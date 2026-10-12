@@ -9,7 +9,36 @@ import SoyehtProtocol
 @MainActor enum PaneInteriorFixture {
   static let paneId = "pane-codex"
 
-  static func client() -> EngineClient {
+  /// A reply that uses every part of the Markdown subset, for the render tests and the shots.
+  static let markdownReply = """
+    ## What changed
+
+    I made **two changes** to `src/main.rs`, and *both* pass `cargo test`. ~~The old path~~ is gone.
+
+    1. Parse the reply into blocks
+    2. Draw each block in the pane
+       - nested bullet with a [link](https://example.com/docs)
+       - another with `inline code`
+
+    > A quoted note about streaming replies.
+
+    ```rust
+    fn render(block: &Block) -> Element {
+        // flat, in the palette
+    }
+    ```
+
+    | Part | Status |
+    | --- | --- |
+    | Parser | **done** |
+    | Views | `ready` |
+
+    ---
+
+    That is all.
+    """
+
+  static func client(messages: [TranscriptMessage]? = nil) -> EngineClient {
     let client = EngineClient(socket: "/tmp/sn-pane-interior/engine.sock")
     client.upsertPane(
       Pane(
@@ -18,19 +47,22 @@ import SoyehtProtocol
         phrase: "Needs you", generation: 1, cols: 80, rows: 24, record: true,
         agent: session))
     var view = AgentPaneView()
-    view.messages = [
-      message(
-        "1", role: .user,
-        text: "Please run cargo test -p acp contract_session_new and tell me if it passes.",
-        agentMessage: AgentMessageSource(paneId: "pane-claude", name: "Claude", harness: "claude")),
-      message("2", role: .assistant, text: "Running the contract tests now."),
-      tool("3", kind: "read", title: "schema/v2/meta.json", status: .completed),
-      tool(
-        "4", kind: "execute", title: "cargo test -p acp contract_session_new", status: .in_progress),
-      TranscriptMessage(
-        localId: "5", generation: 1, seq: "5", role: .assistant, kind: .usage, text: "",
-        complete: true, usage: TokenUsage(totalTokens: "61000", contextSize: "200000")),
-    ]
+    view.messages =
+      messages ?? [
+        message(
+          "1", role: .user,
+          text: "Please run cargo test -p acp contract_session_new and tell me if it passes.",
+          agentMessage: AgentMessageSource(paneId: "pane-claude", name: "Claude", harness: "claude")
+        ),
+        message("2", role: .assistant, text: "Running the contract tests now."),
+        tool("3", kind: "read", title: "schema/v2/meta.json", status: .completed),
+        tool(
+          "4", kind: "execute", title: "cargo test -p acp contract_session_new",
+          status: .in_progress),
+        TranscriptMessage(
+          localId: "5", generation: 1, seq: "5", role: .assistant, kind: .usage, text: "",
+          complete: true, usage: TokenUsage(totalTokens: "61000", contextSize: "200000")),
+      ]
     view.permission = PermissionRequest(
       requestId: "request-1", paneId: paneId, generation: 1, promptId: "prompt-1",
       title: "Codex asks to run", detail: "",
@@ -66,7 +98,7 @@ import SoyehtProtocol
     ],
     authMethods: [], queue: [], draft: false, role: .worker)
 
-  private static func message(
+  static func message(
     _ id: String, role: TranscriptRole, text: String, agentMessage: AgentMessageSource? = nil
   ) -> TranscriptMessage {
     TranscriptMessage(

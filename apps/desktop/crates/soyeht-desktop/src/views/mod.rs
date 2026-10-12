@@ -7,6 +7,7 @@
 mod agent;
 mod composer;
 mod harness_menu;
+mod markdown;
 pub(crate) mod menus;
 mod pane;
 mod permission;

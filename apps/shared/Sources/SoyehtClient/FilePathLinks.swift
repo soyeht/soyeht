@@ -112,13 +112,19 @@ extension EnvironmentValues {
 }
 
 public struct FilePathText: View {
-  private let text: String
+  private let base: AttributedString
   private let workspaceId: String
   @Environment(\.filePathOpenAction) private var openFile
   @Environment(\.webLinkOpenAction) private var openWeb
 
   public init(_ text: String, workspaceId: String) {
-    self.text = text
+    self.init(AttributedString(text), workspaceId: workspaceId)
+  }
+
+  /// Text that already carries its own styling (a Markdown reply): file references and web
+  /// addresses are linked in the stretches that have no link yet.
+  public init(_ text: AttributedString, workspaceId: String) {
+    base = text
     self.workspaceId = workspaceId
   }
 
@@ -138,36 +144,36 @@ public struct FilePathText: View {
   }
 
   private var attributedText: AttributedString {
-    guard openFile.enabled || openWeb.enabled else { return AttributedString(text) }
-    var result = AttributedString()
-    for segment in FilePathLinks.segments(in: text) {
+    guard openFile.enabled || openWeb.enabled else { return base }
+    var result = base
+    var offset = 0
+    for segment in FilePathLinks.segments(in: String(base.characters)) {
       switch segment {
-      case .plain(let value): appendPlain(value, to: &result)
+      case .plain(let value):
+        if openWeb.enabled { linkWebAddresses(in: value, offset: offset, of: &result) }
+        offset += value.count
       case .reference(let label, let reference):
-        var value = AttributedString(label)
-        value.link = Self.url(for: reference)
-        result += value
+        link(offset..<(offset + label.count), to: Self.url(for: reference), in: &result)
+        offset += label.count
       }
     }
     return result
   }
 
-  private func appendPlain(_ value: String, to result: inout AttributedString) {
-    guard openWeb.enabled else {
-      result += AttributedString(value)
-      return
-    }
-    var cursor = value.startIndex
+  private func linkWebAddresses(in value: String, offset: Int, of result: inout AttributedString) {
     for link in WebLinkRouting.links(in: value) {
-      if cursor < link.range.lowerBound {
-        result += AttributedString(String(value[cursor..<link.range.lowerBound]))
-      }
-      var linked = AttributedString(link.label)
-      linked.link = link.url
-      result += linked
-      cursor = link.range.upperBound
+      let start = offset + value.distance(from: value.startIndex, to: link.range.lowerBound)
+      self.link(start..<(start + link.label.count), to: link.url, in: &result)
     }
-    if cursor < value.endIndex { result += AttributedString(String(value[cursor...])) }
+  }
+
+  /// Links the characters in `span` unless the author already linked them.
+  private func link(_ span: Range<Int>, to url: URL?, in text: inout AttributedString) {
+    let start = text.index(text.startIndex, offsetByCharacters: span.lowerBound)
+    let end = text.index(start, offsetByCharacters: span.count)
+    for run in text[start..<end].runs where run.link == nil {
+      text[run.range].link = url
+    }
   }
 
   private static func url(for reference: FilePathReference) -> URL? {

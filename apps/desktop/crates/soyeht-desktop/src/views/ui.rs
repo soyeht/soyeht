@@ -3,7 +3,7 @@
 use crate::{
     assets::Icon,
     neo,
-    theme::{Palette, desktop, elevation, fonts, radius, space, type_scale},
+    theme::{Palette, desktop, elevation, fonts, pane_interior, radius, space, type_scale},
 };
 use gpui::{
     AnyElement, AnyView, App, AppContext, Context, Div, ElementId, FontWeight, Hsla,
@@ -115,6 +115,17 @@ pub fn id(kind: &str, owner: &str) -> SharedString {
 /// A row whose children are centered on the cross axis.
 pub fn row() -> Div {
     div().flex().flex_row().items_center()
+}
+
+/// Text in a mono well: command output and code, as the Mac shows them.
+pub fn code_well(text: impl Into<SharedString>, palette: &Palette) -> Div {
+    div()
+        .p(px(pane_interior::ROW_SPACING))
+        .rounded(px(pane_interior::WELL_RADIUS))
+        .bg(rgb(palette.well))
+        .mono()
+        .text_size(px(pane_interior::MONO_POINT_SIZE))
+        .child(text.into())
 }
 
 /// A column.

@@ -61,3 +61,8 @@ and event. The same values pass through Rust and Swift types and the TypeScript
 reader. `vectors/frames.json` fixes reference bytes in both directions. Negative
 controls check truncation, excessive size, invalid frame kinds, incorrect JSON
 types and unknown enums.
+
+`vectors/markdown.json` is the specification of how agent replies are drawn (ADR 0087): each
+vector is a Markdown input and the blocks it must become, optionally as a reply that is still
+arriving (`"streaming": true`). The Swift client (`MarkdownTests`) and the desktop client
+(`tests/markdown_vectors.rs`) both pass the whole file.

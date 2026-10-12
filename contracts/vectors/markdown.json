@@ -1,0 +1,636 @@
+[
+  {
+    "name": "plain text",
+    "markdown": "Hello world",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "Hello world"}]}
+    ]
+  },
+  {
+    "name": "empty input has no blocks",
+    "markdown": "",
+    "streaming": false,
+    "blocks": []
+  },
+  {
+    "name": "blank lines only have no blocks",
+    "markdown": "\n\n  \n",
+    "streaming": false,
+    "blocks": []
+  },
+  {
+    "name": "bold",
+    "markdown": "a **b** c",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "b", "bold": true}, {"text": " c"}]}
+    ]
+  },
+  {
+    "name": "bold with underscores",
+    "markdown": "a __b__ c",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "b", "bold": true}, {"text": " c"}]}
+    ]
+  },
+  {
+    "name": "italic with stars",
+    "markdown": "a *b* c",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "b", "italic": true}, {"text": " c"}]}
+    ]
+  },
+  {
+    "name": "italic with underscores",
+    "markdown": "a _b_ c",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "b", "italic": true}, {"text": " c"}]}
+    ]
+  },
+  {
+    "name": "bold and italic",
+    "markdown": "a ***b*** c",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "b", "bold": true, "italic": true}, {"text": " c"}]}
+    ]
+  },
+  {
+    "name": "nested emphasis",
+    "markdown": "**bold *and italic* bold**",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "bold ", "bold": true}, {"text": "and italic", "bold": true, "italic": true}, {"text": " bold", "bold": true}]}
+    ]
+  },
+  {
+    "name": "underscores inside words stay literal",
+    "markdown": "call snake_case_name now",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "call snake_case_name now"}]}
+    ]
+  },
+  {
+    "name": "inline code",
+    "markdown": "run `cargo test` now",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "run "}, {"text": "cargo test", "code": true}, {"text": " now"}]}
+    ]
+  },
+  {
+    "name": "markers inside code stay literal",
+    "markdown": "`**not bold**`",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "**not bold**", "code": true}]}
+    ]
+  },
+  {
+    "name": "code span with a backtick",
+    "markdown": "`` a`b ``",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a`b", "code": true}]}
+    ]
+  },
+  {
+    "name": "strikethrough",
+    "markdown": "a ~~gone~~ b",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "gone", "strike": true}, {"text": " b"}]}
+    ]
+  },
+  {
+    "name": "link",
+    "markdown": "see [the docs](https://example.com/a?b=1) now",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "see "}, {"text": "the docs", "link": "https://example.com/a?b=1"}, {"text": " now"}]}
+    ]
+  },
+  {
+    "name": "link title is dropped",
+    "markdown": "[t](https://example.com \"Title\")",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "t", "link": "https://example.com"}]}
+    ]
+  },
+  {
+    "name": "http and mailto links are kept",
+    "markdown": "[a](http://a.test) [m](mailto:me@a.test)",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a", "link": "http://a.test"}, {"text": " "}, {"text": "m", "link": "mailto:me@a.test"}]}
+    ]
+  },
+  {
+    "name": "script links lose the link",
+    "markdown": "[x](javascript:alert(1))",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "x"}]}
+    ]
+  },
+  {
+    "name": "relative links lose the link",
+    "markdown": "[x](./notes.md)",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "x"}]}
+    ]
+  },
+  {
+    "name": "styled text inside a link",
+    "markdown": "[**bold** link](https://a.test)",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "bold", "bold": true, "link": "https://a.test"}, {"text": " link", "link": "https://a.test"}]}
+    ]
+  },
+  {
+    "name": "a link whose text is its address is plain text",
+    "markdown": "<https://a.test/x>",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "https://a.test/x"}]}
+    ]
+  },
+  {
+    "name": "image becomes its alt text linked to the image",
+    "markdown": "![diagram](https://a.test/d.png)",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "diagram", "link": "https://a.test/d.png"}]}
+    ]
+  },
+  {
+    "name": "entities and escapes",
+    "markdown": "&amp; &lt;tag&gt; \\*not italic\\*",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "& <tag> *not italic*"}]}
+    ]
+  },
+  {
+    "name": "soft break keeps the line break",
+    "markdown": "first\nsecond",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "first\nsecond"}]}
+    ]
+  },
+  {
+    "name": "hard break with example",
+    "markdown": "first  \nsecond",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "first\nsecond"}]}
+    ]
+  },
+  {
+    "name": "hard break with backslash",
+    "markdown": "first\\\nsecond",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "first\nsecond"}]}
+    ]
+  },
+  {
+    "name": "emphasis continues across a line break",
+    "markdown": "**one\ntwo**",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "one\ntwo", "bold": true}]}
+    ]
+  },
+  {
+    "name": "inline html stays literal",
+    "markdown": "a <b>x</b> c",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a <b>x</b> c"}]}
+    ]
+  },
+  {
+    "name": "two paragraphs",
+    "markdown": "one\n\ntwo",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "one"}]},
+      {"type": "paragraph", "inlines": [{"text": "two"}]}
+    ]
+  },
+  {
+    "name": "heading level 1",
+    "markdown": "# Title 1",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 1, "inlines": [{"text": "Title 1"}]}
+    ]
+  },
+  {
+    "name": "heading level 2",
+    "markdown": "## Title 2",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 2, "inlines": [{"text": "Title 2"}]}
+    ]
+  },
+  {
+    "name": "heading level 3",
+    "markdown": "### Title 3",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 3, "inlines": [{"text": "Title 3"}]}
+    ]
+  },
+  {
+    "name": "heading level 4",
+    "markdown": "#### Title 4",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 4, "inlines": [{"text": "Title 4"}]}
+    ]
+  },
+  {
+    "name": "heading level 5",
+    "markdown": "##### Title 5",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 5, "inlines": [{"text": "Title 5"}]}
+    ]
+  },
+  {
+    "name": "heading level 6",
+    "markdown": "###### Title 6",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 6, "inlines": [{"text": "Title 6"}]}
+    ]
+  },
+  {
+    "name": "heading with styled text",
+    "markdown": "## A `code` **head**",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 2, "inlines": [{"text": "A "}, {"text": "code", "code": true}, {"text": " "}, {"text": "head", "bold": true}]}
+    ]
+  },
+  {
+    "name": "setext heading",
+    "markdown": "Title\n=====\n\nbody",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 1, "inlines": [{"text": "Title"}]},
+      {"type": "paragraph", "inlines": [{"text": "body"}]}
+    ]
+  },
+  {
+    "name": "thematic break",
+    "markdown": "above\n\n---\n\nbelow",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "above"}]},
+      {"type": "rule"},
+      {"type": "paragraph", "inlines": [{"text": "below"}]}
+    ]
+  },
+  {
+    "name": "bullet list",
+    "markdown": "- one\n- two\n- three",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "one"}]}], [{"type": "paragraph", "inlines": [{"text": "two"}]}], [{"type": "paragraph", "inlines": [{"text": "three"}]}]]}
+    ]
+  },
+  {
+    "name": "bullet list with stars and plus",
+    "markdown": "* a\n* b\n\n+ c",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "a"}]}], [{"type": "paragraph", "inlines": [{"text": "b"}]}]]},
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "c"}]}]]}
+    ]
+  },
+  {
+    "name": "ordered list",
+    "markdown": "1. one\n2. two",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": true, "start": 1, "items": [[{"type": "paragraph", "inlines": [{"text": "one"}]}], [{"type": "paragraph", "inlines": [{"text": "two"}]}]]}
+    ]
+  },
+  {
+    "name": "ordered list keeps its first number",
+    "markdown": "3. three\n4. four",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": true, "start": 3, "items": [[{"type": "paragraph", "inlines": [{"text": "three"}]}], [{"type": "paragraph", "inlines": [{"text": "four"}]}]]}
+    ]
+  },
+  {
+    "name": "nested list",
+    "markdown": "- a\n  - b\n  - c\n- d",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "a"}]}, {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "b"}]}], [{"type": "paragraph", "inlines": [{"text": "c"}]}]]}], [{"type": "paragraph", "inlines": [{"text": "d"}]}]]}
+    ]
+  },
+  {
+    "name": "ordered list inside a bullet",
+    "markdown": "- steps\n  1. first\n  2. second",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "steps"}]}, {"type": "list", "ordered": true, "start": 1, "items": [[{"type": "paragraph", "inlines": [{"text": "first"}]}], [{"type": "paragraph", "inlines": [{"text": "second"}]}]]}]]}
+    ]
+  },
+  {
+    "name": "list item with several blocks",
+    "markdown": "- intro\n\n  more text\n\n  ```sh\n  ls\n  ```\n- last",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "intro"}]}, {"type": "paragraph", "inlines": [{"text": "more text"}]}, {"type": "code", "language": "sh", "text": "ls"}], [{"type": "paragraph", "inlines": [{"text": "last"}]}]]}
+    ]
+  },
+  {
+    "name": "task list markers stay as typed",
+    "markdown": "- [ ] todo\n- [x] done",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "[ ] todo"}]}], [{"type": "paragraph", "inlines": [{"text": "[x] done"}]}]]}
+    ]
+  },
+  {
+    "name": "list item with styled text",
+    "markdown": "- **Name**: the `value`",
+    "streaming": false,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "Name", "bold": true}, {"text": ": the "}, {"text": "value", "code": true}]}]]}
+    ]
+  },
+  {
+    "name": "block quote",
+    "markdown": "> quoted\n> text",
+    "streaming": false,
+    "blocks": [
+      {"type": "quote", "blocks": [{"type": "paragraph", "inlines": [{"text": "quoted\ntext"}]}]}
+    ]
+  },
+  {
+    "name": "nested block quote",
+    "markdown": "> outer\n>\n> > inner",
+    "streaming": false,
+    "blocks": [
+      {"type": "quote", "blocks": [{"type": "paragraph", "inlines": [{"text": "outer"}]}, {"type": "quote", "blocks": [{"type": "paragraph", "inlines": [{"text": "inner"}]}]}]}
+    ]
+  },
+  {
+    "name": "list inside a quote",
+    "markdown": "> - a\n> - b",
+    "streaming": false,
+    "blocks": [
+      {"type": "quote", "blocks": [{"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "a"}]}], [{"type": "paragraph", "inlines": [{"text": "b"}]}]]}]}
+    ]
+  },
+  {
+    "name": "fenced code with a language",
+    "markdown": "```rust\nfn main() {}\n```",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": "rust", "text": "fn main() {}"}
+    ]
+  },
+  {
+    "name": "fenced code without a language",
+    "markdown": "```\nplain\n```",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": null, "text": "plain"}
+    ]
+  },
+  {
+    "name": "tilde fence",
+    "markdown": "~~~\ntilde\n~~~",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": null, "text": "tilde"}
+    ]
+  },
+  {
+    "name": "code keeps blank lines and indentation",
+    "markdown": "```py\ndef f():\n\n    return 1\n```",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": "py", "text": "def f():\n\n    return 1"}
+    ]
+  },
+  {
+    "name": "code keeps markdown characters",
+    "markdown": "```\n# not a heading\n**not bold**\n```",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": null, "text": "# not a heading\n**not bold**"}
+    ]
+  },
+  {
+    "name": "indented code",
+    "markdown": "para\n\n    indented\n    code",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "para"}]},
+      {"type": "code", "language": null, "text": "indented\ncode"}
+    ]
+  },
+  {
+    "name": "an unclosed fence runs to the end",
+    "markdown": "```py\nopen\nstill open",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": "py", "text": "open\nstill open"}
+    ]
+  },
+  {
+    "name": "an empty fence has no block",
+    "markdown": "```\n```\n\nafter",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "after"}]}
+    ]
+  },
+  {
+    "name": "text after a fence",
+    "markdown": "```\ncode\n```\nafter",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": null, "text": "code"},
+      {"type": "paragraph", "inlines": [{"text": "after"}]}
+    ]
+  },
+  {
+    "name": "html block stays literal",
+    "markdown": "<div>\nhi\n</div>\n\nafter",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "<div>\nhi\n</div>"}]},
+      {"type": "paragraph", "inlines": [{"text": "after"}]}
+    ]
+  },
+  {
+    "name": "table",
+    "markdown": "| name | value |\n| --- | --- |\n| a | 1 |\n| b | 2 |",
+    "streaming": false,
+    "blocks": [
+      {"type": "table", "header": [[{"text": "name"}], [{"text": "value"}]], "rows": [[[{"text": "a"}], [{"text": "1"}]], [[{"text": "b"}], [{"text": "2"}]]]}
+    ]
+  },
+  {
+    "name": "table cells with styled text",
+    "markdown": "| h |\n|---|\n| **b** `c` |",
+    "streaming": false,
+    "blocks": [
+      {"type": "table", "header": [[{"text": "h"}]], "rows": [[[{"text": "b", "bold": true}, {"text": " "}, {"text": "c", "code": true}]]]}
+    ]
+  },
+  {
+    "name": "table with an empty cell",
+    "markdown": "| a | b |\n|---|---|\n| | 2 |",
+    "streaming": false,
+    "blocks": [
+      {"type": "table", "header": [[{"text": "a"}], [{"text": "b"}]], "rows": [[[], [{"text": "2"}]]]}
+    ]
+  },
+  {
+    "name": "a pipe line without a delimiter row is a paragraph",
+    "markdown": "| a | b |",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "| a | b |"}]}
+    ]
+  },
+  {
+    "name": "realistic reply",
+    "markdown": "## Summary\n\nI changed **two files**:\n\n- `src/main.rs`: new parser\n- `README.md`\n\n```rust\nlet x = 1;\n```\n\nSee [docs](https://example.com).",
+    "streaming": false,
+    "blocks": [
+      {"type": "heading", "level": 2, "inlines": [{"text": "Summary"}]},
+      {"type": "paragraph", "inlines": [{"text": "I changed "}, {"text": "two files", "bold": true}, {"text": ":"}]},
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "src/main.rs", "code": true}, {"text": ": new parser"}]}], [{"type": "paragraph", "inlines": [{"text": "README.md", "code": true}]}]]},
+      {"type": "code", "language": "rust", "text": "let x = 1;"},
+      {"type": "paragraph", "inlines": [{"text": "See "}, {"text": "docs", "link": "https://example.com"}, {"text": "."}]}
+    ]
+  },
+  {
+    "name": "streaming: an open bold closes",
+    "markdown": "a **bol",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "bol", "bold": true}]}
+    ]
+  },
+  {
+    "name": "streaming: an open code span closes",
+    "markdown": "run `cargo te",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "run "}, {"text": "cargo te", "code": true}]}
+    ]
+  },
+  {
+    "name": "streaming: an open strike closes",
+    "markdown": "a ~~gon",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "gon", "strike": true}]}
+    ]
+  },
+  {
+    "name": "streaming: markers close in reverse order",
+    "markdown": "**a `b",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a ", "bold": true}, {"text": "b", "bold": true, "code": true}]}
+    ]
+  },
+  {
+    "name": "streaming: a marker with no text yet is dropped",
+    "markdown": "wait **",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "wait"}]}
+    ]
+  },
+  {
+    "name": "streaming: a space after a marker is not an opener",
+    "markdown": "2 ** 3",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "2 ** 3"}]}
+    ]
+  },
+  {
+    "name": "streaming: a closed pair needs nothing",
+    "markdown": "a **b** c",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a "}, {"text": "b", "bold": true}, {"text": " c"}]}
+    ]
+  },
+  {
+    "name": "streaming: an open fence keeps its backticks",
+    "markdown": "```py\nx = `a",
+    "streaming": true,
+    "blocks": [
+      {"type": "code", "language": "py", "text": "x = `a"}
+    ]
+  },
+  {
+    "name": "streaming: the text after a closed fence closes",
+    "markdown": "```\ncode\n\nmore\n```\nnow `x",
+    "streaming": true,
+    "blocks": [
+      {"type": "code", "language": null, "text": "code\n\nmore"},
+      {"type": "paragraph", "inlines": [{"text": "now "}, {"text": "x", "code": true}]}
+    ]
+  },
+  {
+    "name": "streaming: a blank line ends the open marker",
+    "markdown": "**a\n\nb",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "**a"}]},
+      {"type": "paragraph", "inlines": [{"text": "b"}]}
+    ]
+  },
+  {
+    "name": "streaming: an escaped marker is text",
+    "markdown": "a \\**b",
+    "streaming": true,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a **b"}]}
+    ]
+  },
+  {
+    "name": "streaming: a list item closes",
+    "markdown": "- one\n- **tw",
+    "streaming": true,
+    "blocks": [
+      {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "one"}]}], [{"type": "paragraph", "inlines": [{"text": "tw", "bold": true}]}]]}
+    ]
+  },
+  {
+    "name": "the same text as a finished reply keeps its markers",
+    "markdown": "a **bol",
+    "streaming": false,
+    "blocks": [
+      {"type": "paragraph", "inlines": [{"text": "a **bol"}]}
+    ]
+  }
+]

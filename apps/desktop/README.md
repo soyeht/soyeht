@@ -34,7 +34,7 @@ agent works.
   of a pane header split it to the right or below and store the new arrangement.
 - Terminal panes show live output (the engine streams raw terminal bytes, parsed
   with `vt100`), accept typing, paste, resize with the window, and scroll back.
-- Agent panes show the transcript (the person's messages, replies, thoughts, tool rows, plans,
+- Agent panes show the transcript (the person's messages, replies drawn as Markdown, thoughts, tool rows, plans,
   command output in a mono well, hand-overs), take a
   message from the composer (text comes through GPUI's input handler, so dead keys, input
   methods and emoji work), and offer the harness, model, effort and permission pickers, the

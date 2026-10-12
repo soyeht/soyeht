@@ -8,6 +8,7 @@ let package = Package(
     dependencies: [
         .package(path: "../../contracts/swift"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.20.0"),
+        .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.9.0"),
     ],
     targets: [
         .target(
@@ -15,6 +16,7 @@ let package = Package(
             dependencies: [
                 .product(name: "SoyehtProtocol", package: "swift"),
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
+                .product(name: "Markdown", package: "swift-markdown"),
             ],
             resources: [.process("Resources")]
         ),

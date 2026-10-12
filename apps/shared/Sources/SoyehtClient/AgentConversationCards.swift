@@ -28,9 +28,11 @@ struct AgentTranscriptRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       case .thought:
         DisclosureGroup("Thought", isExpanded: $showsThought) {
-          FilePathText(message.text, workspaceId: workspaceId)
-            .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, PaneInteriorMetrics.compactSpacing)
+          AgentMarkdownText(
+            text: message.text, streaming: !message.complete, workspaceId: workspaceId,
+            style: style, ink: style.secondary
+          )
+          .padding(.top, PaneInteriorMetrics.compactSpacing)
         }.foregroundStyle(style.secondary)
       case .tool:
         if let tool = message.tool {
@@ -61,10 +63,14 @@ struct AgentTranscriptRow: View {
       default:
         if message.role == .user || message.agentMessage != nil {
           addressedMessage
+        } else if message.role == .assistant {
+          AgentMarkdownText(
+            text: message.text, streaming: !message.complete, workspaceId: workspaceId,
+            style: style)
         } else {
           FilePathText(message.text, workspaceId: workspaceId)
             .textSelection(.enabled)
-            .foregroundStyle(message.role == .system ? style.secondary : style.ink)
+            .foregroundStyle(style.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
       }

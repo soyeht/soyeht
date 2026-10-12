@@ -15,6 +15,7 @@ mod event;
 pub mod harness_picker;
 pub mod keys;
 pub mod layout;
+pub mod markdown;
 pub mod permission_preview;
 pub mod profile;
 mod rpc;

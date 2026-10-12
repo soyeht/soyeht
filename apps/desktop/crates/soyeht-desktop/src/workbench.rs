@@ -15,6 +15,7 @@ use gpui::{
 use soyeht_client::{
     Command, Connection, Effect, Engine, Error, Event, State,
     keys::{self, Modifiers},
+    markdown,
     screen::TerminalScreen,
 };
 use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
@@ -44,6 +45,8 @@ pub struct Workbench {
     transcripts: HashMap<String, (ScrollHandle, usize)>,
     /// The thoughts of an agent the person has opened, by message.
     pub(crate) open_thoughts: HashSet<String>,
+    /// The Markdown of the replies on screen, parsed once per change.
+    pub(crate) markdown: markdown::Cache,
     /// The sideways scroll of the stage, when the panes need more room than the window has.
     pub(crate) stage_scroll: ScrollHandle,
     /// The sideways scroll of the workspace tabs.
@@ -108,6 +111,7 @@ impl Workbench {
             next_ticket: 0,
             transcripts: HashMap::new(),
             open_thoughts: HashSet::new(),
+            markdown: markdown::Cache::default(),
             stage_scroll: ScrollHandle::new(),
             tab_scroll: ScrollHandle::new(),
             revealed_tab: None,

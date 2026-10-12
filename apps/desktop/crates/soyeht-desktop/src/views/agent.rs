@@ -2,7 +2,7 @@
 //! card headed "YOU", the agent's reply is plain text, a tool call is a plain row over a thin
 //! line, and the composer sits at the bottom. Nothing in here has a shadow.
 
-use super::ui::{Typeface, column, icon, id, row};
+use super::ui::{Typeface, code_well, column, icon, id, row};
 use crate::{
     assets::Icon,
     theme::{Palette, desktop, pane_interior, space, type_scale},
@@ -12,7 +12,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
     ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
 };
-use soyeht_client::agent::terminal_text;
+use soyeht_client::{agent::terminal_text, markdown};
 use soyeht_protocol::{
     PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind, TranscriptMessage,
     TranscriptRole,
@@ -32,6 +32,7 @@ impl Workbench {
         let scroll = self.transcript_scroll(&pane.pane_id, count);
         // The transcript is read where it lives and only the elements are built: the last
         // `TAIL` messages, never a copy of all of them.
+        let markdown = &mut self.markdown;
         let (rows, hidden, notice, permission) = match self.state.agent(&pane.pane_id) {
             Some(view) => {
                 let (shown, hidden) = view.tail();
@@ -40,7 +41,7 @@ impl Workbench {
                     .filter(|message| message.subagent_id.is_none())
                     .filter_map(|message| {
                         let open = self.open_thoughts.contains(&message.local_id);
-                        transcript_row(message, open, palette, cx)
+                        transcript_row(message, open, markdown, palette, cx)
                     })
                     .collect();
                 let permission = view
@@ -125,12 +126,13 @@ fn notice_line(text: &str, palette: &Palette) -> AnyElement {
 fn transcript_row(
     message: &TranscriptMessage,
     open: bool,
+    markdown: &mut markdown::Cache,
     palette: &Palette,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
     match message.kind {
         TranscriptKind::Tool => message.tool.as_ref().map(|tool| tool_row(tool, palette)),
-        TranscriptKind::Thought => Some(thought_row(message, open, palette, cx)),
+        TranscriptKind::Thought => Some(thought_row(message, open, markdown, palette, cx)),
         TranscriptKind::Plan => message.plan.as_ref().map(|plan| plan_card(plan, palette)),
         TranscriptKind::Handover => Some(
             labelled(
@@ -145,12 +147,38 @@ fn transcript_row(
             .as_ref()
             .map(|output| terminal_block(output, palette)),
         TranscriptKind::Usage | TranscriptKind::Subagent => None,
-        TranscriptKind::Message | TranscriptKind::System => Some(text_row(message, palette)),
+        TranscriptKind::Message | TranscriptKind::System => {
+            Some(text_row(message, markdown, palette))
+        }
     }
 }
 
-/// A message: a card for the person or a peer agent, plain text for the agent's own words.
-fn text_row(message: &TranscriptMessage, palette: &Palette) -> AnyElement {
+/// The agent's words with their Markdown drawn, in `ink`; a reply that is still arriving has its
+/// open spans closed.
+fn markdown_body(
+    message: &TranscriptMessage,
+    markdown: &mut markdown::Cache,
+    palette: &Palette,
+    ink: u32,
+) -> AnyElement {
+    let blocks = markdown.blocks(&message.local_id, &message.text, !message.complete);
+    super::markdown::reply(&blocks, &message.local_id, palette, ink)
+}
+
+/// A message: a card for the person or a peer agent, plain text for what they typed, and the
+/// agent's own words with their Markdown drawn.
+fn text_row(
+    message: &TranscriptMessage,
+    markdown: &mut markdown::Cache,
+    palette: &Palette,
+) -> AnyElement {
+    if message.role == TranscriptRole::Assistant && message.agent_message.is_none() {
+        return div()
+            .w_full()
+            .text_size(px(pane_interior::BODY_POINT_SIZE))
+            .child(markdown_body(message, markdown, palette, palette.ink))
+            .into_any_element();
+    }
     let body = div()
         .text_size(px(pane_interior::BODY_POINT_SIZE))
         .child(SharedString::from(message.text.clone()));
@@ -186,12 +214,7 @@ fn text_row(message: &TranscriptMessage, palette: &Palette) -> AnyElement {
             .child(body)
             .into_any_element();
     }
-    body.text_color(rgb(if message.role == TranscriptRole::System {
-        palette.secondary
-    } else {
-        palette.ink
-    }))
-    .into_any_element()
+    body.text_color(rgb(palette.secondary)).into_any_element()
 }
 
 /// A tool call as a plain row: kind, title and paths in mono, the status at the trailing edge,
@@ -268,6 +291,7 @@ fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
 fn thought_row(
     message: &TranscriptMessage,
     open: bool,
+    markdown: &mut markdown::Cache,
     palette: &Palette,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
@@ -295,20 +319,14 @@ fn thought_row(
                 ))
                 .child("Thought"),
         )
-        .children(open.then(|| div().child(SharedString::from(message.text.clone()))))
+        .children(open.then(|| markdown_body(message, markdown, palette, palette.secondary)))
         .into_any_element()
 }
 
 /// A command's output: the text in a mono well, as the Mac shows it.
 fn terminal_block(output: &TerminalOutput, palette: &Palette) -> AnyElement {
-    div()
+    code_well(terminal_text(output), palette)
         .w_full()
-        .p(px(pane_interior::ROW_SPACING))
-        .rounded(px(pane_interior::WELL_RADIUS))
-        .bg(rgb(palette.well))
-        .mono()
-        .text_size(px(pane_interior::MONO_POINT_SIZE))
-        .child(SharedString::from(terminal_text(output)))
         .into_any_element()
 }
 

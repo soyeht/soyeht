@@ -69,6 +69,9 @@ ADR when you change a boundary.
 - Once a generated form exists, use it. Do not hand-type a method or event name,
   a limit, or an error code. Examples: `EventName`, `METHODS`, `error_code()`,
   `limits.rs` and `ProtocolLimits`.
+- Rules every client must share that are not wire values (the Markdown subset of agent
+  replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
+  the same file. Change the vectors first.
 - One rule, one place. Before you add a helper, a constant or a policy, search
   for an existing one and reuse or extend it.
 - Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard

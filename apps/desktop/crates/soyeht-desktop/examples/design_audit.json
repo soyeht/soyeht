@@ -177,6 +177,34 @@
    "name": "Empty",
    "path": "/home/dev/soyeht",
    "layout": {}
+  },
+  {
+   "workspaceId": "ws-markdown",
+   "name": "Markdown",
+   "path": "/home/dev/soyeht",
+   "layout": {
+    "version": 2,
+    "mode": "custom",
+    "tree": {
+     "axis": "horizontal",
+     "children": [
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "md-a",
+        "kind": "agent"
+       }
+      },
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "md-b",
+        "kind": "agent"
+       }
+      }
+     ]
+    }
+   }
   }
  ],
  "panes": [
@@ -865,6 +893,214 @@
     "role": "worker"
    },
    "title": "More rows"
+  },
+  {
+   "paneId": "md-a",
+   "workspaceId": "ws-markdown",
+   "name": "Claude",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.claude-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opus",
+      "options": [
+       {
+        "value": "opus",
+        "name": "Opus 5 (1M)"
+       },
+       {
+        "value": "sonnet",
+        "name": "Sonnet 5.5"
+       },
+       {
+        "value": "haiku",
+        "name": "Haiku 5"
+       }
+      ]
+     },
+     {
+      "id": "effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "high",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "max",
+        "name": "max"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "acceptEdits",
+      "options": [
+       {
+        "value": "default",
+        "name": "Manual"
+       },
+       {
+        "value": "acceptEdits",
+        "name": "Accept edits"
+       },
+       {
+        "value": "plan",
+        "name": "Plan"
+       },
+       {
+        "value": "auto",
+        "name": "Auto"
+       },
+       {
+        "value": "bypass",
+        "name": "Bypass"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": null,
+    "role": "worker"
+   },
+   "title": "Rows of the transcript"
+  },
+  {
+   "paneId": "md-b",
+   "workspaceId": "ws-markdown",
+   "name": "Codex",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "sessionId": "s-registry.claude-acp",
+    "options": [
+     {
+      "id": "model",
+      "name": "Model",
+      "category": "model",
+      "type": "select",
+      "currentValue": "opus",
+      "options": [
+       {
+        "value": "opus",
+        "name": "Opus 5 (1M)"
+       },
+       {
+        "value": "sonnet",
+        "name": "Sonnet 5.5"
+       },
+       {
+        "value": "haiku",
+        "name": "Haiku 5"
+       }
+      ]
+     },
+     {
+      "id": "effort",
+      "name": "Effort",
+      "category": "thought_level",
+      "type": "select",
+      "currentValue": "high",
+      "options": [
+       {
+        "value": "low",
+        "name": "low"
+       },
+       {
+        "value": "medium",
+        "name": "medium"
+       },
+       {
+        "value": "high",
+        "name": "high"
+       },
+       {
+        "value": "max",
+        "name": "max"
+       }
+      ]
+     },
+     {
+      "id": "mode",
+      "name": "Mode",
+      "category": "mode",
+      "type": "select",
+      "currentValue": "acceptEdits",
+      "options": [
+       {
+        "value": "default",
+        "name": "Manual"
+       },
+       {
+        "value": "acceptEdits",
+        "name": "Accept edits"
+       },
+       {
+        "value": "plan",
+        "name": "Plan"
+       },
+       {
+        "value": "auto",
+        "name": "Auto"
+       },
+       {
+        "value": "bypass",
+        "name": "Bypass"
+       }
+      ]
+     }
+    ],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "activePromptId": null,
+    "role": "worker"
+   },
+   "title": "Rows of the transcript"
   }
  ],
  "requests": [
@@ -1460,6 +1696,64 @@
     "kind": "message",
     "text": "Hello! How can I help?",
     "complete": true
+   }
+  ],
+  "md-a": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "user",
+    "kind": "message",
+    "text": "Summarize the change and show the new render function.",
+    "complete": true
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "message",
+    "text": "## What changed\n\nI made **two changes** to `src/main.rs`, and *both* pass `cargo test`. ~~The old path~~ is gone.\n\n1. Parse the reply into blocks\n2. Draw each block in the pane\n   - nested bullet with a [link](https://example.com/docs)\n   - another with `inline code`\n\n> A quoted note about streaming replies.\n\n```rust\nfn render(block: &Block) -> Element {\n    // flat, in the palette\n}\n```\n\n| Part | Status |\n| --- | --- |\n| Parser | **done** |\n| Views | `ready` |\n\n---\n\nThat is all.",
+    "complete": true
+   },
+   {
+    "localId": "m3",
+    "generation": 1,
+    "seq": "3",
+    "role": "assistant",
+    "kind": "message",
+    "text": "Next I will **run the full suit",
+    "complete": false
+   }
+  ],
+  "md-b": [
+   {
+    "localId": "m1",
+    "generation": 1,
+    "seq": "1",
+    "role": "user",
+    "kind": "message",
+    "text": "Explain what you are running.",
+    "complete": true
+   },
+   {
+    "localId": "m2",
+    "generation": 1,
+    "seq": "2",
+    "role": "assistant",
+    "kind": "message",
+    "text": "I am running **the contract tests** with `cargo test -p acp`:\n\n- first the schema check\n- then `contract_session_new`",
+    "complete": true
+   },
+   {
+    "localId": "m3",
+    "generation": 1,
+    "seq": "3",
+    "role": "assistant",
+    "kind": "message",
+    "text": "Now the fix:\n\n```rust\nfn main() {\n    let x = `par",
+    "complete": false
    }
   ]
  },
