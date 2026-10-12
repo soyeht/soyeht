@@ -194,23 +194,18 @@ struct AgentElicitationCard: View {
   let style: AgentConversationStyle
   @State private var values: [String: String] = [:]
 
-  private var fields: [(String, String)] {
-    guard case .object(let schema) = request.schema,
-      case .object(let properties) = schema["properties"]
-    else { return [] }
-    return properties.keys.sorted().map { key in
-      (key, properties[key]?["title"].string ?? key)
-    }
+  private var fields: [AgentElicitationFields.Field] {
+    AgentElicitationFields.fields(schema: request.schema)
   }
 
   var body: some View {
     VStack(alignment: .leading, spacing: PaneInteriorMetrics.rowSpacing) {
       Label(request.title, systemImage: "list.clipboard").font(style.headingFont)
-      ForEach(fields, id: \.0) { field in
+      ForEach(fields, id: \.key) { field in
         TextField(
-          field.1,
+          field.title,
           text: Binding(
-            get: { values[field.0, default: ""] }, set: { values[field.0] = $0 })
+            get: { values[field.key, default: ""] }, set: { values[field.key] = $0 })
         )
         .textFieldStyle(.plain).font(style.bodyFont)
         .padding(.horizontal, PaneInteriorMetrics.rowSpacing)
@@ -218,12 +213,12 @@ struct AgentElicitationCard: View {
         .paneInteriorFill(style.well, radius: PaneInteriorMetrics.wellRadius)
       }
       HStack {
-        Button("Cancel", role: .cancel) {
+        Button(AgentElicitationFields.cancelTitle, role: .cancel) {
           client.answerElicitation(request, fields: nil, cancel: true)
         }
         .buttonStyle(PanePillButtonStyle(.secondary, style: style))
         Spacer()
-        Button("Submit") {
+        Button(AgentElicitationFields.submitTitle) {
           client.answerElicitation(
             request, fields: .object(values.mapValues(JsonValue.string)), cancel: false)
         }

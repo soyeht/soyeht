@@ -8,6 +8,8 @@
 
 pub mod agent;
 mod agents;
+pub mod attachments;
+pub mod cards;
 pub mod commands;
 mod engine;
 mod error;
@@ -15,7 +17,9 @@ mod event;
 pub mod harness_picker;
 pub mod keys;
 pub mod layout;
+pub mod loops;
 pub mod markdown;
+mod paging;
 pub mod permission_preview;
 pub mod profile;
 mod rpc;
@@ -24,9 +28,11 @@ mod session;
 mod snapshot;
 pub mod state;
 pub mod streams;
+pub mod tasks;
 pub mod terminal_state;
 #[cfg(test)]
 mod testing;
+pub mod timestamp;
 pub mod transport;
 pub mod usage;
 

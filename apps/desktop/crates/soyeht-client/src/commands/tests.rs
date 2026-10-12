@@ -1,0 +1,329 @@
+use super::*;
+use serde_json::Value;
+
+fn input(pane: &str, text: &str) -> Command {
+    Command::Input {
+        pane_id: pane.into(),
+        bytes: text.as_bytes().to_vec(),
+    }
+}
+
+#[test]
+fn typing_bursts_for_one_pane_merge_in_order() {
+    let (tx, rx) = mpsc::channel();
+    tx.send(input("p", "b")).unwrap();
+    tx.send(input("p", "c")).unwrap();
+    let mut carry = None;
+    assert_eq!(
+        coalesce(input("p", "a"), &rx, &mut carry),
+        input("p", "abc")
+    );
+    assert_eq!(carry, None);
+}
+
+#[test]
+fn merging_stops_at_another_pane_or_command_and_keeps_order() {
+    let (tx, rx) = mpsc::channel();
+    tx.send(input("p", "b")).unwrap();
+    tx.send(input("q", "x")).unwrap();
+    tx.send(input("p", "c")).unwrap();
+    let mut carry = None;
+    assert_eq!(coalesce(input("p", "a"), &rx, &mut carry), input("p", "ab"));
+    assert_eq!(carry, Some(input("q", "x")));
+    assert_eq!(rx.try_recv().unwrap(), input("p", "c"));
+}
+
+#[test]
+fn a_burst_of_resizes_keeps_only_the_last_size() {
+    let resize = |rows, cols| Command::Resize {
+        pane_id: "p".into(),
+        rows,
+        cols,
+    };
+    let (tx, rx) = mpsc::channel();
+    tx.send(resize(25, 81)).unwrap();
+    tx.send(resize(30, 100)).unwrap();
+    tx.send(Command::Focus {
+        pane_id: "p".into(),
+    })
+    .unwrap();
+    let mut carry = None;
+    assert_eq!(coalesce(resize(24, 80), &rx, &mut carry), resize(30, 100));
+    assert_eq!(
+        carry,
+        Some(Command::Focus {
+            pane_id: "p".into()
+        })
+    );
+}
+
+#[test]
+fn other_commands_pass_through_untouched() {
+    let (_tx, rx) = mpsc::channel();
+    let focus = Command::Focus {
+        pane_id: "p".into(),
+    };
+    assert_eq!(coalesce(focus.clone(), &rx, &mut None), focus);
+}
+
+#[test]
+fn requests_use_the_generated_method_names_and_wire_shapes() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let subscribe = body(Command::Subscribe {
+        pane_id: "p".into(),
+    });
+    assert_eq!(subscribe["method"], "pane.stream.subscribe");
+    assert_eq!(
+        subscribe["params"],
+        serde_json::json!({"paneId": "p", "from": "tail"})
+    );
+    let resize = body(Command::Resize {
+        pane_id: "p".into(),
+        rows: 24,
+        cols: 80,
+    });
+    assert_eq!(resize["method"], "pane.resize");
+    assert_eq!(
+        (
+            resize["params"]["rows"].clone(),
+            resize["params"]["cols"].clone()
+        ),
+        (24.into(), 80.into())
+    );
+    let create = body(Command::CreateTerminal {
+        workspace_id: "w".into(),
+        ticket: 7,
+    });
+    assert_eq!(create["method"], "pane.create");
+    assert_eq!(create["params"]["mode"], "terminal");
+    assert!(
+        create["params"]["idempotencyKey"]
+            .as_str()
+            .is_some_and(|key| key.len() == 36)
+    );
+}
+
+#[test]
+fn the_queue_the_question_and_the_sign_in_use_the_engines_methods() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let remove = body(Command::RemoveQueued {
+        pane_id: "p".into(),
+        prompt_id: "q".into(),
+    });
+    assert_eq!(remove["method"], "pane.queue.remove");
+    assert_eq!(remove["params"]["promptId"], "q");
+    let resume = body(Command::ResumeQueue {
+        pane_id: "p".into(),
+    });
+    assert_eq!(resume["method"], "pane.queue.resume");
+    let answer = body(Command::AnswerElicitation {
+        pane_id: "p".into(),
+        request_id: "e".into(),
+        fields: Some(serde_json::json!({"a": "b"})),
+        cancel: false,
+    });
+    assert_eq!(answer["method"], "pane.elicitation.answer");
+    assert_eq!(answer["params"]["fields"]["a"], "b");
+    assert!(answer["params"].get("cancel").is_none());
+    let declined = body(Command::AnswerElicitation {
+        pane_id: "p".into(),
+        request_id: "e".into(),
+        fields: None,
+        cancel: true,
+    });
+    assert_eq!(declined["params"]["cancel"], true);
+    assert!(declined["params"].get("fields").is_none());
+    let start = body(Command::StartSignIn {
+        pane_id: "p".into(),
+        method_id: Some("m".into()),
+    });
+    assert_eq!(start["method"], "pane.auth.start");
+    assert_eq!(start["params"]["authMethodId"], "m");
+    let cancel = body(Command::CancelSignIn {
+        pane_id: "p".into(),
+    });
+    assert_eq!(cancel["method"], "pane.auth.cancel");
+    let older = body(Command::LoadOlder {
+        pane_id: "p".into(),
+        before: "40".into(),
+    });
+    assert_eq!(older["method"], "pane.transcript");
+    assert_eq!(older["params"]["before"], "40");
+    assert_eq!(older["params"]["limit"], TRANSCRIPT_PAGE);
+    assert!(
+        request(&Command::LoadQueue {
+            pane_id: "p".into()
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn the_loop_the_role_and_the_draft_use_the_engines_methods() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let set = Command::SetLoop {
+        pane_id: "p".into(),
+        prompt: "go".into(),
+        interval: 300,
+        max_rounds: 25,
+        stop_when: LoopStopWhen::RoundLimit,
+        enabled: true,
+    };
+    let sent = body(set.clone());
+    assert_eq!(sent["method"], "loop.set");
+    assert_eq!(sent["params"]["stopWhen"], "round_limit");
+    assert_eq!(sent["params"]["maxRounds"], 25);
+    let config = serde_json::json!({"prompt": "go", "interval": 300, "maxRounds": 25,
+                                    "stopWhen": "round_limit", "enabled": true});
+    let event = outcome(&set, serde_json::json!({"config": config})).unwrap();
+    assert!(matches!(event, Some(Event::LoopSet { pane_id, .. }) if pane_id == "p"));
+    let role = body(Command::SetRole {
+        pane_id: "p".into(),
+        role: AgentPaneRole::Chief,
+    });
+    assert_eq!(
+        (role["method"].as_str(), role["params"]["role"].as_str()),
+        (Some("pane.role.set"), Some("chief"))
+    );
+    let draft = body(Command::SetDraft {
+        pane_id: "p".into(),
+        active: true,
+    });
+    assert_eq!(
+        (
+            draft["method"].as_str(),
+            draft["params"]["active"].as_bool()
+        ),
+        (Some("pane.draft"), Some(true))
+    );
+}
+
+#[test]
+fn a_page_of_the_transcript_carries_its_cursor() {
+    let load = Command::LoadOlder {
+        pane_id: "p".into(),
+        before: "40".into(),
+    };
+    let page = serde_json::json!({"items": [], "nextCursor": "20"});
+    let event = outcome(&load, page).unwrap();
+    assert!(matches!(
+        event,
+        Some(Event::Transcript { next_cursor: Some(cursor), .. }) if cursor == "20"
+    ));
+}
+
+#[test]
+fn only_fetches_run_in_the_background_and_only_opening_a_pane_has_a_ticket() {
+    assert!(Command::LoadUsage.is_background());
+    assert!(
+        Command::LoadTranscript {
+            pane_id: "p".into()
+        }
+        .is_background()
+    );
+    assert!(!input("p", "x").is_background());
+    let open = Command::CreateTerminal {
+        workspace_id: "w".into(),
+        ticket: 3,
+    };
+    assert_eq!(open.ticket(), Some(3));
+    assert_eq!(input("p", "x").ticket(), None);
+}
+
+#[test]
+fn the_answer_to_opening_a_pane_carries_its_ticket() {
+    let open = Command::CreateTerminal {
+        workspace_id: "w".into(),
+        ticket: 3,
+    };
+    let event = outcome(&open, serde_json::json!({"paneId": "p9"})).unwrap();
+    assert!(matches!(event, Some(Event::Opened { ticket: 3, pane_id }) if pane_id == "p9"));
+}
+
+#[test]
+fn input_is_base64_with_a_fresh_idempotency_key_each_time() {
+    let first = serde_json::to_value(input_request("p", b"ls\r")).unwrap();
+    let second = serde_json::to_value(input_request("p", b"ls\r")).unwrap();
+    assert_eq!(first["method"], "pane.input");
+    assert_eq!(first["params"]["bytes"], "bHMN");
+    assert_ne!(
+        first["params"]["idempotencyKey"],
+        second["params"]["idempotencyKey"]
+    );
+}
+
+#[test]
+fn the_tasks_use_the_engines_methods() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let created = body(Command::CreateTask {
+        task: Box::new(NewTask {
+            workspace_id: "w".into(),
+            title: "t".into(),
+            description: "d".into(),
+            how_to_verify: None,
+            must_not_change: "m".into(),
+            executor: None,
+            priority: TaskPriority::High,
+            create_worktree: true,
+            dependencies: vec!["WS-1".into()],
+            dispatch: true,
+        }),
+        ticket: 4,
+    });
+    assert_eq!(created["method"], "task.create");
+    assert_eq!(created["params"]["dispatch"], true);
+    assert_eq!(created["params"]["priority"], "high");
+    assert_eq!(
+        created["params"]["dependencies"],
+        serde_json::json!(["WS-1"])
+    );
+    assert!(created["params"].get("howToVerify").is_none());
+    let moved = body(Command::MoveTask {
+        workspace_id: "w".into(),
+        task_id: "WS-1".into(),
+        state: TaskState::InReview,
+        reason: "Moved on the workspace board".into(),
+    });
+    assert_eq!(
+        (moved["method"].as_str(), moved["params"]["state"].as_str()),
+        (Some("task.move"), Some("in_review"))
+    );
+    let preset = TaskExecutor {
+        workspace_default: true,
+        harness: None,
+        model: None,
+        effort: None,
+        permission_mode: None,
+    };
+    let dispatch = Command::DispatchTask {
+        workspace_id: "w".into(),
+        task_id: "WS-1".into(),
+        preset,
+        ticket: 5,
+    };
+    assert_eq!(body(dispatch.clone())["method"], "task.dispatch");
+    assert_eq!(dispatch.ticket(), Some(5));
+    assert_eq!(
+        body(Command::LoadTask {
+            workspace_id: "w".into(),
+            task_id: "WS-1".into()
+        })["method"],
+        "task.show"
+    );
+    assert!(
+        request(&Command::LoadTasks {
+            workspace_id: "w".into()
+        })
+        .is_none()
+    );
+    assert!(
+        Command::LoadTasks {
+            workspace_id: "w".into()
+        }
+        .is_background()
+    );
+}

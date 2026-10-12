@@ -1,0 +1,763 @@
+{
+  "description": "The workspace tasks shared by the Mac (TaskPresentation) and the desktop client (soyeht_client::tasks). Both pass every case.",
+  "tasks": [
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-6",
+      "title": "Loop prompt for the idle interval",
+      "description": "Do Loop prompt for the idle interval",
+      "mustNotChange": "The engine owns state",
+      "state": "todo",
+      "priority": "high",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "free to claim"
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-7",
+      "title": "Permissions answered from the phone",
+      "description": "Do Permissions answered from the phone",
+      "mustNotChange": "The engine owns state",
+      "state": "todo",
+      "priority": "medium",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "free to claim"
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-8",
+      "title": "worktrunk in the engine",
+      "description": "Do worktrunk in the engine",
+      "mustNotChange": "The engine owns state",
+      "state": "todo",
+      "priority": "low",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "free to claim",
+      "blocking": {
+        "kind": "dependency",
+        "reason": "waits for WS-9"
+      }
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-5",
+      "title": "Workspace task screen",
+      "description": "Do Workspace task screen",
+      "mustNotChange": "The engine owns state",
+      "state": "in_progress",
+      "priority": "high",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "victoria editing",
+      "ownerPaneId": "victoria",
+      "worktree": {
+        "path": "/w/ws-5",
+        "branch": "ws-5"
+      }
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-9",
+      "title": "ACP adapter",
+      "description": "Do ACP adapter",
+      "mustNotChange": "The engine owns state",
+      "state": "in_progress",
+      "priority": "urgent",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "waits on you",
+      "ownerPaneId": "aria",
+      "reviewBadge": "your_turn"
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-4",
+      "title": "Entry screen of the new pane",
+      "description": "Do Entry screen of the new pane",
+      "mustNotChange": "The engine owns state",
+      "state": "in_review",
+      "priority": "medium",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "CI passed",
+      "ownerPaneId": "victoria",
+      "reviewBadge": "system_turn"
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-1",
+      "title": "Contract with the iPhone API",
+      "description": "Do Contract with the iPhone API",
+      "mustNotChange": "The engine owns state",
+      "state": "in_review",
+      "priority": "high",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "CI passed"
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-3",
+      "title": "Card of a neomorphic pane",
+      "description": "Do Card of a neomorphic pane",
+      "mustNotChange": "The engine owns state",
+      "state": "completed",
+      "priority": "medium",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "merged yesterday"
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-2",
+      "title": "Swift theme tokens",
+      "description": "Do Swift theme tokens",
+      "mustNotChange": "The engine owns state",
+      "state": "completed",
+      "priority": "low",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "merged"
+    },
+    {
+      "workspaceId": "ws",
+      "taskId": "WS-10",
+      "title": "Dropped idea",
+      "description": "Do Dropped idea",
+      "mustNotChange": "The engine owns state",
+      "state": "cancelled",
+      "priority": "low",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "dropped"
+    }
+  ],
+  "stateTitles": [
+    {
+      "state": "todo",
+      "title": "To do",
+      "role": "secondary"
+    },
+    {
+      "state": "in_progress",
+      "title": "In progress",
+      "role": "accent"
+    },
+    {
+      "state": "in_review",
+      "title": "In review",
+      "role": "warning"
+    },
+    {
+      "state": "completed",
+      "title": "Completed",
+      "role": "success"
+    },
+    {
+      "state": "cancelled",
+      "title": "Cancelled",
+      "role": "danger"
+    }
+  ],
+  "columns": [
+    {
+      "name": "without cancelled tasks",
+      "taskIds": [
+        "WS-6",
+        "WS-7",
+        "WS-8",
+        "WS-5",
+        "WS-9",
+        "WS-4",
+        "WS-1",
+        "WS-3",
+        "WS-2"
+      ],
+      "board": [
+        "todo",
+        "in_progress",
+        "in_review",
+        "completed"
+      ],
+      "list": [
+        "in_progress",
+        "in_review",
+        "todo",
+        "completed"
+      ]
+    },
+    {
+      "name": "with a cancelled task",
+      "taskIds": [
+        "WS-6",
+        "WS-7",
+        "WS-8",
+        "WS-5",
+        "WS-9",
+        "WS-4",
+        "WS-1",
+        "WS-3",
+        "WS-2",
+        "WS-10"
+      ],
+      "board": [
+        "todo",
+        "in_progress",
+        "in_review",
+        "completed",
+        "cancelled"
+      ],
+      "list": [
+        "in_progress",
+        "in_review",
+        "todo",
+        "completed",
+        "cancelled"
+      ]
+    }
+  ],
+  "listOrder": {
+    "taskIds": [
+      "WS-6",
+      "WS-7",
+      "WS-8",
+      "WS-5",
+      "WS-9",
+      "WS-4",
+      "WS-1",
+      "WS-3",
+      "WS-2"
+    ],
+    "sorted": [
+      "WS-9",
+      "WS-1",
+      "WS-5",
+      "WS-6",
+      "WS-3",
+      "WS-4",
+      "WS-7",
+      "WS-2",
+      "WS-8"
+    ]
+  },
+  "priorityTitles": [
+    {
+      "priority": "urgent",
+      "title": "Urgent"
+    },
+    {
+      "priority": "high",
+      "title": "High"
+    },
+    {
+      "priority": "medium",
+      "title": "Medium"
+    },
+    {
+      "priority": "low",
+      "title": "Low"
+    }
+  ],
+  "badges": [
+    {
+      "badge": "your_turn",
+      "title": "YOUR TURN",
+      "role": "accent"
+    },
+    {
+      "badge": "system_turn",
+      "title": "SYSTEM'S TURN",
+      "role": "warning"
+    }
+  ],
+  "blockingTitles": [
+    {
+      "kind": "dependency",
+      "title": "dependency"
+    },
+    {
+      "kind": "missing_information",
+      "title": "missing information"
+    },
+    {
+      "kind": "external_error",
+      "title": "external error"
+    }
+  ],
+  "attemptTitles": [
+    {
+      "result": "completed",
+      "title": "Completed"
+    },
+    {
+      "result": "returned",
+      "title": "Returned"
+    },
+    {
+      "result": "failed",
+      "title": "Failed"
+    },
+    {
+      "result": "cancelled",
+      "title": "Cancelled"
+    }
+  ],
+  "ownerPlates": [
+    {
+      "name": "victoria",
+      "plate": "blue"
+    },
+    {
+      "name": "aria",
+      "plate": "blue"
+    },
+    {
+      "name": "Claude",
+      "plate": "green"
+    },
+    {
+      "name": "Codex 2",
+      "plate": "blue"
+    },
+    {
+      "name": "ws-5",
+      "plate": "rose"
+    },
+    {
+      "name": "",
+      "plate": "rose"
+    },
+    {
+      "name": "émile",
+      "plate": "sand"
+    }
+  ],
+  "statusLines": [
+    {
+      "taskId": "WS-6",
+      "line": "free to claim",
+      "indicator": "secondary"
+    },
+    {
+      "taskId": "WS-7",
+      "line": "free to claim",
+      "indicator": "secondary"
+    },
+    {
+      "taskId": "WS-8",
+      "line": "free to claim",
+      "indicator": "warning"
+    },
+    {
+      "taskId": "WS-5",
+      "line": "victoria editing",
+      "indicator": "accent"
+    },
+    {
+      "taskId": "WS-9",
+      "line": "YOUR TURN · waits on you",
+      "indicator": "accent"
+    },
+    {
+      "taskId": "WS-4",
+      "line": "SYSTEM'S TURN · CI passed",
+      "indicator": "warning"
+    },
+    {
+      "taskId": "WS-1",
+      "line": "CI passed",
+      "indicator": "warning"
+    },
+    {
+      "taskId": "WS-3",
+      "line": "merged yesterday",
+      "indicator": "success"
+    },
+    {
+      "taskId": "WS-2",
+      "line": "merged",
+      "indicator": "success"
+    },
+    {
+      "taskId": "WS-10",
+      "line": "dropped",
+      "indicator": "danger"
+    }
+  ],
+  "summary": [
+    {
+      "taskIds": [
+        "WS-6",
+        "WS-7",
+        "WS-8",
+        "WS-5",
+        "WS-9",
+        "WS-4",
+        "WS-1",
+        "WS-3",
+        "WS-2"
+      ],
+      "attention": 2,
+      "text": "9 tasks · 2 in progress · 2 need you"
+    },
+    {
+      "taskIds": [],
+      "attention": 0,
+      "text": "0 tasks · 0 in progress · 0 need you"
+    }
+  ],
+  "dispatch": {
+    "taskIds": [
+      "WS-6",
+      "WS-7",
+      "WS-8",
+      "WS-5",
+      "WS-9",
+      "WS-4",
+      "WS-1",
+      "WS-3",
+      "WS-2"
+    ],
+    "ready": [
+      "WS-6",
+      "WS-7",
+      "WS-8"
+    ],
+    "labels": {
+      "WS-6": "WS-6 · Loop prompt for the idle interval",
+      "WS-7": "WS-7 · Permissions answered from the phone",
+      "WS-8": "WS-8 · worktrunk in the engine",
+      "WS-5": "WS-5 · Workspace task screen",
+      "WS-9": "WS-9 · ACP adapter",
+      "WS-4": "WS-4 · Entry screen of the new pane",
+      "WS-1": "WS-1 · Contract with the iPhone API",
+      "WS-3": "WS-3 · Card of a neomorphic pane",
+      "WS-2": "WS-2 · Swift theme tokens"
+    },
+    "none": "No task is ready"
+  },
+  "runners": [
+    {
+      "executor": null,
+      "name": "Workspace default"
+    },
+    {
+      "executor": {
+        "workspaceDefault": true,
+        "harness": "claude"
+      },
+      "name": "Workspace default"
+    },
+    {
+      "executor": {
+        "workspaceDefault": false,
+        "harness": "claude",
+        "model": "opus",
+        "effort": "high"
+      },
+      "name": "claude · opus · high"
+    },
+    {
+      "executor": {
+        "workspaceDefault": false,
+        "harness": "codex",
+        "model": "",
+        "effort": "medium"
+      },
+      "name": "codex · medium"
+    }
+  ],
+  "subitems": [
+    {
+      "states": [
+        "done",
+        "open",
+        "done"
+      ],
+      "title": "SUBITEMS · 2 OF 3"
+    },
+    {
+      "states": [],
+      "title": "SUBITEMS · 0 OF 0"
+    }
+  ],
+  "attempts": [
+    {
+      "attempt": {
+        "n": 2,
+        "paneId": "p",
+        "harness": "claude",
+        "model": "opus",
+        "start": "2026-10-10T10:00:00Z",
+        "result": "returned"
+      },
+      "line": "Attempt 2 · claude · opus",
+      "outcome": "Returned"
+    },
+    {
+      "attempt": {
+        "n": 1,
+        "paneId": "p",
+        "harness": "codex",
+        "model": "gpt",
+        "start": "2026-10-10T09:00:00Z"
+      },
+      "line": "Attempt 1 · codex · gpt",
+      "outcome": "active"
+    }
+  ],
+  "timeline": {
+    "history": [
+      {
+        "actor": "you",
+        "from": "todo",
+        "to": "in_progress",
+        "reason": "dispatched",
+        "at": "2026-10-10T10:00:00Z"
+      },
+      {
+        "actor": "victoria",
+        "from": "in_progress",
+        "to": "in_review",
+        "reason": "CI passed",
+        "at": "2026-10-10T12:00:00Z"
+      }
+    ],
+    "comments": [
+      {
+        "commentId": "c1",
+        "taskId": "WS-5",
+        "author": "victoria",
+        "text": "Tests green.\na → b is renamed\nnothing else",
+        "at": "2026-10-10T11:00:00Z"
+      },
+      {
+        "commentId": "c2",
+        "taskId": "WS-5",
+        "author": "you",
+        "text": "Ship it → now",
+        "at": "2026-10-10T13:00:00Z"
+      }
+    ],
+    "entries": [
+      {
+        "id": "move-0-2026-10-10T10:00:00Z",
+        "author": null,
+        "text": "you · To do → In progress · dispatched",
+        "at": "2026-10-10T10:00:00Z"
+      },
+      {
+        "id": "comment-c1",
+        "author": "victoria",
+        "text": "Tests green.\na → b is renamed\nnothing else",
+        "at": "2026-10-10T11:00:00Z"
+      },
+      {
+        "id": "move-1-2026-10-10T12:00:00Z",
+        "author": null,
+        "text": "victoria · In progress → In review · CI passed",
+        "at": "2026-10-10T12:00:00Z"
+      },
+      {
+        "id": "comment-c2",
+        "author": "you",
+        "text": "Ship it → now",
+        "at": "2026-10-10T13:00:00Z"
+      }
+    ],
+    "findings": [
+      "a → b is renamed",
+      "Ship it → now"
+    ]
+  },
+  "declarations": {
+    "contractChange": {
+      "path": "contracts/protocol.json",
+      "name": "TaskRecord",
+      "label": "style",
+      "contractRef": "03-workspace-tasks",
+      "text": "contracts/protocol.json::TaskRecord · style · 03-workspace-tasks"
+    },
+    "outOfScope": {
+      "path": "apps/mac/Sources/App.swift",
+      "reason": "unrelated cleanup",
+      "text": "apps/mac/Sources/App.swift · unrelated cleanup"
+    }
+  },
+  "newTask": {
+    "missing": [
+      {
+        "title": "",
+        "description": "d",
+        "mustNotChange": "m",
+        "missing": [
+          "title"
+        ]
+      },
+      {
+        "title": "t",
+        "description": "  ",
+        "mustNotChange": "\n",
+        "missing": [
+          "description",
+          "MUST NOT CHANGE"
+        ]
+      },
+      {
+        "title": "t",
+        "description": "d",
+        "mustNotChange": "m",
+        "missing": []
+      },
+      {
+        "title": "",
+        "description": "",
+        "mustNotChange": "",
+        "missing": [
+          "title",
+          "description",
+          "MUST NOT CHANGE"
+        ]
+      }
+    ],
+    "hints": [
+      {
+        "missing": [
+          "title"
+        ],
+        "workspaceDefault": true,
+        "harness": "",
+        "shortcuts": "go",
+        "text": "Required: title"
+      },
+      {
+        "missing": [
+          "description",
+          "MUST NOT CHANGE"
+        ],
+        "workspaceDefault": true,
+        "harness": "",
+        "shortcuts": "go",
+        "text": "Required: description, MUST NOT CHANGE"
+      },
+      {
+        "missing": [],
+        "workspaceDefault": false,
+        "harness": "",
+        "shortcuts": "go",
+        "text": "Required: choose an agent"
+      },
+      {
+        "missing": [],
+        "workspaceDefault": false,
+        "harness": "claude",
+        "shortcuts": "go",
+        "text": "go"
+      },
+      {
+        "missing": [],
+        "workspaceDefault": true,
+        "harness": "",
+        "shortcuts": "go",
+        "text": "go"
+      }
+    ],
+    "dependencies": [
+      {
+        "dependencies": [],
+        "text": "dependencies"
+      },
+      {
+        "dependencies": [
+          "WS-3"
+        ],
+        "text": "after WS-3"
+      },
+      {
+        "dependencies": [
+          "WS-9",
+          "WS-3",
+          "WS-5"
+        ],
+        "text": "after WS-3 +2"
+      }
+    ],
+    "runnerTitles": [
+      {
+        "workspaceDefault": true,
+        "harnessName": null,
+        "modelName": null,
+        "effortName": null,
+        "text": "Workspace default"
+      },
+      {
+        "workspaceDefault": false,
+        "harnessName": null,
+        "modelName": null,
+        "effortName": null,
+        "text": "Choose an agent"
+      },
+      {
+        "workspaceDefault": false,
+        "harnessName": "Claude",
+        "modelName": "Opus 5",
+        "effortName": "High",
+        "text": "Claude · Opus 5 · High"
+      },
+      {
+        "workspaceDefault": false,
+        "harnessName": "Codex",
+        "modelName": null,
+        "effortName": "medium",
+        "text": "Codex · medium"
+      }
+    ]
+  },
+  "words": {
+    "emptyTitle": "No tasks",
+    "emptyDetail": "Create a task for this workspace, then dispatch it or let an idle pane claim it."
+  }
+}

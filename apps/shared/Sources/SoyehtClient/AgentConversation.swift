@@ -32,6 +32,27 @@ struct AgentSilencePresentation: Sendable {
   }
 
   var elapsed: String? { elapsedSeconds.map(AgentElapsedText.text(seconds:)) }
+
+  var title: String {
+    switch (escalated, elapsed) {
+    case (true, let elapsed?): "No output from the agent for \(elapsed)"
+    case (true, nil): "The agent has produced no output"
+    case (false, let elapsed?): "Waiting for the first agent output · \(elapsed)"
+    case (false, nil): "Waiting for the first agent output"
+    }
+  }
+
+  var detail: String {
+    if elapsedSeconds == nil {
+      return
+        "The turn is active. Elapsed time is unavailable. You can keep waiting or cancel this turn."
+    }
+    return escalated
+      ? "The turn is still active. You can keep waiting or cancel this turn."
+      : "The turn is active. Nothing from the agent has arrived yet."
+  }
+
+  static let cancelTurnTitle = "Cancel turn"
 }
 
 enum AgentElapsedText {
@@ -122,7 +143,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
           .id(elicitation.requestId)
           .padding(.horizontal, inset).padding(.bottom, PaneInteriorMetrics.rowSpacing)
       }
-      if !view.queue.isEmpty || view.queuePaused { queue }
+      if AgentQueuePresentation.isShown(items: view.queue, paused: view.queuePaused) { queue }
       if let draft = client.agentWebDrafts[paneId] {
         AgentWebElementAttachmentCard(
           draft: draft, style: style,
@@ -158,7 +179,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
       ScrollView {
         LazyVStack(spacing: PaneInteriorMetrics.stackSpacing) {
           if view.hasOlderMessages {
-            Button("Load earlier messages") { client.loadOlderAgentMessages(paneId) }
+            Button(AgentTranscriptLabels.loadEarlier) { client.loadOlderAgentMessages(paneId) }
               .buttonStyle(PanePillButtonStyle(.secondary, style: style))
           }
           if let notice = view.notice {
@@ -210,44 +231,38 @@ extension AgentConversationView where HarnessControl == EmptyView {
   }
 
   private var queue: some View {
-    VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
+    let presentation = AgentQueuePresentation(items: view.queue, paused: view.queuePaused)
+    return VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
       HStack {
-        let agentMessageCount = view.queue.filter { $0.agentMessage != nil }.count
-        let countLabel =
-          agentMessageCount > 0
-          ? "\(agentMessageCount) \(agentMessageCount == 1 ? "message" : "messages") waiting"
-          : "\(view.queue.count) queued"
         Label(
-          view.queuePaused
-            ? "\(countLabel) · Queue paused after interruption" : countLabel,
+          presentation.summary,
           systemImage: view.queuePaused
             ? "pause.circle" : "text.line.last.and.arrowtriangle.forward")
         Spacer()
         if view.queuePaused {
-          Button("Resume") { client.resumeAgentQueue(paneId) }
+          Button(AgentQueuePresentation.resumeTitle) { client.resumeAgentQueue(paneId) }
             .buttonStyle(PanePillButtonStyle(.primary, style: style))
         }
       }.font(style.captionFont.weight(.semibold))
-      ForEach(view.queue, id: \.promptId) { item in
+      ForEach(presentation.rows, id: \.promptId) { row in
         HStack(spacing: PaneInteriorMetrics.compactSpacing) {
           VStack(alignment: .leading, spacing: 2) {
-            if let sender = item.agentMessage {
-              Text("From \(sender.displayName)")
-                .font(style.captionFont.weight(.semibold))
+            if let sender = row.sender {
+              Text(sender).font(style.captionFont.weight(.semibold))
             }
-            Text(item.text).font(style.captionFont).lineLimit(2)
-            if let count = item.attachments?.count, count > 0 {
+            Text(row.text).font(style.captionFont).lineLimit(2)
+            if let count = row.attachmentCount {
               Label("\(count)", systemImage: "paperclip").font(style.captionFont)
             }
           }
           Spacer()
           unavailableSteer
           Button(role: .destructive) {
-            client.removeQueuedPrompt(paneId, promptId: item.promptId)
+            client.removeQueuedPrompt(paneId, promptId: row.promptId)
           } label: {
             Image(systemName: "xmark").foregroundStyle(style.secondary)
           }
-          .buttonStyle(.plain).accessibilityLabel("Remove queued message")
+          .buttonStyle(.plain).accessibilityLabel(AgentQueuePresentation.removeTitle)
         }
       }
     }
@@ -260,30 +275,21 @@ extension AgentConversationView where HarnessControl == EmptyView {
     TimelineView(.periodic(from: .now, by: 1)) { timeline in
       let presentation = AgentSilencePresentation(
         silentSince: since, paneState: state, now: timeline.date)
-      let elapsed = presentation.elapsed
       VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
         Label(
-          presentation.escalated
-            ? elapsed.map { "No output from the agent for \($0)" }
-              ?? "The agent has produced no output"
-            : elapsed.map { "Waiting for the first agent output · \($0)" }
-              ?? "Waiting for the first agent output",
+          presentation.title,
           systemImage: presentation.escalated ? "clock.badge.exclamationmark" : "clock"
         )
         .font(style.headingFont)
         .foregroundStyle(presentation.escalated ? style.warning : style.secondary)
-        Text(
-          elapsed == nil
-            ? "The turn is active. Elapsed time is unavailable. You can keep waiting or cancel this turn."
-            : presentation.escalated
-              ? "The turn is still active. You can keep waiting or cancel this turn."
-              : "The turn is active. Nothing from the agent has arrived yet."
-        )
-        .font(style.captionFont).foregroundStyle(style.secondary)
+        Text(presentation.detail)
+          .font(style.captionFont).foregroundStyle(style.secondary)
         HStack {
           Spacer()
-          Button("Cancel turn", role: .destructive) { client.cancelAgent(paneId) }
-            .buttonStyle(PanePillButtonStyle(.destructive, style: style))
+          Button(AgentSilencePresentation.cancelTurnTitle, role: .destructive) {
+            client.cancelAgent(paneId)
+          }
+          .buttonStyle(PanePillButtonStyle(.destructive, style: style))
         }
       }
       .padding(PaneInteriorMetrics.cardPadding)
@@ -295,10 +301,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
   }
 
   @ViewBuilder private var unavailableSteer: some View {
-    let button = Button("Send now") {}.buttonStyle(.borderless).disabled(true)
-      .accessibilityHint("This agent only reads new messages between turns")
+    let button = Button(AgentQueuePresentation.sendNowTitle) {}.buttonStyle(.borderless)
+      .disabled(true).accessibilityHint(AgentQueuePresentation.sendNowHint)
     #if os(macOS)
-      button.help("This agent only reads new messages between turns")
+      button.help(AgentQueuePresentation.sendNowHint)
     #else
       button
     #endif

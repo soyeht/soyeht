@@ -7,18 +7,18 @@ struct PaneAutomationPanel: View {
   let pane: Pane
   let dismiss: () -> Void
   @State private var role = AgentPaneRole.worker
-  @State private var prompt = "Pick the next task and complete it."
-  @State private var interval: UInt32 = 60
-  @State private var maxRounds: UInt32 = 10
-  @State private var stopWhen = LoopStopWhen.three_empty
+  @State private var prompt = LoopPresentation.defaultPrompt
+  @State private var interval = LoopPresentation.defaultInterval
+  @State private var maxRounds = LoopPresentation.defaultMaxRounds
+  @State private var stopWhen = LoopPresentation.defaultStopWhen
   @State private var enabled = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
       header
-      sectionLabel("PROMPT")
+      sectionLabel(LoopPresentation.promptHeading)
       promptEditor
-      sectionLabel("WHEN")
+      sectionLabel(LoopPresentation.whenHeading)
       idleTrigger
       loopOptions
       rules
@@ -33,15 +33,15 @@ struct PaneAutomationPanel: View {
   private var header: some View {
     HStack(spacing: MacTheme.Space.x8) {
       Menu {
-        Button("Worker") { role = .worker }
-        Button("Lead") { role = .chief }
+        Button(LoopPresentation.workerRole) { role = .worker }
+        Button(LoopPresentation.leadRole) { role = .chief }
       } label: {
         HStack(spacing: MacTheme.Space.x8) {
           Image(systemName: PaneHeaderAction.loop.systemImage).font(
             .system(size: 15, weight: .medium)
           )
           .foregroundStyle(MacTheme.accent)
-          Text("Loop this pane")
+          Text(LoopPresentation.title)
             .font(MacTheme.chrome(14, weight: .bold)).foregroundStyle(MacTheme.ink)
         }
       }
@@ -66,40 +66,40 @@ struct PaneAutomationPanel: View {
 
   private var idleTrigger: some View {
     HStack(spacing: MacTheme.Space.x2) {
-      Text("Every interval").foregroundStyle(MacTheme.muted)
+      Text(LoopPresentation.everyInterval).foregroundStyle(MacTheme.muted)
         .frame(maxWidth: .infinity).padding(.vertical, MacTheme.Space.x6)
-      Text("When idle").foregroundStyle(MacTheme.ink)
+      Text(LoopPresentation.whenIdle).foregroundStyle(MacTheme.ink)
         .frame(maxWidth: .infinity).padding(.vertical, MacTheme.Space.x6)
         .neoRaised(radius: MacTheme.Radius.pill, elevation: .toggle)
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
     .padding(MacTheme.Space.x3).background(MacTheme.well, in: Capsule())
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("The loop sends only when the pane is idle")
+    .accessibilityLabel(LoopPresentation.idleExplanation)
   }
 
   private var loopOptions: some View {
     HStack(spacing: MacTheme.Space.x8) {
       Menu {
-        ForEach(intervalChoices, id: \.self) { value in
-          Button(intervalLabel(value)) { interval = value }
+        ForEach(LoopPresentation.intervalChoices, id: \.self) { value in
+          Button(LoopPresentation.intervalLabel(value)) { interval = value }
         }
       } label: {
-        optionLabel(icon: "timer", text: intervalLabel(interval))
+        optionLabel(icon: "timer", text: LoopPresentation.intervalLabel(interval))
       }
       Menu {
-        ForEach(roundChoices, id: \.self) { value in
-          Button(roundLabel(value)) { maxRounds = value }
+        ForEach(LoopPresentation.roundChoices, id: \.self) { value in
+          Button(LoopPresentation.roundLabel(value)) { maxRounds = value }
         }
       } label: {
-        optionLabel(icon: "number", text: roundLabel(maxRounds))
+        optionLabel(icon: "number", text: LoopPresentation.roundLabel(maxRounds))
       }
       Menu {
-        Button("Three empty results") { stopWhen = .three_empty }
-        Button("Round limit") { stopWhen = .round_limit }
-        Button("Until turned off") { stopWhen = .explicit_off }
+        ForEach(LoopPresentation.stopChoices, id: \.self) { value in
+          Button(LoopPresentation.stopChoiceTitle(value)) { stopWhen = value }
+        }
       } label: {
-        optionLabel(icon: "calendar", text: stopLabel)
+        optionLabel(icon: "calendar", text: LoopPresentation.stopLabel(stopWhen))
       }
     }
     .menuIndicator(.hidden).buttonStyle(.plain).fixedSize(horizontal: false, vertical: true)
@@ -107,9 +107,7 @@ struct PaneAutomationPanel: View {
 
   private var rules: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x5) {
-      rule("Never sends over your draft.")
-      rule("Busy ticks are skipped and recorded.")
-      rule("Survives an engine restart.")
+      ForEach(LoopPresentation.rules, id: \.self) { rule($0) }
     }.padding(EdgeInsets(top: 4, leading: 2, bottom: 0, trailing: 2))
   }
 
@@ -119,9 +117,9 @@ struct PaneAutomationPanel: View {
         .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
         .foregroundStyle(MacTheme.muted).lineLimit(1)
       Spacer(minLength: 0)
-      Button("Cancel", action: dismiss).buttonStyle(.plain)
-      Button("Apply", action: apply).buttonStyle(.plain)
-        .disabled(enabled && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      Button(LoopPresentation.cancelTitle, action: dismiss).buttonStyle(.plain)
+      Button(LoopPresentation.applyTitle, action: apply).buttonStyle(.plain)
+        .disabled(!LoopPresentation.canApply(enabled: enabled, prompt: prompt))
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
     .foregroundStyle(MacTheme.accent).padding(.top, MacTheme.Space.x6)
@@ -153,12 +151,8 @@ struct PaneAutomationPanel: View {
 
   private func load() {
     role = pane.agent?.role ?? .worker
-    guard let config = client.paneLoops[pane.paneId] else { return }
-    prompt = config.prompt
-    interval = config.interval
-    maxRounds = config.maxRounds
-    stopWhen = config.stopWhen
-    enabled = config.enabled
+    let start = LoopPresentation.initial(client.paneLoops[pane.paneId])
+    (prompt, interval, maxRounds, stopWhen, enabled) = start
   }
 
   private func apply() {
@@ -169,29 +163,9 @@ struct PaneAutomationPanel: View {
     dismiss()
   }
 
-  private var intervalChoices: [UInt32] { [5, 10, 30, 60, 300, 600, 1_800, 3_600] }
-  private var roundChoices: [UInt32] { [0, 1, 5, 10, 25, 50, 100] }
-
-  private func intervalLabel(_ seconds: UInt32) -> String {
-    if seconds < 60 { return "\(seconds) sec" }
-    return "\(seconds / 60) min"
-  }
-
-  private func roundLabel(_ rounds: UInt32) -> String {
-    rounds == 0 ? "no limit" : "\(rounds) rounds"
-  }
-
-  private var stopLabel: String {
-    switch stopWhen {
-    case .three_empty: "three empty"
-    case .round_limit: "round limit"
-    case .explicit_off: "until off"
-    }
-  }
-
   private var loopStatus: String {
-    let rounds = client.paneLoops[pane.paneId]?.rounds ?? 0
-    return enabled ? "next: when \(pane.name) is idle · \(rounds) today" : "off · \(rounds) today"
+    LoopPresentation.status(
+      enabled: enabled, paneName: pane.name, rounds: client.paneLoops[pane.paneId]?.rounds ?? 0)
   }
 }
 

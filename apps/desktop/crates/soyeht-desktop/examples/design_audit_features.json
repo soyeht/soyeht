@@ -1,0 +1,1698 @@
+{
+  "focus": {
+    "workspaceId": "ws-cards"
+  },
+  "staged": {
+    "attach-chat": [
+      {
+        "kind": "image",
+        "name": "harbor.jpeg",
+        "mimeType": "image/jpeg",
+        "bytes": "412000",
+        "path": "/home/dev/harbor.jpeg",
+        "thumbnail": "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"
+      },
+      {
+        "kind": "file",
+        "name": "invoice.pdf",
+        "mimeType": "application/pdf",
+        "bytes": "98304",
+        "path": "/home/dev/invoice.pdf"
+      },
+      {
+        "kind": "text",
+        "name": "build.log",
+        "mimeType": "text/plain",
+        "bytes": "5400000",
+        "path": "/home/dev/build.log"
+      }
+    ]
+  },
+  "refused": {
+    "attach-chat": {
+      "rejection": "tooLarge",
+      "name": "recording.mov"
+    }
+  },
+  "loops": [
+    {
+      "paneId": "loop-pane",
+      "config": {
+        "prompt": "Pick the next task from the list (task_next) and complete it. If no task is free, answer only \"nothing\".",
+        "interval": 600,
+        "maxRounds": 0,
+        "stopWhen": "explicit_off",
+        "enabled": true,
+        "rounds": 3
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-6",
+      "title": "Loop prompt for the idle interval",
+      "description": "Loop prompt for the idle interval. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "todo",
+      "priority": "high",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "free to claim"
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-7",
+      "title": "Permissions answered from the phone",
+      "description": "Permissions answered from the phone. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "todo",
+      "priority": "medium",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "free to claim"
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-8",
+      "title": "worktrunk in the engine, pinned version",
+      "description": "worktrunk in the engine, pinned version. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "todo",
+      "priority": "low",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "free to claim",
+      "blocking": {
+        "kind": "dependency",
+        "reason": "waits for WS-9"
+      }
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-5",
+      "title": "Workspace task screen",
+      "description": "Workspace task screen. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "in_progress",
+      "priority": "high",
+      "dependencies": [],
+      "currentAttempt": 1,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "victoria editing, last commit 2 min ago",
+      "ownerPaneId": "tasks-victoria",
+      "worktree": {
+        "path": "/home/dev/ws-5",
+        "branch": "ws-5"
+      },
+      "howToVerify": "Open the tasks screen: board and list show the same tasks."
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-9",
+      "title": "ACP adapter: session, prompt, permissions",
+      "description": "ACP adapter: session, prompt, permissions. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "in_progress",
+      "priority": "urgent",
+      "dependencies": [],
+      "currentAttempt": 1,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "waits on you",
+      "ownerPaneId": "tasks-aria",
+      "reviewBadge": "your_turn",
+      "worktree": {
+        "path": "/home/dev/ws-9",
+        "branch": "ws-9"
+      }
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-4",
+      "title": "Entry screen of the new pane",
+      "description": "Entry screen of the new pane. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "in_review",
+      "priority": "medium",
+      "dependencies": [],
+      "currentAttempt": 1,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "CI passed",
+      "ownerPaneId": "tasks-victoria",
+      "reviewBadge": "system_turn",
+      "worktree": {
+        "path": "/home/dev/ws-4",
+        "branch": "ws-4"
+      }
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-1",
+      "title": "Contract with the iPhone API",
+      "description": "Contract with the iPhone API. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "in_review",
+      "priority": "high",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "CI passed, waiting for you"
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-3",
+      "title": "Card of a neomorphic pane",
+      "description": "Card of a neomorphic pane. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "completed",
+      "priority": "medium",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "merged yesterday"
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "taskId": "WS-2",
+      "title": "Swift theme tokens",
+      "description": "Swift theme tokens. Keep the change small and covered by a test.",
+      "mustNotChange": "The engine owns state. No new method in the protocol.",
+      "state": "completed",
+      "priority": "low",
+      "dependencies": [],
+      "currentAttempt": 0,
+      "prContract": false,
+      "createdAt": "2026-10-09T20:00:00Z",
+      "createdBy": "you",
+      "version": 1,
+      "phrase": "merged on the 8th"
+    }
+  ],
+  "taskDetails": {
+    "WS-5": {
+      "task": {
+        "workspaceId": "ws-tasks",
+        "taskId": "WS-5",
+        "title": "Workspace task screen",
+        "description": "Workspace task screen. Keep the change small and covered by a test.",
+        "mustNotChange": "The engine owns state. No new method in the protocol.",
+        "state": "in_progress",
+        "priority": "high",
+        "dependencies": [],
+        "currentAttempt": 1,
+        "prContract": false,
+        "createdAt": "2026-10-09T20:00:00Z",
+        "createdBy": "you",
+        "version": 1,
+        "phrase": "victoria editing, last commit 2 min ago",
+        "ownerPaneId": "tasks-victoria",
+        "worktree": {
+          "path": "/home/dev/ws-5",
+          "branch": "ws-5"
+        },
+        "howToVerify": "Open the tasks screen: board and list show the same tasks."
+      },
+      "subitems": [
+        {
+          "subitemId": "s1",
+          "taskId": "WS-5",
+          "text": "Task card",
+          "state": "done",
+          "agent": "victoria"
+        },
+        {
+          "subitemId": "s2",
+          "taskId": "WS-5",
+          "text": "Board with four columns",
+          "state": "done",
+          "agent": "victoria"
+        },
+        {
+          "subitemId": "s3",
+          "taskId": "WS-5",
+          "text": "List view",
+          "state": "open",
+          "agent": "victoria"
+        }
+      ],
+      "comments": [
+        {
+          "commentId": "c1",
+          "taskId": "WS-5",
+          "author": "victoria",
+          "text": "Card and board are ready. The list view is next.",
+          "at": "2026-10-11T09:20:00Z"
+        },
+        {
+          "commentId": "c2",
+          "taskId": "WS-5",
+          "author": "you",
+          "text": "Keep the cards flat, as the pane interior.",
+          "at": "2026-10-11T09:40:00Z"
+        }
+      ],
+      "attempts": [
+        {
+          "n": 1,
+          "paneId": "tasks-victoria",
+          "harness": "claude",
+          "model": "opus",
+          "start": "2026-10-10T22:40:00Z"
+        }
+      ],
+      "history": [
+        {
+          "actor": "you",
+          "from": "todo",
+          "to": "in_progress",
+          "reason": "dispatched",
+          "at": "2026-10-10T22:40:00Z"
+        }
+      ]
+    }
+  },
+  "attention": [
+    {
+      "attentionId": "x1",
+      "paneId": "tasks-aria",
+      "message": "aria asks permission to run cargo test -p acp contract_session_new",
+      "createdAt": "2026-10-11T09:50:00Z"
+    },
+    {
+      "attentionId": "x2",
+      "paneId": "tasks-aria",
+      "message": "WS-9 is waiting for your review",
+      "createdAt": "2026-10-11T09:55:00Z"
+    }
+  ],
+  "workspaces": [
+    {
+      "workspaceId": "ws-cards",
+      "name": "Agent cards",
+      "path": "/home/dev/soyeht",
+      "layout": {
+        "version": 2,
+        "mode": "custom",
+        "tree": {
+          "axis": "horizontal",
+          "children": [
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "cards-run",
+                "kind": "agent"
+              }
+            },
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "cards-ask",
+                "kind": "agent"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "workspaceId": "ws-cards2",
+      "name": "Agent cards 2",
+      "path": "/home/dev/soyeht",
+      "layout": {
+        "version": 2,
+        "mode": "custom",
+        "tree": {
+          "axis": "horizontal",
+          "children": [
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "cards-login",
+                "kind": "agent"
+              }
+            },
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "cards-older",
+                "kind": "agent"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "workspaceId": "ws-attach",
+      "name": "Attachments",
+      "path": "/home/dev/soyeht",
+      "layout": {
+        "version": 2,
+        "mode": "custom",
+        "tree": {
+          "axis": "horizontal",
+          "children": [
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "attach-chat",
+                "kind": "agent"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "workspaceId": "ws-loop",
+      "name": "Loop",
+      "path": "/home/dev/soyeht",
+      "layout": {
+        "version": 2,
+        "mode": "custom",
+        "tree": {
+          "axis": "horizontal",
+          "children": [
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "loop-pane",
+                "kind": "agent"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "workspaceId": "ws-tasks",
+      "name": "Soyeht CI",
+      "path": "/home/dev/soyeht",
+      "layout": {
+        "version": 2,
+        "mode": "custom",
+        "tree": {
+          "axis": "horizontal",
+          "children": [
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "tasks-victoria",
+                "kind": "agent"
+              }
+            },
+            {
+              "weight": 1.0,
+              "node": {
+                "paneId": "tasks-aria",
+                "kind": "agent"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "panes": [
+    {
+      "paneId": "cards-run",
+      "workspaceId": "ws-cards",
+      "name": "Claude",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "working",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.claude-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.claude-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "opus",
+            "options": [
+              {
+                "value": "opus",
+                "name": "Opus 5 (1M)"
+              },
+              {
+                "value": "sonnet",
+                "name": "Sonnet 5.5"
+              },
+              {
+                "value": "haiku",
+                "name": "Haiku 5"
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "high",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "max",
+                "name": "max"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "acceptEdits",
+            "options": [
+              {
+                "value": "default",
+                "name": "Manual"
+              },
+              {
+                "value": "acceptEdits",
+                "name": "Accept edits"
+              },
+              {
+                "value": "plan",
+                "name": "Plan"
+              },
+              {
+                "value": "auto",
+                "name": "Auto"
+              },
+              {
+                "value": "bypass",
+                "name": "Bypass"
+              }
+            ]
+          }
+        ],
+        "authMethods": [],
+        "queue": [],
+        "draft": false,
+        "activePromptId": "p-run",
+        "role": "worker",
+        "silentSince": "now-154"
+      },
+      "title": "Review the engine's queue code"
+    },
+    {
+      "paneId": "cards-ask",
+      "workspaceId": "ws-cards",
+      "name": "Codex",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "waiting_for_you",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.codex-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.codex-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "gpt-6-astra",
+            "options": [
+              {
+                "value": "gpt-6-astra",
+                "name": "gpt-6-astra"
+              },
+              {
+                "value": "gpt-6-mini",
+                "name": "gpt-6-mini"
+              }
+            ]
+          },
+          {
+            "id": "reasoning_effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "medium",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "xhigh",
+                "name": "extra high"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "ask",
+            "options": [
+              {
+                "value": "ask",
+                "name": "Ask for approval"
+              },
+              {
+                "value": "auto",
+                "name": "Approve for me"
+              },
+              {
+                "value": "full",
+                "name": "Full access"
+              }
+            ]
+          }
+        ],
+        "authMethods": [],
+        "queue": [],
+        "draft": false,
+        "activePromptId": "p-1",
+        "role": "worker",
+        "queuePaused": true
+      },
+      "title": "Waiting on a question"
+    },
+    {
+      "paneId": "cards-login",
+      "workspaceId": "ws-cards2",
+      "name": "Claude",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "idle",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.claude-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.claude-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "opus",
+            "options": [
+              {
+                "value": "opus",
+                "name": "Opus 5 (1M)"
+              },
+              {
+                "value": "sonnet",
+                "name": "Sonnet 5.5"
+              },
+              {
+                "value": "haiku",
+                "name": "Haiku 5"
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "high",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "max",
+                "name": "max"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "acceptEdits",
+            "options": [
+              {
+                "value": "default",
+                "name": "Manual"
+              },
+              {
+                "value": "acceptEdits",
+                "name": "Accept edits"
+              },
+              {
+                "value": "plan",
+                "name": "Plan"
+              },
+              {
+                "value": "auto",
+                "name": "Auto"
+              },
+              {
+                "value": "bypass",
+                "name": "Bypass"
+              }
+            ]
+          }
+        ],
+        "authMethods": [
+          {
+            "id": "claude-login",
+            "name": "Claude account",
+            "description": "Sign in with your Claude subscription in a terminal pane.",
+            "terminal": true
+          },
+          {
+            "id": "api-key",
+            "name": "Use an API key",
+            "terminal": false
+          }
+        ],
+        "queue": [],
+        "draft": false,
+        "activePromptId": null,
+        "role": "worker"
+      },
+      "title": "Needs a sign-in"
+    },
+    {
+      "paneId": "cards-older",
+      "workspaceId": "ws-cards2",
+      "name": "Codex",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "idle",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.codex-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.codex-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "gpt-6-astra",
+            "options": [
+              {
+                "value": "gpt-6-astra",
+                "name": "gpt-6-astra"
+              },
+              {
+                "value": "gpt-6-mini",
+                "name": "gpt-6-mini"
+              }
+            ]
+          },
+          {
+            "id": "reasoning_effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "medium",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "xhigh",
+                "name": "extra high"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "ask",
+            "options": [
+              {
+                "value": "ask",
+                "name": "Ask for approval"
+              },
+              {
+                "value": "auto",
+                "name": "Approve for me"
+              },
+              {
+                "value": "full",
+                "name": "Full access"
+              }
+            ]
+          }
+        ],
+        "authMethods": [],
+        "queue": [],
+        "draft": false,
+        "activePromptId": "p-1",
+        "role": "worker"
+      },
+      "title": "A long conversation"
+    },
+    {
+      "paneId": "attach-chat",
+      "workspaceId": "ws-attach",
+      "name": "Claude",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "idle",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.claude-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.claude-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "opus",
+            "options": [
+              {
+                "value": "opus",
+                "name": "Opus 5 (1M)"
+              },
+              {
+                "value": "sonnet",
+                "name": "Sonnet 5.5"
+              },
+              {
+                "value": "haiku",
+                "name": "Haiku 5"
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "high",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "max",
+                "name": "max"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "acceptEdits",
+            "options": [
+              {
+                "value": "default",
+                "name": "Manual"
+              },
+              {
+                "value": "acceptEdits",
+                "name": "Accept edits"
+              },
+              {
+                "value": "plan",
+                "name": "Plan"
+              },
+              {
+                "value": "auto",
+                "name": "Auto"
+              },
+              {
+                "value": "bypass",
+                "name": "Bypass"
+              }
+            ]
+          }
+        ],
+        "authMethods": [],
+        "queue": [],
+        "draft": false,
+        "activePromptId": null,
+        "role": "worker"
+      },
+      "title": "Sent with files"
+    },
+    {
+      "paneId": "loop-pane",
+      "workspaceId": "ws-loop",
+      "name": "aria",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "idle",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.claude-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.claude-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "opus",
+            "options": [
+              {
+                "value": "opus",
+                "name": "Opus 5 (1M)"
+              },
+              {
+                "value": "sonnet",
+                "name": "Sonnet 5.5"
+              },
+              {
+                "value": "haiku",
+                "name": "Haiku 5"
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "high",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "max",
+                "name": "max"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "acceptEdits",
+            "options": [
+              {
+                "value": "default",
+                "name": "Manual"
+              },
+              {
+                "value": "acceptEdits",
+                "name": "Accept edits"
+              },
+              {
+                "value": "plan",
+                "name": "Plan"
+              },
+              {
+                "value": "auto",
+                "name": "Auto"
+              },
+              {
+                "value": "bypass",
+                "name": "Bypass"
+              }
+            ]
+          }
+        ],
+        "authMethods": [],
+        "queue": [],
+        "draft": false,
+        "activePromptId": null,
+        "role": "worker"
+      },
+      "title": "Loops on its own"
+    },
+    {
+      "paneId": "tasks-victoria",
+      "workspaceId": "ws-tasks",
+      "name": "victoria",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "working",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.claude-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.claude-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "opus",
+            "options": [
+              {
+                "value": "opus",
+                "name": "Opus 5 (1M)"
+              },
+              {
+                "value": "sonnet",
+                "name": "Sonnet 5.5"
+              },
+              {
+                "value": "haiku",
+                "name": "Haiku 5"
+              }
+            ]
+          },
+          {
+            "id": "effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "high",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "max",
+                "name": "max"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "acceptEdits",
+            "options": [
+              {
+                "value": "default",
+                "name": "Manual"
+              },
+              {
+                "value": "acceptEdits",
+                "name": "Accept edits"
+              },
+              {
+                "value": "plan",
+                "name": "Plan"
+              },
+              {
+                "value": "auto",
+                "name": "Auto"
+              },
+              {
+                "value": "bypass",
+                "name": "Bypass"
+              }
+            ]
+          }
+        ],
+        "authMethods": [],
+        "queue": [],
+        "draft": false,
+        "activePromptId": null,
+        "role": "worker"
+      },
+      "title": "WS-5: task screen"
+    },
+    {
+      "paneId": "tasks-aria",
+      "workspaceId": "ws-tasks",
+      "name": "aria",
+      "cwd": "/home/dev/soyeht",
+      "mode": "agent",
+      "state": "waiting_for_you",
+      "source": "protocol",
+      "confidence": 1.0,
+      "phrase": "",
+      "generation": 1,
+      "cols": 80,
+      "rows": 24,
+      "record": false,
+      "agent": {
+        "harness": "registry.codex-acp",
+        "version": "1.0",
+        "fingerprint": "f",
+        "sessionId": "s-registry.codex-acp",
+        "options": [
+          {
+            "id": "model",
+            "name": "Model",
+            "category": "model",
+            "type": "select",
+            "currentValue": "gpt-6-astra",
+            "options": [
+              {
+                "value": "gpt-6-astra",
+                "name": "gpt-6-astra"
+              },
+              {
+                "value": "gpt-6-mini",
+                "name": "gpt-6-mini"
+              }
+            ]
+          },
+          {
+            "id": "reasoning_effort",
+            "name": "Effort",
+            "category": "thought_level",
+            "type": "select",
+            "currentValue": "medium",
+            "options": [
+              {
+                "value": "low",
+                "name": "low"
+              },
+              {
+                "value": "medium",
+                "name": "medium"
+              },
+              {
+                "value": "high",
+                "name": "high"
+              },
+              {
+                "value": "xhigh",
+                "name": "extra high"
+              }
+            ]
+          },
+          {
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": "ask",
+            "options": [
+              {
+                "value": "ask",
+                "name": "Ask for approval"
+              },
+              {
+                "value": "auto",
+                "name": "Approve for me"
+              },
+              {
+                "value": "full",
+                "name": "Full access"
+              }
+            ]
+          }
+        ],
+        "authMethods": [],
+        "queue": [],
+        "draft": false,
+        "activePromptId": "p-1",
+        "role": "worker"
+      },
+      "title": "WS-9: ACP adapter"
+    }
+  ],
+  "requests": [
+    {
+      "kind": "elicitation",
+      "request": {
+        "requestId": "e1",
+        "paneId": "cards-ask",
+        "generation": 1,
+        "promptId": "p-ask",
+        "title": "Codex has a question",
+        "expiresAt": "2030-01-01T00:00:00Z",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "branch": {
+              "type": "string",
+              "title": "Branch name"
+            },
+            "reason": {
+              "type": "string",
+              "title": "Why this release"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "transcripts": {
+    "cards-run": [
+      {
+        "localId": "m1",
+        "generation": 1,
+        "seq": "1",
+        "role": "user",
+        "kind": "message",
+        "text": "Review the queue code in the engine and tell me what could lose a message.",
+        "complete": true
+      },
+      {
+        "localId": "m2",
+        "generation": 1,
+        "seq": "2",
+        "role": "assistant",
+        "kind": "message",
+        "text": "I split the review in two. One subagent reads the queue, the other the tests.",
+        "complete": true
+      },
+      {
+        "localId": "m3",
+        "generation": 1,
+        "seq": "3",
+        "role": "assistant",
+        "kind": "subagent",
+        "text": "",
+        "complete": false,
+        "subagent": {
+          "subagentId": "explore",
+          "name": "Explore",
+          "task": "Read engine/agents/queue.rs and list every place a prompt can be dropped.",
+          "status": "running",
+          "startedAt": "now-47",
+          "model": "haiku"
+        }
+      },
+      {
+        "localId": "m4",
+        "generation": 1,
+        "seq": "4",
+        "role": "assistant",
+        "kind": "subagent",
+        "text": "",
+        "complete": true,
+        "subagent": {
+          "subagentId": "review",
+          "name": "Review",
+          "task": "Check the tests that cover cancel.",
+          "status": "completed",
+          "startedAt": "now-300",
+          "summary": "Contents verbatim:\n```\nThe queue keeps a prompt until the turn that carries it ends.\nOne path drops it: a cancel between dequeue and send.\n```",
+          "model": "sonnet"
+        }
+      },
+      {
+        "localId": "m5",
+        "generation": 1,
+        "seq": "5",
+        "role": "assistant",
+        "kind": "tool",
+        "text": "",
+        "complete": true,
+        "tool": {
+          "toolCallId": "c5",
+          "title": "engine/agents/queue.rs",
+          "kind": "read",
+          "status": "completed",
+          "locations": []
+        }
+      }
+    ],
+    "cards-ask": [
+      {
+        "localId": "m1",
+        "generation": 1,
+        "seq": "1",
+        "role": "user",
+        "kind": "message",
+        "text": "Prepare the release branch and tell me when it is ready.",
+        "complete": true
+      },
+      {
+        "localId": "m2",
+        "generation": 1,
+        "seq": "2",
+        "role": "assistant",
+        "kind": "message",
+        "text": "I need two details before I create the branch.",
+        "complete": true
+      }
+    ],
+    "cards-login": [
+      {
+        "localId": "m1",
+        "generation": 1,
+        "seq": "1",
+        "role": "system",
+        "kind": "system",
+        "text": "Claude needs a sign-in before it can answer.",
+        "complete": true
+      }
+    ],
+    "cards-older": [
+      {
+        "localId": "m40",
+        "generation": 1,
+        "seq": "40",
+        "role": "user",
+        "kind": "message",
+        "text": "Message 40 of a conversation that began earlier.",
+        "complete": true
+      },
+      {
+        "localId": "m41",
+        "generation": 1,
+        "seq": "41",
+        "role": "assistant",
+        "kind": "message",
+        "text": "Message 41 of a conversation that began earlier.",
+        "complete": true
+      },
+      {
+        "localId": "m42",
+        "generation": 1,
+        "seq": "42",
+        "role": "user",
+        "kind": "message",
+        "text": "Message 42 of a conversation that began earlier.",
+        "complete": true
+      },
+      {
+        "localId": "m43",
+        "generation": 1,
+        "seq": "43",
+        "role": "assistant",
+        "kind": "message",
+        "text": "Message 43 of a conversation that began earlier.",
+        "complete": true
+      },
+      {
+        "localId": "m44",
+        "generation": 1,
+        "seq": "44",
+        "role": "user",
+        "kind": "message",
+        "text": "Message 44 of a conversation that began earlier.",
+        "complete": true
+      },
+      {
+        "localId": "m45",
+        "generation": 1,
+        "seq": "45",
+        "role": "assistant",
+        "kind": "message",
+        "text": "Message 45 of a conversation that began earlier.",
+        "complete": true
+      },
+      {
+        "localId": "m46",
+        "generation": 1,
+        "seq": "46",
+        "role": "user",
+        "kind": "message",
+        "text": "Message 46 of a conversation that began earlier.",
+        "complete": true
+      },
+      {
+        "localId": "m47",
+        "generation": 1,
+        "seq": "47",
+        "role": "assistant",
+        "kind": "message",
+        "text": "Message 47 of a conversation that began earlier.",
+        "complete": true
+      }
+    ],
+    "attach-chat": [
+      {
+        "localId": "m1",
+        "generation": 1,
+        "seq": "1",
+        "role": "user",
+        "kind": "message",
+        "text": "Here is the screenshot and the report. What changed since last week?",
+        "complete": true,
+        "attachments": [
+          {
+            "kind": "image",
+            "name": "Screenshot 2026-10-11.png",
+            "mimeType": "image/png",
+            "bytes": "183500",
+            "path": "/home/dev/Screenshot 2026-10-11.png",
+            "thumbnail": "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"
+          },
+          {
+            "kind": "file",
+            "name": "weekly-report.pdf",
+            "mimeType": "application/pdf",
+            "bytes": "1234567",
+            "path": "/home/dev/weekly-report.pdf"
+          },
+          {
+            "kind": "text",
+            "name": "notes.md",
+            "mimeType": "text/markdown",
+            "bytes": "800",
+            "path": "/home/dev/notes.md"
+          }
+        ]
+      },
+      {
+        "localId": "m2",
+        "generation": 1,
+        "seq": "2",
+        "role": "assistant",
+        "kind": "message",
+        "text": "I read both. The report shows two new failing tests; the screenshot shows the login form moved.",
+        "complete": true
+      }
+    ],
+    "loop-pane": [
+      {
+        "localId": "m1",
+        "generation": 1,
+        "seq": "1",
+        "role": "user",
+        "kind": "message",
+        "text": "Take the next task from the list.",
+        "complete": true
+      },
+      {
+        "localId": "m2",
+        "generation": 1,
+        "seq": "2",
+        "role": "assistant",
+        "kind": "message",
+        "text": "Picked WS-5 and started on it.",
+        "complete": true
+      }
+    ],
+    "tasks-victoria": [
+      {
+        "localId": "m1",
+        "generation": 1,
+        "seq": "1",
+        "role": "user",
+        "kind": "message",
+        "text": "Take WS-5.",
+        "complete": true
+      }
+    ],
+    "tasks-aria": [
+      {
+        "localId": "m1",
+        "generation": 1,
+        "seq": "1",
+        "role": "user",
+        "kind": "message",
+        "text": "Take WS-9.",
+        "complete": true
+      }
+    ]
+  },
+  "olderCursors": {
+    "cards-older": "40"
+  },
+  "queues": {
+    "cards-run": {
+      "items": [
+        {
+          "promptId": "q1",
+          "text": "Then run the tests again",
+          "origin": "human",
+          "status": "queued",
+          "queuedAt": "2026-10-11T12:00:00.000Z"
+        },
+        {
+          "promptId": "q2",
+          "text": "Can you check the queue before you finish?",
+          "origin": "automatic",
+          "status": "queued",
+          "queuedAt": "2026-10-11T12:00:00.000Z",
+          "agentMessage": {
+            "paneId": "aria",
+            "name": "aria",
+            "harness": "claude"
+          },
+          "attachments": [
+            {
+              "kind": "file",
+              "name": "notes-0.md",
+              "mimeType": "text/markdown",
+              "bytes": "1200"
+            }
+          ]
+        }
+      ],
+      "paused": false
+    },
+    "cards-ask": {
+      "items": [
+        {
+          "promptId": "q3",
+          "text": "Keep going with the release notes",
+          "origin": "human",
+          "status": "queued",
+          "queuedAt": "2026-10-11T12:00:00.000Z"
+        }
+      ],
+      "paused": true
+    }
+  },
+  "terminals": {},
+  "usage": [
+    {
+      "provider": "claude",
+      "state": "ok",
+      "source": "claude_oauth_endpoint",
+      "fetchedAt": "2026-10-10T00:00:00Z",
+      "primary": {
+        "used": 0.73,
+        "resetsAt": "2026-10-17T00:00:00Z",
+        "label": "Week"
+      }
+    },
+    {
+      "provider": "codex",
+      "state": "ok",
+      "source": "codex_app_server",
+      "fetchedAt": "2026-10-10T00:00:00Z",
+      "primary": {
+        "used": 0.21,
+        "resetsAt": "2026-10-17T00:00:00Z",
+        "label": "Week"
+      }
+    },
+    {
+      "provider": "cursor",
+      "state": "ok",
+      "source": "cursor_current_period",
+      "fetchedAt": "2026-10-10T00:00:00Z",
+      "primary": {
+        "used": 0.52,
+        "resetsAt": "2026-10-17T00:00:00Z",
+        "label": "Month"
+      }
+    }
+  ],
+  "harnesses": [
+    {
+      "id": "registry.claude-acp",
+      "name": "Claude",
+      "available": true,
+      "installed": true,
+      "version": "1.0",
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "setupState": "ready"
+    },
+    {
+      "id": "registry.codex-acp",
+      "name": "Codex",
+      "available": true,
+      "installed": true,
+      "version": "1.0",
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "setupState": "ready"
+    },
+    {
+      "id": "registry.cursor-acp",
+      "name": "Cursor",
+      "available": true,
+      "installed": true,
+      "version": "1.0",
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "setupState": "not_checked"
+    },
+    {
+      "id": "registry.gemini-acp",
+      "name": "Gemini CLI",
+      "available": true,
+      "installed": true,
+      "version": "1.0",
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "setupState": "sign_in"
+    },
+    {
+      "id": "registry.goose-acp",
+      "name": "Goose",
+      "available": false,
+      "installed": false,
+      "version": "1.0",
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "setupState": "not_installed"
+    },
+    {
+      "id": "registry.opencode-acp",
+      "name": "OpenCode",
+      "available": false,
+      "installed": false,
+      "version": "1.0",
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "setupState": "not_installed"
+    }
+  ]
+}

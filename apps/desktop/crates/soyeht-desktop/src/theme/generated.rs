@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 f7bdae38ff3eb90abe195535ea6680ce13a19fcd3e496ebbb42d9b3e32825622). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 c570bc6dc51f75956310bb824490b5fca1e31ac895e6743c3374f73078b78bd7). Do not edit.
 use super::Palette;
 
 pub(super) static MILK: Palette = Palette {
@@ -407,6 +407,37 @@ pub mod desktop {
     pub const SHADOW_HALO_OPACITY: f32 = 0.8;
     pub const SHADOW_LIGHT_OFFSET_SCALE: f32 = 0.964;
     pub const SHADOW_LIGHT_SIGMA_SCALE: f32 = 0.63;
+    pub const SUBAGENT_INDENT: f32 = 22.0;
+    pub const SUBAGENT_SUMMARY_INDENT: f32 = 40.0;
+    pub const PROGRESS_SEGMENT: f32 = 0.3;
+    pub const PROGRESS_PERIOD: f32 = 1.4;
+    pub const ATTACHMENT_THUMBNAIL: f32 = 26.0;
+    pub const ATTACHMENT_THUMBNAIL_RADIUS: f32 = 4.0;
+    pub const ATTACHMENT_CHIP_NAME_WIDTH: f32 = 160.0;
+    pub const DROP_BORDER: f32 = 2.0;
+    pub const LOOP_PANEL_WIDTH: f32 = 400.0;
+    pub const LOOP_TOGGLE_WIDTH: f32 = 40.0;
+    pub const LOOP_TOGGLE_HEIGHT: f32 = 22.0;
+    pub const LOOP_TOGGLE_KNOB: f32 = 18.0;
+    pub const LOOP_PROMPT_HEIGHT: f32 = 88.0;
+    pub const TASK_COLUMN_WIDTH: f32 = 250.0;
+    pub const TASK_COLUMN_MIN_HEIGHT: f32 = 500.0;
+    pub const TASK_DOT: f32 = 6.0;
+    pub const TASK_SHEET_WIDTH: f32 = 460.0;
+    pub const TASK_SHEET_HEIGHT: f32 = 826.0;
+    pub const NEW_TASK_SHEET_WIDTH: f32 = 560.0;
+    pub const TASK_LIST_MINIMUM_WIDTH: f32 = 960.0;
+    pub const TASK_LIST_KEY_WIDTH: f32 = 70.0;
+    pub const TASK_LIST_STATE_WIDTH: f32 = 120.0;
+    pub const TASK_LIST_PRIORITY_WIDTH: f32 = 90.0;
+    pub const TASK_LIST_OWNER_WIDTH: f32 = 120.0;
+    pub const TASK_LIST_WORKTREE_WIDTH: f32 = 90.0;
+    pub const TASK_LIST_COMMENTS_WIDTH: f32 = 40.0;
+    pub const TASK_LIST_UPDATED_WIDTH: f32 = 90.0;
+    pub const TASK_LIST_TITLE_MINIMUM_WIDTH: f32 = 220.0;
+    pub const TASK_EDITOR_HEIGHT: f32 = 96.0;
+    pub const TASK_FIELD_HEIGHT: f32 = 40.0;
+    pub const ATTENTION_POPOVER_WIDTH: f32 = 340.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

@@ -62,19 +62,21 @@ struct AgentSignInCard: View {
         Spacer(minLength: 0)
         #if os(macOS)
           if let terminalPaneId {
-            Button("Show terminal") { client.select(terminalPaneId) }
+            Button(AgentSignInLabels.showTerminal) { client.select(terminalPaneId) }
               .buttonStyle(PanePillButtonStyle(.secondary, style: style))
           }
         #endif
-        Button("Cancel sign-in", role: .destructive) { client.cancelAgentAuthentication(paneId) }
-          .buttonStyle(PanePillButtonStyle(.destructive, style: style))
+        Button(AgentSignInLabels.cancelSignIn, role: .destructive) {
+          client.cancelAgentAuthentication(paneId)
+        }
+        .buttonStyle(PanePillButtonStyle(.destructive, style: style))
       }
     case .verifying, .signingOut:
       progress
     case .failed:
       HStack {
         Spacer()
-        Button("Dismiss") { client.dismissSignInFailure(paneId) }
+        Button(AgentSignInLabels.dismiss) { client.dismissSignInFailure(paneId) }
           .buttonStyle(PanePillButtonStyle(.secondary, style: style))
       }
     }
@@ -86,7 +88,7 @@ struct AgentSignInCard: View {
     }
     #if os(macOS)
       if methods.contains(where: \.opensTerminal) {
-        Text("Choose a method to open its sign-in terminal. Enter credentials there.")
+        Text(AgentSignInLabels.chooseTerminalHint)
           .font(style.captionFont).foregroundStyle(style.secondary)
       }
       ForEach(Array(methods.enumerated()), id: \.element.id) { index, method in

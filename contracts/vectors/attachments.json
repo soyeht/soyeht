@@ -1,0 +1,836 @@
+{
+  "description": "Attachments shared by the Mac (AgentAttachmentPresentation, AgentAttachmentGlyph, AgentAttachmentStaging, AgentAttachmentList, AgentAttachmentDraft, AgentPasteboardContent) and the desktop client (soyeht_client::attachments). Both pass every case. Sizes are written as in the English locale.",
+  "fileSize": [
+    {
+      "bytes": 1,
+      "text": "1 byte"
+    },
+    {
+      "bytes": 2,
+      "text": "2 bytes"
+    },
+    {
+      "bytes": 500,
+      "text": "500 bytes"
+    },
+    {
+      "bytes": 999,
+      "text": "999 bytes"
+    },
+    {
+      "bytes": 1000,
+      "text": "1 KB"
+    },
+    {
+      "bytes": 1023,
+      "text": "1 KB"
+    },
+    {
+      "bytes": 1024,
+      "text": "1 KB"
+    },
+    {
+      "bytes": 1500,
+      "text": "2 KB"
+    },
+    {
+      "bytes": 2500,
+      "text": "3 KB"
+    },
+    {
+      "bytes": 9999,
+      "text": "10 KB"
+    },
+    {
+      "bytes": 12345,
+      "text": "12 KB"
+    },
+    {
+      "bytes": 99999,
+      "text": "100 KB"
+    },
+    {
+      "bytes": 999499,
+      "text": "999 KB"
+    },
+    {
+      "bytes": 999500,
+      "text": "1 MB"
+    },
+    {
+      "bytes": 999999,
+      "text": "1 MB"
+    },
+    {
+      "bytes": 1000000,
+      "text": "1 MB"
+    },
+    {
+      "bytes": 1049999,
+      "text": "1 MB"
+    },
+    {
+      "bytes": 1234567,
+      "text": "1.2 MB"
+    },
+    {
+      "bytes": 1250000,
+      "text": "1.3 MB"
+    },
+    {
+      "bytes": 1500000,
+      "text": "1.5 MB"
+    },
+    {
+      "bytes": 9999999,
+      "text": "10 MB"
+    },
+    {
+      "bytes": 10485760,
+      "text": "10.5 MB"
+    },
+    {
+      "bytes": 12345678,
+      "text": "12.3 MB"
+    },
+    {
+      "bytes": 20971520,
+      "text": "21 MB"
+    },
+    {
+      "bytes": 99999999,
+      "text": "100 MB"
+    },
+    {
+      "bytes": 123456789,
+      "text": "123.5 MB"
+    },
+    {
+      "bytes": 1000000000,
+      "text": "1 GB"
+    },
+    {
+      "bytes": 1005000000,
+      "text": "1.01 GB"
+    },
+    {
+      "bytes": 1250000000,
+      "text": "1.25 GB"
+    },
+    {
+      "bytes": 1500000000,
+      "text": "1.5 GB"
+    },
+    {
+      "bytes": 1995000000,
+      "text": "2 GB"
+    },
+    {
+      "bytes": 5368709120,
+      "text": "5.37 GB"
+    },
+    {
+      "bytes": 12345678901,
+      "text": "12.35 GB"
+    },
+    {
+      "bytes": 1000000000000,
+      "text": "1 TB"
+    },
+    {
+      "bytes": 2500000000000,
+      "text": "2.5 TB"
+    }
+  ],
+  "detail": [
+    {
+      "mimeType": "image/png",
+      "bytes": 12345,
+      "text": "PNG · 12 KB"
+    },
+    {
+      "mimeType": "image/svg+xml",
+      "bytes": 2048,
+      "text": "SVG · 2 KB"
+    },
+    {
+      "mimeType": "application/pdf",
+      "bytes": 1234567,
+      "text": "PDF · 1.2 MB"
+    },
+    {
+      "mimeType": "text/plain",
+      "bytes": 0,
+      "text": "PLAIN"
+    },
+    {
+      "mimeType": "text/markdown",
+      "bytes": 800,
+      "text": "MARKDOWN · 800 bytes"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "bytes": 0,
+      "text": "JPEG"
+    },
+    {
+      "mimeType": "audio/mpeg",
+      "bytes": 3000000,
+      "text": "MPEG · 3 MB"
+    },
+    {
+      "mimeType": "application/octet-stream",
+      "bytes": 1,
+      "text": "OCTET-STREAM · 1 byte"
+    },
+    {
+      "mimeType": "weird",
+      "bytes": 5000,
+      "text": "WEIRD · 5 KB"
+    }
+  ],
+  "glyph": [
+    {
+      "kind": "image",
+      "mimeType": "image/png",
+      "glyph": "image"
+    },
+    {
+      "kind": "audio",
+      "mimeType": "audio/mpeg",
+      "glyph": "audio"
+    },
+    {
+      "kind": "text",
+      "mimeType": "text/plain",
+      "glyph": "text"
+    },
+    {
+      "kind": "file",
+      "mimeType": "application/pdf",
+      "glyph": "pdf"
+    },
+    {
+      "kind": "file",
+      "mimeType": "application/zip",
+      "glyph": "file"
+    },
+    {
+      "kind": "file",
+      "mimeType": "application/octet-stream",
+      "glyph": "file"
+    },
+    {
+      "kind": "image",
+      "mimeType": "application/pdf",
+      "glyph": "image"
+    }
+  ],
+  "fileKinds": [
+    {
+      "fileName": "photo.png",
+      "kind": "image",
+      "mimeType": "image/png"
+    },
+    {
+      "fileName": "photo.PNG",
+      "kind": "image",
+      "mimeType": "image/png"
+    },
+    {
+      "fileName": "pic.jpg",
+      "kind": "image",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "fileName": "pic.jpeg",
+      "kind": "image",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "fileName": "anim.gif",
+      "kind": "image",
+      "mimeType": "image/gif"
+    },
+    {
+      "fileName": "pic.webp",
+      "kind": "image",
+      "mimeType": "image/webp"
+    },
+    {
+      "fileName": "IMG_1.heic",
+      "kind": "image",
+      "mimeType": "image/heic"
+    },
+    {
+      "fileName": "scan.tiff",
+      "kind": "image",
+      "mimeType": "image/tiff"
+    },
+    {
+      "fileName": "old.bmp",
+      "kind": "image",
+      "mimeType": "image/bmp"
+    },
+    {
+      "fileName": "logo.svg",
+      "kind": "image",
+      "mimeType": "image/svg+xml"
+    },
+    {
+      "fileName": "Report Q3.pdf",
+      "kind": "file",
+      "mimeType": "application/pdf"
+    },
+    {
+      "fileName": "notes.txt",
+      "kind": "text",
+      "mimeType": "text/plain"
+    },
+    {
+      "fileName": "README.md",
+      "kind": "text",
+      "mimeType": "text/markdown"
+    },
+    {
+      "fileName": "data.json",
+      "kind": "text",
+      "mimeType": "application/json"
+    },
+    {
+      "fileName": "table.csv",
+      "kind": "text",
+      "mimeType": "text/csv"
+    },
+    {
+      "fileName": "page.html",
+      "kind": "text",
+      "mimeType": "text/html"
+    },
+    {
+      "fileName": "feed.xml",
+      "kind": "text",
+      "mimeType": "application/xml"
+    },
+    {
+      "fileName": "main.swift",
+      "kind": "text",
+      "mimeType": "text/plain"
+    },
+    {
+      "fileName": "app.js",
+      "kind": "text",
+      "mimeType": "text/javascript"
+    },
+    {
+      "fileName": "bundle.zip",
+      "kind": "file",
+      "mimeType": "application/zip"
+    },
+    {
+      "fileName": "song.mp3",
+      "kind": "audio",
+      "mimeType": "audio/mpeg"
+    },
+    {
+      "fileName": "clip.wav",
+      "kind": "audio",
+      "mimeType": "audio/vnd.wave"
+    },
+    {
+      "fileName": "movie.mp4",
+      "kind": "file",
+      "mimeType": "video/mp4"
+    },
+    {
+      "fileName": "movie.mov",
+      "kind": "file",
+      "mimeType": "video/quicktime"
+    },
+    {
+      "fileName": "letter.docx",
+      "kind": "file",
+      "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    },
+    {
+      "fileName": "sheet.xlsx",
+      "kind": "file",
+      "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    },
+    {
+      "fileName": "archive.unknownext",
+      "kind": "file",
+      "mimeType": "application/octet-stream"
+    },
+    {
+      "fileName": "noextension",
+      "kind": "file",
+      "mimeType": "application/octet-stream"
+    }
+  ],
+  "pasteOffers": [
+    {
+      "files": 0,
+      "image": false,
+      "text": false,
+      "offers": false
+    },
+    {
+      "files": 2,
+      "image": false,
+      "text": true,
+      "offers": true
+    },
+    {
+      "files": 1,
+      "image": true,
+      "text": true,
+      "offers": true
+    },
+    {
+      "files": 0,
+      "image": true,
+      "text": false,
+      "offers": true
+    },
+    {
+      "files": 0,
+      "image": true,
+      "text": true,
+      "offers": false
+    },
+    {
+      "files": 0,
+      "image": false,
+      "text": true,
+      "offers": false
+    }
+  ],
+  "imagePolicy": {
+    "inlineTypes": [
+      "image/png",
+      "image/jpeg",
+      "image/gif",
+      "image/webp"
+    ],
+    "maximumPixels": 2048,
+    "maximumBytes": 716800,
+    "thumbnailPixels": 160,
+    "scalePixels": [
+      2048,
+      1600,
+      1280,
+      1024,
+      768
+    ],
+    "qualities": [
+      0.85,
+      0.7,
+      0.55,
+      0.4
+    ],
+    "thumbnailAttempts": [
+      {
+        "pixels": 160,
+        "quality": 0.7
+      },
+      {
+        "pixels": 160,
+        "quality": 0.45
+      },
+      {
+        "pixels": 96,
+        "quality": 0.45
+      }
+    ],
+    "fallbackName": "Pasted image"
+  },
+  "keepsImage": [
+    {
+      "mimeType": "image/png",
+      "bytes": 716800,
+      "width": 2048,
+      "height": 2048,
+      "keeps": true
+    },
+    {
+      "mimeType": "image/png",
+      "bytes": 716801,
+      "width": 2048,
+      "height": 2048,
+      "keeps": false
+    },
+    {
+      "mimeType": "image/png",
+      "bytes": 100,
+      "width": 2049,
+      "height": 10,
+      "keeps": false
+    },
+    {
+      "mimeType": "image/png",
+      "bytes": 100,
+      "width": 10,
+      "height": 2049,
+      "keeps": false
+    },
+    {
+      "mimeType": "image/heic",
+      "bytes": 100,
+      "width": 10,
+      "height": 10,
+      "keeps": false
+    },
+    {
+      "mimeType": "image/tiff",
+      "bytes": 100,
+      "width": 10,
+      "height": 10,
+      "keeps": false
+    },
+    {
+      "mimeType": "image/gif",
+      "bytes": 100,
+      "width": 10,
+      "height": 10,
+      "keeps": true
+    },
+    {
+      "mimeType": "image/jpeg",
+      "bytes": 5000,
+      "width": 2048,
+      "height": 100,
+      "keeps": true
+    },
+    {
+      "mimeType": "image/webp",
+      "bytes": 5000,
+      "width": 100,
+      "height": 100,
+      "keeps": true
+    },
+    {
+      "mimeType": "image/bmp",
+      "bytes": 100,
+      "width": 10,
+      "height": 10,
+      "keeps": false
+    }
+  ],
+  "imageName": [
+    {
+      "name": null,
+      "sentAs": "image/png",
+      "fileName": "Pasted image.png"
+    },
+    {
+      "name": "shot.png",
+      "sentAs": "image/png",
+      "fileName": "shot.png"
+    },
+    {
+      "name": "IMG_0001.HEIC",
+      "sentAs": "image/jpeg",
+      "fileName": "IMG_0001.jpeg"
+    },
+    {
+      "name": "  ",
+      "sentAs": "image/png",
+      "fileName": "Pasted image.png"
+    },
+    {
+      "name": "holiday.photo.tiff",
+      "sentAs": "image/png",
+      "fileName": "holiday.photo.png"
+    },
+    {
+      "name": "a.b",
+      "sentAs": "image/jpeg",
+      "fileName": "a.jpeg"
+    },
+    {
+      "name": "scan",
+      "sentAs": "image/png",
+      "fileName": "scan.png"
+    }
+  ],
+  "limits": [
+    {
+      "name": "twenty linked files, then one more",
+      "adds": [
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "linked.pdf",
+          "bytes": 50000000,
+          "linked": true
+        },
+        {
+          "name": "one.bin",
+          "bytes": 1,
+          "linked": false
+        }
+      ],
+      "outcomes": [
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "ok",
+        "tooMany"
+      ]
+    },
+    {
+      "name": "sizes of uploaded bytes",
+      "adds": [
+        {
+          "name": "big.bin",
+          "bytes": 10485761,
+          "linked": false
+        },
+        {
+          "name": "a.bin",
+          "bytes": 10485760,
+          "linked": false
+        },
+        {
+          "name": "b.bin",
+          "bytes": 10485760,
+          "linked": false
+        },
+        {
+          "name": "c.bin",
+          "bytes": 1,
+          "linked": false
+        },
+        {
+          "name": "empty.bin",
+          "bytes": 0,
+          "linked": false
+        }
+      ],
+      "outcomes": [
+        "tooLarge",
+        "ok",
+        "ok",
+        "totalTooLarge",
+        "empty"
+      ]
+    },
+    {
+      "name": "a linked file is not counted in the bytes sent",
+      "adds": [
+        {
+          "name": "a.bin",
+          "bytes": 10485760,
+          "linked": false
+        },
+        {
+          "name": "b.bin",
+          "bytes": 10485760,
+          "linked": false
+        },
+        {
+          "name": "linked.mov",
+          "bytes": 524288000,
+          "linked": true
+        }
+      ],
+      "outcomes": [
+        "ok",
+        "ok",
+        "ok"
+      ]
+    }
+  ],
+  "rejections": [
+    {
+      "rejection": "tooMany",
+      "message": "A message takes at most 20 attachments."
+    },
+    {
+      "rejection": "tooLarge",
+      "name": "big.bin",
+      "message": "big.bin is larger than 10 MB."
+    },
+    {
+      "rejection": "totalTooLarge",
+      "message": "Attachments are limited to 20 MB per message."
+    },
+    {
+      "rejection": "empty",
+      "name": "empty.bin",
+      "message": "empty.bin is empty."
+    },
+    {
+      "rejection": "unreadable",
+      "name": "x.bin",
+      "message": "x.bin could not be read."
+    },
+    {
+      "rejection": "folder",
+      "name": "stuff",
+      "message": "stuff is a folder; attach the files inside it."
+    }
+  ],
+  "wire": [
+    {
+      "name": "bytes sent as frames",
+      "draft": {
+        "id": "00112233-4455-4677-8899-aabbccddeeff",
+        "kind": "image",
+        "name": "shot.png",
+        "mimeType": "image/png",
+        "byteCount": 3,
+        "source": {
+          "bytes": "AQID"
+        },
+        "thumbnail": "CQ=="
+      },
+      "prompt": {
+        "kind": "image",
+        "name": "shot.png",
+        "mimeType": "image/png",
+        "bytes": "3",
+        "attachmentId": "00112233-4455-4677-8899-aabbccddeeff",
+        "thumbnail": "CQ=="
+      },
+      "frame": {
+        "attachmentId": "00112233-4455-4677-8899-aabbccddeeff",
+        "mimeType": "image/png",
+        "name": "shot.png",
+        "bytes": "3",
+        "data": "AQID"
+      }
+    },
+    {
+      "name": "a file linked where it is",
+      "draft": {
+        "id": "00112233-4455-4677-8899-aabbccddeeff",
+        "kind": "file",
+        "name": "report.pdf",
+        "mimeType": "application/pdf",
+        "byteCount": 2048,
+        "source": {
+          "path": "/Users/example/report.pdf"
+        }
+      },
+      "prompt": {
+        "kind": "file",
+        "name": "report.pdf",
+        "mimeType": "application/pdf",
+        "bytes": "2048",
+        "path": "/Users/example/report.pdf"
+      },
+      "frame": null
+    }
+  ]
+}

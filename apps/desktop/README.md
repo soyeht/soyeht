@@ -62,7 +62,19 @@ agent works.
   it is, and the others under a collapsed "More harnesses" entry; an agent that cannot start is
   shown dimmed. Popup menus are as tall as the Mac's popover at most, scroll inside, and close on
   Escape.
-- Editor, web and writing panes, tasks, loops, attachments and dictation are listed with a notice.
+- The transcript carries the Mac's cards: messages queued behind a running turn (with remove and
+  resume), the notice when a turn goes quiet, the sign-in card, the answer form for an agent's
+  question, subagent cards, and "Load earlier messages" for older history.
+- The composer takes attachments: the paperclip opens a picker, files and images can be dropped
+  or pasted, and chips above the message line show what will go (with a thumbnail for images).
+  Images are prepared and sent with the prompt by the same rules as the Mac.
+- The pane header's loop button opens the loop panel (the Mac's "Loop and lead controls"): the
+  loop prompt, interval and on/off, the pane's role, and the draft heartbeat that keeps a loop
+  from sending over a half-written message.
+- The rail's Tasks surface shows the workspace's board and list, a task's detail with its
+  subitems, attempts and timeline, the "new task" sheet with create and dispatch, and the
+  attention popover for what needs the person.
+- Editor, web and writing panes and dictation are listed with a notice.
 
 ## Run
 
@@ -99,7 +111,8 @@ cargo test --locked --workspace
 
 `scripts/check_all.sh` runs the same three steps. The first run on a machine
 fetches the Zed git dependencies and compiles GPUI, which takes several minutes.
-The client crate tests
+The rules both clients share (card wording, attachment preparation, loop and task
+presentation) live in `contracts/vectors/` and are run by the Swift and Rust tests alike. The client crate tests
 include an end-to-end run against a scripted engine on a real local socket; the
 palettes and tokens in `theme` are generated from `contracts/design-tokens.json`.
 
@@ -137,7 +150,10 @@ cargo run --release --example design_audit -- crates/soyeht-desktop/examples/des
   --workspace ws-ci --size 1200x700 --open config:claude:model
 ```
 
-`--open` takes `new-pane`, `overflow`, `settings`, `harness:<pane>` or `config:<pane>:<option>`.
+`--open` takes `new-pane`, `overflow`, `settings`, `harness:<pane>`, `config:<pane>:<option>`,
+`loop:<pane>`, `tasks`, `tasks:list`, `task:<id>` or `new-task`.
+`examples/design_audit_features.json` is the second recorded state, with the workspaces that show
+the cards, the attachments, the loop panel and the tasks.
 The same file feeds the Mac's own views, rendered offscreen, so that both clients draw the same
 conversation. The `.pen` frames "Interior da pane" (approved) and `DCzvR`, `OtYMZ` are the
 references for the interior, the composer and the header.

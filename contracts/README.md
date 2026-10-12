@@ -66,3 +66,9 @@ types and unknown enums.
 vector is a Markdown input and the blocks it must become, optionally as a reply that is still
 arriving (`"streaming": true`). The Swift client (`MarkdownTests`) and the desktop client
 (`tests/markdown_vectors.rs`) both pass the whole file.
+
+`vectors/agent-cards.json`, `attachments.json`, `loop-panel.json` and `tasks.json` fix what
+the clients compute for the person rather than what travels: the wording of the transcript's
+cards, how an attachment is prepared and sized, how the loop panel reads a pane's loop, and how
+a task is grouped, labelled and dated. The Swift tests in `apps/shared` and the Rust tests in
+`apps/desktop` run the same file, so the Mac and the desktop cannot drift apart.

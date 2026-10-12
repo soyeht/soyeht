@@ -12,6 +12,12 @@ pub struct Snapshot {
     pub focus: Option<ClientFocus>,
     /// The requests agents are waiting on (permissions), as the engine lists them.
     pub requests: Vec<Value>,
+    /// The loops of the panes: each entry names its pane and holds the loop.
+    pub loops: Vec<Value>,
+    /// The tasks of every workspace.
+    pub tasks: Vec<Value>,
+    /// What needs the person, as the engine lists it.
+    pub attention: Vec<Value>,
     /// The event cursor to subscribe from.
     pub cursor: u64,
 }
@@ -27,6 +33,9 @@ impl Snapshot {
             workspaces: decode(pages.take(&SnapshotSection::Workspaces))?,
             panes: decode(pages.take(&SnapshotSection::Panes))?,
             requests: pages.take(&SnapshotSection::Requests),
+            loops: pages.take(&SnapshotSection::Loops),
+            tasks: pages.take(&SnapshotSection::Tasks),
+            attention: pages.take(&SnapshotSection::Attention),
             focus: pages.metadata.focus,
             cursor,
         })

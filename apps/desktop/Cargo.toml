@@ -21,6 +21,7 @@ base64 = "0.22"
 uuid = { version = "1", features = ["v4", "serde"] }
 vt100 = "0.16.2"
 async-channel = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
 # Default features off: the parser alone, without its HTML writer or command-line tool.
 pulldown-cmark = { version = "0.13", default-features = false }
 

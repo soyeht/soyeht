@@ -2,15 +2,18 @@
 //! card headed "YOU", the agent's reply is plain text, a tool call is a plain row over a thin
 //! line, and the composer sits at the bottom. Nothing in here has a shadow.
 
-use super::ui::{Typeface, code_well, column, icon, id, row};
+use super::{
+    attachments::sent_chips,
+    ui::{Typeface, code_well, column, icon, id, row},
+};
 use crate::{
     assets::Icon,
     theme::{Palette, desktop, pane_interior, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, FontWeight, InteractiveElement, IntoElement,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
+    AnyElement, ClickEvent, Context, Div, ExternalPaths, FontWeight, InteractiveElement,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
 };
 use soyeht_client::{agent::terminal_text, markdown};
 use soyeht_protocol::{
@@ -30,31 +33,39 @@ impl Workbench {
             .agent(&pane.pane_id)
             .map_or(0, |view| view.messages.len());
         let scroll = self.transcript_scroll(&pane.pane_id, count);
+        let limit = self.transcript_limit(&pane.pane_id);
         // The transcript is read where it lives and only the elements are built: the last
-        // `TAIL` messages, never a copy of all of them.
-        let markdown = &mut self.markdown;
-        let (rows, hidden, notice, permission) = match self.state.agent(&pane.pane_id) {
+        // `limit` messages, never a copy of all of them. The Markdown cache is taken out of
+        // the workbench while the rows are built, so the transcript is only read.
+        let mut markdown = std::mem::take(&mut self.markdown);
+        let (rows, earlier, notice) = match self.state.agent(&pane.pane_id) {
             Some(view) => {
-                let (shown, hidden) = view.tail();
-                let rows: Vec<AnyElement> = shown
-                    .iter()
-                    .filter(|message| message.subagent_id.is_none())
-                    .filter_map(|message| {
-                        let open = self.open_thoughts.contains(&message.local_id);
-                        transcript_row(message, open, markdown, palette, cx)
-                    })
-                    .collect();
-                let permission = view
-                    .permission
-                    .as_ref()
-                    .map(|request| super::permission::card(&pane.pane_id, request, palette, cx));
-                (rows, hidden, view.notice.clone(), permission)
+                let (shown, hidden) = view.tail(limit);
+                (
+                    self.transcript_entries(shown, &mut markdown, palette, cx),
+                    view.cards.has_earlier(hidden),
+                    view.notice.clone(),
+                )
             }
-            None => (Vec::new(), 0, None, None),
+            None => (Vec::new(), false, None),
         };
+        self.markdown = markdown;
+        let load_earlier = earlier.then(|| self.load_earlier_button(&pane.pane_id, palette, cx));
+        let dropped = pane.pane_id.clone();
         column()
             .flex_1()
             .min_h_0()
+            // Files dropped anywhere on the conversation attach to the composer, and the pane
+            // shows it will take them with an accent border, as the Mac's does.
+            .on_drop(cx.listener(move |this, paths: &ExternalPaths, _, cx| {
+                this.attach_paths(&dropped, paths.paths().to_vec(), cx)
+            }))
+            .drag_over::<ExternalPaths>(move |style, _, _, _| {
+                style
+                    .border(px(desktop::DROP_BORDER))
+                    .border_color(rgb(palette.accent))
+                    .rounded(px(pane_interior::CARD_RADIUS))
+            })
             .child(
                 div()
                     .id(id("transcript", &pane.pane_id))
@@ -67,17 +78,12 @@ impl Workbench {
                     .child(
                         column()
                             .gap(px(pane_interior::STACK_SPACING))
+                            .children(load_earlier)
                             .children(notice.as_deref().map(|text| notice_line(text, palette)))
-                            .children((hidden > 0).then(|| earlier_line(hidden, palette)))
                             .children(rows),
                     ),
             )
-            .children(permission.map(|card| {
-                div()
-                    .px(px(pane_interior::CARD_PADDING))
-                    .pb(px(pane_interior::ROW_SPACING))
-                    .child(card)
-            }))
+            .children(self.cards_under_transcript(pane, palette, cx))
             .child(self.composer(pane, palette, cx))
             .into_any_element()
     }
@@ -98,19 +104,8 @@ pub(super) fn pill(key: SharedString, fill: u32, ink: u32) -> gpui::Stateful<Div
         .active(|style| style.opacity(pane_interior::PRESSED_OPACITY))
 }
 
-fn earlier_line(hidden: usize, palette: &Palette) -> AnyElement {
-    div()
-        .text_size(px(pane_interior::CAPTION_POINT_SIZE))
-        .text_color(rgb(palette.secondary))
-        .child(SharedString::from(format!(
-            "{hidden} earlier message{} not shown",
-            if hidden == 1 { "" } else { "s" }
-        )))
-        .into_any_element()
-}
-
 /// A caption with the small icon the Mac's `Label` puts before it.
-fn labelled(glyph: Icon, color: u32, text: impl Into<SharedString>) -> Div {
+pub(super) fn labelled(glyph: Icon, color: u32, text: impl Into<SharedString>) -> Div {
     row()
         .gap(px(space::X6))
         .text_size(px(pane_interior::CAPTION_POINT_SIZE))
@@ -119,11 +114,11 @@ fn labelled(glyph: Icon, color: u32, text: impl Into<SharedString>) -> Div {
         .child(div().flex_1().min_w_0().child(text.into()))
 }
 
-fn notice_line(text: &str, palette: &Palette) -> AnyElement {
+pub(super) fn notice_line(text: &str, palette: &Palette) -> AnyElement {
     labelled(Icon::Alert, palette.warning(), text.to_owned()).into_any_element()
 }
 
-fn transcript_row(
+pub(super) fn transcript_row(
     message: &TranscriptMessage,
     open: bool,
     markdown: &mut markdown::Cache,
@@ -146,6 +141,7 @@ fn transcript_row(
             .terminal
             .as_ref()
             .map(|output| terminal_block(output, palette)),
+        // A subagent's row is drawn from its group, with the activity it owns under it.
         TranscriptKind::Usage | TranscriptKind::Subagent => None,
         TranscriptKind::Message | TranscriptKind::System => {
             Some(text_row(message, markdown, palette))
@@ -212,6 +208,13 @@ fn text_row(
                     .child(SharedString::from(sender.to_uppercase())),
             )
             .child(body)
+            .children(
+                message
+                    .attachments
+                    .iter()
+                    .filter(|attachments| !attachments.is_empty())
+                    .map(|attachments| sent_chips(attachments, palette)),
+            )
             .into_any_element();
     }
     body.text_color(rgb(palette.secondary)).into_any_element()

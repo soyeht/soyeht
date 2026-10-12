@@ -21,7 +21,8 @@ private func row(_ seq: Int, _ id: String, owner: String? = nil, status: Subagen
     run: SubagentRun(subagentId: id, name: id.capitalized, task: "Task \(id)", status: status))
 }
 
-private func shape(_ entries: [AgentTranscriptEntry]) -> [String] {
+/// The transcript entries as text: a message by its text, a subagent by its name and what it holds.
+func shape(_ entries: [AgentTranscriptEntry]) -> [String] {
   entries.map { entry in
     switch entry {
     case .message(let message): message.text

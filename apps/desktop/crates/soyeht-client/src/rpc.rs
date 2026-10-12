@@ -1,9 +1,10 @@
 //! Request/response correlation over one connection. A caller blocks on `call`; the reader
 //! thread completes the matching request when the response frame arrives.
 
+use crate::attachments::Upload;
 use crate::{Error, Result, transport::Closer};
 use serde_json::{Value, json};
-use soyeht_protocol::{Request, frame::write_json};
+use soyeht_protocol::{Request, attachment::attachment_frames, frame::write_json};
 use std::{
     collections::HashMap,
     io::Write,
@@ -59,6 +60,16 @@ impl Rpc {
 
     /// Sends a typed request and waits for its result.
     pub fn call(&self, request: &Request) -> Result<Value> {
+        self.call_with_uploads(request, &[])
+    }
+
+    /// As [`Rpc::call`], for a request that names attachments: their bytes go first, as binary
+    /// frames, with nothing between them and the request.
+    pub fn call_with_uploads(&self, request: &Request, uploads: &[Upload]) -> Result<Value> {
+        let mut frames = Vec::new();
+        for upload in uploads {
+            frames.extend(attachment_frames(&upload.reference, &upload.bytes)?);
+        }
         let kind = match request {
             Request::PaneStreamSubscribe(_) => Kind::StreamSubscribe,
             _ => Kind::Plain,
@@ -68,7 +79,11 @@ impl Rpc {
         self.lock_pending().insert(id, Pending { kind, reply });
         let sent = {
             let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
-            write_json(&mut *writer, &message).and_then(|()| Ok(writer.flush()?))
+            frames
+                .iter()
+                .try_for_each(|frame| frame.write_to(&mut *writer))
+                .and_then(|()| write_json(&mut *writer, &message))
+                .and_then(|()| Ok(writer.flush()?))
         };
         if let Err(error) = sent {
             self.lock_pending().remove(&id);

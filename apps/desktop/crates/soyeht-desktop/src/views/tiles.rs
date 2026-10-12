@@ -38,6 +38,9 @@ impl Workbench {
         };
         let workspace_id = workspace.workspace_id.clone();
         let place = self.destination;
+        if place == crate::destination::Destination::Tasks {
+            return self.tasks_surface(&workspace_id, palette, cx);
+        }
         if !place.is_pane_grid() {
             return empty(
                 palette,

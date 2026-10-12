@@ -30,6 +30,15 @@ const MODIFIER: &str = "cmd";
 #[cfg(not(target_os = "macos"))]
 const MODIFIER: &str = "ctrl-shift";
 
+/// The tasks surface a replay opens on.
+pub(crate) struct TasksStart {
+    pub view: crate::tasks_ui::TaskView,
+    /// The task whose detail is open.
+    pub task: Option<String>,
+    /// The new-task form is open.
+    pub new_task: bool,
+}
+
 /// What the window starts from: the engine it talks to, the events it draws, and how it opens.
 pub(crate) struct Setup {
     pub engine: Engine,
@@ -39,6 +48,10 @@ pub(crate) struct Setup {
     pub menu: Option<crate::open_menu::Menu>,
     /// The window's size in points, when it is not the one the display suggests.
     pub size: Option<(f32, f32)>,
+    /// Files already attached in the composers, for a replay that draws them.
+    pub staged: Vec<(String, soyeht_client::attachments::Staged)>,
+    /// The tasks surface the window opens on, instead of the panes.
+    pub tasks: Option<TasksStart>,
 }
 
 /// Opens the window and runs until the application quits.
@@ -58,6 +71,8 @@ pub fn run() {
             theme: ThemeName::DEFAULT,
             menu: None,
             size: None,
+            staged: Vec::new(),
+            tasks: None,
         }
     });
 }
@@ -103,6 +118,15 @@ pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
             let workbench = cx.new(|cx| {
                 let mut workbench = Workbench::new(setup.engine, setup.inbox, cx);
                 workbench.theme = setup.theme;
+                workbench.staged.extend(setup.staged);
+                if let Some(start) = setup.tasks {
+                    workbench.destination = crate::destination::Destination::Tasks;
+                    workbench.tasks_ui.view = start.view;
+                    workbench.tasks_ui.selected = start.task;
+                    if start.new_task {
+                        workbench.open_new_task(cx);
+                    }
+                }
                 if let Some(menu) = setup.menu {
                     workbench.menus.toggle(menu, Instant::now());
                 }

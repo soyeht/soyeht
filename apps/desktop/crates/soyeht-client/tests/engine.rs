@@ -3,10 +3,13 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
-use soyeht_client::{Command, Connection, Effect, Engine, Error, Event, State};
+use soyeht_client::{
+    Command, Connection, Effect, Engine, Error, Event, State,
+    attachments::{Draft, Source},
+};
 use soyeht_platform::local::{Listener, Stream};
 use soyeht_protocol::{
-    EventName,
+    EventName, PromptAttachmentKind,
     frame::{Frame, read_json, write_json},
 };
 use std::{path::PathBuf, time::Duration};
@@ -387,5 +390,99 @@ fn a_closed_pane_releases_its_stream_position() {
         }
     ));
 
+    finish(&engine, remote, &path);
+}
+
+fn read_frame(remote: &mut FakeEngine) -> Frame {
+    Frame::read_from(&mut remote.0)
+        .unwrap()
+        .expect("client closed early")
+}
+
+#[test]
+fn a_prompt_with_attachments_sends_their_bytes_as_frames_before_the_request() {
+    let (engine, _inbox, mut remote, path) = connected("attachments");
+    let upload = Draft::new(
+        PromptAttachmentKind::Image,
+        "shot.png".into(),
+        "image/png".into(),
+        3,
+        Source::Bytes(vec![1, 2, 3]),
+        None,
+    );
+    let linked = Draft::new(
+        PromptAttachmentKind::File,
+        "report.pdf".into(),
+        "application/pdf".into(),
+        2_048,
+        Source::HostFile("/work/report.pdf".into()),
+        None,
+    );
+    engine
+        .send(Command::Prompt {
+            pane_id: "t1".into(),
+            text: "look".into(),
+            attachments: vec![upload.clone(), linked],
+        })
+        .unwrap();
+    let Frame::Attachment { header, bytes } = read_frame(&mut remote) else {
+        panic!("the bytes go first, as an attachment frame");
+    };
+    assert_eq!(bytes, [1, 2, 3]);
+    let prompt = remote.expect("pane.prompt");
+    let sent = prompt["params"]["attachments"].as_array().unwrap();
+    assert_eq!(sent[0]["attachmentId"], upload.id);
+    assert_eq!(
+        header,
+        *uuid::Uuid::parse_str(&upload.id).unwrap().as_bytes()
+    );
+    assert_eq!(sent[1]["path"], "/work/report.pdf");
+    assert!(sent[1].get("attachmentId").is_none());
+    remote.reply(&prompt, json!({}));
+    finish(&engine, remote, &path);
+}
+
+#[test]
+fn the_queue_of_waiting_messages_is_read_to_its_last_page() {
+    let (engine, inbox, mut remote, path) = connected("queue");
+    next(&inbox);
+    engine
+        .send(Command::LoadQueue {
+            pane_id: "a1".into(),
+        })
+        .unwrap();
+    let item = |id: &str| {
+        json!({"promptId": id, "text": id, "origin": "human", "status": "queued",
+               "queuedAt": "2026-10-11T12:00:00Z"})
+    };
+    let first = remote.expect("pane.queue.list");
+    assert!(first["params"].get("cursor").is_none());
+    remote.reply(
+        &first,
+        json!({"items": [item("q1")], "draft": false, "nextCursor": "c2"}),
+    );
+    let second = remote.expect("pane.queue.list");
+    assert_eq!(second["params"]["cursor"], "c2");
+    remote.reply(
+        &second,
+        json!({"items": [item("q2")], "draft": false, "paused": true}),
+    );
+    let Event::Queue {
+        pane_id,
+        items,
+        paused,
+    } = next(&inbox)
+    else {
+        panic!("the queue arrives as one event");
+    };
+    assert_eq!(pane_id, "a1");
+    assert_eq!(
+        items
+            .iter()
+            .map(|i| i.prompt_id.as_str())
+            .collect::<Vec<_>>(),
+        ["q1", "q2"]
+    );
+    assert!(paused);
     finish(&engine, remote, &path);
 }

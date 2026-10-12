@@ -5,6 +5,7 @@ use crate::{
     Error, Result,
     commands::{self, Command, INPUT_CHUNK_BYTES},
     event::Event,
+    paging,
     rpc::Rpc,
     session::{EventSink, Session},
     transport,
@@ -206,11 +207,17 @@ fn report(events: &EventSink, error: &Error) -> bool {
 }
 
 fn execute(rpc: &Rpc, command: &Command) -> Result<Option<Event>> {
-    if let Command::Input { pane_id, bytes } = command {
-        return send_input(rpc, pane_id, bytes).map(|()| None);
+    match command {
+        Command::Input { pane_id, bytes } => return send_input(rpc, pane_id, bytes).map(|()| None),
+        Command::LoadQueue { pane_id } => return paging::queue(rpc, pane_id).map(Some),
+        Command::LoadTasks { workspace_id } => return paging::tasks(rpc, workspace_id).map(Some),
+        _ => {}
     }
     match commands::request(command) {
-        Some(request) => commands::outcome(command, rpc.call(&request)?),
+        Some(request) => {
+            let result = rpc.call_with_uploads(&request, &commands::uploads(command))?;
+            commands::outcome(command, result)
+        }
         None => Ok(None),
     }
 }

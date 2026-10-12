@@ -1,6 +1,8 @@
-use crate::{snapshot::Snapshot, streams::StreamOutput};
+use crate::{snapshot::Snapshot, streams::StreamOutput, tasks::TaskUpdate};
 use serde_json::Value;
-use soyeht_protocol::{EventName, HarnessInfo, TranscriptMessage, UsageReading};
+use soyeht_protocol::{
+    EventName, HarnessInfo, LoopConfig, PromptItem, Task, TranscriptMessage, UsageReading,
+};
 
 /// What the connection tells the application, in the order it happened.
 #[derive(Debug, Clone)]
@@ -19,6 +21,24 @@ pub enum Event {
     Transcript {
         pane_id: String,
         items: Vec<TranscriptMessage>,
+        /// Where the page before this one starts, when the engine has earlier messages.
+        next_cursor: Option<String>,
+    },
+    /// What the engine told about the tasks.
+    Task(TaskUpdate),
+    /// A task a request created or dispatched, with the pane it opened for it, if any.
+    TaskPane {
+        task: Task,
+        ticket: u64,
+        pane_id: Option<String>,
+    },
+    /// The loop the engine accepted for a pane.
+    LoopSet { pane_id: String, config: LoopConfig },
+    /// The messages waiting for an agent pane, as the engine holds them.
+    Queue {
+        pane_id: String,
+        items: Vec<PromptItem>,
+        paused: bool,
     },
     /// The pane a request to open one (`Command::CreateTerminal`, `CreateAgent`) created.
     Opened { ticket: u64, pane_id: String },

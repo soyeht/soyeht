@@ -9,7 +9,7 @@ use gpui::{
     AnyElement, AnyView, App, AppContext, Context, Div, ElementId, FontWeight, Hsla,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Render, ScrollHandle,
     SharedString, StatefulInteractiveElement, Styled, Svg, Window, div, linear_color_stop,
-    linear_gradient, px, relative, rgb, svg,
+    linear_gradient, prelude::FluentBuilder, px, relative, rgb, svg,
 };
 
 /// The two faces besides the interface's own, each with the line height its font has. GPUI's
@@ -105,6 +105,71 @@ pub fn working_dot(palette: &Palette) -> Div {
         .size(px(space::X7))
         .rounded_full()
         .bg(rgb(palette.accent))
+}
+
+/// A line of small mono type in the muted ink that is cut short when it does not fit: a status,
+/// a branch.
+pub fn mono_note(palette: &Palette) -> Div {
+    div()
+        .mono()
+        .truncate()
+        .font_weight(FontWeight::MEDIUM)
+        .text_size(px(type_scale::SMALL))
+        .text_color(rgb(palette.muted))
+}
+
+/// A raised pill that opens or closes the choices of an option: an icon, the label and a chevron
+/// that turns over while the choices are open. What a click does is the caller's to attach.
+pub fn option_pill(
+    palette: &'static Palette,
+    key: impl Into<ElementId>,
+    glyph: Icon,
+    text: impl Into<SharedString>,
+    open: bool,
+) -> gpui::Stateful<Div> {
+    neo::raised(palette, radius::PILL, elevation::CHIP)
+        .id(key)
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(space::X6))
+        .px(px(space::X10))
+        .py(px(space::X6))
+        .chrome()
+        .font_weight(FontWeight::SEMIBOLD)
+        .text_size(px(type_scale::CONTROL))
+        .text_color(rgb(palette.secondary))
+        .cursor_pointer()
+        .own_press()
+        .child(icon(glyph, desktop::INLINE_GLYPH, palette.secondary))
+        .child(text.into())
+        .child(icon(
+            if open {
+                Icon::ChevronUp
+            } else {
+                Icon::ChevronDown
+            },
+            desktop::CHEVRON_GLYPH,
+            palette.muted,
+        ))
+}
+
+/// The on/off switch: an accent capsule with the knob on the right when on, a well with the
+/// knob on the left when off.
+pub fn switch(on: bool, palette: &Palette) -> Div {
+    row()
+        .w(px(desktop::LOOP_TOGGLE_WIDTH))
+        .h(px(desktop::LOOP_TOGGLE_HEIGHT))
+        .p(px(space::X2))
+        .rounded_full()
+        .bg(rgb(if on { palette.accent } else { palette.well }))
+        .when(on, |track| track.justify_end())
+        .child(
+            div()
+                .size(px(desktop::LOOP_TOGGLE_KNOB))
+                .rounded_full()
+                .bg(rgb(palette.on_accent)),
+        )
 }
 
 /// A stable element id from a kind and the thing it belongs to.

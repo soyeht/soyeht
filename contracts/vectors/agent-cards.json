@@ -1,0 +1,1053 @@
+{
+  "description": "Agent pane cards shared by the Mac (AgentSilencePresentation, AgentQueuePresentation, AgentSignInState, AgentElicitationFields, AgentTranscriptGrouping, AgentSubagentPresentation, AgentSubagentPreview) and the desktop client (soyeht_client::cards). Both pass every case. Timestamps are ISO 8601.",
+  "elapsedText": [
+    {
+      "seconds": 0,
+      "text": "0m 0s"
+    },
+    {
+      "seconds": 3,
+      "text": "0m 3s"
+    },
+    {
+      "seconds": 154,
+      "text": "2m 34s"
+    },
+    {
+      "seconds": 3599,
+      "text": "59m 59s"
+    },
+    {
+      "seconds": 3600,
+      "text": "1h 0m"
+    },
+    {
+      "seconds": 28800,
+      "text": "8h 0m"
+    },
+    {
+      "seconds": 90061,
+      "text": "25h 1m"
+    }
+  ],
+  "silence": [
+    {
+      "name": "past the no-signal threshold",
+      "silentSince": "2026-09-15T18:00:00.000Z",
+      "paneState": null,
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": 154,
+      "escalated": true,
+      "elapsed": "2m 34s",
+      "title": "No output from the agent for 2m 34s",
+      "detail": "The turn is still active. You can keep waiting or cancel this turn."
+    },
+    {
+      "name": "below the threshold",
+      "silentSince": "2026-09-15T18:02:31.000Z",
+      "paneState": null,
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": 3,
+      "escalated": false,
+      "elapsed": "0m 3s",
+      "title": "Waiting for the first agent output · 0m 3s",
+      "detail": "The turn is active. Nothing from the agent has arrived yet."
+    },
+    {
+      "name": "exactly at the threshold",
+      "silentSince": "2026-09-15T18:01:04.000Z",
+      "paneState": null,
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": 90,
+      "escalated": true,
+      "elapsed": "1m 30s",
+      "title": "No output from the agent for 1m 30s",
+      "detail": "The turn is still active. You can keep waiting or cancel this turn."
+    },
+    {
+      "name": "a time in the future",
+      "silentSince": "2026-09-15T18:03:00.000Z",
+      "paneState": null,
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": null,
+      "escalated": false,
+      "elapsed": null,
+      "title": "Waiting for the first agent output",
+      "detail": "The turn is active. Elapsed time is unavailable. You can keep waiting or cancel this turn."
+    },
+    {
+      "name": "a time that is not a timestamp, pane without a signal",
+      "silentSince": "not-a-timestamp",
+      "paneState": "no_signal",
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": null,
+      "escalated": true,
+      "elapsed": null,
+      "title": "The agent has produced no output",
+      "detail": "The turn is active. Elapsed time is unavailable. You can keep waiting or cancel this turn."
+    },
+    {
+      "name": "the pane has no signal before the threshold",
+      "silentSince": "2026-09-15T18:02:31.000Z",
+      "paneState": "no_signal",
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": 3,
+      "escalated": true,
+      "elapsed": "0m 3s",
+      "title": "No output from the agent for 0m 3s",
+      "detail": "The turn is still active. You can keep waiting or cancel this turn."
+    },
+    {
+      "name": "just started",
+      "silentSince": "2026-09-15T18:02:34.000Z",
+      "paneState": null,
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": 0,
+      "escalated": false,
+      "elapsed": "0m 0s",
+      "title": "Waiting for the first agent output · 0m 0s",
+      "detail": "The turn is active. Nothing from the agent has arrived yet."
+    },
+    {
+      "name": "a timestamp without fractions",
+      "silentSince": "2026-09-15T18:00:00Z",
+      "paneState": null,
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": 154,
+      "escalated": true,
+      "elapsed": "2m 34s",
+      "title": "No output from the agent for 2m 34s",
+      "detail": "The turn is still active. You can keep waiting or cancel this turn."
+    },
+    {
+      "name": "a machine asleep for hours",
+      "silentSince": "2026-09-15T10:02:34.000Z",
+      "paneState": null,
+      "now": "2026-09-15T18:02:34.000Z",
+      "elapsedSeconds": 28800,
+      "escalated": true,
+      "elapsed": "8h 0m",
+      "title": "No output from the agent for 8h 0m",
+      "detail": "The turn is still active. You can keep waiting or cancel this turn."
+    }
+  ],
+  "silenceLabels": {
+    "cancelTurn": "Cancel turn"
+  },
+  "queue": [
+    {
+      "name": "two typed messages",
+      "items": [
+        {
+          "promptId": "q1",
+          "text": "run the tests",
+          "origin": "human",
+          "status": "queued",
+          "queuedAt": "2026-09-15T18:00:00.000Z"
+        },
+        {
+          "promptId": "q2",
+          "text": "then commit",
+          "origin": "human",
+          "status": "queued",
+          "queuedAt": "2026-09-15T18:00:00.000Z"
+        }
+      ],
+      "paused": false,
+      "summary": "2 queued",
+      "rows": [
+        {
+          "sender": null,
+          "text": "run the tests",
+          "attachmentCount": null
+        },
+        {
+          "sender": null,
+          "text": "then commit",
+          "attachmentCount": null
+        }
+      ]
+    },
+    {
+      "name": "one message from an agent among others",
+      "items": [
+        {
+          "promptId": "q1",
+          "text": "ping",
+          "origin": "automatic",
+          "status": "queued",
+          "queuedAt": "2026-09-15T18:00:00.000Z",
+          "agentMessage": {
+            "paneId": "p-aria",
+            "name": "aria",
+            "harness": "claude"
+          }
+        },
+        {
+          "promptId": "q2",
+          "text": "later",
+          "origin": "human",
+          "status": "queued",
+          "queuedAt": "2026-09-15T18:00:00.000Z"
+        }
+      ],
+      "paused": false,
+      "summary": "1 message waiting",
+      "rows": [
+        {
+          "sender": "From aria",
+          "text": "ping",
+          "attachmentCount": null
+        },
+        {
+          "sender": null,
+          "text": "later",
+          "attachmentCount": null
+        }
+      ]
+    },
+    {
+      "name": "two messages from agents",
+      "items": [
+        {
+          "promptId": "q1",
+          "text": "a",
+          "origin": "automatic",
+          "status": "queued",
+          "queuedAt": "2026-09-15T18:00:00.000Z",
+          "agentMessage": {
+            "paneId": "p-aria",
+            "name": "aria",
+            "harness": "claude"
+          }
+        },
+        {
+          "promptId": "q2",
+          "text": "b",
+          "origin": "automatic",
+          "status": "queued",
+          "queuedAt": "2026-09-15T18:00:00.000Z",
+          "agentMessage": {
+            "paneId": "p-x",
+            "name": "  ",
+            "harness": "codex"
+          }
+        }
+      ],
+      "paused": false,
+      "summary": "2 messages waiting",
+      "rows": [
+        {
+          "sender": "From aria",
+          "text": "a",
+          "attachmentCount": null
+        },
+        {
+          "sender": "From codex",
+          "text": "b",
+          "attachmentCount": null
+        }
+      ]
+    },
+    {
+      "name": "paused after an interruption",
+      "items": [
+        {
+          "promptId": "q1",
+          "text": "keep going",
+          "origin": "human",
+          "status": "queued",
+          "queuedAt": "2026-09-15T18:00:00.000Z",
+          "attachments": [
+            {
+              "kind": "file",
+              "name": "f0.txt",
+              "mimeType": "text/plain",
+              "bytes": "10"
+            },
+            {
+              "kind": "file",
+              "name": "f1.txt",
+              "mimeType": "text/plain",
+              "bytes": "10"
+            }
+          ]
+        }
+      ],
+      "paused": true,
+      "summary": "1 queued · Queue paused after interruption",
+      "rows": [
+        {
+          "sender": null,
+          "text": "keep going",
+          "attachmentCount": 2
+        }
+      ]
+    },
+    {
+      "name": "paused and empty",
+      "items": [],
+      "paused": true,
+      "summary": "0 queued · Queue paused after interruption",
+      "rows": []
+    }
+  ],
+  "queueLabels": {
+    "resume": "Resume",
+    "remove": "Remove queued message",
+    "sendNow": "Send now",
+    "sendNowHint": "This agent only reads new messages between turns"
+  },
+  "signIn": [
+    {
+      "name": "a sign-in waits in a terminal",
+      "login": {
+        "phase": "waiting",
+        "terminalPaneId": "t-1"
+      },
+      "authMethods": [],
+      "failure": null,
+      "state": "waiting",
+      "title": "Finish signing in",
+      "detail": "Complete the sign-in in your browser. Soyeht continues as soon as it is done.",
+      "isWorking": false,
+      "terminalPaneId": "t-1"
+    },
+    {
+      "name": "a sign-in waits without a terminal",
+      "login": {
+        "phase": "waiting"
+      },
+      "authMethods": [],
+      "failure": null,
+      "state": "waiting",
+      "title": "Finish signing in",
+      "detail": "Complete the sign-in in your browser. Soyeht continues as soon as it is done.",
+      "isWorking": false,
+      "terminalPaneId": null
+    },
+    {
+      "name": "the new account is being checked",
+      "login": {
+        "phase": "verifying"
+      },
+      "authMethods": [],
+      "failure": null,
+      "state": "verifying",
+      "title": "Checking the new account",
+      "detail": "Restarting the agent. The conversation stays.",
+      "isWorking": true
+    },
+    {
+      "name": "the agent is signing out",
+      "login": {
+        "phase": "signing_out"
+      },
+      "authMethods": [],
+      "failure": null,
+      "state": "signingOut",
+      "title": "Signing out",
+      "detail": "The agent is forgetting its account.",
+      "isWorking": true
+    },
+    {
+      "name": "the agent needs a sign-in",
+      "login": null,
+      "authMethods": [
+        {
+          "id": "login",
+          "name": "Claude account",
+          "terminal": true,
+          "description": "Opens a terminal here"
+        },
+        {
+          "id": "key",
+          "name": "API key",
+          "terminal": false
+        }
+      ],
+      "failure": null,
+      "state": "choose",
+      "title": "Sign in to continue",
+      "detail": null,
+      "isWorking": false,
+      "methods": [
+        {
+          "id": "login",
+          "name": "Claude account",
+          "detail": "Opens a terminal here",
+          "opensTerminal": true
+        },
+        {
+          "id": "key",
+          "name": "API key",
+          "detail": null,
+          "opensTerminal": false
+        }
+      ],
+      "chooseFailure": null
+    },
+    {
+      "name": "the agent needs a sign-in after a failure",
+      "login": null,
+      "authMethods": [
+        {
+          "id": "login",
+          "name": "Claude account",
+          "terminal": true,
+          "description": "Opens a terminal here"
+        },
+        {
+          "id": "key",
+          "name": "API key",
+          "terminal": false
+        }
+      ],
+      "failure": "Cancelled by you",
+      "state": "choose",
+      "title": "Sign in to continue",
+      "detail": null,
+      "isWorking": false,
+      "methods": [
+        {
+          "id": "login",
+          "name": "Claude account",
+          "detail": "Opens a terminal here",
+          "opensTerminal": true
+        },
+        {
+          "id": "key",
+          "name": "API key",
+          "detail": null,
+          "opensTerminal": false
+        }
+      ],
+      "chooseFailure": "Cancelled by you"
+    },
+    {
+      "name": "a sign-in that did not finish on a signed-in pane",
+      "login": null,
+      "authMethods": [],
+      "failure": "The browser closed",
+      "state": "failed",
+      "title": "Sign-in did not finish",
+      "detail": "The browser closed",
+      "isWorking": false,
+      "reason": "The browser closed"
+    },
+    {
+      "name": "nothing to sign in to",
+      "login": null,
+      "authMethods": [],
+      "failure": null,
+      "state": "hidden",
+      "title": null,
+      "detail": null,
+      "isWorking": false
+    },
+    {
+      "name": "a running sign-in wins over the choices",
+      "login": {
+        "phase": "waiting",
+        "terminalPaneId": "t-2"
+      },
+      "authMethods": [
+        {
+          "id": "login",
+          "name": "Claude account",
+          "terminal": true,
+          "description": "Opens a terminal here"
+        },
+        {
+          "id": "key",
+          "name": "API key",
+          "terminal": false
+        }
+      ],
+      "failure": "old",
+      "state": "waiting",
+      "title": "Finish signing in",
+      "detail": "Complete the sign-in in your browser. Soyeht continues as soon as it is done.",
+      "isWorking": false,
+      "terminalPaneId": "t-2"
+    }
+  ],
+  "signInLabels": {
+    "chooseTerminalHint": "Choose a method to open its sign-in terminal. Enter credentials there.",
+    "showTerminal": "Show terminal",
+    "cancelSignIn": "Cancel sign-in",
+    "dismiss": "Dismiss"
+  },
+  "elicitation": [
+    {
+      "name": "fields sorted by key with their titles",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "title": "Zone"
+          },
+          "alpha": {
+            "title": "Alpha value"
+          },
+          "mid": {
+            "type": "string"
+          }
+        }
+      },
+      "fields": [
+        {
+          "key": "alpha",
+          "title": "Alpha value"
+        },
+        {
+          "key": "mid",
+          "title": "mid"
+        },
+        {
+          "key": "zone",
+          "title": "Zone"
+        }
+      ]
+    },
+    {
+      "name": "a schema without properties",
+      "schema": {
+        "type": "object"
+      },
+      "fields": []
+    },
+    {
+      "name": "a schema that is not an object",
+      "schema": "text",
+      "fields": []
+    },
+    {
+      "name": "a property that is not an object",
+      "schema": {
+        "properties": {
+          "a": "x",
+          "b": {
+            "title": "Bee"
+          }
+        }
+      },
+      "fields": [
+        {
+          "key": "a",
+          "title": "a"
+        },
+        {
+          "key": "b",
+          "title": "Bee"
+        }
+      ]
+    }
+  ],
+  "elicitationLabels": {
+    "cancel": "Cancel",
+    "submit": "Submit"
+  },
+  "subagentGrouping": [
+    {
+      "name": "activity nests under its row",
+      "messages": [
+        {
+          "localId": "m1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "message",
+          "text": "delegating",
+          "complete": true
+        },
+        {
+          "localId": "m2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "alpha",
+            "name": "Alpha",
+            "task": "Task alpha",
+            "status": "running"
+          }
+        },
+        {
+          "localId": "m3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "beta",
+            "name": "Beta",
+            "task": "Task beta",
+            "status": "running"
+          }
+        },
+        {
+          "localId": "m4",
+          "generation": 1,
+          "seq": "4",
+          "role": "assistant",
+          "kind": "message",
+          "text": "alpha tool",
+          "complete": true,
+          "subagentId": "alpha"
+        },
+        {
+          "localId": "m5",
+          "generation": 1,
+          "seq": "5",
+          "role": "assistant",
+          "kind": "message",
+          "text": "beta says",
+          "complete": true,
+          "subagentId": "beta"
+        },
+        {
+          "localId": "m6",
+          "generation": 1,
+          "seq": "6",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "gamma",
+            "name": "Gamma",
+            "task": "Task gamma",
+            "status": "running"
+          },
+          "subagentId": "alpha"
+        },
+        {
+          "localId": "m7",
+          "generation": 1,
+          "seq": "7",
+          "role": "assistant",
+          "kind": "message",
+          "text": "gamma says",
+          "complete": true,
+          "subagentId": "gamma"
+        },
+        {
+          "localId": "m8",
+          "generation": 1,
+          "seq": "8",
+          "role": "assistant",
+          "kind": "message",
+          "text": "alpha says",
+          "complete": true,
+          "subagentId": "alpha"
+        },
+        {
+          "localId": "m9",
+          "generation": 1,
+          "seq": "9",
+          "role": "assistant",
+          "kind": "message",
+          "text": "both done",
+          "complete": true
+        }
+      ],
+      "shape": [
+        "delegating",
+        "Alpha[alpha tool,Gamma[gamma says],alpha says]",
+        "Beta[beta says]",
+        "both done"
+      ],
+      "awaited": 0
+    },
+    {
+      "name": "activity whose row is on an older page stays grouped where it starts",
+      "messages": [
+        {
+          "localId": "m10",
+          "generation": 1,
+          "seq": "10",
+          "role": "assistant",
+          "kind": "message",
+          "text": "orphan tool",
+          "complete": true,
+          "subagentId": "early"
+        },
+        {
+          "localId": "m11",
+          "generation": 1,
+          "seq": "11",
+          "role": "assistant",
+          "kind": "message",
+          "text": "parent",
+          "complete": true
+        },
+        {
+          "localId": "m12",
+          "generation": 1,
+          "seq": "12",
+          "role": "assistant",
+          "kind": "message",
+          "text": "orphan says",
+          "complete": true,
+          "subagentId": "early"
+        }
+      ],
+      "shape": [
+        "?[orphan tool,orphan says]",
+        "parent"
+      ],
+      "awaited": 0
+    },
+    {
+      "name": "the parent waits on running rows that end the transcript",
+      "messages": [
+        {
+          "localId": "m1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "message",
+          "text": "delegating",
+          "complete": true
+        },
+        {
+          "localId": "m2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "alpha",
+            "name": "Alpha",
+            "task": "Task alpha",
+            "status": "running"
+          }
+        },
+        {
+          "localId": "m3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "beta",
+            "name": "Beta",
+            "task": "Task beta",
+            "status": "running"
+          }
+        }
+      ],
+      "shape": [
+        "delegating",
+        "Alpha[]",
+        "Beta[]"
+      ],
+      "awaited": 2
+    },
+    {
+      "name": "a finished row is not awaited",
+      "messages": [
+        {
+          "localId": "m1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "message",
+          "text": "delegating",
+          "complete": true
+        },
+        {
+          "localId": "m2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "alpha",
+            "name": "Alpha",
+            "task": "Task alpha",
+            "status": "completed"
+          }
+        },
+        {
+          "localId": "m3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "beta",
+            "name": "Beta",
+            "task": "Task beta",
+            "status": "running"
+          }
+        }
+      ],
+      "shape": [
+        "delegating",
+        "Alpha[]",
+        "Beta[]"
+      ],
+      "awaited": 1
+    },
+    {
+      "name": "a message after the rows ends the wait",
+      "messages": [
+        {
+          "localId": "m1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "subagent",
+          "text": "",
+          "complete": true,
+          "subagent": {
+            "subagentId": "alpha",
+            "name": "Alpha",
+            "task": "Task alpha",
+            "status": "running"
+          }
+        },
+        {
+          "localId": "m2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "message",
+          "text": "moving on",
+          "complete": true
+        }
+      ],
+      "shape": [
+        "Alpha[]",
+        "moving on"
+      ],
+      "awaited": 0
+    }
+  ],
+  "subagentGroupingEntryIds": [
+    {
+      "name": "an orphan group is named after its subagent",
+      "messages": [
+        {
+          "localId": "m10",
+          "generation": 1,
+          "seq": "10",
+          "role": "assistant",
+          "kind": "message",
+          "text": "orphan tool",
+          "complete": true,
+          "subagentId": "early"
+        }
+      ],
+      "ids": [
+        "subagent:early"
+      ]
+    },
+    {
+      "name": "a message keeps its own id",
+      "messages": [
+        {
+          "localId": "m1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "message",
+          "text": "hello",
+          "complete": true
+        }
+      ],
+      "ids": [
+        "m1"
+      ]
+    }
+  ],
+  "subagentPresentation": [
+    {
+      "name": "running with a start time",
+      "run": {
+        "subagentId": "alpha",
+        "name": "Explore",
+        "task": "Look",
+        "status": "running",
+        "startedAt": "2026-09-30T12:00:00Z"
+      },
+      "now": "2026-09-30T12:00:12Z",
+      "status": "running",
+      "trailing": "0m 12s",
+      "model": null,
+      "summary": null
+    },
+    {
+      "name": "running without a start time",
+      "run": {
+        "subagentId": "alpha",
+        "name": "Explore",
+        "task": "Look",
+        "status": "running"
+      },
+      "now": "2026-09-30T12:00:12Z",
+      "status": "running",
+      "trailing": "running",
+      "model": null,
+      "summary": null
+    },
+    {
+      "name": "completed with a model and summary",
+      "run": {
+        "subagentId": "alpha",
+        "name": "Explore",
+        "task": "Look",
+        "status": "completed",
+        "model": "claude-model",
+        "summary": "Found it"
+      },
+      "now": "2026-09-30T12:00:12Z",
+      "status": "succeeded",
+      "trailing": "done",
+      "model": "claude-model",
+      "summary": "Found it"
+    },
+    {
+      "name": "failed",
+      "run": {
+        "subagentId": "alpha",
+        "name": "Explore",
+        "task": "Look",
+        "status": "failed"
+      },
+      "now": "2026-09-30T12:00:12Z",
+      "status": "failed",
+      "trailing": "failed",
+      "model": null,
+      "summary": null
+    },
+    {
+      "name": "disconnected",
+      "run": {
+        "subagentId": "alpha",
+        "name": "Explore",
+        "task": "Look",
+        "status": "disconnected"
+      },
+      "now": "2026-09-30T12:00:12Z",
+      "status": "failed",
+      "trailing": "disconnected",
+      "model": null,
+      "summary": null
+    },
+    {
+      "name": "cancelled",
+      "run": {
+        "subagentId": "alpha",
+        "name": "Explore",
+        "task": "Look",
+        "status": "cancelled"
+      },
+      "now": "2026-09-30T12:00:12Z",
+      "status": "stopped",
+      "trailing": "cancelled",
+      "model": null,
+      "summary": null
+    },
+    {
+      "name": "the summary is previewed",
+      "run": {
+        "subagentId": "alpha",
+        "name": "Explore",
+        "task": "Look",
+        "status": "completed",
+        "summary": "Contents verbatim:\n```\nhello\n```"
+      },
+      "now": "2026-09-30T12:00:12Z",
+      "status": "succeeded",
+      "trailing": "done",
+      "model": null,
+      "summary": "hello"
+    },
+    {
+      "name": "a run that has not arrived",
+      "run": null,
+      "now": "2026-09-30T12:00:12Z",
+      "status": "stopped",
+      "trailing": "",
+      "model": null,
+      "summary": null
+    }
+  ],
+  "subagentRunFallbackName": "Subagent",
+  "subagentWaiting": [
+    {
+      "count": 1,
+      "text": "Waiting for 1 subagent"
+    },
+    {
+      "count": 2,
+      "text": "Waiting for 2 subagents"
+    }
+  ],
+  "subagentPreview": [
+    {
+      "text": "The file exists. Contents verbatim:\n```\nhello\nworld\n```\n",
+      "limit": 160,
+      "preview": "hello · world"
+    },
+    {
+      "text": "Top-level contents of /srv/app:\n\n- src/\n- README.md\n",
+      "limit": 160,
+      "preview": "src/ · README.md"
+    },
+    {
+      "text": "## Result\n  The config   is\tin config/app.toml.  ",
+      "limit": 160,
+      "preview": "Result · The config is in config/app.toml."
+    },
+    {
+      "text": "Found these files:",
+      "limit": 160,
+      "preview": "Found these files:"
+    },
+    {
+      "text": "```\n```\n  \n",
+      "limit": 160,
+      "preview": null
+    },
+    {
+      "text": "alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha alpha",
+      "limit": 40,
+      "preview": "alpha alpha alpha alpha alpha alpha…"
+    },
+    {
+      "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "limit": 10,
+      "preview": "xxxxxxxxx…"
+    },
+    {
+      "text": "short",
+      "limit": 10,
+      "preview": "short"
+    },
+    {
+      "text": "• one\n+ two\n* three",
+      "limit": 160,
+      "preview": "one · two · three"
+    }
+  ],
+  "transcriptLabels": {
+    "loadEarlier": "Load earlier messages"
+  }
+}

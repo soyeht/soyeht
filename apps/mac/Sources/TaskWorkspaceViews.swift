@@ -126,9 +126,9 @@ struct TaskWorkspaceView: View {
 
   private var emptyState: some View {
     ContentUnavailableView {
-      Label("No tasks", systemImage: "checklist")
+      Label(TaskPresentation.emptyTitle, systemImage: "checklist")
     } description: {
-      Text("Create a task for this workspace, then dispatch it or let an idle pane claim it.")
+      Text(TaskPresentation.emptyDetail)
     } actions: {
       Button("New task") { showNewTask = true }.buttonStyle(NeoPillButtonStyle(accent: true))
     }.font(MacTheme.chrome(MacTheme.TypeScale.body))
@@ -136,8 +136,7 @@ struct TaskWorkspaceView: View {
   }
 
   private var summary: String {
-    let active = tasks.filter { $0.state == .in_progress }.count
-    return "\(tasks.count) tasks · \(active) in progress · \(attention.count) need you"
+    TaskPresentation.summary(tasks: tasks, attention: attention.count)
   }
 
   private var workspaceName: String {
@@ -146,12 +145,12 @@ struct TaskWorkspaceView: View {
 
   private var dispatchMenu: some View {
     Menu {
-      let ready = tasks.filter { $0.state == .todo && $0.ownerPaneId == nil }
+      let ready = TaskPresentation.readyToDispatch(tasks)
       if ready.isEmpty {
-        Text("No task is ready")
+        Text(TaskPresentation.noTaskReady)
       } else {
         ForEach(ready, id: \.taskId) { task in
-          Button("\(task.taskId) · \(task.title)") { client.dispatchTask(task) }
+          Button(TaskPresentation.dispatchLabel(task)) { client.dispatchTask(task) }
         }
       }
     } label: {
@@ -247,11 +246,7 @@ private struct TaskBoard: View {
   let tasks: [TaskRecord]
   let open: (TaskRecord) -> Void
 
-  private var visibleStates: [TaskState] {
-    var states: [TaskState] = [.todo, .in_progress, .in_review, .completed]
-    if tasks.contains(where: { $0.state == .cancelled }) { states.append(.cancelled) }
-    return states
-  }
+  private var visibleStates: [TaskState] { TaskPresentation.boardStates(tasks) }
 
   var body: some View {
     ScrollView([.horizontal, .vertical]) {
@@ -362,21 +357,12 @@ private struct TaskCard: View {
     .neoRaised(radius: MacTheme.Radius.control, elevation: .taskCard)
   }
 
-  private var statusLine: String {
-    task.reviewBadge.map { "\($0.title) · \(task.phrase)" } ?? task.phrase
-  }
+  private var statusLine: String { TaskPresentation.statusLine(task) }
 
-  private var indicatorColor: Color {
-    if let badge = task.reviewBadge { return badge.color }
-    if task.blocking != nil { return MacTheme.warning }
-    return task.state.color
-  }
+  private var indicatorColor: Color { MacTheme.color(for: TaskPresentation.indicator(task)) }
 
   private var ownerColor: Color {
-    let colors = [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand]
-    guard let ownerName else { return MacTheme.well }
-    let value = ownerName.utf8.reduce(0) { ($0 + Int($1)) % colors.count }
-    return colors[value]
+    ownerName.map(taskOwnerColor) ?? MacTheme.well
   }
 }
 
@@ -385,11 +371,7 @@ private struct TaskList: View {
   let tasks: [TaskRecord]
   let open: (TaskRecord) -> Void
 
-  private var visibleStates: [TaskState] {
-    var states: [TaskState] = [.in_progress, .in_review, .todo, .completed]
-    if tasks.contains(where: { $0.state == .cancelled }) { states.append(.cancelled) }
-    return states
-  }
+  private var visibleStates: [TaskState] { TaskPresentation.listStates(tasks) }
 
   var body: some View {
     GeometryReader { geometry in
@@ -398,7 +380,7 @@ private struct TaskList: View {
           TaskListHeader()
           Rectangle().fill(MacTheme.well).frame(height: 1)
           ForEach(visibleStates, id: \.rawValue) { state in
-            let rows = tasks.filter { $0.state == state }.sorted(by: taskOrder)
+            let rows = tasks.filter { $0.state == state }.sorted(by: TaskPresentation.listPrecedes)
             if !rows.isEmpty {
               TaskListGroup(
                 client: client, state: state, tasks: rows, open: open)
@@ -411,13 +393,6 @@ private struct TaskList: View {
     }
   }
 
-  private func taskOrder(_ left: TaskRecord, _ right: TaskRecord) -> Bool {
-    let priorities: [TaskPriority] = [.urgent, .high, .medium, .low]
-    let leftIndex = priorities.firstIndex(of: left.priority) ?? priorities.count
-    let rightIndex = priorities.firstIndex(of: right.priority) ?? priorities.count
-    if leftIndex != rightIndex { return leftIndex < rightIndex }
-    return left.taskId < right.taskId
-  }
 }
 
 private struct TaskListHeader: View {
@@ -559,9 +534,12 @@ private struct TaskOwnerChip: View {
 }
 
 @MainActor private func taskOwnerColor(_ name: String) -> Color {
-  let colors = [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand]
-  let value = name.utf8.reduce(0) { ($0 + Int($1)) % colors.count }
-  return colors[value]
+  switch TaskPresentation.ownerPlate(name) {
+  case .rose: MacTheme.agentRose
+  case .blue: MacTheme.agentBlue
+  case .green: MacTheme.agentGreen
+  case .sand: MacTheme.agentSand
+  }
 }
 
 private struct AttentionPopover: View {
@@ -659,7 +637,7 @@ private struct TaskDetailSheet: View {
 
   private func runnerFacts(_ task: TaskRecord) -> some View {
     HStack(spacing: MacTheme.Space.x8) {
-      Label(runnerName(task), systemImage: "cpu")
+      Label(TaskPresentation.runnerName(task), systemImage: "cpu")
         .font(MacTheme.chrome(MacTheme.TypeScale.small, weight: .bold))
         .foregroundStyle(MacTheme.ink).padding(.horizontal, 10).padding(.vertical, 4)
         .neoRaised(radius: MacTheme.Radius.pill, elevation: .chip)
@@ -669,14 +647,6 @@ private struct TaskDetailSheet: View {
           .foregroundStyle(MacTheme.muted).lineLimit(1)
       }
     }
-  }
-
-  private func runnerName(_ task: TaskRecord) -> String {
-    guard let executor = task.executor, !executor.workspaceDefault else {
-      return "Workspace default"
-    }
-    return [executor.harness, executor.model, executor.effort]
-      .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
   }
 
   private func ownerName(_ task: TaskRecord) -> String? {
@@ -694,8 +664,7 @@ private struct TaskDetailSheet: View {
 
   private var subitems: some View {
     let values = detail?.subitems ?? []
-    let done = values.filter { $0.state == .done }.count
-    return DetailGroup(title: "SUBITEMS · \(done) OF \(values.count)") {
+    return DetailGroup(title: TaskPresentation.subitemsTitle(values)) {
       if detail?.subitems.isEmpty != false {
         Text("No subitems.").font(MacTheme.chrome(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.secondary)
@@ -722,9 +691,9 @@ private struct TaskDetailSheet: View {
     DetailGroup(title: "ATTEMPTS") {
       ForEach(detail?.attempts ?? [], id: \.n) { attempt in
         VStack(alignment: .leading, spacing: 3) {
-          Text("Attempt \(identifier: attempt.n) · \(attempt.harness) · \(attempt.model)").font(
+          Text(TaskPresentation.attemptLine(attempt)).font(
             MacTheme.chrome(MacTheme.TypeScale.control, weight: .semibold))
-          Text(attempt.result?.title ?? "active").font(
+          Text(TaskPresentation.attemptOutcome(attempt)).font(
             MacTheme.chrome(MacTheme.TypeScale.small)
           ).foregroundStyle(MacTheme.secondary)
           if let value = attempt.summary {
@@ -744,18 +713,14 @@ private struct TaskDetailSheet: View {
   }
 
   private var driftReview: some View {
-    let lines = (detail?.comments ?? []).flatMap { comment in
-      comment.text.split(separator: "\n").map(String.init).filter { $0.contains("→") }
-    }
+    let lines = TaskPresentation.driftFindings(detail?.comments ?? [])
     return DetailGroup(title: "DRIFT REVIEW") {
       DeclarationList(
         title: "Contract changes",
-        values: detail?.task.contractChanges?.map {
-          "\($0.path)::\($0.name) · \($0.label.rawValue) · \($0.contractRef)"
-        } ?? [])
+        values: detail?.task.contractChanges?.map(TaskPresentation.contractChange) ?? [])
       DeclarationList(
         title: "Out-of-scope edits",
-        values: detail?.task.outOfScopeEdits?.map { "\($0.path) · \($0.reason)" } ?? [])
+        values: detail?.task.outOfScopeEdits?.map(TaskPresentation.outOfScopeEdit) ?? [])
       if lines.isEmpty {
         Text("No reviewer findings.").font(MacTheme.chrome(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.secondary)
@@ -770,7 +735,7 @@ private struct TaskDetailSheet: View {
 
   private var timeline: some View {
     DetailGroup(title: "HISTORY AND COMMENTS") {
-      ForEach(timelineEntries) { entry in
+      ForEach(timelineEntries, id: \.id) { entry in
         HStack(alignment: .top, spacing: MacTheme.Space.x8) {
           Image(systemName: entry.author == nil ? "circle.fill" : "person.crop.circle.fill")
             .font(.system(size: 10)).foregroundStyle(MacTheme.muted).padding(.top, 3)
@@ -792,18 +757,8 @@ private struct TaskDetailSheet: View {
     }
   }
 
-  private var timelineEntries: [TaskTimelineEntry] {
-    let moves = (detail?.history ?? []).enumerated().map { index, move in
-      TaskTimelineEntry(
-        id: "move-\(index)-\(move.at)", author: nil,
-        text: "\(move.actor) · \(move.from.title) → \(move.to.title) · \(move.reason)", at: move.at)
-    }
-    let comments = (detail?.comments ?? []).map { comment in
-      TaskTimelineEntry(
-        id: "comment-\(comment.commentId)", author: comment.author, text: comment.text,
-        at: comment.at)
-    }
-    return (moves + comments).sorted { $0.at < $1.at }
+  private var timelineEntries: [TaskPresentation.TimelineEntry] {
+    detail.map(TaskPresentation.timeline) ?? []
   }
 
   private var commentPreview: some View {
@@ -826,13 +781,6 @@ private struct TaskDetailSheet: View {
         .foregroundStyle(MacTheme.muted)
     }.accessibilityHidden(true)
   }
-}
-
-private struct TaskTimelineEntry: Identifiable {
-  let id: String
-  let author: String?
-  let text: String
-  let at: String
 }
 
 private struct DetailStatePill: View {
@@ -936,20 +884,13 @@ private struct NewTaskSheet: View {
     missingRequiredFields.isEmpty && (workspaceDefault || !harness.isEmpty)
   }
   private var missingRequiredFields: [String] {
-    [
-      ("title", title),
-      ("description", description),
-      ("MUST NOT CHANGE", mustNotChange),
-    ].compactMap { name, value in
-      value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? name : nil
-    }
+    TaskPresentation.missingRequiredFields(
+      title: title, description: description, mustNotChange: mustNotChange)
   }
   private var actionHint: String {
-    if !missingRequiredFields.isEmpty {
-      return "Required: \(missingRequiredFields.joined(separator: ", "))"
-    }
-    if !workspaceDefault && harness.isEmpty { return "Required: choose an agent" }
-    return "⌘↩ create · ⇧⌘↩ create & dispatch"
+    TaskPresentation.actionHint(
+      missing: missingRequiredFields, workspaceDefault: workspaceDefault, harness: harness,
+      shortcuts: "⌘↩ create · ⇧⌘↩ create & dispatch")
   }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
   private var permissionModes: AgentPermissionModes? {
@@ -1094,16 +1035,15 @@ private struct NewTaskSheet: View {
   }
 
   private var runnerTitle: String {
-    guard !workspaceDefault else { return "Workspace default" }
-    let harnessName = client.harnesses.first { $0.id == harness }?.name ?? "Choose an agent"
-    let modelName = catalogue?.models.first { $0.id == model }?.name
-    let effortName = effortOption?.options.first { $0.value == effort }?.name
-    return [harnessName, modelName, effortName].compactMap { $0 }.joined(separator: " · ")
+    TaskPresentation.runnerTitle(
+      workspaceDefault: workspaceDefault,
+      harnessName: client.harnesses.first { $0.id == harness }?.name,
+      modelName: catalogue?.models.first { $0.id == model }?.name,
+      effortName: effortOption?.options.first { $0.value == effort }?.name)
   }
 
   private var dependencyTitle: String {
-    guard let first = dependencies.sorted().first else { return "dependencies" }
-    return dependencies.count == 1 ? "after \(first)" : "after \(first) +\(dependencies.count - 1)"
+    TaskPresentation.dependencyTitle(dependencies)
   }
 
   private var verificationEditor: some View {
@@ -1274,49 +1214,37 @@ extension String {
   }
 }
 
+@MainActor extension MacTheme {
+  fileprivate static func color(for role: TaskRole) -> Color {
+    switch role {
+    case .accent: accent
+    case .secondary: secondary
+    case .warning: warning
+    case .success: success
+    case .danger: urgent
+    }
+  }
+}
+
 @MainActor extension TaskState {
-  fileprivate var title: String {
-    switch self {
-    case .todo: "To do"
-    case .in_progress: "In progress"
-    case .in_review: "In review"
-    case .completed: "Completed"
-    case .cancelled: "Cancelled"
-    }
-  }
-  fileprivate var color: Color {
-    switch self {
-    case .todo: MacTheme.secondary
-    case .in_progress: MacTheme.accent
-    case .in_review: MacTheme.warning
-    case .completed: MacTheme.success
-    case .cancelled: MacTheme.urgent
-    }
-  }
+  fileprivate var title: String { TaskPresentation.title(self) }
+  fileprivate var color: Color { MacTheme.color(for: TaskPresentation.role(self)) }
 }
 
 @MainActor extension TaskPriority {
-  fileprivate static let all: [TaskPriority] = [.urgent, .high, .medium, .low]
-  fileprivate var title: String { rawValue.replacingOccurrences(of: "_", with: " ").capitalized }
-  fileprivate var color: Color {
-    switch self {
-    case .urgent: MacTheme.urgent
-    case .high: MacTheme.warning
-    case .medium: MacTheme.accent
-    case .low: MacTheme.secondary
-    }
-  }
+  fileprivate static let all: [TaskPriority] = TaskPresentation.priorities
+  fileprivate var title: String { TaskPresentation.title(self) }
 }
 
 @MainActor extension TaskReviewBadge {
-  fileprivate var title: String { self == .your_turn ? "YOUR TURN" : "SYSTEM'S TURN" }
-  fileprivate var color: Color { self == .your_turn ? MacTheme.accent : MacTheme.warning }
+  fileprivate var title: String { TaskPresentation.title(self) }
+  fileprivate var color: Color { MacTheme.color(for: TaskPresentation.role(self)) }
 }
 
 extension BlockingKind {
-  fileprivate var title: String { rawValue.replacingOccurrences(of: "_", with: " ") }
+  fileprivate var title: String { TaskPresentation.title(self) }
 }
 
 extension AttemptResult {
-  fileprivate var title: String { rawValue.capitalized }
+  fileprivate var title: String { TaskPresentation.title(self) }
 }

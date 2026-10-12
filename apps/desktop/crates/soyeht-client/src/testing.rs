@@ -22,3 +22,29 @@ pub fn workspace(id: &str) -> Workspace {
 pub fn pane(id: &str, workspace: &str, mode: &str) -> Pane {
     serde_json::from_value(pane_json(id, workspace, mode)).unwrap()
 }
+
+/// A file of `contracts/vectors`: the cases the Mac client and this one both pass.
+pub fn vector(name: &str) -> Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../../contracts/vectors")
+        .join(format!("{name}.json"));
+    let text = std::fs::read_to_string(&path).unwrap();
+    serde_json::from_str(&text).unwrap()
+}
+
+/// The cases listed under `key` in a file of `contracts/vectors`.
+pub fn cases(file: &str, key: &str) -> Vec<Value> {
+    vector(file)[key].as_array().unwrap().clone()
+}
+
+/// The text of a JSON string.
+pub fn text(value: &Value) -> &str {
+    value.as_str().unwrap()
+}
+
+/// A notification the engine sent, with the fields every event carries.
+pub fn event(name: soyeht_protocol::EventName, mut params: Value) -> crate::Event {
+    params["eventId"] = json!("9");
+    params["at"] = json!("now");
+    crate::Event::Notification { name, params }
+}

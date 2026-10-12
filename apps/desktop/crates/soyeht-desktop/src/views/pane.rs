@@ -25,8 +25,8 @@ use std::time::Instant;
 /// The buttons of the header, left to right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Action {
-    History,
-    List,
+    Loop,
+    Tasks,
     SplitColumns,
     SplitRows,
     Close,
@@ -35,8 +35,8 @@ enum Action {
 impl Action {
     fn icon(self) -> Icon {
         match self {
-            Self::History => Icon::History,
-            Self::List => Icon::List,
+            Self::Loop => Icon::Timer,
+            Self::Tasks => Icon::List,
             Self::SplitColumns => Icon::Columns,
             Self::SplitRows => Icon::Rows,
             Self::Close => Icon::Close,
@@ -45,8 +45,8 @@ impl Action {
 
     fn name(self) -> &'static str {
         match self {
-            Self::History => "history",
-            Self::List => "list",
+            Self::Loop => "loop",
+            Self::Tasks => "tasks",
             Self::SplitColumns => "split-columns",
             Self::SplitRows => "split-rows",
             Self::Close => "close",
@@ -56,20 +56,11 @@ impl Action {
     /// The button's tooltip, named as on the Mac.
     fn title(self) -> &'static str {
         match self {
-            Self::History => "Loop and lead controls",
-            Self::List => "Open workspace tasks",
+            Self::Loop => "Loop and lead controls",
+            Self::Tasks => "Open workspace tasks",
             Self::SplitColumns => "Split pane into columns",
             Self::SplitRows => "Split pane into rows",
             Self::Close => "Close this pane",
-        }
-    }
-
-    /// What the button says when this client does not serve it yet.
-    fn unavailable(self) -> Option<&'static str> {
-        match self {
-            Self::History => Some("Loops are not available in the desktop client yet."),
-            Self::List => Some("Tasks are not available in the desktop client yet."),
-            _ => None,
         }
     }
 }
@@ -77,10 +68,10 @@ impl Action {
 fn actions(mode: &PaneMode) -> Vec<Action> {
     let mut all = Vec::new();
     if *mode == PaneMode::Agent {
-        all.push(Action::History);
+        all.push(Action::Loop);
     }
     all.extend([
-        Action::List,
+        Action::Tasks,
         Action::SplitColumns,
         Action::SplitRows,
         Action::Close,
@@ -224,13 +215,16 @@ impl Workbench {
     ) -> AnyElement {
         let pane_id = pane.pane_id.clone();
         let key = id(action.name(), &pane.pane_id);
-        let notice = action.unavailable().map(|_| Menu::Notice {
-            pane_id: pane.pane_id.clone(),
-            button: action.name(),
-        });
-        let open = notice.as_ref().is_some_and(|menu| self.menus.is_open(menu));
+        // The loop button opens the loop panel.
+        let menu = (action == Action::Loop).then(|| Menu::Loop(pane.pane_id.clone()));
+        let open = menu.as_ref().is_some_and(|menu| self.menus.is_open(menu));
+        if action == Action::Loop && !open {
+            // The panel starts again from the pane's loop each time it opens.
+            self.loop_forms.remove(&pane.pane_id);
+        }
         let connected = self.state.connection == soyeht_client::Connection::Connected;
-        let enabled = notice.is_some() || connected;
+        let enabled = menu.is_some() || connected;
+        let body = open.then(|| self.loop_panel(pane, palette, cx));
         div()
             .relative()
             .flex_none()
@@ -252,7 +246,7 @@ impl Workbench {
                     .own_press()
                     .tooltip(hint(action.title(), palette))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        if let Some(menu) = notice.clone() {
+                        if let Some(menu) = menu.clone() {
                             this.toggle_menu(menu, cx);
                         } else if connected {
                             match action {
@@ -265,7 +259,8 @@ impl Workbench {
                                     this.split_pane(&pane_id, WorkspacePaneLayoutAxis::Vertical, cx)
                                 }
                                 Action::Close => this.close_pane(&pane_id),
-                                Action::History | Action::List => {}
+                                Action::Tasks => this.open_tasks(cx),
+                                Action::Loop => {}
                             }
                         }
                     }))
@@ -275,18 +270,18 @@ impl Workbench {
                         palette.secondary,
                     )),
             )
-            .when(open, |slot| {
-                slot.child(super::menus::popup(
+            .children(body.map(|body| {
+                super::menus::popup(
                     palette,
                     Anchor::TopRight,
                     (
                         pane_layout::HEADER_ACTION_WIDTH,
                         pane_layout::HEADER_HEIGHT + space::X4,
                     ),
-                    super::menus::note(palette, action.unavailable().unwrap_or_default()),
+                    body,
                     cx,
-                ))
-            })
+                )
+            }))
             .into_any_element()
     }
 
@@ -353,11 +348,7 @@ fn notice_label(notice: terminal_state::Notice, palette: &Palette) -> Div {
         Severity::Neutral => (Icon::Stopped, palette.secondary),
         Severity::Warning => (Icon::Alert, palette.warning()),
     };
-    row()
-        .gap(px(space::X6))
-        .text_color(rgb(color))
-        .child(icon(glyph, desktop::INLINE_GLYPH, color))
-        .child(div().flex_1().min_w_0().child(notice.text))
+    super::agent::labelled(glyph, color, notice.text)
 }
 
 fn notice_body(palette: &Palette, message: &str) -> AnyElement {
@@ -400,8 +391,8 @@ mod tests {
 
     #[test]
     fn agents_have_the_loop_button_and_terminals_do_not() {
-        assert_eq!(actions(&PaneMode::Agent)[0], Action::History);
-        assert_eq!(actions(&PaneMode::Terminal)[0], Action::List);
+        assert_eq!(actions(&PaneMode::Agent)[0], Action::Loop);
+        assert_eq!(actions(&PaneMode::Terminal)[0], Action::Tasks);
         assert_eq!(actions(&PaneMode::Agent).len(), 5);
         assert_eq!(*actions(&PaneMode::Terminal).last().unwrap(), Action::Close);
     }
@@ -427,9 +418,20 @@ mod tests {
     }
 
     #[test]
-    fn only_the_buttons_without_a_desktop_feature_explain_themselves() {
-        assert!(Action::History.unavailable().is_some());
-        assert!(Action::List.unavailable().is_some());
-        assert!(Action::Close.unavailable().is_none());
+    fn the_header_buttons_are_named_as_the_mac_names_them() {
+        let titles: Vec<_> = actions(&PaneMode::Agent)
+            .iter()
+            .map(|action| action.title())
+            .collect();
+        assert_eq!(
+            titles,
+            [
+                "Loop and lead controls",
+                "Open workspace tasks",
+                "Split pane into columns",
+                "Split pane into rows",
+                "Close this pane"
+            ]
+        );
     }
 }

@@ -1,0 +1,216 @@
+{
+  "description": "The loop panel of a pane shared by the Mac (LoopPresentation) and the desktop client (soyeht_client::loops). Both pass every case.",
+  "words": {
+    "title": "Loop this pane",
+    "promptHeading": "PROMPT",
+    "whenHeading": "WHEN",
+    "everyInterval": "Every interval",
+    "whenIdle": "When idle",
+    "idleExplanation": "The loop sends only when the pane is idle",
+    "workerRole": "Worker",
+    "leadRole": "Lead",
+    "cancel": "Cancel",
+    "apply": "Apply",
+    "rules": [
+      "Never sends over your draft.",
+      "Busy ticks are skipped and recorded.",
+      "Survives an engine restart."
+    ]
+  },
+  "defaults": {
+    "prompt": "Pick the next task and complete it.",
+    "interval": 60,
+    "maxRounds": 10,
+    "stopWhen": "three_empty",
+    "enabled": false
+  },
+  "intervals": [
+    {
+      "seconds": 5,
+      "label": "5 sec"
+    },
+    {
+      "seconds": 10,
+      "label": "10 sec"
+    },
+    {
+      "seconds": 30,
+      "label": "30 sec"
+    },
+    {
+      "seconds": 60,
+      "label": "1 min"
+    },
+    {
+      "seconds": 300,
+      "label": "5 min"
+    },
+    {
+      "seconds": 600,
+      "label": "10 min"
+    },
+    {
+      "seconds": 1800,
+      "label": "30 min"
+    },
+    {
+      "seconds": 3600,
+      "label": "60 min"
+    }
+  ],
+  "rounds": [
+    {
+      "rounds": 0,
+      "label": "no limit"
+    },
+    {
+      "rounds": 1,
+      "label": "1 rounds"
+    },
+    {
+      "rounds": 5,
+      "label": "5 rounds"
+    },
+    {
+      "rounds": 10,
+      "label": "10 rounds"
+    },
+    {
+      "rounds": 25,
+      "label": "25 rounds"
+    },
+    {
+      "rounds": 50,
+      "label": "50 rounds"
+    },
+    {
+      "rounds": 100,
+      "label": "100 rounds"
+    }
+  ],
+  "stops": [
+    {
+      "stopWhen": "three_empty",
+      "label": "three empty",
+      "choice": "Three empty results"
+    },
+    {
+      "stopWhen": "round_limit",
+      "label": "round limit",
+      "choice": "Round limit"
+    },
+    {
+      "stopWhen": "explicit_off",
+      "label": "until off",
+      "choice": "Until turned off"
+    }
+  ],
+  "status": [
+    {
+      "enabled": true,
+      "paneName": "aria",
+      "rounds": 3,
+      "text": "next: when aria is idle · 3 today"
+    },
+    {
+      "enabled": false,
+      "paneName": "aria",
+      "rounds": 0,
+      "text": "off · 0 today"
+    },
+    {
+      "enabled": false,
+      "paneName": "Claude 2",
+      "rounds": 12,
+      "text": "off · 12 today"
+    }
+  ],
+  "initial": [
+    {
+      "name": "no loop yet",
+      "config": null,
+      "prompt": "Pick the next task and complete it.",
+      "interval": 60,
+      "maxRounds": 10,
+      "stopWhen": "three_empty",
+      "enabled": false
+    },
+    {
+      "name": "a loop that runs",
+      "config": {
+        "prompt": "Do the next task",
+        "interval": 300,
+        "maxRounds": 25,
+        "stopWhen": "round_limit",
+        "enabled": true,
+        "rounds": 4
+      },
+      "prompt": "Do the next task",
+      "interval": 300,
+      "maxRounds": 25,
+      "stopWhen": "round_limit",
+      "enabled": true
+    }
+  ],
+  "canApply": [
+    {
+      "enabled": true,
+      "prompt": "go",
+      "ok": true
+    },
+    {
+      "enabled": true,
+      "prompt": "  \n ",
+      "ok": false
+    },
+    {
+      "enabled": false,
+      "prompt": "",
+      "ok": true
+    },
+    {
+      "enabled": false,
+      "prompt": "go",
+      "ok": true
+    }
+  ],
+  "events": [
+    {
+      "name": "a tick sets the round count",
+      "config": {
+        "prompt": "Do the next task",
+        "interval": 300,
+        "maxRounds": 25,
+        "stopWhen": "round_limit",
+        "enabled": true,
+        "rounds": 4
+      },
+      "event": "loop.tick",
+      "params": {
+        "paneId": "p",
+        "round": 7,
+        "of": 25
+      },
+      "rounds": 7,
+      "enabled": true
+    },
+    {
+      "name": "stopping turns it off",
+      "config": {
+        "prompt": "Do the next task",
+        "interval": 300,
+        "maxRounds": 25,
+        "stopWhen": "round_limit",
+        "enabled": true,
+        "rounds": 4
+      },
+      "event": "loop.stopped",
+      "params": {
+        "paneId": "p",
+        "reason": "round limit"
+      },
+      "rounds": 4,
+      "enabled": false
+    }
+  ]
+}

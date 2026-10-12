@@ -16,6 +16,8 @@ pub enum Menu {
     Harness(String),
     /// A model, effort or permission chip: the pane and the option.
     Config { pane_id: String, config_id: String },
+    /// The loop button of an agent pane's header: the pane.
+    Loop(String),
     /// The settings entry at the bottom of the rail.
     Settings,
     /// A header button the desktop client does not serve yet: the pane and the button.

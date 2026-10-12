@@ -3,9 +3,11 @@
 //! the mic and a round send button (stop while the agent runs).
 
 use super::{
+    agent::notice_line,
+    attachments::chip_view,
     harness_menu::Pick,
     menus,
-    ui::{OwnPress, Typeface, column, icon, id, logo, row, sideways_scroller},
+    ui::{OwnPress, Typeface, column, hint, icon, id, logo, row, sideways_scroller},
     usage_ring::ring_canvas,
 };
 use crate::{
@@ -19,7 +21,10 @@ use gpui::{
     MouseButton, ParentElement, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
     div, prelude::FluentBuilder, px, rgb,
 };
-use soyeht_client::agent::{Action, Controls, Menu as ConfigMenu};
+use soyeht_client::{
+    agent::{Action, Controls, Menu as ConfigMenu},
+    attachments::Chip,
+};
 use soyeht_protocol::Pane;
 use std::rc::Rc;
 
@@ -50,6 +55,7 @@ impl Workbench {
         );
         field.update(cx, |field, _| field.style(palette, &placeholder));
         let focus_id = pane_id.clone();
+        let attachments = self.attachment_row(&pane_id, palette, cx);
 
         let controls_row = match &controls {
             Some(controls) => {
@@ -71,9 +77,52 @@ impl Workbench {
                 MouseButton::Left,
                 cx.listener(move |this, _, window, cx| this.focus_input(&focus_id, window, cx)),
             )
+            .children(attachments)
             .child(field)
             .child(controls_row)
             .into_any_element()
+    }
+
+    /// The attachment chips above the message line, and the latest refusal; nothing while there
+    /// is neither.
+    fn attachment_row(
+        &mut self,
+        pane_id: &str,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let staged = self.staged(pane_id).filter(|staged| staged.is_shown())?;
+        let chips: Vec<Chip> = staged.items().iter().map(Chip::of_draft).collect();
+        let notice = staged.notice().map(str::to_owned);
+        let chips = chips.iter().map(|chip| {
+            let (pane_id, chip_id) = (pane_id.to_owned(), chip.id.clone());
+            let remove = row()
+                .id(id("attachment-remove", &chip.id))
+                .flex_none()
+                .cursor_pointer()
+                .own_press()
+                .tooltip(hint(format!("Remove {}", chip.name), palette))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.remove_attachment(&pane_id, &chip_id, cx)
+                }))
+                .child(icon(Icon::Close, desktop::INLINE_GLYPH, palette.muted));
+            chip_view(chip, palette).child(remove).into_any_element()
+        });
+        let strip = row()
+            .flex_none()
+            .gap(px(pane_interior::COMPACT_SPACING))
+            .children(chips);
+        let scroll = self.attachment_scroll(pane_id);
+        Some(
+            column()
+                .gap(px(pane_interior::COMPACT_SPACING))
+                .child(
+                    sideways_scroller(id("composer-attachments", pane_id), &scroll, strip, palette)
+                        .flex_none(),
+                )
+                .children(notice.map(|text| notice_line(&text, palette)))
+                .into_any_element(),
+        )
     }
 
     fn control_row(
@@ -116,14 +165,7 @@ impl Workbench {
         };
         row()
             .gap(px(composer::CONTROL_SPACING))
-            .child(self.round_button(
-                "attach",
-                Icon::Plus,
-                "Attachments are not available in the desktop client yet.",
-                notice_for("attach"),
-                palette,
-                cx,
-            ))
+            .child(self.attach_button(&pane_id, palette, cx))
             // As on the Mac, the chips keep their size and the strip scrolls sideways when the
             // pane is too narrow for all of them. A fade at an end that hides more says so, and
             // the wheel moves the strip only sideways.
@@ -146,6 +188,27 @@ impl Workbench {
             .into_any_element()
     }
 
+    /// The "+" of the control row: the file picker.
+    fn attach_button(
+        &mut self,
+        pane_id: &str,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let pane_id = pane_id.to_owned();
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                round_frame("attach", Icon::Plus, palette)
+                    .tooltip(hint("Attach files", palette))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.pick_attachments(&pane_id, cx)
+                    })),
+            )
+            .into_any_element()
+    }
+
     /// A round 28-point icon button of the control row. The desktop client does not serve what
     /// it stands for yet, so a click says so beside the button.
     fn round_button(
@@ -162,20 +225,9 @@ impl Workbench {
         div()
             .relative()
             .flex_none()
-            .child(
-                row()
-                    .id(id("composer", name))
-                    .size(px(composer::CONTROL_HEIGHT))
-                    .justify_center()
-                    .rounded_full()
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgb(palette.hover)))
-                    .own_press()
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.toggle_menu(toggled.clone(), cx)
-                    }))
-                    .child(icon(glyph, desktop::COMPOSER_GLYPH, palette.secondary)),
-            )
+            .child(round_frame(name, glyph, palette).on_click(cx.listener(
+                move |this, _: &ClickEvent, _, cx| this.toggle_menu(toggled.clone(), cx),
+            )))
             .when(open, |slot| {
                 slot.child(menus::popup(
                     palette,
@@ -319,6 +371,20 @@ impl Workbench {
             cx,
         )
     }
+}
+
+/// The frame of a round 28-point icon button of the control row: a click does what its caller
+/// says.
+fn round_frame(name: &str, glyph: Icon, palette: &Palette) -> gpui::Stateful<Div> {
+    row()
+        .id(id("composer", name))
+        .size(px(composer::CONTROL_HEIGHT))
+        .justify_center()
+        .rounded_full()
+        .cursor_pointer()
+        .hover(|style| style.bg(rgb(palette.hover)))
+        .own_press()
+        .child(icon(glyph, desktop::COMPOSER_GLYPH, palette.secondary))
 }
 
 /// A borderless chip of the control row: an optional mark, the label and a chevron.

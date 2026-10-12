@@ -5,15 +5,20 @@
 //! role of the active palette and every size is a design token.
 
 mod agent;
+mod attachments;
+mod cards;
 mod composer;
 mod harness_menu;
+mod loop_panel;
 mod markdown;
 pub(crate) mod menus;
 mod pane;
 mod permission;
+mod prelude;
 mod rail;
 mod resize_handles;
 mod settings;
+mod tasks;
 mod tiles;
 mod top_bar;
 mod ui;

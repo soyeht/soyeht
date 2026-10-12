@@ -17,6 +17,27 @@ public enum AgentAttachmentStaging {
   static let maximumImageBytes = 700 * 1_024
   static let thumbnailPixels = 160
   static let fallbackImageName = "Pasted image"
+  /// The longest sides an image is scaled to, the largest that fits first.
+  static let scalePixels = [maximumImagePixels, 1_600, 1_280, 1_024, 768]
+  /// The JPEG qualities tried at each scale, the best first.
+  static let jpegQualities = [0.85, 0.7, 0.55, 0.4]
+  /// The preview's longest side and JPEG quality, tried in turn until one fits the budget.
+  static let thumbnailAttempts = [(thumbnailPixels, 0.7), (thumbnailPixels, 0.45), (96, 0.45)]
+
+  /// Whether an image goes to the agent as it is: a type every agent takes inline, small enough
+  /// in bytes and in pixels.
+  static func keepsOriginal(type: UTType, byteCount: Int, width: Int, height: Int) -> Bool {
+    inlineImageTypes.contains(type) && byteCount <= maximumImageBytes
+      && max(width, height) <= maximumImagePixels
+  }
+
+  /// The name an image is attached under: its own name without the extension, or
+  /// "Pasted image", with the extension of the type it is sent as.
+  static func imageFileName(_ name: String?, type: UTType) -> String {
+    let base = (name.map { ($0 as NSString).deletingPathExtension } ?? "").trimmingCharacters(
+      in: .whitespacesAndNewlines)
+    return "\(base.isEmpty ? fallbackImageName : base).\(type.preferredFilenameExtension ?? "png")"
+  }
 
   public static func kind(of type: UTType) -> PromptAttachmentKind {
     if type.conforms(to: .image) { return .image }
@@ -75,12 +96,9 @@ public enum AgentAttachmentStaging {
     else { return nil }
     let (prepared, preparedType) = preparedImage(data, type: type, source: source)
     guard let prepared else { return nil }
-    let base = (name.map { ($0 as NSString).deletingPathExtension } ?? "").trimmingCharacters(
-      in: .whitespacesAndNewlines)
-    let fileName =
-      "\(base.isEmpty ? fallbackImageName : base).\(preparedType.preferredFilenameExtension ?? "png")"
     return AgentAttachmentDraft(
-      kind: .image, name: fileName, mimeType: mimeType(of: preparedType, kind: .image),
+      kind: .image, name: imageFileName(name, type: preparedType),
+      mimeType: mimeType(of: preparedType, kind: .image),
       byteCount: prepared.count, source: .bytes(prepared), thumbnail: thumbnail(source))
   }
 
@@ -90,19 +108,17 @@ public enum AgentAttachmentStaging {
     let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
     let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
     let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
-    if inlineImageTypes.contains(type), data.count <= maximumImageBytes,
-      max(width, height) <= maximumImagePixels
-    {
+    if keepsOriginal(type: type, byteCount: data.count, width: width, height: height) {
       return (data, type)
     }
     var smallest: Data?
-    for pixels in [maximumImagePixels, 1_600, 1_280, 1_024, 768] {
+    for pixels in scalePixels {
       guard let image = scaled(source, maximumPixels: pixels) else { return (nil, type) }
       let opaque = [.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
       if !opaque, let png = encoded(image, as: .png), png.count <= maximumImageBytes {
         return (png, .png)
       }
-      for quality in [0.85, 0.7, 0.55, 0.4] {
+      for quality in jpegQualities {
         let jpeg = encoded(image, as: .jpeg, quality: quality)
         if let jpeg, jpeg.count <= maximumImageBytes { return (jpeg, .jpeg) }
         smallest = jpeg ?? smallest
@@ -114,7 +130,7 @@ public enum AgentAttachmentStaging {
 
   /// A preview within the protocol's thumbnail budget, or nil.
   static func thumbnail(_ source: CGImageSource) -> Data? {
-    for (pixels, quality) in [(thumbnailPixels, 0.7), (thumbnailPixels, 0.45), (96, 0.45)] {
+    for (pixels, quality) in thumbnailAttempts {
       if let image = scaled(source, maximumPixels: pixels),
         let jpeg = encoded(image, as: .jpeg, quality: quality),
         jpeg.count <= ProtocolLimits.promptAttachmentThumbnailBytes

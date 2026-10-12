@@ -5,7 +5,9 @@
 use crate::{
     composer_field::{ComposerEvent, ComposerField, new_field},
     destination::Destination,
+    loop_form::LoopForm,
     open_menu::{Menu, OpenMenu},
+    tasks_ui::TasksUi,
     theme::ThemeName,
 };
 use gpui::{
@@ -14,6 +16,7 @@ use gpui::{
 };
 use soyeht_client::{
     Command, Connection, Effect, Engine, Error, Event, State,
+    attachments::Staged,
     keys::{self, Modifiers},
     markdown,
     screen::TerminalScreen,
@@ -39,12 +42,28 @@ pub struct Workbench {
     pub(crate) rail_open: bool,
     pub(crate) menus: OpenMenu,
     /// The message line of each agent pane's composer.
-    fields: HashMap<String, Entity<ComposerField>>,
+    pub(crate) fields: HashMap<String, Entity<ComposerField>>,
     /// Numbers the requests that open a pane, so each answer is matched to its request.
     next_ticket: u64,
     transcripts: HashMap<String, (ScrollHandle, usize)>,
     /// The thoughts of an agent the person has opened, by message.
     pub(crate) open_thoughts: HashSet<String>,
+    /// The subagent rows the person has opened, by subagent.
+    pub(crate) open_subagents: HashSet<String>,
+    /// How many messages beyond `TAIL` each agent's transcript draws.
+    pub(crate) transcript_extra: HashMap<String, usize>,
+    /// When each composer's draft was last announced to the engine.
+    pub(crate) draft_beats: HashMap<String, Instant>,
+    /// The tasks surface: its view, the task open and the new-task form.
+    pub(crate) tasks_ui: TasksUi,
+    /// The loop panel each open pane is editing.
+    pub(crate) loop_forms: HashMap<String, LoopForm>,
+    /// The files attached to each agent pane's next message, with the latest refusal.
+    pub(crate) staged: HashMap<String, Staged>,
+    /// The sideways scroll of each composer's attachment chips.
+    attachment_scrolls: HashMap<String, ScrollHandle>,
+    /// The fields of the questions agents ask, by request and field.
+    pub(crate) form_fields: HashMap<(String, String), Entity<ComposerField>>,
     /// The Markdown of the replies on screen, parsed once per change.
     pub(crate) markdown: markdown::Cache,
     /// The sideways scroll of the stage, when the panes need more room than the window has.
@@ -90,6 +109,7 @@ impl Workbench {
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 let repaint = this.update(cx, |this, cx| {
+                    this.beat_drafts(cx);
                     if this.state.has_running_turn() {
                         cx.notify();
                     }
@@ -111,6 +131,14 @@ impl Workbench {
             next_ticket: 0,
             transcripts: HashMap::new(),
             open_thoughts: HashSet::new(),
+            open_subagents: HashSet::new(),
+            transcript_extra: HashMap::new(),
+            form_fields: HashMap::new(),
+            staged: HashMap::new(),
+            loop_forms: HashMap::new(),
+            tasks_ui: TasksUi::default(),
+            draft_beats: HashMap::new(),
+            attachment_scrolls: HashMap::new(),
             markdown: markdown::Cache::default(),
             stage_scroll: ScrollHandle::new(),
             tab_scroll: ScrollHandle::new(),
@@ -136,7 +164,11 @@ impl Workbench {
                         self.send(Command::Subscribe { pane_id });
                     }
                     Effect::Resync => self.engine.resync(),
+                    // A pane's queue of waiting messages is loaded with its transcript.
                     Effect::LoadTranscript(pane_id) => {
+                        self.send(Command::LoadQueue {
+                            pane_id: pane_id.clone(),
+                        });
                         self.send(Command::LoadTranscript { pane_id });
                     }
                     Effect::LoadUsage => {
@@ -144,6 +176,15 @@ impl Workbench {
                     }
                     Effect::LoadHarnesses => {
                         self.send(Command::LoadHarnesses);
+                    }
+                    Effect::LoadTask {
+                        workspace_id,
+                        task_id,
+                    } => {
+                        self.send(Command::LoadTask {
+                            workspace_id,
+                            task_id,
+                        });
                     }
                     Effect::StoreLayout {
                         workspace_id,
@@ -156,6 +197,10 @@ impl Workbench {
                     }
                     // The pane the person opened takes the keyboard, as a new terminal does on the Mac.
                     Effect::FocusPane(pane_id) => {
+                        // A pane a task was dispatched to is in the agents' place.
+                        if !self.destination.is_pane_grid() {
+                            self.destination = Destination::Agents;
+                        }
                         self.state.focus_pane(&pane_id);
                         self.announce_focus();
                         self.reveal = Some(pane_id.clone());
@@ -174,6 +219,21 @@ impl Workbench {
         self.fields.retain(|id, _| state.agent(id).is_some());
         self.transcripts.retain(|id, _| state.agent(id).is_some());
         self.chip_scrolls.retain(|id, _| state.agent(id).is_some());
+        self.transcript_extra
+            .retain(|id, _| state.agent(id).is_some());
+        self.staged.retain(|id, _| state.agent(id).is_some());
+        self.loop_forms.retain(|id, _| state.agent(id).is_some());
+        self.draft_beats.retain(|id, _| state.agent(id).is_some());
+        self.attachment_scrolls
+            .retain(|id, _| state.agent(id).is_some());
+        self.form_fields.retain(|(request, _), _| {
+            state.agent_ids().any(|id| {
+                state
+                    .agent(id)
+                    .and_then(|view| view.cards.elicitation.as_ref())
+                    .is_some_and(|open| &open.request_id == request)
+            })
+        });
         if !self.open_thoughts.is_empty() {
             self.open_thoughts.retain(|message| {
                 state.agent_ids().any(|id| {
@@ -283,6 +343,14 @@ impl Workbench {
             .clone()
     }
 
+    /// The sideways scroll of an agent composer's attachment chips, made when first needed.
+    pub(crate) fn attachment_scroll(&mut self, pane_id: &str) -> ScrollHandle {
+        self.attachment_scrolls
+            .entry(pane_id.to_owned())
+            .or_default()
+            .clone()
+    }
+
     /// The scroll state of an agent's transcript, following the newest message while it grows.
     pub(crate) fn transcript_scroll(&mut self, pane_id: &str, messages: usize) -> ScrollHandle {
         let (handle, seen) = self
@@ -305,7 +373,7 @@ impl Workbench {
 
     /// Queues a command for the engine. Typing and clicking never wait for the engine, so a
     /// command the queue cannot take is reported to the user instead; false means it was not taken.
-    fn send(&mut self, command: Command) -> bool {
+    pub(crate) fn send(&mut self, command: Command) -> bool {
         match self.engine.send(command) {
             Ok(()) => true,
             Err(error) => {
@@ -361,7 +429,7 @@ impl Workbench {
         }
     }
 
-    fn next_ticket(&mut self) -> u64 {
+    pub(crate) fn next_ticket(&mut self) -> u64 {
         self.next_ticket += 1;
         self.next_ticket
     }
@@ -425,6 +493,9 @@ impl Workbench {
 
     pub(crate) fn select_destination(&mut self, destination: Destination, cx: &mut Context<Self>) {
         self.destination = destination;
+        if destination == Destination::Tasks {
+            self.refresh_tasks();
+        }
         cx.notify();
     }
 
@@ -442,11 +513,20 @@ impl Workbench {
             cx.notify();
             return;
         }
+        let attachments = self
+            .staged
+            .get(pane_id)
+            .map(|staged| staged.items().to_vec())
+            .unwrap_or_default();
         if self.send(Command::Prompt {
             pane_id: pane_id.to_owned(),
             text,
+            attachments,
         }) {
             field.update(cx, |field, cx| field.clear(cx));
+            if let Some(staged) = self.staged.get_mut(pane_id) {
+                staged.take();
+            }
         }
         cx.notify();
     }
@@ -498,17 +578,26 @@ impl Workbench {
     }
 
     pub(crate) fn paste(&mut self, _: &Paste, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+        let Some(item) = cx.read_from_clipboard() else {
             return;
         };
         if let Some(pane) = self.state.focused_pane()
             && pane.mode == PaneMode::Agent
         {
             let pane_id = pane.pane_id.clone();
-            let field = self.composer_field(&pane_id, cx);
-            field.update(cx, |field, cx| field.insert(&text, cx));
+            // Copied files and pictures become attachments; anything else is text.
+            if self.attach_pasted(&pane_id, &item, cx) {
+                return;
+            }
+            if let Some(text) = item.text() {
+                let field = self.composer_field(&pane_id, cx);
+                field.update(cx, |field, cx| field.insert(&text, cx));
+            }
             return;
         }
+        let Some(text) = item.text() else {
+            return;
+        };
         let Some(pane_id) = self.focused_terminal() else {
             return;
         };
