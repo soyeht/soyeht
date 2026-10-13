@@ -6,7 +6,7 @@ extension EngineClient {
     idempotencyKey: String
   ) async throws {
     _ = try await mutation(
-      "web.host.navigated",
+      .webHostNavigated,
       WebHostNavigatedParams(
         paneId: paneId, navigationGeneration: navigationGeneration, url: url, title: title,
         idempotencyKey: idempotencyKey)
@@ -18,7 +18,7 @@ extension EngineClient {
     paneId: String, warnings: UInt32, errors: UInt32, idempotencyKey: String
   ) async throws {
     _ = try await mutation(
-      "web.host.console_counts",
+      .webHostConsoleCounts,
       WebHostConsoleCountsParams(
         paneId: paneId, warnings: warnings, errors: errors, idempotencyKey: idempotencyKey)
     )

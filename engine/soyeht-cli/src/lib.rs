@@ -7,9 +7,9 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_platform::local::{Stream, connect};
 use soyeht_protocol::{
-    StateSnapshotPartEvent, Welcome,
+    StateSnapshotPartEvent, Welcome, event,
     frame::{read_json, write_json},
-    handshake,
+    handshake, method,
     profile::DEV_ENGINE_SOCKET,
     snapshot::SnapshotAssembler,
 };
@@ -62,7 +62,7 @@ impl Client {
             env!("CARGO_PKG_VERSION"),
             binding,
         ))?;
-        let welcome: Welcome = client.request("hello", hello)?;
+        let welcome: Welcome = client.request(method::HELLO, hello)?;
         handshake::expect_welcome(&welcome, binding.is_some())?;
         Ok(client)
     }
@@ -91,7 +91,7 @@ impl Client {
             }
             let result = self.request_once(method, params.clone());
             match result {
-                Err(error) if method != "hello" && attempt < 3 && retryable(&error) => {
+                Err(error) if method != method::HELLO && attempt < 3 && retryable(&error) => {
                     reconnect = true
                 }
                 result => return result,
@@ -110,14 +110,14 @@ impl Client {
         }
     }
     pub fn snapshot(&mut self) -> Result<Snapshot> {
-        let id = self.begin("state.snapshot", json!({}))?;
+        let id = self.begin(method::STATE_SNAPSHOT, json!({}))?;
         let mut assembler = SnapshotAssembler::default();
         loop {
             let response = self.read()?;
             if response["id"] == id {
                 return Ok(assembler.finish(result(response)?)?);
             }
-            if response["method"] == "state.snapshot_part" {
+            if response["method"] == event::STATE_SNAPSHOT_PART {
                 let part: StateSnapshotPartEvent =
                     serde_json::from_value(response["params"].clone())?;
                 assembler.push(part)?;

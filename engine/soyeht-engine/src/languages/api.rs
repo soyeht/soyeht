@@ -11,6 +11,7 @@ use soyeht_lsp::{PositionValue, RequestKind};
 use soyeht_protocol::{
     FileDefinitionResult, FileDiagnosticsParams, FileDiagnosticsResult, FileLocation,
     FilePositionParams, FileReferencesResult, FileSymbol, FileSymbolsParams, FileSymbolsResult,
+    method,
 };
 use soyeht_store::editor::EditorFile;
 use std::path::Path;
@@ -120,7 +121,7 @@ impl Core {
         params: &Value,
     ) -> Result<(EditorFile, Query, String)> {
         let (file_id, revision, position, kind) = match method {
-            "file.symbols" => {
+            method::FILE_SYMBOLS => {
                 let request: FileSymbolsParams = serde_json::from_value(params.clone())
                     .map_err(|_| errors::invalid("Invalid file symbols parameters"))?;
                 (
@@ -130,10 +131,10 @@ impl Core {
                     RequestKind::Symbols,
                 )
             }
-            "file.definition" | "file.references" => {
+            method::FILE_DEFINITION | method::FILE_REFERENCES => {
                 let request: FilePositionParams = serde_json::from_value(params.clone())
                     .map_err(|_| errors::invalid("Invalid file position parameters"))?;
-                let kind = if method == "file.definition" {
+                let kind = if method == method::FILE_DEFINITION {
                     RequestKind::Definition
                 } else {
                     RequestKind::References

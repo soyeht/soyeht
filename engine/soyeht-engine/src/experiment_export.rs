@@ -14,7 +14,7 @@ use soyeht_platform::fs::{
     OpenOptionsPrivateExt, create_private_dir, dir_is_owner_only, file_is_owner_only,
     sync_directory,
 };
-use soyeht_protocol::limits;
+use soyeht_protocol::{limits, method};
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsStr,
@@ -26,7 +26,7 @@ use std::{
 use uuid::Uuid;
 
 const EXPORT_FORMAT_VERSION: u32 = 1;
-const EXPORT_METHOD: &str = "pane.experiment.export";
+const EXPORT_METHOD: &str = method::PANE_EXPERIMENT_EXPORT;
 const STALE_EXPORT_TEMP_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const SKIPPED_SOURCE_NOTICE: &str = "Some selected experiment segments were excluded because their dataset schema is unsupported. Delete the named pane's captured data to remove those segments.";
 

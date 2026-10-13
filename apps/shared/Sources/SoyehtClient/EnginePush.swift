@@ -22,7 +22,7 @@ extension EngineClient {
   /// Registers this device's APNs token; registering again replaces it.
   public func registerPush(token: String, environment: PushEnvironment) async throws {
     _ = try await mutation(
-      "push.register",
+      .pushRegister,
       PushRegisterParams(
         platform: .apns, token: token, environment: environment,
         idempotencyKey: UUID().uuidString))
@@ -30,14 +30,14 @@ extension EngineClient {
 
   public func unregisterPush() async throws {
     _ = try await mutation(
-      "push.unregister", PushUnregisterParams(idempotencyKey: UUID().uuidString))
+      .pushUnregister, PushUnregisterParams(idempotencyKey: UUID().uuidString))
   }
 
   /// The one answer path for the pane, notification actions and the Mac alike.
   public func answerPermission(paneId: String, requestId: String, optionId: String) async throws {
     try await waitUntilConnected()
     _ = try await mutation(
-      "pane.permission.answer",
+      .panePermissionAnswer,
       PanePermissionAnswerParams(
         paneId: paneId, requestId: requestId, optionId: optionId,
         idempotencyKey: UUID().uuidString))

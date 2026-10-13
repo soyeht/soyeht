@@ -83,3 +83,9 @@ public enum ProtocolLimits {
     public static let experimentExportRows = 100000
     public static let experimentExportBytes = 67108864
 }
+
+public enum FrameKind {
+    public static let json: UInt8 = 1
+    public static let terminal: UInt8 = 2
+    public static let attachment: UInt8 = 3
+}

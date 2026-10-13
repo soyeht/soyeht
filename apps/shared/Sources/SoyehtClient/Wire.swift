@@ -37,6 +37,8 @@ extension JsonValue {
   var string: String? { if case .string(let value) = self { value } else { nil } }
   var array: [JsonValue]? { if case .array(let value) = self { value } else { nil } }
   var int: Int? { if case .integer(let value) = self { Int(exactly: value) } else { nil } }
+  /// The notification a `method` field names, when it is one of the contract's events.
+  var eventName: EventName? { string.flatMap(EventName.init(rawValue:)) }
   func decoded<T: Decodable>(_ type: T.Type) throws -> T {
     try JSONDecoder().decode(type, from: JSONEncoder().encode(self))
   }
@@ -73,7 +75,7 @@ final class Wire {
     let session = URLSession(configuration: .ephemeral)
     self.session = session
     let task = session.webSocketTask(with: url)
-    task.maximumMessageSize = 1_048_576
+    task.maximumMessageSize = ProtocolLimits.jsonBytes
     webSocket = task
   }
 
@@ -120,11 +122,18 @@ final class Wire {
   }
 
   func send(_ value: JsonValue, attachments: [WebHostAttachment] = []) async throws {
+    try await write(WirePayload(message: value, attachments: attachments).frames())
+  }
+
+  func send(_ response: WebHostResponse) async throws {
+    try await write(response.frames())
+  }
+
+  private func write(_ frames: [Frame]) async throws {
     guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
-    let frames = try WirePayload(message: value, attachments: attachments).frames()
     if let webSocket {
       for frame in frames {
-        if frame.kind == 1 {
+        if frame.kind == FrameKind.json {
           try await webSocket.send(.string(String(decoding: frame.payload, as: UTF8.self)))
         } else {
           try await webSocket.send(.data(try frame.encode()))
@@ -136,36 +145,6 @@ final class Wire {
     var data = Data()
     for frame in frames { data.append(try frame.encode()) }
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      connection.send(
-        content: data,
-        completion: .contentProcessed { error in
-          if error != nil {
-            continuation.resume(throwing: ClientFailure.disconnected)
-          } else {
-            continuation.resume()
-          }
-        })
-    }
-  }
-
-  func send(_ response: WebHostResponse) async throws {
-    guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
-    let frames = try response.frames()
-    if let webSocket {
-      for frame in frames {
-        if frame.kind == 1 {
-          try await webSocket.send(.string(String(decoding: frame.payload, as: UTF8.self)))
-        } else {
-          try await webSocket.send(.data(try frame.encode()))
-        }
-      }
-      return
-    }
-    guard let connection else { throw ClientFailure.disconnected }
-    var data = Data()
-    for frame in frames { data.append(try frame.encode()) }
-    try await withCheckedThrowingContinuation {
-      (continuation: CheckedContinuation<Void, Error>) in
       connection.send(
         content: data,
         completion: .contentProcessed { error in
@@ -233,11 +212,13 @@ final class Wire {
     if let webSocket {
       switch try await webSocket.receive() {
       case .string(let text):
-        guard !text.isEmpty, text.utf8.count <= 1_048_576 else { throw ClientFailure.invalidFrame }
-        return Frame(kind: 1, payload: Data(text.utf8))
+        guard !text.isEmpty, text.utf8.count <= ProtocolLimits.jsonBytes else {
+          throw ClientFailure.invalidFrame
+        }
+        return Frame(kind: FrameKind.json, payload: Data(text.utf8))
       case .data(let bytes):
         let frame = try Frame.decode(bytes)
-        guard frame.kind != 1 else { throw ClientFailure.invalidFrame }
+        guard frame.kind != FrameKind.json else { throw ClientFailure.invalidFrame }
         return frame
       @unknown default: throw ClientFailure.invalidFrame
       }
@@ -245,14 +226,9 @@ final class Wire {
     let prefix = try await exact(5)
     let size = prefix.dropFirst().reduce(0) { ($0 << 8) | Int($1) }
     // Validate before allocating or reading the advertised body.
-    let range: ClosedRange<Int>
-    switch prefix.first {
-    case 1: range = 1...1_048_576
-    case 2: range = 16...(16 + 65_536)
-    case 3: range = 16...(16 + 262_144)
-    default: throw ClientFailure.invalidFrame
+    guard let kind = prefix.first, Frame.accepts(kind: kind, length: size) else {
+      throw ClientFailure.invalidFrame
     }
-    guard range.contains(size) else { throw ClientFailure.invalidFrame }
     return try Frame.decode(prefix + (try await exact(size)))
   }
 }
@@ -277,13 +253,15 @@ struct WirePayload {
       repeat {
         let end = min(offset + ProtocolLimits.attachmentPayloadBytes, attachment.bytes.count)
         frames.append(
-          Frame(kind: 3, header: header, payload: attachment.bytes.subdata(in: offset..<end)))
+          Frame(
+            kind: FrameKind.attachment, header: header,
+            payload: attachment.bytes.subdata(in: offset..<end)))
         offset = end
       } while offset < attachment.bytes.count
     }
     let json = try JSONEncoder().encode(message)
     guard json.count <= ProtocolLimits.jsonBytes else { throw ClientFailure.invalidFrame }
-    frames.append(Frame(kind: 1, payload: json))
+    frames.append(Frame(kind: FrameKind.json, payload: json))
     return frames
   }
 }

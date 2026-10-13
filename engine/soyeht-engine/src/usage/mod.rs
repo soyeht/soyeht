@@ -24,7 +24,8 @@ use crate::{
 use serde_json::{Value, json};
 use service::{Committed, ManualRefusal, RefreshBatch};
 use soyeht_protocol::{
-    UsageListResult, UsageReading, UsageRefreshParams, UsageRefreshResult, UsageWindow,
+    UsageListResult, UsageReading, UsageRefreshParams, UsageRefreshResult, UsageWindow, event,
+    method,
 };
 use soyeht_store::usage::StoredUsageReading;
 use soyeht_usage::{Reading, Window};
@@ -140,7 +141,7 @@ impl Core {
         let fresh = fresh_readings(&committed);
         let mutation = self.mutate(
             &finish.connection,
-            "usage.refresh",
+            method::USAGE_REFRESH,
             &finish.params,
             |change| {
                 for (reading, observed_at) in &fresh {
@@ -233,7 +234,7 @@ pub async fn schedule(core: Shared) -> Result<()> {
 fn change_events(readings: &[UsageReading]) -> Result<Vec<(String, Value)>> {
     readings
         .iter()
-        .map(|reading| Ok(("usage.changed".into(), serde_json::to_value(reading)?)))
+        .map(|reading| Ok((event::USAGE_CHANGED.into(), serde_json::to_value(reading)?)))
         .collect::<serde_json::Result<Vec<_>>>()
         .map_err(|_| errors::internal("Usage event serialization failed"))
 }

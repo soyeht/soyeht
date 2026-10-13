@@ -11,8 +11,8 @@ struct EngineTimeoutDiagnostic: Equatable {
   let durationMs: UInt64
   let paneId: String?
 
-  init(method: String, params: JsonValue, durationMs: UInt64) {
-    self.method = method
+  init(method: RequestMethod, params: JsonValue, durationMs: UInt64) {
+    self.method = method.rawValue
     self.durationMs = durationMs
     self.paneId = params["paneId"].string.flatMap(UUID.init(uuidString:))?.uuidString.lowercased()
   }
@@ -123,7 +123,7 @@ public final class EngineClient {
   public var engineId: String? { credential?.engineId }
 
   private struct Pending {
-    var method: String
+    var method: RequestMethod
     var params: JsonValue
     var startedAtNs: UInt64
     var continuation: CheckedContinuation<EngineResponse, Error>
@@ -141,18 +141,17 @@ public final class EngineClient {
   }
 
   static func requestTimeoutDeadline(
-    method: String, timeoutSeconds: Double,
-    waitForTimeout: @escaping @Sendable (String, Double) async throws -> Void,
+    method: RequestMethod, timeoutSeconds: Double,
+    waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
     onTimeout: @escaping @MainActor @Sendable (ClientFailure) -> Void
   ) -> Task<Void, Never> {
     Task {
       do { try await waitForTimeout(method, timeoutSeconds) } catch { return }
-      onTimeout(.requestTimeout(method))
+      onTimeout(.requestTimeout(method.rawValue))
     }
   }
 
-  private static func waitForRequestTimeout(_ method: String, _ seconds: Double) async throws {
-    _ = method
+  private static func waitForRequestTimeout(_: RequestMethod, _ seconds: Double) async throws {
     try await Task.sleep(for: .seconds(seconds))
   }
 
@@ -261,7 +260,7 @@ public final class EngineClient {
     let challenge = try await wire.next()
     guard challenge.kind == 1 else { throw ClientFailure.invalidFrame }
     let first = try JSONDecoder().decode(JsonValue.self, from: challenge.payload)
-    guard first["method"].string == "auth.challenge" else { throw ClientFailure.invalidFrame }
+    guard first["method"].eventName == .authChallenge else { throw ClientFailure.invalidFrame }
     let reader = Task { [weak self] in
       do {
         while !Task.isCancelled {
@@ -288,7 +287,7 @@ public final class EngineClient {
         client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1,
         capabilities: webHost == nil || webHostRefused ? nil : [.web_host])
     }
-    let welcome = try await request("hello", .encoded(hello)).decoded(Welcome.self)
+    let welcome = try await request(.hello, .encoded(hello)).decoded(Welcome.self)
     guard welcome.role == (pairedDevice ? .human_device : .human_local),
       welcome.protocolVersion == 1
     else {
@@ -296,9 +295,9 @@ public final class EngineClient {
     }
     connectionActor = Actor(
       role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
-    _ = try await request("state.snapshot", .object([:]))
+    _ = try await request(.stateSnapshot, .object([:]))
     try await loadPreferredHarness()
-    _ = try await request("events.subscribe", .object(["since": .string(String(cursor))]))
+    _ = try await request(.eventsSubscribe, .object(["since": .string(String(cursor))]))
     try await loadUsage()
     if !pairedDevice { try await loadLocalServers() }
     connectionRevision &+= 1
@@ -326,7 +325,7 @@ public final class EngineClient {
     await reader.value
   }
   func request(
-    _ method: String, _ params: JsonValue, timeoutSeconds: Double = 12,
+    _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = 12,
     attachments: [WebHostAttachment] = []
   ) async throws -> JsonValue {
     try await requestResponse(
@@ -334,7 +333,7 @@ public final class EngineClient {
     ).value
   }
   func requestResponse(
-    _ method: String, _ params: JsonValue, timeoutSeconds: Double = 12,
+    _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = 12,
     attachments: [WebHostAttachment] = []
   ) async throws -> EngineResponse {
     guard let wire else { throw ClientFailure.disconnected }
@@ -345,13 +344,13 @@ public final class EngineClient {
       try await wire.send(
         .object([
           "jsonrpc": .string("2.0"), "id": .string(id),
-          "method": .string(method), "params": params,
+          "method": .string(method.rawValue), "params": params,
         ]), attachments: attachments)
     }
   }
   func pendingResponse(
-    _ method: String, _ params: JsonValue, timeoutSeconds: Double,
-    waitForTimeout: @escaping @Sendable (String, Double) async throws -> Void,
+    _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double,
+    waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
     send: @escaping @MainActor (String) async throws -> Void
   ) async throws -> EngineResponse {
     let id = UUID().uuidString
@@ -362,7 +361,8 @@ public final class EngineClient {
         guard let request = self?.pending.removeValue(forKey: id) else { return }
         let elapsedNs = DispatchTime.now().uptimeNanoseconds - request.startedAtNs
         let diagnostic = EngineTimeoutDiagnostic(
-          method: request.method, params: request.params, durationMs: elapsedNs / 1_000_000)
+          method: request.method, params: request.params, durationMs: elapsedNs / 1_000_000
+        )
         engineTimeoutLogger.error("Engine RPC timeout: \(diagnostic.logLine, privacy: .public)")
         request.continuation.resume(throwing: failure)
         self?.wire?.close()
@@ -384,7 +384,7 @@ public final class EngineClient {
   }
   /// Retry only connection loss, with the same mutation parameters and idempotency key.
   func mutation<T: Encodable>(
-    _ method: String, _ params: T, timeoutSeconds: Double = 12,
+    _ method: RequestMethod, _ params: T, timeoutSeconds: Double = 12,
     attachments: [WebHostAttachment] = []
   ) async throws -> JsonValue {
     let value = try JsonValue.encoded(params)
@@ -408,7 +408,7 @@ public final class EngineClient {
     guard let method = message["method"].string, let id = message["id"].string else {
       return false
     }
-    guard method == "web.command", webHostTasks[id] == nil else {
+    guard method == RequestMethod.webCommand.rawValue, webHostTasks[id] == nil else {
       throw ClientFailure.invalidFrame
     }
     let command = try message["params"].decoded(WebCommandParams.self)
@@ -499,8 +499,8 @@ public final class EngineClient {
           WebHostAttachment(reference: $0, bytes: try responseAttachments.commit($0))
         }
         if reference == nil, responseAttachments.isPending { throw ClientFailure.invalidFrame }
-        if request.method == "state.snapshot" { try applySnapshot(result) }
-        if request.method == "pane.stream.subscribe",
+        if request.method == .stateSnapshot { try applySnapshot(result) }
+        if request.method == .paneStreamSubscribe,
           let paneId = request.params["paneId"].string
         {
           let info = try result.decoded(StreamInfo.self)
@@ -733,13 +733,13 @@ public final class EngineClient {
       #if !os(macOS)
         if let old, self.panes.first(where: { $0.paneId == old })?.mode == .terminal {
           _ = try await self.request(
-            "pane.stream.unsubscribe", .object(["paneId": .string(old)]))
+            .paneStreamUnsubscribe, .object(["paneId": .string(old)]))
           self.terminalStreams.remove(old)
         }
       #endif
       if let paneId, self.selectedPaneId == paneId {
         _ = try await self.mutation(
-          "pane.focus", PaneFocusParams(paneId: paneId, idempotencyKey: UUID().uuidString))
+          .paneFocus, PaneFocusParams(paneId: paneId, idempotencyKey: UUID().uuidString))
         if self.selectedPaneId == paneId,
           let pane = self.panes.first(where: { $0.paneId == paneId })
         {
@@ -783,7 +783,7 @@ public final class EngineClient {
     terminalSubscriptionsInFlight.insert(pane)
     defer { terminalSubscriptionsInFlight.remove(pane) }
     _ = try await request(
-      "pane.stream.subscribe", .object(["paneId": .string(pane), "from": .string("tail")]))
+      .paneStreamSubscribe, .object(["paneId": .string(pane), "from": .string("tail")]))
   }
   public func refreshTerminal() {
     guard let pane = selectedPaneId, selectedPane?.mode == .terminal, connected else { return }
@@ -845,7 +845,7 @@ public final class EngineClient {
     let path = directory.standardizedFileURL.path
     let workspaceId = try await workspaceId(for: directory, path: path)
     let result = try await mutation(
-      "pane.create",
+      .paneCreate,
       PaneCreateParams(
         workspaceId: workspaceId,
         mode: .terminal, cwd: path, name: "Terminal", idempotencyKey: UUID().uuidString))
@@ -858,7 +858,7 @@ public final class EngineClient {
       return existing
     }
     let result = try await mutation(
-      "workspace.create",
+      .workspaceCreate,
       WorkspaceCreateParams(
         name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
     return try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
@@ -867,7 +867,7 @@ public final class EngineClient {
     workspaceId: String, state: PaneLayoutState
   ) async throws -> Workspace {
     let result = try await mutation(
-      "workspace.layout.set",
+      .workspaceLayoutSet,
       WorkspaceLayoutSetParams(
         workspaceId: workspaceId, layout: try state.envelope(),
         idempotencyKey: UUID().uuidString))
@@ -875,7 +875,7 @@ public final class EngineClient {
   }
   public func closeWorkspace(_ workspaceId: String) async throws {
     _ = try await mutation(
-      "workspace.close",
+      .workspaceClose,
       WorkspaceCloseParams(
         workspaceId: workspaceId, idempotencyKey: UUID().uuidString))
   }
@@ -891,14 +891,14 @@ public final class EngineClient {
   public func closePane(_ id: String) {
     perform {
       _ = try await self.mutation(
-        "pane.close", PaneCloseParams(paneId: id, idempotencyKey: UUID().uuidString))
+        .paneClose, PaneCloseParams(paneId: id, idempotencyKey: UUID().uuidString))
     }
   }
   public func setExperimentCapture(
     paneId: String, on: Bool
   ) async throws -> PaneExperimentSetResult {
     try await mutation(
-      "pane.experiment.set",
+      .paneExperimentSet,
       PaneExperimentSetParams(
         paneId: paneId, on: on, idempotencyKey: UUID().uuidString)
     ).decoded(PaneExperimentSetResult.self)
@@ -907,7 +907,7 @@ public final class EngineClient {
     paneId: String
   ) async throws -> PaneExperimentDeleteResult {
     try await mutation(
-      "pane.experiment.delete",
+      .paneExperimentDelete,
       PaneExperimentDeleteParams(paneId: paneId, idempotencyKey: UUID().uuidString)
     ).decoded(PaneExperimentDeleteResult.self)
   }
@@ -915,7 +915,7 @@ public final class EngineClient {
     paneIds: [String], fromMs: String, toMs: String
   ) async throws -> PaneExperimentExportResult {
     try await mutation(
-      "pane.experiment.export",
+      .paneExperimentExport,
       PaneExperimentExportParams(
         paneIds: paneIds, fromMs: fromMs, toMs: toMs,
         idempotencyKey: UUID().uuidString)
@@ -946,7 +946,7 @@ public final class EngineClient {
           while offset < data.count {
             let chunk = data.subdata(in: offset..<min(offset + 16_384, data.count))
             let result = try await mutation(
-              "pane.input",
+              .paneInput,
               PaneInputParams(
                 paneId: pane,
                 bytes: chunk.base64EncodedString(), idempotencyKey: UUID().uuidString))
@@ -980,7 +980,7 @@ public final class EngineClient {
       do {
         try await Task.sleep(for: .milliseconds(100))
         _ = try await mutation(
-          "pane.resize",
+          .paneResize,
           PaneResizeParams(
             paneId: pane,
             cols: UInt32(min(cols, 1000)), rows: UInt32(min(rows, 1000)),

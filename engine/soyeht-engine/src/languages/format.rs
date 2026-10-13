@@ -9,7 +9,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_lsp::RequestKind;
-use soyeht_protocol::{FileFormatParams, FileFormatResult, TextEdit};
+use soyeht_protocol::{FileFormatParams, FileFormatResult, TextEdit, method};
 use soyeht_store::editor::document;
 use std::path::Path;
 
@@ -93,7 +93,7 @@ impl Core {
             .get(connection)
             .ok_or_else(|| errors::unauthorized("Connection not found"))?;
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
-            &json!(["file.format", params]).to_string(),
+            &json!([method::FILE_FORMAT, params]).to_string(),
         ));
         let intent = MutationIntent {
             scope: client.scope.clone(),

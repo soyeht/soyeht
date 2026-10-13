@@ -10,7 +10,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     EditorContentSource, FileOpenParams, FileOpenResult, FileReadParams, FileReadResult, Pane,
-    PaneMode, PaneState, StateSource,
+    PaneMode, PaneState, StateSource, method,
 };
 use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use std::path::Path;
@@ -34,7 +34,7 @@ impl Core {
     pub fn file_open(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let request: FileOpenParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid file open parameters"))?;
-        self.open_editor(connection, "file.open", params, request, false)
+        self.open_editor(connection, method::FILE_OPEN, params, request, false)
     }
 
     pub fn editor_pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -46,7 +46,7 @@ impl Core {
             preview: None,
             idempotency_key: errors::param_str(params, "idempotencyKey")?.into(),
         };
-        self.open_editor(connection, "pane.create", params, request, true)
+        self.open_editor(connection, method::PANE_CREATE, params, request, true)
     }
 
     fn open_editor(

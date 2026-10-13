@@ -9,8 +9,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 399,
-      "duplicated_lines": 3564
+      "clones": 395,
+      "duplicated_lines": 3535
     },
     "ios": {
       "clones": 6,
@@ -21,12 +21,12 @@
       "duplicated_lines": 730
     },
     "shared": {
-      "clones": 64,
-      "duplicated_lines": 496
+      "clones": 63,
+      "duplicated_lines": 468
     },
     "swift_all": {
-      "clones": 154,
-      "duplicated_lines": 1395
+      "clones": 153,
+      "duplicated_lines": 1367
     }
   },
   "engine_production_panics": 0,
@@ -244,7 +244,6 @@
     "engine/soyeht-engine/src/pane_observations.rs": 1657,
     "engine/soyeht-engine/src/server.rs": 1080,
     "engine/soyeht-engine/src/tasks/feedback.rs": 907,
-    "engine/soyeht-engine/src/tasks/review.rs": 817,
     "engine/soyeht-engine/src/terminal_capture.rs": 1561,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1115,

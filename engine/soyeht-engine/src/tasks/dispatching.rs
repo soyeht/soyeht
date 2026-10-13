@@ -2,7 +2,7 @@
 
 use super::{
     api::parameters,
-    looping,
+    events, looping,
     worktree::{self, PreparedWorktree, WorktreePort},
 };
 use crate::{
@@ -19,7 +19,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, Pane, PaneMode, PaneState, PromptOrigin, Role, StateSource, Task, TaskDispatchParams,
-    TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree,
+    TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree, event, method,
 };
 use soyeht_store::{
     database::Change,
@@ -69,7 +69,7 @@ impl TaskDispatchChange {
 impl Core {
     pub(crate) fn task_dispatch(&mut self, connection: &str, raw: &Value) -> Result<Outcome> {
         let params: TaskDispatchParams = parameters(raw)?;
-        if let Some(result) = self.repeated_mutation(connection, "task.dispatch", raw)? {
+        if let Some(result) = self.repeated_mutation(connection, method::TASK_DISPATCH, raw)? {
             return self.continue_dispatch(&params.workspace_id, &params.task_id, result);
         }
         let actor = self.task_actor(connection)?;
@@ -116,7 +116,7 @@ impl Core {
     }
 
     pub(crate) fn task_next(&mut self, connection: &str, raw: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "task.next", raw)? {
+        if let Some(result) = self.repeated_mutation(connection, method::TASK_NEXT, raw)? {
             return Ok(result);
         }
         let params: TaskNextParams = parameters(raw)?;
@@ -130,7 +130,7 @@ impl Core {
         let loop_context = self.task_next_loop(&pane_id)?;
         let branch_pane = pane_id.clone();
         let actor_name = self.actor_name(&actor)?;
-        let mutation = self.mutate(connection, "task.next", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_NEXT, raw, move |change| {
             let Some(task) =
                 change.reserve_next_task(&workspace, &branch_pane, &harness, &model, &timestamp)?
             else {
@@ -194,7 +194,7 @@ impl Core {
         let saved = prepared.0.clone();
         let state = prepared.1.clone();
         let reserved_pane = pane_id.clone();
-        let mutation = self.mutate(connection, "task.dispatch", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_DISPATCH, raw, move |change| {
             persist_new_pane(change, &saved, Some(&state))?;
             let task = change.reserve_task(
                 &workspace,
@@ -518,7 +518,7 @@ impl Core {
                 persist_new_pane(change, &saved, Some(&state))?;
                 Ok((
                     json!({}),
-                    vec![("pane.created".into(), json!({"pane":saved.pane}))],
+                    vec![(event::PANE_CREATED.into(), json!({"pane":saved.pane}))],
                 ))
             },
         )
@@ -745,21 +745,12 @@ fn prepare_new_pane(
 
 fn claimed_events(task: &Task, movement: &TaskMove, pane: &str) -> Vec<(String, Value)> {
     vec![
+        events::moved(task, movement),
         (
-            "task.moved".into(),
-            json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"actor":movement.actor,"from":movement.from,"to":movement.to,"reason":movement.reason}),
-        ),
-        (
-            "task.claimed".into(),
+            event::TASK_CLAIMED.into(),
             json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"paneId":pane,"attempt":task.current_attempt}),
         ),
-        (
-            "task.phrase_changed".into(),
-            json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"phrase":task.phrase}),
-        ),
-        (
-            "task.updated".into(),
-            json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"version":task.version}),
-        ),
+        events::phrase_changed(task),
+        events::updated(task),
     ]
 }

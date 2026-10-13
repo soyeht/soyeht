@@ -10,7 +10,7 @@ use serde_json::json;
 use soyeht_acp::config::{FULL_ACCESS_KIND, MODE_CATEGORY, Options, Route};
 use soyeht_protocol::{
     ConfigChoice, ConfigOperation, ConfigOption, ConfigType, ConfigValue, Role, TranscriptKind,
-    TranscriptRole,
+    TranscriptRole, event,
 };
 use uuid::Uuid;
 
@@ -243,7 +243,7 @@ pub fn begin(
             .confirmed(config, &value, &json!({}))
             .map_err(native_error)?;
         confirmed(state, options, config);
-        changes.events.push(("pane.config_changed".into(),json!({"paneId":pane,"configId":config,"value":value,"options":state.options.values,"sessionPreserved":true})));
+        changes.events.push((event::PANE_CONFIG_CHANGED.into(),json!({"paneId":pane,"configId":config,"value":value,"options":state.options.values,"sessionPreserved":true})));
         return Ok(None);
     };
     let id = Uuid::new_v4().to_string();
@@ -256,7 +256,7 @@ pub fn begin(
     state.operation_user = user;
     state.operation_timed_out = false;
     changes.events.push((
-        "pane.config_changing".into(),
+        event::PANE_CONFIG_CHANGING.into(),
         json!({"paneId":pane,"configId":config,"value":value,"operationId":id}),
     ));
     responses::call(
@@ -333,7 +333,7 @@ impl Core {
                     continue;
                 }
                 state.initial_config_failed = true;
-                changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":key,"value":desired,"reason":"Requested selector is not offered by this session"})));
+                changes.events.push((event::PANE_CONFIG_FAILED.into(),json!({"paneId":pane,"configId":key,"value":desired,"reason":"Requested selector is not offered by this session"})));
                 break;
             };
             if option.current_value == desired {
@@ -359,7 +359,7 @@ impl Core {
                 }
                 Ok(None) => {}
                 Err(error) => {
-                    changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":option.id,"value":desired,"reason":error.to_string()})));
+                    changes.events.push((event::PANE_CONFIG_FAILED.into(),json!({"paneId":pane,"configId":option.id,"value":desired,"reason":error.to_string()})));
                     if key == MODE_KEY {
                         let generation = self.panes[pane].stored.pane.generation;
                         refused_mode(&mut state, generation, &desired, &mut changes)?;

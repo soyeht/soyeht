@@ -82,3 +82,6 @@ pub const MODEL_REFUSAL_REASON_BYTES: usize = 4096;
 pub const EXPERIMENT_EXPORT_PANES: usize = 64;
 pub const EXPERIMENT_EXPORT_ROWS: usize = 100000;
 pub const EXPERIMENT_EXPORT_BYTES: usize = 67108864;
+pub const FRAME_KIND_JSON: u8 = 1;
+pub const FRAME_KIND_TERMINAL: u8 = 2;
+pub const FRAME_KIND_ATTACHMENT: u8 = 3;

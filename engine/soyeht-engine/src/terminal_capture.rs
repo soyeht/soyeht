@@ -9,7 +9,7 @@ use crate::{
 };
 use crossbeam_channel as channel;
 use soyeht_pane_state::{EngineBuild, GroundTruthProvenance, HarnessIdentity, ObservationPaneKind};
-use soyeht_protocol::{PaneExperimentCapture, PaneMode, PaneState, StateSource};
+use soyeht_protocol::{PaneExperimentCapture, PaneMode, PaneState, StateSource, method};
 use std::{
     path::Path,
     sync::{
@@ -506,7 +506,7 @@ impl Core {
         params: &serde_json::Value,
     ) -> Result<serde_json::Value> {
         if let Some(result) =
-            self.repeated_mutation(connection, "pane.experiment.delete", params)?
+            self.repeated_mutation(connection, method::PANE_EXPERIMENT_DELETE, params)?
         {
             return Ok(result);
         }
@@ -524,7 +524,7 @@ impl Core {
             "nothingRemained":true,
             "exportsPath":exports_path
         });
-        match self.mutate(connection, "pane.experiment.delete", params, |_tx| {
+        match self.mutate(connection, method::PANE_EXPERIMENT_DELETE, params, |_tx| {
             Ok((result, vec![]))
         }) {
             Ok(mutation) => Ok(mutation.result),

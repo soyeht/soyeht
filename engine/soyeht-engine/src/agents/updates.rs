@@ -13,7 +13,9 @@ use soyeht_acp::{
     session::{self, Update},
     subagents::Lifecycle,
 };
-use soyeht_protocol::{ConfigValue, TokenUsage, TranscriptKind, TranscriptMessage, TranscriptRole};
+use soyeht_protocol::{
+    ConfigValue, TokenUsage, TranscriptKind, TranscriptMessage, TranscriptRole, event,
+};
 
 fn append_replayed_user(
     store: &impl StorePort,
@@ -325,7 +327,7 @@ fn configuration_event(
     )?;
     changes.messages.push(item.clone());
     if !changes.replay_messages {
-        changes.events.push(("pane.update".into(),json!({"paneId":pane,"kind":"config_option_update","generation":generation,"seq":item.seq,"localId":item.local_id,"options":state.options.values})));
+        changes.events.push((event::PANE_UPDATE.into(),json!({"paneId":pane,"kind":"config_option_update","generation":generation,"seq":item.seq,"localId":item.local_id,"options":state.options.values})));
     }
     Ok(())
 }

@@ -9,7 +9,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_lsp::{Position, Range};
-use soyeht_protocol::{FileDiagnostic, LspStatusParams, LspStatusResult, TextPosition, TextRange};
+use soyeht_protocol::{
+    FileDiagnostic, LspStatusParams, LspStatusResult, TextPosition, TextRange, event,
+};
 use soyeht_ptyd::wire::{Instance, Request, Response};
 use soyeht_store::editor::EditorFile;
 use std::path::Path;
@@ -529,7 +531,7 @@ fn diagnostic_events(updates: Vec<DiagnosticUpdate>) -> Vec<(String, Value)> {
         .into_iter()
         .map(|update| {
             (
-                "lsp.diagnostics".into(),
+                event::LSP_DIAGNOSTICS.into(),
                 json!({"fileId":update.file_id,"revision":update.revision.to_string(),"items":update.items}),
             )
         })

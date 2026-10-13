@@ -16,7 +16,9 @@ use soyeht_acp::{
     config::Options,
     session::{self, Initialization},
 };
-use soyeht_protocol::{PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole};
+use soyeht_protocol::{
+    PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole, event,
+};
 use soyeht_store::agents::AgentModelRefusal;
 use std::path::Path;
 
@@ -132,7 +134,7 @@ fn needs_login(state: &mut State, saved: &mut StoredPane, changes: &mut Changes)
         })
         .unwrap_or_default();
     changes.events.push((
-        "pane.needs_login".into(),
+        event::PANE_NEEDS_LOGIN.into(),
         json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"authMethods":methods}),
     ));
 }
@@ -165,7 +167,7 @@ fn finish_configuration(
             }
             super::configuration::confirmed(state, options, &operation.config_id);
             state.initial_config_failed = false;
-            changes.events.push(("pane.config_changed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"options":state.options.values,"sessionPreserved":true})));
+            changes.events.push((event::PANE_CONFIG_CHANGED.into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"options":state.options.values,"sessionPreserved":true})));
             Ok(super::configuration::applied(&operation.value))
         }
         Err(error) => {
@@ -181,7 +183,7 @@ fn finish_configuration(
                 Some(_) => state.initial_config_failed = true,
                 None => {}
             }
-            changes.events.push(("pane.config_failed".into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.to_string()})));
+            changes.events.push((event::PANE_CONFIG_FAILED.into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.to_string()})));
             Err(error)
         }
     };
@@ -287,7 +289,7 @@ fn auth_response(
     };
     state.probe_started_ms = None;
     changes.clear_failed_probes = ok;
-    changes.events.push(("pane.auth_finished".into(),json!({"paneId":saved.pane.pane_id,"ok":ok,"reason":result.err().map(|error|error.message).unwrap_or_else(||"Sign-in completed".into())})));
+    changes.events.push((event::PANE_AUTH_FINISHED.into(),json!({"paneId":saved.pane.pane_id,"ok":ok,"reason":result.err().map(|error|error.message).unwrap_or_else(||"Sign-in completed".into())})));
 }
 
 fn initialize_response(
@@ -523,7 +525,7 @@ fn session_opened(
         PaneState::Starting
     };
     saved.pane.phrase = "Agent session ready".into();
-    changes.events.push(("pane.session_started".into(),json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"version":initialized_version(state)?,"sessionId":state.session_id,"generation":saved.pane.generation,"options":state.options.values})));
+    changes.events.push((event::PANE_SESSION_STARTED.into(),json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"version":initialized_version(state)?,"sessionId":state.session_id,"generation":saved.pane.generation,"options":state.options.values})));
     Ok(())
 }
 
@@ -542,7 +544,7 @@ fn session_lost(
     state.replay_role = None;
     let text = "Native session lost; opening a new session without a continuation package";
     changes.events.push((
-        "pane.session_lost".into(),
+        event::PANE_SESSION_LOST.into(),
         json!({"paneId":saved.pane.pane_id,"reason":reason,"recovery":"new_session"}),
     ));
     changes.messages.push(transcript::new_message(
@@ -657,7 +659,7 @@ fn prompt_response(
     saved.pane.state = PaneState::Idle;
     saved.pane.phrase = "Agent turn ended".into();
     changes.events.push((
-        "pane.turn_ended".into(),
+        event::PANE_TURN_ENDED.into(),
         json!({"paneId":saved.pane.pane_id,"promptId":context,"stopReason":reason}),
     ));
     if authentication_required {

@@ -46,7 +46,7 @@ use serde_json::{Value, json};
 use soyeht_acp::Message;
 use soyeht_protocol::{
     HarnessSetupReason, HarnessSetupState, ProbeCapability, PromptItem, TranscriptMessage,
-    Workspace, ndjson::Decoder,
+    Workspace, event, ndjson::Decoder,
 };
 use soyeht_store::{
     agents::{self, AgentModelRefusal, NativeRequest, Outgoing},
@@ -188,17 +188,17 @@ fn readiness_after_changes(
             }),
         ))
     } else if state.auth_required
-        && (has_event("pane.session_started")
-            || has_event("pane.needs_login")
-            || has_event("pane.auth_finished"))
+        && (has_event(event::PANE_SESSION_STARTED)
+            || has_event(event::PANE_NEEDS_LOGIN)
+            || has_event(event::PANE_AUTH_FINISHED))
     {
         Some((
             HarnessSetupState::SignIn,
             Some(HarnessSetupReason::AuthenticationRequired),
         ))
-    } else if has_event("pane.session_started")
-        || has_event("pane.auth_finished")
-        || has_event("pane.turn_ended")
+    } else if has_event(event::PANE_SESSION_STARTED)
+        || has_event(event::PANE_AUTH_FINISHED)
+        || has_event(event::PANE_TURN_ENDED)
     {
         Some((HarnessSetupState::Ready, None))
     } else {
@@ -308,7 +308,7 @@ impl AgentPersistence<'_> {
         }
         if attention_changed {
             let items = agents::attention_in_change(tx, &self.saved.pane.workspace_id)?;
-            events.push(("attention.changed".into(),json!({"workspaceId":self.saved.pane.workspace_id,"count":items.len(),"items":items})));
+            events.push((event::ATTENTION_CHANGED.into(),json!({"workspaceId":self.saved.pane.workspace_id,"count":items.len(),"items":items})));
         }
         if self.changes.clear_failed_probes {
             tx.clear_failed_probes(&self.state.fingerprint)?;
@@ -434,7 +434,7 @@ impl Core {
                 || running.stored.pane.phrase != saved.pane.phrase
         }) {
             events.push((
-                "pane.state_changed".into(),
+                event::PANE_STATE_CHANGED.into(),
                 crate::core::state_event(&saved),
             ));
         }
@@ -443,7 +443,7 @@ impl Core {
             .get(&id)
             .is_none_or(|running| running.stored.pane != saved.pane)
         {
-            events.push(("pane.updated".into(), json!({"pane":saved.pane})));
+            events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
         }
         let persistence = AgentPersistence {
             id: &id,

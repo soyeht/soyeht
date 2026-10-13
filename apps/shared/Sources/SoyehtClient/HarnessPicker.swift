@@ -206,14 +206,14 @@ public enum HarnessPickerModel {
 extension EngineClient {
   func loadPreferredHarness() async throws {
     let result = try await request(
-      "settings.get", .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
+      .settingsGet, .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
     ).decoded(SettingsGetResult.self)
     preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
   }
 
   public func setPreferredHarness(_ harnessId: String) async throws {
     let result = try await mutation(
-      "settings.set",
+      .settingsSet,
       SettingsSetParams(
         key: HarnessPickerModel.preferredHarnessKey, value: .string(harnessId),
         idempotencyKey: UUID().uuidString)

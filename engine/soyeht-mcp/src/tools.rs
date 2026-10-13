@@ -1,7 +1,7 @@
 use crate::{Error, Result, engine::EnginePort};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value, json};
-use soyeht_protocol::Role;
+use soyeht_protocol::{Role, method};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,245 +31,245 @@ struct Tool {
 const TOOLS: [Tool; 35] = [
     Tool {
         name: "list_agents",
-        method: "agent.list",
+        method: method::AGENT_LIST,
         audience: Audience::Both,
         description: "List other ACP agent panes in this workspace, including IDs for messaging.",
         schema: empty_schema,
     },
     Tool {
         name: "message_agent",
-        method: "agent.message",
+        method: method::AGENT_MESSAGE,
         audience: Audience::Both,
         description: "Queue a message for another ACP agent; delivery waits for its clean input.",
         schema: agent_message_schema,
     },
     Tool {
         name: "task_create",
-        method: "task.create",
+        method: method::TASK_CREATE,
         audience: Audience::Chief,
         description: "Create a workspace task with explicit preservation constraints.",
         schema: create_schema,
     },
     Tool {
         name: "task_next",
-        method: "task.next",
+        method: method::TASK_NEXT,
         audience: Audience::Agent,
         description: "Claim the next eligible task for this pane.",
         schema: empty_schema,
     },
     Tool {
         name: "task_show",
-        method: "task.show",
+        method: method::TASK_SHOW,
         audience: Audience::Both,
         description: "Show the current task or a selected workspace task.",
         schema: task_selector_schema,
     },
     Tool {
         name: "task_list",
-        method: "task.list",
+        method: method::TASK_LIST,
         audience: Audience::Chief,
         description: "List workspace tasks.",
         schema: list_schema,
     },
     Tool {
         name: "task_update",
-        method: "task.update",
+        method: method::TASK_UPDATE,
         audience: Audience::Both,
         description: "Update task fields using its current version.",
         schema: update_schema,
     },
     Tool {
         name: "task_comment",
-        method: "task.comment",
+        method: method::TASK_COMMENT,
         audience: Audience::Both,
         description: "Add a durable task comment.",
         schema: comment_schema,
     },
     Tool {
         name: "task_subitem_add",
-        method: "task.subitem.add",
+        method: method::TASK_SUBITEM_ADD,
         audience: Audience::Agent,
         description: "Add a task subitem before executing it.",
         schema: subitem_add_schema,
     },
     Tool {
         name: "task_subitem_done",
-        method: "task.subitem.done",
+        method: method::TASK_SUBITEM_DONE,
         audience: Audience::Agent,
         description: "Mark one task subitem as done.",
         schema: subitem_done_schema,
     },
     Tool {
         name: "task_block",
-        method: "task.block",
+        method: method::TASK_BLOCK,
         audience: Audience::Agent,
         description: "Block the task with a typed reason.",
         schema: block_schema,
     },
     Tool {
         name: "task_release",
-        method: "task.release",
+        method: method::TASK_RELEASE,
         audience: Audience::Agent,
         description: "Return the current task to the workspace list.",
         schema: release_schema,
     },
     Tool {
         name: "task_request_review",
-        method: "task.request_review",
+        method: method::TASK_REQUEST_REVIEW,
         audience: Audience::Agent,
         description: "Request review after all subitems are done.",
         schema: release_schema,
     },
     Tool {
         name: "task_complete",
-        method: "task.complete",
+        method: method::TASK_COMPLETE,
         audience: Audience::Agent,
         description: "Complete the task with explicit contract and scope declarations.",
         schema: complete_schema,
     },
     Tool {
         name: "task_dispatch",
-        method: "task.dispatch",
+        method: method::TASK_DISPATCH,
         audience: Audience::Chief,
         description: "Dispatch a task with an executor preset.",
         schema: dispatch_schema,
     },
     Tool {
         name: "task_unblock",
-        method: "task.unblock",
+        method: method::TASK_UNBLOCK,
         audience: Audience::Chief,
         description: "Remove a task block with a recorded reason.",
         schema: unblock_schema,
     },
     Tool {
         name: "loop_set",
-        method: "loop.set",
+        method: method::LOOP_SET,
         audience: Audience::Both,
         description: "Configure the loop for this pane.",
         schema: loop_schema,
     },
     Tool {
         name: "writing_structure",
-        method: "writing.structure",
+        method: method::WRITING_STRUCTURE,
         audience: Audience::Both,
         description: "Read the bounded structure of an open writing document.",
         schema: writing_structure_schema,
     },
     Tool {
         name: "writing_variant_add",
-        method: "writing.variant.add",
+        method: method::WRITING_VARIANT_ADD,
         audience: Audience::Both,
         description: "Add one alternate take to a screenplay line for the writer to choose.",
         schema: writing_variant_add_schema,
     },
     Tool {
         name: "web_open",
-        method: "web.open",
+        method: method::WEB_OPEN,
         audience: Audience::Both,
         description: "Open or focus a web pane in the bound workspace.",
         schema: web_open_schema,
     },
     Tool {
         name: "web_navigate",
-        method: "web.navigate",
+        method: method::WEB_NAVIGATE,
         audience: Audience::Both,
         description: "Navigate a web pane to a URL or through its local history.",
         schema: web_navigate_schema,
     },
     Tool {
         name: "web_snapshot",
-        method: "web.snapshot",
+        method: method::WEB_SNAPSHOT,
         audience: Audience::Both,
         description: "Read a bounded accessibility snapshot from a visible web pane.",
         schema: web_snapshot_schema,
     },
     Tool {
         name: "web_click",
-        method: "web.click",
+        method: method::WEB_CLICK,
         audience: Audience::Both,
         description: "Click an element reference from the latest web snapshot.",
         schema: web_ref_schema,
     },
     Tool {
         name: "web_type",
-        method: "web.type",
+        method: method::WEB_TYPE,
         audience: Audience::Both,
         description: "Type bounded text into an element reference.",
         schema: web_type_schema,
     },
     Tool {
         name: "web_press",
-        method: "web.press",
+        method: method::WEB_PRESS,
         audience: Audience::Both,
         description: "Send one bounded key name to a web pane.",
         schema: web_press_schema,
     },
     Tool {
         name: "web_hover",
-        method: "web.hover",
+        method: method::WEB_HOVER,
         audience: Audience::Both,
         description: "Hover an element reference from the latest web snapshot.",
         schema: web_ref_schema,
     },
     Tool {
         name: "web_select",
-        method: "web.select",
+        method: method::WEB_SELECT,
         audience: Audience::Both,
         description: "Select a bounded value in a referenced web control.",
         schema: web_select_schema,
     },
     Tool {
         name: "web_scroll",
-        method: "web.scroll",
+        method: method::WEB_SCROLL,
         audience: Audience::Both,
         description: "Scroll a web pane or a referenced element by bounded deltas.",
         schema: web_scroll_schema,
     },
     Tool {
         name: "web_wait",
-        method: "web.wait",
+        method: method::WEB_WAIT,
         audience: Audience::Both,
         description: "Wait for bounded text, selector, or network-idle conditions.",
         schema: web_wait_schema,
     },
     Tool {
         name: "web_evaluate",
-        method: "web.evaluate",
+        method: method::WEB_EVALUATE,
         audience: Audience::Both,
         description: "Evaluate bounded page code after a separate human permission.",
         schema: web_evaluate_schema,
     },
     Tool {
         name: "web_screenshot",
-        method: "web.screenshot",
+        method: method::WEB_SCREENSHOT,
         audience: Audience::Both,
         description: "Capture a bounded screenshot from a visible web pane.",
         schema: web_screenshot_schema,
     },
     Tool {
         name: "web_console",
-        method: "web.console",
+        method: method::WEB_CONSOLE,
         audience: Audience::Both,
         description: "Read bounded console metadata without page or transport bodies.",
         schema: web_since_schema,
     },
     Tool {
         name: "web_network",
-        method: "web.network",
+        method: method::WEB_NETWORK,
         audience: Audience::Both,
         description: "Read bounded network metadata without headers or bodies.",
         schema: web_since_schema,
     },
     Tool {
         name: "web_resize",
-        method: "web.resize",
+        method: method::WEB_RESIZE,
         audience: Audience::Both,
         description: "Resize a visible web pane using a preset or explicit dimensions.",
         schema: web_resize_schema,
     },
     Tool {
         name: "web_close",
-        method: "web.close",
+        method: method::WEB_CLOSE,
         audience: Audience::Both,
         description: "Close a visible web pane.",
         schema: web_pane_schema,
@@ -422,15 +422,15 @@ fn requires_task(name: &str) -> bool {
 fn mutating(method: &str) -> bool {
     !matches!(
         method,
-        "task.show"
-            | "agent.list"
-            | "task.list"
-            | "writing.structure"
-            | "web.snapshot"
-            | "web.wait"
-            | "web.screenshot"
-            | "web.console"
-            | "web.network"
+        method::TASK_SHOW
+            | method::AGENT_LIST
+            | method::TASK_LIST
+            | method::WRITING_STRUCTURE
+            | method::WEB_SNAPSHOT
+            | method::WEB_WAIT
+            | method::WEB_SCREENSHOT
+            | method::WEB_CONSOLE
+            | method::WEB_NETWORK
     )
 }
 

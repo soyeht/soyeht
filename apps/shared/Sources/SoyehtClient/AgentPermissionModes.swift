@@ -104,7 +104,7 @@ extension EngineClient {
     performBackground(.defaultPermissionModes) {
       for harness in self.harnesses {
         let result = try await self.request(
-          "settings.get",
+          .settingsGet,
           .encoded(
             SettingsGetParams(key: AgentPermissionModes.defaultModeKey(harness: harness.id)))
         ).decoded(SettingsGetResult.self)
@@ -116,7 +116,7 @@ extension EngineClient {
   /// `nil` keeps the harness's own default for new panes.
   public func setDefaultPermissionMode(_ mode: String?, harness: String) async throws {
     let result = try await mutation(
-      "settings.set",
+      .settingsSet,
       SettingsSetParams(
         key: AgentPermissionModes.defaultModeKey(harness: harness), value: .string(mode ?? ""),
         idempotencyKey: UUID().uuidString)

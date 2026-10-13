@@ -2,6 +2,7 @@ use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
 use soyeht_protocol::{
     TextEdit, TextPosition, TextRange, WritingFormatParams, WritingFormatResult, WritingKind,
+    event, method,
 };
 use soyeht_store::editor::document;
 
@@ -14,7 +15,7 @@ impl Core {
     ) -> Result<Value> {
         let request: WritingFormatParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid writing format parameters"))?;
-        if let Some(result) = self.repeated_mutation(connection, "writing.format", params)? {
+        if let Some(result) = self.repeated_mutation(connection, method::WRITING_FORMAT, params)? {
             return Ok(result);
         }
         let current = self.editor.stored(&request.file_id)?.clone();
@@ -54,9 +55,9 @@ impl Core {
                 &image.bytes,
             )?;
         }
-        let mutation = self.mutate(connection, "writing.format", params, |change| {
+        let mutation = self.mutate(connection, method::WRITING_FORMAT, params, |change| {
             change.save_editor_file(&file)?;
-            Ok((result, vec![("writing.changed".into(), event)]))
+            Ok((result, vec![(event::WRITING_CHANGED.into(), event)]))
         })?;
         if !mutation.repeated {
             self.editor.commit_edit(prepared);

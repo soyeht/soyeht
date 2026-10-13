@@ -461,7 +461,7 @@ extension EngineClient {
   func loadAgentPane(_ paneId: String, replacing: Bool) async throws {
     let revision = connectionRevision
     let result = try await request(
-      "pane.transcript",
+      .paneTranscript,
       .encoded(PaneTranscriptParams(paneId: paneId, limit: 100))
     )
     .decoded(PaneTranscriptResult.self)
@@ -484,7 +484,7 @@ extension EngineClient {
     guard let params = olderTranscriptParams(paneId) else { return }
     perform {
       let result = try await self.request(
-        "pane.transcript",
+        .paneTranscript,
         .encoded(params)
       )
       .decoded(PaneTranscriptResult.self)
@@ -500,7 +500,7 @@ extension EngineClient {
     var paused = false
     repeat {
       let result = try await request(
-        "pane.queue.list",
+        .paneQueueList,
         .encoded(PaneQueueListParams(paneId: paneId, cursor: cursor, limit: 64))
       )
       .decoded(PaneQueueListResult.self)
@@ -530,7 +530,7 @@ extension EngineClient {
     var environmentIssue: HarnessEnvironmentIssue?
     repeat {
       let page = try await request(
-        "harness.list",
+        .harnessList,
         .encoded(
           HarnessListParams(cursor: cursor, limit: 64, rescan: cursor == nil ? rescan : nil)),
         timeoutSeconds: Self.catalogueTimeoutSeconds
@@ -552,7 +552,7 @@ extension EngineClient {
 
   private func loadCustomHarnesses() async throws {
     customHarnesses = try await request(
-      "harness.custom.list", .encoded(HarnessCustomListParams())
+      .harnessCustomList, .encoded(HarnessCustomListParams())
     ).decoded(HarnessCustomListResult.self).items
   }
 
@@ -567,7 +567,7 @@ extension EngineClient {
 
   public func createCustomHarness(_ harness: HarnessLaunch) async throws -> HarnessLaunch {
     let result = try await mutation(
-      "harness.custom.create",
+      .harnessCustomCreate,
       HarnessCustomCreateParams(harness: harness, idempotencyKey: UUID().uuidString)
     ).decoded(HarnessCustomMutationResult.self)
     try await refreshAfterCustomHarnessMutation()
@@ -576,7 +576,7 @@ extension EngineClient {
 
   public func updateCustomHarness(_ harness: HarnessLaunch) async throws -> HarnessLaunch {
     let result = try await mutation(
-      "harness.custom.update",
+      .harnessCustomUpdate,
       HarnessCustomUpdateParams(harness: harness, idempotencyKey: UUID().uuidString)
     ).decoded(HarnessCustomMutationResult.self)
     try await refreshAfterCustomHarnessMutation()
@@ -585,7 +585,7 @@ extension EngineClient {
 
   public func removeCustomHarness(_ harnessId: String) async throws {
     _ = try await mutation(
-      "harness.custom.remove",
+      .harnessCustomRemove,
       HarnessCustomRemoveParams(harnessId: harnessId, idempotencyKey: UUID().uuidString)
     ).decoded(HarnessCustomRemoveResult.self)
     try await refreshAfterCustomHarnessMutation()
@@ -610,7 +610,7 @@ extension EngineClient {
       var source = ModelListSource.not_probed
       repeat {
         let page = try await self.request(
-          "model.list",
+          .modelList,
           .encoded(
             ModelListParams(
               harness: harness, paneId: paneId, cursor: cursor, limit: 64)),
@@ -651,7 +651,7 @@ extension EngineClient {
     let path = directory.standardizedFileURL.path
     let workspaceId = try await workspaceId(for: directory, path: path)
     let result = try await mutation(
-      "pane.create",
+      .paneCreate,
       PaneCreateParams(
         workspaceId: workspaceId, mode: .agent, cwd: path,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
@@ -681,7 +681,7 @@ extension EngineClient {
     }
     let (attachments, frames) = Self.promptAttachments(web: draft, drafts: drafts)
     _ = try await mutation(
-      "pane.prompt",
+      .panePrompt,
       PanePromptParams(
         paneId: paneId, text: prompt, origin: .human,
         attachments: attachments.isEmpty ? nil : attachments,
@@ -714,7 +714,7 @@ extension EngineClient {
   public func cancelAgent(_ paneId: String) {
     perform {
       _ = try await self.mutation(
-        "pane.cancel", PaneCancelParams(paneId: paneId, idempotencyKey: UUID().uuidString))
+        .paneCancel, PaneCancelParams(paneId: paneId, idempotencyKey: UUID().uuidString))
     }
   }
 
@@ -728,7 +728,7 @@ extension EngineClient {
   public func answerElicitation(_ request: ElicitationRequest, fields: JsonValue?, cancel: Bool) {
     perform {
       _ = try await self.mutation(
-        "pane.elicitation.answer",
+        .paneElicitationAnswer,
         PaneElicitationAnswerParams(
           paneId: request.paneId, requestId: request.requestId, fields: fields,
           cancel: cancel, idempotencyKey: UUID().uuidString))
@@ -738,7 +738,7 @@ extension EngineClient {
   public func setAgentConfig(_ paneId: String, configId: String, value: ConfigValue) {
     perform {
       _ = try await self.mutation(
-        "pane.config.set",
+        .paneConfigSet,
         PaneConfigSetParams(
           paneId: paneId, configId: configId, value: value,
           idempotencyKey: UUID().uuidString),
@@ -750,7 +750,7 @@ extension EngineClient {
     _ paneId: String, harness: String, model: String? = nil, effort: String? = nil
   ) async throws -> PaneHarnessSwitchResult {
     let result = try await mutation(
-      "pane.harness.switch",
+      .paneHarnessSwitch,
       PaneHarnessSwitchParams(
         paneId: paneId, harness: harness, model: model, effort: effort,
         idempotencyKey: UUID().uuidString),
@@ -763,7 +763,7 @@ extension EngineClient {
   public func setDraft(_ paneId: String, active: Bool) {
     perform {
       _ = try await self.mutation(
-        "pane.draft",
+        .paneDraft,
         PaneDraftParams(
           paneId: paneId, active: active, idempotencyKey: UUID().uuidString))
     }
@@ -772,7 +772,7 @@ extension EngineClient {
   public func removeQueuedPrompt(_ paneId: String, promptId: String) {
     perform {
       _ = try await self.mutation(
-        "pane.queue.remove",
+        .paneQueueRemove,
         PaneQueueRemoveParams(
           paneId: paneId, promptId: promptId, idempotencyKey: UUID().uuidString))
     }
@@ -781,7 +781,7 @@ extension EngineClient {
   public func resumeAgentQueue(_ paneId: String) {
     perform {
       _ = try await self.mutation(
-        "pane.queue.resume",
+        .paneQueueResume,
         PaneQueueResumeParams(paneId: paneId, idempotencyKey: UUID().uuidString))
     }
   }

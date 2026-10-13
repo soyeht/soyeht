@@ -1,16 +1,17 @@
+import SoyehtProtocol
 import Testing
 @testable import SoyehtClient
 
 private actor TimeoutGate {
-  private var released: Set<String> = []
-  private var waiters: [String: CheckedContinuation<Void, Never>] = [:]
+  private var released: Set<RequestMethod> = []
+  private var waiters: [RequestMethod: CheckedContinuation<Void, Never>] = [:]
 
-  func wait(for method: String) async {
+  func wait(for method: RequestMethod) async {
     if released.remove(method) != nil { return }
     await withCheckedContinuation { waiters[method] = $0 }
   }
 
-  func release(_ method: String) {
+  func release(_ method: RequestMethod) {
     if let waiter = waiters.removeValue(forKey: method) {
       waiter.resume()
     } else {
@@ -23,8 +24,8 @@ private actor TimeoutGate {
 @Test func requestTimeoutNamesWhicheverMethodFailsToFinish() async {
   let client = EngineClient(socket: "/tmp/request-timeout-attribution.sock")
   func timeoutMessage(
-    method: String, gate: TimeoutGate,
-    registered: AsyncStream<String>.Continuation
+    method: RequestMethod, gate: TimeoutGate,
+    registered: AsyncStream<RequestMethod>.Continuation
   ) async -> String {
     do {
       _ = try await client.pendingResponse(
@@ -37,12 +38,12 @@ private actor TimeoutGate {
     }
   }
   func firstTimeout(
-    first: String, second: String, victim: String
-  ) async -> (String, String) {
+    first: RequestMethod, second: RequestMethod, victim: RequestMethod
+  ) async -> (RequestMethod, String) {
     let gate = TimeoutGate()
-    let (registrations, registered) = AsyncStream.makeStream(of: String.self)
+    let (registrations, registered) = AsyncStream.makeStream(of: RequestMethod.self)
     var registration = registrations.makeAsyncIterator()
-    let (completions, completed) = AsyncStream.makeStream(of: (String, String).self)
+    let (completions, completed) = AsyncStream.makeStream(of: (RequestMethod, String).self)
     var completion = completions.makeAsyncIterator()
     let firstTask = Task {
       let message = await timeoutMessage(method: first, gate: gate, registered: registered)
@@ -64,12 +65,12 @@ private actor TimeoutGate {
   }
 
   let modelVictim = await firstTimeout(
-    first: "harness.list", second: "model.list", victim: "model.list")
-  #expect(modelVictim.0 == "model.list")
+    first: .harnessList, second: .modelList, victim: .modelList)
+  #expect(modelVictim.0 == .modelList)
   #expect(modelVictim.1 == "The engine did not respond to model.list in time.")
 
   let harnessVictim = await firstTimeout(
-    first: "harness.list", second: "model.list", victim: "harness.list")
-  #expect(harnessVictim.0 == "harness.list")
+    first: .harnessList, second: .modelList, victim: .harnessList)
+  #expect(harnessVictim.0 == .harnessList)
   #expect(harnessVictim.1 == "The engine did not respond to harness.list in time.")
 }

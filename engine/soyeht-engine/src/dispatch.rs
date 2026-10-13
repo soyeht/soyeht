@@ -10,7 +10,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, AttachmentRef, ClientCapability, HelloParams, Role, Welcome,
-    attachment::AttachmentAssembler, frame::Frame, limits,
+    attachment::AttachmentAssembler, event, frame::Frame, limits, method,
 };
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -38,7 +38,9 @@ pub enum Outcome {
 fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
     if matches!(
         method,
-        "pane.experiment.set" | "pane.experiment.delete" | "pane.experiment.export"
+        method::PANE_EXPERIMENT_SET
+            | method::PANE_EXPERIMENT_DELETE
+            | method::PANE_EXPERIMENT_EXPORT
     ) && !signed_ui
     {
         return Err(errors::forbidden_role(
@@ -72,7 +74,10 @@ fn log_refused_handshake(connection: &str, params: &Value, error: &errors::Error
 }
 
 fn uses_native_rpc_result(method: &str) -> bool {
-    matches!(method, "pane.config.set" | "pane.harness.switch")
+    matches!(
+        method,
+        method::PANE_CONFIG_SET | method::PANE_HARNESS_SWITCH
+    )
 }
 
 impl Core {
@@ -80,7 +85,7 @@ impl Core {
         let id = Uuid::new_v4().to_string();
         let nonce = auth::random_bytes().map_err(|error| errors::internal(error.to_string()))?;
         outbox.send(model::notification(
-            "auth.challenge",
+            event::AUTH_CHALLENGE,
             json!({"nonce":STANDARD.encode(nonce),"engineId":self.store.db_id}),
         )?);
         self.clients.insert(
@@ -306,9 +311,12 @@ impl Core {
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method.starts_with("task.")
             && !method.starts_with("web.")
-            && !matches!(method, "agent.list" | "agent.message")
-            && !matches!(method, "writing.structure" | "writing.variant.add")
-            && method != "loop.set"
+            && !matches!(method, method::AGENT_LIST | method::AGENT_MESSAGE)
+            && !matches!(
+                method,
+                method::WRITING_STRUCTURE | method::WRITING_VARIANT_ADD
+            )
+            && method != method::LOOP_SET
         {
             return Err(errors::forbidden_role(
                 "Agent binding method is not allowed",
@@ -328,8 +336,8 @@ impl Core {
         params: &Value,
         scope: &str,
     ) -> Result<Option<Outcome>> {
-        if matches!(method, "task.dispatch" | "task.next")
-            || method == "task.create" && params["dispatch"].as_bool() == Some(true)
+        if matches!(method, method::TASK_DISPATCH | method::TASK_NEXT)
+            || method == method::TASK_CREATE && params["dispatch"].as_bool() == Some(true)
         {
             return Ok(None);
         }
@@ -370,26 +378,26 @@ impl Core {
         writing_image: Option<crate::writing::attachments::WritingImageAttachment>,
     ) -> Result<Outcome> {
         let result = match method {
-            "state.snapshot" => return self.snapshot_parts(connection),
-            "events.subscribe" => self.subscribe_events(connection, params)?,
-            "workspace.list" => json!({"items":self.snapshot_section("workspaces")?}),
+            method::STATE_SNAPSHOT => return self.snapshot_parts(connection),
+            method::EVENTS_SUBSCRIBE => self.subscribe_events(connection, params)?,
+            method::WORKSPACE_LIST => json!({"items":self.snapshot_section("workspaces")?}),
             method if crate::workspaces::handles(method) => {
                 self.workspace_request(connection, method, params)?
             }
-            "pane.create" => self.pane_create(connection, params)?,
-            "pane.close"
-            | "pane.focus"
-            | "pane.rename"
-            | "pane.resize"
-            | "pane.record.set"
-            | "pane.experiment.set"
-            | "pane.experiment.delete" => self.pane_edit(connection, method, params)?,
-            "pane.experiment.export" => self.export_experiment(connection, params)?,
-            "pane.experiment.hook" => self.record_hook_event(connection, params)?,
-            "pane.input" => self.pane_input(connection, params)?,
-            "pane.harness.switch" => self.agent_harness_switch(connection, params)?,
-            "pane.role.set" => self.pane_role_set(connection, params)?,
-            "pane.auth.start" | "pane.auth.cancel" | "pane.auth.logout" => {
+            method::PANE_CREATE => self.pane_create(connection, params)?,
+            method::PANE_CLOSE
+            | method::PANE_FOCUS
+            | method::PANE_RENAME
+            | method::PANE_RESIZE
+            | method::PANE_RECORD_SET
+            | method::PANE_EXPERIMENT_SET
+            | method::PANE_EXPERIMENT_DELETE => self.pane_edit(connection, method, params)?,
+            method::PANE_EXPERIMENT_EXPORT => self.export_experiment(connection, params)?,
+            method::PANE_EXPERIMENT_HOOK => self.record_hook_event(connection, params)?,
+            method::PANE_INPUT => self.pane_input(connection, params)?,
+            method::PANE_HARNESS_SWITCH => self.agent_harness_switch(connection, params)?,
+            method::PANE_ROLE_SET => self.pane_role_set(connection, params)?,
+            method::PANE_AUTH_START | method::PANE_AUTH_CANCEL | method::PANE_AUTH_LOGOUT => {
                 self.agent_auth(connection, method, params)?
             }
             method if method.starts_with("harness.custom.") => {
@@ -398,65 +406,76 @@ impl Core {
             method if crate::agents::methods::handles(method) => {
                 self.agent_method(connection, method, params, prompt_attachments)?
             }
-            "agent.list" | "agent.message" => self.agent_peer_method(connection, method, params)?,
-            "pane.permission.answer" => self.permission_answer(connection, method, params)?,
-            "pane.elicitation.answer" => self.agent_answer(connection, method, params)?,
-            "task.show" | "task.list" | "task.comments" => {
+            method::AGENT_LIST | method::AGENT_MESSAGE => {
+                self.agent_peer_method(connection, method, params)?
+            }
+            method::PANE_PERMISSION_ANSWER => self.permission_answer(connection, method, params)?,
+            method::PANE_ELICITATION_ANSWER => self.agent_answer(connection, method, params)?,
+            method::TASK_SHOW | method::TASK_LIST | method::TASK_COMMENTS => {
                 self.task_query(connection, method, params)?
             }
-            "pane.commands.list" => self.pane_commands_list(params)?,
+            method::PANE_COMMANDS_LIST => self.pane_commands_list(params)?,
             method if crate::skills::handles(method) => {
                 self.skills_request(connection, method, params)?
             }
-            "usage.list" => self.usage_list()?,
-            "usage.refresh" => return self.usage_refresh(connection, params),
-            "servers.local.list" => return self.local_servers_list(),
-            "web.open" => self.web_open(connection, params)?,
-            "web.navigate" => return self.web_navigate(connection, request_id, params),
-            "web.close" => self.web_close(connection, params)?,
+            method::USAGE_LIST => self.usage_list()?,
+            method::USAGE_REFRESH => return self.usage_refresh(connection, params),
+            method::SERVERS_LOCAL_LIST => return self.local_servers_list(),
+            method::WEB_OPEN => self.web_open(connection, params)?,
+            method::WEB_NAVIGATE => return self.web_navigate(connection, request_id, params),
+            method::WEB_CLOSE => self.web_close(connection, params)?,
             method if crate::web::handles_command(method) => {
                 return self.web_command(connection, request_id, method, params);
             }
             method if crate::web::handles_host_update(method) => {
                 self.web_host_update(connection, method, params)?
             }
-            "lsp.status" => self.lsp_status(params)?,
-            "file.symbols" | "file.definition" | "file.references" => {
+            method::LSP_STATUS => self.lsp_status(params)?,
+            method::FILE_SYMBOLS | method::FILE_DEFINITION | method::FILE_REFERENCES => {
                 return self.language_request(connection, request_id, method, params);
             }
-            "file.format" => return self.language_format(connection, request_id, params),
-            "file.diagnostics" => self.file_diagnostics(params)?,
-            "file.diff" => return self.file_diff(params),
-            "writing.asset.read" => return self.writing_asset_read(params),
-            "writing.section.list" => return self.writing_section_list(params),
-            "file.search" => return self.file_search(connection, params),
+            method::FILE_FORMAT => return self.language_format(connection, request_id, params),
+            method::FILE_DIAGNOSTICS => self.file_diagnostics(params)?,
+            method::FILE_DIFF => return self.file_diff(params),
+            method::WRITING_ASSET_READ => return self.writing_asset_read(params),
+            method::WRITING_SECTION_LIST => return self.writing_section_list(params),
+            method::FILE_SEARCH => return self.file_search(connection, params),
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
                 self.document_request(connection, method, params, writing_image)?
             }
-            "task.dispatch" => return self.task_dispatch(connection, params),
-            "task.next" => self.task_next(connection, params)?,
-            "task.worktree.clean" => return self.task_worktree_clean(connection, params),
-            "loop.set" => self.loop_set(connection, params)?,
-            "task.request_review" => return self.task_request_review(connection, params),
-            "task.create" | "task.update" | "task.comment" | "task.subitem.add"
-            | "task.subitem.done" | "task.block" | "task.release" | "task.complete"
-            | "task.unblock" | "task.move" => return self.task_author(connection, method, params),
-            "pane.stream.subscribe" | "pane.stream.unsubscribe" => {
+            method::TASK_DISPATCH => return self.task_dispatch(connection, params),
+            method::TASK_NEXT => self.task_next(connection, params)?,
+            method::TASK_WORKTREE_CLEAN => return self.task_worktree_clean(connection, params),
+            method::LOOP_SET => self.loop_set(connection, params)?,
+            method::TASK_REQUEST_REVIEW => return self.task_request_review(connection, params),
+            method::TASK_CREATE
+            | method::TASK_UPDATE
+            | method::TASK_COMMENT
+            | method::TASK_SUBITEM_ADD
+            | method::TASK_SUBITEM_DONE
+            | method::TASK_BLOCK
+            | method::TASK_RELEASE
+            | method::TASK_COMPLETE
+            | method::TASK_UNBLOCK
+            | method::TASK_MOVE => return self.task_author(connection, method, params),
+            method::PANE_STREAM_SUBSCRIBE | method::PANE_STREAM_UNSUBSCRIBE => {
                 return self.stream_request(connection, request_id, method, params);
             }
-            "engine.status" => {
+            method::ENGINE_STATUS => {
                 json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION},"reachability":self.reachability})
             }
-            "settings.get" => {
+            method::SETTINGS_GET => {
                 let key = errors::param_str(params, "key")?;
                 json!({"key":params["key"],"value":self.setting(key)?})
             }
-            "settings.set" => self.setting_set(connection, params)?,
-            "device.list" => json!({"items":self.snapshot_section("devices")?}),
-            "device.pair.start" | "device.pair.decide" | "device.revoke" => {
+            method::SETTINGS_SET => self.setting_set(connection, params)?,
+            method::DEVICE_LIST => json!({"items":self.snapshot_section("devices")?}),
+            method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE => {
                 self.device_request(connection, method, params)?
             }
-            "push.register" | "push.unregister" => self.push_request(connection, method, params)?,
+            method::PUSH_REGISTER | method::PUSH_UNREGISTER => {
+                self.push_request(connection, method, params)?
+            }
             _ => return Err(errors::invalid("Method unavailable")),
         };
         if uses_native_rpc_result(method) {
@@ -517,7 +536,7 @@ impl Core {
         let mut params = request.get("params").cloned().unwrap_or(json!({}));
         soyeht_protocol::validate::parameters(method, &params)
             .map_err(|error| errors::invalid(error.to_string()))?;
-        if method == "hello" {
+        if method == method::HELLO {
             return self
                 .hello(connection, &params)
                 .map(Outcome::Reply)
@@ -529,12 +548,12 @@ impl Core {
                 .map(Outcome::Reply);
         }
         let scope = self.authenticated_scope(connection, method)?;
-        let prompt_attachments = if method == "pane.prompt" {
+        let prompt_attachments = if method == method::PANE_PROMPT {
             self.prepare_prompt_attachments(connection, &mut params)?
         } else {
             Vec::new()
         };
-        let writing_image = if method == "writing.format" {
+        let writing_image = if method == method::WRITING_FORMAT {
             let image = self.prepare_writing_image(connection, &mut params)?;
             if image.is_none() && self.web_attachment_pending(connection)? {
                 return Err(errors::invalid(
@@ -555,7 +574,7 @@ impl Core {
         {
             return Ok(outcome);
         }
-        if matches!(method, "harness.list" | "model.list") {
+        if matches!(method, method::HARNESS_LIST | method::MODEL_LIST) {
             return Ok(Outcome::Catalog {
                 method: method.to_owned(),
                 params,
@@ -641,7 +660,7 @@ impl Core {
             .enumerate()
             .map(|(index, (section, data))| {
                 model::notification(
-                    "state.snapshot_part",
+                    event::STATE_SNAPSHOT_PART,
                     json!({"snapshotId":snapshot_id,"index":index,"of":count,"section":section,"data":data}),
                 )
             })

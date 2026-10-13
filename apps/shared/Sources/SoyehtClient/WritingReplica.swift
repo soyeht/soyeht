@@ -84,7 +84,7 @@ extension EngineClient {
     workspaceId: String, section: WritingSection, cursor: String? = nil, limit: UInt32 = 100
   ) async throws -> WritingSectionListResult {
     try await request(
-      "writing.section.list",
+      .writingSectionList,
       .encoded(
         WritingSectionListParams(
           workspaceId: workspaceId, section: section, cursor: cursor,
@@ -99,7 +99,7 @@ extension EngineClient {
     selectPane: Bool = true
   ) async throws -> WritingDocumentCreateResult {
     let result = try await mutation(
-      "writing.document.create",
+      .writingDocumentCreate,
       WritingDocumentCreateParams(
         workspaceId: workspaceId, section: section, title: title,
         relativeFolder: relativeFolder, idempotencyKey: UUID().uuidString)
@@ -116,7 +116,7 @@ extension EngineClient {
     workspaceId: String, path: String, kind: WritingKind, selectPane: Bool = true
   ) async throws -> WritingDocumentOpenResult {
     let result = try await mutation(
-      "writing.document.open",
+      .writingDocumentOpen,
       WritingDocumentOpenParams(
         workspaceId: workspaceId, path: path, kind: kind,
         idempotencyKey: UUID().uuidString)
@@ -132,7 +132,7 @@ extension EngineClient {
   public func loadWritingStructure(fileId: String) async throws -> WritingStructureResult {
     let result: WritingStructureResult = try await withWritingRevision(fileId) { revision in
       let value = try await self.request(
-        "writing.structure", .encoded(WritingStructureParams(fileId: fileId, revision: revision))
+        .writingStructure, .encoded(WritingStructureParams(fileId: fileId, revision: revision))
       ).decoded(WritingStructureResult.self)
       guard value.document.file.revision == revision else { throw ClientFailure.invalidFrame }
       return value
@@ -149,7 +149,7 @@ extension EngineClient {
     let key = UUID().uuidString
     let result: WritingFormatResult = try await withWritingRevision(fileId) { revision in
       try await self.mutation(
-        "writing.format",
+        .writingFormat,
         WritingFormatParams(
           fileId: fileId, baseRevision: revision, range: range, kind: kind, value: value,
           image: image?.reference, idempotencyKey: key),
@@ -166,7 +166,7 @@ extension EngineClient {
   public func readWritingAsset(fileId: String, asset: String) async throws -> Data {
     try await withWritingRevision(fileId) { revision in
       let response = try await self.requestResponse(
-        "writing.asset.read",
+        .writingAssetRead,
         .encoded(WritingAssetReadParams(fileId: fileId, revision: revision, asset: asset)))
       let result = try response.value.decoded(WritingAssetReadResult.self)
       guard result.fileId == fileId, result.revision == revision,
@@ -189,7 +189,7 @@ extension EngineClient {
     let key = UUID().uuidString
     let result: WritingPreferencesResult = try await withWritingRevision(fileId) { revision in
       try await self.mutation(
-        "writing.preferences.set",
+        .writingPreferencesSet,
         WritingPreferencesParams(
           fileId: fileId, baseRevision: revision, font: font, focusMode: focusMode,
           fullWidth: fullWidth, idempotencyKey: key)
@@ -205,7 +205,7 @@ extension EngineClient {
     let key = UUID().uuidString
     return try await withWritingRevision(fileId) { revision in
       try await self.mutation(
-        "writing.variant.request",
+        .writingVariantRequest,
         WritingVariantRequestParams(
           fileId: fileId, lineId: lineId, baseRevision: revision,
           agentPaneId: agentPaneId, instruction: instruction, idempotencyKey: key)
@@ -220,7 +220,7 @@ extension EngineClient {
     let key = UUID().uuidString
     let result: WritingVariantResult = try await withWritingRevision(fileId) { revision in
       try await self.mutation(
-        "writing.variant.select",
+        .writingVariantSelect,
         WritingVariantSelectParams(
           fileId: fileId, lineId: lineId, variantId: variantId,
           baseRevision: revision, idempotencyKey: key)
@@ -236,7 +236,7 @@ extension EngineClient {
     let key = UUID().uuidString
     let result: WritingVariantResult = try await withWritingRevision(fileId) { revision in
       try await self.mutation(
-        "writing.variant.remove",
+        .writingVariantRemove,
         WritingVariantRemoveParams(
           fileId: fileId, lineId: lineId, variantId: variantId,
           baseRevision: revision, idempotencyKey: key)
@@ -248,7 +248,7 @@ extension EngineClient {
   public func listWritingBeats(fileId: String) async throws -> WritingBeatListResult {
     let result: WritingBeatListResult = try await withWritingRevision(fileId) { revision in
       try await self.request(
-        "writing.beat.list", .encoded(WritingBeatListParams(fileId: fileId, revision: revision))
+        .writingBeatList, .encoded(WritingBeatListParams(fileId: fileId, revision: revision))
       ).decoded(WritingBeatListResult.self)
     }
     guard result.beats.count <= ProtocolLimits.writingBeatCards else {
@@ -265,7 +265,7 @@ extension EngineClient {
     let key = UUID().uuidString
     let result: WritingBeatResult = try await withWritingRevision(fileId) { revision in
       try await self.mutation(
-        "writing.beat.put",
+        .writingBeatPut,
         WritingBeatPutParams(
           fileId: fileId, baseRevision: revision, beatId: beatId,
           title: title, body: body, category: category, order: order, sceneId: sceneId,
@@ -281,7 +281,7 @@ extension EngineClient {
     let key = UUID().uuidString
     let result: WritingBeatResult = try await withWritingRevision(fileId) { revision in
       try await self.mutation(
-        "writing.beat.delete",
+        .writingBeatDelete,
         WritingBeatDeleteParams(
           fileId: fileId, baseRevision: revision, beatId: beatId, idempotencyKey: key)
       ).decoded(WritingBeatResult.self)
@@ -381,7 +381,7 @@ extension EngineClient {
   private func refreshWritingStructure(_ fileId: String, generation: UInt64) async throws {
     let revision = try writingRevision(fileId)
     let result = try await request(
-      "writing.structure", .encoded(WritingStructureParams(fileId: fileId, revision: revision))
+      .writingStructure, .encoded(WritingStructureParams(fileId: fileId, revision: revision))
     ).decoded(WritingStructureResult.self)
     guard result.document.file.revision == revision,
       writingRefreshGeneration[fileId] == generation,

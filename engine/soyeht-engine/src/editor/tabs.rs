@@ -17,7 +17,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    EditorTab, EditorTabsListParams, EditorTabsListResult, EditorTabsMoveParams, Workspace,
+    EditorTab, EditorTabsListParams, EditorTabsListResult, EditorTabsMoveParams, Workspace, event,
+    method,
 };
 use soyeht_store::{
     database::Change,
@@ -75,11 +76,14 @@ impl Core {
         order.insert((request.index as usize).min(order.len()), moved);
         let workspace_id = request.workspace_id.clone();
         Ok(self
-            .mutate(connection, "editor.tabs.move", params, |change| {
+            .mutate(connection, method::EDITOR_TABS_MOVE, params, |change| {
                 change.replace_editor_tabs(&workspace_id, &order)?;
                 let rows = change.editor_tabs(&workspace_id)?;
                 let result = tabs_value(&workspace_id, &rows)?;
-                Ok((result.clone(), vec![("editor.tabs_updated".into(), result)]))
+                Ok((
+                    result.clone(),
+                    vec![(event::EDITOR_TABS_UPDATED.into(), result)],
+                ))
             })?
             .result)
     }
@@ -106,7 +110,7 @@ impl Core {
                 if let Some(version) = &opening.version {
                     change.record_file_version(version)?;
                 }
-                let mut events = vec![("pane.created".into(), opening.created_event.clone())];
+                let mut events = vec![(event::PANE_CREATED.into(), opening.created_event.clone())];
                 if let Some(replaced) = &replaced {
                     persist_pane(change, &replaced.saved)?;
                     if let Some(workspace) = &replaced.layout {
@@ -201,7 +205,7 @@ pub(crate) fn refresh_tabs(
     let rows = change.editor_tabs(workspace_id)?;
     change.replace_editor_tabs(workspace_id, &placements(&rows))?;
     Ok((
-        "editor.tabs_updated".into(),
+        event::EDITOR_TABS_UPDATED.into(),
         tabs_value(workspace_id, &rows)?,
     ))
 }
@@ -228,7 +232,7 @@ pub(crate) fn pin_tab(
     change.replace_editor_tabs(workspace_id, &order)?;
     let rows = change.editor_tabs(workspace_id)?;
     Ok(Some((
-        "editor.tabs_updated".into(),
+        event::EDITOR_TABS_UPDATED.into(),
         tabs_value(workspace_id, &rows)?,
     )))
 }
@@ -260,7 +264,7 @@ fn place_tab(
     change.replace_editor_tabs(workspace_id, &order)?;
     let rows = change.editor_tabs(workspace_id)?;
     Ok((
-        "editor.tabs_updated".into(),
+        event::EDITOR_TABS_UPDATED.into(),
         tabs_value(workspace_id, &rows)?,
     ))
 }

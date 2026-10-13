@@ -7,7 +7,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     PaneMode, WebCommandKind, WebCommandParams, WebInteractionMode, WebNavigateParams,
-    WebOpenParams, WebOpenResult,
+    WebOpenParams, WebOpenResult, method,
 };
 use soyeht_web::NormalizedUrl;
 
@@ -36,7 +36,7 @@ impl Core {
         }
         self.persist_web_pane(
             connection,
-            "web.open",
+            method::WEB_OPEN,
             params,
             NewWebPane {
                 workspace: &workspace,
@@ -71,7 +71,13 @@ impl Core {
             timeout_ms: NAVIGATION_TIMEOUT_MS,
             operation_key: request.idempotency_key,
         };
-        self.queue_web_command(connection, request_id, "web.navigate", params, command)?;
+        self.queue_web_command(
+            connection,
+            request_id,
+            method::WEB_NAVIGATE,
+            params,
+            command,
+        )?;
         Ok(Outcome::Queued)
     }
 
@@ -140,7 +146,7 @@ impl Core {
         })
         .map_err(|_| errors::internal("Web open result serialization failed"))?;
         Ok(self
-            .mutate(connection, "web.open", params, |change| {
+            .mutate(connection, method::WEB_OPEN, params, |change| {
                 change.focus_pane(scope, workspace_id, pane_id)?;
                 Ok((result, Vec::new()))
             })?

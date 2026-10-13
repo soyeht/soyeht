@@ -90,23 +90,23 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
         args.truncate(args.len() - 2);
     }
     match args.as_slice() {
-        ["status"] => rpc::<EngineStatusResult>(client, "engine.status", json!({})),
+        ["status"] => rpc::<EngineStatusResult>(client, method::ENGINE_STATUS, json!({})),
         ["__experiment-hook", capability] => experiment_hook(client, capability),
         ["pane", "list"] => Ok(json!({"items":client.snapshot()?.take(&SnapshotSection::Panes)})),
         ["pane", "create", rest @ ..] => create(client, rest, &key),
         ["pane", "close", id] => rpc::<PaneCloseResult>(
             client,
-            "pane.close",
+            method::PANE_CLOSE,
             json!({"paneId":id,"idempotencyKey":key}),
         ),
         ["pane", "prompt", id, text] => rpc::<PanePromptResult>(
             client,
-            "pane.prompt",
+            method::PANE_PROMPT,
             json!({"paneId":id,"text":text,"idempotencyKey":key}),
         ),
         ["pane", "cancel", id] => rpc::<PaneCancelResult>(
             client,
-            "pane.cancel",
+            method::PANE_CANCEL,
             json!({"paneId":id,"idempotencyKey":key}),
         ),
         ["pane", "permission", id, choice, rest @ ..] if matches!(*choice, "allow" | "deny") => {
@@ -116,42 +116,42 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
         ["pane", "mode", id, mode] => set_mode(client, id, mode, &key),
         ["pane", "auth", id, method] => rpc::<PaneAuthStartResult>(
             client,
-            "pane.auth.start",
+            method::PANE_AUTH_START,
             json!({"paneId":id,"authMethodId":method,"idempotencyKey":key}),
         ),
         ["pane", "auth-cancel", id] => rpc::<PaneAuthCancelResult>(
             client,
-            "pane.auth.cancel",
+            method::PANE_AUTH_CANCEL,
             json!({"paneId":id,"idempotencyKey":key}),
         ),
         ["pane", "logout", id] => rpc::<PaneAuthLogoutResult>(
             client,
-            "pane.auth.logout",
+            method::PANE_AUTH_LOGOUT,
             json!({"paneId":id,"idempotencyKey":key}),
         ),
         ["pane", "transcript", id, rest @ ..] => {
             let mut params = options(rest, &[("--before", "before"), ("--limit", "limit")])?;
             params["paneId"] = json!(id);
-            rpc::<PaneTranscriptResult>(client, "pane.transcript", params)
+            rpc::<PaneTranscriptResult>(client, method::PANE_TRANSCRIPT, params)
         }
         ["pane", "queue", id, rest @ ..] => {
             let mut params = options(rest, &[("--cursor", "cursor"), ("--limit", "limit")])?;
             params["paneId"] = json!(id);
-            rpc::<PaneQueueListResult>(client, "pane.queue.list", params)
+            rpc::<PaneQueueListResult>(client, method::PANE_QUEUE_LIST, params)
         }
         ["pane", "queue-resume", id] => rpc::<PaneQueueResumeResult>(
             client,
-            "pane.queue.resume",
+            method::PANE_QUEUE_RESUME,
             json!({"paneId":id,"idempotencyKey":key}),
         ),
         ["pane", "queue-remove", id, prompt] => rpc::<PaneQueueRemoveResult>(
             client,
-            "pane.queue.remove",
+            method::PANE_QUEUE_REMOVE,
             json!({"paneId":id,"promptId":prompt,"idempotencyKey":key}),
         ),
         ["harness", "list", rest @ ..] => rpc::<HarnessListResult>(
             client,
-            "harness.list",
+            method::HARNESS_LIST,
             options(rest, &[("--cursor", "cursor"), ("--limit", "limit")])?,
         ),
         ["model", "list", harness, rest @ ..] => {
@@ -164,12 +164,14 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
                 ],
             )?;
             params["harness"] = json!(harness);
-            rpc::<ModelListResult>(client, "model.list", params)
+            rpc::<ModelListResult>(client, method::MODEL_LIST, params)
         }
-        ["device", "list"] => rpc::<DeviceListResult>(client, "device.list", json!({})),
-        ["device", "pair-start"] => {
-            rpc::<DevicePairStartResult>(client, "device.pair.start", json!({"idempotencyKey":key}))
-        }
+        ["device", "list"] => rpc::<DeviceListResult>(client, method::DEVICE_LIST, json!({})),
+        ["device", "pair-start"] => rpc::<DevicePairStartResult>(
+            client,
+            method::DEVICE_PAIR_START,
+            json!({"idempotencyKey":key}),
+        ),
         ["file", rest @ ..] => editor_commands::execute_file(client, rest, &key),
         ["usage", rest @ ..] => editor_commands::execute_usage(client, rest, &key),
         ["task", rest @ ..] => task_commands::execute_task(client, rest, &key),
@@ -194,7 +196,7 @@ fn experiment_hook(client: &mut Client, capability: &str) -> Result<Value> {
     let event: ExperimentHookEvent =
         serde_json::from_value(json!(event)).map_err(|_| invalid("Unsupported hook event"))?;
     let _: PaneExperimentHookResult = client.request(
-        "pane.experiment.hook",
+        method::PANE_EXPERIMENT_HOOK,
         serde_json::to_value(PaneExperimentHookParams {
             event,
             capability: capability.into(),
@@ -241,7 +243,7 @@ fn set_config(
     };
     rpc::<PaneConfigSetResult>(
         client,
-        "pane.config.set",
+        method::PANE_CONFIG_SET,
         json!({"paneId":pane,"configId":config,"value":value,"idempotencyKey":key}),
     )
 }
@@ -258,7 +260,7 @@ fn set_mode(client: &mut Client, pane: &str, mode: &str, key: &str) -> Result<Va
         .ok_or_else(|| invalid("The permission mode selector has no ID"))?;
     rpc::<PaneConfigSetResult>(
         client,
-        "pane.config.set",
+        method::PANE_CONFIG_SET,
         json!({"paneId":pane,"configId":config,"value":mode,"idempotencyKey":key}),
     )
 }
@@ -290,11 +292,11 @@ fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
     let path = cwd
         .to_str()
         .ok_or_else(|| invalid("Directory must be valid UTF-8"))?;
-    let workspaces: WorkspaceListResult = client.request("workspace.list", json!({}))?;
+    let workspaces: WorkspaceListResult = client.request(method::WORKSPACE_LIST, json!({}))?;
     let workspace = if let Some(workspace) = workspaces.items.into_iter().find(|w| w.path == path) {
         workspace
     } else {
-        let created: WorkspaceCreateResult = client.request("workspace.create",json!({"name":cwd.file_name().and_then(|v| v.to_str()).unwrap_or("Workspace"),"path":path,"idempotencyKey":Uuid::new_v4().to_string()}))?;
+        let created: WorkspaceCreateResult = client.request(method::WORKSPACE_CREATE,json!({"name":cwd.file_name().and_then(|v| v.to_str()).unwrap_or("Workspace"),"path":path,"idempotencyKey":Uuid::new_v4().to_string()}))?;
         created.workspace
     };
     params["workspaceId"] = json!(workspace.workspace_id);
@@ -307,7 +309,7 @@ fn create(client: &mut Client, args: &[&str], key: &str) -> Result<Value> {
     if let Some(path) = editor {
         params["path"] = json!(path);
     }
-    rpc::<PaneCreateResult>(client, "pane.create", params)
+    rpc::<PaneCreateResult>(client, method::PANE_CREATE, params)
 }
 
 fn permission(
@@ -347,7 +349,7 @@ fn permission(
         .ok_or_else(|| invalid("The agent does not offer that one-time permission choice"))?;
     rpc::<PanePermissionAnswerResult>(
         client,
-        "pane.permission.answer",
+        method::PANE_PERMISSION_ANSWER,
         json!({"paneId":pane,"requestId":request["requestId"],"optionId":option["optionId"],"idempotencyKey":key}),
     )
 }

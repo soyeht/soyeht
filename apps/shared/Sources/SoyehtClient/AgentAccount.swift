@@ -146,7 +146,7 @@ extension EngineClient {
     agentPanes[paneId, default: AgentPaneView()].signInFailure = nil
     perform {
       let result = try await self.mutation(
-        "pane.auth.start",
+        .paneAuthStart,
         PaneAuthStartParams(
           paneId: paneId, authMethodId: methodId, idempotencyKey: UUID().uuidString)
       ).decoded(PaneAuthStartResult.self)
@@ -163,7 +163,7 @@ extension EngineClient {
   public func cancelAgentAuthentication(_ paneId: String) {
     perform {
       _ = try await self.mutation(
-        "pane.auth.cancel",
+        .paneAuthCancel,
         PaneAuthCancelParams(paneId: paneId, idempotencyKey: UUID().uuidString))
     }
   }
@@ -180,7 +180,7 @@ extension EngineClient {
   public func signOutAgent(_ paneId: String) {
     perform {
       _ = try await self.mutation(
-        "pane.auth.logout",
+        .paneAuthLogout,
         PaneAuthLogoutParams(paneId: paneId, idempotencyKey: UUID().uuidString))
     }
   }

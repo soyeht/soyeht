@@ -6,26 +6,28 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::client;
-use soyeht_protocol::{AgentMessageSource, PaneMode, PaneState, PromptOrigin, limits};
+use soyeht_protocol::{
+    AgentMessageSource, PaneMode, PaneState, PromptOrigin, event, limits, method,
+};
 use soyeht_store::agents;
 
 pub(crate) fn handles(method: &str) -> bool {
     matches!(
         method,
-        "pane.prompt"
-            | "pane.queue.list"
-            | "pane.queue.remove"
-            | "pane.queue.resume"
-            | "pane.cancel"
-            | "pane.config.set"
-            | "pane.transcript"
-            | "pane.draft"
+        method::PANE_PROMPT
+            | method::PANE_QUEUE_LIST
+            | method::PANE_QUEUE_REMOVE
+            | method::PANE_QUEUE_RESUME
+            | method::PANE_CANCEL
+            | method::PANE_CONFIG_SET
+            | method::PANE_TRANSCRIPT
+            | method::PANE_DRAFT
     )
 }
 
 pub(crate) fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
     (
-        "pane.queued".into(),
+        event::PANE_QUEUED.into(),
         json!({"paneId":pane,"n":state.queue.len(),
         "promptIds":state.queue.iter().map(|p| &p.prompt_id).collect::<Vec<_>>(),"draft":state.draft_until_ms > now_ms}),
     )
@@ -51,14 +53,14 @@ fn read_agent_state(
     state: &super::state::State,
     now_ms: i64,
 ) -> Result<Option<Value>> {
-    if method == "pane.queue.list" {
+    if method == method::PANE_QUEUE_LIST {
         return Ok(Some(json!(state.queue_page(
             params["cursor"].as_str(),
             params["limit"].as_u64().unwrap_or(64) as usize,
             now_ms
         )?)));
     }
-    if method == "pane.transcript" {
+    if method == method::PANE_TRANSCRIPT {
         let before = params["before"]
             .as_str()
             .map(str::parse::<u64>)
@@ -100,7 +102,7 @@ pub(crate) fn cancel(
     if !state.queue_paused {
         state.queue_paused = true;
         changes.events.push((
-            "pane.queue.paused".into(),
+            event::PANE_QUEUE_PAUSED.into(),
             json!({"paneId":pane,"paused":true,"reason":"interrupted"}),
         ));
     }
@@ -158,7 +160,7 @@ impl Core {
             .stored
             .pane
             .clone();
-        if method == "agent.list" {
+        if method == method::AGENT_LIST {
             let items: Vec<AgentMessageSource> = self
                 .panes
                 .values()
@@ -295,7 +297,7 @@ impl Core {
         state.operation = None;
         if let Some(prompt) = state.active.take() {
             changes.events.push((
-                "pane.turn_ended".into(),
+                event::PANE_TURN_ENDED.into(),
                 json!({"paneId":pane,"promptId":prompt.prompt_id,"stopReason":"cancelled"}),
             ));
         }
@@ -308,7 +310,7 @@ impl Core {
                 saved,
                 state,
                 changes,
-                Some((connection, "pane.close", params)),
+                Some((connection, method::PANE_CLOSE, params)),
                 json!({"paneId":pane}),
             )?
             .result;
@@ -343,7 +345,7 @@ impl Core {
             return Err(errors::pane_busy("Harness switch is still pending"));
         }
         let result = match method {
-            "pane.prompt" => {
+            method::PANE_PROMPT => {
                 changes.clear_attention = true;
                 let origin = prompt_origin(params)?;
                 if origin == PromptOrigin::Human {
@@ -371,7 +373,7 @@ impl Core {
                 changes.events.push(queued(pane, &state, now_ms));
                 json!({"promptId":prompt.prompt_id,"queued":true})
             }
-            "pane.queue.remove" => {
+            method::PANE_QUEUE_REMOVE => {
                 let prompt = errors::param_str(params, "promptId")?;
                 let removed = state.remove(prompt)?;
                 if removed {
@@ -379,13 +381,13 @@ impl Core {
                 }
                 json!({"promptId":prompt,"removed":removed})
             }
-            "pane.draft" => {
+            method::PANE_DRAFT => {
                 let active = errors::param_bool(params, "active")?;
                 state.draft_until_ms = if active { now_ms + 10_000 } else { 0 };
                 changes.events.push(queued(pane, &state, now_ms));
                 json!({"active":active})
             }
-            "pane.cancel" => cancel(
+            method::PANE_CANCEL => cancel(
                 &self.store,
                 pane,
                 &mut state,
@@ -394,17 +396,17 @@ impl Core {
                 now_ms,
                 &timestamp,
             )?,
-            "pane.queue.resume" => {
+            method::PANE_QUEUE_RESUME => {
                 if state.queue_paused {
                     state.queue_paused = false;
                     changes.events.push((
-                        "pane.queue.resumed".into(),
+                        event::PANE_QUEUE_RESUMED.into(),
                         json!({"paneId":pane,"paused":false}),
                     ));
                 }
                 json!({"paneId":pane,"paused":false})
             }
-            "pane.config.set" => {
+            method::PANE_CONFIG_SET => {
                 let config_id = errors::param_str(params, "configId")?;
                 let value: soyeht_protocol::ConfigValue =
                     serde_json::from_value(params["value"].clone())

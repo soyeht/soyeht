@@ -12,15 +12,15 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_editor::HistoryDirection;
-use soyeht_protocol::{FileUndoParams, FileUndoResult};
+use soyeht_protocol::{FileUndoParams, FileUndoResult, method};
 use soyeht_store::editor::document;
 
 impl Core {
     pub fn file_undo(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         let request: FileUndoParams = parameters(params, "undo")?;
         let direction = match method {
-            "file.undo" => HistoryDirection::Undo,
-            "file.redo" => HistoryDirection::Redo,
+            method::FILE_UNDO => HistoryDirection::Undo,
+            method::FILE_REDO => HistoryDirection::Redo,
             _ => return Err(errors::internal("Unknown file history method")),
         };
         let author = self.file_author(connection)?;

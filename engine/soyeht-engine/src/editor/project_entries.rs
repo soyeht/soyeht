@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     PaneMode, ProjectDeleteOutcome, ProjectEntryCreateParams, ProjectEntryCreateResult,
     ProjectEntryDeleteParams, ProjectEntryDeleteResult, ProjectEntryRenameParams,
-    ProjectEntryRenameResult,
+    ProjectEntryRenameResult, event, method,
 };
 use soyeht_store::editor::{EditorFile, document};
 use std::path::Path;
@@ -35,7 +35,7 @@ impl Core {
         })
         .map_err(|_| errors::internal("Project entry serialization failed"))?;
         Ok(self
-            .mutate(connection, "project.entry.create", params, |_| {
+            .mutate(connection, method::PROJECT_ENTRY_CREATE, params, |_| {
                 Ok((result, Vec::new()))
             })?
             .result)
@@ -96,7 +96,7 @@ impl Core {
         })
         .map_err(|_| errors::internal("Project rename serialization failed"))?;
         let workspace_id = request.workspace_id.clone();
-        let mutation = self.mutate(connection, "project.entry.rename", params, |change| {
+        let mutation = self.mutate(connection, method::PROJECT_ENTRY_RENAME, params, |change| {
             change.move_editor_paths(&workspace_id, &from, &to)?;
             let mut events = Vec::new();
             for file in &files {
@@ -104,9 +104,9 @@ impl Core {
             }
             for pane in &panes {
                 persist_pane(change, pane)?;
-                events.push(("pane.renamed".into(), json!({"pane":pane.pane})));
+                events.push((event::PANE_RENAMED.into(), json!({"pane":pane.pane})));
             }
-            events.push(("project.entry_renamed".into(), result.clone()));
+            events.push((event::PROJECT_ENTRY_RENAMED.into(), result.clone()));
             events.push(super::tabs::refresh_tabs(change, &workspace_id)?);
             Ok((result, events))
         })?;
@@ -164,7 +164,7 @@ impl Core {
         .map_err(|_| errors::internal("Project delete serialization failed"))?;
         if outcome == ProjectDeleteOutcome::NeedsConfirmation {
             return Ok(self
-                .mutate(connection, "project.entry.delete", params, |_| {
+                .mutate(connection, method::PROJECT_ENTRY_DELETE, params, |_| {
                     Ok((result, Vec::new()))
                 })?
                 .result);
@@ -196,18 +196,18 @@ impl Core {
                 layout_changed = true;
             }
             events.push((
-                "pane.closed".into(),
+                event::PANE_CLOSED.into(),
                 json!({"paneId":pane_id,"workspaceId":workspace_id}),
             ));
             closing.push(saved);
         }
         if layout_changed {
             events.push((
-                "workspace.layout_updated".into(),
+                event::WORKSPACE_LAYOUT_UPDATED.into(),
                 json!({"workspace":workspace}),
             ));
         }
-        let mutation = self.mutate(connection, "project.entry.delete", params, |change| {
+        let mutation = self.mutate(connection, method::PROJECT_ENTRY_DELETE, params, |change| {
             for saved in &closing {
                 persist_pane(change, saved)?;
             }

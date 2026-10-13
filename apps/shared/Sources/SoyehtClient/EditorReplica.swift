@@ -47,10 +47,10 @@ public enum EditorHistoryDirection: Sendable {
   case undo
   case redo
 
-  var method: String {
+  var method: RequestMethod {
     switch self {
-    case .undo: "file.undo"
-    case .redo: "file.redo"
+    case .undo: .fileUndo
+    case .redo: .fileRedo
     }
   }
 }
@@ -152,7 +152,7 @@ extension EngineClient {
     preview: Bool = false
   ) async throws -> FileOpenResult {
     let result = try await mutation(
-      "file.open",
+      .fileOpen,
       FileOpenParams(
         workspaceId: workspaceId, path: path, line: line, column: column,
         preview: preview ? true : nil, idempotencyKey: UUID().uuidString)
@@ -176,7 +176,7 @@ extension EngineClient {
     versionId: String? = nil, fromLine: UInt32, lineCount: UInt32
   ) async throws -> FileReadResult {
     let result = try await request(
-      "file.read",
+      .fileRead,
       .encoded(
         FileReadParams(
           fileId: fileId, revision: revision, source: source, versionId: versionId,
@@ -204,7 +204,7 @@ extension EngineClient {
   ) async throws -> FileWriteResult {
     guard let actor = connectionActor else { throw ClientFailure.disconnected }
     let result = try await mutation(
-      "file.write",
+      .fileWrite,
       FileWriteParams(
         fileId: fileId, baseRevision: baseRevision, edits: edits,
         author: FileAuthor(actor: actor, name: "you"), idempotencyKey: UUID().uuidString)
@@ -234,7 +234,7 @@ extension EngineClient {
   @discardableResult
   public func watchEditorFile(_ fileId: String, watch: Bool) async throws -> FileWatchResult {
     let result = try await mutation(
-      "file.watch",
+      .fileWatch,
       FileWatchParams(fileId: fileId, watch: watch, idempotencyKey: UUID().uuidString)
     ).decoded(FileWatchResult.self)
     updateEditor(fileId) { $0.file.watching = result.watching }
@@ -245,7 +245,7 @@ extension EngineClient {
     _ fileId: String, cursor: String? = nil, limit: UInt32 = 50
   ) async throws -> FileHistoryResult {
     try await request(
-      "file.history",
+      .fileHistory,
       .encoded(FileHistoryParams(fileId: fileId, cursor: cursor, limit: limit))
     )
     .decoded(FileHistoryResult.self)
@@ -257,7 +257,7 @@ extension EngineClient {
     fromLine: UInt32 = 0, lineCount: UInt32 = UInt32(ProtocolLimits.editorViewportLines)
   ) async throws -> FileReadResult {
     try await request(
-      "file.read",
+      .fileRead,
       .encoded(
         FileReadParams(
           fileId: fileId, revision: revision, source: source, versionId: versionId,
@@ -373,7 +373,7 @@ extension EngineClient {
     _ fileId: String, versionId: String, baseRevision: String
   ) async throws -> FileRevertResult {
     let result = try await mutation(
-      "file.revert",
+      .fileRevert,
       FileRevertParams(
         fileId: fileId, versionId: versionId, baseRevision: baseRevision,
         idempotencyKey: UUID().uuidString)
@@ -389,7 +389,7 @@ extension EngineClient {
     limit: UInt32 = UInt32(ProtocolLimits.editorSearchResults)
   ) async throws -> FileSearchResult {
     try await mutation(
-      "file.search",
+      .fileSearch,
       FileSearchParams(
         workspaceId: workspaceId, scope: scope, query: query, replacement: replacement,
         caseSensitive: caseSensitive,
@@ -401,7 +401,7 @@ extension EngineClient {
 
   public func editorSymbols(fileId: String, revision: String) async throws -> FileSymbolsResult {
     try await request(
-      "file.symbols", .encoded(FileSymbolsParams(fileId: fileId, revision: revision))
+      .fileSymbols, .encoded(FileSymbolsParams(fileId: fileId, revision: revision))
     ).decoded(FileSymbolsResult.self)
   }
 
@@ -409,7 +409,7 @@ extension EngineClient {
     fileId: String, revision: String, position: TextPosition
   ) async throws -> FileDefinitionResult {
     try await request(
-      "file.definition",
+      .fileDefinition,
       .encoded(FilePositionParams(fileId: fileId, revision: revision, position: position))
     ).decoded(FileDefinitionResult.self)
   }
@@ -418,7 +418,7 @@ extension EngineClient {
     fileId: String, revision: String, position: TextPosition
   ) async throws -> FileReferencesResult {
     try await request(
-      "file.references",
+      .fileReferences,
       .encoded(FilePositionParams(fileId: fileId, revision: revision, position: position))
     ).decoded(FileReferencesResult.self)
   }
@@ -427,13 +427,13 @@ extension EngineClient {
     fileId: String, revision: String
   ) async throws -> FileDiagnosticsResult {
     try await request(
-      "file.diagnostics", .encoded(FileDiagnosticsParams(fileId: fileId, revision: revision))
+      .fileDiagnostics, .encoded(FileDiagnosticsParams(fileId: fileId, revision: revision))
     ).decoded(FileDiagnosticsResult.self)
   }
 
   public func editorDiff(fileId: String, revision: String) async throws -> FileDiffResult {
     try await request(
-      "file.diff", .encoded(FileDiffParams(fileId: fileId, revision: revision))
+      .fileDiff, .encoded(FileDiffParams(fileId: fileId, revision: revision))
     ).decoded(FileDiffResult.self)
   }
 
@@ -442,7 +442,7 @@ extension EngineClient {
     fileId: String, hunkId: String, baseRevision: String
   ) async throws -> EditorReviewResult {
     try await resolveEditorReview(
-      method: "editor.review.accept", fileId: fileId, hunkId: hunkId,
+      method: .editorReviewAccept, fileId: fileId, hunkId: hunkId,
       baseRevision: baseRevision)
   }
 
@@ -451,7 +451,7 @@ extension EngineClient {
     fileId: String, hunkId: String, baseRevision: String
   ) async throws -> EditorReviewResult {
     try await resolveEditorReview(
-      method: "editor.review.reject", fileId: fileId, hunkId: hunkId,
+      method: .editorReviewReject, fileId: fileId, hunkId: hunkId,
       baseRevision: baseRevision)
   }
 
@@ -459,7 +459,7 @@ extension EngineClient {
     fileId: String, range: SoyehtProtocol.TextRange, body: String
   ) async throws -> EditorReviewCommentResult {
     try await mutation(
-      "editor.review.comment",
+      .editorReviewComment,
       EditorReviewCommentParams(
         fileId: fileId, range: range, body: body, idempotencyKey: UUID().uuidString)
     ).decoded(EditorReviewCommentResult.self)
@@ -469,7 +469,7 @@ extension EngineClient {
     workspaceId: String? = nil, language: EditorLanguage? = nil
   ) async throws -> LspStatusResult {
     try await request(
-      "lsp.status", .encoded(LspStatusParams(workspaceId: workspaceId, language: language))
+      .lspStatus, .encoded(LspStatusParams(workspaceId: workspaceId, language: language))
     ).decoded(LspStatusResult.self)
   }
 
@@ -478,7 +478,7 @@ extension EngineClient {
     -> FileFormatResult
   {
     let result = try await mutation(
-      "file.format",
+      .fileFormat,
       FileFormatParams(
         fileId: fileId, baseRevision: baseRevision, idempotencyKey: UUID().uuidString)
     ).decoded(FileFormatResult.self)
@@ -600,7 +600,7 @@ extension EngineClient {
   }
 
   private func resolveEditorReview(
-    method: String, fileId: String, hunkId: String, baseRevision: String
+    method: RequestMethod, fileId: String, hunkId: String, baseRevision: String
   ) async throws -> EditorReviewResult {
     let result = try await mutation(
       method,

@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     Pane, PaneMode, PaneState, StateSource, WritingDocument, WritingDocumentCreateParams,
     WritingDocumentCreateResult, WritingDocumentOpenParams, WritingDocumentOpenResult, WritingFont,
-    WritingKind, WritingPreferencesParams, WritingPreferencesResult, WritingSection,
+    WritingKind, WritingPreferencesParams, WritingPreferencesResult, WritingSection, event, method,
 };
 use soyeht_store::{
     editor::{EditorFile, document},
@@ -48,7 +48,7 @@ impl Core {
     ) -> Result<Value> {
         let request: WritingDocumentCreateParams = parameters(params, "document create")?;
         if let Some(result) =
-            self.repeated_mutation(connection, "writing.document.create", params)?
+            self.repeated_mutation(connection, method::WRITING_DOCUMENT_CREATE, params)?
         {
             return Ok(result);
         }
@@ -65,7 +65,7 @@ impl Core {
             .map(|client| client.scope.clone())
             .ok_or_else(|| errors::unauthorized("Writing connection is unavailable"))?;
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
-            &json!(["writing.document.create", params]).to_string(),
+            &json!([method::WRITING_DOCUMENT_CREATE, params]).to_string(),
         ));
         let intent = self.resolve_writing_create_intent(CreateIntentInput {
             scope: &scope,
@@ -171,19 +171,24 @@ impl Core {
         let screen = self.open_pane_screen(&pane.pane_id)?;
         let saved_file = file.clone();
         let saved_record = record.clone();
-        let mutation = self.mutate(connection, "writing.document.create", params, |change| {
-            persist_new_pane(change, &saved_pane, None)?;
-            change.save_editor_file(&saved_file)?;
-            change.save_writing_document(&saved_record)?;
-            change.remove_writing_create_intent(&intent.scope, &intent.idempotency_key)?;
-            Ok((
-                result,
-                vec![
-                    ("pane.created".into(), created_event),
-                    ("writing.changed".into(), event),
-                ],
-            ))
-        })?;
+        let mutation = self.mutate(
+            connection,
+            method::WRITING_DOCUMENT_CREATE,
+            params,
+            |change| {
+                persist_new_pane(change, &saved_pane, None)?;
+                change.save_editor_file(&saved_file)?;
+                change.save_writing_document(&saved_record)?;
+                change.remove_writing_create_intent(&intent.scope, &intent.idempotency_key)?;
+                Ok((
+                    result,
+                    vec![
+                        (event::PANE_CREATED.into(), created_event),
+                        (event::WRITING_CHANGED.into(), event),
+                    ],
+                ))
+            },
+        )?;
         if !mutation.repeated {
             self.install_open_writing(saved_pane, screen, file, syntax);
         }
@@ -196,7 +201,13 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         let request: WritingDocumentOpenParams = parameters(params, "document open")?;
-        self.open_writing(connection, "writing.document.open", params, request, false)
+        self.open_writing(
+            connection,
+            method::WRITING_DOCUMENT_OPEN,
+            params,
+            request,
+            false,
+        )
     }
 
     pub(crate) fn writing_pane_create(
@@ -223,7 +234,7 @@ impl Core {
             kind,
             idempotency_key: request.idempotency_key,
         };
-        self.open_writing(connection, "pane.create", params, request, true)
+        self.open_writing(connection, method::PANE_CREATE, params, request, true)
     }
 
     fn open_writing(
@@ -290,10 +301,15 @@ impl Core {
         .map_err(|_| errors::internal("Writing preferences result cannot be encoded"))?;
         let saved = record.clone();
         let event = changed_event(&file, &record)?;
-        self.mutate(connection, "writing.preferences.set", params, |change| {
-            change.save_writing_document(&saved)?;
-            Ok((result, vec![("writing.changed".into(), event)]))
-        })
+        self.mutate(
+            connection,
+            method::WRITING_PREFERENCES_SET,
+            params,
+            |change| {
+                change.save_writing_document(&saved)?;
+                Ok((result, vec![(event::WRITING_CHANGED.into(), event)]))
+            },
+        )
         .map(|mutation| mutation.result)
     }
 
@@ -384,7 +400,7 @@ impl Core {
                 if let Some(version) = &version {
                     change.record_file_version(version)?;
                 }
-                Ok((result, vec![("pane.created".into(), created_event)]))
+                Ok((result, vec![(event::PANE_CREATED.into(), created_event)]))
             },
         )?;
         if !mutation.repeated {
@@ -429,7 +445,7 @@ impl Core {
                 persist_new_pane(change, &saved_pane, None)?;
                 change.save_editor_file(&saved_file)?;
                 change.save_writing_document(&saved_record)?;
-                Ok((result, vec![("pane.created".into(), created_event)]))
+                Ok((result, vec![(event::PANE_CREATED.into(), created_event)]))
             },
         )?;
         if !mutation.repeated {

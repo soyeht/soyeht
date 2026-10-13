@@ -18,7 +18,7 @@ use crate::{
     ports::{Clock, StorePort},
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{PushRegisterParams, Role};
+use soyeht_protocol::{PushRegisterParams, Role, event, method};
 use soyeht_store::database::Event;
 use std::{
     path::Path,
@@ -118,12 +118,12 @@ impl Core {
         for event in events {
             let request_id = || event.params["requestId"].as_str().map(str::to_owned);
             match event.method.as_str() {
-                "pane.permission_requested" | "pane.elicitation_requested" => {
+                event::PANE_PERMISSION_REQUESTED | event::PANE_ELICITATION_REQUESTED => {
                     if let Some(job) = self.push_delivery(event) {
                         self.push.submit(job);
                     }
                 }
-                "pane.permission_answered" | "pane.elicitation_answered" => {
+                event::PANE_PERMISSION_ANSWERED | event::PANE_ELICITATION_ANSWERED => {
                     if let Some(request_id) = request_id() {
                         self.push.submit(Job::Settle { request_id });
                     }
@@ -190,7 +190,7 @@ impl Core {
                 ));
             }
         };
-        let register = if method == "push.register" {
+        let register = if method == method::PUSH_REGISTER {
             let register = serde_json::from_value::<PushRegisterParams>(params.clone())
                 .map_err(|_| errors::invalid("Invalid push registration"))?;
             // The token is the hex form of the bytes APNs gave the device.

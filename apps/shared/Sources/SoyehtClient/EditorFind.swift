@@ -63,7 +63,7 @@ extension EngineClient {
       throw ClientFailure.invalidSnapshot
     }
     let result = try await mutation(
-      "file.replace",
+      .fileReplace,
       FileReplaceParams(
         fileId: fileId, baseRevision: revision, query: query, replacement: replacement,
         range: range, idempotencyKey: UUID().uuidString)
@@ -78,7 +78,7 @@ extension EngineClient {
     direction: FileFindDirection, page: FileReadResult
   ) async throws -> FileFindResult {
     try await request(
-      "file.find",
+      .fileFind,
       .encoded(
         FileFindParams(
           fileId: fileId, revision: revision, query: query, from: from, direction: direction,

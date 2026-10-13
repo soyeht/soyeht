@@ -5,7 +5,7 @@ use crate::{
 use serde_json::Value;
 use soyeht_protocol::{
     PaneMode, WebConsoleCountsEvent, WebHostConsoleCountsParams, WebHostConsoleCountsResult,
-    WebHostNavigatedParams, WebHostNavigatedResult,
+    WebHostNavigatedParams, WebHostNavigatedResult, event, method,
 };
 use soyeht_web::NormalizedUrl;
 
@@ -18,8 +18,8 @@ impl Core {
     ) -> Result<Value> {
         self.require_web_host(connection)?;
         match method {
-            "web.host.navigated" => self.web_host_navigated(connection, params),
-            "web.host.console_counts" => self.web_host_console_counts(connection, params),
+            method::WEB_HOST_NAVIGATED => self.web_host_navigated(connection, params),
+            method::WEB_HOST_CONSOLE_COUNTS => self.web_host_console_counts(connection, params),
             _ => Err(errors::internal("Unknown web host update")),
         }
     }
@@ -49,9 +49,9 @@ impl Core {
             "url": url.as_str(),
             "title": request.title,
         });
-        let mutation = self.mutate(connection, "web.host.navigated", params, |change| {
+        let mutation = self.mutate(connection, method::WEB_HOST_NAVIGATED, params, |change| {
             write_pane(change, &saved)?;
-            Ok((result, vec![("web.navigated".into(), event)]))
+            Ok((result, vec![(event::WEB_NAVIGATED.into(), event)]))
         })?;
         if !mutation.repeated {
             self.live_web_pane_mut(&request.pane_id)?.stored = saved;
@@ -71,11 +71,11 @@ impl Core {
             errors: request.errors,
         })
         .map_err(|_| errors::internal("Web console count event serialization failed"))?;
-        let mutation = self.mutate(connection, "web.host.console_counts", params, |_| {
+        let mutation = self.mutate(connection, method::WEB_HOST_CONSOLE_COUNTS, params, |_| {
             Ok((result, Vec::new()))
         })?;
         if !mutation.repeated {
-            self.transient_event("web.console_counts", event)?;
+            self.transient_event(event::WEB_CONSOLE_COUNTS, event)?;
         }
         Ok(mutation.result)
     }

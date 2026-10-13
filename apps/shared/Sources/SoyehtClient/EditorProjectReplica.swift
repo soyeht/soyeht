@@ -51,7 +51,7 @@ extension EngineClient {
       let watched = projectTree(workspaceId).watchedDirectories
       guard editorWorkspace.watched[workspaceId] != watched else { return }
       _ = try await request(
-        "project.tree.watch",
+        .projectTreeWatch,
         .encoded(ProjectTreeWatchParams(workspaceId: workspaceId, paths: watched)))
       editorWorkspace.watched[workspaceId] = watched
     } catch is CancellationError {
@@ -81,7 +81,7 @@ extension EngineClient {
     workspaceId: String, path: String, kind: ProjectEntryKind
   ) async throws -> ProjectEntry {
     let result = try await mutation(
-      "project.entry.create",
+      .projectEntryCreate,
       ProjectEntryCreateParams(
         workspaceId: workspaceId, path: path, kind: kind, idempotencyKey: UUID().uuidString)
     ).decoded(ProjectEntryCreateResult.self)
@@ -93,7 +93,7 @@ extension EngineClient {
 
   public func renameProjectEntry(workspaceId: String, from: String, to: String) async throws {
     let result = try await mutation(
-      "project.entry.rename",
+      .projectEntryRename,
       ProjectEntryRenameParams(
         workspaceId: workspaceId, from: from, to: to, idempotencyKey: UUID().uuidString)
     ).decoded(ProjectEntryRenameResult.self)
@@ -111,7 +111,7 @@ extension EngineClient {
     workspaceId: String, path: String, permanent: Bool = false
   ) async throws -> ProjectDeleteOutcome {
     let result = try await mutation(
-      "project.entry.delete",
+      .projectEntryDelete,
       ProjectEntryDeleteParams(
         workspaceId: workspaceId, path: path, permanent: permanent,
         idempotencyKey: UUID().uuidString)
@@ -134,7 +134,7 @@ extension EngineClient {
   private func loadProjectDirectory(_ workspaceId: String, path: String) async throws {
     let showIgnored = projectTree(workspaceId).showIgnored
     let listing = try await request(
-      "project.tree.list",
+      .projectTreeList,
       .encoded(
         ProjectTreeListParams(workspaceId: workspaceId, path: path, showIgnored: showIgnored))
     ).decoded(ProjectTreeListResult.self)

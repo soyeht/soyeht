@@ -9,7 +9,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{AgentPaneRole, PaneRoleSetParams, PaneState, PromptOrigin, Role};
+use soyeht_protocol::{AgentPaneRole, PaneRoleSetParams, PaneState, PromptOrigin, Role, method};
 use soyeht_ptyd::wire::Request;
 
 const LEAD_PROMPT: &str = "Coordinate; do not implement. Create small, self-contained tasks with how to verify. Never depend on another task's memory. Dispatch only when no free pane is available to claim.";
@@ -70,7 +70,7 @@ impl Core {
                 saved,
                 state,
                 Changes::default(),
-                Some((connection, "pane.role.set", raw)),
+                Some((connection, method::PANE_ROLE_SET, raw)),
                 result,
             )?
             .result;

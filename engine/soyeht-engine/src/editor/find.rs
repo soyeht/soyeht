@@ -11,7 +11,7 @@ use serde_json::Value;
 use soyeht_editor::{ContentMatcher, FindDirection, FindRequest, MatchOptions};
 use soyeht_protocol::{
     FileFindDirection, FileFindMatch, FileFindParams, FileFindQuery, FileFindResult,
-    FileReplaceParams, FileReplaceResult,
+    FileReplaceParams, FileReplaceResult, method,
 };
 use soyeht_store::editor::{EditorFile, document};
 
@@ -71,7 +71,7 @@ impl Core {
                 cursor: None,
             })?;
             return Ok(self
-                .mutate(connection, "file.replace", params, |_| {
+                .mutate(connection, method::FILE_REPLACE, params, |_| {
                     Ok((result, Vec::new()))
                 })?
                 .result);
@@ -89,7 +89,7 @@ impl Core {
             changed_lines: prepared.changed_lines.clone(),
             cursor: prepared.cursor.clone(),
         })?;
-        self.commit_prepared_edit(connection, "file.replace", params, prepared, result)
+        self.commit_prepared_edit(connection, method::FILE_REPLACE, params, prepared, result)
     }
 }
 

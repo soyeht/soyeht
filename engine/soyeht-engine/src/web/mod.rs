@@ -21,7 +21,7 @@ use crate::{
     ports::{PortScanObservation, PortScanPort},
 };
 use serde_json::Value;
-use soyeht_protocol::{LocalServer, ServersLocalListResult};
+use soyeht_protocol::{LocalServer, ServersLocalListResult, event, method};
 use soyeht_web::LocalServerScan;
 use std::time::Duration;
 
@@ -31,7 +31,10 @@ const SCAN_JOB: &str = "local_servers";
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) fn handles_host_update(method: &str) -> bool {
-    matches!(method, "web.host.navigated" | "web.host.console_counts")
+    matches!(
+        method,
+        method::WEB_HOST_NAVIGATED | method::WEB_HOST_CONSOLE_COUNTS
+    )
 }
 
 pub(crate) use commands::handles as handles_command;
@@ -144,7 +147,7 @@ impl Core {
         let refresh = self.web.finish(observation)?;
         if refresh.changed {
             self.transient_event(
-                "servers.local.changed",
+                event::SERVERS_LOCAL_CHANGED,
                 serde_json::json!({"servers": refresh.servers}),
             )?;
         }

@@ -114,7 +114,7 @@ extension EngineClient {
     dispatch: Bool
   ) async throws -> TaskCreateResult {
     let result = try await mutation(
-      "task.create",
+      .taskCreate,
       TaskCreateParams(
         workspaceId: workspaceId, title: title, description: description,
         howToVerify: howToVerify, mustNotChange: mustNotChange, executor: executor,
@@ -130,7 +130,7 @@ extension EngineClient {
   public func moveTask(_ task: TaskRecord, to state: TaskState, reason: String) {
     perform {
       let result = try await self.mutation(
-        "task.move",
+        .taskMove,
         TaskMoveParams(
           workspaceId: task.workspaceId, taskId: task.taskId, state: state,
           reason: reason, idempotencyKey: UUID().uuidString)
@@ -144,7 +144,7 @@ extension EngineClient {
     perform {
       let preset = task.executor ?? TaskExecutor(workspaceDefault: true)
       let result = try await self.mutation(
-        "task.dispatch",
+        .taskDispatch,
         TaskDispatchParams(
           workspaceId: task.workspaceId, taskId: task.taskId, preset: preset,
           idempotencyKey: UUID().uuidString),
@@ -161,7 +161,7 @@ extension EngineClient {
   ) {
     perform {
       let result = try await self.mutation(
-        "loop.set",
+        .loopSet,
         LoopSetParams(
           paneId: paneId, prompt: prompt, interval: interval, maxRounds: maxRounds,
           stopWhen: stopWhen, enabled: enabled, idempotencyKey: UUID().uuidString)
@@ -173,7 +173,7 @@ extension EngineClient {
   public func setPaneRole(_ paneId: String, role: AgentPaneRole) {
     perform {
       _ = try await self.mutation(
-        "pane.role.set",
+        .paneRoleSet,
         PaneRoleSetParams(
           paneId: paneId, role: role, idempotencyKey: UUID().uuidString))
     }
@@ -186,7 +186,7 @@ extension EngineClient {
 
   private func loadTask(workspaceId: String, taskId: String) async throws {
     let result = try await request(
-      "task.show", .encoded(TaskShowParams(workspaceId: workspaceId, taskId: taskId))
+      .taskShow, .encoded(TaskShowParams(workspaceId: workspaceId, taskId: taskId))
     ).decoded(TaskShowResult.self)
     upsertTask(result.task)
     taskDetails[taskId] = result
@@ -197,7 +197,7 @@ extension EngineClient {
     var loaded: [TaskRecord] = []
     repeat {
       let result = try await request(
-        "task.list",
+        .taskList,
         .encoded(TaskListParams(workspaceId: workspaceId, limit: 100, cursor: cursor))
       ).decoded(TaskListResult.self)
       loaded.append(contentsOf: result.items)

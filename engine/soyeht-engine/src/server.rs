@@ -17,7 +17,7 @@ use soyeht_platform::{
     },
 };
 use soyeht_protocol::{
-    AttachmentRef, attachment::attachment_frames, frame::Frame, profile::DEV_ENGINE_SOCKET,
+    AttachmentRef, attachment::attachment_frames, frame::Frame, method, profile::DEV_ENGINE_SOCKET,
 };
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -339,7 +339,7 @@ async fn read_requests(
         let pane_id = operation_pane_id(method, &request).map(str::to_owned);
         let operation = OperationTimer::start(id, method, pane_id);
         let request_id = request["id"].clone();
-        let failed_handshake = request["method"] == "hello";
+        let failed_handshake = request["method"] == method::HELLO;
         let connection = id.to_owned();
         let outcome = core_lock::with(&core, "dispatch", move |state| {
             state.dispatch(&connection, request)

@@ -80,7 +80,7 @@ extension EngineClient {
 
   public func loadEditorTabs(workspaceId: String) async throws {
     let result = try await request(
-      "editor.tabs.list", .encoded(EditorTabsListParams(workspaceId: workspaceId))
+      .editorTabsList, .encoded(EditorTabsListParams(workspaceId: workspaceId))
     ).decoded(EditorTabsListResult.self)
     editorWorkspace.tabs[result.workspaceId] = result.tabs
   }
@@ -103,7 +103,7 @@ extension EngineClient {
     }
     editorWorkspace.history[workspaceId]?.removeAll { $0 == paneId }
     _ = try await mutation(
-      "pane.close", PaneCloseParams(paneId: paneId, idempotencyKey: UUID().uuidString))
+      .paneClose, PaneCloseParams(paneId: paneId, idempotencyKey: UUID().uuidString))
   }
 
   public func moveEditorTab(workspaceId: String, paneId: String, to index: Int) async throws {
@@ -113,7 +113,7 @@ extension EngineClient {
       current.first { $0.paneId == id }
     }
     let result = try await mutation(
-      "editor.tabs.move",
+      .editorTabsMove,
       EditorTabsMoveParams(
         workspaceId: workspaceId, paneId: paneId, index: UInt32(max(0, index)),
         idempotencyKey: UUID().uuidString)

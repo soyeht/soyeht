@@ -240,6 +240,29 @@ export const eventRegistry = {{
 }} as const satisfies Record<EventName, EventDescriptor>;"""
 
 
+def rust_names(schema):
+    """String constants for every method and event name: usable in `match` patterns."""
+
+    def module(kind, names):
+        consts = [f'    pub const {snake(variant(n)).upper()}: &str = "{n}";' for n in names]
+        return f"pub mod {kind} {{\n" + "\n".join(consts) + "\n}"
+
+    return module("method", schema["x-methods"]) + "\n" + module("event", schema["x-events"])
+
+
+def method_registry_swift(schema):
+    cases = [f'    case {lower_camel(name)} = "{name}"' for name in schema["x-methods"]]
+    return (
+        "public enum RequestMethod: String, Codable, Sendable, CaseIterable {\n"
+        + "\n".join(cases)
+        + "\n}"
+    )
+
+
+def frame_kinds(schema):
+    return schema["x-framing"]["types"]
+
+
 def validate_schema(schema):
     allowed = {"$ref", "type", "properties", "required", "additionalProperties",
                "enum", "oneOf", "items", "minimum", "maximum", "minLength",
@@ -320,6 +343,11 @@ def validate_schema(schema):
         event_cases.append(variant(name))
     if len(event_cases) != len(set(event_cases)):
         raise ValueError("Event names collide after identifier generation")
+    method_cases = [variant(name) for name in schema["x-methods"]]
+    if len(method_cases) != len(set(method_cases)):
+        raise ValueError("Method names collide after identifier generation")
+    if set(frame_kinds(schema)) != {"json", "terminal", "attachment"}:
+        raise ValueError("Framing needs exactly the json, terminal and attachment kinds")
 
     error_kinds = schema["$defs"]["ErrorKind"].get("enum", [])
     error_codes = schema["x-errorCodes"]
@@ -472,14 +500,14 @@ def render(schema, digest):
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
     header = f"// Generated from contracts/protocol.json (sha256 {digest}). Do not edit.\n"
     rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items())
-    rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n"
+    rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n" + rust_names(schema) + "\n"
     rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items()) + "\n    }\n}\n"
     # Formatting in memory keeps --check read-only and identical across invocations.
     rust = subprocess.run(["rustfmt", "--edition", "2024"], input=rust, text=True, capture_output=True, check=True).stdout
     outputs["engine/soyeht-protocol/src/generated.rs"] = rust
     swift = header + "import Foundation\n\n"
     swift += "\n\n".join(swift_definition(n, s) for n, s in schema["$defs"].items())
-    swift += "\n\n" + event_registry_swift(schema) + "\n"
+    swift += "\n\n" + method_registry_swift(schema) + "\n\n" + event_registry_swift(schema) + "\n"
     outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"] = swift
     ts = header + "\n\n".join(ts_definition(n, s) for n, s in schema["$defs"].items())
     ts += "\n\nexport interface Methods {\n" + "\n".join(f'  "{n}": {{ params: {type_name(m["params"], "ts")}; result: {type_name(m["result"], "ts")} }};' for n, m in schema["x-methods"].items()) + "\n}\n"
@@ -487,9 +515,10 @@ def render(schema, digest):
     outputs["contracts/typescript/src/generated.ts"] = ts
     constants = header + f'pub const PROTOCOL_VERSION: u32 = {schema["x-protocolVersion"]};\n'
     constants += "\n".join(f"pub const {snake(k).upper()}: usize = {v};" for k, v in schema["x-limits"].items()) + "\n"
+    constants += "\n".join(f"pub const FRAME_KIND_{k.upper()}: u8 = {v};" for k, v in frame_kinds(schema).items()) + "\n"
     outputs["engine/soyeht-protocol/src/limits.rs"] = constants
     outputs["contracts/typescript/src/limits.ts"] = header + "export const limits = " + json.dumps(schema["x-limits"], indent=2) + " as const;\n"
-    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n"
+    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
     # Round-trip executables dispatch through every named schema, not through untyped JSON.
     swift_cases = []
     rust_cases = []

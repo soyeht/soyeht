@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::json;
 use soyeht_protocol::{
-    AttentionItem, PaneState, StateSource, TranscriptKind, TranscriptRole, limits,
+    AttentionItem, PaneState, StateSource, TranscriptKind, TranscriptRole, event, limits,
 };
 use soyeht_ptyd::wire::Request;
 
@@ -88,12 +88,12 @@ impl Core {
         )?);
         if let Some(prompt) = state.active.take() {
             changes.events.push((
-                "pane.turn_ended".into(),
+                event::PANE_TURN_ENDED.into(),
                 json!({"paneId":pane,"promptId":prompt.prompt_id,"stopReason":"error"}),
             ));
         }
         if let Some(operation) = state.operation.take() {
-            changes.events.push(("pane.config_failed".into(),json!({"paneId":pane,"configId":operation.config_id,"value":operation.value,"reason":reason})));
+            changes.events.push((event::PANE_CONFIG_FAILED.into(),json!({"paneId":pane,"configId":operation.config_id,"value":operation.value,"reason":reason})));
         }
         if let Some(user) = state.operation_user.take() {
             changes.completed_user = Some(super::pending::Completion {
@@ -139,7 +139,7 @@ impl Core {
             let reason = "Configuration confirmation timed out; the session remains open and the pending request is retained";
             state.operation_timed_out = true;
             let mut changes = Changes::default();
-            changes.events.push(("pane.config_failed".into(), json!({
+            changes.events.push((event::PANE_CONFIG_FAILED.into(), json!({
                 "paneId":pane,"configId":operation.config_id,"value":operation.value,"reason":reason
             })));
             if let Some(user) = state.operation_user.take() {

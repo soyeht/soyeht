@@ -6,7 +6,7 @@ use crate::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
-    PromptAttachment, PromptItem, TranscriptKind, TranscriptMessage, TranscriptRole, limits,
+    PromptAttachment, PromptItem, TranscriptKind, TranscriptMessage, TranscriptRole, event, limits,
 };
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -218,7 +218,7 @@ pub fn put(
     if !changes.replay_messages {
         changes
             .events
-            .push(("pane.update".into(), event(pane, &message, kind)));
+            .push((event::PANE_UPDATE.into(), event(pane, &message, kind)));
     }
     changes.messages.push(message);
     Ok(())

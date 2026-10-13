@@ -40,31 +40,32 @@ pub(crate) use tabs::refresh_tabs;
 
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
+use soyeht_protocol::method::*;
 
 pub fn handles(method: &str) -> bool {
     matches!(
         method,
-        "file.open"
-            | "file.read"
-            | "file.write"
-            | "file.watch"
-            | "file.history"
-            | "file.revert"
-            | "file.undo"
-            | "file.redo"
-            | "file.search"
-            | "file.find"
-            | "file.replace"
-            | "project.tree.list"
-            | "project.tree.watch"
-            | "project.entry.create"
-            | "project.entry.rename"
-            | "project.entry.delete"
-            | "editor.tabs.list"
-            | "editor.tabs.move"
-            | "editor.review.accept"
-            | "editor.review.reject"
-            | "editor.review.comment"
+        FILE_OPEN
+            | FILE_READ
+            | FILE_WRITE
+            | FILE_WATCH
+            | FILE_HISTORY
+            | FILE_REVERT
+            | FILE_UNDO
+            | FILE_REDO
+            | FILE_SEARCH
+            | FILE_FIND
+            | FILE_REPLACE
+            | PROJECT_TREE_LIST
+            | PROJECT_TREE_WATCH
+            | PROJECT_ENTRY_CREATE
+            | PROJECT_ENTRY_RENAME
+            | PROJECT_ENTRY_DELETE
+            | EDITOR_TABS_LIST
+            | EDITOR_TABS_MOVE
+            | EDITOR_REVIEW_ACCEPT
+            | EDITOR_REVIEW_REJECT
+            | EDITOR_REVIEW_COMMENT
     )
 }
 
@@ -76,26 +77,26 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         match method {
-            "file.open" => self.file_open(connection, params),
-            "file.read" => self.file_read(params),
-            "file.write" => self.file_write(connection, params),
-            "file.watch" => self.file_watch(connection, params),
-            "file.history" => self.file_history(params),
-            "file.revert" => self.file_revert(connection, params),
-            "file.undo" | "file.redo" => self.file_undo(connection, method, params),
-            "file.find" => self.file_find(params),
-            "file.replace" => self.file_replace(connection, params),
-            "project.tree.list" => self.project_tree_list(params),
-            "project.tree.watch" => self.project_tree_watch(connection, params),
-            "project.entry.create" => self.project_entry_create(connection, params),
-            "project.entry.rename" => self.project_entry_rename(connection, params),
-            "project.entry.delete" => self.project_entry_delete(connection, params),
-            "editor.tabs.list" => self.editor_tabs_list(params),
-            "editor.tabs.move" => self.editor_tabs_move(connection, params),
-            "editor.review.accept" | "editor.review.reject" => {
+            FILE_OPEN => self.file_open(connection, params),
+            FILE_READ => self.file_read(params),
+            FILE_WRITE => self.file_write(connection, params),
+            FILE_WATCH => self.file_watch(connection, params),
+            FILE_HISTORY => self.file_history(params),
+            FILE_REVERT => self.file_revert(connection, params),
+            FILE_UNDO | FILE_REDO => self.file_undo(connection, method, params),
+            FILE_FIND => self.file_find(params),
+            FILE_REPLACE => self.file_replace(connection, params),
+            PROJECT_TREE_LIST => self.project_tree_list(params),
+            PROJECT_TREE_WATCH => self.project_tree_watch(connection, params),
+            PROJECT_ENTRY_CREATE => self.project_entry_create(connection, params),
+            PROJECT_ENTRY_RENAME => self.project_entry_rename(connection, params),
+            PROJECT_ENTRY_DELETE => self.project_entry_delete(connection, params),
+            EDITOR_TABS_LIST => self.editor_tabs_list(params),
+            EDITOR_TABS_MOVE => self.editor_tabs_move(connection, params),
+            EDITOR_REVIEW_ACCEPT | EDITOR_REVIEW_REJECT => {
                 self.editor_review(connection, method, params)
             }
-            "editor.review.comment" => self.editor_review_comment(connection, params),
+            EDITOR_REVIEW_COMMENT => self.editor_review_comment(connection, params),
             _ => Err(errors::internal("Unknown editor method")),
         }
     }

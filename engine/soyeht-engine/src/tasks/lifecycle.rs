@@ -10,7 +10,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, Attempt, AttemptResult, BlockingKind, Comment, Role, Task, TaskBlockParams,
-    TaskCompleteParams, TaskMove, TaskReleaseParams, TaskState, TaskUnblockParams,
+    TaskCompleteParams, TaskMove, TaskReleaseParams, TaskState, TaskUnblockParams, event, method,
 };
 use soyeht_store::{
     agents,
@@ -50,7 +50,7 @@ impl TaskOwnerLoss {
         let mut events = Vec::new();
         if let Some(movement) = &self.movement {
             events.push((
-                "task.moved".into(),
+                event::TASK_MOVED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
                     "actor":movement.actor,"from":movement.from,"to":movement.to,
                     "reason":movement.reason}),
@@ -58,22 +58,22 @@ impl TaskOwnerLoss {
         }
         events.extend([
             (
-                "task.released".into(),
+                event::TASK_RELEASED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
                     "reason":self.comment.text,"attempt":self.attempt.n}),
             ),
             (
-                "task.commented".into(),
+                event::TASK_COMMENTED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
                     "comment":self.comment}),
             ),
             (
-                "task.updated".into(),
+                event::TASK_UPDATED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
                     "version":self.task.version}),
             ),
             (
-                "task.phrase_changed".into(),
+                event::TASK_PHRASE_CHANGED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
                     "phrase":self.task.phrase}),
             ),
@@ -133,10 +133,10 @@ impl Core {
             return Ok(result);
         }
         match method {
-            "task.block" => self.task_block(connection, params, parameters(params)?),
-            "task.release" => self.task_release(connection, params, parameters(params)?),
-            "task.complete" => self.task_complete(connection, params, parameters(params)?),
-            "task.unblock" => self.task_unblock(connection, params, parameters(params)?),
+            method::TASK_BLOCK => self.task_block(connection, params, parameters(params)?),
+            method::TASK_RELEASE => self.task_release(connection, params, parameters(params)?),
+            method::TASK_COMPLETE => self.task_complete(connection, params, parameters(params)?),
+            method::TASK_UNBLOCK => self.task_unblock(connection, params, parameters(params)?),
             _ => Err(errors::invalid("Unknown task lifecycle method")),
         }
     }
@@ -197,7 +197,7 @@ impl Core {
             .then(|| self.now_ms().saturating_add(RETRY_DELAY_MS));
         let attention = (kind == BlockingKind::MissingInformation)
             .then(|| attention(&updated, &pane, self.timestamp()));
-        let mutation = self.mutate(connection, "task.block", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_BLOCK, raw, move |change| {
             change.replace_task(&updated, expected)?;
             if let Some(due) = next_retry {
                 change.schedule_task_retry(&workspace, &task_id, due)?;
@@ -209,26 +209,26 @@ impl Core {
             }
             let mut events = vec![
                 (
-                    "task.blocked".into(),
+                    event::TASK_BLOCKED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"kind":kind,"reason":reason}),
                 ),
                 (
-                    "task.phrase_changed".into(),
+                    event::TASK_PHRASE_CHANGED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
                 ),
                 (
-                    "task.updated".into(),
+                    event::TASK_UPDATED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"version":updated.version}),
                 ),
             ];
             if attention.is_some() {
                 let items = agents::attention_in_change(change, &workspace)?;
                 events.push((
-                    "task.attention".into(),
+                    event::TASK_ATTENTION.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"n":1}),
                 ));
                 events.push((
-                    "attention.changed".into(),
+                    event::ATTENTION_CHANGED.into(),
                     json!({"workspaceId":workspace,"count":items.len(),"items":items}),
                 ));
             }
@@ -302,7 +302,7 @@ impl Core {
         let actor = self.actor_name(&actor)?;
         self.persist_closing_move(
             connection,
-            "task.release",
+            method::TASK_RELEASE,
             raw,
             ClosingMove {
                 current,
@@ -350,7 +350,7 @@ impl Core {
         let reason = params.reason.unwrap_or_else(|| "unblocked".into());
         let expected = current.version;
         let owner = current.owner_pane_id.clone();
-        let mutation = self.mutate(connection, "task.unblock", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_UNBLOCK, raw, move |change| {
             change.replace_task(&updated, expected)?;
             change.clear_task_retry(&workspace, &task_id)?;
             if let Some(pane) = &owner {
@@ -358,22 +358,22 @@ impl Core {
             }
             let mut events = vec![
                 (
-                    "task.unblocked".into(),
+                    event::TASK_UNBLOCKED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"reason":reason}),
                 ),
                 (
-                    "task.phrase_changed".into(),
+                    event::TASK_PHRASE_CHANGED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
                 ),
                 (
-                    "task.updated".into(),
+                    event::TASK_UPDATED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"version":updated.version}),
                 ),
             ];
             if owner.is_some() {
                 let items = agents::attention_in_change(change, &workspace)?;
                 events.push((
-                    "attention.changed".into(),
+                    event::ATTENTION_CHANGED.into(),
                     json!({"workspaceId":workspace,"count":items.len(),"items":items}),
                 ));
             }
@@ -409,18 +409,18 @@ impl Core {
             change.insert_move(&workspace, &task_id, &movement)?;
             let mut events = vec![
                 (
-                    "task.moved".into(),
+                    event::TASK_MOVED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,
                         "actor":movement.actor,"from":movement.from,
                         "to":movement.to,"reason":movement.reason}),
                 ),
                 (
-                    "task.phrase_changed".into(),
+                    event::TASK_PHRASE_CHANGED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"phrase":closing.updated.phrase}),
                 ),
             ];
             if let Some(released) = closing.released {
-                events.push(("task.released".into(), released));
+                events.push((event::TASK_RELEASED.into(), released));
             }
             Ok((json!({"task":closing.updated}), events))
         })?;

@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Pane, PaneCreateParams, PaneMode, PaneState, Role, StateSource, WebCloseParams, WebOpenResult,
-    WebSessionState, WebViewportPreset, limits,
+    WebSessionState, WebViewportPreset, limits, method,
 };
 use soyeht_web::{DEFAULT_ZOOM_PERCENT, NormalizedUrl, viewport};
 use uuid::Uuid;
@@ -46,7 +46,7 @@ impl Core {
                 "Web panes may be closed only by a person or a bound agent",
             ));
         }
-        self.pane_edit(connection, "pane.close", params)
+        self.pane_edit(connection, method::PANE_CLOSE, params)
     }
 
     pub(crate) fn web_pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -60,7 +60,7 @@ impl Core {
             .transpose()?;
         self.persist_web_pane(
             connection,
-            "pane.create",
+            method::PANE_CREATE,
             params,
             NewWebPane {
                 workspace: &workspace,
@@ -95,7 +95,7 @@ impl Core {
         let mutation = self.mutate(connection, method, raw_params, |change| {
             persist_new_pane(change, &saved, None)?;
             let (_, events) = pane_created(&saved);
-            let result = if method == "web.open" {
+            let result = if method == method::WEB_OPEN {
                 serde_json::to_value(WebOpenResult {
                     pane_id: saved.pane.pane_id.clone(),
                 })?

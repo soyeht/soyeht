@@ -39,6 +39,13 @@ limits belong to the engine. The TypeScript reader validates parameters against
 the schema before returning types. Serde and Codable check types during deserialization.
 Frame size limits are checked by all three binary codecs.
 
+Every method and event name has a generated form so that no client types one by hand:
+`RequestMethod` and `EventName` enums in Swift, `method::*` and `event::*` string constants
+(which also work in `match` patterns) and the `EventName` enum in Rust. The frame kinds
+(`x-framing.types`) and the frame bounds come from the same file: `FrameKind` and
+`ProtocolLimits` in Swift, `limits::FRAME_KIND_*` and `limits::*` in Rust.
+`scripts/check_wire_names.py` fails on a string literal equal to a name in production code.
+
 Requests and notifications use the JSON-RPC 2.0 envelope. `welcome` is the result
 of `hello`. Challenges, snapshot parts, stream events, local-server changes,
 web console counts and web driving state are notifications without a state

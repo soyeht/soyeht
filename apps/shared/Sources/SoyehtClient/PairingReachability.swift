@@ -40,7 +40,7 @@ extension EngineClient {
   public func beginPairing() {
     perform {
       let code = try await self.mutation(
-        "device.pair.start",
+        .devicePairStart,
         DevicePairStartParams(idempotencyKey: UUID().uuidString)
       ).decoded(DevicePairStartResult.self)
       self.pairCode = code
@@ -50,14 +50,14 @@ extension EngineClient {
   public func revokeDevice(_ id: String) {
     perform {
       _ = try await self.mutation(
-        "device.revoke", DeviceRevokeParams(deviceId: id, idempotencyKey: UUID().uuidString))
+        .deviceRevoke, DeviceRevokeParams(deviceId: id, idempotencyKey: UUID().uuidString))
     }
   }
   public func clearPairCode() { pairCode = nil }
   public func decidePairing(_ request: PairPrompt, approve: Bool) {
     perform {
       _ = try await self.mutation(
-        "device.pair.decide",
+        .devicePairDecide,
         DevicePairDecideParams(
           requestId: request.requestId, approve: approve, idempotencyKey: UUID().uuidString))
       self.pairRequests.removeAll { $0.requestId == request.requestId }

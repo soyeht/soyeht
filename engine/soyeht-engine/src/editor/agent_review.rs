@@ -7,7 +7,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, DiffHunk, EditorReviewCommentParams, EditorReviewCommentResult, EditorReviewParams,
-    EditorReviewResult, FileAuthor, PaneState, Role, TextPosition, TextRange,
+    EditorReviewResult, FileAuthor, PaneState, Role, TextPosition, TextRange, event, method,
 };
 use soyeht_store::{
     database::Change,
@@ -195,7 +195,9 @@ impl Core {
     }
 
     pub fn editor_review_comment(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "editor.review.comment", params)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::EDITOR_REVIEW_COMMENT, params)?
+        {
             return Ok(result);
         }
         let request: EditorReviewCommentParams = serde_json::from_value(params.clone())
@@ -219,7 +221,7 @@ impl Core {
             .as_ref()
             .map_or_else(Vec::new, |feedback| feedback.events());
         events.push((
-            "pane.queued".into(),
+            event::PANE_QUEUED.into(),
             json!({"paneId":pane_id,"n":state.queue.len(),"promptIds":[prompt.prompt_id],"draft":false}),
         ));
         let result = review_comment_result(comment_id, task_id, true)?;
@@ -234,7 +236,7 @@ impl Core {
                 saved,
                 state,
                 changes,
-                Some((connection, "editor.review.comment", params)),
+                Some((connection, method::EDITOR_REVIEW_COMMENT, params)),
                 result,
             )?
             .result)
@@ -293,7 +295,7 @@ impl Core {
     ) -> Result<Value> {
         let result = review_comment_result(comment_id, None, false)?;
         Ok(self
-            .mutate(connection, "editor.review.comment", params, |_| {
+            .mutate(connection, method::EDITOR_REVIEW_COMMENT, params, |_| {
                 Ok((result, Vec::new()))
             })?
             .result)
@@ -308,7 +310,7 @@ impl Core {
         hunk_id: &str,
     ) -> Result<ResolvedReview> {
         let current = file.disk_text.clone();
-        if method == "editor.review.accept" {
+        if method == method::EDITOR_REVIEW_ACCEPT {
             review.baseline_text =
                 self.vcs
                     .accept_hunk(&current, &review.baseline_text, hunk_id)?;
@@ -397,13 +399,13 @@ fn agent_write_events(
 ) -> Result<Vec<(String, Value)>> {
     let wire = document(file.clone()).map_err(errors::storage)?;
     Ok(vec![
-        ("file.saved".into(), json!({"file":wire,"by":author})),
+        (event::FILE_SAVED.into(), json!({"file":wire,"by":author})),
         (
-            "editor.review_requested".into(),
+            event::EDITOR_REVIEW_REQUESTED.into(),
             review_event(file, pane_id, hunks, author),
         ),
         (
-            "editor.agent_cursor".into(),
+            event::EDITOR_AGENT_CURSOR.into(),
             json!({"fileId":file.file_id,"paneId":pane_id,"name":author.name,"position":end_position(&file.disk_text)?}),
         ),
     ])
@@ -415,7 +417,7 @@ fn review_events(
     hunks: Vec<soyeht_vcs::Hunk>,
 ) -> Result<Vec<(String, Value)>> {
     Ok(vec![(
-        "editor.review_requested".into(),
+        event::EDITOR_REVIEW_REQUESTED.into(),
         review_event(file, &review.pane_id, hunks, &review.author),
     )])
 }

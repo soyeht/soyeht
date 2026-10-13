@@ -5,18 +5,18 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{Workspace, WorkspacePaneLayoutEnvelope};
+use soyeht_protocol::{Workspace, WorkspacePaneLayoutEnvelope, event, method};
 use std::path::Path;
 use uuid::Uuid;
 
 pub fn handles(method: &str) -> bool {
     matches!(
         method,
-        "workspace.create"
-            | "workspace.layout.set"
-            | "workspace.rename"
-            | "workspace.close"
-            | "workspace.focus"
+        method::WORKSPACE_CREATE
+            | method::WORKSPACE_LAYOUT_SET
+            | method::WORKSPACE_RENAME
+            | method::WORKSPACE_CLOSE
+            | method::WORKSPACE_FOCUS
     )
 }
 
@@ -54,9 +54,9 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         match method {
-            "workspace.create" => self.workspace_create(connection, params),
-            "workspace.layout.set" => self.workspace_layout_set(connection, params),
-            "workspace.rename" | "workspace.close" | "workspace.focus" => {
+            method::WORKSPACE_CREATE => self.workspace_create(connection, params),
+            method::WORKSPACE_LAYOUT_SET => self.workspace_layout_set(connection, params),
+            method::WORKSPACE_RENAME | method::WORKSPACE_CLOSE | method::WORKSPACE_FOCUS => {
                 self.workspace_edit(connection, method, params)
             }
             _ => Err(errors::invalid("Workspace method unavailable")),
@@ -76,11 +76,14 @@ impl Core {
             path: path.into(),
             layout: json!({"panes":[]}),
         };
-        let mutation = self.mutate(connection, "workspace.create", params, |tx| {
+        let mutation = self.mutate(connection, method::WORKSPACE_CREATE, params, |tx| {
             tx.insert_workspace(&workspace)?;
             Ok((
                 json!({"workspace":workspace}),
-                vec![("workspace.created".into(), json!({"workspace":workspace}))],
+                vec![(
+                    event::WORKSPACE_CREATED.into(),
+                    json!({"workspace":workspace}),
+                )],
             ))
         })?;
         Ok(mutation.result)
@@ -93,24 +96,27 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         let id = errors::param_str(params, "workspaceId")?;
-        let new_name = if method == "workspace.rename" {
+        let new_name = if method == method::WORKSPACE_RENAME {
             Some(errors::param_str(params, "name")?)
         } else {
             None
         };
         let workspace = workspace_for_action(&self.store, id, new_name)?;
-        if method == "workspace.rename" {
+        if method == method::WORKSPACE_RENAME {
             return Ok(self
                 .mutate(connection, method, params, |tx| {
                     tx.update_workspace(&workspace)?;
                     Ok((
                         json!({"workspace":workspace}),
-                        vec![("workspace.renamed".into(), json!({"workspace":workspace}))],
+                        vec![(
+                            event::WORKSPACE_RENAMED.into(),
+                            json!({"workspace":workspace}),
+                        )],
                     ))
                 })?
                 .result);
         }
-        if method == "workspace.focus" {
+        if method == method::WORKSPACE_FOCUS {
             let scope = errors::invariant(
                 self.clients.get(connection),
                 "Workspace connection disappeared",
@@ -137,12 +143,12 @@ impl Core {
                     .iter()
                     .map(|p| {
                         (
-                            "pane.closed".into(),
+                            event::PANE_CLOSED.into(),
                             json!({"paneId":p.pane.pane_id,"workspaceId":id}),
                         )
                     })
                     .collect();
-                events.push(("workspace.closed".into(), json!({"workspaceId":id})));
+                events.push((event::WORKSPACE_CLOSED.into(), json!({"workspaceId":id})));
                 Ok((json!({"workspaceId":id}), events))
             })?
             .result;
@@ -175,12 +181,12 @@ impl Core {
         workspace.layout = serde_json::to_value(layout)
             .map_err(|_| errors::internal("Workspace pane layout serialization failed"))?;
         Ok(self
-            .mutate(connection, "workspace.layout.set", params, |tx| {
+            .mutate(connection, method::WORKSPACE_LAYOUT_SET, params, |tx| {
                 tx.update_workspace(&workspace)?;
                 Ok((
                     json!({"workspace":workspace}),
                     vec![(
-                        "workspace.layout_updated".into(),
+                        event::WORKSPACE_LAYOUT_UPDATED.into(),
                         json!({"workspace":workspace}),
                     )],
                 ))

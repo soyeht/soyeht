@@ -15,7 +15,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::AuthKind;
-use soyeht_protocol::{AgentLoginPhase, AgentLoginProgress, AuthMethod};
+use soyeht_protocol::{AgentLoginPhase, AgentLoginProgress, AuthMethod, method};
 
 /// The account fields `AgentSession` publishes.
 pub(crate) struct AccountView {
@@ -127,7 +127,7 @@ impl Core {
                 self.panes[id].stored.clone(),
                 state,
                 changes,
-                Some((connection, "pane.auth.cancel", params)),
+                Some((connection, method::PANE_AUTH_CANCEL, params)),
                 json!({"paneId":id}),
             )?
             .result)
@@ -163,7 +163,7 @@ impl Core {
                 self.panes[id].stored.clone(),
                 state,
                 changes,
-                Some((connection, "pane.auth.logout", params)),
+                Some((connection, method::PANE_AUTH_LOGOUT, params)),
                 json!({"paneId":id}),
             )?
             .result)

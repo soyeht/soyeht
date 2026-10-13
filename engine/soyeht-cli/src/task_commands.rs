@@ -1,7 +1,7 @@
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value, json};
 use soyeht_cli::{Client, Error, Result};
-use soyeht_protocol::*;
+use soyeht_protocol::{method::*, *};
 use std::collections::BTreeMap;
 
 fn invalid(message: impl Into<String>) -> Error {
@@ -85,31 +85,31 @@ enum Request {
 impl Request {
     fn run(self, client: &mut Client) -> Result<Value> {
         match self {
-            Self::Create(params) => rpc::<TaskCreateResult>(client, "task.create", params),
-            Self::Next(params) => rpc::<TaskNextResult>(client, "task.next", params),
-            Self::Show(params) => rpc::<TaskShowResult>(client, "task.show", params),
-            Self::List(params) => rpc::<TaskListResult>(client, "task.list", params),
-            Self::Update(params) => rpc::<TaskUpdateResult>(client, "task.update", params),
-            Self::Comment(params) => rpc::<TaskCommentResult>(client, "task.comment", params),
+            Self::Create(params) => rpc::<TaskCreateResult>(client, TASK_CREATE, params),
+            Self::Next(params) => rpc::<TaskNextResult>(client, TASK_NEXT, params),
+            Self::Show(params) => rpc::<TaskShowResult>(client, TASK_SHOW, params),
+            Self::List(params) => rpc::<TaskListResult>(client, TASK_LIST, params),
+            Self::Update(params) => rpc::<TaskUpdateResult>(client, TASK_UPDATE, params),
+            Self::Comment(params) => rpc::<TaskCommentResult>(client, TASK_COMMENT, params),
             Self::SubitemAdd(params) => {
-                rpc::<TaskSubitemAddResult>(client, "task.subitem.add", params)
+                rpc::<TaskSubitemAddResult>(client, TASK_SUBITEM_ADD, params)
             }
             Self::SubitemDone(params) => {
-                rpc::<TaskSubitemDoneResult>(client, "task.subitem.done", params)
+                rpc::<TaskSubitemDoneResult>(client, TASK_SUBITEM_DONE, params)
             }
-            Self::Block(params) => rpc::<TaskBlockResult>(client, "task.block", params),
-            Self::Release(params) => rpc::<TaskReleaseResult>(client, "task.release", params),
+            Self::Block(params) => rpc::<TaskBlockResult>(client, TASK_BLOCK, params),
+            Self::Release(params) => rpc::<TaskReleaseResult>(client, TASK_RELEASE, params),
             Self::Review(params) => {
-                rpc::<TaskRequestReviewResult>(client, "task.request_review", params)
+                rpc::<TaskRequestReviewResult>(client, TASK_REQUEST_REVIEW, params)
             }
-            Self::Complete(params) => rpc::<TaskCompleteResult>(client, "task.complete", params),
-            Self::Dispatch(params) => rpc::<TaskDispatchResult>(client, "task.dispatch", params),
-            Self::Unblock(params) => rpc::<TaskUnblockResult>(client, "task.unblock", params),
-            Self::Move(params) => rpc::<TaskMoveResult>(client, "task.move", params),
+            Self::Complete(params) => rpc::<TaskCompleteResult>(client, TASK_COMPLETE, params),
+            Self::Dispatch(params) => rpc::<TaskDispatchResult>(client, TASK_DISPATCH, params),
+            Self::Unblock(params) => rpc::<TaskUnblockResult>(client, TASK_UNBLOCK, params),
+            Self::Move(params) => rpc::<TaskMoveResult>(client, TASK_MOVE, params),
             Self::WorktreeClean(params) => {
-                rpc::<TaskWorktreeCleanResult>(client, "task.worktree.clean", params)
+                rpc::<TaskWorktreeCleanResult>(client, TASK_WORKTREE_CLEAN, params)
             }
-            Self::LoopSet(params) => rpc::<LoopSetResult>(client, "loop.set", params),
+            Self::LoopSet(params) => rpc::<LoopSetResult>(client, LOOP_SET, params),
         }
     }
 }

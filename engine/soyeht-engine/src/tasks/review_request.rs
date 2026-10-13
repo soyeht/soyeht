@@ -13,7 +13,7 @@ use crate::{
     offload::Offload,
 };
 use serde_json::Value;
-use soyeht_protocol::{Task, TaskRequestReviewParams};
+use soyeht_protocol::{Task, TaskRequestReviewParams, method};
 use soyeht_store::tasks::{ReviewStage, TaskReviewRecord};
 use std::{path::PathBuf, time::Duration};
 
@@ -34,7 +34,9 @@ impl Core {
     /// Validates under the Core lock, inspects the repository with git off
     /// it, then validates again and starts the reviewer under it (ADR 0079).
     pub(crate) fn task_request_review(&mut self, connection: &str, raw: &Value) -> Result<Outcome> {
-        if let Some(result) = self.repeated_mutation(connection, "task.request_review", raw)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::TASK_REQUEST_REVIEW, raw)?
+        {
             return Ok(Outcome::Reply(result));
         }
         let params: TaskRequestReviewParams = parameters(raw)?;

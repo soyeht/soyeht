@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
     HarnessEnvironmentIssue, HarnessInfo, HarnessSetupReason, HarnessSetupState, HarnessSource,
-    ModelInfo, ModelListSource, ModelRefusal, limits,
+    ModelInfo, ModelListSource, ModelRefusal, limits, method,
 };
 use soyeht_store::agents::AgentModelRefusal;
 use soyeht_store::agents::HarnessReadiness;
@@ -184,7 +184,7 @@ pub(crate) fn prepare_catalog(
     params: &Value,
     session_harnesses: BTreeSet<String>,
 ) -> Result<PreparedCatalog> {
-    if method == "harness.list" {
+    if method == method::HARNESS_LIST {
         let started = Instant::now();
         if params["rescan"].as_bool() == Some(true) && params["cursor"].is_null() {
             super::environment::invalidate_launch_path();
@@ -223,7 +223,7 @@ pub(crate) fn prepare_catalog(
             "{}",
             json!({
                 "event":"engine.catalog_prepared",
-                "method":"harness.list",
+                "method":method::HARNESS_LIST,
                 "entries":entries.len(),
                 "environmentMs":environment_ms,
                 "resolveMs":resolve_ms,
@@ -254,7 +254,7 @@ pub(crate) fn prepare_catalog(
         "{}",
         json!({
             "event":"engine.catalog_prepared",
-            "method":"model.list",
+            "method":method::MODEL_LIST,
             "totalMs":started.elapsed().as_millis()
         })
     );

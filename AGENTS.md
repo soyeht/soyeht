@@ -67,8 +67,10 @@ ADR when you change a boundary.
   contracts/` (or `# Generated from contracts/`) is an output: never edit it by
   hand. Commit the outputs with their source; the gate runs `--check`.
 - Once a generated form exists, use it. Do not hand-type a method or event name,
-  a limit, or an error code. Examples: `EventName`, `METHODS`, `error_code()`,
-  `limits.rs` and `ProtocolLimits`.
+  a limit, a frame kind or an error code. Examples: `RequestMethod`, `EventName`,
+  `FrameKind` and `ProtocolLimits` in Swift; `method::*`, `event::*`, `limits::*` and
+  `error_code()` in Rust. `scripts/check_wire_names.py` fails on a string literal equal to a
+  method or event name in production code.
 - Rules every client must share that are not wire values (the Markdown subset of agent
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
   the same file. Change the vectors first.

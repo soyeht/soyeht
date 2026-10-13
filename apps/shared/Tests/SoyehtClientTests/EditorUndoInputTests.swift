@@ -64,6 +64,6 @@ private func point(_ position: TextPosition?) -> [UInt32]? {
   #expect(undo.handled)
   #expect(undo.effect == .undo)
   #expect(undo.plan == nil)
-  #expect(EditorHistoryDirection.undo.method == "file.undo")
-  #expect(EditorHistoryDirection.redo.method == "file.redo")
+  #expect(EditorHistoryDirection.undo.method == .fileUndo)
+  #expect(EditorHistoryDirection.redo.method == .fileRedo)
 }

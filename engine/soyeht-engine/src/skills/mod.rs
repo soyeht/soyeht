@@ -17,6 +17,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     Skill, SkillScope, SkillsChangedEvent, SkillsCreateParams, SkillsDeleteParams,
     SkillsDeleteResult, SkillsListResult, SkillsReadParams, SkillsReadResult, SkillsUpdateParams,
+    event, method,
 };
 use soyeht_skills::{Entry, Store, home};
 use std::path::Path;
@@ -26,7 +27,11 @@ const ALLOWED_TOOLS_CHARS: usize = 1024;
 pub(crate) fn handles(method: &str) -> bool {
     matches!(
         method,
-        "skills.list" | "skills.read" | "skills.create" | "skills.update" | "skills.delete"
+        method::SKILLS_LIST
+            | method::SKILLS_READ
+            | method::SKILLS_CREATE
+            | method::SKILLS_UPDATE
+            | method::SKILLS_DELETE
     )
 }
 
@@ -112,15 +117,15 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
-        if method != "skills.list"
-            && method != "skills.read"
+        if method != method::SKILLS_LIST
+            && method != method::SKILLS_READ
             && let Some(result) = self.repeated_mutation(connection, method, params)?
         {
             return Ok(result);
         }
         let result = match method {
-            "skills.list" => return self.list_skills(connection, params),
-            "skills.read" => {
+            method::SKILLS_LIST => return self.list_skills(connection, params),
+            method::SKILLS_READ => {
                 let request: SkillsReadParams = parse(params)?;
                 let scoped = self.skills_in(request.workspace_id.as_deref())?;
                 let (entry, content) = scoped.store.read(&request.name).map_err(skill_error)?;
@@ -129,7 +134,7 @@ impl Core {
                     content,
                 }));
             }
-            "skills.create" => {
+            method::SKILLS_CREATE => {
                 let request: SkillsCreateParams = parse(params)?;
                 let scoped = self.skills_in(request.workspace_id.as_deref())?;
                 let instructions = request.instructions.unwrap_or_default();
@@ -139,7 +144,7 @@ impl Core {
                     .map_err(skill_error)?;
                 json!({"skill":scoped.wire(entry)})
             }
-            "skills.update" => {
+            method::SKILLS_UPDATE => {
                 let request: SkillsUpdateParams = parse(params)?;
                 let scoped = self.skills_in(request.workspace_id.as_deref())?;
                 let entry = scoped
@@ -148,7 +153,7 @@ impl Core {
                     .map_err(skill_error)?;
                 json!({"skill":scoped.wire(entry)})
             }
-            "skills.delete" => {
+            method::SKILLS_DELETE => {
                 let request: SkillsDeleteParams = parse(params)?;
                 let scoped = self.skills_in(request.workspace_id.as_deref())?;
                 scoped.store.delete(&request.name).map_err(skill_error)?;
@@ -225,7 +230,7 @@ impl Core {
                     scope: scoped.scope,
                     workspace_id,
                 };
-                self.transient_event("skills.changed", json!(event))?;
+                self.transient_event(event::SKILLS_CHANGED, json!(event))?;
             }
         }
         Ok(())

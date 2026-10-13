@@ -7,7 +7,9 @@ use crate::{
     settings,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{Pane, PaneExperimentCapture, PaneMode, PaneState, StateSource};
+use soyeht_protocol::{
+    Pane, PaneExperimentCapture, PaneMode, PaneState, StateSource, event, method,
+};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
@@ -59,7 +61,7 @@ pub(crate) fn persist_new_pane(
 pub(crate) fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) {
     (
         json!({"paneId":saved.pane.pane_id}),
-        vec![("pane.created".into(), json!({"pane":saved.pane}))],
+        vec![(event::PANE_CREATED.into(), json!({"pane":saved.pane}))],
     )
 }
 
@@ -224,7 +226,7 @@ impl Core {
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             saved.pane.record,
         )?;
-        let mutation = self.mutate(connection, "pane.create", params, |tx| {
+        let mutation = self.mutate(connection, method::PANE_CREATE, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
@@ -265,12 +267,12 @@ impl Core {
         let workspace =
             self.workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
         events.push((
-            "pane.closed".into(),
+            event::PANE_CLOSED.into(),
             json!({"paneId":saved.pane.pane_id,"workspaceId":saved.pane.workspace_id}),
         ));
         if let Some(workspace) = &workspace {
             events.push((
-                "workspace.layout_updated".into(),
+                event::WORKSPACE_LAYOUT_UPDATED.into(),
                 json!({"workspace":workspace}),
             ));
         }
@@ -278,14 +280,14 @@ impl Core {
     }
 
     pub fn pane_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
-        if method == "pane.experiment.delete" {
+        if method == method::PANE_EXPERIMENT_DELETE {
             return self.delete_experiment_capture_data(connection, params);
         }
         let id = errors::param_str(params, "paneId")?;
-        if method == "pane.close" && self.agents.contains_key(id) {
+        if method == method::PANE_CLOSE && self.agents.contains_key(id) {
             return self.close_agent(connection, params);
         }
-        if method == "pane.close" {
+        if method == method::PANE_CLOSE {
             self.settle_editor_pane_before_close(id);
         }
         let mut saved = self
@@ -296,7 +298,7 @@ impl Core {
             .stored
             .clone();
         let mut layout_workspace = None;
-        let requested_capture = (method == "pane.experiment.set")
+        let requested_capture = (method == method::PANE_EXPERIMENT_SET)
             .then(|| errors::param_bool(params, "on"))
             .transpose()?;
         let capture_is_active =
@@ -320,30 +322,30 @@ impl Core {
         };
         let mut events = vec![];
         let result = match method {
-            "pane.close" => {
+            method::PANE_CLOSE => {
                 layout_workspace = self.prepare_pane_close(&mut saved, &mut events)?;
                 json!({"paneId":id})
             }
-            "pane.rename" => {
+            method::PANE_RENAME => {
                 saved.pane.name = errors::param_str(params, "name")?.into();
-                events.push(("pane.renamed".into(), json!({"pane":saved.pane})));
+                events.push((event::PANE_RENAMED.into(), json!({"pane":saved.pane})));
                 json!({"pane":saved.pane})
             }
-            "pane.resize" => {
+            method::PANE_RESIZE => {
                 saved.pane.cols = u32::try_from(errors::param_u64(params, "cols")?)
                     .map_err(|_| errors::invalid("Pane columns exceed the supported range"))?;
                 saved.pane.rows = u32::try_from(errors::param_u64(params, "rows")?)
                     .map_err(|_| errors::invalid("Pane rows exceed the supported range"))?;
                 json!({"cols":saved.pane.cols,"rows":saved.pane.rows})
             }
-            "pane.record.set" => {
+            method::PANE_RECORD_SET => {
                 if saved.pane.mode == soyeht_protocol::PaneMode::Agent {
                     return Err(errors::invalid("Agent protocol history is always durable"));
                 }
                 saved.pane.record = errors::param_bool(params, "on")?;
                 json!({"on":saved.pane.record})
             }
-            "pane.experiment.set" => {
+            method::PANE_EXPERIMENT_SET => {
                 if !matches!(saved.pane.mode, PaneMode::Terminal | PaneMode::Agent) {
                     return Err(errors::invalid(
                         "Experiment capture requires a terminal or agent pane",
@@ -358,7 +360,7 @@ impl Core {
                 });
                 json!({"capture":saved.pane.experiment_capture})
             }
-            "pane.focus" => {
+            method::PANE_FOCUS => {
                 let scope =
                     errors::invariant(self.clients.get(connection), "Pane connection disappeared")?
                         .scope
@@ -376,9 +378,9 @@ impl Core {
         };
         if matches!(
             method,
-            "pane.resize" | "pane.record.set" | "pane.experiment.set"
+            method::PANE_RESIZE | method::PANE_RECORD_SET | method::PANE_EXPERIMENT_SET
         ) {
-            events.push(("pane.updated".into(), json!({"pane":saved.pane})));
+            events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
         }
         let closes_editor = saved.closed && saved.pane.mode == PaneMode::Editor;
         let mutation = self.mutate(connection, method, params, |tx| {
@@ -410,7 +412,7 @@ impl Core {
         )?;
         running.screen.recording = saved.pane.record;
         running.stored = saved.clone();
-        if method == "pane.experiment.set" {
+        if method == method::PANE_EXPERIMENT_SET {
             if saved
                 .pane
                 .experiment_capture
@@ -436,7 +438,7 @@ impl Core {
         if saved.closed {
             self.finish_close(id)?;
         }
-        if method == "pane.resize" && saved.pane.mode == PaneMode::Terminal {
+        if method == method::PANE_RESIZE && saved.pane.mode == PaneMode::Terminal {
             self.resize_terminal_capture(id)?;
             if let Some(instance_id) = saved.instance_id {
                 // Best effort: the size is already durable, and a lost supervisor is

@@ -34,14 +34,14 @@ extension EngineClient {
   /// Listing a workspace also makes the engine announce its changes.
   public func loadSkills(workspaceId: String?) async throws {
     let result = try await request(
-      "skills.list", .encoded(SkillsListParams(workspaceId: workspaceId))
+      .skillsList, .encoded(SkillsListParams(workspaceId: workspaceId))
     ).decoded(SkillsListResult.self)
     slashSources.skills[workspaceId ?? ""] = result
   }
 
   func loadCommands(paneId: String) async throws {
     let result = try await request(
-      "pane.commands.list", .encoded(PaneCommandsListParams(paneId: paneId))
+      .paneCommandsList, .encoded(PaneCommandsListParams(paneId: paneId))
     ).decoded(PaneCommandsListResult.self)
     slashSources.commands[paneId] = result.items
   }
@@ -50,7 +50,7 @@ extension EngineClient {
     name: String, description: String, instructions: String, workspaceId: String? = nil
   ) async throws -> Skill {
     let result = try await mutation(
-      "skills.create",
+      .skillsCreate,
       SkillsCreateParams(
         name: name, description: description, instructions: instructions,
         workspaceId: workspaceId, idempotencyKey: UUID().uuidString)
@@ -61,7 +61,7 @@ extension EngineClient {
 
   public func deleteSkill(_ skill: Skill) async throws {
     _ = try await mutation(
-      "skills.delete",
+      .skillsDelete,
       SkillsDeleteParams(
         name: skill.name, workspaceId: skill.workspaceId, idempotencyKey: UUID().uuidString))
     try await loadSkills(workspaceId: skill.workspaceId)

@@ -126,7 +126,7 @@ extension EngineClient {
   }
 
   func loadLocalServers() async throws {
-    localServers = try await request("servers.local.list", .object([:]))
+    localServers = try await request(.serversLocalList, .object([:]))
       .decoded(ServersLocalListResult.self).servers
   }
 
@@ -138,7 +138,7 @@ extension EngineClient {
     workspaceId: String, url: String, newPane: Bool = false, incognito: Bool = false
   ) async throws -> WebOpenResult {
     let result = try await mutation(
-      "web.open",
+      .webOpen,
       WebOpenParams(
         url: url, workspaceId: workspaceId, newPane: newPane, incognito: incognito,
         idempotencyKey: UUID().uuidString))
@@ -151,7 +151,7 @@ extension EngineClient {
     paneId: String, url: String? = nil, action: WebNavigationAction? = nil
   ) async throws -> WebNavigateResult {
     try await mutation(
-      "web.navigate",
+      .webNavigate,
       WebNavigateParams(
         paneId: paneId, url: url, action: action, idempotencyKey: UUID().uuidString)
     )
@@ -163,7 +163,7 @@ extension EngineClient {
     height: UInt32? = nil, rotate: Bool = false
   ) async throws -> WebResizeResult {
     try await mutation(
-      "web.resize",
+      .webResize,
       WebResizeParams(
         paneId: paneId, preset: preset, width: width, height: height, rotate: rotate,
         idempotencyKey: UUID().uuidString)

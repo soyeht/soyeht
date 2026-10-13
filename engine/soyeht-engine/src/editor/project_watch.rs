@@ -18,7 +18,7 @@ use crate::{
     model,
 };
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
-use soyeht_protocol::ProjectTreeChangedEvent;
+use soyeht_protocol::{ProjectTreeChangedEvent, event};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -283,7 +283,7 @@ impl Core {
             if let Some(client) = self.clients.get(&connection) {
                 client
                     .outbox
-                    .send(model::notification("project.tree_changed", event)?);
+                    .send(model::notification(event::PROJECT_TREE_CHANGED, event)?);
             }
         }
         Ok(())

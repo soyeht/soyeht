@@ -9,7 +9,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    PaneState, StateSource,
+    PaneState, StateSource, event,
     profile::{DEV_PTYD_SOCKET, DEV_TCP_PORT},
 };
 use soyeht_ptyd::{
@@ -193,7 +193,7 @@ impl Core {
         // The supervisor can start after the engine under the service manager.
         // No process is declared dead until its registry has been reconciled.
         let _ = core.connect_supervisor();
-        core.system_event("engine.restarted", json!({"generation":generation}))?;
+        core.system_event(event::ENGINE_RESTARTED, json!({"generation":generation}))?;
         Ok(core)
     }
 
@@ -359,7 +359,7 @@ impl Core {
                 // The caller still gets ptyd_unavailable; a lost event that cannot be
                 // recorded must at least reach the log.
                 if let Err(error) = self.system_event(
-                    "ptyd.lost",
+                    event::PTYD_LOST,
                     json!({"reason":"Supervisor connection closed"}),
                 ) {
                     errors::log_failure("engine.ptyd_lost_unrecorded", &error);
@@ -383,7 +383,7 @@ impl Core {
                 "Supervisor disappeared after registry reconciliation",
             )?
             .supervisor_generation();
-            self.system_event("ptyd.reconnected", json!({"generation":generation}))?;
+            self.system_event(event::PTYD_RECONNECTED, json!({"generation":generation}))?;
         }
         result
     }
@@ -599,8 +599,8 @@ impl Core {
                 Ok((
                     json!({}),
                     vec![
-                        ("pane.state_changed".into(), event),
-                        ("pane.updated".into(), json!({"pane": saved.pane})),
+                        (event::PANE_STATE_CHANGED.into(), event),
+                        (event::PANE_UPDATED.into(), json!({"pane": saved.pane})),
                     ],
                 ))
             },

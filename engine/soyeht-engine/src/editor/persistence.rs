@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, FileAuthor, FileHistoryParams, FileHistoryResult, FileRevertParams, FileRevertResult,
-    FileWatchParams, FileWatchResult, FileWriteParams, FileWriteResult, Role,
+    FileWatchParams, FileWatchResult, FileWriteParams, FileWriteResult, Role, event, method,
 };
 use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use uuid::Uuid;
@@ -35,7 +35,7 @@ impl Core {
             changed_lines: prepared.changed_lines.clone(),
         })
         .map_err(|_| errors::internal("File write result serialization failed"))?;
-        self.commit_prepared_edit(connection, "file.write", params, prepared, result)
+        self.commit_prepared_edit(connection, method::FILE_WRITE, params, prepared, result)
     }
 
     /// Persists a prepared buffer change, then applies it to the open document
@@ -71,7 +71,7 @@ impl Core {
         })
         .map_err(|_| errors::internal("File watch result serialization failed"))?;
         let saved = file.clone();
-        let mutation = self.mutate(connection, "file.watch", params, |change| {
+        let mutation = self.mutate(connection, method::FILE_WATCH, params, |change| {
             change.save_editor_file(&saved)?;
             Ok((result, Vec::new()))
         })?;
@@ -125,7 +125,7 @@ impl Core {
         })
         .map_err(|_| errors::internal("File revert result serialization failed"))?;
         let saved = file.clone();
-        let mutation = self.mutate(connection, "file.revert", params, |change| {
+        let mutation = self.mutate(connection, method::FILE_REVERT, params, |change| {
             change.save_editor_file(&saved)?;
             Ok((result, Vec::new()))
         })?;
@@ -266,7 +266,7 @@ impl Core {
         let version = stored_version(&file, content, author.clone(), self.timestamp());
         let wire = document(file.clone()).map_err(errors::storage)?;
         let result = json!({"file":wire});
-        let events = vec![("file.saved".into(), json!({"file":wire,"by":author}))];
+        let events = vec![(event::FILE_SAVED.into(), json!({"file":wire,"by":author}))];
         self.persist_editor_system("save", file, Some(version), result, events, true)
     }
 
@@ -288,7 +288,7 @@ impl Core {
             file,
             Some(version),
             json!({}),
-            vec![("file.changed_on_disk".into(), event)],
+            vec![(event::FILE_CHANGED_ON_DISK.into(), event)],
             false,
         )
     }
@@ -314,7 +314,7 @@ impl Core {
             file,
             None,
             json!({}),
-            vec![("file.conflict".into(), event)],
+            vec![(event::FILE_CONFLICT.into(), event)],
             true,
         )
     }

@@ -6,7 +6,7 @@ use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
 use soyeht_protocol::{
     BeatCard, FileAuthor, Role, WritingBeatDeleteParams, WritingBeatListParams,
-    WritingBeatListResult, WritingBeatPutParams, WritingBeatResult, WritingKind,
+    WritingBeatListResult, WritingBeatPutParams, WritingBeatResult, WritingKind, event, method,
 };
 use soyeht_store::{editor::EditorFile, writing::WritingDocumentRecord};
 use soyeht_writing::BeatBoard;
@@ -25,7 +25,9 @@ impl Core {
     }
 
     pub(super) fn writing_beat_put(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "writing.beat.put", params)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::WRITING_BEAT_PUT, params)?
+        {
             return Ok(result);
         }
         let request: WritingBeatPutParams = parameters(params, "beat put")?;
@@ -56,7 +58,7 @@ impl Core {
             .ok_or_else(|| errors::internal("Saved writing beat is unavailable"))?;
         self.persist_beat_change(
             connection,
-            "writing.beat.put",
+            method::WRITING_BEAT_PUT,
             params,
             context,
             author,
@@ -69,7 +71,9 @@ impl Core {
         connection: &str,
         params: &Value,
     ) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "writing.beat.delete", params)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::WRITING_BEAT_DELETE, params)?
+        {
             return Ok(result);
         }
         let request: WritingBeatDeleteParams = parameters(params, "beat delete")?;
@@ -79,7 +83,7 @@ impl Core {
         context.board.delete(&request.beat_id)?;
         self.persist_beat_change(
             connection,
-            "writing.beat.delete",
+            method::WRITING_BEAT_DELETE,
             params,
             context,
             author,
@@ -137,7 +141,7 @@ impl Core {
                     &author,
                     context.record.updated_ms,
                 )?;
-                Ok((result, vec![("writing.changed".into(), event)]))
+                Ok((result, vec![(event::WRITING_CHANGED.into(), event)]))
             })?
             .result)
     }

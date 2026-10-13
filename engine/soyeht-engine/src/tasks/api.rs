@@ -15,6 +15,7 @@ use soyeht_protocol::{
     Actor, Comment, Role, Subitem, SubitemState, Task, TaskCommentParams, TaskCommentsParams,
     TaskCreateParams, TaskCreateResult, TaskDispatchParams, TaskDispatchResult, TaskExecutor,
     TaskListParams, TaskShowParams, TaskSubitemAddParams, TaskSubitemDoneParams, TaskUpdateParams,
+    event, method,
 };
 use soyeht_store::database::Error as StoreError;
 use uuid::Uuid;
@@ -44,9 +45,9 @@ fn cursor(value: Option<&str>, name: &str) -> Result<u32> {
 impl Core {
     pub fn task_query(&self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         match method {
-            "task.show" => self.task_show(connection, parameters(params)?),
-            "task.list" => self.task_list(connection, parameters(params)?),
-            "task.comments" => self.task_comments(connection, parameters(params)?),
+            method::TASK_SHOW => self.task_show(connection, parameters(params)?),
+            method::TASK_LIST => self.task_list(connection, parameters(params)?),
+            method::TASK_COMMENTS => self.task_comments(connection, parameters(params)?),
             _ => Err(errors::invalid("Unknown task query")),
         }
     }
@@ -57,7 +58,7 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Outcome> {
-        if method == "task.create" {
+        if method == method::TASK_CREATE {
             return self.task_create(connection, params, parameters(params)?);
         }
         self.task_edit(connection, method, params)
@@ -66,14 +67,19 @@ impl Core {
 
     fn task_edit(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         match method {
-            "task.update" => self.task_update(connection, params, parameters(params)?),
-            "task.comment" => self.task_comment(connection, params, parameters(params)?),
-            "task.subitem.add" => self.task_subitem_add(connection, params, parameters(params)?),
-            "task.subitem.done" => self.task_subitem_done(connection, params, parameters(params)?),
-            "task.block" | "task.release" | "task.complete" | "task.unblock" => {
-                self.task_lifecycle(connection, method, params)
+            method::TASK_UPDATE => self.task_update(connection, params, parameters(params)?),
+            method::TASK_COMMENT => self.task_comment(connection, params, parameters(params)?),
+            method::TASK_SUBITEM_ADD => {
+                self.task_subitem_add(connection, params, parameters(params)?)
             }
-            "task.move" => self.task_move(connection, params, parameters(params)?),
+            method::TASK_SUBITEM_DONE => {
+                self.task_subitem_done(connection, params, parameters(params)?)
+            }
+            method::TASK_BLOCK
+            | method::TASK_RELEASE
+            | method::TASK_COMPLETE
+            | method::TASK_UNBLOCK => self.task_lifecycle(connection, method, params),
+            method::TASK_MOVE => self.task_move(connection, params, parameters(params)?),
             _ => Err(errors::invalid("Unknown task authoring method")),
         }
     }
@@ -255,7 +261,7 @@ impl Core {
             &template.dependencies,
         )?;
         let workspace = params.workspace_id.clone();
-        let mutation = self.mutate(connection, "task.create", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_CREATE, raw, move |change| {
             let mut created = template;
             created.task_id = change.allocate_task_id(&workspace)?;
             if created.dependencies.contains(&created.task_id) {
@@ -264,7 +270,7 @@ impl Core {
             change.insert_task(&created)?;
             Ok((
                 json!({"task":created}),
-                vec![("task.created".into(), json!({"task":created}))],
+                vec![(event::TASK_CREATED.into(), json!({"task":created}))],
             ))
         })?;
         if !should_dispatch {
@@ -332,15 +338,15 @@ impl Core {
         let phrase_changed = current.phrase != updated.phrase;
         let workspace = params.workspace_id;
         let task_id = params.task_id;
-        let mutation = self.mutate(connection, "task.update", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_UPDATE, raw, move |change| {
             change.replace_task(&updated, expected)?;
             let mut events = vec![(
-                "task.updated".into(),
+                event::TASK_UPDATED.into(),
                 json!({"workspaceId":workspace,"taskId":task_id,"version":updated.version}),
             )];
             if phrase_changed {
                 events.push((
-                    "task.phrase_changed".into(),
+                    event::TASK_PHRASE_CHANGED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
                 ));
             }
@@ -371,12 +377,12 @@ impl Core {
         };
         let workspace = params.workspace_id;
         let task_id = params.task_id;
-        let mutation = self.mutate(connection, "task.comment", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_COMMENT, raw, move |change| {
             change.insert_comment(&workspace, &task_id, &comment)?;
             Ok((
                 json!({"comment":comment}),
                 vec![(
-                    "task.commented".into(),
+                    event::TASK_COMMENTED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"comment":comment}),
                 )],
             ))
@@ -407,7 +413,7 @@ impl Core {
         let text = params.text.trim().to_owned();
         let agent = params.agent;
         let instructions = params.instructions;
-        let mutation = self.mutate(connection, "task.subitem.add", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_SUBITEM_ADD, raw, move |change| {
             let subitem = Subitem {
                 subitem_id: change.allocate_subitem_id(&workspace, &task_id)?,
                 task_id: task_id.clone(),
@@ -420,7 +426,7 @@ impl Core {
             Ok((
                 json!({"subitem":subitem}),
                 vec![(
-                    "task.subitem_changed".into(),
+                    event::TASK_SUBITEM_CHANGED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"subitem":subitem}),
                 )],
             ))
@@ -453,12 +459,12 @@ impl Core {
         subitem.state = SubitemState::Done;
         let workspace = params.workspace_id;
         let task_id = params.task_id;
-        let mutation = self.mutate(connection, "task.subitem.done", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_SUBITEM_DONE, raw, move |change| {
             change.replace_subitem(&workspace, &task_id, &subitem)?;
             Ok((
                 json!({"subitem":subitem}),
                 vec![(
-                    "task.subitem_changed".into(),
+                    event::TASK_SUBITEM_CHANGED.into(),
                     json!({"workspaceId":workspace,"taskId":task_id,"subitem":subitem}),
                 )],
             ))

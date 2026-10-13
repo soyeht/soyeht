@@ -4,6 +4,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
+use soyeht_protocol::{event, method};
 
 pub const PREFERRED_HARNESS_KEY: &str = "harness.preferredId";
 /// Followed by a harness ID: the permission mode new panes of that harness
@@ -60,11 +61,14 @@ impl Core {
             return Err(errors::invalid("Invalid setting value"));
         }
         Ok(self
-            .mutate(connection, "settings.set", params, |tx| {
+            .mutate(connection, method::SETTINGS_SET, params, |tx| {
                 tx.set_setting(key, value)?;
                 Ok((
                     json!({"key":key,"value":value}),
-                    vec![("settings.changed".into(), json!({"key":key,"value":value}))],
+                    vec![(
+                        event::SETTINGS_CHANGED.into(),
+                        json!({"key":key,"value":value}),
+                    )],
                 ))
             })?
             .result)

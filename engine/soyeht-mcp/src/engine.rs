@@ -5,7 +5,7 @@ use soyeht_protocol::{
     AttachmentRef, Role, Welcome,
     attachment::AttachmentAssembler,
     frame::{Frame, read_json, write_json},
-    handshake, limits,
+    handshake, limits, method,
 };
 use std::{
     path::{Path, PathBuf},
@@ -153,15 +153,15 @@ impl Client {
 
 fn response_attachment(method: &str, value: &Value) -> Result<Option<AttachmentRef>> {
     let field = match method {
-        "web.screenshot" => Some("image"),
-        "web.snapshot" => Some("screenshot"),
+        method::WEB_SCREENSHOT => Some("image"),
+        method::WEB_SNAPSHOT => Some("screenshot"),
         _ => None,
     };
     let reference: Option<AttachmentRef> = field
         .and_then(|field| value.get(field))
         .map(|value| serde_json::from_value(value.clone()).map_err(Error::from))
         .transpose()?;
-    if method == "web.screenshot" && reference.is_none() {
+    if method == method::WEB_SCREENSHOT && reference.is_none() {
         return Err(Error::ResponseMissingAttachment);
     }
     if let Some(reference) = &reference

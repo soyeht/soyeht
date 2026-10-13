@@ -5,7 +5,7 @@ use soyeht_protocol::{
     Actor, FileAuthor, PaneState, Role, TextEdit, TextPosition, TextRange, WritingLineVariants,
     WritingVariant, WritingVariantAddParams, WritingVariantRemoveParams,
     WritingVariantRequestParams, WritingVariantRequestResult, WritingVariantResult,
-    WritingVariantSelectParams,
+    WritingVariantSelectParams, event, method,
 };
 use soyeht_store::{editor::EditorFile, writing::WritingDocumentRecord};
 use soyeht_writing::VariantSet;
@@ -18,7 +18,7 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         if let Some(result) =
-            self.repeated_mutation(connection, "writing.variant.request", params)?
+            self.repeated_mutation(connection, method::WRITING_VARIANT_REQUEST, params)?
         {
             return Ok(result);
         }
@@ -47,7 +47,7 @@ impl Core {
             .stored
             .clone();
         let events = vec![(
-            "pane.queued".into(),
+            event::PANE_QUEUED.into(),
             json!({"paneId":request.agent_pane_id,"n":state.queue.len(),"promptIds":[queued.prompt_id],"draft":false}),
         )];
         Ok(self
@@ -58,7 +58,7 @@ impl Core {
                     events,
                     ..crate::agents::Changes::default()
                 },
-                Some((connection, "writing.variant.request", params)),
+                Some((connection, method::WRITING_VARIANT_REQUEST, params)),
                 result,
             )?
             .result)
@@ -69,7 +69,9 @@ impl Core {
         connection: &str,
         params: &Value,
     ) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "writing.variant.add", params)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::WRITING_VARIANT_ADD, params)?
+        {
             return Ok(result);
         }
         let request: WritingVariantAddParams = parameters(params, "variant add")?;
@@ -88,7 +90,7 @@ impl Core {
             self,
             MutationContext {
                 connection,
-                method: "writing.variant.add",
+                method: method::WRITING_VARIANT_ADD,
                 params,
             },
             VariantPersistence {
@@ -109,7 +111,7 @@ impl Core {
         self.change_variant_choice(
             MutationContext {
                 connection,
-                method: "writing.variant.select",
+                method: method::WRITING_VARIANT_SELECT,
                 params,
             },
             VariantChoice {
@@ -131,7 +133,7 @@ impl Core {
         self.change_variant_choice(
             MutationContext {
                 connection,
-                method: "writing.variant.remove",
+                method: method::WRITING_VARIANT_REMOVE,
                 params,
             },
             VariantChoice {
@@ -213,7 +215,7 @@ impl Core {
                     &persistence.author,
                     next_record.updated_ms,
                 )?;
-                Ok((result, vec![("writing.changed".into(), event)]))
+                Ok((result, vec![(event::WRITING_CHANGED.into(), event)]))
             },
         )?;
         self.editor.commit_edit(prepared);
@@ -230,7 +232,7 @@ impl Core {
     ) -> Result<Value> {
         let result = variant_request_result(request_id, delivered)?;
         Ok(self
-            .mutate(connection, "writing.variant.request", params, |_| {
+            .mutate(connection, method::WRITING_VARIANT_REQUEST, params, |_| {
                 Ok((result, Vec::new()))
             })?
             .result)
@@ -328,7 +330,7 @@ fn save_variant_sidecar(
                     &persistence.author,
                     next.updated_ms,
                 )?;
-                Ok((result, vec![("writing.changed".into(), event)]))
+                Ok((result, vec![(event::WRITING_CHANGED.into(), event)]))
             },
         )?
         .result)

@@ -11,7 +11,7 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use soyeht_protocol::{PaneState, Role};
+use soyeht_protocol::{PaneState, Role, method};
 use std::path::Path;
 
 pub(crate) const CLAUDE_HARNESS_ID: &str = "registry.claude-acp";
@@ -113,7 +113,9 @@ impl Core {
         // Return its durable receipt before resolving the current capability: the
         // original label remains attributed to its original generation, and the
         // retry never records a second label against the replacement session.
-        if let Some(result) = self.repeated_mutation(connection, "pane.experiment.hook", raw)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::PANE_EXPERIMENT_HOOK, raw)?
+        {
             return Ok(result);
         }
         let client = self
@@ -196,7 +198,7 @@ impl Core {
             // capture is therefore an authenticated no-op, never a disk write.
             let result = json!({"recorded":false});
             return Ok(self
-                .mutate(connection, "pane.experiment.hook", raw, |_| {
+                .mutate(connection, method::PANE_EXPERIMENT_HOOK, raw, |_| {
                     Ok((result, Vec::new()))
                 })?
                 .result);
@@ -208,7 +210,7 @@ impl Core {
         }
         let result = json!({"recorded":true});
         Ok(self
-            .mutate(connection, "pane.experiment.hook", raw, |_| {
+            .mutate(connection, method::PANE_EXPERIMENT_HOOK, raw, |_| {
                 Ok((result, Vec::new()))
             })?
             .result)

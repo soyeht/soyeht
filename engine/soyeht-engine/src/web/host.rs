@@ -10,7 +10,7 @@ use soyeht_protocol::{
     AttachmentRef, ErrorKind, RpcError, WebActionResult, WebAgentDrivingEvent, WebCloseResult,
     WebCommandKind, WebCommandParams, WebCommandResult, WebConsoleResult, WebEvaluateResult,
     WebNavigateResult, WebNetworkResult, WebResizeResult, WebScreenshotResult, WebSnapshotResult,
-    WebWaitResult, attachment::attachment_frames, error_code, frame::Frame,
+    WebWaitResult, attachment::attachment_frames, error_code, event, frame::Frame, method::*,
 };
 use soyeht_web::{command_response_budget, validate_command};
 use uuid::Uuid;
@@ -315,7 +315,7 @@ impl Core {
         waiter.permission.apply_to(&mut waiter.params)?;
         let payload = serde_json::to_value(&waiter.params)
             .map_err(|_| errors::internal("Web command serialization failed"))?;
-        let frame = model::request(json!(id), "web.command", payload)?;
+        let frame = model::request(json!(id), WEB_COMMAND, payload)?;
         let sent = self
             .clients
             .get(&host)
@@ -370,28 +370,28 @@ impl Core {
         };
         let params = serde_json::to_value(event)
             .map_err(|_| errors::internal("Web driving event serialization failed"))?;
-        self.transient_event("web.agent_driving", params)
+        self.transient_event(event::WEB_AGENT_DRIVING, params)
     }
 }
 
 fn public_result(waiter: &WebWaiter, result: &WebCommandResult) -> Result<Value> {
     match waiter.method.as_str() {
-        "web.navigate" => serde_json::to_value(WebNavigateResult {
+        WEB_NAVIGATE => serde_json::to_value(WebNavigateResult {
             pane_id: waiter.pane_id.clone(),
             accepted: true,
         })
         .map_err(|_| errors::internal("Web navigation result serialization failed")),
-        "web.snapshot" => typed_public_result::<WebSnapshotResult>(waiter, result),
-        "web.click" | "web.type" | "web.press" | "web.hover" | "web.select" | "web.scroll" => {
+        WEB_SNAPSHOT => typed_public_result::<WebSnapshotResult>(waiter, result),
+        WEB_CLICK | WEB_TYPE | WEB_PRESS | WEB_HOVER | WEB_SELECT | WEB_SCROLL => {
             typed_public_result::<WebActionResult>(waiter, result)
         }
-        "web.wait" => typed_public_result::<WebWaitResult>(waiter, result),
-        "web.evaluate" => typed_public_result::<WebEvaluateResult>(waiter, result),
-        "web.screenshot" => typed_public_result::<WebScreenshotResult>(waiter, result),
-        "web.console" => typed_public_result::<WebConsoleResult>(waiter, result),
-        "web.network" => typed_public_result::<WebNetworkResult>(waiter, result),
-        "web.resize" => typed_public_result::<WebResizeResult>(waiter, result),
-        "web.close" => typed_public_result::<WebCloseResult>(waiter, result),
+        WEB_WAIT => typed_public_result::<WebWaitResult>(waiter, result),
+        WEB_EVALUATE => typed_public_result::<WebEvaluateResult>(waiter, result),
+        WEB_SCREENSHOT => typed_public_result::<WebScreenshotResult>(waiter, result),
+        WEB_CONSOLE => typed_public_result::<WebConsoleResult>(waiter, result),
+        WEB_NETWORK => typed_public_result::<WebNetworkResult>(waiter, result),
+        WEB_RESIZE => typed_public_result::<WebResizeResult>(waiter, result),
+        WEB_CLOSE => typed_public_result::<WebCloseResult>(waiter, result),
         _ => Err(errors::internal("Unsupported routed web result")),
     }
 }
@@ -428,15 +428,15 @@ fn web_attachment_reference(
     result: &WebCommandResult,
 ) -> Result<Option<AttachmentRef>> {
     let field = match waiter.method.as_str() {
-        "web.screenshot" => Some("image"),
-        "web.snapshot" => Some("screenshot"),
+        WEB_SCREENSHOT => Some("image"),
+        WEB_SNAPSHOT => Some("screenshot"),
         _ => None,
     };
     let Some(field) = field else {
         return Ok(None);
     };
     let Some(value) = result.value.as_ref().and_then(|value| value.get(field)) else {
-        return if waiter.method == "web.screenshot" {
+        return if waiter.method == WEB_SCREENSHOT {
             Err(errors::invalid("Web screenshot result omitted its image"))
         } else {
             Ok(None)

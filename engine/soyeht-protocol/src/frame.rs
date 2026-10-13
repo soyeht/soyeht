@@ -20,12 +20,12 @@ pub enum Frame {
 
 pub fn validate_length(kind: u8, length: usize) -> Result<()> {
     let (minimum, maximum) = match kind {
-        1 => (1, limits::JSON_BYTES),
-        2 => (
+        limits::FRAME_KIND_JSON => (1, limits::JSON_BYTES),
+        limits::FRAME_KIND_TERMINAL => (
             limits::TERMINAL_HEADER_BYTES,
             limits::TERMINAL_HEADER_BYTES + limits::TERMINAL_PAYLOAD_BYTES,
         ),
-        3 => (
+        limits::FRAME_KIND_ATTACHMENT => (
             limits::ATTACHMENT_HEADER_BYTES,
             limits::ATTACHMENT_HEADER_BYTES + limits::ATTACHMENT_PAYLOAD_BYTES,
         ),
@@ -52,7 +52,7 @@ pub fn read_json<T: DeserializeOwned>(reader: impl Read) -> Result<Option<T>> {
 impl Frame {
     pub fn write_to(&self, mut writer: impl Write) -> Result<()> {
         let (kind, header, bytes) = match self {
-            Self::Json(bytes) => (1, Vec::new(), bytes),
+            Self::Json(bytes) => (limits::FRAME_KIND_JSON, Vec::new(), bytes),
             Self::Terminal {
                 pane_ref,
                 generation,
@@ -63,9 +63,11 @@ impl Frame {
                 header.extend_from_slice(&pane_ref.to_be_bytes());
                 header.extend_from_slice(&generation.to_be_bytes());
                 header.extend_from_slice(&offset.to_be_bytes());
-                (2, header, bytes)
+                (limits::FRAME_KIND_TERMINAL, header, bytes)
             }
-            Self::Attachment { header, bytes } => (3, header.to_vec(), bytes),
+            Self::Attachment { header, bytes } => {
+                (limits::FRAME_KIND_ATTACHMENT, header.to_vec(), bytes)
+            }
         };
         let length = header
             .len()
@@ -98,8 +100,8 @@ impl Frame {
         let mut bytes = vec![0; length];
         reader.read_exact(&mut bytes)?;
         let frame = match kind[0] {
-            1 => Self::Json(bytes),
-            2 => {
+            limits::FRAME_KIND_JSON => Self::Json(bytes),
+            limits::FRAME_KIND_TERMINAL => {
                 let header: [u8; limits::TERMINAL_HEADER_BYTES] = bytes
                     .get(..limits::TERMINAL_HEADER_BYTES)
                     .ok_or(Error::MissingTerminalHeader)?
@@ -127,7 +129,7 @@ impl Frame {
                     bytes: bytes[limits::TERMINAL_HEADER_BYTES..].to_vec(),
                 }
             }
-            3 => {
+            limits::FRAME_KIND_ATTACHMENT => {
                 let header = bytes
                     .get(..limits::ATTACHMENT_HEADER_BYTES)
                     .ok_or(Error::MissingAttachmentHeader)?

@@ -65,7 +65,7 @@ impl Reader {
                 while let Some(message) = reader.next().await {
                     match message? {
                         Message::Text(text) => {
-                            validate_length(1, text.len())?;
+                            validate_length(limits::FRAME_KIND_JSON, text.len())?;
                             return Ok(Some(Frame::Json(text.as_bytes().to_vec())));
                         }
                         Message::Binary(bytes) => {
@@ -100,7 +100,7 @@ impl Writer {
             Self::Web(writer) => {
                 let message = match frame {
                     Frame::Json(bytes) => {
-                        validate_length(1, bytes.len())?;
+                        validate_length(limits::FRAME_KIND_JSON, bytes.len())?;
                         Message::Text(String::from_utf8(bytes.clone())?.into())
                     }
                     _ => {

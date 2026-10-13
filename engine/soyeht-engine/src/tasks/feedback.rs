@@ -10,7 +10,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     AttentionItem, Comment, PaneState, Task, TaskCheckState, TaskPullRequest, TaskReviewBadge,
-    TaskReviewState,
+    TaskReviewState, event,
 };
 use soyeht_store::{agents, database::Change, tasks::FeedbackState};
 use uuid::Uuid;
@@ -76,15 +76,15 @@ impl TaskEditorFeedbackChange {
     pub(crate) fn events(&self) -> Vec<(String, Value)> {
         vec![
             (
-                "task.commented".into(),
+                event::TASK_COMMENTED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"comment":self.comment}),
             ),
             (
-                "task.updated".into(),
+                event::TASK_UPDATED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"version":self.task.version}),
             ),
             (
-                "task.phrase_changed".into(),
+                event::TASK_PHRASE_CHANGED.into(),
                 json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"phrase":self.task.phrase}),
             ),
         ]
@@ -283,7 +283,7 @@ impl Core {
                 if attention.next != attention.prior {
                     let items = agents::attention_in_change(change, &workspace)?;
                     committed.push((
-                        "attention.changed".into(),
+                        event::ATTENTION_CHANGED.into(),
                         json!({"workspaceId":workspace,"count":items.len(),"items":items}),
                     ));
                 }
@@ -344,25 +344,25 @@ fn feedback_events(
     let mut events = Vec::new();
     if current != updated {
         events.push((
-            "task.updated".into(),
+            event::TASK_UPDATED.into(),
             json!({"workspaceId":updated.workspace_id,"taskId":updated.task_id,"version":updated.version}),
         ));
         if current.phrase != updated.phrase {
             events.push((
-                "task.phrase_changed".into(),
+                event::TASK_PHRASE_CHANGED.into(),
                 json!({"workspaceId":updated.workspace_id,"taskId":updated.task_id,"phrase":updated.phrase}),
             ));
         }
     }
     if let Some((prompt, count)) = prompt {
         events.push((
-            "pane.queued".into(),
+            event::PANE_QUEUED.into(),
             json!({"paneId":updated.owner_pane_id,"n":count,"promptIds":[prompt.prompt_id],"draft":false}),
         ));
     }
     if attention.next.is_some() && attention.next != attention.prior {
         events.push((
-            "task.attention".into(),
+            event::TASK_ATTENTION.into(),
             json!({"workspaceId":updated.workspace_id,"taskId":updated.task_id,"n":1}),
         ));
     }

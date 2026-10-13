@@ -12,7 +12,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
-    FileAuthor, FileSearchMatch, FileSearchParams, FileSearchResult, FileSearchScope,
+    FileAuthor, FileSearchMatch, FileSearchParams, FileSearchResult, FileSearchScope, event, method,
 };
 use soyeht_store::editor::{
     EditorFile, ProjectReplacement, ProjectReplacementItem, StoredFileVersion, document,
@@ -59,7 +59,7 @@ impl Core {
             },
             move |core, result| {
                 let result = result?;
-                let mutation = core.mutate(&connection, "file.search", &params, |_| {
+                let mutation = core.mutate(&connection, method::FILE_SEARCH, &params, |_| {
                     Ok((result, Vec::new()))
                 })?;
                 Ok(Outcome::Reply(mutation.result))
@@ -82,7 +82,7 @@ impl Core {
                 "Replacement is only valid for content search",
             ));
         }
-        if let Some(result) = self.repeated_mutation(connection, "file.search", params)? {
+        if let Some(result) = self.repeated_mutation(connection, method::FILE_SEARCH, params)? {
             return Ok(result);
         }
         let identity = self.replacement_identity(connection, params, &request)?;
@@ -338,7 +338,7 @@ impl Core {
         let open = self.editor.is_open(&file.file_id);
         let events = if open {
             vec![(
-                "file.saved".into(),
+                event::FILE_SAVED.into(),
                 json!({"file":document(file.clone()).map_err(errors::storage)?,"by":journal.author}),
             )]
         } else {
@@ -379,7 +379,7 @@ impl Core {
         let result = search_result(journal.matches.clone(), journal.total_replaced)?;
         let operation = journal.operation_id.clone();
         Ok(self
-            .mutate(connection, "file.search", params, |change| {
+            .mutate(connection, method::FILE_SEARCH, params, |change| {
                 change.complete_file_replacement(&operation)?;
                 Ok((result, Vec::new()))
             })?
@@ -394,7 +394,7 @@ impl Core {
     ) -> Result<Value> {
         let result = search_result(matches, 0)?;
         Ok(self
-            .mutate(connection, "file.search", params, |_| {
+            .mutate(connection, method::FILE_SEARCH, params, |_| {
                 Ok((result, Vec::new()))
             })?
             .result)
@@ -414,7 +414,7 @@ impl Core {
             return Err(errors::invalid("Missing idempotency key"));
         }
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
-            &json!(["file.search", params]).to_string(),
+            &json!([method::FILE_SEARCH, params]).to_string(),
         ));
         Ok((client.scope.clone(), fingerprint))
     }

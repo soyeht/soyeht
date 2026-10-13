@@ -5,7 +5,7 @@ use soyeht_protocol::{
     WebClickParams, WebCommandKind, WebCommandParams, WebConsoleParams, WebEvaluateParams,
     WebHoverParams, WebNetworkParams, WebPressParams, WebResizeParams, WebScreenshotParams,
     WebScrollParams, WebSelectParams, WebSnapshotParams, WebTypeParams, WebViewportPreset,
-    WebWaitParams,
+    WebWaitParams, method,
 };
 use soyeht_web::{DEFAULT_ZOOM_PERCENT, viewport};
 use uuid::Uuid;
@@ -15,19 +15,19 @@ const DEFAULT_COMMAND_TIMEOUT_MS: u32 = 30_000;
 pub(crate) fn handles(method: &str) -> bool {
     matches!(
         method,
-        "web.snapshot"
-            | "web.click"
-            | "web.type"
-            | "web.press"
-            | "web.hover"
-            | "web.select"
-            | "web.scroll"
-            | "web.wait"
-            | "web.evaluate"
-            | "web.screenshot"
-            | "web.console"
-            | "web.network"
-            | "web.resize"
+        method::WEB_SNAPSHOT
+            | method::WEB_CLICK
+            | method::WEB_TYPE
+            | method::WEB_PRESS
+            | method::WEB_HOVER
+            | method::WEB_SELECT
+            | method::WEB_SCROLL
+            | method::WEB_WAIT
+            | method::WEB_EVALUATE
+            | method::WEB_SCREENSHOT
+            | method::WEB_CONSOLE
+            | method::WEB_NETWORK
+            | method::WEB_RESIZE
     )
 }
 
@@ -69,19 +69,19 @@ impl Core {
 
 fn canonical_params(method: &str, params: &Value) -> Result<Value> {
     match method {
-        "web.snapshot" => canonical::<WebSnapshotParams>(params),
-        "web.click" => canonical::<WebClickParams>(params),
-        "web.type" => canonical::<WebTypeParams>(params),
-        "web.press" => canonical::<WebPressParams>(params),
-        "web.hover" => canonical::<WebHoverParams>(params),
-        "web.select" => canonical::<WebSelectParams>(params),
-        "web.scroll" => canonical::<WebScrollParams>(params),
-        "web.wait" => canonical::<WebWaitParams>(params),
-        "web.evaluate" => canonical::<WebEvaluateParams>(params),
-        "web.screenshot" => canonical::<WebScreenshotParams>(params),
-        "web.console" => canonical::<WebConsoleParams>(params),
-        "web.network" => canonical::<WebNetworkParams>(params),
-        "web.resize" => canonical::<WebResizeParams>(params),
+        method::WEB_SNAPSHOT => canonical::<WebSnapshotParams>(params),
+        method::WEB_CLICK => canonical::<WebClickParams>(params),
+        method::WEB_TYPE => canonical::<WebTypeParams>(params),
+        method::WEB_PRESS => canonical::<WebPressParams>(params),
+        method::WEB_HOVER => canonical::<WebHoverParams>(params),
+        method::WEB_SELECT => canonical::<WebSelectParams>(params),
+        method::WEB_SCROLL => canonical::<WebScrollParams>(params),
+        method::WEB_WAIT => canonical::<WebWaitParams>(params),
+        method::WEB_EVALUATE => canonical::<WebEvaluateParams>(params),
+        method::WEB_SCREENSHOT => canonical::<WebScreenshotParams>(params),
+        method::WEB_CONSOLE => canonical::<WebConsoleParams>(params),
+        method::WEB_NETWORK => canonical::<WebNetworkParams>(params),
+        method::WEB_RESIZE => canonical::<WebResizeParams>(params),
         _ => Err(errors::invalid("Unsupported web command")),
     }
 }
@@ -106,25 +106,25 @@ fn command_args(params: &Value) -> Result<Value> {
 
 fn command_kind(method: &str) -> Result<WebCommandKind> {
     match method {
-        "web.snapshot" => Ok(WebCommandKind::Snapshot),
-        "web.click" => Ok(WebCommandKind::Click),
-        "web.type" => Ok(WebCommandKind::Type),
-        "web.press" => Ok(WebCommandKind::Press),
-        "web.hover" => Ok(WebCommandKind::Hover),
-        "web.select" => Ok(WebCommandKind::Select),
-        "web.scroll" => Ok(WebCommandKind::Scroll),
-        "web.wait" => Ok(WebCommandKind::Wait),
-        "web.evaluate" => Ok(WebCommandKind::Evaluate),
-        "web.screenshot" => Ok(WebCommandKind::Screenshot),
-        "web.console" => Ok(WebCommandKind::Console),
-        "web.network" => Ok(WebCommandKind::Network),
-        "web.resize" => Ok(WebCommandKind::Resize),
+        method::WEB_SNAPSHOT => Ok(WebCommandKind::Snapshot),
+        method::WEB_CLICK => Ok(WebCommandKind::Click),
+        method::WEB_TYPE => Ok(WebCommandKind::Type),
+        method::WEB_PRESS => Ok(WebCommandKind::Press),
+        method::WEB_HOVER => Ok(WebCommandKind::Hover),
+        method::WEB_SELECT => Ok(WebCommandKind::Select),
+        method::WEB_SCROLL => Ok(WebCommandKind::Scroll),
+        method::WEB_WAIT => Ok(WebCommandKind::Wait),
+        method::WEB_EVALUATE => Ok(WebCommandKind::Evaluate),
+        method::WEB_SCREENSHOT => Ok(WebCommandKind::Screenshot),
+        method::WEB_CONSOLE => Ok(WebCommandKind::Console),
+        method::WEB_NETWORK => Ok(WebCommandKind::Network),
+        method::WEB_RESIZE => Ok(WebCommandKind::Resize),
         _ => Err(errors::invalid("Unsupported web command")),
     }
 }
 
 fn validate_resize(method: &str, params: &Value) -> Result<()> {
-    if method != "web.resize" {
+    if method != method::WEB_RESIZE {
         return Ok(());
     }
     let request: WebResizeParams = serde_json::from_value(params.clone())

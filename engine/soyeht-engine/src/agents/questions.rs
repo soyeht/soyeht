@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::{
     PaneState, PermissionFileChange, PermissionOption, PermissionOptionKind,
-    PermissionPresentation, PermissionToolArgument, Role, limits,
+    PermissionPresentation, PermissionToolArgument, Role, event, limits, method,
 };
 use soyeht_store::agents::NativeRequest;
 use std::collections::BTreeMap;
@@ -298,7 +298,7 @@ fn public_question(
         public["presentation"] = serde_json::to_value(presentation)
             .map_err(|_| errors::internal("Permission presentation serialization failed"))?;
         public["options"] = json!(public_options);
-        "pane.permission_requested"
+        event::PANE_PERMISSION_REQUESTED
     } else {
         if method != "elicitation/create"
             || params["mode"] != "form"
@@ -313,7 +313,7 @@ fn public_question(
             512
         )?);
         public["schema"] = params["requestedSchema"].clone();
-        "pane.elicitation_requested"
+        event::PANE_ELICITATION_REQUESTED
     };
     if errors::json_bytes(&public)?.len() > 512 * 1024 {
         return Err(invalid("Question exceeds snapshot item capacity"));
@@ -574,9 +574,9 @@ pub fn decision(
     event["paneId"] = json!(request.pane_id);
     changes.events.push((
         if permission {
-            "pane.permission_answered"
+            event::PANE_PERMISSION_ANSWERED
         } else {
-            "pane.elicitation_answered"
+            event::PANE_ELICITATION_ANSWERED
         }
         .into(),
         event,
@@ -600,7 +600,7 @@ impl Core {
             .map_err(errors::storage)?
             .filter(|r| r.pane_id == pane)
             .ok_or_else(|| errors::not_found("Question not found"))?;
-        let expected = if method == "pane.permission.answer" {
+        let expected = if method == method::PANE_PERMISSION_ANSWER {
             "session/request_permission"
         } else {
             "elicitation/create"

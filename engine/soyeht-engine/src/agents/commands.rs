@@ -10,7 +10,7 @@ use crate::{
     errors::{self, Result},
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{AgentCommand, PaneCommandsListResult};
+use soyeht_protocol::{AgentCommand, PaneCommandsListResult, event};
 
 pub(super) fn replace(
     pane: &str,
@@ -24,7 +24,7 @@ pub(super) fn replace(
     state.commands = commands;
     changes
         .events
-        .push(("pane.commands_changed".into(), json!({"paneId":pane})));
+        .push((event::PANE_COMMANDS_CHANGED.into(), json!({"paneId":pane})));
 }
 
 impl Core {

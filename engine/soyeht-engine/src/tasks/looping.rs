@@ -8,7 +8,9 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{LoopConfig, LoopSetParams, LoopStopWhen, PaneState, PromptOrigin, Role};
+use soyeht_protocol::{
+    LoopConfig, LoopSetParams, LoopStopWhen, PaneState, PromptOrigin, Role, event, method,
+};
 use soyeht_store::database::Change;
 use uuid::Uuid;
 
@@ -58,7 +60,7 @@ pub(crate) fn record_task_next(
     Ok(stopped
         .then(|| {
             (
-                "loop.stopped".into(),
+                event::LOOP_STOPPED.into(),
                 json!({"paneId":context.pane_id,"reason":"three_empty"}),
             )
         })
@@ -82,11 +84,11 @@ impl Core {
         let next_tick_ms = next_tick(self.now_ms(), config.interval)?;
         let pane_id = params.pane_id;
         let stopped = !config.enabled;
-        let mutation = self.mutate(connection, "loop.set", raw, move |change| {
+        let mutation = self.mutate(connection, method::LOOP_SET, raw, move |change| {
             change.save_loop_config(&pane_id, &config, next_tick_ms)?;
             let events = if stopped {
                 vec![(
-                    "loop.stopped".into(),
+                    event::LOOP_STOPPED.into(),
                     json!({"paneId":pane_id,"reason":"explicit_off"}),
                 )]
             } else {
@@ -173,17 +175,17 @@ impl Core {
         )?;
         let mut events = vec![
             (
-                "pane.queued".into(),
+                event::PANE_QUEUED.into(),
                 json!({"paneId":pane,"n":state.queue.len(),"promptIds":[prompt.prompt_id],"draft":false}),
             ),
             (
-                "loop.tick".into(),
+                event::LOOP_TICK.into(),
                 json!({"paneId":pane,"round":round,"of":config.max_rounds}),
             ),
         ];
         if round_limit {
             events.push((
-                "loop.stopped".into(),
+                event::LOOP_STOPPED.into(),
                 json!({"paneId":pane,"reason":"round_limit"}),
             ));
         }

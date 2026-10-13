@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, DecisionBy, PaneMode, PanePermissionAnswerParams, PanePermissionAnswerResult,
     PermissionOption, PermissionOptionKind, PermissionRequest, PermissionRequestKind,
-    PermissionResult, Role, WebCommandParams, WebSessionState,
+    PermissionResult, Role, WebCommandParams, WebSessionState, event, method,
 };
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant, WebSessionGrantScope};
 use soyeht_web::NormalizedUrl;
@@ -142,11 +142,11 @@ impl Core {
             domain,
             task_id,
             session: session_access(agent, incognito, granted),
-            evaluation: !agent && method == "web.evaluate",
+            evaluation: !agent && method == method::WEB_EVALUATE,
             request_id: None,
             expires_ms: None,
         };
-        if agent && method == "web.evaluate" {
+        if agent && method == method::WEB_EVALUATE {
             self.apply_permission_decision(
                 &mut permission,
                 params,
@@ -260,9 +260,9 @@ impl Core {
         }
         let public = serde_json::to_value(&request.public)
             .map_err(|_| errors::internal("Permission serialization failed"))?;
-        let mut events = vec![("pane.permission_requested".into(), public)];
+        let mut events = vec![(event::PANE_PERMISSION_REQUESTED.into(), public)];
         if request.kind == PermissionRequestKind::WebSession {
-            events.push(("pane.updated".into(), json!({"pane":saved.pane})));
+            events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
         }
         let request_for_write = request.clone();
         let mutation = StorePort::mutate(
@@ -354,7 +354,7 @@ impl Core {
         let raw = serde_json::to_value(&params)
             .map_err(|_| errors::internal("Permission answer serialization failed"))?;
         Ok(self
-            .mutate(connection, "pane.permission.answer", &raw, |_| {
+            .mutate(connection, method::PANE_PERMISSION_ANSWER, &raw, |_| {
                 Ok((serde_json::to_value(result)?, Vec::new()))
             })?
             .result)
@@ -383,7 +383,7 @@ impl Core {
         let raw = serde_json::to_value(&params)
             .map_err(|_| errors::internal("Permission answer serialization failed"))?;
         let request_id = request.request_id.clone();
-        let mutation = self.mutate(connection, "pane.permission.answer", &raw, |change| {
+        let mutation = self.mutate(connection, method::PANE_PERMISSION_ANSWER, &raw, |change| {
             if !change.answer_web_permission(&request_id, &result)? {
                 return Err(soyeht_store::database::Error::InvalidWebPermission);
             }
@@ -564,9 +564,9 @@ fn permission_events(
     saved: &crate::model::StoredPane,
     result: Value,
 ) -> Vec<(String, Value)> {
-    let mut events = vec![("pane.permission_answered".into(), result)];
+    let mut events = vec![(event::PANE_PERMISSION_ANSWERED.into(), result)];
     if request.kind == PermissionRequestKind::WebSession {
-        events.push(("pane.updated".into(), json!({"pane":saved.pane})));
+        events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
     }
     events
 }

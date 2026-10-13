@@ -8,7 +8,7 @@ use crate::{
     offload::Offload,
 };
 use serde_json::Value;
-use soyeht_protocol::{Role, TaskWorktreeCleanParams, TaskWorktreeCleanResult};
+use soyeht_protocol::{Role, TaskWorktreeCleanParams, TaskWorktreeCleanResult, method};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -21,7 +21,9 @@ impl crate::core::Core {
     /// Validates under the Core lock, runs `wt` and `lsof` off it, and
     /// records the result under it (ADR 0079).
     pub(crate) fn task_worktree_clean(&mut self, connection: &str, raw: &Value) -> Result<Outcome> {
-        if let Some(result) = self.repeated_mutation(connection, "task.worktree.clean", raw)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::TASK_WORKTREE_CLEAN, raw)?
+        {
             return Ok(Outcome::Reply(result));
         }
         let params: TaskWorktreeCleanParams = crate::tasks::api::parameters(raw)?;
@@ -74,7 +76,7 @@ impl crate::core::Core {
         })
         .map_err(|_| errors::internal("Worktree cleanup result serialization failed"))?;
         let stored = result.clone();
-        let mutation = self.mutate(connection, "task.worktree.clean", raw, move |_| {
+        let mutation = self.mutate(connection, method::TASK_WORKTREE_CLEAN, raw, move |_| {
             Ok((stored, Vec::new()))
         })?;
         Ok(mutation.result)

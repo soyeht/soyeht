@@ -12,7 +12,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::AuthKind;
-use soyeht_protocol::{HarnessLaunch, PaneMode, PaneState, StateSource};
+use soyeht_protocol::{HarnessLaunch, PaneMode, PaneState, StateSource, event, method};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
 use std::path::Path;
 use uuid::Uuid;
@@ -88,8 +88,8 @@ fn auth_pane_created(
     (
         json!({"paneId":agent.pane_id,"terminalPaneId":child.pane_id}),
         vec![
-            ("pane.created".into(), json!({"pane":child})),
-            ("pane.updated".into(), json!({"pane":agent})),
+            (event::PANE_CREATED.into(), json!({"pane":child})),
+            (event::PANE_UPDATED.into(), json!({"pane":agent})),
         ],
     )
 }
@@ -155,8 +155,8 @@ impl Core {
     /// `pane.auth.start`, `pane.auth.cancel` and `pane.auth.logout`.
     pub fn agent_auth(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         match method {
-            "pane.auth.cancel" => self.agent_auth_cancel(connection, params),
-            "pane.auth.logout" => self.agent_auth_logout(connection, params),
+            method::PANE_AUTH_CANCEL => self.agent_auth_cancel(connection, params),
+            method::PANE_AUTH_LOGOUT => self.agent_auth_logout(connection, params),
             _ => self.agent_auth_start(connection, params),
         }
     }
@@ -179,7 +179,7 @@ impl Core {
                     self.panes[id].stored.clone(),
                     state,
                     Changes::default(),
-                    Some((connection, "pane.auth.start", params)),
+                    Some((connection, method::PANE_AUTH_START, params)),
                     result,
                 )?
                 .result);
@@ -218,7 +218,7 @@ impl Core {
                     self.panes[id].stored.clone(),
                     state,
                     changes,
-                    Some((connection, "pane.auth.start", params)),
+                    Some((connection, method::PANE_AUTH_START, params)),
                     json!({"paneId":id}),
                 )?
                 .result);
@@ -239,7 +239,7 @@ impl Core {
         let mut saved = self.panes[id].stored.clone();
         saved.pane.agent = Some(state.public(self.now_ms()));
         let generation = saved.pane.generation;
-        let mutation = self.mutate(connection, "pane.auth.start", params, |tx| {
+        let mutation = self.mutate(connection, method::PANE_AUTH_START, params, |tx| {
             tx.insert_pane(&child)?;
             tx.insert_pane_launch(&child_id, &launch)?;
             crate::core::write_pane(tx, &saved)?;
@@ -397,7 +397,7 @@ fn unfinished_reason(terminal: &StoredPane) -> &'static str {
 
 pub(super) fn auth_finished(id: &str, ok: bool, reason: &str) -> (String, Value) {
     (
-        "pane.auth_finished".into(),
+        event::PANE_AUTH_FINISHED.into(),
         json!({"paneId":id,"ok":ok,"reason":reason}),
     )
 }

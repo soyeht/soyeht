@@ -6,7 +6,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     HarnessCustomCreateParams, HarnessCustomListResult, HarnessCustomRemoveParams,
-    HarnessCustomRemoveResult, HarnessCustomUpdateParams,
+    HarnessCustomRemoveResult, HarnessCustomUpdateParams, method,
 };
 
 impl Core {
@@ -39,7 +39,9 @@ impl Core {
     }
 
     fn create_custom_harness(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "harness.custom.create", params)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::HARNESS_CUSTOM_CREATE, params)?
+        {
             return Ok(result);
         }
         let parsed: HarnessCustomCreateParams = serde_json::from_value(params.clone())
@@ -47,14 +49,16 @@ impl Core {
         let harness = registry::create_custom(&self.directory, parsed.harness)?;
         self.commit_harness_file_mutation(
             connection,
-            "harness.custom.create",
+            method::HARNESS_CUSTOM_CREATE,
             params,
             json!({"harness":harness}),
         )
     }
 
     fn update_custom_harness(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "harness.custom.update", params)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::HARNESS_CUSTOM_UPDATE, params)?
+        {
             return Ok(result);
         }
         let parsed: HarnessCustomUpdateParams = serde_json::from_value(params.clone())
@@ -67,14 +71,16 @@ impl Core {
         let harness = registry::update_custom(&self.directory, parsed.harness)?;
         self.commit_harness_file_mutation(
             connection,
-            "harness.custom.update",
+            method::HARNESS_CUSTOM_UPDATE,
             params,
             json!({"harness":harness}),
         )
     }
 
     fn remove_custom_harness(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if let Some(result) = self.repeated_mutation(connection, "harness.custom.remove", params)? {
+        if let Some(result) =
+            self.repeated_mutation(connection, method::HARNESS_CUSTOM_REMOVE, params)?
+        {
             return Ok(result);
         }
         let parsed: HarnessCustomRemoveParams = serde_json::from_value(params.clone())
@@ -91,7 +97,7 @@ impl Core {
         };
         self.commit_harness_file_mutation(
             connection,
-            "harness.custom.remove",
+            method::HARNESS_CUSTOM_REMOVE,
             params,
             json!(result),
         )
@@ -104,12 +110,12 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         match method {
-            "harness.custom.list" => Ok(json!(HarnessCustomListResult {
+            method::HARNESS_CUSTOM_LIST => Ok(json!(HarnessCustomListResult {
                 items: registry::custom_launches(&self.directory)?,
             })),
-            "harness.custom.create" => self.create_custom_harness(connection, params),
-            "harness.custom.update" => self.update_custom_harness(connection, params),
-            "harness.custom.remove" => self.remove_custom_harness(connection, params),
+            method::HARNESS_CUSTOM_CREATE => self.create_custom_harness(connection, params),
+            method::HARNESS_CUSTOM_UPDATE => self.update_custom_harness(connection, params),
+            method::HARNESS_CUSTOM_REMOVE => self.remove_custom_harness(connection, params),
             _ => Err(errors::invalid("Unknown custom harness method")),
         }
     }

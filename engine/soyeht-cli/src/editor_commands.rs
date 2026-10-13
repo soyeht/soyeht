@@ -77,17 +77,17 @@ enum Request {
 impl Request {
     fn run(self, client: &mut Client) -> Result<Value> {
         match self {
-            Self::Open(params) => rpc::<FileOpenResult>(client, "file.open", params),
-            Self::Read(params) => rpc::<FileReadResult>(client, "file.read", params),
-            Self::Write(params) => rpc::<FileWriteResult>(client, "file.write", params),
-            Self::History(params) => rpc::<FileHistoryResult>(client, "file.history", params),
-            Self::Revert(params) => rpc::<FileRevertResult>(client, "file.revert", params),
-            Self::Search(params) => rpc::<FileSearchResult>(client, "file.search", params),
-            Self::Symbols(params) => rpc::<FileSymbolsResult>(client, "file.symbols", params),
-            Self::Diff(params) => rpc::<FileDiffResult>(client, "file.diff", params),
-            Self::UsageList(params) => rpc::<UsageListResult>(client, "usage.list", params),
+            Self::Open(params) => rpc::<FileOpenResult>(client, method::FILE_OPEN, params),
+            Self::Read(params) => rpc::<FileReadResult>(client, method::FILE_READ, params),
+            Self::Write(params) => rpc::<FileWriteResult>(client, method::FILE_WRITE, params),
+            Self::History(params) => rpc::<FileHistoryResult>(client, method::FILE_HISTORY, params),
+            Self::Revert(params) => rpc::<FileRevertResult>(client, method::FILE_REVERT, params),
+            Self::Search(params) => rpc::<FileSearchResult>(client, method::FILE_SEARCH, params),
+            Self::Symbols(params) => rpc::<FileSymbolsResult>(client, method::FILE_SYMBOLS, params),
+            Self::Diff(params) => rpc::<FileDiffResult>(client, method::FILE_DIFF, params),
+            Self::UsageList(params) => rpc::<UsageListResult>(client, method::USAGE_LIST, params),
             Self::UsageRefresh(params) => {
-                rpc::<UsageRefreshResult>(client, "usage.refresh", params)
+                rpc::<UsageRefreshResult>(client, method::USAGE_REFRESH, params)
             }
         }
     }

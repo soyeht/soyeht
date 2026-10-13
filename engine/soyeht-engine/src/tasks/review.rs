@@ -3,6 +3,7 @@
 use super::{
     apply_complete, apply_review_return,
     drift::{DriftDecision, DriftFinding, evaluate_review, parse_findings, reviewer_prompt},
+    events,
     review_request::ReviewRequest,
     revision::RevisionSnapshot,
 };
@@ -19,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{
     AttemptResult, Comment, Pane, PaneMode, PaneState, PromptOrigin, StateSource, Task,
-    TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole, limits,
+    TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole, event, limits, method,
 };
 use soyeht_store::{
     agents,
@@ -107,7 +108,7 @@ impl Core {
         let expected_task = current.version;
         let prior_version = existing.as_ref().map(|item| item.version);
         let result = json!({"task":updated});
-        let mutation = self.mutate(connection, "task.request_review", raw, |change| {
+        let mutation = self.mutate(connection, method::TASK_REQUEST_REVIEW, raw, |change| {
             persist_review_start(
                 change,
                 &current,
@@ -158,7 +159,7 @@ impl Core {
         let task_id = current.task_id.clone();
         let attempt = current.current_attempt;
         let task = current.clone();
-        let mutation = self.mutate(connection, "task.complete", raw, move |change| {
+        let mutation = self.mutate(connection, method::TASK_COMPLETE, raw, move |change| {
             change.replace_task_review(
                 &workspace,
                 &task_id,
@@ -536,22 +537,13 @@ impl ReviewResolution {
 
     fn events(&self) -> Vec<(String, Value)> {
         vec![
+            events::moved(&self.updated, &self.movement),
             (
-                "task.moved".into(),
-                json!({"workspaceId":self.updated.workspace_id,"taskId":self.updated.task_id,"actor":self.movement.actor,"from":self.movement.from,"to":self.movement.to,"reason":self.movement.reason}),
-            ),
-            (
-                "task.commented".into(),
+                event::TASK_COMMENTED.into(),
                 json!({"workspaceId":self.updated.workspace_id,"taskId":self.updated.task_id,"comment":self.comment}),
             ),
-            (
-                "task.updated".into(),
-                json!({"workspaceId":self.updated.workspace_id,"taskId":self.updated.task_id,"version":self.updated.version}),
-            ),
-            (
-                "task.phrase_changed".into(),
-                json!({"workspaceId":self.updated.workspace_id,"taskId":self.updated.task_id,"phrase":self.updated.phrase}),
-            ),
+            events::updated(&self.updated),
+            events::phrase_changed(&self.updated),
         ]
     }
 }
@@ -731,19 +723,10 @@ fn review_start_events(
     reviewer: &StoredPane,
 ) -> Vec<(String, Value)> {
     vec![
-        (
-            "task.moved".into(),
-            json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"actor":movement.actor,"from":movement.from,"to":movement.to,"reason":movement.reason}),
-        ),
-        (
-            "task.updated".into(),
-            json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"version":task.version}),
-        ),
-        (
-            "task.phrase_changed".into(),
-            json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"phrase":task.phrase}),
-        ),
-        ("pane.created".into(), json!({"pane":reviewer.pane})),
+        events::moved(task, movement),
+        events::updated(task),
+        events::phrase_changed(task),
+        (event::PANE_CREATED.into(), json!({"pane":reviewer.pane})),
     ]
 }
 

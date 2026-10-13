@@ -10,24 +10,25 @@ mod variants;
 
 use crate::{core::Core, errors, errors::Result};
 use serde_json::Value;
+use soyeht_protocol::method;
 
 pub fn handles(method: &str) -> bool {
     matches!(
         method,
-        "writing.section.list"
-            | "writing.document.create"
-            | "writing.document.open"
-            | "writing.structure"
-            | "writing.format"
-            | "writing.asset.read"
-            | "writing.preferences.set"
-            | "writing.variant.request"
-            | "writing.variant.add"
-            | "writing.variant.select"
-            | "writing.variant.remove"
-            | "writing.beat.list"
-            | "writing.beat.put"
-            | "writing.beat.delete"
+        method::WRITING_SECTION_LIST
+            | method::WRITING_DOCUMENT_CREATE
+            | method::WRITING_DOCUMENT_OPEN
+            | method::WRITING_STRUCTURE
+            | method::WRITING_FORMAT
+            | method::WRITING_ASSET_READ
+            | method::WRITING_PREFERENCES_SET
+            | method::WRITING_VARIANT_REQUEST
+            | method::WRITING_VARIANT_ADD
+            | method::WRITING_VARIANT_SELECT
+            | method::WRITING_VARIANT_REMOVE
+            | method::WRITING_BEAT_LIST
+            | method::WRITING_BEAT_PUT
+            | method::WRITING_BEAT_DELETE
     )
 }
 
@@ -72,18 +73,18 @@ impl Core {
         writing_image: Option<attachments::WritingImageAttachment>,
     ) -> Result<Value> {
         match method {
-            "writing.document.create" => self.writing_document_create(connection, params),
-            "writing.document.open" => self.writing_document_open(connection, params),
-            "writing.structure" => self.writing_structure(connection, params),
-            "writing.format" => self.writing_format(connection, params, writing_image),
-            "writing.preferences.set" => self.writing_preferences(connection, params),
-            "writing.variant.request" => self.writing_variant_request(connection, params),
-            "writing.variant.add" => self.writing_variant_add(connection, params),
-            "writing.variant.select" => self.writing_variant_select(connection, params),
-            "writing.variant.remove" => self.writing_variant_remove(connection, params),
-            "writing.beat.list" => self.writing_beat_list(connection, params),
-            "writing.beat.put" => self.writing_beat_put(connection, params),
-            "writing.beat.delete" => self.writing_beat_delete(connection, params),
+            method::WRITING_DOCUMENT_CREATE => self.writing_document_create(connection, params),
+            method::WRITING_DOCUMENT_OPEN => self.writing_document_open(connection, params),
+            method::WRITING_STRUCTURE => self.writing_structure(connection, params),
+            method::WRITING_FORMAT => self.writing_format(connection, params, writing_image),
+            method::WRITING_PREFERENCES_SET => self.writing_preferences(connection, params),
+            method::WRITING_VARIANT_REQUEST => self.writing_variant_request(connection, params),
+            method::WRITING_VARIANT_ADD => self.writing_variant_add(connection, params),
+            method::WRITING_VARIANT_SELECT => self.writing_variant_select(connection, params),
+            method::WRITING_VARIANT_REMOVE => self.writing_variant_remove(connection, params),
+            method::WRITING_BEAT_LIST => self.writing_beat_list(connection, params),
+            method::WRITING_BEAT_PUT => self.writing_beat_put(connection, params),
+            method::WRITING_BEAT_DELETE => self.writing_beat_delete(connection, params),
             _ => Err(errors::internal("Unknown writing method")),
         }
     }

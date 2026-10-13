@@ -10,7 +10,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use soyeht_protocol::Device;
+use soyeht_protocol::{Device, event, method};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -85,7 +85,7 @@ impl Core {
         }
         let fingerprint = STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
         let idem = errors::param_str(params, "idempotencyKey")?;
-        if method == "pair.begin" {
+        if method == method::PAIR_BEGIN {
             let code = errors::param_str(params, "code")?;
             let key = errors::param_str(params, "devicePublicKey")?;
             let name = errors::param_str(params, "deviceName")?;
@@ -161,7 +161,7 @@ impl Core {
         pending.proved = true;
         let mutation=StorePort::mutate(&mut self.store,&scope,idem,&fingerprint,|tx| {
             tx.update_pair_request(id, &pending)?;
-            let events=if was_proved {vec![]}else{vec![("device.pair_requested".into(),json!({"requestId":id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public)}))]};
+            let events=if was_proved {vec![]}else{vec![(event::DEVICE_PAIR_REQUESTED.into(),json!({"requestId":id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public)}))]};
             Ok((json!({"status":"pending"}),events))
         }).map_err(errors::storage)?;
         self.publish(&mutation.events)?;
@@ -181,7 +181,7 @@ impl Core {
             return Ok(());
         }
         self.reachability = update.reachability;
-        self.transient_event("engine.reachability_changed", json!(self.reachability))
+        self.transient_event(event::ENGINE_REACHABILITY_CHANGED, json!(self.reachability))
     }
 
     fn send_pair_result(&self, connection: &str, pending: &Pending) -> Result<()> {
@@ -196,7 +196,7 @@ impl Core {
         if let Some(client) = self.clients.get(connection) {
             client
                 .outbox
-                .send(model::notification("pair.result", result)?);
+                .send(model::notification(event::PAIR_RESULT, result)?);
         }
         Ok(())
     }
@@ -207,7 +207,7 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
-        if method == "device.pair.start" {
+        if method == method::DEVICE_PAIR_START {
             let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
             let now = self.now_unix();
             let expires = now + chrono::Duration::minutes(10).num_seconds();
@@ -227,7 +227,7 @@ impl Core {
             result["reachability"] = json!(self.reachability);
             return Ok(result);
         }
-        if method == "device.revoke" {
+        if method == method::DEVICE_REVOKE {
             let id = errors::param_str(params, "deviceId")?;
             let mut device: Device = StorePort::device(&self.store, id)
                 .map_err(errors::storage)?
@@ -238,7 +238,7 @@ impl Core {
                     tx.revoke_device(id, &device)?;
                     Ok((
                         json!({"deviceId":id}),
-                        vec![("device.revoked".into(), json!({"deviceId":id}))],
+                        vec![(event::DEVICE_REVOKED.into(), json!({"deviceId":id}))],
                     ))
                 })?
                 .result;
@@ -295,7 +295,7 @@ impl Core {
                         public.as_bytes(),
                         &auth::token_hash(token),
                     )?;
-                    events.push(("device.paired".into(), json!({"device":device})));
+                    events.push((event::DEVICE_PAIRED.into(), json!({"device":device})));
                 }
                 tx.update_pair_request(id, &pending)?;
                 Ok((json!({"requestId":id,"approved":approve}), events))

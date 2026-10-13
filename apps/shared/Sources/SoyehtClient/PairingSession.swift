@@ -44,10 +44,10 @@ public final class PairingSession {
         try await wire.open()
         let first = try await wire.next()
         let greeting = try JSONDecoder().decode(JsonValue.self, from: first.payload)
-        guard first.kind == 1, greeting["method"].string == "auth.challenge",
+        guard first.kind == 1, greeting["method"].eventName == .authChallenge,
           greeting["params"]["engineId"].string == link.engineId
         else { throw ClientFailure.invalidFrame }
-        let result = try await request("pair.begin", .encoded(begin)).decoded(PairBeginResult.self)
+        let result = try await request(.pairBegin, .encoded(begin)).decoded(PairBeginResult.self)
         if prove == nil {
           prove = PairProveParams(
             requestId: result.requestId,
@@ -56,7 +56,7 @@ public final class PairingSession {
             idempotencyKey: UUID().uuidString)
         }
         guard prove?.requestId == result.requestId else { throw ClientFailure.invalidFrame }
-        _ = try await request("pair.prove", .encoded(prove!))
+        _ = try await request(.pairProve, .encoded(prove!))
         status = "Compare the fingerprint and allow access on the Mac."
         while earlyResult == nil {
           guard Date() < deadline else { throw ClientFailure.timeout }
@@ -64,7 +64,7 @@ public final class PairingSession {
           let frame = try await wire.next()
           guard frame.kind == 1 else { throw ClientFailure.invalidFrame }
           let event = try JSONDecoder().decode(JsonValue.self, from: frame.payload)
-          if event["method"].string == "pair.result" {
+          if event["method"].eventName == .pairResult {
             earlyResult = try event["params"].decoded(PairResultEvent.self)
           }
         }
@@ -88,7 +88,7 @@ public final class PairingSession {
     throw ClientFailure.disconnected
   }
 
-  private func request(_ method: String, _ params: JsonValue) async throws -> JsonValue {
+  private func request(_ method: RequestMethod, _ params: JsonValue) async throws -> JsonValue {
     guard let wire else { throw ClientFailure.disconnected }
     let id = UUID().uuidString
     let timeout = Task { @MainActor in
@@ -99,14 +99,14 @@ public final class PairingSession {
     try await wire.send(
       .object([
         "jsonrpc": .string("2.0"), "id": .string(id),
-        "method": .string(method), "params": params,
+        "method": .string(method.rawValue), "params": params,
       ]))
     while true {
       let frame = try await wire.next()
       guard frame.kind == 1 else { throw ClientFailure.invalidFrame }
       let message = try JSONDecoder().decode(JsonValue.self, from: frame.payload)
       guard message["jsonrpc"].string == "2.0" else { throw ClientFailure.invalidFrame }
-      if message["method"].string == "pair.result" {
+      if message["method"].eventName == .pairResult {
         earlyResult = try message["params"].decoded(PairResultEvent.self)
       }
       guard message["id"].string == id else { continue }

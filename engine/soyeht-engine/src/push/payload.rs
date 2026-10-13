@@ -6,6 +6,7 @@
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use soyeht_protocol::event;
 
 /// Allow and Deny actions; the phone answers without opening the app.
 pub const PERMISSION_CATEGORY: &str = "soyeht.permission";
@@ -101,7 +102,7 @@ pub fn alert(question: &Question<'_>) -> Option<Alert> {
     custom.insert("paneId".into(), json!(pane_id));
     custom.insert("requestId".into(), json!(request_id));
     let (title, body, category) = match question.event {
-        "pane.permission_requested" => {
+        event::PANE_PERMISSION_REQUESTED => {
             custom.insert("kind".into(), json!("permission"));
             let answers = option_id(request, "allow_once").zip(option_id(request, "reject_once"));
             let category = match answers {
@@ -118,7 +119,7 @@ pub fn alert(question: &Question<'_>) -> Option<Alert> {
                 category,
             )
         }
-        "pane.elicitation_requested" => {
+        event::PANE_ELICITATION_REQUESTED => {
             custom.insert("kind".into(), json!("question"));
             (
                 format!("{harness} has a question"),

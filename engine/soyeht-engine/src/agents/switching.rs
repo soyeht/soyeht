@@ -28,7 +28,7 @@ use soyeht_acp::{
 };
 use soyeht_protocol::{
     ConfigValue, PaneHarnessSwitchParams, PaneState, StateSource, TranscriptKind, TranscriptRole,
-    limits, ndjson::Decoder,
+    event, limits, method::PANE_HARNESS_SWITCH, ndjson::Decoder,
 };
 use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
 use soyeht_store::segments::Record;
@@ -76,7 +76,7 @@ impl Core {
     pub fn agent_harness_switch(&mut self, connection: &str, raw: &Value) -> Result<Value> {
         let params: PaneHarnessSwitchParams = serde_json::from_value(raw.clone())
             .map_err(|_| errors::invalid("Invalid harness switch parameters"))?;
-        if let Some(result) = self.repeated_mutation(connection, "pane.harness.switch", raw)? {
+        if let Some(result) = self.repeated_mutation(connection, PANE_HARNESS_SWITCH, raw)? {
             return Ok(result);
         }
         let pane = params.pane_id.as_str();
@@ -113,7 +113,7 @@ impl Core {
         if !state.queue_paused {
             state.queue_paused = true;
             changes.events.push((
-                "pane.queue.paused".into(),
+                event::PANE_QUEUE_PAUSED.into(),
                 json!({"paneId":pane,"paused":true,"reason":"harness_switch"}),
             ));
         }
@@ -131,7 +131,7 @@ impl Core {
         saved.pane.state = PaneState::Starting;
         saved.pane.phrase = format!("Switching to {}", launch.name);
         changes.events.push((
-            "pane.harness_switch_started".into(),
+            event::PANE_HARNESS_SWITCH_STARTED.into(),
             json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
                 "toHarness":checkpoint.to_harness}),
         ));
@@ -141,7 +141,7 @@ impl Core {
                 saved,
                 state,
                 changes,
-                Some((connection, "pane.harness.switch", raw)),
+                Some((connection, PANE_HARNESS_SWITCH, raw)),
                 pending,
             )?
             .result;
@@ -658,7 +658,7 @@ impl Core {
         // The client reloads the typed transcript on pane.harness_switch_done.
         changes.messages.push(marker_message);
         changes.events.push((
-            "pane.harness_switch_done".into(),
+            event::PANE_HARNESS_SWITCH_DONE.into(),
             json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
                 "toHarness":checkpoint.to_harness,"newSessionId":session_id,"markerSeq":marker_seq}),
         ));
@@ -798,7 +798,7 @@ impl Core {
         };
         transcript::put(&mut changes, pane, marker_message, "agent_message_chunk")?;
         changes.events.push((
-            "pane.harness_switch_failed".into(),
+            event::PANE_HARNESS_SWITCH_FAILED.into(),
             json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
                 "toHarness":checkpoint.to_harness,"reason":reason,"restored":true}),
         ));

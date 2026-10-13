@@ -30,6 +30,8 @@ uv run python scripts/hardening_gate.py check-function-length "$@"
 uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
 uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
 uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
+uv run python -m unittest discover -s scripts -p 'test_check_wire_names.py'
+uv run python scripts/check_wire_names.py
 uv run python scripts/check_quality.py
 uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
 uv run python scripts/check_dead_pub.py

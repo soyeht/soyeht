@@ -5,6 +5,7 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
+use soyeht_protocol::method::PANE_INPUT;
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::domain::InputIntent;
 use uuid::Uuid;
@@ -70,7 +71,7 @@ impl Core {
         let scope = self.clients[connection].scope.clone();
         let key = errors::param_str(params, "idempotencyKey")?;
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
-            &json!(["pane.input", params]).to_string(),
+            &json!([PANE_INPUT, params]).to_string(),
         ));
         // The durable intent precedes the irreversible supervisor write. Only
         // a digest is retained; input bytes may contain credentials.
@@ -93,7 +94,7 @@ impl Core {
             return Err(errors::ptyd_unavailable("Invalid input receipt"));
         };
         let result = self
-            .mutate(connection, "pane.input", params, |tx| {
+            .mutate(connection, PANE_INPUT, params, |tx| {
                 tx.remove_input_intent(&scope, key)?;
                 Ok((json!({"acceptedBytes":bytes}), vec![]))
             })?

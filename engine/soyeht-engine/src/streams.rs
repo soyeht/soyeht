@@ -5,7 +5,7 @@ use crate::{
     model::{self, Subscription},
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{frame::Frame, limits};
+use soyeht_protocol::{event, frame::Frame, limits, method};
 use soyeht_store::segments::Record;
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -18,7 +18,7 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Outcome> {
-        if method == "pane.stream.subscribe" {
+        if method == method::PANE_STREAM_SUBSCRIBE {
             self.subscribe_stream(connection, request_id, params)?;
             return Ok(Outcome::Queued);
         }
@@ -81,7 +81,7 @@ impl Core {
         // while holding the same engine lock used by output ingestion.
         client.streams.remove(pane_id);
         client.outbox.send(model::response(id,json!({"streamId":stream_id,"paneId":pane_id,"generation":generation,"firstRetainedOffset":running.screen.first_offset().to_string(),"nextOffset":high.to_string(),"binaryPaneRef":binary_ref}))?);
-        client.outbox.send_stream(model::notification("stream.replay_start",json!({"streamId":stream_id,"generation":generation,"fromOffset":from.to_string(),"toOffset":high.to_string(),"reset":tail}))?,Arc::clone(&current));
+        client.outbox.send_stream(model::notification(event::STREAM_REPLAY_START,json!({"streamId":stream_id,"generation":generation,"fromOffset":from.to_string(),"toOffset":high.to_string(),"reset":tail}))?,Arc::clone(&current));
         client.streams.insert(
             pane_id.into(),
             Subscription {
@@ -126,7 +126,7 @@ impl Core {
                 };
                 if subscription.next < pane.screen.first_offset() {
                     let to = pane.screen.first_offset().min(through);
-                    client.outbox.send_stream(model::notification("stream.gap",json!({"streamId":subscription.stream_id,"fromOffset":subscription.next.to_string(),"toOffset":to.to_string()}))?,Arc::clone(&subscription.current));
+                    client.outbox.send_stream(model::notification(event::STREAM_GAP,json!({"streamId":subscription.stream_id,"fromOffset":subscription.next.to_string(),"toOffset":to.to_string()}))?,Arc::clone(&subscription.current));
                     subscription.next = to;
                 }
                 if subscription.next < through {
@@ -144,7 +144,7 @@ impl Core {
                                 bytes,
                             },
                             Record::Gap { from, to } => model::notification(
-                                "stream.gap",
+                                event::STREAM_GAP,
                                 json!({"streamId":subscription.stream_id,"fromOffset":from.to_string(),"toOffset":to.to_string()}),
                             )?,
                         };
@@ -158,7 +158,7 @@ impl Core {
                     }
                 }
                 if subscription.replaying && subscription.next == subscription.replay_until {
-                    client.outbox.send_stream(model::notification("stream.replay_done",json!({"streamId":subscription.stream_id,"nextOffset":subscription.next.to_string()}))?,Arc::clone(&subscription.current));
+                    client.outbox.send_stream(model::notification(event::STREAM_REPLAY_DONE,json!({"streamId":subscription.stream_id,"nextOffset":subscription.next.to_string()}))?,Arc::clone(&subscription.current));
                     subscription.replaying = false;
                 }
             }

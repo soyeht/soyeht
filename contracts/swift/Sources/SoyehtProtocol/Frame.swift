@@ -15,11 +15,20 @@ public struct Frame: Equatable, Sendable {
 
     private static func bounds(_ kind: UInt8) throws -> ClosedRange<Int> {
         switch kind {
-        case 1: return 1...ProtocolLimits.jsonBytes
-        case 2: return ProtocolLimits.terminalHeaderBytes...(ProtocolLimits.terminalHeaderBytes + ProtocolLimits.terminalPayloadBytes)
-        case 3: return ProtocolLimits.attachmentHeaderBytes...(ProtocolLimits.attachmentHeaderBytes + ProtocolLimits.attachmentPayloadBytes)
+        case FrameKind.json: return 1...ProtocolLimits.jsonBytes
+        case FrameKind.terminal:
+            return ProtocolLimits.terminalHeaderBytes...(ProtocolLimits.terminalHeaderBytes + ProtocolLimits.terminalPayloadBytes)
+        case FrameKind.attachment:
+            return ProtocolLimits.attachmentHeaderBytes...(ProtocolLimits.attachmentHeaderBytes + ProtocolLimits.attachmentPayloadBytes)
         default: throw FrameError.invalidType
         }
+    }
+
+    /// Whether a frame of this kind may advertise this length. A reader checks it before it
+    /// allocates or reads the body.
+    public static func accepts(kind: UInt8, length: Int) -> Bool {
+        guard let range = try? bounds(kind) else { return false }
+        return range.contains(length)
     }
 
     /// Decode one whole frame. Transport code assembles the bounded frame first.
@@ -30,13 +39,13 @@ public struct Frame: Equatable, Sendable {
         let length = bytes[1..<5].reduce(0) { ($0 << 8) | Int($1) }
         guard try bounds(kind).contains(length) else { throw FrameError.invalidLength }
         guard bytes.count == 5 + length else { throw FrameError.truncated }
-        let headerSize = kind == 1 ? 0 : 16
+        let headerSize = kind == FrameKind.json ? 0 : 16
         return Frame(kind: kind, header: Data(bytes[5..<(5 + headerSize)]), payload: Data(bytes[(5 + headerSize)...]))
     }
 
     public func encode() throws -> Data {
         let length = header.count + payload.count
-        guard try Self.bounds(kind).contains(length), header.count == (kind == 1 ? 0 : 16) else {
+        guard try Self.bounds(kind).contains(length), header.count == (kind == FrameKind.json ? 0 : 16) else {
             throw FrameError.invalidLength
         }
         var encoded = Data([kind])

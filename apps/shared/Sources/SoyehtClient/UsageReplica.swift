@@ -17,7 +17,7 @@ extension EngineClient {
   }
 
   func loadUsage() async throws {
-    let result = try await request("usage.list", .encoded(UsageListParams()))
+    let result = try await request(.usageList, .encoded(UsageListParams()))
       .decoded(UsageListResult.self)
     usageReadings = result.providers
   }
@@ -98,7 +98,7 @@ extension EngineClient {
     // session) in parallel; a chain bounds its own waits well inside this.
     let timeout = 150.0
     return try await mutation(
-      "usage.refresh",
+      .usageRefresh,
       UsageRefreshParams(provider: provider, idempotencyKey: UUID().uuidString),
       timeoutSeconds: timeout
     ).decoded(UsageRefreshResult.self)

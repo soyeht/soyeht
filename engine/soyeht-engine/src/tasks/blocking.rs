@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Attempt, AttemptResult, AttentionItem, Blocking, BlockingKind, Comment, PaneState,
-    PromptOrigin, Task, TaskMove, TaskState, limits,
+    PromptOrigin, Task, TaskMove, TaskState, event, limits,
 };
 use soyeht_store::database::{Change, Result as StoreResult};
 use uuid::Uuid;
@@ -56,17 +56,17 @@ impl TaskBlockingChange {
         let task = &self.task;
         let mut events = vec![
             (
-                "task.updated".into(),
+                event::TASK_UPDATED.into(),
                 json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"version":task.version}),
             ),
             (
-                "task.phrase_changed".into(),
+                event::TASK_PHRASE_CHANGED.into(),
                 json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"phrase":task.phrase}),
             ),
         ];
         if let Some(movement) = &self.movement {
             events.push((
-                "task.moved".into(),
+                event::TASK_MOVED.into(),
                 json!({"workspaceId":task.workspace_id,"taskId":task.task_id,
                     "actor":movement.actor,"from":movement.from,"to":movement.to,
                     "reason":movement.reason}),
@@ -74,7 +74,7 @@ impl TaskBlockingChange {
         }
         if let Some(comment) = &self.comment {
             events.push((
-                "task.commented".into(),
+                event::TASK_COMMENTED.into(),
                 json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"comment":comment}),
             ));
         }
@@ -369,14 +369,14 @@ impl Core {
         if let Some((_, prompt_id)) = &queued {
             let prompt_ids: Vec<_> = state.queue.iter().map(|item| &item.prompt_id).collect();
             events.push((
-                "pane.queued".into(),
+                event::PANE_QUEUED.into(),
                 json!({"paneId":pane,"n":state.queue.len(),"promptIds":prompt_ids,
                     "addedPromptId":prompt_id,"draft":false}),
             ));
         }
         if needs_attention.is_some() {
             events.push((
-                "task.attention".into(),
+                event::TASK_ATTENTION.into(),
                 json!({"workspaceId":task_for_attention.workspace_id,
                     "taskId":task_for_attention.task_id,"n":1}),
             ));

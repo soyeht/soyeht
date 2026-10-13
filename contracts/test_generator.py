@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from generate import lower_camel, render, validate_profiles, validate_schema, variant
+from generate import lower_camel, render, snake, validate_profiles, validate_schema, variant
 
 ROOT = Path(__file__).resolve().parent
 
@@ -113,6 +113,24 @@ class SchemaTests(unittest.TestCase):
                     f'"{name}": {{ paramsType: "{params}", durable: {durable} }}',
                     typescript,
                 )
+
+    def test_every_method_and_event_name_has_a_generated_form(self):
+        outputs = render(self.schema, "test-digest")
+        rust = outputs["engine/soyeht-protocol/src/generated.rs"]
+        swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]
+        for kind, names in (("method", self.schema["x-methods"]), ("event", self.schema["x-events"])):
+            for name in names:
+                with self.subTest(kind=kind, name=name):
+                    self.assertIn(f'pub const {snake(variant(name)).upper()}: &str = "{name}";', rust)
+                    self.assertIn(f'case {lower_camel(name)} = "{name}"', swift)
+
+    def test_frame_kinds_are_generated_for_both_languages(self):
+        outputs = render(self.schema, "test-digest")
+        rust = outputs["engine/soyeht-protocol/src/limits.rs"]
+        swift = outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"]
+        for name, value in self.schema["x-framing"]["types"].items():
+            self.assertIn(f"pub const FRAME_KIND_{name.upper()}: u8 = {value};", rust)
+            self.assertIn(f"public static let {name}: UInt8 = {value}", swift)
 
     def test_event_and_error_registries_fail_closed(self):
         changes = []
