@@ -87,11 +87,38 @@ impl State {
             .workspaces
             .iter()
             .find(|workspace| workspace.workspace_id == workspace_id)?;
+        let waiting = self.waiting_for_place(workspace_id);
         let panes: Vec<&Pane> = self
             .panes_of(workspace_id)
-            .filter(|pane| shows(pane))
+            .filter(|pane| shows(pane) && !waiting.contains(&pane.pane_id.as_str()))
             .collect();
         layout::resolve(&workspace.layout, &panes, &self.sizing)
+    }
+
+    /// The panes of `workspace_id` that wait to be told whether they are the one a split is
+    /// placing: they arrived while a split request had no answer yet.
+    fn waiting_for_place(&self, workspace_id: &str) -> Vec<&str> {
+        self.expected
+            .iter()
+            .filter(|expected| {
+                expected.workspace_id == workspace_id
+                    && expected.split.is_some()
+                    && expected.pane_id.is_none()
+            })
+            .flat_map(|expected| expected.arrivals.iter().map(String::as_str))
+            .collect()
+    }
+
+    /// A pane arrived: when a split request is still unanswered in its workspace, it may be the
+    /// pane that request opened, so it is kept out of the drawing until the answer arrives.
+    pub(crate) fn wait_for_answer(&mut self, pane: &Pane) {
+        if let Some(expected) = self.expected.iter_mut().find(|expected| {
+            expected.workspace_id == pane.workspace_id
+                && expected.split.is_some()
+                && expected.pane_id.is_none()
+        }) {
+            expected.arrivals.push(pane.pane_id.clone());
+        }
     }
 
     /// Remembers that the engine was asked (by request `ticket`) to open a pane in a workspace.
@@ -101,6 +128,7 @@ impl State {
             workspace_id: workspace_id.to_owned(),
             split: None,
             pane_id: None,
+            arrivals: Vec::new(),
         });
     }
 
@@ -170,9 +198,20 @@ impl State {
             return effects;
         };
         if let Some(placed) = layout::split_pane(&tree, &anchor, &pane, axis) {
+            let envelope = layout::envelope(placed);
+            // Draw it at once: the engine's echo of the stored layout comes a round trip later,
+            // and until then the new pane would show in the automatic place.
+            if let (Some(workspace), Ok(stored)) = (
+                self.workspaces
+                    .iter_mut()
+                    .find(|workspace| workspace.workspace_id == expected.workspace_id),
+                serde_json::to_value(&envelope),
+            ) {
+                workspace.layout = stored;
+            }
             effects.push(Effect::StoreLayout {
                 workspace_id: expected.workspace_id,
-                layout: layout::envelope(placed),
+                layout: envelope,
             });
         }
         effects

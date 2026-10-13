@@ -4,6 +4,7 @@
 use super::ui::{Typeface, column, icon};
 use crate::{
     assets::Icon,
+    neo,
     theme::{Palette, desktop, pane_layout, space, type_scale},
     workbench::Workbench,
 };
@@ -83,13 +84,21 @@ impl Workbench {
         // when the panes need more room than the window has, the stage scrolls sideways. The
         // wheel moves it only sideways, so a transcript or a terminal under the pointer keeps
         // its own vertical scrolling.
+        //
+        // A scroller clips what it holds to its bounds, and a pane's shadow reaches `PANE_HALO`
+        // past its card. The scroller therefore reaches that far beyond the margins the panes
+        // keep and gives the room back as padding inside, so the outermost panes draw their
+        // whole halo on every side (the Mac leaves the same room around its pane grid).
+        let halo = neo::PANE_HALO;
         let stage = div()
             .flex()
             .flex_1()
-            .min_w(px(needed_width(&tree)))
+            .min_w(px(needed_width(&tree) + 2.0 * halo))
+            .p(px(halo))
             .child(tiles);
         super::ui::sideways_scroller("tiles", &self.stage_scroll, stage, palette)
             .min_h_0()
+            .m(px(-halo))
             .into_any_element()
     }
 
@@ -105,7 +114,7 @@ impl Workbench {
         let floor = super::composer::minimum_pane_width();
         if let Some((start, width)) = pane_span(tree, &pane_id, floor, pane_layout::PANE_GAP) {
             let scrolled = -f32::from(self.stage_scroll.offset().x);
-            let target = reveal_offset(start, width, scrolled, viewport);
+            let target = reveal_offset(start + neo::PANE_HALO, width, scrolled, viewport);
             self.stage_scroll.set_offset(point(px(-target), px(0.0)));
         }
     }

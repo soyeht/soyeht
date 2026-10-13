@@ -75,6 +75,10 @@ pub fn well(palette: &Palette, radius: f32, depth: f32) -> Div {
     }
 }
 
+/// How far the pane shell's shadows reach past the card (offset plus blur), as the Mac's
+/// `PaneShellMetrics.halo`. Nothing around a pane may clip it.
+pub const PANE_HALO: f32 = pane_shell::SHADOW_OFFSET + pane_shell::SHADOW_BLUR;
+
 /// The pane shell of the approved frames: the only raised surface a pane draws.
 pub fn pane_shell(palette: &Palette) -> Div {
     raised(

@@ -62,6 +62,10 @@ pub(crate) struct Expected {
     pub(crate) split: Option<(String, WorkspacePaneLayoutAxis)>,
     /// Known once the engine has answered the request.
     pub(crate) pane_id: Option<String>,
+    /// Panes of the workspace that arrived before the answer named the pane: one of them is
+    /// the new pane, and until the answer says which, none of them is drawn (a split pane
+    /// must never show in the automatic place first and then move).
+    pub(crate) arrivals: Vec<String>,
 }
 
 pub struct State {
@@ -466,6 +470,9 @@ impl State {
         let mut effects = Vec::new();
         let pane_id = pane.pane_id.clone();
         let arrived = !self.panes.iter().any(|known| known.pane_id == pane_id);
+        if arrived {
+            self.wait_for_answer(&pane);
+        }
         if pane.mode == PaneMode::Agent && !self.agents.contains_key(&pane.pane_id) {
             self.agents
                 .insert(pane.pane_id.clone(), AgentView::default());

@@ -184,6 +184,60 @@ fn a_split_places_the_new_pane_beside_its_anchor_and_stores_the_layout() {
     );
 }
 
+/// What the window draws for the workspace right now, without the engine's layout event.
+fn drawn(state: &State) -> WorkspacePaneLayoutNode {
+    state.layout("w", |_| true).expect("a workspace with panes")
+}
+
+#[test]
+fn a_split_pane_is_never_drawn_anywhere_but_beside_its_anchor() {
+    for axis in [
+        WorkspacePaneLayoutAxis::Horizontal,
+        WorkspacePaneLayoutAxis::Vertical,
+    ] {
+        // The notification may come first: the pane is here, unplaced, until the answer names it.
+        let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+        state.expect_split(1, "a", axis.clone());
+        state.apply(created("n"));
+        assert!(
+            !layout::contains(&drawn(&state), "n"),
+            "the new pane waits for its place instead of showing in the automatic one"
+        );
+        let effects = state.apply(Event::Opened {
+            ticket: 1,
+            pane_id: "n".into(),
+        });
+        let placed = stored(&effects).unwrap();
+        assert_eq!(layout::pane_ids(&placed), ["a", "n", "b"]);
+        // Before the engine echoes the stored layout the window already draws it.
+        assert_eq!(drawn(&state), placed);
+
+        // The answer may come first: the same place, in the same frame the pane arrives in.
+        let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+        state.expect_split(2, "a", axis);
+        state.apply(Event::Opened {
+            ticket: 2,
+            pane_id: "n".into(),
+        });
+        let placed = stored(&state.apply(created("n"))).unwrap();
+        assert_eq!(layout::pane_ids(&placed), ["a", "n", "b"]);
+        assert_eq!(drawn(&state), placed);
+    }
+}
+
+#[test]
+fn a_pane_someone_else_opens_while_a_split_waits_is_shown_once_the_answer_arrives() {
+    let (mut state, _) = connected(&[("a", "terminal")]);
+    state.expect_split(5, "a", WorkspacePaneLayoutAxis::Horizontal);
+    state.apply(created("theirs"));
+    assert!(!layout::contains(&drawn(&state), "theirs"));
+    state.apply(Event::Opened {
+        ticket: 5,
+        pane_id: "n".into(),
+    });
+    assert!(layout::contains(&drawn(&state), "theirs"));
+}
+
 #[test]
 fn the_answer_may_come_before_the_notification() {
     let (mut state, _) = connected(&[("a", "terminal")]);
