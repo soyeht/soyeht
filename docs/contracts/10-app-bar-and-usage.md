@@ -69,7 +69,8 @@ source answers. The ring's detail names the source that answered.
 - **Codex**: (1) a personal access token in `auth.json`; (2) the ChatGPT
   login in `auth.json` (`$CODEX_HOME`, else `~/.codex`), both sent to the
   ChatGPT usage endpoint; (3) a disposable `codex app-server` asked for
-  `account/rateLimits/read`.
+  `account/read` with `refreshToken` (so a login the endpoint refused is
+  renewed first) and then `account/rateLimits/read`.
 - **Cursor**: (1) the Cursor app's own login in its `state.vscdb`; (2) on
   macOS, the cursor.com session cookie from the user's browsers; both sent
   to cursor.com's usage summary.

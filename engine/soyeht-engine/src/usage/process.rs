@@ -248,7 +248,8 @@ fn spawn_line_reader(stdout: impl Read + Send + 'static) -> Receiver<Line> {
     receiver
 }
 
-/// The `result` of the response with `id`, skipping notifications and other responses.
+/// The `result` of the response with `id`, skipping notifications and other responses. An error
+/// response gives `null`: the caller decides whether that call mattered.
 fn response_with_id(
     receiver: &Receiver<Line>,
     id: u64,
@@ -260,6 +261,9 @@ fn response_with_id(
             Line::Bytes(bytes) => {
                 let mut value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
                 if value["id"] == id {
+                    if value.get("error").is_some() {
+                        return Some(serde_json::Value::Null);
+                    }
                     return value.get_mut("result").map(serde_json::Value::take);
                 }
             }
@@ -271,6 +275,32 @@ fn response_with_id(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn answers(lines: &[&str]) -> Receiver<Line> {
+        let (sender, receiver) = mpsc::channel();
+        for line in lines {
+            sender.send(Line::Bytes(line.as_bytes().to_vec())).unwrap();
+        }
+        receiver
+    }
+
+    #[test]
+    fn an_error_answer_is_null_and_the_exchange_goes_on() {
+        let receiver = answers(&[
+            r#"{"jsonrpc":"2.0","method":"note","params":{}}"#,
+            r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32603,"message":"token expired"}}"#,
+            r#"{"jsonrpc":"2.0","id":3,"result":{"rateLimits":{}}}"#,
+        ]);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        assert_eq!(
+            response_with_id(&receiver, 2, deadline),
+            Some(serde_json::Value::Null)
+        );
+        assert_eq!(
+            response_with_id(&receiver, 3, deadline),
+            Some(serde_json::json!({"rateLimits": {}}))
+        );
+    }
 
     #[test]
     fn http_status_and_retry_after_are_split_from_the_body() {

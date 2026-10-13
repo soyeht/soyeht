@@ -3,8 +3,8 @@
 #![allow(dead_code)]
 
 use soyeht_usage::host::{
-    CookieJar, CookieRead, FileRead, Host, HttpRequest, HttpResult, Platform, RpcRequest, RpcRun,
-    SecretRead, TerminalDriver, TerminalRequest, TerminalRun, TerminalStep,
+    CookieJar, CookieRead, FileRead, Host, HttpRequest, HttpResult, Platform, RpcCall, RpcRequest,
+    RpcRun, SecretRead, TerminalDriver, TerminalRequest, TerminalRun, TerminalStep,
 };
 use std::{
     collections::VecDeque,
@@ -32,6 +32,7 @@ pub enum Call {
         program: String,
         args: Vec<String>,
         methods: Vec<String>,
+        calls: Vec<RpcCall>,
     },
     Terminal {
         program: String,
@@ -120,6 +121,17 @@ impl FakeHost {
             .iter()
             .filter(|call| matches!(call, Call::Terminal { .. }))
             .count()
+    }
+
+    /// The calls of the first JSON-RPC exchange.
+    pub fn rpc_calls(&self) -> Vec<RpcCall> {
+        self.calls()
+            .into_iter()
+            .find_map(|call| match call {
+                Call::Rpc { calls, .. } => Some(calls),
+                _ => None,
+            })
+            .unwrap_or_default()
     }
 
     pub fn rpc_runs(&self) -> usize {
@@ -215,6 +227,7 @@ impl Host for FakeHost {
                 .iter()
                 .map(|call| call.method.clone())
                 .collect(),
+            calls: request.calls.clone(),
         });
         self.rpc
             .lock()

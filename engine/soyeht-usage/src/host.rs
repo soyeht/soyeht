@@ -238,7 +238,8 @@ pub struct RpcCall {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RpcRun {
-    /// The `result` of every call that has an id, in call order.
+    /// The `result` of every call that has an id, in call order; `null` for a call the server
+    /// answered with an error.
     Results(Vec<serde_json::Value>),
     ToolNotFound,
     Failed,

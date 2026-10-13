@@ -1,5 +1,10 @@
 //! A disposable `codex app-server` asked for `account/rateLimits/read`
 //! (CodexBar `CodexCLIUsageStrategy`, `UsageFetcher.loadLatestCLIAccountSnapshot`).
+//!
+//! The rate limits are read only after `account/read` with `refreshToken`: this source is
+//! reached when the login file holds a token the usage endpoint refuses or is about to refuse,
+//! and the app server refreshes that token itself only when asked. Reading the limits first
+//! gets "token expired" and the child is gone before it refreshes anything.
 
 use super::super::{Attempt, Failure, ReadContext, Source};
 use crate::host::{Host, RpcCall, RpcRequest, RpcRun};
@@ -43,17 +48,26 @@ impl Source for AppServerSource {
                     id: None,
                 },
                 RpcCall {
+                    method: "account/read".into(),
+                    params: json!({"refreshToken": true}),
+                    id: Some(2),
+                },
+                RpcCall {
                     method: "account/rateLimits/read".into(),
                     params: json!({}),
-                    id: Some(2),
+                    id: Some(3),
                 },
             ],
             timeout: TIMEOUT,
         };
         match host.json_rpc(&request) {
-            RpcRun::Results(results) => {
-                super::parse_rate_limits(results.get(1).ok_or(Failure::Failed)?)
-            }
+            // The last result is the rate limits; a refusal arrives as `null`. The refresh
+            // before it may be refused too (no login to refresh), which is not the end of the read.
+            RpcRun::Results(results) => results
+                .last()
+                .filter(|limits| !limits.is_null())
+                .ok_or(Failure::Failed)
+                .and_then(super::parse_rate_limits),
             RpcRun::ToolNotFound => Err(Failure::ToolNotFound),
             RpcRun::Failed => Err(Failure::Failed),
         }

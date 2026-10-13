@@ -30,6 +30,10 @@ fn login(expires: u64) -> Vec<u8> {
         .into_bytes()
 }
 
+fn rate_limits() -> serde_json::Value {
+    serde_json::from_slice(include_bytes!("fixtures/codex-app-server-rate-limits.json")).unwrap()
+}
+
 fn header<'a>(call: &'a Call, name: &str) -> Option<&'a str> {
     let Call::Http { headers, .. } = call else {
         return None;
@@ -107,16 +111,11 @@ fn personal_access_token_asks_whoami_first() {
 
 #[test]
 fn a_login_codex_must_refresh_goes_to_the_app_server() {
-    let host = FakeHost::new(Platform::Linux).file(".codex/auth.json", &login(NOW + 60));
-    host.rpc.lock().unwrap().push_back(RpcRun::Results(vec![
+    let (host, reading) = app_server_reading(vec![
         json!({}),
-        serde_json::from_slice(include_bytes!("fixtures/codex-app-server-rate-limits.json"))
-            .unwrap(),
-    ]));
-    let host = Arc::new(host);
-    let reading = Planner::new(host.clone())
-        .refresh(&UsageProvider::Codex, Trigger::Automatic, NOW, "now")
-        .reading;
+        json!({"account": null, "requiresOpenaiAuth": true}),
+        rate_limits(),
+    ]);
     assert_eq!(reading.source, UsageSource::CodexAppServer);
     assert_eq!(reading.primary.unwrap().used, 0.08);
     assert!(host.http_urls().is_empty(), "an expiring token was sent");
@@ -124,6 +123,7 @@ fn a_login_codex_must_refresh_goes_to_the_app_server() {
         program,
         args,
         methods,
+        ..
     }) = host.calls().pop()
     else {
         panic!("no app server");
@@ -132,8 +132,58 @@ fn a_login_codex_must_refresh_goes_to_the_app_server() {
     assert_eq!(args, ["-s", "read-only", "-a", "never", "app-server"]);
     assert_eq!(
         methods,
-        ["initialize", "initialized", "account/rateLimits/read"]
+        [
+            "initialize",
+            "initialized",
+            "account/read",
+            "account/rateLimits/read"
+        ]
     );
+}
+
+/// The Codex reading after an expiring login sent the planner to the app server, which answers
+/// with `results`; the host, to see what was asked.
+fn app_server_reading(results: Vec<serde_json::Value>) -> (Arc<FakeHost>, soyeht_usage::Reading) {
+    let host = FakeHost::new(Platform::Linux).file(".codex/auth.json", &login(NOW + 60));
+    host.rpc.lock().unwrap().push_back(RpcRun::Results(results));
+    let host = Arc::new(host);
+    let reading = Planner::new(host.clone())
+        .refresh(&UsageProvider::Codex, Trigger::Automatic, NOW, "now")
+        .reading;
+    (host, reading)
+}
+
+/// The limits are asked for only after the app server was told to refresh its login, since a
+/// token the usage endpoint refused is renewed by the refresh and not by the read.
+#[test]
+fn the_app_server_refreshes_its_login_before_reading_the_limits() {
+    let (host, _) = app_server_reading(vec![json!({}), json!({}), rate_limits()]);
+    let calls = host.rpc_calls();
+    assert_eq!(calls[2].method, "account/read");
+    assert_eq!(calls[2].params, json!({"refreshToken": true}));
+    assert_eq!(calls[3].method, "account/rateLimits/read");
+    assert!(calls[2].id < calls[3].id, "the refresh is answered first");
+}
+
+/// A token still refused after the refresh (`null` is how an error answer reaches the source)
+/// gives no limits: the reading says the app server failed.
+#[test]
+fn an_expired_token_answer_to_the_limits_is_an_app_server_failure() {
+    let null = serde_json::Value::Null;
+    let (_, reading) = app_server_reading(vec![json!({}), null.clone(), null]);
+    assert_eq!(reading.state, UsageState::Unavailable);
+    assert_eq!(
+        reading.unavailable_reason,
+        Some(UsageUnavailableReason::AppServerFailed)
+    );
+}
+
+/// A refused refresh does not stop the limits from being read.
+#[test]
+fn a_refused_refresh_still_reads_the_limits() {
+    let (_, reading) = app_server_reading(vec![json!({}), serde_json::Value::Null, rate_limits()]);
+    assert_eq!(reading.state, UsageState::Ok);
+    assert_eq!(reading.source, UsageSource::CodexAppServer);
 }
 
 #[test]

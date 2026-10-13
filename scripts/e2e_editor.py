@@ -73,13 +73,20 @@ SECOND_SOURCE = """#!/usr/bin/env python3
 import json, os, sys
 mode=json.load(open(os.environ["SOYEHT_TEST_USAGE_MODE"]))["second"]
 if mode != "ok": sys.exit(1)
+refreshed=False
 for line in sys.stdin:
  value=json.loads(line)
  if value.get("id") == 1:
   print(json.dumps({"jsonrpc":"2.0","id":1,"result":{}}),flush=True)
- if value.get("id") == 2:
+ if value.get("id") == 2 and value.get("params") == {"refreshToken": True}:
+  refreshed=True
+  print(json.dumps({"jsonrpc":"2.0","id":2,"result":{"account":None,"requiresOpenaiAuth":True}}),flush=True)
+ if value.get("id") == 3:
+  if not refreshed:
+   print(json.dumps({"jsonrpc":"2.0","id":3,"error":{"code":-32603,"message":"401 token_expired"}}),flush=True)
+   break
   result={"rateLimits":{"primary":{"usedPercent":30,"resetsAt":1000},"secondary":{"usedPercent":60,"resetsAt":2000}}}
-  print(json.dumps({"jsonrpc":"2.0","id":2,"result":result}),flush=True)
+  print(json.dumps({"jsonrpc":"2.0","id":3,"result":result}),flush=True)
   break
 """
 
