@@ -14,6 +14,7 @@ mod draft;
 mod fixture;
 mod fonts;
 mod gallery;
+mod graphics;
 mod loop_form;
 mod neo;
 mod open_menu;

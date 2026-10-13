@@ -85,6 +85,11 @@ cd apps/desktop
 cargo run --release -p soyeht-desktop
 ```
 
+On Linux the window needs a Vulkan driver; a machine without a graphics card uses Mesa's
+software renderer, which needs an up-to-date Mesa (see "Graphics on Linux" in
+`docs/platforms.md`: `mesa-vulkan-drivers`, and `sudo dnf upgrade mesa-vulkan-drivers` on
+Fedora).
+
 The socket is found from the Dev profile directory under the user's home, which is where the
 engine keeps it on macOS, Linux and Windows. To reach another engine, set the socket path:
 

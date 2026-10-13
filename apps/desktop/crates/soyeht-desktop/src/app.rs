@@ -2,7 +2,7 @@
 
 use crate::{
     assets::Assets,
-    fonts,
+    fonts, graphics,
     theme::{ThemeName, desktop},
     window_size::{self, opening_size},
     workbench::{NewTerminal, Paste, Quit, Workbench},
@@ -134,10 +134,16 @@ pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
             });
             let focus = workbench.read(cx).focus.clone();
             window.focus(&focus, cx);
+            if let Some(note) = graphics::software_note(window.gpu_specs().as_ref()) {
+                eprintln!("{note}");
+            }
             workbench
         });
         if let Err(error) = opened {
-            eprintln!("soyeht: the window could not be opened: {error}");
+            eprintln!(
+                "{}",
+                graphics::open_failure(&error, cfg!(target_os = "linux"))
+            );
             cx.quit();
         }
         cx.activate(true);

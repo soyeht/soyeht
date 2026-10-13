@@ -115,6 +115,27 @@ libxcursor-dev libxrandr-dev libxi-dev libfontconfig-dev libfreetype-dev libssl-
 libasound2-dev`; on Fedora the same names ending in `-devel`). To run it, the system
 needs a Vulkan driver (`mesa-vulkan-drivers`); its tests open no window.
 
+### Graphics on Linux
+
+The window is drawn through Vulkan (OpenGL when there is no Vulkan driver). A machine with
+a card needs its Mesa or vendor driver. A machine without one (a virtual machine, a remote
+session) draws on the processor through Mesa's software renderer, llvmpipe, which is part of
+the Vulkan driver package:
+
+| Distribution | Package |
+| --- | --- |
+| Fedora | `sudo dnf install mesa-vulkan-drivers` |
+| Ubuntu | `sudo apt install mesa-vulkan-drivers` |
+| Arch | `sudo pacman -S vulkan-swrast` |
+
+Keep Mesa up to date. Fedora 44 on arm64 with Mesa 26.0.3 and LLVM 22.1.8 (what a fresh
+install holds after its updates) crashes with a segmentation fault inside LLVM, in
+`llvmpipe_update_fs`, while compiling the first shader the window draws, so the window never
+appears. `sudo dnf upgrade mesa-vulkan-drivers` (Mesa 26.2.4) fixes it. `vulkaninfo --summary`
+shows the driver in use. The client prints one line to stderr when it draws on a software
+renderer, naming it and its Mesa version, and when no driver can open the window it prints the
+packages above.
+
 ## Running the Windows check
 
 On Windows with rustup, the Visual Studio C++ build tools (MSVC and a Windows SDK),
