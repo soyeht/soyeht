@@ -67,6 +67,8 @@ pub(crate) struct Expected {
 pub struct State {
     pub connection: Connection,
     pub problem: Option<String>,
+    /// What the weights of an arrangement are measured with; the window sets it.
+    pub(crate) sizing: crate::layout::Sizing,
     pub(crate) workspaces: Vec<Workspace>,
     pub(crate) panes: Vec<Pane>,
     selected_workspace: Option<String>,
@@ -102,6 +104,7 @@ impl Default for State {
         Self {
             connection: Connection::Connecting,
             problem: None,
+            sizing: crate::layout::Sizing::default(),
             workspaces: Vec::new(),
             panes: Vec::new(),
             selected_workspace: None,
@@ -127,6 +130,12 @@ impl Default for State {
 }
 
 impl State {
+    /// The state measuring its arrangements with `sizing`.
+    pub fn with_sizing(mut self, sizing: crate::layout::Sizing) -> Self {
+        self.sizing = sizing;
+        self
+    }
+
     pub fn workspaces(&self) -> &[Workspace] {
         &self.workspaces
     }

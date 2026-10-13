@@ -91,7 +91,7 @@ impl State {
             .panes_of(workspace_id)
             .filter(|pane| shows(pane))
             .collect();
-        layout::resolve(&workspace.layout, &panes)
+        layout::resolve(&workspace.layout, &panes, &self.sizing)
     }
 
     /// Remembers that the engine was asked (by request `ticket`) to open a pane in a workspace.

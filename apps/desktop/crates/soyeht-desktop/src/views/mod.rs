@@ -25,6 +25,8 @@ mod settings;
 mod switch_popover;
 mod tasks;
 mod tiles;
+
+pub(crate) use tiles::sizing;
 mod top_bar;
 mod ui;
 mod usage_ring;

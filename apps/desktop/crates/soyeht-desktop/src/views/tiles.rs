@@ -11,7 +11,7 @@ use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div, point,
     px, rgb,
 };
-use soyeht_client::layout::{minimum_width, pane_span, reveal_offset};
+use soyeht_client::layout::{Sizing, minimum_width, pane_span, reveal_offset};
 use soyeht_protocol::{Pane, WorkspacePaneLayoutAxis, WorkspacePaneLayoutNode as Node};
 
 /// The width the arrangement needs so that no pane is narrower than the floor.
@@ -21,6 +21,20 @@ fn needed_width(node: &Node) -> f32 {
         super::composer::minimum_pane_width(),
         pane_layout::PANE_GAP,
     )
+}
+
+/// What an arrangement's weights are measured with: every kind of pane needs the width the pane
+/// floor gives it (the Mac measures one floor per kind; the desktop has one, set by the composer
+/// a pane always shows), and the room between two panes is the gap.
+pub(crate) fn sizing() -> Sizing {
+    let floor = f64::from(super::composer::minimum_pane_width());
+    Sizing {
+        floor: (floor, floor),
+        kinds: Vec::new(),
+        horizontal_gap: f64::from(pane_layout::PANE_GAP),
+        vertical_gap: f64::from(pane_layout::PANE_GAP),
+        companion_strip: 0.0,
+    }
 }
 
 impl Workbench {

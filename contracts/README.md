@@ -95,3 +95,12 @@ window a usage ring follows, its band and percentage, the sentences for a missin
 spans of time) and `vectors/agent-account.json` (the account section of a signed-in agent pane:
 switch account and sign out). The Mac passes them in `SharedVectorsTests.swift`, the desktop client
 in the tests of `harness_picker`, `usage` and `account` (`apps/desktop/crates/soyeht-client`).
+
+`vectors/pane-layout.json` fixes the rules the clients apply to a workspace's pane tree: how
+a stored layout is read and which panes it keeps (`PaneLayoutState`, `layout::stored_tree`),
+merging and collapsing splits, splitting a pane, the width a tree needs, where each pane
+sits at that width, and where a pane goes that the tree does not list (`PaneLayoutArrangement`,
+`layout::arrange`): primary panes (editor, web, writing) left to right, auxiliary panes
+(terminal, agent) stacked on the right, and in the automatic mode every branch weighed by the
+smallest size its panes need. Each case gives the floors to weigh with; the Mac measures one
+per kind, the desktop passes one for all.

@@ -129,7 +129,7 @@ impl Workbench {
         });
         Self {
             engine,
-            state: State::default(),
+            state: State::default().with_sizing(crate::views::sizing()),
             theme: ThemeName::DEFAULT,
             focus: cx.focus_handle(),
             destination: Destination::default(),

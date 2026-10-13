@@ -3,15 +3,22 @@
 //! `WorkspacePaneLayoutNode`; nothing here defines a second shape for it.
 //!
 //! A workspace whose layout is missing, unreadable or out of date shows every live pane: panes
-//! the tree no longer has are dropped from it, panes it does not list yet are added beside the
-//! rest, and with no usable tree the panes tile in the squarest grid.
+//! the tree no longer has are dropped from it, and panes it does not list yet are added the way
+//! the Mac adds them, by role (`arrange`); with no usable tree every pane is added that way.
+//!
+//! The rules the Mac client applies to a tree (reading a stored layout, removing panes,
+//! flattening, splitting, minimum sizes, where a pane sits, where a pane the tree does not list
+//! goes) are the cases of `contracts/vectors/pane-layout.json`, which both clients pass.
 
+mod arrange;
+
+pub use arrange::Sizing;
 use serde_json::Value;
 use soyeht_protocol::{
     Pane, PaneMode, WorkspacePaneLayoutAxis as Axis, WorkspacePaneLayoutBranch as Branch,
-    WorkspacePaneLayoutEnvelope as Envelope, WorkspacePaneLayoutKind as Kind,
-    WorkspacePaneLayoutLeaf as Leaf, WorkspacePaneLayoutMode, WorkspacePaneLayoutNode as Node,
-    WorkspacePaneLayoutSplit as Split, WritingKind,
+    WorkspacePaneLayoutCompanion as Companion, WorkspacePaneLayoutEnvelope as Envelope,
+    WorkspacePaneLayoutKind as Kind, WorkspacePaneLayoutLeaf as Leaf, WorkspacePaneLayoutMode,
+    WorkspacePaneLayoutNode as Node, WorkspacePaneLayoutSplit as Split, WritingKind,
 };
 
 /// The envelope version this client writes: the one that carries companion annotations.
@@ -58,75 +65,168 @@ fn split(axis: Axis, nodes: Vec<Node>) -> Node {
 
 /// The arrangement to draw for `panes`, in the order the workspace lists them. `None` when
 /// there is nothing to draw.
-pub fn resolve(layout: &Value, panes: &[&Pane]) -> Option<Node> {
-    if panes.is_empty() {
+pub fn resolve(layout: &Value, panes: &[&Pane], sizing: &Sizing) -> Option<Node> {
+    let (mut tree, custom) = match stored_tree(layout, panes) {
+        Some((tree, mode)) => (Some(tree), mode == WorkspacePaneLayoutMode::Custom),
+        None => (None, false),
+    };
+    for pane in panes {
+        tree = Some(arrange::insert(tree, pane, !custom, sizing));
+    }
+    tree
+}
+
+/// The stored arrangement of `layout` for `panes`, as the Mac reads it (`PaneLayoutState`): a
+/// layout that is missing, of an unknown version or malformed gives `None`; panes that are gone
+/// leave the tree; and when a pane that stays is of another kind than its leaf says, the whole
+/// arrangement is discarded.
+fn stored_tree(layout: &Value, panes: &[&Pane]) -> Option<(Node, WorkspacePaneLayoutMode)> {
+    // A layout that cannot be read falls back to the automatic arrangement, as on the Mac.
+    let Ok(envelope) = serde_json::from_value::<Envelope>(layout.clone()) else {
+        return None;
+    };
+    let mut tree = envelope.tree?;
+    match envelope.version {
+        VERSION => {}
+        // Version 1 predates companion annotations; they are not read from it.
+        1 => without_companions(&mut tree),
+        _ => return None,
+    }
+    if !is_valid(&tree) {
         return None;
     }
-    // A layout that cannot be read falls back to the automatic arrangement, as on the Mac.
-    let stored = match serde_json::from_value::<Envelope>(layout.clone()) {
-        Ok(envelope) => envelope.tree,
-        Err(_) => None,
-    };
-    let Some(tree) = stored.and_then(|tree| retain(tree, panes)) else {
-        return Some(grid(panes));
-    };
-    let missing: Vec<Node> = panes
-        .iter()
-        .filter(|pane| !contains(&tree, &pane.pane_id))
-        .map(|pane| leaf(pane))
+    tree = arrange::adopt_live_editor(tree, panes);
+    let gone: Vec<String> = pane_ids(&tree)
+        .into_iter()
+        .filter(|id| !panes.iter().any(|pane| pane.pane_id == *id))
+        .map(str::to_owned)
         .collect();
-    if missing.is_empty() {
-        return Some(tree);
+    for id in gone {
+        tree = remove_pane(tree, &id)?;
     }
-    // Panes the stored tree does not know sit beside it, along the axis the tree already uses.
-    let axis = match &tree {
-        Node::V1(split) => split.axis.clone(),
-        Node::V0(_) => Axis::Horizontal,
-    };
-    let mut nodes = vec![tree];
-    nodes.extend(missing);
-    Some(normalize(split(axis, nodes)))
-}
-
-/// The squarest grid: rows of `ceil(sqrt(n))` panes.
-fn grid(panes: &[&Pane]) -> Node {
-    let columns = ((panes.len() as f64).sqrt().ceil() as usize).max(1);
-    let mut rows: Vec<Node> = panes
-        .chunks(columns)
-        .map(|chunk| {
-            let leaves: Vec<Node> = chunk.iter().map(|pane| leaf(pane)).collect();
-            match <[Node; 1]>::try_from(leaves) {
-                Ok([only]) => only,
-                Err(leaves) => split(Axis::Horizontal, leaves),
-            }
-        })
-        .collect();
-    if rows.len() == 1 {
-        return rows.remove(0);
-    }
-    split(Axis::Vertical, rows)
-}
-
-/// The tree without the panes that are gone. A leaf whose kind no longer matches its pane is
-/// treated as gone, as on the Mac.
-fn retain(node: Node, panes: &[&Pane]) -> Option<Node> {
-    match node {
-        Node::V0(leaf) => panes
+    let all_match = panes_of(&tree).into_iter().all(|leaf| {
+        panes
             .iter()
             .any(|pane| pane.pane_id == leaf.pane_id && kind_of(pane) == leaf.kind)
-            .then_some(Node::V0(leaf)),
+    });
+    all_match.then_some((tree, envelope.mode))
+}
+
+fn without_companions(node: &mut Node) {
+    if let Node::V1(split) = node {
+        split.companion = None;
+        for branch in &mut split.children {
+            without_companions(&mut branch.node);
+        }
+    }
+}
+
+fn panes_of(node: &Node) -> Vec<&Leaf> {
+    match node {
+        Node::V0(leaf) => vec![leaf],
+        Node::V1(split) => split
+            .children
+            .iter()
+            .flat_map(|branch| panes_of(&branch.node))
+            .collect(),
+    }
+}
+
+/// The rules the Mac checks before it uses a stored tree: a split has two or more children with
+/// positive finite weights, every pane appears once, and a companion pairs a writing pane with
+/// an agent pane that are the only two children of its split.
+fn is_valid(root: &Node) -> bool {
+    let leaves = panes_of(root);
+    let unique = leaves.iter().enumerate().all(|(index, leaf)| {
+        leaves[..index]
+            .iter()
+            .all(|seen| seen.pane_id != leaf.pane_id)
+    });
+    unique && leaves.iter().all(|leaf| !leaf.pane_id.is_empty()) && sound(root, &mut Vec::new())
+}
+
+fn sound(node: &Node, paired: &mut Vec<String>) -> bool {
+    let Node::V1(split) = node else {
+        return true;
+    };
+    let weights_ok = split
+        .children
+        .iter()
+        .all(|branch| branch.weight.is_finite() && branch.weight > 0.0);
+    if split.children.len() < 2 || !weights_ok {
+        return false;
+    }
+    if !split
+        .children
+        .iter()
+        .all(|branch| sound(&branch.node, paired))
+    {
+        return false;
+    }
+    split
+        .companion
+        .as_ref()
+        .is_none_or(|companion| companion_ok(split, companion, paired))
+}
+
+fn companion_ok(split: &Split, companion: &Companion, paired: &mut Vec<String>) -> bool {
+    let members = [&companion.writing_pane_id, &companion.agent_pane_id];
+    let direct: Vec<&Leaf> = split
+        .children
+        .iter()
+        .filter_map(|branch| match &branch.node {
+            Node::V0(leaf) => Some(leaf),
+            Node::V1(_) => None,
+        })
+        .collect();
+    let writing = direct
+        .iter()
+        .find(|leaf| &leaf.pane_id == members[0])
+        .map(|leaf| &leaf.kind);
+    let agent = direct
+        .iter()
+        .find(|leaf| &leaf.pane_id == members[1])
+        .map(|leaf| &leaf.kind);
+    let fresh = members.iter().all(|id| !paired.contains(id));
+    let ok = members[0] != members[1]
+        && split.children.len() == 2
+        && direct.len() == 2
+        && fresh
+        && matches!(
+            writing,
+            Some(Kind::Text | Kind::Presentation | Kind::Screenplay)
+        )
+        && matches!(agent, Some(Kind::Agent));
+    if ok {
+        paired.extend(members.map(Clone::clone));
+    }
+    ok
+}
+
+/// `node` without pane `pane_id`; a split left with one child is that child. `None` when
+/// nothing remains.
+fn remove_pane(node: Node, pane_id: &str) -> Option<Node> {
+    match node {
+        Node::V0(leaf) => (leaf.pane_id != pane_id).then_some(Node::V0(leaf)),
         Node::V1(mut split) => {
             split.children = split
                 .children
                 .into_iter()
                 .filter_map(|branch| {
-                    retain(branch.node, panes).map(|node| Branch {
+                    remove_pane(branch.node, pane_id).map(|node| Branch {
                         weight: branch.weight,
                         node,
                     })
                 })
                 .collect();
-            (!split.children.is_empty()).then_some(normalize(Node::V1(split)))
+            if split.children.len() < 2 {
+                return split.children.pop().map(|only| only.node);
+            }
+            // A companion survives only while both of its panes are direct children.
+            if !keeps_companion(&split) {
+                split.companion = None;
+            }
+            Some(normalize(Node::V1(split)))
         }
     }
 }
@@ -141,12 +241,48 @@ pub fn contains(node: &Node, pane_id: &str) -> bool {
     }
 }
 
+/// Whether a split still pairs its companion's two panes: they are its only two children.
+fn keeps_companion(split: &Split) -> bool {
+    let Some(companion) = &split.companion else {
+        return false;
+    };
+    let direct: Vec<&str> = split
+        .children
+        .iter()
+        .filter_map(|branch| match &branch.node {
+            Node::V0(leaf) => Some(leaf.pane_id.as_str()),
+            Node::V1(_) => None,
+        })
+        .collect();
+    split.children.len() == 2
+        && direct.len() == 2
+        && direct.contains(&companion.writing_pane_id.as_str())
+        && direct.contains(&companion.agent_pane_id.as_str())
+}
+
 /// A split of one child is that child; a child split on the same axis as its parent is merged
-/// into it (its weight shared out by the child's own proportions).
+/// into it (its weight shared out by the child's own proportions). A split that carries a
+/// companion keeps its children as they are, and loses the companion when they no longer pair
+/// its two panes.
 fn normalize(node: Node) -> Node {
     let Node::V1(mut parent) = node else {
         return node;
     };
+    if parent.companion.is_some() {
+        parent.children = parent
+            .children
+            .into_iter()
+            .map(|branch| Branch {
+                weight: branch.weight,
+                node: normalize(branch.node),
+            })
+            .collect();
+        if keeps_companion(&parent) {
+            return Node::V1(parent);
+        }
+        parent.companion = None;
+        return normalize(Node::V1(parent));
+    }
     let mut children = Vec::new();
     for branch in parent.children {
         match normalize(branch.node) {
@@ -178,8 +314,11 @@ fn normalize(node: Node) -> Node {
 
 /// `anchor` with a new pane placed beside it (to its right for `Axis::Horizontal`, below it
 /// for `Axis::Vertical`), the two sharing the room the anchor had. `None` when `anchor` is not
-/// in the tree.
+/// in the tree or the new pane is.
 pub fn split_pane(tree: &Node, anchor: &str, new: &Pane, axis: Axis) -> Option<Node> {
+    if contains(tree, &new.pane_id) {
+        return None;
+    }
     fn replace(node: &Node, anchor: &str, new: &Node, axis: &Axis) -> Option<Node> {
         match node {
             Node::V0(leaf) if leaf.pane_id == anchor => {
@@ -233,24 +372,40 @@ pub fn minimum_width(node: &Node, floor: f32, gap: f32) -> f32 {
 
 /// Where pane `pane_id` sits across the width `minimum_width` asks for: its left edge and its
 /// width. When a tree needs more room than the window has, every pane is drawn at exactly this
-/// size, so it says how far to scroll to bring the pane into view.
+/// size, so it says how far to scroll to bring the pane into view. A pane stacked in a column
+/// is as wide as the column, as on the Mac.
 pub fn pane_span(node: &Node, pane_id: &str, floor: f32, gap: f32) -> Option<(f32, f32)> {
+    span_in(
+        node,
+        pane_id,
+        floor,
+        gap,
+        0.0,
+        minimum_width(node, floor, gap),
+    )
+}
+
+fn span_in(
+    node: &Node,
+    pane_id: &str,
+    floor: f32,
+    gap: f32,
+    left: f32,
+    width: f32,
+) -> Option<(f32, f32)> {
     match node {
-        Node::V0(leaf) => (leaf.pane_id == pane_id).then_some((0.0, floor)),
+        Node::V0(leaf) => (leaf.pane_id == pane_id).then_some((left, width)),
         Node::V1(split) => {
-            let mut offset = 0.0;
-            for branch in &split.children {
-                if let Some((start, width)) = pane_span(&branch.node, pane_id, floor, gap) {
-                    return Some(match split.axis {
-                        Axis::Horizontal => (offset + start, width),
-                        Axis::Vertical => (start, width),
-                    });
+            let mut offset = left;
+            split.children.iter().find_map(|branch| match split.axis {
+                Axis::Horizontal => {
+                    let own = minimum_width(&branch.node, floor, gap);
+                    let found = span_in(&branch.node, pane_id, floor, gap, offset, own);
+                    offset += own + gap;
+                    found
                 }
-                if split.axis == Axis::Horizontal {
-                    offset += minimum_width(&branch.node, floor, gap) + gap;
-                }
-            }
-            None
+                Axis::Vertical => span_in(&branch.node, pane_id, floor, gap, left, width),
+            })
         }
     }
 }
@@ -281,6 +436,9 @@ pub fn pane_ids(node: &Node) -> Vec<&str> {
 }
 
 #[cfg(test)]
+mod vectors;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::testing::pane;
@@ -292,6 +450,19 @@ mod tests {
 
     fn refs(panes: &[Pane]) -> Vec<&Pane> {
         panes.iter().collect()
+    }
+
+    fn resolve(layout: &Value, panes: &[&Pane]) -> Option<Node> {
+        super::resolve(layout, panes, &Sizing::default())
+    }
+
+    /// The panes in a row, as the Mac's stored layout of a person's own arrangement has them.
+    fn row(ids: &[&str]) -> Node {
+        let children: Vec<Value> = ids
+            .iter()
+            .map(|id| json!({"weight": 1.0, "node": leaf_json(id)}))
+            .collect();
+        serde_json::from_value(json!({"axis": "horizontal", "children": children})).unwrap()
     }
 
     fn stored(tree: Value) -> Value {
@@ -320,15 +491,15 @@ mod tests {
     }
 
     #[test]
-    fn without_a_stored_tree_panes_tile_in_the_squarest_grid() {
+    fn without_a_stored_tree_terminals_stack_in_one_column() {
         let panes = panes(&["a", "b", "c", "d", "e"]);
         let tree = resolve(&json!({}), &refs(&panes)).unwrap();
         assert_eq!(pane_ids(&tree), ["a", "b", "c", "d", "e"]);
-        let Node::V1(rows) = tree else {
-            panic!("five panes need rows")
+        let Node::V1(column) = tree else {
+            panic!("five panes need a split")
         };
-        assert_eq!(rows.axis, Axis::Vertical);
-        assert_eq!(rows.children.len(), 2);
+        assert_eq!(column.axis, Axis::Vertical);
+        assert_eq!(column.children.len(), 5);
         let one = panes[..1].iter().collect::<Vec<_>>();
         assert!(matches!(resolve(&json!({}), &one), Some(Node::V0(_))));
     }
@@ -357,7 +528,21 @@ mod tests {
     }
 
     #[test]
-    fn a_leaf_of_the_wrong_kind_counts_as_gone() {
+    fn a_leaf_of_the_wrong_kind_discards_the_stored_tree() {
+        let live = vec![pane("a", "w", "agent"), pane("b", "w", "terminal")];
+        let layout = stored(json!({"axis": "horizontal", "children": [
+            {"weight": 3.0, "node": leaf_json("a")}, {"weight": 1.0, "node": leaf_json("b")}
+        ]}));
+        let tree = resolve(&layout, &refs(&live)).unwrap();
+        assert_eq!(pane_ids(&tree), ["a", "b"]);
+        let Node::V1(root) = tree else {
+            panic!("two panes tile")
+        };
+        assert_eq!(root.children[0].weight, 1.0);
+    }
+
+    #[test]
+    fn a_single_pane_of_the_wrong_kind_is_drawn_by_its_real_kind() {
         let live = vec![pane("a", "w", "agent")];
         let layout = stored(leaf_json("a"));
         let tree = resolve(&layout, &refs(&live)).unwrap();
@@ -369,8 +554,7 @@ mod tests {
 
     #[test]
     fn splitting_places_the_new_pane_beside_the_anchor() {
-        let panes = panes(&["a", "b"]);
-        let tree = resolve(&json!({}), &refs(&panes)).unwrap();
+        let tree = row(&["a", "b"]);
         let fresh = pane("n", "w", "terminal");
         let tree = split_pane(&tree, "a", &fresh, Axis::Vertical).unwrap();
         assert_eq!(pane_ids(&tree), ["a", "n", "b"]);
@@ -384,8 +568,7 @@ mod tests {
 
     #[test]
     fn splitting_along_the_parent_axis_flattens_and_shares_the_weight() {
-        let panes = panes(&["a", "b"]);
-        let tree = resolve(&json!({}), &refs(&panes)).unwrap();
+        let tree = row(&["a", "b"]);
         let fresh = pane("n", "w", "terminal");
         let Some(Node::V1(root)) = split_pane(&tree, "a", &fresh, Axis::Horizontal) else {
             panic!("expected a split")
