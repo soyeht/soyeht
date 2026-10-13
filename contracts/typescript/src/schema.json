@@ -14334,5 +14334,48 @@
     "harness_switch_failed": -32035,
     "attachment_limit_exceeded": -32036,
     "platform_unsupported": -32037
+  },
+  "x-clientPolicy": {
+    "timeouts": {
+      "requestTimeoutMs": 12000,
+      "greetingTimeoutMs": 5000,
+      "reconnectDelayMs": 1000
+    },
+    "terminal": {
+      "inputChunkBytes": 16384
+    },
+    "usageBand": {
+      "warningFrom": 0.5,
+      "dangerAbove": 0.8
+    },
+    "contextBand": {
+      "warningAbove": 0.75,
+      "dangerAbove": 0.9
+    },
+    "usageRing": {
+      "lastKnownArcOpacity": 0.45,
+      "unavailableOpacity": 0.46
+    },
+    "usageWindow": {
+      "weeklyKeyword": "week"
+    },
+    "usageProviderNames": {
+      "claude": "Claude",
+      "codex": "Codex",
+      "cursor": "Cursor"
+    },
+    "configRoles": {
+      "model": {
+        "category": "model"
+      },
+      "effort": {
+        "category": "thought_level",
+        "legacyId": "effort"
+      },
+      "permission": {
+        "category": "mode",
+        "legacyId": "mode"
+      }
+    }
   }
 }

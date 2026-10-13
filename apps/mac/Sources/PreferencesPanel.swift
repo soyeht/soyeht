@@ -627,7 +627,7 @@ private struct HarnessPreferenceRow: View {
   }
 
   private var modelLabel: String {
-    if let option = options.first(where: { $0.category == "model" }),
+    if let option = options.first(where: \.isModel),
       case .v0(let value) = option.currentValue
     {
       return option.options.first(where: { $0.value == value })?.name ?? value
@@ -637,9 +637,7 @@ private struct HarnessPreferenceRow: View {
 
   private var effortLabel: String {
     guard
-      let option = options.first(where: {
-        $0.category == "thought_level" || $0.id == "effort"
-      }), case .v0(let value) = option.currentValue
+      let option = options.first(where: \.isEffort), case .v0(let value) = option.currentValue
     else { return "Default effort" }
     return option.options.first(where: { $0.value == value })?.name ?? value.capitalized
   }

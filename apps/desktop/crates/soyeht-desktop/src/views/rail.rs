@@ -31,7 +31,7 @@ impl Workbench {
             .to_vec()
             .into_iter()
             .map(|reading| {
-                let name = soyeht_client::usage::display_name(&reading.provider);
+                let name = reading.provider.display_name();
                 let provider = reading.provider.clone();
                 div()
                     .id(id("usage", name))

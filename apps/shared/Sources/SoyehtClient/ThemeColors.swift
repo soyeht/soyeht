@@ -74,7 +74,7 @@ public struct SoyehtThemeColorSet {
 @MainActor public enum SoyehtThemeColors {
   public static var palette: SoyehtThemePalette { SoyehtThemeStore.shared.activeTheme.palette }
 
-  private static var active: SoyehtThemeColorSet { SoyehtThemeColorSet(palette: palette) }
+  public static var active: SoyehtThemeColorSet { SoyehtThemeColorSet(palette: palette) }
 
   public static var canvas: Color { active.canvas }
   public static var face: Color { active.face }

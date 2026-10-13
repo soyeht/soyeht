@@ -4,7 +4,7 @@
 use crate::attachments::Upload;
 use crate::{Error, Result, transport::Closer};
 use serde_json::{Value, json};
-use soyeht_protocol::{Request, attachment::attachment_frames, frame::write_json};
+use soyeht_protocol::{Request, attachment::attachment_frames, client_policy, frame::write_json};
 use std::{
     collections::HashMap,
     io::Write,
@@ -16,8 +16,8 @@ use std::{
     time::Duration,
 };
 
-/// How long a request may wait for its answer, as on the Mac client.
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
+/// How long a request may wait for its answer: the contract's, as on the Mac client.
+const REQUEST_TIMEOUT: Duration = Duration::from_millis(client_policy::REQUEST_TIMEOUT_MS);
 
 /// What the reader must do besides delivering a successful result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

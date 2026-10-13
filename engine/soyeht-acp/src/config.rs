@@ -12,7 +12,7 @@ pub enum Route {
     Client,
 }
 
-pub use soyeht_protocol::modes::MODE_CATEGORY;
+pub use soyeht_protocol::client_policy::PERMISSION_MODE_CATEGORY;
 /// Mode kind for presets that approve everything without asking.
 pub const FULL_ACCESS_KIND: &str = "full_access";
 /// Adapters that predate `_meta.kind` still name their full-access presets.
@@ -170,10 +170,10 @@ impl Options {
                 .as_array()
                 .ok_or(Error::MissingSessionModes)?;
             let choices: Result<Vec<_>,Error> = available.iter().map(|mode| Ok(json!({"value":text(mode,"id")?,"name":text(mode,"name")?,"description":mode.get("description"),"_meta":mode.get("_meta")}))).collect();
-            result.values.push(option(&json!({"id":MODE_CATEGORY,"name":"Mode","category":MODE_CATEGORY,"type":"select","currentValue":text(modes,"currentModeId")?,"options":choices?}))?);
+            result.values.push(option(&json!({"id":PERMISSION_MODE_CATEGORY,"name":"Mode","category":PERMISSION_MODE_CATEGORY,"type":"select","currentValue":text(modes,"currentModeId")?,"options":choices?}))?);
             result
                 .routes
-                .insert(MODE_CATEGORY.into(), Route::SessionMode);
+                .insert(PERMISSION_MODE_CATEGORY.into(), Route::SessionMode);
         }
         result.check_size()?;
         Ok(result)
@@ -449,7 +449,7 @@ mod tests {
                 id: "mode".into(),
                 name: "Mode".into(),
                 description: None,
-                category: Some(MODE_CATEGORY.into()),
+                category: Some(PERMISSION_MODE_CATEGORY.into()),
                 r#type: ConfigType::Select,
                 current_value: ConfigValue::V0("ask".into()),
                 options: vec![

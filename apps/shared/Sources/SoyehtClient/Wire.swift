@@ -81,7 +81,7 @@ final class Wire {
 
   func open() async throws {
     greetingDeadline = Task { [weak self] in
-      do { try await Task.sleep(for: .seconds(5)) } catch { return }
+      do { try await Task.sleep(for: greetingTimeout) } catch { return }
       self?.close()
     }
     if let webSocket {

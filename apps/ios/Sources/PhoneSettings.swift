@@ -144,30 +144,26 @@ private struct PhoneUsageRing: View {
 private struct PhoneUsageDetail: View {
   let reading: UsageReading
 
+  private var model: UsageDetailModel { UsageDetailModel(reading, onThisMac: false) }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       HStack(spacing: 10) {
         ProviderGlyph(reading.provider).frame(width: 22, height: 22)
-        Text(reading.provider.displayName).font(.headline)
+        Text(model.providerName).font(.headline)
         Spacer()
-        Circle().fill(statusColor).frame(width: 9, height: 9)
+        Circle().fill(model.statusColor(in: SoyehtThemeColors.active)).frame(width: 9, height: 9)
       }
-      if reading.state == .login_needed {
-        stateMessage("Sign in in your terminal.", icon: "person.crop.circle.badge.exclamationmark")
-      } else if reading.state == .no_access {
-        stateMessage("Allow access in Settings on your Mac.", icon: "lock")
-      } else if let primary = reading.primary {
-        PhoneUsageWindow(window: primary, stale: reading.state == .stale)
-        if let secondary = reading.secondary {
-          PhoneUsageWindow(window: secondary, stale: reading.state == .stale)
-        }
-        if let hint = UsagePresentation(reading).staleHint {
+      switch model.content {
+      case .notice(let notice):
+        stateMessage(notice)
+      case .windows(let rows, let hint):
+        ForEach(Array(rows.enumerated()), id: \.offset) { PhoneUsageWindow(row: $0.element) }
+        if let hint {
           Text(hint).font(.caption2).foregroundStyle(PhonePalette.secondary)
         }
-      } else {
-        stateMessage(stateLabel, icon: "exclamationmark.circle")
       }
-      Text("Source: \(reading.source.displayName) · \(UsageTimeText.age(of: reading))")
+      Text(model.footer)
         .font(.caption2)
         .foregroundStyle(PhonePalette.secondary)
     }
@@ -177,51 +173,30 @@ private struct PhoneUsageDetail: View {
     .accessibilityIdentifier("usage-detail-\(reading.provider.rawValue)")
   }
 
-  private func stateMessage(_ message: String, icon: String) -> some View {
-    Label(message, systemImage: icon)
+  private func stateMessage(_ notice: UsageDetailModel.Notice) -> some View {
+    Label(notice.message, systemImage: notice.symbol)
       .font(.subheadline.weight(.semibold))
       .foregroundStyle(PhonePalette.secondary)
       .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
   }
-
-  private var stateLabel: String {
-    switch reading.state {
-    case .ok: "No reading yet."
-    case .stale: "Last reading is stale."
-    case .login_needed: "Sign in in your terminal."
-    case .no_access: "Allow access in Settings on your Mac."
-    case .unavailable: UsagePresentation(reading).unavailableMessage
-    }
-  }
-
-  private var statusColor: Color {
-    switch reading.state {
-    case .ok: PhonePalette.success
-    case .stale: PhonePalette.warning
-    case .login_needed, .no_access, .unavailable: PhonePalette.secondary
-    }
-  }
 }
 
 private struct PhoneUsageWindow: View {
-  let window: UsageWindow
-  let stale: Bool
+  let row: UsageDetailModel.Row
 
   var body: some View {
     VStack(alignment: .leading, spacing: 7) {
       HStack {
-        Text(window.label).font(.subheadline.weight(.semibold))
+        Text(row.label).font(.subheadline.weight(.semibold))
         Spacer()
-        Text("\(Int((fraction * 100).rounded()))%").font(.caption.bold())
+        Text(row.percentage).font(.caption.bold())
       }
-      ProgressView(value: fraction)
-        .tint(UsageBand(usedFraction: fraction).color)
-        .opacity(stale ? UsageEmphasis.lastKnown.arcOpacity : 1)
-      Text(UsageTimeText.reset(window.resetsAt))
+      ProgressView(value: row.fraction)
+        .tint(row.band.color)
+        .opacity(row.barOpacity)
+      Text(row.reset)
         .font(.caption2)
         .foregroundStyle(PhonePalette.secondary)
     }
   }
-
-  private var fraction: Double { min(max(window.used, 0), 1) }
 }

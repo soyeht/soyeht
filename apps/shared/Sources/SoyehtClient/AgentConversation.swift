@@ -367,10 +367,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
   }
 
   private func configIcon(_ option: ConfigOption) -> String {
-    switch option.category ?? option.id {
-    case "model": "cpu"
-    case "thought_level": "brain"
-    default: "slider.horizontal.3"
-    }
+    if option.isModel { return "cpu" }
+    return option.isEffort ? "brain" : "slider.horizontal.3"
   }
 }

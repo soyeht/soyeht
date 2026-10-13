@@ -89,9 +89,7 @@ impl Workbench {
         let options: &[ConfigOption] = catalogue.map_or(harness.options.as_slice(), |catalogue| {
             catalogue.options.as_slice()
         });
-        let modes = options
-            .iter()
-            .find(|option| option.category.as_deref() == Some("mode") || option.id == "mode");
+        let modes = options.iter().find(|option| option.is_permission_mode());
         let mode_label = modes
             .and_then(|option| {
                 option
@@ -365,7 +363,7 @@ fn identity(
 fn model_label(options: &[ConfigOption], catalogue: Option<&Catalogue>) -> String {
     options
         .iter()
-        .find(|option| option.category.as_deref() == Some("model"))
+        .find(|option| option.is_model())
         .and_then(current_choice)
         .or_else(|| {
             catalogue

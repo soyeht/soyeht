@@ -445,10 +445,6 @@ pub struct Controls {
     pub busy: bool,
 }
 
-fn category(option: &ConfigOption) -> &str {
-    option.category.as_deref().unwrap_or(&option.id)
-}
-
 impl Controls {
     /// `harness_name` is the display name of the pane's harness, when the catalogue has it.
     pub fn new(
@@ -465,12 +461,9 @@ impl Controls {
         let running = is_running(&pane.state);
         let harness = harness_name.unwrap_or(&agent.harness).to_owned();
         Some(Self {
-            model: find(&|option| category(option) == "model").and_then(Menu::new),
-            effort: find(&|option| category(option) == "thought_level").and_then(Menu::new),
-            permission: find(&|option| {
-                option.category.as_deref() == Some("mode") || option.id == "mode"
-            })
-            .and_then(Menu::new),
+            model: find(&ConfigOption::is_model).and_then(Menu::new),
+            effort: find(&ConfigOption::is_effort).and_then(Menu::new),
+            permission: find(&ConfigOption::is_permission_mode).and_then(Menu::new),
             placeholder: if running {
                 format!("Queue a message for {harness}\u{2026}")
             } else {

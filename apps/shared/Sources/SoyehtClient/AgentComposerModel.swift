@@ -75,10 +75,10 @@ public struct AgentComposerControls: Equatable, Sendable {
     let operation = agent?.operation
     let modelNames = Dictionary(
       catalogue.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
-    model = Self.option(in: options, matching: Self.isModel).flatMap {
+    model = options.first(where: \.isModel).flatMap {
       AgentConfigMenu(option: $0, operation: operation, displayNames: modelNames)
     }
-    effort = Self.option(in: options, matching: Self.isEffort).flatMap {
+    effort = options.first(where: \.isEffort).flatMap {
       AgentConfigMenu(option: $0, operation: operation)
     }
     permission = AgentPermissionModes(options: options, operation: operation)
@@ -106,25 +106,10 @@ public struct AgentComposerControls: Equatable, Sendable {
 
   /// Options that the composer shows as menus; a host's extra configuration row skips them.
   public static func isComposerOption(_ option: ConfigOption) -> Bool {
-    option.isPermissionMode || isModel(option) || isEffort(option)
+    option.isPermissionMode || option.isModel || option.isEffort
   }
 
   static let runningStates: Set<PaneState> = [.working, .waiting_for_you, .cancelling, .no_signal]
-
-  private static func isModel(_ option: ConfigOption) -> Bool {
-    (option.category ?? option.id) == "model"
-  }
-
-  /// ACP names reasoning effort `thought_level`; the engine maps a harness's `effort` to it.
-  private static func isEffort(_ option: ConfigOption) -> Bool {
-    (option.category ?? option.id) == "thought_level"
-  }
-
-  private static func option(
-    in options: [ConfigOption], matching accept: (ConfigOption) -> Bool
-  ) -> ConfigOption? {
-    options.first(where: accept)
-  }
 
   private static func fraction(_ usage: TokenUsage) -> Double? {
     guard let used = Double(usage.totalTokens), let size = usage.contextSize,

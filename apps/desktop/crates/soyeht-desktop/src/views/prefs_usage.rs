@@ -18,7 +18,7 @@ use gpui::{
 };
 use soyeht_client::{
     timestamp,
-    usage::{self, Band, Presentation, display_name},
+    usage::{self, Band, Presentation},
 };
 use soyeht_protocol::{UsageProvider, UsageReading, UsageState, UsageWindow};
 
@@ -86,7 +86,7 @@ impl Workbench {
             .iter()
             .map(|reading| {
                 let shown = Presentation(reading);
-                let name = display_name(&reading.provider);
+                let name = reading.provider.display_name();
                 let chosen = selected == Some(&reading.provider);
                 let provider = reading.provider.clone();
                 row()
@@ -216,7 +216,7 @@ fn balloon(reading: &UsageReading, palette: &Palette) -> Div {
                         .flex_1()
                         .font_weight(FontWeight::BOLD)
                         .text_size(px(type_scale::CONTROL))
-                        .child(display_name(&reading.provider)),
+                        .child(reading.provider.display_name()),
                 )
                 .child(micro(palette, reset)),
         )

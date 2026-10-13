@@ -15,18 +15,6 @@ SWIFT_OUTPUT = "apps/shared/Sources/SoyehtClient/Generated.swift"
 RUST_OUTPUT = "apps/desktop/crates/soyeht-desktop/src/theme/generated.rs"
 
 HEX = re.compile(r"^#[0-9A-F]{6}$")
-# The order of the palettes is the order of `TerminalColorTheme`.
-PALETTE_NAMES = (
-    "milk",
-    "paleMist",
-    "mistyBlue",
-    "sunlitChartreuse",
-    "sunriseGold",
-    "deepVine",
-    "deepForest",
-    "midnightTeal",
-    "deepHarbor",
-)
 COLOR_ROLES = (
     "screen",
     "canvas",
@@ -47,6 +35,7 @@ COLOR_ROLES = (
 # exactly as `SoyehtThemePalette.make` does.
 FALLBACKS = {"syntaxType": 13, "diffAdded": 10}
 PALETTE_KEYS = set(COLOR_ROLES) | {
+    "displayName",
     "wellLip",
     "selection",
     "presentationLetterbox",
@@ -87,9 +76,13 @@ def _number(value, where):
 
 
 def validate_palette(name, palette):
+    if not re.fullmatch(r"[a-z][A-Za-z]*", name):
+        raise ValueError(f"palette {name!r} is not a lower camel case name")
     unknown = set(palette) - PALETTE_KEYS
     if unknown:
         raise ValueError(f"palette {name}: unknown keys {sorted(unknown)}")
+    if not isinstance(palette.get("displayName"), str) or not palette["displayName"]:
+        raise ValueError(f"palette {name}: displayName is required")
     for role in (*COLOR_ROLES, "selection", "presentationLetterbox"):
         _hex(palette.get(role), f"palette {name} {role}")
     if "wellLip" not in palette:
@@ -114,8 +107,8 @@ def validate_tokens(document):
         raise ValueError(f"design tokens need exactly {sorted(expected)}")
     if list(document)[-1] != DESKTOP_SECTION:
         raise ValueError("the desktop section must be the last one")
-    if tuple(document["palettes"]) != PALETTE_NAMES:
-        raise ValueError(f"palettes must be {PALETTE_NAMES} in this order")
+    if not document["palettes"]:
+        raise ValueError("at least one palette is required")
     for name, palette in document["palettes"].items():
         validate_palette(name, palette)
     for section in (*NUMERIC_SECTIONS, DESKTOP_SECTION):
@@ -173,6 +166,57 @@ def swift_wrap(items, indent):
     return "\n".join(lines)
 
 
+def theme_case(name):
+    """`milk` is the theme `neoMilk`: the name persisted in the Mac's settings."""
+    return "neo" + name[:1].upper() + name[1:]
+
+
+def swift_themes(document):
+    palettes = document["palettes"]
+    cases = "\n".join(f"  case {theme_case(name)}" for name in palettes)
+    names = "\n".join(
+        f"    case .{theme_case(name)}: {json.dumps(p['displayName'], ensure_ascii=False)}"
+        for name, p in palettes.items()
+    )
+    mapping = "\n".join(f"    case .{theme_case(name)}: .{name}" for name in palettes)
+    return (
+        "/// The reviewed themes, in the order of `palettes` in the token file. The first one is\n"
+        "/// the seeded default.\n"
+        "public enum TerminalColorTheme: String, CaseIterable, Codable, Sendable {\n"
+        f"{cases}\n\n"
+        f"  public static let seededDefault = TerminalColorTheme.{theme_case(next(iter(palettes)))}\n\n"
+        f"  public var displayName: String {{\n    switch self {{\n{names}\n    }}\n  }}\n\n"
+        f"  public var palette: SoyehtThemePalette {{\n    switch self {{\n{mapping}\n    }}\n  }}\n"
+        "}\n"
+    )
+
+
+def rust_themes(document):
+    palettes = document["palettes"]
+    variants = [theme_case(name)[:1].upper() + theme_case(name)[1:] for name in palettes]
+    cases = "\n".join(f"{v}," for v in variants)
+    listed = ", ".join(f"Self::{v}" for v in variants)
+    palette_arms = "\n".join(
+        f"Self::{v} => &{snake(name).upper()}," for v, name in zip(variants, palettes)
+    )
+    name_arms = "\n".join(
+        f"Self::{v} => {json.dumps(p['displayName'], ensure_ascii=False)},"
+        for v, p in zip(variants, palettes.values())
+    )
+    return (
+        "/// The reviewed themes, in the order of `palettes` in the token file. The first one is the\n"
+        "/// seeded default.\n"
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n"
+        f"pub enum ThemeName {{\n{cases}\n}}\n\n"
+        "impl ThemeName {\n"
+        f"pub const ALL: [Self; {len(variants)}] = [{listed}];\n"
+        "pub const DEFAULT: Self = Self::ALL[0];\n\n"
+        f"pub fn palette(self) -> &'static Palette {{\nmatch self {{\n{palette_arms}\n}}\n}}\n\n"
+        f"pub fn display_name(self) -> &'static str {{\nmatch self {{\n{name_arms}\n}}\n}}\n"
+        "}"
+    )
+
+
 def swift_palette(name, palette):
     lip = palette["wellLip"]
     lip_text = "nil" if lip is None else json.dumps(lip)
@@ -213,6 +257,7 @@ def render_swift(document, header):
         elevations.append(line)
     return (
         f"{header}\nimport CoreGraphics\n\n"
+        f"{swift_themes(document)}\n"
         f"extension SoyehtThemePalette {{\n{palettes}\n}}\n\n"
         "/// The design tokens of `contracts/design-tokens.json`: the one source of the Mac and the\n"
         "/// desktop clients' radii, spacing, type scale, shadows and layout metrics.\n"
@@ -281,7 +326,7 @@ def render_rust(document, header):
         + "\n}"
     )
     source = (
-        f"{header}\nuse super::Palette;\n\n{palettes}\n{modules}\n{elevation}\n"
+        f"{header}\nuse super::Palette;\n\n{rust_themes(document)}\n{palettes}\n{modules}\n{elevation}\n"
         f"pub mod fonts {{\n{fonts}\n}}\n"
     )
     return subprocess.run(

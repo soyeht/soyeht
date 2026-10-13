@@ -26,7 +26,7 @@ use soyeht_client::{
     harness_picker,
     switch::{self, Phase},
 };
-use soyeht_protocol::Pane;
+use soyeht_protocol::{Pane, client_policy};
 
 impl Workbench {
     pub(super) fn composer(
@@ -534,9 +534,9 @@ fn separator(palette: &Palette) -> AnyElement {
 /// The context ring and its percentage; empty until the harness reports its context use.
 fn context_gauge(controls: &Controls, palette: &Palette) -> AnyElement {
     let used = controls.context.unwrap_or(0.0);
-    let color = if used > 0.9 {
+    let color = if used > client_policy::CONTEXT_BAND_DANGER_ABOVE {
         palette.danger()
-    } else if used > 0.75 {
+    } else if used > client_policy::CONTEXT_BAND_WARNING_ABOVE {
         palette.warning()
     } else {
         palette.secondary

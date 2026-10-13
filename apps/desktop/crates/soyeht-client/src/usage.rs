@@ -1,29 +1,31 @@
 //! How a provider's usage reading is shown on the rail: the window the ring follows, its
-//! colour band and the percentage under it. The thresholds are the ones of contract 10, as on
-//! the Mac and the iPhone.
+//! colour band and the percentage under it. The thresholds, opacities and the weekly rule come
+//! from `x-clientPolicy` (contract 10), the Mac's and the iPhone's source too; the cases in
+//! `contracts/vectors/usage.json` check both implementations.
 
 use crate::timestamp;
 use soyeht_protocol::{
     UsageProvider, UsageReading, UsageSource, UsageState, UsageUnavailableReason, UsageWindow,
+    client_policy,
 };
 
 /// The colour band of a used fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Band {
-    /// Below 50 %.
+    /// Below the warning threshold.
     Success,
-    /// From 50 % to 80 %, both included.
+    /// From the warning threshold to the danger one, both included.
     Warning,
-    /// Above 80 %.
+    /// Above the danger threshold.
     Danger,
 }
 
 impl Band {
     pub fn of(used: f64) -> Self {
         let used = used.clamp(0.0, 1.0);
-        if used < 0.5 {
+        if used < client_policy::USAGE_BAND_WARNING_FROM {
             Self::Success
-        } else if used <= 0.8 {
+        } else if used <= client_policy::USAGE_BAND_DANGER_ABOVE {
             Self::Warning
         } else {
             Self::Danger
@@ -46,13 +48,17 @@ impl Emphasis {
     pub fn arc_opacity(self) -> f32 {
         match self {
             Self::Current => 1.0,
-            Self::LastKnown => 0.45,
+            Self::LastKnown => client_policy::USAGE_RING_LAST_KNOWN_ARC_OPACITY as f32,
             Self::None => 0.0,
         }
     }
 
     pub fn ring_opacity(self) -> f32 {
-        if self == Self::None { 0.46 } else { 1.0 }
+        if self == Self::None {
+            client_policy::USAGE_RING_UNAVAILABLE_OPACITY as f32
+        } else {
+            1.0
+        }
     }
 }
 
@@ -68,7 +74,12 @@ impl Presentation<'_> {
             UsageProvider::Claude | UsageProvider::Codex => [&reading.primary, &reading.secondary]
                 .into_iter()
                 .flatten()
-                .find(|window| window.label.to_lowercase().contains("week"))
+                .find(|window| {
+                    window
+                        .label
+                        .to_lowercase()
+                        .contains(client_policy::USAGE_WINDOW_WEEKLY_KEYWORD)
+                })
                 .or(reading.secondary.as_ref())
                 .or(reading.primary.as_ref()),
         }
@@ -111,7 +122,7 @@ impl Presentation<'_> {
     }
 
     fn reason_message(&self) -> Option<String> {
-        let provider = display_name(&self.0.provider);
+        let provider = self.0.provider.display_name();
         Some(match self.0.unavailable_reason.as_ref()? {
             UsageUnavailableReason::NotChecked => "Usage has not been checked yet.".to_owned(),
             UsageUnavailableReason::ToolNotFound => format!("{provider} not found on this Mac."),
@@ -140,14 +151,6 @@ impl Presentation<'_> {
             || "\u{2014}".to_owned(),
             |f| format!("{}%", (f * 100.0).round()),
         )
-    }
-}
-
-pub fn display_name(provider: &UsageProvider) -> &'static str {
-    match provider {
-        UsageProvider::Claude => "Claude",
-        UsageProvider::Codex => "Codex",
-        UsageProvider::Cursor => "Cursor",
     }
 }
 
@@ -221,6 +224,7 @@ pub fn age_text(reading: &UsageReading, now: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::cases;
     use serde_json::json;
 
     fn reading(provider: &str, state: &str, windows: &[(&str, f64)]) -> UsageReading {
@@ -231,6 +235,14 @@ mod tests {
             "primary": windows.first().map(window), "secondary": windows.get(1).map(window)
         }))
         .unwrap()
+    }
+
+    fn band_name(band: Band) -> &'static str {
+        match band {
+            Band::Success => "success",
+            Band::Warning => "warning",
+            Band::Danger => "danger",
+        }
     }
 
     fn vectors() -> serde_json::Value {
@@ -300,42 +312,29 @@ mod tests {
     }
 
     #[test]
-    fn the_bands_split_at_half_and_four_fifths() {
-        assert_eq!(Band::of(0.49), Band::Success);
-        assert_eq!(Band::of(0.5), Band::Warning);
-        assert_eq!(Band::of(0.8), Band::Warning);
-        assert_eq!(Band::of(0.81), Band::Danger);
+    fn the_bands_split_where_the_vector_says() {
+        for case in cases("usage", "bands") {
+            let used = case["used"].as_f64().unwrap();
+            assert_eq!(band_name(Band::of(used)), case["band"], "{used}");
+        }
     }
 
     #[test]
-    fn claude_and_codex_follow_the_weekly_window() {
-        let claude = reading("claude", "ok", &[("5-hour", 0.9), ("Weekly", 0.08)]);
-        let shown = Presentation(&claude);
-        assert_eq!(shown.percentage(), "8%");
-        assert_eq!(shown.band(), Some(Band::Success));
-        assert_eq!(shown.emphasis(), Emphasis::Current);
-    }
-
-    #[test]
-    fn cursor_follows_its_only_window() {
-        let cursor = reading("cursor", "ok", &[("Month", 0.55)]);
-        assert_eq!(Presentation(&cursor).percentage(), "55%");
-    }
-
-    #[test]
-    fn a_stale_reading_keeps_its_percentage_and_mutes_the_arc() {
-        let stale = reading("codex", "stale", &[("Weekly", 0.07)]);
-        let shown = Presentation(&stale);
-        assert_eq!(shown.percentage(), "7%");
-        assert_eq!(shown.emphasis(), Emphasis::LastKnown);
-    }
-
-    #[test]
-    fn no_reading_shows_a_dash_and_a_dimmed_ring() {
-        let lost = reading("claude", "login_needed", &[]);
-        let shown = Presentation(&lost);
-        assert_eq!(shown.percentage(), "\u{2014}");
-        assert_eq!(shown.emphasis(), Emphasis::None);
-        assert!(shown.emphasis().ring_opacity() < 1.0);
+    fn the_opacities_are_the_vectors() {
+        for case in cases("usage", "emphasis") {
+            let emphasis = match case["emphasis"].as_str().unwrap() {
+                "current" => Emphasis::Current,
+                "last_known" => Emphasis::LastKnown,
+                _ => Emphasis::None,
+            };
+            assert_eq!(
+                emphasis.arc_opacity(),
+                case["arcOpacity"].as_f64().unwrap() as f32
+            );
+            assert_eq!(
+                emphasis.ring_opacity(),
+                case["ringOpacity"].as_f64().unwrap() as f32
+            );
+        }
     }
 }

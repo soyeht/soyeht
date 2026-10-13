@@ -1,8 +1,10 @@
+import SoyehtProtocol
+
 /// How long the client waits before it connects to the engine again. A refusal that repeats
 /// is not retried every second forever: the wait doubles up to a ceiling, and a connection
 /// that was established starts it over.
 struct ReconnectBackoff: Equatable, Sendable {
-  static let first: Duration = .seconds(1)
+  static let first: Duration = .milliseconds(ClientPolicy.reconnectDelayMs)
   static let ceiling: Duration = .seconds(30)
 
   private var delay = Self.first

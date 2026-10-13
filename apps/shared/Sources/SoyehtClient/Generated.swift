@@ -1,5 +1,49 @@
-// Generated from contracts/design-tokens.json (sha256 b89a2ce5a535f07989cb59b4be1f1ef103de22cdc597e0ee50bc8d741c771c9c). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 e5c5880fff1aebfadfb9d2868cc7223d7e870cb6eda6b1a580d059a2f40ae4f0). Do not edit.
 import CoreGraphics
+
+/// The reviewed themes, in the order of `palettes` in the token file. The first one is
+/// the seeded default.
+public enum TerminalColorTheme: String, CaseIterable, Codable, Sendable {
+  case neoMilk
+  case neoPaleMist
+  case neoMistyBlue
+  case neoSunlitChartreuse
+  case neoSunriseGold
+  case neoDeepVine
+  case neoDeepForest
+  case neoMidnightTeal
+  case neoDeepHarbor
+
+  public static let seededDefault = TerminalColorTheme.neoMilk
+
+  public var displayName: String {
+    switch self {
+    case .neoMilk: "Neo · Milk"
+    case .neoPaleMist: "Neo · Pale Mist"
+    case .neoMistyBlue: "Neo · Misty Blue"
+    case .neoSunlitChartreuse: "Neo · Sunlit Chartreuse"
+    case .neoSunriseGold: "Neo · Sunrise Gold"
+    case .neoDeepVine: "Neo · Deep Vine"
+    case .neoDeepForest: "Neo · Deep Forest"
+    case .neoMidnightTeal: "Neo · Midnight Teal"
+    case .neoDeepHarbor: "Neo · Deep Harbor"
+    }
+  }
+
+  public var palette: SoyehtThemePalette {
+    switch self {
+    case .neoMilk: .milk
+    case .neoPaleMist: .paleMist
+    case .neoMistyBlue: .mistyBlue
+    case .neoSunlitChartreuse: .sunlitChartreuse
+    case .neoSunriseGold: .sunriseGold
+    case .neoDeepVine: .deepVine
+    case .neoDeepForest: .deepForest
+    case .neoMidnightTeal: .midnightTeal
+    case .neoDeepHarbor: .deepHarbor
+    }
+  }
+}
 
 extension SoyehtThemePalette {
   static let milk = make(

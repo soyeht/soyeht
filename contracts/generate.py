@@ -8,6 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from client_policy import render_client_policy
 from design_tokens import TOKENS_PATH, render_tokens
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -519,6 +520,7 @@ def render(schema, digest):
     outputs["engine/soyeht-protocol/src/limits.rs"] = constants
     outputs["contracts/typescript/src/limits.ts"] = header + "export const limits = " + json.dumps(schema["x-limits"], indent=2) + " as const;\n"
     outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
+    outputs.update(render_client_policy(schema, header))
     # Round-trip executables dispatch through every named schema, not through untyped JSON.
     swift_cases = []
     rust_cases = []

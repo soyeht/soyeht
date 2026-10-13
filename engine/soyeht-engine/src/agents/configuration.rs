@@ -7,7 +7,7 @@ use crate::{
     errors::{self, Result},
 };
 use serde_json::json;
-use soyeht_acp::config::{FULL_ACCESS_KIND, MODE_CATEGORY, Options, Route};
+use soyeht_acp::config::{FULL_ACCESS_KIND, Options, PERMISSION_MODE_CATEGORY, Route};
 use soyeht_protocol::{
     ConfigChoice, ConfigOperation, ConfigOption, ConfigType, ConfigValue, Role, TranscriptKind,
     TranscriptRole, event,
@@ -50,10 +50,10 @@ fn client_modes(current: Option<&str>) -> ConfigOption {
         .filter(|value| options.iter().any(|choice| choice.value == *value))
         .unwrap_or(ASK);
     ConfigOption {
-        id: MODE_CATEGORY.into(),
+        id: PERMISSION_MODE_CATEGORY.into(),
         name: "Mode".into(),
         description: Some("Enforced by Soyeht: this agent announces no permission modes".into()),
-        category: Some(MODE_CATEGORY.into()),
+        category: Some(PERMISSION_MODE_CATEGORY.into()),
         r#type: ConfigType::Select,
         current_value: ConfigValue::V0(current.into()),
         options,

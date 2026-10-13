@@ -13,11 +13,19 @@ nor explicitly classified, and also fails when a listed name becomes unused.
 This exhaustiveness covers only `Id`-typed parameters: a future pane route
 represented as a plain string under another name must be declared separately.
 
+`x-clientPolicy` holds what the clients agree on without sending it over the wire: the request,
+greeting and reconnect timings, the terminal input chunk, the usage and context band
+thresholds, the ring opacities, the weekly-window keyword, the provider names and the
+category rule of the model, effort and permission selectors. The generator emits
+`engine/soyeht-protocol/src/client_policy.rs`, `contracts/swift/Sources/SoyehtProtocol/ClientPolicy.swift`
+and `contracts/typescript/src/clientPolicy.ts`. `vectors/usage.json` holds the cases of the
+usage presentation and the selector roles that the Mac and the desktop client both pass.
+
 `design-tokens.json` is the single source for the design tokens: the nine
 palettes (colors per role, ANSI slots, agent plates), radii, spacing, type scale,
 elevations, layout metrics, composer metrics and font families. The generator emits
-`apps/shared/Sources/SoyehtClient/Generated.swift` (the palettes and `DesignTokens`)
-and `apps/desktop/crates/soyeht-desktop/src/theme/generated.rs` (the palettes and
+`apps/shared/Sources/SoyehtClient/Generated.swift` (`TerminalColorTheme`, the palettes and `DesignTokens`)
+and `apps/desktop/crates/soyeht-desktop/src/theme/generated.rs` (`ThemeName`, the palettes and
 `f32` constants per section). Names are the JSON keys: `radius.compact` is
 `DesignTokens.Radius.compact` in Swift and `theme::radius::COMPACT` in Rust. The
 Mac values are pinned to the pre-generation ones by `test_design_tokens.py`.

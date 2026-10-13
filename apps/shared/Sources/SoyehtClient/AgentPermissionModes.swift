@@ -2,9 +2,6 @@ import Foundation
 import SoyehtProtocol
 
 extension ConfigOption {
-  /// The harness's own permission-mode selector (ADR 0070).
-  public var isPermissionMode: Bool { category == "mode" || id == "mode" }
-
   /// A selectable option's chosen value, and the one `operation` is still applying to it.
   func selection(operation: ConfigOperation?) -> (current: String?, pending: String?)? {
     guard type == .select, !options.isEmpty else { return nil }

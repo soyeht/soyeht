@@ -10,7 +10,7 @@ use gpui::{
     AnyElement, Hsla, InteractiveElement, IntoElement, ParentElement, PathBuilder, Styled, canvas,
     div, point, px, rgb,
 };
-use soyeht_client::usage::{Band, Presentation, display_name};
+use soyeht_client::usage::{Band, Presentation};
 use soyeht_protocol::UsageReading;
 
 /// The palette role of a usage band; usage never introduces a color of its own.
@@ -30,7 +30,7 @@ pub fn ring(reading: &UsageReading, palette: &Palette) -> AnyElement {
         color.a *= emphasis.arc_opacity();
         (fraction, color)
     });
-    let name = display_name(&reading.provider);
+    let name = reading.provider.display_name();
     let diameter = usage_ring::DIAMETER;
     let track = usage_ring::FACE_DIAMETER + usage_ring::TRACK_WIDTH;
     column()

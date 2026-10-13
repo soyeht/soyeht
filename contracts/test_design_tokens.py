@@ -9,7 +9,6 @@ from design_tokens import (
     DESKTOP_SECTION,
     FALLBACKS,
     NUMERIC_SECTIONS,
-    PALETTE_NAMES,
     RUST_OUTPUT,
     SWIFT_OUTPUT,
     render_tokens,
@@ -98,7 +97,8 @@ PALETTE_ROLES = (
 
 def resolved(palette):
     ansi = palette["ansi"]
-    return palette | {role: palette.get(role, ansi[slot]) for role, slot in FALLBACKS.items()}
+    colors = {key: value for key, value in palette.items() if key != "displayName"}
+    return colors | {role: palette.get(role, ansi[slot]) for role, slot in FALLBACKS.items()}
 
 
 def enum_body(source, header):
@@ -133,7 +133,7 @@ class TokenGenerationTests(unittest.TestCase):
     def test_generated_swift_palettes_read_back_as_the_json(self):
         swift = render_tokens(tokens(), TOKEN_BYTES)[SWIFT_OUTPUT]
         parsed = swift_palettes(swift)
-        self.assertEqual(tuple(parsed), PALETTE_NAMES)
+        self.assertEqual(tuple(parsed), tuple(tokens()["palettes"]))
         for name, palette in tokens()["palettes"].items():
             self.assertEqual(parsed[name], resolved(palette), name)
 
@@ -195,9 +195,12 @@ class TokenGenerationTests(unittest.TestCase):
         short_ansi = copy.deepcopy(tokens())
         short_ansi["palettes"]["milk"]["ansi"].pop()
         cases.append(short_ansi)
-        reordered = copy.deepcopy(tokens())
-        reordered["palettes"] = dict(reversed(list(reordered["palettes"].items())))
-        cases.append(reordered)
+        nameless = copy.deepcopy(tokens())
+        del nameless["palettes"]["milk"]["displayName"]
+        cases.append(nameless)
+        badly_named = copy.deepcopy(tokens())
+        badly_named["palettes"] = {"Milk Tea": badly_named["palettes"]["milk"]}
+        cases.append(badly_named)
         unknown = copy.deepcopy(tokens())
         unknown["palettes"]["milk"]["glow"] = "#FFFFFF"
         cases.append(unknown)
@@ -217,9 +220,21 @@ class MacValuesAreUnchangedTests(unittest.TestCase):
 
     def test_palettes_equal_the_pre_generation_swift_catalogue(self):
         old = swift_palettes(base_file(SHARED + "ThemePalette.swift"))
-        self.assertEqual(tuple(old), PALETTE_NAMES)
+        self.assertEqual(tuple(old), tuple(tokens()["palettes"]))
         for name, palette in tokens()["palettes"].items():
             self.assertEqual(resolved(palette), old[name], name)
+
+    def test_theme_names_and_order_equal_the_pre_generation_catalogue(self):
+        """The raw values are persisted: a rename would lose a person's chosen theme."""
+        old = base_file(SHARED + "ThemePalette.swift")
+        enum = enum_body(old, "enum TerminalColorTheme")
+        cases = re.findall(r"^\s*case (neo\w+)$", enum, re.M)
+        names = dict(re.findall(r'case \.(neo\w+): "([^"]+)"', enum))
+        document = tokens()["palettes"]
+        self.assertEqual(cases, ["neo" + n[:1].upper() + n[1:] for n in document])
+        for palette_name, palette in document.items():
+            theme = "neo" + palette_name[:1].upper() + palette_name[1:]
+            self.assertEqual(names[theme], palette["displayName"], theme)
 
     def test_numeric_tokens_equal_the_pre_generation_swift_literals(self):
         document = tokens()

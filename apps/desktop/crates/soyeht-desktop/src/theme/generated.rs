@@ -1,6 +1,63 @@
-// Generated from contracts/design-tokens.json (sha256 13e7dae72dce34b6fb6523d019a89cc63773185942ac0eeb0675f51b4938162b). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 ee8bc58735b0fb353f893e0df904adfa5d4501f20a1237a68c8d992c204c46b0). Do not edit.
 use super::Palette;
 
+/// The reviewed themes, in the order of `palettes` in the token file. The first one is the
+/// seeded default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThemeName {
+    NeoMilk,
+    NeoPaleMist,
+    NeoMistyBlue,
+    NeoSunlitChartreuse,
+    NeoSunriseGold,
+    NeoDeepVine,
+    NeoDeepForest,
+    NeoMidnightTeal,
+    NeoDeepHarbor,
+}
+
+impl ThemeName {
+    pub const ALL: [Self; 9] = [
+        Self::NeoMilk,
+        Self::NeoPaleMist,
+        Self::NeoMistyBlue,
+        Self::NeoSunlitChartreuse,
+        Self::NeoSunriseGold,
+        Self::NeoDeepVine,
+        Self::NeoDeepForest,
+        Self::NeoMidnightTeal,
+        Self::NeoDeepHarbor,
+    ];
+    pub const DEFAULT: Self = Self::ALL[0];
+
+    pub fn palette(self) -> &'static Palette {
+        match self {
+            Self::NeoMilk => &MILK,
+            Self::NeoPaleMist => &PALE_MIST,
+            Self::NeoMistyBlue => &MISTY_BLUE,
+            Self::NeoSunlitChartreuse => &SUNLIT_CHARTREUSE,
+            Self::NeoSunriseGold => &SUNRISE_GOLD,
+            Self::NeoDeepVine => &DEEP_VINE,
+            Self::NeoDeepForest => &DEEP_FOREST,
+            Self::NeoMidnightTeal => &MIDNIGHT_TEAL,
+            Self::NeoDeepHarbor => &DEEP_HARBOR,
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::NeoMilk => "Neo · Milk",
+            Self::NeoPaleMist => "Neo · Pale Mist",
+            Self::NeoMistyBlue => "Neo · Misty Blue",
+            Self::NeoSunlitChartreuse => "Neo · Sunlit Chartreuse",
+            Self::NeoSunriseGold => "Neo · Sunrise Gold",
+            Self::NeoDeepVine => "Neo · Deep Vine",
+            Self::NeoDeepForest => "Neo · Deep Forest",
+            Self::NeoMidnightTeal => "Neo · Midnight Teal",
+            Self::NeoDeepHarbor => "Neo · Deep Harbor",
+        }
+    }
+}
 pub(super) static MILK: Palette = Palette {
     screen: 0xE8EDF4,
     canvas: 0xE0E5EC,

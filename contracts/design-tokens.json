@@ -1,6 +1,7 @@
 {
   "palettes": {
     "milk": {
+      "displayName": "Neo · Milk",
       "screen": "#E8EDF4",
       "canvas": "#E0E5EC",
       "face": "#E8EDF4",
@@ -24,6 +25,7 @@
       "diffAdded": "#3F9C6A"
     },
     "paleMist": {
+      "displayName": "Neo · Pale Mist",
       "screen": "#C0C8CA",
       "canvas": "#B8C0C2",
       "face": "#C0C8CA",
@@ -45,6 +47,7 @@
       "ansi": ["#1F2F33", "#CE2E48", "#257C5C", "#8B6823", "#286CCD", "#8952C8", "#257887", "#4B6268", "#5E8089", "#D71B3D", "#2B7B5E", "#946412", "#0E68E2", "#7E42FF", "#267885", "#25363B"]
     },
     "mistyBlue": {
+      "displayName": "Neo · Misty Blue",
       "screen": "#83A7B4",
       "canvas": "#7B9FAC",
       "face": "#83A7B4",
@@ -66,6 +69,7 @@
       "ansi": ["#1F2E33", "#9C2336", "#1C5D46", "#694E1A", "#1E519B", "#6B35A8", "#1C5A66", "#37464C", "#4A626B", "#A3142F", "#205C47", "#6F4C0E", "#0A4FAA", "#4E00FB", "#1D5A64", "#0C1012"]
     },
     "sunlitChartreuse": {
+      "displayName": "Neo · Sunlit Chartreuse",
       "screen": "#DCD870",
       "canvas": "#D2CE67",
       "face": "#DCD870",
@@ -87,6 +91,7 @@
       "ansi": ["#33321F", "#D44158", "#288664", "#977026", "#3275D7", "#915ECC", "#298192", "#6A684C", "#88865E", "#E4274A", "#2E8566", "#A06D14", "#1271F1", "#854DFF", "#298290", "#3E3D28"]
     },
     "sunriseGold": {
+      "displayName": "Neo · Sunrise Gold",
       "screen": "#EDB964",
       "canvas": "#E4B15C",
       "face": "#EDB964",
@@ -108,6 +113,7 @@
       "ansi": ["#332B1F", "#C72D45", "#247859", "#876422", "#2768C7", "#864DC7", "#247484", "#645948", "#84755B", "#D01A3B", "#29775B", "#906112", "#0D65DB", "#793CFF", "#257481", "#362E22"]
     },
     "deepVine": {
+      "displayName": "Neo · Deep Vine",
       "screen": "#3B3D26",
       "canvas": "#32341E",
       "face": "#3B3D26",
@@ -129,6 +135,7 @@
       "ansi": ["#1D1E12", "#EF4747", "#00D9A3", "#F59E0B", "#7573FF", "#EA00E9", "#00A5B2", "#BFC0AE", "#A1A38C", "#EF4747", "#00D9A3", "#FFAA00", "#7673FF", "#EA00E9", "#00E5E5", "#F1F2E9"]
     },
     "deepForest": {
+      "displayName": "Neo · Deep Forest",
       "screen": "#223D22",
       "canvas": "#1A341B",
       "face": "#223D22",
@@ -150,6 +157,7 @@
       "ansi": ["#101C10", "#EF4444", "#00D9A3", "#F59E0B", "#6F6DFF", "#E100E0", "#00A5B2", "#AEC0AE", "#8CA38C", "#EF4444", "#00D9A3", "#FFAA00", "#706CFF", "#E500E5", "#00E5E5", "#E9F2E9"]
     },
     "midnightTeal": {
+      "displayName": "Neo · Midnight Teal",
       "screen": "#062635",
       "canvas": "#00202E",
       "face": "#062635",
@@ -171,6 +179,7 @@
       "ansi": ["#010507", "#EF4444", "#00D9A3", "#F59E0B", "#5452FF", "#C100C0", "#00A5B2", "#AEBAC0", "#8C9CA3", "#EF4444", "#00D9A3", "#FFAA00", "#5651FF", "#E500E5", "#00E5E5", "#E9EFF2"]
     },
     "deepHarbor": {
+      "displayName": "Neo · Deep Harbor",
       "screen": "#2B4851",
       "canvas": "#223F48",
       "face": "#2B4851",

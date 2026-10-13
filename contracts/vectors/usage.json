@@ -1,0 +1,239 @@
+{
+  "description": "Usage thresholds and the configuration-selector roles, shared by the Mac and iOS clients (UsageBand, UsageEmphasis, ConfigOption.isModel/isEffort/isPermissionMode) and the desktop client (soyeht_client::usage, soyeht_protocol::ConfigOption). Both pass every case. A band is success, warning or danger; an emphasis is current, last_known or none. Which window a reading shows, its text and its stale hint are in usage-presentation.json.",
+  "bands": [
+    {
+      "used": -0.2,
+      "band": "success"
+    },
+    {
+      "used": 0,
+      "band": "success"
+    },
+    {
+      "used": 0.49,
+      "band": "success"
+    },
+    {
+      "used": 0.5,
+      "band": "warning"
+    },
+    {
+      "used": 0.8,
+      "band": "warning"
+    },
+    {
+      "used": 0.81,
+      "band": "danger"
+    },
+    {
+      "used": 1,
+      "band": "danger"
+    },
+    {
+      "used": 1.3,
+      "band": "danger"
+    }
+  ],
+  "emphasis": [
+    {
+      "emphasis": "current",
+      "arcOpacity": 1,
+      "ringOpacity": 1
+    },
+    {
+      "emphasis": "last_known",
+      "arcOpacity": 0.45,
+      "ringOpacity": 1
+    },
+    {
+      "emphasis": "none",
+      "arcOpacity": 0,
+      "ringOpacity": 0.46
+    }
+  ],
+  "configRoles": [
+    {
+      "name": "model by category",
+      "option": {
+        "id": "m",
+        "name": "m",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ],
+        "category": "model"
+      },
+      "roles": [
+        "model"
+      ]
+    },
+    {
+      "name": "model by id when there is no category",
+      "option": {
+        "id": "model",
+        "name": "model",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ]
+      },
+      "roles": [
+        "model"
+      ]
+    },
+    {
+      "name": "a category wins over the id",
+      "option": {
+        "id": "model",
+        "name": "model",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ],
+        "category": "other"
+      },
+      "roles": []
+    },
+    {
+      "name": "effort by category",
+      "option": {
+        "id": "e",
+        "name": "e",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ],
+        "category": "thought_level"
+      },
+      "roles": [
+        "effort"
+      ]
+    },
+    {
+      "name": "effort by id with another category",
+      "option": {
+        "id": "effort",
+        "name": "effort",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ],
+        "category": "other"
+      },
+      "roles": [
+        "effort"
+      ]
+    },
+    {
+      "name": "effort by id without a category",
+      "option": {
+        "id": "effort",
+        "name": "effort",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ]
+      },
+      "roles": [
+        "effort"
+      ]
+    },
+    {
+      "name": "permission by category",
+      "option": {
+        "id": "p",
+        "name": "p",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ],
+        "category": "mode"
+      },
+      "roles": [
+        "permission"
+      ]
+    },
+    {
+      "name": "permission by id with another category",
+      "option": {
+        "id": "mode",
+        "name": "mode",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ],
+        "category": "other"
+      },
+      "roles": [
+        "permission"
+      ]
+    },
+    {
+      "name": "permission by id without a category",
+      "option": {
+        "id": "mode",
+        "name": "mode",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ]
+      },
+      "roles": [
+        "permission"
+      ]
+    },
+    {
+      "name": "any other selector has no role",
+      "option": {
+        "id": "font",
+        "name": "font",
+        "type": "select",
+        "currentValue": "a",
+        "options": [
+          {
+            "value": "a",
+            "name": "A"
+          }
+        ],
+        "category": "appearance"
+      },
+      "roles": []
+    }
+  ]
+}

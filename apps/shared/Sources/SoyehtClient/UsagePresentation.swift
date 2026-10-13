@@ -14,9 +14,9 @@ public enum UsageBand: Sendable, Equatable {
 
   public init(usedFraction: Double) {
     let fraction = min(max(usedFraction, 0), 1)
-    if fraction < 0.5 {
+    if fraction < ClientPolicy.usageBandWarningFrom {
       self = .success
-    } else if fraction <= 0.8 {
+    } else if fraction <= ClientPolicy.usageBandDangerAbove {
       self = .warning
     } else {
       self = .danger
@@ -47,13 +47,13 @@ public enum UsageEmphasis: Sendable, Equatable {
   public var arcOpacity: Double {
     switch self {
     case .current: 1
-    case .lastKnown: 0.45
+    case .lastKnown: ClientPolicy.usageRingLastKnownArcOpacity
     case .none: 0
     }
   }
 
   /// Opacity of the whole ring, glyph and label included.
-  public var ringOpacity: Double { self == .none ? 0.46 : 1 }
+  public var ringOpacity: Double { self == .none ? ClientPolicy.usageRingUnavailableOpacity : 1 }
 }
 
 public enum UsageTimestamp {
@@ -83,7 +83,7 @@ public struct UsagePresentation: Sendable {
   private var weeklyWindow: UsageWindow? {
     [reading.primary, reading.secondary]
       .compactMap { $0 }
-      .first { $0.label.lowercased().contains("week") }
+      .first { $0.label.lowercased().contains(ClientPolicy.usageWindowWeeklyKeyword) }
   }
 
   public var fraction: Double? {

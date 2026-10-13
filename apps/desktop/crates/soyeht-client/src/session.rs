@@ -12,7 +12,8 @@ use crate::{
 use serde_json::Value;
 use soyeht_protocol::{
     EventName, EventsSubscribeParams, PaneClosedEvent, Request, RpcError, StateSnapshotParams,
-    StateSnapshotResult, StreamInfo, Welcome, frame::Frame, handshake, snapshot::SnapshotAssembler,
+    StateSnapshotResult, StreamInfo, Welcome, client_policy, frame::Frame, handshake,
+    snapshot::SnapshotAssembler,
 };
 use std::{
     io::Read,
@@ -25,8 +26,8 @@ use std::{
     time::Duration,
 };
 
-/// The engine must greet within this time, as on the Mac client.
-const GREETING_DEADLINE: Duration = Duration::from_secs(5);
+/// The engine must greet within the contract's time, as on the Mac client.
+const GREETING_DEADLINE: Duration = Duration::from_millis(client_policy::GREETING_TIMEOUT_MS);
 
 pub type EventSink = async_channel::Sender<Event>;
 

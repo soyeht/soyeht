@@ -1,9 +1,9 @@
 //! Public wire models and bounded framing for Soyeht clients.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod client_policy;
 mod generated;
 pub mod limits;
-pub mod modes;
 pub use generated::*;
 pub mod attachment;
 pub mod data_directory;

@@ -897,7 +897,7 @@ private struct NewTaskSheet: View {
     catalogue.flatMap { AgentPermissionModes(options: $0.options) }
   }
   private var effortOption: ConfigOption? {
-    catalogue?.options.first { $0.category == "thought_level" || $0.id == "effort" }
+    catalogue?.options.first(where: \.isEffort)
   }
 
   var body: some View {

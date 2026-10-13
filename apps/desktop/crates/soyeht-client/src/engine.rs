@@ -10,7 +10,7 @@ use crate::{
     session::{EventSink, Session},
     transport,
 };
-use soyeht_protocol::PaneInputResult;
+use soyeht_protocol::{PaneInputResult, client_policy};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -23,7 +23,7 @@ use std::{
 
 /// The `client` name sent in `hello`.
 const CLIENT_NAME: &str = "desktop-dev";
-const RECONNECT_DELAY: Duration = Duration::from_secs(1);
+const RECONNECT_DELAY: Duration = Duration::from_millis(client_policy::RECONNECT_DELAY_MS);
 /// Engine events waiting for the interface. When it is full the reader waits, which stops it
 /// taking bytes off the socket, so output the interface cannot draw fast enough slows the
 /// engine down instead of growing memory.

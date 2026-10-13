@@ -8,8 +8,8 @@
 mod generated;
 
 pub use generated::{
-    composer, desktop, elevation, fonts, glyph, layout, pane_interior, pane_layout, pane_shell,
-    radius, space, type_scale, usage_ring,
+    ThemeName, composer, desktop, elevation, fonts, glyph, layout, pane_interior, pane_layout,
+    pane_shell, radius, space, type_scale, usage_ring,
 };
 
 use soyeht_client::screen::CellColor;
@@ -74,49 +74,7 @@ impl Palette {
     }
 }
 
-/// The reviewed themes. Neo Milk is the seeded default.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThemeName {
-    NeoMilk,
-    NeoPaleMist,
-    NeoMistyBlue,
-    NeoSunlitChartreuse,
-    NeoSunriseGold,
-    NeoDeepVine,
-    NeoDeepForest,
-    NeoMidnightTeal,
-    NeoDeepHarbor,
-}
-
 impl ThemeName {
-    pub const ALL: [Self; 9] = [
-        Self::NeoMilk,
-        Self::NeoPaleMist,
-        Self::NeoMistyBlue,
-        Self::NeoSunlitChartreuse,
-        Self::NeoSunriseGold,
-        Self::NeoDeepVine,
-        Self::NeoDeepForest,
-        Self::NeoMidnightTeal,
-        Self::NeoDeepHarbor,
-    ];
-
-    pub const DEFAULT: Self = Self::NeoMilk;
-
-    pub fn palette(self) -> &'static Palette {
-        match self {
-            Self::NeoMilk => &generated::MILK,
-            Self::NeoPaleMist => &generated::PALE_MIST,
-            Self::NeoMistyBlue => &generated::MISTY_BLUE,
-            Self::NeoSunlitChartreuse => &generated::SUNLIT_CHARTREUSE,
-            Self::NeoSunriseGold => &generated::SUNRISE_GOLD,
-            Self::NeoDeepVine => &generated::DEEP_VINE,
-            Self::NeoDeepForest => &generated::DEEP_FOREST,
-            Self::NeoMidnightTeal => &generated::MIDNIGHT_TEAL,
-            Self::NeoDeepHarbor => &generated::DEEP_HARBOR,
-        }
-    }
-
     /// The theme whose name, without example, ends with `wanted` (`milk`, `deepharbor`, ...):
     /// how the examples that compare themes are told which one to draw.
     pub fn named(wanted: &str) -> Option<Self> {
@@ -127,20 +85,6 @@ impl ThemeName {
                 .to_lowercase();
             name.ends_with(&wanted.to_lowercase())
         })
-    }
-
-    pub fn display_name(self) -> &'static str {
-        match self {
-            Self::NeoMilk => "Neo \u{b7} Milk",
-            Self::NeoPaleMist => "Neo \u{b7} Pale Mist",
-            Self::NeoMistyBlue => "Neo \u{b7} Misty Blue",
-            Self::NeoSunlitChartreuse => "Neo \u{b7} Sunlit Chartreuse",
-            Self::NeoSunriseGold => "Neo \u{b7} Sunrise Gold",
-            Self::NeoDeepVine => "Neo \u{b7} Deep Vine",
-            Self::NeoDeepForest => "Neo \u{b7} Deep Forest",
-            Self::NeoMidnightTeal => "Neo \u{b7} Midnight Teal",
-            Self::NeoDeepHarbor => "Neo \u{b7} Deep Harbor",
-        }
     }
 }
 

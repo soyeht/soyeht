@@ -25,8 +25,8 @@
       "duplicated_lines": 468
     },
     "swift_all": {
-      "clones": 153,
-      "duplicated_lines": 1367
+      "clones": 152,
+      "duplicated_lines": 1361
     }
   },
   "engine_production_panics": 0,
@@ -227,7 +227,7 @@
   },
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1492,
-    "apps/mac/Sources/PreferencesPanel.swift": 881,
+    "apps/mac/Sources/PreferencesPanel.swift": 879,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1250,
     "apps/mac/Sources/WorkspaceWindow.swift": 2771,
     "apps/mac/Sources/WritingPresentationPane.swift": 1239,

@@ -22,22 +22,7 @@ DIRECT_SHADOW = re.compile(
     rf"\.shadow\s*\(\s*(?:\.inner\s*\(\s*)?color\s*:\s*\.{SYSTEM_COLOR}\b"
 )
 SOURCE_ROOTS = (pathlib.Path("apps/mac/Sources"), pathlib.Path("apps/ios/Sources"))
-THEME_CATALOG = pathlib.Path("apps/shared/Sources/SoyehtClient/ThemePalette.swift")
-# The nine authored palettes are generated from contracts/design-tokens.json.
-THEME_PALETTES = pathlib.Path("apps/shared/Sources/SoyehtClient/Generated.swift")
 THEME_COLORS = pathlib.Path("apps/shared/Sources/SoyehtClient/ThemeColors.swift")
-EXPECTED_THEMES = (
-    "neoMilk",
-    "neoPaleMist",
-    "neoMistyBlue",
-    "neoSunlitChartreuse",
-    "neoSunriseGold",
-    "neoDeepVine",
-    "neoDeepForest",
-    "neoMidnightTeal",
-    "neoDeepHarbor",
-)
-THEME_CASE = re.compile(r"^\s*case\s+(neo[A-Za-z]+)\s*$", re.MULTILINE)
 HEX_LITERAL = re.compile(r'#[0-9A-Fa-f]{6,8}')
 
 
@@ -112,40 +97,15 @@ def scan(root: pathlib.Path = pathlib.Path(".")) -> list[tuple[pathlib.Path, int
 
 
 def theme_catalog_violations(root: pathlib.Path = pathlib.Path(".")) -> list[str]:
-    catalog_path = root / THEME_CATALOG
+    """The theme catalogue, its names and its palettes are generated from
+    contracts/design-tokens.json (`generate.py --check`); this only guards how ThemeColors
+    projects them."""
     colors_path = root / THEME_COLORS
-    palettes_path = root / THEME_PALETTES
-    missing = [path for path in (catalog_path, palettes_path, colors_path) if not path.is_file()]
-    if missing:
-        return [f"missing required theme source: {path.relative_to(root)}" for path in missing]
-
-    catalog = code_only(catalog_path.read_text(encoding="utf-8"))
+    if not colors_path.is_file():
+        return [f"missing required theme source: {colors_path.relative_to(root)}"]
     raw_colors = colors_path.read_text(encoding="utf-8")
     colors = code_only(raw_colors)
-    palettes = code_only(palettes_path.read_text(encoding="utf-8"))
-    enum_source = catalog.split("public struct SoyehtThemePalette", maxsplit=1)[0]
-    found_themes = tuple(THEME_CASE.findall(enum_source))
-    found_counts = {theme: found_themes.count(theme) for theme in set(found_themes)}
     problems: list[str] = []
-    if found_themes != EXPECTED_THEMES:
-        problems.append(
-            "theme catalogue must contain exactly the nine approved cases in canonical order"
-        )
-    if any(count != 1 for count in found_counts.values()):
-        problems.append("each approved theme case must be declared exactly once")
-
-    for theme in EXPECTED_THEMES:
-        palette_name = theme.removeprefix("neo")
-        palette_name = palette_name[:1].lower() + palette_name[1:]
-        mapping = re.compile(rf"case\s+\.{theme}\s*:\s*\.{palette_name}\b")
-        if len(mapping.findall(enum_source)) != 1:
-            problems.append(f"theme {theme} must map to its authored palette exactly once")
-        definition = re.compile(
-            rf"static\s+let\s+{palette_name}\s*=\s*make\s*\("
-        )
-        if len(definition.findall(palettes)) != 1:
-            problems.append(f"theme {theme} must have exactly one authored palette")
-
     if HEX_LITERAL.search(raw_colors):
         problems.append("ThemeColors must not contain literal hex values")
     if "SoyehtThemeColorSet(palette: palette)" not in colors:

@@ -325,7 +325,7 @@ public final class EngineClient {
     await reader.value
   }
   func request(
-    _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = 12,
+    _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = defaultRequestTimeout,
     attachments: [WebHostAttachment] = []
   ) async throws -> JsonValue {
     try await requestResponse(
@@ -333,7 +333,7 @@ public final class EngineClient {
     ).value
   }
   func requestResponse(
-    _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = 12,
+    _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = defaultRequestTimeout,
     attachments: [WebHostAttachment] = []
   ) async throws -> EngineResponse {
     guard let wire else { throw ClientFailure.disconnected }
@@ -384,7 +384,7 @@ public final class EngineClient {
   }
   /// Retry only connection loss, with the same mutation parameters and idempotency key.
   func mutation<T: Encodable>(
-    _ method: RequestMethod, _ params: T, timeoutSeconds: Double = 12,
+    _ method: RequestMethod, _ params: T, timeoutSeconds: Double = defaultRequestTimeout,
     attachments: [WebHostAttachment] = []
   ) async throws -> JsonValue {
     let value = try JsonValue.encoded(params)
@@ -944,7 +944,7 @@ public final class EngineClient {
         do {
           var offset = 0
           while offset < data.count {
-            let chunk = data.subdata(in: offset..<min(offset + 16_384, data.count))
+            let chunk = data.subdata(in: offset..<min(offset + inputChunkBytes, data.count))
             let result = try await mutation(
               .paneInput,
               PaneInputParams(

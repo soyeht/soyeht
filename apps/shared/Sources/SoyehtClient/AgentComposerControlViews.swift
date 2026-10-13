@@ -151,7 +151,8 @@ struct AgentContextGauge: View {
 
   private var color: Color {
     let used = fraction ?? 0
-    return used > 0.9 ? style.danger : used > 0.75 ? style.warning : style.secondary
+    if used > ClientPolicy.contextBandDangerAbove { return style.danger }
+    return used > ClientPolicy.contextBandWarningAbove ? style.warning : style.secondary
   }
 
   var body: some View {

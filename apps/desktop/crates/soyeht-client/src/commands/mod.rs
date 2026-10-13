@@ -21,13 +21,13 @@ use soyeht_protocol::{
     SkillsListResult, TailSelector, TaskCreateParams, TaskCreateResult, TaskDispatchParams,
     TaskDispatchResult, TaskExecutor, TaskMoveParams, TaskMoveResult, TaskPriority, TaskShowParams,
     TaskShowResult, TaskState, UsageListParams, UsageListResult, UsageProvider,
-    WorkspaceCloseParams, WorkspaceLayoutSetParams, WorkspacePaneLayoutEnvelope,
+    WorkspaceCloseParams, WorkspaceLayoutSetParams, WorkspacePaneLayoutEnvelope, client_policy,
 };
 use std::sync::mpsc;
 use uuid::Uuid;
 
-/// Raw input goes out in pieces of this size, as on the Mac client.
-pub const INPUT_CHUNK_BYTES: usize = 16 * 1024;
+/// Raw input goes out in pieces of the contract's size, as on the Mac client.
+pub const INPUT_CHUNK_BYTES: usize = client_policy::TERMINAL_INPUT_CHUNK_BYTES;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {

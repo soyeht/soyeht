@@ -48,9 +48,7 @@ pub(crate) fn load(rpc: &Rpc, harness: &str) -> Result<Catalogue> {
 
 /// The effort option among `options`.
 pub fn effort_of(options: &[ConfigOption]) -> Option<&ConfigOption> {
-    options
-        .iter()
-        .find(|option| option.category.as_deref() == Some("thought_level") || option.id == "effort")
+    options.iter().find(|option| option.is_effort())
 }
 
 /// What the model list of a harness is in, for what the switch popover shows under "MODEL".

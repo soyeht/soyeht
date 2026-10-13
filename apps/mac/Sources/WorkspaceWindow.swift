@@ -2487,7 +2487,7 @@ private struct NewPaneSheet: View {
   private var selectedHarness: HarnessInfo? { client.harnesses.first { $0.id == harness } }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
   private var effortOption: ConfigOption? {
-    catalogue?.options.first { $0.category == "thought_level" || $0.id == "effort" }
+    catalogue?.options.first(where: \.isEffort)
   }
 
   var body: some View {

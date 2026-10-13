@@ -153,16 +153,6 @@ extension UsageProvider {
   }
 }
 
-extension UsageProvider {
-  public var displayName: String {
-    switch self {
-    case .claude: "Claude"
-    case .codex: "Codex"
-    case .cursor: "Cursor"
-    }
-  }
-}
-
 extension UsageSource {
   public var displayName: String {
     switch self {

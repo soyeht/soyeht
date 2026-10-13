@@ -8,7 +8,8 @@ fix one of them in the same PR.
 
 Each layer depends only on the layers listed above it.
 
-1. `contracts/`: `protocol.json` (wire methods, events, limits, error codes),
+1. `contracts/`: `protocol.json` (wire methods, events, limits, the clients' shared policy,
+   error codes),
    `profiles.json` (installed profile values) and `design-tokens.json` (palettes,
    radii, spacing, type scale, shadows, layout metrics, fonts). This is the only
    place where wire values and design tokens are defined.
@@ -74,6 +75,15 @@ ADR when you change a boundary.
 - Rules every client must share that are not wire values (the Markdown subset of agent
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
   the same file. Change the vectors first.
+- The rules the Mac, iOS and desktop clients share are `x-clientPolicy` in `protocol.json`:
+  request, greeting and reconnect timings, the terminal input chunk, the usage and context
+  band thresholds and ring opacities, the weekly-window rule, provider names and which
+  configuration selector is the model, effort or permission one. Use `ClientPolicy` and
+  `ConfigOption.isModel`/`isEffort`/`isPermissionMode` in Swift and
+  `soyeht_protocol::client_policy` in Rust. Behaviour the two languages implement separately
+  (the usage presentation, the pane layout) is held together by the cases of
+  `contracts/vectors/` that both pass. Theme names, their order and display names are the
+  `palettes` of `design-tokens.json`; `TerminalColorTheme` and `ThemeName` are generated.
 - One rule, one place. Before you add a helper, a constant or a policy, search
   for an existing one and reuse or extend it.
 - Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard
