@@ -7,6 +7,8 @@ use crate::{
     destination::Destination,
     loop_form::LoopForm,
     open_menu::{Menu, OpenMenu},
+    prefs::Prefs,
+    switch_flow::SwitchDraft,
     tasks_ui::TasksUi,
     theme::ThemeName,
 };
@@ -41,6 +43,12 @@ pub struct Workbench {
     pub(crate) destination: Destination,
     pub(crate) rail_open: bool,
     pub(crate) menus: OpenMenu,
+    /// What the open harness switch popover has chosen so far.
+    pub(crate) switch: Option<SwitchDraft>,
+    /// The height of the window as the last frame saw it, for popovers that fit inside it.
+    pub(crate) window_height: f32,
+    /// Which Preferences panel is open and what is half done in it.
+    pub(crate) prefs: Prefs,
     /// The message line of each agent pane's composer.
     pub(crate) fields: HashMap<String, Entity<ComposerField>>,
     /// Numbers the requests that open a pane, so each answer is matched to its request.
@@ -127,6 +135,9 @@ impl Workbench {
             destination: Destination::default(),
             rail_open: true,
             menus: OpenMenu::default(),
+            switch: None,
+            window_height: f32::MAX,
+            prefs: Prefs::default(),
             fields: HashMap::new(),
             next_ticket: 0,
             transcripts: HashMap::new(),
@@ -174,8 +185,11 @@ impl Workbench {
                     Effect::LoadUsage => {
                         self.send(Command::LoadUsage);
                     }
+                    Effect::LoadSkills => {
+                        self.send(Command::LoadSkills);
+                    }
                     Effect::LoadHarnesses => {
-                        self.send(Command::LoadHarnesses);
+                        self.send(Command::LoadHarnesses { rescan: false });
                     }
                     Effect::LoadTask {
                         workspace_id,
@@ -210,6 +224,9 @@ impl Workbench {
             }
         }
         self.forget_closed_panes();
+        if self.switch.is_some() {
+            self.choose_first_harness(cx);
+        }
         cx.notify();
     }
 
@@ -462,7 +479,14 @@ impl Workbench {
     }
 
     pub(crate) fn toggle_menu(&mut self, menu: Menu, cx: &mut Context<Self>) {
-        if self.menus.toggle(menu, Instant::now()) {
+        if self.menus.toggle(menu.clone(), Instant::now()) {
+            if self.menus.is_open(&menu) {
+                match &menu {
+                    Menu::Harness(pane_id) => self.begin_switch(pane_id, cx),
+                    Menu::Settings => self.begin_prefs(cx),
+                    _ => {}
+                }
+            }
             cx.notify();
         }
     }
@@ -475,6 +499,11 @@ impl Workbench {
 
     /// A click outside the open menu closed it.
     pub(crate) fn dismiss_menu(&mut self, cx: &mut Context<Self>) {
+        // A list inside Preferences closes before the panel does.
+        if self.prefs.mode_menu.take().is_some() {
+            cx.notify();
+            return;
+        }
         if self.menus.dismiss(Instant::now()) {
             cx.notify();
         }
@@ -560,15 +589,6 @@ impl Workbench {
         cx.notify();
     }
 
-    pub(crate) fn switch_harness(&mut self, pane_id: &str, harness: &str, cx: &mut Context<Self>) {
-        self.send(Command::SwitchHarness {
-            pane_id: pane_id.to_owned(),
-            harness: harness.to_owned(),
-        });
-        self.menus.close();
-        cx.notify();
-    }
-
     pub(crate) fn answer_permission(&mut self, pane_id: &str, request_id: &str, option_id: &str) {
         self.send(Command::AnswerPermission {
             pane_id: pane_id.to_owned(),
@@ -616,7 +636,9 @@ impl Workbench {
     ) {
         let keystroke = &event.keystroke;
         // Escape closes an open menu, as on the Mac, and is not typed into the terminal.
-        if keystroke.key == "escape" && self.menus.escape() {
+        if keystroke.key == "escape"
+            && (self.prefs.mode_menu.take().is_some() || self.menus.escape())
+        {
             cx.notify();
             cx.stop_propagation();
             return;

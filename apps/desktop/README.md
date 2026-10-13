@@ -42,8 +42,20 @@ agent works.
   command, tool arguments and file changes. The header names the agent, the current plan step and
   the latest tool calls (the whole line is in its tooltip), and counts the running turn.
 - A pane opened from "+" or a split takes the keyboard.
-- Settings: the Appearance panel (a card with a swatch for each of the nine palettes) and the
-  engine connection.
+- Preferences, from the rail's gear, laid out as the Mac's sheet: the panels down the left, the open
+  one beside them. Appearance (a card with a swatch for each of the nine palettes); Harnesses (a
+  raised row for each harness the engine lists: version, the model, effort and permission mode a new
+  pane starts in, how ready it is, "default", the reason behind its status, "Make default", the
+  permission mode chosen before any pane runs it, Rescan); Usage (the providers with their
+  percentage, and for the one chosen its windows, time to reset, the state when there is no reading
+  and the source; a click on a ring of the rail opens it); Skills (the user's skills: list, create,
+  delete). The footer says the build and whether the engine is connected.
+- The harness chip of an agent opens the Mac's switch popover: what switching does, a search over the
+  harnesses (installed ones by readiness, the rest under "More harnesses"), a rescan, the model and
+  effort of the harness picked (loaded from the engine's `model.list`; a model the agent refused
+  before says so), the button "Restart conversation with ..." that sends the engine's
+  `pane.harness.switch` with the choice, and under it the account of the agent that runs now
+  (switch account, sign out). The chip names the harness a switch is moving to and waits for it.
 - A terminal pane says when its process has exited or has gone quiet, and when output was not
   recorded, in the lines the Mac shows above and below its screen.
 - On Linux and Windows the top bar carries the window controls (minimize, maximize, close),
@@ -58,9 +70,9 @@ agent works.
   transcripts and terminals keep their own scrolling) and fades at each end that hides more;
   the pane that was focused or just opened is scrolled into view. The composer keeps its chips at
   full size and scrolls them sideways in the same way.
-- The "+" menu and the harness chip list the installed agents by readiness, each with how ready
-  it is, and the others under a collapsed "More harnesses" entry; an agent that cannot start is
-  shown dimmed. Popup menus are as tall as the Mac's popover at most, scroll inside, and close on
+- The "+" menu lists the installed agents by readiness, each with how ready it is, and the others
+  under a collapsed "More harnesses" entry; an agent that cannot start is shown dimmed. The grouping
+  and order are the rules of `contracts/vectors/harness-picker.json`, which the Mac passes too. Popup menus are as tall as the Mac's popover at most, scroll inside, and close on
   Escape.
 - The transcript carries the Mac's cards: messages queued behind a running turn (with remove and
   resume), the notice when a turn goes quiet, the sign-in card, the answer form for an agent's
@@ -75,6 +87,12 @@ agent works.
   subitems, attempts and timeline, the "new task" sheet with create and dispatch, and the
   attention popover for what needs the person.
 - Editor, web and writing panes and dictation are listed with a notice.
+- Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
+  General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone
+  and Tasks and loops (placeholders on the Mac too), Shortcuts (Vim mode: there is no editor pane
+  here), Links (there is no web pane) and Dictation. Of the Harnesses panel, adding, editing and
+  removing a custom harness (the engine has `harness.custom.*`; the form is its own piece of work)
+  and the raw terminal row (a static display on the Mac) are not done.
 
 ## Run
 
@@ -155,10 +173,13 @@ cargo run --release --example design_audit -- crates/soyeht-desktop/examples/des
   --workspace ws-ci --size 1200x700 --open config:claude:model
 ```
 
-`--open` takes `new-pane`, `overflow`, `settings`, `harness:<pane>`, `config:<pane>:<option>`,
-`loop:<pane>`, `tasks`, `tasks:list`, `task:<id>` or `new-task`.
+`--open` takes `new-pane`, `overflow`, `settings` or `settings:<panel>` (`appearance`, `harnesses`,
+`usage`, `skills`), `harness:<pane>`, `config:<pane>:<option>`, `loop:<pane>`, `tasks`, `tasks:list`,
+`task:<id>` or `new-task`.
 `examples/design_audit_features.json` is the second recorded state, with the workspaces that show
 the cards, the attachments, the loop panel and the tasks.
+Besides the state of the engine the fixtures carry `catalogues` (what `model.list` answers for each
+harness), `settings`, `skills` and `notifications` (events replayed after the state).
 The same file feeds the Mac's own views, rendered offscreen, so that both clients draw the same
 conversation. The `.pen` frames "Interior da pane" (approved) and `DCzvR`, `OtYMZ` are the
 references for the interior, the composer and the header.

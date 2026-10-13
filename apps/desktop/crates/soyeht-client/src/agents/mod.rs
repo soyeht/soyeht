@@ -5,13 +5,15 @@ use crate::{
     agent::{self, AgentView},
     layout,
     state::{Connection, Effect, Expected, State},
+    switch::{HarnessSwitchView, Phase},
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    EventName, HarnessInfo, Pane, PaneConfigChangedEvent, PaneMode, PanePermissionAnsweredEvent,
-    PanePermissionRequestedEvent, PaneSessionLostEvent, PaneSessionStartedEvent, PaneState,
-    PaneUpdateEvent, PermissionRequest, UsageChangedEvent, UsageReading, Workspace,
-    WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope, WorkspacePaneLayoutNode,
+    EventName, HarnessInfo, Pane, PaneConfigChangedEvent, PaneHarnessSwitchDoneEvent, PaneMode,
+    PanePermissionAnsweredEvent, PanePermissionRequestedEvent, PaneSessionLostEvent,
+    PaneSessionStartedEvent, PaneState, PaneUpdateEvent, PermissionRequest, UsageChangedEvent,
+    UsageReading, Workspace, WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope,
+    WorkspacePaneLayoutNode,
 };
 
 impl State {
@@ -210,6 +212,17 @@ impl State {
             if let Some(view) = self.agents.get_mut(&pane.pane_id) {
                 observe_turn(view, pane);
                 view.cards.adopt(pane);
+                // A switch that was running when the connection began is still running.
+                view.harness_switch = pane
+                    .agent
+                    .as_ref()
+                    .and_then(|agent| agent.harness_switch.as_ref())
+                    .map(|running| HarnessSwitchView {
+                        from: running.from_harness.clone(),
+                        to: running.to_harness.clone(),
+                        phase: Phase::Switching,
+                        reason: None,
+                    });
             }
         }
         for entry in requests {
@@ -260,8 +273,16 @@ impl State {
             }
             EventName::PaneTurnEnded => self.reload_transcript(&params),
             EventName::PaneHarnessSwitchDone => {
-                if let Some(pane_id) = params.get("paneId").and_then(Value::as_str) {
-                    self.clear_sign_in(pane_id);
+                let event = serde_json::from_value::<PaneHarnessSwitchDoneEvent>(params.clone())?;
+                self.record_switch(
+                    &event.pane_id,
+                    event.from_harness,
+                    event.to_harness,
+                    Phase::Restarted,
+                );
+                self.clear_sign_in(&event.pane_id);
+                if let Some(view) = self.agents.get_mut(&event.pane_id) {
+                    view.notice = None;
                 }
                 self.reload_transcript(&params)
             }
@@ -274,7 +295,9 @@ impl State {
                 if let Some(view) = self.agents.get_mut(&event.pane_id) {
                     view.notice = None;
                 }
-                self.reload_transcript(&params)
+                let mut effects = self.reload_transcript(&params);
+                effects.push(Effect::LoadHarnesses);
+                effects
             }
             EventName::PaneConfigChanged => {
                 let event = serde_json::from_value::<PaneConfigChangedEvent>(params)?;
@@ -286,9 +309,7 @@ impl State {
             }
             EventName::PaneSessionLost => {
                 let event = serde_json::from_value::<PaneSessionLostEvent>(params)?;
-                if let Some(view) = self.agents.get_mut(&event.pane_id) {
-                    view.notice = Some(event.reason);
-                }
+                self.set_notice(&event.pane_id, event.reason);
                 Vec::new()
             }
             EventName::PanePermissionRequested => {
@@ -343,7 +364,7 @@ impl State {
         })
     }
 
-    fn reload_transcript(&self, params: &Value) -> Vec<Effect> {
+    pub(crate) fn reload_transcript(&self, params: &Value) -> Vec<Effect> {
         params
             .get("paneId")
             .and_then(Value::as_str)
@@ -352,12 +373,22 @@ impl State {
             .unwrap_or_default()
     }
 
-    fn agent_session_mut(&mut self, pane_id: &str) -> Option<&mut soyeht_protocol::AgentSession> {
+    pub(crate) fn agent_session_mut(
+        &mut self,
+        pane_id: &str,
+    ) -> Option<&mut soyeht_protocol::AgentSession> {
         self.panes
             .iter_mut()
             .find(|pane| pane.pane_id == pane_id)?
             .agent
             .as_mut()
+    }
+
+    /// Says why an agent's session is not usable.
+    pub(crate) fn set_notice(&mut self, pane_id: &str, reason: String) {
+        if let Some(view) = self.agents.get_mut(pane_id) {
+            view.notice = Some(reason);
+        }
     }
 
     fn record_usage(&mut self, event: UsageChangedEvent) {

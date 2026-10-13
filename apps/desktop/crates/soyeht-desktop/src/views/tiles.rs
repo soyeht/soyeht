@@ -33,7 +33,7 @@ impl Workbench {
             return empty(
                 palette,
                 None,
-                super::connection_notice(&self.state.connection).hint,
+                super::connection_hint(&self.state.connection),
             );
         };
         let workspace_id = workspace.workspace_id.clone();

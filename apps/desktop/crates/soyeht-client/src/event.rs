@@ -1,7 +1,11 @@
-use crate::{snapshot::Snapshot, streams::StreamOutput, tasks::TaskUpdate};
+use crate::{
+    catalogue::Catalogue, preferences::Preferences, snapshot::Snapshot, streams::StreamOutput,
+    tasks::TaskUpdate,
+};
 use serde_json::Value;
 use soyeht_protocol::{
-    EventName, HarnessInfo, LoopConfig, PromptItem, Task, TranscriptMessage, UsageReading,
+    EventName, HarnessInfo, LoopConfig, PromptItem, SkillsListResult, Task, TranscriptMessage,
+    UsageReading,
 };
 
 /// What the connection tells the application, in the order it happened.
@@ -48,4 +52,15 @@ pub enum Event {
     Usage(Vec<UsageReading>),
     /// The agent harnesses the engine can start.
     Harnesses(Vec<HarnessInfo>),
+    /// The models and options a harness offers.
+    Catalogue {
+        harness: String,
+        catalogue: Catalogue,
+    },
+    /// The models of a harness could not be read.
+    CatalogueFailed { harness: String, reason: String },
+    /// The skills every harness loads.
+    Skills(SkillsListResult),
+    /// The settings Preferences shows.
+    Preferences(Preferences),
 }

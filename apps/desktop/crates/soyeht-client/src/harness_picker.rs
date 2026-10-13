@@ -3,7 +3,7 @@
 //! they are, and everything else sits under one collapsed "More harnesses" entry, so that a
 //! catalogue of dozens of registry adapters does not bury the few that can run.
 
-use soyeht_protocol::{HarnessInfo, HarnessSetupState, ProbeResult};
+use soyeht_protocol::{HarnessInfo, HarnessSetupReason, HarnessSetupState, ModelInfo, ProbeResult};
 
 /// The title of the collapsed entry.
 pub const MORE_TITLE: &str = "More harnesses";
@@ -68,17 +68,162 @@ pub fn group_of(harness: &HarnessInfo) -> Group {
     }
 }
 
+/// The harness a picker preselects: the one the person chose as their default when it can
+/// start, else the ready one that opened a session most recently. The harness a pane already
+/// runs (`excluding`) is never one.
+pub fn default_harness<'a>(
+    harnesses: &'a [HarnessInfo],
+    excluding: Option<&str>,
+    preferred: Option<&str>,
+) -> Option<&'a HarnessInfo> {
+    let candidates = || {
+        harnesses
+            .iter()
+            .filter(|harness| harness.available && Some(harness.id.as_str()) != excluding)
+    };
+    if let Some(chosen) = preferred.and_then(|id| candidates().find(|harness| harness.id == id)) {
+        return Some(chosen);
+    }
+    let last_ready = |harness: &HarnessInfo| {
+        harness
+            .last_ready_at_ms
+            .as_deref()
+            .map_or(0, |at| at.parse::<i64>().unwrap_or(0))
+    };
+    candidates()
+        .filter(|harness| setup_state(harness) == HarnessSetupState::Ready)
+        .min_by(|left, right| {
+            last_ready(right)
+                .cmp(&last_ready(left))
+                .then_with(|| ordered(left, right))
+        })
+}
+
+/// What the second line of a harness row, in short, says is wrong or right about it, in full:
+/// the sentence the person reads when they open a harness's status.
+pub fn status_reason(harness: &HarnessInfo) -> &'static str {
+    let reason = harness.setup_reason.clone().or(match setup_state(harness) {
+        HarnessSetupState::Ready => None,
+        HarnessSetupState::NotChecked => Some(HarnessSetupReason::NeverStarted),
+        HarnessSetupState::SignIn => Some(HarnessSetupReason::AuthenticationRequired),
+        HarnessSetupState::CheckSetup => Some(HarnessSetupReason::LaunchFailed),
+        HarnessSetupState::NotInstalled => Some(HarnessSetupReason::ExecutableMissing),
+    });
+    match reason {
+        Some(HarnessSetupReason::NeverStarted) => {
+            "Installed; this agent has not been started yet. You can start it now."
+        }
+        Some(HarnessSetupReason::ExecutableMissing) => {
+            "Executable not found on the engine's launch PATH."
+        }
+        Some(HarnessSetupReason::RegistryPackageUnverified) => {
+            "The adapter runner is available; its package has not been verified locally. Starting it will check the package."
+        }
+        Some(HarnessSetupReason::AuthenticationRequired) => {
+            "This agent requires sign-in before it can start."
+        }
+        Some(HarnessSetupReason::SessionFailed) => {
+            "The agent started, but its session failed. Try starting it again."
+        }
+        Some(HarnessSetupReason::LaunchFailed) => {
+            "The agent could not start. Check its installation and try again."
+        }
+        Some(HarnessSetupReason::EnvironmentUnavailable) => {
+            "The engine could not read the launch environment."
+        }
+        None => "An agent session opened successfully.",
+    }
+}
+
+/// A harness name without the ACP adapter's suffix ("Claude Agent" becomes "Claude"), the rule
+/// the engine names agent panes by.
+pub fn short_name(name: &str) -> &str {
+    const SUFFIX: &str = " Agent";
+    let trimmed = name.trim();
+    match trimmed.strip_suffix(SUFFIX).map(str::trim) {
+        Some(label) if !label.is_empty() => label,
+        _ => trimmed,
+    }
+}
+
+/// A last-resort name from a launch identifier: "registry.claude-acp" becomes "Claude". A raw
+/// identifier is never shown.
+pub fn readable_name(harness_id: &str) -> String {
+    let mut name = harness_id;
+    for prefix in ["registry.", "local.", "custom."] {
+        name = name.strip_prefix(prefix).unwrap_or(name);
+    }
+    let name = name.strip_suffix("-acp").unwrap_or(name);
+    let words: Vec<String> = name
+        .split(['-', '_', '.'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut letters = word.chars();
+            letters.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(letters).collect()
+            })
+        })
+        .collect();
+    if words.is_empty() {
+        "Agent".to_owned()
+    } else {
+        words.join(" ")
+    }
+}
+
+/// What the harness chip of an agent composer says: the harness the pane runs, named by the
+/// engine's catalogue ("Claude"), or the one it is switching to while a switch runs. Before the
+/// catalogue loads, the running harness is called by the pane's own name and any other by a name
+/// read from its identifier. The second value is whether a switch is running.
+pub fn chip_title(
+    harnesses: &[HarnessInfo],
+    current: &str,
+    switching_to: Option<&str>,
+    pane_name: Option<&str>,
+) -> (String, bool) {
+    let shown = switching_to.unwrap_or(current);
+    let title = match harnesses.iter().find(|harness| harness.id == shown) {
+        Some(entry) => short_name(&entry.name).to_owned(),
+        None => match pane_name.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(name) if shown == current => name.to_owned(),
+            _ => readable_name(shown),
+        },
+    };
+    (title, switching_to.is_some())
+}
+
+/// The button that hands a conversation over: it names the harness chosen.
+pub fn switch_label(target: Option<&HarnessInfo>) -> String {
+    match target {
+        Some(target) => format!("Restart conversation with {}", target.name),
+        None => "Choose another agent".to_owned(),
+    }
+}
+
+/// A model's name in a list, saying so when the agent refused it before.
+pub fn model_label(model: &ModelInfo) -> String {
+    match model.observed_refusal {
+        Some(_) => format!("{} \u{2014} refused", model.name),
+        None => model.name.clone(),
+    }
+}
+
 /// The second line of a harness row: how ready it is, which tells apart two harnesses that
 /// share a name.
 pub fn status_label(harness: &HarnessInfo) -> &'static str {
     group_of(harness).title()
 }
 
-/// Whether "More harnesses" is open: when asked to be, and also when it is all there is, as
-/// the Mac's picker opens it when no installed harness is left to show. The desktop menus pick
-/// on click and keep no selection, so a selection that lives under "More" needs no rule here.
-pub fn more_expanded(layout: &Layout, asked: bool) -> bool {
-    asked || layout.sections.is_empty()
+/// Whether "More harnesses" is open: when asked to be, when a search is running, when it is all
+/// there is, and when the chosen harness lives there, as the Mac's picker opens it.
+pub fn more_expanded(layout: &Layout, asked: bool, searching: bool, chosen: Option<&str>) -> bool {
+    asked
+        || searching
+        || layout.sections.is_empty()
+        || layout
+            .more
+            .iter()
+            .any(|harness| Some(harness.id.as_str()) == chosen)
 }
 
 /// Whether the harness is on this machine: it has opened a session, or its executable resolves
@@ -103,12 +248,29 @@ const GROUPS: [Group; 5] = [
     Group::NotInstalled,
 ];
 
-pub fn layout(harnesses: &[HarnessInfo]) -> Layout<'_> {
+/// Whether `harness` answers to `query`: its name or its id contains it, whatever the case. An
+/// empty query matches everything.
+pub fn matches(harness: &HarnessInfo, query: &str) -> bool {
+    let needle = query.trim().to_lowercase();
+    needle.is_empty()
+        || harness.name.to_lowercase().contains(&needle)
+        || harness.id.to_lowercase().contains(&needle)
+}
+
+/// The harnesses of the picker for `query`, laid out. `excluding` is the harness a pane already
+/// runs, which cannot be switched to.
+pub fn layout<'a>(
+    harnesses: &'a [HarnessInfo],
+    query: &str,
+    excluding: Option<&str>,
+) -> Layout<'a> {
     let mut sections = Vec::new();
     let mut more = Vec::new();
     for wanted in GROUPS {
         let mut items: Vec<&HarnessInfo> = harnesses
             .iter()
+            .filter(|harness| Some(harness.id.as_str()) != excluding)
+            .filter(|harness| matches(harness, query))
             .filter(|harness| group_of(harness) == wanted)
             .collect();
         items.sort_by(|left, right| ordered(left, right));
@@ -123,111 +285,4 @@ pub fn layout(harnesses: &[HarnessInfo]) -> Layout<'_> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn harness(id: &str, name: &str, available: bool, installed: Option<bool>) -> HarnessInfo {
-        let mut value = json!({
-            "id": id, "name": name, "available": available,
-            "capabilities": [], "options": [], "authMethods": [],
-        });
-        if let Some(installed) = installed {
-            value["installed"] = json!(installed);
-        }
-        serde_json::from_value(value).unwrap()
-    }
-
-    fn with_state(mut harness: HarnessInfo, state: HarnessSetupState) -> HarnessInfo {
-        harness.setup_state = Some(state);
-        harness
-    }
-
-    fn ids<'a>(items: &[&'a HarnessInfo]) -> Vec<&'a str> {
-        items.iter().map(|harness| harness.id.as_str()).collect()
-    }
-
-    #[test]
-    fn installed_harnesses_come_first_in_groups_and_a_package_runner_waits_under_more() {
-        let catalogue = [
-            harness("registry.cline", "Cline", true, Some(false)),
-            with_state(
-                harness("codex", "Codex", true, None),
-                HarnessSetupState::Ready,
-            ),
-            harness("claude", "claude", true, Some(true)),
-            with_state(
-                harness("gemini", "Gemini", true, None),
-                HarnessSetupState::SignIn,
-            ),
-            harness("registry.auggie", "Auggie CLI", false, None),
-        ];
-        let layout = layout(&catalogue);
-        let groups: Vec<_> = layout
-            .sections
-            .iter()
-            .map(|(group, items)| (group.title(), ids(items)))
-            .collect();
-        assert_eq!(
-            groups,
-            [
-                ("Ready", vec!["codex"]),
-                ("Not checked", vec!["claude"]),
-                ("Sign in", vec!["gemini"]),
-            ]
-        );
-        assert_eq!(ids(&layout.more), ["registry.cline", "registry.auggie"]);
-    }
-
-    #[test]
-    fn a_harness_that_ran_before_is_installed_even_when_a_runner_reaches_it() {
-        let ran = with_state(
-            harness("registry.codex-acp", "Codex", true, Some(false)),
-            HarnessSetupState::Ready,
-        );
-        assert!(is_installed(&ran));
-        assert!(!is_installed(&harness("a", "A", true, Some(false))));
-        assert!(!is_installed(&harness("b", "B", false, None)));
-    }
-
-    #[test]
-    fn names_sort_without_regard_to_case_then_by_id() {
-        let catalogue = [
-            harness("b", "beta", true, Some(true)),
-            harness("a2", "Alpha", true, Some(true)),
-            harness("a1", "alpha", true, Some(true)),
-        ];
-        let layout = layout(&catalogue);
-        assert_eq!(ids(&layout.sections[0].1), ["a1", "a2", "b"]);
-    }
-
-    #[test]
-    fn the_second_line_says_how_ready_a_harness_is() {
-        let ready = with_state(harness("a", "Claude", true, None), HarnessSetupState::Ready);
-        let unchecked = harness("b", "Claude", true, Some(true));
-        let missing = harness("c", "Claude", false, None);
-        assert_eq!(status_label(&ready), "Ready");
-        assert_eq!(status_label(&unchecked), "Not checked");
-        assert_eq!(status_label(&missing), "Not installed");
-    }
-
-    #[test]
-    fn more_opens_when_asked_or_when_nothing_installed_is_left() {
-        let installed = [
-            harness("a", "A", true, Some(true)),
-            harness("b", "B", false, None),
-        ];
-        let with_installed = layout(&installed);
-        assert!(!more_expanded(&with_installed, false));
-        assert!(more_expanded(&with_installed, true));
-        let none_installed = [harness("b", "B", false, None)];
-        let only_more = layout(&none_installed);
-        assert!(more_expanded(&only_more, false));
-    }
-
-    #[test]
-    fn an_empty_catalogue_has_nothing_to_show() {
-        let layout = layout(&[]);
-        assert!(layout.sections.is_empty() && layout.more.is_empty());
-    }
-}
+mod tests;

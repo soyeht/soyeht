@@ -2,7 +2,6 @@
 //! percentages, then settings at the bottom.
 
 use super::{
-    menus,
     ui::{column, hint, icon, id, waiting_badge, working_dot},
     usage_ring,
 };
@@ -14,8 +13,9 @@ use crate::{
     workbench::Workbench,
 };
 use gpui::{
-    Anchor, AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px, rgb,
+    AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, div, prelude::FluentBuilder, px,
+    rgb,
 };
 
 impl Workbench {
@@ -24,11 +24,25 @@ impl Workbench {
             .into_iter()
             .map(|place| self.rail_button(place, palette, cx))
             .collect();
+        // A ring opens the usage of its provider, as on the Mac.
         let rings: Vec<AnyElement> = self
             .state
             .usage()
-            .iter()
-            .map(|reading| usage_ring::ring(reading, palette))
+            .to_vec()
+            .into_iter()
+            .map(|reading| {
+                let name = soyeht_client::usage::display_name(&reading.provider);
+                let provider = reading.provider.clone();
+                div()
+                    .id(id("usage", name))
+                    .cursor_pointer()
+                    .tooltip(hint(format!("{name} usage"), palette))
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        this.open_usage(provider.clone(), cx)
+                    }))
+                    .child(usage_ring::ring(&reading, palette))
+                    .into_any_element()
+            })
             .collect();
         column()
             .w(px(layout::RAIL_WIDTH))
@@ -82,20 +96,8 @@ impl Workbench {
             0
         };
         let working = agents && self.state.has_working_agent(None);
-        div()
-            .id(id("rail", place.label()))
+        rail_slot(id("rail", place.label()), selected, palette)
             .relative()
-            .size(px(layout::RAIL_BUTTON_SIZE))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(radius::COMPACT))
-            .cursor_pointer()
-            .when(selected, |button| button.bg(rgb(palette.well)))
-            .when(!selected, |button| {
-                button.hover(|style| style.bg(rgb(palette.hover)))
-            })
             .on_click(
                 cx.listener(move |this, _: &ClickEvent, _, cx| this.select_destination(place, cx)),
             )
@@ -133,42 +135,38 @@ impl Workbench {
 
     fn settings_button(&mut self, palette: &'static Palette, cx: &mut Context<Self>) -> AnyElement {
         let open = self.menus.is_open(&Menu::Settings);
-        div()
-            .relative()
-            .flex_none()
-            .child(
-                div()
-                    .id("rail-settings")
-                    .size(px(layout::RAIL_BUTTON_SIZE))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px(radius::COMPACT))
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgb(palette.hover)))
-                    .tooltip(hint("Settings", palette))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.toggle_menu(Menu::Settings, cx)
-                    }))
-                    .child(icon(
-                        Icon::Settings,
-                        crate::theme::glyph::RAIL,
-                        palette.secondary,
-                    )),
+        rail_slot("rail-settings".into(), open, palette)
+            .tooltip(hint("Settings", palette))
+            .on_click(
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_menu(Menu::Settings, cx)),
             )
-            .when(open, |slot| {
-                let body = self.settings_panel(palette, cx);
-                slot.child(menus::popup(
-                    palette,
-                    Anchor::BottomLeft,
-                    (
-                        layout::RAIL_BUTTON_SIZE + space::X8,
-                        layout::RAIL_BUTTON_SIZE,
-                    ),
-                    body,
-                    cx,
-                ))
-            })
+            .child(icon(
+                Icon::Settings,
+                crate::theme::glyph::RAIL,
+                if open {
+                    palette.accent
+                } else {
+                    palette.secondary
+                },
+            ))
             .into_any_element()
     }
+}
+
+/// A square button of the rail: on the well while it is the selected one, on the hover color
+/// under the pointer otherwise.
+fn rail_slot(key: SharedString, selected: bool, palette: &Palette) -> Stateful<Div> {
+    div()
+        .id(key)
+        .size(px(layout::RAIL_BUTTON_SIZE))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(radius::COMPACT))
+        .cursor_pointer()
+        .when(selected, |button| button.bg(rgb(palette.well)))
+        .when(!selected, |button| {
+            button.hover(|style| style.bg(rgb(palette.hover)))
+        })
 }

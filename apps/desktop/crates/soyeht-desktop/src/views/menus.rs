@@ -21,6 +21,25 @@ pub fn popup(
     body: Div,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
+    popup_up_to(
+        palette,
+        anchor,
+        offset,
+        layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT,
+        body,
+        cx,
+    )
+}
+
+/// As [`popup`], for a card that may grow to `max_height` before it scrolls.
+pub fn popup_up_to(
+    palette: &Palette,
+    anchor: Anchor,
+    offset: (f32, f32),
+    max_height: f32,
+    body: Div,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
     // The card of the approved harness picker: radius 20 and the panel elevation.
     let card = neo::raised(palette, radius::CARD, elevation::PANEL)
         .flex()
@@ -30,7 +49,7 @@ pub fn popup(
         .min_w(px(desktop::MENU_MIN_WIDTH))
         // The Mac's popover height: a longer list scrolls inside the card, and the card snaps
         // into the window.
-        .max_h(px(layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT))
+        .max_h(px(max_height))
         .id("menu")
         .overflow_y_scroll()
         .occlude()
@@ -107,9 +126,10 @@ pub fn detail_item(
     mark: AnyElement,
     label: impl Into<SharedString>,
     detail: impl Into<SharedString>,
+    checked: bool,
     enabled: bool,
 ) -> Stateful<Div> {
-    row_frame(palette, key, false, enabled)
+    row_frame(palette, key, checked, enabled)
         .min_h(px(desktop::MENU_HARNESS_ROW_HEIGHT))
         .child(div().w(px(space::X18)).flex_none().child(mark))
         .child(
@@ -132,6 +152,7 @@ pub fn detail_item(
                         .child(detail.into()),
                 ),
         )
+        .children(checked.then(|| check(palette)))
 }
 
 /// The face of a heading: small bold chrome type in the muted ink, with room above.

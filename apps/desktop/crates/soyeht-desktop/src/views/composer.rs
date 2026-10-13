@@ -5,7 +5,6 @@
 use super::{
     agent::notice_line,
     attachments::chip_view,
-    harness_menu::Pick,
     menus,
     ui::{OwnPress, Typeface, column, hint, icon, id, logo, row, sideways_scroller},
     usage_ring::ring_canvas,
@@ -13,7 +12,7 @@ use super::{
 use crate::{
     assets::{self, Icon},
     open_menu::Menu,
-    theme::{Palette, composer, desktop, pane_interior, pane_layout},
+    theme::{Palette, composer, desktop, layout, pane_interior, pane_layout},
     workbench::Workbench,
 };
 use gpui::{
@@ -24,9 +23,10 @@ use gpui::{
 use soyeht_client::{
     agent::{Action, Controls, Menu as ConfigMenu},
     attachments::Chip,
+    harness_picker,
+    switch::{self, Phase},
 };
 use soyeht_protocol::Pane;
-use std::rc::Rc;
 
 impl Workbench {
     pub(super) fn composer(
@@ -58,9 +58,7 @@ impl Workbench {
         let attachments = self.attachment_row(&pane_id, palette, cx);
 
         let controls_row = match &controls {
-            Some(controls) => {
-                self.control_row(pane, controls, harness_name.as_deref(), palette, cx)
-            }
+            Some(controls) => self.control_row(pane, controls, palette, cx),
             None => row().into_any_element(),
         };
         column()
@@ -129,24 +127,15 @@ impl Workbench {
         &mut self,
         pane: &Pane,
         controls: &Controls,
-        harness_name: Option<&str>,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let pane_id = pane.pane_id.clone();
         let connected = self.state.connection == soyeht_client::Connection::Connected;
         let enabled = connected && !controls.busy;
-        let harness = pane.agent.as_ref().map(|agent| agent.harness.clone());
 
         let mut chips: Vec<AnyElement> = Vec::new();
-        chips.push(self.harness_chip(
-            &pane_id,
-            harness.as_deref(),
-            harness_name,
-            enabled,
-            palette,
-            cx,
-        ));
+        chips.push(self.harness_chip(pane, connected, palette, cx));
         let model_or_effort = controls.model.is_some() || controls.effort.is_some();
         if model_or_effort {
             chips.push(separator(palette));
@@ -287,29 +276,47 @@ impl Workbench {
             .into_any_element()
     }
 
+    /// The harness chip: the harness the pane runs, or the one it is switching to while a switch
+    /// runs. It opens the switch popover.
     fn harness_chip(
         &mut self,
-        pane_id: &str,
-        current: Option<&str>,
-        name: Option<&str>,
-        enabled: bool,
+        pane: &Pane,
+        connected: bool,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let pane_id = pane.pane_id.as_str();
+        let current = pane
+            .agent
+            .as_ref()
+            .map_or("", |agent| agent.harness.as_str());
+        let view = self.state.agent(pane_id);
+        let switching = view
+            .and_then(|view| view.harness_switch.as_ref())
+            .filter(|switch| switch.phase == Phase::Switching)
+            .map(|switch| switch.to.clone());
+        let (label, _) = harness_picker::chip_title(
+            self.state.harnesses(),
+            current,
+            switching.as_deref(),
+            Some(&pane.name),
+        );
+        let enabled = switch::can_switch(
+            connected,
+            pane.agent.as_ref(),
+            view.and_then(|view| view.harness_switch.as_ref()),
+        );
         let menu = Menu::Harness(pane_id.to_owned());
         let open = self.menus.is_open(&menu);
-        let label = name.or(current).unwrap_or("Agent").to_owned();
-        let mark = current
-            .and_then(assets::logo_path)
+        let mark = assets::logo_path(switching.as_deref().unwrap_or(current))
             .map(|path| logo(path, composer::HARNESS_LOGO_SIZE, palette.ink).into_any_element());
-        let rows = if open {
-            let pane_id = pane_id.to_owned();
-            let pick: Pick =
-                Rc::new(move |this, harness, cx| this.switch_harness(&pane_id, harness, cx));
-            self.harness_rows(current, palette, &pick, cx)
-        } else {
-            Vec::new()
-        };
+        let popover = open.then(|| {
+            (
+                self.switch_popover(pane, palette, cx),
+                desktop::SWITCH_POPOVER_MAXIMUM_HEIGHT
+                    .min(self.window_height - 2.0 * desktop::PREFERENCES_INSET),
+            )
+        });
         chip(
             palette,
             id("harness-chip", pane_id),
@@ -318,7 +325,7 @@ impl Workbench {
             mark,
             enabled,
             menu,
-            open.then(|| menus::list(rows)),
+            popover,
             cx,
         )
     }
@@ -367,7 +374,12 @@ impl Workbench {
             }),
             enabled,
             open_menu,
-            open.then(|| menus::list(rows)),
+            open.then(|| {
+                (
+                    menus::list(rows),
+                    layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT,
+                )
+            }),
             cx,
         )
     }
@@ -397,7 +409,7 @@ fn chip(
     leading: Option<AnyElement>,
     enabled: bool,
     menu: Menu,
-    popup: Option<Div>,
+    popup: Option<(Div, f32)>,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     let toggled = menu;
@@ -450,11 +462,12 @@ fn chip(
                     palette.secondary,
                 )),
         )
-        .children(popup.map(|body| {
-            menus::popup(
+        .children(popup.map(|(body, max_height)| {
+            menus::popup_up_to(
                 palette,
                 Anchor::BottomLeft,
                 (0.0, -desktop::POPUP_GAP),
+                max_height,
                 body,
                 cx,
             )

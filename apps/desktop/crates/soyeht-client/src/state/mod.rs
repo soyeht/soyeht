@@ -3,15 +3,16 @@
 //! without a window or a connection.
 
 use crate::{
-    agent::AgentView, event::Event, screen::TerminalScreen, snapshot::Snapshot,
-    streams::StreamOutput,
+    agent::AgentView, catalogue::Catalogue, event::Event, preferences::Preferences,
+    screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput,
 };
 use serde_json::Value;
 use soyeht_protocol::{
     AttentionItem, EventName, HarnessInfo, LoopConfig, Pane, PaneClosedEvent, PaneCreatedEvent,
-    PaneMode, PaneStateChangedEvent, PaneUpdatedEvent, Task, TaskShowResult, UsageReading,
-    Workspace, WorkspaceClosedEvent, WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent,
-    WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope, WorkspaceRenamedEvent,
+    PaneMode, PaneStateChangedEvent, PaneUpdatedEvent, SkillsListResult, Task, TaskShowResult,
+    UsageReading, Workspace, WorkspaceClosedEvent, WorkspaceCreatedEvent,
+    WorkspaceLayoutUpdatedEvent, WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope,
+    WorkspaceRenamedEvent,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -35,6 +36,8 @@ pub enum Effect {
     LoadUsage,
     /// Fetch the agent harnesses the engine can start.
     LoadHarnesses,
+    /// Fetch the skills again: they changed on the engine.
+    LoadSkills,
     /// Fetch one task again, with its detail.
     LoadTask {
         workspace_id: String,
@@ -81,6 +84,13 @@ pub struct State {
     pub(crate) attention: HashMap<String, Vec<AttentionItem>>,
     pub(crate) usage: Vec<UsageReading>,
     pub(crate) harnesses: Vec<HarnessInfo>,
+    /// The engine has answered the request for the harnesses at least once.
+    pub(crate) harnesses_loaded: bool,
+    pub(crate) catalogues: HashMap<String, Catalogue>,
+    /// Why the models of a harness could not be read, until they are.
+    pub(crate) catalogue_failures: HashMap<String, String>,
+    pub(crate) preferences: Preferences,
+    pub(crate) skills: Option<SkillsListResult>,
     pub(crate) expected: Vec<Expected>,
     /// Panes closed since the last snapshot. The engine may still announce one more update
     /// about a pane as it closes; it must not bring the pane back.
@@ -105,6 +115,11 @@ impl Default for State {
             attention: HashMap::new(),
             usage: Vec::new(),
             harnesses: Vec::new(),
+            harnesses_loaded: false,
+            catalogues: HashMap::new(),
+            catalogue_failures: HashMap::new(),
+            preferences: Preferences::default(),
+            skills: None,
             expected: Vec::new(),
             closed: HashSet::new(),
         }
@@ -254,6 +269,24 @@ impl State {
             }
             Event::Harnesses(items) => {
                 self.harnesses = items;
+                self.harnesses_loaded = true;
+                Vec::new()
+            }
+            Event::Catalogue { harness, catalogue } => {
+                self.catalogue_failures.remove(&harness);
+                self.catalogues.insert(harness, catalogue);
+                Vec::new()
+            }
+            Event::CatalogueFailed { harness, reason } => {
+                self.catalogue_failures.insert(harness, reason);
+                Vec::new()
+            }
+            Event::Skills(skills) => {
+                self.skills = Some(skills);
+                Vec::new()
+            }
+            Event::Preferences(preferences) => {
+                self.preferences = preferences;
                 Vec::new()
             }
         }

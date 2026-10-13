@@ -1,0 +1,557 @@
+{
+  "description": "Harness picker rules shared by the Mac (HarnessPickerModel, HarnessSwitchModel) and the desktop client (soyeht_client::harness_picker). Both pass every case.",
+  "catalogue": {
+    "claude": {
+      "id": "registry.claude-acp",
+      "name": "Claude Agent",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "ready",
+      "lastReadyAtMs": "100"
+    },
+    "codex": {
+      "id": "registry.codex-acp",
+      "name": "Codex",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "ready",
+      "lastReadyAtMs": "200"
+    },
+    "tool": {
+      "id": "local.tool",
+      "name": "Tool",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "not_checked"
+    },
+    "legacySignIn": {
+      "id": "legacy",
+      "name": "Legacy",
+      "available": true,
+      "capabilities": [
+        {
+          "method": "session/new",
+          "result": "unauthenticated",
+          "checkedAt": "2026-10-01T00:00:00Z"
+        }
+      ],
+      "options": [],
+      "authMethods": []
+    },
+    "gemini": {
+      "id": "registry.gemini",
+      "name": "Gemini",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "sign_in"
+    },
+    "broken": {
+      "id": "registry.broken",
+      "name": "Broken",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "check_setup"
+    },
+    "runner": {
+      "id": "registry.runner",
+      "name": "Runner",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": false,
+      "setupState": "not_checked"
+    },
+    "alpha": {
+      "id": "registry.a",
+      "name": "alpha",
+      "available": false,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "setupState": "not_installed"
+    },
+    "beta": {
+      "id": "registry.b",
+      "name": "Beta",
+      "available": false,
+      "capabilities": [],
+      "options": [],
+      "authMethods": []
+    },
+    "signInRunner": {
+      "id": "registry.signin-runner",
+      "name": "Zeta",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": false,
+      "setupState": "sign_in"
+    }
+  },
+  "layouts": [
+    {
+      "name": "groups by readiness, then name; what is not installed waits under more",
+      "harnesses": [
+        "beta",
+        "runner",
+        "alpha",
+        "legacySignIn",
+        "tool",
+        "codex",
+        "claude",
+        "gemini",
+        "broken",
+        "signInRunner"
+      ],
+      "query": "",
+      "excluding": null,
+      "sections": [
+        [
+          "Ready",
+          [
+            "registry.claude-acp",
+            "registry.codex-acp"
+          ]
+        ],
+        [
+          "Not checked",
+          [
+            "local.tool"
+          ]
+        ],
+        [
+          "Sign in",
+          [
+            "registry.gemini",
+            "legacy"
+          ]
+        ],
+        [
+          "Check setup",
+          [
+            "registry.broken"
+          ]
+        ]
+      ],
+      "more": [
+        "registry.runner",
+        "registry.signin-runner",
+        "registry.a",
+        "registry.b"
+      ]
+    },
+    {
+      "name": "the order does not depend on the order of the catalogue",
+      "harnesses": [
+        "signInRunner",
+        "broken",
+        "gemini",
+        "claude",
+        "codex",
+        "tool",
+        "legacySignIn",
+        "alpha",
+        "runner",
+        "beta"
+      ],
+      "query": "",
+      "excluding": null,
+      "sections": [
+        [
+          "Ready",
+          [
+            "registry.claude-acp",
+            "registry.codex-acp"
+          ]
+        ],
+        [
+          "Not checked",
+          [
+            "local.tool"
+          ]
+        ],
+        [
+          "Sign in",
+          [
+            "registry.gemini",
+            "legacy"
+          ]
+        ],
+        [
+          "Check setup",
+          [
+            "registry.broken"
+          ]
+        ]
+      ],
+      "more": [
+        "registry.runner",
+        "registry.signin-runner",
+        "registry.a",
+        "registry.b"
+      ]
+    },
+    {
+      "name": "a query matches the name or the id, ignoring case",
+      "harnesses": [
+        "beta",
+        "runner",
+        "alpha",
+        "legacySignIn",
+        "tool",
+        "codex",
+        "claude",
+        "gemini",
+        "broken",
+        "signInRunner"
+      ],
+      "query": "GEMI",
+      "excluding": null,
+      "sections": [
+        [
+          "Sign in",
+          [
+            "registry.gemini"
+          ]
+        ]
+      ],
+      "more": []
+    },
+    {
+      "name": "a query that only a not installed harness matches leaves the groups empty",
+      "harnesses": [
+        "beta",
+        "runner",
+        "alpha",
+        "legacySignIn",
+        "tool",
+        "codex",
+        "claude",
+        "gemini",
+        "broken",
+        "signInRunner"
+      ],
+      "query": "beta",
+      "excluding": null,
+      "sections": [],
+      "more": [
+        "registry.b"
+      ]
+    },
+    {
+      "name": "the harness a pane runs is left out when switching",
+      "harnesses": [
+        "beta",
+        "runner",
+        "alpha",
+        "legacySignIn",
+        "tool",
+        "codex",
+        "claude",
+        "gemini",
+        "broken",
+        "signInRunner"
+      ],
+      "query": "",
+      "excluding": "registry.claude-acp",
+      "sections": [
+        [
+          "Ready",
+          [
+            "registry.codex-acp"
+          ]
+        ],
+        [
+          "Not checked",
+          [
+            "local.tool"
+          ]
+        ],
+        [
+          "Sign in",
+          [
+            "registry.gemini",
+            "legacy"
+          ]
+        ],
+        [
+          "Check setup",
+          [
+            "registry.broken"
+          ]
+        ]
+      ],
+      "more": [
+        "registry.runner",
+        "registry.signin-runner",
+        "registry.a",
+        "registry.b"
+      ]
+    },
+    {
+      "name": "an empty catalogue shows nothing",
+      "harnesses": [],
+      "query": "",
+      "excluding": null,
+      "sections": [],
+      "more": []
+    }
+  ],
+  "defaults": [
+    {
+      "name": "the harness that was ready most recently",
+      "harnesses": [
+        "claude",
+        "codex",
+        "tool"
+      ],
+      "excluding": null,
+      "preferred": null,
+      "expected": "registry.codex-acp"
+    },
+    {
+      "name": "the chosen default wins when it can start",
+      "harnesses": [
+        "claude",
+        "codex"
+      ],
+      "excluding": null,
+      "preferred": "registry.claude-acp",
+      "expected": "registry.claude-acp"
+    },
+    {
+      "name": "the running harness is never the target",
+      "harnesses": [
+        "claude",
+        "codex"
+      ],
+      "excluding": "registry.codex-acp",
+      "preferred": "registry.codex-acp",
+      "expected": "registry.claude-acp"
+    },
+    {
+      "name": "only a ready harness is picked without a choice",
+      "harnesses": [
+        "tool",
+        "gemini",
+        "alpha"
+      ],
+      "excluding": null,
+      "preferred": null,
+      "expected": null
+    },
+    {
+      "name": "a chosen default that is not ready is still honoured",
+      "harnesses": [
+        "tool",
+        "alpha"
+      ],
+      "excluding": null,
+      "preferred": "local.tool",
+      "expected": "local.tool"
+    },
+    {
+      "name": "a default that cannot start is ignored",
+      "harnesses": [
+        "alpha",
+        "codex"
+      ],
+      "excluding": null,
+      "preferred": "registry.a",
+      "expected": "registry.codex-acp"
+    }
+  ],
+  "statuses": [
+    {
+      "harness": "codex",
+      "label": "Ready",
+      "reason": "An agent session opened successfully.",
+      "installed": true
+    },
+    {
+      "harness": "tool",
+      "label": "Not checked",
+      "reason": "Installed; this agent has not been started yet. You can start it now.",
+      "installed": true
+    },
+    {
+      "harness": "legacySignIn",
+      "label": "Sign in",
+      "reason": "This agent requires sign-in before it can start.",
+      "installed": true
+    },
+    {
+      "harness": "broken",
+      "label": "Check setup",
+      "reason": "The agent could not start. Check its installation and try again.",
+      "installed": true
+    },
+    {
+      "harness": "alpha",
+      "label": "Not installed",
+      "reason": "Executable not found on the engine's launch PATH.",
+      "installed": false
+    },
+    {
+      "harness": "runner",
+      "label": "Not checked",
+      "reason": "Installed; this agent has not been started yet. You can start it now.",
+      "installed": false
+    },
+    {
+      "harness": "signInRunner",
+      "label": "Sign in",
+      "reason": "This agent requires sign-in before it can start.",
+      "installed": false
+    }
+  ],
+  "reasons": [
+    {
+      "setupReason": "registry_package_unverified",
+      "text": "The adapter runner is available; its package has not been verified locally. Starting it will check the package."
+    },
+    {
+      "setupReason": "session_failed",
+      "text": "The agent started, but its session failed. Try starting it again."
+    },
+    {
+      "setupReason": "environment_unavailable",
+      "text": "The engine could not read the launch environment."
+    },
+    {
+      "setupReason": "executable_missing",
+      "text": "Executable not found on the engine's launch PATH."
+    },
+    {
+      "setupReason": "authentication_required",
+      "text": "This agent requires sign-in before it can start."
+    },
+    {
+      "setupReason": "launch_failed",
+      "text": "The agent could not start. Check its installation and try again."
+    },
+    {
+      "setupReason": "never_started",
+      "text": "Installed; this agent has not been started yet. You can start it now."
+    }
+  ],
+  "shortNames": [
+    [
+      "Claude Agent",
+      "Claude"
+    ],
+    [
+      "  Codex  ",
+      "Codex"
+    ],
+    [
+      "Agent",
+      "Agent"
+    ],
+    [
+      "Gemini CLI",
+      "Gemini CLI"
+    ]
+  ],
+  "actionLabels": {
+    "target": "Codex",
+    "withTarget": "Restart conversation with Codex",
+    "withoutTarget": "Choose another agent"
+  },
+  "readableNames": [
+    [
+      "registry.claude-acp",
+      "Claude"
+    ],
+    [
+      "custom.gone",
+      "Gone"
+    ],
+    [
+      "local.my_tool-v2",
+      "My Tool V2"
+    ],
+    [
+      "registry.local.x",
+      "X"
+    ],
+    [
+      "registry.",
+      "Agent"
+    ],
+    [
+      "codex",
+      "Codex"
+    ]
+  ],
+  "chipTitles": [
+    {
+      "name": "the running harness is named by the catalogue",
+      "current": "registry.claude-acp",
+      "switchingTo": null,
+      "harnesses": [
+        "claude",
+        "codex"
+      ],
+      "paneName": "My pane",
+      "title": "Claude",
+      "busy": false
+    },
+    {
+      "name": "a switch in flight names its target",
+      "current": "registry.claude-acp",
+      "switchingTo": "registry.codex-acp",
+      "harnesses": [
+        "claude",
+        "codex"
+      ],
+      "paneName": "My pane",
+      "title": "Codex",
+      "busy": true
+    },
+    {
+      "name": "before the catalogue loads the pane's name stands in",
+      "current": "registry.claude-acp",
+      "switchingTo": null,
+      "harnesses": [],
+      "paneName": "Claude Code",
+      "title": "Claude Code",
+      "busy": false
+    },
+    {
+      "name": "without a pane name the identifier is read, never shown raw",
+      "current": "registry.claude-acp",
+      "switchingTo": null,
+      "harnesses": [],
+      "paneName": null,
+      "title": "Claude",
+      "busy": false
+    },
+    {
+      "name": "a target the catalogue does not list is read from its identifier",
+      "current": "registry.claude-acp",
+      "switchingTo": "registry.codex-acp",
+      "harnesses": [],
+      "paneName": "Claude Code",
+      "title": "Codex",
+      "busy": true
+    }
+  ]
+}

@@ -1,0 +1,191 @@
+{
+  "description": "Account rules shared by the Mac (AgentAccountActions) and the desktop client (soyeht_client::account). Both pass every case. The sign-in card is in agent-cards.json. An agent is described only by the fields these rules read; `operation` stands for any configuration change in flight.",
+  "account": [
+    {
+      "name": "each way to sign in again and a sign-out",
+      "reauthMethods": [
+        {
+          "id": "login",
+          "name": "Claude Subscription",
+          "terminal": true
+        },
+        {
+          "id": "console",
+          "name": "Console",
+          "description": "Pay as you go",
+          "terminal": true
+        }
+      ],
+      "canSignOut": true,
+      "paneState": "idle",
+      "connected": true,
+      "operation": false,
+      "expected": {
+        "enabled": true,
+        "items": [
+          [
+            "switch:login",
+            "Switch account: Claude Subscription"
+          ],
+          [
+            "switch:console",
+            "Switch account: Console"
+          ],
+          [
+            "signOut",
+            "Sign out"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "one way to sign in again",
+      "reauthMethods": [
+        {
+          "id": "login",
+          "name": "Claude Subscription",
+          "terminal": true
+        }
+      ],
+      "canSignOut": false,
+      "paneState": "idle",
+      "connected": true,
+      "operation": false,
+      "expected": {
+        "enabled": true,
+        "items": [
+          [
+            "switch:login",
+            "Switch account"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "only a sign-out",
+      "reauthMethods": [],
+      "canSignOut": true,
+      "paneState": "idle",
+      "connected": true,
+      "operation": false,
+      "expected": {
+        "enabled": true,
+        "items": [
+          [
+            "signOut",
+            "Sign out"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "an agent that offers nothing has no account section",
+      "reauthMethods": [],
+      "canSignOut": false,
+      "paneState": "idle",
+      "connected": true,
+      "operation": false,
+      "expected": null
+    },
+    {
+      "name": "a turn that runs blocks the change",
+      "reauthMethods": [
+        {
+          "id": "login",
+          "name": "Claude Subscription",
+          "terminal": true
+        }
+      ],
+      "canSignOut": true,
+      "paneState": "working",
+      "connected": true,
+      "operation": false,
+      "expected": {
+        "enabled": false,
+        "items": [
+          [
+            "switch:login",
+            "Switch account"
+          ],
+          [
+            "signOut",
+            "Sign out"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a request for permission blocks the change",
+      "reauthMethods": [
+        {
+          "id": "login",
+          "name": "Claude Subscription",
+          "terminal": true
+        }
+      ],
+      "canSignOut": false,
+      "paneState": "waiting_for_you",
+      "connected": true,
+      "operation": false,
+      "expected": {
+        "enabled": false,
+        "items": [
+          [
+            "switch:login",
+            "Switch account"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a configuration change in flight blocks the change",
+      "reauthMethods": [
+        {
+          "id": "login",
+          "name": "Claude Subscription",
+          "terminal": true
+        }
+      ],
+      "canSignOut": false,
+      "paneState": "idle",
+      "connected": true,
+      "operation": true,
+      "expected": {
+        "enabled": false,
+        "items": [
+          [
+            "switch:login",
+            "Switch account"
+          ]
+        ]
+      }
+    },
+    {
+      "name": "a lost connection blocks the change",
+      "reauthMethods": [
+        {
+          "id": "login",
+          "name": "Claude Subscription",
+          "terminal": true
+        }
+      ],
+      "canSignOut": false,
+      "paneState": "idle",
+      "connected": false,
+      "operation": false,
+      "expected": {
+        "enabled": false,
+        "items": [
+          [
+            "switch:login",
+            "Switch account"
+          ]
+        ]
+      }
+    }
+  ],
+  "copy": {
+    "sectionTitle": "Account",
+    "explanation": "Switching signs in again in a terminal pane. The conversation and its history stay."
+  }
+}

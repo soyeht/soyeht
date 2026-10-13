@@ -2,12 +2,14 @@
 //! design and the Mac (`examples/design_audit.rs`). The state is a JSON file of the wire's own
 //! shapes: workspaces, panes, the requests agents wait on, a transcript per agent pane (and
 //! where its earlier page starts), the messages queued for an agent, what a terminal printed,
-//! the usage readings and the harness catalogue. Nothing is drawn that a real engine could
-//! send, and no engine is needed.
+//! the usage readings, the harness catalogue with the models each lists, the settings and
+//! skills Preferences show, and any further notifications to replay. Nothing is drawn that a
+//! real engine could send, and no engine is needed.
 
 use crate::{
     app::{self, Setup, TasksStart},
     open_menu::Menu,
+    prefs::Section,
     tasks_ui::TaskView,
     theme::ThemeName,
 };
@@ -15,11 +17,13 @@ use serde_json::Value;
 use soyeht_client::{
     Engine, Event, Snapshot,
     attachments::{Draft, Rejection, Source, Staged, decode_base64},
+    catalogue::Catalogue,
+    preferences::Preferences,
     streams::StreamOutput,
     tasks::TaskUpdate,
     timestamp,
 };
-use soyeht_protocol::PromptAttachment;
+use soyeht_protocol::{EventName, ModelListResult, PromptAttachment};
 use std::path::PathBuf;
 
 /// A time in a fixture as `now-154`, the moment that long before the window opens, so that a
@@ -111,7 +115,54 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
     events.push(Event::Harnesses(
         serde_json::from_value(Value::Array(list("harnesses"))).map_err(describe("harnesses"))?,
     ));
+    events.extend(catalogues(&section("catalogues"))?);
+    if let Value::Object(settings) = section("settings") {
+        let mut preferences = Preferences::default();
+        for (key, value) in &settings {
+            if !preferences.apply(key, value) {
+                return Err(format!(
+                    "the fixture's settings name {key}, which is none of Preferences'"
+                ));
+            }
+        }
+        events.push(Event::Preferences(preferences));
+    }
+    if !section("skills").is_null() {
+        events.push(Event::Skills(
+            serde_json::from_value(section("skills")).map_err(describe("skills"))?,
+        ));
+    }
+    for notification in list("notifications") {
+        let name = serde_json::from_value::<EventName>(notification["name"].clone())
+            .map_err(describe("notifications"))?;
+        events.push(Event::Notification {
+            name,
+            params: notification["params"].clone(),
+        });
+    }
     Ok(events)
+}
+
+/// The models each harness lists, as the engine's `model.list` answers.
+fn catalogues(section: &Value) -> Result<Vec<Event>, String> {
+    let Value::Object(harnesses) = section else {
+        return Ok(Vec::new());
+    };
+    harnesses
+        .iter()
+        .map(|(harness, listing)| {
+            let page: ModelListResult =
+                serde_json::from_value(listing.clone()).map_err(describe("catalogues"))?;
+            Ok(Event::Catalogue {
+                harness: harness.clone(),
+                catalogue: Catalogue {
+                    models: page.items,
+                    options: page.options,
+                    source: page.source,
+                },
+            })
+        })
+        .collect()
 }
 
 /// The files the fixture says are attached in each composer (and not yet sent), and the refusal
@@ -162,14 +213,15 @@ fn describe(section: &str) -> impl Fn(serde_json::Error) -> String + '_ {
     move |error| format!("the fixture's {section} are not the wire's shapes: {error}")
 }
 
-/// The menu a spec names: `new-pane`, `overflow`, `settings`, `harness:<pane>`, `loop:<pane>` or
-/// `config:<pane>:<option>`.
+/// The menu a spec names: `new-pane`, `overflow`, `settings` or `settings:<panel>`,
+/// `harness:<pane>`, `loop:<pane>` or `config:<pane>:<option>`.
 pub fn menu(spec: &str) -> Option<Menu> {
     let mut parts = spec.splitn(3, ':');
     match (parts.next()?, parts.next(), parts.next()) {
         ("new-pane", None, None) => Some(Menu::NewPane),
         ("overflow", None, None) => Some(Menu::Overflow),
         ("settings", None, None) => Some(Menu::Settings),
+        ("settings", Some(panel), None) => Section::named(panel).map(|_| Menu::Settings),
         ("harness", Some(pane), None) => Some(Menu::Harness(pane.to_owned())),
         ("loop", Some(pane), None) => Some(Menu::Loop(pane.to_owned())),
         ("config", Some(pane), Some(config)) => Some(Menu::Config {
@@ -178,6 +230,11 @@ pub fn menu(spec: &str) -> Option<Menu> {
         }),
         _ => None,
     }
+}
+
+/// The Preferences panel a spec names (`settings:usage`), when it names one.
+pub fn panel(spec: &str) -> Option<Section> {
+    Section::named(spec.strip_prefix("settings:")?)
 }
 
 /// The tasks surface a spec names: `tasks` (the board), `tasks:list`, `task:<id>` (the board with
@@ -208,6 +265,7 @@ pub fn run(
     let events = events(fixture)?;
     let staged = staged(fixture)?;
     let tasks = open.and_then(tasks_start);
+    let panel = open.and_then(panel);
     let menu = match (open, &tasks) {
         (Some(spec), None) => Some(menu(spec).ok_or_else(|| format!("no menu is named {spec}"))?),
         _ => None,
@@ -229,6 +287,7 @@ pub fn run(
             inbox,
             theme,
             menu,
+            panel,
             size,
             staged,
             tasks,
@@ -322,6 +381,10 @@ mod tests {
                 config_id: "model".into()
             })
         );
+        assert_eq!(menu("settings:usage"), Some(Menu::Settings));
+        assert_eq!(panel("settings:usage"), Some(Section::Usage));
+        assert_eq!(menu("settings:shortcuts"), None);
+        assert_eq!(panel("settings"), None);
         assert_eq!(menu("nonsense"), None);
     }
 }

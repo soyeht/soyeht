@@ -14,10 +14,15 @@ mod markdown;
 pub(crate) mod menus;
 mod pane;
 mod permission;
+mod preferences;
+mod prefs_harnesses;
+mod prefs_skills;
+mod prefs_usage;
 mod prelude;
 mod rail;
 mod resize_handles;
 mod settings;
+mod switch_popover;
 mod tasks;
 mod tiles;
 mod top_bar;
@@ -40,6 +45,7 @@ use soyeht_client::Connection;
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_focus_request(window, cx);
+        self.window_height = f32::from(window.viewport_size().height);
         let palette = self.theme.palette();
         div()
             .id("workbench")
@@ -75,6 +81,10 @@ impl Render for Workbench {
                     })
                     .children(self.rail_open.then(|| self.rail(palette, cx)))
                     .child(self.stage(palette, cx)),
+            )
+            .children(
+                self.prefs_open()
+                    .then(|| self.preferences_overlay(palette, window.viewport_size(), cx)),
             )
             .children(resize_handles::handles(window))
     }
@@ -136,26 +146,13 @@ impl Workbench {
     }
 }
 
-/// How the engine connection is told: a short status for the settings menu, and what the stage
-/// says when there is nothing else to show.
-pub(crate) struct ConnectionNotice {
-    pub status: SharedString,
-    pub hint: &'static str,
-}
-
-pub(crate) fn connection_notice(connection: &Connection) -> ConnectionNotice {
+/// What the stage says when there is nothing else to show, by how the connection stands.
+pub(crate) fn connection_hint(connection: &Connection) -> &'static str {
     match connection {
-        Connection::Connecting => ConnectionNotice {
-            status: "Connecting to the engine\u{2026}".into(),
-            hint: "Connecting to the engine\u{2026}",
-        },
-        Connection::Connected => ConnectionNotice {
-            status: "Connected".into(),
-            hint: "No workspaces yet. Create one with the soyeht command line.",
-        },
-        Connection::Disconnected(reason) => ConnectionNotice {
-            status: format!("Engine unavailable \u{b7} {reason}").into(),
-            hint: "The engine is not running. Start it and this window reconnects.",
-        },
+        Connection::Connecting => "Connecting to the engine\u{2026}",
+        Connection::Connected => "No workspaces yet. Create one with the soyeht command line.",
+        Connection::Disconnected(_) => {
+            "The engine is not running. Start it and this window reconnects."
+        }
     }
 }

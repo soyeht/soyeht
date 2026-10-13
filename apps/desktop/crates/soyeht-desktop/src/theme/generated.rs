@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 c570bc6dc51f75956310bb824490b5fca1e31ac895e6743c3374f73078b78bd7). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 13e7dae72dce34b6fb6523d019a89cc63773185942ac0eeb0675f51b4938162b). Do not edit.
 use super::Palette;
 
 pub(super) static MILK: Palette = Palette {
@@ -438,6 +438,34 @@ pub mod desktop {
     pub const TASK_EDITOR_HEIGHT: f32 = 96.0;
     pub const TASK_FIELD_HEIGHT: f32 = 40.0;
     pub const ATTENTION_POPOVER_WIDTH: f32 = 340.0;
+    pub const SWITCH_POPOVER_WIDTH: f32 = 448.0;
+    pub const SWITCH_POPOVER_MAXIMUM_HEIGHT: f32 = 780.0;
+    pub const SWITCH_POPOVER_PADDING: f32 = 14.0;
+    pub const HARNESS_LIST_HEIGHT: f32 = 260.0;
+    pub const SEARCH_FIELD_HEIGHT: f32 = 32.0;
+    pub const MODEL_FIELD_HEIGHT: f32 = 30.0;
+    pub const EFFORT_SEGMENT_INSET: f32 = 3.0;
+    pub const PREFERENCES_WIDTH: f32 = 1080.0;
+    pub const PREFERENCES_HEIGHT: f32 = 700.0;
+    pub const PREFERENCES_INSET: f32 = 12.0;
+    pub const PREFERENCES_SIDEBAR_WIDTH: f32 = 220.0;
+    pub const PREFERENCES_SIDEBAR_ROW_HEIGHT: f32 = 34.0;
+    pub const PREFERENCES_SIDE_PADDING: f32 = 22.0;
+    pub const PREFERENCES_TITLE_SIZE: f32 = 16.0;
+    pub const PREFERENCES_PAGE_TITLE_SIZE: f32 = 18.0;
+    pub const PREFERENCES_GLYPH: f32 = 13.0;
+    pub const PREFERENCES_ROW_TITLE_SIZE: f32 = 14.0;
+    pub const PREFERENCES_CHIP_HEIGHT: f32 = 26.0;
+    pub const USAGE_BALLOON_RADIUS: f32 = 14.0;
+    pub const HARNESS_ROW_IDENTITY_WIDTH: f32 = 160.0;
+    pub const HARNESS_ROW_STATUS_WIDTH: f32 = 118.0;
+    pub const HARNESS_ROW_HEIGHT: f32 = 58.0;
+    pub const HARNESS_ROW_WIDE_MINIMUM: f32 = 780.0;
+    pub const USAGE_PROVIDER_LIST_WIDTH: f32 = 210.0;
+    pub const USAGE_PROVIDER_ROW_HEIGHT: f32 = 42.0;
+    pub const USAGE_DETAIL_WIDTH: f32 = 250.0;
+    pub const USAGE_BAR_HEIGHT: f32 = 6.0;
+    pub const USAGE_STATUS_DOT: f32 = 8.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

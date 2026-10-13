@@ -4,7 +4,7 @@
 //! Every update the engine pushes carries the whole message it changes, so folding an update in
 //! replaces the message with the same `localId`.
 
-use crate::{Error, Result, cards::CardState};
+use crate::{Error, Result, cards::CardState, switch::HarnessSwitchView};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{
     AgentMessageUpdateKind, ConfigOption, ConfigValue, Pane, PaneState, PaneUpdateEvent,
@@ -77,6 +77,8 @@ pub struct AgentView {
     pub notice: Option<String>,
     /// The queue, the question, the sign-in and the paging behind the cards.
     pub cards: CardState,
+    /// The pane's last switch to another harness.
+    pub harness_switch: Option<HarnessSwitchView>,
 }
 
 impl AgentView {

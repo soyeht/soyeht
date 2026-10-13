@@ -72,3 +72,11 @@ the clients compute for the person rather than what travels: the wording of the 
 cards, how an attachment is prepared and sized, how the loop panel reads a pane's loop, and how
 a task is grouped, labelled and dated. The Swift tests in `apps/shared` and the Rust tests in
 `apps/desktop` run the same file, so the Mac and the desktop cannot drift apart.
+
+Rules that the harness switch, Preferences and the rail compute for the person are vectors too:
+`vectors/harness-picker.json` (how the harness pickers group, order, name and preselect
+harnesses, and what the chip and the switch button say), `vectors/usage-presentation.json` (the
+window a usage ring follows, its band and percentage, the sentences for a missing reading, the
+spans of time) and `vectors/agent-account.json` (the account section of a signed-in agent pane:
+switch account and sign out). The Mac passes them in `SharedVectorsTests.swift`, the desktop client
+in the tests of `harness_picker`, `usage` and `account` (`apps/desktop/crates/soyeht-client`).

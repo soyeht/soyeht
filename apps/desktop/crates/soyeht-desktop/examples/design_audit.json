@@ -205,6 +205,41 @@
      ]
     }
    }
+  },
+  {
+   "workspaceId": "ws-auth",
+   "name": "Sign in",
+   "path": "/home/dev/soyeht",
+   "layout": {
+    "version": 2,
+    "mode": "custom",
+    "tree": {
+     "axis": "horizontal",
+     "children": [
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "gem",
+        "kind": "agent"
+       }
+      },
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "gem-wait",
+        "kind": "agent"
+       }
+      },
+      {
+       "weight": 1.0,
+       "node": {
+        "paneId": "gem-failed",
+        "kind": "agent"
+       }
+      }
+     ]
+    }
+   }
   }
  ],
  "panes": [
@@ -308,7 +343,21 @@
     "queue": [],
     "draft": false,
     "activePromptId": null,
-    "role": "worker"
+    "role": "worker",
+    "reauthMethods": [
+     {
+      "id": "login",
+      "name": "Claude subscription",
+      "terminal": true
+     },
+     {
+      "id": "console",
+      "name": "Console",
+      "description": "Pay as you go",
+      "terminal": true
+     }
+    ],
+    "canSignOut": true
    },
    "title": "Implement the ACP v2 client (+84 -3), asked Codex to run the contract tests"
   },
@@ -1013,10 +1062,10 @@
    "rows": 24,
    "record": false,
    "agent": {
-    "harness": "registry.claude-acp",
+    "harness": "registry.codex-acp",
     "version": "1.0",
     "fingerprint": "f",
-    "sessionId": "s-registry.claude-acp",
+    "sessionId": "s-registry.codex-acp",
     "options": [
      {
       "id": "model",
@@ -1101,6 +1150,123 @@
     "role": "worker"
    },
    "title": "Rows of the transcript"
+  },
+  {
+   "paneId": "gem",
+   "workspaceId": "ws-auth",
+   "name": "Gemini",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.gemini-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "options": [],
+    "authMethods": [
+     {
+      "id": "login",
+      "name": "Google account",
+      "description": "Opens the sign-in in a terminal pane next to the agent.",
+      "terminal": true
+     },
+     {
+      "id": "key",
+      "name": "API key",
+      "terminal": false
+     }
+    ],
+    "queue": [],
+    "draft": false,
+    "role": "worker"
+   }
+  },
+  {
+   "paneId": "gem-wait",
+   "workspaceId": "ws-auth",
+   "name": "Gemini 2",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.gemini-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "options": [],
+    "authMethods": [
+     {
+      "id": "login",
+      "name": "Google account",
+      "description": "Opens the sign-in in a terminal pane next to the agent.",
+      "terminal": true
+     },
+     {
+      "id": "key",
+      "name": "API key",
+      "terminal": false
+     }
+    ],
+    "queue": [],
+    "draft": false,
+    "role": "worker",
+    "login": {
+     "phase": "waiting",
+     "terminalPaneId": "gem-term"
+    }
+   }
+  },
+  {
+   "paneId": "gem-failed",
+   "workspaceId": "ws-auth",
+   "name": "Claude 3",
+   "cwd": "/home/dev/soyeht",
+   "mode": "agent",
+   "state": "idle",
+   "source": "protocol",
+   "confidence": 1.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false,
+   "agent": {
+    "harness": "registry.claude-acp",
+    "version": "1.0",
+    "fingerprint": "f",
+    "options": [],
+    "authMethods": [],
+    "queue": [],
+    "draft": false,
+    "role": "worker",
+    "canSignOut": true,
+    "reauthMethods": [
+     {
+      "id": "login",
+      "name": "Google account",
+      "description": "Opens the sign-in in a terminal pane next to the agent.",
+      "terminal": true
+     },
+     {
+      "id": "key",
+      "name": "API key",
+      "terminal": false
+     }
+    ]
+   }
   }
  ],
  "requests": [
@@ -1755,7 +1921,10 @@
     "text": "Now the fix:\n\n```rust\nfn main() {\n    let x = `par",
     "complete": false
    }
-  ]
+  ],
+  "gem": [],
+  "gem-wait": [],
+  "gem-failed": []
  },
  "terminals": {
   "victoria": "\u001b[1m$\u001b[0m mkdir -p ~/soyeht/design && ls -la\r\ntotal 8\r\ndrwx------  3 dev  dev   96 Sep 10 00:02 \u001b[34m.\u001b[0m\r\n-rw-------  1 dev  dev   33 Sep 10 00:02 soyeht-desktop.pen\r\n\u001b[32m$\u001b[0m cargo test -p acp\r\n\u001b[2mrunning 3 tests\u001b[0m\r\ntest contract::session_new ... \u001b[32mok\u001b[0m\r\ntest contract::permissions ... \u001b[31mFAILED\u001b[0m\r\n$ ",
@@ -1769,8 +1938,13 @@
    "provider": "claude",
    "state": "ok",
    "source": "claude_oauth_endpoint",
-   "fetchedAt": "2026-10-10T00:00:00Z",
+   "fetchedAt": "2026-10-11T08:55:00Z",
    "primary": {
+    "used": 0.42,
+    "resetsAt": "2026-10-11T12:00:00Z",
+    "label": "Session (5 h)"
+   },
+   "secondary": {
     "used": 0.73,
     "resetsAt": "2026-10-17T00:00:00Z",
     "label": "Week"
@@ -1778,9 +1952,10 @@
   },
   {
    "provider": "codex",
-   "state": "ok",
+   "state": "stale",
    "source": "codex_app_server",
-   "fetchedAt": "2026-10-10T00:00:00Z",
+   "fetchedAt": "2026-10-11T07:00:00Z",
+   "unavailableReason": "rate_limited",
    "primary": {
     "used": 0.21,
     "resetsAt": "2026-10-17T00:00:00Z",
@@ -1789,14 +1964,10 @@
   },
   {
    "provider": "cursor",
-   "state": "ok",
+   "state": "login_needed",
    "source": "cursor_current_period",
-   "fetchedAt": "2026-10-10T00:00:00Z",
-   "primary": {
-    "used": 0.52,
-    "resetsAt": "2026-10-17T00:00:00Z",
-    "label": "Month"
-   }
+   "fetchedAt": "2026-10-11T08:00:00Z",
+   "unavailableReason": "login_needed"
   }
  ],
  "harnesses": [
@@ -1805,9 +1976,86 @@
    "name": "Claude",
    "available": true,
    "installed": true,
-   "version": "1.0",
+   "version": "0.76.0",
    "capabilities": [],
-   "options": [],
+   "options": [
+    {
+     "id": "model",
+     "name": "Model",
+     "category": "model",
+     "type": "select",
+     "currentValue": "opus",
+     "options": [
+      {
+       "value": "opus",
+       "name": "Opus 5 (1M)"
+      },
+      {
+       "value": "sonnet",
+       "name": "Sonnet 5.5"
+      },
+      {
+       "value": "haiku",
+       "name": "Haiku 5"
+      }
+     ]
+    },
+    {
+     "id": "effort",
+     "name": "Effort",
+     "category": "thought_level",
+     "type": "select",
+     "currentValue": "high",
+     "options": [
+      {
+       "value": "low",
+       "name": "Low"
+      },
+      {
+       "value": "medium",
+       "name": "Medium"
+      },
+      {
+       "value": "high",
+       "name": "High"
+      },
+      {
+       "value": "max",
+       "name": "Max"
+      }
+     ]
+    },
+    {
+     "id": "mode",
+     "name": "Mode",
+     "category": "mode",
+     "type": "select",
+     "currentValue": "acceptEdits",
+     "options": [
+      {
+       "value": "default",
+       "name": "Manual"
+      },
+      {
+       "value": "acceptEdits",
+       "name": "Accept edits"
+      },
+      {
+       "value": "plan",
+       "name": "Plan"
+      },
+      {
+       "value": "auto",
+       "name": "Auto"
+      },
+      {
+       "value": "bypass",
+       "name": "Bypass",
+       "kind": "full_access"
+      }
+     ]
+    }
+   ],
    "authMethods": [],
    "setupState": "ready"
   },
@@ -1816,9 +2064,70 @@
    "name": "Codex",
    "available": true,
    "installed": true,
-   "version": "1.0",
+   "version": "1.11.0",
    "capabilities": [],
-   "options": [],
+   "options": [
+    {
+     "id": "model",
+     "name": "Model",
+     "category": "model",
+     "type": "select",
+     "currentValue": "gpt-6-astra",
+     "options": [
+      {
+       "value": "gpt-6-astra",
+       "name": "gpt-6-astra"
+      },
+      {
+       "value": "gpt-6-mini",
+       "name": "gpt-6-mini"
+      }
+     ]
+    },
+    {
+     "id": "effort",
+     "name": "Effort",
+     "category": "thought_level",
+     "type": "select",
+     "currentValue": "medium",
+     "options": [
+      {
+       "value": "low",
+       "name": "Low"
+      },
+      {
+       "value": "medium",
+       "name": "Medium"
+      },
+      {
+       "value": "high",
+       "name": "High"
+      }
+     ]
+    },
+    {
+     "id": "mode",
+     "name": "Mode",
+     "category": "mode",
+     "type": "select",
+     "currentValue": "ask",
+     "options": [
+      {
+       "value": "ask",
+       "name": "Ask for approval"
+      },
+      {
+       "value": "auto",
+       "name": "Approve for me"
+      },
+      {
+       "value": "full",
+       "name": "Full access",
+       "kind": "full_access"
+      }
+     ]
+    }
+   ],
    "authMethods": [],
    "setupState": "ready"
   },
@@ -1841,8 +2150,15 @@
    "version": "1.0",
    "capabilities": [],
    "options": [],
-   "authMethods": [],
-   "setupState": "sign_in"
+   "authMethods": [
+    {
+     "id": "login",
+     "name": "Google account",
+     "terminal": true
+    }
+   ],
+   "setupState": "sign_in",
+   "setupReason": "authentication_required"
   },
   {
    "id": "registry.goose-acp",
@@ -1865,6 +2181,227 @@
    "options": [],
    "authMethods": [],
    "setupState": "not_installed"
+  }
+ ],
+ "catalogues": {
+  "registry.claude-acp": {
+   "items": [
+    {
+     "id": "opus",
+     "name": "Opus 5 (1M)"
+    },
+    {
+     "id": "sonnet",
+     "name": "Sonnet 5.5"
+    },
+    {
+     "id": "haiku",
+     "name": "Haiku 5"
+    }
+   ],
+   "options": [
+    {
+     "id": "model",
+     "name": "Model",
+     "category": "model",
+     "type": "select",
+     "currentValue": "opus",
+     "options": [
+      {
+       "value": "opus",
+       "name": "Opus 5 (1M)"
+      },
+      {
+       "value": "sonnet",
+       "name": "Sonnet 5.5"
+      },
+      {
+       "value": "haiku",
+       "name": "Haiku 5"
+      }
+     ]
+    },
+    {
+     "id": "effort",
+     "name": "Effort",
+     "category": "thought_level",
+     "type": "select",
+     "currentValue": "high",
+     "options": [
+      {
+       "value": "low",
+       "name": "Low"
+      },
+      {
+       "value": "medium",
+       "name": "Medium"
+      },
+      {
+       "value": "high",
+       "name": "High"
+      },
+      {
+       "value": "max",
+       "name": "Max"
+      }
+     ]
+    },
+    {
+     "id": "mode",
+     "name": "Mode",
+     "category": "mode",
+     "type": "select",
+     "currentValue": "acceptEdits",
+     "options": [
+      {
+       "value": "default",
+       "name": "Manual"
+      },
+      {
+       "value": "acceptEdits",
+       "name": "Accept edits"
+      },
+      {
+       "value": "plan",
+       "name": "Plan"
+      },
+      {
+       "value": "auto",
+       "name": "Auto"
+      },
+      {
+       "value": "bypass",
+       "name": "Bypass",
+       "kind": "full_access"
+      }
+     ]
+    }
+   ],
+   "source": "native_session"
+  },
+  "registry.codex-acp": {
+   "items": [
+    {
+     "id": "gpt-6-astra",
+     "name": "gpt-6-astra"
+    },
+    {
+     "id": "gpt-6-mini",
+     "name": "gpt-6-mini",
+     "observedRefusal": {
+      "reason": "The account has no access to this model.",
+      "observedAt": "2026-10-08T00:00:00Z"
+     }
+    }
+   ],
+   "options": [
+    {
+     "id": "model",
+     "name": "Model",
+     "category": "model",
+     "type": "select",
+     "currentValue": "gpt-6-astra",
+     "options": [
+      {
+       "value": "gpt-6-astra",
+       "name": "gpt-6-astra"
+      },
+      {
+       "value": "gpt-6-mini",
+       "name": "gpt-6-mini"
+      }
+     ]
+    },
+    {
+     "id": "effort",
+     "name": "Effort",
+     "category": "thought_level",
+     "type": "select",
+     "currentValue": "medium",
+     "options": [
+      {
+       "value": "low",
+       "name": "Low"
+      },
+      {
+       "value": "medium",
+       "name": "Medium"
+      },
+      {
+       "value": "high",
+       "name": "High"
+      }
+     ]
+    },
+    {
+     "id": "mode",
+     "name": "Mode",
+     "category": "mode",
+     "type": "select",
+     "currentValue": "ask",
+     "options": [
+      {
+       "value": "ask",
+       "name": "Ask for approval"
+      },
+      {
+       "value": "auto",
+       "name": "Approve for me"
+      },
+      {
+       "value": "full",
+       "name": "Full access",
+       "kind": "full_access"
+      }
+     ]
+    }
+   ],
+   "source": "native_session"
+  },
+  "registry.cursor-acp": {
+   "items": [],
+   "options": [],
+   "source": "not_probed"
+  }
+ },
+ "settings": {
+  "harness.preferredId": "registry.claude-acp",
+  "harness.defaultMode.registry.claude-acp": "acceptEdits"
+ },
+ "skills": {
+  "items": [
+   {
+    "name": "review-pr",
+    "scope": "user",
+    "path": "/home/dev/.soyeht/skills/review-pr",
+    "description": "Review a pull request: read the diff, run the tests, list findings by severity."
+   },
+   {
+    "name": "release-notes",
+    "scope": "user",
+    "path": "/home/dev/.soyeht/skills/release-notes",
+    "description": "Write release notes from the merged pull requests since the last tag.",
+    "allowedTools": "Bash(git log:*)"
+   },
+   {
+    "name": "broken-skill",
+    "scope": "user",
+    "path": "/home/dev/.soyeht/skills/broken-skill",
+    "problem": "SKILL.md has no description."
+   }
+  ],
+  "userDirectory": "/home/dev/.soyeht/skills"
+ },
+ "notifications": [
+  {
+   "name": "pane.auth_finished",
+   "params": {
+    "eventId": "1",
+    "at": "2026-10-10T00:00:00Z",
+    "paneId": "gem-failed",
+    "ok": false,
+    "reason": "Sign-in was cancelled in the browser."
+   }
   }
  ]
 }

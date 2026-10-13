@@ -83,6 +83,9 @@ icons! {
     ChevronUp => "chevron-up",
     Hash => "hash",
     Calendar => "calendar",
+    Gauge => "gauge",
+    Palette => "palette",
+    Skills => "wand-sparkles",
 }
 
 macro_rules! logo {

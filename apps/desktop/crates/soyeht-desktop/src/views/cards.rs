@@ -23,13 +23,13 @@ use std::time::Duration;
 /// How the buttons of the cards are filled: the primary action in ink, the others on a well, a
 /// rejection in the danger color.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Role {
+pub(super) enum Role {
     Primary,
     Secondary,
     Destructive,
 }
 
-fn button(
+pub(super) fn button(
     key: SharedString,
     role: Role,
     text: impl Into<SharedString>,

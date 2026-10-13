@@ -327,3 +327,94 @@ fn the_tasks_use_the_engines_methods() {
         .is_background()
     );
 }
+
+#[test]
+fn the_switch_carries_the_model_and_effort_the_person_chose() {
+    let body = |model: Option<&str>, effort: Option<&str>| -> Value {
+        serde_json::to_value(
+            request(&Command::SwitchHarness {
+                pane_id: "p".into(),
+                harness: "codex".into(),
+                model: model.map(str::to_owned),
+                effort: effort.map(str::to_owned),
+            })
+            .unwrap(),
+        )
+        .unwrap()
+    };
+    let chosen = body(Some("gpt-6"), Some("high"));
+    assert_eq!(chosen["method"], "pane.harness.switch");
+    assert_eq!(chosen["params"]["harness"], "codex");
+    assert_eq!(chosen["params"]["model"], "gpt-6");
+    assert_eq!(chosen["params"]["effort"], "high");
+    let left_to_the_harness = body(None, None);
+    assert!(left_to_the_harness["params"].get("model").is_none());
+    assert!(left_to_the_harness["params"].get("effort").is_none());
+}
+
+#[test]
+fn account_commands_use_the_engines_auth_methods() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let start = body(Command::StartSignIn {
+        pane_id: "p".into(),
+        method_id: Some("login".into()),
+    });
+    assert_eq!(start["method"], "pane.auth.start");
+    assert_eq!(start["params"]["authMethodId"], "login");
+    let first = body(Command::StartSignIn {
+        pane_id: "p".into(),
+        method_id: None,
+    });
+    assert!(first["params"].get("authMethodId").is_none());
+    assert_eq!(
+        body(Command::CancelSignIn {
+            pane_id: "p".into()
+        })["method"],
+        "pane.auth.cancel"
+    );
+    assert_eq!(
+        body(Command::SignOut {
+            pane_id: "p".into()
+        })["method"],
+        "pane.auth.logout"
+    );
+}
+
+#[test]
+fn settings_are_written_under_the_keys_the_engine_names() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let preferred = body(Command::SetPreferredHarness {
+        harness: "codex".into(),
+    });
+    assert_eq!(preferred["method"], "settings.set");
+    assert_eq!(preferred["params"]["key"], "harness.preferredId");
+    assert_eq!(preferred["params"]["value"], "codex");
+    let mode = body(Command::SetDefaultMode {
+        harness: "codex".into(),
+        mode: None,
+    });
+    assert_eq!(mode["params"]["key"], "harness.defaultMode.codex");
+    assert_eq!(
+        mode["params"]["value"], "",
+        "no mode keeps the harness's own"
+    );
+}
+
+#[test]
+fn a_rescan_and_a_model_page_are_ordinary_requests() {
+    let rescan =
+        serde_json::to_value(request(&Command::LoadHarnesses { rescan: true }).unwrap()).unwrap();
+    assert_eq!(rescan["params"]["rescan"], true);
+    let plain =
+        serde_json::to_value(request(&Command::LoadHarnesses { rescan: false }).unwrap()).unwrap();
+    assert!(plain["params"].get("rescan").is_none());
+    let page = serde_json::to_value(crate::preference_requests::catalogue_request(
+        "codex",
+        Some("c2".into()),
+    ))
+    .unwrap();
+    assert_eq!(page["method"], "model.list");
+    assert_eq!(page["params"]["cursor"], "c2");
+}

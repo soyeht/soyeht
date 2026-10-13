@@ -13,16 +13,20 @@ use gpui::{
 use soyeht_client::usage::{Band, Presentation, display_name};
 use soyeht_protocol::UsageReading;
 
+/// The palette role of a usage band; usage never introduces a color of its own.
+pub fn band_color(band: Band, palette: &Palette) -> u32 {
+    match band {
+        Band::Success => palette.success(),
+        Band::Warning => palette.warning(),
+        Band::Danger => palette.danger(),
+    }
+}
+
 pub fn ring(reading: &UsageReading, palette: &Palette) -> AnyElement {
     let shown = Presentation(reading);
     let emphasis = shown.emphasis();
     let arc = shown.fraction().zip(shown.band()).map(|(fraction, band)| {
-        let color = match band {
-            Band::Success => palette.success(),
-            Band::Warning => palette.warning(),
-            Band::Danger => palette.danger(),
-        };
-        let mut color: Hsla = rgb(color).into();
+        let mut color: Hsla = rgb(band_color(band, palette)).into();
         color.a *= emphasis.arc_opacity();
         (fraction, color)
     });

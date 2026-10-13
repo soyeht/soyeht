@@ -6,21 +6,22 @@ use crate::{
     agent::TRANSCRIPT_PAGE,
     attachments::{Draft, Upload},
     event::Event,
+    preference_requests,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use soyeht_protocol::{
-    AgentPaneRole, ConfigValue, HarnessInfo, HarnessListParams, HarnessListResult, LoopSetParams,
-    LoopSetResult, LoopStopWhen, PaneAuthCancelParams, PaneAuthStartParams, PaneCancelParams,
-    PaneCloseParams, PaneConfigSetParams, PaneCreateParams, PaneCreateResult, PaneDraftParams,
+    AgentPaneRole, ConfigValue, HarnessInfo, HarnessListResult, LoopSetParams, LoopSetResult,
+    LoopStopWhen, PaneAuthCancelParams, PaneAuthStartParams, PaneCancelParams, PaneCloseParams,
+    PaneConfigSetParams, PaneCreateParams, PaneCreateResult, PaneDraftParams,
     PaneElicitationAnswerParams, PaneFocusParams, PaneHarnessSwitchParams, PaneInputParams,
     PaneMode, PanePermissionAnswerParams, PanePromptParams, PaneQueueRemoveParams,
     PaneQueueResumeParams, PaneResizeParams, PaneRoleSetParams, PaneStreamSubscribeParams,
-    PaneTranscriptParams, PaneTranscriptResult, PromptOrigin, ReplayFrom, Request, TailSelector,
-    TaskCreateParams, TaskCreateResult, TaskDispatchParams, TaskDispatchResult, TaskExecutor,
-    TaskMoveParams, TaskMoveResult, TaskPriority, TaskShowParams, TaskShowResult, TaskState,
-    UsageListParams, UsageListResult, WorkspaceCloseParams, WorkspaceLayoutSetParams,
-    WorkspacePaneLayoutEnvelope,
+    PaneTranscriptParams, PaneTranscriptResult, PromptOrigin, ReplayFrom, Request,
+    SkillsListResult, TailSelector, TaskCreateParams, TaskCreateResult, TaskDispatchParams,
+    TaskDispatchResult, TaskExecutor, TaskMoveParams, TaskMoveResult, TaskPriority, TaskShowParams,
+    TaskShowResult, TaskState, UsageListParams, UsageListResult, UsageProvider,
+    WorkspaceCloseParams, WorkspaceLayoutSetParams, WorkspacePaneLayoutEnvelope,
 };
 use std::sync::mpsc;
 use uuid::Uuid;
@@ -82,16 +83,61 @@ pub enum Command {
         pane_id: String,
     },
     LoadUsage,
-    LoadHarnesses,
+    /// Ask the usage readers for a fresh reading, of one provider or of all.
+    RefreshUsage {
+        provider: Option<UsageProvider>,
+    },
+    /// Fetch the agent harnesses the engine can start. `rescan` reads the login-shell environment
+    /// again first.
+    LoadHarnesses {
+        rescan: bool,
+    },
+    /// Fetch the models and options a harness offers before a pane runs it.
+    LoadCatalogue {
+        harness: String,
+    },
+    /// Fetch the settings Preferences shows: the default harness and the default permission mode
+    /// of each of `harnesses`.
+    LoadPreferences {
+        harnesses: Vec<String>,
+    },
+    /// Fetch the skills every harness loads.
+    LoadSkills,
+    /// Make a skill of the user's: its folder with a `SKILL.md`.
+    CreateSkill {
+        name: String,
+        description: String,
+        instructions: String,
+    },
+    DeleteSkill {
+        name: String,
+    },
+    /// Make `harness` the one new agents start with.
+    SetPreferredHarness {
+        harness: String,
+    },
+    /// The permission mode new panes of `harness` start in; `None` keeps the harness's own.
+    SetDefaultMode {
+        harness: String,
+        mode: Option<String>,
+    },
+    /// Ask the agent to forget its account; it then asks for a sign-in again.
+    SignOut {
+        pane_id: String,
+    },
     /// Choose a value of one of the pane's agent options (model, effort, permission mode).
     SetConfig {
         pane_id: String,
         config_id: String,
         value: String,
     },
+    /// Restart the pane on `harness` and hand the conversation over. No model or effort leaves
+    /// the choice to the harness.
     SwitchHarness {
         pane_id: String,
         harness: String,
+        model: Option<String>,
+        effort: Option<String>,
     },
     AnswerPermission {
         pane_id: String,
@@ -192,7 +238,7 @@ pub struct NewTask {
     pub dispatch: bool,
 }
 
-fn key() -> String {
+pub(crate) fn key() -> String {
     Uuid::new_v4().to_string()
 }
 
@@ -206,6 +252,9 @@ pub fn input_request(pane_id: &str, bytes: &[u8]) -> Request {
 
 /// The single request a command needs. Input is sent in pieces by the caller.
 pub fn request(command: &Command) -> Option<Request> {
+    if let Some(request) = preference_requests::request(command) {
+        return Some(request);
+    }
     Some(match command {
         Command::Input { .. } => return None,
         Command::Resize {
@@ -259,11 +308,6 @@ pub fn request(command: &Command) -> Option<Request> {
         // The queue comes in pages: the engine fetches them one after the other.
         Command::LoadQueue { .. } => return None,
         Command::LoadUsage => Request::UsageList(UsageListParams {}),
-        Command::LoadHarnesses => Request::HarnessList(HarnessListParams {
-            cursor: None,
-            limit: None,
-            rescan: None,
-        }),
         Command::SetConfig {
             pane_id,
             config_id,
@@ -274,15 +318,18 @@ pub fn request(command: &Command) -> Option<Request> {
             value: ConfigValue::V0(value.clone()),
             idempotency_key: key(),
         }),
-        Command::SwitchHarness { pane_id, harness } => {
-            Request::PaneHarnessSwitch(PaneHarnessSwitchParams {
-                pane_id: pane_id.clone(),
-                harness: harness.clone(),
-                model: None,
-                effort: None,
-                idempotency_key: key(),
-            })
-        }
+        Command::SwitchHarness {
+            pane_id,
+            harness,
+            model,
+            effort,
+        } => Request::PaneHarnessSwitch(PaneHarnessSwitchParams {
+            pane_id: pane_id.clone(),
+            harness: harness.clone(),
+            model: model.clone(),
+            effort: effort.clone(),
+            idempotency_key: key(),
+        }),
         Command::AnswerPermission {
             pane_id,
             request_id,
@@ -485,7 +532,10 @@ impl Command {
                 | Self::LoadOlder { .. }
                 | Self::LoadQueue { .. }
                 | Self::LoadUsage
-                | Self::LoadHarnesses
+                | Self::LoadHarnesses { .. }
+                | Self::LoadCatalogue { .. }
+                | Self::LoadPreferences { .. }
+                | Self::LoadSkills
         )
     }
 }
@@ -531,7 +581,10 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
         Command::LoadUsage => Some(Event::Usage(
             serde_json::from_value::<UsageListResult>(result)?.providers,
         )),
-        Command::LoadHarnesses => Some(Event::Harnesses(harnesses(result)?)),
+        Command::LoadHarnesses { .. } => Some(Event::Harnesses(harnesses(result)?)),
+        Command::LoadSkills => Some(Event::Skills(serde_json::from_value::<SkillsListResult>(
+            result,
+        )?)),
         Command::CreateTerminal { ticket, .. } | Command::CreateAgent { ticket, .. } => {
             Some(Event::Opened {
                 ticket: *ticket,

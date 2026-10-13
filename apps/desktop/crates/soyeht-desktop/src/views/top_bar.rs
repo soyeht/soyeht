@@ -3,7 +3,7 @@
 //! Linux and Windows the window controls.
 
 use super::{
-    harness_menu::Pick,
+    harness_menu::{Pick, Picker},
     menus,
     ui::{
         OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer, waiting_badge,
@@ -334,7 +334,7 @@ impl Workbench {
         let rows = if open {
             let pick: Pick =
                 Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
-            let agents = self.harness_rows(None, palette, &pick, cx);
+            let agents = self.harness_rows(Picker::default(), palette, &pick, cx);
             std::iter::once(menus::heading(palette, "Open a pane").into_any_element())
                 .chain(std::iter::once(menus::on_pick(
                     menus::item(palette, "terminal", "Terminal", false),

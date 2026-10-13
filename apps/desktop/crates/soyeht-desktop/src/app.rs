@@ -13,7 +13,6 @@ use gpui::{
 };
 use gpui_platform::application;
 use soyeht_client::{Engine, Event, profile};
-use std::time::Instant;
 
 /// Where the macOS window buttons sit; the top bar leaves room for them.
 const TRAFFIC_LIGHTS: (f32, f32) = (desktop::TRAFFIC_LIGHT_INSET, desktop::TRAFFIC_LIGHT_INSET);
@@ -46,6 +45,8 @@ pub(crate) struct Setup {
     pub theme: ThemeName,
     /// A menu that is open from the first frame.
     pub menu: Option<crate::open_menu::Menu>,
+    /// The Preferences panel that shows when Preferences are that menu.
+    pub panel: Option<crate::prefs::Section>,
     /// The window's size in points, when it is not the one the display suggests.
     pub size: Option<(f32, f32)>,
     /// Files already attached in the composers, for a replay that draws them.
@@ -70,6 +71,7 @@ pub fn run() {
             inbox,
             theme: ThemeName::DEFAULT,
             menu: None,
+            panel: None,
             size: None,
             staged: Vec::new(),
             tasks: None,
@@ -118,6 +120,7 @@ pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
             let workbench = cx.new(|cx| {
                 let mut workbench = Workbench::new(setup.engine, setup.inbox, cx);
                 workbench.theme = setup.theme;
+                workbench.prefs.section = setup.panel;
                 workbench.staged.extend(setup.staged);
                 if let Some(start) = setup.tasks {
                     workbench.destination = crate::destination::Destination::Tasks;
@@ -128,7 +131,7 @@ pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
                     }
                 }
                 if let Some(menu) = setup.menu {
-                    workbench.menus.toggle(menu, Instant::now());
+                    workbench.toggle_menu(menu, cx);
                 }
                 workbench
             });

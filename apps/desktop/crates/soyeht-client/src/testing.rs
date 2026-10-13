@@ -1,7 +1,7 @@
 //! Fixtures shared by the unit tests of this crate.
 
 use serde_json::{Value, json};
-use soyeht_protocol::{Pane, Workspace};
+use soyeht_protocol::{AgentSession, Pane, Workspace};
 
 pub fn workspace_json(id: &str) -> Value {
     json!({"workspaceId": id, "name": id, "path": "/work", "layout": {}})
@@ -47,4 +47,23 @@ pub fn event(name: soyeht_protocol::EventName, mut params: Value) -> crate::Even
     params["eventId"] = json!("9");
     params["at"] = json!("now");
     crate::Event::Notification { name, params }
+}
+
+/// An agent session carrying `fields` besides the ones every session has.
+pub fn agent_session(fields: Value) -> AgentSession {
+    let mut session = json!({
+        "harness": "claude", "version": "1", "fingerprint": "f", "options": [],
+        "authMethods": [], "queue": [], "draft": false, "role": "worker",
+    });
+    for (key, field) in fields.as_object().into_iter().flatten() {
+        session[key] = field.clone();
+    }
+    serde_json::from_value(session).unwrap()
+}
+
+/// An agent pane whose session carries `fields`.
+pub fn agent_pane(id: &str, workspace: &str, fields: Value) -> Pane {
+    let mut value = pane_json(id, workspace, "agent");
+    value["agent"] = serde_json::to_value(agent_session(fields)).unwrap();
+    serde_json::from_value(value).unwrap()
 }

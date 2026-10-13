@@ -2,10 +2,10 @@
 //! alive, and a worker thread that carries out commands in the order they were issued.
 
 use crate::{
-    Error, Result,
+    Error, Result, catalogue,
     commands::{self, Command, INPUT_CHUNK_BYTES},
     event::Event,
-    paging,
+    paging, preferences,
     rpc::Rpc,
     session::{EventSink, Session},
     transport,
@@ -211,6 +211,24 @@ fn execute(rpc: &Rpc, command: &Command) -> Result<Option<Event>> {
         Command::Input { pane_id, bytes } => return send_input(rpc, pane_id, bytes).map(|()| None),
         Command::LoadQueue { pane_id } => return paging::queue(rpc, pane_id).map(Some),
         Command::LoadTasks { workspace_id } => return paging::tasks(rpc, workspace_id).map(Some),
+        // A harness whose models cannot be read is told apart from a failed request: the
+        // popover says so beside that harness and offers to try again.
+        Command::LoadCatalogue { harness } => {
+            return Ok(Some(match catalogue::load(rpc, harness) {
+                Ok(catalogue) => Event::Catalogue {
+                    harness: harness.clone(),
+                    catalogue,
+                },
+                Err(error) => Event::CatalogueFailed {
+                    harness: harness.clone(),
+                    reason: error.to_string(),
+                },
+            }));
+        }
+        Command::LoadPreferences { harnesses } => {
+            return preferences::load(rpc, harnesses)
+                .map(|loaded| Some(Event::Preferences(loaded)));
+        }
         _ => {}
     }
     match commands::request(command) {

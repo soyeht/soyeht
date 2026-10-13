@@ -1,0 +1,390 @@
+{
+  "description": "Usage presentation shared by the Mac (UsagePresentation, UsageTimeText) and the desktop client (soyeht_client::usage). Both pass every case.",
+  "readings": [
+    {
+      "name": "claude follows the weekly window",
+      "reading": {
+        "provider": "claude",
+        "state": "ok",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.9,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "5-hour"
+        },
+        "secondary": {
+          "used": 0.08,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        }
+      },
+      "window": "Weekly",
+      "percentage": "8%",
+      "band": "success",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "the weekly window may be the first one",
+      "reading": {
+        "provider": "codex",
+        "state": "ok",
+        "source": "codex_app_server",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.5,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        },
+        "secondary": {
+          "used": 0.1,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "5-hour"
+        }
+      },
+      "window": "Weekly",
+      "percentage": "50%",
+      "band": "warning",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "without a weekly window the second one is followed",
+      "reading": {
+        "provider": "codex",
+        "state": "ok",
+        "source": "codex_app_server",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.8,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "5-hour"
+        },
+        "secondary": {
+          "used": 0.81,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Daily"
+        }
+      },
+      "window": "Daily",
+      "percentage": "81%",
+      "band": "danger",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "one window only",
+      "reading": {
+        "provider": "claude",
+        "state": "ok",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.3,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Session"
+        }
+      },
+      "window": "Session",
+      "percentage": "30%",
+      "band": "success",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "cursor follows its primary window",
+      "reading": {
+        "provider": "cursor",
+        "state": "ok",
+        "source": "cursor_current_period",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.55,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Month"
+        },
+        "secondary": {
+          "used": 0.9,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        }
+      },
+      "window": "Month",
+      "percentage": "55%",
+      "band": "warning",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "a stale reading keeps its percentage",
+      "reading": {
+        "provider": "codex",
+        "state": "stale",
+        "source": "codex_app_server",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.07,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        },
+        "unavailableReason": "rate_limited"
+      },
+      "window": "Weekly",
+      "percentage": "7%",
+      "band": "success",
+      "emphasis": "lastKnown",
+      "unavailableMessage": "Codex is limiting usage requests; retrying later.",
+      "staleHint": "Latest refresh: Codex is limiting usage requests; retrying later."
+    },
+    {
+      "name": "a stale reading without a reason has no hint",
+      "reading": {
+        "provider": "claude",
+        "state": "stale",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.2,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        }
+      },
+      "window": "Weekly",
+      "percentage": "20%",
+      "band": "success",
+      "emphasis": "lastKnown",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "sign in needed shows a dash",
+      "reading": {
+        "provider": "claude",
+        "state": "login_needed",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "login_needed"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Sign in to Claude in your terminal.",
+      "staleHint": null
+    },
+    {
+      "name": "no access",
+      "reading": {
+        "provider": "claude",
+        "state": "no_access",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "no_access"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Access to the Claude login was declined.",
+      "staleHint": null
+    },
+    {
+      "name": "unavailable because the tool is missing",
+      "reading": {
+        "provider": "cursor",
+        "state": "unavailable",
+        "source": "cursor_current_period",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "tool_not_found"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Cursor not found on this Mac.",
+      "staleHint": null
+    },
+    {
+      "name": "unavailable because it was not checked",
+      "reading": {
+        "provider": "codex",
+        "state": "unavailable",
+        "source": "codex_app_server",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "not_checked"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Usage has not been checked yet.",
+      "staleHint": null
+    },
+    {
+      "name": "unavailable for a failing app server",
+      "reading": {
+        "provider": "codex",
+        "state": "unavailable",
+        "source": "codex_app_server",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "app_server_failed"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Codex app server could not provide usage.",
+      "staleHint": null
+    },
+    {
+      "name": "unavailable for an invalid response",
+      "reading": {
+        "provider": "claude",
+        "state": "unavailable",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "invalid_response"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Usage reader returned invalid data.",
+      "staleHint": null
+    },
+    {
+      "name": "unavailable for the network",
+      "reading": {
+        "provider": "claude",
+        "state": "unavailable",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "network_error"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Claude could not be reached.",
+      "staleHint": null
+    },
+    {
+      "name": "unavailable for a failing source",
+      "reading": {
+        "provider": "claude",
+        "state": "unavailable",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "source_failed"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Claude could not provide usage.",
+      "staleHint": null
+    },
+    {
+      "name": "a fraction beyond the ends is clamped",
+      "reading": {
+        "provider": "claude",
+        "state": "ok",
+        "source": "claude_cli_usage",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 1.4,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        }
+      },
+      "window": "Weekly",
+      "percentage": "100%",
+      "band": "danger",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    }
+  ],
+  "durations": [
+    [
+      59,
+      "1m"
+    ],
+    [
+      600,
+      "10m"
+    ],
+    [
+      3540,
+      "59m"
+    ],
+    [
+      3600,
+      "1h"
+    ],
+    [
+      5400,
+      "1h 30m"
+    ],
+    [
+      86399,
+      "23h 59m"
+    ],
+    [
+      90000,
+      "1d 1h"
+    ],
+    [
+      172800,
+      "2d 0h"
+    ]
+  ],
+  "sources": [
+    [
+      "claude_oauth_endpoint",
+      "Claude Code login (OAuth)"
+    ],
+    [
+      "claude_cli_usage",
+      "Claude Code /usage"
+    ],
+    [
+      "claude_web",
+      "claude.ai browser session"
+    ],
+    [
+      "claude_desktop_cache",
+      "Claude Code cache"
+    ],
+    [
+      "codex_access_token",
+      "Codex access token"
+    ],
+    [
+      "codex_account_endpoint",
+      "Codex login (ChatGPT)"
+    ],
+    [
+      "codex_app_server",
+      "Codex app server"
+    ],
+    [
+      "cursor_app_login",
+      "Cursor app login"
+    ],
+    [
+      "cursor_browser_cookies",
+      "cursor.com browser session"
+    ],
+    [
+      "cursor_current_period",
+      "Cursor current period"
+    ]
+  ]
+}

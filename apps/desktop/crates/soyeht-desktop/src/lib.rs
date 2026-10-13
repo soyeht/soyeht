@@ -18,6 +18,8 @@ mod graphics;
 mod loop_form;
 mod neo;
 mod open_menu;
+mod prefs;
+mod switch_flow;
 mod tasks_ui;
 mod terminal_view;
 pub mod theme;

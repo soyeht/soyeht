@@ -1,9 +1,8 @@
-//! Settings, from the rail's gear: the Mac's Appearance panel (a card for each of the nine
-//! themes, with a swatch of the theme's own surfaces, the name and a check) and how the engine
-//! connection stands.
+//! The Appearance panel of Preferences, as the Mac's: a card for each of the nine themes, with a
+//! swatch of the theme's own surfaces, the name and a check.
 
 use super::{
-    connection_notice,
+    preferences::page,
     ui::{Typeface, column, icon, id, row},
 };
 use crate::{
@@ -18,55 +17,33 @@ use gpui::{
 };
 
 impl Workbench {
-    /// The settings panel: the themes in two columns, then the connection.
-    pub(super) fn settings_panel(
+    /// The Appearance panel: the themes in two columns.
+    pub(super) fn appearance_page(
         &mut self,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> Div {
-        let columns: Vec<AnyElement> = ThemeName::ALL
-            .chunks(2)
-            .map(|pair| {
-                row()
-                    .gap(px(space::X12))
-                    .children(
-                        pair.iter()
-                            .map(|&theme| theme_card(theme, theme == self.theme, palette, cx)),
-                    )
-                    .into_any_element()
-            })
+        // The cards wrap: two to a line while the page is wide, one in a narrow window.
+        let cards: Vec<AnyElement> = ThemeName::ALL
+            .iter()
+            .map(|&theme| theme_card(theme, theme == self.theme, palette, cx))
             .collect();
-        column()
-            .gap(px(space::X12))
-            .child(
-                column()
-                    .gap(px(space::X4))
-                    .child(
-                        div()
-                            .chrome()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(type_scale::SUBHEADING))
-                            .child("Appearance"),
-                    )
-                    .child(
-                        div()
-                            .chrome()
-                            .text_size(px(type_scale::CAPTION))
-                            .text_color(rgb(palette.secondary))
-                            .child("Choose one neomorphic theme for every Soyeht window and pane."),
-                    ),
-            )
-            .child(column().gap(px(space::X12)).children(columns))
-            .child(
-                div()
-                    .chrome()
-                    .text_size(px(type_scale::SMALL))
-                    .text_color(rgb(palette.muted))
-                    .child(format!(
-                        "Engine \u{b7} {}",
-                        connection_notice(&self.state.connection).status
-                    )),
-            )
+        page(
+            palette,
+            "Appearance",
+            Some("Choose one neomorphic theme for every Soyeht window and pane."),
+            None,
+            column()
+                .gap(px(space::X12))
+                .child(row().flex_wrap().gap(px(space::X12)).children(cards))
+                .child(
+                    div()
+                        .chrome()
+                        .text_size(px(type_scale::SMALL))
+                        .text_color(rgb(palette.muted))
+                        .child("Your choice applies immediately."),
+                ),
+        )
     }
 }
 
@@ -100,7 +77,7 @@ fn theme_card(
         .cursor_pointer()
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
             this.theme = theme;
-            this.close_menu(cx);
+            cx.notify();
         }))
         .child(swatch(own))
         .child(

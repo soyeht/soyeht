@@ -6,10 +6,13 @@
 //! method names all come from `soyeht-protocol`; nothing about the protocol is defined here.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod account;
+mod account_events;
 pub mod agent;
 mod agents;
 pub mod attachments;
 pub mod cards;
+pub mod catalogue;
 pub mod commands;
 mod engine;
 mod error;
@@ -21,6 +24,8 @@ pub mod loops;
 pub mod markdown;
 mod paging;
 pub mod permission_preview;
+mod preference_requests;
+pub mod preferences;
 pub mod profile;
 mod rpc;
 pub mod screen;
@@ -28,6 +33,7 @@ mod session;
 mod snapshot;
 pub mod state;
 pub mod streams;
+pub mod switch;
 pub mod tasks;
 pub mod terminal_state;
 #[cfg(test)]

@@ -107,7 +107,7 @@ impl State {
                 }
                 vec![Effect::LoadHarnesses]
             }
-            _ => Vec::new(),
+            _ => return self.account_notification(name, params),
         })
     }
 

@@ -2,7 +2,10 @@
 //! colour band and the percentage under it. The thresholds are the ones of contract 10, as on
 //! the Mac and the iPhone.
 
-use soyeht_protocol::{UsageProvider, UsageReading, UsageState, UsageWindow};
+use crate::timestamp;
+use soyeht_protocol::{
+    UsageProvider, UsageReading, UsageSource, UsageState, UsageUnavailableReason, UsageWindow,
+};
 
 /// The colour band of a used fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +96,45 @@ impl Presentation<'_> {
         }
     }
 
+    /// Why there is no reading, in words; the sentence the usage detail shows.
+    pub fn unavailable_message(&self) -> String {
+        self.reason_message()
+            .unwrap_or_else(|| "Usage is unavailable.".to_owned())
+    }
+
+    /// Why a last-known reading was not replaced: the latest refresh failed for this reason.
+    pub fn stale_hint(&self) -> Option<String> {
+        self.is_stale()
+            .then(|| self.reason_message())
+            .flatten()
+            .map(|reason| format!("Latest refresh: {reason}"))
+    }
+
+    fn reason_message(&self) -> Option<String> {
+        let provider = display_name(&self.0.provider);
+        Some(match self.0.unavailable_reason.as_ref()? {
+            UsageUnavailableReason::NotChecked => "Usage has not been checked yet.".to_owned(),
+            UsageUnavailableReason::ToolNotFound => format!("{provider} not found on this Mac."),
+            UsageUnavailableReason::AppServerFailed => {
+                format!("{provider} app server could not provide usage.")
+            }
+            UsageUnavailableReason::InvalidResponse => {
+                "Usage reader returned invalid data.".to_owned()
+            }
+            UsageUnavailableReason::RateLimited => {
+                format!("{provider} is limiting usage requests; retrying later.")
+            }
+            UsageUnavailableReason::NetworkError => format!("{provider} could not be reached."),
+            UsageUnavailableReason::LoginNeeded => {
+                format!("Sign in to {provider} in your terminal.")
+            }
+            UsageUnavailableReason::NoAccess => {
+                format!("Access to the {provider} login was declined.")
+            }
+            UsageUnavailableReason::SourceFailed => format!("{provider} could not provide usage."),
+        })
+    }
+
     pub fn percentage(&self) -> String {
         self.fraction().map_or_else(
             || "\u{2014}".to_owned(),
@@ -109,6 +151,73 @@ pub fn display_name(provider: &UsageProvider) -> &'static str {
     }
 }
 
+/// Where a reading came from, as the detail names it.
+pub fn source_name(source: &UsageSource) -> &'static str {
+    match source {
+        UsageSource::ClaudeOauthEndpoint => "Claude Code login (OAuth)",
+        UsageSource::ClaudeCliUsage => "Claude Code /usage",
+        UsageSource::ClaudeWeb => "claude.ai browser session",
+        UsageSource::ClaudeDesktopCache => "Claude Code cache",
+        UsageSource::CodexAccessToken => "Codex access token",
+        UsageSource::CodexAccountEndpoint => "Codex login (ChatGPT)",
+        UsageSource::CodexAppServer => "Codex app server",
+        UsageSource::CursorAppLogin => "Cursor app login",
+        UsageSource::CursorBrowserCookies => "cursor.com browser session",
+        UsageSource::CursorCurrentPeriod => "Cursor current period",
+    }
+}
+
+/// A span of time as the usage detail says it: "10m", "1h 30m", "1d 1h". Under a minute is a
+/// minute.
+pub fn duration_text(seconds: u64) -> String {
+    let minutes = (seconds / 60).max(1);
+    if minutes < 60 {
+        return format!("{minutes}m");
+    }
+    let (hours, remainder) = (minutes / 60, minutes % 60);
+    if hours < 24 {
+        return if remainder == 0 {
+            format!("{hours}h")
+        } else {
+            format!("{hours}h {remainder}m")
+        };
+    }
+    format!("{}d {}h", hours / 24, hours % 24)
+}
+
+/// When a window resets, as the detail says it, `now` being seconds since the Unix epoch.
+pub fn reset_text(resets_at: Option<&str>, now: f64) -> String {
+    let Some(at) = resets_at.and_then(timestamp::seconds_since_epoch) else {
+        return "Reset unavailable".to_owned();
+    };
+    if at > now {
+        format!("Resets in {}", duration_text((at - now) as u64))
+    } else {
+        "Reset due".to_owned()
+    }
+}
+
+/// How old a reading is: "updated 5m ago" for a current one, "as of" the minute for a stale one.
+pub fn age_text(reading: &UsageReading, now: f64) -> String {
+    let Some(fetched) = timestamp::seconds_since_epoch(&reading.fetched_at) else {
+        return "time unavailable".to_owned();
+    };
+    if reading.state == UsageState::Stale {
+        let minutes_of_day = (fetched as i64).rem_euclid(86_400) / 60;
+        return format!(
+            "as of {:02}:{:02}",
+            minutes_of_day / 60,
+            minutes_of_day % 60
+        );
+    }
+    let age = now - fetched;
+    if age >= 60.0 {
+        format!("updated {} ago", duration_text(age as u64))
+    } else {
+        "updated just now".to_owned()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +231,72 @@ mod tests {
             "primary": windows.first().map(window), "secondary": windows.get(1).map(window)
         }))
         .unwrap()
+    }
+
+    fn vectors() -> serde_json::Value {
+        crate::testing::vector("usage-presentation")
+    }
+
+    #[test]
+    fn readings_follow_the_shared_vectors() {
+        for case in vectors()["readings"].as_array().unwrap() {
+            let reading: UsageReading = serde_json::from_value(case["reading"].clone()).unwrap();
+            let shown = Presentation(&reading);
+            let name = &case["name"];
+            assert_eq!(
+                shown.window().map(|window| window.label.as_str()),
+                case["window"].as_str(),
+                "{name}"
+            );
+            assert_eq!(shown.percentage(), case["percentage"], "{name}");
+            let band = shown.band().map(|band| format!("{band:?}").to_lowercase());
+            assert_eq!(band.as_deref(), case["band"].as_str(), "{name}");
+            let emphasis = match shown.emphasis() {
+                Emphasis::Current => "current",
+                Emphasis::LastKnown => "lastKnown",
+                Emphasis::None => "none",
+            };
+            assert_eq!(emphasis, case["emphasis"], "{name}");
+            assert_eq!(
+                shown.unavailable_message(),
+                case["unavailableMessage"],
+                "{name}"
+            );
+            assert_eq!(
+                shown.stale_hint().as_deref(),
+                case["staleHint"].as_str(),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn durations_and_sources_follow_the_shared_vectors() {
+        let vectors = vectors();
+        for pair in vectors["durations"].as_array().unwrap() {
+            assert_eq!(duration_text(pair[0].as_u64().unwrap()), pair[1]);
+        }
+        for pair in vectors["sources"].as_array().unwrap() {
+            let source: UsageSource = serde_json::from_value(pair[0].clone()).unwrap();
+            assert_eq!(source_name(&source), pair[1]);
+        }
+    }
+
+    #[test]
+    fn times_are_said_in_relation_to_now() {
+        let at = |text| timestamp::seconds_since_epoch(text).unwrap();
+        let now = at("2026-10-09T10:00:00Z");
+        assert_eq!(
+            reset_text(Some("2026-10-09T11:30:00Z"), now),
+            "Resets in 1h 30m"
+        );
+        assert_eq!(reset_text(Some("2026-10-09T09:00:00Z"), now), "Reset due");
+        assert_eq!(reset_text(None, now), "Reset unavailable");
+        let current = reading("claude", "ok", &[("Weekly", 0.1)]);
+        assert_eq!(age_text(&current, now + 300.0), "updated 5m ago");
+        assert_eq!(age_text(&current, now + 5.0), "updated just now");
+        let stale = reading("claude", "stale", &[("Weekly", 0.1)]);
+        assert_eq!(age_text(&stale, now + 300.0), "as of 10:00");
     }
 
     #[test]
