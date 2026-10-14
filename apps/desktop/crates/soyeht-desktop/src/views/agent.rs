@@ -4,6 +4,7 @@
 
 use super::{
     attachments::sent_chips,
+    cards::Windowing,
     ui::{Typeface, code_well, column, icon, id, row},
 };
 use crate::{
@@ -15,7 +16,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, ExternalPaths, FontWeight, InteractiveElement,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
 };
-use soyeht_client::{agent::terminal_text, markdown};
+use soyeht_client::{agent::terminal_text, markdown, transcript_rows::Viewport};
 use soyeht_protocol::{
     PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind, TranscriptMessage,
     TranscriptRole,
@@ -32,25 +33,55 @@ impl Workbench {
             .state
             .agent(&pane.pane_id)
             .map_or(0, |view| view.messages.len());
-        let scroll = self.transcript_scroll(&pane.pane_id, count);
+        let (scroll, follows) = self.transcript_scroll(&pane.pane_id, count);
+        let measured = self.transcript_rows(&pane.pane_id);
+        let viewport = Viewport {
+            // The scroll to the newest message lands in this frame's layout, after the rows have
+            // been chosen: a frame that follows builds every row, as one does before the first
+            // layout.
+            height: if follows {
+                0.0
+            } else {
+                f32::from(scroll.bounds().size.height)
+            },
+            // A wheel can leave the offset past the ends until the next layout clamps it.
+            from_bottom: if follows {
+                0.0
+            } else {
+                let max = f32::from(scroll.max_offset().y);
+                (max + f32::from(scroll.offset().y)).clamp(0.0, max)
+            },
+        };
         let limit = self.transcript_limit(&pane.pane_id);
         // The transcript is read where it lives and only the elements are built: the last
         // `limit` messages, never a copy of all of them. The Markdown cache is taken out of
         // the workbench while the rows are built, so the transcript is only read.
         let mut markdown = std::mem::take(&mut self.markdown);
-        let (rows, earlier, notice) = match self.state.agent(&pane.pane_id) {
-            Some(view) => {
-                let (shown, hidden) = view.tail(limit);
-                (
-                    self.transcript_entries(shown, &mut markdown, palette, cx),
-                    view.cards.has_earlier(hidden),
-                    view.notice.clone(),
-                )
-            }
-            None => (Vec::new(), false, None),
+        let notice = self
+            .state
+            .agent(&pane.pane_id)
+            .and_then(|view| view.notice.clone());
+        let load_earlier = self
+            .state
+            .agent(&pane.pane_id)
+            .is_some_and(|view| view.cards.has_earlier(view.tail(limit).1))
+            .then(|| self.load_earlier_button(&pane.pane_id, palette, cx));
+        let leading = usize::from(load_earlier.is_some()) + usize::from(notice.is_some());
+        let rows = match self.state.agent(&pane.pane_id) {
+            Some(view) => self.transcript_entries(
+                view.tail(limit).0,
+                &mut markdown,
+                Windowing {
+                    rows: &measured,
+                    viewport,
+                    leading,
+                },
+                palette,
+                cx,
+            ),
+            None => Vec::new(),
         };
         self.markdown = markdown;
-        let load_earlier = earlier.then(|| self.load_earlier_button(&pane.pane_id, palette, cx));
         let dropped = pane.pane_id.clone();
         column()
             .flex_1()
@@ -78,6 +109,20 @@ impl Workbench {
                     .child(
                         column()
                             .gap(px(pane_interior::STACK_SPACING))
+                            // The sizes the rows were laid out at tell the next frame which of
+                            // them it can stand a spacer in for.
+                            .on_children_prepainted(move |bounds, _, _| {
+                                let sizes: Vec<(f32, f32)> = bounds
+                                    .iter()
+                                    .map(|bounds| {
+                                        (
+                                            f32::from(bounds.size.width),
+                                            f32::from(bounds.size.height),
+                                        )
+                                    })
+                                    .collect();
+                                measured.borrow_mut().absorb(&sizes);
+                            })
                             .children(load_earlier)
                             .children(notice.as_deref().map(|text| notice_line(text, palette)))
                             .children(rows),

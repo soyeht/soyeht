@@ -22,10 +22,13 @@ use soyeht_client::{
     keys::{self, Modifiers},
     markdown,
     screen::TerminalScreen,
+    transcript_rows::Rows,
 };
 use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet},
+    rc::Rc,
     time::{Duration, Instant},
 };
 
@@ -47,6 +50,11 @@ pub struct Workbench {
     pub(crate) switch: Option<SwitchDraft>,
     /// The height of the window as the last frame saw it, for popovers that fit inside it.
     pub(crate) window_height: f32,
+    /// The width of the window as the last frame saw it.
+    pub(crate) window_width: f32,
+    /// What decides how wide the panes are besides the size of their own card: the window, the
+    /// rail and the workspace's arrangement.
+    pub(crate) layout_signature: u64,
     /// Which Preferences panel is open and what is half done in it.
     pub(crate) prefs: Prefs,
     /// The message line of each agent pane's composer.
@@ -54,6 +62,9 @@ pub struct Workbench {
     /// Numbers the requests that open a pane, so each answer is matched to its request.
     next_ticket: u64,
     transcripts: HashMap<String, (ScrollHandle, usize)>,
+    /// What the rows of each agent transcript were laid out at, so that a long one builds only the
+    /// rows near the viewport.
+    transcript_rows: HashMap<String, Rc<RefCell<Rows>>>,
     /// The thoughts of an agent the person has opened, by message.
     pub(crate) open_thoughts: HashSet<String>,
     /// The subagent rows the person has opened, by subagent.
@@ -137,10 +148,13 @@ impl Workbench {
             menus: OpenMenu::default(),
             switch: None,
             window_height: f32::MAX,
+            window_width: f32::MAX,
+            layout_signature: 0,
             prefs: Prefs::default(),
             fields: HashMap::new(),
             next_ticket: 0,
             transcripts: HashMap::new(),
+            transcript_rows: HashMap::new(),
             open_thoughts: HashSet::new(),
             open_subagents: HashSet::new(),
             transcript_extra: HashMap::new(),
@@ -241,6 +255,8 @@ impl Workbench {
         let state = &self.state;
         self.fields.retain(|id, _| state.agent(id).is_some());
         self.transcripts.retain(|id, _| state.agent(id).is_some());
+        self.transcript_rows
+            .retain(|id, _| state.agent(id).is_some());
         self.chip_scrolls.retain(|id, _| state.agent(id).is_some());
         self.transcript_extra
             .retain(|id, _| state.agent(id).is_some());
@@ -374,17 +390,31 @@ impl Workbench {
             .clone()
     }
 
-    /// The scroll state of an agent's transcript, following the newest message while it grows.
-    pub(crate) fn transcript_scroll(&mut self, pane_id: &str, messages: usize) -> ScrollHandle {
+    /// The scroll state of an agent's transcript, following the newest message while it grows;
+    /// true when this frame scrolls it to the newest.
+    pub(crate) fn transcript_scroll(
+        &mut self,
+        pane_id: &str,
+        messages: usize,
+    ) -> (ScrollHandle, bool) {
         let (handle, seen) = self
             .transcripts
             .entry(pane_id.to_owned())
             .or_insert_with(|| (ScrollHandle::new(), 0));
-        if *seen != messages {
+        let follows = *seen != messages;
+        if follows {
             *seen = messages;
             handle.scroll_to_bottom();
         }
-        handle.clone()
+        (handle.clone(), follows)
+    }
+
+    /// What the rows of an agent's transcript measured, made when first needed.
+    pub(crate) fn transcript_rows(&mut self, pane_id: &str) -> Rc<RefCell<Rows>> {
+        self.transcript_rows
+            .entry(pane_id.to_owned())
+            .or_default()
+            .clone()
     }
 
     /// Called at the start of a frame: honours a request to move keyboard focus.

@@ -12,7 +12,10 @@ use gpui::{
     AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div, point,
     px, rgb,
 };
-use soyeht_client::layout::{Sizing, minimum_width, pane_span, reveal_offset};
+use soyeht_client::{
+    layout::{Sizing, minimum_width, pane_span, reveal_offset},
+    transcript_rows,
+};
 use soyeht_protocol::{Pane, WorkspacePaneLayoutAxis, WorkspacePaneLayoutNode as Node};
 
 /// The width the arrangement needs so that no pane is narrower than the floor.
@@ -78,6 +81,15 @@ impl Workbench {
             return empty(palette, Some(place.icon()), message);
         };
         let focused = self.state.focused_pane().map(|pane| pane.pane_id.clone());
+        self.layout_signature = transcript_rows::fingerprint(
+            &(
+                &tree,
+                self.window_width.to_bits(),
+                self.window_height.to_bits(),
+                self.rail_open,
+            ),
+            0,
+        );
         let tiles = self.tile(&tree, focused.as_deref(), palette, cx);
         self.reveal_pending(&tree);
         // A pane keeps a width its composer and header fit in, as the Mac's layout floors do:

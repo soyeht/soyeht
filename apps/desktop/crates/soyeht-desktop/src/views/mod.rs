@@ -48,6 +48,7 @@ impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_focus_request(window, cx);
         self.window_height = f32::from(window.viewport_size().height);
+        self.window_width = f32::from(window.viewport_size().width);
         let palette = self.theme.palette();
         div()
             .id("workbench")

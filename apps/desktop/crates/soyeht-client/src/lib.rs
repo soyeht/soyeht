@@ -39,6 +39,7 @@ pub mod terminal_state;
 #[cfg(test)]
 mod testing;
 pub mod timestamp;
+pub mod transcript_rows;
 pub mod transport;
 pub mod usage;
 

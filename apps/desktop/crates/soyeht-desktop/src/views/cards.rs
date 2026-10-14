@@ -16,9 +16,25 @@ use soyeht_client::{
         silence as silence_words,
     },
     markdown, timestamp,
+    transcript_rows::{self, Child, Rows, Viewport},
 };
 use soyeht_protocol::{ElicitationRequest, Pane};
-use std::time::Duration;
+use std::{cell::RefCell, time::Duration};
+
+/// What a frame knows about the rows of the transcript it is building.
+pub(super) struct Windowing<'a> {
+    /// What the rows were laid out at.
+    pub rows: &'a RefCell<Rows>,
+    /// Where the transcript is scrolled to.
+    pub viewport: Viewport,
+    /// How many children of the transcript column come before its rows.
+    pub leading: usize,
+}
+
+/// Stands in for a row that is far from the viewport: as high as the row was when it was built.
+fn spacer_row(height: f32) -> AnyElement {
+    div().flex_none().w_full().h(px(height)).into_any_element()
+}
 
 /// How the buttons of the cards are filled: the primary action in ink, the others on a well, a
 /// rejection in the danger color.
@@ -488,24 +504,73 @@ impl Workbench {
     }
 
     /// The transcript's entries, with each subagent's activity under its row, and the line that
-    /// says the parent waits on its subagents.
+    /// says the parent waits on its subagents. The entries far from the viewport are spacers
+    /// (see `transcript_rows`).
     pub(super) fn transcript_entries(
         &self,
         shown: &[soyeht_protocol::TranscriptMessage],
         markdown: &mut markdown::Cache,
+        windowing: Windowing<'_>,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let entries = cards::entries(shown);
-        let mut rows: Vec<AnyElement> = entries
+        let keys: Vec<(String, u64)> = entries
             .iter()
-            .filter_map(|entry| self.entry_row(entry, markdown, palette, cx))
+            .map(|entry| {
+                (
+                    entry.id(),
+                    transcript_rows::fingerprint(entry, self.open_state(entry)),
+                )
+            })
             .collect();
+        let plan = windowing.rows.borrow_mut().plan(
+            &keys,
+            windowing.viewport,
+            pane_interior::STACK_SPACING,
+            self.layout_signature,
+        );
+        let mut children = vec![Child::Other; windowing.leading];
+        let mut rows: Vec<AnyElement> = Vec::with_capacity(entries.len() + 1);
+        for ((entry, (key, fingerprint)), spacer) in entries.iter().zip(keys).zip(plan) {
+            let row = match spacer {
+                Some(height) => Some(spacer_row(height)),
+                None => self.entry_row(entry, markdown, palette, cx),
+            };
+            if let Some(row) = row {
+                children.push(Child::Row {
+                    key,
+                    fingerprint,
+                    built: spacer.is_none(),
+                });
+                rows.push(row);
+            } else {
+                windowing.rows.borrow_mut().mark_absent(&key, fingerprint);
+            }
+        }
         let waiting = cards::awaited(&entries);
         if waiting > 0 {
+            children.push(Child::Other);
             rows.push(caption(palette.secondary, cards::waiting(waiting)).into_any_element());
         }
+        windowing.rows.borrow_mut().set_children(children);
         rows
+    }
+
+    /// What an entry shows that its content does not hold: whether its thought or subagent is
+    /// open, which changes its height.
+    fn open_state(&self, entry: &Entry<'_>) -> u64 {
+        match entry {
+            Entry::Message(message) => u64::from(self.open_thoughts.contains(&message.local_id)),
+            Entry::Subagent(group) => group.entries.iter().fold(
+                u64::from(self.open_subagents.contains(group.subagent_id)),
+                |state, inner| {
+                    state
+                        .wrapping_mul(31)
+                        .wrapping_add(self.open_state(inner) + 1)
+                },
+            ),
+        }
     }
 
     fn entry_row(
