@@ -2098,6 +2098,7 @@ dependencies = [
  "waker-fn",
  "web-time",
  "windows 0.61.3",
+ "zed-scap",
 ]
 
 [[package]]
