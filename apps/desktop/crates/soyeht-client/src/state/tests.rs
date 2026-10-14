@@ -267,6 +267,43 @@ fn selecting_a_workspace_focuses_its_first_terminal() {
 }
 
 #[test]
+fn a_workspace_that_was_not_shown_has_its_screens_when_it_is_selected() {
+    let (mut state, _) = connected(across_workspaces());
+    let output = |pane_id: &str| {
+        Event::Terminal(StreamOutput::Bytes {
+            pane_id: pane_id.into(),
+            bytes: b"prompt $ ".to_vec(),
+        })
+    };
+    // Output of the workspace shown changes the view; output of the other one does not, but its
+    // replica takes it.
+    assert!(state.changes_view(&output("t1")));
+    assert!(!state.changes_view(&output("t2")));
+    assert!(!state.changes_view(&output("missing")));
+    state.apply(output("t2"));
+    // Selecting needs no event and no request: the state shows the new workspace at once.
+    state.select_workspace("w2");
+    assert_eq!(state.selected_workspace().unwrap().workspace_id, "w2");
+    assert_eq!(state.focused_pane().unwrap().pane_id, "t2");
+    assert!(
+        state
+            .screen("t2")
+            .unwrap()
+            .contents()
+            .starts_with("prompt $")
+    );
+    assert!(state.changes_view(&output("t2")));
+    assert!(!state.changes_view(&output("t1")));
+}
+
+#[test]
+fn events_other_than_terminal_output_change_the_view() {
+    let (state, _) = connected(across_workspaces());
+    assert!(state.changes_view(&Event::Problem("boom".into())));
+    assert!(state.changes_view(&Event::Disconnected("lost".into())));
+}
+
+#[test]
 fn problems_are_kept_until_the_next_connection() {
     let mut state = State::default();
     state.apply(Event::Problem("boom".into()));

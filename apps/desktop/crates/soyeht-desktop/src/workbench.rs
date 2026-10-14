@@ -168,7 +168,11 @@ impl Workbench {
     }
 
     fn apply(&mut self, events: Vec<Event>, cx: &mut Context<Self>) {
+        // A frame costs the same however little changed in it, and on a machine without a GPU that
+        // is long: output of terminals the window does not show asks for none.
+        let mut repaint = false;
         for event in events {
+            repaint |= self.state.changes_view(&event);
             for effect in self.state.apply(event) {
                 match effect {
                     Effect::SubscribeTerminal(pane_id) => {
@@ -227,7 +231,9 @@ impl Workbench {
         if self.switch.is_some() {
             self.choose_first_harness(cx);
         }
-        cx.notify();
+        if repaint {
+            cx.notify();
+        }
     }
 
     /// Drops what is kept per pane for panes that are gone, and per message for messages that are.

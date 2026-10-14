@@ -8,8 +8,8 @@ use crate::{
 use gpui::{
     AnyElement, AnyView, App, AppContext, Context, Div, ElementId, FontWeight, Hsla,
     InteractiveElement, IntoElement, MouseButton, ParentElement, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, Svg, Window, div, linear_color_stop,
-    linear_gradient, prelude::FluentBuilder, px, relative, rgb, svg,
+    SharedString, StatefulInteractiveElement, Styled, Svg, TextRun, Window, div, font,
+    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rgb, svg,
 };
 
 /// The two faces besides the interface's own, each with the line height its font has. GPUI's
@@ -48,6 +48,24 @@ pub fn logo(path: &'static str, size: f32, color: u32) -> Svg {
         .size(px(size))
         .flex_none()
         .text_color(rgb(color))
+}
+
+/// How wide `text` is in the window's chrome face (Nunito) at `size` points and `weight`.
+pub fn text_width(window: &Window, text: &str, size: f32, weight: FontWeight) -> f32 {
+    let mut face = font(fonts::CHROME);
+    face.weight = weight;
+    let run = TextRun {
+        len: text.len(),
+        font: face,
+        color: Hsla::default(),
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let line = window
+        .text_system()
+        .shape_line(text.to_owned().into(), px(size), &[run], None);
+    f32::from(line.width)
 }
 
 /// What a tooltip says, in a small raised chip of the palette.

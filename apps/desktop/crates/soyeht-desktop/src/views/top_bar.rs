@@ -6,8 +6,8 @@ use super::{
     harness_menu::{Pick, Picker},
     menus,
     ui::{
-        OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer, waiting_badge,
-        working_dot,
+        OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer, text_width,
+        waiting_badge, working_dot,
     },
     window_controls,
 };
@@ -48,7 +48,7 @@ impl Workbench {
         } else {
             window_controls::visible(window)
         };
-        let strip = self.tab_strip(palette, cx);
+        let strip = self.tab_strip(palette, window, cx);
         let hidden = strip.hidden;
         let connected = self.state.connection == Connection::Connected;
         let reconnecting = !connected && !matches!(self.state.connection, Connection::Connecting);
@@ -73,7 +73,12 @@ impl Workbench {
     /// that hides tabs, with a chevron on it that moves the strip to the next hidden tab, and the
     /// active tab scrolled into view when it changes. The tabs that are not wholly in view, as
     /// the last frame laid them out, are the ones the "+N" button lists.
-    fn tab_strip(&mut self, palette: &'static Palette, cx: &mut Context<Self>) -> TabStrip {
+    fn tab_strip(
+        &mut self,
+        palette: &'static Palette,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> TabStrip {
         let workspaces = self.state.workspaces();
         let ids: Vec<(String, String)> = workspaces
             .iter()
@@ -123,7 +128,9 @@ impl Workbench {
         let tabs: Vec<AnyElement> = ids
             .iter()
             .enumerate()
-            .map(|(index, (id, name))| self.tab(id, name, Some(index) == active, palette, cx))
+            .map(|(index, (id, name))| {
+                self.tab(id, name, Some(index) == active, palette, window, cx)
+            })
             .collect();
         let clearance = shadow_clearance();
         let chevron = |key: &'static str, glyph: Icon, target: Option<usize>| {
@@ -194,6 +201,7 @@ impl Workbench {
         name: &str,
         selected: bool,
         palette: &'static Palette,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         // Beside the name: how many requests wait in the workspace, else a dot while an agent
@@ -224,7 +232,11 @@ impl Workbench {
                     this.focus_input(&pane_id, window, cx);
                 }
             }))
-            .tooltip(hint(name.to_owned(), palette))
+            // The name is in the tooltip only when the tab cuts it short, as the Mac's `.help(name)`
+            // is of use only then: a name that is all in view needs no second reading.
+            .when(name_is_cut(name, waiting, working, window), |tab| {
+                tab.tooltip(hint(name.to_owned(), palette))
+            })
             .child(
                 row()
                     .min_w_0()
@@ -388,6 +400,29 @@ impl Workbench {
 struct TabStrip {
     element: AnyElement,
     hidden: Vec<(String, String)>,
+}
+
+/// Whether a tab cuts `name` short. The name has what the widest tab leaves it beside the padding,
+/// the close mark and, while there is one, the count of waiting requests or the dot of a working
+/// agent; it is cut when its text is wider than that.
+fn name_is_cut(name: &str, waiting: usize, working: bool, window: &Window) -> bool {
+    let beside = if waiting > 0 {
+        space::X8
+            + 2.0 * space::X6
+            + text_width(
+                window,
+                &waiting.to_string(),
+                type_scale::MICRO,
+                FontWeight::BOLD,
+            )
+    } else if working {
+        space::X8 + space::X7
+    } else {
+        0.0
+    };
+    let close = 2.0 * space::X2 + glyph::TAB_CLOSE;
+    let room = layout::WORKSPACE_TAB_MAXIMUM_WIDTH - 2.0 * space::X12 - space::X6 - close - beside;
+    text_width(window, name, type_scale::CAPTION, FontWeight::SEMIBOLD) > room
 }
 
 /// How far a raised pill's shadow reaches past its edge: the room a strip that clips its tabs

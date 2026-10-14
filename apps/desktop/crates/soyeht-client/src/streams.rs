@@ -23,6 +23,17 @@ pub enum StreamOutput {
     },
 }
 
+impl StreamOutput {
+    /// The pane the output belongs to.
+    pub fn pane_id(&self) -> &str {
+        match self {
+            Self::Reset { pane_id } | Self::Bytes { pane_id, .. } | Self::Gap { pane_id } => {
+                pane_id
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Position {
     stream_id: String,

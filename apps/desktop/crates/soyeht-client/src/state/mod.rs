@@ -179,6 +179,23 @@ impl State {
         self.gaps.contains(pane_id)
     }
 
+    /// Whether applying `event` can change what the window draws. Terminal output cannot while its
+    /// pane is in a workspace that is not the selected one: the replica of its screen keeps up
+    /// with the output, and the pane draws that replica when its workspace is selected.
+    pub fn changes_view(&self, event: &Event) -> bool {
+        let Event::Terminal(output) = event else {
+            return true;
+        };
+        let selected = self.selected_workspace.as_deref();
+        self.panes
+            .iter()
+            .find(|pane| pane.pane_id == output.pane_id())
+            .is_some_and(|pane| selected == Some(pane.workspace_id.as_str()))
+    }
+
+    /// Selects a workspace and focuses its first terminal. It reads and writes only this replica:
+    /// every workspace's panes already hold their screens, so the new workspace draws at once
+    /// and the engine is told afterwards.
     pub fn select_workspace(&mut self, workspace_id: &str) {
         if self
             .workspaces
