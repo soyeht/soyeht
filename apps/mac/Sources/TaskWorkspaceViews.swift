@@ -303,7 +303,7 @@ private struct TaskColumn: View {
     guard let taskId, let task = client.tasks.first(where: { $0.taskId == taskId }),
       task.state != state
     else { return false }
-    client.moveTask(task, to: state, reason: "Moved on the workspace board")
+    client.moveTask(task, to: state, reason: ClientPolicy.taskMoveReason)
     return true
   }
 }

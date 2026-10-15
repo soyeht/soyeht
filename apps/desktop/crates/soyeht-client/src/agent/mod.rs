@@ -13,23 +13,12 @@ use soyeht_protocol::{
 };
 use std::time::{Duration, Instant};
 
-/// The transcript page the client asks for, as on the Mac client.
-pub const TRANSCRIPT_PAGE: u32 = 100;
 /// The messages of a transcript the view draws; earlier ones stay in the replica.
 pub const TAIL: usize = 200;
 /// The tool calls the header ticker lists after the current activity.
 const TICKER_HISTORY: usize = 3;
 /// What stands between two entries of the header ticker.
 pub const TICKER_SEPARATOR: &str = "   \u{2022}   ";
-
-/// Whether an agent in `state` is in the middle of a turn: its composer offers stop and queues
-/// what is typed, and its header counts the time.
-pub fn is_running(state: &PaneState) -> bool {
-    matches!(
-        state,
-        PaneState::Working | PaneState::WaitingForYou | PaneState::Cancelling | PaneState::NoSignal
-    )
-}
 
 /// When the running turn started, as this device saw it: the engine does not report a turn's
 /// start, so the clock notes the moment the active prompt first appeared.
@@ -458,7 +447,7 @@ impl Controls {
         let find = |wanted: &dyn Fn(&ConfigOption) -> bool| {
             agent.options.iter().find(|option| wanted(option))
         };
-        let running = is_running(&pane.state);
+        let running = pane.state.is_turn_running();
         let harness = harness_name.unwrap_or(&agent.harness).to_owned();
         Some(Self {
             model: find(&ConfigOption::is_model).and_then(Menu::new),
@@ -501,22 +490,7 @@ pub fn status_word(state: &PaneState, needs_authentication: bool, has_session: b
     if *state == PaneState::Starting && has_session {
         return "ready".into();
     }
-    state_name(state).replace('_', " ")
-}
-
-/// The wire spelling of a pane state ("waiting_for_you").
-pub fn state_name(state: &PaneState) -> &'static str {
-    match state {
-        PaneState::Starting => "starting",
-        PaneState::Working => "working",
-        PaneState::Idle => "idle",
-        PaneState::WaitingForYou => "waiting_for_you",
-        PaneState::Cancelling => "cancelling",
-        PaneState::NoSignal => "no_signal",
-        PaneState::Recovering => "recovering",
-        PaneState::Dead => "dead",
-        PaneState::Unknown => "unknown",
-    }
+    state.as_str().replace('_', " ")
 }
 
 #[cfg(test)]

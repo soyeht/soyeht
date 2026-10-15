@@ -38,6 +38,39 @@ class ClientPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(changed, SCHEMA)
 
+    def test_a_page_size_stays_within_the_limit_of_its_request(self):
+        for value in (0, 65, "most", 1.5):
+            changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            changed["pageSize"]["queue"] = value
+            with self.assertRaises(ValueError):
+                validate(changed, SCHEMA)
+
+    def test_the_maximum_is_the_requests_own(self):
+        outputs = render_client_policy(SCHEMA, HEADER)
+        self.assertIn("pub const PAGE_SIZE_QUEUE: u32 = 64;", outputs[RUST_OUTPUT])
+        self.assertIn("static let pageSizeModels: UInt32 = 64", outputs[SWIFT_OUTPUT])
+        self.assertNotIn('"maximum"', outputs[TS_OUTPUT])
+
+    def test_every_pane_state_has_a_dot_and_a_running_flag(self):
+        missing = copy.deepcopy(SCHEMA["x-clientPolicy"])
+        del missing["paneStates"]["dead"]
+        with self.assertRaises(ValueError):
+            validate(missing, SCHEMA)
+        unknown_dot = copy.deepcopy(SCHEMA["x-clientPolicy"])
+        unknown_dot["paneStates"]["dead"]["dot"] = "magenta"
+        with self.assertRaises(ValueError):
+            validate(unknown_dot, SCHEMA)
+        outputs = render_client_policy(SCHEMA, HEADER)
+        self.assertIn("pub fn is_turn_running(&self) -> bool", outputs[RUST_OUTPUT])
+        self.assertIn("public var isTurnRunning: Bool", outputs[SWIFT_OUTPUT])
+
+    def test_the_inline_image_types_are_distinct_media_types(self):
+        for types in ([], ["image/png", "image/png"], ["png"]):
+            changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            changed["inlineImageTypes"] = types
+            with self.assertRaises(ValueError):
+                validate(changed, SCHEMA)
+
     def test_the_roles_are_closed(self):
         extra = copy.deepcopy(SCHEMA["x-clientPolicy"])
         extra["configRoles"]["verbosity"] = {"category": "verbosity"}

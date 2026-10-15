@@ -4,10 +4,9 @@ use crate::tasks::TaskUpdate;
 use crate::{Event, Result, rpc::Rpc};
 use soyeht_protocol::{
     PaneQueueListParams, PaneQueueListResult, Request, TaskListParams, TaskListResult,
+    client_policy,
 };
 
-/// The protocol's largest page of a queue.
-const QUEUE_PAGE: u32 = 64;
 /// More than this many waiting messages are not read, as on the Mac client.
 const QUEUE_LIMIT: usize = 1_000;
 
@@ -19,7 +18,7 @@ pub(crate) fn queue(rpc: &Rpc, pane_id: &str) -> Result<Event> {
             serde_json::from_value(rpc.call(&Request::PaneQueueList(PaneQueueListParams {
                 pane_id: pane_id.to_owned(),
                 cursor: cursor.take(),
-                limit: Some(QUEUE_PAGE),
+                limit: Some(client_policy::PAGE_SIZE_QUEUE),
             }))?)?;
         items.extend(page.items);
         cursor = page.next_cursor;
@@ -33,9 +32,6 @@ pub(crate) fn queue(rpc: &Rpc, pane_id: &str) -> Result<Event> {
     }
 }
 
-/// The largest page of tasks the client asks for, as the Mac does.
-const TASK_PAGE: u32 = 100;
-
 /// Every task of a workspace.
 pub(crate) fn tasks(rpc: &Rpc, workspace_id: &str) -> Result<Event> {
     let (mut tasks, mut cursor) = (Vec::new(), None);
@@ -44,7 +40,7 @@ pub(crate) fn tasks(rpc: &Rpc, workspace_id: &str) -> Result<Event> {
             serde_json::from_value(rpc.call(&Request::TaskList(TaskListParams {
                 workspace_id: workspace_id.to_owned(),
                 state: None,
-                limit: TASK_PAGE,
+                limit: client_policy::PAGE_SIZE_TASKS,
                 cursor: cursor.take(),
             }))?)?;
         tasks.extend(page.items);

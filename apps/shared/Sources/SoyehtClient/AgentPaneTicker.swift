@@ -76,7 +76,7 @@ public struct AgentACPTickerSource: AgentTickerSource {
   }
 
   private func elapsed(_ context: AgentTickerContext) -> String? {
-    guard let pane = context.pane, AgentComposerControls.runningStates.contains(pane.state),
+    guard let pane = context.pane, pane.state.isTurnRunning,
       let start = context.turnStartedAt
     else { return nil }
     return AgentElapsedText.text(seconds: max(0, Int(context.now.timeIntervalSince(start))))

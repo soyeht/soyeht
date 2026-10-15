@@ -151,7 +151,10 @@ fn the_queue_the_question_and_the_sign_in_use_the_engines_methods() {
     });
     assert_eq!(older["method"], "pane.transcript");
     assert_eq!(older["params"]["before"], "40");
-    assert_eq!(older["params"]["limit"], TRANSCRIPT_PAGE);
+    assert_eq!(
+        older["params"]["limit"],
+        soyeht_protocol::client_policy::PAGE_SIZE_TRANSCRIPT
+    );
     assert!(
         request(&Command::LoadQueue {
             pane_id: "p".into()
@@ -286,7 +289,7 @@ fn the_tasks_use_the_engines_methods() {
         workspace_id: "w".into(),
         task_id: "WS-1".into(),
         state: TaskState::InReview,
-        reason: "Moved on the workspace board".into(),
+        reason: soyeht_protocol::client_policy::TASK_MOVE_REASON.into(),
     });
     assert_eq!(
         (moved["method"].as_str(), moved["params"]["state"].as_str()),

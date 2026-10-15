@@ -8,6 +8,7 @@ use crate::Error;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use soyeht_protocol::client_policy::INLINE_IMAGE_TYPES;
 use soyeht_protocol::{PromptAttachment, PromptAttachmentKind, limits};
 use url::Url;
 
@@ -31,10 +32,6 @@ impl PromptCapabilities {
         }
     }
 }
-
-/// Image types that claude-agent-acp and codex-acp forward as model input and
-/// that both providers accept. Other images are linked.
-const INLINE_IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 /// Room kept for the JSON-RPC envelope around `params`.
 const ENVELOPE_BYTES: usize = 1024;

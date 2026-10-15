@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 e5c5880fff1aebfadfb9d2868cc7223d7e870cb6eda6b1a580d059a2f40ae4f0). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 ea208b2afc6adfbe65a2d82db40cb4ce32c6bce858dbac875986a0eb8c45c136). Do not edit.
 import CoreGraphics
 
 /// The reviewed themes, in the order of `palettes` in the token file. The first one is
@@ -206,6 +206,7 @@ public enum DesignTokens {
     public static let headerHeight: CGFloat = 26
     public static let headerStateDot: CGFloat = 8
     public static let headerActionWidth: CGFloat = 24
+    public static let terminalFontSize: CGFloat = 13
   }
 
   public enum Layout {

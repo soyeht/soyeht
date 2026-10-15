@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 ee8bc58735b0fb353f893e0df904adfa5d4501f20a1237a68c8d992c204c46b0). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 81deb04b9adc7420323a911883eb82370e3ec697eefc5a7472d8a76206cf9774). Do not edit.
 use super::Palette;
 
 /// The reviewed themes, in the order of `palettes` in the token file. The first one is the
@@ -336,6 +336,7 @@ pub mod pane_layout {
     pub const HEADER_HEIGHT: f32 = 26.0;
     pub const HEADER_STATE_DOT: f32 = 8.0;
     pub const HEADER_ACTION_WIDTH: f32 = 24.0;
+    pub const TERMINAL_FONT_SIZE: f32 = 13.0;
 }
 pub mod layout {
     pub const RAIL_WIDTH: f32 = 56.0;

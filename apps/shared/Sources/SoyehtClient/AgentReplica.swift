@@ -462,7 +462,7 @@ extension EngineClient {
     let revision = connectionRevision
     let result = try await request(
       .paneTranscript,
-      .encoded(PaneTranscriptParams(paneId: paneId, limit: 100))
+      .encoded(PaneTranscriptParams(paneId: paneId, limit: ClientPolicy.pageSizeTranscript))
     )
     .decoded(PaneTranscriptResult.self)
     guard connected && connectionRevision == revision,
@@ -477,7 +477,8 @@ extension EngineClient {
 
   func olderTranscriptParams(_ paneId: String) -> PaneTranscriptParams? {
     guard let before = agentPanes[paneId]?.nextTranscriptCursor else { return nil }
-    return PaneTranscriptParams(paneId: paneId, before: before, limit: 100)
+    return PaneTranscriptParams(
+      paneId: paneId, before: before, limit: ClientPolicy.pageSizeTranscript)
   }
 
   public func loadOlderAgentMessages(_ paneId: String) {
@@ -501,7 +502,8 @@ extension EngineClient {
     repeat {
       let result = try await request(
         .paneQueueList,
-        .encoded(PaneQueueListParams(paneId: paneId, cursor: cursor, limit: 64))
+        .encoded(
+          PaneQueueListParams(paneId: paneId, cursor: cursor, limit: ClientPolicy.pageSizeQueue))
       )
       .decoded(PaneQueueListResult.self)
       items.append(contentsOf: result.items)
@@ -532,7 +534,9 @@ extension EngineClient {
       let page = try await request(
         .harnessList,
         .encoded(
-          HarnessListParams(cursor: cursor, limit: 64, rescan: cursor == nil ? rescan : nil)),
+          HarnessListParams(
+            cursor: cursor, limit: ClientPolicy.pageSizeHarnesses,
+            rescan: cursor == nil ? rescan : nil)),
         timeoutSeconds: Self.catalogueTimeoutSeconds
       )
       .decoded(HarnessListResult.self)
@@ -613,7 +617,8 @@ extension EngineClient {
           .modelList,
           .encoded(
             ModelListParams(
-              harness: harness, paneId: paneId, cursor: cursor, limit: 64)),
+              harness: harness, paneId: paneId, cursor: cursor,
+              limit: ClientPolicy.pageSizeModels)),
           timeoutSeconds: Self.catalogueTimeoutSeconds
         )
         .decoded(ModelListResult.self)

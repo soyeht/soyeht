@@ -1,0 +1,110 @@
+{
+  "description": "How a pane state is shown: the palette role of its dot, whether a turn is running in it (the agent can be stopped, typing queues, the header counts time), and the word at the header's trailing edge. The Mac (PaneState.dot, isTurnRunning, AgentPaneStatusPresentation) and the desktop client (PaneState::dot, is_turn_running, agent::status_word) pass every case. The dot roles and the running set are defined once in x-clientPolicy paneStates; this file fixes what they come to. A palette role is resolved by each client: success, accent, warning, muted or secondary.",
+  "states": [
+    {
+      "state": "starting",
+      "dot": "secondary",
+      "turnRunning": false,
+      "word": "starting"
+    },
+    {
+      "state": "working",
+      "dot": "success",
+      "turnRunning": true,
+      "word": "working"
+    },
+    {
+      "state": "idle",
+      "dot": "success",
+      "turnRunning": false,
+      "word": "idle"
+    },
+    {
+      "state": "waiting_for_you",
+      "dot": "accent",
+      "turnRunning": true,
+      "word": "waiting for you"
+    },
+    {
+      "state": "cancelling",
+      "dot": "secondary",
+      "turnRunning": true,
+      "word": "cancelling"
+    },
+    {
+      "state": "no_signal",
+      "dot": "warning",
+      "turnRunning": true,
+      "word": "no signal"
+    },
+    {
+      "state": "recovering",
+      "dot": "secondary",
+      "turnRunning": false,
+      "word": "recovering"
+    },
+    {
+      "state": "dead",
+      "dot": "muted",
+      "turnRunning": false,
+      "word": "dead"
+    },
+    {
+      "state": "unknown",
+      "dot": "muted",
+      "turnRunning": false,
+      "word": "unknown"
+    }
+  ],
+  "statusWords": [
+    {
+      "name": "a state is named by its wire spelling, spaced",
+      "state": "idle",
+      "needsAuthentication": false,
+      "hasSession": true,
+      "title": "idle"
+    },
+    {
+      "name": "underscores become example",
+      "state": "waiting_for_you",
+      "needsAuthentication": false,
+      "hasSession": true,
+      "title": "waiting for you"
+    },
+    {
+      "name": "no signal",
+      "state": "no_signal",
+      "needsAuthentication": false,
+      "hasSession": false,
+      "title": "no signal"
+    },
+    {
+      "name": "a session that is still starting is ready",
+      "state": "starting",
+      "needsAuthentication": false,
+      "hasSession": true,
+      "title": "ready"
+    },
+    {
+      "name": "no session yet: starting",
+      "state": "starting",
+      "needsAuthentication": false,
+      "hasSession": false,
+      "title": "starting"
+    },
+    {
+      "name": "an agent that needs to sign in says so",
+      "state": "idle",
+      "needsAuthentication": true,
+      "hasSession": true,
+      "title": "Sign in"
+    },
+    {
+      "name": "signing in outranks a running turn",
+      "state": "working",
+      "needsAuthentication": true,
+      "hasSession": true,
+      "title": "Sign in"
+    }
+  ]
+}

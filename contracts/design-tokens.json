@@ -260,7 +260,8 @@
     "paneStackSpacing": 8,
     "headerHeight": 26,
     "headerStateDot": 8,
-    "headerActionWidth": 24
+    "headerActionWidth": 24,
+    "terminalFontSize": 13
   },
   "layout": {
     "railWidth": 56,

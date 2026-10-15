@@ -3,7 +3,6 @@
 use crate::tasks::TaskUpdate;
 use crate::{
     Error, Result,
-    agent::TRANSCRIPT_PAGE,
     attachments::{Draft, Upload},
     event::Event,
     preference_requests,
@@ -484,7 +483,7 @@ fn transcript_page(pane_id: &str, before: Option<&String>) -> Request {
     Request::PaneTranscript(PaneTranscriptParams {
         pane_id: pane_id.to_owned(),
         before: before.cloned(),
-        limit: Some(TRANSCRIPT_PAGE),
+        limit: Some(client_policy::PAGE_SIZE_TRANSCRIPT),
     })
 }
 

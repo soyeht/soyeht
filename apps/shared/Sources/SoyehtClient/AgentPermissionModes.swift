@@ -28,7 +28,6 @@ public struct AgentPermissionMode: Equatable, Sendable, Identifiable {
 /// is still applying. Nothing here maps modes to a Soyeht vocabulary.
 public struct AgentPermissionModes: Equatable, Sendable {
   static let fullAccessKind = "full_access"
-  public static let defaultModeKeyPrefix = "harness.defaultMode."
 
   public let configId: String
   public let modes: [AgentPermissionMode]
@@ -71,9 +70,6 @@ public struct AgentPermissionModes: Equatable, Sendable {
     return nil
   }
 
-  public static func defaultModeKey(harness: String) -> String {
-    defaultModeKeyPrefix + harness
-  }
 }
 
 extension EngineClient {
@@ -103,7 +99,7 @@ extension EngineClient {
         let result = try await self.request(
           .settingsGet,
           .encoded(
-            SettingsGetParams(key: AgentPermissionModes.defaultModeKey(harness: harness.id)))
+            SettingsGetParams(key: Setting.harnessDefaultModeKey(harness.id)))
         ).decoded(SettingsGetResult.self)
         self.recordDefaultPermissionMode(result.value, harness: harness.id)
       }
@@ -115,15 +111,14 @@ extension EngineClient {
     let result = try await mutation(
       .settingsSet,
       SettingsSetParams(
-        key: AgentPermissionModes.defaultModeKey(harness: harness), value: .string(mode ?? ""),
+        key: Setting.harnessDefaultModeKey(harness), value: .string(mode ?? ""),
         idempotencyKey: UUID().uuidString)
     ).decoded(SettingsSetResult.self)
     recordDefaultPermissionMode(result.value, harness: harness)
   }
 
   func applyDefaultPermissionModeChanged(_ event: SettingsChangedEvent) -> Bool {
-    guard event.key.hasPrefix(AgentPermissionModes.defaultModeKeyPrefix) else { return false }
-    let harness = String(event.key.dropFirst(AgentPermissionModes.defaultModeKeyPrefix.count))
+    guard let harness = Setting.harnessDefaultModeParameter(of: event.key) else { return false }
     recordDefaultPermissionMode(event.value, harness: harness)
     return true
   }

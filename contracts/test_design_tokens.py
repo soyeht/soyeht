@@ -309,6 +309,7 @@ NUMERIC_SOURCES = [
             "genericPaneHeaderHeight": "headerHeight",
             "genericPaneHeaderStateDotWidth": "headerStateDot",
             "genericPaneHeaderActionWidth": "headerActionWidth",
+            "terminalFontPointSize": "terminalFontSize",
         },
     ),
     (

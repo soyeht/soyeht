@@ -13,11 +13,8 @@ use soyeht_client::{
     commands::NewTask,
     tasks::{self, PRIORITIES},
 };
-use soyeht_protocol::{TaskExecutor, TaskPriority, TaskState};
+use soyeht_protocol::{TaskExecutor, TaskPriority, TaskState, client_policy};
 use std::collections::BTreeSet;
-
-/// What a card dragged to another column of the board says.
-const MOVE_REASON: &str = "Moved on the workspace board";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum TaskView {
@@ -129,7 +126,7 @@ impl Workbench {
             workspace_id,
             task_id: task_id.to_owned(),
             state,
-            reason: MOVE_REASON.to_owned(),
+            reason: client_policy::TASK_MOVE_REASON.to_owned(),
         });
         cx.notify();
     }

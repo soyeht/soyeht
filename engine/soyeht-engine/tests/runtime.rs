@@ -3418,7 +3418,7 @@ fn untyped_internal_error_with_auth_words_does_not_downgrade_ready() {
 fn preferred_harness_setting_is_durable_and_rejects_non_string_values() {
     let mut rig = Rig::new();
     let mut client = rig.client();
-    let key = soyeht_engine::settings::PREFERRED_HARNESS_KEY;
+    let key = soyeht_protocol::setting::HARNESS_PREFERRED_ID;
     assert_eq!(client.call("settings.get", json!({"key":key}))["value"], "");
     let set = client.call(
         "settings.set",
@@ -3699,7 +3699,7 @@ fn production_sessions_receive_one_bound_mcp_server_and_probes_receive_none() {
         (
             4,
             "settings.set",
-            json!({"key":soyeht_engine::settings::PREFERRED_HARNESS_KEY,"value":"agent","idempotencyKey":"agent-setting"}),
+            json!({"key":soyeht_protocol::setting::HARNESS_PREFERRED_ID,"value":"agent","idempotencyKey":"agent-setting"}),
         ),
         (
             5,
@@ -4614,7 +4614,7 @@ fn chosen_mode_returns_after_restart_and_harness_switch() {
     rig.install_switch_harnesses();
     client.call(
         "settings.set",
-        json!({"key":"harness.defaultMode.next-agent","value":"allow_all","idempotencyKey":"default"}),
+        json!({"key":soyeht_protocol::setting::harness_default_mode_key("next-agent"),"value":"allow_all","idempotencyKey":"default"}),
     );
     client.call(
         "pane.harness.switch",
@@ -4629,7 +4629,7 @@ fn new_panes_start_in_the_preferred_mode_only_when_offered() {
     let mut client = rig.client();
     client.call(
         "settings.set",
-        json!({"key":"harness.defaultMode.test-agent","value":"accept_edits","idempotencyKey":"default"}),
+        json!({"key":soyeht_protocol::setting::harness_default_mode_key("test-agent"),"value":"accept_edits","idempotencyKey":"default"}),
     );
     let (mut client, pane) = rig.agent();
     wait_for_mode(&mut client, &pane, "accept_edits");
@@ -4669,7 +4669,7 @@ fn a_refused_mode_leaves_the_queue_running_in_the_agents_mode() {
     let mut client = rig.client();
     client.call(
         "settings.set",
-        json!({"key":"harness.defaultMode.test-agent","value":"locked","idempotencyKey":"locked"}),
+        json!({"key":soyeht_protocol::setting::harness_default_mode_key("test-agent"),"value":"locked","idempotencyKey":"locked"}),
     );
     let (mut client, pane) = rig.agent();
     run_turn(&mut client, &pane, "hello");
@@ -6990,7 +6990,7 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
         ),
         (
             "settings.set",
-            json!({"key":soyeht_engine::settings::PREFERRED_HARNESS_KEY,"value":"unpaired","idempotencyKey":"unpaired-setting"}),
+            json!({"key":soyeht_protocol::setting::HARNESS_PREFERRED_ID,"value":"unpaired","idempotencyKey":"unpaired-setting"}),
         ),
         (
             "device.pair.start",
@@ -7086,7 +7086,7 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
         typed["result"]["acceptedBytes"].as_u64().unwrap() > 0,
         "{typed}"
     );
-    let key_name = soyeht_engine::settings::PREFERRED_HARNESS_KEY;
+    let key_name = soyeht_protocol::setting::HARNESS_PREFERRED_ID;
     let set = phone.request(
         "settings.set",
         json!({"key":key_name,"value":"phone-choice","idempotencyKey":"phone-setting"}),

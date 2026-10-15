@@ -47,7 +47,7 @@ impl State {
     /// Whether any agent is in the middle of a turn, so that the time in its header must tick.
     pub fn has_running_turn(&self) -> bool {
         self.agent_panes(None)
-            .any(|pane| agent::is_running(&pane.state))
+            .any(|pane| pane.state.is_turn_running())
     }
 
     fn agent_panes<'a>(&'a self, workspace: Option<&'a str>) -> impl Iterator<Item = &'a Pane> {

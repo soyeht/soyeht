@@ -27,6 +27,7 @@ pub mod permission_preview;
 mod preference_requests;
 pub mod preferences;
 pub mod profile;
+mod reconnect;
 mod rpc;
 pub mod screen;
 mod session;

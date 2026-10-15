@@ -3,8 +3,9 @@
 
 use soyeht_protocol::AgentSession;
 
-pub const TITLE: &str = "Switch agent";
-pub const HANDOVER_EXPLANATION: &str = "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.";
+pub use soyeht_protocol::client_policy::{
+    HARNESS_SWITCH_HANDOVER as HANDOVER_EXPLANATION, HARNESS_SWITCH_TITLE as TITLE,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {

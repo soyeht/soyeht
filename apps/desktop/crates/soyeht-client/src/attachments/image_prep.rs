@@ -8,7 +8,9 @@ use image::{
     DynamicImage, ImageDecoder, ImageEncoder, ImageFormat, ImageReader, codecs::jpeg::JpegEncoder,
     imageops::FilterType, metadata::Orientation,
 };
-use soyeht_protocol::limits::PROMPT_ATTACHMENT_THUMBNAIL_BYTES;
+use soyeht_protocol::{
+    client_policy::INLINE_IMAGE_TYPES, limits::PROMPT_ATTACHMENT_THUMBNAIL_BYTES,
+};
 use std::io::Cursor;
 
 /// Providers downscale larger images anyway, and the limit keeps an image inside the one-line
@@ -24,13 +26,11 @@ pub(super) const JPEG_QUALITIES: [u8; 4] = [85, 70, 55, 40];
 /// The preview's longest side and JPEG quality (percent), tried in turn until one fits.
 pub(super) const THUMBNAIL_ATTEMPTS: [(u32, u8); 3] =
     [(THUMBNAIL_PIXELS, 70), (THUMBNAIL_PIXELS, 45), (96, 45)];
-/// The types every pinned agent takes inline.
-pub(super) const INLINE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 /// Whether an image goes to the agent as it is: a type every agent takes inline, small enough in
 /// bytes and in pixels.
 pub fn keeps_original(mime_type: &str, byte_count: usize, width: u32, height: u32) -> bool {
-    INLINE_TYPES.contains(&mime_type)
+    INLINE_IMAGE_TYPES.contains(&mime_type)
         && byte_count <= IMAGE_MAXIMUM_BYTES
         && width.max(height) <= IMAGE_MAXIMUM_PIXELS
 }
@@ -77,7 +77,9 @@ pub(super) fn prepare(data: &[u8], mime_type: &str) -> Option<Prepared> {
     let (width, height) = (image.width(), image.height());
     let thumbnail = thumbnail(&image);
     if keeps_original(mime_type, data.len(), width, height) {
-        let mime_type = INLINE_TYPES.iter().find(|inline| **inline == mime_type)?;
+        let mime_type = INLINE_IMAGE_TYPES
+            .iter()
+            .find(|inline| **inline == mime_type)?;
         return Some(Prepared {
             bytes: data.to_vec(),
             mime_type,

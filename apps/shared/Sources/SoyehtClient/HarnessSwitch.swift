@@ -14,10 +14,8 @@ public enum HarnessSwitchOutcome: Sendable, Equatable {
 /// Shared rules for switching an agent pane's harness, used by the Mac pane
 /// header and the iPhone and iPad agent pane.
 public enum HarnessSwitchModel {
-  public static let title = "Switch agent"
-  public static let handoverExplanation =
-    "This starts a new agent session. Recent messages and pending prompts are handed "
-    + "over as historical data."
+  public static let title = ClientPolicy.harnessSwitchTitle
+  public static let handoverExplanation = ClientPolicy.harnessSwitchHandover
 
   /// A pane can switch while connected, with no configuration change in flight and
   /// no switch already running.

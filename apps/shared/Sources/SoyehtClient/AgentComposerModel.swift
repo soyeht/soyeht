@@ -84,7 +84,7 @@ public struct AgentComposerControls: Equatable, Sendable {
     permission = AgentPermissionModes(options: options, operation: operation)
     showsContext = agent != nil
     contextFraction = usage.flatMap(Self.fraction)
-    let running = state.map(Self.runningStates.contains) ?? false
+    let running = state?.isTurnRunning ?? false
     action =
       running
       ? .stop(enabled: state != .cancelling && connected)
@@ -108,8 +108,6 @@ public struct AgentComposerControls: Equatable, Sendable {
   public static func isComposerOption(_ option: ConfigOption) -> Bool {
     option.isPermissionMode || option.isModel || option.isEffort
   }
-
-  static let runningStates: Set<PaneState> = [.working, .waiting_for_you, .cancelling, .no_signal]
 
   private static func fraction(_ usage: TokenUsage) -> Double? {
     guard let used = Double(usage.totalTokens), let size = usage.contextSize,

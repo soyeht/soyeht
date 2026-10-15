@@ -1,8 +1,7 @@
 //! Paints a terminal screen: backgrounds, text and the cursor, on the character grid.
 
 use crate::{
-    fonts::TERMINAL_SIZE,
-    theme::{Palette, desktop, fonts::MONO as MONO_FAMILY},
+    theme::{Palette, desktop, fonts::MONO as MONO_FAMILY, pane_layout::TERMINAL_FONT_SIZE},
     workbench::Workbench,
 };
 use gpui::{
@@ -24,14 +23,14 @@ pub struct CellSize {
 impl CellSize {
     pub fn measure(cx: &App) -> Self {
         let text = cx.text_system();
-        let size = px(TERMINAL_SIZE);
+        let size = px(TERMINAL_FONT_SIZE);
         let id = text.resolve_font(&font(MONO_FAMILY));
         let width = text
             .advance(id, size, 'm')
             .map_or(size * 0.6, |advance| advance.width);
         Self {
             width,
-            height: px((TERMINAL_SIZE * desktop::LINE_HEIGHT_MONO).round()),
+            height: px((TERMINAL_FONT_SIZE * desktop::LINE_HEIGHT_MONO).round()),
         }
     }
 
@@ -187,7 +186,7 @@ fn draw_text(
     };
     let shaped = window.text_system().shape_line(
         text.to_owned().into(),
-        px(TERMINAL_SIZE),
+        px(TERMINAL_FONT_SIZE),
         &[run],
         Some(cell.width),
     );

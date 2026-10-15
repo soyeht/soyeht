@@ -166,7 +166,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
       guard !prompt.isEmpty else { return }
       while !Task.isCancelled && !prompt.isEmpty {
         client.setDraft(paneId, active: true)
-        do { try await Task.sleep(for: .seconds(8)) } catch { return }
+        do { try await Task.sleep(for: .milliseconds(ClientPolicy.draftBeatMs)) } catch { return }
       }
     }
     .onDisappear {

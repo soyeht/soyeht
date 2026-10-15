@@ -63,7 +63,6 @@ fn a_paste_attaches_files_and_pictures_but_leaves_text_to_the_field() {
 #[test]
 fn the_image_policy_is_the_shared_one() {
     let policy = vector("attachments")["imagePolicy"].clone();
-    assert_eq!(policy["inlineTypes"], json!(prep::INLINE_TYPES));
     assert_eq!(policy["maximumPixels"], prep::IMAGE_MAXIMUM_PIXELS);
     assert_eq!(policy["maximumBytes"], prep::IMAGE_MAXIMUM_BYTES);
     assert_eq!(policy["thumbnailPixels"], prep::THUMBNAIL_PIXELS);

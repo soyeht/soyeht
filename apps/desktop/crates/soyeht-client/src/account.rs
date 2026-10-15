@@ -57,7 +57,7 @@ impl AccountActions {
         if switch_methods.is_empty() && !can_sign_out {
             return None;
         }
-        let turn_running = state.is_some_and(crate::agent::is_running);
+        let turn_running = state.is_some_and(PaneState::is_turn_running);
         Some(Self {
             switch_methods,
             can_sign_out,

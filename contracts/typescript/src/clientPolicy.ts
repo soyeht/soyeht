@@ -1,12 +1,21 @@
-// Generated from contracts/protocol.json (sha256 96e9a6c2600dc2ec7c40a94f545618ee858e5ce15ee105719d8c3c8114ec5404). Do not edit.
+// Generated from contracts/protocol.json (sha256 5c9246216c7089634574b1e4ee21720d759b8abed6a21bfac81bffec76c08a3e). Do not edit.
 export const clientPolicy = {
   "timeouts": {
     "requestTimeoutMs": 12000,
     "greetingTimeoutMs": 5000,
-    "reconnectDelayMs": 1000
+    "reconnectDelayMs": 1000,
+    "reconnectCeilingMs": 30000,
+    "draftBeatMs": 8000
   },
   "terminal": {
     "inputChunkBytes": 16384
+  },
+  "pageSize": {
+    "queue": 64,
+    "harnesses": 64,
+    "models": 64,
+    "transcript": 100,
+    "tasks": 100
   },
   "usageBand": {
     "warningFrom": 0.5,
@@ -22,6 +31,55 @@ export const clientPolicy = {
   },
   "usageWindow": {
     "weeklyKeyword": "week"
+  },
+  "texts": {
+    "harnessSwitchTitle": "Switch agent",
+    "harnessSwitchHandover": "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.",
+    "taskMoveReason": "Moved on the workspace board"
+  },
+  "inlineImageTypes": [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp"
+  ],
+  "paneStates": {
+    "starting": {
+      "turnRunning": false,
+      "dot": "secondary"
+    },
+    "working": {
+      "turnRunning": true,
+      "dot": "success"
+    },
+    "idle": {
+      "turnRunning": false,
+      "dot": "success"
+    },
+    "waiting_for_you": {
+      "turnRunning": true,
+      "dot": "accent"
+    },
+    "cancelling": {
+      "turnRunning": true,
+      "dot": "secondary"
+    },
+    "no_signal": {
+      "turnRunning": true,
+      "dot": "warning"
+    },
+    "recovering": {
+      "turnRunning": false,
+      "dot": "secondary"
+    },
+    "dead": {
+      "turnRunning": false,
+      "dot": "muted"
+    },
+    "unknown": {
+      "turnRunning": false,
+      "dot": "muted"
+    }
   },
   "usageProviderNames": {
     "claude": "Claude",

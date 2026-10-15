@@ -11,17 +11,8 @@ use serde_json::Value;
 use soyeht_protocol::{
     HarnessListParams, ModelListParams, ModelListResult, PaneAuthLogoutParams, Request,
     SettingsGetParams, SettingsSetParams, SkillsCreateParams, SkillsDeleteParams, SkillsListParams,
-    UsageRefreshParams,
+    UsageRefreshParams, client_policy, setting,
 };
-
-/// The setting that names the harness new agents start with (`contracts/protocol.json`,
-/// `x-settings`).
-pub const PREFERRED_HARNESS_KEY: &str = "harness.preferredId";
-
-/// The setting that names the permission mode new panes of `harness` start in.
-pub fn default_mode_key(harness: &str) -> String {
-    format!("harness.defaultMode.{harness}")
-}
 
 /// A model list page; the next one is `cursor`.
 pub fn catalogue_request(harness: &str, cursor: Option<String>) -> Request {
@@ -29,12 +20,9 @@ pub fn catalogue_request(harness: &str, cursor: Option<String>) -> Request {
         harness: harness.to_owned(),
         pane_id: None,
         cursor,
-        limit: Some(CATALOGUE_PAGE),
+        limit: Some(client_policy::PAGE_SIZE_MODELS),
     })
 }
-
-/// The models a catalogue request lists per page, as on the Mac client.
-const CATALOGUE_PAGE: u32 = 64;
 
 pub fn setting_request(key: &str) -> Request {
     Request::SettingsGet(SettingsGetParams {
@@ -42,7 +30,7 @@ pub fn setting_request(key: &str) -> Request {
     })
 }
 
-fn setting(name: String, value: &str) -> Request {
+fn set_request(name: String, value: &str) -> Request {
     Request::SettingsSet(SettingsSetParams {
         key: name,
         value: serde_json::Value::String(value.to_owned()),
@@ -81,10 +69,10 @@ pub(crate) fn request(command: &Command) -> Option<Request> {
             idempotency_key: key(),
         }),
         Command::SetPreferredHarness { harness } => {
-            setting(PREFERRED_HARNESS_KEY.to_owned(), harness)
+            set_request(setting::HARNESS_PREFERRED_ID.to_owned(), harness)
         }
-        Command::SetDefaultMode { harness, mode } => setting(
-            default_mode_key(harness),
+        Command::SetDefaultMode { harness, mode } => set_request(
+            setting::harness_default_mode_key(harness),
             mode.as_deref().unwrap_or_default(),
         ),
         Command::SignOut { pane_id } => Request::PaneAuthLogout(PaneAuthLogoutParams {

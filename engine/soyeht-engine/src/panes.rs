@@ -8,7 +8,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneExperimentCapture, PaneMode, PaneState, StateSource, event, method,
+    Pane, PaneExperimentCapture, PaneMode, PaneState, StateSource, event, method, setting,
 };
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
@@ -27,15 +27,15 @@ enum PreparedExperimentCapture {
 }
 
 fn pane_defaults(store: &impl StorePort) -> Result<PaneDefaults> {
-    let cols = settings::read(store, "terminal.defaultCols")?
+    let cols = settings::read(store, setting::TERMINAL_DEFAULT_COLS)?
         .as_u64()
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| errors::internal("Stored terminal column setting is invalid"))?;
-    let rows = settings::read(store, "terminal.defaultRows")?
+    let rows = settings::read(store, setting::TERMINAL_DEFAULT_ROWS)?
         .as_u64()
         .and_then(|value| u32::try_from(value).ok())
         .ok_or_else(|| errors::internal("Stored terminal row setting is invalid"))?;
-    let record = settings::read(store, "record.default")?
+    let record = settings::read(store, setting::RECORD_DEFAULT)?
         .as_bool()
         .ok_or_else(|| errors::internal("Stored recording setting is invalid"))?;
     Ok(PaneDefaults { cols, rows, record })
@@ -497,11 +497,13 @@ mod tests {
         let mut store = MemoryStore::default();
         store
             .settings
-            .insert("terminal.defaultCols".into(), json!(132));
+            .insert(setting::TERMINAL_DEFAULT_COLS.into(), json!(132));
         store
             .settings
-            .insert("terminal.defaultRows".into(), json!(44));
-        store.settings.insert("record.default".into(), json!(false));
+            .insert(setting::TERMINAL_DEFAULT_ROWS.into(), json!(44));
+        store
+            .settings
+            .insert(setting::RECORD_DEFAULT.into(), json!(false));
 
         assert_eq!(
             pane_defaults(&store).unwrap(),

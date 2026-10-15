@@ -1,5 +1,5 @@
 use super::*;
-use crate::testing::pane_json;
+use crate::testing::{cases, pane_json};
 use serde_json::{Value, json};
 
 fn message_json(id: &str, seq: &str, kind: &str, text: &str) -> Value {
@@ -246,4 +246,35 @@ fn the_status_word_names_the_state() {
     );
     assert_eq!(status_word(&PaneState::Starting, false, true), "ready");
     assert_eq!(status_word(&PaneState::Idle, true, true), "Sign in");
+}
+
+fn state(name: &str) -> PaneState {
+    serde_json::from_value(Value::from(name)).unwrap()
+}
+
+#[test]
+fn the_status_word_is_the_one_in_the_vector() {
+    for case in cases("pane-state-presentation", "statusWords") {
+        assert_eq!(
+            status_word(
+                &state(case["state"].as_str().unwrap()),
+                case["needsAuthentication"].as_bool().unwrap(),
+                case["hasSession"].as_bool().unwrap(),
+            ),
+            case["title"].as_str().unwrap(),
+            "{}",
+            case["name"]
+        );
+    }
+}
+
+#[test]
+fn every_state_word_is_its_wire_spelling_spaced() {
+    for case in cases("pane-state-presentation", "states") {
+        let wire = case["state"].as_str().unwrap();
+        assert_eq!(
+            status_word(&state(wire), false, false),
+            case["word"].as_str().unwrap()
+        );
+    }
 }

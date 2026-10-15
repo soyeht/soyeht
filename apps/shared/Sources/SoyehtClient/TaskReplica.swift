@@ -198,7 +198,9 @@ extension EngineClient {
     repeat {
       let result = try await request(
         .taskList,
-        .encoded(TaskListParams(workspaceId: workspaceId, limit: 100, cursor: cursor))
+        .encoded(
+          TaskListParams(
+            workspaceId: workspaceId, limit: ClientPolicy.pageSizeTasks, cursor: cursor))
       ).decoded(TaskListResult.self)
       loaded.append(contentsOf: result.items)
       cursor = result.nextCursor

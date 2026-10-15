@@ -16,10 +16,12 @@ use gpui::{
 };
 use gpui::{InteractiveElement, MouseButton, StatefulInteractiveElement};
 use soyeht_client::{
-    agent::{elapsed_text, is_running, status_word},
+    agent::{elapsed_text, status_word},
     terminal_state::{self, Severity},
 };
-use soyeht_protocol::{Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis};
+use soyeht_protocol::{
+    Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis, client_policy::StateDot,
+};
 use std::time::Instant;
 
 /// The buttons of the header, left to right.
@@ -129,7 +131,7 @@ impl Workbench {
         );
         let ticker = view.and_then(|view| view.ticker(pane.title.as_deref()));
         let elapsed = view
-            .filter(|_| is_running(&pane.state))
+            .filter(|_| pane.state.is_turn_running())
             .and_then(|view| view.turn.elapsed(Instant::now()))
             .map(elapsed_text);
         let buttons: Vec<AnyElement> = actions(&pane.mode)
@@ -372,16 +374,15 @@ fn mode_notice(mode: &PaneMode) -> &'static str {
     }
 }
 
-/// The color of the state dot, as the Mac's pane header picks it: green while the agent runs or
-/// rests, the accent when it waits for the person, the warning when it has gone quiet, muted when
-/// the process is gone or unknown, and the secondary ink while it starts, recovers or stops.
+/// The color of the state dot: the palette role the contract gives the state (`x-clientPolicy`,
+/// `paneStates`, which the Mac's pane header resolves too).
 fn state_color(state: &PaneState, palette: &Palette) -> u32 {
-    match state {
-        PaneState::Working | PaneState::Idle => palette.success(),
-        PaneState::WaitingForYou => palette.accent,
-        PaneState::NoSignal => palette.warning(),
-        PaneState::Dead | PaneState::Unknown => palette.muted,
-        PaneState::Starting | PaneState::Cancelling | PaneState::Recovering => palette.secondary,
+    match state.dot() {
+        StateDot::Success => palette.success(),
+        StateDot::Accent => palette.accent,
+        StateDot::Warning => palette.warning(),
+        StateDot::Muted => palette.muted,
+        StateDot::Secondary => palette.secondary,
     }
 }
 

@@ -13,13 +13,30 @@ nor explicitly classified, and also fails when a listed name becomes unused.
 This exhaustiveness covers only `Id`-typed parameters: a future pane route
 represented as a plain string under another name must be declared separately.
 
+`x-settings` defines each setting the engine stores and the clients read and change through
+`settings.get` and `settings.set`: its key, type, default and bounds. A key ending in `.<name>`
+is a family whose parameter (a harness ID) is bounded by `parameter`. The generator emits
+`engine/soyeht-protocol/src/setting.rs` (`setting::*` key constants, `default_value`, `validate`
+and the family key builders), `contracts/swift/Sources/SoyehtProtocol/Setting.swift` (`Setting`)
+and `contracts/typescript/src/settings.ts`. The engine validates with the generated code, and
+`check_wire_names.py` fails on a setting key typed by hand in production code. The link
+preferences of the Mac (open external links in Soyeht) are not engine settings: they are kept per
+device, because the system browser they choose between is the device's own.
+
 `x-clientPolicy` holds what the clients agree on without sending it over the wire: the request,
-greeting and reconnect timings, the terminal input chunk, the usage and context band
-thresholds, the ring opacities, the weekly-window keyword, the provider names and the
-category rule of the model, effort and permission selectors. The generator emits
-`engine/soyeht-protocol/src/client_policy.rs`, `contracts/swift/Sources/SoyehtProtocol/ClientPolicy.swift`
-and `contracts/typescript/src/clientPolicy.ts`. `vectors/usage.json` holds the cases of the
-usage presentation and the selector roles that the Mac and the desktop client both pass.
+greeting, reconnect (first wait and ceiling) and draft-beat timings, the page size of each list
+request (`maximum` takes the request's own limit), the terminal input chunk, the usage and context
+band thresholds, the ring opacities, the weekly-window keyword, the provider names, the texts two
+clients both store (the harness switch wording and the reason a card moved on the task board), the
+image types an agent takes inline, what each pane state means (whether a turn runs in it and the
+palette role of its dot) and the category rule of the model, effort and permission selectors. The
+generator emits `engine/soyeht-protocol/src/client_policy.rs` (with `PaneState::as_str`,
+`is_turn_running` and `dot`), `contracts/swift/Sources/SoyehtProtocol/ClientPolicy.swift` and
+`contracts/typescript/src/clientPolicy.ts`. `vectors/usage.json` holds the cases of the usage
+presentation and the selector roles, `vectors/pane-state-presentation.json` the dot, running flag
+and status word of every pane state, `vectors/reconnect.json` the waits between reconnects and
+`vectors/permission-preview.json` the lines a file change shows before it is approved and how many
+lines a text takes; the Mac and the desktop client both pass them.
 
 `design-tokens.json` is the single source for the design tokens: the nine
 palettes (colors per role, ANSI slots, agent plates), radii, spacing, type scale,

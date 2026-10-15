@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Fail when production code types a wire method or event name by hand.
+"""Fail when production code types a wire method, event or setting name by hand.
 
 `contracts/protocol.json` defines every method and event name once. The generated forms are
 `RequestMethod` and `EventName` in Swift, and `method::*` and `event::*` string constants
 (also usable in `match` patterns) and `EventName` in Rust. A string literal equal to one of
 those names anywhere in production code is a copy that can drift: use the generated form.
+
+The same holds for the setting keys of `x-settings`, whose generated forms are `Setting` in
+Swift and `setting::*` in Rust, and for the families of keys that end in `.<name>` (a literal
+that starts with the family's prefix, such as `"harness.defaultMode."`, is a copy too). A file
+whose first line says `Generated from contracts/` is an output and is not scanned.
 
 Test code is exempt: Swift `Tests` directories, Rust `tests/` directories, `#[cfg(test)]`
 items and files compiled only for tests, and the migration files of `FROZEN_NAMES`. The name `hello` has no dot and is too common as
@@ -40,15 +45,23 @@ RUST_ROOTS = ("engine", "apps/desktop")
 FROZEN_NAMES = {
     "engine/soyeht-store/src/english_values.rs": "rewrites events stored before the English rename",
 }
-LITERAL = re.compile(r'"([a-z][A-Za-z0-9_]*(?:\.[a-z][A-Za-z0-9_]*)+)"')
+GENERATED = ("// Generated from contracts/", "# Generated from contracts/")
+LITERAL = re.compile(r'"([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_{}]*)+)"')
 
 
-def wire_names(root: Path) -> dict[str, str]:
-    """Map every dotted method and event name to `method` or `event`."""
+def wire_names(root: Path) -> tuple[dict[str, str], list[str]]:
+    """Map every dotted method, event and setting name to its kind, and list the key families.
+
+    The kinds are `method`, `event` and `setting`. A family (`harness.defaultMode.<harnessId>`)
+    is given by its prefix, `harness.defaultMode.`.
+    """
     schema = json.loads((root / SCHEMA).read_text(encoding="utf-8"))
     names = {name: "method" for name in schema["x-methods"]}
     names.update({name: "event" for name in schema["x-events"]})
-    return {name: kind for name, kind in names.items() if "." in name}
+    settings = schema.get("x-settings", {})
+    names.update({key: "setting" for key in settings if "<" not in key})
+    prefixes = [key[: key.index("<")] for key in settings if "<" in key]
+    return {name: kind for name, kind in names.items() if "." in name}, prefixes
 
 
 def production_literals(path: str, text: str, excluded: set[str]) -> list[tuple[int, str]]:
@@ -87,7 +100,7 @@ def sources(root: Path) -> dict[str, str]:
 
 def sites(root: Path) -> list[tuple[str, int, str, str]]:
     """Return (path, line, name, kind) for every hand-typed wire name."""
-    names = wire_names(root)
+    names, prefixes = wire_names(root)
     files = sources(root)
     rust_masks = {
         path: mask(text)[0] for path, text in files.items() if is_rust_production_source(path)
@@ -97,9 +110,14 @@ def sites(root: Path) -> list[tuple[str, int, str, str]]:
     for path, text in sorted(files.items()):
         if path in FROZEN_NAMES or (path.endswith(".rs") and path not in rust_masks):
             continue
+        if text.startswith(GENERATED):
+            continue
         for offset, name in production_literals(path, text, excluded):
-            if name in names:
-                found.append((path, text.count("\n", 0, offset) + 1, name, names[name]))
+            kind = names.get(name) or (
+                "setting" if any(name.startswith(prefix) for prefix in prefixes) else None
+            )
+            if kind:
+                found.append((path, text.count("\n", 0, offset) + 1, name, kind))
     return found
 
 

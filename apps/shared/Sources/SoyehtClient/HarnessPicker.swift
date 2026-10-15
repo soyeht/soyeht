@@ -64,8 +64,6 @@ public enum ModelPickerContentState: Sendable, Equatable {
 }
 
 public enum HarnessPickerModel {
-  public static let preferredHarnessKey = "harness.preferredId"
-
   public static func contentState(
     harnesses: [HarnessInfo], query: String, loading: Bool, failed: Bool = false
   ) -> HarnessPickerContentState {
@@ -206,7 +204,7 @@ public enum HarnessPickerModel {
 extension EngineClient {
   func loadPreferredHarness() async throws {
     let result = try await request(
-      .settingsGet, .encoded(SettingsGetParams(key: HarnessPickerModel.preferredHarnessKey))
+      .settingsGet, .encoded(SettingsGetParams(key: Setting.harnessPreferredId))
     ).decoded(SettingsGetResult.self)
     preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
   }
@@ -215,7 +213,7 @@ extension EngineClient {
     let result = try await mutation(
       .settingsSet,
       SettingsSetParams(
-        key: HarnessPickerModel.preferredHarnessKey, value: .string(harnessId),
+        key: Setting.harnessPreferredId, value: .string(harnessId),
         idempotencyKey: UUID().uuidString)
     ).decoded(SettingsSetResult.self)
     preferredHarnessId = result.value.string.flatMap { $0.isEmpty ? nil : $0 }
@@ -223,7 +221,7 @@ extension EngineClient {
 
   func applySettingsChanged(_ event: SettingsChangedEvent) {
     if applyDefaultPermissionModeChanged(event) { return }
-    guard event.key == HarnessPickerModel.preferredHarnessKey else { return }
+    guard event.key == Setting.harnessPreferredId else { return }
     preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
   }
 }

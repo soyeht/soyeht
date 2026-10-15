@@ -2408,12 +2408,12 @@ private struct PaneCard: View {
   }
 
   private var stateColor: Color {
-    switch pane.state {
-    case .working, .idle: MacTheme.success
-    case .waiting_for_you: MacTheme.accent
-    case .no_signal: MacTheme.warning
-    case .dead, .unknown: MacTheme.muted
-    default: MacTheme.secondary
+    switch pane.state.dot {
+    case .success: MacTheme.success
+    case .accent: MacTheme.accent
+    case .warning: MacTheme.warning
+    case .muted: MacTheme.muted
+    case .secondary: MacTheme.secondary
     }
   }
 

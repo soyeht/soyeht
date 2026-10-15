@@ -100,7 +100,7 @@ public struct AgentAccountActions: Equatable, Sendable {
     guard !methods.isEmpty || canSignOut else { return nil }
     switchMethods = methods
     self.canSignOut = canSignOut
-    let turnRunning = [.working, .waiting_for_you, .cancelling, .no_signal].contains(paneState)
+    let turnRunning = paneState?.isTurnRunning ?? false
     isEnabled = connected && agent?.operation == nil && !turnRunning
   }
 

@@ -8,9 +8,6 @@
 use gpui::App;
 use std::borrow::Cow;
 
-/// Terminal text size in points, as on the Mac client.
-pub const TERMINAL_SIZE: f32 = 13.0;
-
 const FILES: [&[u8]; 12] = [
     include_bytes!("../../../../mac/Resources/Fonts/Inter.ttf"),
     include_bytes!("../assets/fonts/Inter-Medium.ttf"),

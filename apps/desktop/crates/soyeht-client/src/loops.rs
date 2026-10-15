@@ -33,9 +33,10 @@ pub const STOP_CHOICES: [LoopStopWhen; 3] = [
     LoopStopWhen::ExplicitOff,
 ];
 
-/// How often a composer with a draft tells the engine so (`pane.draft`), as the Mac does: the
-/// engine forgets a draft that is not repeated, and a loop never sends over one.
-pub const DRAFT_BEAT: std::time::Duration = std::time::Duration::from_secs(8);
+/// How often a composer with a draft tells the engine so (`pane.draft`): the engine forgets a
+/// draft that is not repeated, and a loop never sends over one.
+pub const DRAFT_BEAT: std::time::Duration =
+    std::time::Duration::from_millis(soyeht_protocol::client_policy::DRAFT_BEAT_MS);
 
 /// Whether the draft of a pane is due to be announced again: it has text, and it was never
 /// announced or the last announcement is old.

@@ -3,7 +3,7 @@
 
 use crate::{Result, preference_requests, rpc::Rpc};
 use serde_json::Value;
-use soyeht_protocol::SettingsGetResult;
+use soyeht_protocol::{SettingsGetResult, setting};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -18,11 +18,11 @@ impl Preferences {
     /// Folds in the setting `key` now holding `value`; false when it is not one of these.
     pub fn apply(&mut self, key: &str, value: &Value) -> bool {
         let text = value.as_str().filter(|text| !text.is_empty());
-        if key == preference_requests::PREFERRED_HARNESS_KEY {
+        if key == setting::HARNESS_PREFERRED_ID {
             self.preferred_harness = text.map(str::to_owned);
             return true;
         }
-        let Some(harness) = key.strip_prefix(&preference_requests::default_mode_key("")) else {
+        let Some(harness) = setting::harness_default_mode_key_parameter(key) else {
             return false;
         };
         match text {
@@ -38,10 +38,10 @@ impl Preferences {
 /// Reads the default harness and the default permission mode of each of `harnesses`.
 pub(crate) fn load(rpc: &Rpc, harnesses: &[String]) -> Result<Preferences> {
     let mut preferences = Preferences::default();
-    let keys = std::iter::once(preference_requests::PREFERRED_HARNESS_KEY.to_owned()).chain(
+    let keys = std::iter::once(setting::HARNESS_PREFERRED_ID.to_owned()).chain(
         harnesses
             .iter()
-            .map(|harness| preference_requests::default_mode_key(harness)),
+            .map(|harness| setting::harness_default_mode_key(harness)),
     );
     for key in keys {
         let result: SettingsGetResult =

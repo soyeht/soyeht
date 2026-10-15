@@ -118,7 +118,7 @@ import Testing
   client.applySettingsChanged(
     SettingsChangedEvent(
       eventId: "1", at: "2026-09-25T00:00:00Z",
-      key: HarnessPickerModel.preferredHarnessKey, value: .string(chosen.id)))
+      key: Setting.harnessPreferredId, value: .string(chosen.id)))
   #expect(client.preferredHarnessId == chosen.id)
   #expect(
     HarnessPickerModel.defaultHarness(

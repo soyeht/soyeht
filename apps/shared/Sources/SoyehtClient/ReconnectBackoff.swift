@@ -5,7 +5,7 @@ import SoyehtProtocol
 /// that was established starts it over.
 struct ReconnectBackoff: Equatable, Sendable {
   static let first: Duration = .milliseconds(ClientPolicy.reconnectDelayMs)
-  static let ceiling: Duration = .seconds(30)
+  static let ceiling: Duration = .milliseconds(ClientPolicy.reconnectCeilingMs)
 
   private var delay = Self.first
 

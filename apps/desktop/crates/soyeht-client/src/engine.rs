@@ -6,11 +6,12 @@ use crate::{
     commands::{self, Command, INPUT_CHUNK_BYTES},
     event::Event,
     paging, preferences,
+    reconnect::Backoff,
     rpc::Rpc,
     session::{EventSink, Session},
     transport,
 };
-use soyeht_protocol::{PaneInputResult, client_policy};
+use soyeht_protocol::PaneInputResult;
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -18,12 +19,13 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 /// The `client` name sent in `hello`.
 const CLIENT_NAME: &str = "desktop-dev";
-const RECONNECT_DELAY: Duration = Duration::from_millis(client_policy::RECONNECT_DELAY_MS);
+/// How often a wait before reconnecting looks at whether the application has stopped.
+const WAIT_SLICE: Duration = Duration::from_millis(100);
 /// Engine events waiting for the interface. When it is full the reader waits, which stops it
 /// taking bytes off the socket, so output the interface cannot draw fast enough slows the
 /// engine down instead of growing memory.
@@ -121,8 +123,12 @@ impl Drop for Engine {
 }
 
 fn supervise(socket: &Path, events: &EventSink, shared: &Shared) {
+    let mut backoff = Backoff::default();
     while !shared.stopped.load(Ordering::Relaxed) {
         let ended = run_connection(socket, events, shared);
+        if shared.rpc().is_some() {
+            backoff.reset();
+        }
         shared.set(None);
         if events
             .send_blocking(Event::Disconnected(ended.to_string()))
@@ -130,7 +136,19 @@ fn supervise(socket: &Path, events: &EventSink, shared: &Shared) {
         {
             return;
         }
-        std::thread::sleep(RECONNECT_DELAY);
+        wait(shared, backoff.next());
+    }
+}
+
+/// Waits for `delay`, or until the application stops the engine.
+fn wait(shared: &Shared, delay: Duration) {
+    let deadline = Instant::now() + delay;
+    while !shared.stopped.load(Ordering::Relaxed) {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return;
+        }
+        std::thread::sleep(left.min(WAIT_SLICE));
     }
 }
 

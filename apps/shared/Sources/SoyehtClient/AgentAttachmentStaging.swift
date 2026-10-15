@@ -9,8 +9,8 @@ import UniformTypeIdentifiers
 /// as PNG or JPEG. Other files are linked on the engine's Mac, or sent as bytes
 /// from a paired device.
 public enum AgentAttachmentStaging {
-  /// Image types every pinned agent takes inline (claude-agent-acp and codex-acp).
-  static let inlineImageTypes: [UTType] = [.png, .jpeg, .gif, .webP]
+  /// Image types every pinned agent takes inline, from the contract.
+  static let inlineImageTypes = ClientPolicy.inlineImageTypes.compactMap { UTType(mimeType: $0) }
   /// Providers downscale larger images anyway, and the limit keeps an image
   /// inside the one-line ACP message once encoded as base64.
   static let maximumImagePixels = 2_048

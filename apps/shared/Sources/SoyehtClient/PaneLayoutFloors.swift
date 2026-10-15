@@ -72,7 +72,7 @@ public enum PaneLayoutContentMetrics {
   public static let genericPaneHeaderSummaryCharacters = 12.0
   public static let genericPaneHeaderStatusCharacters = 15.0
   public static let genericPaneHeaderActionWidth = Double(DesignTokens.PaneLayout.headerActionWidth)
-  public static let terminalFontPointSize = 13.0
+  public static let terminalFontPointSize = Double(DesignTokens.PaneLayout.terminalFontSize)
   public static let terminalStateVerticalInset = 7.0
 
   public static let editorFontPointSize = 11.5

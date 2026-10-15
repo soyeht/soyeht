@@ -1,0 +1,291 @@
+{
+  "description": "What the person sees of a file change before approving it, and how tall a permission well is. The Mac (PermissionPreviewPolicy) and the desktop client (soyeht_client::permission_preview) pass every case. A preview lists the lines that went away, then the lines that came in. The lines both texts start or end with are kept; of the rest a longest common run is kept, and when several are as long, the one found by taking the earliest line of the old text out first. `oldText` null is a new file. A final line break ends the last line instead of starting another. `newLineCount` stands for that many lines of `line`.",
+  "visibleLineLimit": 12,
+  "lineCounts": [
+    {
+      "name": "empty is one line",
+      "text": "",
+      "lines": 1
+    },
+    {
+      "name": "no break is one line",
+      "text": "curl -sI https://example.com | head -1",
+      "lines": 1
+    },
+    {
+      "name": "a final break starts another line",
+      "text": "a\nb\n",
+      "lines": 3
+    },
+    {
+      "name": "CRLF is one break",
+      "text": "HTTP/2 200 \r\n",
+      "lines": 2
+    },
+    {
+      "name": "a lone CR is a break",
+      "text": "a\rb",
+      "lines": 2
+    },
+    {
+      "name": "CRLF twice",
+      "text": "a\r\nb\r\nc",
+      "lines": 3
+    },
+    {
+      "name": "the Unicode line and paragraph separators are breaks",
+      "text": "a\u2028b\u2029c",
+      "lines": 3
+    },
+    {
+      "name": "vertical tab, form feed and NEL are breaks",
+      "text": "a\u000bb\fc\u0085d",
+      "lines": 4
+    }
+  ],
+  "visibleLines": [
+    {
+      "lines": 0,
+      "height": 1
+    },
+    {
+      "lines": 1,
+      "height": 1
+    },
+    {
+      "lines": 5,
+      "height": 5
+    },
+    {
+      "lines": 12,
+      "height": 12
+    },
+    {
+      "lines": 500,
+      "height": 12
+    }
+  ],
+  "previews": [
+    {
+      "name": "a new file is all added",
+      "oldText": null,
+      "newText": "first\nsecond\n",
+      "rows": [
+        [
+          "+",
+          "first"
+        ],
+        [
+          "+",
+          "second"
+        ]
+      ]
+    },
+    {
+      "name": "a deleted file is all removed",
+      "oldText": "x\ny",
+      "newText": "",
+      "rows": [
+        [
+          "-",
+          "x"
+        ],
+        [
+          "-",
+          "y"
+        ]
+      ]
+    },
+    {
+      "name": "only the changed line is shown",
+      "oldText": "same\nbefore\nend\n",
+      "newText": "same\nafter\nend\n",
+      "rows": [
+        [
+          "-",
+          "before"
+        ],
+        [
+          "+",
+          "after"
+        ]
+      ]
+    },
+    {
+      "name": "a one-line edit",
+      "oldText": "hello",
+      "newText": "goodbye",
+      "rows": [
+        [
+          "-",
+          "hello"
+        ],
+        [
+          "+",
+          "goodbye"
+        ]
+      ]
+    },
+    {
+      "name": "removed lines come before added ones",
+      "oldText": "one\ntwo\nthree",
+      "newText": "red\nblue\ngreen",
+      "rows": [
+        [
+          "-",
+          "one"
+        ],
+        [
+          "-",
+          "two"
+        ],
+        [
+          "-",
+          "three"
+        ],
+        [
+          "+",
+          "red"
+        ],
+        [
+          "+",
+          "blue"
+        ],
+        [
+          "+",
+          "green"
+        ]
+      ]
+    },
+    {
+      "name": "equal texts show nothing",
+      "oldText": "a\nb\n",
+      "newText": "a\nb\n",
+      "rows": []
+    },
+    {
+      "name": "a final line break alone is no change",
+      "oldText": "a",
+      "newText": "a\n",
+      "rows": []
+    },
+    {
+      "name": "carriage returns stay in the lines",
+      "oldText": "a\r\nb",
+      "newText": "a\r\nc",
+      "rows": [
+        [
+          "-",
+          "b"
+        ],
+        [
+          "+",
+          "c"
+        ]
+      ]
+    },
+    {
+      "name": "swapped lines: the earliest old line goes out",
+      "oldText": "a\nb",
+      "newText": "b\na",
+      "rows": [
+        [
+          "-",
+          "a"
+        ],
+        [
+          "+",
+          "a"
+        ]
+      ]
+    },
+    {
+      "name": "repeated lines keep the earliest common run",
+      "oldText": "a\nb\na",
+      "newText": "b\na\nb",
+      "rows": [
+        [
+          "-",
+          "a"
+        ],
+        [
+          "+",
+          "b"
+        ]
+      ]
+    },
+    {
+      "name": "reversed lines",
+      "oldText": "a\nb\nc\nd",
+      "newText": "b\nd\nc\na",
+      "rows": [
+        [
+          "-",
+          "a"
+        ],
+        [
+          "-",
+          "c"
+        ],
+        [
+          "+",
+          "c"
+        ],
+        [
+          "+",
+          "a"
+        ]
+      ]
+    },
+    {
+      "name": "lines kept between changes",
+      "oldText": "x\na\ny\na\nz",
+      "newText": "a\nq\na",
+      "rows": [
+        [
+          "-",
+          "x"
+        ],
+        [
+          "-",
+          "y"
+        ],
+        [
+          "-",
+          "z"
+        ],
+        [
+          "+",
+          "q"
+        ]
+      ]
+    },
+    {
+      "name": "the first of two equal lines stays",
+      "oldText": "a\nb\na",
+      "newText": "a",
+      "rows": [
+        [
+          "-",
+          "b"
+        ],
+        [
+          "-",
+          "a"
+        ]
+      ]
+    },
+    {
+      "name": "as many lines as the limit are previewed",
+      "oldText": null,
+      "newLineCount": 400,
+      "unavailable": false
+    },
+    {
+      "name": "one line more than the limit is not",
+      "oldText": null,
+      "newLineCount": 401,
+      "unavailable": true
+    }
+  ]
+}

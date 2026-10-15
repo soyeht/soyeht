@@ -38,9 +38,23 @@ fn lines(text: &str) -> Vec<&str> {
     lines
 }
 
-/// How many lines a text takes: a text without a line break is one line, and so is an empty one.
+/// How many lines a text takes, as the Mac counts them (`Character.isNewline`): a text without a
+/// line break is one line, and so is an empty one. Besides `\n`, a lone `\r`, a vertical tab, a
+/// form feed, NEL and the Unicode line and paragraph separators end a line; `\r\n` ends one.
 pub fn line_count(text: &str) -> usize {
-    text.split('\n').count()
+    let mut count = 1;
+    let mut chars = text.chars().peekable();
+    while let Some(character) = chars.next() {
+        match character {
+            '\r' => {
+                chars.next_if_eq(&'\n');
+                count += 1;
+            }
+            '\n' | '\u{b}' | '\u{c}' | '\u{85}' | '\u{2028}' | '\u{2029}' => count += 1,
+            _ => {}
+        }
+    }
+    count
 }
 
 /// How many lines a well that shows `lines` of text is tall: all of them up to the limit.
@@ -48,8 +62,11 @@ pub fn visible_lines(lines: usize) -> usize {
     lines.clamp(1, VISIBLE_LINE_LIMIT)
 }
 
-/// The lines of `before` that `after` does not keep, and those of `after` that are new, found
-/// from their longest common run of lines.
+/// The lines of `before` that `after` does not keep, and those of `after` that are new. The lines
+/// both start or end with are kept; of the rest, a longest common run of lines is kept, and when
+/// several are as long, the one found by taking the earliest line of `before` out first. The Mac
+/// follows the same rule (`PermissionPreviewPolicy`), because the standard library's diff does not
+/// promise which of several equally short differences it returns.
 pub fn preview(change: &PermissionFileChange) -> Preview {
     let before = lines(change.old_text.as_deref().unwrap_or_default());
     let after = lines(&change.new_text);
@@ -59,6 +76,19 @@ pub fn preview(change: &PermissionFileChange) -> Preview {
             unavailable: true,
         };
     }
+    let head = before
+        .iter()
+        .zip(&after)
+        .take_while(|(old, new)| old == new)
+        .count();
+    let tail = before[head..]
+        .iter()
+        .rev()
+        .zip(after[head..].iter().rev())
+        .take_while(|(old, new)| old == new)
+        .count();
+    let before = &before[head..before.len() - tail];
+    let after = &after[head..after.len() - tail];
     // `kept[i][j]`: how many lines the tails `before[i..]` and `after[j..]` share in order.
     let mut kept = vec![vec![0usize; after.len() + 1]; before.len() + 1];
     for i in (0..before.len()).rev() {
@@ -105,50 +135,77 @@ pub fn preview(change: &PermissionFileChange) -> Preview {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::{cases, vector};
 
-    fn change(old: Option<&str>, new: &str) -> PermissionFileChange {
+    fn change(case: &serde_json::Value) -> PermissionFileChange {
+        let new_text = match case["newLineCount"].as_u64() {
+            Some(count) => "line\n".repeat(count as usize),
+            None => case["newText"].as_str().unwrap().to_owned(),
+        };
         PermissionFileChange {
             path: "a.rs".into(),
-            old_text: old.map(str::to_owned),
-            new_text: new.into(),
+            old_text: case["oldText"].as_str().map(str::to_owned),
+            new_text,
         }
     }
 
-    fn shown(preview: &Preview) -> Vec<String> {
-        preview
-            .rows
-            .iter()
-            .map(|row| match row.kind {
-                Kind::Removed => format!("-{}", row.text),
-                Kind::Added => format!("+{}", row.text),
-            })
-            .collect()
+    #[test]
+    fn previews_are_the_cases_the_mac_passes() {
+        for case in cases("permission-preview", "previews") {
+            let preview = preview(&change(&case));
+            let name = case["name"].as_str().unwrap();
+            assert_eq!(
+                preview.unavailable,
+                case["unavailable"].as_bool().unwrap_or(false),
+                "{name}"
+            );
+            if let Some(expected) = case["rows"].as_array() {
+                let shown: Vec<(String, String)> = preview
+                    .rows
+                    .iter()
+                    .map(|row| {
+                        let sign = if row.kind == Kind::Removed { "-" } else { "+" };
+                        (sign.to_owned(), row.text.clone())
+                    })
+                    .collect();
+                let expected: Vec<(String, String)> = expected
+                    .iter()
+                    .map(|row| {
+                        (
+                            row[0].as_str().unwrap().to_owned(),
+                            row[1].as_str().unwrap().to_owned(),
+                        )
+                    })
+                    .collect();
+                assert_eq!(shown, expected, "{name}");
+            }
+        }
     }
 
     #[test]
-    fn a_changed_line_is_removed_then_added_and_the_rest_is_not_shown() {
-        let preview = preview(&change(Some("a\nb\nc\n"), "a\nB\nc\n"));
-        assert_eq!(shown(&preview), ["-b", "+B"]);
-        assert!(!preview.unavailable);
-    }
-
-    #[test]
-    fn a_new_file_is_all_added_and_a_deleted_one_all_removed() {
-        assert_eq!(shown(&preview(&change(None, "x\ny"))), ["+x", "+y"]);
-        assert_eq!(shown(&preview(&change(Some("x\ny"), ""))), ["-x", "-y"]);
-    }
-
-    #[test]
-    fn a_change_over_the_limit_is_not_previewed() {
-        let big = "line\n".repeat(PERMISSION_PREVIEW_LINES);
-        assert!(preview(&change(Some(&big), "x")).unavailable);
+    fn lines_are_counted_as_the_mac_counts_them() {
+        for case in cases("permission-preview", "lineCounts") {
+            assert_eq!(
+                line_count(case["text"].as_str().unwrap()) as u64,
+                case["lines"].as_u64().unwrap(),
+                "{}",
+                case["name"]
+            );
+        }
     }
 
     #[test]
     fn a_well_is_as_tall_as_its_text_up_to_the_limit() {
-        assert_eq!(line_count("one"), 1);
-        assert_eq!(line_count("a\nb\n"), 3);
-        assert_eq!(visible_lines(0), 1);
-        assert_eq!(visible_lines(40), VISIBLE_LINE_LIMIT);
+        assert_eq!(
+            VISIBLE_LINE_LIMIT as u64,
+            vector("permission-preview")["visibleLineLimit"]
+        );
+        for case in cases("permission-preview", "visibleLines") {
+            assert_eq!(
+                visible_lines(case["lines"].as_u64().unwrap() as usize) as u64,
+                case["height"].as_u64().unwrap(),
+                "{case}"
+            );
+        }
     }
 }

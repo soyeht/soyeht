@@ -1,0 +1,5 @@
+{
+  "description": "How long a client waits before it connects to the engine again (x-clientPolicy timeouts reconnectDelayMs and reconnectCeilingMs). The wait doubles after every refusal up to the ceiling, and a connection that was established starts it over. The Mac (ReconnectBackoff) and the desktop client (soyeht_client::reconnect) pass the same waits.",
+  "waitsMs": [1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000],
+  "afterResetMs": 1000
+}
