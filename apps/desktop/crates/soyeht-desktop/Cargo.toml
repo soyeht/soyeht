@@ -10,6 +10,19 @@ publish.workspace = true
 name = "soyeht-desktop"
 path = "src/main.rs"
 
+# `dev-tools` builds what the design comparisons need and a release has no use for: the replay of a
+# recorded engine state (`fixture`) and the surface gallery (`gallery`). Its examples need it.
+[features]
+dev-tools = []
+
+[[example]]
+name = "design_audit"
+required-features = ["dev-tools"]
+
+[[example]]
+name = "neo_gallery"
+required-features = ["dev-tools"]
+
 [dependencies]
 soyeht-client = { path = "../soyeht-client" }
 soyeht-protocol.workspace = true

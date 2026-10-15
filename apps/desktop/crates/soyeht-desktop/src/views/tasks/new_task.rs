@@ -30,10 +30,7 @@ const SHORTCUTS: &str = "\u{2318}\u{21a9} create \u{b7} \u{21e7}\u{2318}\u{21a9}
 const SHORTCUTS: &str = "Ctrl+Enter create \u{b7} Ctrl+Shift+Enter create & dispatch";
 
 fn label(palette: &Palette, text: &str) -> gpui::Div {
-    div()
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::SMALL))
+    chrome_text(FontWeight::BOLD, type_scale::SMALL)
         .text_color(rgb(palette.muted))
         .child(SharedString::from(text.to_owned()))
 }
@@ -395,13 +392,7 @@ fn sheet_header(palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyEl
         .child(
             column()
                 .gap(px(space::X3))
-                .child(
-                    div()
-                        .chrome()
-                        .font_weight(FontWeight::BOLD)
-                        .text_size(px(type_scale::SUBHEADING))
-                        .child(TITLE),
-                )
+                .child(chrome_text(FontWeight::BOLD, type_scale::SUBHEADING).child(TITLE))
                 .child(
                     div()
                         .text_size(px(type_scale::CAPTION))
@@ -446,7 +437,7 @@ fn fields_section(
                         .flex()
                         .items_center()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(type_scale::BODY - 1.0))
+                        .text_size(px(desktop::TASK_FIELD_TEXT_SIZE))
                         .child(fields.0.clone()),
                 ),
         )

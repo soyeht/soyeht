@@ -5,7 +5,7 @@
 use super::{
     attachments::sent_chips,
     cards::Windowing,
-    ui::{Typeface, code_well, column, icon, id, row},
+    ui::{Typeface, code_well, column, disclosure_chevron, icon, id, row},
 };
 use crate::{
     assets::Icon,
@@ -72,6 +72,7 @@ impl Workbench {
                 view.tail(limit).0,
                 &mut markdown,
                 Windowing {
+                    pane_id: &pane.pane_id,
                     rows: &measured,
                     viewport,
                     leading,
@@ -164,6 +165,7 @@ pub(super) fn notice_line(text: &str, palette: &Palette) -> AnyElement {
 }
 
 pub(super) fn transcript_row(
+    pane_id: &str,
     message: &TranscriptMessage,
     open: bool,
     markdown: &mut markdown::Cache,
@@ -172,7 +174,10 @@ pub(super) fn transcript_row(
 ) -> Option<AnyElement> {
     match message.kind {
         TranscriptKind::Tool => message.tool.as_ref().map(|tool| tool_row(tool, palette)),
-        TranscriptKind::Thought => Some(thought_row(message, open, markdown, palette, cx)),
+        TranscriptKind::Thought => {
+            let body = open.then(|| markdown_body(message, markdown, palette, palette.secondary));
+            Some(thought_row(pane_id, message, body, palette, cx))
+        }
         TranscriptKind::Plan => message.plan.as_ref().map(|plan| plan_card(plan, palette)),
         TranscriptKind::Handover => Some(
             labelled(
@@ -335,15 +340,17 @@ fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
         .into_any_element()
 }
 
-/// A thought: collapsed to its name until the person opens it, as on the Mac.
+/// A thought: collapsed to its name until the person opens it, as on the Mac. `body` is what an
+/// open thought shows.
 fn thought_row(
+    pane_id: &str,
     message: &TranscriptMessage,
-    open: bool,
-    markdown: &mut markdown::Cache,
+    body: Option<AnyElement>,
     palette: &Palette,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let message_id = message.local_id.clone();
+    let open = body.is_some();
+    let (pane_id, message_id) = (pane_id.to_owned(), message.local_id.clone());
     column()
         .gap(px(pane_interior::COMPACT_SPACING))
         .text_size(px(pane_interior::BODY_POINT_SIZE))
@@ -354,20 +361,12 @@ fn thought_row(
                 .gap(px(space::X6))
                 .cursor_pointer()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.toggle_thought(&message_id, cx)
+                    this.toggle_thought(&pane_id, &message_id, cx)
                 }))
-                .child(icon(
-                    if open {
-                        Icon::ChevronDown
-                    } else {
-                        Icon::ChevronRight
-                    },
-                    desktop::DISCLOSURE_GLYPH,
-                    palette.secondary,
-                ))
+                .child(disclosure_chevron(open, palette.secondary))
                 .child("Thought"),
         )
-        .children(open.then(|| markdown_body(message, markdown, palette, palette.secondary)))
+        .children(body)
         .into_any_element()
 }
 

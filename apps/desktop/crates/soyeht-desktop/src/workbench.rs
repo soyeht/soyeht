@@ -5,8 +5,8 @@
 use crate::{
     composer_field::{ComposerEvent, ComposerField, new_field},
     destination::Destination,
-    loop_form::LoopForm,
     open_menu::{Menu, OpenMenu},
+    pane_ui::PaneUis,
     prefs::Prefs,
     switch_flow::SwitchDraft,
     tasks_ui::TasksUi,
@@ -18,7 +18,6 @@ use gpui::{
 };
 use soyeht_client::{
     Command, Connection, Effect, Engine, Error, Event, State,
-    attachments::Staged,
     keys::{self, Modifiers},
     markdown,
     screen::TerminalScreen,
@@ -27,7 +26,6 @@ use soyeht_client::{
 use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -57,32 +55,12 @@ pub struct Workbench {
     pub(crate) layout_signature: u64,
     /// Which Preferences panel is open and what is half done in it.
     pub(crate) prefs: Prefs,
-    /// The message line of each agent pane's composer.
-    pub(crate) fields: HashMap<String, Entity<ComposerField>>,
+    /// What the window keeps for each agent pane, dropped as one when the pane closes.
+    pub(crate) panes: PaneUis,
     /// Numbers the requests that open a pane, so each answer is matched to its request.
     next_ticket: u64,
-    transcripts: HashMap<String, (ScrollHandle, usize)>,
-    /// What the rows of each agent transcript were laid out at, so that a long one builds only the
-    /// rows near the viewport.
-    transcript_rows: HashMap<String, Rc<RefCell<Rows>>>,
-    /// The thoughts of an agent the person has opened, by message.
-    pub(crate) open_thoughts: HashSet<String>,
-    /// The subagent rows the person has opened, by subagent.
-    pub(crate) open_subagents: HashSet<String>,
-    /// How many messages beyond `TAIL` each agent's transcript draws.
-    pub(crate) transcript_extra: HashMap<String, usize>,
-    /// When each composer's draft was last announced to the engine.
-    pub(crate) draft_beats: HashMap<String, Instant>,
     /// The tasks surface: its view, the task open and the new-task form.
     pub(crate) tasks_ui: TasksUi,
-    /// The loop panel each open pane is editing.
-    pub(crate) loop_forms: HashMap<String, LoopForm>,
-    /// The files attached to each agent pane's next message, with the latest refusal.
-    pub(crate) staged: HashMap<String, Staged>,
-    /// The sideways scroll of each composer's attachment chips.
-    attachment_scrolls: HashMap<String, ScrollHandle>,
-    /// The fields of the questions agents ask, by request and field.
-    pub(crate) form_fields: HashMap<(String, String), Entity<ComposerField>>,
     /// The Markdown of the replies on screen, parsed once per change.
     pub(crate) markdown: markdown::Cache,
     /// The sideways scroll of the stage, when the panes need more room than the window has.
@@ -93,8 +71,6 @@ pub struct Workbench {
     pub(crate) revealed_tab: Option<String>,
     /// How many tabs were not wholly in view when the last frame was laid out.
     pub(crate) hidden_tabs: usize,
-    /// The sideways scroll of each agent composer's chip strip.
-    chip_scrolls: HashMap<String, ScrollHandle>,
     /// The pane to bring into view on the next frame, once the stage has been laid out.
     pub(crate) reveal: Option<String>,
     /// The pane whose input takes keyboard focus on the next frame.
@@ -151,25 +127,14 @@ impl Workbench {
             window_width: f32::MAX,
             layout_signature: 0,
             prefs: Prefs::default(),
-            fields: HashMap::new(),
+            panes: PaneUis::default(),
             next_ticket: 0,
-            transcripts: HashMap::new(),
-            transcript_rows: HashMap::new(),
-            open_thoughts: HashSet::new(),
-            open_subagents: HashSet::new(),
-            transcript_extra: HashMap::new(),
-            form_fields: HashMap::new(),
-            staged: HashMap::new(),
-            loop_forms: HashMap::new(),
             tasks_ui: TasksUi::default(),
-            draft_beats: HashMap::new(),
-            attachment_scrolls: HashMap::new(),
             markdown: markdown::Cache::default(),
             stage_scroll: ScrollHandle::new(),
             tab_scroll: ScrollHandle::new(),
             revealed_tab: None,
             hidden_tabs: 0,
-            chip_scrolls: HashMap::new(),
             reveal: None,
             focus_request: None,
             _events: events,
@@ -252,36 +217,7 @@ impl Workbench {
 
     /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
     fn forget_closed_panes(&mut self) {
-        let state = &self.state;
-        self.fields.retain(|id, _| state.agent(id).is_some());
-        self.transcripts.retain(|id, _| state.agent(id).is_some());
-        self.transcript_rows
-            .retain(|id, _| state.agent(id).is_some());
-        self.chip_scrolls.retain(|id, _| state.agent(id).is_some());
-        self.transcript_extra
-            .retain(|id, _| state.agent(id).is_some());
-        self.staged.retain(|id, _| state.agent(id).is_some());
-        self.loop_forms.retain(|id, _| state.agent(id).is_some());
-        self.draft_beats.retain(|id, _| state.agent(id).is_some());
-        self.attachment_scrolls
-            .retain(|id, _| state.agent(id).is_some());
-        self.form_fields.retain(|(request, _), _| {
-            state.agent_ids().any(|id| {
-                state
-                    .agent(id)
-                    .and_then(|view| view.cards.elicitation.as_ref())
-                    .is_some_and(|open| &open.request_id == request)
-            })
-        });
-        if !self.open_thoughts.is_empty() {
-            self.open_thoughts.retain(|message| {
-                state.agent_ids().any(|id| {
-                    state
-                        .agent(id)
-                        .is_some_and(|view| view.messages.iter().any(|m| &m.local_id == message))
-                })
-            });
-        }
+        self.panes.forget_closed(&self.state);
     }
 
     /// Called while painting a terminal: fits its screen to the room it has and tells the
@@ -357,7 +293,7 @@ impl Workbench {
         pane_id: &str,
         cx: &mut Context<Self>,
     ) -> Entity<ComposerField> {
-        if let Some(field) = self.fields.get(pane_id) {
+        if let Some(field) = self.panes.get(pane_id).and_then(|ui| ui.field.as_ref()) {
             return field.clone();
         }
         let field = new_field(self.theme.palette(), cx);
@@ -370,24 +306,18 @@ impl Workbench {
             },
         )
         .detach();
-        self.fields.insert(pane_id.to_owned(), field.clone());
+        self.panes.of(pane_id).field = Some(field.clone());
         field
     }
 
     /// The sideways scroll of an agent composer's chip strip, made when first needed.
     pub(crate) fn chip_scroll(&mut self, pane_id: &str) -> ScrollHandle {
-        self.chip_scrolls
-            .entry(pane_id.to_owned())
-            .or_default()
-            .clone()
+        self.panes.of(pane_id).chip_scroll.clone()
     }
 
     /// The sideways scroll of an agent composer's attachment chips, made when first needed.
     pub(crate) fn attachment_scroll(&mut self, pane_id: &str) -> ScrollHandle {
-        self.attachment_scrolls
-            .entry(pane_id.to_owned())
-            .or_default()
-            .clone()
+        self.panes.of(pane_id).attachment_scroll.clone()
     }
 
     /// The scroll state of an agent's transcript, following the newest message while it grows;
@@ -398,9 +328,10 @@ impl Workbench {
         messages: usize,
     ) -> (ScrollHandle, bool) {
         let (handle, seen) = self
-            .transcripts
-            .entry(pane_id.to_owned())
-            .or_insert_with(|| (ScrollHandle::new(), 0));
+            .panes
+            .of(pane_id)
+            .transcript
+            .get_or_insert_with(|| (ScrollHandle::new(), 0));
         let follows = *seen != messages;
         if follows {
             *seen = messages;
@@ -411,10 +342,7 @@ impl Workbench {
 
     /// What the rows of an agent's transcript measured, made when first needed.
     pub(crate) fn transcript_rows(&mut self, pane_id: &str) -> Rc<RefCell<Rows>> {
-        self.transcript_rows
-            .entry(pane_id.to_owned())
-            .or_default()
-            .clone()
+        self.panes.of(pane_id).rows.clone()
     }
 
     /// Called at the start of a frame: honours a request to move keyboard focus.
@@ -567,7 +495,7 @@ impl Workbench {
     /// Sends the composer's text to the agent. The text leaves the composer only once the
     /// engine's queue has taken it: a message that could not be sent stays to be sent again.
     pub(crate) fn submit_prompt(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        let Some(field) = self.fields.get(pane_id).cloned() else {
+        let Some(field) = self.panes.get(pane_id).and_then(|ui| ui.field.clone()) else {
             return;
         };
         let Some(text) = field.read(cx).draft().to_send() else {
@@ -579,8 +507,7 @@ impl Workbench {
             return;
         }
         let attachments = self
-            .staged
-            .get(pane_id)
+            .staged(pane_id)
             .map(|staged| staged.items().to_vec())
             .unwrap_or_default();
         if self.send(Command::Prompt {
@@ -589,16 +516,26 @@ impl Workbench {
             attachments,
         }) {
             field.update(cx, |field, cx| field.clear(cx));
-            if let Some(staged) = self.staged.get_mut(pane_id) {
+            if let Some(staged) = self
+                .panes
+                .get_mut(pane_id)
+                .and_then(|ui| ui.staged.as_mut())
+            {
                 staged.take();
             }
         }
         cx.notify();
     }
 
-    pub(crate) fn toggle_thought(&mut self, message_id: &str, cx: &mut Context<Self>) {
-        if !self.open_thoughts.remove(message_id) {
-            self.open_thoughts.insert(message_id.to_owned());
+    pub(crate) fn toggle_thought(
+        &mut self,
+        pane_id: &str,
+        message_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let open = &mut self.panes.of(pane_id).open_thoughts;
+        if !open.remove(message_id) {
+            open.insert(message_id.to_owned());
         }
         cx.notify();
     }

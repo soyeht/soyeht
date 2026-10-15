@@ -4,7 +4,7 @@
 
 use super::{
     preferences::{page, pill_button},
-    ui::{Typeface, column, id, logo, row},
+    ui::{Typeface, chrome_text, column, id, logo, row},
     usage_ring::band_color,
 };
 use crate::neo;
@@ -109,18 +109,12 @@ impl Workbench {
                         assets::logo_path(name).map(|path| logo(path, space::X18, palette.ink)),
                     )
                     .child(
-                        div()
-                            .chrome()
+                        chrome_text(FontWeight::BOLD, type_scale::CAPTION)
                             .flex_1()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(type_scale::CAPTION))
                             .child(name),
                     )
                     .child(
-                        div()
-                            .chrome()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(type_scale::CONTROL))
+                        chrome_text(FontWeight::BOLD, type_scale::CONTROL)
                             .child(shown.percentage()),
                     )
                     .into_any_element()
@@ -211,11 +205,8 @@ fn balloon(reading: &UsageReading, palette: &Palette) -> Div {
                         .bg(rgb(dot)),
                 )
                 .child(
-                    div()
-                        .chrome()
+                    chrome_text(FontWeight::BOLD, type_scale::CONTROL)
                         .flex_1()
-                        .font_weight(FontWeight::BOLD)
-                        .text_size(px(type_scale::CONTROL))
                         .child(reading.provider.display_name()),
                 )
                 .child(micro(palette, reset)),
@@ -260,18 +251,12 @@ fn window_row(window: &UsageWindow, stale: bool, palette: &Palette) -> AnyElemen
             row()
                 .gap(px(space::X4))
                 .child(
-                    div()
-                        .chrome()
+                    chrome_text(FontWeight::SEMIBOLD, type_scale::SMALL)
                         .flex_1()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(type_scale::SMALL))
                         .child(SharedString::from(window.label.clone())),
                 )
                 .child(
-                    div()
-                        .chrome()
-                        .font_weight(FontWeight::BOLD)
-                        .text_size(px(type_scale::MICRO))
+                    chrome_text(FontWeight::BOLD, type_scale::MICRO)
                         .child(format!("{}%", (used * 100.0).round())),
                 )
                 .child(micro(

@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 81deb04b9adc7420323a911883eb82370e3ec697eefc5a7472d8a76206cf9774). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 2641e49bd5cb59bb3a12af9e4161854f1415c4f75747d2c462caf932f8fe30b1). Do not edit.
 use super::Palette;
 
 /// The reviewed themes, in the order of `palettes` in the token file. The first one is the
@@ -474,6 +474,8 @@ pub mod desktop {
     pub const ATTACHMENT_CHIP_NAME_WIDTH: f32 = 160.0;
     pub const DROP_BORDER: f32 = 2.0;
     pub const LOOP_PANEL_WIDTH: f32 = 400.0;
+    pub const LOOP_PANEL_CONTENT_WIDTH: f32 = 372.0;
+    pub const LOOP_PANEL_TITLE_SIZE: f32 = 14.0;
     pub const LOOP_TOGGLE_WIDTH: f32 = 40.0;
     pub const LOOP_TOGGLE_HEIGHT: f32 = 22.0;
     pub const LOOP_TOGGLE_KNOB: f32 = 18.0;
@@ -495,8 +497,12 @@ pub mod desktop {
     pub const TASK_LIST_TITLE_MINIMUM_WIDTH: f32 = 220.0;
     pub const TASK_EDITOR_HEIGHT: f32 = 96.0;
     pub const TASK_FIELD_HEIGHT: f32 = 40.0;
+    pub const TASK_FIELD_TEXT_SIZE: f32 = 14.0;
+    pub const TASK_TOOLBAR_HEIGHT: f32 = 34.0;
+    pub const TASK_CARD_GLYPH: f32 = 10.0;
     pub const ATTENTION_POPOVER_WIDTH: f32 = 340.0;
     pub const SWITCH_POPOVER_WIDTH: f32 = 448.0;
+    pub const SWITCH_POPOVER_CONTENT_WIDTH: f32 = 420.0;
     pub const SWITCH_POPOVER_MAXIMUM_HEIGHT: f32 = 780.0;
     pub const SWITCH_POPOVER_PADDING: f32 = 14.0;
     pub const HARNESS_LIST_HEIGHT: f32 = 260.0;
@@ -514,6 +520,7 @@ pub mod desktop {
     pub const PREFERENCES_GLYPH: f32 = 13.0;
     pub const PREFERENCES_ROW_TITLE_SIZE: f32 = 14.0;
     pub const PREFERENCES_CHIP_HEIGHT: f32 = 26.0;
+    pub const PREFERENCES_CHIP_GLYPH: f32 = 10.0;
     pub const USAGE_BALLOON_RADIUS: f32 = 14.0;
     pub const HARNESS_ROW_IDENTITY_WIDTH: f32 = 160.0;
     pub const HARNESS_ROW_STATUS_WIDTH: f32 = 118.0;

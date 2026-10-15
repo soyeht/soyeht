@@ -3,7 +3,11 @@
 use crate::{
     assets::Icon,
     neo,
-    theme::{Palette, desktop, elevation, fonts, pane_interior, radius, space, type_scale},
+    theme::{
+        Palette, desktop,
+        elevation::{self, Elevation},
+        fonts, layout, pane_interior, radius, space, type_scale,
+    },
 };
 use gpui::{
     AnyElement, AnyView, App, AppContext, Context, Div, ElementId, FontWeight, Hsla,
@@ -32,6 +36,23 @@ pub trait Typeface: Styled + Sized {
 
 impl<T: Styled> Typeface for T {}
 
+/// A raised button of the top bar, `width` wide and as tall as the bar's controls, its content
+/// centered. The caller says what a click does.
+pub fn top_bar_button(palette: &Palette, radius: f32, elevation: Elevation, width: f32) -> Div {
+    neo::raised(palette, radius, elevation)
+        .w(px(width))
+        .h(px(layout::TOP_BAR_CONTROL_HEIGHT))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+}
+
+/// A block of window text: Nunito at `weight` and `size` points.
+pub fn chrome_text(weight: FontWeight, size: f32) -> Div {
+    div().chrome().font_weight(weight).text_size(px(size))
+}
+
 /// A line icon of `size` points in a palette color.
 pub fn icon(icon: Icon, size: f32, color: u32) -> Svg {
     svg()
@@ -39,6 +60,19 @@ pub fn icon(icon: Icon, size: f32, color: u32) -> Svg {
         .size(px(size))
         .flex_none()
         .text_color(rgb(color))
+}
+
+/// The chevron of a disclosure: down while what it folds is shown, right while it is folded.
+pub fn disclosure_chevron(expanded: bool, color: u32) -> Svg {
+    icon(
+        if expanded {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        },
+        desktop::DISCLOSURE_GLYPH,
+        color,
+    )
 }
 
 /// A provider logo of `size` points in a palette color.
@@ -145,31 +179,47 @@ pub fn option_pill(
     text: impl Into<SharedString>,
     open: bool,
 ) -> gpui::Stateful<Div> {
+    let chevron = if open {
+        Icon::ChevronUp
+    } else {
+        Icon::ChevronDown
+    };
+    raised_chip(
+        palette,
+        glyph,
+        desktop::INLINE_GLYPH,
+        text.into(),
+        Some(chevron),
+    )
+    .id(key)
+    .gap(px(space::X6))
+    .px(px(space::X10))
+    .py(px(space::X6))
+    .cursor_pointer()
+    .own_press()
+}
+
+/// The raised capsule every chip and pill of the windows shares: an icon of `glyph_size`, the
+/// label and, when `chevron` names one, a muted chevron. The caller sets the spacing and what a
+/// click does.
+pub fn raised_chip(
+    palette: &Palette,
+    glyph: Icon,
+    glyph_size: f32,
+    label: impl IntoElement,
+    chevron: Option<Icon>,
+) -> Div {
     neo::raised(palette, radius::PILL, elevation::CHIP)
-        .id(key)
         .flex()
         .flex_row()
         .items_center()
-        .gap(px(space::X6))
-        .px(px(space::X10))
-        .py(px(space::X6))
         .chrome()
         .font_weight(FontWeight::SEMIBOLD)
         .text_size(px(type_scale::CONTROL))
         .text_color(rgb(palette.secondary))
-        .cursor_pointer()
-        .own_press()
-        .child(icon(glyph, desktop::INLINE_GLYPH, palette.secondary))
-        .child(text.into())
-        .child(icon(
-            if open {
-                Icon::ChevronUp
-            } else {
-                Icon::ChevronDown
-            },
-            desktop::CHEVRON_GLYPH,
-            palette.muted,
-        ))
+        .child(icon(glyph, glyph_size, palette.secondary))
+        .child(label)
+        .children(chevron.map(|chevron| icon(chevron, desktop::CHEVRON_GLYPH, palette.muted)))
 }
 
 /// The on/off switch: an accent capsule with the knob on the right when on, a well with the

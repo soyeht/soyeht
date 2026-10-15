@@ -16,9 +16,9 @@ mod vectors;
 pub use image_prep::{
     IMAGE_FALLBACK_NAME, IMAGE_MAXIMUM_BYTES, IMAGE_MAXIMUM_PIXELS, image_file_name, keeps_original,
 };
-pub use kinds::{classify, kind_of_file, mime_for};
+pub use kinds::classify;
 pub use size::file_size;
-pub use stage::{stage_bytes, stage_image, stage_path};
+pub use stage::{stage_image, stage_path};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{

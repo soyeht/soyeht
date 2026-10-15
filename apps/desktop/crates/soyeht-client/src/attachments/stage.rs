@@ -50,25 +50,6 @@ pub fn stage_path(path: &Path, link_host_files: bool) -> Result<Draft, Rejection
     ))
 }
 
-/// Bytes with a known name, such as a file a clipboard provides by value.
-pub fn stage_bytes(data: Vec<u8>, name: &str) -> Draft {
-    let (kind, mime_type) = classify(name);
-    if kind == PromptAttachmentKind::Image
-        && let Some(draft) = stage_image(&data, &mime_type, Some(name))
-    {
-        return draft;
-    }
-    let size = data.len();
-    Draft::new(
-        kind,
-        name.to_owned(),
-        mime_type,
-        size,
-        Source::Bytes(data),
-        None,
-    )
-}
-
 /// An image from the clipboard, a drop or the photo library, prepared for the agent with a
 /// thumbnail. `None` when the bytes are not a readable image.
 pub fn stage_image(data: &[u8], mime_type: &str, name: Option<&str>) -> Option<Draft> {

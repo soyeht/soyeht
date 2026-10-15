@@ -121,7 +121,9 @@ pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
                 let mut workbench = Workbench::new(setup.engine, setup.inbox, cx);
                 workbench.theme = setup.theme;
                 workbench.prefs.section = setup.panel;
-                workbench.staged.extend(setup.staged);
+                for (pane_id, staged) in setup.staged {
+                    workbench.panes.of(&pane_id).staged = Some(staged);
+                }
                 if let Some(start) = setup.tasks {
                     workbench.destination = crate::destination::Destination::Tasks;
                     workbench.tasks_ui.view = start.view;

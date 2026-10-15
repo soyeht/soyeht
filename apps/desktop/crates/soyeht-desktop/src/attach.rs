@@ -13,7 +13,7 @@ type Staging = Vec<Result<Draft, Rejection>>;
 
 impl Workbench {
     pub(crate) fn staged(&self, pane_id: &str) -> Option<&Staged> {
-        self.staged.get(pane_id)
+        self.panes.get(pane_id)?.staged.as_ref()
     }
 
     /// The "+" of the composer: the system's file picker.
@@ -99,7 +99,11 @@ impl Workbench {
     }
 
     pub(crate) fn remove_attachment(&mut self, pane_id: &str, id: &str, cx: &mut Context<Self>) {
-        if let Some(staged) = self.staged.get_mut(pane_id) {
+        if let Some(staged) = self
+            .panes
+            .get_mut(pane_id)
+            .and_then(|ui| ui.staged.as_mut())
+        {
             staged.remove(id);
             cx.notify();
         }
@@ -111,7 +115,11 @@ impl Workbench {
             let results = work.await;
             // Once the window is gone the update fails, and nobody waits for the files.
             this.update(cx, |this, cx| {
-                this.staged.entry(pane_id).or_default().add(results);
+                this.panes
+                    .of(&pane_id)
+                    .staged
+                    .get_or_insert_default()
+                    .add(results);
                 cx.notify();
             })
         })

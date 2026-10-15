@@ -12,11 +12,10 @@
 //! has a tiled edge but can still be minimized and maximized: the edge only takes away the
 //! resize handles.
 
-use super::ui::{icon, id, row};
+use super::ui::{icon, id, row, top_bar_button};
 use crate::workbench::Workbench;
 use crate::{
     assets::Icon,
-    neo,
     theme::{Palette, desktop, elevation, layout, radius, space},
 };
 use gpui::{
@@ -187,24 +186,24 @@ pub fn controls(
 #[cfg_attr(target_os = "windows", allow(unused_variables))]
 fn button(control: Control, palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyElement {
     let danger = matches!(control, Control::Close);
-    let button = neo::raised(palette, radius::PILL, elevation::PILL)
-        .id(id("window", control.name()))
-        .size(px(layout::TOP_BAR_CONTROL_HEIGHT))
-        .flex_none()
-        .flex()
-        .items_center()
-        .justify_center()
-        .cursor_pointer()
-        .window_control_area(control.area())
-        .child(icon(
-            control.icon(),
-            desktop::WINDOW_CONTROL_GLYPH,
-            if danger {
-                palette.danger()
-            } else {
-                palette.ink
-            },
-        ));
+    let button = top_bar_button(
+        palette,
+        radius::PILL,
+        elevation::PILL,
+        layout::TOP_BAR_CONTROL_HEIGHT,
+    )
+    .id(id("window", control.name()))
+    .cursor_pointer()
+    .window_control_area(control.area())
+    .child(icon(
+        control.icon(),
+        desktop::WINDOW_CONTROL_GLYPH,
+        if danger {
+            palette.danger()
+        } else {
+            palette.ink
+        },
+    ));
     // Windows acts on the hit-test; elsewhere the click does the work.
     #[cfg(not(target_os = "windows"))]
     let button = button.on_click(

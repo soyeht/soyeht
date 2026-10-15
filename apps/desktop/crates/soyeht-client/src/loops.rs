@@ -11,7 +11,6 @@ pub const PROMPT_HEADING: &str = "PROMPT";
 pub const WHEN_HEADING: &str = "WHEN";
 pub const EVERY_INTERVAL: &str = "Every interval";
 pub const WHEN_IDLE: &str = "When idle";
-pub const IDLE_EXPLANATION: &str = "The loop sends only when the pane is idle";
 pub const WORKER_ROLE: &str = "Worker";
 pub const LEAD_ROLE: &str = "Lead";
 pub const CANCEL: &str = "Cancel";
@@ -209,7 +208,6 @@ mod tests {
             (WHEN_HEADING, "whenHeading"),
             (EVERY_INTERVAL, "everyInterval"),
             (WHEN_IDLE, "whenIdle"),
-            (IDLE_EXPLANATION, "idleExplanation"),
             (WORKER_ROLE, "workerRole"),
             (LEAD_ROLE, "leadRole"),
             (CANCEL, "cancel"),

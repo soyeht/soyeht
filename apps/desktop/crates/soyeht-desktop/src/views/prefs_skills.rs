@@ -4,7 +4,7 @@
 use super::{
     cards::{Role, button},
     preferences::{page, pill_button},
-    ui::{OwnPress, Typeface, column, id, row},
+    ui::{OwnPress, Typeface, chrome_text, column, id, row},
 };
 use crate::{
     composer_field::ComposerField,
@@ -111,10 +111,7 @@ impl Workbench {
                     .min_w_0()
                     .gap(px(space::X4))
                     .child(
-                        div()
-                            .chrome()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(type_scale::BODY))
+                        chrome_text(FontWeight::BOLD, type_scale::BODY)
                             .child(SharedString::from(skill.name.clone())),
                     )
                     .child(

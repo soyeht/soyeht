@@ -150,7 +150,7 @@ desktop emulates that with three shadows whose scales are in the `desktop` secti
 clipping of children, so corners are circular arcs and content that touches a rounded corner is
 rounded by its own radius.
 
-`cargo run --release --example neo_gallery -- milk` opens every surface on one canvas at fixed
+`cargo run --release --features dev-tools --example neo_gallery -- milk` opens every surface on one canvas at fixed
 positions (no text), for comparing with the Mac's render of the same surfaces pixel by pixel.
 
 ## Rules
@@ -169,9 +169,12 @@ positions (no text), for comparing with the Mac's render of the same surfaces pi
 terminal output, usage and harnesses, all in the wire's own shapes), with no engine:
 
 ```sh
-cargo run --release --example design_audit -- crates/soyeht-desktop/examples/design_audit.json milk \
+cargo run --release --features dev-tools --example design_audit -- crates/soyeht-desktop/examples/design_audit.json milk \
   --workspace ws-ci --size 1200x700 --open config:claude:model
 ```
+
+The replay and the gallery are behind the `dev-tools` feature, so the shipping binary does not
+carry them.
 
 `--open` takes `new-pane`, `overflow`, `settings` or `settings:<panel>` (`appearance`, `harnesses`,
 `usage`, `skills`), `harness:<pane>`, `config:<pane>:<option>`, `loop:<pane>`, `tasks`, `tasks:list`,

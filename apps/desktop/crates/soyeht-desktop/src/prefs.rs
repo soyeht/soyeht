@@ -31,13 +31,6 @@ impl Section {
             Self::Skills => "Skills",
         }
     }
-
-    /// The panel a spec names (`appearance`, `harnesses`, `usage`, `skills`).
-    pub fn named(spec: &str) -> Option<Self> {
-        Self::ALL
-            .into_iter()
-            .find(|section| section.title().eq_ignore_ascii_case(spec))
-    }
 }
 
 /// The fields of the form that makes a skill.
@@ -263,10 +256,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_panel_is_found_by_its_name_and_the_harnesses_open_first() {
-        assert_eq!(Section::named("usage"), Some(Section::Usage));
-        assert_eq!(Section::named("Skills"), Some(Section::Skills));
-        assert_eq!(Section::named("shortcuts"), None);
+    fn the_harnesses_open_first() {
         assert_eq!(Prefs::default().section(), Section::Harnesses);
     }
 

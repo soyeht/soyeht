@@ -21,18 +21,22 @@ impl Workbench {
     pub(crate) fn beat_drafts(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
         let drafts: Vec<(String, bool)> = self
-            .fields
+            .panes
             .iter()
-            .map(|(pane_id, field)| (pane_id.clone(), !field.read(cx).draft().text().is_empty()))
+            .filter_map(|(pane_id, ui)| {
+                let field = ui.field.as_ref()?;
+                Some((pane_id.clone(), !field.read(cx).draft().text().is_empty()))
+            })
             .collect();
         for (pane_id, has_draft) in drafts {
-            let last = self.draft_beats.get(&pane_id).copied();
+            let ui = self.panes.of(&pane_id);
+            let last = ui.draft_beat;
             if !has_draft {
-                self.draft_beats.remove(&pane_id);
+                ui.draft_beat = None;
             } else if loops::draft_beat_due(has_draft, last, now)
                 && self.state.connection == Connection::Connected
             {
-                self.draft_beats.insert(pane_id.clone(), now);
+                ui.draft_beat = Some(now);
                 self.send(Command::SetDraft {
                     pane_id,
                     active: true,
@@ -41,16 +45,22 @@ impl Workbench {
         }
     }
 
-    pub(crate) fn toggle_subagent(&mut self, subagent_id: &str, cx: &mut Context<Self>) {
-        if !self.open_subagents.remove(subagent_id) {
-            self.open_subagents.insert(subagent_id.to_owned());
+    pub(crate) fn toggle_subagent(
+        &mut self,
+        pane_id: &str,
+        subagent_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let open = &mut self.panes.of(pane_id).open_subagents;
+        if !open.remove(subagent_id) {
+            open.insert(subagent_id.to_owned());
         }
         cx.notify();
     }
 
     /// How many messages of an agent's transcript the view draws.
     pub(crate) fn transcript_limit(&self, pane_id: &str) -> usize {
-        TAIL + self.transcript_extra.get(pane_id).copied().unwrap_or(0)
+        TAIL + self.panes.get(pane_id).map_or(0, |ui| ui.extra)
     }
 
     /// "Load earlier messages": draws the messages already held beyond the last ones, and when
@@ -62,7 +72,7 @@ impl Workbench {
         };
         match view.cards.earlier(view.tail(limit).1) {
             Earlier::Reveal => {
-                *self.transcript_extra.entry(pane_id.to_owned()).or_default() += TAIL;
+                self.panes.of(pane_id).extra += TAIL;
             }
             Earlier::Fetch(before) => {
                 self.send(Command::LoadOlder {
@@ -125,22 +135,29 @@ impl Workbench {
     ) -> Entity<ComposerField> {
         let palette = self.theme.palette();
         let handle = (request_id.to_owned(), key.to_owned());
-        let field = match self.form_fields.get(&handle) {
+        let field = match self
+            .panes
+            .get(pane_id)
+            .and_then(|ui| ui.form_fields.get(&handle))
+        {
             Some(field) => field.clone(),
             None => {
                 let field = new_field(palette, cx);
-                let (pane_id, request_id) = (pane_id.to_owned(), request_id.to_owned());
+                let (owner, request_id) = (pane_id.to_owned(), request_id.to_owned());
                 cx.subscribe(
                     &field,
                     move |this, _, event: &ComposerEvent, cx| match event {
                         ComposerEvent::Submit => {
-                            this.answer_elicitation(&pane_id, &request_id, true, cx)
+                            this.answer_elicitation(&owner, &request_id, true, cx)
                         }
                         ComposerEvent::Dismiss => this.close_menu(cx),
                     },
                 )
                 .detach();
-                self.form_fields.insert(handle, field.clone());
+                self.panes
+                    .of(pane_id)
+                    .form_fields
+                    .insert(handle, field.clone());
                 field
             }
         };
@@ -158,8 +175,10 @@ impl Workbench {
     ) {
         let fields = submit.then(|| {
             elicitation::answer(
-                self.form_fields
-                    .iter()
+                self.panes
+                    .get(pane_id)
+                    .into_iter()
+                    .flat_map(|ui| ui.form_fields.iter())
                     .filter(|((request, _), _)| request == request_id)
                     .map(|((_, key), field)| {
                         (key.clone(), field.read(cx).draft().text().to_owned())

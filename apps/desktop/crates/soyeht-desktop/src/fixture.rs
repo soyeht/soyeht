@@ -221,7 +221,7 @@ pub fn menu(spec: &str) -> Option<Menu> {
         ("new-pane", None, None) => Some(Menu::NewPane),
         ("overflow", None, None) => Some(Menu::Overflow),
         ("settings", None, None) => Some(Menu::Settings),
-        ("settings", Some(panel), None) => Section::named(panel).map(|_| Menu::Settings),
+        ("settings", Some(panel), None) => section(panel).map(|_| Menu::Settings),
         ("harness", Some(pane), None) => Some(Menu::Harness(pane.to_owned())),
         ("loop", Some(pane), None) => Some(Menu::Loop(pane.to_owned())),
         ("config", Some(pane), Some(config)) => Some(Menu::Config {
@@ -234,7 +234,14 @@ pub fn menu(spec: &str) -> Option<Menu> {
 
 /// The Preferences panel a spec names (`settings:usage`), when it names one.
 pub fn panel(spec: &str) -> Option<Section> {
-    Section::named(spec.strip_prefix("settings:")?)
+    section(spec.strip_prefix("settings:")?)
+}
+
+/// The panel called `name` (`appearance`, `harnesses`, `usage`, `skills`).
+fn section(name: &str) -> Option<Section> {
+    Section::ALL
+        .into_iter()
+        .find(|section| section.title().eq_ignore_ascii_case(name))
 }
 
 /// The tasks surface a spec names: `tasks` (the board), `tasks:list`, `task:<id>` (the board with
@@ -300,6 +307,14 @@ pub fn run(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_panel_is_found_by_its_name() {
+        assert_eq!(panel("settings:usage"), Some(Section::Usage));
+        assert_eq!(panel("settings:Skills"), Some(Section::Skills));
+        assert_eq!(panel("settings:shortcuts"), None);
+        assert_eq!(panel("usage"), None);
+    }
 
     #[test]
     fn a_fixture_replays_as_a_connection_then_transcripts_screens_gaps_usage_and_harnesses() {

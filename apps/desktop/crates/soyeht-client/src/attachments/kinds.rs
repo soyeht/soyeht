@@ -83,13 +83,3 @@ pub fn classify(name: &str) -> (PromptAttachmentKind, String) {
             },
         )
 }
-
-/// The kind of a file named `name`.
-pub fn kind_of_file(name: &str) -> PromptAttachmentKind {
-    classify(name).0
-}
-
-/// The MIME type of a file named `name`.
-pub fn mime_for(name: &str) -> String {
-    classify(name).1
-}

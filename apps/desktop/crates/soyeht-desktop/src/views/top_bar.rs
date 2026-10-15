@@ -7,7 +7,7 @@ use super::{
     menus,
     ui::{
         OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer, text_width,
-        waiting_badge, working_dot,
+        top_bar_button, waiting_badge, working_dot,
     },
     window_controls,
 };
@@ -181,18 +181,18 @@ impl Workbench {
     }
 
     fn rail_toggle(&self, palette: &'static Palette, cx: &mut Context<Self>) -> AnyElement {
-        neo::raised(palette, radius::CONTROL, elevation::CARD)
-            .id("toggle-rail")
-            .size(px(layout::TOP_BAR_CONTROL_HEIGHT))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .cursor_pointer()
-            .tooltip(hint("Toggle app bar", palette))
-            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_rail(cx)))
-            .child(icon(Icon::Grid, glyph::TOP_BAR_TOGGLE, palette.ink))
-            .into_any_element()
+        top_bar_button(
+            palette,
+            radius::CONTROL,
+            elevation::CARD,
+            layout::TOP_BAR_CONTROL_HEIGHT,
+        )
+        .id("toggle-rail")
+        .cursor_pointer()
+        .tooltip(hint("Toggle app bar", palette))
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_rail(cx)))
+        .child(icon(Icon::Grid, glyph::TOP_BAR_TOGGLE, palette.ink))
+        .into_any_element()
     }
 
     fn tab(
@@ -296,44 +296,33 @@ impl Workbench {
                 )
             })
             .collect();
-        div()
-            .relative()
-            .flex_none()
-            .child(
-                neo::raised(palette, radius::PILL, elevation::PILL)
-                    .id("workspace-tabs-overflow")
-                    .w(px(layout::WORKSPACE_OVERFLOW_BUTTON_WIDTH))
-                    .h(px(layout::TOP_BAR_CONTROL_HEIGHT))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .cursor_pointer()
-                    .chrome()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::CAPTION))
-                    .text_color(rgb(palette.accent))
-                    .tooltip(hint(
-                        format!("Show {} more workspaces", hidden.len()),
-                        palette,
-                    ))
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.toggle_menu(Menu::Overflow, cx)
-                    }))
-                    .child(format!("+{}", hidden.len())),
+        with_list(
+            palette,
+            open,
+            layout::WORKSPACE_OVERFLOW_BUTTON_WIDTH,
+            rows,
+            cx,
+            top_bar_button(
+                palette,
+                radius::PILL,
+                elevation::PILL,
+                layout::WORKSPACE_OVERFLOW_BUTTON_WIDTH,
             )
-            .when(open, |slot| {
-                slot.child(menus::popup(
-                    palette,
-                    Anchor::TopRight,
-                    (
-                        layout::WORKSPACE_OVERFLOW_BUTTON_WIDTH,
-                        layout::TOP_BAR_CONTROL_HEIGHT + space::X6,
-                    ),
-                    menus::list(rows),
-                    cx,
-                ))
-            })
-            .into_any_element()
+            .id("workspace-tabs-overflow")
+            .cursor_pointer()
+            .chrome()
+            .font_weight(FontWeight::BOLD)
+            .text_size(px(type_scale::CAPTION))
+            .text_color(rgb(palette.accent))
+            .tooltip(hint(
+                format!("Show {} more workspaces", hidden.len()),
+                palette,
+            ))
+            .on_click(
+                cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_menu(Menu::Overflow, cx)),
+            )
+            .child(format!("+{}", hidden.len())),
+        )
     }
 
     fn new_pane_button(
@@ -358,42 +347,58 @@ impl Workbench {
         } else {
             Vec::new()
         };
-        div()
-            .relative()
-            .flex_none()
-            .child(
-                neo::raised(palette, radius::PILL, elevation::PILL)
-                    .id("new-pane")
-                    .size(px(layout::TOP_BAR_CONTROL_HEIGHT))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .when(!connected, |button| {
-                        button.opacity(pane_interior::DISABLED_OPACITY)
-                    })
-                    .when(connected, |button| button.cursor_pointer())
-                    .tooltip(hint("Open a terminal or agent pane", palette))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        if connected {
-                            this.toggle_menu(Menu::NewPane, cx);
-                        }
-                    }))
-                    .child(icon(Icon::Plus, glyph::TOP_BAR_NEW_PANE, palette.ink)),
+        with_list(
+            palette,
+            open,
+            layout::TOP_BAR_CONTROL_HEIGHT,
+            rows,
+            cx,
+            top_bar_button(
+                palette,
+                radius::PILL,
+                elevation::PILL,
+                layout::TOP_BAR_CONTROL_HEIGHT,
             )
-            .when(open, |slot| {
-                slot.child(menus::popup(
-                    palette,
-                    Anchor::TopRight,
-                    (
-                        layout::TOP_BAR_CONTROL_HEIGHT,
-                        layout::TOP_BAR_CONTROL_HEIGHT + space::X6,
-                    ),
-                    menus::list(rows),
-                    cx,
-                ))
+            .id("new-pane")
+            .when(!connected, |button| {
+                button.opacity(pane_interior::DISABLED_OPACITY)
             })
-            .into_any_element()
+            .when(connected, |button| button.cursor_pointer())
+            .tooltip(hint("Open a terminal or agent pane", palette))
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                if connected {
+                    this.toggle_menu(Menu::NewPane, cx);
+                }
+            }))
+            .child(icon(Icon::Plus, glyph::TOP_BAR_NEW_PANE, palette.ink)),
+        )
     }
+}
+
+/// A button of the top bar and, while `open`, the list of `rows` under its right edge. `width`
+/// is the button's width, which puts the list's corner under it.
+fn with_list(
+    palette: &'static Palette,
+    open: bool,
+    width: f32,
+    rows: Vec<AnyElement>,
+    cx: &mut Context<Workbench>,
+    button: impl IntoElement,
+) -> AnyElement {
+    div()
+        .relative()
+        .flex_none()
+        .child(button)
+        .when(open, |slot| {
+            slot.child(menus::popup(
+                palette,
+                Anchor::TopRight,
+                (width, layout::TOP_BAR_CONTROL_HEIGHT + space::X6),
+                menus::list(rows),
+                cx,
+            ))
+        })
+        .into_any_element()
 }
 
 /// The strip of tabs and the workspaces whose tabs are not wholly in view.

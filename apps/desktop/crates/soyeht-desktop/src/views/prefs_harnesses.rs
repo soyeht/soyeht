@@ -6,7 +6,7 @@
 use super::{
     menus,
     preferences::{page, pill_button},
-    ui::{OwnPress, Typeface, column, icon, id, row},
+    ui::{OwnPress, Typeface, chrome_text, column, id, raised_chip, row},
 };
 use crate::{
     assets::Icon,
@@ -195,7 +195,7 @@ impl Workbench {
             .relative()
             .flex_none()
             .child(
-                chip_frame(palette, Icon::Shield, label, true)
+                chip_frame(palette, Icon::Shield, label)
                     .id(id("default-mode", &harness.id))
                     .when_some(modes, |chip, _| chip.cursor_pointer())
                     .own_press()
@@ -249,10 +249,7 @@ impl Workbench {
                     .bg(rgb(color)),
             )
             .child(
-                div()
-                    .chrome()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(type_scale::CONTROL))
+                chrome_text(FontWeight::SEMIBOLD, type_scale::CONTROL)
                     .text_color(rgb(palette.secondary))
                     .child(harness_picker::status_label(harness)),
             )
@@ -274,10 +271,7 @@ impl Workbench {
             .px(px(space::X16))
             .pb(px(space::X4))
             .child(
-                div()
-                    .chrome()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::CAPTION))
+                chrome_text(FontWeight::BOLD, type_scale::CAPTION)
                     .child(harness_picker::status_label(harness)),
             )
             .child(
@@ -395,28 +389,22 @@ fn current_choice(option: &ConfigOption) -> Option<String> {
 
 /// A raised chip with an icon and a label, as the Mac's `PreferenceChip`.
 fn chip(palette: &Palette, glyph: Icon, label: &str) -> AnyElement {
-    chip_frame(palette, glyph, label, true).into_any_element()
+    chip_frame(palette, glyph, label).into_any_element()
 }
 
-fn chip_frame(palette: &Palette, glyph: Icon, label: &str, chevron: bool) -> Div {
-    neo::raised(palette, radius::PILL, elevation::CHIP)
-        .h(px(desktop::PREFERENCES_CHIP_HEIGHT))
-        .flex_none()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(space::X5))
-        .px(px(space::X8))
-        .chrome()
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_size(px(type_scale::CONTROL))
-        .text_color(rgb(palette.secondary))
-        .child(icon(glyph, desktop::CHEVRON_GLYPH + 1.0, palette.secondary))
-        .child(
-            div()
-                .max_w(px(desktop::CHIP_MAX_WIDTH))
-                .truncate()
-                .child(SharedString::from(label.to_owned())),
-        )
-        .children(chevron.then(|| icon(Icon::ChevronDown, desktop::CHEVRON_GLYPH, palette.muted)))
+fn chip_frame(palette: &Palette, glyph: Icon, label: &str) -> Div {
+    raised_chip(
+        palette,
+        glyph,
+        desktop::PREFERENCES_CHIP_GLYPH,
+        div()
+            .max_w(px(desktop::CHIP_MAX_WIDTH))
+            .truncate()
+            .child(SharedString::from(label.to_owned())),
+        Some(Icon::ChevronDown),
+    )
+    .h(px(desktop::PREFERENCES_CHIP_HEIGHT))
+    .flex_none()
+    .gap(px(space::X5))
+    .px(px(space::X8))
 }

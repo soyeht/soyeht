@@ -8,7 +8,7 @@ use crate::{
     theme::{Palette, desktop, space, type_scale},
     views::{
         prelude::*,
-        ui::{mono_note, rule},
+        ui::{disclosure_chevron, mono_note, rule},
     },
 };
 use soyeht_client::tasks;
@@ -69,11 +69,7 @@ impl Workbench {
                             .font_weight(FontWeight::BOLD)
                             .text_size(px(type_scale::SMALL))
                             .text_color(rgb(palette.muted))
-                            .child(icon(
-                                Icon::ChevronDown,
-                                desktop::DISCLOSURE_GLYPH,
-                                palette.muted,
-                            ))
+                            .child(disclosure_chevron(true, palette.muted))
                             .child(SharedString::from(
                                 tasks::state_title(&state).to_uppercase(),
                             ))

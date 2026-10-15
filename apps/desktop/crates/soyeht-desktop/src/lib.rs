@@ -11,13 +11,16 @@ mod attach;
 mod composer_field;
 mod destination;
 mod draft;
+#[cfg(feature = "dev-tools")]
 mod fixture;
 mod fonts;
+#[cfg(feature = "dev-tools")]
 mod gallery;
 mod graphics;
 mod loop_form;
 mod neo;
 mod open_menu;
+mod pane_ui;
 mod prefs;
 mod switch_flow;
 mod tasks_ui;
@@ -28,5 +31,7 @@ mod window_size;
 mod workbench;
 
 pub use app::run;
+#[cfg(feature = "dev-tools")]
 pub use fixture::run as run_fixture;
+#[cfg(feature = "dev-tools")]
 pub use gallery::run as run_gallery;

@@ -39,7 +39,13 @@ DUPLICATION_SCANS = {
         ("apps/shared", "apps/dictation", "apps/mac/Sources", "apps/ios/Sources"),
         "swift",
     ),
+    # The desktop views are built from chained calls that the 40-token scan never sees as
+    # repeated: a smaller window finds the widgets written twice.
+    "desktop_views": (("apps/desktop/crates/soyeht-desktop/src",), "rust"),
 }
+# (minimum lines, minimum tokens) of a clone; the scans not listed use the default.
+DEFAULT_CLONE_SIZE = (5, 40)
+CLONE_SIZES = {"desktop_views": (4, 25)}
 SWIFT_LITERAL_PATTERNS = {
     "padding": re.compile(r"\.padding\(\s*(?:\.[A-Za-z]+\s*,\s*)?\d+(?:\.\d+)?\s*\)"),
     "corner_radius": re.compile(
@@ -166,15 +172,16 @@ def rust_roots(repo: Path) -> list[Path]:
 
 def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int | float]:
     paths, language = DUPLICATION_SCANS[area]
+    min_lines, min_tokens = CLONE_SIZES.get(area, DEFAULT_CLONE_SIZE)
     if not any((repo / path).is_dir() for path in paths):
         return {"clones": 0, "duplicated_lines": 0, "percent": 0}
     with tempfile.TemporaryDirectory(prefix="soyeht-quality-jscpd-") as output:
         command = [
             str(jscpd),
             "--min-lines",
-            "5",
+            str(min_lines),
             "--min-tokens",
-            "40",
+            str(min_tokens),
             "--max-lines",
             "20000",
             "--max-size",

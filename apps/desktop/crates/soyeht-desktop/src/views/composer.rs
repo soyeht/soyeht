@@ -317,17 +317,16 @@ impl Workbench {
                     .min(self.window_height - 2.0 * desktop::PREFERENCES_INSET),
             )
         });
-        chip(
-            palette,
-            id("harness-chip", pane_id),
-            &label,
-            true,
-            mark,
+        ControlChip {
+            key: id("harness-chip", pane_id),
+            label: &label,
+            emphasized: true,
+            leading: mark,
             enabled,
             menu,
-            popover,
-            cx,
-        )
+            popup: popover,
+        }
+        .build(palette, cx)
     }
 
     fn config_chip(
@@ -364,24 +363,23 @@ impl Workbench {
                 )
             })
             .collect();
-        chip(
-            palette,
-            id("config-chip", &format!("{pane_id}-{}", menu.config_id)),
-            menu.label(),
-            false,
-            leading.map(|glyph| {
+        ControlChip {
+            key: id("config-chip", &format!("{pane_id}-{}", menu.config_id)),
+            label: menu.label(),
+            emphasized: false,
+            leading: leading.map(|glyph| {
                 icon(glyph, composer::SHIELD_SIZE, palette.secondary).into_any_element()
             }),
             enabled,
-            open_menu,
-            open.then(|| {
+            menu: open_menu,
+            popup: open.then(|| {
                 (
                     menus::list(rows),
                     layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT,
                 )
             }),
-            cx,
-        )
+        }
+        .build(palette, cx)
     }
 }
 
@@ -400,79 +398,91 @@ fn round_frame(name: &str, glyph: Icon, palette: &Palette) -> gpui::Stateful<Div
 }
 
 /// A borderless chip of the control row: an optional mark, the label and a chevron.
-#[allow(clippy::too_many_arguments)]
-fn chip(
-    palette: &'static Palette,
+struct ControlChip<'a> {
     key: SharedString,
-    label: &str,
+    label: &'a str,
     emphasized: bool,
     leading: Option<AnyElement>,
     enabled: bool,
+    /// The menu a click opens.
     menu: Menu,
+    /// What the open menu shows, and the most it may be tall.
     popup: Option<(Div, f32)>,
-    cx: &mut Context<Workbench>,
-) -> AnyElement {
-    let toggled = menu;
-    div()
-        .relative()
-        .flex_none()
-        .child(
-            row()
-                .id(key)
-                .min_w_0()
-                .h(px(composer::CONTROL_HEIGHT))
-                .px(px(composer::CHIP_HORIZONTAL_PADDING))
-                .gap(px(composer::CHIP_SPACING))
-                .rounded_full()
-                .text_size(px(pane_interior::CAPTION_POINT_SIZE))
-                .font_weight(if emphasized {
-                    FontWeight::SEMIBOLD
-                } else {
-                    FontWeight::MEDIUM
-                })
-                .text_color(rgb(if emphasized {
-                    palette.ink
-                } else {
-                    palette.secondary
-                }))
-                .when(enabled, |chip| {
-                    chip.cursor_pointer()
-                        .hover(|style| style.bg(rgb(palette.hover)))
-                })
-                .when(!enabled, |chip| {
-                    chip.opacity(pane_interior::DISABLED_OPACITY)
-                })
-                .own_press()
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    if enabled {
-                        this.toggle_menu(toggled.clone(), cx);
-                    }
-                }))
-                .children(leading)
-                .child(
-                    div()
-                        .min_w_0()
-                        .max_w(px(desktop::CHIP_MAX_WIDTH))
-                        .truncate()
-                        .child(SharedString::from(label.to_owned())),
-                )
-                .child(icon(
-                    Icon::ChevronDown,
-                    desktop::CHEVRON_GLYPH,
-                    palette.secondary,
-                )),
-        )
-        .children(popup.map(|(body, max_height)| {
-            menus::popup_up_to(
-                palette,
-                Anchor::BottomLeft,
-                (0.0, -desktop::POPUP_GAP),
-                max_height,
-                body,
-                cx,
+}
+
+impl ControlChip<'_> {
+    fn build(self, palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyElement {
+        let Self {
+            key,
+            label,
+            emphasized,
+            leading,
+            enabled,
+            menu,
+            popup,
+        } = self;
+        let toggled = menu;
+        div()
+            .relative()
+            .flex_none()
+            .child(
+                row()
+                    .id(key)
+                    .min_w_0()
+                    .h(px(composer::CONTROL_HEIGHT))
+                    .px(px(composer::CHIP_HORIZONTAL_PADDING))
+                    .gap(px(composer::CHIP_SPACING))
+                    .rounded_full()
+                    .text_size(px(pane_interior::CAPTION_POINT_SIZE))
+                    .font_weight(if emphasized {
+                        FontWeight::SEMIBOLD
+                    } else {
+                        FontWeight::MEDIUM
+                    })
+                    .text_color(rgb(if emphasized {
+                        palette.ink
+                    } else {
+                        palette.secondary
+                    }))
+                    .when(enabled, |chip| {
+                        chip.cursor_pointer()
+                            .hover(|style| style.bg(rgb(palette.hover)))
+                    })
+                    .when(!enabled, |chip| {
+                        chip.opacity(pane_interior::DISABLED_OPACITY)
+                    })
+                    .own_press()
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                        if enabled {
+                            this.toggle_menu(toggled.clone(), cx);
+                        }
+                    }))
+                    .children(leading)
+                    .child(
+                        div()
+                            .min_w_0()
+                            .max_w(px(desktop::CHIP_MAX_WIDTH))
+                            .truncate()
+                            .child(SharedString::from(label.to_owned())),
+                    )
+                    .child(icon(
+                        Icon::ChevronDown,
+                        desktop::CHEVRON_GLYPH,
+                        palette.secondary,
+                    )),
             )
-        }))
-        .into_any_element()
+            .children(popup.map(|(body, max_height)| {
+                menus::popup_up_to(
+                    palette,
+                    Anchor::BottomLeft,
+                    (0.0, -desktop::POPUP_GAP),
+                    max_height,
+                    body,
+                    cx,
+                )
+            }))
+            .into_any_element()
+    }
 }
 
 /// The chips in a strip that scrolls sideways when the pane is too narrow for them all.

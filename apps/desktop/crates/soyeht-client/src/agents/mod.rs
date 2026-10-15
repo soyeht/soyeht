@@ -56,11 +56,6 @@ impl State {
         })
     }
 
-    /// The panes that have an agent transcript.
-    pub fn agent_ids(&self) -> impl Iterator<Item = &str> {
-        self.agents.keys().map(String::as_str)
-    }
-
     pub fn usage(&self) -> &[UsageReading] {
         &self.usage
     }

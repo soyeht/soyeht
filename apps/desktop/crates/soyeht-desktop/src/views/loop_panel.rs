@@ -29,7 +29,7 @@ impl Workbench {
             .loop_of(&pane.pane_id)
             .and_then(|held| held.rounds)
             .unwrap_or(0);
-        let Some(held) = self.loop_forms.get(&pane.pane_id) else {
+        let Some(held) = self.loop_form(&pane.pane_id) else {
             return div();
         };
         let (form, role, choice) = (held.form.clone(), held.role.clone(), held.choice);
@@ -38,7 +38,7 @@ impl Workbench {
         let pane_id = pane.pane_id.clone();
         let applied = pane.clone();
         column()
-            .w(px(desktop::LOOP_PANEL_WIDTH - 2.0 * space::X14))
+            .w(px(desktop::LOOP_PANEL_CONTENT_WIDTH))
             .gap(px(space::X12))
             .child(self.loop_header(&pane_id, &form, &role, palette, cx))
             .child(heading(palette, loops::PROMPT_HEADING))
@@ -128,10 +128,7 @@ impl Workbench {
                     }))
                     .child(icon(Icon::Timer, desktop::COMPOSER_GLYPH, palette.accent))
                     .child(
-                        div()
-                            .chrome()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(type_scale::SUBHEADING - 4.0))
+                        chrome_text(FontWeight::BOLD, desktop::LOOP_PANEL_TITLE_SIZE)
                             .text_color(rgb(palette.ink))
                             .child(loops::TITLE),
                     ),

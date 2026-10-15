@@ -1,0 +1,195 @@
+//! What the window keeps for each agent pane besides what the engine says about it: the message
+//! line, the scroll positions, the files waiting to be sent, the panel half filled in, and which
+//! thoughts and subagents the person has opened. All of it hangs off one `PaneUi` per pane, so a
+//! pane that closes takes its interface state with it in one step, and a new kind of state has
+//! no list to remember.
+
+use crate::{composer_field::ComposerField, loop_form::LoopForm};
+use gpui::{Entity, ScrollHandle};
+use soyeht_client::{State, attachments::Staged, transcript_rows::Rows};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+    time::Instant,
+};
+
+#[derive(Default)]
+pub(crate) struct PaneUi {
+    /// The message line of the pane's composer, made when first needed.
+    pub field: Option<Entity<ComposerField>>,
+    /// The scroll of the transcript and how many messages it had when last laid out, to follow
+    /// the newest while it grows.
+    pub transcript: Option<(ScrollHandle, usize)>,
+    /// What the rows of the transcript were laid out at, so that a long one builds only the rows
+    /// near the viewport.
+    pub rows: Rc<RefCell<Rows>>,
+    /// The sideways scroll of the composer's chip strip.
+    pub chip_scroll: ScrollHandle,
+    /// The sideways scroll of the composer's attachment chips.
+    pub attachment_scroll: ScrollHandle,
+    /// How many messages beyond `TAIL` the transcript draws.
+    pub extra: usize,
+    /// The files attached to the pane's next message, with the latest refusal.
+    pub staged: Option<Staged>,
+    /// The loop panel the pane is editing.
+    pub loop_form: Option<LoopForm>,
+    /// When the composer's draft was last announced to the engine.
+    pub draft_beat: Option<Instant>,
+    /// The thoughts the person has opened, by message.
+    pub open_thoughts: HashSet<String>,
+    /// The subagent rows the person has opened, by subagent.
+    pub open_subagents: HashSet<String>,
+    /// The fields of the questions the agent asks, by request and field.
+    pub form_fields: HashMap<(String, String), Entity<ComposerField>>,
+}
+
+impl PaneUi {
+    /// Drops what refers to messages and requests the pane no longer holds.
+    fn forget_gone(&mut self, state: &State, pane_id: &str) {
+        let Some(view) = state.agent(pane_id) else {
+            return;
+        };
+        self.form_fields.retain(|(request, _), _| {
+            view.cards
+                .elicitation
+                .as_ref()
+                .is_some_and(|open| &open.request_id == request)
+        });
+        if !self.open_thoughts.is_empty() {
+            self.open_thoughts
+                .retain(|message| view.messages.iter().any(|m| &m.local_id == message));
+        }
+    }
+}
+
+/// The `PaneUi` of every pane that has one.
+#[derive(Default)]
+pub(crate) struct PaneUis(HashMap<String, PaneUi>);
+
+impl PaneUis {
+    pub fn get(&self, pane_id: &str) -> Option<&PaneUi> {
+        self.0.get(pane_id)
+    }
+
+    pub fn get_mut(&mut self, pane_id: &str) -> Option<&mut PaneUi> {
+        self.0.get_mut(pane_id)
+    }
+
+    pub fn thought_is_open(&self, pane_id: &str, message_id: &str) -> bool {
+        self.get(pane_id)
+            .is_some_and(|ui| ui.open_thoughts.contains(message_id))
+    }
+
+    pub fn subagent_is_open(&self, pane_id: &str, subagent_id: &str) -> bool {
+        self.get(pane_id)
+            .is_some_and(|ui| ui.open_subagents.contains(subagent_id))
+    }
+
+    /// The pane's state, made when first needed.
+    pub fn of(&mut self, pane_id: &str) -> &mut PaneUi {
+        self.0.entry(pane_id.to_owned()).or_default()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &PaneUi)> {
+        self.0.iter()
+    }
+
+    /// Drops the state of panes that are gone, and of messages and requests that are.
+    pub fn forget_closed(&mut self, state: &State) {
+        self.0.retain(|pane_id, _| state.agent(pane_id).is_some());
+        for (pane_id, ui) in &mut self.0 {
+            ui.forget_gone(state, pane_id);
+        }
+    }
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use soyeht_client::{Event, Snapshot};
+    use std::time::Instant;
+
+    fn state_with(agents: &[&str]) -> State {
+        let pane = |id: &str| {
+            json!({
+                "paneId": id, "workspaceId": "w", "name": id, "cwd": "/work", "mode": "agent",
+                "state": "idle", "source": "none", "confidence": 0.0, "phrase": "",
+                "generation": 1, "cols": 80, "rows": 24, "record": false,
+                "agent": {
+                    "harness": "worker-harness", "version": "1", "fingerprint": "f", "options": [],
+                    "authMethods": [], "queue": [], "draft": false, "role": "worker"
+                }
+            })
+        };
+        let snapshot = Snapshot {
+            workspaces: vec![
+                serde_json::from_value(
+                    json!({"workspaceId": "w", "name": "w", "path": "/work", "layout": {}}),
+                )
+                .unwrap(),
+            ],
+            panes: agents
+                .iter()
+                .map(|id| serde_json::from_value(pane(id)).unwrap())
+                .collect(),
+            focus: None,
+            requests: Vec::new(),
+            loops: Vec::new(),
+            tasks: Vec::new(),
+            attention: Vec::new(),
+            cursor: 1,
+        };
+        let mut state = State::default();
+        state.apply(Event::Connected(snapshot));
+        state
+    }
+
+    /// Fills every field of a `PaneUi` that does not need a window. Written as a struct
+    /// expression with no `..Default::default()`, so a field added to `PaneUi` fails to compile
+    /// here until the test fills it too.
+    fn used() -> PaneUi {
+        PaneUi {
+            field: None,
+            transcript: Some((ScrollHandle::new(), 3)),
+            rows: Rc::default(),
+            chip_scroll: ScrollHandle::new(),
+            attachment_scroll: ScrollHandle::new(),
+            extra: 50,
+            staged: Some(Staged::default()),
+            loop_form: None,
+            draft_beat: Some(Instant::now()),
+            open_thoughts: HashSet::from(["thought".to_owned()]),
+            open_subagents: HashSet::from(["subagent".to_owned()]),
+            form_fields: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn a_closed_pane_leaves_no_state_of_its_own() {
+        let mut uis = PaneUis::default();
+        *uis.of("kept") = used();
+        *uis.of("closed") = used();
+        uis.forget_closed(&state_with(&["kept"]));
+        assert!(uis.get("closed").is_none());
+        let kept = uis.get("kept").unwrap();
+        assert_eq!(kept.extra, 50);
+        assert!(kept.open_subagents.contains("subagent"));
+        uis.forget_closed(&state_with(&[]));
+        assert!(uis.is_empty());
+    }
+
+    #[test]
+    fn a_thought_of_a_message_that_is_gone_is_forgotten() {
+        let mut uis = PaneUis::default();
+        *uis.of("kept") = used();
+        uis.forget_closed(&state_with(&["kept"]));
+        assert!(uis.get("kept").unwrap().open_thoughts.is_empty());
+    }
+}

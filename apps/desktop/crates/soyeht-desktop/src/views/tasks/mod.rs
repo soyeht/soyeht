@@ -220,7 +220,7 @@ impl Workbench {
         };
         row()
             .gap(px(space::X12))
-            .min_h(px(space::X18 * 2.0 - space::X2))
+            .min_h(px(desktop::TASK_TOOLBAR_HEIGHT))
             .child(
                 row()
                     .gap(px(space::X2))
@@ -304,13 +304,7 @@ impl Workbench {
                 desktop::EMPTY_STATE_GLYPH,
                 palette.secondary,
             ))
-            .child(
-                div()
-                    .chrome()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::HEADING))
-                    .child(tasks::EMPTY_TITLE),
-            )
+            .child(chrome_text(FontWeight::BOLD, type_scale::HEADING).child(tasks::EMPTY_TITLE))
             .child(
                 div()
                     .text_size(px(type_scale::CAPTION))

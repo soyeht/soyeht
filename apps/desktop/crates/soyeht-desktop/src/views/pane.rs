@@ -222,7 +222,9 @@ impl Workbench {
         let open = menu.as_ref().is_some_and(|menu| self.menus.is_open(menu));
         if action == Action::Loop && !open {
             // The panel starts again from the pane's loop each time it opens.
-            self.loop_forms.remove(&pane.pane_id);
+            if let Some(ui) = self.panes.get_mut(&pane.pane_id) {
+                ui.loop_form = None;
+            }
         }
         let connected = self.state.connection == soyeht_client::Connection::Connected;
         let enabled = menu.is_some() || connected;

@@ -1,7 +1,7 @@
 //! The panes of a workspace laid out as its split tree says: a branch is a row or a column of
 //! children that share the room by weight, a leaf is a pane card.
 
-use super::ui::{Typeface, column, icon};
+use super::ui::{chrome_text, column, icon};
 use crate::{
     assets::Icon,
     neo,
@@ -194,10 +194,7 @@ fn empty(palette: &Palette, glyph: Option<Icon>, message: &str) -> AnyElement {
         .px(px(space::X18))
         .children(glyph.map(|glyph| icon(glyph, desktop::EMPTY_STATE_GLYPH, palette.secondary)))
         .child(
-            div()
-                .chrome()
-                .font_weight(FontWeight::BOLD)
-                .text_size(px(type_scale::HEADING))
+            chrome_text(FontWeight::BOLD, type_scale::HEADING)
                 .text_color(rgb(palette.ink))
                 .child(SharedString::from(message.to_owned())),
         )

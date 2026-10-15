@@ -6,6 +6,7 @@
 use super::{
     agent::{labelled, pill, transcript_row},
     prelude::*,
+    ui::disclosure_chevron,
 };
 use crate::theme::{Palette, desktop, pane_interior, space};
 use gpui::{Animation, AnimationExt, Transformation, percentage, relative};
@@ -23,6 +24,8 @@ use std::{cell::RefCell, time::Duration};
 
 /// What a frame knows about the rows of the transcript it is building.
 pub(super) struct Windowing<'a> {
+    /// The pane the transcript belongs to.
+    pub pane_id: &'a str,
     /// What the rows were laid out at.
     pub rows: &'a RefCell<Rows>,
     /// Where the transcript is scrolled to.
@@ -520,7 +523,7 @@ impl Workbench {
             .map(|entry| {
                 (
                     entry.id(),
-                    transcript_rows::fingerprint(entry, self.open_state(entry)),
+                    transcript_rows::fingerprint(entry, self.open_state(windowing.pane_id, entry)),
                 )
             })
             .collect();
@@ -535,7 +538,7 @@ impl Workbench {
         for ((entry, (key, fingerprint)), spacer) in entries.iter().zip(keys).zip(plan) {
             let row = match spacer {
                 Some(height) => Some(spacer_row(height)),
-                None => self.entry_row(entry, markdown, palette, cx),
+                None => self.entry_row(windowing.pane_id, entry, markdown, palette, cx),
             };
             if let Some(row) = row {
                 children.push(Child::Row {
@@ -559,15 +562,17 @@ impl Workbench {
 
     /// What an entry shows that its content does not hold: whether its thought or subagent is
     /// open, which changes its height.
-    fn open_state(&self, entry: &Entry<'_>) -> u64 {
+    fn open_state(&self, pane_id: &str, entry: &Entry<'_>) -> u64 {
         match entry {
-            Entry::Message(message) => u64::from(self.open_thoughts.contains(&message.local_id)),
+            Entry::Message(message) => {
+                u64::from(self.panes.thought_is_open(pane_id, &message.local_id))
+            }
             Entry::Subagent(group) => group.entries.iter().fold(
-                u64::from(self.open_subagents.contains(group.subagent_id)),
+                u64::from(self.panes.subagent_is_open(pane_id, group.subagent_id)),
                 |state, inner| {
                     state
                         .wrapping_mul(31)
-                        .wrapping_add(self.open_state(inner) + 1)
+                        .wrapping_add(self.open_state(pane_id, inner) + 1)
                 },
             ),
         }
@@ -575,6 +580,7 @@ impl Workbench {
 
     fn entry_row(
         &self,
+        pane_id: &str,
         entry: &Entry<'_>,
         markdown: &mut markdown::Cache,
         palette: &'static Palette,
@@ -582,37 +588,32 @@ impl Workbench {
     ) -> Option<AnyElement> {
         match entry {
             Entry::Message(message) => {
-                let open = self.open_thoughts.contains(&message.local_id);
-                transcript_row(message, open, markdown, palette, cx)
+                let open = self.panes.thought_is_open(pane_id, &message.local_id);
+                transcript_row(pane_id, message, open, markdown, palette, cx)
             }
-            Entry::Subagent(group) => Some(self.subagent_row(group, markdown, palette, cx)),
+            Entry::Subagent(group) => {
+                Some(self.subagent_row(pane_id, group, markdown, palette, cx))
+            }
         }
     }
 
     fn subagent_row(
         &self,
+        pane_id: &str,
         group: &Group<'_>,
         markdown: &mut markdown::Cache,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let presentation = SubagentPresentation::new(group.run, timestamp::now());
-        let expanded = self.open_subagents.contains(group.subagent_id);
-        let toggled = group.subagent_id.to_owned();
+        let expanded = self.panes.subagent_is_open(pane_id, group.subagent_id);
+        let (owner, toggled) = (pane_id.to_owned(), group.subagent_id.to_owned());
         let header = column()
             .gap(px(space::X3))
             .child(
                 row()
                     .gap(px(space::X8))
-                    .child(icon(
-                        if expanded {
-                            Icon::ChevronDown
-                        } else {
-                            Icon::ChevronRight
-                        },
-                        desktop::DISCLOSURE_GLYPH,
-                        palette.secondary,
-                    ))
+                    .child(disclosure_chevron(expanded, palette.secondary))
                     .child(status_mark(presentation.status, palette))
                     .child(
                         div()
@@ -651,7 +652,7 @@ impl Workbench {
             let children: Vec<AnyElement> = group
                 .entries
                 .iter()
-                .filter_map(|entry| self.entry_row(entry, markdown, palette, cx))
+                .filter_map(|entry| self.entry_row(pane_id, entry, markdown, palette, cx))
                 .collect();
             column()
                 .gap(px(space::X8))
@@ -666,7 +667,7 @@ impl Workbench {
                     .id(id("subagent", group.subagent_id))
                     .cursor_pointer()
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.toggle_subagent(&toggled, cx)
+                        this.toggle_subagent(&owner, &toggled, cx)
                     }))
                     .child(header),
             )

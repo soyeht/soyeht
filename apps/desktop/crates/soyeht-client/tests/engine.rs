@@ -4,12 +4,12 @@
 
 use serde_json::{Value, json};
 use soyeht_client::{
-    Command, Connection, Effect, Engine, Error, Event, State,
+    CLIENT_NAME, Command, Connection, Effect, Engine, Error, Event, State,
     attachments::{Draft, Source},
 };
 use soyeht_platform::local::{Listener, Stream};
 use soyeht_protocol::{
-    EventName, PromptAttachmentKind,
+    ErrorKind, EventName, PromptAttachmentKind, error_code,
     frame::{Frame, read_json, write_json},
 };
 use std::{path::PathBuf, time::Duration};
@@ -52,7 +52,7 @@ impl FakeEngine {
     /// hello, state.snapshot (one workspace, one terminal) and events.subscribe.
     fn handshake(&mut self) {
         let hello = self.expect("hello");
-        assert_eq!(hello["params"]["client"], "desktop-dev");
+        assert_eq!(hello["params"]["client"], CLIENT_NAME);
         self.reply(
             &hello,
             json!({"engineVersion": "0", "protocolVersion": 1,
@@ -86,6 +86,14 @@ impl FakeEngine {
 
 fn notification(method: &str, params: Value) -> Value {
     json!({"jsonrpc": "2.0", "method": method, "params": params})
+}
+
+/// The engine's refusal of `request` because what it names does not exist, with the code and the
+/// kind the contract gives.
+fn not_found(request: &Value, message: &str) -> Value {
+    json!({"jsonrpc": "2.0", "id": request["id"], "error": {
+        "code": error_code(&ErrorKind::NotFound), "message": message,
+        "data": {"kind": ErrorKind::NotFound}}})
 }
 
 fn socket_path(name: &str) -> PathBuf {
@@ -251,8 +259,7 @@ fn a_refused_request_becomes_a_problem_not_a_crash() {
         })
         .unwrap();
     let focus = remote.expect("pane.focus");
-    remote.send(&json!({"jsonrpc": "2.0", "id": focus["id"], "error": {
-        "code": -32001, "message": "Pane not found", "data": {"kind": "not_found"}}}));
+    remote.send(&not_found(&focus, "Pane not found"));
     match next(&inbox) {
         Event::Problem(message) => assert_eq!(message, "Pane not found"),
         other => panic!("expected a problem, got {other:?}"),
@@ -320,8 +327,7 @@ fn opening_a_pane_is_answered_with_its_ticket_and_a_failure_releases_it() {
         })
         .unwrap();
     let refused = remote.expect("pane.create");
-    remote.send(&json!({"jsonrpc": "2.0", "id": refused["id"], "error": {
-        "code": -32001, "message": "No such workspace", "data": {"kind": "not_found"}}}));
+    remote.send(&not_found(&refused, "No such workspace"));
     assert!(matches!(next(&inbox), Event::OpenFailed { ticket: 6 }));
     assert!(matches!(next(&inbox), Event::Problem(_)));
 

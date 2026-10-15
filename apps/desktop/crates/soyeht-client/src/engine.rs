@@ -22,8 +22,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// The `client` name sent in `hello`.
-const CLIENT_NAME: &str = "desktop-dev";
+/// The `client` name sent in `hello`: `desktop` in a release build, `desktop-dev` in a debug one,
+/// so the engine's log tells a person's window from a developer's.
+pub const CLIENT_NAME: &str = if cfg!(debug_assertions) {
+    "desktop-dev"
+} else {
+    "desktop"
+};
 /// How often a wait before reconnecting looks at whether the application has stopped.
 const WAIT_SLICE: Duration = Duration::from_millis(100);
 /// Engine events waiting for the interface. When it is full the reader waits, which stops it

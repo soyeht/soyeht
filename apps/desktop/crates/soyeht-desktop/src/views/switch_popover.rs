@@ -81,7 +81,7 @@ impl Workbench {
             .map(|actions| account_section(&pane_id, &actions, palette, cx));
 
         column()
-            .w(px(desktop::SWITCH_POPOVER_WIDTH - 2.0 * space::X14))
+            .w(px(desktop::SWITCH_POPOVER_CONTENT_WIDTH))
             .gap(px(space::X12))
             .child(header(palette))
             .child(
@@ -293,15 +293,7 @@ fn model_field(
                 .truncate()
                 .child(SharedString::from(label)),
         )
-        .child(icon(
-            if open {
-                Icon::ChevronDown
-            } else {
-                Icon::ChevronRight
-            },
-            desktop::DISCLOSURE_GLYPH,
-            palette.muted,
-        ))
+        .child(super::ui::disclosure_chevron(open, palette.muted))
         .into_any_element()
 }
 

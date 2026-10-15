@@ -176,15 +176,7 @@ pub fn disclosure(palette: &Palette, key: &str, text: &str, expanded: bool) -> S
         .id(id("menu-disclosure", key))
         .cursor_pointer()
         .child(text.to_uppercase())
-        .child(icon(
-            if expanded {
-                Icon::ChevronDown
-            } else {
-                Icon::ChevronRight
-            },
-            desktop::DISCLOSURE_GLYPH,
-            palette.muted,
-        ))
+        .child(super::ui::disclosure_chevron(expanded, palette.muted))
 }
 
 /// A row of plain text that is not selectable.

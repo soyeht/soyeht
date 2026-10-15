@@ -79,6 +79,25 @@ class DeadPubTests(unittest.TestCase):
             ],
         )
 
+    def test_a_pub_fn_of_the_desktop_that_only_tests_call_is_listed(self):
+        root = self.fixture()
+        crate = root / "apps/desktop/crates/client/src"
+        crate.mkdir(parents=True)
+        (crate / "lib.rs").write_text(
+            "pub fn used_by_the_window() {}\n"
+            "pub fn desktop_dead() {}\n"
+            "pub fn caller() { used_by_the_window(); }\n"
+            "#[cfg(test)]\nmod tests { fn t() { super::desktop_dead(); } }\n"
+        )
+        found = [(path, name) for path, _, name in candidates(root) if "apps/desktop" in path]
+        self.assertEqual(
+            found,
+            [
+                ("apps/desktop/crates/client/src/lib.rs", "desktop_dead"),
+                ("apps/desktop/crates/client/src/lib.rs", "caller"),
+            ],
+        )
+
     def test_reports_the_line_of_the_definition(self):
         found = {name: line for _, line, name in candidates(self.fixture())}
         self.assertEqual(found["dead"], 3)

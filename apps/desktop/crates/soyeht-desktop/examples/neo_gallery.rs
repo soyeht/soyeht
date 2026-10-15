@@ -1,5 +1,5 @@
 //! Opens the neumorphic gallery (`src/gallery.rs`) in one theme, for comparing the surfaces of
-//! the desktop client with the Mac's. Usage: `cargo run --example neo_gallery -- milk`, where
+//! the desktop client with the Mac's. Usage: `cargo run --features dev-tools --example neo_gallery -- milk`, where
 //! the argument is the end of a theme name without example (`milk`, `deepharbor`, ...).
 
 use soyeht_desktop::theme::ThemeName;

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Fail on `pub fn` items of engine crates that no production code references.
+"""Fail on `pub fn` items of engine and desktop crates that no production code references.
 
 A public function that only tests call is dead code the compiler cannot see, because
 `pub` hides it from the unused-code lint. The check lists every `pub fn` in the
-production code of `engine/` whose name appears in no other production Rust file or
+production code of `engine/` and `apps/desktop` whose name appears in no other production Rust file or
 line of the repository (`engine/`, `apps/desktop`, and the Rust that
 `contracts/generate.py` writes). Test code (`tests/`, `#[cfg(test)]` items, test-support
 files) neither defines nor references a name. The match is by name, so a name shared
@@ -33,8 +33,8 @@ from check_swallowed_errors import (
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = Path(__file__).resolve().with_name("dead_pub_allowlist.json")
-DEFINITION_ROOT = "engine"
-REFERENCE_ROOTS = ("engine", "apps/desktop")
+DEFINITION_ROOTS = ("engine", "apps/desktop")
+REFERENCE_ROOTS = DEFINITION_ROOTS
 PUB_FN = re.compile(r"^[ \t]*pub(?:[ \t]+(?:const|async|unsafe))*[ \t]+fn[ \t]+(\w+)", re.M)
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
 # `#[serde(with = "module")]` calls these two by name.
@@ -56,7 +56,7 @@ def referenced_names(root: Path) -> Counter[str]:
     ]
     # `generated.rs` is excluded from production_files, but generated code calls into
     # the crates, so it counts as a reference.
-    files += sorted((root / DEFINITION_ROOT).rglob("generated.rs"))
+    files += sorted(path for relative in DEFINITION_ROOTS for path in (root / relative).rglob("generated.rs"))
     for path in files:
         previous = ""
         for name in IDENTIFIER.findall(production_code(path)):
@@ -70,7 +70,11 @@ def candidates(root: Path) -> list[tuple[str, int, str]]:
     """Return (path, line, name) for every unreferenced `pub fn`."""
     counts = referenced_names(root)
     found: list[tuple[str, int, str]] = []
-    for path in production_files(root, DEFINITION_ROOT, ".rs"):
+    for path in (
+        path
+        for relative in DEFINITION_ROOTS
+        for path in production_files(root, relative, ".rs")
+    ):
         code = production_code(path)
         relative = path.relative_to(root).as_posix()
         for match in PUB_FN.finditer(code):

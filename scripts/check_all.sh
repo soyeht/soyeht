@@ -35,6 +35,8 @@ uv run python scripts/check_wire_names.py
 uv run python scripts/check_quality.py
 uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
 uv run python scripts/check_dead_pub.py
+uv run python -m unittest discover -s scripts -p 'test_check_desktop_tokens.py'
+uv run python scripts/check_desktop_tokens.py
 
 uv run python contracts/generate.py --check
 uv run python -m unittest discover -s contracts -p 'test_*.py'
@@ -67,7 +69,9 @@ uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
     cd apps/desktop
     cargo fmt --all --check
     cargo clippy --locked --workspace --all-targets -- -D warnings
-    cargo test --locked --workspace
+    # The design-audit tools (`dev-tools`) are not in the shipping build: lint and test them too.
+    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+    cargo test --locked --workspace --all-features
 )
 uv run python -m unittest discover -s scripts -p 'test_tcc_guard.py'
 uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json

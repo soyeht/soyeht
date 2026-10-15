@@ -99,9 +99,4 @@ impl SignInState {
             Self::Failed { reason } => Some(reason),
         }
     }
-
-    /// The state is moving on its own, so the card shows progress rather than choices.
-    pub fn is_working(&self) -> bool {
-        matches!(self, Self::Verifying | Self::SigningOut)
-    }
 }

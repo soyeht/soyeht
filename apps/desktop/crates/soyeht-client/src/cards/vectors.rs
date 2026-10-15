@@ -135,11 +135,6 @@ fn the_sign_in_card_follows_the_engines_state() {
             text(&case, "detail"),
             "{name}"
         );
-        assert_eq!(
-            state.is_working(),
-            case["isWorking"].as_bool().unwrap(),
-            "{name}"
-        );
         match state {
             SignInState::Waiting { terminal_pane_id } => {
                 assert_eq!(terminal_pane_id, text(&case, "terminalPaneId"), "{name}");

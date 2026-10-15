@@ -45,7 +45,7 @@ pub mod transport;
 pub mod usage;
 
 pub use commands::Command;
-pub use engine::Engine;
+pub use engine::{CLIENT_NAME, Engine};
 pub use error::{Error, Result};
 pub use event::Event;
 pub use session::Session;

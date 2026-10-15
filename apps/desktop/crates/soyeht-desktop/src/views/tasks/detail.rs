@@ -15,10 +15,7 @@ fn group(palette: &Palette, heading: impl Into<SharedString>, content: Div) -> D
     column()
         .gap(px(space::X8))
         .child(
-            div()
-                .chrome()
-                .font_weight(FontWeight::BOLD)
-                .text_size(px(type_scale::MICRO))
+            chrome_text(FontWeight::BOLD, type_scale::MICRO)
                 .text_color(rgb(palette.secondary))
                 .child(SharedString::from(heading.into().to_uppercase())),
         )
@@ -227,10 +224,7 @@ impl Workbench {
         column()
             .gap(px(space::X12))
             .child(
-                div()
-                    .chrome()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::HEADING))
+                chrome_text(FontWeight::BOLD, type_scale::HEADING)
                     .child(SharedString::from(task.title.clone())),
             )
             .child(facts)

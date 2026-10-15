@@ -299,6 +299,26 @@ class QualityRatchetTests(unittest.TestCase):
             actual = duplicate_measurement(root, "engine", jscpd)
         self.assertGreater(actual["clones"], 0)
 
+    def test_the_desktop_views_scan_finds_a_clone_the_default_size_misses(self):
+        jscpd, _ = tool_paths(ROOT)
+        short = (
+            "fn chip(label: &str) -> usize {\n"
+            "    let first = label.len() + 11;\n"
+            "    let second = first * 2 + label.len();\n"
+            "    second + first\n"
+            "}\n"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "apps/desktop/crates/soyeht-desktop/src"
+            source.mkdir(parents=True)
+            (source / "one.rs").write_text(short)
+            (source / "two.rs").write_text(short)
+            views = duplicate_measurement(root, "desktop_views", jscpd)
+            default = duplicate_measurement(root, "desktop", jscpd)
+        self.assertGreater(views["clones"], 0)
+        self.assertEqual(default["clones"], 0)
+
     def test_disposable_file_at_801_lines_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

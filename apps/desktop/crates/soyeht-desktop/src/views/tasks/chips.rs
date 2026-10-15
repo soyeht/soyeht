@@ -118,7 +118,7 @@ pub(super) fn muted_mono(text: impl Into<SharedString>, palette: &Palette) -> Di
 }
 
 /// The glyph size of the small icons of a card.
-pub(super) const CARD_GLYPH: f32 = desktop::INLINE_GLYPH - 2.0;
+pub(super) const CARD_GLYPH: f32 = desktop::TASK_CARD_GLYPH;
 
 /// How many tasks a group holds, in a well capsule.
 pub(super) fn count_pill(palette: &Palette, count: usize) -> Div {

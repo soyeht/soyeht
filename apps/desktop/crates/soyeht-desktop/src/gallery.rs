@@ -6,7 +6,7 @@ use crate::{
     neo,
     theme::{
         Palette, ThemeName,
-        desktop::WELL_DEPTH,
+        desktop::{self, WELL_DEPTH},
         elevation::{self, Elevation},
         pane_interior, pane_layout, radius,
     },
@@ -101,7 +101,7 @@ impl Render for Gallery {
                 inner(pane.3 - inset - 56.0, 56.0),
             ))
             .child(at(
-                neo::raised(palette, 14.0, elevation::BALLOON),
+                neo::raised(palette, desktop::USAGE_BALLOON_RADIUS, elevation::BALLOON),
                 (500.0, 110.0, 200.0, 130.0),
             ))
             .child(at(
