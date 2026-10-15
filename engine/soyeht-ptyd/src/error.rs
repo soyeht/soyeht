@@ -41,12 +41,12 @@ pub enum Error {
 impl Error {
     pub fn wire_kind(&self) -> &'static str {
         match self {
-            Self::AckAhead => "ack_ahead",
-            Self::CursorAhead => "cursor_ahead",
-            Self::PendingRequestNotFound => "not_found",
-            Self::InvalidPendingOffset => "invalid_offset",
-            Self::OutputOffsetExhausted => "output_offset_overflow",
-            _ => "operation_failed",
+            Self::AckAhead => crate::wire_kind::ACK_AHEAD,
+            Self::CursorAhead => crate::wire_kind::CURSOR_AHEAD,
+            Self::PendingRequestNotFound => crate::wire_kind::NOT_FOUND,
+            Self::InvalidPendingOffset => crate::wire_kind::INVALID_OFFSET,
+            Self::OutputOffsetExhausted => crate::wire_kind::OUTPUT_OFFSET_OVERFLOW,
+            _ => crate::wire_kind::OPERATION_FAILED,
         }
     }
 }

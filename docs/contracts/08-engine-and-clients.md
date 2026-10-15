@@ -223,7 +223,8 @@ engine's Mac; the engine stages sent bytes and queues paths, ADR 0076),
 `pane.elicitation.answer {requestId, fields}` (questions with fields; never
 answered by any permission mode),
 `pane.config.set {configId, value}` → `{applied: bool, effective, sessionPreserved: bool}`,
-`pane.switch_harness {harness, model?, effort?}` → `{switchId}`,
+`pane.harness.switch {paneId, harness, model?, effort?, idempotencyKey}` →
+`{paneId, fromHarness, toHarness, newSessionId, markerSeq}`,
 `loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`,
 `pane.role.set {role: "chief"|"worker"}`,
 `pane.auth.start` → opens login or, on a signed-in pane, an account switch (contract 04 §7);
@@ -233,8 +234,9 @@ event `pane.auth_finished`,
 localId, generation, seq, complete`,
 `pane.stream.subscribe {paneId, from: "tail" | {streamId, offset}}` /
 `pane.stream.unsubscribe` (§6),
-`pane.message.send {toPaneId, text}` and `pane.message.list` (persisted pane-to-pane
-messages with `queued|delivered|read` state),
+`agent.message {targetPaneId, text, idempotencyKey}` → `{promptId, queued}` (an agent
+pane queues a prompt in another agent pane of its workspace, contract 04 R17) and
+`agent.list` (the agent panes of the caller's workspace that it can message),
 `pane.record.set {on}` (do not record this pane's screen; contract 07 §2).
 `pane.commands.list {paneId}` → `{paneId, items: [{name, description, inputHint?}]}`,
 the slash commands the harness last advertised with ACP
@@ -267,7 +269,7 @@ the complete shapes and limits are generated from `contracts/protocol.json`.
 `experiment.export {from, to}` → `{path, bytes}`, `experiment.metrics`,
 `experiment.detector.set {name}`.
 
-**Other**: `attention.list`, `harness.list` (registry + detected + probed
+**Other**: `harness.list` (registry + detected + probed
 capabilities), `model.list {harness}` (session catalog when available, with
 closed source `not_probed | native_session`),
 `device.pair.start|decide`, `device.list`, `device.revoke`,
@@ -295,7 +297,7 @@ executable schema carry no state cursor and never enter replay.
   carry `subagentId` when a harness subagent owns them (contract 04 §2.7)
 - `pane.turn_ended {promptId, stopReason}`, `pane.queued {n, promptIds}`
 - `pane.queue.paused {paneId, paused, reason}`,
-  `pane.queue.resumed {paneId, paused}`. `pane.queue.steered` is introduced
+  `pane.queue.resumed {paneId, paused}`. A steering event is introduced
   only with the proven steering method described by contract 04.
 - `pane.permission_requested {requestId, generation, title, detail,
   options: [{optionId, kind, name}], expiresAt}`,
@@ -323,7 +325,6 @@ executable schema carry no state cursor and never enter replay.
 - `usage.changed {provider, state, primary?, secondary?, source, fetchedAt}`
 - `pane.commands_changed {paneId}` (read the list with `pane.commands.list`),
   `skills.changed {scope, workspaceId?}` (non-durable; list again)
-- `pane.message {fromPaneId, toPaneId, text, state}`
 - `device.pair_requested`, `device.paired`, `device.revoked`
 - `engine.updating`, `engine.restarted {generation}`, `ptyd.reconnected
   {generation}`, `ptyd.lost`

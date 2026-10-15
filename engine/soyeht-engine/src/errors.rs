@@ -1,6 +1,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use soyeht_protocol::{ErrorData, ErrorKind, RpcError, error_code};
+use soyeht_ptyd::wire_kind;
 use std::{fmt, io};
 
 #[derive(Debug)]
@@ -214,10 +215,10 @@ fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
 
 fn supervisor_kind(error: &soyeht_ptyd::Error) -> ErrorKind {
     match error {
-        soyeht_ptyd::Error::Remote { kind, .. } if kind == "stale_engine_generation" => {
+        soyeht_ptyd::Error::Remote { kind, .. } if kind == wire_kind::STALE_ENGINE_GENERATION => {
             ErrorKind::StaleEngineGeneration
         }
-        soyeht_ptyd::Error::Remote { kind, .. } if kind == "spawn_failed" => {
+        soyeht_ptyd::Error::Remote { kind, .. } if kind == wire_kind::SPAWN_FAILED => {
             ErrorKind::HarnessUnavailable
         }
         _ => ErrorKind::PtydUnavailable,
@@ -368,7 +369,7 @@ pub fn kind(error: &Error) -> ErrorKind {
 pub fn missing_supervisor_instance(error: &Error) -> bool {
     matches!(
         error,
-        Error::Supervisor(soyeht_ptyd::Error::Remote { kind, .. }) if kind == "not_found"
+        Error::Supervisor(soyeht_ptyd::Error::Remote { kind, .. }) if kind == wire_kind::NOT_FOUND
     )
 }
 

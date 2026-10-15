@@ -32,6 +32,13 @@ uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
 uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
 uv run python -m unittest discover -s scripts -p 'test_check_wire_names.py'
 uv run python scripts/check_wire_names.py
+uv run python -m unittest discover -s scripts -p 'test_check_repo_files.py'
+# Like the ratchets, it compares with the merge-base unless --base is passed.
+uv run python scripts/check_repo_files.py "$@"
+uv run python -m unittest discover -s scripts -p 'test_check_doc_names.py'
+uv run python scripts/check_doc_names.py
+uv run python -m unittest discover -s scripts -p 'test_check_layers.py'
+uv run python scripts/check_layers.py
 uv run python scripts/check_quality.py
 uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
 uv run python scripts/check_dead_pub.py

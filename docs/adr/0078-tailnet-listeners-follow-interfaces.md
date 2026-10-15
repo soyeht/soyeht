@@ -41,5 +41,5 @@ caused the restart.
 
 The tailnet appearing after login no longer restarts the engine, and a
 broken lookup is visible in the log, the status and the pairing sheet.
-`engine.network_changed` is no longer logged. Explicit `--listen` addresses
+The earlier network-change log line is no longer written. Explicit `--listen` addresses
 keep the fixed configuration used by isolated tests.

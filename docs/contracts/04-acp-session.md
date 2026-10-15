@@ -275,7 +275,7 @@ by the user with the "Send now" action only after a disposable fingerprint
 probe has proved a reviewed harness-specific steering operation. Standard
 ACP v1 does not define that operation, so slice 2 exposes no steering method
 or event and disables the action with the tooltip "this agent only reads new
-messages between turns". The method and `pane.queue.steered {promptId}` event
+messages between turns". The method and its `{promptId}` event
 must be added together with the first proven adapter. The queue pauses by itself
 when the user cancels the current turn (⌘.) and shows "queue paused because you
 interrupted" with a "Resume" button; nothing is sent until the user resumes.

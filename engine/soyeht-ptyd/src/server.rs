@@ -9,6 +9,7 @@ use crate::{
     registry::Registry,
     retention::Retention,
     wire::*,
+    wire_kind,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
@@ -72,6 +73,10 @@ fn lock<'a, T>(mutex: &'a Mutex<T>, resource: &'static str) -> Result<MutexGuard
 fn send(stream: &mut Stream, response: &Response) -> Result<()> {
     write_json(stream, response)?;
     Ok(())
+}
+
+fn refuse(stream: &mut Stream, kind: &str, message: &str) -> Result<()> {
+    send(stream, &error(kind, message))
 }
 
 pub fn run(directory: &Path) -> Result<()> {
@@ -150,27 +155,30 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
         engine_generation,
     } = request
     else {
-        return send(&mut stream, &error("unauthorized", "hello required"));
+        return refuse(&mut stream, wire_kind::UNAUTHORIZED, "hello required");
     };
     let connection_id = Uuid::new_v4().to_string();
     {
         let mut state = lock(&shared, "state")?;
         if version != VERSION {
-            return send(
+            return refuse(
                 &mut stream,
-                &error("version_unsupported", "incompatible supervisor protocol"),
+                wire_kind::VERSION_UNSUPPORTED,
+                "incompatible supervisor protocol",
             );
         }
         if engine_generation < state.registry.engine_generation {
-            return send(
+            return refuse(
                 &mut stream,
-                &error("stale_engine_generation", "engine generation is stale"),
+                wire_kind::STALE_ENGINE_GENERATION,
+                "engine generation is stale",
             );
         }
         if engine_generation == state.registry.engine_generation && state.active.is_some() {
-            return send(
+            return refuse(
                 &mut stream,
-                &error("engine_connected", "an engine is already connected"),
+                wire_kind::ENGINE_CONNECTED,
+                "an engine is already connected",
             );
         }
         let prior_generation = state.registry.engine_generation;
@@ -204,7 +212,7 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
                 return Err(Error::ConnectionSuperseded);
             }
             let response = execute(&mut state, &shared, request)
-                .unwrap_or_else(|e| error("operation_failed", &e.to_string()));
+                .unwrap_or_else(|e| error(wire_kind::OPERATION_FAILED, &e.to_string()));
             drop(state);
             send(&mut stream, &response)?;
         }
@@ -252,7 +260,10 @@ fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> R
 }
 
 fn execute_hello() -> Result<Response> {
-    Ok(error("already_authenticated", "hello was already accepted"))
+    Ok(error(
+        wire_kind::ALREADY_AUTHENTICATED,
+        "hello was already accepted",
+    ))
 }
 
 fn execute_list(state: &State) -> Result<Response> {
@@ -272,7 +283,10 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         return Ok(if existing.spawn == config {
             Response::Instance(existing.clone())
         } else {
-            error("idempotency_conflict", "spawn key has different parameters")
+            error(
+                wire_kind::IDEMPOTENCY_CONFLICT,
+                "spawn key has different parameters",
+            )
         });
     }
     let instance_id = Uuid::new_v4().to_string();
@@ -288,7 +302,7 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         Err(failure) if config.kind == ProcessKind::Pty => {
             // PTY setup either never starts a child or kills and reaps it before
             // returning an error. No process needs adoption.
-            return Ok(error("spawn_failed", &failure.to_string()));
+            return Ok(error(wire_kind::SPAWN_FAILED, &failure.to_string()));
         }
         Err(failure) => return Err(failure),
     };
@@ -366,7 +380,7 @@ fn reap(child: &mut Child) {
 
 fn execute_kill(state: &State, instance_id: &str) -> Result<Response> {
     let Some(live) = state.live.get(instance_id) else {
-        return Ok(error("not_found", "process not found"));
+        return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
     let mut child = lock(&live.child, "child")?;
     if child.try_wait()?.is_none() {
@@ -417,11 +431,11 @@ fn execute_pending_inputs(state: &State) -> Result<Response> {
 
 fn execute_pending_requests(state: &State, instance_id: &str) -> Result<Response> {
     let Some(live) = state.live.get(instance_id) else {
-        return Ok(error("not_found", "process not found"));
+        return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
     let output = lock(&live.output, "output")?;
     let Some(pending) = &output.pending else {
-        return Ok(error("wrong_process_kind", "ACP pipes required"));
+        return Ok(error(wire_kind::WRONG_PROCESS_KIND, "ACP pipes required"));
     };
     let (items, recovery_gap) = pending.list();
     Ok(Response::PendingRequests {
@@ -437,11 +451,11 @@ fn execute_pending_request_chunk(
     offset: usize,
 ) -> Result<Response> {
     let Some(live) = state.live.get(instance_id) else {
-        return Ok(error("not_found", "process not found"));
+        return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
     let output = lock(&live.output, "output")?;
     let Some(pending) = &output.pending else {
-        return Ok(error("wrong_process_kind", "ACP pipes required"));
+        return Ok(error(wire_kind::WRONG_PROCESS_KIND, "ACP pipes required"));
     };
     Ok(match pending.chunk(request_key, offset) {
         Ok(chunk) => Response::PendingRequestChunk(chunk),
@@ -462,14 +476,14 @@ fn execute_input(
     fingerprint: String,
 ) -> Result<Response> {
     if operation_key.is_empty() || operation_key.len() > 128 || fingerprint.len() > 128 {
-        return Ok(error("invalid_params", "invalid input identity"));
+        return Ok(error(wire_kind::INVALID_PARAMS, "invalid input identity"));
     }
     if let Some((prior_instance, prior_fingerprint, accepted)) = state.inputs.get(&operation_key) {
         return Ok(
             if prior_instance == &instance_id && prior_fingerprint == &fingerprint {
                 Response::Accepted { bytes: *accepted }
             } else {
-                error("idempotency_conflict", "input identity reused")
+                error(wire_kind::IDEMPOTENCY_CONFLICT, "input identity reused")
             },
         );
     }
@@ -480,16 +494,16 @@ fn execute_input(
         ));
     }
     let Some(live) = state.live.get(&instance_id) else {
-        return Ok(error("not_found", "process not found"));
+        return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
     if live.exited.load(Ordering::Acquire) {
-        return Ok(error("process_exited", "process has exited"));
+        return Ok(error(wire_kind::PROCESS_EXITED, "process has exited"));
     }
     let bytes = STANDARD
         .decode(bytes)
         .map_err(|_| Error::InvalidBase64Input)?;
     if bytes.len() > limits::TERMINAL_PAYLOAD_BYTES {
-        return Ok(error("input_too_large", "input exceeds 64 KiB"));
+        return Ok(error(wire_kind::INPUT_TOO_LARGE, "input exceeds 64 KiB"));
     }
     let mut output = lock(&live.output, "output")?;
     let count = match lock(&live.master, "master")?.write(&bytes) {
@@ -508,10 +522,13 @@ fn execute_input(
 
 fn execute_resize(state: &State, instance_id: &str, cols: u16, rows: u16) -> Result<Response> {
     let Some(live) = state.live.get(instance_id) else {
-        return Ok(error("not_found", "process not found"));
+        return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
     let Some(resizer) = &live.resizer else {
-        return Ok(error("wrong_process_kind", "terminal PTY required"));
+        return Ok(error(
+            wire_kind::WRONG_PROCESS_KIND,
+            "terminal PTY required",
+        ));
     };
     resizer.resize(cols, rows)?;
     Ok(Response::Ok)
@@ -519,7 +536,7 @@ fn execute_resize(state: &State, instance_id: &str, cols: u16, rows: u16) -> Res
 
 fn execute_drain(state: &State, instance_id: &str, from_seq: u64) -> Result<Response> {
     let Some(live) = state.live.get(instance_id) else {
-        return Ok(error("not_found", "process not found"));
+        return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
     let output = lock(&live.output, "output")?.retention.read(
         from_seq,
@@ -534,7 +551,7 @@ fn execute_drain(state: &State, instance_id: &str, from_seq: u64) -> Result<Resp
 
 fn execute_ack(state: &State, instance_id: &str, seq: u64) -> Result<Response> {
     let Some(live) = state.live.get(instance_id) else {
-        return Ok(error("not_found", "process not found"));
+        return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
     Ok(
         match lock(&live.output, "output")?.retention.acknowledge(seq) {

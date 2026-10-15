@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Fail when production code types a wire method, event or setting name by hand.
+"""Fail when production code types a wire method, event, setting name or error code by hand.
 
 `contracts/protocol.json` defines every method and event name once. The generated forms are
 `RequestMethod` and `EventName` in Swift, and `method::*` and `event::*` string constants
 (also usable in `match` patterns) and `EventName` in Rust. A string literal equal to one of
 those names anywhere in production code is a copy that can drift: use the generated form.
+The same holds for the error codes of `x-errorCodes`, whose generated forms are `ErrorKind` in
+Swift and Rust.
 
 The same holds for the setting keys of `x-settings`, whose generated forms are `Setting` in
 Swift and `setting::*` in Rust, and for the families of keys that end in `.<name>` (a literal
@@ -12,8 +14,10 @@ that starts with the family's prefix, such as `"harness.defaultMode."`, is a cop
 whose first line says `Generated from contracts/` is an output and is not scanned.
 
 Test code is exempt: Swift `Tests` directories, Rust `tests/` directories, `#[cfg(test)]`
-items and files compiled only for tests, and the migration files of `FROZEN_NAMES`. The name `hello` has no dot and is too common as
-plain text, so it is not checked. Run the script to list every offending literal.
+items and files compiled only for tests, and the migration files of `FROZEN_NAMES`. The name
+`hello` has no dot and is too common as plain text, so it is not checked. A file of
+`OWN_VOCABULARIES` defines labels of its own that share a spelling with an error code, and is
+checked for the other kinds only. Run the script to list every offending literal.
 """
 
 from __future__ import annotations
@@ -45,14 +49,19 @@ RUST_ROOTS = ("engine", "apps/desktop")
 FROZEN_NAMES = {
     "engine/soyeht-store/src/english_values.rs": "rewrites events stored before the English rename",
 }
+# Files that define a vocabulary of their own whose labels equal some error codes by spelling.
+OWN_VOCABULARIES = {
+    "engine/soyeht-ptyd/src/wire_kind.rs": "the supervisor's own error kinds, a private protocol (ADR 0003)",
+    "engine/soyeht-engine/src/outbox.rs": "log labels of why a connection closed",
+}
 GENERATED = ("// Generated from contracts/", "# Generated from contracts/")
-LITERAL = re.compile(r'"([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_{}]*)+)"')
+LITERAL = re.compile(r'"([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_{}]*)*)"')
 
 
 def wire_names(root: Path) -> tuple[dict[str, str], list[str]]:
     """Map every dotted method, event and setting name to its kind, and list the key families.
 
-    The kinds are `method`, `event` and `setting`. A family (`harness.defaultMode.<harnessId>`)
+    The kinds are `method`, `event`, `setting` and `error code`. A family (`harness.defaultMode.<harnessId>`)
     is given by its prefix, `harness.defaultMode.`.
     """
     schema = json.loads((root / SCHEMA).read_text(encoding="utf-8"))
@@ -61,7 +70,9 @@ def wire_names(root: Path) -> tuple[dict[str, str], list[str]]:
     settings = schema.get("x-settings", {})
     names.update({key: "setting" for key in settings if "<" not in key})
     prefixes = [key[: key.index("<")] for key in settings if "<" in key]
-    return {name: kind for name, kind in names.items() if "." in name}, prefixes
+    names = {name: kind for name, kind in names.items() if "." in name}
+    names.update({name: "error code" for name in schema.get("x-errorCodes", {})})
+    return names, prefixes
 
 
 def production_literals(path: str, text: str, excluded: set[str]) -> list[tuple[int, str]]:
@@ -116,7 +127,7 @@ def sites(root: Path) -> list[tuple[str, int, str, str]]:
             kind = names.get(name) or (
                 "setting" if any(name.startswith(prefix) for prefix in prefixes) else None
             )
-            if kind:
+            if kind and not (kind == "error code" and path in OWN_VOCABULARIES):
                 found.append((path, text.count("\n", 0, offset) + 1, name, kind))
     return found
 

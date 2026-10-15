@@ -487,7 +487,7 @@ public final class EngineClient {
         }
         request.continuation.resume(
           throwing: ClientFailure.remote(
-            message["error"]["data"]["kind"].string ?? "internal_error",
+            message["error"]["data"]["kind"].string ?? ErrorKind.internal_error.rawValue,
             message["error"]["message"].string ?? "Request refused",
             retryAfterSec: message["error"]["data"]["retryAfterSec"].int.flatMap(UInt32.init)))
         return

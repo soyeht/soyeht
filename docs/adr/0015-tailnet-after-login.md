@@ -14,7 +14,7 @@ using the same mechanism as the restart acceptances.
 
 This choice uses the already tested recovery path. It creates no other socket
 owner and does not change transport. A network fluctuation may cause an additional
-engine restart; the log records `engine.network_changed` without copying addresses.
+engine restart; the log records the change without copying addresses.
 A query error does not count as an interface disappearing.
 
 Explicit `--listen` addresses retain the fixed configuration used in isolated

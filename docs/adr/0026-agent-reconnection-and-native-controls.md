@@ -18,7 +18,7 @@ and show context numbers without a compaction action.
 Enabling either native control requires a disposable, per-fingerprint probe
 that proves the exact operation and a reviewed adapter that defines completion,
 cancellation and recovery after an ambiguous disconnect. A steering method and
-its durable `pane.queue.steered` event must arrive in the same change. A timeout
+its durable event must arrive in the same change. A timeout
 or parameter error remains inconclusive. The protocol version remains 1 because
 no client has been released and the snapshot addition does not change an
 existing method.

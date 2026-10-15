@@ -16,6 +16,7 @@ SCHEMA = {
         "terminal.defaultCols": {},
         "harness.defaultMode.<harnessId>": {},
     },
+    "x-errorCodes": {"not_found": -32000, "stale_version": -32007},
 }
 RUST = '''
 use soyeht_protocol::method;
@@ -28,6 +29,8 @@ fn production() {
     let other = "pane.listing";
     let setting = "terminal.defaultCols";
     let family = format!("harness.defaultMode.{id}");
+    let code = "not_found";
+    let near = "not_found_yet";
     // "task.show" in a comment
 }
 
@@ -44,6 +47,7 @@ mod fixtures;
 SWIFT = """
 func load() {
   let a = "task.show"
+  let b = failure ?? "stale_version"
   // "pane.list" in a comment
 }
 """
@@ -65,6 +69,8 @@ class WireNameTests(unittest.TestCase):
                 '// Generated from contracts/protocol.json (sha256 x). Do not edit.\n'
                 'pub const A: &str = "terminal.defaultCols";'
             ),
+            "engine/soyeht-ptyd/src/wire_kind.rs": 'pub const A: &str = "not_found";\nconst B: &str = "pane.list";',
+            "engine/soyeht-engine/src/outbox.rs": 'const A: &str = "not_found";',
             "apps/shared/Sources/Client/Client.swift": SWIFT,
             "apps/shared/Tests/ClientTests/ClientTests.swift": 'let a = "task.show"',
         }.items():
@@ -79,10 +85,13 @@ class WireNameTests(unittest.TestCase):
             found,
             [
                 ("apps/shared/Sources/Client/Client.swift", 3, "task.show"),
+                ("apps/shared/Sources/Client/Client.swift", 4, "stale_version"),
                 ("engine/crate/src/lib.rs", 6, "pane.list"),
                 ("engine/crate/src/lib.rs", 7, "pane.updated"),
                 ("engine/crate/src/lib.rs", 10, "terminal.defaultCols"),
                 ("engine/crate/src/lib.rs", 11, "harness.defaultMode.{id}"),
+                ("engine/crate/src/lib.rs", 12, "not_found"),
+                ("engine/soyeht-ptyd/src/wire_kind.rs", 2, "pane.list"),
             ],
         )
 
@@ -92,6 +101,7 @@ class WireNameTests(unittest.TestCase):
         self.assertEqual(kinds["pane.list"], "method")
         self.assertEqual(kinds["terminal.defaultCols"], "setting")
         self.assertEqual(kinds["harness.defaultMode.{id}"], "setting")
+        self.assertEqual(kinds["not_found"], "error code")
 
 
 if __name__ == "__main__":

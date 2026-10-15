@@ -19,7 +19,12 @@ from hardening_gate import engine_production_panics as count_engine_panics
 JSCPD_VERSION = "4.3.0"
 MACHETE_VERSION = "0.9.2"
 # Generous ceilings: a killed scanner is a false failure on a busy machine.
+# The scan deadline starts at SCAN_TIMEOUT and grows with the load per core up to
+# SCAN_TIMEOUT_CEILING, so a loaded host is given time and a real hang still fails.
+# SOYEHT_SCAN_TIMEOUT (seconds) replaces the computed value.
 SCAN_TIMEOUT = 300
+SCAN_TIMEOUT_CEILING = 1800
+SCAN_TIMEOUT_ENV = "SOYEHT_SCAN_TIMEOUT"
 TOOL_TIMEOUT = 60
 FILE_LIMIT = 800
 AREAS = {
@@ -198,13 +203,15 @@ def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int |
             "--noTips",
             *paths,
         ]
+        deadline = scan_timeout()
         try:
             result = subprocess.run(
-                command, cwd=repo, capture_output=True, text=True, timeout=SCAN_TIMEOUT
+                command, cwd=repo, capture_output=True, text=True, timeout=deadline
             )
         except subprocess.TimeoutExpired as error:
             raise QualityError(
-                f"jscpd exceeded {SCAN_TIMEOUT} s for {area}; the machine is overloaded"
+                f"jscpd exceeded {deadline:.0f} s for {area}; the machine is overloaded "
+                f"or the scan hung (set {SCAN_TIMEOUT_ENV} to allow more time)"
             ) from error
         report = Path(output) / "jscpd-report.json"
         if result.returncode or not report.is_file():
@@ -218,6 +225,29 @@ def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int |
         "duplicated_lines": total["duplicatedLines"],
         "percent": total["percentage"],
     }
+
+
+def scan_timeout(
+    load: float | None = None, cores: int | None = None, environment: dict[str, str] | None = None
+) -> float:
+    """Return the jscpd deadline in seconds for the current host load."""
+    environment = os.environ if environment is None else environment
+    configured = environment.get(SCAN_TIMEOUT_ENV)
+    if configured:
+        try:
+            seconds = float(configured)
+        except ValueError:
+            seconds = 0.0
+        if seconds <= 0:
+            raise QualityError(f"{SCAN_TIMEOUT_ENV} must be a positive number of seconds")
+        return seconds
+    if load is None:
+        try:
+            load = os.getloadavg()[0]
+        except OSError:
+            load = 0.0  # No load average on this system: keep the base deadline.
+    cores = cores or os.cpu_count() or 1
+    return min(SCAN_TIMEOUT_CEILING, SCAN_TIMEOUT * max(1.0, load / cores))
 
 
 def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str, int]]]:

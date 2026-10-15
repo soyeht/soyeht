@@ -315,7 +315,9 @@ extension EngineClient {
   ) async throws -> Value {
     await settleEditorWrites(fileId)
     do { return try await operation(try writingRevision(fileId)) } catch {
-      guard case ClientFailure.remote("stale_version", _, _) = error else { throw error }
+      guard case ClientFailure.remote(ErrorKind.stale_version.rawValue, _, _) = error else {
+        throw error
+      }
       return try await operation(try await refreshWritingRevision(fileId))
     }
   }

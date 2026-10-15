@@ -48,6 +48,6 @@ For agents with native modes the engine never answers on the person's behalf,
 except for a pane-scoped `allow_always` grant. Elicitations are never answered
 by any mode.
 
-`pane.yolo`, the stored policy/previous-policy pair and the Soyeht permission
+The `yolo` pane request, the stored policy/previous-policy pair and the Soyeht permission
 enumeration are removed. This supersedes the Yolo parts of ADR 0016, ADR 0025
 and contract 04 §4/R15.

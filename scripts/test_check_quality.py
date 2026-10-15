@@ -27,6 +27,7 @@ from quality_core import (
     engine_production_panics,
     measure,
     periphery_status,
+    scan_timeout,
     source_measurements,
     tool_paths,
     unjustified_relaxations,
@@ -287,6 +288,32 @@ class QualityRatchetTests(unittest.TestCase):
                 ):
                     tool_paths(ROOT)
                 self.assertIn("SKIPPED", periphery_status(ROOT))
+
+    def test_scan_deadline_grows_with_the_load_per_core_up_to_a_ceiling(self):
+        self.assertEqual(scan_timeout(load=0.5, cores=8, environment={}), 300)
+        self.assertEqual(scan_timeout(load=8, cores=8, environment={}), 300)
+        self.assertEqual(scan_timeout(load=24, cores=8, environment={}), 900)
+        self.assertEqual(scan_timeout(load=110, cores=8, environment={}), 1800)
+
+    def test_scan_deadline_can_be_set_and_rejects_nonsense(self):
+        environment = {"SOYEHT_SCAN_TIMEOUT": "42"}
+        self.assertEqual(scan_timeout(load=500, cores=1, environment=environment), 42)
+        for bad in ("0", "-5", "soon"):
+            with self.assertRaises(QualityError):
+                scan_timeout(environment={"SOYEHT_SCAN_TIMEOUT": bad})
+
+    def test_a_hung_scanner_still_fails_at_the_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "engine/crate/src"
+            source.mkdir(parents=True)
+            (source / "lib.rs").write_text("fn main() {}\n")
+            hung = root / "jscpd"
+            hung.write_text("#!/bin/sh\nsleep 30\n")
+            hung.chmod(0o755)
+            with patch.dict(os.environ, {"SOYEHT_SCAN_TIMEOUT": "1"}):
+                with self.assertRaisesRegex(QualityError, r"jscpd exceeded 1 s for engine"):
+                    duplicate_measurement(root, "engine", hung)
 
     def test_real_clone_is_detected_in_disposable_sources(self):
         jscpd, _ = tool_paths(ROOT)

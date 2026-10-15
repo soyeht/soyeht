@@ -16,3 +16,4 @@ pub mod retention;
 pub mod server;
 pub mod shell;
 pub mod wire;
+pub mod wire_kind;
