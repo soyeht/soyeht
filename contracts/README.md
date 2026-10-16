@@ -103,7 +103,9 @@ types and unknown enums.
 `vectors/markdown.json` is the specification of how agent replies are drawn (ADR 0087): each
 vector is a Markdown input and the blocks it must become, optionally as a reply that is still
 arriving (`"streaming": true`). The Swift client (`MarkdownTests`) and the desktop client
-(`tests/markdown_vectors.rs`) both pass the whole file.
+(`tests/markdown_vectors.rs`) both pass the whole file. `vectors/web-links.json` fixes which
+bare web addresses in a reply become links (ADR 0087): a text and the addresses found in it,
+passed by `WebLinkRoutingTests` and `tests/web_link_vectors.rs`.
 
 `vectors/agent-cards.json`, `attachments.json`, `loop-panel.json` and `tasks.json` fix what
 the clients compute for the person rather than what travels: the wording of the transcript's

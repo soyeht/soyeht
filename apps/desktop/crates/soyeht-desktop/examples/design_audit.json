@@ -1923,7 +1923,7 @@
     "seq": "2",
     "role": "assistant",
     "kind": "message",
-    "text": "## What changed\n\nI made **two changes** to `src/main.rs`, and *both* pass `cargo test`. ~~The old path~~ is gone.\n\n1. Parse the reply into blocks\n2. Draw each block in the pane\n   - nested bullet with a [link](https://example.com/docs)\n   - another with `inline code`\n\n> A quoted note about streaming replies.\n\n```rust\nfn render(block: &Block) -> Element {\n    // flat, in the palette\n}\n```\n\n| Part | Status |\n| --- | --- |\n| Parser | **done** |\n| Views | `ready` |\n\n---\n\nThat is all.",
+    "text": "## What changed\n\nI made **two changes** to `src/main.rs`, and *both* pass `cargo test`. ~~The old path~~ is gone.\n\n1. Parse the reply into blocks\n2. Draw each block in the pane\n   - nested bullet with a [link](https://example.com/docs)\n   - another with `inline code`\n\n> A quoted note about streaming replies.\n\n```rust\nfn render(block: &Block) -> Element {\n    // flat, in the palette\n}\n```\n\n| Part | Status |\n| --- | --- |\n| Parser | **done** |\n| Views | `ready` |\n\n---\n\nThat is all. The notes are at https://example.com/docs/reply.",
     "complete": true
    },
    {

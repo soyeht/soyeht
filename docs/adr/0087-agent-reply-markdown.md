@@ -27,8 +27,12 @@ A rule changes by changing the vector first. The rules beyond CommonMark itself:
 
 - A link is kept only for `http`, `https` and `mailto` addresses. Any other destination (a
   script, a relative path) leaves its text plain.
-- A link whose text is its own address is plain text; the pane linkifies bare addresses
-  itself (the Mac already did).
+- A link whose text is its own address is plain text; the pane links bare addresses itself,
+  after the parse, with one rule on both clients (`contracts/vectors/web-links.json`,
+  `WebLinkRouting.links` and `markdown::link_blocks`): an `http://` or `https://` address up
+  to the next space, angle bracket or quote, without the punctuation of the sentence after it
+  (`. , ; : ! ? ) ] }`), with a host and no name or password. The desktop never links inside
+  code (a code span or block) or over a link the author wrote.
 - An image is its alt text, linked to the image when the address is allowed.
 - Raw HTML, and a task list's `[ ]` or `[x]`, stay as typed.
 - A line break (soft or hard) is a `\n` in the text, in the style around it.
@@ -72,5 +76,6 @@ it to its web pane.
   clients pass them.
 - Apple builds gain two small dependencies (swift-markdown and swift-cmark); the desktop gains
   `pulldown-cmark`.
-- The desktop bundles no italic cut of Inter, so italic is not visible there on every
-  platform; the vectors still require it, and the run carries it.
+- The desktop embeds the italic and bold italic cuts of Inter, instanced from the Mac's
+  variable font at its full slant by `scripts/instance_inter_fonts.py`, so `*emphasis*` is
+  drawn in an italic face on every platform.

@@ -1,0 +1,117 @@
+[
+  {
+    "name": "an https address",
+    "text": "see https://example.test/docs now",
+    "links": ["https://example.test/docs"]
+  },
+  {
+    "name": "an http address",
+    "text": "see http://example.test/docs now",
+    "links": ["http://example.test/docs"]
+  },
+  {
+    "name": "the scheme in capitals keeps its case",
+    "text": "go HTTPS://Example.test/Docs now",
+    "links": ["HTTPS://Example.test/Docs"]
+  },
+  {
+    "name": "an address alone",
+    "text": "https://example.test",
+    "links": ["https://example.test"]
+  },
+  {
+    "name": "a full stop after the address",
+    "text": "Open https://example.test/docs.",
+    "links": ["https://example.test/docs"]
+  },
+  {
+    "name": "a comma after the address",
+    "text": "https://example.test/a, then https://example.test/b",
+    "links": ["https://example.test/a", "https://example.test/b"]
+  },
+  {
+    "name": "a question mark, an exclamation mark, a colon and a semicolon",
+    "text": "a https://a.test/1? b https://a.test/2! c https://a.test/3: d https://a.test/4;",
+    "links": ["https://a.test/1", "https://a.test/2", "https://a.test/3", "https://a.test/4"]
+  },
+  {
+    "name": "a closing parenthesis after the address",
+    "text": "(see https://example.test/docs)",
+    "links": ["https://example.test/docs"]
+  },
+  {
+    "name": "a closing parenthesis and a full stop",
+    "text": "(see https://example.test/docs).",
+    "links": ["https://example.test/docs"]
+  },
+  {
+    "name": "a closing bracket and brace",
+    "text": "[https://a.test/x] {https://a.test/y}",
+    "links": ["https://a.test/x", "https://a.test/y"]
+  },
+  {
+    "name": "a query and a fragment stay",
+    "text": "https://a.test/p?q=1&r=2#top.",
+    "links": ["https://a.test/p?q=1&r=2#top"]
+  },
+  {
+    "name": "a port and a local host",
+    "text": "http://localhost:5173/app.",
+    "links": ["http://localhost:5173/app"]
+  },
+  {
+    "name": "an address in quotes",
+    "text": "say \"https://a.test/x\" or 'https://a.test/y'",
+    "links": ["https://a.test/x", "https://a.test/y"]
+  },
+  {
+    "name": "an address in angle brackets",
+    "text": "<https://a.test/x>",
+    "links": ["https://a.test/x"]
+  },
+  {
+    "name": "an address ends at a line break",
+    "text": "https://a.test/x\nhttps://a.test/y",
+    "links": ["https://a.test/x", "https://a.test/y"]
+  },
+  {
+    "name": "an address in the middle of a word",
+    "text": "xhttps://a.test/x",
+    "links": ["https://a.test/x"]
+  },
+  {
+    "name": "other schemes are not addresses",
+    "text": "ftp://a.test/x file:///tmp/x javascript:alert(1)",
+    "links": []
+  },
+  {
+    "name": "an address with no scheme is not an address",
+    "text": "www.a.test/x a.test/x",
+    "links": []
+  },
+  {
+    "name": "a scheme with no host is not an address",
+    "text": "https:// https://. https:///path",
+    "links": []
+  },
+  {
+    "name": "an address with a name and a password is not an address",
+    "text": "https://name:secret@a.test/x",
+    "links": []
+  },
+  {
+    "name": "an address with a name is not an address",
+    "text": "https://name@a.test/x",
+    "links": []
+  },
+  {
+    "name": "text without an address",
+    "text": "nothing to link here",
+    "links": []
+  },
+  {
+    "name": "empty text",
+    "text": "",
+    "links": []
+  }
+]

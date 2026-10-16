@@ -41,3 +41,22 @@ import Testing
   preferences.setOpenExternalLinksInSoyeht(true)
   #expect(WebLinkPreferences(preferences: store).openExternalLinksInSoyeht)
 }
+
+private struct WebLinkVector: Decodable {
+  var name: String
+  var text: String
+  var links: [String]
+}
+
+/// The rules every client shares: the desktop client's Rust linker passes the same file.
+@Test func everySharedVectorLinksTheSameAddresses() throws {
+  let file = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    .deletingLastPathComponent().deletingLastPathComponent()
+    .appendingPathComponent("contracts/vectors/web-links.json")
+  let all = try JSONDecoder().decode([WebLinkVector].self, from: Data(contentsOf: file))
+  #expect(all.count > 15)
+  for vector in all {
+    #expect(WebLinkRouting.links(in: vector.text).map(\.label) == vector.links, "\(vector.name)")
+  }
+}

@@ -212,7 +212,7 @@ Fonts and the provider logos are the Mac app's own resources, embedded from `app
 
 - The fonts (Inter, Nunito, JetBrains Mono) are under the SIL Open Font License 1.1. GPUI on Linux
   draws a variable font at its default weight, so the medium, semibold, bold and extra bold cuts of
-  Inter are instanced from the Mac's variable `Inter.ttf` by `scripts/instance_inter_fonts.py` and
+  Inter, and its italic and bold italic (the slant axis), are instanced from the Mac's variable `Inter.ttf` by `scripts/instance_inter_fonts.py` and
   kept in `crates/soyeht-desktop/assets/fonts`. The license
   texts that must travel with a binary are in `crates/soyeht-desktop/assets/licenses/`.
 - The line icons in `crates/soyeht-desktop/assets/icons` are Lucide: ISC license, and the MIT
