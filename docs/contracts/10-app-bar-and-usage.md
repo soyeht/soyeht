@@ -108,6 +108,13 @@ a value right after restart, marked stale until refreshed.
 - `usage.list` → `{providers: [{provider, state: "ok"|"stale"|"login_needed"|
   "no_access"|"unavailable", primary?: {used, resetsAt, label}, secondary?:
   {used, resetsAt, label}, source, fetchedAt}]}`
+- `resetsAt` is ISO 8601 text in UTC (`2026-10-11T09:00:00Z`), or empty when the provider
+  gave no reset time. A provider that reports Unix seconds (the Codex app server sends them as
+  a string) is converted by the engine's reader, so a client reads no other form. The detail
+  says "Resets in 1h 30m" for a future reset, "Reset due" when the time is not after now (the
+  reading predates the reset and the next refresh brings the new window) and "Reset
+  unavailable" when the text is empty or is not a timestamp. Both clients pass the `resets`
+  cases of `contracts/vectors/usage-presentation.json`.
 - `usage.refresh {provider?}` → same shape; rate-limited to one call per
   provider per 30 s (error `RATE_LIMITED` with `retryAfterSec`). It walks the
   chains outside the engine lock, providers in parallel, and may take as long

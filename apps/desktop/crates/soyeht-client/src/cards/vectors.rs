@@ -98,6 +98,10 @@ fn the_queue_counts_and_describes_what_waits() {
     assert_eq!(words["remove"], super::queue::REMOVE);
     assert_eq!(words["sendNow"], super::queue::SEND_NOW);
     assert_eq!(words["sendNowHint"], super::queue::SEND_NOW_HINT);
+    assert_eq!(
+        labels("sendNowAvailable"),
+        Value::Bool(super::queue::SEND_NOW_AVAILABLE)
+    );
 }
 
 fn session(login: &Value) -> AgentSession {

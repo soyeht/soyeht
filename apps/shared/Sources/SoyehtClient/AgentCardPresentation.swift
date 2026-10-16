@@ -21,6 +21,9 @@ struct AgentQueuePresentation: Equatable, Sendable {
   static let removeTitle = "Remove queued message"
   static let sendNowTitle = "Send now"
   static let sendNowHint = "This agent only reads new messages between turns"
+  /// "Send now" stays disabled until the engine has a steering method (contract 04, addendum of
+  /// 2026-09-11); the desktop client holds the same value (`agent-cards.json`).
+  static let sendNowAvailable = false
 
   let summary: String
   let rows: [Row]

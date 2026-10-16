@@ -1984,12 +1984,12 @@
    "fetchedAt": "2026-10-11T08:55:00Z",
    "primary": {
     "used": 0.42,
-    "resetsAt": "2026-10-11T12:00:00Z",
+    "resetsAt": "now+9000",
     "label": "Session (5 h)"
    },
    "secondary": {
     "used": 0.73,
-    "resetsAt": "2026-10-17T00:00:00Z",
+    "resetsAt": "now+388800",
     "label": "Week"
    }
   },
@@ -2001,7 +2001,7 @@
    "unavailableReason": "rate_limited",
    "primary": {
     "used": 0.21,
-    "resetsAt": "2026-10-17T00:00:00Z",
+    "resetsAt": "now+388800",
     "label": "Week"
    }
   },

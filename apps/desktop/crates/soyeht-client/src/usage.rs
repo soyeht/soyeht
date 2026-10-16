@@ -295,6 +295,21 @@ mod tests {
     }
 
     #[test]
+    fn a_reset_is_said_the_way_the_shared_vector_says() {
+        let vectors = vectors();
+        let now =
+            timestamp::seconds_since_epoch(vectors["resets"]["now"].as_str().unwrap()).unwrap();
+        for case in vectors["resets"]["cases"].as_array().unwrap() {
+            assert_eq!(
+                reset_text(case["resetsAt"].as_str(), now),
+                case["text"].as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
+        }
+    }
+
+    #[test]
     fn times_are_said_in_relation_to_now() {
         let at = |text| timestamp::seconds_since_epoch(text).unwrap();
         let now = at("2026-10-09T10:00:00Z");

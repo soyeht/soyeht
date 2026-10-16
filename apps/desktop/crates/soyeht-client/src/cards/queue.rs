@@ -6,6 +6,9 @@ pub const RESUME: &str = "Resume";
 pub const REMOVE: &str = "Remove queued message";
 pub const SEND_NOW: &str = "Send now";
 pub const SEND_NOW_HINT: &str = "This agent only reads new messages between turns";
+/// "Send now" is drawn disabled until the engine has a steering method (contract 04, addendum
+/// of 2026-09-11); the Mac and iOS clients hold the same value (`agent-cards.json`).
+pub const SEND_NOW_AVAILABLE: bool = false;
 
 /// Who sent a peer message, by name; the pane identifier only routes replies.
 pub fn agent_message_name(source: &AgentMessageSource) -> &str {

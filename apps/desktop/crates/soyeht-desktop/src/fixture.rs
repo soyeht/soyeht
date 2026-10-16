@@ -30,13 +30,20 @@ use soyeht_protocol::{
 };
 use std::path::PathBuf;
 
-/// A time in a fixture as `now-154`, the moment that long before the window opens, so that a
-/// scene is the same each time it is drawn. The engine's timestamps replace them.
+/// A time in a fixture as `now-154` or `now+9000`, the moment that many seconds before or
+/// after the window opens, so that a scene is the same each time it is drawn (a reset that
+/// is written as a date goes by). The engine's timestamps replace them.
 fn resolve_clock(value: &mut Value) {
     match value {
         Value::String(text) => {
-            if let Some(ago) = text.strip_prefix("now-").and_then(timestamp::parsed::<i64>) {
+            let offset = |sign: &str| {
+                let seconds = text.strip_prefix(sign)?;
+                timestamp::parsed::<i64>(seconds)
+            };
+            if let Some(ago) = offset("now-") {
                 *text = timestamp::format(timestamp::now() as i64 - ago);
+            } else if let Some(ahead) = offset("now+") {
+                *text = timestamp::format(timestamp::now() as i64 + ahead);
             }
         }
         Value::Array(items) => items.iter_mut().for_each(resolve_clock),
@@ -418,6 +425,26 @@ mod tests {
         };
         let queued = timestamp::seconds_since_epoch(&items[0].queued_at).unwrap();
         assert!((timestamp::now() - queued - 60.0).abs() < 5.0);
+    }
+
+    #[test]
+    fn a_time_written_as_so_long_from_now_becomes_a_timestamp() {
+        let fixture = json!({"panes": [], "workspaces": [], "usage": [{
+            "provider": "claude", "state": "ok", "source": "claude_oauth_endpoint",
+            "fetchedAt": "now-60",
+            "primary": {"used": 0.4, "resetsAt": "now+9000", "label": "Session (5 h)"}
+        }]});
+        let events = events(&fixture).unwrap();
+        let Some(Event::Usage(readings)) = events.iter().find(|e| matches!(e, Event::Usage(_)))
+        else {
+            panic!("no usage");
+        };
+        let resets = readings[0]
+            .primary
+            .as_ref()
+            .map(|window| window.resets_at.clone());
+        let resets = timestamp::seconds_since_epoch(&resets.unwrap()).unwrap();
+        assert!((resets - timestamp::now() - 9000.0).abs() < 5.0);
     }
 
     #[test]

@@ -302,7 +302,8 @@ extension AgentConversationView where HarnessControl == EmptyView {
 
   @ViewBuilder private var unavailableSteer: some View {
     let button = Button(AgentQueuePresentation.sendNowTitle) {}.buttonStyle(.borderless)
-      .disabled(true).accessibilityHint(AgentQueuePresentation.sendNowHint)
+      .disabled(!AgentQueuePresentation.sendNowAvailable)
+      .accessibilityHint(AgentQueuePresentation.sendNowHint)
     #if os(macOS)
       button.help(AgentQueuePresentation.sendNowHint)
     #else

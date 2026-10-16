@@ -386,5 +386,56 @@
       "cursor_current_period",
       "Cursor current period"
     ]
-  ]
+  ],
+  "resets": {
+    "description": "The reset text of a window at `now`. resetsAt is ISO 8601 text (contract 10): the engine turns a provider's Unix seconds into it, so a client reads no other form. A reset in the past or at `now` is 'Reset due' (the reading predates the reset; the next refresh brings the new window); no value, an empty one or one that is not ISO 8601 is 'Reset unavailable'.",
+    "now": "2026-10-11T09:00:00Z",
+    "cases": [
+      {
+        "name": "a reset in the future",
+        "resetsAt": "2026-10-11T10:30:00Z",
+        "text": "Resets in 1h 30m"
+      },
+      {
+        "name": "a weekly reset",
+        "resetsAt": "2026-10-17T00:00:00Z",
+        "text": "Resets in 5d 15h"
+      },
+      {
+        "name": "fractional seconds",
+        "resetsAt": "2026-10-11T09:10:00.250Z",
+        "text": "Resets in 10m"
+      },
+      {
+        "name": "a UTC offset",
+        "resetsAt": "2026-10-11T07:30:00-03:00",
+        "text": "Resets in 1h 30m"
+      },
+      {
+        "name": "a reset in the past",
+        "resetsAt": "2026-10-11T08:00:00Z",
+        "text": "Reset due"
+      },
+      {
+        "name": "a reset at this moment",
+        "resetsAt": "2026-10-11T09:00:00Z",
+        "text": "Reset due"
+      },
+      {
+        "name": "no value",
+        "resetsAt": null,
+        "text": "Reset unavailable"
+      },
+      {
+        "name": "an empty value",
+        "resetsAt": "",
+        "text": "Reset unavailable"
+      },
+      {
+        "name": "Unix seconds are not the wire format",
+        "resetsAt": "1791062400",
+        "text": "Reset unavailable"
+      }
+    ]
+  }
 }

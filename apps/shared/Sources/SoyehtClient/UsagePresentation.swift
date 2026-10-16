@@ -187,11 +187,11 @@ extension UsageProvider {
 
 /// Relative times of usage readings, shared by the Mac balloon and the iPhone detail.
 public enum UsageTimeText {
-  public static func reset(_ value: String?) -> String {
+  public static func reset(_ value: String?, now: Date = Date()) -> String {
     guard let value, let date = UsageTimestamp.date(from: value) else {
       return "Reset unavailable"
     }
-    let seconds = date.timeIntervalSinceNow
+    let seconds = date.timeIntervalSince(now)
     guard seconds > 0 else { return "Reset due" }
     return "Resets in \(duration(seconds))"
   }

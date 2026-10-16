@@ -205,6 +205,19 @@ pub(crate) fn epoch_text(seconds: i64) -> Option<String> {
         .map(|time| time.to_rfc3339_opts(SecondsFormat::Secs, true))
 }
 
+/// A provider's reset time given as Unix seconds, either a JSON number or a string of digits
+/// (the Codex app server sends a string), as the wire's ISO 8601 UTC text (contract 10).
+/// Anything else, including a negative or fractional count, is no reset time.
+pub(crate) fn epoch_value(value: &Value) -> Option<String> {
+    /// Far beyond any reset time, and below where the count stops being exact.
+    const LAST_SECOND: f64 = 1e12;
+    let seconds = number(value).filter(|seconds| (0.0..=LAST_SECOND).contains(seconds))?;
+    if seconds.fract() != 0.0 {
+        return None;
+    }
+    epoch_text(seconds as i64)
+}
+
 /// An ISO 8601 timestamp normalized to UTC, with or without fractional seconds.
 pub(crate) fn iso_text(value: &str) -> Option<String> {
     DateTime::parse_from_rfc3339(value.trim()).ok().map(|time| {

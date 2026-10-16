@@ -59,6 +59,7 @@ private func date(_ value: String?) throws -> Date {
   #expect(AgentQueuePresentation.removeTitle == words["remove"].string)
   #expect(AgentQueuePresentation.sendNowTitle == words["sendNow"].string)
   #expect(AgentQueuePresentation.sendNowHint == words["sendNowHint"].string)
+  #expect(AgentQueuePresentation.sendNowAvailable == all["sendNowAvailable"].bool)
 }
 
 @Test func theSignInCardFollowsTheEnginesState() throws {

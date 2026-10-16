@@ -1600,7 +1600,7 @@
       "fetchedAt": "2026-10-10T00:00:00Z",
       "primary": {
         "used": 0.73,
-        "resetsAt": "2026-10-17T00:00:00Z",
+        "resetsAt": "now+388800",
         "label": "Week"
       }
     },
@@ -1611,7 +1611,7 @@
       "fetchedAt": "2026-10-10T00:00:00Z",
       "primary": {
         "used": 0.21,
-        "resetsAt": "2026-10-17T00:00:00Z",
+        "resetsAt": "now+388800",
         "label": "Week"
       }
     },
@@ -1622,7 +1622,7 @@
       "fetchedAt": "2026-10-10T00:00:00Z",
       "primary": {
         "used": 0.52,
-        "resetsAt": "2026-10-17T00:00:00Z",
+        "resetsAt": "now+388800",
         "label": "Month"
       }
     }

@@ -5,7 +5,7 @@
 mod app_server;
 mod token;
 
-use super::{Failure, ParsedReading, Source, env_dir, epoch_text, number, percent_window};
+use super::{Failure, ParsedReading, Source, env_dir, epoch_value, number, percent_window};
 use crate::{Window, host::Host};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -84,7 +84,7 @@ const USAGE_SHAPE: Shape = Shape {
 };
 
 /// The app server's `account/rateLimits/read` result: `rateLimits.primary` and `secondary`,
-/// each `{usedPercent, windowDurationMins, resetsAt (Unix seconds)}`.
+/// each `{usedPercent, windowDurationMins, resetsAt (Unix seconds, a number or a string)}`.
 const APP_SERVER_SHAPE: Shape = Shape {
     container: "rateLimits",
     windows: ["primary", "secondary"],
@@ -104,7 +104,7 @@ fn parse_shape(document: &Value, shape: &Shape) -> Result<ParsedReading, Failure
         };
         let percent = number(&value[shape.percent]).ok_or(Failure::InvalidResponse)?;
         let minutes = (shape.minutes)(value);
-        let resets_at = value[shape.reset].as_i64().and_then(epoch_text);
+        let resets_at = epoch_value(&value[shape.reset]);
         Ok(Some(Lane {
             minutes,
             window: percent_window(percent, resets_at, label(minutes, fallback))?,
@@ -141,6 +141,30 @@ mod tests {
         let weekly = reading.secondary.unwrap();
         assert_eq!(weekly.label, "Weekly");
         assert_eq!(weekly.resets_at, "2027-01-15T08:00:00Z");
+    }
+
+    #[test]
+    fn a_reset_time_is_unix_seconds_as_a_number_or_a_string() {
+        let window = |reset: Value| {
+            let reading = parse_rate_limits(&json!({"rateLimits": {"primary": {
+                "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": reset
+            }}}))
+            .unwrap();
+            reading.primary.resets_at
+        };
+        assert_eq!(window(json!(1800000000)), "2027-01-15T08:00:00Z");
+        assert_eq!(window(json!("1800000000")), "2027-01-15T08:00:00Z");
+        assert_eq!(window(json!(" 1800000000 ")), "2027-01-15T08:00:00Z");
+        for missing in [
+            json!(null),
+            json!(""),
+            json!("soon"),
+            json!("-5"),
+            json!(-5),
+            json!(1.5),
+        ] {
+            assert_eq!(window(missing.clone()), "", "{missing}");
+        }
     }
 
     #[test]

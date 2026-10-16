@@ -436,7 +436,11 @@ impl Workbench {
                         .id(id("queue-send-now", &queued.prompt_id))
                         .flex_none()
                         .text_color(rgb(palette.secondary))
-                        .opacity(pane_interior::DISABLED_OPACITY)
+                        .opacity(if queue_words::SEND_NOW_AVAILABLE {
+                            1.0
+                        } else {
+                            pane_interior::DISABLED_OPACITY
+                        })
                         .tooltip(super::ui::hint(queue_words::SEND_NOW_HINT, palette))
                         .child(queue_words::SEND_NOW),
                 )

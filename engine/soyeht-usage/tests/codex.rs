@@ -153,6 +153,20 @@ fn app_server_reading(results: Vec<serde_json::Value>) -> (Arc<FakeHost>, soyeht
     (host, reading)
 }
 
+/// The app server sends `resetsAt` as a string of Unix seconds (issue 398); the reading still
+/// carries the wire's ISO 8601 text, so every client shows when the window resets.
+#[test]
+fn the_app_server_reset_time_as_a_string_of_unix_seconds_reaches_the_wire_as_iso() {
+    let mut limits = rate_limits();
+    for window in ["primary", "secondary"] {
+        let seconds = limits["rateLimits"][window]["resetsAt"].to_string();
+        limits["rateLimits"][window]["resetsAt"] = json!(seconds);
+    }
+    let (_, reading) = app_server_reading(vec![json!({}), json!({}), limits]);
+    assert_eq!(reading.primary.unwrap().resets_at, "2026-10-03T21:20:00Z");
+    assert_eq!(reading.secondary.unwrap().resets_at, "2026-10-08T12:00:00Z");
+}
+
 /// The limits are asked for only after the app server was told to refresh its login, since a
 /// token the usage endpoint refused is renewed by the refresh and not by the read.
 #[test]

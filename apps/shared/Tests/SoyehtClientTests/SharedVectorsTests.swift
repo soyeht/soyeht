@@ -132,6 +132,14 @@ private func catalogue(_ vector: [String: Any], _ keys: Any?) throws -> [Harness
     let seconds = try #require(pair[0] as? Double)
     #expect(UsageTimeText.duration(seconds) == pair[1] as? String)
   }
+  let resets = try #require(vector["resets"] as? [String: Any])
+  let nowText = try #require(resets["now"] as? String)
+  let now = try #require(UsageTimestamp.date(from: nowText))
+  for entry in try cases(resets, "cases") {
+    #expect(
+      UsageTimeText.reset(entry["resetsAt"] as? String, now: now) == entry["text"] as? String,
+      "\(entry["name"] ?? "")")
+  }
   for pair in try #require(vector["sources"] as? [[String]]) {
     let source = try decode(UsageSource.self, pair[0])
     #expect(source.displayName == pair[1])
