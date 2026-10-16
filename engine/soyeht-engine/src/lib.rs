@@ -7,6 +7,7 @@ pub mod core;
 pub mod core_lock;
 pub mod dispatch;
 pub mod editor;
+pub mod engine_build;
 pub mod errors;
 mod experiment_export;
 mod frames;

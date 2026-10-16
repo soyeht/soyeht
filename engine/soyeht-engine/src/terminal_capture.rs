@@ -3,7 +3,7 @@ use crate::{
     errors::{self, Result},
     pane_observations::{
         DeletionReceipt, LABEL_WRITE_TIMEOUT, ObservationRecorder, SegmentStore, delete_pane,
-        experiment_root, installed_engine_build,
+        experiment_root,
     },
     terminal_projection::TerminalProjection,
 };
@@ -468,7 +468,7 @@ impl Core {
         if let Some(build) = &self.experiment_capture_build {
             return Ok(build.clone());
         }
-        let build = installed_engine_build()?;
+        let build = crate::engine_build::installed_engine_build()?;
         self.experiment_capture_build = Some(build.clone());
         Ok(build)
     }

@@ -24,6 +24,22 @@ fn sibling_binary(name: &str) -> PathBuf {
 // runs stop as soon as the expected signal arrives.
 const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Runs each program the tests start once before any deadline runs: the first run of a new
+/// binary is assessed by the system, which takes seconds under load.
+fn warm_up_binaries() {
+    for binary in [
+        sibling_binary("soyeht-ptyd"),
+        sibling_binary("soyeht-engine"),
+        sibling_binary("soyeht-fake-acp"),
+        PathBuf::from(env!("CARGO_BIN_EXE_soyeht")),
+    ] {
+        let took = soyeht_platform::testing::warm_up(&binary);
+        if took > Duration::from_secs(1) {
+            eprintln!("first run of {} took {took:?}", binary.display());
+        }
+    }
+}
+
 struct Rig {
     path: PathBuf,
     engine: Child,
@@ -31,6 +47,7 @@ struct Rig {
 }
 impl Rig {
     fn start() -> Self {
+        warm_up_binaries();
         // A Unix socket path is limited to about a hundred bytes; the temporary folder of macOS is long.
         let root = if cfg!(unix) {
             PathBuf::from("/tmp")
@@ -446,11 +463,20 @@ fn client_reconnects_after_engine_restart() {
         .unwrap();
     // Wait on a separate connection so a slow engine start on a busy host does not
     // exhaust the client's reconnect budget; `client` still has to reconnect itself.
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    let started = Instant::now();
+    let deadline = started + ASYNC_ASSERTION_TIMEOUT;
     while soyeht_cli::Client::connect(&rig.path).is_err() {
+        // An engine that ended will never accept: say how it ended instead of waiting.
+        let ended = rig.engine.try_wait().unwrap();
+        assert!(
+            ended.is_none(),
+            "the restarted engine ended with {ended:?} after {:?}",
+            started.elapsed()
+        );
         assert!(
             Instant::now() < deadline,
-            "restarted engine never accepted a connection"
+            "restarted engine never accepted a connection in {:?}",
+            started.elapsed()
         );
         thread::sleep(Duration::from_millis(10));
     }

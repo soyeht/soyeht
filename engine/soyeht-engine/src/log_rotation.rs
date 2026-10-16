@@ -23,7 +23,13 @@ pub const LOG_KEEP_ROTATED: usize = 4;
 /// A single log line is cut here, so one record cannot defeat the size bound.
 const LINE_MAX_BYTES: usize = 64 * 1024;
 const READ_CHUNK_BYTES: usize = 16 * 1024;
-const FLUSH_GRACE: Duration = Duration::from_secs(2);
+/// A line the engine writes into its own pipe on shutdown. Everything written before it has
+/// been copied into the file by the time the copy thread reads it.
+const FLUSH_MARKER: &[u8] = b"\0soyeht-log-flush\0\n";
+/// The longest a shutdown waits for the copy thread to reach the marker. The copy thread's
+/// progress depends on nothing outside this process but the disk, so a loaded host only
+/// makes the wait longer, never wrong; this bounds a disk that has stopped answering.
+const FLUSH_DEADLINE: Duration = Duration::from_secs(10);
 
 pub struct RotatingFile {
     path: PathBuf,
@@ -97,8 +103,13 @@ fn append(path: &Path) -> io::Result<File> {
 
 /// Copies `source` into `log` line by line until it ends. A line longer than
 /// `LINE_MAX_BYTES` is cut and terminated; a final line without a newline gets
-/// one.
-pub fn pump(mut source: impl Read, log: &mut RotatingFile) -> io::Result<()> {
+/// one. `flushed` is called once per [`FLUSH_MARKER`] line, after every line
+/// before it is in `log`; the marker itself is not logged.
+fn copy(
+    mut source: impl Read,
+    log: &mut RotatingFile,
+    mut flushed: impl FnMut(),
+) -> io::Result<()> {
     let mut chunk = vec![0_u8; READ_CHUNK_BYTES];
     let mut pending: Vec<u8> = Vec::new();
     loop {
@@ -111,7 +122,11 @@ pub fn pump(mut source: impl Read, log: &mut RotatingFile) -> io::Result<()> {
         pending.extend_from_slice(&chunk[..count]);
         if let Some(end) = pending.iter().rposition(|byte| *byte == b'\n') {
             let rest = pending.split_off(end + 1);
-            log.write_lines(&bounded_lines(&pending))?;
+            let (lines, markers) = without_markers(&pending);
+            log.write_lines(&bounded_lines(&lines))?;
+            for _ in 0..markers {
+                flushed();
+            }
             pending = rest;
         }
         if pending.len() > LINE_MAX_BYTES {
@@ -125,6 +140,20 @@ pub fn pump(mut source: impl Read, log: &mut RotatingFile) -> io::Result<()> {
         log.write_lines(&bounded_lines(&pending))?;
     }
     Ok(())
+}
+
+/// `lines` without the flush markers, and how many there were.
+fn without_markers(lines: &[u8]) -> (Vec<u8>, usize) {
+    let mut kept = Vec::with_capacity(lines.len());
+    let mut markers = 0;
+    for line in lines.split_inclusive(|byte| *byte == b'\n') {
+        if line == FLUSH_MARKER {
+            markers += 1;
+        } else {
+            kept.extend_from_slice(line);
+        }
+    }
+    (kept, markers)
 }
 
 /// `lines` with every line cut to `LINE_MAX_BYTES`.
@@ -149,11 +178,11 @@ mod system;
 mod system;
 
 /// Keeps stderr on the pipe while alive. Dropping it puts the original file
-/// back on stderr and waits briefly for the copy thread to drain the pipe.
+/// back on stderr and waits until the copy thread has written what the pipe held.
 pub struct StderrRotation {
     original: system::Original,
-    writer: Option<PipeWriter>,
-    finished: mpsc::Receiver<()>,
+    writer: PipeWriter,
+    flushed: mpsc::Receiver<()>,
 }
 
 /// Replaces stderr with a rotating copy when stderr is a regular file.
@@ -171,30 +200,47 @@ pub fn capture_stderr(max_bytes: u64, keep: usize) -> io::Result<Option<StderrRo
     let mut log = RotatingFile::open(&path, max_bytes, keep)?;
     let (reader, writer) = io::pipe()?;
     system::redirect_stderr(&writer)?;
-    let (done, finished) = mpsc::channel();
+    let (acknowledge, flushed) = mpsc::channel();
     thread::Builder::new()
         .name("engine-log".into())
         .spawn(move || {
-            // Nowhere to report: stderr is this pipe. The sender only wakes a waiting drop.
-            let _ = pump(reader, &mut log);
-            let _ = done.send(());
+            // Nowhere to report: stderr is this pipe. The sender only wakes a waiting drop,
+            // and a drop that finds the thread gone has nothing left to wait for.
+            let _ = copy(reader, &mut log, || {
+                let _ = acknowledge.send(());
+            });
         })?;
     Ok(Some(StderrRotation {
         original,
-        writer: Some(writer),
-        finished,
+        writer,
+        flushed,
     }))
 }
 
 impl Drop for StderrRotation {
     fn drop(&mut self) {
-        // Shutdown path: if stderr cannot be restored or the flush times out, the process
+        // Shutdown path: if stderr cannot be restored or the flush fails, the process
         // is exiting and there is no better place to log it.
         let _ = system::restore_stderr(&self.original);
-        // With stderr restored, this is the last writer: closing it ends the pipe.
-        drop(self.writer.take());
-        let _ = self.finished.recv_timeout(FLUSH_GRACE);
+        flush(&self.writer, &self.flushed, FLUSH_DEADLINE);
     }
+}
+
+/// Waits until the copy thread has written everything `writer` carried before this call.
+/// The marker travels behind those bytes, so the wait ends when they are in the file, even
+/// when a process the engine started still holds the pipe open. `false` means the thread
+/// is gone or did not answer in `deadline`.
+fn flush(writer: &PipeWriter, flushed: &mpsc::Receiver<()>, deadline: Duration) -> bool {
+    // A thread writes the marker so that a pipe nobody drains cannot hold the caller past
+    // `deadline`. The marker is shorter than the atomic pipe write, so it stays one line.
+    let Ok(mut writer) = writer.try_clone() else {
+        return false;
+    };
+    thread::spawn(move || {
+        // A failed write means the copy thread is gone; the caller sees that on `flushed`.
+        let _ = writer.write_all(FLUSH_MARKER);
+    });
+    flushed.recv_timeout(deadline).is_ok()
 }
 
 #[cfg(test)]
@@ -203,6 +249,10 @@ mod tests {
     use serde_json::json;
     use std::io::Cursor;
     use uuid::Uuid;
+
+    fn pump(source: impl Read, log: &mut RotatingFile) -> io::Result<()> {
+        copy(source, log, || ())
+    }
 
     fn directory() -> PathBuf {
         let directory = std::env::temp_dir().join(format!("soyeht-log-{}", Uuid::new_v4()));
@@ -293,6 +343,69 @@ mod tests {
         assert!(text.len() < LINE_MAX_BYTES * 4 + 64, "{} bytes", text.len());
         assert!(text.lines().all(|line| line.len() <= LINE_MAX_BYTES));
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_flush_marker_is_not_logged_and_acknowledges_the_lines_before_it() {
+        let directory = directory();
+        let path = directory.join("engine.log");
+        let mut log = RotatingFile::open(&path, 1_000_000, 1).unwrap();
+        let mut input = b"{\"event\":\"before\"}\n".to_vec();
+        input.extend_from_slice(FLUSH_MARKER);
+        input.extend_from_slice(b"{\"event\":\"after\"}\n");
+        let mut seen = Vec::new();
+        copy(Cursor::new(input), &mut log, || {
+            seen.push(fs::read_to_string(&path).unwrap());
+        })
+        .unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(seen[0].starts_with("{\"event\":\"before\"}\n"));
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "{\"event\":\"before\"}\n{\"event\":\"after\"}\n"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// The copy thread starts later than any fixed wait would allow, and another process
+    /// holds the pipe open so it never ends: the flush still returns once the records
+    /// are in the file, and not before.
+    #[test]
+    fn a_flush_waits_for_a_late_copy_thread_and_does_not_need_the_pipe_to_end() {
+        let directory = directory();
+        let path = directory.join("engine.log");
+        let mut log = RotatingFile::open(&path, 1_000_000, 1).unwrap();
+        let (reader, writer) = io::pipe().unwrap();
+        let other_holder = writer.try_clone().unwrap();
+        let (acknowledge, flushed) = mpsc::channel();
+        let late = Duration::from_millis(2_500);
+        let copying = thread::spawn(move || {
+            thread::sleep(late);
+            copy(reader, &mut log, || {
+                let _ = acknowledge.send(());
+            })
+        });
+        let mut producer = writer.try_clone().unwrap();
+        producer.write_all(&records(50)).unwrap();
+        let started = std::time::Instant::now();
+        assert!(flush(&writer, &flushed, Duration::from_secs(60)));
+        assert!(started.elapsed() >= late / 2, "{:?}", started.elapsed());
+        let live = fs::read_to_string(&path).unwrap();
+        assert!(live.contains("\"index\":49,"), "the last record is kept");
+        assert!(!live.contains('\0'));
+        // Closing every holder ends the copy thread; the one that was held open is released.
+        drop((writer, producer, other_holder));
+        copying.join().unwrap().unwrap();
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_flush_reports_a_copy_thread_that_is_gone() {
+        let (reader, writer) = io::pipe().unwrap();
+        drop(reader);
+        let (acknowledge, flushed) = mpsc::channel::<()>();
+        drop(acknowledge);
+        assert!(!flush(&writer, &flushed, Duration::from_secs(60)));
     }
 
     const CHILD_MARKER: &str = "SOYEHT_LOG_ROTATION_CHILD";

@@ -48,6 +48,7 @@ pub struct Rig {
 impl Rig {
     pub fn new() -> Self {
         let runtime_slot = runtime_rig_slot();
+        warm_up_binaries();
         let path = rig_root().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         install_fake_worktrunk(&path);
@@ -74,6 +75,7 @@ impl Rig {
         self.path.join("usage-readers")
     }
     pub fn start(&mut self) {
+        warm_up_binaries();
         self.engine = Some(
             Command::new(env!("CARGO_BIN_EXE_soyeht-engine"))
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
@@ -91,7 +93,13 @@ impl Rig {
         );
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         while connect(&self.path.join("engine.sock")).is_err() {
-            assert!(Instant::now() < deadline, "engine ready timeout");
+            let exit = self.engine.as_mut().unwrap().try_wait();
+            assert!(
+                Instant::now() < deadline,
+                "engine ready timeout: engine {exit:?}, socket exists {}, ptyd {:?}",
+                self.path.join("engine.sock").exists(),
+                self.ptyd.try_wait()
+            );
             thread::sleep(Duration::from_millis(10));
         }
     }
@@ -279,6 +287,23 @@ impl Rig {
     }
     pub fn hook_client(&self) -> Client {
         Client::new_named(self.path.join("engine.sock"), "soyeht-hook", json!([]))
+    }
+}
+
+/// Runs each program a rig starts once before any deadline runs: the first run of a new
+/// binary is assessed by the system, which takes seconds under load (see
+/// `soyeht_platform::testing::warm_up`). The time spent shows with `--nocapture`.
+fn warm_up_binaries() {
+    for name in ["soyeht-ptyd", "soyeht-fake-acp"] {
+        warm_up(&sibling_binary(name));
+    }
+    warm_up(Path::new(env!("CARGO_BIN_EXE_soyeht-engine")));
+}
+
+fn warm_up(binary: &Path) {
+    let took = soyeht_platform::testing::warm_up(binary);
+    if took > Duration::from_secs(1) {
+        eprintln!("first run of {} took {took:?}", binary.display());
     }
 }
 

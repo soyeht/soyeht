@@ -24,7 +24,10 @@ use std::{
     io::{self, Read, Write},
     marker::PhantomData,
     process::{Command, ExitStatus},
-    sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
+    sync::{
+        Mutex,
+        mpsc::{self, Receiver, RecvTimeoutError, Sender},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -33,12 +36,20 @@ use system::Running;
 
 /// How long the pipes may stay open after the command exits or is killed.
 /// A descendant that left the process group can hold them; it is abandoned.
+/// [`spawn`] keeps a concurrent start from holding them too.
 const PIPE_GRACE: Duration = Duration::from_secs(1);
 const FIRST_POLL: Duration = Duration::from_millis(1);
 const LONGEST_POLL: Duration = Duration::from_millis(20);
 const READ_CHUNK: usize = 8 * 1024;
 /// Diagnostic text kept from standard error.
 pub const STDERR_BYTES: usize = 16 * 1024;
+
+/// Held while a command starts. A start creates the command's pipes, and a command another
+/// thread starts at the same moment inherits their write ends until its own program image
+/// has loaded. On a loaded macOS host that takes seconds (the first run of a new binary is
+/// assessed by the system), and the first command's output then stays open for as long, long
+/// after it exited. One start at a time leaves no overlap.
+static SPAWN_LOCK: Mutex<()> = Mutex::new(());
 
 thread_local! {
     static LOCK_HOLDER: Cell<Option<&'static str>> = const { Cell::new(None) };
@@ -203,7 +214,7 @@ fn execute(command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<O
     if let Some(holder) = forbidden() {
         return Err(Error::UnderLock { program, holder });
     }
-    let mut running = Running::spawn(command, input.is_some()).map_err(|source| Error::Spawn {
+    let mut running = spawn(command, input.is_some()).map_err(|source| Error::Spawn {
         program: program.clone(),
         source,
     })?;
@@ -247,6 +258,14 @@ fn execute(command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<O
         stdout,
         stderr,
     })
+}
+
+/// Starts `command` with its pipes, never at the same time as another command.
+fn spawn(command: Command, input: bool) -> io::Result<Running> {
+    let _starting = SPAWN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Running::spawn(command, input)
 }
 
 /// Starts the thread that writes `input` to the command and closes its standard input.
@@ -533,7 +552,7 @@ mod tests {
     fn a_command_that_finishes_leaves_its_background_process_running() {
         let pidfile = scratch("detached");
         let _ = fs::remove_file(&pidfile);
-        let mut running = Running::spawn(
+        let mut running = spawn(
             helper_command(&format!("detach:{}", pidfile.display())),
             false,
         )

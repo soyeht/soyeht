@@ -53,7 +53,10 @@ change.
   loops has backoff of its own.
 - A failure that lasts for hours is visible as a few lines with growing
   `attempts`, not as a flood.
-- The copy thread is bounded by a short grace wait when the engine shuts
-  down; lines still in the pipe after that are lost.
+- On shutdown the engine writes a marker line into the pipe and waits until the
+  copy thread has read it, so every line written before shutdown is in the
+  file even when a process the engine started still holds the pipe or the host
+  is slow. The wait is bounded (10 s) only against a disk that has stopped
+  answering; lines still in the pipe after that are lost.
 - `ptyd.log` is not covered here. The supervisor keeps no editor loops and
   writes a few lines per start.

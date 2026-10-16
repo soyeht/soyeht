@@ -50,5 +50,10 @@ panic = "deny"
 [profile.dev]
 debug = 0
 
+# The engine hashes its whole executable to name its build. Unoptimized, that takes tens of
+# seconds on a loaded host and the engine cannot listen until it ends.
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.test]
 debug = 0

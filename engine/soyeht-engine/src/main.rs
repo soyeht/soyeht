@@ -18,6 +18,8 @@ async fn main() -> Result<()> {
             None
         }
     };
+    // Captures record the engine build; hashing the executable overlaps the rest of startup.
+    soyeht_engine::engine_build::prefetch_engine_build();
     let mut directory = dev_data_directory(std::env::home_dir())?;
     let mut listen = vec![];
     let mut args = std::env::args().skip(1);

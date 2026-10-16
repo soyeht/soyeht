@@ -241,7 +241,7 @@
     "engine/soyeht-engine/src/agents/switching.rs": 1063,
     "engine/soyeht-engine/src/editor/service.rs": 1027,
     "engine/soyeht-engine/src/experiment_export.rs": 1194,
-    "engine/soyeht-engine/src/pane_observations.rs": 1657,
+    "engine/soyeht-engine/src/pane_observations.rs": 1636,
     "engine/soyeht-engine/src/tasks/feedback.rs": 907,
     "engine/soyeht-engine/src/terminal_capture.rs": 1558,
     "engine/soyeht-engine/src/web/host.rs": 956,

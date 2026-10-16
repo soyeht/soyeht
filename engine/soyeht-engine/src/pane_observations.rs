@@ -733,27 +733,6 @@ impl SegmentStore {
     }
 }
 
-pub fn installed_engine_build() -> Result<EngineBuild> {
-    let executable = std::env::current_exe()?;
-    let mut file = File::open(executable)?;
-    let mut digest = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        digest.update(&buffer[..read]);
-    }
-    let digest = digest.finalize();
-    let build = EngineBuild {
-        package_version: env!("CARGO_PKG_VERSION").into(),
-        executable_sha256: format!("{digest:x}"),
-    };
-    build.validate()?;
-    Ok(build)
-}
-
 pub fn experiment_root(profile: &Path) -> Result<PathBuf> {
     let experiments = profile.join("experiments");
     ensure_private_directory(&experiments)?;
