@@ -53,6 +53,21 @@ does nothing silently.
   Writing over a read-only file is refused.
 - The default shell is `%COMSPEC%`. The engine does not ask a login shell for `PATH`.
 
+## Starting the engine
+
+The engine listens before it waits for anything the system or the person's environment
+can make slow. Two things used to hold the socket back for seconds on a busy machine:
+
+- The `PATH` of the person's interactive login shell (it reads the person's startup
+  files). The engine remembers the last answer in `launch-path` in its data directory,
+  uses it at once, and asks the shell again on a thread. Only a first start, which has
+  nothing remembered, waits for the shell when something needs the `PATH`. A shell
+  that fails keeps the remembered `PATH` and reports the failure in the harness
+  catalogue. Windows has no login shell to ask.
+- The file-event stream of the user's skill folder. The system's file-event service
+  can take seconds to start a stream. It starts on its own thread and the folder is
+  read by polling until it is live, then once more.
+
 ## Tests
 
 Tests that need a POSIX shell, `ps`, `perl`, permission modes, or a shell script as

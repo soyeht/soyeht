@@ -81,10 +81,8 @@ fn permission_turn(
             thread::sleep(Duration::from_millis(10));
         }
     }
-    if matches!(text, "permission-delayed" | "permission-overflow") {
-        thread::sleep(Duration::from_millis(500));
-    }
     if text == "permission-overflow" {
+        thread::sleep(Duration::from_millis(500));
         let flood = Arc::clone(runtime);
         thread::spawn(move || {
             thread::sleep(Duration::from_millis(100));

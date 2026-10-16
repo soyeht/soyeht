@@ -91,9 +91,9 @@ fn log_stale_export_cleanup(directory: &Path) {
 
 impl Core {
     pub fn open(directory: &Path) -> Result<Self> {
-        // Resolve the user's interactive launch path before requests arrive so
-        // catalogue reads and process launches share one environment snapshot.
-        let _ = crate::agents::environment::launch_path();
+        // The user's interactive launch path, remembered from the last start: asking the login
+        // shell takes seconds on a busy machine and the engine must not wait for it to listen.
+        crate::agents::environment::warm_launch_path(directory);
         log_stale_export_cleanup(directory);
         let mut store = Store::open(directory).map_err(errors::storage)?;
         let workspaces = store.workspaces().map_err(errors::storage)?;

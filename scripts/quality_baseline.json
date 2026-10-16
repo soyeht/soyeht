@@ -258,7 +258,7 @@
     "engine/soyeht-store/tests/tasks.rs": 978
   },
   "swallowed_errors": {
-    "rust_let_underscore": 49,
+    "rust_let_underscore": 48,
     "rust_ok": 104,
     "swift_try_optional": 34
   },

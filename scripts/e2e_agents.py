@@ -197,9 +197,13 @@ def acceptance_cancel(services, client, pane, results):
 def acceptance_engine_outage(services, client, pane, results):
     original = client.pane(pane)
     generation = client.call("engine.status", {})["generation"]
-    turn_id = client.mutate("pane.prompt", paneId=pane, text="permission-delayed")["promptId"]
-    until(lambda: client.pane(pane)["state"] == "working", "delayed turn did not start")
+    # The harness holds the turn until the release file exists, so the permission request can
+    # only be made once the engine is down, however long the service manager takes to stop it.
+    harness_directory = services.data / "test"
+    turn_id = client.mutate("pane.prompt", paneId=pane, text="permission-gated")["promptId"]
+    until(lambda: (harness_directory / "permission.waiting").exists(), "gated turn did not start")
     services.launcher.take_down("engine")
+    (harness_directory / "permission.release").write_bytes(b"continue")
     supervisor = json.loads((services.data / "ptyd-registry.json").read_text())
     instance = next(value["instance_id"] for value in supervisor["instances"].values()
                     if value.get("pid") == original["pid"])

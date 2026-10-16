@@ -3,6 +3,11 @@
 //! project panel does). A burst is read once it settles, and a folder is
 //! announced only when its listing changed. A folder that does not exist yet,
 //! or that no event stream could follow, is looked at every two seconds.
+//!
+//! Starting an event stream asks the system's file-event service, which can take
+//! seconds on a busy machine. It happens on its own thread, so neither engine
+//! start nor a request waits for it: the folder is looked at every two seconds
+//! until the stream is live, and read once more when it goes live.
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use soyeht_protocol::Skill;
@@ -11,6 +16,7 @@ use std::{
     hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
     sync::mpsc::{self, Receiver, TryRecvError},
+    thread,
 };
 
 /// A burst is read once no event arrived for this long ...
@@ -31,6 +37,8 @@ struct Events {
 struct Folder {
     root: PathBuf,
     events: Option<Events>,
+    /// The thread that is starting the event stream; it answers once.
+    starting: Option<Receiver<Option<Events>>>,
     fingerprint: u64,
     /// The listing the fingerprint comes from was read before the event
     /// stream started, so one more read is due: a change in between is in no
@@ -176,6 +184,7 @@ impl Folder {
         let mut folder = Self {
             root: root.into(),
             events: None,
+            starting: None,
             fingerprint: fingerprint(listed),
             catch_up: true,
             polling_only,
@@ -192,10 +201,17 @@ impl Folder {
     /// Follows the folder while it exists. True when it appeared, vanished,
     /// or cannot be followed by events and must be read again.
     fn reattach(&mut self) -> bool {
+        self.reattach_with(event_source)
+    }
+
+    fn reattach_with(
+        &mut self,
+        start: impl FnOnce(&Path) -> Option<Events> + Send + 'static,
+    ) -> bool {
         match (self.root.is_dir(), self.events.is_some()) {
             (true, false) => {
-                if !self.polling_only {
-                    self.events = event_source(&self.root);
+                if !self.polling_only && self.starting.is_none() {
+                    self.starting = start_in_background(&self.root, start);
                 }
                 true
             }
@@ -207,12 +223,35 @@ impl Folder {
         }
     }
 
-    /// Empties the event queue; true when anything arrived.
-    fn drain(&mut self) -> bool {
-        let Some(events) = &self.events else {
+    /// Takes the event stream once its thread has started it. True when the
+    /// thread answered: a change since the first listing is in no event, so the
+    /// folder is read again.
+    fn take_started(&mut self) -> bool {
+        let Some(starting) = &self.starting else {
             return false;
         };
-        let mut arrived = false;
+        match starting.try_recv() {
+            Ok(events) => {
+                self.starting = None;
+                self.events = events;
+                self.catch_up = true;
+                true
+            }
+            Err(TryRecvError::Empty) => false,
+            Err(TryRecvError::Disconnected) => {
+                self.starting = None;
+                false
+            }
+        }
+    }
+
+    /// Empties the event queue; true when anything arrived.
+    fn drain(&mut self) -> bool {
+        let started = self.take_started();
+        let Some(events) = &self.events else {
+            return started;
+        };
+        let mut arrived = started;
         loop {
             match events.receiver.try_recv() {
                 Ok(_) => arrived = true,
@@ -224,6 +263,23 @@ impl Folder {
             }
         }
     }
+}
+
+fn start_in_background(
+    root: &Path,
+    start: impl FnOnce(&Path) -> Option<Events> + Send + 'static,
+) -> Option<Receiver<Option<Events>>> {
+    let (sender, receiver) = mpsc::channel();
+    let root = root.to_owned();
+    thread::Builder::new()
+        .name("skill-watch-start".into())
+        .spawn(move || {
+            // The receiver is gone when the folder was dropped meanwhile; nobody wants the
+            // stream then.
+            sender.send(start(&root)).unwrap_or_default();
+        })
+        .ok()?;
+    Some(receiver)
 }
 
 fn event_source(root: &Path) -> Option<Events> {
@@ -382,7 +438,48 @@ mod tests {
             settle(&mut watches, 1_000 + PROBE_INTERVAL_MS),
             [(workspace_key(), root.clone())]
         );
-        assert!(watches.workspaces[WORKSPACE].0.events.is_some());
+        let folder = &mut watches.workspaces.get_mut(WORKSPACE).unwrap().0;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+        while folder.events.is_none() && std::time::Instant::now() < deadline {
+            folder.take_started();
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(folder.events.is_some(), "the stream was started again");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The system's file-event service can take seconds to start a stream. The
+    /// folder returns at once, is read by polling until the stream is live, and
+    /// is read once more when it goes live.
+    #[test]
+    fn a_slow_event_stream_start_does_not_block_and_is_caught_up_when_it_arrives() {
+        let root = temp_folder();
+        std::fs::create_dir_all(&root).unwrap();
+        let mut folder = Folder::new(&root, &[], true);
+        folder.polling_only = false;
+        assert!(folder.take_catch_up(), "the first listing is read");
+        let (release, gate) = mpsc::channel::<()>();
+        let (_sender, receiver) = mpsc::channel();
+        assert!(folder.reattach_with(move |_| {
+            gate.recv().ok();
+            Some(Events {
+                receiver,
+                _watcher: None,
+            })
+        }));
+        assert!(folder.events.is_none() && folder.starting.is_some());
+        assert!(!folder.drain() && !folder.take_catch_up(), "still starting");
+        assert!(
+            folder.reattach_with(|_| None),
+            "a second probe starts nothing"
+        );
+        release.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+        while !folder.drain() && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        assert!(folder.events.is_some() && folder.starting.is_none());
+        assert!(folder.take_catch_up(), "a change while starting is read");
         std::fs::remove_dir_all(&root).unwrap();
     }
 

@@ -1,14 +1,14 @@
 use soyeht_protocol::HarnessEnvironmentVariable;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::PathBuf,
-    sync::{OnceLock, RwLock},
+    path::{Path, PathBuf},
 };
 
+mod cache;
 #[cfg(unix)]
 mod probe;
 
-static LAUNCH_PATH: OnceLock<RwLock<Option<LaunchPath>>> = OnceLock::new();
+static LAUNCH_PATH: cache::Cache = cache::Cache::new();
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LaunchPath {
@@ -50,17 +50,14 @@ fn resolve_launch_path() -> LaunchPath {
     }
 }
 
+/// Starts the engine with the `PATH` remembered in `directory` and asks the shell again in the
+/// background, so a restart does not wait for the shell.
+pub fn warm_launch_path(directory: &Path) {
+    LAUNCH_PATH.warm(directory, resolve_launch_path);
+}
+
 pub fn launch_path_resolution() -> LaunchPath {
-    let cache = LAUNCH_PATH.get_or_init(|| RwLock::new(None));
-    // A poisoned cache only costs a fresh probe.
-    if let Some(path) = cache.read().ok().and_then(|value| value.clone()) {
-        return path;
-    }
-    let path = resolve_launch_path();
-    if let Ok(mut value) = cache.write() {
-        *value = Some(path.clone());
-    }
-    path
+    LAUNCH_PATH.resolution(resolve_launch_path)
 }
 
 pub fn launch_path() -> String {
@@ -68,11 +65,7 @@ pub fn launch_path() -> String {
 }
 
 pub fn invalidate_launch_path() {
-    if let Some(cache) = LAUNCH_PATH.get()
-        && let Ok(mut value) = cache.write()
-    {
-        *value = None;
-    }
+    LAUNCH_PATH.invalidate();
 }
 
 pub fn launch_environment() -> BTreeMap<String, String> {
