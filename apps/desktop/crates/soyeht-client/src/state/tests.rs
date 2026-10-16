@@ -12,10 +12,7 @@ fn snapshot(workspaces: &[&str], panes: &[(&str, &str, &str)]) -> Snapshot {
             .collect(),
         focus: None,
         cursor: 1,
-        requests: Vec::new(),
-        loops: Vec::new(),
-        tasks: Vec::new(),
-        attention: Vec::new(),
+        ..Snapshot::default()
     }
 }
 

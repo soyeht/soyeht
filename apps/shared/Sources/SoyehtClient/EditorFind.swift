@@ -35,12 +35,20 @@ extension EngineClient {
       fileId, revision: view.file.revision, query: query, from: from, direction: direction,
       page: loaded)
     guard let current = result.current else { return result }
+    let line = current.range.start.line
     let landing = EditorViewportPaging.landingStart(
-      line: current.range.start.line, loadedFrom: loaded.fromLine, loadedTo: loaded.toLine)
+      line: line, loadedFrom: loaded.fromLine, loadedTo: loaded.toLine,
+      askedLines: view.viewportRequestedLines)
     if landing != loaded.fromLine {
-      let page = try await readEditorFile(
+      var page = try await readEditorFile(
         fileId: fileId, revision: result.revision, fromLine: landing,
         lineCount: EditorViewportPaging.pageLines)
+      if page.toLine <= line {
+        // A page the engine cut short ended before the match: read it again from the match.
+        page = try await readEditorFile(
+          fileId: fileId, revision: result.revision, fromLine: line,
+          lineCount: EditorViewportPaging.pageLines)
+      }
       result = try await requestEditorFind(
         fileId, revision: result.revision, query: query, from: current.range.start,
         direction: .next, page: page)

@@ -11,6 +11,9 @@ public struct EditorFileView: Sendable {
   public var diagnosticRevision: String?
   public var agentCursors: [String: EditorAgentCursorEvent]
   public var review: EditorReviewRequestedEvent?
+  /// How many lines were asked for when the viewport was read; nil for the page `file.open`
+  /// returned, which is a short one by choice.
+  public var viewportRequestedLines: UInt32?
 
   public init(file: FileDocument, viewport: FileReadResult? = nil) {
     self.file = file
@@ -22,6 +25,7 @@ public struct EditorFileView: Sendable {
     diagnosticRevision = nil
     agentCursors = [:]
     review = nil
+    viewportRequestedLines = nil
   }
 }
 
@@ -184,7 +188,7 @@ extension EngineClient {
           lineCount: min(lineCount, UInt32(ProtocolLimits.editorViewportLines))))
     )
     .decoded(FileReadResult.self)
-    acceptEditorRead(result)
+    acceptEditorRead(result, requested: min(lineCount, UInt32(ProtocolLimits.editorViewportLines)))
     return result
   }
 
@@ -269,10 +273,10 @@ extension EngineClient {
 
   public func saveEditorFile(_ fileId: String) async throws {
     if let task = editorWriteTasks[fileId] { await task.value }
-    for _ in 0..<30 {
+    for _ in 0..<ClientPolicy.editorSaveAttempts {
       try await refreshEditorFile(fileId)
       guard editorFiles[fileId]?.file.dirty == true else { return }
-      try await Task.sleep(for: .milliseconds(100))
+      try await Task.sleep(for: .milliseconds(ClientPolicy.editorSaveRetryMs))
     }
     throw ClientFailure.editorCommand("The file did not finish saving before the deadline.")
   }
@@ -353,9 +357,15 @@ extension EngineClient {
   func reloadEditorPage(_ fileId: String, showing line: UInt32?) async throws {
     guard let loaded = editorFiles[fileId]?.viewport else { return }
     let fromLine = EditorViewportPaging.landingStart(
-      line: line ?? loaded.fromLine, loadedFrom: loaded.fromLine, loadedTo: loaded.toLine)
-    _ = try await readEditorFile(
+      line: line ?? loaded.fromLine, loadedFrom: loaded.fromLine, loadedTo: loaded.toLine,
+      askedLines: editorFiles[fileId]?.viewportRequestedLines)
+    let page = try await readEditorFile(
       fileId: fileId, fromLine: fromLine, lineCount: EditorViewportPaging.pageLines)
+    if let line, page.toLine <= line {
+      // A page the engine cut short ended before the line: read it again from the line.
+      _ = try await readEditorFile(
+        fileId: fileId, fromLine: line, lineCount: EditorViewportPaging.pageLines)
+    }
   }
 
   @discardableResult
@@ -574,8 +584,17 @@ extension EngineClient {
     acceptEditorRead(result)
   }
 
-  func acceptEditorRead(_ result: FileReadResult) {
-    upsertEditor(result.file) { $0.viewport = result }
+  /// Takes a read. `requested` is how many lines it asked for; a read that does not say (the
+  /// page `file.open` returns, a reload of the loaded page) keeps what the page it replaces had.
+  func acceptEditorRead(_ result: FileReadResult, requested: UInt32? = nil) {
+    upsertEditor(result.file) {
+      if let requested {
+        $0.viewportRequestedLines = requested
+      } else if $0.viewport?.fromLine != result.fromLine {
+        $0.viewportRequestedLines = nil
+      }
+      $0.viewport = result
+    }
   }
 
   func upsertEditor(

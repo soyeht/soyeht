@@ -4,6 +4,7 @@ use crate::tasks::TaskUpdate;
 use crate::{
     Error, Result,
     attachments::{Draft, Upload},
+    editor::EditorCommand,
     event::Event,
     preference_requests,
 };
@@ -219,6 +220,8 @@ pub enum Command {
     CloseWorkspace {
         workspace_id: String,
     },
+    /// What the person does in an editor pane.
+    Editor(EditorCommand),
 }
 
 /// What the new-task form asks the engine to create.
@@ -520,6 +523,15 @@ impl Command {
         }
     }
 
+    /// What the application learns when this command fails, so that it stops waiting for the
+    /// answer.
+    pub fn failure(&self) -> Option<Event> {
+        match self {
+            Self::Editor(editor) => crate::editor::commands::failure(editor),
+            _ => None,
+        }
+    }
+
     /// Fetches that the interface does not wait on. They run apart from the commands that carry
     /// the person's typing, so a burst of them never delays a keystroke.
     pub fn is_background(&self) -> bool {
@@ -535,7 +547,7 @@ impl Command {
                 | Self::LoadCatalogue { .. }
                 | Self::LoadPreferences { .. }
                 | Self::LoadSkills
-        )
+        ) || matches!(self, Self::Editor(editor) if editor.is_background())
     }
 }
 

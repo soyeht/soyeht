@@ -335,6 +335,18 @@
     "contextSpacing": 6,
     "contextHorizontalPadding": 4
   },
+  "editor": {
+    "fontPointSize": 11.5,
+    "lineHeight": 19,
+    "gutterWidth": 44,
+    "textInset": 10,
+    "headerHeight": 27,
+    "tabHeight": 26,
+    "viewportVerticalInset": 20,
+    "statusHeight": 24,
+    "findFieldHeight": 24,
+    "projectPanelWidth": 212
+  },
   "desktop": {
     "windowWidth": 1280,
     "windowHeight": 800,
@@ -455,6 +467,17 @@
     "usageProviderRowHeight": 42,
     "usageDetailWidth": 250,
     "usageBarHeight": 6,
-    "usageStatusDot": 8
+    "usageStatusDot": 8,
+    "editorTabBarHeight": 34,
+    "editorTabCloseSlot": 12,
+    "editorDirtyDot": 6,
+    "editorCaretWidth": 2,
+    "editorProjectRowHeight": 22,
+    "editorProjectIndent": 12,
+    "editorFindStatusWidth": 72,
+    "editorThumbInset": 2,
+    "editorThumbWidth": 5,
+    "editorThumbMinimum": 24,
+    "editorMarginCells": 2
   }
 }

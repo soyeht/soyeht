@@ -26,6 +26,7 @@ use soyeht_client::{
 use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
 use std::{
     cell::RefCell,
+    collections::{HashMap, HashSet},
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -75,6 +76,10 @@ pub struct Workbench {
     pub(crate) reveal: Option<String>,
     /// The pane whose input takes keyboard focus on the next frame.
     focus_request: Option<String>,
+    /// The workspaces whose editors have their project panel folded away.
+    pub(crate) project_panel_hidden: HashSet<String>,
+    /// The scroll of the project panel of each workspace's editor place that has no file open.
+    pub(crate) empty_tree_scroll: HashMap<String, ScrollHandle>,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
     _clock: Task<()>,
@@ -137,6 +142,8 @@ impl Workbench {
             hidden_tabs: 0,
             reveal: None,
             focus_request: None,
+            project_panel_hidden: HashSet::new(),
+            empty_tree_scroll: HashMap::new(),
             _events: events,
             _clock: clock,
         }
@@ -152,59 +159,8 @@ impl Workbench {
         let mut repaint = false;
         for event in events {
             repaint |= self.state.changes_view(&event);
-            for effect in self.state.apply(event) {
-                match effect {
-                    Effect::SubscribeTerminal(pane_id) => {
-                        self.send(Command::Subscribe { pane_id });
-                    }
-                    Effect::Resync => self.engine.resync(),
-                    // A pane's queue of waiting messages is loaded with its transcript.
-                    Effect::LoadTranscript(pane_id) => {
-                        self.send(Command::LoadQueue {
-                            pane_id: pane_id.clone(),
-                        });
-                        self.send(Command::LoadTranscript { pane_id });
-                    }
-                    Effect::LoadUsage => {
-                        self.send(Command::LoadUsage);
-                    }
-                    Effect::LoadSkills => {
-                        self.send(Command::LoadSkills);
-                    }
-                    Effect::LoadHarnesses => {
-                        self.send(Command::LoadHarnesses { rescan: false });
-                    }
-                    Effect::LoadTask {
-                        workspace_id,
-                        task_id,
-                    } => {
-                        self.send(Command::LoadTask {
-                            workspace_id,
-                            task_id,
-                        });
-                    }
-                    Effect::StoreLayout {
-                        workspace_id,
-                        layout,
-                    } => {
-                        self.send(Command::SetLayout {
-                            workspace_id,
-                            layout,
-                        });
-                    }
-                    // The pane the person opened takes the keyboard, as a new terminal does on the Mac.
-                    Effect::FocusPane(pane_id) => {
-                        // A pane a task was dispatched to is in the agents' place.
-                        if !self.destination.is_pane_grid() {
-                            self.destination = Destination::Agents;
-                        }
-                        self.state.focus_pane(&pane_id);
-                        self.announce_focus();
-                        self.reveal = Some(pane_id.clone());
-                        self.focus_request = Some(pane_id);
-                    }
-                }
-            }
+            let effects = self.state.apply(event);
+            self.run_effects(effects);
         }
         self.forget_closed_panes();
         if self.switch.is_some() {
@@ -215,9 +171,95 @@ impl Workbench {
         }
     }
 
+    /// Carries out one thing the replica asks for.
+    pub(crate) fn run_effect(&mut self, effect: Effect) {
+        match effect {
+            Effect::SubscribeTerminal(pane_id) => {
+                self.send(Command::Subscribe { pane_id });
+            }
+            Effect::Resync => self.engine.resync(),
+            // A pane's queue of waiting messages is loaded with its transcript.
+            Effect::LoadTranscript(pane_id) => {
+                self.send(Command::LoadQueue {
+                    pane_id: pane_id.clone(),
+                });
+                self.send(Command::LoadTranscript { pane_id });
+            }
+            Effect::LoadUsage => {
+                self.send(Command::LoadUsage);
+            }
+            Effect::LoadSkills => {
+                self.send(Command::LoadSkills);
+            }
+            Effect::LoadHarnesses => {
+                self.send(Command::LoadHarnesses { rescan: false });
+            }
+            Effect::LoadTask {
+                workspace_id,
+                task_id,
+            } => {
+                self.send(Command::LoadTask {
+                    workspace_id,
+                    task_id,
+                });
+            }
+            Effect::StoreLayout {
+                workspace_id,
+                layout,
+            } => {
+                self.send(Command::SetLayout {
+                    workspace_id,
+                    layout,
+                });
+            }
+            // The pane the person opened takes the keyboard, as a new terminal does on the Mac.
+            Effect::FocusPane(pane_id) => {
+                // A pane a task was dispatched to is in the agents' place.
+                if !self.destination.is_pane_grid() {
+                    self.destination = Destination::Agents;
+                }
+                self.state.focus_pane(&pane_id);
+                self.announce_focus();
+                self.reveal = Some(pane_id.clone());
+                self.focus_request = Some(pane_id);
+            }
+            Effect::Send(command) => {
+                // A command the queue refuses never gets an answer: the replica is told, so that
+                // what waits for it is not stuck.
+                let failure = command.failure();
+                if !self.send(command)
+                    && let Some(event) = failure
+                {
+                    let effects = self.state.apply(event);
+                    self.run_effects(effects);
+                }
+            }
+        }
+    }
+
     /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
     fn forget_closed_panes(&mut self) {
         self.panes.forget_closed(&self.state);
+        let open = |id: &String| {
+            self.state
+                .workspaces()
+                .iter()
+                .any(|workspace| &workspace.workspace_id == id)
+        };
+        let (hidden, scrolls): (HashSet<String>, HashMap<String, ScrollHandle>) = (
+            self.project_panel_hidden
+                .iter()
+                .filter(|id| open(id))
+                .cloned()
+                .collect(),
+            self.empty_tree_scroll
+                .iter()
+                .filter(|(id, _)| open(id))
+                .map(|(id, handle)| (id.clone(), handle.clone()))
+                .collect(),
+        );
+        self.project_panel_hidden = hidden;
+        self.empty_tree_scroll = scrolls;
     }
 
     /// Called while painting a terminal: fits its screen to the room it has and tells the
@@ -278,9 +320,8 @@ impl Workbench {
     pub(crate) fn input_focus(&mut self, pane_id: &str, cx: &mut Context<Self>) -> FocusHandle {
         let is_agent = self
             .state
-            .panes()
-            .iter()
-            .any(|pane| pane.pane_id == pane_id && pane.mode == PaneMode::Agent);
+            .pane(pane_id)
+            .is_some_and(|pane| pane.mode == PaneMode::Agent);
         if !is_agent {
             return self.focus.clone();
         }
@@ -364,7 +405,7 @@ impl Workbench {
         }
     }
 
-    fn announce_focus(&mut self) {
+    pub(crate) fn announce_focus(&mut self) {
         if let Some(pane_id) = self.state.focused_pane().map(|pane| pane.pane_id.clone()) {
             self.send(Command::Focus { pane_id });
         }
@@ -400,9 +441,7 @@ impl Workbench {
     ) {
         let harness = self
             .state
-            .panes()
-            .iter()
-            .find(|pane| pane.pane_id == pane_id)
+            .pane(pane_id)
             .and_then(|pane| pane.agent.as_ref().map(|agent| agent.harness.clone()));
         let ticket = self.next_ticket();
         if let Some(workspace_id) = self.state.expect_split(ticket, pane_id, axis) {
@@ -574,6 +613,12 @@ impl Workbench {
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
+        if let Some(pane_id) = self.focused_editor() {
+            if let Some(text) = item.text() {
+                self.editor_paste(&pane_id, &text, cx);
+            }
+            return;
+        }
         if let Some(pane) = self.state.focused_pane()
             && pane.mode == PaneMode::Agent
         {
@@ -614,6 +659,13 @@ impl Workbench {
         {
             cx.notify();
             cx.stop_propagation();
+            return;
+        }
+        // An editor takes its keys, the platform key among them: on the Mac that is its shortcut key.
+        if let Some(pane_id) = self.focused_editor() {
+            if self.editor_key(&pane_id, event, cx) {
+                cx.stop_propagation();
+            }
             return;
         }
         // The platform key belongs to application shortcuts, never to the terminal.

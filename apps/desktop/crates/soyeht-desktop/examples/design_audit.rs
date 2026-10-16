@@ -3,8 +3,9 @@
 //! `cargo run --features dev-tools --example design_audit -- <fixture.json> [theme] [--workspace id] [--open menu] [--size WxH]`
 //! where `theme` is the end of a theme name without example (`milk`, `deepharbor`, ...) and
 //! `menu` is `new-pane`, `overflow`, `settings` or `settings:<panel>`, `harness:<pane>`,
-//! `loop:<pane>` or `config:<pane>:<option>`, or the tasks surface: `tasks`, `tasks:list`,
-//! `task:<id>` or `new-task`.
+//! `loop:<pane>` or `config:<pane>:<option>`, the tasks surface: `tasks`, `tasks:list`,
+//! `task:<id>` or `new-task`, or a place of the rail: `editor`, `terminal`, `agents`.
+//! The editor scene is the workspace `ws-editor`: `--workspace ws-editor --open editor`.
 //! `examples/design_audit.json` is the fixture the comparisons use.
 
 use serde_json::{Value, json};

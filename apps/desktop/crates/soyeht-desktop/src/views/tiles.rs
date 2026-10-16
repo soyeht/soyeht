@@ -1,17 +1,14 @@
 //! The panes of a workspace laid out as its split tree says: a branch is a row or a column of
 //! children that share the room by weight, a leaf is a pane card.
 
-use super::ui::{chrome_text, column, icon};
+use super::ui::empty_state;
 use crate::{
     assets::Icon,
     neo,
-    theme::{Palette, desktop, pane_layout, space, type_scale},
+    theme::{Palette, pane_layout},
     workbench::Workbench,
 };
-use gpui::{
-    AnyElement, Context, FontWeight, IntoElement, ParentElement, SharedString, Styled, div, point,
-    px, rgb,
-};
+use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, point, px};
 use soyeht_client::{
     layout::{Sizing, minimum_width, pane_span, reveal_offset},
     transcript_rows,
@@ -73,6 +70,9 @@ impl Workbench {
             .state
             .layout(&workspace_id, |pane| place.shows(&pane.mode))
         else {
+            if place == crate::destination::Destination::Editor {
+                return self.editor_empty(cx, palette, &workspace_id);
+            }
             let message = if self.state.panes_of(&workspace_id).next().is_none() {
                 "This workspace has no panes yet. Use + to open one."
             } else {
@@ -140,12 +140,7 @@ impl Workbench {
     ) -> AnyElement {
         match node {
             Node::V0(leaf) => {
-                let pane: Option<Pane> = self
-                    .state
-                    .panes()
-                    .iter()
-                    .find(|pane| pane.pane_id == leaf.pane_id)
-                    .cloned();
+                let pane: Option<Pane> = self.state.pane(&leaf.pane_id).cloned();
                 match pane {
                     Some(pane) => {
                         let is_focused = focused == Some(pane.pane_id.as_str());
@@ -186,17 +181,5 @@ impl Workbench {
 /// What stands where the panes would be, as the Mac's empty workspace draws it: the icon of the
 /// place when it has one, large and light, over a heading of the window's chrome face.
 fn empty(palette: &Palette, glyph: Option<Icon>, message: &str) -> AnyElement {
-    column()
-        .flex_1()
-        .items_center()
-        .justify_center()
-        .gap(px(space::X18))
-        .px(px(space::X18))
-        .children(glyph.map(|glyph| icon(glyph, desktop::EMPTY_STATE_GLYPH, palette.secondary)))
-        .child(
-            chrome_text(FontWeight::BOLD, type_scale::HEADING)
-                .text_color(rgb(palette.ink))
-                .child(SharedString::from(message.to_owned())),
-        )
-        .into_any_element()
+    empty_state(palette, glyph, message.to_owned(), None).into_any_element()
 }

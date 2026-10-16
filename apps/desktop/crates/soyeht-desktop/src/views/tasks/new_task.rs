@@ -9,7 +9,7 @@ use crate::{
     views::{
         menus,
         prelude::*,
-        ui::{option_pill, switch},
+        ui::{caption, option_pill, switch},
     },
 };
 use gpui::Entity;
@@ -393,12 +393,7 @@ fn sheet_header(palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyEl
             column()
                 .gap(px(space::X3))
                 .child(chrome_text(FontWeight::BOLD, type_scale::SUBHEADING).child(TITLE))
-                .child(
-                    div()
-                        .text_size(px(type_scale::CAPTION))
-                        .text_color(rgb(palette.secondary))
-                        .child(SUBTITLE),
-                ),
+                .child(caption(palette).child(SUBTITLE)),
         )
         .child(spacer())
         .child(

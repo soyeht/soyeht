@@ -3,33 +3,58 @@ import SoyehtProtocol
 
 public enum EditorViewportPaging {
   public static let pageLines = UInt32(ProtocolLimits.editorViewportLines)
-  public static let prefetchLines: UInt32 = 160
+  public static let prefetchLines = UInt32(ClientPolicy.editorPrefetchLines)
 
+  /// The first line of the page to read, or nil while the loaded page holds the view with room
+  /// to spare, or when no other page would hold more of it. `askedLines` is how many lines were
+  /// asked for when the loaded page was read; nil means as many as it holds.
+  ///
+  /// A page the engine cut short (it stops a page at its byte budget) is as long as a page can be
+  /// there: it is settled when it holds the view, and one that does not is followed by the page
+  /// that starts at the view, after which nothing more is asked.
   public static func requestedStart(
     visibleFrom: UInt32, visibleLines: UInt32, loadedFrom: UInt32, loadedTo: UInt32,
-    totalLines: UInt32
+    totalLines: UInt32, askedLines: UInt32? = nil
   ) -> UInt32? {
-    guard totalLines > loadedTo - loadedFrom else { return nil }
-    let visibleTo = Swift.min(visibleFrom.saturatingAdd(max(visibleLines, 1)), totalLines)
     let loadedCount = loadedTo.saturatingSubtract(loadedFrom)
+    guard totalLines > loadedCount else { return nil }
+    let visibleTo = Swift.min(visibleFrom.saturatingAdd(max(visibleLines, 1)), totalLines)
+    let cut = loadedCount < (askedLines ?? loadedCount)
     let margin = min(prefetchLines, loadedCount / 4)
     let protectedFrom = loadedFrom.saturatingAdd(margin)
     let protectedTo = loadedTo.saturatingSubtract(margin)
-    if loadedCount >= pageLines, visibleFrom >= protectedFrom, visibleTo <= protectedTo {
+    if loadedCount >= pageLines || cut, visibleFrom >= protectedFrom, visibleTo <= protectedTo {
       return nil
     }
-    let lead = pageLines / 4
+    let lead = pageLines / UInt32(ClientPolicy.editorPageLeadDivisor)
     let lastStart = totalLines.saturatingSubtract(pageLines)
     let start = Swift.min(visibleFrom.saturatingSubtract(lead), lastStart)
-    if start == loadedFrom, loadedCount >= pageLines { return nil }
-    return start
+    if cut {
+      if visibleFrom >= loadedFrom, visibleTo <= loadedTo { return nil }
+      let beginsInside = visibleFrom >= loadedFrom && visibleFrom < loadedTo
+      if !beginsInside, start != loadedFrom { return start }
+      return visibleFrom == loadedFrom ? nil : visibleFrom
+    }
+    if start != loadedFrom { return start }
+    // The page that leads the view is the one loaded. A full page is the most there is, and a
+    // short one that was asked for as short is read in full, unless it already ends the file.
+    return loadedCount < pageLines && loadedTo < totalLines ? start : nil
   }
 
   /// The first line to load so `line` is visible: the loaded page when it
   /// already holds the line, otherwise a page with the line a quarter down.
-  public static func landingStart(line: UInt32, loadedFrom: UInt32, loadedTo: UInt32) -> UInt32 {
+  /// `askedLines` is how many lines were asked for when the loaded page was read; a page that
+  /// came back shorter was cut short by the engine, the next may be as short, and the line then
+  /// leads by a quarter of that page, so that the page read holds it. A page that has to be read
+  /// again for it starts at the line itself.
+  public static func landingStart(
+    line: UInt32, loadedFrom: UInt32, loadedTo: UInt32, askedLines: UInt32? = nil
+  ) -> UInt32 {
     if line >= loadedFrom, line < loadedTo { return loadedFrom }
-    return line.saturatingSubtract(pageLines / 4)
+    let loaded = loadedTo.saturatingSubtract(loadedFrom)
+    let lead = pageLines / UInt32(ClientPolicy.editorPageLeadDivisor)
+    let cut = loaded < (askedLines ?? loaded)
+    return line.saturatingSubtract(cut ? Swift.min(lead, loaded / 4) : lead)
   }
 
   /// The UTF-16 offset of `position` in the loaded page text, clamped to the

@@ -54,6 +54,7 @@ NUMERIC_SECTIONS = {
     "usageRing": "UsageRing",
     "paneInterior": "PaneInterior",
     "composer": "Composer",
+    "editor": "Editor",
 }
 # Values only the desktop client has (window frame, popups, glyph sizes). They are Rust-only: the
 # Mac output does not mention them, and it does not change when they do (see `mac_digest`).

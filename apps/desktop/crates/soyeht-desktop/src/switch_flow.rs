@@ -55,9 +55,7 @@ impl Workbench {
     /// The harness a pane runs.
     fn running_harness(&self, pane_id: &str) -> Option<String> {
         self.state
-            .panes()
-            .iter()
-            .find(|pane| pane.pane_id == pane_id)
+            .pane(pane_id)
             .and_then(|pane| pane.agent.as_ref())
             .map(|agent| agent.harness.clone())
     }
@@ -159,9 +157,7 @@ impl Workbench {
         let allowed = can_switch(
             connected,
             self.state
-                .panes()
-                .iter()
-                .find(|pane| pane.pane_id == pane_id)
+                .pane(pane_id)
                 .and_then(|pane| pane.agent.as_ref()),
             self.state
                 .agent(pane_id)

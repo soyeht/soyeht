@@ -1,6 +1,6 @@
-// Generated from contracts/protocol.json (sha256 5c9246216c7089634574b1e4ee21720d759b8abed6a21bfac81bffec76c08a3e). Do not edit.
+// Generated from contracts/protocol.json (sha256 9bb117402f4ec1fb09eae31802dbe473e93d71604bc115885ff580588304f488). Do not edit.
 
-use crate::{ConfigOption, PaneState, UsageProvider};
+use crate::{ConfigOption, HighlightKind, PaneState, UsageProvider};
 
 pub const REQUEST_TIMEOUT_MS: u64 = 12000;
 pub const GREETING_TIMEOUT_MS: u64 = 5000;
@@ -23,6 +23,14 @@ pub const CONTEXT_BAND_DANGER_ABOVE: f64 = 0.9;
 pub const USAGE_RING_LAST_KNOWN_ARC_OPACITY: f64 = 0.45;
 pub const USAGE_RING_UNAVAILABLE_OPACITY: f64 = 0.46;
 pub const USAGE_WINDOW_WEEKLY_KEYWORD: &str = "week";
+pub const EDITOR_PREFETCH_LINES: u32 = 160;
+pub const EDITOR_PAGE_LEAD_DIVISOR: u32 = 4;
+pub const EDITOR_TAB_WIDTH: u32 = 4;
+pub const EDITOR_TAB_HISTORY: u32 = 64;
+pub const EDITOR_SAVE_ATTEMPTS: u32 = 30;
+pub const EDITOR_SAVE_RETRY_MS: u32 = 100;
+pub const EDITOR_INDENT_UNIT: &str = "    ";
+pub const EDITOR_INDENT_OPENERS: &str = "{[(";
 /// Image types that claude-agent-acp and codex-acp forward as model input and that both
 /// providers accept; any other image is linked.
 pub const INLINE_IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -77,6 +85,49 @@ impl PaneState {
             Self::Recovering => StateDot::Secondary,
             Self::Dead => StateDot::Muted,
             Self::Unknown => StateDot::Muted,
+        }
+    }
+}
+
+/// The character an editor types after `opening` to close the pair, when it closes one
+/// (brackets and quotes).
+pub fn editor_closing(opening: &str) -> Option<&'static str> {
+    match opening {
+        "(" => Some(")"),
+        "[" => Some("]"),
+        "{" => Some("}"),
+        "\"" => Some("\""),
+        "'" => Some("'"),
+        _ => None,
+    }
+}
+
+/// The palette role a syntax highlight is colored from; each client resolves the role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HighlightRole {
+    Accent,
+    SyntaxType,
+    Warning,
+    Muted,
+    Success,
+    Ink,
+}
+
+impl HighlightKind {
+    /// The role of the highlight's color.
+    pub fn role(&self) -> HighlightRole {
+        match self {
+            Self::Keyword => HighlightRole::Accent,
+            Self::String => HighlightRole::Success,
+            Self::Comment => HighlightRole::Muted,
+            Self::Number => HighlightRole::Warning,
+            Self::Type => HighlightRole::SyntaxType,
+            Self::Function => HighlightRole::Accent,
+            Self::Property => HighlightRole::Ink,
+            Self::Operator => HighlightRole::Accent,
+            Self::Punctuation => HighlightRole::Ink,
+            Self::Constant => HighlightRole::Warning,
+            Self::Variable => HighlightRole::Ink,
         }
     }
 }

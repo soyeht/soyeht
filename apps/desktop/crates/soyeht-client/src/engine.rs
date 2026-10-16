@@ -4,6 +4,7 @@
 use crate::{
     Error, Result, catalogue,
     commands::{self, Command, INPUT_CHUNK_BYTES},
+    editor,
     event::Event,
     paging, preferences,
     reconnect::Backoff,
@@ -213,7 +214,11 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
                 let released = command.ticket().is_none_or(|ticket| {
                     events.send_blocking(Event::OpenFailed { ticket }).is_ok()
                 });
-                released && report(events, &error)
+                // An editor command that failed leaves the replica waiting for its answer.
+                let told = command
+                    .failure()
+                    .is_none_or(|event| events.send_blocking(event).is_ok());
+                released && told && report(events, &error)
             }
         };
         if !delivered {
@@ -232,6 +237,7 @@ fn report(events: &EventSink, error: &Error) -> bool {
 fn execute(rpc: &Rpc, command: &Command) -> Result<Option<Event>> {
     match command {
         Command::Input { pane_id, bytes } => return send_input(rpc, pane_id, bytes).map(|()| None),
+        Command::Editor(editor) => return editor::commands::run(rpc, editor),
         Command::LoadQueue { pane_id } => return paging::queue(rpc, pane_id).map(Some),
         Command::LoadTasks { workspace_id } => return paging::tasks(rpc, workspace_id).map(Some),
         // A harness whose models cannot be read is told apart from a failed request: the

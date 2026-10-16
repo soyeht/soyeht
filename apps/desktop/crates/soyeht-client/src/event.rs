@@ -1,6 +1,6 @@
 use crate::{
-    catalogue::Catalogue, preferences::Preferences, snapshot::Snapshot, streams::StreamOutput,
-    tasks::TaskUpdate,
+    catalogue::Catalogue, editor::EditorEvent, preferences::Preferences, snapshot::Snapshot,
+    streams::StreamOutput, tasks::TaskUpdate,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -63,4 +63,6 @@ pub enum Event {
     Skills(SkillsListResult),
     /// The settings Preferences shows.
     Preferences(Preferences),
+    /// What the engine told an editor pane.
+    Editor(EditorEvent),
 }

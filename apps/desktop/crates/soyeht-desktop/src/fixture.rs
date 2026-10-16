@@ -8,6 +8,7 @@
 
 use crate::{
     app::{self, Setup, TasksStart},
+    destination::Destination,
     open_menu::Menu,
     prefs::Section,
     tasks_ui::TaskView,
@@ -18,12 +19,15 @@ use soyeht_client::{
     Engine, Event, Snapshot,
     attachments::{Draft, Rejection, Source, Staged, decode_base64},
     catalogue::Catalogue,
+    editor::EditorEvent,
     preferences::Preferences,
     streams::StreamOutput,
     tasks::TaskUpdate,
     timestamp,
 };
-use soyeht_protocol::{EventName, ModelListResult, PromptAttachment};
+use soyeht_protocol::{
+    EditorTabsListResult, EventName, FileReadResult, ModelListResult, PromptAttachment,
+};
 use std::path::PathBuf;
 
 /// A time in a fixture as `now-154`, the moment that long before the window opens, so that a
@@ -62,6 +66,7 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
         loops: list("loops"),
         tasks: list("tasks"),
         attention: list("attention"),
+        files: serde_json::from_value(Value::Array(list("files"))).map_err(describe("files"))?,
         cursor: 1,
     };
     let mut events = vec![Event::Connected(snapshot)];
@@ -109,6 +114,7 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
             pane_id: pane_id.to_owned(),
         }));
     }
+    events.extend(editors(&fixture)?);
     events.push(Event::Usage(
         serde_json::from_value(Value::Array(list("usage"))).map_err(describe("usage"))?,
     ));
@@ -139,6 +145,34 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
             name,
             params: notification["params"].clone(),
         });
+    }
+    Ok(events)
+}
+
+/// What the engine told the editors: the page of each open file, the tabs of each workspace and
+/// the folders of the project trees.
+fn editors(fixture: &Value) -> Result<Vec<Event>, String> {
+    let mut events = Vec::new();
+    if let Some(Value::Object(pages)) = fixture.get("pages") {
+        for page in pages.values() {
+            let page: FileReadResult =
+                serde_json::from_value(page.clone()).map_err(describe("pages"))?;
+            events.push(Event::Editor(EditorEvent::Page(Box::new(page))));
+        }
+    }
+    if let Some(Value::Object(tabs)) = fixture.get("tabs") {
+        for (workspace_id, tabs) in tabs {
+            events.push(Event::Editor(EditorEvent::Tabs(EditorTabsListResult {
+                workspace_id: workspace_id.clone(),
+                tabs: serde_json::from_value(tabs.clone()).map_err(describe("tabs"))?,
+            })));
+        }
+    }
+    if let Some(Value::Array(listings)) = fixture.get("trees") {
+        for listing in listings {
+            let listing = serde_json::from_value(listing.clone()).map_err(describe("trees"))?;
+            events.push(Event::Editor(EditorEvent::Listed(Box::new(listing))));
+        }
     }
     Ok(events)
 }
@@ -244,6 +278,13 @@ fn section(name: &str) -> Option<Section> {
         .find(|section| section.title().eq_ignore_ascii_case(name))
 }
 
+/// The place of the rail a spec names (`editor`, `terminal`), when it names one that draws panes.
+pub fn place(spec: &str) -> Option<Destination> {
+    Destination::ALL
+        .into_iter()
+        .find(|place| place.is_pane_grid() && place.label().eq_ignore_ascii_case(spec))
+}
+
 /// The tasks surface a spec names: `tasks` (the board), `tasks:list`, `task:<id>` (the board with
 /// that task's detail) or `new-task` (the board with the new-task form).
 pub fn tasks_start(spec: &str) -> Option<TasksStart> {
@@ -261,7 +302,8 @@ pub fn tasks_start(spec: &str) -> Option<TasksStart> {
     })
 }
 
-/// Opens the window on `fixture`, in `theme`, with the menu `open` names open (see [`menu`]),
+/// Opens the window on `fixture`, in `theme`, with the menu `open` names open (see [`menu`]) or the
+/// place of the rail it names (see [`place`]),
 /// in a window of `size` points when given, and runs until it closes.
 pub fn run(
     fixture: &Value,
@@ -273,8 +315,11 @@ pub fn run(
     let staged = staged(fixture)?;
     let tasks = open.and_then(tasks_start);
     let panel = open.and_then(panel);
-    let menu = match (open, &tasks) {
-        (Some(spec), None) => Some(menu(spec).ok_or_else(|| format!("no menu is named {spec}"))?),
+    let destination = open.and_then(place);
+    let menu = match (open, &tasks, destination) {
+        (Some(spec), None, None) => {
+            Some(menu(spec).ok_or_else(|| format!("no menu is named {spec}"))?)
+        }
         _ => None,
     };
     app::launch(move || {
@@ -298,6 +343,7 @@ pub fn run(
             size,
             staged,
             tasks,
+            destination,
         }
     });
     Ok(())

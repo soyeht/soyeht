@@ -13,7 +13,10 @@ use crate::{
     neo,
     tasks_ui::TaskView,
     theme::{Palette, desktop, elevation, pane_layout, radius, space, type_scale},
-    views::{prelude::*, ui::option_pill},
+    views::{
+        prelude::*,
+        ui::{empty_state, mono_label, option_pill},
+    },
 };
 use soyeht_client::{Connection, tasks};
 use soyeht_protocol::Task;
@@ -135,13 +138,7 @@ impl Workbench {
                 desktop::HEADER_ACTION_GLYPH,
                 palette.secondary,
             ))
-            .child(
-                div()
-                    .mono()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::SMALL))
-                    .child(SharedString::from(format!("tasks \u{b7} {name}"))),
-            )
+            .child(mono_label().child(SharedString::from(format!("tasks \u{b7} {name}"))))
             .child(spacer())
             .child(
                 div()
@@ -294,25 +291,15 @@ impl Workbench {
         connected: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        column()
-            .flex_1()
-            .items_center()
-            .justify_center()
-            .gap(px(space::X14))
-            .child(icon(
-                Icon::ListChecks,
-                desktop::EMPTY_STATE_GLYPH,
-                palette.secondary,
-            ))
-            .child(chrome_text(FontWeight::BOLD, type_scale::HEADING).child(tasks::EMPTY_TITLE))
-            .child(
-                div()
-                    .text_size(px(type_scale::CAPTION))
-                    .text_color(rgb(palette.secondary))
-                    .child(tasks::EMPTY_DETAIL),
-            )
-            .child(self.new_task_button(connected, palette, cx))
-            .into_any_element()
+        empty_state(
+            palette,
+            Some(Icon::ListChecks),
+            tasks::EMPTY_TITLE,
+            Some(tasks::EMPTY_DETAIL.into()),
+        )
+        .gap(px(space::X14))
+        .child(self.new_task_button(connected, palette, cx))
+        .into_any_element()
     }
 
     /// Who needs the person, each with a way to the pane.

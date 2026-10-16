@@ -15,7 +15,7 @@ struct EditorStatusBar: View {
     HStack(spacing: MacTheme.Space.x14) {
       Text(language).font(MacTheme.ui(MacTheme.TypeScale.small)).help(languageHelp)
       Text("UTF-8").font(MacTheme.ui(MacTheme.TypeScale.small))
-      Text("LF").font(MacTheme.ui(MacTheme.TypeScale.small))
+      Text(lineEnding).font(MacTheme.ui(MacTheme.TypeScale.small))
       if vimEnabled {
         Text(vimCommandLine ?? "-- \(vimMode.rawValue.uppercased()) --")
           .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
@@ -45,6 +45,15 @@ struct EditorStatusBar: View {
     .foregroundStyle(MacTheme.secondary)
     .padding(.horizontal, MacTheme.Space.x12)
     .frame(height: PaneLayoutContentMetrics.editorStatusHeight).background(MacTheme.canvas)
+  }
+
+  /// The line break of the line the caret is on, from the lines of the page.
+  private var lineEnding: String {
+    guard let viewport = view.viewport else { return "LF" }
+    let caret = selectedPosition?.line ?? viewport.fromLine
+    let line = Int(caret > viewport.fromLine ? caret - viewport.fromLine : 0)
+    let ending = EditorEditing.lineEnding(lines: viewport.lines.map(\.text), line: line)
+    return ending == "\r\n" ? "CRLF" : "LF"
   }
 
   private var language: String {

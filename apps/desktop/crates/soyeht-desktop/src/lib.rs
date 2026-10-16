@@ -11,6 +11,9 @@ mod attach;
 mod composer_field;
 mod destination;
 mod draft;
+mod editor_input;
+mod editor_ui;
+mod editor_view;
 #[cfg(feature = "dev-tools")]
 mod fixture;
 mod fonts;

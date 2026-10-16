@@ -1,10 +1,11 @@
 //! A pane: the raised card, its header, and the body of its kind. The card is the only raised
 //! surface; the header and everything under it are flat.
 
-use super::ui::{OwnPress, Typeface, column, hint, icon, id, row, rule};
+use super::ui::{
+    OwnPress, Typeface, column, header_bar, hint, icon, id, pane_card_shell, row, rule,
+};
 use crate::{
     assets::Icon,
-    neo,
     open_menu::Menu,
     terminal_view,
     theme::{Palette, desktop, pane_interior, pane_layout, radius, space, type_scale},
@@ -90,24 +91,32 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let pane_id = pane.pane_id.clone();
-        let body = match pane.mode {
-            PaneMode::Terminal => self.terminal_body(pane, focused, palette, cx),
-            PaneMode::Agent => self.agent_body(pane, palette, cx),
-            _ => notice_body(palette, mode_notice(&pane.mode)),
+        // An editor has a header of its own: the file's path, not the pane's name and state.
+        let (header, body) = match pane.mode {
+            PaneMode::Editor => (
+                self.editor_header(cx, pane, palette),
+                self.editor_body(cx, palette, pane, focused),
+            ),
+            PaneMode::Terminal => (
+                self.pane_header(pane, palette, cx),
+                self.terminal_body(pane, focused, palette, cx),
+            ),
+            PaneMode::Agent => (
+                self.pane_header(pane, palette, cx),
+                self.agent_body(pane, palette, cx),
+            ),
+            _ => (
+                self.pane_header(pane, palette, cx),
+                notice_body(palette, mode_notice(&pane.mode)),
+            ),
         };
-        neo::pane_shell(palette)
+        pane_card_shell(palette)
             .id(id("pane", &pane.pane_id))
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .flex()
-            .flex_col()
-            .p(px(pane_layout::PANE_CARD_INSET))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _, window, cx| this.focus_pane(&pane_id, window, cx)),
             )
-            .child(self.pane_header(pane, palette, cx))
+            .child(header)
             .child(rule(palette.well, desktop::HAIRLINE))
             .child(body)
             .into_any_element()
@@ -138,11 +147,7 @@ impl Workbench {
             .into_iter()
             .map(|action| self.header_button(pane, action, palette, cx))
             .collect();
-        row()
-            .h(px(pane_layout::HEADER_HEIGHT))
-            .flex_none()
-            .px(px(space::X12))
-            .gap(px(space::X7))
+        header_bar(pane_layout::HEADER_HEIGHT)
             .font_weight(FontWeight::MEDIUM)
             .text_size(px(type_scale::CONTROL))
             .text_color(rgb(palette.secondary))
@@ -369,10 +374,9 @@ fn notice_body(palette: &Palette, message: &str) -> AnyElement {
 
 fn mode_notice(mode: &PaneMode) -> &'static str {
     match mode {
-        PaneMode::Editor => "Editor panes are not available in the desktop client yet.",
         PaneMode::Web => "Web panes are not available in the desktop client yet.",
         PaneMode::Writing => "Writing panes are not available in the desktop client yet.",
-        PaneMode::Terminal | PaneMode::Agent => "",
+        PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor => "",
     }
 }
 

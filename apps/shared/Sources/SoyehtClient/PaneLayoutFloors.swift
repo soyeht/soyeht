@@ -75,21 +75,21 @@ public enum PaneLayoutContentMetrics {
   public static let terminalFontPointSize = Double(DesignTokens.PaneLayout.terminalFontSize)
   public static let terminalStateVerticalInset = 7.0
 
-  public static let editorFontPointSize = 11.5
-  public static let editorLineHeight = 19.0
-  public static let editorGutterWidth = 44.0
-  public static let editorTextInset = 10.0
-  public static let editorHeaderHeight = 27.0
-  public static let editorTabHeight = 26.0
-  public static let editorViewportVerticalInset = 20.0
+  public static let editorFontPointSize = Double(DesignTokens.Editor.fontPointSize)
+  public static let editorLineHeight = Double(DesignTokens.Editor.lineHeight)
+  public static let editorGutterWidth = Double(DesignTokens.Editor.gutterWidth)
+  public static let editorTextInset = Double(DesignTokens.Editor.textInset)
+  public static let editorHeaderHeight = Double(DesignTokens.Editor.headerHeight)
+  public static let editorTabHeight = Double(DesignTokens.Editor.tabHeight)
+  public static let editorViewportVerticalInset = Double(DesignTokens.Editor.viewportVerticalInset)
   public static let editorReviewHeight = 42.0
-  public static let editorStatusHeight = 24.0
-  public static let editorFindFieldHeight = 24.0
+  public static let editorStatusHeight = Double(DesignTokens.Editor.statusHeight)
+  public static let editorFindFieldHeight = Double(DesignTokens.Editor.findFieldHeight)
   /// Lines the replace field up under the find field, past the disclosure.
   public static let editorFindIndent = editorFindFieldHeight + 6.0
   /// The project panel beside the code; part of the editor's full minimum width. A narrow
   /// layout folds it away and lays the editor out at its compact floor.
-  public static let editorProjectPanelWidth = 212.0
+  public static let editorProjectPanelWidth = Double(DesignTokens.Editor.projectPanelWidth)
 
   public static let agentTaskHeight = 34.0
   public static let agentBodyTopInset = 4.0

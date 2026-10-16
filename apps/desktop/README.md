@@ -86,11 +86,29 @@ agent works.
 - The rail's Tasks surface shows the workspace's board and list, a task's detail with its
   subitems, attempts and timeline, the "new task" sheet with create and dispatch, and the
   attention popover for what needs the person.
-- Editor, web and writing panes and dictation are listed with a notice.
+- The Editor place shows the Mac's editor pane: a tab strip (the engine's order, a preview tab
+  in italics until its file is edited, a dot for unsaved edits, a close button on hover), the
+  project panel (a lazy tree that respects `.gitignore`, opens a file on a click and keeps its tab
+  on a double click, answers the arrow keys, Return and Space), the lines with a gutter and the
+  engine's syntax colors, the caret and selection (mouse, double and triple click, shift and word
+  motions, Home, End, Page Up and Down), typing with auto-closing brackets and auto-indent,
+  copy, cut and paste, the engine's undo and redo (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y; Command on the
+  Mac), save (Ctrl+S: waits for the engine to save the draft), in-file find (Ctrl+F, Ctrl+G,
+  Escape) with case, whole word and regex toggles, and a status bar that names the file's line
+  ending. A character is a grapheme cluster (a flag, a family, a letter with its accents, a Hangul
+  syllable) and takes the cells a terminal gives it (two for a wide character); a `\r\n` line break
+  is not text, and new lines of a CRLF file break the same way. Only the lines in view are
+  drawn and the replica holds one page of at most `editorViewportLines` lines, read ahead by the
+  rules of `contracts/vectors/editor.json`, which the Mac passes too. Left out: replace, multi
+  cursor, soft wrap, Vim mode, the command palette and file name search, go to definition and
+  references, diagnostics, the git gutter and diff, blame, the agent's review and cursor, file
+  history and the conflict comparison (a conflict is shown on a banner), Markdown preview, tab
+  drag and drop, creating, renaming and deleting entries of the project panel, and input method
+  composition (typed text is the key's own text).
+- Web and writing panes and dictation are listed with a notice.
 - Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
   General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone
-  and Tasks and loops (placeholders on the Mac too), Shortcuts (Vim mode: there is no editor pane
-  here), Links (there is no web pane) and Dictation. Of the Harnesses panel, adding, editing and
+  and Tasks and loops (placeholders on the Mac too), Shortcuts (Vim mode: the editor has none), Links (there is no web pane) and Dictation. Of the Harnesses panel, adding, editing and
   removing a custom harness (the engine has `harness.custom.*`; the form is its own piece of work)
   and the raw terminal row (a static display on the Mac) are not done.
 

@@ -6,8 +6,9 @@ use crate::{
     theme::{
         Palette, desktop,
         elevation::{self, Elevation},
-        fonts, layout, pane_interior, radius, space, type_scale,
+        fonts, layout, pane_interior, pane_layout, radius, space, type_scale,
     },
+    workbench::Workbench,
 };
 use gpui::{
     AnyElement, AnyView, App, AppContext, Context, Div, ElementId, FontWeight, Hsla,
@@ -238,6 +239,122 @@ pub fn switch(on: bool, palette: &Palette) -> Div {
                 .rounded_full()
                 .bg(rgb(palette.on_accent)),
         )
+}
+
+/// A listener for an element of something that has an id (a pane, a workspace): it is told the
+/// id, the event and the window besides the workbench.
+pub fn owned<E: 'static>(
+    cx: &mut Context<Workbench>,
+    owner: &str,
+    act: impl Fn(&mut Workbench, &str, &E, &mut Window, &mut Context<Workbench>) + 'static,
+) -> impl Fn(&E, &mut Window, &mut App) + 'static {
+    let owner = owner.to_owned();
+    cx.listener(move |this, event, window, cx| act(this, &owner, event, window, cx))
+}
+
+/// As [`owned`], for a handler that wants neither the event nor the window.
+pub fn acting<E: 'static>(
+    cx: &mut Context<Workbench>,
+    owner: &str,
+    act: fn(&mut Workbench, &str, &mut Context<Workbench>),
+) -> impl Fn(&E, &mut Window, &mut App) + 'static {
+    owned(cx, owner, move |this, owner, _: &E, _, cx| {
+        act(this, owner, cx)
+    })
+}
+
+/// A small button that is only an icon, with a tooltip; what a click does is the caller's.
+pub fn icon_button(
+    key: impl Into<ElementId>,
+    glyph: Icon,
+    color: u32,
+    tip: impl Into<SharedString>,
+    palette: &'static Palette,
+) -> gpui::Stateful<Div> {
+    row()
+        .id(key)
+        .flex_none()
+        .cursor_pointer()
+        .own_press()
+        .tooltip(hint(tip, palette))
+        .child(icon(glyph, desktop::INLINE_GLYPH, color))
+}
+
+/// A line of caption text in the secondary ink.
+pub fn caption(palette: &Palette) -> Div {
+    div()
+        .text_size(px(type_scale::CAPTION))
+        .text_color(rgb(palette.secondary))
+}
+
+/// What stands where a place would be when it has nothing to show: its icon, large and light,
+/// over a heading of the window's chrome face, and `detail` under it. The caller may add more.
+pub fn empty_state(
+    palette: &Palette,
+    glyph: Option<Icon>,
+    heading: impl Into<SharedString>,
+    detail: Option<SharedString>,
+) -> Div {
+    column()
+        .flex_1()
+        .items_center()
+        .justify_center()
+        .gap(px(space::X18))
+        .px(px(space::X18))
+        .children(glyph.map(|glyph| icon(glyph, desktop::EMPTY_STATE_GLYPH, palette.secondary)))
+        .child(
+            chrome_text(FontWeight::BOLD, type_scale::HEADING)
+                .text_color(rgb(palette.ink))
+                .child(heading.into()),
+        )
+        .children(detail.map(|detail| caption(palette).child(detail)))
+}
+
+/// The card of a pane: the raised shell that holds its header and its body.
+pub fn pane_card_shell(palette: &Palette) -> Div {
+    neo::pane_shell(palette)
+        .flex_1()
+        .min_w_0()
+        .min_h_0()
+        .flex()
+        .flex_col()
+        .p(px(pane_layout::PANE_CARD_INSET))
+}
+
+/// The bar at the top of a pane card, `height` tall, for its title and buttons.
+pub fn header_bar(height: f32) -> Div {
+    row()
+        .h(px(height))
+        .flex_none()
+        .px(px(space::X12))
+        .gap(px(space::X7))
+}
+
+/// A band of controls on the canvas, as the find bar of the editor is.
+pub fn control_band(palette: &Palette) -> Div {
+    row()
+        .flex_none()
+        .bg(rgb(palette.canvas))
+        .px(px(space::X10))
+        .py(px(space::X6))
+        .gap(px(space::X6))
+}
+
+/// Small mono type in bold: a path, the name of a place, a toggle.
+pub fn mono_label() -> Div {
+    div()
+        .mono()
+        .font_weight(FontWeight::BOLD)
+        .text_size(px(type_scale::SMALL))
+}
+
+/// A small capitalised heading over a list: FILES.
+pub fn section_label(palette: &Palette, text: &'static str) -> Div {
+    div()
+        .text_color(rgb(palette.secondary))
+        .text_size(px(type_scale::MICRO))
+        .font_weight(FontWeight::BOLD)
+        .child(text)
 }
 
 /// A stable element id from a kind and the thing it belongs to.

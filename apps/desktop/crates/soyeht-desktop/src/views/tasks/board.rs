@@ -185,9 +185,7 @@ impl Workbench {
         let owner = task.owner_pane_id.as_ref()?;
         Some(
             self.state
-                .panes()
-                .iter()
-                .find(|pane| &pane.pane_id == owner)
+                .pane(owner)
                 .map_or_else(|| owner.clone(), |pane| pane.name.clone()),
         )
     }

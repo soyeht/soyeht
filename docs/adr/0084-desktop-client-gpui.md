@@ -166,8 +166,8 @@ half of the screen on GNOME or KDE can still be minimized and maximized.
   request.
 - Scope of the first version: workspaces, panes, live terminal panes with
   typing, paste, scrollback and resize. Agent panes (transcript, composer and its
-  pickers, harness switch) came with the Mac parity work; editor, web and writing
-  panes show a notice. Text selection and copy, IME composition, the Mac's harness
+  pickers, harness switch) and the editor pane (see `apps/desktop/README.md`) came with the Mac parity work; web and
+  writing panes show a notice. Text selection and copy, IME composition, the Mac's harness
   switch sheet (explanation, model and effort before switching) and account section,
   and workspace creation are later.
 - `input chunk size` (16 KiB per `pane.input`) is a Mac client convention, not a

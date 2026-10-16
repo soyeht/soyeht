@@ -23,6 +23,21 @@ pub fn pane(id: &str, workspace: &str, mode: &str) -> Pane {
     serde_json::from_value(pane_json(id, workspace, mode)).unwrap()
 }
 
+/// The listing of the folder `path`, as `project.tree.list` answers: each entry is a name and
+/// whether it is a folder.
+pub fn listing(path: &str, entries: &[(&str, bool)]) -> soyeht_protocol::ProjectTreeListResult {
+    serde_json::from_value(json!({
+        "workspaceId": "w", "path": path, "truncated": false,
+        "entries": entries.iter().map(|(name, folder)| json!({
+            "name": name,
+            "path": if path.is_empty() { (*name).to_owned() } else { format!("{path}/{name}") },
+            "kind": if *folder { "directory" } else { "file" },
+            "ignored": false
+        })).collect::<Vec<_>>()
+    }))
+    .unwrap()
+}
+
 /// A file of `contracts/vectors`: the cases the Mac client and this one both pass.
 pub fn vector(name: &str) -> Value {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

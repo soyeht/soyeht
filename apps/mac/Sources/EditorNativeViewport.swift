@@ -307,7 +307,8 @@ struct EditorNativeViewport: NSViewRepresentable {
         let start = EditorViewportPaging.requestedStart(
           visibleFrom: visibleFrom, visibleLines: visibleLines,
           loadedFrom: viewport.fromLine, loadedTo: viewport.toLine,
-          totalLines: viewport.file.lineCount)
+          totalLines: viewport.file.lineCount,
+          askedLines: parent.view.viewportRequestedLines)
       else { return }
       requestedViewportStart = start
       let fileId = viewport.file.fileId
@@ -534,13 +535,13 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
 
     private func highlightColor(_ kind: HighlightKind) -> NSColor {
-      switch kind {
-      case .keyword, .function, .operator: NSColor(MacTheme.accent)
-      case .type: NSColor(MacTheme.syntaxType)
-      case .number, .constant: NSColor(MacTheme.warning)
-      case .comment: NSColor(MacTheme.muted)
-      case .string: NSColor(MacTheme.success)
-      case .property, .punctuation, .variable: NSColor(MacTheme.ink)
+      switch kind.role {
+      case .accent: NSColor(MacTheme.accent)
+      case .syntaxType: NSColor(MacTheme.syntaxType)
+      case .warning: NSColor(MacTheme.warning)
+      case .muted: NSColor(MacTheme.muted)
+      case .success: NSColor(MacTheme.success)
+      case .ink: NSColor(MacTheme.ink)
       }
     }
 

@@ -17,6 +17,8 @@ vt100.workspace = true
 async-channel.workspace = true
 image.workspace = true
 pulldown-cmark.workspace = true
+unicode-segmentation.workspace = true
+unicode-width.workspace = true
 
 [lints]
 workspace = true

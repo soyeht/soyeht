@@ -1,3 +1,5 @@
+import SoyehtProtocol
+
 /// Soft wrap for the paged code view, shared by the Mac and the iPad.
 ///
 /// The view holds one page of logical lines (`EditorViewportPaging`). With soft wrap a page line
@@ -13,7 +15,7 @@
 /// Building a layout walks the page text once. Typing rebuilds it for the page only, never for
 /// the whole file.
 public struct EditorWrapLayout: Equatable, Sendable {
-  public static let tabWidth = 4
+  public static let tabWidth = ClientPolicy.editorTabWidth
 
   /// Cells per row, or nil when lines do not wrap.
   public let columns: Int?

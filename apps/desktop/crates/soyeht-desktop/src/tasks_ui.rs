@@ -62,9 +62,7 @@ pub(crate) struct TasksUi {
 impl Workbench {
     /// The workspace the tasks surface shows: the selected one.
     pub(crate) fn tasks_workspace(&self) -> Option<String> {
-        self.state
-            .selected_workspace()
-            .map(|workspace| workspace.workspace_id.clone())
+        self.state.selected_workspace_id()
     }
 
     /// Opens the tasks surface for the selected workspace and reads its tasks again.

@@ -3,8 +3,8 @@
 //! without a window or a connection.
 
 use crate::{
-    agent::AgentView, catalogue::Catalogue, event::Event, preferences::Preferences,
-    screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput,
+    Command, agent::AgentView, catalogue::Catalogue, editor::Editors, event::Event,
+    preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -50,6 +50,8 @@ pub enum Effect {
         workspace_id: String,
         layout: WorkspacePaneLayoutEnvelope,
     },
+    /// Send this command to the engine.
+    Send(Command),
 }
 
 /// A pane the person asked to open, until it arrives: named by the ticket of the request, so a
@@ -97,6 +99,8 @@ pub struct State {
     pub(crate) catalogue_failures: HashMap<String, String>,
     pub(crate) preferences: Preferences,
     pub(crate) skills: Option<SkillsListResult>,
+    /// The files open in editor panes, the tabs and the project trees.
+    pub editors: Editors,
     pub(crate) expected: Vec<Expected>,
     /// Panes closed since the last snapshot. The engine may still announce one more update
     /// about a pane as it closes; it must not bring the pane back.
@@ -127,6 +131,7 @@ impl Default for State {
             catalogue_failures: HashMap::new(),
             preferences: Preferences::default(),
             skills: None,
+            editors: Editors::default(),
             expected: Vec::new(),
             closed: HashSet::new(),
         }
@@ -161,9 +166,18 @@ impl State {
             .find(|workspace| workspace.workspace_id == id)
     }
 
+    pub fn pane(&self, pane_id: &str) -> Option<&Pane> {
+        self.panes.iter().find(|pane| pane.pane_id == pane_id)
+    }
+
     pub fn focused_pane(&self) -> Option<&Pane> {
-        let id = self.focused_pane.as_deref()?;
-        self.panes.iter().find(|pane| pane.pane_id == id)
+        self.pane(self.focused_pane.as_deref()?)
+    }
+
+    /// The id of the selected workspace.
+    pub fn selected_workspace_id(&self) -> Option<String> {
+        self.selected_workspace()
+            .map(|workspace| workspace.workspace_id.clone())
     }
 
     pub fn screen(&self, pane_id: &str) -> Option<&TerminalScreen> {
@@ -211,6 +225,7 @@ impl State {
         if let Some(pane) = self.panes.iter().find(|pane| pane.pane_id == pane_id) {
             self.selected_workspace = Some(pane.workspace_id.clone());
             self.focused_pane = Some(pane_id.to_owned());
+            self.editors.activated(pane);
         }
     }
 
@@ -319,6 +334,7 @@ impl State {
                 self.preferences = preferences;
                 Vec::new()
             }
+            Event::Editor(event) => self.editor_event(event),
         }
     }
 
@@ -346,6 +362,7 @@ impl State {
         effects.extend(self.adopt_agents(&snapshot.requests));
         self.adopt_loops(&snapshot.loops);
         self.adopt_tasks(&snapshot.tasks, &snapshot.attention);
+        effects.extend(self.editors.adopt(snapshot.files, &self.panes));
         let focus = snapshot.focus;
         let keep =
             |id: &Option<String>, exists: &dyn Fn(&str) -> bool| id.clone().filter(|id| exists(id));
@@ -441,12 +458,14 @@ impl State {
                 self.change_pane_state(serde_json::from_value(params)?);
                 Vec::new()
             }
+            _ if Self::handles_editor_event(&name) => self.editor_notification(&name, params)?,
             _ => self.agent_notification(name, params)?,
         })
     }
 
     fn close_workspace(&mut self, workspace_id: &str) {
         self.workspaces.retain(|w| w.workspace_id != workspace_id);
+        self.editors.workspace_closed(workspace_id);
         if self.selected_workspace.as_deref() == Some(workspace_id) {
             self.selected_workspace = self.workspaces.first().map(|w| w.workspace_id.clone());
             self.focused_pane = None;
@@ -489,6 +508,7 @@ impl State {
         let arrived = !self.panes.iter().any(|known| known.pane_id == pane_id);
         if arrived {
             self.wait_for_answer(&pane);
+            effects.extend(self.editors.pane_arrived(&pane));
         }
         if pane.mode == PaneMode::Agent && !self.agents.contains_key(&pane.pane_id) {
             self.agents
@@ -523,6 +543,7 @@ impl State {
         self.panes.retain(|pane| pane.pane_id != pane_id);
         self.screens.remove(pane_id);
         self.agents.remove(pane_id);
+        self.editors.pane_closed(pane_id);
         self.gaps.remove(pane_id);
         if self.focused_pane.as_deref() == Some(pane_id) {
             self.focused_pane = None;
@@ -560,5 +581,6 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
     TerminalScreen::new(rows, cols)
 }
 
+mod editor;
 #[cfg(test)]
 mod tests;

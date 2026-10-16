@@ -236,7 +236,7 @@ fn search_field(
 }
 
 /// A line set into the well, as the Mac's search and model fields are.
-fn well_row(palette: &Palette) -> Div {
+pub(super) fn well_row(palette: &Palette) -> Div {
     row()
         .px(px(space::X10))
         .rounded(px(radius::COMPACT))

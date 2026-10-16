@@ -8,8 +8,8 @@
 mod generated;
 
 pub use generated::{
-    ThemeName, composer, desktop, elevation, fonts, glyph, layout, pane_interior, pane_layout,
-    pane_shell, radius, space, type_scale, usage_ring,
+    ThemeName, composer, desktop, editor, elevation, fonts, glyph, layout, pane_interior,
+    pane_layout, pane_shell, radius, space, type_scale, usage_ring,
 };
 
 use soyeht_client::screen::CellColor;

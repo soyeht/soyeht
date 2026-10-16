@@ -42,6 +42,10 @@ PAGE_REQUESTS = {
     "tasks": "TaskListParams",
 }
 INLINE_IMAGE_TYPES = "inlineImageTypes"
+EDITOR_PAIRS = "editorPairs"
+HIGHLIGHT_ROLES = "highlightRoles"
+# The palette roles a syntax highlight can take, which each client resolves.
+SYNTAX_ROLES = ("accent", "syntaxType", "warning", "muted", "success", "ink")
 PANE_STATES = "paneStates"
 STATE_FIELDS = {"turnRunning", "dot"}
 # What a pane state's dot is colored from: a role of the palette, which each client resolves.
@@ -55,6 +59,7 @@ SCALAR_GROUPS = (
     "contextBand",
     "usageRing",
     "usageWindow",
+    "editor",
 )
 
 
@@ -89,6 +94,8 @@ def validate(policy, schema):
         PROVIDER_NAMES,
         CONFIG_ROLES,
         INLINE_IMAGE_TYPES,
+        EDITOR_PAIRS,
+        HIGHLIGHT_ROLES,
         PANE_STATES,
     }
     if set(policy) != expected:
@@ -113,6 +120,13 @@ def validate(policy, schema):
         re.fullmatch(r"image/[a-z0-9.+-]+", kind) for kind in types
     ):
         raise ValueError("inlineImageTypes must list distinct image/* media types")
+    pairs = policy[EDITOR_PAIRS]
+    if not pairs or any(len(k) != 1 or len(v) != 1 for k, v in pairs.items()):
+        raise ValueError("editorPairs maps one opening character to one closing character")
+    if list(policy[HIGHLIGHT_ROLES]) != schema["$defs"]["HighlightKind"]["enum"]:
+        raise ValueError("highlightRoles must name every HighlightKind, in order")
+    if not set(policy[HIGHLIGHT_ROLES].values()) <= set(SYNTAX_ROLES):
+        raise ValueError(f"highlightRoles take roles of {SYNTAX_ROLES}")
     states = schema["$defs"]["PaneState"]["enum"]
     if list(policy[PANE_STATES]) != states:
         raise ValueError("paneStates must name every PaneState, in order")
@@ -148,7 +162,13 @@ def rust_constant(name, value):
         return f"pub const {snake(name).upper()}: &str = {json.dumps(value)};"
     if isinstance(value, float):
         return f"pub const {snake(name).upper()}: f64 = {value!r};"
-    kind = "usize" if name.endswith("Bytes") else "u32" if name.startswith(PAGE_SIZES) else "u64"
+    kind = (
+        "usize"
+        if name.endswith("Bytes")
+        else "u32"
+        if name.startswith((PAGE_SIZES, "editor"))
+        else "u64"
+    )
     return f"pub const {snake(name).upper()}: {kind} = {value};"
 
 
@@ -160,7 +180,7 @@ def role_rule_rust(role, rule):
 
 
 def render_rust(policy, header):
-    lines = [header, "use crate::{ConfigOption, PaneState, UsageProvider};", ""]
+    lines = [header, "use crate::{ConfigOption, HighlightKind, PaneState, UsageProvider};", ""]
     lines += [rust_constant(name, value) for name, value in constants(policy)]
     types = policy[INLINE_IMAGE_TYPES]
     lines += [
@@ -177,6 +197,7 @@ def render_rust(policy, header):
         for provider, name in policy[PROVIDER_NAMES].items()
     )
     lines += render_pane_states_rust(policy[PANE_STATES])
+    lines += render_editor_rust(policy)
     lines += [
         "",
         "impl UsageProvider {",
@@ -206,6 +227,40 @@ def render_rust(policy, header):
     return subprocess.run(
         ["rustfmt", "--edition", "2024"], input=source, text=True, capture_output=True, check=True
     ).stdout
+
+
+def render_editor_rust(policy):
+    pairs = policy[EDITOR_PAIRS]
+    arms = ",\n".join(f"        {json.dumps(k)} => Some({json.dumps(v)})" for k, v in pairs.items())
+    roles = ", ".join(pascal(role) for role in SYNTAX_ROLES)
+    kinds = "\n".join(
+        f"            Self::{pascal(kind)} => HighlightRole::{pascal(role)},"
+        for kind, role in policy[HIGHLIGHT_ROLES].items()
+    )
+    return [
+        "",
+        "/// The character an editor types after `opening` to close the pair, when it closes one",
+        "/// (brackets and quotes).",
+        "pub fn editor_closing(opening: &str) -> Option<&'static str> {",
+        "    match opening {",
+        arms + ",",
+        "        _ => None,",
+        "    }",
+        "}",
+        "",
+        "/// The palette role a syntax highlight is colored from; each client resolves the role.",
+        "#[derive(Debug, Clone, Copy, PartialEq, Eq)]",
+        f"pub enum HighlightRole {{ {roles} }}",
+        "",
+        "impl HighlightKind {",
+        "    /// The role of the highlight's color.",
+        "    pub fn role(&self) -> HighlightRole {",
+        "        match self {",
+        kinds,
+        "        }",
+        "    }",
+        "}",
+    ]
 
 
 def render_pane_states_rust(states):
@@ -288,6 +343,40 @@ def render_pane_states_swift(states):
     )
 
 
+def render_editor_swift(policy):
+    pairs = "\n".join(
+        f"        case {json.dumps(k)}: {json.dumps(v)}" for k, v in policy[EDITOR_PAIRS].items()
+    )
+    roles = ", ".join(SYNTAX_ROLES)
+    kinds = "\n".join(
+        f"        case .{kind}: .{role}" for kind, role in policy[HIGHLIGHT_ROLES].items()
+    )
+    return (
+        "extension ClientPolicy {\n"
+        "    /// The character an editor types after `opening` to close the pair, when it closes one\n"
+        "    /// (brackets and quotes).\n"
+        "    public static func editorClosing(_ opening: String) -> String? {\n"
+        "        switch opening {\n"
+        f"{pairs}\n"
+        "        default: nil\n"
+        "        }\n"
+        "    }\n"
+        "}\n\n"
+        "/// The palette role a syntax highlight is colored from; each client resolves the role.\n"
+        "public enum HighlightRole: String, Sendable, CaseIterable {\n"
+        f"    case {roles}\n"
+        "}\n\n"
+        "extension HighlightKind {\n"
+        "    /// The role of the highlight's color.\n"
+        "    public var role: HighlightRole {\n"
+        "        switch self {\n"
+        f"{kinds}\n"
+        "        }\n"
+        "    }\n"
+        "}"
+    )
+
+
 def role_rule_swift(rule):
     condition = f"(category ?? id) == {json.dumps(rule['category'])}"
     if "legacyId" in rule:
@@ -318,6 +407,7 @@ def render_swift(policy, header):
         f"    public static let inlineImageTypes = [{types}]\n"
         "}\n\n"
         f"{render_pane_states_swift(policy[PANE_STATES])}\n\n"
+        f"{render_editor_swift(policy)}\n\n"
         "extension UsageProvider {\n"
         "    /// The name the clients show for the provider.\n"
         "    public var displayName: String {\n"

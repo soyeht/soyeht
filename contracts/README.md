@@ -36,7 +36,13 @@ generator emits `engine/soyeht-protocol/src/client_policy.rs` (with `PaneState::
 presentation and the selector roles, `vectors/pane-state-presentation.json` the dot, running flag
 and status word of every pane state, `vectors/reconnect.json` the waits between reconnects and
 `vectors/permission-preview.json` the lines a file change shows before it is approved and how many
-lines a text takes; the Mac and the desktop client both pass them.
+lines a text takes, and `vectors/editor.json` when the visible lines need another page of a file,
+which editor tab shows and which takes over, what a keystroke changes and sends, and how the
+project tree answers the keys; the Mac and the desktop client both pass them. The editor's
+constants (`editor`: the read-ahead, the tab width, the bounded tab history, the save wait, the
+indent), the pairs it closes (`editorPairs`) and the palette role of each syntax highlight
+(`highlightRoles`) are generated with the rest, and the editor's metrics (`editor` in
+`design-tokens.json`) are tokens like any other.
 
 `design-tokens.json` is the single source for the design tokens: the nine
 palettes (colors per role, ANSI slots, agent plates), radii, spacing, type scale,

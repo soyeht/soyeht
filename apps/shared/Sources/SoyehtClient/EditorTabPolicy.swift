@@ -57,7 +57,7 @@ public enum EditorTabPolicy {
 
   /// Puts `paneId` first in the activation history, keeping it bounded.
   public static func recorded(_ paneId: String, in history: [String]) -> [String] {
-    Array(([paneId] + history.filter { $0 != paneId }).prefix(64))
+    Array(([paneId] + history.filter { $0 != paneId }).prefix(ClientPolicy.editorTabHistory))
   }
 
   /// Closing a tab saves its draft; only a draft that conflicts with the disk

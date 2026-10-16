@@ -86,6 +86,11 @@ impl State {
         let panes: Vec<&Pane> = self
             .panes_of(workspace_id)
             .filter(|pane| shows(pane) && !waiting.contains(&pane.pane_id.as_str()))
+            .filter(|pane| {
+                // Every editor pane of the workspace shares one slot, which shows the active tab.
+                let selected = self.focused_pane().map(|focused| focused.pane_id.as_str());
+                self.editors.shows(pane, selected, &self.panes)
+            })
             .collect();
         layout::resolve(&workspace.layout, &panes, &self.sizing)
     }
@@ -178,13 +183,8 @@ impl State {
         };
         let expected = self.expected.remove(at);
         let mut effects = vec![Effect::FocusPane(pane_id.to_owned())];
-        let (Some((anchor, axis)), Some(pane)) = (
-            expected.split,
-            self.panes
-                .iter()
-                .find(|pane| pane.pane_id == pane_id)
-                .cloned(),
-        ) else {
+        let (Some((anchor, axis)), Some(pane)) = (expected.split, self.pane(pane_id).cloned())
+        else {
             return effects;
         };
         // The arrangement without the new pane, which the split then places.

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 5c9246216c7089634574b1e4ee21720d759b8abed6a21bfac81bffec76c08a3e). Do not edit.
+// Generated from contracts/protocol.json (sha256 9bb117402f4ec1fb09eae31802dbe473e93d71604bc115885ff580588304f488). Do not edit.
 export const clientPolicy = {
   "timeouts": {
     "requestTimeoutMs": 12000,
@@ -31,6 +31,16 @@ export const clientPolicy = {
   },
   "usageWindow": {
     "weeklyKeyword": "week"
+  },
+  "editor": {
+    "prefetchLines": 160,
+    "pageLeadDivisor": 4,
+    "tabWidth": 4,
+    "tabHistory": 64,
+    "saveAttempts": 30,
+    "saveRetryMs": 100,
+    "indentUnit": "    ",
+    "indentOpeners": "{[("
   },
   "texts": {
     "harnessSwitchTitle": "Switch agent",
@@ -98,5 +108,25 @@ export const clientPolicy = {
       "category": "mode",
       "legacyId": "mode"
     }
+  },
+  "editorPairs": {
+    "(": ")",
+    "[": "]",
+    "{": "}",
+    "\"": "\"",
+    "'": "'"
+  },
+  "highlightRoles": {
+    "keyword": "accent",
+    "string": "success",
+    "comment": "muted",
+    "number": "warning",
+    "type": "syntaxType",
+    "function": "accent",
+    "property": "ink",
+    "operator": "accent",
+    "punctuation": "ink",
+    "constant": "warning",
+    "variable": "ink"
   }
 } as const;

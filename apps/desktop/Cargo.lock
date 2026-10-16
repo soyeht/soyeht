@@ -4942,6 +4942,8 @@ dependencies = [
  "serde_json",
  "soyeht-platform",
  "soyeht-protocol",
+ "unicode-segmentation",
+ "unicode-width",
  "uuid",
  "vt100",
 ]

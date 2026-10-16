@@ -22,15 +22,24 @@ pub struct CellSize {
 
 impl CellSize {
     pub fn measure(cx: &App) -> Self {
+        Self::of(
+            cx,
+            TERMINAL_FONT_SIZE,
+            (TERMINAL_FONT_SIZE * desktop::LINE_HEIGHT_MONO).round(),
+        )
+    }
+
+    /// The cell of the mono face at `font_size` points, on a line `height` points tall.
+    pub fn of(cx: &App, font_size: f32, height: f32) -> Self {
         let text = cx.text_system();
-        let size = px(TERMINAL_FONT_SIZE);
+        let size = px(font_size);
         let id = text.resolve_font(&font(MONO_FAMILY));
         let width = text
             .advance(id, size, 'm')
             .map_or(size * 0.6, |advance| advance.width);
         Self {
             width,
-            height: px((TERMINAL_FONT_SIZE * desktop::LINE_HEIGHT_MONO).round()),
+            height: px(height),
         }
     }
 
@@ -51,6 +60,23 @@ struct Frame {
     cursor: Option<(Cursor, String)>,
 }
 
+/// A canvas that gathers what a frame draws from the app, then draws it. `gather` runs while the
+/// frame is laid out and may change the app; `draw` only paints.
+pub fn frame_canvas<F: 'static>(
+    gather: impl Fn(Bounds<Pixels>, &mut App) -> Option<F> + 'static,
+    draw: impl Fn(&F, Bounds<Pixels>, &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
+    canvas(
+        move |bounds, _window, cx| gather(bounds, cx),
+        move |bounds, frame, window, cx| {
+            if let Some(frame) = frame {
+                draw(&frame, bounds, window, cx);
+            }
+        },
+    )
+    .size_full()
+}
+
 /// A canvas that shows `pane_id`'s screen and keeps the screen fitted to its own size.
 pub fn surface(
     workbench: Entity<Workbench>,
@@ -58,8 +84,8 @@ pub fn surface(
     palette: &'static Palette,
     focused: bool,
 ) -> impl IntoElement {
-    canvas(
-        move |bounds, _window, cx| {
+    frame_canvas(
+        move |bounds, cx| {
             let cell = CellSize::measure(cx);
             let (rows, cols) = cell.grid(bounds);
             workbench.update(cx, |workbench, _| {
@@ -76,13 +102,8 @@ pub fn surface(
                     .map(|cursor| (cursor, screen.text_at(cursor.row, cursor.column))),
             })
         },
-        move |bounds, frame, window, cx| {
-            if let Some(frame) = frame {
-                paint(&frame, bounds, palette, focused, window, cx);
-            }
-        },
+        move |frame, bounds, window, cx| paint(frame, bounds, palette, focused, window, cx),
     )
-    .size_full()
 }
 
 fn paint(
@@ -184,14 +205,47 @@ fn draw_text(
         }),
         strikethrough: None,
     };
-    let shaped = window.text_system().shape_line(
-        text.to_owned().into(),
-        px(TERMINAL_FONT_SIZE),
+    paint_runs(
+        text,
         &[run],
-        Some(cell.width),
+        TERMINAL_FONT_SIZE,
+        at,
+        Layout::Grid(cell),
+        window,
+        cx,
     );
-    // A run that fails to paint leaves its cells blank until the screen next changes.
-    if let Err(error) = shaped.paint(at, cell.height, TextAlign::Left, None, window, cx) {
-        eprintln!("soyeht: could not paint terminal text: {error}");
+}
+
+/// How the characters of a run of text are laid out.
+#[derive(Clone, Copy)]
+pub enum Layout {
+    /// Each character on its own cell.
+    Grid(CellSize),
+    /// Each character as wide as its glyphs, on a line of this height: a wide character, or a
+    /// letter with its accents.
+    Natural(Pixels),
+}
+
+/// Shapes `text` in `runs` of the mono face and paints it from `at`.
+pub fn paint_runs(
+    text: &str,
+    runs: &[TextRun],
+    font_size: f32,
+    at: gpui::Point<Pixels>,
+    layout: Layout,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let (force, height) = match layout {
+        Layout::Grid(cell) => (Some(cell.width), cell.height),
+        Layout::Natural(height) => (None, height),
+    };
+    let shaped =
+        window
+            .text_system()
+            .shape_line(text.to_owned().into(), px(font_size), runs, force);
+    // A run that fails to paint leaves its cells blank until the next frame draws them.
+    if let Err(error) = shaped.paint(at, height, TextAlign::Left, None, window, cx) {
+        eprintln!("soyeht: could not paint text: {error}");
     }
 }

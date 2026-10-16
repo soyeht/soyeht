@@ -240,6 +240,19 @@
      ]
     }
    }
+  },
+  {
+   "workspaceId": "ws-editor",
+   "name": "Soyeht Editor",
+   "path": "/home/dev/soyeht",
+   "layout": {
+    "version": 2,
+    "mode": "custom",
+    "tree": {
+     "paneId": "ed-main",
+     "kind": "editor"
+    }
+   }
   }
  ],
  "panes": [
@@ -1267,6 +1280,36 @@
      }
     ]
    }
+  },
+  {
+   "paneId": "ed-main",
+   "workspaceId": "ws-editor",
+   "name": "main.rs",
+   "cwd": "/home/dev/soyeht",
+   "mode": "editor",
+   "state": "idle",
+   "source": "none",
+   "confidence": 0.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false
+  },
+  {
+   "paneId": "ed-lib",
+   "workspaceId": "ws-editor",
+   "name": "lib.rs",
+   "cwd": "/home/dev/soyeht",
+   "mode": "editor",
+   "state": "idle",
+   "source": "none",
+   "confidence": 0.0,
+   "phrase": "",
+   "generation": 1,
+   "cols": 80,
+   "rows": 24,
+   "record": false
   }
  ],
  "requests": [
@@ -2392,6 +2435,528 @@
   ],
   "userDirectory": "/home/dev/.soyeht/skills"
  },
+ "files": [
+  {
+   "fileId": "f-main",
+   "paneId": "ed-main",
+   "workspaceId": "ws-editor",
+   "path": "src/main.rs",
+   "language": "rust",
+   "revision": "3",
+   "diskRevision": "1",
+   "lineCount": 20,
+   "byteCount": "483",
+   "dirty": true,
+   "conflicted": false,
+   "watching": true
+  },
+  {
+   "fileId": "f-lib",
+   "paneId": "ed-lib",
+   "workspaceId": "ws-editor",
+   "path": "src/lib.rs",
+   "language": "rust",
+   "revision": "1",
+   "diskRevision": "1",
+   "lineCount": 7,
+   "byteCount": "119",
+   "dirty": false,
+   "conflicted": false,
+   "watching": true
+  }
+ ],
+ "pages": {
+  "f-main": {
+   "file": {
+    "fileId": "f-main",
+    "paneId": "ed-main",
+    "workspaceId": "ws-editor",
+    "path": "src/main.rs",
+    "language": "rust",
+    "revision": "3",
+    "diskRevision": "1",
+    "lineCount": 20,
+    "byteCount": "483",
+    "dirty": true,
+    "conflicted": false,
+    "watching": true
+   },
+   "source": "buffer",
+   "fromLine": 0,
+   "toLine": 20,
+   "lines": [
+    {
+     "line": 0,
+     "text": "//! The Soyeht desktop client.",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 30,
+       "kind": "comment"
+      }
+     ]
+    },
+    {
+     "line": 1,
+     "text": "use std::path::PathBuf;",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 3,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 15,
+       "endColumn": 22,
+       "kind": "type"
+      }
+     ]
+    },
+    {
+     "line": 2,
+     "text": "",
+     "highlights": []
+    },
+    {
+     "line": 3,
+     "text": "fn main() {",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 2,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 3,
+       "endColumn": 7,
+       "kind": "function"
+      }
+     ]
+    },
+    {
+     "line": 4,
+     "text": "    let socket = match profile::engine_socket() {",
+     "highlights": [
+      {
+       "startColumn": 4,
+       "endColumn": 7,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 17,
+       "endColumn": 22,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 32,
+       "endColumn": 45,
+       "kind": "function"
+      }
+     ]
+    },
+    {
+     "line": 5,
+     "text": "        Ok(path) => path,",
+     "highlights": [
+      {
+       "startColumn": 8,
+       "endColumn": 10,
+       "kind": "type"
+      }
+     ]
+    },
+    {
+     "line": 6,
+     "text": "        Err(error) => {",
+     "highlights": [
+      {
+       "startColumn": 8,
+       "endColumn": 11,
+       "kind": "type"
+      }
+     ]
+    },
+    {
+     "line": 7,
+     "text": "            eprintln!(\"soyeht: {error}\");",
+     "highlights": [
+      {
+       "startColumn": 12,
+       "endColumn": 21,
+       "kind": "function"
+      },
+      {
+       "startColumn": 22,
+       "endColumn": 39,
+       "kind": "string"
+      }
+     ]
+    },
+    {
+     "line": 8,
+     "text": "            std::process::exit(2);",
+     "highlights": [
+      {
+       "startColumn": 26,
+       "endColumn": 30,
+       "kind": "function"
+      },
+      {
+       "startColumn": 31,
+       "endColumn": 32,
+       "kind": "number"
+      }
+     ]
+    },
+    {
+     "line": 9,
+     "text": "        }",
+     "highlights": []
+    },
+    {
+     "line": 10,
+     "text": "    };",
+     "highlights": []
+    },
+    {
+     "line": 11,
+     "text": "    // Four example, or a tab, indent a line.",
+     "highlights": [
+      {
+       "startColumn": 4,
+       "endColumn": 44,
+       "kind": "comment"
+      }
+     ]
+    },
+    {
+     "line": 12,
+     "text": "\tlet retries: u32 = 3;",
+     "highlights": [
+      {
+       "startColumn": 1,
+       "endColumn": 4,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 14,
+       "endColumn": 17,
+       "kind": "type"
+      },
+      {
+       "startColumn": 20,
+       "endColumn": 21,
+       "kind": "number"
+      }
+     ]
+    },
+    {
+     "line": 13,
+     "text": "    soyeht_desktop::run(socket, retries);",
+     "highlights": [
+      {
+       "startColumn": 20,
+       "endColumn": 23,
+       "kind": "function"
+      }
+     ]
+    },
+    {
+     "line": 14,
+     "text": "}",
+     "highlights": []
+    },
+    {
+     "line": 15,
+     "text": "",
+     "highlights": []
+    },
+    {
+     "line": 16,
+     "text": "/// Where the engine listens.",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 29,
+       "kind": "comment"
+      }
+     ]
+    },
+    {
+     "line": 17,
+     "text": "fn engine_socket() -> PathBuf {",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 2,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 3,
+       "endColumn": 16,
+       "kind": "function"
+      },
+      {
+       "startColumn": 22,
+       "endColumn": 29,
+       "kind": "type"
+      }
+     ]
+    },
+    {
+     "line": 18,
+     "text": "    PathBuf::from(\"/run/soyeht/engine.sock\")",
+     "highlights": [
+      {
+       "startColumn": 4,
+       "endColumn": 11,
+       "kind": "type"
+      },
+      {
+       "startColumn": 13,
+       "endColumn": 17,
+       "kind": "function"
+      },
+      {
+       "startColumn": 18,
+       "endColumn": 43,
+       "kind": "string"
+      }
+     ]
+    },
+    {
+     "line": 19,
+     "text": "}",
+     "highlights": []
+    }
+   ]
+  },
+  "f-lib": {
+   "file": {
+    "fileId": "f-lib",
+    "paneId": "ed-lib",
+    "workspaceId": "ws-editor",
+    "path": "src/lib.rs",
+    "language": "rust",
+    "revision": "1",
+    "diskRevision": "1",
+    "lineCount": 7,
+    "byteCount": "119",
+    "dirty": false,
+    "conflicted": false,
+    "watching": true
+   },
+   "source": "buffer",
+   "fromLine": 0,
+   "toLine": 7,
+   "lines": [
+    {
+     "line": 0,
+     "text": "pub mod account;",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 3,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 4,
+       "endColumn": 7,
+       "kind": "keyword"
+      }
+     ]
+    },
+    {
+     "line": 1,
+     "text": "pub mod agent;",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 3,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 4,
+       "endColumn": 7,
+       "kind": "keyword"
+      }
+     ]
+    },
+    {
+     "line": 2,
+     "text": "mod engine;",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 3,
+       "kind": "keyword"
+      }
+     ]
+    },
+    {
+     "line": 3,
+     "text": "pub mod state;",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 3,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 4,
+       "endColumn": 7,
+       "kind": "keyword"
+      }
+     ]
+    },
+    {
+     "line": 4,
+     "text": "",
+     "highlights": []
+    },
+    {
+     "line": 5,
+     "text": "pub use engine::Engine;",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 3,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 4,
+       "endColumn": 7,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 16,
+       "endColumn": 22,
+       "kind": "type"
+      }
+     ]
+    },
+    {
+     "line": 6,
+     "text": "pub use state::{Connection, State};",
+     "highlights": [
+      {
+       "startColumn": 0,
+       "endColumn": 3,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 4,
+       "endColumn": 7,
+       "kind": "keyword"
+      },
+      {
+       "startColumn": 16,
+       "endColumn": 26,
+       "kind": "type"
+      },
+      {
+       "startColumn": 28,
+       "endColumn": 33,
+       "kind": "type"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "tabs": {
+  "ws-editor": [
+   {
+    "paneId": "ed-main",
+    "fileId": "f-main",
+    "path": "src/main.rs",
+    "preview": false
+   },
+   {
+    "paneId": "ed-lib",
+    "fileId": "f-lib",
+    "path": "src/lib.rs",
+    "preview": true,
+    "previewRevision": "1"
+   }
+  ]
+ },
+ "trees": [
+  {
+   "workspaceId": "ws-editor",
+   "path": "",
+   "truncated": false,
+   "entries": [
+    {
+     "name": "docs",
+     "path": "docs",
+     "kind": "directory",
+     "ignored": false
+    },
+    {
+     "name": "src",
+     "path": "src",
+     "kind": "directory",
+     "ignored": false
+    },
+    {
+     "name": "target",
+     "path": "target",
+     "kind": "directory",
+     "ignored": true
+    },
+    {
+     "name": "Cargo.toml",
+     "path": "Cargo.toml",
+     "kind": "file",
+     "ignored": false
+    },
+    {
+     "name": "README.md",
+     "path": "README.md",
+     "kind": "file",
+     "ignored": false
+    }
+   ]
+  },
+  {
+   "workspaceId": "ws-editor",
+   "path": "src",
+   "truncated": false,
+   "entries": [
+    {
+     "name": "account.rs",
+     "path": "src/account.rs",
+     "kind": "file",
+     "ignored": false
+    },
+    {
+     "name": "agent.rs",
+     "path": "src/agent.rs",
+     "kind": "file",
+     "ignored": false
+    },
+    {
+     "name": "lib.rs",
+     "path": "src/lib.rs",
+     "kind": "file",
+     "ignored": false
+    },
+    {
+     "name": "main.rs",
+     "path": "src/main.rs",
+     "kind": "file",
+     "ignored": false
+    },
+    {
+     "name": "state.rs",
+     "path": "src/state.rs",
+     "kind": "file",
+     "ignored": false
+    }
+   ]
+  }
+ ],
  "notifications": [
   {
    "name": "pane.auth_finished",

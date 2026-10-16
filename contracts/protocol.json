@@ -14279,6 +14279,16 @@
     "usageWindow": {
       "weeklyKeyword": "week"
     },
+    "editor": {
+      "prefetchLines": 160,
+      "pageLeadDivisor": 4,
+      "tabWidth": 4,
+      "tabHistory": 64,
+      "saveAttempts": 30,
+      "saveRetryMs": 100,
+      "indentUnit": "    ",
+      "indentOpeners": "{[("
+    },
     "texts": {
       "harnessSwitchTitle": "Switch agent",
       "harnessSwitchHandover": "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.",
@@ -14305,6 +14315,26 @@
       "model": { "category": "model" },
       "effort": { "category": "thought_level", "legacyId": "effort" },
       "permission": { "category": "mode", "legacyId": "mode" }
+    },
+    "editorPairs": {
+      "(": ")",
+      "[": "]",
+      "{": "}",
+      "\"": "\"",
+      "'": "'"
+    },
+    "highlightRoles": {
+      "keyword": "accent",
+      "string": "success",
+      "comment": "muted",
+      "number": "warning",
+      "type": "syntaxType",
+      "function": "accent",
+      "property": "ink",
+      "operator": "accent",
+      "punctuation": "ink",
+      "constant": "warning",
+      "variable": "ink"
     }
   }
 }

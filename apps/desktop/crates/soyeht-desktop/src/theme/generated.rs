@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 2641e49bd5cb59bb3a12af9e4161854f1415c4f75747d2c462caf932f8fe30b1). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 bbfb602d5e67c209ebc25d9087b9611544d464dd7d7e3dc1664c25e9bfbd8ca0). Do not edit.
 use super::Palette;
 
 /// The reviewed themes, in the order of `palettes` in the token file. The first one is the
@@ -410,6 +410,18 @@ pub mod composer {
     pub const CONTEXT_SPACING: f32 = 6.0;
     pub const CONTEXT_HORIZONTAL_PADDING: f32 = 4.0;
 }
+pub mod editor {
+    pub const FONT_POINT_SIZE: f32 = 11.5;
+    pub const LINE_HEIGHT: f32 = 19.0;
+    pub const GUTTER_WIDTH: f32 = 44.0;
+    pub const TEXT_INSET: f32 = 10.0;
+    pub const HEADER_HEIGHT: f32 = 27.0;
+    pub const TAB_HEIGHT: f32 = 26.0;
+    pub const VIEWPORT_VERTICAL_INSET: f32 = 20.0;
+    pub const STATUS_HEIGHT: f32 = 24.0;
+    pub const FIND_FIELD_HEIGHT: f32 = 24.0;
+    pub const PROJECT_PANEL_WIDTH: f32 = 212.0;
+}
 pub mod desktop {
     pub const WINDOW_WIDTH: f32 = 1280.0;
     pub const WINDOW_HEIGHT: f32 = 800.0;
@@ -531,6 +543,17 @@ pub mod desktop {
     pub const USAGE_DETAIL_WIDTH: f32 = 250.0;
     pub const USAGE_BAR_HEIGHT: f32 = 6.0;
     pub const USAGE_STATUS_DOT: f32 = 8.0;
+    pub const EDITOR_TAB_BAR_HEIGHT: f32 = 34.0;
+    pub const EDITOR_TAB_CLOSE_SLOT: f32 = 12.0;
+    pub const EDITOR_DIRTY_DOT: f32 = 6.0;
+    pub const EDITOR_CARET_WIDTH: f32 = 2.0;
+    pub const EDITOR_PROJECT_ROW_HEIGHT: f32 = 22.0;
+    pub const EDITOR_PROJECT_INDENT: f32 = 12.0;
+    pub const EDITOR_FIND_STATUS_WIDTH: f32 = 72.0;
+    pub const EDITOR_THUMB_INSET: f32 = 2.0;
+    pub const EDITOR_THUMB_WIDTH: f32 = 5.0;
+    pub const EDITOR_THUMB_MINIMUM: f32 = 24.0;
+    pub const EDITOR_MARGIN_CELLS: f32 = 2.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

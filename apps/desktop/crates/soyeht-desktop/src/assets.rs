@@ -86,6 +86,11 @@ icons! {
     Gauge => "gauge",
     Palette => "palette",
     Skills => "wand-sparkles",
+    PanelLeft => "panel-left",
+    Folder => "folder",
+    Eye => "eye",
+    EyeOff => "eye-off",
+    Search => "search",
 }
 
 macro_rules! logo {

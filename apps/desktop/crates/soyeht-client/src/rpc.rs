@@ -4,12 +4,15 @@
 use crate::attachments::Upload;
 use crate::{Error, Result, transport::Closer};
 use serde_json::{Value, json};
-use soyeht_protocol::{Request, attachment::attachment_frames, client_policy, frame::write_json};
+use soyeht_protocol::{
+    Actor, FileAuthor, Request, Role, attachment::attachment_frames, client_policy,
+    frame::write_json,
+};
 use std::{
     collections::HashMap,
     io::Write,
     sync::{
-        Mutex, PoisonError,
+        Mutex, OnceLock, PoisonError,
         atomic::{AtomicU64, Ordering},
         mpsc,
     },
@@ -45,6 +48,8 @@ pub struct Rpc {
     pending: Mutex<HashMap<u64, Pending>>,
     next_id: AtomicU64,
     close: Closer,
+    /// Who the engine took this connection for, known once the handshake is done.
+    actor: OnceLock<Actor>,
 }
 
 impl Rpc {
@@ -55,7 +60,31 @@ impl Rpc {
             pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(first_id),
             close,
+            actor: OnceLock::new(),
         }
+    }
+
+    /// Records who the engine took this connection for, from its welcome.
+    pub fn identify(&self, role: Role, client: &str) {
+        self.actor.get_or_init(|| Actor {
+            role,
+            client: client.to_owned(),
+            device_id: None,
+            pane_id: None,
+        });
+    }
+
+    /// The author of the files this connection writes: the engine refuses a write whose author is
+    /// not the connection's own.
+    pub fn author(&self) -> Result<FileAuthor> {
+        let actor = self
+            .actor
+            .get()
+            .ok_or(Error::Invalid("the connection is not authenticated"))?;
+        Ok(FileAuthor {
+            actor: actor.clone(),
+            name: "you".to_owned(),
+        })
     }
 
     /// Sends a typed request and waits for its result.

@@ -14,6 +14,7 @@ pub mod attachments;
 pub mod cards;
 pub mod catalogue;
 pub mod commands;
+pub mod editor;
 mod engine;
 mod error;
 mod event;

@@ -4,7 +4,7 @@
 //! pane that closes takes its interface state with it in one step, and a new kind of state has
 //! no list to remember.
 
-use crate::{composer_field::ComposerField, loop_form::LoopForm};
+use crate::{composer_field::ComposerField, editor_ui::EditorUi, loop_form::LoopForm};
 use gpui::{Entity, ScrollHandle};
 use soyeht_client::{State, attachments::Staged, transcript_rows::Rows};
 use std::{
@@ -42,6 +42,8 @@ pub(crate) struct PaneUi {
     pub open_subagents: HashSet<String>,
     /// The fields of the questions the agent asks, by request and field.
     pub form_fields: HashMap<(String, String), Entity<ComposerField>>,
+    /// What an editor pane keeps: the scroll, the find bar, the tabs' and the panel's scroll.
+    pub editor: EditorUi,
 }
 
 impl PaneUi {
@@ -97,7 +99,8 @@ impl PaneUis {
 
     /// Drops the state of panes that are gone, and of messages and requests that are.
     pub fn forget_closed(&mut self, state: &State) {
-        self.0.retain(|pane_id, _| state.agent(pane_id).is_some());
+        self.0
+            .retain(|pane_id, _| state.panes().iter().any(|pane| &pane.pane_id == pane_id));
         for (pane_id, ui) in &mut self.0 {
             ui.forget_gone(state, pane_id);
         }
@@ -140,11 +143,8 @@ mod tests {
                 .map(|id| serde_json::from_value(pane(id)).unwrap())
                 .collect(),
             focus: None,
-            requests: Vec::new(),
-            loops: Vec::new(),
-            tasks: Vec::new(),
-            attention: Vec::new(),
             cursor: 1,
+            ..Snapshot::default()
         };
         let mut state = State::default();
         state.apply(Event::Connected(snapshot));
@@ -168,6 +168,7 @@ mod tests {
             open_thoughts: HashSet::from(["thought".to_owned()]),
             open_subagents: HashSet::from(["subagent".to_owned()]),
             form_fields: HashMap::new(),
+            editor: EditorUi::default(),
         }
     }
 

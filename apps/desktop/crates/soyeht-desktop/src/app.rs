@@ -53,6 +53,8 @@ pub(crate) struct Setup {
     pub staged: Vec<(String, soyeht_client::attachments::Staged)>,
     /// The tasks surface the window opens on, instead of the panes.
     pub tasks: Option<TasksStart>,
+    /// The place of the rail the window opens on, when it is not the first.
+    pub destination: Option<crate::destination::Destination>,
 }
 
 /// Opens the window and runs until the application quits.
@@ -75,6 +77,7 @@ pub fn run() {
             size: None,
             staged: Vec::new(),
             tasks: None,
+            destination: None,
         }
     });
 }
@@ -123,6 +126,9 @@ pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
                 workbench.prefs.section = setup.panel;
                 for (pane_id, staged) in setup.staged {
                     workbench.panes.of(&pane_id).staged = Some(staged);
+                }
+                if let Some(place) = setup.destination {
+                    workbench.destination = place;
                 }
                 if let Some(start) = setup.tasks {
                     workbench.destination = crate::destination::Destination::Tasks;

@@ -52,10 +52,14 @@ public enum EditorEditing {
           ))
       } else if inserted == "\n" {
         let indent = indentation(at: range.location, in: source)
+        let lineIndex =
+          source.substring(to: range.location).components(separatedBy: "\n").count - 1
+        let ending = lineEnding(lines: text.components(separatedBy: "\n"), line: lineIndex)
         let extra =
           linePrefix(at: range.location, in: source).trimmingCharacters(in: .whitespaces)
-            .last.map { "{[(".contains($0) } == true ? "    " : ""
-        let replacement = "\n" + indent + extra
+            .last.map { ClientPolicy.editorIndentOpeners.contains($0) } == true
+          ? ClientPolicy.editorIndentUnit : ""
+        let replacement = ending + indent + extra
         changes.append(
           (EditorLocalReplacement(range: range, text: replacement), replacement.utf16.count))
       } else {
@@ -82,6 +86,14 @@ public enum EditorEditing {
     return makePlan(source: source, viewportStartLine: viewportStartLine, changes: changes)
   }
 
+  /// The line break the file's lines have: the one of line `line`, or for the last line of the
+  /// page, which may be the last of the file and then has none, the one of the line before.
+  /// `lines` are the page's lines split at "\n", so a line that ends with "\r\n" keeps its "\r".
+  public static func lineEnding(lines: [String], line: Int) -> String {
+    let crlf = { (index: Int) in lines.indices.contains(index) && lines[index].hasSuffix("\r") }
+    return crlf(line) || (line == lines.count - 1 && crlf(line - 1)) ? "\r\n" : "\n"
+  }
+
   public static func deletionPlan(
     text: String, viewportStartLine: UInt32, ranges: [NSRange], backward: Bool,
     language: EditorLanguage
@@ -91,17 +103,17 @@ public enum EditorEditing {
     let expanded = ordered.map { range -> NSRange in
       guard range.length == 0 else { return range }
       if backward, range.location > 0 {
-        let previous = source.rangeOfComposedCharacterSequence(at: range.location - 1)
+        let previous = characterRange(at: range.location - 1, in: source)
         if let closing = closingCharacter(source.substring(with: previous)),
           character(at: range.location, in: source) == closing
         {
-          let next = source.rangeOfComposedCharacterSequence(at: range.location)
+          let next = characterRange(at: range.location, in: source)
           return NSRange(location: previous.location, length: previous.length + next.length)
         }
         return previous
       }
       if !backward, range.location < source.length {
-        return source.rangeOfComposedCharacterSequence(at: range.location)
+        return characterRange(at: range.location, in: source)
       }
       return range
     }
@@ -261,7 +273,26 @@ public enum EditorEditing {
   }
 
   private static func closingCharacter(_ inserted: String) -> String? {
-    ["(": ")", "[": "]", "{": "}", "\"": "\"", "'": "'"][inserted]
+    ClientPolicy.editorClosing(inserted)
+  }
+
+  /// The character at `offset`, as one key deletes it: a composed character sequence, and a
+  /// "\r\n" line break, which NSString splits in two.
+  private static func characterRange(at offset: Int, in source: NSString) -> NSRange {
+    let range = source.rangeOfComposedCharacterSequence(at: offset)
+    // Only a lone "\r" or "\n" is joined to its pair: a sequence that is already two long is one.
+    guard range.length == 1 else { return range }
+    if source.character(at: range.location) == 13, NSMaxRange(range) < source.length,
+      source.character(at: NSMaxRange(range)) == 10
+    {
+      return NSRange(location: range.location, length: range.length + 1)
+    }
+    if source.character(at: range.location) == 10, range.location > 0,
+      source.character(at: range.location - 1) == 13
+    {
+      return NSRange(location: range.location - 1, length: range.length + 1)
+    }
+    return range
   }
 
   private static func character(at offset: Int, in source: NSString) -> String? {

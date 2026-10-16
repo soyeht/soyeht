@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 ea208b2afc6adfbe65a2d82db40cb4ce32c6bce858dbac875986a0eb8c45c136). Do not edit.
+// Generated from contracts/design-tokens.json (sha256 33619c1f2b3ad3c6dc0ad7ac5f090d23ec25255e2decdc61a44121fa8635ab5a). Do not edit.
 import CoreGraphics
 
 /// The reviewed themes, in the order of `palettes` in the token file. The first one is
@@ -284,6 +284,19 @@ public enum DesignTokens {
     public static let ringLineWidth: CGFloat = 3
     public static let contextSpacing: CGFloat = 6
     public static let contextHorizontalPadding: CGFloat = 4
+  }
+
+  public enum Editor {
+    public static let fontPointSize: CGFloat = 11.5
+    public static let lineHeight: CGFloat = 19
+    public static let gutterWidth: CGFloat = 44
+    public static let textInset: CGFloat = 10
+    public static let headerHeight: CGFloat = 27
+    public static let tabHeight: CGFloat = 26
+    public static let viewportVerticalInset: CGFloat = 20
+    public static let statusHeight: CGFloat = 24
+    public static let findFieldHeight: CGFloat = 24
+    public static let projectPanelWidth: CGFloat = 212
   }
 
   public enum Fonts {

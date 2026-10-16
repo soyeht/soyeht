@@ -3,7 +3,7 @@
 
 use crate::{Error, Result};
 use serde_json::Value;
-use soyeht_protocol::{ClientFocus, Pane, SnapshotSection, Workspace, snapshot};
+use soyeht_protocol::{ClientFocus, FileDocument, Pane, SnapshotSection, Workspace, snapshot};
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Snapshot {
@@ -18,6 +18,8 @@ pub struct Snapshot {
     pub tasks: Vec<Value>,
     /// What needs the person, as the engine lists it.
     pub attention: Vec<Value>,
+    /// The files open in editor panes.
+    pub files: Vec<FileDocument>,
     /// The event cursor to subscribe from.
     pub cursor: u64,
 }
@@ -36,6 +38,7 @@ impl Snapshot {
             loops: pages.take(&SnapshotSection::Loops),
             tasks: pages.take(&SnapshotSection::Tasks),
             attention: pages.take(&SnapshotSection::Attention),
+            files: decode(pages.take(&SnapshotSection::Files))?,
             focus: pages.metadata.focus,
             cursor,
         })

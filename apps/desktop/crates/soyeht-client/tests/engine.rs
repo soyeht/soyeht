@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use soyeht_client::{
     CLIENT_NAME, Command, Connection, Effect, Engine, Error, Event, State,
     attachments::{Draft, Source},
+    editor::selection::Motion,
 };
 use soyeht_platform::local::{Listener, Stream};
 use soyeht_protocol::{
@@ -490,5 +491,80 @@ fn the_queue_of_waiting_messages_is_read_to_its_last_page() {
         ["q1", "q2"]
     );
     assert!(paused);
+    finish(&engine, remote, &path);
+}
+
+/// The document the engine lists for the file `main.rs` of pane `e1`.
+fn document(revision: u32, dirty: bool) -> Value {
+    json!({"fileId": "f1", "paneId": "e1", "workspaceId": "w1", "path": "main.rs",
+        "language": "rust", "revision": revision.to_string(), "diskRevision": "1", "lineCount": 1,
+        "byteCount": "2", "dirty": dirty, "conflicted": false, "watching": true})
+}
+
+/// A read of `main.rs` that says `text`.
+fn read_of(revision: u32, dirty: bool, text: &str) -> Value {
+    json!({"file": document(revision, dirty), "source": "buffer", "fromLine": 0, "toLine": 1,
+        "lines": [{"line": 0, "text": text, "highlights": []}]})
+}
+
+/// Sends what the replica asks the engine for.
+fn dispatch(engine: &Engine, effects: Vec<Effect>) {
+    for effect in effects {
+        if let Effect::Send(command) = effect {
+            engine.send(command).unwrap();
+        }
+    }
+}
+
+fn page_text(state: &State) -> String {
+    let file = state.editors.file_of_pane("e1").unwrap();
+    file.page.as_ref().unwrap().text(0).to_owned()
+}
+
+#[test]
+fn a_file_is_opened_edited_to_the_revision_the_engine_gave_and_saved() {
+    let (engine, inbox, mut remote, path) = connected("editor");
+    let mut state = State::default();
+    state.apply(next(&inbox));
+
+    dispatch(&engine, state.editor_open("w1", "main.rs", true));
+    let open = remote.expect("file.open");
+    assert_eq!(open["params"]["path"], "main.rs");
+    assert_eq!(open["params"]["preview"], true);
+    let pane = json!({"paneId": "e1", "workspaceId": "w1", "name": "main.rs", "cwd": "/work",
+        "mode": "editor", "state": "idle", "source": "none", "confidence": 0.0, "phrase": "",
+        "generation": 1, "cols": 80, "rows": 24, "record": false});
+    remote.reply(
+        &open,
+        json!({"file": document(1, false), "pane": pane, "viewport": read_of(1, false, "hi")}),
+    );
+    let effects = state.apply(next(&inbox));
+    assert!(effects.contains(&Effect::FocusPane("e1".into())));
+    assert_eq!(page_text(&state), "hi");
+
+    // A keystroke changes the page at once; the write names the revision and who writes.
+    dispatch(&engine, state.editors.motion("e1", Motion::LineEnd, false));
+    dispatch(&engine, state.editors.insert("e1", "!"));
+    assert_eq!(page_text(&state), "hi!");
+    let write = remote.expect("file.write");
+    assert_eq!(write["params"]["baseRevision"], "1");
+    assert_eq!(write["params"]["author"]["actor"]["role"], "human_local");
+    assert_eq!(write["params"]["author"]["actor"]["client"], CLIENT_NAME);
+    assert_eq!(write["params"]["edits"][0]["text"], "!");
+    remote.reply(
+        &write,
+        json!({"file": document(2, true), "changedLines": [0]}),
+    );
+    dispatch(&engine, state.apply(next(&inbox)));
+
+    // Saving waits until the engine has saved: the page is read until the file is not dirty.
+    dispatch(&engine, state.editors.save("e1"));
+    let first = remote.expect("file.read");
+    remote.reply(&first, read_of(2, true, "hi!"));
+    let second = remote.expect("file.read");
+    remote.reply(&second, read_of(2, false, "hi!"));
+    state.apply(next(&inbox));
+    assert!(!state.editors.file_of_pane("e1").unwrap().doc.dirty);
+
     finish(&engine, remote, &path);
 }

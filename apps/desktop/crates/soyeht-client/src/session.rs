@@ -82,6 +82,7 @@ impl Session {
         let hello = Request::Hello(handshake::hello(client, env!("CARGO_PKG_VERSION"), None));
         let welcome: Welcome = serde_json::from_value(self.rpc.call(&hello)?)?;
         handshake::expect_welcome(&welcome, false)?;
+        self.rpc.identify(welcome.role.clone(), client);
         let result: StateSnapshotResult = serde_json::from_value(
             self.rpc
                 .call(&Request::StateSnapshot(StateSnapshotParams {}))?,

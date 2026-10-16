@@ -313,6 +313,23 @@ NUMERIC_SOURCES = [
         },
     ),
     (
+        SHARED + "PaneLayoutFloors.swift",
+        "enum PaneLayoutContentMetrics",
+        "editor",
+        {
+            "editorFontPointSize": "fontPointSize",
+            "editorLineHeight": "lineHeight",
+            "editorGutterWidth": "gutterWidth",
+            "editorTextInset": "textInset",
+            "editorHeaderHeight": "headerHeight",
+            "editorTabHeight": "tabHeight",
+            "editorViewportVerticalInset": "viewportVerticalInset",
+            "editorStatusHeight": "statusHeight",
+            "editorFindFieldHeight": "findFieldHeight",
+            "editorProjectPanelWidth": "projectPanelWidth",
+        },
+    ),
+    (
         MAC + "MacPaneLayoutMetrics.swift",
         "enum MacPaneLayoutMetrics",
         "layout",
