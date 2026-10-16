@@ -11,10 +11,14 @@
 #          full  runs only in the full tier
 #          fast  runs only in the fast tier (a cheaper stand-in for a full step)
 # The full tier (the default) runs every `both` and `full` step, as it always did. The
-# fast tier, which runs before a merge, runs the `always` steps plus the `both` and
-# `fast` steps of the areas that scripts/gate_plan.py selects from the changed paths.
-# The full tier runs on main after the merge (scripts/post_merge.py). A fast step that
-# stands in for a full one is named `<full id>-changed` or `<full id>-fast`
+# fast tier, which runs before a merge, is cheap (a few minutes on a warm cache): the
+# `always` steps plus format, lint, a build and the unit tests of the `both` and `fast`
+# steps of the areas that scripts/gate_plan.py selects from the changed paths. Integration
+# tests, the Swift tests, the Mac and iOS app builds, e2e, the editor measurement and the
+# timing tests are `full` steps. The full tier runs on main after the merge
+# (scripts/post_merge.py, scripts/main_watch.py), on a remote Linux host for the areas
+# that run there (--remote, scripts/remote_gate.sh). A fast step that stands in for a
+# full one is named `<full id>-changed`, `<full id>-fast` or `<full id>-build`
 # (test_gate_list.py checks that). A change to the scripts that run the gate upgrades a
 # fast run to the full tier. Exit codes: 64 bad usage, 70 unknown tier in a step,
 # 71 unknown area in a step, 78 --only names no step.
@@ -69,7 +73,6 @@ timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
 step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
 GATE_AREAS="always engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing"
 GATE_ENGINE_TEST_ARGS="--workspace"
-GATE_DICTATION=1
 matched=0
 
 finish() {
@@ -192,6 +195,7 @@ step always both gate-list:unit uv run python -m unittest discover -s scripts -p
 step always both gate-plan:unit uv run python -m unittest discover -s scripts -p 'test_gate_plan.py'
 step always both gate-timings:unit uv run python -m unittest discover -s scripts -p 'test_gate_timings.py'
 step always both post-merge:unit uv run python -m unittest discover -s scripts -p 'test_post_merge.py'
+step always both main-watch:unit uv run python -m unittest discover -s scripts -p 'test_main_watch.py'
 step always both require-one-rust-test:unit uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
 # Without --base, the ratchets compare with the merge-base of origin/main and
 # HEAD and stop the gate when it cannot be resolved.
@@ -225,12 +229,12 @@ step always both install-dev:unit uv run python -m unittest discover -s scripts 
 
 step engine both engine:fmt in_dir engine cargo fmt --all --check
 step engine both engine:clippy in_dir engine cargo clippy --locked --workspace --all-targets -- -D warnings
-# The tests start sibling binaries, so even the fast tier builds the whole workspace.
 step engine both engine:build in_dir engine cargo build --locked --workspace
+# Integration tests (the crates' tests/ directories, which start sibling binaries) run here only.
 step engine full engine:test in_dir engine cargo test --locked --workspace
-# The changed crates and their reverse dependencies, integration tests included.
+# Unit tests (src/ of libraries and binaries) of the changed crates and their reverse dependencies.
 # shellcheck disable=SC2086
-step engine fast engine:test-changed in_dir engine cargo test --locked $GATE_ENGINE_TEST_ARGS
+step engine fast engine:test-changed in_dir engine cargo test --locked $GATE_ENGINE_TEST_ARGS --lib --bins
 step engine both engine:clippy-windows in_dir engine lint_windows
 step timing full engine:timing-frame-dense in_dir engine capture_test \
     terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage
@@ -241,7 +245,8 @@ step desktop both desktop:fmt in_dir apps/desktop cargo fmt --all --check
 step desktop both desktop:clippy in_dir apps/desktop cargo clippy --locked --workspace --all-targets -- -D warnings
 # The design-audit tools (`dev-tools`) are not in the shipping build: lint and test them too.
 step desktop both desktop:clippy-all-features in_dir apps/desktop cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-step desktop both desktop:test in_dir apps/desktop cargo test --locked --workspace --all-features
+step desktop full desktop:test in_dir apps/desktop cargo test --locked --workspace --all-features
+step desktop fast desktop:test-fast in_dir apps/desktop cargo test --locked --workspace --all-features --lib --bins
 
 step always both tcc-guard:unit uv run python -m unittest discover -s scripts -p 'test_tcc_guard.py'
 step e2e full e2e:tcc-snapshot uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
@@ -267,18 +272,16 @@ step always both mac-view-colors:unit uv run python -m unittest discover -s scri
 step always both mac-view-colors:check uv run python scripts/check_mac_view_colors.py
 step swift both swift:format-lint swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/dictation/Sources apps/dictation/Tests apps/mac/Sources apps/ios/Sources
 # EngineConnectionTests and PhoneConnectionTests launch the engine binaries from engine/target,
-# so a change that selects no engine area still needs them built.
-step swift both swift:engine-binaries in_dir engine cargo build --locked --workspace
-step swift both swift:test-shared swift test --package-path apps/shared
-step dictation both swift:test-dictation swift test --package-path apps/dictation
+# so the Swift tests need them built.
+step swift full swift:engine-binaries in_dir engine cargo build --locked --workspace
+step swift full swift:test-shared swift test --package-path apps/shared
+# The fast stand-in compiles the shared package without running its tests.
+step swift fast swift:test-shared-build swift build --package-path apps/shared
+step dictation full swift:test-dictation swift test --package-path apps/dictation
 step mac_app full mac-app:build bash scripts/check_mac.sh
-# The fast stand-in: no tests (the shared suite is a swift step), an incremental build in a
-# persistent DerivedData directory.
-step mac_app fast mac-app:build-fast bash scripts/check_mac.sh --fast
 step always both editor-performance:unit uv run python -m unittest discover -s scripts -p 'test_check_editor_performance.py'
 step editor_perf full editor-performance:check uv run python scripts/check_editor_performance.py
 step ios_app full ios-app:build bash scripts/check_ios.sh
-step ios_app fast ios-app:build-fast bash scripts/check_ios.sh --fast
 
 step typescript both typescript:install in_dir contracts/typescript npm ci --ignore-scripts
 step typescript both typescript:check in_dir contracts/typescript npm run check

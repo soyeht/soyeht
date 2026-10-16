@@ -6,13 +6,7 @@ SIGNING=(CODE_SIGNING_ALLOWED=NO)
 DESTINATION='generic/platform=iOS Simulator'
 DERIVED="$ROOT/.cache/ios-derived"
 PACKAGES="$ROOT/.cache/apple-packages"
-if [[ "${1:-}" == --fast ]]; then
-    # The fast gate: an incremental build in DerivedData that outlives the checkout.
-    gate_cache="${SOYEHT_GATE_DERIVED:-$HOME/Library/Caches/soyeht-gate-derived}"
-    DERIVED="$gate_cache/ios"
-    PACKAGES="$gate_cache/apple-packages"
-    mkdir -p "$DERIVED" "$PACKAGES"
-elif [[ "${1:-}" == --sign ]]; then
+if [[ "${1:-}" == --sign ]]; then
     : "${SOYEHT_DEVELOPMENT_TEAM:?Set the development team for the local build}"
     SIGNING=(-allowProvisioningUpdates CODE_SIGN_STYLE=Automatic "DEVELOPMENT_TEAM=$SOYEHT_DEVELOPMENT_TEAM")
     DESTINATION='generic/platform=iOS'
@@ -20,7 +14,7 @@ elif [[ "${1:-}" == --sign-simulator ]]; then
     : "${SOYEHT_DEVELOPMENT_TEAM:?Set the development team for the local build}"
     SIGNING=(CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Automatic "DEVELOPMENT_TEAM=$SOYEHT_DEVELOPMENT_TEAM")
 elif [[ $# -gt 0 ]]; then
-    echo 'Usage: scripts/check_ios.sh [--sign | --sign-simulator | --fast]' >&2
+    echo 'Usage: scripts/check_ios.sh [--sign | --sign-simulator]' >&2
     exit 2
 fi
 xcodebuild -project apps/ios/SoyehtPhone.xcodeproj -scheme SoyehtPhone \

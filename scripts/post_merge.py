@@ -2,6 +2,7 @@
 """Run the full gate on a main commit and find the culprit when it is red (ADR 0089).
 
     post_merge.py [--sha COMMIT] [--health-dir DIR] [--keep] [--force]
+                  [--remote HOST --remote-root PATH]
 
 In a clean worktree of the commit (default: `origin/main` after a fetch) it runs
 `scripts/check_all.sh --tier full` against the commit's parent, then records
@@ -16,6 +17,12 @@ them. It never pushes, reverts or edits main: it reports the culprit commit, the
 step and the log, and exits 1. A commit that cannot run the step, or cannot be checked
 out, is skipped; if that leaves several candidates, all of them are reported.
 
+With `--remote HOST --remote-root PATH` the steps of the areas that run on Linux (`REMOTE_AREAS`:
+engine, desktop, e2e) run on HOST over ssh, through `scripts/remote_gate.sh` of the checkout at
+PATH (docs/dev-local.md), and the other steps (the Swift packages, the Mac and iOS apps, the
+editor measurement, the dictation tests, the timing tests, the `always` checks) run here. The
+remote steps run first; a failure there stops the run, as a local failure does.
+
 Only one run at a time (a lock in the health directory). A problem of the machine, not of
 main (no restricted vocabulary, a gate that cannot start) writes no record and exits 2.
 The coordinator session runs this after each merge or every few merges; the editor
@@ -29,6 +36,7 @@ import fcntl
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -45,7 +53,8 @@ GOOD, BAD, SKIP = "good", "bad", "skip"
 FAILED_STEP = re.compile(r"^check_all: FAILED step (\S+)", re.MULTILINE)
 # check_all.sh exit codes that mean the gate could not run, not that main is red.
 UNSUPPORTED_STEP_EXIT = 78
-INFRASTRUCTURE_EXITS = {2, 64, 70, 71, UNSUPPORTED_STEP_EXIT}
+INFRASTRUCTURE_EXIT = 2
+INFRASTRUCTURE_EXITS = {INFRASTRUCTURE_EXIT, 64, 70, 71, UNSUPPORTED_STEP_EXIT}
 # A step that only means something after another step of the same run.
 PREREQUISITES = {"e2e:tcc-check": "e2e:tcc-snapshot"}
 WORKTREE_PREFIX = "soyeht-post-merge-"
@@ -53,6 +62,26 @@ WORKTREE_PREFIX = "soyeht-post-merge-"
 # that two gates running the tests at once never remove each other's worktrees.
 SCRATCH_ROOT_ENV = "SOYEHT_POST_MERGE_TMP"
 BUSY_EXIT = 75
+# The areas whose steps run on the remote Linux host; every other step runs on this machine.
+REMOTE_AREAS = ("engine", "desktop", "e2e")
+# Set to a command (split on example) to replace `ssh -o BatchMode=yes`; the tests use it.
+SSH_ENV = "SOYEHT_REMOTE_SSH"
+REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
+SSH_FAILED_EXIT = 255  # ssh itself could not connect or run the command
+
+
+@dataclass(frozen=True)
+class Remote:
+    host: str
+    root: str  # a checkout of the repository on the host that has scripts/remote_gate.sh
+
+    def ssh(self, command: str) -> list[str]:
+        ssh = os.environ.get(SSH_ENV, "ssh -o BatchMode=yes").split()
+        # A login shell, so that the host's toolchain is on PATH. A missing checkout or script is
+        # a problem of the host (exit 2), not a red main.
+        script = (f"cd {shlex.quote(self.root)} || exit 2; "
+                  f"[ -f scripts/remote_gate.sh ] || exit 2; {command}")
+        return [*ssh, self.host, "bash -lc " + shlex.quote(script)]
 
 
 class InfrastructureError(RuntimeError):
@@ -111,8 +140,8 @@ def run_process(arguments: list[str], cwd: Path, env: dict, output) -> int:
         raise
 
 
-def run_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
-             timings: Path, command: list[str]) -> int:
+def run_local_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
+                   timings: Path, command: list[str]) -> int:
     arguments = [*command, "--tier", "full"]
     if only:
         arguments += ["--only", only]
@@ -121,8 +150,77 @@ def run_gate(worktree: Path, base: str | None, only: str | None, log: Path | Non
     environment = {**os.environ, "SOYEHT_GATE_TIMINGS": str(timings)}
     if log is None:
         return run_process(arguments, worktree, environment, subprocess.DEVNULL)
-    with log.open("wb") as handle:
+    with log.open("ab") as handle:
         return run_process(arguments, worktree, environment, handle)
+
+
+def gate_step_areas(worktree: Path, command: list[str]) -> dict[str, str] | None:
+    """{step id: area} of the full tier, or None when the commit's gate cannot list its steps."""
+    result = subprocess.run([*command, "--tier", "full", "--list"], cwd=worktree,
+                            capture_output=True, text=True)
+    if result.returncode:
+        return None
+    rows = [line.split() for line in result.stdout.splitlines()]
+    return {row[2]: row[0] for row in rows if len(row) == 3}
+
+
+def remote_steps_timings(remote: Remote) -> list[dict]:
+    """The per-step times of the last remote run, or nothing when the host cannot say."""
+    result = subprocess.run(remote.ssh("bash scripts/remote_gate.sh --print-timings"),
+                            capture_output=True, text=True)
+    try:
+        return json.loads(result.stdout)["latest"]["steps"] if result.returncode == 0 else []
+    except (ValueError, KeyError, TypeError):
+        return []
+
+
+def run_split_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
+                   timings: Path, command: list[str], remote: Remote) -> int:
+    """The remote areas run on the host, then the rest here; the first failure ends the run."""
+    areas = gate_step_areas(worktree, command)
+    if areas is None:
+        return REMOTE_UNSUPPORTED_EXIT
+    wanted = only.split(",") if only else list(areas)
+    remote_ids = [i for i in areas if i in wanted and areas[i] in REMOTE_AREAS]
+    local_ids = [i for i in areas if i in wanted and areas[i] not in REMOTE_AREAS]
+    local_ids += [i for i in wanted if i not in areas]  # the local gate reports an unknown step
+    sha = git(worktree, "rev-parse", "HEAD")
+    timings.unlink(missing_ok=True)
+    steps: list[dict] = []
+    code = 0
+    if remote_ids:
+        arguments = f"bash scripts/remote_gate.sh --sha {sha} --steps {','.join(remote_ids)}"
+        if base:
+            arguments += f" --base {base}"
+        code = run_process_logged(remote.ssh(arguments), worktree, log)
+        if code == SSH_FAILED_EXIT:
+            code = INFRASTRUCTURE_EXIT
+        steps += remote_steps_timings(remote)
+    if not code and local_ids:
+        local_timings = timings.with_name(timings.name + ".local")
+        local_timings.unlink(missing_ok=True)
+        code = run_local_gate(worktree, base, ",".join(local_ids), log, local_timings, command)
+        try:
+            steps += json.loads(local_timings.read_text())["latest"]["steps"]
+        except (OSError, ValueError, KeyError):
+            pass  # a gate that failed to start has no timings; the exit code says so
+    if steps:
+        write_json(timings, {"latest": {"steps": steps}})
+    return code
+
+
+def run_process_logged(arguments: list[str], cwd: Path, log: Path | None) -> int:
+    if log is None:
+        return run_process(arguments, cwd, os.environ.copy(), subprocess.DEVNULL)
+    with log.open("ab") as handle:
+        return run_process(arguments, cwd, os.environ.copy(), handle)
+
+
+def run_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
+             timings: Path, command: list[str], remote: Remote | None = None) -> int:
+    if remote is None:
+        return run_local_gate(worktree, base, only, log, timings, command)
+    return run_split_gate(worktree, base, only, log, timings, command, remote)
 
 
 def step_with_prerequisites(step: str) -> str:
@@ -175,7 +273,7 @@ def search_range(root: Path, health: Path, sha: str, since: str | None) -> list[
 
 
 def locate_culprit(root: Path, worktree: Path, commits: list[str], step: str,
-                   command: list[str], scratch: Path) -> Search:
+                   command: list[str], scratch: Path, remote: Remote | None = None) -> Search:
     selection = step_with_prerequisites(step)
 
     def probe(commit: str) -> str:
@@ -186,7 +284,7 @@ def locate_culprit(root: Path, worktree: Path, commits: list[str], step: str,
             return SKIP
         if not supports_only(root, commit):
             return SKIP
-        code = run_gate(worktree, parent_of(root, commit), selection, None, scratch / "probe.json", command)
+        code = run_gate(worktree, parent_of(root, commit), selection, None, scratch / "probe.json", command, remote)
         print(f"post_merge: {commit[:12]} step {selection}: exit {code}", flush=True)
         if code in INFRASTRUCTURE_EXITS:
             return SKIP
@@ -214,14 +312,14 @@ def report(record: dict) -> str:
 
 
 def investigate(root: Path, worktree: Path, scratch: Path, health: Path, record: dict,
-                since: str | None, command: list[str]) -> None:
+                since: str | None, command: list[str], remote: Remote | None = None) -> None:
     """Fill in the culprit of a red run: a flaky step blames nobody."""
     sha, step = record["sha"], record["failed_step"]
     if not step:
         record["note"] = "the failing step is unknown, so the culprit was not searched"
         return
     again = run_gate(worktree, parent_of(root, sha), step_with_prerequisites(step), None,
-                     scratch / "rerun.json", command)
+                     scratch / "rerun.json", command, remote)
     if again == 0:
         record["result"] = "flaky"
         record["note"] = (f"step {step} passed when run again on the same commit; no commit is blamed, "
@@ -233,7 +331,7 @@ def investigate(root: Path, worktree: Path, scratch: Path, health: Path, record:
     elif len(commits) == 1:
         record["culprit"] = commit_info(root, commits[0])
     else:
-        result = locate_culprit(root, worktree, commits, step, command, scratch)
+        result = locate_culprit(root, worktree, commits, step, command, scratch, remote)
         if result.culprit:
             record["culprit"] = commit_info(root, result.culprit)
         else:
@@ -254,7 +352,7 @@ def remove_stale_worktrees(root: Path) -> None:
 
 
 def run(root: Path, sha: str, health: Path, command: list[str], since: str | None = None,
-        keep: bool = False) -> dict:
+        keep: bool = False, remote: Remote | None = None) -> dict:
     sha = git(root, "rev-parse", sha)
     log, timings = health / f"{sha}.log", health / f"{sha}.timings.json"
     health.mkdir(parents=True, exist_ok=True)
@@ -263,7 +361,8 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
     try:
         git(root, "worktree", "add", "--detach", str(worktree), sha)
         started = time.time()
-        code = run_gate(worktree, parent_of(root, sha), None, log, timings, command)
+        log.write_bytes(b"")  # a run for a commit that is recorded already (--force) starts afresh
+        code = run_gate(worktree, parent_of(root, sha), None, log, timings, command, remote)
         if code in INFRASTRUCTURE_EXITS:
             raise InfrastructureError(f"the gate could not run (exit {code}); see {log}")
         record: dict = {
@@ -276,6 +375,8 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
             "log": str(log),
             "steps": [],
         }
+        if remote:
+            record["remote"] = remote.host
         try:
             record["steps"] = json.loads(timings.read_text())["latest"]["steps"]
         except (OSError, ValueError, KeyError):
@@ -283,7 +384,7 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
         if code:
             record["failed_step"] = failing_step(log, timings)
             try:
-                investigate(root, worktree, scratch, health, record, since, command)
+                investigate(root, worktree, scratch, health, record, since, command, remote)
             except RuntimeError as error:  # the record of the red run is still written
                 record["note"] = f"the culprit search failed: {error}"
         write_json(health / f"{sha}.json", record)
@@ -309,9 +410,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--since", help="last known green commit when none is recorded")
     parser.add_argument("--check-all", default="bash scripts/check_all.sh",
                         help="the gate command run in each worktree")
+    parser.add_argument("--remote", metavar="HOST",
+                        help="run the engine, desktop and e2e steps on this host over ssh")
+    parser.add_argument("--remote-root", metavar="PATH",
+                        help="the checkout on the host that has scripts/remote_gate.sh")
     parser.add_argument("--keep", action="store_true", help="keep the worktree")
     parser.add_argument("--force", action="store_true", help="run again for a recorded commit")
     arguments = parser.parse_args(argv)
+    if bool(arguments.remote) != bool(arguments.remote_root):
+        parser.error("--remote and --remote-root go together")
+    remote = Remote(arguments.remote, arguments.remote_root) if arguments.remote else None
     if not os.environ.get("FORBIDDEN_TERMS"):
         print("post_merge: provide FORBIDDEN_TERMS through the environment; nothing was recorded",
               file=sys.stderr)
@@ -334,7 +442,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"post_merge: {sha[:12]} is already recorded in {health}")
             return 0
         try:
-            record = run(root, sha, health, arguments.check_all.split(), arguments.since, arguments.keep)
+            record = run(root, sha, health, arguments.check_all.split(), arguments.since, arguments.keep,
+                         remote)
         except InfrastructureError as error:
             print(f"post_merge: {error}; nothing was recorded", file=sys.stderr)
             return 2

@@ -1,6 +1,6 @@
 # ADR 0089: A fast gate before the merge, the full gate after it
 
-- Status: accepted
+- Status: accepted; the content of the fast tier is amended by ADR 0092
 - Date: 2026-10-16
 
 ## Context
@@ -22,22 +22,18 @@ always ran. `--tier fast` runs:
 - every `always` step: the forbidden-terms scan, the hardening and quality ratchets, the
   other `check_*` scripts with their unit tests, `generate.py --check` and the contracts
   tests;
-- for each selected area, format, lint and tests. For the engine that is format and
-  `clippy -D warnings` over the workspace, a workspace build (the integration tests start
-  sibling binaries), and `cargo test` of the changed crates, the crates that depend on them
-  and the crates whose tests start them (`TEST_EDGES`), plus `soyeht-platform` and
-  `soyeht-cli`, integration tests included. The desktop runs its full format, clippy (both
-  feature sets) and test. Swift runs `swift format lint` and the tests of `apps/shared`
-  (also when the engine binaries that they launch changed), and of `apps/dictation` when it,
-  `apps/shared` or `contracts/swift` changed. The Mac and iOS apps get an incremental compile
-  (`check_mac.sh --fast`, `check_ios.sh --fast`) in DerivedData under
-  `~/Library/Caches/soyeht-gate-derived`, one directory per app. TypeScript runs `check` and
-  `test`.
+- for each selected area, format, lint, a build and the unit tests (ADR 0092 narrowed this
+  from the full tests). For the engine that is format and `clippy -D warnings` over the
+  workspace, a workspace build, and `cargo test --lib --bins` of the changed crates and the
+  crates that depend on them. The desktop runs its full format, clippy (both feature sets)
+  and `cargo test --lib --bins`. Swift runs `swift format lint` and a `swift build` of
+  `apps/shared`. TypeScript runs `check` and `test`.
 
-The fast tier leaves out the end-to-end suites, the full app builds with their tests, the
-editor measurement on the VM and the ignored timing tests (the areas `e2e`, `editor_perf`
-and `timing`, and the full steps of the others); only the full tier runs them. A fast step
-that stands in for a full one is named `<full id>-changed` or `<full id>-fast`, and
+The fast tier leaves out the integration tests, the Swift tests, the Mac and iOS app builds,
+the end-to-end suites, the editor measurement on the VM and the ignored timing tests (the
+areas `dictation`, `mac_app`, `ios_app`, `e2e`, `editor_perf` and `timing`, and the full
+steps of the others); only the full tier runs them. A fast step that stands in for a full
+one is named `<full id>-changed`, `<full id>-fast` or `<full id>-build`, and
 `test_gate_list.py` checks the list: known areas and tiers, unique ids, a full step behind
 every stand-in. The ratchet counts the steps that run in both tiers per area, so moving one
 out of the fast tier needs a `Verification change:` line, as removing it does.
@@ -45,10 +41,12 @@ out of the fast tier needs a `Verification change:` line, as removing it does.
 **The areas come from the paths.** `scripts/gate_plan.py` maps the files that differ from the
 merge-base of `origin/main` (or `--base`) to areas, and `check_all.sh` prints the plan at the
 top of the log. A change to `contracts/` (other than the Swift and TypeScript outputs),
-`engine/soyeht-protocol`, the gate tooling (`scripts/`, `.github/`, `.githooks/`), a lockfile
+`engine/soyeht-protocol`, the gate tooling (`scripts/`, `.github/`, `.githooks/`; not the unit tests `scripts/test_*.py`), a lockfile
 or a workspace manifest selects every code area, and so does a cargo workspace that cannot
 be read. A change to the scripts that run the gate (`check_all.sh`, `gate_*`, `post_merge*`,
-`e2e*`, the app build scripts) upgrades the run to the full tier. A file that another
+`main_watch*`, `remote_gate*`, `e2e*`, the app build scripts) upgrades the run to the full
+tier; a change to their unit tests alone (`scripts/test_*.py`) selects `always`, which runs
+those tests (ADR 0092). A file that another
 directory reads and Cargo does not show (the Xcode project that the engine's attestation
 embeds, the fonts and icons the desktop embeds) is listed in `CROSS_READS`; a test scans the
 engine and desktop sources for such reads and fails on one that is missing. A path under an engine crate selects the
@@ -71,7 +69,8 @@ commit that cannot run the step or cannot be checked out is skipped, and the can
 reported. It reports the culprit commit, the failing step and the log, and exits non-zero.
 It never pushes, reverts or edits main. One run at a time (a lock), SIGTERM cleans up, and a
 problem of the machine (no restricted vocabulary, a gate that cannot start) writes no record.
-The coordinator session runs it after each merge or every few merges. The plan prints a
+The coordinator session runs it after each merge or every few merges (ADR 0092 runs
+it continuously, with an automatic revert of a confirmed culprit). The plan prints a
 warning while `latest.json` says main is red. The editor measurement on the VM stays
 separate: it is collected when the editor hash changes.
 

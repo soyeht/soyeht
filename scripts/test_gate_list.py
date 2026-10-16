@@ -41,8 +41,13 @@ def gate_list_problems(name: str, text: str) -> list[str]:
 
 
 STEP = re.compile(r"^\s*step\s+(\S+)\s+(\S+)\s+(\S+)", re.MULTILINE)
-# A fast step that stands in for a full one is named `<full id>-changed` or `<full id>-fast`.
-STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast)$")
+# A fast step that stands in for a full one is named `<full id>-changed`, `-fast` or `-build`.
+STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast|build)$")
+# The steps that only the full tier (after the merge) runs, whichever area they belong to.
+AFTER_MERGE = (
+    "engine:test", "desktop:test", "swift:test-shared", "swift:test-dictation", "swift:engine-binaries",
+    "mac-app:build", "ios-app:build", "swift:check-swift", "editor-performance:check",
+)
 
 
 def gate_steps() -> list[tuple[str, str, str]]:
@@ -73,6 +78,25 @@ class StepListTests(unittest.TestCase):
                 self.assertIsNotNone(match, f"{step_id}: name it <full id>-changed or <full id>-fast")
                 self.assertEqual(steps.get(match["full"]), (area, "full"))
 
+    def test_the_heavy_steps_run_only_after_the_merge(self):
+        steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
+        for step_id in AFTER_MERGE:
+            with self.subTest(step=step_id):
+                self.assertEqual(steps[step_id][1], "full")
+        for step_id, (area, tiers) in steps.items():
+            with self.subTest(step=step_id):
+                if area in gate_plan.FULL_ONLY_AREAS:
+                    self.assertEqual(tiers, "full")
+
+    def test_the_fast_tier_runs_unit_tests_only(self):
+        commands = (ROOT / "scripts/check_all.sh").read_text()
+        engine = re.search(r"step engine fast engine:test-changed .*", commands)[0]
+        desktop = re.search(r"step desktop fast desktop:test-fast .*", commands)[0]
+        for line in (engine, desktop):
+            self.assertIn("--lib --bins", line)
+        self.assertIn("swift build --package-path apps/shared", commands)
+        self.assertNotRegex(commands, r"step \w+ (?:both|fast) \S+ .*swift test")
+
     def test_post_merge_prerequisites_are_steps_of_the_same_area(self):
         steps = {step_id: area for area, _, step_id in gate_steps()}
         for step_id, prerequisite in post_merge.PREREQUISITES.items():
@@ -86,7 +110,7 @@ class StepListTests(unittest.TestCase):
 
     def test_the_script_lists_every_step_of_each_tier(self):
         changed = Path(tempfile.mkdtemp()) / "changed.txt"
-        changed.write_text("engine/soyeht-web/src/lib.rs\n")
+        changed.write_text("engine/soyeht-web/src/lib.rs\napps/desktop/crates/soyeht-client/src/lib.rs\napps/shared/Sources/A.swift\n")
         for tier in ("fast", "full"):
             with self.subTest(tier=tier):
                 result = subprocess.run(
@@ -112,6 +136,10 @@ class StepListTests(unittest.TestCase):
                     self.assertNotIn("engine:test", listed)
                     self.assertIn("engine:test-changed", listed)
                     self.assertNotIn("desktop:test", listed)
+                    self.assertIn("desktop:test-fast", listed)
+                    for step_id in AFTER_MERGE:
+                        self.assertNotIn(step_id, listed)
+                    self.assertIn("swift:test-shared-build", listed)
 
 
 class GateListTests(unittest.TestCase):

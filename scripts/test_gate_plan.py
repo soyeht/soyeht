@@ -23,7 +23,7 @@ PACKAGES = [
     Package("soyeht-cli", "engine/soyeht-cli", ("soyeht-protocol", "soyeht-platform")),
 ]
 DESKTOP_DEPS = {"soyeht-protocol", "soyeht-platform"}
-EVERYTHING = ("always", "engine", "desktop", "swift", "dictation", "mac_app", "ios_app", "typescript")
+EVERYTHING = ("always", "engine", "desktop", "swift", "typescript")
 
 
 def plan(*files: str):
@@ -52,35 +52,24 @@ class AreaTests(unittest.TestCase):
 
     def test_an_engine_crate_selects_it_and_its_reverse_dependencies(self):
         result = plan("engine/soyeht-vcs/src/lib.rs")
-        self.assertEqual(result.areas, ("always", "engine", "swift"))
-        self.assertEqual(
-            result.engine_crates,
-            ("soyeht-cli", "soyeht-engine", "soyeht-platform", "soyeht-vcs"),
-        )
+        self.assertEqual(result.areas, ("always", "engine"))
+        self.assertEqual(result.engine_crates, ("soyeht-engine", "soyeht-vcs"))
 
-    def test_every_engine_change_also_tests_the_platform_and_the_cli(self):
-        result = plan("engine/soyeht-editor/src/lib.rs")
-        self.assertIn("soyeht-platform", result.engine_crates)
-        self.assertIn("soyeht-cli", result.engine_crates)
+    def test_unit_tests_do_not_follow_the_edges_that_only_integration_tests_use(self):
+        # A sibling-binary test (the CLI starts the engine) runs after the merge, not before it.
+        self.assertEqual(plan("engine/soyeht-mcp/src/main.rs").engine_crates, ("soyeht-mcp",))
+        self.assertNotIn("soyeht-cli", plan("engine/soyeht-ptyd/src/lib.rs").engine_crates)
+        self.assertNotIn("soyeht-platform", plan("engine/soyeht-editor/src/lib.rs").engine_crates)
 
-    def test_test_time_edges_the_graph_does_not_show(self):
-        self.assertIn("soyeht-engine", plan("engine/soyeht-mcp/src/main.rs").engine_crates)
-        ptyd = plan("engine/soyeht-ptyd/src/lib.rs").engine_crates
-        self.assertIn("soyeht-cli", ptyd)
-        self.assertIn("soyeht-engine", ptyd)
-        self.assertIn("soyeht-cli", plan("engine/soyeht-engine/src/auth.rs").engine_crates)
-
-    def test_engine_crates_the_swift_tests_launch_also_run_the_shared_swift_tests(self):
+    def test_an_engine_change_leaves_the_swift_tests_to_the_full_tier(self):
         for path in ("engine/soyeht-engine/src/x.rs", "engine/soyeht-ptyd/src/x.rs",
-                     "engine/soyeht-cli/src/x.rs", "engine/soyeht-store/src/x.rs",
-                     "engine/soyeht-web/src/x.rs"):
+                     "engine/soyeht-cli/src/x.rs", "engine/soyeht-store/src/x.rs"):
             with self.subTest(path=path):
-                self.assertIn("swift", plan(path).areas)
-        self.assertNotIn("dictation", plan("engine/soyeht-store/src/x.rs").areas)
+                self.assertNotIn("swift", plan(path).areas)
 
     def test_a_crate_the_desktop_uses_selects_desktop_too(self):
         self.assertEqual(plan("engine/soyeht-platform/src/fs.rs").areas,
-                         ("always", "engine", "desktop", "swift"))
+                         ("always", "engine", "desktop"))
         self.assertIsNotNone(plan("engine/soyeht-platform/src/fs.rs").engine_crates)
 
     def test_an_engine_file_outside_every_crate_tests_the_workspace(self):
@@ -99,12 +88,12 @@ class AreaTests(unittest.TestCase):
         self.assertEqual(result.areas, ("always", "desktop"))
 
     def test_swift_and_dictation(self):
-        self.assertEqual(plan("apps/mac/Sources/Foo.swift").areas, ("always", "swift", "mac_app"))
-        self.assertEqual(plan("apps/ios/Sources/Foo.swift").areas, ("always", "swift", "ios_app"))
-        shared = ("always", "swift", "dictation", "mac_app", "ios_app")
-        self.assertEqual(plan("apps/shared/Sources/A.swift").areas, shared)
-        self.assertEqual(plan("contracts/swift/Package.swift").areas, shared)
-        self.assertEqual(plan("apps/dictation/Sources/A.swift").areas, ("always", "swift", "dictation"))
+        # The app builds and the dictation tests have no fast step; the full tier runs them.
+        for path in ("apps/mac/Sources/Foo.swift", "apps/ios/Sources/Foo.swift",
+                     "apps/shared/Sources/A.swift", "contracts/swift/Package.swift",
+                     "apps/dictation/Sources/A.swift"):
+            with self.subTest(path=path):
+                self.assertEqual(plan(path).areas, ("always", "swift"))
 
     def test_typescript(self):
         self.assertEqual(plan("contracts/typescript/src/x.ts").areas, ("always", "typescript"))
@@ -129,7 +118,6 @@ class AreaTests(unittest.TestCase):
                 result = plan(path)
                 self.assertEqual(result.areas, EVERYTHING)
                 self.assertIsNone(result.engine_crates)
-                self.assertTrue(result.dictation)
 
     def test_unknown_paths_select_everything(self):
         self.assertEqual(plan("tools/new/thing.bin").areas, EVERYTHING)
@@ -140,7 +128,7 @@ class AreaTests(unittest.TestCase):
 
     def test_areas_combine(self):
         result = plan("docs/x.md", "apps/desktop/crates/a/src/b.rs", "engine/soyeht-editor/src/lib.rs")
-        self.assertEqual(result.areas, ("always", "engine", "desktop", "swift"))
+        self.assertEqual(result.areas, ("always", "engine", "desktop"))
         self.assertIn("soyeht-editor", result.engine_crates)
 
     def test_full_plan_has_every_area(self):
@@ -148,10 +136,10 @@ class AreaTests(unittest.TestCase):
 
     def test_files_that_other_directories_read(self):
         project = plan("apps/mac/SoyehtMac.xcodeproj/project.pbxproj")
-        self.assertEqual(project.areas, ("always", "engine", "swift", "mac_app"))
+        self.assertEqual(project.areas, ("always", "engine", "swift"))
         self.assertIn("soyeht-engine", project.engine_crates)
         fonts = plan("apps/mac/Resources/Fonts/Inter.ttf")
-        self.assertEqual(fonts.areas, ("always", "desktop", "swift", "mac_app"))
+        self.assertEqual(fonts.areas, ("always", "desktop", "swift"))
         icons = plan("apps/shared/Sources/SoyehtClient/Resources/ProviderIcons.xcassets/a.png")
         self.assertIn("desktop", icons.areas)
         self.assertIn("swift", icons.areas)
@@ -165,6 +153,31 @@ class AreaTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).upgrade, ())
         self.assertIn("GATE_UPGRADE=scripts/check_all.sh", gate_plan.render_shell(plan("scripts/check_all.sh")))
+
+    def test_the_new_gate_scripts_upgrade_the_run_too(self):
+        for path in ("scripts/main_watch.py", "scripts/remote_gate.sh"):
+            with self.subTest(path=path):
+                self.assertEqual(plan(path).upgrade, (path,))
+                self.assertEqual(plan(path).areas, EVERYTHING)
+
+    def test_a_test_only_change_of_the_gate_scripts_stays_in_the_fast_tier(self):
+        for path in ("scripts/test_gate_plan.py", "scripts/test_post_merge.py", "scripts/test_main_watch.py",
+                     "scripts/test_gate_list.py", "scripts/test_tcc_guard.py", "scripts/test_check_quality.py"):
+            with self.subTest(path=path):
+                result = plan(path)
+                self.assertEqual(result.upgrade, ())
+                self.assertEqual(result.areas, ("always",))
+                self.assertEqual(result.review, "required")  # a weaker test is a reviewer's call
+        # Beside the script it tests, the script decides.
+        both = plan("scripts/test_post_merge.py", "scripts/post_merge.py")
+        self.assertEqual(both.upgrade, ("scripts/post_merge.py",))
+        self.assertEqual(both.areas, EVERYTHING)
+
+    def test_only_unit_tests_of_the_scripts_directory_are_test_only(self):
+        self.assertFalse(gate_plan.gate_test("scripts/not_a_test.py"))
+        self.assertFalse(gate_plan.gate_test("scripts/test_data.json"))
+        self.assertFalse(gate_plan.gate_test("scripts/quality/test_x.py"))
+        self.assertEqual(plan("scripts/quality/test_x.py").areas, EVERYTHING)
 
 
 class ReviewTests(unittest.TestCase):
@@ -215,16 +228,15 @@ class ReviewTests(unittest.TestCase):
 class RenderTests(unittest.TestCase):
     def test_shell_output_is_assignments_only(self):
         text = gate_plan.render_shell(plan("engine/soyeht-vcs/src/lib.rs"))
-        self.assertIn("GATE_AREAS='always engine swift'", text)
-        self.assertIn("GATE_ENGINE_TEST_ARGS='-p soyeht-cli -p soyeht-engine -p soyeht-platform -p soyeht-vcs'", text)
-        self.assertIn("GATE_DICTATION=0", text)
+        self.assertIn("GATE_AREAS='always engine'", text)
+        self.assertIn("GATE_ENGINE_TEST_ARGS='-p soyeht-engine -p soyeht-vcs'", text)
 
     def test_shell_output_for_everything_tests_the_workspace(self):
         self.assertIn("GATE_ENGINE_TEST_ARGS=--workspace", gate_plan.render_shell(plan("scripts/x.py")))
 
     def test_text_names_the_deferred_areas(self):
         text = gate_plan.render_text(plan("docs/a.md"), "fast")
-        self.assertIn("after the merge only: e2e editor_perf timing", text)
+        self.assertIn("after the merge only: dictation mac_app ios_app e2e editor_perf timing", text)
 
     def test_cargo_metadata_is_turned_into_packages(self):
         raw = [

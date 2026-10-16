@@ -2,7 +2,8 @@
 
 GitHub Actions is disabled until the product is ready. Before every merge, run
 `bash scripts/check_all.sh --tier fast` with `FORBIDDEN_TERMS` supplied through the
-environment; after the merge `scripts/post_merge.py` runs the full tier on main (ADR 0089).
+environment; after the merge `scripts/main_watch.py` runs the full tier on main through
+`scripts/post_merge.py` and reverts a confirmed culprit (ADRs 0089 and 0092).
 `scripts/check_all.sh` is the only list of gate steps; it runs them in sequence
 and stops at the first failure. Record the results in the PR description. To
 also scan PR history and the final title/body, pass
@@ -100,6 +101,52 @@ Tests may use `--data-dir PATH` to connect to a temporary installation.
 On a runner without a graphical domain, the installer accepts `--domain user`;
 inspection and stop commands use that same domain.
 None of these options accepts another profile or service name.
+
+## The full gate after the merge, and the remote Linux host
+
+`scripts/main_watch.py` is one pass of the continuous post-merge gate. It fetches
+`origin/main`, runs `scripts/post_merge.py` once on the newest commit when main moved, and
+writes `.cache/main-health/watch.json` (the last processed commit, the result, the culprit
+and any revert). `--dry-run` is the default; `--apply` pushes and merges the revert of a
+confirmed culprit. Run it from a loop or a timer with `FORBIDDEN_TERMS` in the environment
+and `gh` authenticated; it holds a lock, so overlapping runs exit 75.
+
+```sh
+FORBIDDEN_TERMS=... uv run python scripts/main_watch.py --apply \
+  --remote HOST --remote-root /path/to/soyeht
+```
+
+`--remote HOST --remote-root PATH` (also accepted by `post_merge.py`) runs the steps of the
+areas engine, desktop and e2e on HOST and the other full-tier steps (the Swift packages, the
+Mac and iOS apps, the editor measurement, the dictation tests, the timing tests, the
+`always` checks) on the local machine, after the remote ones. The interface with the host is
+this and nothing else:
+
+- HOST is anything `ssh` accepts, with key authentication and no prompt (`ssh -o
+  BatchMode=yes HOST ...`). `SOYEHT_REMOTE_SSH` replaces the `ssh -o BatchMode=yes` command
+  (split on example).
+- PATH is a clone of this repository on the host, with `origin` pointing at the same remote.
+  It needs `scripts/remote_gate.sh`; keep the clone on a recent main (`git pull`), because
+  the script that runs is the one in the clone, while the gate that runs is the commit's.
+- Each run is `ssh HOST bash -lc 'cd PATH || exit 2; [ -f scripts/remote_gate.sh ] || exit 2;
+  bash scripts/remote_gate.sh --sha FULL_SHA --steps ID,ID,... [--base FULL_SHA]'`. A login
+  shell, so the host's toolchain is on `PATH`.
+- `remote_gate.sh` fetches `origin main` (and the commit itself when that does not reach it),
+  checks the commit out in the persistent worktree `PATH/.cache/remote-gate/tree` (untracked
+  files go, ignored ones such as `target/` stay, so builds are incremental) and runs
+  `bash scripts/check_all.sh --tier full --only STEPS` there, with the per-step times in
+  `PATH/.cache/remote-gate/timings.json`. Its output is the gate's output and its exit code is
+  the gate's, so `check_all: FAILED step ID` reaches the log. Exit 2 means the host could not
+  run the gate (no checkout, no script, the commit cannot be fetched); ssh's own exit 255 is
+  the same. Neither records anything or reverts anything.
+- `remote_gate.sh --print-timings` prints that timings file; `post_merge.py` merges it into
+  the record of the run.
+- The restricted vocabulary is not sent: the remote steps do not scan for it, and a
+  placeholder satisfies the gate's check that it is set.
+- One run at a time per clone (`post_merge.py` holds the lock). Set
+  `SOYEHT_REMOTE_GATE_DIR` to move the state directory. The host needs the Rust toolchain,
+  `uv`, `git` and whatever the e2e suites start; `scripts/check_engine_linux.sh` lists what
+  the engine needs.
 
 ## Local quality ratchet
 

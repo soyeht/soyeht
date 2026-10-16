@@ -3,22 +3,26 @@
 
 `scripts/check_all.sh` is the only list of gate steps and tags each with an area. This
 script decides which areas a change needs, which engine crates `cargo test` covers, and
-whether the change needs a reviewer. Rules, first match wins:
+whether the change needs a reviewer. The fast tier is cheap on purpose: format, lint, a build
+and the unit tests (`--lib --bins`) of the selected areas. Integration tests, the Swift
+tests, the Mac and iOS app builds, e2e, the editor measurement and the timing tests run only
+in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match wins:
 
 - a change to the contracts, `engine/soyeht-protocol`, the gate tooling (`scripts/`,
   `.github/`, `.githooks/`), the lockfiles or the workspace manifests selects every
   code area, and so does a cargo workspace that cannot be read;
 - a file that another directory reads (`CROSS_READS`) also selects the readers;
 - a path under one engine crate selects `engine` and that crate plus its reverse
-  dependencies in the engine workspace (`cargo metadata`) and the test-time edges that
-  Cargo does not show (`TEST_EDGES`); a crate that the desktop workspace depends on
-  also selects `desktop`;
+  dependencies in the engine workspace (`cargo metadata`); a crate that the desktop
+  workspace depends on also selects `desktop`;
 - the other code directories select their own area;
 - documentation selects only `always`;
 - an unknown path selects every code area.
 
 A change to the scripts that run the gate (`gate_runner`) upgrades the run to the full
-tier: a mistake there is not covered by a partial run.
+tier: a mistake there is not covered by a partial run. A change to the unit tests of those
+scripts alone (`scripts/test_*.py`) does not: it selects `always`, whose steps run those
+tests.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import argparse
 import fnmatch
 import json
 import posixpath
+import re
 import shlex
 import subprocess
 import sys
@@ -36,13 +41,12 @@ from pathlib import Path, PurePosixPath
 from gate_base import BaseError, main_health_dir, resolve_base
 
 ROOT = Path(__file__).resolve().parents[1]
-CODE_AREAS = ("engine", "desktop", "swift", "mac_app", "ios_app", "typescript")
-# Areas that only the full tier (the run after the merge) covers.
-FULL_ONLY_AREAS = ("e2e", "editor_perf", "timing")
-# `dictation` is a part of `swift`: its tests run when apps/dictation, apps/shared or
-# contracts/swift changed (its package depends on them).
-ALL_AREAS = ("always", "engine", "desktop", "swift", "dictation", "mac_app", "ios_app",
-             "typescript", *FULL_ONLY_AREAS)
+CODE_AREAS = ("engine", "desktop", "swift", "typescript")
+# Areas that only the full tier (the run after the merge) covers: the dictation tests, the
+# Mac and iOS app builds, the end-to-end suites, the editor measurement and the timing tests.
+# The Swift packages and the engine and desktop workspaces also have steps that are full-only.
+FULL_ONLY_AREAS = ("dictation", "mac_app", "ios_app", "e2e", "editor_perf", "timing")
+ALL_AREAS = ("always", *CODE_AREAS, *FULL_ONLY_AREAS)
 
 # Data files of the ratchets: the always-on checks read them, no code depends on them.
 GATE_DATA_PATTERNS = ("scripts/*baseline*.json", "scripts/*allowlist*.json")
@@ -65,19 +69,6 @@ CROSS_READS = (
     ("apps/mac/Resources/Fonts/", ("swift", "desktop"), ()),
     ("apps/shared/Sources/SoyehtClient/Resources/", ("swift", "desktop"), ()),
 )
-# Test-time edges between engine crates that Cargo does not show: a test starts the other
-# crate's binary. A change to the key also tests the values.
-TEST_EDGES = {
-    "soyeht-mcp": ("soyeht-engine",),
-    "soyeht-engine": ("soyeht-cli",),
-    "soyeht-ptyd": ("soyeht-cli", "soyeht-engine"),
-}
-# soyeht-platform's canonical_paths test scans the source of every engine crate, and the
-# CLI tests start the engine: any engine change tests both.
-ALWAYS_WITH_ENGINE = ("soyeht-platform", "soyeht-cli")
-# The Swift connection tests launch these engine binaries, so a change to them also runs
-# the shared Swift tests.
-SWIFT_LAUNCHES = {"soyeht-engine", "soyeht-ptyd", "soyeht-cli", "soyeht-store"}
 
 ENGINE_CORE = ("core", "dispatch", "server", "agents")
 SECURITY_ENGINE = ("auth", "pairing", "push", "network", "ui_attestation")
@@ -97,7 +88,6 @@ class Plan:
     areas: tuple[str, ...]
     # None runs the whole engine workspace.
     engine_crates: tuple[str, ...] | None
-    dictation: bool
     review: str
     review_reasons: tuple[str, ...]
     # Why the run must be the full tier; empty when the fast tier is enough.
@@ -108,14 +98,20 @@ def gate_data(path: str) -> bool:
     return any(fnmatch.fnmatchcase(path, pattern) for pattern in GATE_DATA_PATTERNS)
 
 
+def gate_test(path: str) -> bool:
+    """A unit test of the gate scripts: the `always` steps run it, and nothing else reads it."""
+    return posixpath.dirname(path) == "scripts" and re.fullmatch(r"test_\w+\.py", posixpath.basename(path)) is not None
+
+
 def gate_runner(path: str) -> bool:
     """The scripts that run or define the gate; a partial run cannot vouch for a change here."""
     name = posixpath.basename(path)
     return path.startswith(".github/") or (
         path.startswith("scripts/")
+        and not gate_test(path)
         and (name == "check_all.sh"
-             or name.startswith(("gate_", "test_gate_", "post_merge", "test_post_merge",
-                                 "e2e", "tcc_guard", "test_tcc_guard", "require_one_rust_test"))
+             or name.startswith(("gate_", "post_merge", "main_watch", "remote_gate",
+                                 "e2e", "tcc_guard", "require_one_rust_test"))
              or name in {"check_mac.sh", "check_ios.sh", "check_swift.sh", "check_editor_performance.py"})
     )
 
@@ -131,7 +127,7 @@ def forces_everything(path: str) -> bool:
         path in CONTRACT_SOURCES
         or path in WORKSPACE_FILES
         or path.startswith("engine/soyeht-protocol/")
-        or gate_tooling(path)
+        or (gate_tooling(path) and not gate_test(path))
         or (path.startswith("contracts/")
             and not path.startswith(("contracts/swift/", "contracts/typescript/"))
             and not path.endswith(".md"))
@@ -158,8 +154,7 @@ def package_of(path: str, packages: list[Package]) -> Package | None:
 
 
 def reverse_closure(names: set[str], packages: list[Package]) -> set[str]:
-    """`names`, the crates that depend on them and the crates their tests start."""
-    known = {package.name for package in packages}
+    """`names` and the crates that depend on them."""
     closure = set(names)
     grew = True
     while grew:
@@ -168,11 +163,6 @@ def reverse_closure(names: set[str], packages: list[Package]) -> set[str]:
             if package.name not in closure and closure.intersection(package.dependencies):
                 closure.add(package.name)
                 grew = True
-        for name in sorted(closure):
-            for affected in TEST_EDGES.get(name, ()):
-                if affected in known and affected not in closure:
-                    closure.add(affected)
-                    grew = True
     return closure
 
 
@@ -212,15 +202,14 @@ def make_plan(
     areas = {"always"}
     crates: set[str] = set()
     everything = engine_packages is None
-    dictation = everything
     for path in files:
         for prefix, extra_areas, extra_crates in CROSS_READS:
             if path.startswith(prefix):
                 areas.update(extra_areas)
                 crates.update(extra_crates)
         if forces_everything(path):
-            everything = dictation = True
-        elif is_documentation(path):
+            everything = True
+        elif is_documentation(path) or gate_test(path):
             continue
         elif path.startswith("engine/") or path.startswith(ENGINE_PROMPTS):
             areas.add("engine")
@@ -233,30 +222,17 @@ def make_plan(
                     areas.add("desktop")
         elif path.startswith("apps/desktop/"):
             areas.add("desktop")
-        elif path.startswith("apps/dictation/"):
-            areas.update(("swift", "dictation"))
-        elif path.startswith(("apps/shared/", "contracts/swift/")):
-            areas.update(("swift", "dictation", "mac_app", "ios_app"))
-        elif path.startswith("apps/mac/"):
-            areas.update(("swift", "mac_app"))
-        elif path.startswith("apps/ios/"):
-            areas.update(("swift", "ios_app"))
+        elif path.startswith(("apps/dictation/", "apps/shared/", "contracts/swift/", "apps/mac/", "apps/ios/")):
+            areas.add("swift")
         elif path.startswith("contracts/typescript/"):
             areas.add("typescript")
         else:
-            everything = dictation = True
+            everything = True
     if everything:
         areas.update(CODE_AREAS)
-        dictation = True
     selection = None
     if "engine" in areas and not everything:
-        affected = reverse_closure(crates, engine_packages or [])
-        if affected & SWIFT_LAUNCHES:
-            areas.add("swift")
-        known = {package.name for package in engine_packages or []}
-        selection = tuple(sorted(affected | (set(ALWAYS_WITH_ENGINE) & known)))
-    if dictation:
-        areas.add("dictation")
+        selection = tuple(sorted(reverse_closure(crates, engine_packages or [])))
     reasons = sorted({reason for path in files for reason in review_reasons(path)})
     upgrade = tuple(sorted(path for path in files if gate_runner(path)))
     return Plan(
@@ -264,7 +240,6 @@ def make_plan(
         tuple(files),
         tuple(area for area in ALL_AREAS if area in areas),
         selection,
-        dictation,
         "required" if reasons else "optional",
         tuple(reasons),
         upgrade,
@@ -272,7 +247,7 @@ def make_plan(
 
 
 def full_plan() -> Plan:
-    return Plan(None, (), ALL_AREAS, None, True, "required", ("full tier",))
+    return Plan(None, (), ALL_AREAS, None, "required", ("full tier",))
 
 
 def metadata(manifest: Path) -> list[dict]:
@@ -328,7 +303,7 @@ def render_text(plan: Plan, tier: str) -> str:
         tests = "whole workspace" if plan.engine_crates is None else " ".join(plan.engine_crates)
         if "engine" in plan.areas:
             lines.append(f"  engine tests: {tests}")
-        lines.append(f"  after the merge only: {' '.join(FULL_ONLY_AREAS)}")
+        lines.append(f"  after the merge only: {' '.join(FULL_ONLY_AREAS)}, integration and Swift tests")
     if plan.upgrade:
         lines.append(f"  full tier required: {', '.join(plan.upgrade)}")
     lines.append(f"  review:  {plan.review}")
@@ -341,7 +316,6 @@ def render_shell(plan: Plan) -> str:
     values = {
         "GATE_AREAS": " ".join(plan.areas),
         "GATE_ENGINE_TEST_ARGS": tests,
-        "GATE_DICTATION": "1" if plan.dictation else "0",
         "GATE_REVIEW": plan.review,
         "GATE_UPGRADE": ", ".join(plan.upgrade),
     }
