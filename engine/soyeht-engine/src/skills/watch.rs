@@ -438,13 +438,14 @@ mod tests {
             settle(&mut watches, 1_000 + PROBE_INTERVAL_MS),
             [(workspace_key(), root.clone())]
         );
-        let folder = &mut watches.workspaces.get_mut(WORKSPACE).unwrap().0;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
-        while folder.events.is_none() && std::time::Instant::now() < deadline {
-            folder.take_started();
-            std::thread::sleep(std::time::Duration::from_millis(25));
-        }
-        assert!(folder.events.is_some(), "the stream was started again");
+        // The probe asks for a new stream on its own thread. Whether the system's file-event
+        // service answers is not this rule (a busy machine may take minutes or refuse), and a
+        // stream that arrives is taken by `a_slow_event_stream_start_..._caught_up`.
+        let folder = &watches.workspaces[WORKSPACE].0;
+        assert!(
+            folder.starting.is_some() || folder.events.is_some(),
+            "the stream was asked for again"
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 
