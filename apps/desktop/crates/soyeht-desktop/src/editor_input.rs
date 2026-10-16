@@ -16,6 +16,7 @@ use gpui::{
 use soyeht_client::{
     Effect,
     editor::{
+        gutter,
         keys::{Action, Chord, action},
         selection::Motion,
         text::{cells_before, column_at_cell, line_cells},
@@ -60,19 +61,20 @@ impl Workbench {
         &mut self,
         pane_id: &str,
         bounds: Bounds<Pixels>,
-        cell: CellSize,
+        (cell, digit_width): (CellSize, f32),
         _: &mut Context<Self>,
     ) -> Option<Frame> {
         let (cell_width, line) = (f32::from(cell.width), f32::from(cell.height));
         let in_view = (f32::from(bounds.size.height) / line).ceil() as u32 + 1;
-        let columns = columns_in(
-            bounds.size.width - px(editor::GUTTER_WIDTH + 2.0 * editor::TEXT_INSET),
-            cell,
-        );
         let file = self.state.editors.file_of_pane_mut(pane_id)?;
         let wants_reveal = file.take_reveal();
         let head = file.selection.head.clone();
         let lines = file.lines;
+        let gutter = gutter::width(lines, digit_width, editor::GUTTER_WIDTH, editor::TEXT_INSET);
+        let columns = columns_in(
+            bounds.size.width - px(gutter + 2.0 * editor::TEXT_INSET),
+            cell,
+        );
         let head_cell = file
             .page
             .as_ref()
@@ -82,6 +84,7 @@ impl Workbench {
         ui.rows = in_view;
         ui.columns = u32::try_from(columns).unwrap_or(u32::MAX);
         ui.cell = (cell_width, line);
+        ui.gutter = gutter;
         if let (true, Some(at)) = (wants_reveal, head_cell) {
             ui.reveal(head.line, at);
         }
@@ -125,6 +128,7 @@ impl Workbench {
             .filter(|(row, _)| *row < shown.len());
         let frame = Frame {
             cell,
+            gutter,
             rows: shown,
             caret,
             scroll: (top, f32::from(bounds.size.height)),
@@ -573,8 +577,7 @@ impl Workbench {
         if !page.holds(line) {
             return None;
         }
-        let x =
-            f32::from(at.x - bounds.left()) - editor::GUTTER_WIDTH - editor::TEXT_INSET + ui.left;
+        let x = f32::from(at.x - bounds.left()) - ui.gutter - editor::TEXT_INSET + ui.left;
         let cell = (x / ui.cell.0.max(1.0)).round().max(0.0) as usize;
         Some(TextPosition {
             line,

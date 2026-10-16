@@ -32,6 +32,12 @@ uses the same ownership path as `file.open`; its smaller response remains
 `{paneId}`. A scripting client can use this request when it needs the smaller
 pane-only response.
 
+A client names the file by a path relative to the workspace, or by an absolute path inside
+it, as a shell gives it (`soyeht pane create --editor /work/repo/src/main.rs --cwd /work/repo`).
+Both are canonicalized with `soyeht_platform::fs::canonicalize` and must lie under the
+canonical workspace root; a path outside it, or a link that leads outside, fails before
+anything is stored.
+
 ## Consequences
 
 Aliases through symbolic links inside a workspace converge on one relative

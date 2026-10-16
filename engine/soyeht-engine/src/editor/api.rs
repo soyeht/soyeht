@@ -1,5 +1,7 @@
 use super::{
+    Service,
     persistence::{filesystem_author, next_revision, stored_version},
+    service::ResolvedPath,
     tabs::EditorPaneOpening,
 };
 use crate::{
@@ -58,9 +60,7 @@ impl Core {
         pane_only: bool,
     ) -> Result<Value> {
         let workspace = crate::model::workspace(&self.store, &request.workspace_id)?;
-        let resolved = self
-            .editor
-            .resolve(Path::new(&workspace.path), &request.path)?;
+        let resolved = resolve_named(&self.editor, Path::new(&workspace.path), &request.path)?;
         if let Some(file) = self
             .store
             .editor_file_for_path(&request.workspace_id, &resolved.relative)
@@ -306,6 +306,17 @@ pub(crate) fn reconcile_reopened_file(
     file.disk_text = disk.clone();
     let version = stored_version(&file, disk, filesystem_author(), created_at);
     Ok((file, Some(version)))
+}
+
+/// The file a client names to open: a path relative to the workspace, or an absolute path inside
+/// it, as a shell gives it. Either way the canonical file must lie in the workspace.
+fn resolve_named(editor: &Service, root: &Path, requested: &str) -> Result<ResolvedPath> {
+    let path = Path::new(requested);
+    if path.is_absolute() {
+        editor.resolve_absolute(root, path)
+    } else {
+        editor.resolve(root, requested)
+    }
 }
 
 fn open_reply(result: FileOpenResult, pane_only: bool) -> Result<Value> {

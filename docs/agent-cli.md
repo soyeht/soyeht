@@ -68,12 +68,14 @@ already signed in, `pane auth` signs in again as another account and restarts th
 session with its history; `pane auth-cancel` stops a running sign-in and closes its
 terminal; `pane logout` asks an agent that supports it to forget its account.
 
-Editor commands use the workspace-relative path only when opening a file. Every
+Editor commands name a file by its workspace-relative path, or by an absolute path inside the
+workspace, only when opening it. Every
 later operation uses the opaque file ID and a revision where the operation must
 reject stale input. Lines and UTF-16 columns are zero-based.
 
 ```sh
 soyeht --profile dev pane create --editor src/main.rs --cwd /absolute/worktree
+soyeht --profile dev pane create --editor /absolute/worktree/src/main.rs --cwd /absolute/worktree
 soyeht --profile dev file open WORKSPACE_ID src/main.rs --line 41 --column 3
 soyeht --profile dev file read FILE_ID --revision 7 --from 0 --lines 200
 soyeht --profile dev file write FILE_ID 7 41 3 41 3 'inserted text'

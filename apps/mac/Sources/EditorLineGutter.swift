@@ -7,7 +7,12 @@ import SoyehtProtocol
 /// `EditorWrapLayout` picks the lines near the visible rows, and the text view's own layout
 /// places each one, so the numbers sit on the drawn text.
 @MainActor final class EditorLineGutter: NSView {
-  static let width: CGFloat = PaneLayoutContentMetrics.editorGutterWidth
+  /// The gutter follows the digits of the last line number (`EditorGutter`), so that no number
+  /// is clipped; the host pins its width to this constraint.
+  private(set) lazy var widthConstraint = widthAnchor.constraint(
+    equalToConstant: PaneLayoutContentMetrics.editorGutterWidth)
+  private static let numberFont = MacTheme.monoNSFont(MacTheme.TypeScale.small)
+  private static let numberInset = CGFloat(PaneLayoutContentMetrics.editorTextInset)
   private static let rowHeight = EditorTextMetrics.lineHeight
   /// Rows read before the first visible one, in case a wide glyph wrapped earlier than the
   /// shared layout counts.
@@ -35,8 +40,12 @@ import SoyehtProtocol
 
   func update(
     startLine: UInt32, markers: [UInt32: Set<EditorDiffMarker>],
-    agentReviewLines: Set<UInt32>, agentCursors: [EditorAgentCursorEvent], selectedLine: UInt32?
+    agentReviewLines: Set<UInt32>, agentCursors: [EditorAgentCursorEvent], selectedLine: UInt32?,
+    lineCount: UInt32
   ) {
+    let digit = ("0" as NSString).size(withAttributes: [.font: Self.numberFont]).width
+    let width = CGFloat(EditorGutter.width(lineCount: lineCount, digitWidth: Double(digit)))
+    if widthConstraint.constant != width { widthConstraint.constant = width }
     self.startLine = startLine
     diffMarkers = markers
     self.agentReviewLines = agentReviewLines
@@ -58,9 +67,8 @@ import SoyehtProtocol
     guard let textView, let scrollView, layout.lineCount > 0 else { return }
     let offset = scrollView.contentView.bounds.minY
     let inset = textView.textContainerInset.height
-    let font = MacTheme.monoNSFont(MacTheme.TypeScale.small)
     let attributes: [NSAttributedString.Key: Any] = [
-      .font: font, .foregroundColor: NSColor(MacTheme.muted),
+      .font: Self.numberFont, .foregroundColor: NSColor(MacTheme.muted),
     ]
     let topRow = Int(max(0, offset - inset) / Self.rowHeight)
     let slack = layout.columns == nil ? 1 : Self.wrapSlackRows
@@ -72,14 +80,15 @@ import SoyehtProtocol
       guard y + height >= rect.minY else { continue }
       if selectedLine == line {
         NSColor(MacTheme.well).setFill()
-        NSRect(x: 0, y: y, width: Self.width, height: height).fill()
+        NSRect(x: 0, y: y, width: bounds.width, height: height).fill()
       }
       drawMarkers(diffMarkers[line] ?? [], y: y, height: height)
       drawAgentFacts(line: line, y: y, height: height)
       let label = "\(UInt64(line) + 1)" as NSString
       let size = label.size(withAttributes: attributes)
       label.draw(
-        at: NSPoint(x: Self.width - size.width - 10, y: y + 2), withAttributes: attributes)
+        at: NSPoint(x: bounds.width - size.width - Self.numberInset, y: y + 2),
+        withAttributes: attributes)
     }
   }
 

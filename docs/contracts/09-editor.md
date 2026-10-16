@@ -96,6 +96,8 @@ collaboration, extensions.
   events `file.changed_on_disk`, `file.saved {by}`, `file.conflict`,
   `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`,
   `editor.tabs_updated`, `project.entry_renamed`, `project.tree_changed`.
+  `file.open` and `pane.create` with `mode: "editor"` (`soyeht pane create --editor`) take a
+  `path` relative to the workspace or an absolute path inside it; a path outside is refused.
 - 07 (persistence): unsaved drafts and per-file version history in the
   database, capped per file (for example 200 versions or 50 MiB) with a
   clear button.

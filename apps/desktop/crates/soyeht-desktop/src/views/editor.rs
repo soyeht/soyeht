@@ -53,10 +53,12 @@ impl Workbench {
     ) -> Div {
         let file = self.state.editors.file_of_pane(&pane.pane_id);
         let label = file.map_or_else(|| "Editor".to_owned(), |file| path_label(&file.doc.path));
-        let (status, color) = match file.map(|file| &file.doc) {
+        let (status, color) = match file {
             None => ("\u{b7} loading", palette.muted),
-            Some(doc) if doc.conflicted => ("\u{b7} conflict", palette.danger()),
-            Some(doc) if doc.dirty => ("\u{b7} unsaved", palette.warning()),
+            Some(file) if file.doc.conflicted => ("\u{b7} conflict", palette.danger()),
+            // The caret is on its way to a page the engine has not sent: keys wait for it.
+            Some(file) if file.is_landing() => ("\u{b7} moving", palette.muted),
+            Some(file) if file.doc.dirty => ("\u{b7} unsaved", palette.warning()),
             Some(_) => ("\u{b7} saved", palette.muted),
         };
         let shown = !self.project_panel_hidden.contains(&pane.workspace_id);
@@ -134,6 +136,10 @@ impl Workbench {
                 format!("Ln {}, Col {}", head.line + 1, head.column + 1),
             ]
         });
+        let notice = file
+            .map(|file| file.dropped_keys)
+            .filter(|dropped| *dropped > 0)
+            .map(|dropped| format!("{dropped} keys could not be applied"));
         let hidden = self.project_panel_hidden.contains(&workspace);
         let tabs = self.editor_tabs(cx, palette, pane);
         let finding = self.find_bar(pane, cx, palette);
@@ -165,7 +171,7 @@ impl Workbench {
                     .children(conflicted.then(|| conflict_banner(palette)))
                     .children(finding)
                     .child(text)
-                    .child(status_bar(status, palette)),
+                    .child(status_bar(status, notice, palette)),
             )
             .into_any_element()
     }
@@ -282,7 +288,11 @@ fn conflict_banner(palette: &Palette) -> AnyElement {
 }
 
 /// The strip under the lines: the language, the encoding, the line ending and the caret.
-fn status_bar(status: Option<[String; 3]>, palette: &Palette) -> AnyElement {
+fn status_bar(
+    status: Option<[String; 3]>,
+    notice: Option<String>,
+    palette: &Palette,
+) -> AnyElement {
     let [language, ending, place] = status.unwrap_or_default();
     row()
         .h(px(editor::STATUS_HEIGHT))
@@ -296,5 +306,6 @@ fn status_bar(status: Option<[String; 3]>, palette: &Palette) -> AnyElement {
         .child("UTF-8")
         .child(ending)
         .child(place)
+        .children(notice.map(|notice| div().text_color(rgb(palette.warning())).child(notice)))
         .into_any_element()
 }

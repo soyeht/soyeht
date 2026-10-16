@@ -89,8 +89,8 @@ pub enum Failure {
     /// A write or a replay: the edits the replica made are not the engine's, so it reads the
     /// page again.
     Edit(String),
-    /// A read or a save: nothing waits for it any more.
-    Read(String),
+    /// A read or a save, of the page that starts at `from_line`: nothing waits for it any more.
+    Read { file_id: String, from_line: u32 },
     /// A folder that could not be listed.
     List { workspace_id: String, path: String },
 }
@@ -265,8 +265,15 @@ pub(crate) fn failure(command: &EditorCommand) -> Option<Event> {
         EditorCommand::Write { file_id, .. } | EditorCommand::Replay { file_id, .. } => {
             Failure::Edit(file_id.clone())
         }
-        EditorCommand::Read(PageRequest { file_id, .. })
-        | EditorCommand::Save(PageRequest { file_id, .. }) => Failure::Read(file_id.clone()),
+        EditorCommand::Read(PageRequest {
+            file_id, from_line, ..
+        })
+        | EditorCommand::Save(PageRequest {
+            file_id, from_line, ..
+        }) => Failure::Read {
+            file_id: file_id.clone(),
+            from_line: *from_line,
+        },
         EditorCommand::List {
             workspace_id, path, ..
         } => Failure::List {

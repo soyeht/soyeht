@@ -9,6 +9,7 @@
 pub(crate) mod commands;
 pub mod editing;
 mod file;
+pub mod gutter;
 pub mod keys;
 pub mod page;
 pub mod selection;
@@ -19,17 +20,17 @@ mod trees;
 mod viewport;
 
 pub use commands::{EditorCommand, EditorEvent, Failure};
+use file::Action;
 pub use file::EditorFile;
 pub use trees::ProjectTrees;
 pub use viewport::PAGE_LINES;
 
 use crate::Effect;
-use page::{Page, position};
-use selection::{Motion, Selection};
+use selection::Motion;
 use serde_json::Value;
 use soyeht_protocol::{
     EditorTab, EventName, FileChangedOnDiskEvent, FileConflictEvent, FileDocument, FileSavedEvent,
-    Pane, PaneMode, ProjectEntryRenamedEvent, ProjectTreeChangedEvent, TextPosition, TextRange,
+    Pane, PaneMode, ProjectEntryRenamedEvent, ProjectTreeChangedEvent, TextPosition,
     limits::EDITOR_EDIT_BYTES,
 };
 use std::collections::{HashMap, HashSet};
@@ -337,10 +338,10 @@ impl Editors {
                 .get_mut(&file_id)
                 .map(EditorFile::edit_failed)
                 .unwrap_or_default(),
-            Failure::Read(file_id) => self
+            Failure::Read { file_id, from_line } => self
                 .files
                 .get_mut(&file_id)
-                .map(EditorFile::read_failed)
+                .map(|file| file.read_failed(from_line))
                 .unwrap_or_default(),
             Failure::List { workspace_id, path } => self.trees.list_failed(&workspace_id, &path),
         }
@@ -430,64 +431,26 @@ impl Editors {
         self.file_of_pane_mut(pane_id).map(act).unwrap_or_default()
     }
 
-    /// Makes the plan `plan` draws up for the selection of the file of `pane_id`.
-    fn change(
-        &mut self,
-        pane_id: &str,
-        plan: impl FnOnce(&Page, &[TextRange]) -> Option<editing::Plan>,
-    ) -> Vec<Effect> {
-        self.on_file(pane_id, |file| {
-            let Some(range) = file.range_to_edit() else {
-                return Vec::new();
-            };
-            let made = file.page.as_ref().and_then(|page| plan(page, &[range]));
-            made.map(|made| file.edit(&made)).unwrap_or_default()
-        })
+    /// Does `action` in the file of `pane_id`, or keeps it until the caret that is on its way has
+    /// landed there.
+    fn act(&mut self, pane_id: &str, action: Action) -> Vec<Effect> {
+        self.on_file(pane_id, |file| file.act(action))
     }
 
     /// Types `text` over the selection: a character, a line break or a tab.
     pub fn insert(&mut self, pane_id: &str, text: &str) -> Vec<Effect> {
-        self.change(pane_id, |page, ranges| {
-            editing::insertion(page, ranges, text)
-        })
+        self.act(pane_id, Action::Insert(text.to_owned()))
     }
 
     /// Backspace (`backward`) or Delete.
     pub fn delete(&mut self, pane_id: &str, backward: bool) -> Vec<Effect> {
-        self.change(pane_id, |page, ranges| {
-            editing::deletion(page, ranges, backward)
-        })
+        self.act(pane_id, Action::Delete { backward })
     }
 
     /// Backspace or Delete over the word before or after the caret; over a selection, or at the
     /// edge of a line, it is the plain key.
     pub fn delete_word(&mut self, pane_id: &str, backward: bool) -> Vec<Effect> {
-        self.change(pane_id, |page, ranges| {
-            let [range] = ranges else {
-                return editing::deletion(page, ranges, backward);
-            };
-            let at = &range.start;
-            let text = page.text(at.line);
-            let at_edge = if backward {
-                at.column == 0
-            } else {
-                at.column >= page.line_end(at.line)
-            };
-            if *at != range.end || at_edge {
-                return editing::deletion(page, ranges, backward);
-            }
-            let edge = if backward {
-                text::word_before(text, at.column)
-            } else {
-                text::word_after(text, at.column)
-            };
-            let (from, to) = (edge.min(at.column), edge.max(at.column));
-            let span = TextRange {
-                start: position(at.line, from),
-                end: position(at.line, to),
-            };
-            editing::deletion(page, &[span], backward)
-        })
+        self.act(pane_id, Action::DeleteWord { backward })
     }
 
     /// Pastes `text` as it is, line breaks of any system made one. A paste the engine would
@@ -504,10 +467,7 @@ impl Editors {
         if text.len() > EDITOR_EDIT_BYTES {
             return Err("The text is too large to paste into the editor.");
         }
-        let strings = [text];
-        Ok(self.change(pane_id, |page, ranges| {
-            editing::verbatim(page, ranges, &strings)
-        }))
+        Ok(self.act(pane_id, Action::Paste(text)))
     }
 
     /// The selected text, for copying.
@@ -528,47 +488,36 @@ impl Editors {
 
     /// Moves the caret, or grows the selection when `extend`.
     pub fn motion(&mut self, pane_id: &str, motion: Motion, extend: bool) -> Vec<Effect> {
-        self.on_file(pane_id, |file| file.motion(motion, extend))
+        self.act(pane_id, Action::Motion { motion, extend })
     }
 
     /// Selects the page: the part of the document that is loaded.
     pub fn select_all(&mut self, pane_id: &str) -> Vec<Effect> {
-        self.on_file(pane_id, EditorFile::select_all)
+        self.act(pane_id, Action::SelectAll)
     }
 
     /// A click (or a drag, with `extend`) at `at`.
     pub fn click(&mut self, pane_id: &str, at: TextPosition, extend: bool) -> Vec<Effect> {
-        self.on_file(pane_id, |file| {
-            let target = file.selection.moved_to(at, extend);
-            file.place(target)
-        })
+        self.act(pane_id, Action::Click { at, extend })
     }
 
     /// A double click selects the word at `at`; a triple click, its line.
     pub fn select_around(&mut self, pane_id: &str, at: &TextPosition, line: bool) -> Vec<Effect> {
-        self.on_file(pane_id, |file| {
-            let Some(page) = file.page.as_ref().filter(|page| page.holds(at.line)) else {
-                return Vec::new();
-            };
-            let (start, end) = if line {
-                (
-                    position(at.line, 0),
-                    position(at.line, page.line_end(at.line)),
-                )
-            } else {
-                let (from, to) = text::word_at(page.text(at.line), at.column);
-                (position(at.line, from), position(at.line, to))
-            };
-            file.place(Selection::selecting(start, end))
-        })
+        self.act(
+            pane_id,
+            Action::SelectAround {
+                at: at.clone(),
+                line,
+            },
+        )
     }
 
     pub fn save(&mut self, pane_id: &str) -> Vec<Effect> {
-        self.on_file(pane_id, EditorFile::save)
+        self.act(pane_id, Action::Save)
     }
 
     pub fn replay(&mut self, pane_id: &str, redo: bool) -> Vec<Effect> {
-        self.on_file(pane_id, |file| file.replay(redo))
+        self.act(pane_id, Action::Replay { redo })
     }
 
     /// What the view shows: the first line and how many, so that the page that holds them is
@@ -578,5 +527,7 @@ impl Editors {
     }
 }
 
+#[cfg(test)]
+mod jump_tests;
 #[cfg(test)]
 mod tests;

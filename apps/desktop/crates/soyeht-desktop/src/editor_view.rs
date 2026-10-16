@@ -31,6 +31,8 @@ pub struct Row {
 /// What a frame draws, copied out of the replica so painting holds no borrow of the app.
 pub struct Frame {
     pub cell: CellSize,
+    /// The width of the gutter: it follows the digits of the last line number.
+    pub gutter: f32,
     pub rows: Vec<Row>,
     /// The caret, as the row it is on and its cell counted from the line's start, when it is in
     /// view.
@@ -126,8 +128,10 @@ pub fn surface(
     frame_canvas(
         move |bounds, cx| {
             let cell = CellSize::of(cx, editor::FONT_POINT_SIZE, editor::LINE_HEIGHT);
+            // The numbers are drawn in the small face: its digit is what the gutter must hold.
+            let digit = CellSize::of(cx, type_scale::SMALL, editor::LINE_HEIGHT).width;
             workbench.update(cx, |workbench, cx| {
-                workbench.editor_frame(&pane_id, bounds, cell, cx)
+                workbench.editor_frame(&pane_id, bounds, (cell, f32::from(digit)), cx)
             })
         },
         move |frame, bounds, window, cx| draw(frame, bounds, window, cx, palette, focused),
@@ -148,7 +152,7 @@ fn draw(
     focused: bool,
 ) {
     let cell = frame.cell;
-    let gutter = px(editor::GUTTER_WIDTH);
+    let gutter = px(frame.gutter);
     let text_area = Bounds::new(
         point(bounds.left() + gutter, bounds.top()),
         size(bounds.size.width - gutter, bounds.size.height),
@@ -255,10 +259,7 @@ fn paint_gutter(
     cx: &mut App,
 ) {
     let cell = frame.cell;
-    let gutter = Bounds::new(
-        bounds.origin,
-        size(px(editor::GUTTER_WIDTH), bounds.size.height),
-    );
+    let gutter = Bounds::new(bounds.origin, size(px(frame.gutter), bounds.size.height));
     window.paint_quad(fill(gutter, color(palette.face)));
     window.with_content_mask(Some(ContentMask { bounds: gutter }), |window| {
         for (index, row) in frame.rows.iter().enumerate() {

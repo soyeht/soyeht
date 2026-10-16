@@ -246,3 +246,15 @@ private func position(_ value: JsonValue) -> TextPosition {
     #expect(reads == (item["reads"].array ?? []).compactMap(\.int), "\(name(item))")
   }
 }
+
+@Test func theGutterIsAsWideAsTheVectorSays() throws {
+  let gutter = try ContractVector.load("editor")["gutterWidth"]
+  #expect(gutter["minimum"].double == PaneLayoutContentMetrics.editorGutterWidth)
+  #expect(gutter["inset"].double == PaneLayoutContentMetrics.editorTextInset)
+  for item in ContractVector.cases(gutter, "cases") {
+    let width = EditorGutter.width(
+      lineCount: UInt32(item["lineCount"].int ?? 0), digitWidth: item["digitWidth"].double ?? 0,
+      minimum: gutter["minimum"].double ?? 0, inset: gutter["inset"].double ?? 0)
+    #expect(width == item["width"].double, "\(name(item))")
+  }
+}

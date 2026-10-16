@@ -28,6 +28,8 @@ pub(crate) struct EditorUi {
     pub columns: u32,
     /// The width of a character and the height of a line, as the text was last drawn.
     pub cell: (f32, f32),
+    /// The width of the gutter as it was last drawn.
+    pub gutter: f32,
     /// The cells of the longest line in view, to keep the sideways scroll inside the text.
     pub longest: usize,
     /// A drag that selects text is under way.
@@ -108,10 +110,7 @@ impl EditorUi {
         let (width, height) = self.bounds.map_or((0.0, 0.0), |bounds| {
             (f32::from(bounds.size.width), f32::from(bounds.size.height))
         });
-        (
-            height,
-            width - editor::GUTTER_WIDTH - 2.0 * editor::TEXT_INSET,
-        )
+        (height, width - self.gutter - 2.0 * editor::TEXT_INSET)
     }
 
     /// Keeps the scroll inside the text.
@@ -153,6 +152,7 @@ mod tests {
                 size(px(400.0), px(190.0)),
             )),
             cell: (7.0, editor::LINE_HEIGHT),
+            gutter: editor::GUTTER_WIDTH,
             ..EditorUi::default()
         }
     }
@@ -235,5 +235,16 @@ mod tests {
         assert!(ui.left > 0.0);
         ui.reveal(2, 0);
         assert_eq!(ui.left, 0.0);
+    }
+
+    #[test]
+    fn the_gutter_vector_is_drawn_with_the_designs_minimum_and_inset() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../contracts/vectors/editor.json");
+        let text = std::fs::read_to_string(path).unwrap();
+        let vector: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let gutter = &vector["gutterWidth"];
+        assert_eq!(gutter["minimum"], f64::from(editor::GUTTER_WIDTH));
+        assert_eq!(gutter["inset"], f64::from(editor::TEXT_INSET));
     }
 }

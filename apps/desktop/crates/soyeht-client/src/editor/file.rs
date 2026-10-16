@@ -5,6 +5,8 @@
 //! the queue is not empty: a page read then would not have the keystrokes yet. What was asked in
 //! the meantime waits and is done when the queue is empty.
 
+mod held;
+
 use super::at_least;
 use super::{
     commands::{EditorCommand, PageRequest},
@@ -19,6 +21,8 @@ use soyeht_protocol::{
     FileWriteResult, TextEdit, TextPosition, TextRange,
 };
 use std::collections::VecDeque;
+
+pub use held::Action;
 
 /// What waits for the edits on their way to the engine.
 #[derive(Debug, Clone, PartialEq)]
@@ -57,6 +61,16 @@ pub struct EditorFile {
     /// Where the caret goes once the page that holds it has been read, and the first line of
     /// that page: a page read earlier does not take it.
     pending: Option<(u32, Selection)>,
+    /// What the person did while the caret was on its way: it is done at the target, in order,
+    /// when the page that holds it has been read (`file/held.rs`).
+    held: VecDeque<Action>,
+    /// An undo or redo is on its way to the engine: the page it leaves is not the one later
+    /// actions are for, so they wait for its answer like they wait for a jump.
+    replaying: bool,
+    /// Whether the held actions already overflowed their bound (logged once per landing).
+    overflowed: bool,
+    /// How many of the person's actions were dropped, for the view to say so until the next one.
+    pub dropped_keys: u32,
     deferred: Vec<Deferred>,
     reveal: bool,
     /// The first line in view and how many are, as the view last said.
@@ -86,6 +100,10 @@ impl EditorFile {
             in_flight: false,
             reading: None,
             pending: None,
+            held: VecDeque::new(),
+            replaying: false,
+            overflowed: false,
+            dropped_keys: 0,
             deferred: Vec::new(),
             reveal: false,
             view: (0, 0),
@@ -98,6 +116,8 @@ impl EditorFile {
         self.in_flight = false;
         self.reading = None;
         self.pending = None;
+        self.replaying = false;
+        self.abandon();
         // What waited for edits that are lost is not done: closing the pane the person is
         // editing, by a write that comes later, least of all.
         self.deferred.clear();
@@ -142,7 +162,9 @@ impl EditorFile {
     pub fn selected_text(&self) -> Option<String> {
         let page = self.page.as_ref()?;
         let range = self.selection.range();
-        (!self.selection.is_empty()).then(|| page.between(&range.start, &range.end))
+        // The selection is the one the jump left, not the one it is going to.
+        (!self.selection.is_empty() && !self.is_landing())
+            .then(|| page.between(&range.start, &range.end))
     }
 
     fn request(&self, from_line: u32) -> PageRequest {
@@ -188,7 +210,11 @@ impl EditorFile {
     /// Takes a page the engine sent. A page that arrives while edits are on their way is older
     /// than the page and is dropped; it is read again when they have arrived.
     pub fn install(&mut self, result: &FileReadResult, asked: u32) -> Vec<Effect> {
-        self.reading = None;
+        // Only the page being waited for ends the wait: another one that arrives first leaves the
+        // read that is outstanding to be waited for, and to fail.
+        if self.reading == Some(result.from_line) {
+            self.reading = None;
+        }
         // A page read before the latest edit describes an older file.
         if self.has_unsent() || !at_least(&result.file.revision, &self.doc.revision) {
             return self.reload();
@@ -232,6 +258,7 @@ impl EditorFile {
             self.pending = Some((line, target));
             effects.extend(self.read(line));
         }
+        effects.extend(self.release());
         effects.extend(self.search_again());
         effects
     }
@@ -380,6 +407,8 @@ impl EditorFile {
         self.queue.clear();
         self.in_flight = false;
         self.pending = None;
+        self.replaying = false;
+        self.abandon();
         self.deferred.retain(|step| *step != Deferred::Reload);
         let mut effects = self.settled();
         effects.extend(self.reload());
@@ -389,15 +418,28 @@ impl EditorFile {
     /// A read did not come. A file that got shorter than the page's first line refuses it, and
     /// the view would stay on a page that is gone: the page is read again from the end of the
     /// file, or from its start. Of two reads that fail, the second is the last.
-    pub fn read_failed(&mut self) -> Vec<Effect> {
-        let Some(failed) = self.reading.take() else {
-            return Vec::new();
-        };
-        if matches!(&self.pending, Some((start, _)) if *start == failed) {
-            self.pending = None;
+    /// `failed` is the first line of the page that was read.
+    pub fn read_failed(&mut self, failed: u32) -> Vec<Effect> {
+        let ours = self.reading == Some(failed);
+        if ours {
+            self.reading = None;
         }
-        if failed == 0 || self.has_unsent() {
-            return Vec::new();
+        // The caret never lands when the page it waits for fails, or when no read is left that
+        // could bring it: what waited for it has no place to go.
+        let stranded = self
+            .pending
+            .as_ref()
+            .is_some_and(|(start, _)| *start == failed || self.reading.is_none());
+        let mut effects = Vec::new();
+        if stranded {
+            self.pending = None;
+            self.abandon();
+            if !self.has_unsent() {
+                effects.extend(self.settled());
+            }
+        }
+        if !ours || failed == 0 || self.has_unsent() {
+            return effects;
         }
         let total = self.doc.line_count;
         let retry = if failed >= total {
@@ -405,7 +447,8 @@ impl EditorFile {
         } else {
             0
         };
-        self.read(retry)
+        effects.extend(self.read(retry));
+        effects
     }
 
     /// What was asked while edits were on their way is done now.
@@ -436,7 +479,8 @@ impl EditorFile {
 
     /// Closes the file's pane once its edits have reached the engine, which saves the draft.
     pub fn close(&mut self) -> Vec<Effect> {
-        if self.has_unsent() {
+        // Keys that wait for a jump are the person's too: they are typed before the pane closes.
+        if self.has_unsent() || !self.held.is_empty() {
             self.defer(Deferred::Close);
             return Vec::new();
         }
@@ -456,6 +500,7 @@ impl EditorFile {
     /// Undoes or redoes the newest edit the engine recorded; the history is the engine's, so
     /// it is shared by every client.
     pub fn replay(&mut self, redo: bool) -> Vec<Effect> {
+        self.replaying = true;
         if self.has_unsent() {
             self.defer(Deferred::Replay { redo });
             return Vec::new();
@@ -470,14 +515,20 @@ impl EditorFile {
     /// The engine undid or redid an edit: the page that shows the result is read, and the caret
     /// goes where the edit was.
     pub fn replayed(&mut self, result: FileUndoResult) -> Vec<Effect> {
+        self.replaying = false;
         self.doc = result.file;
         self.changed_lines = result.changed_lines;
         if !result.applied {
-            return Vec::new();
+            return self.release();
         }
+        // What is done next is done on the page that shows the result, not on this one.
         let start = match result.cursor {
             Some(cursor) => self.wait_for(Selection::caret(cursor)),
-            None => self.start(),
+            None => {
+                let start = self.start();
+                self.pending = Some((start, self.selection.clone()));
+                start
+            }
         };
         self.reading = None;
         self.read(start)

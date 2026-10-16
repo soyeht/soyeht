@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{EventName, FileReadResult, Pane, TextEdit, TextPosition};
 
-fn doc(file: &str, pane_id: &str, revision: u64, lines: u32, dirty: bool) -> Value {
+pub(super) fn doc(file: &str, pane_id: &str, revision: u64, lines: u32, dirty: bool) -> Value {
     json!({
         "fileId": file, "paneId": pane_id, "workspaceId": "w", "path": format!("src/{file}.rs"),
         "language": "rust", "revision": revision.to_string(), "diskRevision": "1",
@@ -17,7 +17,14 @@ fn doc(file: &str, pane_id: &str, revision: u64, lines: u32, dirty: bool) -> Val
     })
 }
 
-fn read(file: &str, pane_id: &str, revision: u64, from: u32, texts: &[&str], total: u32) -> Event {
+pub(super) fn read(
+    file: &str,
+    pane_id: &str,
+    revision: u64,
+    from: u32,
+    texts: &[&str],
+    total: u32,
+) -> Event {
     let lines: Vec<Value> = texts
         .iter()
         .enumerate()
@@ -31,7 +38,7 @@ fn read(file: &str, pane_id: &str, revision: u64, from: u32, texts: &[&str], tot
     Event::Editor(super::EditorEvent::Page(Box::new(result)))
 }
 
-fn written(file: &str, pane_id: &str, revision: u64, lines: u32) -> Event {
+pub(super) fn written(file: &str, pane_id: &str, revision: u64, lines: u32) -> Event {
     Event::Editor(super::EditorEvent::Written {
         file_id: file.into(),
         result: Box::new(
@@ -43,7 +50,7 @@ fn written(file: &str, pane_id: &str, revision: u64, lines: u32) -> Event {
     })
 }
 
-fn snapshot(panes: Vec<Pane>, files: Vec<Value>) -> Snapshot {
+pub(super) fn snapshot(panes: Vec<Pane>, files: Vec<Value>) -> Snapshot {
     Snapshot {
         workspaces: vec![workspace("w")],
         panes,
@@ -63,7 +70,7 @@ fn read_tail() -> Event {
 }
 
 /// What the effects send to the engine, as editor commands.
-fn sent(effects: &[Effect]) -> Vec<super::EditorCommand> {
+pub(super) fn sent(effects: &[Effect]) -> Vec<super::EditorCommand> {
     effects
         .iter()
         .filter_map(|effect| match effect {
@@ -73,7 +80,7 @@ fn sent(effects: &[Effect]) -> Vec<super::EditorCommand> {
         .collect()
 }
 
-fn writes(effects: &[Effect]) -> Vec<(String, Vec<TextEdit>)> {
+pub(super) fn writes(effects: &[Effect]) -> Vec<(String, Vec<TextEdit>)> {
     sent(effects)
         .into_iter()
         .filter_map(|command| match command {
@@ -84,7 +91,7 @@ fn writes(effects: &[Effect]) -> Vec<(String, Vec<TextEdit>)> {
 }
 
 /// A state with one editor pane `e1` showing `src/main.rs`, whose page has been read.
-fn open(texts: &[&str], total: u32) -> State {
+pub(super) fn open(texts: &[&str], total: u32) -> State {
     let mut state = State::default();
     state.apply(Event::Connected(snapshot(
         vec![pane("e1", "w", "editor")],
@@ -101,7 +108,7 @@ fn open_full_page() -> State {
     open(&refs, 5000)
 }
 
-fn page_text(state: &State) -> Vec<String> {
+pub(super) fn page_text(state: &State) -> Vec<String> {
     state
         .editors
         .file_of_pane("e1")
@@ -110,7 +117,7 @@ fn page_text(state: &State) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn caret(state: &State) -> TextPosition {
+pub(super) fn caret(state: &State) -> TextPosition {
     state
         .editors
         .file_of_pane("e1")
@@ -585,17 +592,20 @@ fn a_file_that_got_shorter_than_the_page_is_read_from_its_end_and_a_second_failu
         }),
     );
     state.apply(saved);
-    let failed = |state: &mut State| {
+    let failed = |state: &mut State, from_line: u32| {
         state.apply(Event::Editor(super::EditorEvent::Failed(
-            super::Failure::Read("main".into()),
+            super::Failure::Read {
+                file_id: "main".into(),
+                from_line,
+            },
         )))
     };
-    let retry = sent(&failed(&mut state));
+    let retry = sent(&failed(&mut state, 4499));
     let [super::EditorCommand::Read(first)] = &retry[..] else {
         panic!("one read: {retry:?}");
     };
     assert_eq!(first.from_line, 0);
-    assert!(sent(&failed(&mut state)).is_empty());
+    assert!(sent(&failed(&mut state, 0)).is_empty());
 }
 
 #[test]

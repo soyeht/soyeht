@@ -68,6 +68,15 @@ impl Rig {
         self.command_with_binding(args, None)
     }
     fn command_with_binding(&self, args: &[&str], binding: Option<&str>) -> Value {
+        let output = self.run(args, binding);
+        assert!(
+            output.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+    fn run(&self, args: &[&str], binding: Option<&str>) -> std::process::Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_soyeht"));
         command
             .args(["--profile", "dev", "--data-dir"])
@@ -75,19 +84,13 @@ impl Rig {
         if binding.is_some() {
             command.arg("--bound");
         }
-        let output = command
+        command
             .args(args)
             .env_remove("SOYEHT_MCP_BINDING")
             .envs(binding.map(|value| ("SOYEHT_MCP_BINDING", value)))
             .current_dir(&self.path)
             .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{args:?}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        serde_json::from_slice(&output.stdout).unwrap()
+            .unwrap()
     }
 }
 
@@ -563,4 +566,68 @@ fn cli_agent_controls_use_the_engine_session_and_native_permission_options() {
     assert_eq!(after["pid"], before["pid"]);
     assert_eq!(after["agent"]["sessionId"], before["agent"]["sessionId"]);
     rig.command(&["pane", "close", pane]);
+}
+
+#[test]
+fn an_editor_pane_opens_a_file_named_by_an_absolute_path_inside_its_directory() {
+    let rig = Rig::start();
+    let project = rig.path.join("project");
+    fs::create_dir_all(project.join("src")).unwrap();
+    let note = project.join("src/note.txt");
+    fs::write(&note, "one\n").unwrap();
+    let (cwd, note) = (project.to_str().unwrap(), note.to_str().unwrap());
+    // No workspace has this directory yet: as for a terminal, creating the pane creates it.
+    assert!(
+        rig.command(&["pane", "list"])["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let created = rig.command(&["pane", "create", "--editor", note, "--cwd", cwd]);
+    let listed = rig.command(&["pane", "list"]);
+    let items = listed["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        (&items[0]["paneId"], &items[0]["mode"], &items[0]["cwd"]),
+        (
+            &created["paneId"],
+            &Value::from("editor"),
+            &Value::from(cwd)
+        )
+    );
+    // The relative form names the same file, so it is the same pane.
+    let again = rig.command(&["pane", "create", "--editor", "src/note.txt", "--cwd", cwd]);
+    assert_eq!(again["paneId"], created["paneId"]);
+}
+
+#[test]
+fn an_editor_pane_refuses_a_file_outside_its_directory() {
+    let rig = Rig::start();
+    let project = rig.path.join("project");
+    fs::create_dir(&project).unwrap();
+    let outside = rig.path.join("outside.txt");
+    fs::write(&outside, "secret\n").unwrap();
+    let output = rig.run(
+        &[
+            "pane",
+            "create",
+            "--editor",
+            outside.to_str().unwrap(),
+            "--cwd",
+            project.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("escapes the workspace"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        rig.command(&["pane", "list"])["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }

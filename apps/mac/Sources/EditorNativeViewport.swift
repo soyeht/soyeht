@@ -132,7 +132,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       gutter?.update(
         startLine: viewport.fromLine, markers: parent.diffMarkers,
         agentReviewLines: parent.agentReviewLines,
-        agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line)
+        agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line,
+        lineCount: viewport.file.lineCount)
       updateVirtualGeometry(viewport)
       let identity =
         "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics)):\(SoyehtThemeStore.shared.activeTheme.rawValue)"
@@ -653,7 +654,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       gutter.leadingAnchor.constraint(equalTo: leadingAnchor),
       gutter.topAnchor.constraint(equalTo: topAnchor),
       gutter.bottomAnchor.constraint(equalTo: bottomAnchor),
-      gutter.widthAnchor.constraint(equalToConstant: EditorLineGutter.width),
+      gutter.widthConstraint,
       scrollView.leadingAnchor.constraint(equalTo: gutter.trailingAnchor),
       scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
       scrollView.topAnchor.constraint(equalTo: topAnchor),

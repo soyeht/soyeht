@@ -1,5 +1,5 @@
 {
-  "description": "The editor rules the clients agree on: when the visible lines need another page of the file (x-clientPolicy editor prefetchLines and pageLeadDivisor, over the viewport limit; a page the engine cut short at its byte budget is not read again), which tab shows and which one takes over, what a keystroke changes and sends (a character is a grapheme cluster, and a CRLF line break is one character that the new lines of a CRLF file repeat), which line break a file has, and how the project tree answers the keys. Ranges are UTF-16 offsets into the page text (its lines joined by a newline, a CRLF line keeping its carriage return), as the Mac's text view holds them. The Mac (EditorViewportPaging, EditorTabPolicy, EditorEditing, EditorProjectTree) and the desktop client (soyeht_client::editor) pass the same cases.",
+  "description": "The editor rules the clients agree on: when the visible lines need another page of the file (x-clientPolicy editor prefetchLines and pageLeadDivisor, over the viewport limit; a page the engine cut short at its byte budget is not read again), which tab shows and which one takes over, what a keystroke changes and sends (a character is a grapheme cluster, and a CRLF line break is one character that the new lines of a CRLF file repeat), which line break a file has, how wide the line-number gutter is for the digits of the file's last line number (a number is never clipped), and how the project tree answers the keys. Ranges are UTF-16 offsets into the page text (its lines joined by a newline, a CRLF line keeping its carriage return), as the Mac's text view holds them. The Mac (EditorViewportPaging, EditorTabPolicy, EditorEditing, EditorProjectTree) and the desktop client (soyeht_client::editor) pass the same cases.",
   "pageLines": 2000,
   "requestedStart": [
     {
@@ -1848,6 +1848,66 @@
         "key": "right",
         "selection": "src",
         "loads": "src"
+      }
+    ]
+  },
+  "gutterWidth": {
+    "minimum": 44,
+    "inset": 10,
+    "cases": [
+      {
+        "name": "a short file keeps the minimum",
+        "lineCount": 1,
+        "digitWidth": 6.5,
+        "width": 44
+      },
+      {
+        "name": "no lines count as one digit",
+        "lineCount": 0,
+        "digitWidth": 6.5,
+        "width": 44
+      },
+      {
+        "name": "three digits fit the minimum",
+        "lineCount": 999,
+        "digitWidth": 6.5,
+        "width": 44
+      },
+      {
+        "name": "four digits widen it",
+        "lineCount": 1000,
+        "digitWidth": 6.5,
+        "width": 46
+      },
+      {
+        "name": "five digits",
+        "lineCount": 99999,
+        "digitWidth": 6.5,
+        "width": 53
+      },
+      {
+        "name": "six digits are not clipped",
+        "lineCount": 100000,
+        "digitWidth": 6.5,
+        "width": 59
+      },
+      {
+        "name": "line 100001 shows all its digits",
+        "lineCount": 100001,
+        "digitWidth": 6.5,
+        "width": 59
+      },
+      {
+        "name": "a font that is not a whole number of points wide rounds the digits up",
+        "lineCount": 100000,
+        "digitWidth": 6.6,
+        "width": 60
+      },
+      {
+        "name": "eight digits",
+        "lineCount": 10000000,
+        "digitWidth": 6.5,
+        "width": 72
       }
     ]
   }
