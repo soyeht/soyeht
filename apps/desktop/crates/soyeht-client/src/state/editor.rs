@@ -54,6 +54,32 @@ impl State {
         }
     }
 
+    /// The editor place of a workspace, which the "Editor" entry of the new-pane menu goes to:
+    /// the tab that shows takes the keyboard. A workspace with no tab has nothing to focus and
+    /// the place is its empty one, the project panel to pick a file from.
+    pub fn editor_place(&self, workspace_id: &str) -> Vec<Effect> {
+        let selected = self.focused_pane().map(|pane| pane.pane_id.clone());
+        self.editors
+            .active_pane(workspace_id, selected.as_deref(), &self.panes)
+            .map(Effect::FocusPane)
+            .into_iter()
+            .collect()
+    }
+
+    /// Closes a pane, as the close button of its header asks. An editor pane is a tab, which
+    /// closes after its edits have reached the engine; any other pane closes at once.
+    pub fn close_pane_effects(&mut self, pane_id: &str) -> Vec<Effect> {
+        if self
+            .pane(pane_id)
+            .is_some_and(|pane| pane.mode == PaneMode::Editor)
+        {
+            return self.editor_close_tab(pane_id);
+        }
+        vec![Effect::Send(Command::ClosePane {
+            pane_id: pane_id.to_owned(),
+        })]
+    }
+
     /// Closes a tab. The edits that have not reached the engine go first, and the tab that was
     /// active before it takes over.
     pub fn editor_close_tab(&mut self, pane_id: &str) -> Vec<Effect> {

@@ -337,11 +337,18 @@ impl Workbench {
                 Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
             let agents = self.harness_rows(Picker::default(), palette, &pick, cx);
             std::iter::once(menus::heading(palette, "Open a pane").into_any_element())
-                .chain(std::iter::once(menus::on_pick(
-                    menus::item(palette, "terminal", "Terminal", false),
-                    cx,
-                    |this, cx| this.open_pane(None, cx),
-                )))
+                .chain([
+                    menus::on_pick(
+                        menus::item(palette, "terminal", "Terminal", false),
+                        cx,
+                        |this, cx| this.open_pane(None, cx),
+                    ),
+                    menus::on_pick(
+                        menus::item(palette, "editor", "Editor", false),
+                        cx,
+                        Workbench::open_editor_place,
+                    ),
+                ])
                 .chain(agents)
                 .collect()
         } else {
@@ -364,7 +371,7 @@ impl Workbench {
                 button.opacity(pane_interior::DISABLED_OPACITY)
             })
             .when(connected, |button| button.cursor_pointer())
-            .tooltip(hint("Open a terminal or agent pane", palette))
+            .tooltip(hint("Open a terminal, editor or agent pane", palette))
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 if connected {
                     this.toggle_menu(Menu::NewPane, cx);

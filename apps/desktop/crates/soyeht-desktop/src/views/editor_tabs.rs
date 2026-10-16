@@ -4,9 +4,12 @@
 
 use super::{
     prelude::*,
-    ui::{acting, hint, icon_button, owned, sideways_scroller},
+    ui::{acting, hint, icon_button, owned, sideways_scroller_of},
 };
-use crate::theme::{Palette, desktop, editor, space};
+use crate::{
+    editor_ui::{Reveal, TabPlace},
+    theme::{Palette, desktop, editor, space},
+};
 use gpui::MouseButton;
 use soyeht_client::editor::tabs::is_preview;
 use soyeht_protocol::{EditorTab, Pane};
@@ -27,22 +30,37 @@ impl Workbench {
             .state
             .editors
             .tab_list(&pane.workspace_id, self.state.panes());
+        let place = TabPlace {
+            pane_id: pane.pane_id.clone(),
+            index: tabs
+                .iter()
+                .position(|tab| tab.pane_id == pane.pane_id)
+                .unwrap_or_default(),
+            count: tabs.len(),
+        };
         let items: Vec<AnyElement> = tabs
             .iter()
             .map(|tab| self.editor_tab(tab, &pane.pane_id, palette, cx))
             .collect();
-        let scroll = self.panes.of(&pane.pane_id).editor.tabs_scroll.clone();
-        let strip = row().gap(px(space::X4)).children(items);
+        let ui = &mut self.panes.of(&pane.pane_id).editor;
+        // The active tab is brought into view when it becomes the active one, and when a file is
+        // opened beside it, which adds a tab.
+        let reveal = ui.reveal_tab(place);
+        let scroll = ui.tabs_scroll.clone();
+        // The fades at the strip's ends follow the scroll, which moves while this frame paints.
+        if reveal != Reveal::Done {
+            cx.notify();
+        }
         row()
             .h(px(desktop::EDITOR_TAB_BAR_HEIGHT))
             .flex_none()
             .px(px(space::X8))
             .bg(rgb(palette.canvas))
-            .child(sideways_scroller(
+            .child(sideways_scroller_of(
                 id("editor-tabs", &pane.pane_id),
                 &scroll,
-                strip,
                 palette,
+                |strip| strip.gap(px(space::X4)).children(items),
             ))
             .into_any_element()
     }

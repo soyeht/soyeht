@@ -423,13 +423,25 @@ pub fn sideways_scroller(
     content: impl IntoElement,
     palette: &Palette,
 ) -> Div {
-    let mut scroller = div()
-        .id(id)
-        .flex()
-        .size_full()
-        .overflow_x_scroll()
-        .track_scroll(handle)
-        .child(content);
+    sideways_scroller_of(id, handle, palette, |scroller| scroller.child(content))
+}
+
+/// As [`sideways_scroller`], for a scroller whose items `fill` adds to it directly, so that the
+/// handle knows where each one is (`ScrollHandle::bounds_for_item`) and can bring one into view.
+pub fn sideways_scroller_of(
+    id: impl Into<ElementId>,
+    handle: &ScrollHandle,
+    palette: &Palette,
+    fill: impl FnOnce(gpui::Stateful<Div>) -> gpui::Stateful<Div>,
+) -> Div {
+    let mut scroller = fill(
+        div()
+            .id(id)
+            .flex()
+            .size_full()
+            .overflow_x_scroll()
+            .track_scroll(handle),
+    );
     scroller.style().restrict_scroll_to_axis = Some(true);
     div()
         .relative()

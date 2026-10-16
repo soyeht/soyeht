@@ -3,6 +3,7 @@
 //! is the only raised surface; everything inside is flat.
 
 use super::{
+    pane::Action,
     prelude::*,
     switch_popover::well_row,
     ui::{acting, empty_state, header_bar, icon_button, mono_label, owned, pane_card_shell},
@@ -64,6 +65,7 @@ impl Workbench {
             if shown { "Hide" } else { "Show" },
             panel_shortcut()
         );
+        let close = self.header_button(pane, Action::Close, palette, cx);
         header_bar(editor::HEADER_HEIGHT)
             .child(
                 icon_button(
@@ -101,6 +103,7 @@ impl Workbench {
                     .text_color(rgb(color))
                     .child(status),
             )
+            .child(close)
     }
 
     /// The body of an editor pane.

@@ -38,10 +38,61 @@ pub(crate) struct EditorUi {
     pub revealed: Option<String>,
     pub find: FindBar,
     pub tabs_scroll: ScrollHandle,
+    /// The tab the strip was last scrolled to show, with the place it had and the number of tabs.
+    pub tabs_revealed: Option<TabPlace>,
     pub tree_scroll: ScrollHandle,
 }
 
+/// Where the active tab stands in its strip: the pane, its place, and how many tabs there are.
+/// The strip is scrolled to show the tab again when this changes, and left to the person's own
+/// scroll while it does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TabPlace {
+    pub pane_id: String,
+    pub index: usize,
+    pub count: usize,
+}
+
+/// What asking the strip of tabs to show a tab came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reveal {
+    /// The tab is already the one that was shown.
+    Done,
+    /// The strip has not been laid out with its tabs yet: ask again after the next frame.
+    NextFrame,
+    /// The strip scrolls to the tab as it is painted.
+    Scrolled,
+}
+
+/// Whether a frame has laid out a strip of `tabs` tabs in `width` points, which is when its
+/// scroll handle can place a tab.
+fn strip_laid_out(laid_out: usize, width: f32, tabs: usize) -> bool {
+    width > 0.0 && laid_out == tabs
+}
+
 impl EditorUi {
+    /// Scrolls the strip of tabs to the tab at `place`, by the least move that shows all of it,
+    /// when it is not the place the strip was last scrolled to. A tab the person scrolled away
+    /// from stays where they left it. The scroll handle knows nothing of the strip until a frame
+    /// has laid it out with all its tabs, and drops a request made before then, so the request
+    /// waits for that frame.
+    pub fn reveal_tab(&mut self, place: TabPlace) -> Reveal {
+        if self.tabs_revealed.as_ref() == Some(&place) {
+            return Reveal::Done;
+        }
+        let laid_out = self.tabs_scroll.children_count();
+        if !strip_laid_out(
+            laid_out,
+            f32::from(self.tabs_scroll.bounds().size.width),
+            place.count,
+        ) {
+            return Reveal::NextFrame;
+        }
+        self.tabs_scroll.scroll_to_item(place.index);
+        self.tabs_revealed = Some(place);
+        Reveal::Scrolled
+    }
+
     /// The height of the whole text, with the room above the first line and below the last.
     pub fn content_height(lines: u32) -> f32 {
         lines as f32 * editor::LINE_HEIGHT + editor::VIEWPORT_VERTICAL_INSET
@@ -103,6 +154,51 @@ mod tests {
             )),
             cell: (7.0, editor::LINE_HEIGHT),
             ..EditorUi::default()
+        }
+    }
+
+    fn place(pane: &str, index: usize, count: usize) -> TabPlace {
+        TabPlace {
+            pane_id: pane.into(),
+            index,
+            count,
+        }
+    }
+
+    fn revealed_at_the_fourth_of_five() -> EditorUi {
+        EditorUi {
+            tabs_revealed: Some(place("e1", 3, 5)),
+            ..EditorUi::default()
+        }
+    }
+
+    #[test]
+    fn a_strip_is_laid_out_when_a_frame_drew_every_tab_in_some_width() {
+        assert!(strip_laid_out(5, 300.0, 5));
+        assert!(!strip_laid_out(0, 0.0, 5), "no frame has drawn it");
+        assert!(!strip_laid_out(4, 300.0, 5), "a tab was added since");
+        assert!(!strip_laid_out(5, 0.0, 5), "a pane with no room");
+    }
+
+    #[test]
+    fn the_request_to_scroll_waits_for_the_frame_that_lays_the_strip_out() {
+        let mut ui = EditorUi::default();
+        assert_eq!(ui.reveal_tab(place("e1", 0, 1)), Reveal::NextFrame);
+        assert_eq!(ui.tabs_revealed, None);
+    }
+
+    #[test]
+    fn a_tab_that_stays_where_it_is_leaves_the_strip_to_the_person() {
+        let mut ui = revealed_at_the_fourth_of_five();
+        assert_eq!(ui.reveal_tab(place("e1", 3, 5)), Reveal::Done);
+    }
+
+    #[test]
+    fn a_file_opened_from_the_tree_asks_for_the_scroll_again() {
+        let mut ui = revealed_at_the_fourth_of_five();
+        // A tab was added, and the pane that shows is the new one or has moved in the strip.
+        for next in [place("e1", 3, 6), place("e6", 5, 6), place("e6", 4, 6)] {
+            assert_ne!(ui.reveal_tab(next), Reveal::Done);
         }
     }
 

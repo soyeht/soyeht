@@ -27,7 +27,7 @@ use std::time::Instant;
 
 /// The buttons of the header, left to right.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Action {
+pub(super) enum Action {
     Loop,
     Tasks,
     SplitColumns,
@@ -213,7 +213,8 @@ impl Workbench {
             .children(buttons)
     }
 
-    fn header_button(
+    /// A button of a pane's header; a header of its own kind (an editor's) draws the ones it shares.
+    pub(super) fn header_button(
         &mut self,
         pane: &Pane,
         action: Action,

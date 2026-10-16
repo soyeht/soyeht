@@ -341,6 +341,42 @@ fn closing_a_tab_waits_for_the_edits_and_hands_the_view_to_the_tab_before_it() {
 }
 
 #[test]
+fn closing_the_pane_of_an_editor_waits_for_its_edits_and_any_other_pane_closes_at_once() {
+    let mut state = two_editors(vec![pane("t1", "w", "terminal")]);
+    state.apply(read("a", "e1", 1, 0, &["a"], 1));
+    let close = |pane_id: &str| {
+        Effect::Send(Command::ClosePane {
+            pane_id: pane_id.into(),
+        })
+    };
+    assert_eq!(state.close_pane_effects("t1"), [close("t1")]);
+    state.editors.insert("e1", "x");
+    assert!(!state.close_pane_effects("e1").contains(&close("e1")));
+    let acknowledged = state.apply(written("a", "e1", 2, 1));
+    assert!(acknowledged.contains(&close("e1")));
+    // A tab with nothing unsent goes at once, and a pane the replica does not know is left to
+    // the engine to refuse.
+    assert!(state.close_pane_effects("e2").contains(&close("e2")));
+    assert_eq!(state.close_pane_effects("gone"), [close("gone")]);
+}
+
+#[test]
+fn the_editor_place_focuses_the_tab_that_shows_and_an_empty_one_has_nothing_to_focus() {
+    let mut state = two_editors(vec![pane("t1", "w", "terminal")]);
+    state.focus_pane("e2");
+    state.focus_pane("t1");
+    // The terminal has the keyboard, and the editor goes back to the tab it last showed.
+    assert_eq!(state.editor_place("w"), [Effect::FocusPane("e2".into())]);
+    assert!(state.editor_place("elsewhere").is_empty());
+    let mut bare = State::default();
+    bare.apply(Event::Connected(snapshot(
+        vec![pane("t1", "w", "terminal")],
+        vec![],
+    )));
+    assert!(bare.editor_place("w").is_empty());
+}
+
+#[test]
 fn every_editor_pane_of_a_workspace_shares_one_slot_that_shows_the_active_tab() {
     let mut state = two_editors(vec![pane("t1", "w", "terminal")]);
     let shown = |state: &State| -> Vec<String> {

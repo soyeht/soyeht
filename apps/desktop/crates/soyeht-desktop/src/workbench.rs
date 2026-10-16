@@ -413,10 +413,24 @@ impl Workbench {
         }
     }
 
+    /// Closes a pane. An editor pane is a tab, and goes only after its edits have reached the
+    /// engine, which keeps the draft.
     pub(crate) fn close_pane(&mut self, pane_id: &str) {
-        self.send(Command::ClosePane {
-            pane_id: pane_id.to_owned(),
-        });
+        let effects = self.state.close_pane_effects(pane_id);
+        self.run_effects(effects);
+    }
+
+    /// The "Editor" entry of the new-pane menu: the editor place of the selected workspace, as
+    /// the rail's Editor opens it. The tab that shows takes the keyboard; a workspace with no
+    /// file open shows the project panel to pick one from.
+    pub(crate) fn open_editor_place(&mut self, cx: &mut Context<Self>) {
+        self.menus.close();
+        if let Some(workspace_id) = self.state.selected_workspace_id() {
+            let effects = self.state.editor_place(&workspace_id);
+            self.select_destination(Destination::Editor, cx);
+            self.run_effects(effects);
+        }
+        cx.notify();
     }
 
     pub(crate) fn new_terminal(&mut self, _: &NewTerminal, _: &mut Window, cx: &mut Context<Self>) {
