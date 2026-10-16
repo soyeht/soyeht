@@ -151,6 +151,17 @@ work), and apply the result under the lock. Run every external command through
 `soyeht_process::run`, which has a deadline and refuses to start under the lock.
 `tests/blocking_io_rule.rs` and `tests/core_lock.rs` enforce this.
 
+## Test hooks
+
+Production engine code holds no behaviour that exists only for a test: no `cfg(debug_assertions)`,
+no marker file named `test-...` and no `SOYEHT_TEST_...` variable (ADR 0091), because the app a
+developer installs is a debug build. A test that needs the running engine to misbehave adds a
+method with a default to `soyeht_engine::hooks::Hooks`, which `Core` receives through
+`Core::open_with`, and implements it in `test_hooks::FileHooks`. That module, `usage::FixtureHost`
+and the `soyeht-engine-test` program exist only with the `test-hooks` feature, which no default
+build enables. Unit tests pass their own hook to `Core::open_with`. `scripts/check_no_test_backdoors.py`
+enforces it, with an allowlist whose entries each need a reason.
+
 ## How to add an STT engine
 
 Dictation engines are a catalogue (ADR 0083). A new engine is one file and one entry:

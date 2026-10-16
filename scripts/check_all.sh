@@ -208,6 +208,8 @@ step always both pane-interior:unit uv run python -m unittest discover -s script
 step always both swallowed-errors:unit uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
 step always both wire-names:unit uv run python -m unittest discover -s scripts -p 'test_check_wire_names.py'
 step always both wire-names:check uv run python scripts/check_wire_names.py
+step always both no-test-backdoors:unit uv run python -m unittest discover -s scripts -p 'test_check_no_test_backdoors.py'
+step always both no-test-backdoors:check uv run python scripts/check_no_test_backdoors.py
 step always both repo-files:unit uv run python -m unittest discover -s scripts -p 'test_check_repo_files.py'
 # Like the ratchets, it compares with the merge-base unless --base is passed.
 step always both repo-files:check uv run python scripts/check_repo_files.py "$@"
@@ -232,6 +234,13 @@ step engine both engine:clippy in_dir engine cargo clippy --locked --workspace -
 step engine both engine:build in_dir engine cargo build --locked --workspace
 # Integration tests (the crates' tests/ directories, which start sibling binaries) run here only.
 step engine full engine:test in_dir engine cargo test --locked --workspace
+# `cargo test` links target/debug/soyeht-engine from the library with the test-hooks feature
+# on (the engine lists itself as a development dependency). The acceptances below must run the
+# shipped build, so rebuild the product programs without it.
+step engine full engine:build-product in_dir engine cargo build --locked --workspace
+# The engine with the test hooks (ADR 0091), which the editor acceptance starts. No product
+# build has it.
+step engine full engine:build-test-engine in_dir engine cargo build --locked -p soyeht-engine --features test-hooks --bin soyeht-engine-test
 # Unit tests (src/ of libraries and binaries) of the changed crates and their reverse dependencies.
 # shellcheck disable=SC2086
 step engine fast engine:test-changed in_dir engine cargo test --locked $GATE_ENGINE_TEST_ARGS --lib --bins

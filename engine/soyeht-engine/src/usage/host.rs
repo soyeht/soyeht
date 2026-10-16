@@ -13,35 +13,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// The real host. Debug builds started with `SOYEHT_TEST_USAGE_READER_DIR` instead read a
-/// fixture directory for the end-to-end suite: `home/` replaces the home directory, and the
-/// `http-source`, `keychain-source` and `second-source` scripts replace curl, `security` and
-/// `codex`; browsers and terminals are never touched.
-#[derive(Default)]
-pub struct SystemHost {
-    fixtures: Option<PathBuf>,
-}
-
-impl SystemHost {
-    pub fn from_environment() -> Self {
-        #[cfg(debug_assertions)]
-        if let Some(directory) = std::env::var_os("SOYEHT_TEST_USAGE_READER_DIR") {
-            return Self {
-                fixtures: Some(PathBuf::from(directory)),
-            };
-        }
-        Self::default()
-    }
-
-    /// Whether the background schedule runs: the end-to-end suite drives refreshes itself.
-    pub fn schedules(&self) -> bool {
-        self.fixtures.is_none()
-    }
-
-    fn fixture(&self, name: &str) -> Option<PathBuf> {
-        self.fixtures.as_ref().map(|directory| directory.join(name))
-    }
-}
+/// The real host: the machine's files, keychain, HTTPS, browser cookies and pseudo terminal.
+pub struct SystemHost;
 
 impl Host for SystemHost {
     fn platform(&self) -> Platform {
@@ -55,16 +28,10 @@ impl Host for SystemHost {
     }
 
     fn env(&self, name: &str) -> Option<String> {
-        if self.fixtures.is_some() {
-            return None;
-        }
         std::env::var(name).ok()
     }
 
     fn home(&self) -> Option<PathBuf> {
-        if let Some(home) = self.fixture("home") {
-            return Some(home);
-        }
         std::env::home_dir().filter(|home| home.is_absolute())
     }
 
@@ -100,24 +67,16 @@ impl Host for SystemHost {
         if self.platform() != Platform::MacOs {
             return SecretRead::Unsupported;
         }
-        let program = self
-            .fixture("keychain-source")
-            .unwrap_or_else(|| PathBuf::from(process::SECURITY));
-        process::keychain_password(&program, service, account)
+        process::keychain_password(Path::new(process::SECURITY), service, account)
     }
 
     fn http(&self, request: &HttpRequest) -> HttpResult {
-        let program = self
-            .fixture("http-source")
-            .unwrap_or_else(|| PathBuf::from(process::CURL));
-        process::http(&program, request)
+        process::http(Path::new(process::CURL), request)
     }
 
     fn browser_cookies(&self, domain: &str) -> CookieRead {
         #[cfg(target_os = "macos")]
-        if self.fixtures.is_none()
-            && let Some(home) = self.home()
-        {
+        if let Some(home) = self.home() {
             return super::browser::cookies(&home, domain);
         }
         let _ = domain;
@@ -129,11 +88,7 @@ impl Host for SystemHost {
     }
 
     fn json_rpc(&self, request: &RpcRequest) -> RpcRun {
-        let program = match self.fixture("second-source") {
-            Some(fixture) => Some(fixture),
-            None => executable(&request.program),
-        };
-        let Some(program) = program else {
+        let Some(program) = executable(&request.program) else {
             return RpcRun::ToolNotFound;
         };
         process::json_rpc(&program, &launch_path(), request)
@@ -144,8 +99,7 @@ impl Host for SystemHost {
         request: &TerminalRequest,
         driver: &mut dyn TerminalDriver,
     ) -> TerminalRun {
-        let program = executable(&request.program).filter(|_| self.fixtures.is_none());
-        let Some(program) = program else {
+        let Some(program) = executable(&request.program) else {
             return TerminalRun::ToolNotFound;
         };
         // The scratch directory must be Soyeht's own, inside the temporary directory.
@@ -166,15 +120,12 @@ mod tests {
         let path = std::env::temp_dir().join(format!("sn-bound-{}", Uuid::new_v4()));
         fs::write(&path, b"0123456789").unwrap();
         assert_eq!(
-            SystemHost::default().read_file(&path, 10),
+            SystemHost.read_file(&path, 10),
             FileRead::Bytes(b"0123456789".to_vec())
         );
+        assert_eq!(SystemHost.read_file(&path, 9), FileRead::Unreadable);
         assert_eq!(
-            SystemHost::default().read_file(&path, 9),
-            FileRead::Unreadable
-        );
-        assert_eq!(
-            SystemHost::default().read_file(&path.with_extension("absent"), 9),
+            SystemHost.read_file(&path.with_extension("absent"), 9),
             FileRead::Missing
         );
         fs::remove_file(path).unwrap();

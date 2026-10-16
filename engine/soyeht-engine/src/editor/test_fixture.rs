@@ -1,14 +1,33 @@
 //! A real engine core over a temporary project, driven through `dispatch`
 //! by one signed-in local connection, for editor tests.
 
-use crate::{core::Core, dispatch::Outcome, outbox, ports::testing::FixedClock};
+use crate::{core::Core, dispatch::Outcome, hooks::Hooks, outbox, ports::testing::FixedClock};
 use serde_json::{Value, json};
 use soyeht_protocol::frame::Frame;
-use std::{fs, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 use uuid::Uuid;
+
+/// Holds the editor's autosaves while a test asks it to.
+#[derive(Default)]
+struct AutosaveHold(AtomicBool);
+
+impl Hooks for AutosaveHold {
+    fn pause_editor_autosave(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
 
 pub(crate) struct EditorFixture {
     pub core: Core,
+    autosave: Arc<AutosaveHold>,
     pub connection: String,
     pub receiver: outbox::Receiver,
     pub root: PathBuf,
@@ -27,7 +46,8 @@ impl EditorFixture {
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(path, text).unwrap();
         }
-        let mut core = Core::open(&root.join("engine")).unwrap();
+        let autosave = Arc::new(AutosaveHold::default());
+        let mut core = Core::open_with(&root.join("engine"), autosave.clone()).unwrap();
         core.clock = Arc::new(FixedClock(1_000));
         let (sender, mut receiver) = outbox::channel();
         let connection = core.connect(true, false, sender).unwrap();
@@ -36,6 +56,7 @@ impl EditorFixture {
         };
         let mut fixture = Self {
             core,
+            autosave,
             connection,
             receiver,
             root,
@@ -58,6 +79,11 @@ impl EditorFixture {
 
     pub fn project(&self) -> PathBuf {
         self.root.join("project")
+    }
+
+    /// Holds (or releases) the editor's autosaves, so a draft stays a draft.
+    pub fn pause_autosave(&self, paused: bool) {
+        self.autosave.0.store(paused, Ordering::Relaxed);
     }
 
     pub fn at(&mut self, now_ms: i64) {

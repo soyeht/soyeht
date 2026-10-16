@@ -30,6 +30,13 @@ class LayerTests(unittest.TestCase):
         upward = manifest("soyeht-protocol", '[dependencies]\nsoyeht-engine = { path = "../e" }\n')
         self.assertEqual(len(manifest_problems("p/Cargo.toml", upward)), 1)
 
+    def test_a_crate_may_list_itself_to_turn_on_its_own_features_for_tests(self):
+        own = manifest(
+            "soyeht-engine",
+            '[dev-dependencies]\nsoyeht-engine = { path = ".", features = ["test-hooks"] }\n',
+        )
+        self.assertEqual(manifest_problems("e/Cargo.toml", own), [])
+
     def test_dev_build_and_target_tables_are_checked(self):
         body = (
             '[dev-dependencies]\nsoyeht-engine = { path = "../e" }\n'

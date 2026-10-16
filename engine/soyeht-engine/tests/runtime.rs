@@ -6472,7 +6472,7 @@ fn persisted_terminal_capture_records_provenance_and_resumes_sequence_after_rest
         .iter()
         .find(|row| row["kind"] == "metadata")
         .unwrap();
-    let binary = fs::read(env!("CARGO_BIN_EXE_soyeht-engine")).unwrap();
+    let binary = fs::read(env!("CARGO_BIN_EXE_soyeht-engine-test")).unwrap();
     assert_eq!(
         metadata["engine"]["executableSha256"],
         format!("{:x}", Sha256::digest(binary))

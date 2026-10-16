@@ -31,7 +31,6 @@ use soyeht_protocol::{
     event, limits, method::PANE_HARNESS_SWITCH, ndjson::Decoder,
 };
 use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
-use soyeht_store::segments::Record;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 
@@ -662,8 +661,7 @@ impl Core {
             json!({"paneId":pane,"fromHarness":checkpoint.from_harness,
                 "toHarness":checkpoint.to_harness,"newSessionId":session_id,"markerSeq":marker_seq}),
         ));
-        inject_screen_advance_before_switch_commit(
-            &self.directory,
+        self.hooks.before_switch_commit(
             self.panes
                 .get_mut(pane)
                 .ok_or_else(|| errors::internal("Candidate pane disappeared before commit"))?,
@@ -879,7 +877,7 @@ impl Core {
                 if current_supervisor.as_deref() != Some(&retired.supervisor_id) {
                     continue;
                 }
-                if should_fail_old_close(&self.directory) {
+                if self.hooks.fail_old_close() {
                     keep.push(retired.clone());
                     continue;
                 }
@@ -929,32 +927,6 @@ fn requested_options(params: &PaneHarnessSwitchParams, state: &State) -> Vec<(St
     .collect()
 }
 
-#[cfg(debug_assertions)]
-fn inject_screen_advance_before_switch_commit(
-    directory: &std::path::Path,
-    pane: &mut crate::model::RunningPane,
-) -> Result<()> {
-    if directory
-        .join("test-advance-screen-before-harness-switch-commit")
-        .exists()
-    {
-        let from = pane.screen.next_offset();
-        pane.screen.append(Record::Gap {
-            from,
-            to: from.saturating_add(1),
-        })?;
-    }
-    Ok(())
-}
-
-#[cfg(not(debug_assertions))]
-fn inject_screen_advance_before_switch_commit(
-    _directory: &std::path::Path,
-    _pane: &mut crate::model::RunningPane,
-) -> Result<()> {
-    Ok(())
-}
-
 fn candidate_rpc_error(error: soyeht_acp::RpcError) -> errors::Error {
     if soyeht_acp::rpc::is_auth_required(&error) {
         errors::harness_unavailable("The selected harness requires sign-in")
@@ -969,18 +941,6 @@ fn bounded_reason(reason: &str) -> String {
         end -= 1;
     }
     reason[..end].to_owned()
-}
-
-#[cfg(debug_assertions)]
-fn should_fail_old_close(directory: &std::path::Path) -> bool {
-    directory
-        .join("test-fail-harness-switch-old-close")
-        .is_file()
-}
-
-#[cfg(not(debug_assertions))]
-fn should_fail_old_close(_: &std::path::Path) -> bool {
-    false
 }
 
 #[cfg(test)]

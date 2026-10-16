@@ -31,6 +31,8 @@ from generated_profile import (
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_EXECUTABLES = tuple(executable(name) for name in
                             ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd"))
+# The engine with the test hooks installed (ADR 0091); built with `--features test-hooks`.
+TEST_ENGINE = "soyeht-engine-test"
 
 
 def send(stream, value):
@@ -150,10 +152,10 @@ def programs_directory():
     return Path.home() / "Library/Caches/soyeht-e2e" / checkout / "bin"
 
 
-def stage_programs(binaries):
+def stage_programs(binaries, names=PRODUCT_EXECUTABLES):
     directory = programs_directory()
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    for name in PRODUCT_EXECUTABLES:
+    for name in names:
         source, target = binaries / name, directory / name
         content = source.read_bytes()
         if target.is_file() and target.read_bytes() == content:
@@ -167,7 +169,7 @@ def stage_programs(binaries):
 
 
 class Services:
-    def __init__(self, binaries):
+    def __init__(self, binaries, engine="soyeht-engine"):
         identity = str(uuid.uuid4())
         # Keep Unix socket paths below the macOS sockaddr_un limit.
         self.data = short_temp_root() / f"sn-e2e-{identity}"
@@ -181,14 +183,16 @@ class Services:
         self.binaries=self.data / "bin"
         self.binaries.mkdir(mode=0o700)
         # Only macOS privacy (TCC) needs a stable copy; elsewhere the build's own are used.
-        self.programs = stage_programs(binaries) if MACOS else binaries
+        staged = (*PRODUCT_EXECUTABLES, executable(engine))
+        self.programs = stage_programs(binaries, staged) if MACOS else binaries
         self.ptyd_version = int(subprocess.check_output(
             [str(self.programs / executable("soyeht-ptyd")), "--protocol-version"], text=True))
         self.launcher = make_launcher(self.data, f"{DEV_LAUNCHD_PREFIX}.e2e.{identity}", ROOT)
         self.clients = []
         self.definitions = {}
         for component in ("ptyd", "engine"):
-            argv = [self.programs / executable(f"soyeht-{component}"), "--data-dir", self.data]
+            program = engine if component == "engine" else "soyeht-ptyd"
+            argv = [self.programs / executable(program), "--data-dir", self.data]
             if component == "engine":
                 argv.extend(["--listen", "127.0.0.1:0"])
             self.definitions[component] = (argv, {"ZDOTDIR": str(shell_config)})

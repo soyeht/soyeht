@@ -13,8 +13,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 392,
-      "duplicated_lines": 3516
+      "clones": 391,
+      "duplicated_lines": 3511
     },
     "ios": {
       "clones": 4,
@@ -238,7 +238,7 @@
     "engine/soyeht-cli/src/task_commands.rs": 862,
     "engine/soyeht-engine/src/agents/questions.rs": 1119,
     "engine/soyeht-engine/src/agents/state.rs": 862,
-    "engine/soyeht-engine/src/agents/switching.rs": 1063,
+    "engine/soyeht-engine/src/agents/switching.rs": 1023,
     "engine/soyeht-engine/src/editor/service.rs": 1027,
     "engine/soyeht-engine/src/experiment_export.rs": 1194,
     "engine/soyeht-engine/src/pane_observations.rs": 1636,

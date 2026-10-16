@@ -11,9 +11,11 @@ pub mod engine_build;
 pub mod errors;
 mod experiment_export;
 mod frames;
+pub mod hooks;
 mod immutable_file;
 pub mod input;
 pub mod languages;
+pub mod launch;
 pub mod log_rotation;
 pub mod model;
 pub mod network;
@@ -35,6 +37,8 @@ pub mod tasks;
 mod terminal_capture;
 mod terminal_harness;
 pub mod terminal_projection;
+#[cfg(feature = "test-hooks")]
+pub mod test_hooks;
 #[cfg(test)]
 mod test_paths;
 mod tick;

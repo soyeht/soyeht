@@ -20,6 +20,7 @@ use soyeht_protocol::{
 };
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::segments::Record;
+use std::sync::Arc;
 use uuid::Uuid;
 
 fn next_prompt<S: StorePort, C: Clock + ?Sized>(
@@ -427,8 +428,8 @@ impl Core {
             self.poll_agent_authentication(pane)?;
             return self.close_agent_processes(pane);
         }
-        inject_per_pane_poll_failure(self, pane)?;
-        drop_current_agent_before_poll(self, pane)?;
+        let hooks = Arc::clone(&self.hooks);
+        hooks.before_agent_poll(self, pane)?;
         self.decode_agent_log(pane)?;
         let stored = &self.panes[pane].stored;
         let sequence_base = stored.sequence_base;
@@ -683,44 +684,6 @@ impl Core {
         self.commit_agent(saved, state, changes, None, json!({}))?;
         Ok(())
     }
-}
-
-#[cfg(debug_assertions)]
-fn inject_per_pane_poll_failure(core: &Core, pane: &str) -> Result<()> {
-    let marker = core.directory.join("test-fail-agent-poll");
-    let Ok(target) = std::fs::read_to_string(marker) else {
-        return Ok(());
-    };
-    if target.trim() == pane {
-        return Err(errors::not_found("Injected per-pane polling failure"));
-    }
-    Ok(())
-}
-
-#[cfg(not(debug_assertions))]
-fn inject_per_pane_poll_failure(_core: &Core, _pane: &str) -> Result<()> {
-    Ok(())
-}
-
-#[cfg(debug_assertions)]
-fn drop_current_agent_before_poll(core: &mut Core, pane: &str) -> Result<()> {
-    let marker = core.directory.join("test-drop-current-agent-before-poll");
-    if !marker.exists() {
-        return Ok(());
-    }
-    std::fs::remove_file(marker).map_err(errors::io)?;
-    let instance_id = core.panes[pane]
-        .stored
-        .instance_id
-        .clone()
-        .ok_or_else(|| errors::internal("Agent process has no adopted instance"))?;
-    core.pty_request(Request::Close { instance_id })?;
-    Ok(())
-}
-
-#[cfg(not(debug_assertions))]
-fn drop_current_agent_before_poll(_core: &mut Core, _pane: &str) -> Result<()> {
-    Ok(())
 }
 
 #[cfg(test)]

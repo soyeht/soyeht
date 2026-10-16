@@ -1,5 +1,6 @@
 use crate::{
     errors::{self, Error, Result},
+    hooks::{Hooks, NoHooks},
     model::{self, Connected, RunningPane, StoredPane},
     offload::SharedPort,
     ports::{Clock, StorePort, SupervisorPort, SystemClock, call_supervisor},
@@ -35,6 +36,8 @@ pub struct Core {
     pub(crate) catalog_epoch: u64,
     pub ptyd: Option<Box<dyn SupervisorPort>>,
     pub clock: Arc<dyn Clock>,
+    /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
+    pub hooks: Arc<dyn Hooks>,
     pub revision: SharedPort<dyn crate::tasks::revision::RevisionPort>,
     pub worktrees: SharedPort<dyn crate::tasks::worktree::WorktreePort>,
     pub(crate) background: crate::offload::Background,
@@ -82,6 +85,10 @@ fn log_stale_export_cleanup(directory: &Path) {
 
 impl Core {
     pub fn open(directory: &Path) -> Result<Self> {
+        Self::open_with(directory, Arc::new(NoHooks))
+    }
+
+    pub fn open_with(directory: &Path, hooks: Arc<dyn Hooks>) -> Result<Self> {
         // The user's interactive launch path, remembered from the last start: asking the login
         // shell takes seconds on a busy machine and the engine must not wait for it to listen.
         crate::agents::environment::warm_launch_path(directory);
@@ -111,10 +118,11 @@ impl Core {
             catalog_epoch: 0,
             ptyd: None,
             clock: Arc::new(SystemClock),
+            hooks: Arc::clone(&hooks),
             revision: SharedPort::new(Box::new(GitRevision)),
             worktrees: SharedPort::new(Box::new(CommandWorktree::default())),
             background: Default::default(),
-            usage: crate::usage::system_service(usage_readings),
+            usage: crate::usage::service_over(usage_readings, hooks.usage_host()),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),

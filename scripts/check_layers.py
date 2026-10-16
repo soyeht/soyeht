@@ -76,7 +76,9 @@ def manifest_problems(relative: str, manifest: dict) -> list[str]:
     return [
         f"{relative}: {name} depends on {dependency}, which is not in its layer "
         f"or below it (allowed: {', '.join(sorted(LAYERS[name])) or 'none'})"
-        for dependency in sorted(soyeht_dependencies(manifest) - LAYERS[name])
+        # A crate may list itself as a development dependency to turn on its own features
+        # for its tests (the `test-hooks` of ADR 0091); that is not a dependency on a layer.
+        for dependency in sorted(soyeht_dependencies(manifest) - LAYERS[name] - {name})
     ]
 
 

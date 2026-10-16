@@ -4,6 +4,7 @@ use crate::{
     core_lock::{self, Shared},
     dispatch::Outcome,
     errors::{self, Error},
+    hooks::Hooks,
     model, network,
     operation_log::{OperationTimer, connection_close_record, logged_method, operation_pane_id},
     outbox::{self, CloseReason, Outbox},
@@ -84,6 +85,8 @@ pub struct Config {
     pub listen: Vec<SocketAddr>,
     /// Also listen on every tailnet address on this port, following them as they come and go.
     pub tailnet_port: Option<u16>,
+    /// What the engine does on a test's behalf; [`NoHooks`](crate::hooks::NoHooks) in a product.
+    pub hooks: Arc<dyn Hooks>,
 }
 
 fn singleton(directory: &Path) -> crate::errors::Result<File> {
@@ -103,7 +106,10 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         return Err(Error::ListenerAddressNotPermitted);
     }
     let _lock = singleton(&config.directory)?;
-    let core = crate::push::share(Core::open(&config.directory)?, &config.directory);
+    let core = crate::push::share(
+        Core::open_with(&config.directory, config.hooks)?,
+        &config.directory,
+    );
     let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
     tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
     let socket = config.directory.join(DEV_ENGINE_SOCKET);

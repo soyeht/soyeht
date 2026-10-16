@@ -151,7 +151,7 @@ impl Core {
     pub(super) fn advance_editor_effects(&mut self) -> Vec<Line> {
         let now = self.now_ms();
         let mut records = Vec::new();
-        if !pause_editor_autosave(&self.directory) {
+        if !self.hooks.pause_editor_autosave() {
             for file_id in self.editor.due_saves(now) {
                 let outcome = self.advance_editor_save(&file_id, now);
                 records.extend(self.settle_editor_effect(&file_id, Effect::Save, now, outcome));
@@ -199,7 +199,7 @@ impl Core {
             .editor
             .stored(file_id)
             .is_ok_and(|file| file.draft_text.is_some() && file.conflict_text.is_none());
-        if !pending || pause_editor_autosave(&self.directory) {
+        if !pending || self.hooks.pause_editor_autosave() {
             return Ok(());
         }
         self.advance_editor_save(file_id, self.now_ms())
@@ -366,16 +366,6 @@ impl Core {
         };
         Ok(FileAuthor { actor, name })
     }
-}
-
-#[cfg(debug_assertions)]
-fn pause_editor_autosave(directory: &std::path::Path) -> bool {
-    directory.join("test-pause-editor-autosave").is_file()
-}
-
-#[cfg(not(debug_assertions))]
-fn pause_editor_autosave(_: &std::path::Path) -> bool {
-    false
 }
 
 pub(super) fn parameters<T: serde::de::DeserializeOwned>(params: &Value, name: &str) -> Result<T> {

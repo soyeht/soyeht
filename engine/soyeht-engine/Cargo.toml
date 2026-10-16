@@ -12,6 +12,18 @@ path = "tests/fake-worktrunk/program.rs"
 test = false
 bench = false
 
+# The engine program for tests: the same engine with the hooks of `test_hooks` installed
+# (ADR 0091). It is built only with the `test-hooks` feature, which no product build enables.
+[[bin]]
+name = "soyeht-engine-test"
+path = "tests/test-engine/program.rs"
+required-features = ["test-hooks"]
+test = false
+bench = false
+
+[features]
+test-hooks = []
+
 [dependencies]
 soyeht-acp = { path = "../soyeht-acp" }
 soyeht-editor = { path = "../soyeht-editor" }
@@ -52,6 +64,8 @@ tokio-rustls.workspace = true
 webpki-roots.workspace = true
 
 [dev-dependencies]
+# Enables the hooks for this package's own tests (and so builds `soyeht-engine-test`).
+soyeht-engine = { path = ".", features = ["test-hooks"] }
 soyeht-platform = { path = "../soyeht-platform", features = ["tokio", "test-support"] }
 tokio = { workspace = true, features = ["test-util"] }
 soyeht-store = { path = "../soyeht-store", features = ["test-support"] }

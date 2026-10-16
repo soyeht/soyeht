@@ -79,7 +79,6 @@ impl Watches {
     }
 
     /// Follows folders by looking at them every probe instead of by events.
-    #[cfg(any(debug_assertions, test))]
     pub(super) fn poll_only(&mut self) {
         self.polling_only = true;
     }

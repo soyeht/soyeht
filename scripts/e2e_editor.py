@@ -10,7 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from e2e import ROOT, require
+from e2e import ROOT, TEST_ENGINE, require
 from e2e_platform import database
 from e2e_agents import AgentServices, request, until
 
@@ -19,12 +19,16 @@ AUTHOR = {"actor": {"role": "human_local", "client": "editor-e2e"}, "name": "you
 
 
 class EditorServices(AgentServices):
+    def __init__(self, binaries):
+        # The usage sources read fixtures only through the test engine's hooks (ADR 0091).
+        super().__init__(binaries, engine=TEST_ENGINE)
+
     def install_fakes(self, binaries):
         shutil.copy2(binaries / "soyeht-fake-lsp", self.binaries / "rust-analyzer")
         (self.binaries / "rust-analyzer").chmod(0o700)
         readers = self.data / "usage-readers"
         readers.mkdir(mode=0o700)
-        # The fixture layout SystemHost reads in debug builds (engine usage/host.rs): home/
+        # The fixture layout the test engine's FixtureHost reads (engine usage/fixture_host.rs): home/
         # stands in for the home directory, the scripts for curl, security and codex.
         home = readers / "home"
         self.claude_login = home / ".claude/.credentials.json"
@@ -275,9 +279,10 @@ def main():
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     binaries = args.bin_dir.resolve()
-    names = ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd", "soyeht-fake-lsp")
+    names = ("soyeht", "soyeht-engine", TEST_ENGINE, "soyeht-mcp", "soyeht-ptyd", "soyeht-fake-lsp")
     require(all((binaries / name).is_file() for name in names),
-            "build workspace binaries before running editor acceptances")
+            "build workspace binaries and the test engine (cargo build -p soyeht-engine --features test-hooks)"
+            " before running editor acceptances")
     services = EditorServices(binaries)
     started, results, failure = time.monotonic(), [], None
     try:

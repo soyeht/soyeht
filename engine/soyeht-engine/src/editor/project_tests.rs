@@ -118,7 +118,7 @@ async fn closing_a_dirty_tab_saves_it_and_a_held_draft_survives_reopening() {
     );
 
     // With autosave held, the draft stays in the database and comes back.
-    fs::write(fixture.root.join("engine/test-pause-editor-autosave"), "").unwrap();
+    fixture.pause_autosave(true);
     let reopened = fixture.open("main.rs", false);
     assert_eq!(reopened["file"]["dirty"], false);
     fixture.type_at(&file_of(&reopened), 0, 0, "x");
@@ -126,7 +126,7 @@ async fn closing_a_dirty_tab_saves_it_and_a_held_draft_survives_reopening() {
     let again = fixture.open("main.rs", false);
     assert_eq!(again["file"]["dirty"], true);
     assert!(fixture.text(&file_of(&again)).starts_with("x// saved"));
-    fs::remove_file(fixture.root.join("engine/test-pause-editor-autosave")).unwrap();
+    fixture.pause_autosave(false);
     fixture.at(10_000);
     fixture.core.advance_editor().unwrap();
     assert!(
@@ -141,7 +141,7 @@ async fn rename_moves_open_buffers_drafts_and_tabs_with_the_files() {
     let mut fixture = EditorFixture::new(&[("src/a.rs", "a\n"), ("src/b.rs", "b\n")]).await;
     let workspace_id = fixture.workspace_id.clone();
     let opened = fixture.open("src/a.rs", false);
-    fs::write(fixture.root.join("engine/test-pause-editor-autosave"), "").unwrap();
+    fixture.pause_autosave(true);
     fixture.type_at(&file_of(&opened), 0, 0, "draft ");
 
     let renamed = fixture.call(
@@ -155,7 +155,7 @@ async fn rename_moves_open_buffers_drafts_and_tabs_with_the_files() {
     assert_eq!(tabs(&mut fixture), vec![tab("lib/a.rs", false)]);
     assert_eq!(fixture.read(&file_of(&opened))["file"]["path"], "lib/a.rs");
 
-    fs::remove_file(fixture.root.join("engine/test-pause-editor-autosave")).unwrap();
+    fixture.pause_autosave(false);
     fixture.at(10_000);
     fixture.core.advance_editor().unwrap();
     assert_eq!(

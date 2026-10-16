@@ -1341,6 +1341,7 @@ dependencies = [
  "sha2",
  "soyeht-acp",
  "soyeht-editor",
+ "soyeht-engine",
  "soyeht-lsp",
  "soyeht-pane-state",
  "soyeht-platform",

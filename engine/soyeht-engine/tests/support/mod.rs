@@ -70,14 +70,14 @@ impl Rig {
         rig.start();
         rig
     }
-    /// Where the engine looks for fake usage sources (debug builds only).
+    /// Where the engine looks for fake usage sources (the test engine only).
     pub fn usage_readers(&self) -> PathBuf {
         self.path.join("usage-readers")
     }
     pub fn start(&mut self) {
         warm_up_binaries();
         self.engine = Some(
-            Command::new(env!("CARGO_BIN_EXE_soyeht-engine"))
+            Command::new(env!("CARGO_BIN_EXE_soyeht-engine-test"))
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
                 .arg(&self.path)
                 .env("PATH", test_path(&self.path))
@@ -297,7 +297,7 @@ fn warm_up_binaries() {
     for name in ["soyeht-ptyd", "soyeht-fake-acp"] {
         warm_up(&sibling_binary(name));
     }
-    warm_up(Path::new(env!("CARGO_BIN_EXE_soyeht-engine")));
+    warm_up(Path::new(env!("CARGO_BIN_EXE_soyeht-engine-test")));
 }
 
 fn warm_up(binary: &Path) {
@@ -309,7 +309,7 @@ fn warm_up(binary: &Path) {
 
 /// A binary built next to the engine, by name; Windows adds the `.exe`.
 pub fn sibling_binary(name: &str) -> PathBuf {
-    soyeht_platform::testing::sibling_binary(env!("CARGO_BIN_EXE_soyeht-engine"), name)
+    soyeht_platform::testing::sibling_binary(env!("CARGO_BIN_EXE_soyeht-engine-test"), name)
 }
 
 /// Whether a terminal printed `text`: exactly it on Unix, while a Windows console frames what a
