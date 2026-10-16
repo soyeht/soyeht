@@ -123,6 +123,7 @@ fn run_probe_command(
     while Instant::now() < deadline {
         match read_available(&mut stdout, &mut bytes) {
             Ok(done) => eof |= done,
+            // The typed `ProbeFailed` issue is the report; the shell's output is not logged.
             Err(_) => return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed)),
         }
         if bytes.len() > PATH_PROBE_BYTES {
@@ -131,6 +132,7 @@ fn run_probe_command(
         if exited.is_none() {
             match child.try_wait() {
                 Ok(status) => exited = status,
+                // The typed `ProbeFailed` issue is the report.
                 Err(_) => return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed)),
             }
         }

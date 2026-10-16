@@ -5,6 +5,7 @@ use crate::{
     dispatch::Outcome,
     errors::{self, Error},
     model, network,
+    operation_log::{OperationTimer, connection_close_record, logged_method, operation_pane_id},
     outbox::{self, CloseReason, Outbox},
     transport, ui_attestation,
 };
@@ -15,6 +16,7 @@ use soyeht_platform::{
         BindError,
         asynchronous::{Listener, Stream, same_user},
     },
+    log,
 };
 use soyeht_protocol::{
     AttachmentRef, attachment::attachment_frames, frame::Frame, method, profile::DEV_ENGINE_SOCKET,
@@ -230,7 +232,7 @@ async fn connection(
     .await
     {
         Ok(id) => id,
-        Err(error) => return errors::log_failure("engine.connection_refused", &error),
+        Err(error) => return log::failure("engine.connection_refused", &error),
     };
     let mut write_task = tokio::spawn(write_frames(receiver, writer));
     let reason = tokio::select! {
@@ -246,11 +248,13 @@ async fn connection(
     .await
     {
         // A poisoned lock leaves the client and its waiters registered: say why.
-        let kind = errors::kind(&error);
-        let record = serde_json::json!({"event":"engine.disconnect_cleanup_failed","connectionId":id,"kind":kind});
-        eprintln!("{record}");
+        log::failure_with(
+            "engine.disconnect_cleanup_failed",
+            &[("connectionId", &id)],
+            &error,
+        );
     }
-    eprintln!("{}", connection_close_record(&id, local, reason));
+    connection_close_record(&id, local, reason).emit();
 }
 
 async fn write_frames(
@@ -265,7 +269,10 @@ async fn write_frames(
                     .close_reason()
                     .unwrap_or(CloseReason::WriterStopped);
             }
-            Err(_) => break CloseReason::WorkerFailed,
+            Err(error) => {
+                log::failure("engine.connection_writer_failed", &error);
+                break CloseReason::WorkerFailed;
+            }
         };
         if !packet.is_current() {
             continue;
@@ -288,6 +295,7 @@ async fn write_frames(
         };
         match result {
             Ok(()) => packet.written(),
+            // The close reason is the record: it is logged when the connection closes.
             Err(_) => break CloseReason::WriteError,
         }
     };
@@ -522,13 +530,15 @@ async fn catalog_result(
             }
             let finalize_started = Instant::now();
             let result = state.agent_catalog_prepared(prepared?, &params);
-            eprintln!(
-                "{}",
-                serde_json::json!({
-                    "event":"engine.catalog_finalized",
-                    "method":method,
-                    "durationMs":finalize_started.elapsed().as_millis()
-                })
+            log::event(
+                "engine.catalog_finalized",
+                &[
+                    ("method", &method),
+                    (
+                        "durationMs",
+                        &finalize_started.elapsed().as_millis().to_string(),
+                    ),
+                ],
             );
             result.map(Some)
         })
@@ -553,7 +563,22 @@ async fn resolve_offload(
     let (timeout, work, expire) = offload.into_parts();
     let apply = match tokio::time::timeout(timeout, tokio::task::spawn_blocking(work)).await {
         Ok(Ok(apply)) => apply,
-        Ok(Err(_)) | Err(_) => expire,
+        Ok(Err(error)) => {
+            log::event(
+                "engine.offload_work_failed",
+                &[(
+                    "reason",
+                    if error.is_panic() {
+                        "panicked"
+                    } else {
+                        "cancelled"
+                    },
+                )],
+            );
+            expire
+        }
+        // The deadline passed: the offload's own expiry answers the request.
+        Err(_) => expire,
     };
     core_lock::with(core, "offload_apply", apply).await
 }
@@ -576,191 +601,6 @@ fn send_attachment_response(
         return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
     }
     Ok(())
-}
-
-struct OperationTiming {
-    started_at: chrono::DateTime<chrono::Utc>,
-    finished_at: chrono::DateTime<chrono::Utc>,
-    duration_ms: u128,
-}
-
-struct OperationTimer {
-    operation_id: String,
-    connection_id: String,
-    method: &'static str,
-    pane_id: Option<String>,
-    started_at: chrono::DateTime<chrono::Utc>,
-    started: Instant,
-}
-
-impl OperationTimer {
-    fn start(connection: &str, method: &'static str, pane_id: Option<String>) -> Self {
-        Self::start_with(
-            connection,
-            method,
-            pane_id,
-            chrono::Utc::now(),
-            Instant::now(),
-            emit_operation_record,
-        )
-    }
-
-    fn start_with(
-        connection: &str,
-        method: &'static str,
-        pane_id: Option<String>,
-        started_at: chrono::DateTime<chrono::Utc>,
-        started: Instant,
-        emit: impl FnOnce(Value),
-    ) -> Self {
-        let timer = Self {
-            operation_id: uuid::Uuid::new_v4().to_string(),
-            connection_id: connection.to_owned(),
-            method,
-            pane_id,
-            started_at,
-            started,
-        };
-        emit(timer.started_record());
-        timer
-    }
-
-    fn started_record(&self) -> Value {
-        operation_started_record(
-            &self.operation_id,
-            &self.connection_id,
-            self.method,
-            self.pane_id.as_deref(),
-            self.started_at,
-        )
-    }
-
-    fn finish(self, outcome: &crate::errors::Result<Outcome>) {
-        let (status, kind) = operation_status(outcome);
-        self.finish_status(status, kind.as_ref());
-    }
-
-    fn finish_status(self, status: &str, kind: Option<&soyeht_protocol::ErrorKind>) {
-        let finished_at = chrono::Utc::now();
-        let duration_ms = self.started.elapsed().as_millis();
-        self.finish_with(
-            status,
-            kind,
-            finished_at,
-            duration_ms,
-            emit_operation_record,
-        );
-    }
-
-    fn finish_with(
-        self,
-        status: &str,
-        kind: Option<&soyeht_protocol::ErrorKind>,
-        finished_at: chrono::DateTime<chrono::Utc>,
-        duration_ms: u128,
-        emit: impl FnOnce(Value),
-    ) {
-        emit(operation_record(
-            &self.operation_id,
-            &self.connection_id,
-            self.method,
-            self.pane_id.as_deref(),
-            status,
-            kind,
-            &OperationTiming {
-                started_at: self.started_at,
-                finished_at,
-                duration_ms,
-            },
-        ));
-    }
-}
-
-fn operation_status(
-    outcome: &crate::errors::Result<Outcome>,
-) -> (&'static str, Option<soyeht_protocol::ErrorKind>) {
-    match outcome {
-        Ok(Outcome::Reply(_)) => ("reply", None),
-        Ok(Outcome::Offload(_) | Outcome::Catalog { .. }) | Err(Error::Join(_)) => {
-            ("worker_failed", None)
-        }
-        Ok(Outcome::Attachment { .. }) => ("attachment", None),
-        Ok(Outcome::Queued) => ("queued", None),
-        Ok(Outcome::Snapshot { .. }) => ("snapshot", None),
-        Err(error) => ("error", Some(errors::kind(error))),
-    }
-}
-
-fn emit_operation_record(record: Value) {
-    eprintln!("{record}");
-}
-
-fn logged_method(method: &str) -> &'static str {
-    soyeht_protocol::METHODS
-        .iter()
-        .find(|entry| entry.0 == method)
-        .map(|entry| entry.0)
-        .unwrap_or("unknown")
-}
-
-fn operation_started_record(
-    operation: &str,
-    connection: &str,
-    method: &str,
-    pane_id: Option<&str>,
-    started_at: chrono::DateTime<chrono::Utc>,
-) -> Value {
-    serde_json::json!({
-        "event": "engine.operation_started",
-        "operationId": operation,
-        "connectionId": connection,
-        "method": logged_method(method),
-        "paneId": pane_id,
-        "startedAt": started_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-    })
-}
-
-fn connection_close_record(connection: &str, local: bool, reason: CloseReason) -> Value {
-    serde_json::json!({
-        "event": "engine.connection_closed",
-        "connectionId": connection,
-        "transport": if local { "local" } else { "websocket" },
-        "reason": reason.as_str(),
-    })
-}
-
-fn operation_record(
-    operation: &str,
-    connection: &str,
-    method: &str,
-    pane_id: Option<&str>,
-    outcome: &str,
-    kind: Option<&soyeht_protocol::ErrorKind>,
-    timing: &OperationTiming,
-) -> Value {
-    // Only an allowlisted method name is retained. Request IDs and parameters
-    // may contain credentials or terminal bytes and never enter this record.
-    serde_json::json!({
-        "event": "engine.operation",
-        "operationId": operation,
-        "connectionId": connection,
-        "method": logged_method(method),
-        "paneId": pane_id,
-        "outcome": outcome,
-        "kind": kind,
-        "startedAt": timing.started_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        "finishedAt": timing.finished_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-        "durationMs": timing.duration_ms,
-    })
-}
-
-fn operation_pane_id<'a>(method: &str, request: &'a Value) -> Option<&'a str> {
-    let route = soyeht_protocol::PANE_ROUTE_METHODS
-        .iter()
-        .find_map(|(candidate, property)| (*candidate == method).then_some(*property))?;
-    let pane_id = request.get("params")?.get(route)?.as_str()?;
-    let parsed = uuid::Uuid::parse_str(pane_id).ok()?;
-    (parsed.hyphenated().to_string() == pane_id).then_some(pane_id)
 }
 
 #[cfg(test)]
@@ -890,191 +730,5 @@ mod tests {
         ));
         drop(core);
         std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    fn timestamp(value: &str) -> chrono::DateTime<chrono::Utc> {
-        chrono::DateTime::parse_from_rfc3339(value)
-            .expect("valid test timestamp")
-            .with_timezone(&chrono::Utc)
-    }
-
-    #[test]
-    fn operation_log_keeps_identity_but_never_unknown_method_text() {
-        let operation = uuid::Uuid::new_v4().to_string();
-        let connection = uuid::Uuid::new_v4().to_string();
-        let timing = OperationTiming {
-            started_at: timestamp("2026-09-17T10:00:00.123Z"),
-            finished_at: timestamp("2026-09-17T10:00:00.135Z"),
-            duration_ms: 12,
-        };
-        let record = operation_record(
-            &operation,
-            &connection,
-            "untrusted-private-text",
-            None,
-            "error",
-            Some(&soyeht_protocol::ErrorKind::InvalidParams),
-            &timing,
-        );
-        assert_eq!(record["operationId"], operation);
-        assert_eq!(record["connectionId"], connection);
-        assert_eq!(record["method"], "unknown");
-        assert_eq!(record["kind"], "invalid_params");
-        assert_eq!(record["startedAt"], "2026-09-17T10:00:00.123Z");
-        assert_eq!(record["finishedAt"], "2026-09-17T10:00:00.135Z");
-        assert_eq!(record["durationMs"], 12);
-        assert!(!record.to_string().contains("untrusted-private-text"));
-        let started = operation_started_record(
-            &operation,
-            &connection,
-            "untrusted-private-text",
-            None,
-            timing.started_at,
-        );
-        assert_eq!(started["event"], "engine.operation_started");
-        assert_eq!(started["method"], "unknown");
-        assert!(!started.to_string().contains("untrusted-private-text"));
-        let success = operation_record(
-            &operation,
-            &connection,
-            "pane.create",
-            None,
-            "reply",
-            None,
-            &timing,
-        );
-        assert_eq!(success["method"], "pane.create");
-        assert!(success["kind"].is_null());
-    }
-
-    #[test]
-    fn operation_start_is_durable_without_a_finish_and_correlates_when_finished() {
-        let started_at = timestamp("2026-09-17T10:00:00.123Z");
-        let mut open_records = Vec::new();
-        let open = OperationTimer::start_with(
-            "connection-open",
-            "model.list",
-            None,
-            started_at,
-            Instant::now(),
-            |record| open_records.push(record),
-        );
-        let open_id = open.operation_id.clone();
-        drop(open);
-
-        assert_eq!(open_records.len(), 1);
-        assert_eq!(open_records[0]["event"], "engine.operation_started");
-        assert_eq!(open_records[0]["operationId"], open_id);
-        assert_eq!(open_records[0]["connectionId"], "connection-open");
-        assert_eq!(open_records[0]["method"], "model.list");
-        assert_eq!(open_records[0]["startedAt"], "2026-09-17T10:00:00.123Z");
-        assert!(open_records[0].get("finishedAt").is_none());
-        assert!(open_records[0].get("durationMs").is_none());
-        assert!(open_records[0].get("outcome").is_none());
-
-        let mut completed_records = Vec::new();
-        let completed = OperationTimer::start_with(
-            "connection-finished",
-            "harness.list",
-            None,
-            started_at,
-            Instant::now(),
-            |record| completed_records.push(record),
-        );
-        let completed_id = completed.operation_id.clone();
-        let outcome: crate::errors::Result<Outcome> = Ok(Outcome::Reply(serde_json::json!({})));
-        let (status, kind) = operation_status(&outcome);
-        completed.finish_with(
-            status,
-            kind.as_ref(),
-            timestamp("2026-09-17T10:00:00.135Z"),
-            12,
-            |record| completed_records.push(record),
-        );
-
-        assert_eq!(completed_records.len(), 2);
-        assert_eq!(completed_records[0]["event"], "engine.operation_started");
-        assert_eq!(completed_records[1]["event"], "engine.operation");
-        assert_eq!(completed_records[0]["operationId"], completed_id);
-        assert_eq!(completed_records[1]["operationId"], completed_id);
-        assert_eq!(completed_records[0]["connectionId"], "connection-finished");
-        assert_eq!(completed_records[1]["connectionId"], "connection-finished");
-        assert_eq!(completed_records[0]["method"], "harness.list");
-        assert_eq!(completed_records[1]["method"], "harness.list");
-        assert_eq!(
-            completed_records[1]["finishedAt"],
-            "2026-09-17T10:00:00.135Z"
-        );
-        assert_eq!(completed_records[1]["durationMs"], 12);
-        assert_eq!(completed_records[1]["outcome"], "reply");
-    }
-    #[test]
-    fn operation_log_adds_only_a_validated_pane_route() {
-        let pane_id = uuid::Uuid::new_v4().to_string();
-        let secret = "hook-capability-must-not-enter-the-log";
-        let request = serde_json::json!({
-            "method": "pane.stream.subscribe",
-            "params": {"paneId":pane_id,"capability":secret},
-        });
-        let routed = operation_pane_id("pane.stream.subscribe", &request);
-        let timing = OperationTiming {
-            started_at: timestamp("2026-09-17T10:00:01.000Z"),
-            finished_at: timestamp("2026-09-17T10:00:01.002Z"),
-            duration_ms: 2,
-        };
-        let record = operation_record(
-            "operation",
-            "connection",
-            "pane.stream.subscribe",
-            routed,
-            "queued",
-            None,
-            &timing,
-        );
-        assert_eq!(record["paneId"], pane_id);
-        assert!(!record.to_string().contains(secret));
-
-        let uppercase = serde_json::json!({
-            "params": {"paneId":pane_id.to_uppercase(),"capability":secret},
-        });
-        assert!(operation_pane_id("pane.stream.subscribe", &uppercase).is_none());
-        assert!(operation_pane_id("unknown", &request).is_none());
-
-        let all_routes = serde_json::json!({
-            "params": {"paneId":pane_id,"agentPaneId":pane_id,"targetPaneId":pane_id},
-        });
-        let expected_methods = soyeht_protocol::PANE_ROUTE_METHODS
-            .iter()
-            .map(|(method, _)| *method)
-            .collect::<Vec<_>>();
-        let routed_methods = soyeht_protocol::METHODS
-            .iter()
-            .filter_map(|(method, _, _, _)| operation_pane_id(method, &all_routes).map(|_| *method))
-            .collect::<Vec<_>>();
-        assert_eq!(routed_methods, expected_methods);
-
-        let writing = serde_json::json!({
-            "params": {"agentPaneId":pane_id},
-        });
-        assert_eq!(
-            operation_pane_id("writing.variant.request", &writing),
-            Some(pane_id.as_str())
-        );
-
-        let usage = serde_json::json!({
-            "method": "usage.refresh",
-            "params": {"paneId":pane_id},
-        });
-        assert!(operation_pane_id("usage.refresh", &usage).is_none());
-    }
-    #[test]
-    fn connection_close_log_has_a_bounded_reason_and_no_transport_error_text() {
-        let connection = uuid::Uuid::new_v4().to_string();
-        let record = connection_close_record(&connection, true, CloseReason::WriteError);
-        assert_eq!(record["event"], "engine.connection_closed");
-        assert_eq!(record["connectionId"], connection);
-        assert_eq!(record["transport"], "local");
-        assert_eq!(record["reason"], "write_error");
-        assert_eq!(record.as_object().unwrap().len(), 4);
     }
 }

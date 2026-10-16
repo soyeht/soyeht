@@ -72,6 +72,7 @@ pub(super) fn run(
             stop(&mut child);
             outcome
         }
+        // A program that does not start gives an incomplete run, which the reading reports as unavailable.
         Err(_) => TerminalRun::Incomplete,
     };
     cleanup(request);
@@ -126,6 +127,7 @@ fn remove_dir(directory: &Path) -> io::Result<()> {
         match &result {
             Ok(()) => break,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            // Retried after a pause; the last error is returned when the attempts end.
             Err(_) => {}
         }
     }

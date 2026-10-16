@@ -9,6 +9,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_lsp::{Position, Range};
+use soyeht_platform::log;
 use soyeht_protocol::{
     FileDiagnostic, LspStatusParams, LspStatusResult, TextPosition, TextRange, event,
 };
@@ -47,10 +48,7 @@ impl Core {
                 let marked = self.mark_language_unavailable(&key, &error.to_string());
                 errors::log_if_failed("engine.lsp_mark_unavailable_failed", marked);
             }
-            eprintln!(
-                "{}",
-                json!({"event":"engine.lsp_failed","kind":errors::kind(&error)})
-            );
+            log::failure("engine.lsp_failed", &error);
         }
     }
 
@@ -220,10 +218,7 @@ impl Core {
                 );
                 // A failure here can leave editor requests waiting: it must reach the log.
                 errors::log_if_failed("engine.lsp_fail_waiters_failed", failed);
-                eprintln!(
-                    "{}",
-                    json!({"event":"engine.lsp_failed","kind":errors::kind(&error)})
-                );
+                log::failure("engine.lsp_failed", &error);
             }
         }
     }

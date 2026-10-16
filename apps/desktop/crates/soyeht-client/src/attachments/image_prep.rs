@@ -160,7 +160,10 @@ fn encode_png(image: &DynamicImage) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     match image.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png) {
         Ok(()) => Some(bytes),
-        Err(_) => None,
+        Err(error) => {
+            log_encode_failure("png", &error);
+            None
+        }
     }
 }
 
@@ -175,6 +178,26 @@ fn encode_jpeg(image: &DynamicImage, quality: u8) -> Option<Vec<u8>> {
     );
     match written {
         Ok(()) => Some(bytes),
-        Err(_) => None,
+        Err(error) => {
+            log_encode_failure("jpeg", &error);
+            None
+        }
     }
+}
+
+/// An image that cannot be encoded leaves the person a chip without a picture: say why in the
+/// log. Only the class of the error: its text can name a file.
+fn log_encode_failure(format: &str, error: &image::ImageError) {
+    let kind = match error {
+        image::ImageError::Decoding(_) => "decoding",
+        image::ImageError::Encoding(_) => "encoding",
+        image::ImageError::Parameter(_) => "parameter",
+        image::ImageError::Limits(_) => "limits",
+        image::ImageError::Unsupported(_) => "unsupported",
+        image::ImageError::IoError(_) => "io",
+    };
+    soyeht_platform::log::event(
+        "desktop.image_encode_failed",
+        &[("format", format), ("kind", kind)],
+    );
 }

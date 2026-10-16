@@ -74,14 +74,10 @@ impl Drop for CoreGuard<'_> {
     fn drop(&mut self) {
         let held = self.acquired.elapsed();
         if held >= SLOW_HOLD {
-            eprintln!(
-                "{}",
-                serde_json::json!({
-                    "event":"engine.core_lock_slow",
-                    "purpose":self.purpose,
-                    "heldMs":held.as_millis(),
-                })
-            );
+            soyeht_platform::log::Line::new("engine.core_lock_slow")
+                .field("purpose", self.purpose)
+                .field("heldMs", held.as_millis())
+                .emit();
         }
     }
 }

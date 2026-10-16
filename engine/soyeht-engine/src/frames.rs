@@ -35,6 +35,7 @@ pub(crate) async fn next_frame(
     match result {
         Ok(Some(frame)) => Ok(frame),
         Ok(None) => Err(CloseReason::PeerClosed),
+        // `ReadError` is the reason the close record logs; the transport's text can carry addresses.
         Err(_) => Err(CloseReason::ReadError),
     }
 }

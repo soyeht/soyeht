@@ -1,11 +1,11 @@
-use serde_json::{Value, json};
+use serde_json::Value;
+use soyeht_platform::log::Line;
 use soyeht_protocol::{
     Pane, PaneMode, WorkspacePaneLayoutBranch, WorkspacePaneLayoutCompanion,
     WorkspacePaneLayoutEnvelope, WorkspacePaneLayoutKind, WorkspacePaneLayoutNode,
     WorkspacePaneLayoutSplit, WritingKind,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, Write};
 
 pub const CURRENT_VERSION: u32 = 2;
 
@@ -123,31 +123,24 @@ fn node_contains_pane(node: &WorkspacePaneLayoutNode, pane_id: &str) -> bool {
     }
 }
 
-pub fn fallback_diagnostic(workspace_id: &str, layout: &Value) -> Option<Value> {
+fn fallback_diagnostic(workspace_id: &str, layout: &Value) -> Option<Line> {
     let envelope = serde_json::from_value::<WorkspacePaneLayoutEnvelope>(layout.clone()).ok()?;
     (!matches!(envelope.version, 1 | CURRENT_VERSION)).then(|| {
-        json!({
-            "event":"engine.workspace_layout_version_unsupported",
-            "workspaceId":workspace_id,
-            "version":envelope.version,
-            "fallback":"initial_by_type"
-        })
+        Line::new("engine.workspace_layout_version_unsupported")
+            .field("workspaceId", workspace_id)
+            .field("version", envelope.version)
+            .field("fallback", "initial_by_type")
     })
 }
 
-/// Diagnostics only: callers may ignore a failed write, which must not stop the engine.
-pub fn log_fallback_diagnostics<'a>(
+/// A warning for every workspace whose layout has a version this engine falls back from.
+pub fn fallback_diagnostics<'a>(
     layouts: impl IntoIterator<Item = (&'a str, &'a Value)>,
-    mut output: impl Write,
-) -> io::Result<usize> {
-    let mut count = 0;
-    for (workspace_id, layout) in layouts {
-        if let Some(diagnostic) = fallback_diagnostic(workspace_id, layout) {
-            writeln!(output, "{diagnostic}")?;
-            count += 1;
-        }
-    }
-    Ok(count)
+) -> Vec<Line> {
+    layouts
+        .into_iter()
+        .filter_map(|(workspace_id, layout)| fallback_diagnostic(workspace_id, layout))
+        .collect()
 }
 
 pub fn validate(
@@ -288,6 +281,7 @@ fn kind_for(pane: &Pane) -> WorkspacePaneLayoutKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use soyeht_protocol::{
         PaneState, StateSource, WorkspacePaneLayoutLeaf, WorkspacePaneLayoutMode,
     };
@@ -332,17 +326,14 @@ mod tests {
 
     #[test]
     fn unknown_version_falls_back_with_a_structured_warning() {
+        let line = fallback_diagnostic(
+            "workspace",
+            &json!({"version":99,"mode":"custom","tree":null}),
+        )
+        .unwrap();
         assert_eq!(
-            fallback_diagnostic(
-                "workspace",
-                &json!({"version":99,"mode":"custom","tree":null})
-            ),
-            Some(json!({
-                "event":"engine.workspace_layout_version_unsupported",
-                "workspaceId":"workspace",
-                "version":99,
-                "fallback":"initial_by_type"
-            }))
+            line.json(),
+            r#"{"event":"engine.workspace_layout_version_unsupported","workspaceId":"workspace","version":"99","fallback":"initial_by_type"}"#
         );
     }
 
@@ -350,13 +341,9 @@ mod tests {
     fn migration_logs_unknown_versions_but_not_absent_envelopes() {
         let unknown = json!({"version":99,"mode":"custom","tree":null});
         let absent = json!({"panes":[]});
-        let mut log = Vec::new();
-        assert_eq!(
-            log_fallback_diagnostics([("unknown", &unknown), ("absent", &absent)], &mut log)
-                .unwrap(),
-            1
-        );
-        let log = String::from_utf8(log).unwrap();
+        let lines = fallback_diagnostics([("unknown", &unknown), ("absent", &absent)]);
+        assert_eq!(lines.len(), 1);
+        let log = lines[0].json();
         assert!(log.contains("engine.workspace_layout_version_unsupported"));
         assert!(log.contains("\"workspaceId\":\"unknown\""));
         assert!(log.contains("\"fallback\":\"initial_by_type\""));

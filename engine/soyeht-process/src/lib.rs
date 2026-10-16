@@ -273,6 +273,7 @@ fn input_delivered(
     match writer.join() {
         Ok(Err(error)) if error.kind() != io::ErrorKind::BrokenPipe => Err(error),
         Ok(_) => Ok(()),
+        // The panic becomes the error the caller gets.
         Err(_) => Err(io::Error::other("input writer panicked")),
     }
 }

@@ -9,9 +9,13 @@ use gpui::{
     UnderlineStyle, Window, canvas, fill, font, outline, point, px, rgb, size,
 };
 use soyeht_client::screen::{CellColor, Cursor, Run};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Dim text keeps its hue and loses this much opacity.
 const DIM_OPACITY: f32 = 0.7;
+
+/// Whether the last run to paint failed: a failure is logged when it starts, not on every frame.
+static PAINT_FAILING: AtomicBool = AtomicBool::new(false);
 
 /// The size of one character cell.
 #[derive(Clone, Copy)]
@@ -245,7 +249,19 @@ pub fn paint_runs(
             .text_system()
             .shape_line(text.to_owned().into(), px(font_size), runs, force);
     // A run that fails to paint leaves its cells blank until the next frame draws them.
-    if let Err(error) = shaped.paint(at, height, TextAlign::Left, None, window, cx) {
-        eprintln!("soyeht: could not paint text: {error}");
+    report_paint(
+        shaped
+            .paint(at, height, TextAlign::Left, None, window, cx)
+            .is_err(),
+    );
+}
+
+/// Records whether a run of text painted. A failure that lasts is logged once, not on every
+/// frame: a paint that works ends the streak.
+pub fn report_paint(failed: bool) {
+    if !failed {
+        PAINT_FAILING.store(false, Ordering::Relaxed);
+    } else if !PAINT_FAILING.swap(true, Ordering::Relaxed) {
+        soyeht_platform::log::event("desktop.text_paint_failed", &[]);
     }
 }

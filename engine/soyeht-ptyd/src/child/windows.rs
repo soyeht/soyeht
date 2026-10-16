@@ -69,7 +69,7 @@ impl Child {
     /// the same.
     pub fn kill(&self, _: Reach) {
         if let Err(error) = self.spawned.kill_tree(END_WAIT) {
-            soyeht_platform::log::io_failure("ptyd.kill_tree_failed", &error);
+            soyeht_platform::log::failure("ptyd.kill_tree_failed", &error);
         }
     }
 

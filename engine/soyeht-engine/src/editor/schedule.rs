@@ -3,11 +3,11 @@
 //!
 //! An effect that keeps failing, for example because the file or its workspace
 //! folder is gone, must not run and log on every tick. Each effect of each
-//! open file owns a [`Backoff`]: every consecutive failure doubles the wait up
-//! to `MAX_RETRY_MS` and only some failures are reported (see `crate::backoff`).
+//! open file owns a [`Streak`]: every consecutive failure doubles the wait up
+//! to `MAX_RETRY_MS` and only some failures are reported (see `crate::streak`).
 
 use super::service::{Service, autosave_ms};
-use crate::backoff::Backoff;
+use crate::streak::Streak;
 
 /// Interval between two disk checks of a watched file.
 pub(super) const WATCH_INTERVAL_MS: i64 = 250;
@@ -15,14 +15,14 @@ pub(super) const WATCH_INTERVAL_MS: i64 = 250;
 /// Longest wait between two attempts of a failing effect.
 const MAX_RETRY_MS: i64 = 60_000;
 
-/// The backoff of a file's autosave: its normal interval is the autosave delay.
-pub(super) fn save_backoff() -> Backoff {
-    Backoff::new(autosave_ms(), MAX_RETRY_MS)
+/// The failure streak of a file's autosave: its normal interval is the autosave delay.
+pub(super) fn save_backoff() -> Streak {
+    Streak::retrying(autosave_ms(), MAX_RETRY_MS)
 }
 
-/// The backoff of a file's disk watch.
-pub(super) const fn watch_backoff() -> Backoff {
-    Backoff::new(WATCH_INTERVAL_MS, MAX_RETRY_MS)
+/// The failure streak of a file's disk watch.
+pub(super) const fn watch_backoff() -> Streak {
+    Streak::retrying(WATCH_INTERVAL_MS, MAX_RETRY_MS)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,12 +77,13 @@ impl Service {
         }
     }
 
-    /// Records a failed attempt and moves the next attempt out by the backoff.
+    /// Records a failed attempt of `kind` and moves the next attempt out by the backoff.
     /// `None` when the file is no longer open.
     pub(crate) fn effect_failed(
         &mut self,
         file_id: &str,
         effect: Effect,
+        kind: &str,
         now_ms: i64,
     ) -> Option<Failure> {
         let item = self.open.get_mut(file_id)?;
@@ -90,11 +91,11 @@ impl Service {
             Effect::Save => &mut item.save_backoff,
             Effect::Watch => &mut item.watch_backoff,
         };
-        backoff.fail();
+        let report = backoff.fail(kind);
         let failure = Failure {
             attempts: backoff.attempts(),
             retry_in_ms: backoff.next_delay_ms(),
-            report: backoff.should_log(),
+            report,
         };
         let due = now_ms.saturating_add(failure.retry_in_ms);
         match effect {

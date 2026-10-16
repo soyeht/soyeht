@@ -15,7 +15,7 @@ use crate::{
     panes::persist_new_pane,
     screen::Screen,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use soyeht_protocol::{
     EditorTab, EditorTabsListParams, EditorTabsListResult, EditorTabsMoveParams, Workspace, event,
     method,
@@ -156,9 +156,10 @@ impl Core {
             return;
         };
         if let Err(error) = self.save_editor_now(&file.file_id) {
-            eprintln!(
-                "{}",
-                json!({"event":"editor.close_save_failed","fileId":file.file_id,"reason":error.to_string()})
+            soyeht_platform::log::failure_with(
+                "editor.close_save_failed",
+                &[("fileId", &file.file_id)],
+                &error,
             );
         }
     }

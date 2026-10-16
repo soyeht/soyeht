@@ -54,7 +54,7 @@ pub(super) fn descriptor_path(file: &File) -> Option<PathBuf> {
     match std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())) {
         Ok(path) => Some(path),
         Err(error) => {
-            eprintln!("log rotation is off: cannot name the log file: {error}");
+            soyeht_platform::log::failure("engine.log_rotation_unnamed", &error);
             None
         }
     }

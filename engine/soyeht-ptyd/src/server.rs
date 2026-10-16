@@ -127,7 +127,7 @@ impl Drop for EndpointFile {
         match std::fs::remove_file(&self.0) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => log::io_failure("ptyd.endpoint_not_removed", &error),
+            Err(error) => log::failure("ptyd.endpoint_not_removed", &error),
         }
     }
 }
@@ -374,7 +374,7 @@ fn reap(child: &mut Child) {
         Ok(Some(_)) => {}
         Ok(None) => log::event("ptyd.child_still_running_after_kill", &[]),
         // The child could not be queried; the watcher reports it.
-        Err(error) => log::io_failure("ptyd.child_wait_failed", &error),
+        Err(error) => log::failure("ptyd.child_wait_failed", &error),
     }
 }
 
@@ -587,6 +587,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                         break;
                     }
                 }
+                // EIO is how a pseudoterminal ends when its child exits; any other error ends the reader too.
                 Err(_) => break,
             }
         }
@@ -625,7 +626,8 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     }
                     break;
                 }
-                Err(_) => {
+                Err(error) => {
+                    log::failure("ptyd.child_wait_failed", &error);
                     live.exited.store(true, Ordering::Release);
                     break;
                 }

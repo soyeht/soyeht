@@ -127,10 +127,7 @@ impl Cache {
             && let Some(file) = file
             && let Err(error) = remember(&file, &path.value)
         {
-            eprintln!(
-                "{}",
-                serde_json::json!({"event":"engine.launch_path_not_saved","ioKind":format!("{:?}", error.kind())})
-            );
+            soyeht_platform::log::failure("engine.launch_path_not_saved", &error);
         }
         path
     }

@@ -23,16 +23,17 @@ file, so a loop like this one has no limit except the disk.
 **Backoff.** A failing editor effect (autosave or disk watch) waits twice as
 long after each consecutive failure, up to 60 s. The attempt count is kept per
 file and per effect in memory. A failure is logged only when the attempt
-count is a power of two (1, 2, 4, 8, ...), with `attempts`, `retryInMs` and a
-`cause` (the I/O error kind, never a path). When the effect works again the
+count is a power of two (1, 2, 4, 8, ...) or the kind of the failure changed,
+with `attempts`, `retryInMs` and the `kind` (for an I/O error `io:` and its
+kind, such as `io:NotFound`, never a path). When the effect works again the
 engine logs one `engine.editor_effect_recovered` with the attempts it took, and
 the count resets. A file that comes back (a branch switch, a moved folder) is
 picked up on the next attempt, so there is no permanent give-up state to leave
 behind. A day of failure logs about eleven lines per file instead of
-350,000. The policy is the small `backoff::Backoff` type (base, cap and
-attempts; `fail`, `next_delay_ms`, `should_log`, `succeed`), so other retry
-loops can move onto it later; this change does not touch them. Log records
-carry only the class of an error (`kind`, and the I/O error kind), never its
+350,000. The policy is the engine's `Streak` type (base, cap, attempts and
+the last kind; `fail`, `next_delay_ms`, `succeed`), which ADR 0088 extended
+from this editor-only `Backoff` to every engine loop that logs a repeating
+failure. Log records carry only the class of an error (`kind`), never its
 text, which can hold a path.
 
 **Rotation.** When stderr is a regular file, the engine replaces it with a

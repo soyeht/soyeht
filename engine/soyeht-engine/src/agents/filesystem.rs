@@ -76,6 +76,7 @@ pub fn permits_edit(root: &Path, path: &Path) -> bool {
     match system::open_file(&directory, &leaf) {
         Ok(file) => file.metadata().is_ok_and(|m| m.is_file()),
         Err(Error::Io(error)) => error.kind() == io::ErrorKind::NotFound,
+        // A file that cannot be opened for any other reason cannot be used as an existing file.
         Err(_) => false,
     }
 }

@@ -35,7 +35,7 @@ pub fn link(stream: local::Stream) -> Result<Link> {
             if let Err(error) = stream.shutdown(std::net::Shutdown::Both)
                 && error.kind() != std::io::ErrorKind::NotConnected
             {
-                eprintln!("soyeht: could not close the engine connection: {error}");
+                soyeht_platform::log::failure("desktop.engine_close_failed", &error);
             }
         }),
     })

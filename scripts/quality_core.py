@@ -467,6 +467,8 @@ def baseline_relaxations(before: dict, after: dict) -> list[Change]:
     """Every loosened baseline entry, including exception caps."""
     # A duplication area the older baseline did not scan yet has nothing to compare.
     before = {**before, "duplication": {**after["duplication"], **before["duplication"]}}
+    # A swallowed-error metric the older baseline did not count yet has nothing to compare.
+    before[SWALLOWED_KEY] = {**after[SWALLOWED_KEY], **before.get(SWALLOWED_KEY, {})}
     return [
         change for change in differences(before, after) if change.direction == "RELAXATION"
     ]

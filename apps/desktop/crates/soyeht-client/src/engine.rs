@@ -198,6 +198,7 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
             Some(command) => command,
             None => match queue.recv() {
                 Ok(command) => command,
+                // Every sender is gone: the application is quitting.
                 Err(_) => return,
             },
         };

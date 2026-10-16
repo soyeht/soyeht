@@ -9,6 +9,7 @@ use super::{
     payload::Alert,
 };
 use crate::ports::Clock;
+use soyeht_platform::log::Line;
 use soyeht_protocol::PushEnvironment;
 use std::{
     collections::{HashSet, VecDeque},
@@ -95,10 +96,10 @@ pub struct Worker<T: Transport> {
 }
 
 fn log_failure(status: Option<u16>, reason: &str) {
-    eprintln!(
-        "{}",
-        serde_json::json!({"event":"engine.push_failed","status":status,"reason":reason})
-    );
+    Line::new("engine.push_failed")
+        .field_opt("status", status)
+        .field("reason", reason)
+        .emit();
 }
 
 impl<T: Transport> Worker<T> {
@@ -155,17 +156,15 @@ impl<T: Transport> Worker<T> {
     }
 
     async fn attempt(&mut self, mut attempt: Attempt, waiting: &mut Vec<Attempt>) {
-        let outcome = match self.send(&attempt).await {
-            Ok(response)
-                if response.status == 403
-                    && response.reason.as_deref() == Some("ExpiredProviderToken") =>
-            {
-                self.token.expire();
-                match self.send(&attempt).await {
-                    Ok(response) => self.judge(&attempt, &response),
-                    Err(_) => Outcome::Retry,
-                }
-            }
+        let mut sent = self.send(&attempt).await;
+        if sent.as_ref().is_ok_and(|response| {
+            response.status == 403 && response.reason.as_deref() == Some("ExpiredProviderToken")
+        }) {
+            // A new provider token is signed for the one retry.
+            self.token.expire();
+            sent = self.send(&attempt).await;
+        }
+        let outcome = match sent {
             Ok(response) => self.judge(&attempt, &response),
             Err(error) => {
                 log_failure(None, &error.kind().to_string());

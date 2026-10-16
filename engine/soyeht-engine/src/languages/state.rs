@@ -2,6 +2,7 @@ use crate::{errors, errors::Result};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use soyeht_lsp::{Client, Decoder, Incoming, PositionValue, RequestKind};
+use soyeht_platform::log::Line;
 use soyeht_protocol::{EditorLanguage, FileAuthor, FileDiagnostic, LspServerStatus, LspState};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Spawn};
 use soyeht_store::languages::LanguageServerCheckpoint;
@@ -203,14 +204,10 @@ impl Server {
                             items,
                         )?;
                         if omitted > 0 {
-                            eprintln!(
-                                "{}",
-                                serde_json::json!({
-                                    "event":"engine.lsp_diagnostics_truncated",
-                                    "fileId":document.file_id,
-                                    "omitted":omitted
-                                })
-                            );
+                            Line::new("engine.lsp_diagnostics_truncated")
+                                .field("fileId", &document.file_id)
+                                .field("omitted", omitted)
+                                .emit();
                         }
                         self.diagnostics
                             .insert(document.file_id.clone(), items.clone());

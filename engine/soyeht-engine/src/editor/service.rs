@@ -4,7 +4,7 @@ use super::{
     project_files::{ProjectFile, save_temporary_name},
     project_reader::{ProjectReader, disk_text, list_project_files},
 };
-use crate::{backoff::Backoff, errors, errors::Result};
+use crate::{errors, errors::Result, streak::Streak};
 use soyeht_editor::{
     AppliedStep, EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer,
 };
@@ -216,8 +216,8 @@ pub(super) struct OpenDocument {
     history: EditHistory,
     pub(super) save_due_ms: Option<i64>,
     pub(super) watch_due_ms: i64,
-    pub(super) save_backoff: Backoff,
-    pub(super) watch_backoff: Backoff,
+    pub(super) save_backoff: Streak,
+    pub(super) watch_backoff: Streak,
 }
 
 pub struct Service {

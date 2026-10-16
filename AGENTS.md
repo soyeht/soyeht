@@ -114,10 +114,17 @@ ADR when you change a boundary.
   `#[cfg(all(test, ...))]` items, and modules declared `#[cfg(test)] mod x;`,
   including their submodules. Clippy denies these calls through the workspace
   lints too.
-- Swallowed errors (`swallowed_errors`): Swift `try?` and Rust `.ok()` / `let _ =`
-  in production code may not grow. Log, propagate or surface the error instead, or
-  keep it with a one-line comment saying why ignoring it is correct.
+- Swallowed errors (`swallowed_errors`): Swift `try?` and Rust `.ok()` / `let _ =` /
+  `Err(_) =>` in production code may not grow. Log, propagate or surface the error
+  instead, or keep it with a one-line comment saying why ignoring it is correct.
   `uv run python scripts/check_swallowed_errors.py` lists every counted site.
+- Logging: every log line is written by `soyeht_platform::log` (`event`, `failure`,
+  `failure_with`, or a `Line` built now and emitted later). A failure logs its kind, never
+  its message text, which can carry paths. A failure that can repeat keeps an engine
+  `Streak` (`streak.rs`): it carries the retry backoff and says when to log, which is the
+  first failure and each change of kind; the caller logs the recovery when it wants to.
+  `scripts/check_logging.py` rejects `eprintln!` in `engine` and `apps/desktop` `src`
+  outside `soyeht-platform/src/log.rs` and a binary's `main.rs` (ADR 0088).
 - Dead code: `scripts/check_dead_pub.py` fails on a `pub fn` of an engine or `apps/desktop` crate
   that no production code references (`pub` hides it from the compiler's unused-code lint). Delete
   it and the tests that only exercise it. An entry of `scripts/dead_pub_allowlist.json`

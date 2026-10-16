@@ -52,6 +52,7 @@ pub fn item_table_value(path: &Path, key: &str) -> SecretRead {
     match value {
         Ok(Some(Some(text))) => SecretRead::Found(Secret::new(text)),
         Ok(_) => SecretRead::Missing,
+        // `Denied` reaches the reading as an unavailable source; the database's text is not logged.
         Err(_) => SecretRead::Denied,
     }
 }

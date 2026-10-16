@@ -12,6 +12,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::session::AuthKind;
+use soyeht_platform::log::Line;
 use soyeht_protocol::{HarnessLaunch, PaneMode, PaneState, StateSource, event, method};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
 use std::path::Path;
@@ -299,17 +300,13 @@ impl Core {
             .and_then(|i| i.exit_code);
         let exited_cleanly = !child.closed && exit_code == Some(0);
         // The only durable account of why a sign-in process ended.
-        eprintln!(
-            "{}",
-            json!({
-                "event": "engine.sign_in_ended",
-                "paneId": id,
-                "terminalPaneId": child_id,
-                "closedByPerson": child.closed,
-                "processLost": child.pane.phrase == SIGN_IN_PROCESS_LOST,
-                "exitCode": exit_code,
-            })
-        );
+        Line::new("engine.sign_in_ended")
+            .field("paneId", id)
+            .field("terminalPaneId", child_id.as_str())
+            .field("closedByPerson", child.closed)
+            .field("processLost", child.pane.phrase == SIGN_IN_PROCESS_LOST)
+            .field_opt("exitCode", exit_code)
+            .emit();
         state.login_pane_id = None;
         let relogin = std::mem::take(&mut state.relogin);
         state.last_update_ms = self.now_ms();

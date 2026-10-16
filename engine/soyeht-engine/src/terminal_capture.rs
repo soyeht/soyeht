@@ -315,13 +315,10 @@ impl TerminalCapture {
                 errors::internal("Terminal projection stayed too slow to accept a label")
             })?;
         let remaining = deadline.saturating_duration_since(Instant::now());
-        match result.recv_timeout(remaining) {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => Err(errors::internal(error)),
-            Err(_) => Err(errors::internal(
-                "Terminal projection stayed too slow to record a label",
-            )),
-        }
+        result
+            .recv_timeout(remaining)
+            .map_err(|_| errors::internal("Terminal projection stayed too slow to record a label"))?
+            .map_err(errors::internal)
     }
 
     fn resize(&self, rows: u32, cols: u32) -> Result<()> {

@@ -18,6 +18,7 @@ use crate::{
     ports::{Clock, StorePort},
 };
 use serde_json::{Value, json};
+use soyeht_platform::log;
 use soyeht_protocol::{PushRegisterParams, Role, event, method};
 use soyeht_store::database::Event;
 use std::{
@@ -50,7 +51,7 @@ impl Notifier {
     pub fn start(data_directory: &Path, clock: Arc<dyn Clock>, forget: Forget) -> Self {
         match apns::Credentials::load(data_directory) {
             Ok(credentials) => {
-                eprintln!("{}", json!({"event":"engine.push_enabled"}));
+                log::event("engine.push_enabled", &[]);
                 Self::spawn(Worker {
                     transport: apns::Http2::default(),
                     token: apns::ProviderToken::new(credentials),
@@ -59,10 +60,7 @@ impl Notifier {
                 })
             }
             Err(problem) => {
-                eprintln!(
-                    "{}",
-                    json!({"event":"engine.push_disabled","reason":problem.as_str()})
-                );
+                log::event("engine.push_disabled", &[("reason", problem.as_str())]);
                 Self::disabled()
             }
         }
@@ -73,10 +71,7 @@ impl Notifier {
             && jobs.send(job).is_err()
         {
             // The delivery worker has stopped, so this alert is lost: say so once per alert.
-            eprintln!(
-                "{}",
-                json!({"event":"engine.push_dropped","reason":"worker_stopped"})
-            );
+            log::event("engine.push_dropped", &[("reason", "worker_stopped")]);
         }
     }
 }
@@ -94,10 +89,11 @@ pub fn share(core: Core, data_directory: &Path) -> Arc<Mutex<Core>> {
                     .lock()
                     .map_err(|_| errors::internal("Engine state lock poisoned"))
                     .and_then(|mut core| core.forget_push_token(&device, &token));
-                if removed.is_err() {
-                    eprintln!(
-                        "{}",
-                        json!({"event":"engine.push_failed","reason":"token_not_removed"})
+                if let Err(error) = removed {
+                    log::failure_with(
+                        "engine.push_failed",
+                        &[("reason", "token_not_removed")],
+                        &error,
                     );
                 }
             });
@@ -158,10 +154,11 @@ impl Core {
                     environment: registration.environment,
                 })
                 .collect::<Vec<_>>(),
-            Err(_) => {
-                eprintln!(
-                    "{}",
-                    json!({"event":"engine.push_failed","reason":"registrations_unavailable"})
+            Err(error) => {
+                log::failure_with(
+                    "engine.push_failed",
+                    &[("reason", "registrations_unavailable")],
+                    &errors::storage(error),
                 );
                 return None;
             }

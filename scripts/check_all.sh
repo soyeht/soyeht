@@ -42,6 +42,8 @@ uv run python scripts/check_layers.py
 uv run python scripts/check_quality.py
 uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
 uv run python scripts/check_dead_pub.py
+uv run python -m unittest discover -s scripts -p 'test_check_logging.py'
+uv run python scripts/check_logging.py
 uv run python -m unittest discover -s scripts -p 'test_check_desktop_tokens.py'
 uv run python scripts/check_desktop_tokens.py
 

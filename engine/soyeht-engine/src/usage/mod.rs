@@ -20,9 +20,11 @@ use crate::{
     errors::{self, Result},
     offload::Offload,
     ports::StorePort,
+    streak::Streak,
 };
 use serde_json::{Value, json};
 use service::{Committed, ManualRefusal, RefreshBatch};
+use soyeht_platform::log::{self, Failure as _};
 use soyeht_protocol::{
     UsageListResult, UsageReading, UsageRefreshParams, UsageRefreshResult, UsageWindow, event,
     method,
@@ -196,6 +198,9 @@ impl Core {
 pub async fn schedule(core: Shared) -> Result<()> {
     let mut ticks = tokio::time::interval(SCHEDULE_TICK);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // A source that stays broken is logged when it starts and when its kind changes, not on
+    // every tick.
+    let mut failures = Streak::once();
     loop {
         ticks.tick().await;
         let prepared = core_lock::with(&core, "usage_schedule", |core| {
@@ -213,21 +218,33 @@ pub async fn schedule(core: Shared) -> Result<()> {
         };
         let providers = prepared.providers().to_vec();
         let batch = tokio::task::spawn_blocking(move || prepared.read()).await;
-        core_lock::with(&core, "usage_schedule", move |core| {
-            match batch {
-                Ok(batch) => {
-                    if let Err(error) = core.usage_automatic_commit(batch) {
-                        eprintln!(
-                            "{}",
-                            json!({"event": "engine.usage_schedule_error", "kind": errors::kind(&error)})
-                        );
+        let committed = core_lock::with(&core, "usage_schedule", move |core| {
+            Ok(match batch {
+                Ok(batch) => core
+                    .usage_automatic_commit(batch)
+                    .map_err(|error| error.failure_kind()),
+                Err(error) => {
+                    core.usage.abandon(&providers);
+                    Err(if error.is_panic() {
+                        "reader_panicked"
+                    } else {
+                        "reader_cancelled"
                     }
+                    .to_owned())
                 }
-                Err(_) => core.usage.abandon(&providers),
-            }
-            Ok(())
+            })
         })
         .await?;
+        match committed {
+            Ok(()) => {
+                failures.succeed();
+            }
+            Err(kind) => {
+                if failures.fail(&kind) {
+                    log::event("engine.usage_schedule_error", &[("kind", &kind)]);
+                }
+            }
+        }
     }
 }
 

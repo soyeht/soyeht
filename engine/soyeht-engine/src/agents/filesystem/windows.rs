@@ -101,9 +101,6 @@ pub(super) fn discard(directory: &Directory, temporary: &Name) {
     if let Err(error) = fs::remove_file(directory.0.join(&temporary.0))
         && error.kind() != io::ErrorKind::NotFound
     {
-        eprintln!(
-            "{}",
-            serde_json::json!({"event":"engine.agent_write_cleanup_failed","kind":format!("{:?}", error.kind())})
-        );
+        soyeht_platform::log::failure("engine.agent_write_cleanup_failed", &error);
     }
 }

@@ -42,6 +42,27 @@ impl fmt::Display for Error {
     }
 }
 
+/// A failure the service cannot give the model logs as its class, never its message.
+impl soyeht_platform::log::Failure for Error {
+    fn failure_kind(&self) -> String {
+        match self {
+            Self::Io(error) => format!("io:{:?}", error.kind()),
+            Self::Json(_) => "json".to_owned(),
+            Self::Protocol(_) => "protocol".to_owned(),
+            Self::Remote(_) => "remote".to_owned(),
+            Self::UnexpectedFrame => "unexpected_frame".to_owned(),
+            Self::IncompleteLine => "incomplete_line".to_owned(),
+            Self::RequestIdExhausted => "request_id_exhausted".to_owned(),
+            Self::ResponseMissingResult => "response_missing_result".to_owned(),
+            Self::ResponseMissingAttachment => "response_missing_attachment".to_owned(),
+            Self::InvalidArguments(_)
+            | Self::UnknownTool
+            | Self::ToolForbidden
+            | Self::TaskContextRequired => "invalid_request".to_owned(),
+        }
+    }
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {

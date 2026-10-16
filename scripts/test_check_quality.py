@@ -81,7 +81,7 @@ def empty_measurement() -> dict:
         "version": MEASUREMENT_VERSION,
         PANIC_KEY: 0,
         SWALLOWED_KEY: dict.fromkeys(
-            ("swift_try_optional", "rust_ok", "rust_let_underscore"), 0
+            ("swift_try_optional", "rust_ok", "rust_let_underscore", "rust_err_wildcard"), 0
         ),
         "duplication": {
             area: {"clones": 0, "duplicated_lines": 0, "percent": 0}
@@ -106,6 +106,20 @@ class QualityRatchetTests(unittest.TestCase):
         del before["duplication"]["desktop"]
         after["duplication"]["desktop"]["clones"] = 3
         self.assertEqual(baseline_relaxations(before, after), [])
+
+    def test_a_swallowed_error_metric_the_older_baseline_did_not_count_has_nothing_to_compare(self):
+        after = empty_measurement()
+        before = copy.deepcopy(after)
+        del before[SWALLOWED_KEY]["rust_err_wildcard"]
+        after[SWALLOWED_KEY]["rust_err_wildcard"] = 34
+        self.assertEqual(baseline_relaxations(before, after), [])
+        # A metric the older baseline did count still cannot grow.
+        before[SWALLOWED_KEY]["rust_ok"] = 1
+        after[SWALLOWED_KEY]["rust_ok"] = 2
+        self.assertEqual(
+            [change.key for change in baseline_relaxations(before, after)],
+            ["swallowed_errors.rust_ok"],
+        )
 
     def test_percentage_is_informational_not_in_the_baseline(self):
         measured = empty_measurement()

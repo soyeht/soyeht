@@ -15,8 +15,9 @@ use crate::{
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
+    streak::Streak,
 };
-use soyeht_protocol::ErrorKind;
+use soyeht_platform::log::{self, Failure as _};
 use std::{
     collections::{BTreeMap, BTreeSet},
     panic::{AssertUnwindSafe, catch_unwind},
@@ -183,7 +184,7 @@ pub struct Background {
     active: BTreeSet<String>,
     finished: Arc<Mutex<Vec<(String, ApplyJob)>>>,
     retry_after: BTreeMap<String, Instant>,
-    failures: BTreeMap<String, ErrorKind>,
+    failures: BTreeMap<String, Streak>,
 }
 
 impl Background {
@@ -232,14 +233,23 @@ impl Background {
         match result {
             Ok(()) => {
                 if self.failures.remove(key).is_some() {
-                    log_failure(key, None);
+                    log::event(
+                        "engine.subsystem_recovered",
+                        &[("subsystem", subsystem(key))],
+                    );
                 }
             }
             Err(error) => {
-                let kind = errors::kind(error);
-                if self.failures.get(key) != Some(&kind) {
-                    log_failure(key, Some(&kind));
-                    self.failures.insert(key.to_owned(), kind);
+                let kind = error.failure_kind();
+                let streak = self
+                    .failures
+                    .entry(key.to_owned())
+                    .or_insert_with(Streak::once);
+                if streak.fail(&kind) {
+                    log::event(
+                        "engine.subsystem_failed",
+                        &[("subsystem", subsystem(key)), ("kind", &kind)],
+                    );
                 }
             }
         }
@@ -257,10 +267,12 @@ fn start_pool() -> Result<mpsc::Sender<Task>> {
                 loop {
                     let task = match receiver.lock() {
                         Ok(receiver) => receiver.recv(),
+                        // A worker that panicked while waiting for a task poisoned the queue.
                         Err(_) => return,
                     };
                     match task {
                         Ok(task) => task(),
+                        // Every sender is gone: the engine is shutting down.
                         Err(_) => return,
                     }
                 }
@@ -268,17 +280,6 @@ fn start_pool() -> Result<mpsc::Sender<Task>> {
             .map_err(errors::io)?;
     }
     Ok(sender)
-}
-
-fn log_failure(key: &str, kind: Option<&ErrorKind>) {
-    eprintln!(
-        "{}",
-        serde_json::json!({
-            "event": if kind.is_some() {"engine.subsystem_failed"} else {"engine.subsystem_recovered"},
-            "subsystem": subsystem(key),
-            "kind": kind,
-        })
-    );
 }
 
 /// The subsystem of a key, without task or workspace identifiers.
@@ -324,9 +325,12 @@ impl Core {
         let submitted = self.background.submit(Box::new(move || {
             let result = run_caught(work);
             let job: ApplyJob = Box::new(move |core| apply(core, result));
-            if let Ok(mut finished) = finished.lock() {
-                finished.push((job_key, job));
-            }
+            // The list only gains and loses whole jobs, so a poisoned lock still holds a valid
+            // one; dropping the job here would leave its key active for good.
+            finished
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push((job_key, job));
         }));
         if let Err(error) = &submitted {
             self.background
@@ -338,10 +342,14 @@ impl Core {
     /// Applies every finished background job. A failure is logged for its
     /// job alone and never stops the others or the tick.
     pub(crate) fn apply_background(&mut self) {
-        let finished = match self.background.finished.lock() {
-            Ok(mut finished) => std::mem::take(&mut *finished),
-            Err(_) => return,
-        };
+        // The list only gains and loses whole jobs, so a poisoned lock still holds a valid one.
+        let finished = std::mem::take(
+            &mut *self
+                .background
+                .finished
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
         for (key, apply) in finished {
             let result = apply(self);
             self.background.settle(&key, &result, Instant::now());

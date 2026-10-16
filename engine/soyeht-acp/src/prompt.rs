@@ -124,6 +124,7 @@ impl<'a> PromptFile<'a> {
             Delivery::Embedded => match std::str::from_utf8(contents) {
                 Ok(text) => Some(json!({"type":"resource","resource":{"uri":self.uri()?,
                     "mimeType":self.mime_type,"text":text}})),
+                // Bytes that are not UTF-8 text cannot be embedded, so the resource is not sent.
                 Err(_) => None,
             },
             Delivery::Link => None,

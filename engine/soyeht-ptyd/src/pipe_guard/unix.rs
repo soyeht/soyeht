@@ -156,6 +156,7 @@ pub fn run(fd: i32) -> Result<()> {
                 let _ = reply(&mut control, Reply::Exited(status.code().unwrap_or(-1)));
                 kill_own_group();
             }
+            // If the child cannot be waited for, nothing can be kept safe: stop the whole group.
             Err(_) => kill_own_group(),
             Ok(None) => (),
         }

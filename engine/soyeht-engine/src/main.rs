@@ -14,10 +14,7 @@ async fn main() -> Result<()> {
     let _log_rotation = match log_rotation::capture_stderr(LOG_MAX_BYTES, LOG_KEEP_ROTATED) {
         Ok(rotation) => rotation,
         Err(error) => {
-            eprintln!(
-                "{}",
-                serde_json::json!({"event":"engine.log_rotation_unavailable","ioKind":format!("{:?}", error.kind())})
-            );
+            soyeht_platform::log::failure("engine.log_rotation_unavailable", &error);
             None
         }
     };

@@ -57,16 +57,20 @@ pub(crate) struct Setup {
     pub destination: Option<crate::destination::Destination>,
 }
 
+/// Where the application prints what it tells the person (the program's `main` owns the
+/// terminal): advice such as which driver to install, not a log line.
+pub type Notice = fn(&str);
+
 /// Opens the window and runs until the application quits.
-pub fn run() {
+pub fn run(notice: Notice) {
     let socket = match profile::engine_socket() {
         Ok(path) => path,
         Err(error) => {
-            eprintln!("soyeht: {error}");
+            notice(&format!("soyeht: {error}"));
             std::process::exit(2);
         }
     };
-    launch(move || {
+    launch(notice, move || {
         let (engine, inbox) = Engine::start(socket);
         Setup {
             engine,
@@ -83,7 +87,7 @@ pub fn run() {
 }
 
 /// Opens the window on what `setup` says, once the application is running.
-pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
+pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
     application().with_assets(Assets).run(move |cx: &mut App| {
         fonts::register(cx);
         let setup = setup();
@@ -146,15 +150,12 @@ pub(crate) fn launch(setup: impl FnOnce() -> Setup + 'static) {
             let focus = workbench.read(cx).focus.clone();
             window.focus(&focus, cx);
             if let Some(note) = graphics::software_note(window.gpu_specs().as_ref()) {
-                eprintln!("{note}");
+                notice(&note);
             }
             workbench
         });
         if let Err(error) = opened {
-            eprintln!(
-                "{}",
-                graphics::open_failure(&error, cfg!(target_os = "linux"))
-            );
+            notice(&graphics::open_failure(&error, cfg!(target_os = "linux")));
             cx.quit();
         }
         cx.activate(true);

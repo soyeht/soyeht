@@ -2,7 +2,10 @@
 """Count error-swallowing forms in production code for the quality ratchet.
 
 Swift `try?` and Rust `.ok()` / `let _ =` discard an error (`let _ = expr?;` propagates
-it and is not counted). Each one is either a deliberate, commented choice (best-effort
+it and is not counted). A Rust `Err(_) =>` arm drops the error it matches the same way,
+for example `Err(_) => None` or `Err(_) => break`; give the error a name and log it, or
+keep the arm with a one-line comment saying why the error carries nothing worth keeping.
+Each one is either a deliberate, commented choice (best-effort
 cleanup, optional probes) or a failure the user or the logs should know about. The
 totals are the `swallowed_errors` entries of scripts/quality_baseline.json, which
 scripts/check_quality.py holds exactly. Test code (Swift `Tests` directories, Rust
@@ -38,6 +41,8 @@ PATTERNS = {
     "swift_try_optional": re.compile(r"\btry\?"),
     "rust_ok": re.compile(r"\.ok\(\)"),
     "rust_let_underscore": re.compile(r"\blet\s+_\s*="),
+    # `Err(_) =>`, also with a guard up to its arrow: `Err(_) if left == right =>`.
+    "rust_err_wildcard": re.compile(r"\bErr\(\s*_\s*\)\s*(?:if\b(?:(?!=>)[\s\S])*)?=>"),
 }
 CFG_TEST = re.compile(r"#\[cfg\(\s*(?:test|all\(\s*test\b[^\]]*)\)\]")
 INNER_CFG_TEST = re.compile(r"\A\s*#!\[cfg\(test\)\]")
@@ -170,7 +175,7 @@ def sites(root: Path) -> list[tuple[str, str, int]]:
         for relative in SWIFT_AREAS.values()
         for path in production_files(root, relative, ".swift")
     ] + [
-        (path, ("rust_ok", "rust_let_underscore"))
+        (path, ("rust_ok", "rust_let_underscore", "rust_err_wildcard"))
         for relative in RUST_ROOTS
         for path in production_files(root, relative, ".rs")
     ]

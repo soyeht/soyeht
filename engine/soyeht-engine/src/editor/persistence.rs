@@ -6,6 +6,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
+use soyeht_platform::log::Line;
 use soyeht_protocol::{
     Actor, FileAuthor, FileHistoryParams, FileHistoryResult, FileRevertParams, FileRevertResult,
     FileWatchParams, FileWatchResult, FileWriteParams, FileWriteResult, Role, event, method,
@@ -137,8 +138,8 @@ impl Core {
     }
 
     pub fn advance_editor(&mut self) -> Result<()> {
-        for record in self.advance_editor_effects() {
-            eprintln!("{record}");
+        for line in self.advance_editor_effects() {
+            line.emit();
         }
         Ok(())
     }
@@ -147,7 +148,7 @@ impl Core {
     /// records they produced. A failing effect backs off (see `schedule`), so
     /// a file that stays unreadable is retried less and less often and logged
     /// only at attempts 1, 2, 4, 8 and so on.
-    pub(super) fn advance_editor_effects(&mut self) -> Vec<Value> {
+    pub(super) fn advance_editor_effects(&mut self) -> Vec<Line> {
         let now = self.now_ms();
         let mut records = Vec::new();
         if !pause_editor_autosave(&self.directory) {
@@ -169,24 +170,24 @@ impl Core {
         effect: Effect,
         now: i64,
         outcome: Result<()>,
-    ) -> Option<Value> {
+    ) -> Option<Line> {
         match outcome {
             Ok(()) => self
                 .editor
                 .effect_succeeded(file_id, effect)
                 .map(|attempts| {
-                    json!({
-                        "event": "engine.editor_effect_recovered",
-                        "action": effect.name(),
-                        "fileId": file_id,
-                        "attempts": attempts,
-                    })
+                    Line::new("engine.editor_effect_recovered")
+                        .field("action", effect.name())
+                        .field("fileId", file_id)
+                        .field("attempts", attempts)
                 }),
             Err(error) => {
-                let failure = self.editor.effect_failed(file_id, effect, now)?;
+                // Only the class of the failure: an error's text can carry paths.
+                let kind = soyeht_platform::log::Failure::failure_kind(&error);
+                let failure = self.editor.effect_failed(file_id, effect, &kind, now)?;
                 failure
                     .report
-                    .then(|| failure_record(effect, file_id, &error, failure))
+                    .then(|| failure_line(effect, file_id, kind, failure))
             }
         }
     }
@@ -436,19 +437,11 @@ fn changed_lines(before: &str, after: &str) -> Vec<u32> {
         .collect()
 }
 
-fn failure_record(effect: Effect, file_id: &str, error: &errors::Error, failure: Failure) -> Value {
-    // Only the class of the failure: an error's text can carry paths.
-    let cause = match error {
-        errors::Error::Io(error) => Some(format!("io:{:?}", error.kind())),
-        _ => None,
-    };
-    json!({
-        "event": "engine.editor_effect_failed",
-        "action": effect.name(),
-        "fileId": file_id,
-        "kind": errors::kind(error),
-        "cause": cause,
-        "attempts": failure.attempts,
-        "retryInMs": failure.retry_in_ms,
-    })
+fn failure_line(effect: Effect, file_id: &str, kind: String, failure: Failure) -> Line {
+    Line::new("engine.editor_effect_failed")
+        .field("action", effect.name())
+        .field("fileId", file_id)
+        .field("kind", kind)
+        .field("attempts", failure.attempts)
+        .field("retryInMs", failure.retry_in_ms)
 }

@@ -20,6 +20,19 @@ fn production() -> Result<()> {
     let text = "let _ = not code; .ok()";
     // let _ = a comment; .ok()
     let raw = r#"let _ = "raw" .ok()"#;
+    match read() {
+        Ok(value) => value,
+        Err(error) => log(error),
+        Err(_) => None,
+    }
+    match send() {
+        Err(error) if error.is_closed() => (),
+        Err(_) if retry => (),
+        Err(_) if left == right => (),
+        Err(_) => (),
+        Ok(Err(_)) => (),
+    }
+    let text = "Err(_) => not code";
     Ok(())
 }
 
@@ -28,6 +41,7 @@ mod tests {
     fn helper() {
         let _ = ignored();
         let _ = also().ok();
+        match x { Err(_) => (), _ => () }
     }
 }
 '''
@@ -80,8 +94,14 @@ class SwallowedErrorTests(unittest.TestCase):
         root = self.fixture()
         self.assertEqual(
             measure(root),
-            {"swift_try_optional": 1, "rust_ok": 2, "rust_let_underscore": 2},
+            {
+                "swift_try_optional": 1,
+                "rust_ok": 2,
+                "rust_let_underscore": 2,
+                "rust_err_wildcard": 4,
+            },
         )
+        self.assertIn(("rust_err_wildcard", "engine/crate/src/lib.rs", 14), sites(root))
         self.assertIn(("rust_let_underscore", "engine/crate/src/lib.rs", 3), sites(root))
         self.assertIn(("rust_ok", "apps/desktop/crates/client/src/lib.rs", 1), sites(root))
 

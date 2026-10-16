@@ -4,8 +4,9 @@
 
 use crate::{
     core_lock::{self, Shared},
-    errors,
+    streak::Streak,
 };
+use soyeht_platform::log::{self, Failure as _};
 use std::time::Duration;
 
 const TICK_INTERVAL: Duration = Duration::from_millis(10);
@@ -19,7 +20,7 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
     let mut ticks = tokio::time::interval(TICK_INTERVAL);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut prune = 0_u32;
-    let mut previous_error = None;
+    let mut streak = Streak::once();
     loop {
         ticks.tick().await;
         let result = core_lock::with(&core, "tick", move |core| {
@@ -32,15 +33,15 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
         })
         .await;
         prune = (prune + 1) % PRUNE_EVERY_TICKS;
-        let error = result.err().map(|error| errors::kind(&error));
-        if error != previous_error {
-            if let Some(kind) = &error {
-                eprintln!(
-                    "{}",
-                    serde_json::json!({"event":"engine.storage_or_supervisor_error","kind":kind})
-                );
+        match result {
+            Ok(()) => {
+                streak.succeed();
             }
-            previous_error = error;
+            Err(error) => {
+                if streak.fail(&error.failure_kind()) {
+                    log::failure("engine.storage_or_supervisor_error", &error);
+                }
+            }
         }
     }
 }

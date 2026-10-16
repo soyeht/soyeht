@@ -310,6 +310,7 @@ pub fn run(
     theme: ThemeName,
     open: Option<&str>,
     size: Option<(f32, f32)>,
+    notice: app::Notice,
 ) -> Result<(), String> {
     let events = events(fixture)?;
     let staged = staged(fixture)?;
@@ -322,7 +323,7 @@ pub fn run(
         }
         _ => None,
     };
-    app::launch(move || {
+    app::launch(notice, move || {
         // The engine the window holds has nothing to reach: the window draws the replay only.
         let (engine, unreached) = Engine::start(PathBuf::from("no-engine.sock"));
         // Its threads stop when nobody listens, and then every command would fail: the window

@@ -34,6 +34,7 @@ impl Workbench {
                 Ok(Err(error)) => {
                     this.report(format!("The file picker could not open: {error}"), cx)
                 }
+                // The picker was dropped before it answered: the person is told so.
                 Err(_) => this.report("The file picker closed without answering.".to_owned(), cx),
             })
         })

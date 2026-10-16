@@ -283,16 +283,34 @@ fn writing_kind(error: &soyeht_writing::Error) -> ErrorKind {
     }
 }
 
-/// Logs a failure the caller cannot return as one structured line: the event and the
-/// bounded error kind, never message text.
-pub fn log_failure(event: &str, error: &Error) {
-    eprintln!("{}", serde_json::json!({"event":event,"kind":kind(error)}));
+/// An engine failure logs as its bounded protocol kind, never as message text. An I/O error
+/// logs its `io::ErrorKind` too: the protocol kind of every one is `internal_error`, which
+/// would hide whether a file was missing or refused.
+impl soyeht_platform::log::Failure for Error {
+    fn failure_kind(&self) -> String {
+        match self {
+            Self::Io(error) => format!("io:{:?}", error.kind()),
+            _ => wire_name(&kind(self)),
+        }
+    }
 }
 
-/// [`log_failure`] for a result whose only use is to be reported.
+/// The name a wire value has in its JSON form, such as an error kind or a reason.
+pub fn wire_name(value: &(impl Serialize + ?Sized)) -> String {
+    serde_json::to_value(value).map_or_else(
+        |error| error.to_string(),
+        |value| {
+            value
+                .as_str()
+                .map_or_else(|| value.to_string(), str::to_owned)
+        },
+    )
+}
+
+/// Logs the failure of a result the caller cannot return, as one structured line.
 pub fn log_if_failed(event: &str, result: Result<()>) {
     if let Err(error) = result {
-        log_failure(event, &error);
+        soyeht_platform::log::failure(event, &error);
     }
 }
 
@@ -662,5 +680,14 @@ mod tests {
         assert!(agent_poll_failure_is_global(&Error::Io(io::Error::from(
             io::ErrorKind::StorageFull
         ))));
+    }
+
+    #[test]
+    fn a_failure_logs_its_kind_and_an_io_error_its_io_kind_never_its_text() {
+        use soyeht_platform::log::Failure as _;
+        let missing = Error::Io(io::Error::new(io::ErrorKind::NotFound, "/private/path"));
+        assert_eq!(missing.failure_kind(), "io:NotFound");
+        assert_eq!(not_found("a pane").failure_kind(), "not_found");
+        assert_eq!(internal("/private/path").failure_kind(), "internal_error");
     }
 }

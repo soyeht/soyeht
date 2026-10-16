@@ -8,6 +8,7 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
+use soyeht_platform::log::{Failure as _, Line};
 use soyeht_protocol::{
     Actor, AttachmentRef, ClientCapability, HelloParams, Role, Welcome,
     attachment::AttachmentAssembler, event, frame::Frame, limits, method,
@@ -53,24 +54,22 @@ fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
 /// A client that reconnects with stale credentials leaves no other trace than
 /// its refused handshakes. The record names the client it declared (only when
 /// that is a plain label) and the engine's own fixed reason, never a credential.
-fn refused_handshake_record(connection: &str, params: &Value, error: &errors::Error) -> Value {
+fn refused_handshake_record(connection: &str, params: &Value, error: &errors::Error) -> Line {
     let client = params["client"].as_str().filter(|name| {
         (1..=32).contains(&name.len())
             && name
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
     });
-    json!({
-        "event": "engine.handshake_refused",
-        "connectionId": connection,
-        "client": client,
-        "kind": errors::kind(error),
-        "reason": error.to_string(),
-    })
+    Line::new("engine.handshake_refused")
+        .field("connectionId", connection)
+        .field_opt("client", client)
+        .field("kind", error.failure_kind())
+        .field("reason", error)
 }
 
 fn log_refused_handshake(connection: &str, params: &Value, error: &errors::Error) {
-    eprintln!("{}", refused_handshake_record(connection, params, error));
+    refused_handshake_record(connection, params, error).emit();
 }
 
 fn uses_native_rpc_result(method: &str) -> bool {
@@ -714,6 +713,10 @@ mod experiment_consent_tests {
 mod tests {
     use super::*;
 
+    fn object(line: &Line) -> Value {
+        serde_json::from_str(&line.json()).unwrap()
+    }
+
     #[test]
     fn a_refused_handshake_names_a_plain_client_and_never_a_credential() {
         let params = json!({
@@ -722,11 +725,11 @@ mod tests {
             "deviceToken": "secret-token",
             "proof": "secret-proof",
         });
-        let record = refused_handshake_record(
+        let record = object(&refused_handshake_record(
             "connection",
             &params,
             &errors::unauthorized("Unknown agent binding"),
-        );
+        ));
         assert_eq!(record["client"], "soyeht-mcp");
         assert_eq!(record["kind"], "unauthorized");
         assert_eq!(record["reason"], "Unknown agent binding");
@@ -736,11 +739,11 @@ mod tests {
     #[test]
     fn a_client_label_that_is_not_plain_is_not_logged() {
         for label in ["", "has space", "path/like", "x".repeat(33).as_str()] {
-            let record = refused_handshake_record(
+            let record = object(&refused_handshake_record(
                 "connection",
                 &json!({"client": label}),
                 &errors::unauthorized("Unknown or revoked device"),
-            );
+            ));
             assert!(record["client"].is_null(), "{label}");
         }
     }

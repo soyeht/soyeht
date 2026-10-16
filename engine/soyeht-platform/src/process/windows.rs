@@ -294,6 +294,7 @@ impl Console {
         // The handle leaves the mutex first, so a resize is never blocked behind the close.
         let console = match self.0.lock() {
             Ok(mut guard) => guard.take(),
+            // A poisoned lock means a resize panicked while holding it; there is no handle to take.
             Err(_) => None,
         };
         if let Some(console) = console {

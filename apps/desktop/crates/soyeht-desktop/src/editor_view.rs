@@ -277,11 +277,11 @@ fn paint_gutter(
                     .text_system()
                     .shape_line(label.into(), px(type_scale::SMALL), &[run], None);
             let x = gutter.right() - shaped.width - px(editor::TEXT_INSET);
-            if let Err(error) =
-                shaped.paint(point(x, y), cell.height, TextAlign::Left, None, window, cx)
-            {
-                eprintln!("soyeht: could not paint a line number: {error}");
-            }
+            crate::terminal_view::report_paint(
+                shaped
+                    .paint(point(x, y), cell.height, TextAlign::Left, None, window, cx)
+                    .is_err(),
+            );
         }
     });
 }

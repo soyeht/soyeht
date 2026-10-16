@@ -8,6 +8,7 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
+use soyeht_platform::log::{self, Line};
 use soyeht_protocol::{
     PaneState, StateSource, event,
     profile::{DEV_PTYD_SOCKET, DEV_TCP_PORT},
@@ -67,23 +68,13 @@ pub struct Core {
 fn log_stale_export_cleanup(directory: &Path) {
     match crate::experiment_export::cleanup_stale_export_temporaries_on_start(directory) {
         Ok((cleaned_files, cleaned_bytes)) if cleaned_files > 0 => {
-            eprintln!(
-                "{}",
-                json!({
-                    "event":"engine.experiment_export_temporary_cleanup",
-                    "files":cleaned_files,
-                    "bytes":cleaned_bytes.to_string()
-                })
-            );
+            Line::new("engine.experiment_export_temporary_cleanup")
+                .field("files", cleaned_files)
+                .field("bytes", cleaned_bytes)
+                .emit();
         }
         Err(error) => {
-            eprintln!(
-                "{}",
-                json!({
-                    "event":"engine.experiment_export_temporary_cleanup_failed",
-                    "reason":error.to_string()
-                })
-            );
+            log::failure("engine.experiment_export_temporary_cleanup_failed", &error);
         }
         _ => (),
     }
@@ -97,12 +88,13 @@ impl Core {
         log_stale_export_cleanup(directory);
         let mut store = Store::open(directory).map_err(errors::storage)?;
         let workspaces = store.workspaces().map_err(errors::storage)?;
-        let _ = crate::workspace_layout::log_fallback_diagnostics(
+        for line in crate::workspace_layout::fallback_diagnostics(
             workspaces
                 .iter()
                 .map(|workspace| (workspace.workspace_id.as_str(), &workspace.layout)),
-            std::io::stderr(),
-        );
+        ) {
+            line.emit();
+        }
         let generation = store.next_engine_generation().map_err(errors::storage)?;
         if generation > u32::MAX as u64 {
             return Err(errors::internal("Engine generation exhausted"));
@@ -181,10 +173,7 @@ impl Core {
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {
             // Skills are optional: the engine serves everything else without them.
-            eprintln!(
-                "{}",
-                json!({"event":"engine.skills_unavailable","kind":errors::kind(&error)})
-            );
+            log::failure("engine.skills_unavailable", &error);
         }
         let editor_restore_ms = core.now_ms();
         for file in editor_files {
@@ -362,7 +351,7 @@ impl Core {
                     event::PTYD_LOST,
                     json!({"reason":"Supervisor connection closed"}),
                 ) {
-                    errors::log_failure("engine.ptyd_lost_unrecorded", &error);
+                    log::failure("engine.ptyd_lost_unrecorded", &error);
                 }
                 Err(errors::ptyd_unavailable("Supervisor disconnected"))
             }

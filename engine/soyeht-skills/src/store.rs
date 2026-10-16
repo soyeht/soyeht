@@ -158,6 +158,7 @@ fn read_manifest(path: &Path) -> std::result::Result<(String, String), Problem> 
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             return Err(Problem::MissingManifest);
         }
+        // `Unreadable` is the typed problem the skill list shows.
         Err(_) => return Err(Problem::Unreadable),
     };
     if metadata.len() > SKILL_BYTES as u64 {

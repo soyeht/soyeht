@@ -3,10 +3,19 @@
 
 use super::{Effect, test_fixture::EditorFixture};
 use serde_json::Value;
+use soyeht_platform::log::Line;
 use std::fs;
 
 const TICK_MS: i64 = 250;
 const TEN_MINUTES_MS: i64 = 600_000;
+
+/// The lines as the JSON objects the log carries.
+fn objects(lines: &[Line]) -> Vec<Value> {
+    lines
+        .iter()
+        .map(|line| serde_json::from_str(&line.json()).unwrap())
+        .collect()
+}
 
 fn events<'a>(records: &'a [Value], name: &str) -> Vec<&'a Value> {
     records
@@ -40,15 +49,16 @@ async fn a_watch_on_a_vanished_file_backs_off_and_logs_few_times() {
     // attempts near a dozen, and the log to the power-of-two attempts only.
     let attempts = fixture.core.editor.effect_attempts(&file_id, Effect::Watch);
     assert!((10..=25).contains(&attempts), "attempts: {attempts}");
+    let records = objects(&records);
     let failed = events(&records, "engine.editor_effect_failed");
     assert!(failed.len() <= 6, "logged {} failures", failed.len());
     assert_eq!(failed.len(), records.len());
     let first = failed[0];
     assert_eq!(first["action"], "watch");
     assert_eq!(first["fileId"], file_id.as_str());
-    assert_eq!(first["cause"], "io:NotFound");
-    assert_eq!(first["attempts"], 1);
-    assert_eq!(first["retryInMs"], 500);
+    assert_eq!(first["kind"], "io:NotFound");
+    assert_eq!(first["attempts"], "1");
+    assert_eq!(first["retryInMs"], "500");
 }
 
 #[tokio::test]
@@ -74,6 +84,7 @@ async fn a_watch_that_recovers_logs_one_recovery_and_resets() {
         records.extend(fixture.core.advance_editor_effects());
     }
 
+    let records = objects(&records);
     let recovered = events(&records, "engine.editor_effect_recovered");
     assert_eq!(recovered.len(), 1);
     assert_eq!(recovered[0]["action"], "watch");

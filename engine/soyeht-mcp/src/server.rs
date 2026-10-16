@@ -116,7 +116,10 @@ fn dispatch<P: EnginePort>(
             | Error::TaskContextRequired
             | Error::InvalidArguments(_),
         ) => failure(id, -32602, "Invalid tool request"),
-        Err(_) => failure(id, -32603, "Soyeht service unavailable"),
+        Err(error) => {
+            soyeht_platform::log::failure("mcp.request_failed", &error);
+            failure(id, -32603, "Soyeht service unavailable")
+        }
     }))
 }
 

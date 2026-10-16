@@ -6,6 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use soyeht_platform::log::Line;
 use soyeht_protocol::{
     HarnessEnvironmentIssue, HarnessInfo, HarnessSetupReason, HarnessSetupState, HarnessSource,
     ModelInfo, ModelListSource, ModelRefusal, limits, method,
@@ -219,19 +220,15 @@ pub(crate) fn prepare_catalog(
                 }
             })
             .collect::<Vec<_>>();
-        eprintln!(
-            "{}",
-            json!({
-                "event":"engine.catalog_prepared",
-                "method":method::HARNESS_LIST,
-                "entries":entries.len(),
-                "environmentMs":environment_ms,
-                "resolveMs":resolve_ms,
-                "prepareMs":prepare_ms,
-                "installedMs":installed_ms,
-                "totalMs":started.elapsed().as_millis()
-            })
-        );
+        Line::new("engine.catalog_prepared")
+            .field("method", method::HARNESS_LIST)
+            .field("entries", entries.len())
+            .field("environmentMs", environment_ms)
+            .field("resolveMs", resolve_ms)
+            .field("prepareMs", prepare_ms)
+            .field("installedMs", installed_ms)
+            .field("totalMs", started.elapsed().as_millis())
+            .emit();
         return Ok(PreparedCatalog::Harness { entries, issue });
     }
     let started = Instant::now();
@@ -250,14 +247,10 @@ pub(crate) fn prepare_catalog(
         registry::resolve(&directory, harness)?;
         None
     };
-    eprintln!(
-        "{}",
-        json!({
-            "event":"engine.catalog_prepared",
-            "method":method::MODEL_LIST,
-            "totalMs":started.elapsed().as_millis()
-        })
-    );
+    Line::new("engine.catalog_prepared")
+        .field("method", method::MODEL_LIST)
+        .field("totalMs", started.elapsed().as_millis())
+        .emit();
     Ok(PreparedCatalog::Model {
         harness: harness.to_owned(),
         prepared,

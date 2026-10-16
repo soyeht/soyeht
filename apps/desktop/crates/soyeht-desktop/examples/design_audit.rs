@@ -36,7 +36,9 @@ fn open() -> Result<(), String> {
             name => theme = ThemeName::named(name).ok_or(format!("no theme named {name}"))?,
         }
     }
-    soyeht_desktop::run_fixture(&fixture, theme, open.as_deref(), size)
+    soyeht_desktop::run_fixture(&fixture, theme, open.as_deref(), size, |text| {
+        eprintln!("{text}")
+    })
 }
 
 /// `1280x800` as a width and a height in points.

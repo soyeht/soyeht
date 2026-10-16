@@ -26,7 +26,8 @@ const FILES: [&[u8]; 12] = [
 /// Makes the bundled faces available to the text system.
 pub fn register(cx: &App) {
     let faces = FILES.iter().map(|bytes| Cow::Borrowed(*bytes)).collect();
-    if let Err(error) = cx.text_system().add_fonts(faces) {
-        eprintln!("soyeht: bundled fonts could not be loaded: {error}");
+    // The text system's error is a message that can name a file: the event says what failed.
+    if cx.text_system().add_fonts(faces).is_err() {
+        soyeht_platform::log::event("desktop.fonts_failed", &[]);
     }
 }

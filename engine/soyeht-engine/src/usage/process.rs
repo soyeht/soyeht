@@ -195,6 +195,7 @@ pub(super) fn json_rpc(program: &Path, path_env: &str, request: &RpcRequest) -> 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return RpcRun::ToolNotFound;
         }
+        // `Failed` reaches the reading as an unavailable source.
         Err(_) => return RpcRun::Failed,
     };
     let deadline = Instant::now() + request.timeout;

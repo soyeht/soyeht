@@ -1,8 +1,9 @@
+use crate::streak::Streak;
 use crate::{
     core_lock::{self, Shared},
     errors::Result,
 };
-use serde_json::{Value, json};
+use soyeht_platform::log::{Failure as _, Line};
 use soyeht_protocol::{EngineReachability, EngineReachabilityReason};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -91,7 +92,7 @@ pub struct TailnetUpdate {
 
 pub type Lookup = Box<dyn FnMut() -> io::Result<Vec<IpAddr>> + Send>;
 pub type Serve = Box<dyn FnMut(TcpListener) -> JoinHandle<io::Result<()>> + Send>;
-pub type Log = Box<dyn FnMut(Value) + Send>;
+pub type Log = Box<dyn FnMut(Line) + Send>;
 
 /// Tailnet listeners that follow the interface addresses without an engine restart:
 /// a listener starts when its address appears and stops when the address goes away.
@@ -102,7 +103,7 @@ pub struct TailnetListeners {
     log: Log,
     active: BTreeMap<IpAddr, (SocketAddr, JoinHandle<io::Result<()>>)>,
     refused: BTreeSet<IpAddr>,
-    lookup_failing: bool,
+    lookup_failure: Streak,
     reported: Option<TailnetUpdate>,
 }
 
@@ -115,7 +116,7 @@ impl TailnetListeners {
             log,
             active: BTreeMap::new(),
             refused: BTreeSet::new(),
-            lookup_failing: false,
+            lookup_failure: Streak::once(),
             reported: None,
         }
     }
@@ -125,7 +126,7 @@ impl TailnetListeners {
             port,
             Box::new(tailnet_addresses),
             serve,
-            Box::new(|event| eprintln!("{event}")),
+            Box::new(|line| line.emit()),
         )
     }
 
@@ -135,19 +136,20 @@ impl TailnetListeners {
         self.reap_stopped().await;
         let lookup_failed = match (self.lookup)() {
             Ok(addresses) => {
-                self.lookup_failing = false;
+                self.lookup_failure.succeed();
                 self.follow(addresses.into_iter().collect()).await;
                 false
             }
             Err(error) => {
                 // A failed enumeration is not evidence that an interface went away,
                 // so running listeners stay up; the failure is logged once per streak.
-                if !std::mem::replace(&mut self.lookup_failing, true) {
-                    (self.log)(json!({
-                        "event":"engine.tailnet_lookup_failed",
-                        "error":io_kind(&error),
-                        "retrySec":TAILNET_LOOKUP_PERIOD.as_secs(),
-                    }));
+                let kind = error.failure_kind();
+                if self.lookup_failure.fail(&kind) {
+                    (self.log)(
+                        Line::new("engine.tailnet_lookup_failed")
+                            .field("error", kind)
+                            .field("retrySec", TAILNET_LOOKUP_PERIOD.as_secs()),
+                    );
                 }
                 true
             }
@@ -220,11 +222,11 @@ impl TailnetListeners {
                 // Retried on every lookup; logged once until the address binds or goes.
                 Err(error) => {
                     if self.refused.insert(ip) {
-                        (self.log)(json!({
-                            "event":"engine.tailnet_listen_failed",
-                            "family":family(ip),
-                            "error":io_kind(&error),
-                        }));
+                        (self.log)(
+                            Line::new("engine.tailnet_listen_failed")
+                                .field("family", family(ip))
+                                .field("error", error.failure_kind()),
+                        );
                     }
                 }
             }
@@ -244,16 +246,17 @@ impl TailnetListeners {
             };
             let error = match task.await {
                 Ok(Ok(())) => "Stopped".to_string(),
-                Ok(Err(error)) => io_kind(&error),
+                Ok(Err(error)) => error.failure_kind(),
                 Err(join) if join.is_panic() => "Panicked".to_string(),
+                // The log line below names the reason: the task was cancelled.
                 Err(_) => "Cancelled".to_string(),
             };
             // The next lookup binds the address again if it is still present.
-            (self.log)(json!({
-                "event":"engine.tailnet_listener_stopped",
-                "family":family(ip),
-                "error":error,
-            }));
+            (self.log)(
+                Line::new("engine.tailnet_listener_stopped")
+                    .field("family", family(ip))
+                    .field("error", error),
+            );
         }
     }
 }
@@ -281,15 +284,16 @@ impl Drop for TailnetListeners {
     }
 }
 
-fn reachability_event(reachability: &EngineReachability, listeners: usize) -> Value {
+fn reachability_event(reachability: &EngineReachability, listeners: usize) -> Line {
     match &reachability.reason {
-        None => json!({"event":"engine.tailnet_reachable","listeners":listeners}),
-        Some(reason) => json!({
-            "event":"engine.tailnet_unreachable",
-            "reason":reason,
-            "detail":"Not reachable from your devices; local clients keep loopback",
-            "retrySec":TAILNET_LOOKUP_PERIOD.as_secs(),
-        }),
+        None => Line::new("engine.tailnet_reachable").field("listeners", listeners),
+        Some(reason) => Line::new("engine.tailnet_unreachable")
+            .field("reason", crate::errors::wire_name(reason))
+            .field(
+                "detail",
+                "Not reachable from your devices; local clients keep loopback",
+            )
+            .field("retrySec", TAILNET_LOOKUP_PERIOD.as_secs()),
     }
 }
 
@@ -297,14 +301,10 @@ fn family(ip: IpAddr) -> &'static str {
     if ip.is_ipv4() { "ipv4" } else { "ipv6" }
 }
 
-/// The error kind only: tailnet logs never carry addresses or interface names.
-fn io_kind(error: &io::Error) -> String {
-    format!("{:?}", error.kind())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
     use std::{
         collections::VecDeque,
         sync::{Arc, Mutex},
@@ -337,7 +337,11 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&events);
         (
-            Box::new(move |event| sink.lock().unwrap().push(event)),
+            Box::new(move |line| {
+                sink.lock()
+                    .unwrap()
+                    .push(serde_json::from_str(&line.json()).unwrap())
+            }),
             events,
         )
     }
@@ -410,7 +414,7 @@ mod tests {
         let logged = events.lock().unwrap();
         assert_eq!(logged[1]["reason"], "tailnet_lookup_failed");
         assert_eq!(logged[2]["reason"], "tailnet_address_not_found");
-        assert_eq!(logged[3]["listeners"], 1);
+        assert_eq!(logged[3]["listeners"], "1");
         let text = serde_json::to_string(&*logged).unwrap();
         assert!(!text.contains("::1"), "logs never carry addresses: {text}");
     }

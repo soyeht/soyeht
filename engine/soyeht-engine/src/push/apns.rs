@@ -105,6 +105,7 @@ impl Credentials {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 return Err(ConfigProblem::Missing);
             }
+            // `Unreadable` is the reason `engine.push_disabled` logs.
             Err(_) => return Err(ConfigProblem::Unreadable),
         };
         let config: ConfigFile =
@@ -329,6 +330,7 @@ impl Transport for Http2 {
                 self.connections.remove(host);
                 Err(error)
             }
+            // The deadline passed: the connection is dropped and the caller sees `TimedOut`.
             Err(_) => {
                 self.connections.remove(host);
                 Err(io::Error::new(
