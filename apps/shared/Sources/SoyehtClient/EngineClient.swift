@@ -825,7 +825,6 @@ public final class EngineClient {
     terminalOutputSinks[paneId]?.sink(bytes, reset)
     if paneId == selectedPaneId { terminalOutputSink?(bytes, reset) }
   }
-  var terminalSubscriptionCount: Int { terminalStreams.count }
   var terminalOutputSinkCount: Int { terminalOutputSinks.count }
 
   private func discardTerminalPane(_ paneId: String) {
@@ -837,9 +836,6 @@ public final class EngineClient {
     #if os(macOS)
       terminalViewRegistry.remove(paneId)
     #endif
-  }
-  public func createPane(directory: URL) {
-    perform { _ = try await self.createTerminalPane(directory: directory) }
   }
   public func createTerminalPane(directory: URL) async throws -> String {
     let path = directory.standardizedFileURL.path
@@ -910,16 +906,6 @@ public final class EngineClient {
       .paneExperimentDelete,
       PaneExperimentDeleteParams(paneId: paneId, idempotencyKey: UUID().uuidString)
     ).decoded(PaneExperimentDeleteResult.self)
-  }
-  public func exportExperimentData(
-    paneIds: [String], fromMs: String, toMs: String
-  ) async throws -> PaneExperimentExportResult {
-    try await mutation(
-      .paneExperimentExport,
-      PaneExperimentExportParams(
-        paneIds: paneIds, fromMs: fromMs, toMs: toMs,
-        idempotencyKey: UUID().uuidString)
-    ).decoded(PaneExperimentExportResult.self)
   }
   public func input(_ data: Data) {
     guard let pane = selectedPaneId else { return }
@@ -992,7 +978,8 @@ public final class EngineClient {
       }
     }
   }
-  func perform(_ action: @escaping @MainActor () async throws -> Void) {
+  /// Runs `action` without waiting for it; a failure becomes the visible `problem`.
+  public func perform(_ action: @escaping @MainActor () async throws -> Void) {
     Task { do { try await action() } catch { self.problem = error.localizedDescription } }
   }
 }

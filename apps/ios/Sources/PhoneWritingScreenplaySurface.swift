@@ -39,8 +39,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     private let textView = UITextView()
     private let elementButton = UIButton(type: .system)
     private weak var outerScrollView: UIScrollView?
-    private var source = ""
-    private var firstLine: UInt32 = 0
+    private var text = WritingViewportText()
     private var renderedIdentity: String?
     private var applying = false
 
@@ -132,7 +131,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
       updateAccessibilityValue(scale: desired)
 
       guard let viewport = parent.file.viewport else { return }
-      firstLine = viewport.fromLine
+      text.firstLine = viewport.fromLine
       let identity = [
         viewport.file.revision,
         String(viewport.fromLine),
@@ -141,9 +140,9 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         String(describing: SoyehtThemeStore.shared.activeTheme),
       ].joined(separator: ":")
       if identity != renderedIdentity {
-        source = EditorEditing.viewportText(viewport.lines)
+        text.source = EditorEditing.viewportText(viewport.lines)
         renderedIdentity = identity
-        render(selection: valid(textView.selectedRange))
+        render(selection: text.clamped(textView.selectedRange))
       }
       updateElementMenu()
     }
@@ -184,13 +183,14 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
 
     func textView(
       _ textView: UITextView, shouldChangeTextIn range: NSRange,
-      replacementText text: String
+      replacementText: String
     ) -> Bool {
       guard !applying,
         let edit = ScreenplayInteraction.typingEdit(
-          source: source, firstLine: firstLine, range: range, replacement: text)
+          source: text.source, firstLine: text.firstLine, range: range, replacement: replacementText
+        )
       else { return false }
-      source = edit.source
+      text.source = edit.source
       parent.client.enqueueEditorEdits(
         fileId: parent.file.file.fileId, edits: [edit.wireEdit])
       render(selection: NSRange(location: edit.cursor, length: 0))
@@ -206,20 +206,13 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
       }
       let selection = textView.selectedRange
       guard selection.location != NSNotFound, selection.length == 0,
-        selection.location <= source.utf16.count
+        selection.location <= text.source.utf16.count
       else {
         elementButton.isHidden = true
         return
       }
-      let raw = source as NSString
-      let lineRange = raw.lineRange(for: selection)
-      var contentRange = lineRange
-      while contentRange.length > 0 {
-        let character = raw.character(at: NSMaxRange(contentRange) - 1)
-        guard character == 10 || character == 13 else { break }
-        contentRange.length -= 1
-      }
-      let lineText = raw.substring(with: contentRange)
+      let contentRange = text.contentRange(atLocation: selection.location)
+      let lineText = (text.source as NSString).substring(with: contentRange)
       guard
         PhoneWritingMetrics.chromePolicy.writingChrome.showsScreenplayElementMenu(
           lineText: lineText, selectionLength: selection.length)
@@ -227,7 +220,7 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
         elementButton.isHidden = true
         return
       }
-      let activeLine = lineNumber(at: selection.location)
+      let activeLine = text.line(utf16Offset: selection.location)
       let suggestionKind = ScreenplayInteraction.suggestionKind(
         at: activeLine, in: parent.structure)
       let suggestions = Array(
@@ -287,21 +280,15 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     private func applyLine(kind: ScreenplayElementKind, value: String, range: NSRange) {
       guard
         let edit = ScreenplayInteraction.typingEdit(
-          source: source, firstLine: firstLine, range: range,
+          source: text.source, firstLine: text.firstLine, range: range,
           replacement: ScreenplayInteraction.formattedLine(value, as: kind))
       else { return }
-      source = edit.source
+      text.source = edit.source
       parent.client.enqueueEditorEdits(
         fileId: parent.file.file.fileId, edits: [edit.wireEdit])
       render(selection: NSRange(location: edit.cursor, length: 0))
       parent.onEditingActivity()
       updateElementMenu()
-    }
-
-    private func lineNumber(at utf16Offset: Int) -> UInt32 {
-      EditorEditing.textPosition(
-        text: source, viewportStartLine: firstLine, utf16Offset: utf16Offset
-      )?.line ?? firstLine
     }
 
     private func centerPage(in scrollView: UIScrollView) {
@@ -324,8 +311,8 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
     private func render(selection: NSRange) {
       applying = true
       textView.attributedText = PhoneScreenplayStyle.attributed(
-        source, firstLine: firstLine, structure: parent.structure)
-      textView.selectedRange = valid(selection)
+        text, structure: parent.structure)
+      textView.selectedRange = text.clamped(selection)
       textView.typingAttributes = PhoneScreenplayStyle.typingAttributes
       textView.accessibilityLabel = "\(parent.accessibilityName), screenplay"
       applying = false
@@ -333,14 +320,6 @@ struct PhoneWritingScreenplaySurface: UIViewRepresentable {
 
     private func updateAccessibilityValue(scale: CGFloat) {
       textView.accessibilityValue = "\(Int((scale * 100).rounded())) percent"
-    }
-
-    private func valid(_ range: NSRange) -> NSRange {
-      let length = source.utf16.count
-      guard range.location != NSNotFound, range.location <= length else {
-        return NSRange(location: 0, length: 0)
-      }
-      return NSRange(location: range.location, length: min(range.length, length - range.location))
     }
   }
 }
@@ -351,28 +330,25 @@ private enum PhoneScreenplayStyle {
     [
       .font: PhoneWritingMetrics.screenplayFont(),
       .foregroundColor: UIColor(PhonePalette.ink),
-      .paragraphStyle: baseParagraph(),
+      .paragraphStyle: ScreenplayLineStyle.basePageParagraph(),
     ]
   }
 
   static func attributed(
-    _ source: String, firstLine: UInt32, structure: WritingStructureResult
+    _ text: WritingViewportText, structure: WritingStructureResult
   ) -> NSAttributedString {
-    let result = NSMutableAttributedString(string: source, attributes: typingAttributes)
-    for element in structure.elements {
-      guard
-        let range = range(
-          from: element.startLine, through: element.endLine,
-          source: source, firstLine: firstLine)
-      else { continue }
-      style(element.kind, range: range, in: result)
+    let result = NSMutableAttributedString(string: text.source, attributes: typingAttributes)
+    let appearance = ScreenplayPageAppearance(
+      boldFont: PhoneWritingMetrics.screenplayFont(bold: true),
+      secondaryInk: UIColor(PhonePalette.secondary),
+      hiddenMarkerFont: UIFont.monospacedSystemFont(
+        ofSize: ScreenplayLineStyle.hiddenMarkerFontSize, weight: .regular),
+      hiddenMarkerInk: UIColor(PhonePalette.face))
+    for (kind, range) in text.elementRanges(in: structure) {
+      ScreenplayLineStyle(kind: kind, line: result.attributedSubstring(from: range).string)
+        .apply(to: result, range: range, appearance: appearance)
     }
-    for variants in structure.variants {
-      guard
-        let range = range(
-          from: variants.line, through: variants.line,
-          source: source, firstLine: firstLine)
-      else { continue }
+    for range in text.variantRanges(in: structure) {
       result.addAttributes(
         [
           .underlineStyle: NSUnderlineStyle.single.union(.patternDot).rawValue,
@@ -380,72 +356,5 @@ private enum PhoneScreenplayStyle {
         ], range: range)
     }
     return result
-  }
-
-  private static func style(
-    _ kind: ScreenplayElementKind, range: NSRange, in text: NSMutableAttributedString
-  ) {
-    let paragraph = baseParagraph()
-    let line = text.attributedSubstring(from: range).string
-    let projection = ScreenplayInteraction.lineProjection(source: line, kind: kind)
-    switch kind {
-    case .scene_heading:
-      text.addAttribute(.font, value: PhoneWritingMetrics.screenplayFont(bold: true), range: range)
-    case .action:
-      break
-    case .shot:
-      text.addAttribute(.font, value: PhoneWritingMetrics.screenplayFont(bold: true), range: range)
-    case .character:
-      paragraph.alignment = .center
-      text.addAttribute(.font, value: PhoneWritingMetrics.screenplayFont(bold: true), range: range)
-    case .parenthetical:
-      paragraph.alignment = .center
-      text.addAttribute(.foregroundColor, value: UIColor(PhonePalette.secondary), range: range)
-    case .dialogue:
-      paragraph.firstLineHeadIndent = 120
-      paragraph.headIndent = 120
-      paragraph.tailIndent = -120
-    case .transition:
-      paragraph.alignment = projection.openingTransition ? .left : .right
-      text.addAttribute(.foregroundColor, value: UIColor(PhonePalette.secondary), range: range)
-    }
-    text.addAttribute(.paragraphStyle, value: paragraph, range: range)
-    hideMarkers(projection.hiddenRanges, lineRange: range, in: text)
-  }
-
-  private static func hideMarkers(
-    _ ranges: [NSRange], lineRange: NSRange, in text: NSMutableAttributedString
-  ) {
-    for marker in ranges {
-      let absolute = NSRange(location: lineRange.location + marker.location, length: marker.length)
-      guard NSMaxRange(absolute) <= NSMaxRange(lineRange) else { continue }
-      text.addAttributes(
-        [
-          .font: UIFont.monospacedSystemFont(ofSize: 0.1, weight: .regular),
-          .foregroundColor: UIColor(PhonePalette.face),
-        ], range: absolute)
-    }
-  }
-
-  private static func baseParagraph() -> NSMutableParagraphStyle {
-    let style = NSMutableParagraphStyle()
-    style.minimumLineHeight = PaneLayoutContentMetrics.screenplayLineHeight
-    style.maximumLineHeight = PaneLayoutContentMetrics.screenplayLineHeight
-    style.paragraphSpacing = 8
-    return style
-  }
-
-  private static func range(
-    from start: UInt32, through end: UInt32, source: String, firstLine: UInt32
-  ) -> NSRange? {
-    guard start >= firstLine, end >= start else { return nil }
-    let lines = source.components(separatedBy: "\n")
-    let localStart = Int(start - firstLine)
-    let localEnd = Int(end - firstLine)
-    guard localStart < lines.count else { return nil }
-    let clampedEnd = min(localEnd, lines.count - 1)
-    let location = lines.prefix(localStart).reduce(0) { $0 + $1.utf16.count + 1 }
-    let length = lines[localStart...clampedEnd].reduce(0) { $0 + $1.utf16.count + 1 } - 1
-    return NSRange(location: location, length: max(0, length))
   }
 }

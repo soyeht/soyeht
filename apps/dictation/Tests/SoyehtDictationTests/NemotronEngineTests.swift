@@ -18,7 +18,7 @@ import Testing
   #expect(engine.languages.map(\.id).contains("pt-BR"))
   #expect(engine.model?.licenseName == "OpenMDW-1.1")
   #expect(engine.model?.sizeDescription == "about 642 MB")
-  #expect(engine.requiresInstall)
+  #expect(engine.model != nil)
 }
 
 @MainActor @Test func appleIsTheDefaultEngineAndNemotronIsOptIn() {

@@ -39,12 +39,12 @@ struct AgentHarnessPicker: View {
       failed: client.loadFailure(.catalogue(harness: harness)) != nil)
   }
 
-  private var selected: HarnessInfo? { client.harnesses.first { $0.id == harness } }
+  private var selected: HarnessInfo? { client.harness(id: harness) }
   private var selectedModel: ModelInfo? { catalogue?.models.first { $0.id == model } }
   private var excludedQueryMatch: HarnessInfo? {
     guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
       let excludingHarness,
-      let excluded = client.harnesses.first(where: { $0.id == excludingHarness }),
+      let excluded = client.harness(id: excludingHarness),
       HarnessPickerModel.matches(excluded, query: query)
     else { return nil }
     return excluded

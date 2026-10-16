@@ -860,20 +860,3 @@ struct PreferenceToggle: View {
     .accessibilityHidden(true)
   }
 }
-
-private struct PreferencePreviewAction: View {
-  let icon: String
-  let title: String
-
-  var body: some View {
-    HStack(spacing: MacTheme.Space.x6) {
-      Image(systemName: icon).font(.system(size: 10, weight: .bold))
-      Text(title).font(MacTheme.chrome(MacTheme.TypeScale.control, weight: .bold))
-    }
-    .foregroundStyle(MacTheme.onAccent)
-    .padding(.horizontal, MacTheme.Space.x14)
-    .frame(height: 28)
-    .neoAccent(radius: MacTheme.Radius.pill)
-    .accessibilityHidden(true)
-  }
-}

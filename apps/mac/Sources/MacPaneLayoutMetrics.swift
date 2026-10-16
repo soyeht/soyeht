@@ -58,6 +58,17 @@ import SoyehtProtocol
       surfaceWidth: Double(cardWidth), fonts: fontMetrics)
   }
   static let chromePolicy = WritingChromePolicy()
+  /// How a writing pane lays out its page in a pane of `size`; nil when the pane is too small.
+  static func writingPlan(
+    kind: PaneLayoutKind, size: CGSize, font: PaneLayoutFontMetric, fullWidth: Bool = false,
+    reviewVisible: Bool = false
+  ) -> WritingLayoutPlan? {
+    let policy = WritingLayoutPolicy(floors: surfaceFloors, gaps: sizing.gaps)
+    return try? policy.layout(
+      WritingLayoutRequest(
+        kind: kind, viewport: PaneLayoutSize(width: size.width, height: size.height),
+        font: font, fullWidth: fullWidth, reviewVisible: reviewVisible))
+  }
   static func sizing(newPanePlaceholderId: String) -> PaneLayoutSizingPolicy {
     sizing.overridingFloor(forPaneId: newPanePlaceholderId, with: newPaneFootprintFloor)
   }

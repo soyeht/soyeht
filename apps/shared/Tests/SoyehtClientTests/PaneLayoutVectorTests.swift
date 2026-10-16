@@ -111,8 +111,9 @@ private func sizing(_ all: JsonValue, floors listed: JsonValue = .null) throws
     let node = try tree(item["tree"])
     let minimum = try PaneLayoutMinimumSize.require(
       for: node, floors: policy.floors, gaps: policy.gaps)
-    let rects = try PaneLayoutGeometry.layoutRects(
-      tree: node, viewport: PaneLayoutSize(width: minimum.width, height: 5000), sizing: policy)
+    let rects = try PaneLayoutGeometry.layout(
+      tree: node, viewport: PaneLayoutSize(width: minimum.width, height: 5000), sizing: policy
+    ).paneRects
     guard case .object(let spans) = item["spans"] else { continue }
     for (id, span) in spans {
       let rect = try #require(rects[id], "\(name): \(id)")

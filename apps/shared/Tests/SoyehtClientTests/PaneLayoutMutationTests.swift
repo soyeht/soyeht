@@ -164,8 +164,9 @@ private let mutationSizing = PaneLayoutSizingPolicy(
     tree, splitAt: PaneLayoutNodePath(), dividerIndex: 0, delta: 10_000,
     viewport: viewport, sizing: mutationSizing)
   let clampedSplit = try #require(clamped.mutationHorizontalSplit)
-  let rects = try PaneLayoutGeometry.layoutRects(
-    tree: clamped, viewport: viewport, sizing: mutationSizing)
+  let rects = try PaneLayoutGeometry.layout(
+    tree: clamped, viewport: viewport, sizing: mutationSizing
+  ).paneRects
   #expect(clampedSplit.children[1].weight > 0)
   #expect(abs(clampedSplit.children[0].weight + clampedSplit.children[1].weight - 6) < 0.000_001)
   #expect(abs(try #require(rects["terminal"]).size.width - 300) < 0.000_001)
@@ -293,8 +294,9 @@ private let mutationSizing = PaneLayoutSizingPolicy(
     sizing: mutationSizing)
   let root = try #require(result.mutationHorizontalSplit)
   let equalized = try #require(root.children[1].tree.mutationVerticalSplit)
-  let rects = try PaneLayoutGeometry.layoutRects(
-    tree: result, viewport: viewport, sizing: mutationSizing)
+  let rects = try PaneLayoutGeometry.layout(
+    tree: result, viewport: viewport, sizing: mutationSizing
+  ).paneRects
 
   #expect(root.children.map(\.weight) == [3, 1])
   #expect(equalized.children.map(\.weight) == [164, 124])
@@ -321,8 +323,9 @@ private let mutationSizing = PaneLayoutSizingPolicy(
 
   let result = try PaneLayoutTreeMutation.equalizing(
     tree, splitAt: PaneLayoutNodePath(), viewport: viewport, sizing: sizing)
-  let rects = try PaneLayoutGeometry.layoutRects(
-    tree: result, viewport: viewport, sizing: sizing)
+  let rects = try PaneLayoutGeometry.layout(
+    tree: result, viewport: viewport, sizing: sizing
+  ).paneRects
 
   #expect(abs((try #require(rects["editor"])).size.width - 600) < 0.000_001)
   #expect(abs((try #require(rects["terminal"])).size.width - 280) < 0.000_001)

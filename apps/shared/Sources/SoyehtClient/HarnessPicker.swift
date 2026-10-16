@@ -159,6 +159,11 @@ public enum HarnessPickerModel {
     }
   }
 
+  /// What a picker watches to choose again when a harness is found, lost or changes status.
+  public static func availabilityKeys(_ harnesses: [HarnessInfo]) -> [String] {
+    harnesses.map { "\($0.id):\($0.available):\(statusLabel(for: $0))" }
+  }
+
   public static func statusLabel(for harness: HarnessInfo) -> String {
     switch setupState(for: harness) {
     case .ready: "Ready"
@@ -223,5 +228,14 @@ extension EngineClient {
     if applyDefaultPermissionModeChanged(event) { return }
     guard event.key == Setting.harnessPreferredId else { return }
     preferredHarnessId = event.value.string.flatMap { $0.isEmpty ? nil : $0 }
+  }
+}
+
+extension EngineClient {
+  public func harness(id: String) -> HarnessInfo? { harnesses.first { $0.id == id } }
+
+  /// The effort selector of a harness's catalogue, if it has one.
+  public func effortOption(harness id: String) -> ConfigOption? {
+    agentCatalogues[id]?.options.first(where: \.isEffort)
   }
 }

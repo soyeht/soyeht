@@ -109,7 +109,8 @@
   @MainActor private func exerciseAgentPane(
     local: EngineClient, reader: EngineClient, data: URL
   ) async throws {
-    local.createAgentPane(directory: data, harness: "swift-test", model: nil, effort: nil)
+    _ = try await local.createAgentPaneNow(
+      directory: data, harness: "swift-test", model: nil, effort: nil)
     try await phoneWait("local agent session did not open") {
       local.panes.contains { $0.mode == .agent && $0.agent?.sessionId != nil }
     }
@@ -183,7 +184,7 @@
     reader.stop()
     #expect(reader.panes.isEmpty)
     let paneCount = local.panes.count
-    local.createPane(directory: data)
+    _ = try await local.createTerminalPane(directory: data)
     try await phoneWait("local client did not receive the added pane") {
       local.panes.count == paneCount + 1
     }
@@ -222,7 +223,7 @@
       "soyeht-engine", bins: fixture.bins, data: fixture.data, output: fixture.output)
     local.start()
     try await phoneWait { local.connected }
-    local.createPane(directory: fixture.data)
+    _ = try await local.createTerminalPane(directory: fixture.data)
     try await phoneWait { local.selectedPane?.pid != nil }
     let credential = try await pairCredential(local)
     let reader = EngineClient(credential: credential)

@@ -12,11 +12,9 @@ struct AgentHarnessSwitchPicker: View {
   @State private var submitting = false
 
   private var currentHarness: String { pane.agent?.harness ?? "" }
-  private var selectedHarness: HarnessInfo? { client.harnesses.first { $0.id == harness } }
+  private var selectedHarness: HarnessInfo? { client.harness(id: harness) }
   private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
-  private var effortOption: ConfigOption? {
-    catalogue?.options.first(where: \.isEffort)
-  }
+  private var effortOption: ConfigOption? { client.effortOption(harness: harness) }
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x12) {
@@ -50,11 +48,9 @@ struct AgentHarnessSwitchPicker: View {
       client.refreshHarnesses(rescan: false)
       selectFirstHarness()
     }
-    .onChange(
-      of: client.harnesses.map {
-        "\($0.id):\($0.available):\(HarnessPickerModel.statusLabel(for: $0))"
-      }
-    ) { _, _ in selectFirstHarness() }
+    .onChange(of: HarnessPickerModel.availabilityKeys(client.harnesses)) { _, _ in
+      selectFirstHarness()
+    }
     .onChange(of: harness) { _, value in
       model = ""
       effort = ""

@@ -252,7 +252,7 @@ private enum FakeModelFailure: LocalizedError {
   store.install(store.registry)
   #expect(store.selected.id == "apple")
   #expect(store.choices[1].needsInstall)
-  #expect(store.choices[1].engine.requiresInstall)
+  #expect(store.choices[1].engine.model != nil)
 
   // Neither choosing it, the mic, nor the shortcut starts a download.
   store.select("big")

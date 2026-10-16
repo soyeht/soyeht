@@ -106,12 +106,6 @@ public enum PaneLayoutGeometry {
       dividers: builder.dividers)
   }
 
-  public static func layoutRects(
-    tree: PaneLayoutTree, viewport: PaneLayoutSize, sizing: PaneLayoutSizingPolicy
-  ) throws -> [String: PaneLayoutRect] {
-    try layout(tree: tree, viewport: viewport, sizing: sizing).paneRects
-  }
-
   private struct Builder {
     let sizing: PaneLayoutSizingPolicy
     var nodes: [PaneLayoutNodePath: PaneLayoutNodeGeometry] = [:]

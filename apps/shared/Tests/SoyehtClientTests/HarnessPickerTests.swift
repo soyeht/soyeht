@@ -171,3 +171,11 @@ private func harness(
     options: [], authMethods: [], source: .built_in, setupState: state,
     setupReason: installed == false ? .registry_package_unverified : nil)
 }
+
+@Test func aPickerChoosesAgainWhenAHarnessChangesStatus() {
+  let signIn = harness(id: "tool", name: "Tool", state: .sign_in)
+  let ready = harness(id: "tool", name: "Tool", state: .ready)
+  #expect(
+    HarnessPickerModel.availabilityKeys([signIn]) != HarnessPickerModel.availabilityKeys([ready]))
+  #expect(HarnessPickerModel.availabilityKeys([signIn]).count == 1)
+}

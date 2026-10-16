@@ -3,6 +3,11 @@ import Testing
 
 @testable import SoyehtClient
 
+extension PaneLayoutState {
+  /// The layout as the engine stores it, for tests that read it back.
+  func encodedWorkspaceLayout() throws -> JsonValue { try .encoded(envelope()) }
+}
+
 @Test func absentWorkspaceLayoutMigratesToInitialByType() {
   let state = PaneLayoutState(workspaceLayout: .object(["panes": .array([])]))
 

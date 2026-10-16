@@ -9,10 +9,9 @@ import Testing
   let document = writingDocument()
   try client.applyEditorSnapshot(["files": [try .encoded(document.file)]], panes: [pane])
   try client.applyWritingSnapshot(["writing": [try .encoded(document)]], panes: [pane])
-  client.select(pane.paneId)
 
-  #expect(client.selectedWritingDocument?.document.file.fileId == document.file.fileId)
-  #expect(client.selectedWritingFile?.file.path == "Texts/Opening.md")
+  #expect(client.writingDocuments[document.file.fileId]?.document.file.paneId == pane.paneId)
+  #expect(client.editorFiles[document.file.fileId]?.file.path == "Texts/Opening.md")
 
   var wrong = document
   wrong.kind = .screenplay

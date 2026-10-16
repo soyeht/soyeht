@@ -46,8 +46,9 @@ private let geometrySizing = PaneLayoutSizingPolicy(
           weight: 1, tree: .leaf(PaneLayoutLeaf(paneId: "terminal", kind: .terminal))),
       ]))
 
-  let rects = try PaneLayoutGeometry.layoutRects(
-    tree: tree, viewport: PaneLayoutSize(width: 1_020, height: 500), sizing: geometrySizing)
+  let rects = try PaneLayoutGeometry.layout(
+    tree: tree, viewport: PaneLayoutSize(width: 1_020, height: 500), sizing: geometrySizing
+  ).paneRects
 
   #expect(abs(try #require(rects["editor"]).size.width - 660) < 0.000_001)
   #expect(abs(try #require(rects["terminal"]).size.width - 340) < 0.000_001)

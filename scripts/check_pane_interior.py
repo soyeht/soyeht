@@ -44,16 +44,17 @@ INTERIOR_FILES = (
     "apps/mac/Sources/EditorStatusBar.swift",
     "apps/mac/Sources/EditorTabBar.swift",
     "apps/mac/Sources/PaneTabStrip.swift",
+    "apps/mac/Sources/PaneCard.swift",
+    "apps/mac/Sources/PaneCardHeader.swift",
+    "apps/mac/Sources/PaneCardBody.swift",
+    "apps/mac/Sources/PaneExperimentCapture.swift",
+    "apps/mac/Sources/NewPaneSheet.swift",
     "apps/mac/Sources/Web/WebPaneSurface.swift",
     "apps/mac/Sources/Web/WebWorkspace.swift",
 )
 # Files that mix window chrome with pane interiors: only these types are pane interiors.
-INTERIOR_TYPES = {
-    "apps/mac/Sources/WorkspaceWindow.swift": (
-        "PaneCard",
-        "NewPaneSheet",
-    ),
-}
+# No file does today; a type listed here is looked up by name in its file.
+INTERIOR_TYPES: dict[str, tuple[str, ...]] = {}
 
 NEUMORPHIC = re.compile(
     r"\.neoRaised\s*\(|\.neoWell\s*\(|\.neoAccent\s*\(|\bNeoPillButtonStyle\b"

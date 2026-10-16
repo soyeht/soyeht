@@ -103,10 +103,6 @@ public struct PaneLayoutState: Equatable, Sendable {
       mode: mode,
       tree: try tree.map { try WorkspacePaneLayoutNode(layoutTree: $0) })
   }
-
-  public func encodedWorkspaceLayout() throws -> JsonValue {
-    try .encoded(envelope())
-  }
 }
 
 extension PaneLayoutTree {

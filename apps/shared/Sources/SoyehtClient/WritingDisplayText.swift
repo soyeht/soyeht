@@ -12,6 +12,9 @@ public enum WritingDisplayText {
     .scene_heading, .action, .character, .parenthetical, .dialogue, .transition, .shot,
   ]
 
+  /// The fonts a text document can use, in the order its font menu lists them.
+  public static let fonts: [WritingFont] = [.reading_serif, .classic_serif, .sans]
+
   public static func count(_ count: Int, kind: WritingCountKind) -> String {
     let names: (singular: String, plural: String)
     switch kind {

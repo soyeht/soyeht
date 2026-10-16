@@ -1,3 +1,4 @@
+import SoyehtProtocol
 import Testing
 
 @testable import SoyehtClient
@@ -114,4 +115,60 @@ private let chromePolicy = WritingChromePolicy()
   #expect(WritingChromePolicy.formatShortcut(key: "i", command: true) == .italic)
   #expect(WritingChromePolicy.formatShortcut(key: "k", command: true) == nil)
   #expect(WritingChromePolicy.formatShortcut(key: "b", command: false) == nil)
+}
+
+@Test func everyChromeActionNamesItselfAndItsAccessibilityElement() {
+  for action in WritingChromeAction.allCases {
+    #expect(!action.title().isEmpty, "\(action)")
+    #expect(!action.systemImage.isEmpty, "\(action)")
+    #expect(action.accessibilityIdentifier(paneId: "p1").hasSuffix("-p1"), "\(action)")
+  }
+  let identifiers = WritingChromeAction.allCases
+    .filter { $0 != .useReadingWidth }
+    .map { $0.accessibilityIdentifier(paneId: "p1") }
+  #expect(Set(identifiers).count == identifiers.count)
+  #expect(WritingChromeAction.focusMode.title() == "Focus mode")
+  #expect(WritingChromeAction.focusMode.title(focusMode: true) == "Turn off Focus mode")
+  #expect(
+    WritingChromeAction.useFullWidth.accessibilityIdentifier(paneId: "p1")
+      == WritingChromeAction.useReadingWidth.accessibilityIdentifier(paneId: "p1"))
+}
+
+@Test func theSelectionToolbarIsDrawnFromTheFormatsOfItsActions() {
+  let actions = chromePolicy.plan(kind: .text, hasSelection: true).selectionActions
+  for action in actions {
+    let routes = [
+      action.directFormat != nil, !action.formatChoices.isEmpty, action.destinationFormat != nil,
+    ]
+    #expect(routes.filter { $0 }.count == 1, "\(action)")
+  }
+  #expect(
+    WritingChromeAction.heading.formatChoices.map(\.kind) == [.heading1, .heading2, .heading3])
+  #expect(WritingChromeAction.list.formatChoices.map(\.kind) == [.bullet_list, .numbered_list])
+  #expect(WritingChromeAction.link.shortcutKey == "k")
+  #expect(WritingFormatKind.image.destinationPrompt?.title == "Image path")
+  #expect(WritingFormatKind.link.destinationPrompt?.placeholder == "https://")
+  #expect(WritingFormatKind.bold.destinationPrompt == nil)
+  for action in [WritingChromeAction.bold, .italic] {
+    let key = String(action.shortcutKey ?? " ")
+    #expect(WritingChromePolicy.formatShortcut(key: key, command: true) == action.directFormat)
+  }
+}
+
+@Test func theChromeFadesByTheMetricsOfItsVisibility() {
+  let metrics = WritingChromeMetrics.standard
+  #expect(metrics.opacity(for: .visible) == 1)
+  #expect(metrics.opacity(for: .dimmed) == metrics.dimmedOpacity)
+  #expect(metrics.fadeDuration(into: .dimmed) == metrics.dimDuration)
+  #expect(metrics.fadeDuration(into: .visible) == metrics.revealDuration)
+}
+
+@Test func aRailDividerRunsAlongTheRightEdgeOfItsRail() {
+  let rail = PaneLayoutRect(
+    origin: PaneLayoutPoint(x: 10, y: 20), size: PaneLayoutSize(width: 200, height: 300))
+  let divider = WritingLayoutMetrics.standard.railDivider(after: rail)
+  #expect(divider.origin.x == 210)
+  #expect(divider.origin.y == 20)
+  #expect(divider.size.width == WritingLayoutMetrics.standard.railDividerWidth)
+  #expect(divider.size.height == 300)
 }

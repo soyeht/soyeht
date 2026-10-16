@@ -88,38 +88,14 @@ import WebKit
   private static func boundedPNG(
     _ image: NSImage, maxBytes: Int = ProtocolLimits.webScreenshotBytes
   ) throws -> Data {
-    var candidate = image
-    for _ in 0..<8 {
-      guard let tiff = candidate.tiffRepresentation,
-        let bitmap = NSBitmapImageRep(data: tiff),
-        let png = bitmap.representation(using: .png, properties: [:])
-      else {
-        throw ClientFailure.webHost(.internal_error, "The page snapshot could not be encoded.")
-      }
-      if png.count <= maxBytes { return png }
-      let ratio = sqrt(Double(maxBytes) / Double(png.count)) * 0.85
-      candidate = try resized(candidate, ratio: min(0.9, ratio))
-    }
-    throw ClientFailure.webHost(.internal_error, "The page snapshot exceeds its byte limit.")
-  }
-
-  private static func resized(_ image: NSImage, ratio: Double) throws -> NSImage {
-    let width = max(1, Int(floor(image.size.width * ratio)))
-    let height = max(1, Int(floor(image.size.height * ratio)))
-    guard
-      let bitmap = NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8,
-        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
-        bytesPerRow: 0, bitsPerPixel: 0)
-    else { throw ClientFailure.webHost(.internal_error, "The page snapshot could not be resized.") }
-    NSGraphicsContext.saveGraphicsState()
-    defer { NSGraphicsContext.restoreGraphicsState() }
-    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-    image.draw(
-      in: NSRect(x: 0, y: 0, width: width, height: height), from: .zero,
-      operation: .copy, fraction: 1)
-    let resized = NSImage(size: NSSize(width: width, height: height))
-    resized.addRepresentation(bitmap)
-    return resized
+    try image.boundedPNG(
+      maxBytes: maxBytes,
+      failures: BoundedPNGFailures(
+        encoding: ClientFailure.webHost(
+          .internal_error, "The page snapshot could not be encoded."),
+        resizing: ClientFailure.webHost(
+          .internal_error, "The page snapshot could not be resized."),
+        limit: ClientFailure.webHost(
+          .internal_error, "The page snapshot exceeds its byte limit.")))
   }
 }

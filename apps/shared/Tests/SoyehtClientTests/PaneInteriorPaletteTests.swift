@@ -37,7 +37,7 @@ func paneInteriorColorsResolveFromThePaletteRoles(theme: TerminalColorTheme) {
 @Test(arguments: TerminalColorTheme.allCases)
 func paneInteriorTextIsReadableInEveryPalette(theme: TerminalColorTheme) {
   let palette = theme.palette
-  let contrast = ThemeLabColorMath.contrastRatio
+  let contrast = contrastRatio
   // Body text on cards, the primary pill's label on its ink fill, secondary pills' labels.
   #expect(contrast(palette.ink, palette.canvas) >= 4.5, "\(theme) ink on canvas")
   #expect(contrast(palette.ink, palette.face) >= 4.5, "\(theme) ink on face")
@@ -49,7 +49,7 @@ func paneInteriorTextIsReadableInEveryPalette(theme: TerminalColorTheme) {
 /// this records the gap so a palette change that closes or widens it is noticed.
 @Test func dangerTextOnWellRecordsTheApprovedPalettesContrastGap() {
   let below = TerminalColorTheme.allCases.filter {
-    ThemeLabColorMath.contrastRatio($0.palette.danger, $0.palette.well) < 4.5
+    contrastRatio($0.palette.danger, $0.palette.well) < 4.5
   }
   #expect(
     below == [
@@ -57,7 +57,7 @@ func paneInteriorTextIsReadableInEveryPalette(theme: TerminalColorTheme) {
       .neoDeepVine, .neoDeepForest, .neoDeepHarbor,
     ])
   for theme in TerminalColorTheme.allCases {
-    #expect(ThemeLabColorMath.contrastRatio(theme.palette.danger, theme.palette.well) >= 2.4)
+    #expect(contrastRatio(theme.palette.danger, theme.palette.well) >= 2.4)
   }
 }
 

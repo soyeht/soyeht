@@ -44,7 +44,7 @@ import Testing
 
 @Test func neoMilkInkKeepsReadableContrastOnThePresentationFace() {
   let palette = TerminalColorTheme.neoMilk.palette
-  #expect(ThemeLabColorMath.contrastRatio(palette.ink, palette.face) >= 4.5)
+  #expect(contrastRatio(palette.ink, palette.face) >= 4.5)
 }
 
 @Test func raisedAndWellPairsMatchTheProductionThemes() {
@@ -78,17 +78,4 @@ import Testing
   for theme in TerminalColorTheme.allCases {
     #expect(theme.palette.isDark == dark.contains(theme))
   }
-}
-
-@Test func sharedHexAndShadowMathMatchTheProductionRules() throws {
-  #expect(ThemeHexColorMath.mix("#000000", "#FFFFFF", amount: 0.5) == "#808080")
-  #expect(ThemeHexColorMath.lighten("#000000", by: 0.25) == "#404040")
-  #expect(ThemeHexColorMath.darken("#FFFFFF", by: 0.25) == "#BFBFBF")
-  #expect(ThemeHexColorMath.withAlpha("#5B7CFA", 0.4) == "#5B7CFA66")
-  #expect(ThemeShadowMath.renderRadius(blur: 18) == 9)
-  #expect(ThemeLabColorMath.contrastRatio("#000000", "#FFFFFF") == 21)
-  let accent = try #require(ThemeLabColorMath.lch(of: "#5B7CFA"))
-  #expect(ThemeLabColorMath.hex(accent) == "#5B7CFA")
-  #expect(ThemeLabColorMath.withLightness("#5B7CFA", 50) != nil)
-  #expect((ThemeLabColorMath.distance("#000000", "#FFFFFF") ?? 0) > 99)
 }

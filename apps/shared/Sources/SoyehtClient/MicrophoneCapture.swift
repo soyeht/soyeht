@@ -13,8 +13,6 @@ import Foundation
 
   public init() {}
 
-  public var isRunning: Bool { engine != nil }
-
   /// Asks for microphone access; the system answers on a background queue.
   public static func requestAccess() async -> Bool {
     #if os(iOS)

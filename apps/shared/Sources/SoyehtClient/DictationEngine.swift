@@ -96,10 +96,6 @@ public struct DictationEngine: Identifiable, Sendable {
     self.make = make
   }
 
-  /// The engine needs a model on disk before it listens. Such an engine is opt-in: nothing
-  /// downloads until the person installs it.
-  public var requiresInstall: Bool { model != nil }
-
   /// Why this engine cannot run on `platform`, or nil when it can.
   public func unavailableReason(on platform: DictationPlatform) -> String? {
     guard platforms.contains(platform) else { return "Not available on \(platform.title)" }

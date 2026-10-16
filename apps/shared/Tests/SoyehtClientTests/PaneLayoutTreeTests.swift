@@ -191,13 +191,11 @@ private let sizing = PaneLayoutSizingPolicy(
     .terminal: PaneLayoutSize(width: 320, height: 200),
     .agent: PaneLayoutSize(width: 300, height: 240),
   ]
-  let initial = try #require(
-    PaneLayoutMinimumSize.derive(for: tree, floors: floors, gaps: gaps))
+  let initial = try PaneLayoutMinimumSize.require(for: tree, floors: floors, gaps: gaps)
   #expect(initial == PaneLayoutSize(width: 940, height: 500))
 
   floors[.editor] = PaneLayoutSize(width: 700, height: 500)
-  let changed = try #require(
-    PaneLayoutMinimumSize.derive(for: tree, floors: floors, gaps: gaps))
+  let changed = try PaneLayoutMinimumSize.require(for: tree, floors: floors, gaps: gaps)
   #expect(changed == PaneLayoutSize(width: 1_040, height: 500))
   #expect(changed.width - initial.width == 100)
 }
@@ -226,11 +224,10 @@ private let sizing = PaneLayoutSizingPolicy(
     .editor: PaneLayoutSize(width: 600, height: 500)
   ]
 
-  #expect(
-    PaneLayoutMinimumSize.derive(
-      for: tree,
-      floors: floors,
-      gaps: PaneLayoutGaps(horizontal: 20, vertical: 12)) == nil)
+  #expect(throws: PaneLayoutSizingError.self) {
+    try PaneLayoutMinimumSize.require(
+      for: tree, floors: floors, gaps: PaneLayoutGaps(horizontal: 20, vertical: 12))
+  }
 }
 
 extension PaneLayoutTree {

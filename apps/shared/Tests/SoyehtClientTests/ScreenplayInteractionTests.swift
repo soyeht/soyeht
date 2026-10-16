@@ -128,6 +128,18 @@ import Testing
         hiddenRanges: [NSRange(location: 0, length: 9)], openingTransition: false))
 }
 
+@Test func aViewportLocatesTheElementsAndTakesOfAScreenplay() {
+  let text = WritingViewportText(
+    source: "INT. KITCHEN - DAY\n\nANA\nHello there.\n\nCUT", firstLine: 0)
+  let elements = text.elementRanges(in: screenplayStructure())
+  #expect(elements.map(\.kind) == [.scene_heading, .character])
+  #expect(
+    elements.map(\.range) == [NSRange(location: 0, length: 18), NSRange(location: 20, length: 3)])
+  #expect(text.variantRanges(in: screenplayStructure()) == [NSRange(location: 24, length: 12)])
+  let later = WritingViewportText(source: "ANA\nHello there.", firstLine: 2)
+  #expect(later.elementRanges(in: screenplayStructure()).map(\.kind) == [.character])
+}
+
 private func screenplayStructure() -> WritingStructureResult {
   let document = WritingDocument(
     file: FileDocument(

@@ -433,14 +433,6 @@ public enum PaneLayoutArrangement {
 }
 
 public enum PaneLayoutMinimumSize {
-  public static func derive(
-    for tree: PaneLayoutTree,
-    floors: [PaneLayoutKind: PaneLayoutSize],
-    gaps: PaneLayoutGaps
-  ) -> PaneLayoutSize? {
-    try? require(for: tree, floors: floors, gaps: gaps)
-  }
-
   public static func require(
     for tree: PaneLayoutTree,
     floors: [PaneLayoutKind: PaneLayoutSize],

@@ -71,11 +71,6 @@ public struct WebHostOutput: Sendable {
 }
 
 extension EngineClient {
-  public var selectedWebPane: Pane? {
-    guard selectedPane?.mode == .web else { return nil }
-    return selectedPane
-  }
-
   func applyWebSnapshot(panes: [Pane]) {
     webPanes = Dictionary(
       uniqueKeysWithValues: panes.lazy.filter { $0.mode == .web }.map {

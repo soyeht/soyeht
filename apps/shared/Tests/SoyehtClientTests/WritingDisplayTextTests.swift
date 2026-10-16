@@ -25,3 +25,8 @@ import Testing
   #expect(WritingDisplayText.screenplayElementName(.scene_heading) == "Scene heading")
   #expect(WritingDisplayText.screenplayElementName(.dialogue) == "Dialogue")
 }
+
+@Test func theFontMenuListsEveryFontOnceInItsOrder() {
+  #expect(WritingDisplayText.fonts == [.reading_serif, .classic_serif, .sans])
+  #expect(Set(WritingDisplayText.fonts.map(WritingDisplayText.fontName)).count == 3)
+}

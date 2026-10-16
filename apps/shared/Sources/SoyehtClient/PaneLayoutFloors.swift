@@ -137,6 +137,10 @@ public enum PaneLayoutContentMetrics {
   public static let newPaneFormHeight = 150.0
   public static let newPaneMetadataHeight = 32.0
   public static let newPaneCompactFooterHeight = 64.0
+  /// The room the prompt leaves for the shortcut hint at its trailing edge.
+  public static let newPanePromptTrailingInset = 54.0
+  public static let newPaneAddGlyphSize = 16.0
+  public static let newPaneChevronGlyphSize = 10.0
 }
 
 /// Content rulers accepted in `docs/reports/pane-layout-floor-measurements.md`.

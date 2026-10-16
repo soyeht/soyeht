@@ -99,7 +99,7 @@ struct PhoneWritingWorkspace: View {
                   onAction: { action in apply(action, to: plan) },
                   onSplit: { axis in beginSplit(leaf: leaf, axis: axis) }
                 )
-                .phoneWritingFrame(leaf.rowRect)
+                .writingFrame(leaf.rowRect)
               }
             }
           }
@@ -1016,7 +1016,7 @@ private struct PhoneWritingTextSurface: View {
       ZStack(alignment: .topLeading) {
         PhonePalette.face
         if let review = plan.reviewRect {
-          reviewView.phoneWritingFrame(review)
+          reviewView.writingFrame(review)
         }
         if let file, file.viewport != nil {
           PhoneWritingTextEditor(
@@ -1031,11 +1031,11 @@ private struct PhoneWritingTextSurface: View {
               destinationRequest = PhoneWritingDestinationRequest(kind: kind, range: range)
             }
           )
-          .phoneWritingFrame(textPlan.columnRect)
+          .writingFrame(textPlan.columnRect)
           .clipShape(RoundedRectangle(cornerRadius: 10))
           .accessibilityIdentifier("phone-writing-text-\(writing.document.file.paneId)")
         } else {
-          ProgressView().phoneWritingFrame(textPlan.columnRect)
+          ProgressView().writingFrame(textPlan.columnRect)
         }
       }
       .frame(width: size.width, height: size.height, alignment: .topLeading)
@@ -1128,8 +1128,7 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
 
   @MainActor final class Coordinator: NSObject, UITextViewDelegate {
     var parent: PhoneWritingTextEditor
-    private var source = ""
-    private var firstLine: UInt32 = 0
+    private var text = WritingViewportText()
     private var renderedIdentity: String?
     private var renderedFont: WritingFont?
     private var renderedTheme: TerminalColorTheme?
@@ -1157,16 +1156,16 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
 
     func update(_ textView: UITextView) {
       guard let viewport = parent.view.viewport else { return }
-      firstLine = viewport.fromLine
+      text.firstLine = viewport.fromLine
       let identity = "\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine)"
       let theme = SoyehtThemeStore.shared.activeTheme
       let needsContent = identity != renderedIdentity
       let needsStyle = renderedFont != parent.document.font || renderedTheme != theme
       guard needsContent || needsStyle else { return }
-      if needsContent { source = EditorEditing.viewportText(viewport.lines) }
+      if needsContent { text.source = EditorEditing.viewportText(viewport.lines) }
       let selection = textView.selectedRange
-      textView.attributedText = NSAttributedString(string: source, attributes: attributes())
-      textView.selectedRange = validSelection(selection)
+      textView.attributedText = NSAttributedString(string: text.source, attributes: attributes())
+      textView.selectedRange = text.clamped(selection)
       textView.typingAttributes = attributes()
       textView.accessibilityLabel = "\(parent.accessibilityName), text document"
       renderedIdentity = identity
@@ -1176,16 +1175,16 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
 
     func textView(
       _ textView: UITextView, shouldChangeTextIn range: NSRange,
-      replacementText text: String
+      replacementText: String
     ) -> Bool {
-      let replacement = EditorLocalReplacement(range: range, text: text)
-      let cursor = NSRange(location: range.location + text.utf16.count, length: 0)
+      let replacement = EditorLocalReplacement(range: range, text: replacementText)
+      let cursor = NSRange(location: range.location + replacementText.utf16.count, length: 0)
       guard
         let plan = EditorEditing.replacementPlan(
-          text: source, viewportStartLine: firstLine,
+          text: text.source, viewportStartLine: text.firstLine,
           replacements: [replacement], selections: [cursor])
       else { return false }
-      source = EditorEditing.applying(plan.replacements, to: source)
+      text.source = EditorEditing.applying(plan.replacements, to: text.source)
       parent.client.enqueueEditorEdits(fileId: parent.view.file.fileId, edits: plan.edits)
       parent.onEditingActivity()
       return true
@@ -1218,36 +1217,19 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
     private func menuElement(
       for chromeAction: WritingChromeAction, range: SoyehtProtocol.TextRange
     ) -> UIMenuElement? {
-      switch chromeAction {
-      case .bold:
-        action("Bold", image: "bold", kind: .bold, range: range)
-      case .italic:
-        action("Italic", image: "italic", kind: .italic, range: range)
-      case .heading:
-        UIMenu(
-          title: "Heading", image: UIImage(systemName: "textformat.size"),
-          children: [
-            action("Heading 1", kind: .heading1, range: range),
-            action("Heading 2", kind: .heading2, range: range),
-            action("Heading 3", kind: .heading3, range: range),
-          ])
-      case .list:
-        UIMenu(
-          title: "List", image: UIImage(systemName: "list.bullet"),
-          children: [
-            action("Bulleted list", kind: .bullet_list, range: range),
-            action("Numbered list", kind: .numbered_list, range: range),
-          ])
-      case .quote:
-        action("Quote", image: "text.quote", kind: .quote, range: range)
-      case .link:
-        destinationAction("Link", image: "link", kind: .link, range: range)
-      case .image:
-        destinationAction("Image", image: "photo", kind: .image, range: range)
-      case .font, .useFullWidth, .useReadingWidth, .focusMode, .ideaBoard, .scenes,
-        .present, .splitColumns, .splitRows, .closePane:
-        nil
+      let title = chromeAction.title()
+      if let kind = chromeAction.directFormat {
+        return action(title, image: chromeAction.systemImage, kind: kind, range: range)
       }
+      if let kind = chromeAction.destinationFormat {
+        return destinationAction(title, image: chromeAction.systemImage, kind: kind, range: range)
+      }
+      guard !chromeAction.formatChoices.isEmpty else { return nil }
+      return UIMenu(
+        title: title, image: UIImage(systemName: chromeAction.systemImage),
+        children: chromeAction.formatChoices.map {
+          action($0.title, kind: $0.kind, range: range)
+        })
     }
 
     private func action(
@@ -1271,11 +1253,8 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
     }
 
     private func wireRange(_ range: NSRange) -> SoyehtProtocol.TextRange? {
-      guard
-        let start = EditorEditing.textPosition(
-          text: source, viewportStartLine: firstLine, utf16Offset: range.location),
-        let end = EditorEditing.textPosition(
-          text: source, viewportStartLine: firstLine, utf16Offset: NSMaxRange(range))
+      guard let start = text.position(utf16Offset: range.location),
+        let end = text.position(utf16Offset: NSMaxRange(range))
       else { return nil }
       return SoyehtProtocol.TextRange(start: start, end: end)
     }
@@ -1289,14 +1268,6 @@ private struct PhoneWritingTextEditor: UIViewRepresentable {
         .foregroundColor: UIColor(PhonePalette.ink),
         .paragraphStyle: paragraph,
       ]
-    }
-
-    private func validSelection(_ range: NSRange) -> NSRange {
-      let length = source.utf16.count
-      guard range.location != NSNotFound, range.location <= length else {
-        return NSRange(location: 0, length: 0)
-      }
-      return NSRange(location: range.location, length: min(range.length, length - range.location))
     }
   }
 }
@@ -1338,16 +1309,7 @@ private struct PhoneWritingScenes: View {
       }
       .phoneWritingSheetScroll()
       .phoneWritingSheetNavigation("Scenes")
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button {
-            dismiss()
-          } label: {
-            PhoneWritingActionLabel(
-              title: "Done", minimumTarget: sheetPlan.minimumActionTarget)
-          }
-        }
-      }
+      .phoneWritingDoneToolbar(minimumTarget: sheetPlan.minimumActionTarget, dismiss: dismiss)
     }
     .phoneWritingSheet(.scenes)
     .accessibilityLabel("\(accessibilityName), scenes")
@@ -1416,16 +1378,7 @@ private struct PhoneWritingIdeaBoard: View {
       }
       .background(PhonePalette.canvas)
       .phoneWritingSheetNavigation("Idea board")
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button {
-            dismiss()
-          } label: {
-            PhoneWritingActionLabel(
-              title: "Done", minimumTarget: sheetPlan.minimumActionTarget)
-          }
-        }
-      }
+      .phoneWritingDoneToolbar(minimumTarget: sheetPlan.minimumActionTarget, dismiss: dismiss)
     }
     .phoneWritingSheet(.ideaBoard)
     .accessibilityLabel("\(accessibilityName), idea board")
@@ -1433,11 +1386,19 @@ private struct PhoneWritingIdeaBoard: View {
 }
 
 extension View {
-  func phoneWritingFrame(_ rect: PaneLayoutRect) -> some View {
-    frame(width: rect.size.width, height: rect.size.height, alignment: .topLeading)
-      .position(
-        x: rect.origin.x + rect.size.width / 2,
-        y: rect.origin.y + rect.size.height / 2)
+  /// The Done button that closes a writing sheet.
+  func phoneWritingDoneToolbar(
+    minimumTarget: Double, dismiss: DismissAction
+  ) -> some View {
+    toolbar {
+      ToolbarItem(placement: .confirmationAction) {
+        Button {
+          dismiss()
+        } label: {
+          PhoneWritingActionLabel(title: "Done", minimumTarget: minimumTarget)
+        }
+      }
+    }
   }
 
   fileprivate func phoneWritingSheet(_ kind: PhoneWritingSheetKind) -> some View {

@@ -638,17 +638,6 @@ extension EngineClient {
 
   /// `permissionMode` is one of the harness's own mode IDs; `nil` lets the
   /// engine apply the harness's preferred mode.
-  public func createAgentPane(
-    directory: URL, harness: String, model: String?, effort: String?,
-    permissionMode: String? = nil
-  ) {
-    perform {
-      _ = try await self.createAgentPaneNow(
-        directory: directory, harness: harness, model: model, effort: effort,
-        permissionMode: permissionMode)
-    }
-  }
-
   public func createAgentPaneNow(
     directory: URL, harness: String, model: String?, effort: String?,
     permissionMode: String? = nil, selectPane: Bool = true

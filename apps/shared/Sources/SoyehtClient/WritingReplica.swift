@@ -16,16 +16,6 @@ public struct WritingDocumentView: Sendable {
 }
 
 extension EngineClient {
-  public var selectedWritingDocument: WritingDocumentView? {
-    guard let paneId = selectedPaneId else { return nil }
-    return writingDocuments.values.first { $0.document.file.paneId == paneId }
-  }
-
-  public var selectedWritingFile: EditorFileView? {
-    guard let fileId = selectedWritingDocument?.document.file.fileId else { return nil }
-    return editorFiles[fileId]
-  }
-
   func applyWritingSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
     let live = Dictionary(
       uniqueKeysWithValues: panes.lazy.filter { $0.mode == .writing }.map { ($0.paneId, $0) })

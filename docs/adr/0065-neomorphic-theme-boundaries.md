@@ -8,7 +8,7 @@ The rewrite currently exposes the approved Neo · Milk look through fixed SwiftU
 
 ## Decision
 
-`TerminalColorTheme` is a closed client-side value with the nine production identifiers and display names. It selects a deterministic `SoyehtThemePalette` in the shared client package. The catalogue ports the reviewed color data; `ThemeHexColorMath`, `ThemeLabColorMath`, and `ThemeShadowMath` provide the common deterministic arithmetic. Per-theme raised and well pairs remain authored data. Dark appearance is classified from the canvas with perceptual Lab lightness, matching production.
+`TerminalColorTheme` is a closed client-side value with the nine production identifiers and display names. It selects a deterministic `SoyehtThemePalette` in the shared client package. The catalogue ports the reviewed color data; `ThemeHexColorMath` and `ThemeLabColorMath` (internal to the package) read a hex color and measure its Lab lightness; nothing else of the original palette arithmetic is kept, because no client used it. Per-theme raised and well pairs remain authored data. Dark appearance is classified from the canvas with perceptual Lab lightness, matching production.
 
 Neo · Milk remains the seeded default. Its rewrite-specific editor roles are pinned to the values visible before this slice. The other themes map those roles to their authored bright ANSI semantic slots, so every rendered color still comes from the selected palette.
 

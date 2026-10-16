@@ -35,25 +35,26 @@ struct PhoneWritingPresentationSurface: View {
 
   var body: some View {
     if let plan, case .presentation(let presentation) = plan.surface {
-      ScrollView(scrollAxes(plan), showsIndicators: !plan.overflowAxes.isEmpty) {
+      ScrollView(Axis.Set(overflow: plan.overflowAxes), showsIndicators: !plan.overflowAxes.isEmpty)
+      {
         ZStack(alignment: .topLeading) {
           PhonePalette.face
             .frame(width: plan.contentSize.width, height: contentHeight(plan))
           if presentation.navigation == .thumbnails {
             thumbnailRail
-              .phoneWritingFrame(presentation.navigationRect)
+              .writingFrame(presentation.navigationRect)
               .accessibilityIdentifier(
                 "phone-writing-presentation-thumbnails-\(writing.document.file.paneId)")
           } else {
             numberStrip
-              .phoneWritingFrame(presentation.navigationRect)
+              .writingFrame(presentation.navigationRect)
               .accessibilityIdentifier(
                 "phone-writing-presentation-numbers-\(writing.document.file.paneId)")
           }
           stage
-            .phoneWritingFrame(presentation.stageRect)
+            .writingFrame(presentation.stageRect)
           footer
-            .phoneWritingFrame(presentation.footerRect)
+            .writingFrame(presentation.footerRect)
         }
         .frame(
           width: plan.contentSize.width, height: contentHeight(plan), alignment: .topLeading)
@@ -248,13 +249,6 @@ struct PhoneWritingPresentationSurface: View {
     }
   }
 
-  private func scrollAxes(_ plan: WritingLayoutPlan) -> Axis.Set {
-    var result: Axis.Set = []
-    if plan.overflowAxes.contains(.horizontal) { result.insert(.horizontal) }
-    if plan.overflowAxes.contains(.vertical) { result.insert(.vertical) }
-    return result
-  }
-
   private func contentHeight(_ plan: WritingLayoutPlan) -> Double {
     plan.contentSize.height
   }
@@ -353,16 +347,7 @@ struct PhoneWritingPresentationPlayer: View {
         .padding(.horizontal, 18)
         .background(.ultraThinMaterial)
       }
-      .toolbar {
-        ToolbarItem(placement: .confirmationAction) {
-          Button {
-            dismiss()
-          } label: {
-            PhoneWritingActionLabel(
-              title: "Done", minimumTarget: chromePlan.minimumActionTarget)
-          }
-        }
-      }
+      .phoneWritingDoneToolbar(minimumTarget: chromePlan.minimumActionTarget, dismiss: dismiss)
     }
     .tint(PhonePalette.accent)
   }

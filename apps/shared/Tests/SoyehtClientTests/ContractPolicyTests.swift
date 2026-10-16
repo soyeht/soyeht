@@ -35,6 +35,15 @@ private func contract() throws -> JsonValue {
   }
 }
 
+@MainActor @Test func everyDotRoleIsOnePaletteColor() {
+  #expect(StateDot.success.color == SoyehtThemeColors.success)
+  #expect(StateDot.accent.color == SoyehtThemeColors.accent)
+  #expect(StateDot.warning.color == SoyehtThemeColors.warning)
+  #expect(StateDot.muted.color == SoyehtThemeColors.muted)
+  #expect(StateDot.secondary.color == SoyehtThemeColors.secondary)
+  #expect(StateDot.allCases.count == 5)
+}
+
 @Test func theStatusWordFollowsTheVector() throws {
   let vector = try ContractVector.load("pane-state-presentation")
   for item in ContractVector.cases(vector, "statusWords") {
