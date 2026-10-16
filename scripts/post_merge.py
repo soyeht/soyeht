@@ -49,6 +49,9 @@ INFRASTRUCTURE_EXITS = {2, 64, 70, 71, UNSUPPORTED_STEP_EXIT}
 # A step that only means something after another step of the same run.
 PREREQUISITES = {"e2e:tcc-check": "e2e:tcc-snapshot"}
 WORKTREE_PREFIX = "soyeht-post-merge-"
+# Where a run keeps its worktree. Unset, the system temporary directory; a test names its own so
+# that two gates running the tests at once never remove each other's worktrees.
+SCRATCH_ROOT_ENV = "SOYEHT_POST_MERGE_TMP"
 BUSY_EXIT = 75
 
 
@@ -238,10 +241,14 @@ def investigate(root: Path, worktree: Path, scratch: Path, health: Path, record:
             record["note"] = "some commits cannot run the failing step alone"
 
 
+def scratch_root() -> Path:
+    return Path(os.environ.get(SCRATCH_ROOT_ENV) or tempfile.gettempdir())
+
+
 def remove_stale_worktrees(root: Path) -> None:
     """Leftovers of a run that was killed; the lock says no other run is alive."""
     git(root, "worktree", "prune", check=False)
-    for stale in Path(tempfile.gettempdir()).glob(f"{WORKTREE_PREFIX}*"):
+    for stale in scratch_root().glob(f"{WORKTREE_PREFIX}*"):
         shutil.rmtree(stale, ignore_errors=True)
     git(root, "worktree", "prune", check=False)
 
@@ -251,7 +258,7 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
     sha = git(root, "rev-parse", sha)
     log, timings = health / f"{sha}.log", health / f"{sha}.timings.json"
     health.mkdir(parents=True, exist_ok=True)
-    scratch = Path(tempfile.mkdtemp(prefix=WORKTREE_PREFIX))
+    scratch = Path(tempfile.mkdtemp(prefix=WORKTREE_PREFIX, dir=scratch_root()))
     worktree = scratch / "tree"
     try:
         git(root, "worktree", "add", "--detach", str(worktree), sha)

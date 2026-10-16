@@ -100,14 +100,15 @@ class SyntheticRepositoryTests(unittest.TestCase):
         self.health = self.root.parent / "health"
         self.gate = "bash scripts/check_all.sh".split()
         self.shas = [commit(self.root, "start", {"scripts/check_all.sh": FAKE_GATE, "a": "1"})]
-        environment = mock.patch.dict(os.environ, {"FORBIDDEN_TERMS": "placeholder"})
+        self.scratch = self.root.parent / "scratch"
+        self.scratch.mkdir()
+        environment = mock.patch.dict(
+            os.environ,
+            {"FORBIDDEN_TERMS": "placeholder", post_merge.SCRATCH_ROOT_ENV: str(self.scratch)},
+        )
         environment.start()
         self.addCleanup(environment.stop)
         self.addCleanup(shutil.rmtree, self.root.parent, ignore_errors=True)
-        # Scanning the shared temporary directory is slow; one test covers it.
-        self.stale = mock.patch.object(post_merge, "remove_stale_worktrees")
-        self.stale.start()
-        self.addCleanup(self.stale.stop)
 
     def add(self, name, files):
         self.shas.append(commit(self.root, name, files))
@@ -188,12 +189,13 @@ class SyntheticRepositoryTests(unittest.TestCase):
         self.assertEqual(self.run_main(self.shas[0]), 0)
 
     def test_stale_worktrees_of_a_killed_run_are_removed(self):
-        stale = Path(tempfile.gettempdir()) / f"{post_merge.WORKTREE_PREFIX}stale-test"
+        stale = self.scratch / f"{post_merge.WORKTREE_PREFIX}stale-test"
         (stale / "tree").mkdir(parents=True)
-        self.stale.stop()
-        self.addCleanup(self.stale.start)
+        elsewhere = self.root.parent / f"{post_merge.WORKTREE_PREFIX}another-run"
+        elsewhere.mkdir()
         post_merge.remove_stale_worktrees(self.root)
         self.assertFalse(stale.exists())
+        self.assertTrue(elsewhere.exists(), "a run's leftovers are looked for in its own root only")
 
     def test_no_known_green_main_reports_instead_of_searching(self):
         head = self.add("breaks", {"broken": "x"})
