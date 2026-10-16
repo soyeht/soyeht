@@ -1,11 +1,151 @@
 #!/bin/bash
 # The single list of merge-gate steps. CI workflows call this script and keep
 # no step list of their own (scripts/test_gate_list.py enforces it).
+#
+#   check_all.sh [--tier fast|full] [--only STEP_ID[,STEP_ID...]] [--list] [scanner arguments]
+#
+# Every step is one `step AREA TIERS ID command...` line (ADR 0089):
+#   AREA   always | engine | desktop | swift | dictation | mac_app | ios_app | typescript
+#          | e2e | editor_perf | timing
+#   TIERS  both  runs in the fast and the full tier
+#          full  runs only in the full tier
+#          fast  runs only in the fast tier (a cheaper stand-in for a full step)
+# The full tier (the default) runs every `both` and `full` step, as it always did. The
+# fast tier, which runs before a merge, runs the `always` steps plus the `both` and
+# `fast` steps of the areas that scripts/gate_plan.py selects from the changed paths.
+# The full tier runs on main after the merge (scripts/post_merge.py). A fast step that
+# stands in for a full one is named `<full id>-changed` or `<full id>-fast`
+# (test_gate_list.py checks that). A change to the scripts that run the gate upgrades a
+# fast run to the full tier. Exit codes: 64 bad usage, 70 unknown tier in a step,
+# 71 unknown area in a step, 78 --only names no step.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$repo_root"
-: "${FORBIDDEN_TERMS:?Provide the restricted vocabulary through the environment}"
+
+tier=full
+only=""
+list=0
+base=""
+gate_args=()
+while (($#)); do
+    case "$1" in
+        --tier) tier="${2:?--tier needs fast or full}"; shift 2 ;;
+        --tier=*) tier="${1#--tier=}"; shift ;;
+        --only) only="${2:?--only needs a step id}"; shift 2 ;;
+        --list) list=1; shift ;;
+        --base) base="${2:?--base needs a commit}"; gate_args+=("$1" "$2"); shift 2 ;;
+        --base=*) base="${1#--base=}"; gate_args+=("$1"); shift ;;
+        *) gate_args+=("$1"); shift ;;
+    esac
+done
+case "$tier" in fast | full) ;; *) echo "check_all: --tier must be fast or full" >&2; exit 64 ;; esac
+known_areas=" always engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing "
+set -- ${gate_args[@]+"${gate_args[@]}"}
+if ((!list)); then
+    : "${FORBIDDEN_TERMS:?Provide the restricted vocabulary through the environment}"
+fi
+
+# A shared, content-addressed compile cache: safe across worktrees, unlike a shared
+# target directory. Incremental crates are not cached, so the gate turns them off.
+if [[ -z "${RUSTC_WRAPPER:-}" ]] && command -v sccache >/dev/null 2>&1; then
+    export RUSTC_WRAPPER=sccache
+    if [[ "$(uname)" == Darwin ]]; then
+        export SCCACHE_DIR="${SCCACHE_DIR:-$HOME/Library/Caches/soyeht-sccache}"
+    else
+        export SCCACHE_DIR="${SCCACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/soyeht-sccache}"
+    fi
+    export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+    # A broken cache must not fail every cargo step: build without it. (--show-stats starts
+    # the server when it is not running; --start-server fails when it already runs.)
+    if ((!list)) && ! sccache --show-stats >/dev/null 2>&1; then
+        echo 'check_all: warning: sccache does not start; building without it' >&2
+        unset RUSTC_WRAPPER SCCACHE_DIR
+    fi
+fi
+
+# Per-step wall times: each step appends a line; the EXIT trap writes the JSON.
+timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
+step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
+GATE_AREAS="always engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing"
+GATE_ENGINE_TEST_ARGS="--workspace"
+GATE_DICTATION=1
+matched=0
+
+finish() {
+    local code=$?
+    trap - EXIT
+    if [[ -s "$step_log" ]]; then
+        local label="$tier"
+        [[ -z "$only" ]] || label="only:$only"
+        uv run python scripts/gate_timings.py finalize --steps "$step_log" \
+            --tier "$label" --exit-code "$code" \
+            --areas "$GATE_AREAS" --out "$timings_out" || echo 'check_all: could not write the timings' >&2
+    fi
+    rm -f "$step_log"
+    if [[ "${RUSTC_WRAPPER:-}" == sccache && $code -eq 0 ]] && ((!list)); then
+        sccache --show-stats 2>/dev/null | grep -E '^(Compile requests|Cache hits  |Cache misses  )' || true
+    fi
+    exit "$code"
+}
+trap finish EXIT
+
+now() { perl -MTime::HiRes=time -e 'printf "%.2f\n", time' 2>/dev/null || date +%s; }
+
+area_selected() {
+    local area="$1"
+    [[ "$area" == always || " $GATE_AREAS " == *" $area "* ]]
+}
+
+should_run() {
+    local area="$1" tiers="$2" id="$3"
+    case "$tiers" in
+        both | full | fast) ;;
+        *) echo "check_all: unknown tiers '$tiers' for $id" >&2; exit 70 ;;
+    esac
+    if [[ "$known_areas" != *" $area "* ]]; then
+        echo "check_all: unknown area '$area' for $id" >&2
+        exit 71
+    fi
+    if [[ -n "$only" ]]; then
+        [[ ",$only," == *",$id,"* ]]
+        return
+    fi
+    case "$tiers" in
+        full) [[ "$tier" == full ]] || return 1 ;;
+        fast) [[ "$tier" == fast ]] || return 1 ;;
+    esac
+    area_selected "$area"
+}
+
+# step AREA TIERS ID command...
+# The command runs with errexit off (it is the left side of `||`), so a function that runs
+# several commands must chain them with `&&` or check each one; the last status is the step's.
+step() {
+    local area="$1" tiers="$2" id="$3"
+    shift 3
+    should_run "$area" "$tiers" "$id" || return 0
+    matched=1
+    if ((list)); then
+        printf '%-11s %-5s %s\n' "$area" "$tiers" "$id"
+        return 0
+    fi
+    echo "check_all: [$area] $id"
+    local started status=0
+    started="$(now)"
+    "$@" || status=$?
+    printf '%s\t%s\t%s\t%s\n' "$id" "$area" "$(perl -e 'printf "%.2f", $ARGV[1] - $ARGV[0]' "$started" "$(now)")" "$status" >>"$step_log"
+    if ((status)); then
+        echo "check_all: FAILED step $id (area $area, exit $status)" >&2
+        exit "$status"
+    fi
+}
+
+in_dir() {
+    local directory="$1"
+    shift
+    (cd "$directory" && "$@")
+}
 
 run_exact_rust_test() {
     local expected="$1"
@@ -13,109 +153,138 @@ run_exact_rust_test() {
     "$@" 2>&1 | uv run python "$repo_root/scripts/require_one_rust_test.py" "$expected"
 }
 
-# Optional scanner arguments cover the exact PR base and final title/body.
-uv run python -m unittest discover -s scripts -p 'test_forbidden_terms.py'
-uv run python scripts/forbidden_terms.py "$@"
-unset FORBIDDEN_TERMS
-
-uv run python -m unittest discover -s scripts -p 'test_hardening_gate.py'
-uv run python -m unittest discover -s scripts -p 'test_gate_list.py'
-uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
-# Without --base, the ratchets compare with the merge-base of origin/main and
-# HEAD and stop the gate when it cannot be resolved.
-uv run python scripts/hardening_gate.py check-no-sql-outside-store "$@"
-uv run python scripts/hardening_gate.py check-no-panic-in-production "$@"
-uv run python scripts/hardening_gate.py check-verification-not-weakened "$@"
-uv run python scripts/hardening_gate.py check-function-length "$@"
-uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
-uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
-uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
-uv run python -m unittest discover -s scripts -p 'test_check_wire_names.py'
-uv run python scripts/check_wire_names.py
-uv run python -m unittest discover -s scripts -p 'test_check_repo_files.py'
-# Like the ratchets, it compares with the merge-base unless --base is passed.
-uv run python scripts/check_repo_files.py "$@"
-uv run python -m unittest discover -s scripts -p 'test_check_doc_names.py'
-uv run python scripts/check_doc_names.py
-uv run python -m unittest discover -s scripts -p 'test_check_layers.py'
-uv run python scripts/check_layers.py
-uv run python scripts/check_quality.py
-uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
-uv run python scripts/check_dead_pub.py
-uv run python -m unittest discover -s scripts -p 'test_check_logging.py'
-uv run python scripts/check_logging.py
-uv run python -m unittest discover -s scripts -p 'test_check_desktop_tokens.py'
-uv run python scripts/check_desktop_tokens.py
-
-uv run python contracts/generate.py --check
-uv run python -m unittest discover -s contracts -p 'test_*.py'
-uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
-
-(
-    cd engine
-    cargo fmt --all --check
-    cargo clippy --locked --workspace --all-targets -- -D warnings
-    cargo build --locked --workspace
-    cargo test --locked --workspace
-    # Windows-only code has no host build here, so lint it for the Windows target.
+# Windows-only code has no host build here, so lint it for the Windows target.
+lint_windows() {
     if rustup target list --installed | grep -qx x86_64-pc-windows-msvc; then
         cargo clippy --locked --target x86_64-pc-windows-msvc -p soyeht-platform -p soyeht-process -p soyeht-ptyd --all-targets -- -D warnings
     else
         echo 'check_all: skipped the Windows lint; run: rustup target add x86_64-pc-windows-msvc'
     fi
-    run_exact_rust_test \
-        terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage \
-        cargo test --locked -p soyeht-engine \
-        terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage \
+}
+
+capture_test() {
+    local test="$1"
+    run_exact_rust_test "$test" cargo test --locked -p soyeht-engine "$test" \
         -- --ignored --exact --nocapture --test-threads=1
-    run_exact_rust_test \
-        terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
-        cargo test --locked -p soyeht-engine \
-        terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples \
-        -- --ignored --exact --nocapture --test-threads=1
-)
-(
-    cd apps/desktop
-    cargo fmt --all --check
-    cargo clippy --locked --workspace --all-targets -- -D warnings
-    # The design-audit tools (`dev-tools`) are not in the shipping build: lint and test them too.
-    cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-    cargo test --locked --workspace --all-features
-)
-uv run python -m unittest discover -s scripts -p 'test_tcc_guard.py'
-uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
-uv run python scripts/e2e.py --report .cache/e2e.json
-uv run python scripts/e2e_agents.py --report .cache/e2e-agents.json
-uv run python scripts/e2e_tasks.py --report .cache/e2e-tasks.json
-uv run python scripts/e2e_editor.py --report .cache/e2e-editor.json
-uv run python scripts/e2e_web.py --report .cache/e2e-web.json
-uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
-if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
-    uv run python scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
-    uv run python scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
-    uv run python scripts/e2e_real_harnesses.py --report .cache/e2e-real-harnesses.json
+}
+
+GATE_UPGRADE=""
+if [[ -z "$only" ]]; then
+    # The plan comes first in the log. A base that cannot be resolved stops the gate.
+    # SOYEHT_GATE_FILES_FROM names a file of changed paths (for tests); git is not read then.
+    plan_env="$(uv run python scripts/gate_plan.py --tier "$tier" --format shell ${base:+--base "$base"} ${SOYEHT_GATE_FILES_FROM:+--files-from "$SOYEHT_GATE_FILES_FROM"})"
+    eval "$plan_env"
+    if [[ "$tier" == fast && -n "$GATE_UPGRADE" ]]; then
+        echo "check_all: the gate scripts changed ($GATE_UPGRADE); a partial run cannot vouch for them, running the full tier" >&2
+        tier=full
+        plan_env="$(uv run python scripts/gate_plan.py --tier full --format shell)"
+        eval "$plan_env"
+    fi
 fi
-uv run python scripts/tcc_guard.py check .cache/tcc-guard.json
 
-bash scripts/check_swift.sh
-uv run python -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'
-uv run python scripts/check_mac_text_fonts.py
-uv run python -m unittest discover -s scripts -p 'test_check_mac_identifier_text.py'
-uv run python scripts/check_mac_identifier_text.py
-uv run python -m unittest discover -s scripts -p 'test_check_mac_view_colors.py'
-uv run python scripts/check_mac_view_colors.py
-swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/dictation/Sources apps/dictation/Tests apps/mac/Sources apps/ios/Sources
-swift test --package-path apps/shared
-swift test --package-path apps/dictation
-bash scripts/check_mac.sh
-uv run python -m unittest discover -s scripts -p 'test_check_editor_performance.py'
-uv run python scripts/check_editor_performance.py
-bash scripts/check_ios.sh
+# Optional scanner arguments cover the exact PR base and final title/body.
+step always both forbidden-terms:unit uv run python -m unittest discover -s scripts -p 'test_forbidden_terms.py'
+step always both forbidden-terms:scan uv run python scripts/forbidden_terms.py "$@"
+unset FORBIDDEN_TERMS
 
-(
-    cd contracts/typescript
-    npm ci --ignore-scripts
-    npm run check
-    npm test
-)
-echo 'check_all: passed'
+step always both hardening:unit uv run python -m unittest discover -s scripts -p 'test_hardening_gate.py'
+step always both gate-list:unit uv run python -m unittest discover -s scripts -p 'test_gate_list.py'
+step always both gate-plan:unit uv run python -m unittest discover -s scripts -p 'test_gate_plan.py'
+step always both gate-timings:unit uv run python -m unittest discover -s scripts -p 'test_gate_timings.py'
+step always both post-merge:unit uv run python -m unittest discover -s scripts -p 'test_post_merge.py'
+step always both require-one-rust-test:unit uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
+# Without --base, the ratchets compare with the merge-base of origin/main and
+# HEAD and stop the gate when it cannot be resolved.
+step always both hardening:no-sql-outside-store uv run python scripts/hardening_gate.py check-no-sql-outside-store "$@"
+step always both hardening:no-panic-in-production uv run python scripts/hardening_gate.py check-no-panic-in-production "$@"
+step always both hardening:verification-not-weakened uv run python scripts/hardening_gate.py check-verification-not-weakened "$@"
+step always both hardening:function-length uv run python scripts/hardening_gate.py check-function-length "$@"
+step always both quality:unit uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
+step always both pane-interior:unit uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
+step always both swallowed-errors:unit uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
+step always both wire-names:unit uv run python -m unittest discover -s scripts -p 'test_check_wire_names.py'
+step always both wire-names:check uv run python scripts/check_wire_names.py
+step always both repo-files:unit uv run python -m unittest discover -s scripts -p 'test_check_repo_files.py'
+# Like the ratchets, it compares with the merge-base unless --base is passed.
+step always both repo-files:check uv run python scripts/check_repo_files.py "$@"
+step always both doc-names:unit uv run python -m unittest discover -s scripts -p 'test_check_doc_names.py'
+step always both doc-names:check uv run python scripts/check_doc_names.py
+step always both layers:unit uv run python -m unittest discover -s scripts -p 'test_check_layers.py'
+step always both layers:check uv run python scripts/check_layers.py
+step always both quality:check uv run python scripts/check_quality.py
+step always both dead-pub:unit uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
+step always both dead-pub:check uv run python scripts/check_dead_pub.py
+step always both logging:unit uv run python -m unittest discover -s scripts -p 'test_check_logging.py'
+step always both logging:check uv run python scripts/check_logging.py
+step always both desktop-tokens:unit uv run python -m unittest discover -s scripts -p 'test_check_desktop_tokens.py'
+step always both desktop-tokens:check uv run python scripts/check_desktop_tokens.py
+
+step always both contracts:generate-check uv run python contracts/generate.py --check
+step always both contracts:unit uv run python -m unittest discover -s contracts -p 'test_*.py'
+step always both install-dev:unit uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
+
+step engine both engine:fmt in_dir engine cargo fmt --all --check
+step engine both engine:clippy in_dir engine cargo clippy --locked --workspace --all-targets -- -D warnings
+# The tests start sibling binaries, so even the fast tier builds the whole workspace.
+step engine both engine:build in_dir engine cargo build --locked --workspace
+step engine full engine:test in_dir engine cargo test --locked --workspace
+# The changed crates and their reverse dependencies, integration tests included.
+# shellcheck disable=SC2086
+step engine fast engine:test-changed in_dir engine cargo test --locked $GATE_ENGINE_TEST_ARGS
+step engine both engine:clippy-windows in_dir engine lint_windows
+step timing full engine:timing-frame-dense in_dir engine capture_test \
+    terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage
+step timing full engine:timing-capture-cadence in_dir engine capture_test \
+    terminal_capture::tests::capture_cadence_measurement_uses_ten_paired_noisy_samples
+
+step desktop both desktop:fmt in_dir apps/desktop cargo fmt --all --check
+step desktop both desktop:clippy in_dir apps/desktop cargo clippy --locked --workspace --all-targets -- -D warnings
+# The design-audit tools (`dev-tools`) are not in the shipping build: lint and test them too.
+step desktop both desktop:clippy-all-features in_dir apps/desktop cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+step desktop both desktop:test in_dir apps/desktop cargo test --locked --workspace --all-features
+
+step always both tcc-guard:unit uv run python -m unittest discover -s scripts -p 'test_tcc_guard.py'
+step e2e full e2e:tcc-snapshot uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
+step e2e full e2e:core uv run python scripts/e2e.py --report .cache/e2e.json
+step e2e full e2e:agents uv run python scripts/e2e_agents.py --report .cache/e2e-agents.json
+step e2e full e2e:tasks uv run python scripts/e2e_tasks.py --report .cache/e2e-tasks.json
+step e2e full e2e:editor uv run python scripts/e2e_editor.py --report .cache/e2e-editor.json
+step e2e full e2e:web uv run python scripts/e2e_web.py --report .cache/e2e-web.json
+step e2e full e2e:writing uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
+if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
+    step e2e full e2e:real-acp uv run python scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
+    step e2e full e2e:real-agent-messaging uv run python scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
+    step e2e full e2e:real-harnesses uv run python scripts/e2e_real_harnesses.py --report .cache/e2e-real-harnesses.json
+fi
+step e2e full e2e:tcc-check uv run python scripts/tcc_guard.py check .cache/tcc-guard.json
+
+step swift full swift:check-swift bash scripts/check_swift.sh
+step always both mac-text-fonts:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'
+step always both mac-text-fonts:check uv run python scripts/check_mac_text_fonts.py
+step always both mac-identifier-text:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_identifier_text.py'
+step always both mac-identifier-text:check uv run python scripts/check_mac_identifier_text.py
+step always both mac-view-colors:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_view_colors.py'
+step always both mac-view-colors:check uv run python scripts/check_mac_view_colors.py
+step swift both swift:format-lint swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/dictation/Sources apps/dictation/Tests apps/mac/Sources apps/ios/Sources
+# EngineConnectionTests and PhoneConnectionTests launch the engine binaries from engine/target,
+# so a change that selects no engine area still needs them built.
+step swift both swift:engine-binaries in_dir engine cargo build --locked --workspace
+step swift both swift:test-shared swift test --package-path apps/shared
+step dictation both swift:test-dictation swift test --package-path apps/dictation
+step mac_app full mac-app:build bash scripts/check_mac.sh
+# The fast stand-in: no tests (the shared suite is a swift step), an incremental build in a
+# persistent DerivedData directory.
+step mac_app fast mac-app:build-fast bash scripts/check_mac.sh --fast
+step always both editor-performance:unit uv run python -m unittest discover -s scripts -p 'test_check_editor_performance.py'
+step editor_perf full editor-performance:check uv run python scripts/check_editor_performance.py
+step ios_app full ios-app:build bash scripts/check_ios.sh
+step ios_app fast ios-app:build-fast bash scripts/check_ios.sh --fast
+
+step typescript both typescript:install in_dir contracts/typescript npm ci --ignore-scripts
+step typescript both typescript:check in_dir contracts/typescript npm run check
+step typescript both typescript:test in_dir contracts/typescript npm test
+if [[ -n "$only" && $matched -eq 0 ]]; then
+    echo "check_all: no step with id $only" >&2
+    exit 78
+fi
+((list)) || echo "check_all: passed (tier $tier)"

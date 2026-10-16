@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+
+import gate_plan
+import post_merge
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +38,80 @@ def gate_list_problems(name: str, text: str) -> list[str]:
     if not GATE_CALL.search(commands):
         problems.append(f"{name}: does not run bash scripts/check_all.sh")
     return problems
+
+
+STEP = re.compile(r"^\s*step\s+(\S+)\s+(\S+)\s+(\S+)", re.MULTILINE)
+# A fast step that stands in for a full one is named `<full id>-changed` or `<full id>-fast`.
+STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast)$")
+
+
+def gate_steps() -> list[tuple[str, str, str]]:
+    """(area, tiers, id) of every `step` line of check_all.sh."""
+    return STEP.findall((ROOT / "scripts/check_all.sh").read_text())
+
+
+class StepListTests(unittest.TestCase):
+    def test_areas_and_tiers_are_known(self):
+        steps = gate_steps()
+        self.assertGreater(len(steps), 60)
+        for area, tiers, step_id in steps:
+            with self.subTest(step=step_id):
+                self.assertIn(area, gate_plan.ALL_AREAS)
+                self.assertIn(tiers, {"both", "full", "fast"})
+
+    def test_ids_are_unique(self):
+        ids = [step_id for _, _, step_id in gate_steps()]
+        self.assertEqual(sorted(set(ids)), sorted(ids))
+
+    def test_every_fast_step_stands_in_for_a_full_one(self):
+        steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
+        for step_id, (area, tiers) in steps.items():
+            if tiers != "fast":
+                continue
+            with self.subTest(step=step_id):
+                match = STAND_IN.match(step_id)
+                self.assertIsNotNone(match, f"{step_id}: name it <full id>-changed or <full id>-fast")
+                self.assertEqual(steps.get(match["full"]), (area, "full"))
+
+    def test_post_merge_prerequisites_are_steps_of_the_same_area(self):
+        steps = {step_id: area for area, _, step_id in gate_steps()}
+        for step_id, prerequisite in post_merge.PREREQUISITES.items():
+            with self.subTest(step=step_id):
+                self.assertIn(step_id, steps)
+                self.assertEqual(steps.get(prerequisite), steps[step_id])
+
+    def test_every_area_of_the_plan_has_a_step(self):
+        used = {area for area, _, _ in gate_steps()}
+        self.assertEqual(used, set(gate_plan.ALL_AREAS))
+
+    def test_the_script_lists_every_step_of_each_tier(self):
+        changed = Path(tempfile.mkdtemp()) / "changed.txt"
+        changed.write_text("engine/soyeht-web/src/lib.rs\n")
+        for tier in ("fast", "full"):
+            with self.subTest(tier=tier):
+                result = subprocess.run(
+                    ["bash", "scripts/check_all.sh", "--list", "--tier", tier],
+                    cwd=ROOT, capture_output=True, text=True,
+                    env={**os.environ, "SOYEHT_GATE_FILES_FROM": str(changed)},
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                listed = [line.split()[-1] for line in result.stdout.splitlines()]
+                steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
+                self.assertEqual(len(listed), len(set(listed)))
+                for step_id in listed:
+                    self.assertIn(steps[step_id][1], ("both", tier))
+                always = [i for i, (area, tiers) in steps.items() if area == "always"]
+                self.assertTrue(set(always) <= set(listed))
+                if tier == "full":
+                    # Only the steps that need SOYEHT_REAL_ACP=1 are left out.
+                    expected = {i for i, (_, tiers) in steps.items() if tiers in ("both", "full")}
+                    self.assertEqual(expected - set(listed), {i for i in expected if i.startswith("e2e:real-")})
+                    self.assertNotIn("engine:test-changed", listed)
+                    self.assertIn("engine:test", listed)
+                else:
+                    self.assertNotIn("engine:test", listed)
+                    self.assertIn("engine:test-changed", listed)
+                    self.assertNotIn("desktop:test", listed)
 
 
 class GateListTests(unittest.TestCase):

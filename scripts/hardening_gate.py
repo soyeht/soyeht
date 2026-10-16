@@ -125,6 +125,8 @@ class Metrics:
     acceptances: int
     gate_steps: int
     ignored_tests: int
+    # (area, count) of the steps that run before a merge (`step AREA both ...`).
+    fast_steps: tuple[tuple[str, int], ...] = ()
 
 
 def git(*arguments: str, stdin: bytes | None = None) -> bytes:
@@ -529,6 +531,16 @@ def count_gate_steps(source: str) -> int:
     return sum(len(re.findall(command, commands_only)) for command in commands)
 
 
+def count_fast_steps(source: str) -> tuple[tuple[str, int], ...]:
+    """Steps that run in both tiers, per area: moving one to `full` weakens the fast gate."""
+    counts: dict[str, int] = {}
+    for line in source.splitlines():
+        match = re.match(r"\s*step\s+(\w+)\s+both\b", line)
+        if match:
+            counts[match[1]] = counts.get(match[1], 0) + 1
+    return tuple(sorted(counts.items()))
+
+
 def count_acceptances(source: str) -> int:
     tree = parse_python(source)
     if tree is None:
@@ -554,6 +566,7 @@ def metrics(tree: Tree) -> Metrics:
     functions: list[Function] = []
     engine_sources: dict[str, str] = {}
     tests = ignored_tests = acceptances = gate_steps = sql_statements = 0
+    fast_steps: tuple[tuple[str, int], ...] = ()
     for path in tree.paths():
         try:
             source = tree.read(path)
@@ -581,6 +594,7 @@ def metrics(tree: Tree) -> Metrics:
             acceptances += count_acceptances(source)
         if path == "scripts/check_all.sh":
             gate_steps = count_gate_steps(source)
+            fast_steps = count_fast_steps(source)
     return Metrics(
         frozenset(manifests),
         frozenset(sql_sources),
@@ -591,6 +605,7 @@ def metrics(tree: Tree) -> Metrics:
         acceptances,
         gate_steps,
         ignored_tests,
+        fast_steps,
     )
 
 
@@ -637,6 +652,10 @@ def check_verification(base: Metrics, head: Metrics, allowed: bool) -> bool:
         ("tests", base.tests, head.tests),
         ("acceptances", base.acceptances, head.acceptances),
         ("gate steps", base.gate_steps, head.gate_steps),
+        *(
+            (f"fast-tier steps of area {area}", count, dict(head.fast_steps).get(area, 0))
+            for area, count in base.fast_steps
+        ),
     ):
         print(f"check-verification-not-weakened: {label} base={before} head={after}")
         if after < before and not allowed:

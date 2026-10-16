@@ -3,13 +3,26 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 SIGNING=(CODE_SIGNING_ALLOWED=NO)
+DERIVED="$ROOT/.cache/mac-derived"
+PACKAGES="$ROOT/.cache/apple-packages"
+FAST=0
 if [[ "${1:-}" == --sign ]]; then
     : "${SOYEHT_DEVELOPMENT_TEAM:?Set the development team for the local build}"
     SIGNING=(CODE_SIGN_STYLE=Automatic "DEVELOPMENT_TEAM=$SOYEHT_DEVELOPMENT_TEAM")
+elif [[ "${1:-}" == --fast ]]; then
+    # The fast gate: only the build, incremental, in DerivedData that outlives the checkout
+    # (the shared Swift suite is a step of its own).
+    FAST=1
+    gate_cache="${SOYEHT_GATE_DERIVED:-$HOME/Library/Caches/soyeht-gate-derived}"
+    DERIVED="$gate_cache/mac"
+    PACKAGES="$gate_cache/apple-packages"
+    mkdir -p "$DERIVED" "$PACKAGES"
 elif [[ $# -gt 0 ]]; then
-    echo 'Usage: scripts/check_mac.sh [--sign]' >&2
+    echo 'Usage: scripts/check_mac.sh [--sign | --fast]' >&2
     exit 2
 fi
+
+run_shared_tests() {
 swift test --package-path apps/shared --filter PaneLayout
 
 shared_log=$(mktemp -t soyeht-shared-tests.XXXXXX)
@@ -45,13 +58,15 @@ PY
 then
     exit "$shared_status"
 fi
+}
+((FAST)) || run_shared_tests
 
 xcodebuild -project apps/mac/SoyehtMac.xcodeproj -scheme SoyehtMac \
     -configuration Debug -destination "platform=macOS,arch=$(uname -m)" \
-    -derivedDataPath .cache/mac-derived \
-    -clonedSourcePackagesDirPath .cache/apple-packages \
+    -derivedDataPath "$DERIVED" \
+    -clonedSourcePackagesDirPath "$PACKAGES" \
     -skipPackagePluginValidation ONLY_ACTIVE_ARCH=YES \
-    "SOYEHT_PACKAGES=$ROOT/.cache/apple-packages" "${SIGNING[@]}" build
+    "SOYEHT_PACKAGES=$PACKAGES" "${SIGNING[@]}" build
 
 uv run python scripts/check_pane_drag_type.py \
-    "$ROOT/.cache/mac-derived/Build/Products/Debug/Soyeht Dev.app/Contents/Info.plist"
+    "$DERIVED/Build/Products/Debug/Soyeht Dev.app/Contents/Info.plist"

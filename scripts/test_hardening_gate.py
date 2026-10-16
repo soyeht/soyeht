@@ -1,3 +1,4 @@
+import dataclasses
 import subprocess
 import sys
 import tempfile
@@ -275,6 +276,24 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             "python3 contracts/generate.py --check\n"
         )
         self.assertEqual(gate.count_gate_steps(source), 3)
+
+    def test_fast_steps_are_counted_per_area(self):
+        source = (
+            "step always both a:one uv run python x.py\n"
+            "step engine both engine:fmt cargo fmt\n"
+            "step engine full engine:test cargo test\n"
+            "# step engine both commented cargo test\n"
+            "step engine both engine:clippy cargo clippy\n"
+        )
+        self.assertEqual(gate.count_fast_steps(source), (("always", 1), ("engine", 2)))
+
+    def test_moving_a_step_out_of_the_fast_tier_needs_a_verification_change(self):
+        empty = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 0, 0, 0, 0)
+        before = dataclasses.replace(empty, fast_steps=(("engine", 2),))
+        after = dataclasses.replace(empty, fast_steps=(("engine", 1),))
+        self.assertTrue(gate.check_verification(before, after, False))
+        self.assertFalse(gate.check_verification(before, after, True))
+        self.assertFalse(gate.check_verification(before, before, False))
 
     def test_ratchets_reject_new_sql_panics_and_long_functions(self):
         empty = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 0, 0, 0, 0)

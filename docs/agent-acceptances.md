@@ -1,9 +1,10 @@
 # Agent session acceptances
 
 Build the Rust workspace, then run `uv run python scripts/e2e_agents.py --report
-.cache/e2e-agents.json`. The local merge gate runs this suite after the six
-shell acceptances. The retained workflow has the same step; hosted Actions
-remains disabled by project decision.
+.cache/e2e-agents.json`. The full tier of the gate (`check_all.sh --tier full`, which runs
+on main after the merge, ADR 0089) runs this suite after the six shell acceptances; the
+fast tier before a merge does not. The retained workflow runs the full tier; hosted
+Actions remains disabled by project decision.
 
 The suite copies the four built executables into one directory per checkout
 under `~/Library/Caches/soyeht-e2e/`, replacing a file only when the build

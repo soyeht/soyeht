@@ -34,3 +34,16 @@ def resolve_base(root: Path, explicit: str | None = None) -> str:
             "run `git fetch origin main` or pass --base FULL_COMMIT_OID"
         )
     return base
+
+
+def main_checkout(root: Path) -> Path:
+    """The main working tree, whichever worktree `root` is."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=root, capture_output=True, text=True, check=True,
+    )
+    return Path(result.stdout.strip()).parent
+
+
+def main_health_dir(root: Path) -> Path:
+    return main_checkout(root) / ".cache/main-health"

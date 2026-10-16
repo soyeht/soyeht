@@ -1,7 +1,8 @@
 # Run the new Dev profile
 
 GitHub Actions is disabled until the product is ready. Before every merge, run
-`bash scripts/check_all.sh` with `FORBIDDEN_TERMS` supplied through the environment.
+`bash scripts/check_all.sh --tier fast` with `FORBIDDEN_TERMS` supplied through the
+environment; after the merge `scripts/post_merge.py` runs the full tier on main (ADR 0089).
 `scripts/check_all.sh` is the only list of gate steps; it runs them in sequence
 and stops at the first failure. Record the results in the PR description. To
 also scan PR history and the final title/body, pass
@@ -119,8 +120,8 @@ test targets to the scanner when they are created.
 
 Enable the versioned fast pre-push hook with
 `git config core.hooksPath .githooks`. It runs only
-`uv run python scripts/check_quality.py`, not the full merge gate. The full
-`bash scripts/check_all.sh` remains a manual pre-merge requirement.
+`uv run python scripts/check_quality.py`, not the merge gate. The fast tier,
+`bash scripts/check_all.sh --tier fast`, remains a manual pre-merge requirement.
 
 The measurements must match `scripts/quality_baseline.json` exactly. More
 clones or duplicated lines, a file growing past its cap, more loose literals in

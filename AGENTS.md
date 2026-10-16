@@ -192,9 +192,44 @@ inherit the main actor.
   so a busy machine does not fail it; a real hang still does. `SOYEHT_SCAN_TIMEOUT` (seconds)
   sets the deadline.
 - Merge gate, before every merge:
-  `FORBIDDEN_TERMS=... bash scripts/check_all.sh`. Get the vocabulary from outside
-  the repository. `scripts/check_all.sh` is the only list of gate steps. A CI
-  workflow calls it and never lists steps of its own (`test_gate_list.py`).
+  `FORBIDDEN_TERMS=... bash scripts/check_all.sh --tier fast` (ADR 0089). Get the
+  vocabulary from outside the repository. `scripts/check_all.sh` is the only list of
+  gate steps, and each step has an area and a tier. The fast tier runs every `always`
+  check plus format, clippy and tests for the areas that `scripts/gate_plan.py` selects
+  from the changed paths (the plan is the top of the log): the engine crates changed and
+  the crates that depend on them or whose tests start them, the desktop, the Swift
+  packages, an incremental compile of the Mac and iOS apps, TypeScript. It leaves out the
+  e2e suites, the full app builds, the editor measurement on the VM and the ignored timing
+  tests. A change to the gate scripts (`check_all.sh`, `gate_*`, `post_merge*`, `e2e*`, the
+  app build scripts) runs the full tier instead, and the log says why. A file that another
+  directory reads (an `include_str!`, a font) goes in `CROSS_READS` of `gate_plan.py`; a test
+  fails when a read is missing. A CI workflow calls the script and never lists steps of its
+  own (`test_gate_list.py`). `check_all.sh --list --tier fast` shows the steps without
+  running them.
+- Full gate, after the merge: `scripts/post_merge.py` runs `check_all.sh --tier full` on main
+  in a clean worktree and writes `.cache/main-health/<sha>.json` (result, duration, per-step
+  times) and `latest.json`. The coordinator session runs it after each merge or every few
+  merges, one run at a time. When it is red it reruns the failing step once (a pass is
+  recorded as flaky and blames no commit), then finds the culprit commit by running only the
+  failing step on the commits since the last green main, and reports it; it never pushes or
+  reverts. The plan prints a warning while `latest.json` says main is red. The editor
+  measurement on the VM is collected separately, when the editor hash changes. Run
+  `--tier full` yourself before a merge when you want certainty.
+- Red main is the top priority. The author of the culprit fixes forward or reverts it
+  within the hour, and no other change merges into the affected area while main is red.
+- Review: `gate_plan.py` prints `review: required` when a change touches the engine core
+  (`soyeht-engine` `core*`, `dispatch*`, `server*`, `agents/`, and `soyeht-store`), the
+  protocol and `contracts/profiles.json`, an editor, security-sensitive code (all of
+  `soyeht-platform/src`, `soyeht-ptyd`, `auth`, `pairing`, `push`, `network`,
+  `ui_attestation`, web permissions), dependencies (`Cargo.toml`, `Cargo.lock`,
+  `Package.swift`), a ratchet exception (`quality_baseline_justifications.json`,
+  `dead_pub_allowlist.json`) or the gate scripts. A required review is done by a second
+  agent before the merge; otherwise it is optional.
+- Build cache: when `sccache` is installed (`cargo install sccache --locked`), `check_all.sh`
+  uses it with `CARGO_INCREMENTAL=0`. Give every worktree its own target directory, never a
+  shared one.
+- Step times of every run go to `.cache/gate-timings.json`
+  (`uv run python scripts/gate_timings.py top`).
 - The ratchets compare with the merge-base of `origin/main` and `HEAD`. They fail
   if it cannot be resolved, so run `git fetch origin main` first. Pass
   `--base FULL_OID` to override it.

@@ -65,7 +65,7 @@ The desktop workspace keeps the engine's lints (`unwrap_used`, `expect_used` and
 
 The desktop client is gated like every other client. `scripts/check_all.sh` runs
 its format, clippy and test steps in `apps/desktop` after the engine's, and so a
-full gate run does compile GPUI. The first run on a machine fetches the Zed git
+gate run that selects the desktop area does compile GPUI. The first run on a machine fetches the Zed git
 dependencies (the GPUI revision and the two patched forks) and builds them, which
 takes several minutes and needs network access and the platform SDKs; later runs
 reuse the cache. The quality ratchets (`scripts/check_quality.py`: clones, file
