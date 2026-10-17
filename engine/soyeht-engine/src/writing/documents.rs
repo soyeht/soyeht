@@ -16,7 +16,7 @@ use soyeht_store::{
     editor::{EditorFile, document},
     writing::{WritingCreateIntent, WritingDocumentRecord, WritingSidecar},
 };
-use std::path::Path;
+use std::{io, path::Path};
 use uuid::Uuid;
 
 struct OpenContext<'a> {
@@ -248,9 +248,21 @@ impl Core {
         let section = section_for(&request.kind);
         validate_writing_path(&request.path, &request.kind, &section)?;
         let workspace = crate::model::workspace(&self.store, &request.workspace_id)?;
-        let resolved = self
-            .editor
-            .resolve(Path::new(&workspace.path), &request.path)?;
+        let root = Path::new(&workspace.path);
+        // A path that does not exist yet is created empty, with the product-owned folders
+        // above it, so opening `Writing/Texts/new.md` works the first time.
+        let resolved = match self.editor.resolve(root, &request.path) {
+            Err(errors::Error::Io(error))
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) =>
+            {
+                self.editor.create_empty_text(root, &request.path)?;
+                self.editor.resolve(root, &request.path)?
+            }
+            resolved => resolved?,
+        };
         let existing = self
             .store
             .editor_file_for_path(&request.workspace_id, &resolved.relative)
