@@ -73,6 +73,37 @@ Mac and iOS apps, the editor measurement, the dictation tests, the timing tests,
 missing checkout or script, or a commit that cannot be fetched is a problem of the machine:
 nothing is recorded and nothing is reverted. The interface is in `docs/dev-local.md`.
 
+**A missing editor measurement is not a red main, and the gate runs in a warm worktree.** The
+editor check validates the VM1 report `.cache/editor-performance-vm.json`, which a fresh worktree
+does not have. `post_merge.py` and `main_watch.py` take `--editor-meter REPORT` (env
+`SOYEHT_EDITOR_METER`) and copy the report into the run's worktree before the gate. When
+`editor-performance:check` fails with "missing ..." or "editor paths changed; measure this editor
+version again on VM1", the run runs the steps the check hid and, if they pass, is recorded as
+`needs-measurement` with the editor tree hash to measure: in the health record and in `watch.json`,
+with exit code 4. It starts no culprit search and no revert, and `main_watch.py` leaves the pass
+open; the commit runs again once `--editor-meter` names a report carrying that hash. Any other
+failure of the check, a latency of 8 ms or more on a matching hash included, stays red. The
+second change is `--worktree DIR` (env `SOYEHT_POST_MERGE_WORKTREE`): the run reuses one
+persistent worktree instead of a temporary one, with `git checkout --detach --force` and
+`git clean -fdx` that keep `engine/target`, `apps/desktop/target`, `.cache/apple-packages` and the
+VM1 report, so a Rust build is no longer cold. The Swift `.build` directories and Xcode's derived
+data are not kept: their incremental builds miss cross-module changes across checkouts (a default
+argument added to generated initializers left stale test objects and an "Undefined symbols" link
+error). The culprit search probes in the same worktree. Only a worktree the script created, marked
+in its git directory, is reused: the main checkout, the checkout the script runs from, any other
+worktree and any other directory are refused, so the force and the clean cannot reach anyone's
+work. A relative path is resolved before any check. A worktree that cannot be prepared (a
+killed git left `index.lock`) is recreated, and the persistent worktree is never removed as a
+stale one. The Rust half of the editor check, which stops at a missing report, is run here with
+the same limits, and its failure is red. The probes of a latency failure run older commits with the
+newest report: a probe that fails as stale or missing is skipped, so such a commit is never
+blamed and the revert is not made on a guess.
+
+Known limits, left as follow-ups: the editor hash rule (`editor_path`) comes from the running
+script, not from the commit under test, so a commit that changes the rule is judged by the old one;
+and the lock is per health directory, so two runs with different `--health-dir` values and the
+same `--worktree` are not serialized.
+
 **Review is for risky changes.** `gate_plan.py` keeps `review: required|optional`
 (ADR 0089). A pull request whose plan says `optional` merges on a green fast tier with no
 separate reviewer; one that says `required` is reviewed by a second agent first. The full

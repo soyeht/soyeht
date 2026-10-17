@@ -10,7 +10,7 @@ from unittest import mock
 
 import main_watch
 import post_merge
-from test_post_merge import FAKE_GATE, commit, git
+from test_post_merge import FAKE_EDITOR_GATE, FAKE_GATE, commit, git
 
 # A stand-in for the GitHub CLI. `pr create` records what the pushed branch changes relative to
 # main and what it says; `pr merge` squashes that branch into main of the bare origin, like the
@@ -100,7 +100,8 @@ class WatchCase(unittest.TestCase):
         head = self.land("four", {"c": "3"})
         return culprit, head
 
-    def scripted(self, result, culprit=None, candidates=(), step="unit", exit_code=None, note=None):
+    def scripted(self, result, culprit=None, candidates=(), step="unit", exit_code=None, note=None,
+                 extra=None):
         """Replace the gate run with the record it would write (post_merge has tests of its own)."""
         def gate(argv):
             sha = argv[argv.index("--sha") + 1]
@@ -115,6 +116,7 @@ class WatchCase(unittest.TestCase):
                 record["candidates"] = [info(commit) for commit in candidates]
             if note:
                 record["note"] = note
+            record.update(extra or {})
             post_merge.write_json(health / f"{sha}.json", record)
             return 0 if result == "pass" else 1 if exit_code is None else exit_code
 
@@ -274,6 +276,63 @@ class RevertTests(WatchCase):
             self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
         self.assertEqual(self.status()["result"], "red-reverted")
         self.assertEqual((self.gh_dir / "changes.txt").read_text().split(), ["D", "broken"])
+
+
+class MeasurementTests(WatchCase):
+    """A missing editor measurement is not a red main: no revert, the pass stays open."""
+
+    def test_a_missing_measurement_reverts_nothing_and_leaves_the_pass_open(self):
+        self.land("two", {"b": "2"})
+        gate = {"editor_tree_hash": "ab" * 32, "note": "no valid VM1 measurement"}
+        with self.scripted("needs-measurement", step="editor-performance:check",
+                           exit_code=post_merge.NEEDS_MEASUREMENT_EXIT, extra=gate):
+            self.assertEqual(self.watch("--apply"), main_watch.NEEDS_MEASUREMENT_EXIT)
+        self.assertEqual(self.gh_calls(), [])
+        status = self.status()
+        self.assertEqual(status["result"], "needs-measurement")
+        self.assertEqual(status["editor_tree_hash"], "ab" * 32)
+        self.assertEqual(status["failed_step"], "editor-performance:check")
+        self.assertIsNone(status["revert"])
+        self.assertNotIn("last_sha", status)
+        self.assertNotEqual(main_watch.NEEDS_MEASUREMENT_EXIT, main_watch.RED_EXIT)
+
+    @mock.patch.object(post_merge, "rust_editor_failures", return_value=[])  # no engine in the repository
+    def test_a_missing_measurement_found_by_the_real_gate_starts_no_search(self, _rust):
+        self.land("editor gate", {"scripts/check_all.sh": FAKE_EDITOR_GATE})
+        report = self.base / "report.json"
+        head = self.land("three", {"c": "3"})
+        self.assertEqual(self.watch("--apply"), main_watch.NEEDS_MEASUREMENT_EXIT)
+        status = self.status()
+        self.assertEqual(status["result"], "needs-measurement")
+        self.assertTrue(status["editor_tree_hash"])
+        self.assertIsNone(status["culprit"])
+        self.assertEqual(self.gh_calls(), [])
+        self.assertEqual(self.origin_head(), head)
+        # Measured on VM1 and handed over: the same commit runs again and is green.
+        main_watch.write_json(report, {"editor_tree_hash": status["editor_tree_hash"]})
+        self.assertEqual(self.watch("--apply", "--editor-meter", str(report)), 0)
+        self.assertEqual(self.status()["result"], "green")
+        self.assertEqual(self.status()["last_sha"], head)
+
+    def test_the_meter_and_the_worktree_go_to_the_gate(self):
+        seen = []
+
+        def gate(argv):
+            seen.append(argv)
+            return post_merge.INFRASTRUCTURE_EXIT
+
+        with mock.patch.object(post_merge, "main", gate):
+            self.watch("--editor-meter", "/srv/report.json", "--worktree", "/srv/warm")
+        argv = seen[0]
+        self.assertEqual(argv[argv.index("--editor-meter") + 1], "/srv/report.json")
+        self.assertEqual(argv[argv.index("--worktree") + 1], "/srv/warm")
+
+    def test_the_environment_reaches_the_gate_without_options(self):
+        seen = []
+        with mock.patch.object(post_merge, "main", lambda argv: seen.append(argv) or 2), \
+                mock.patch.dict(os.environ, {post_merge.EDITOR_METER_ENV: "/srv/report.json"}):
+            self.watch()
+        self.assertIn("/srv/report.json", seen[0])
 
 
 class PassTests(WatchCase):

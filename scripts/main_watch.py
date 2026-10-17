@@ -2,6 +2,7 @@
 """Run the full gate on new main commits and revert a confirmed culprit (ADR 0092).
 
     main_watch.py [--apply] [--repo DIR] [--health-dir DIR] [--remote HOST --remote-root PATH]
+                  [--editor-meter REPORT] [--worktree DIR]
 
 One pass: fetch `origin/main`; when it moved since the last pass recorded in
 `<health-dir>/watch.json`, run `scripts/post_merge.py` once on the newest commit (a batch of
@@ -17,6 +18,13 @@ ambiguous (candidates), when the run was flaky or the failing step is unknown, w
 is itself a revert, when it was reverted already, or when the revert does not apply cleanly:
 it records and reports instead.
 
+A run whose only failure is the editor measurement (`editor-performance:check` with no report
+for this commit's editor files, or a report of other files) is not red: post_merge records it as
+`needs-measurement`, with the editor tree hash to measure on VM1, and this script reports that
+and exits 4. It never reverts for it, and the pass stays open, so the next pass runs again once
+`--editor-meter` (env `SOYEHT_EDITOR_METER`) names a report for that hash. `--editor-meter` and
+`--worktree` (env `SOYEHT_POST_MERGE_WORKTREE`, a warm worktree for the gate) go to post_merge.
+
 `--dry-run` is the default: the gate runs and the plan is written, but nothing is pushed or
 merged, and the pass is not marked as done, so a later `--apply` still acts on it. The script
 only ever creates, pushes and deletes its own revert branches; it never rewrites history or
@@ -24,7 +32,8 @@ touches another branch.
 
 `<health-dir>/watch.json` holds the last processed commit, the result and the revert. Exit
 codes: 0 green or nothing new, 1 main was red (see the file), 2 the gate could not run,
-3 a revert was needed and failed, 75 another run is in progress.
+3 a revert was needed and failed, 4 the editor needs a VM1 measurement, 75 another run is in
+progress.
 """
 
 from __future__ import annotations
@@ -49,6 +58,7 @@ STATUS_FILE = "watch.json"
 LOCK_FILE = "main_watch.lock"
 BRANCH_PREFIX = "main-watch/revert-"
 GREEN_EXIT, RED_EXIT, INFRASTRUCTURE_EXIT, REVERT_FAILED_EXIT = 0, 1, 2, 3
+NEEDS_MEASUREMENT_EXIT = post_merge.NEEDS_MEASUREMENT_EXIT
 HISTORY_LIMIT = 50
 LOG_TAIL_LINES = 40
 LOG_TAIL_CHARS = 3000
@@ -205,6 +215,8 @@ def revert_culprit(root: Path, record: dict, culprit: dict, apply: bool, gh: lis
 def classify(record: dict) -> str:
     if record.get("result") == "pass":
         return "green"
+    if record.get("result") == post_merge.NEEDS_MEASUREMENT:
+        return "needs-measurement"
     if record.get("result") == "flaky":
         return "flaky"
     if record.get("culprit"):
@@ -222,7 +234,9 @@ def decide(root: Path, record: dict, apply: bool, gh: list[str], scratch: Path) 
         outcomes = {"merged": "red-reverted", "planned": "red-revert-planned", "open": "red-revert-open",
                     "skipped": "red-not-reverted", "failed": "red-revert-failed"}
         return outcomes[revert.state], revert
-    return {"green": "green", "flaky": "flaky", "ambiguous": "red-ambiguous", "unknown": "red-unknown"}[kind], None
+    outcomes = {"green": "green", "flaky": "flaky", "ambiguous": "red-ambiguous", "unknown": "red-unknown",
+                "needs-measurement": post_merge.NEEDS_MEASUREMENT}
+    return outcomes[kind], None
 
 
 def new_commits(root: Path, last: str | None, head: str) -> list[str]:
@@ -241,6 +255,8 @@ def summary(result: str, head: str, record: dict, revert: Revert | None) -> str:
         lines.append(f"  failing step: {record['failed_step']}")
     for commit in record.get("candidates", []):
         lines.append(f"  candidate: {commit['sha'][:12]} {commit['subject']}")
+    if record.get("editor_tree_hash"):
+        lines.append(f"  editor tree to measure on VM1: {record['editor_tree_hash']}")
     if record.get("note"):
         lines.append(f"  note: {record['note']}")
     if revert:
@@ -266,14 +282,15 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
     argv = ["--repo", str(root), "--sha", head, "--health-dir", str(health),
             "--check-all", arguments.check_all]
     for option, value in (("--since", arguments.since), ("--remote", arguments.remote),
-                          ("--remote-root", arguments.remote_root)):
+                          ("--remote-root", arguments.remote_root),
+                          ("--editor-meter", arguments.editor_meter), ("--worktree", arguments.worktree)):
         if value:
             argv += [option, value]
     code = post_merge.main(argv)
     if code == post_merge.BUSY_EXIT:
         return post_merge.BUSY_EXIT
     record = read_json(health / f"{head}.json")
-    if code not in (0, 1) or not record:
+    if code not in (0, 1, NEEDS_MEASUREMENT_EXIT) or not record:
         write_json(status_path, {**base, "result": "infrastructure", "note": "the gate could not run"})
         print("main_watch: the gate could not run; nothing was recorded or reverted", file=sys.stderr)
         return INFRASTRUCTURE_EXIT
@@ -288,13 +305,18 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
         "log": record.get("log"), "culprit": record.get("culprit"),
         "candidates": record.get("candidates", []), "note": record.get("note"),
         "revert": asdict(revert) if revert else None, "reverts": history,
+        "editor_tree_hash": record.get("editor_tree_hash"),
     }
-    if arguments.apply:  # a dry run leaves the pass open for a later --apply
+    # A dry run leaves the pass open for a later --apply; so does a missing measurement, which
+    # runs again (cheaply, from the record) until a report for its hash is given.
+    if arguments.apply and result != post_merge.NEEDS_MEASUREMENT:
         update["last_sha"] = head
     write_json(status_path, update)
     print(summary(result, head, record, revert))
     if revert and revert.state in ("failed", "open"):
         return REVERT_FAILED_EXIT
+    if result == post_merge.NEEDS_MEASUREMENT:
+        return NEEDS_MEASUREMENT_EXIT
     return GREEN_EXIT if result == "green" else RED_EXIT
 
 
@@ -313,6 +335,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check-all", default="bash scripts/check_all.sh")
     parser.add_argument("--remote", metavar="HOST")
     parser.add_argument("--remote-root", metavar="PATH")
+    parser.add_argument("--editor-meter", metavar="REPORT", default=os.environ.get(post_merge.EDITOR_METER_ENV),
+                        help="the VM1 editor measurement for the gate")
+    parser.add_argument("--worktree", metavar="DIR", default=os.environ.get(post_merge.WORKTREE_ENV),
+                        help="a warm worktree for the gate, kept between runs")
     parser.add_argument("--gh", default=os.environ.get("SOYEHT_GH", "gh"), help="the GitHub CLI command")
     arguments = parser.parse_args(argv)
     if bool(arguments.remote) != bool(arguments.remote_root):

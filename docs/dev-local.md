@@ -148,6 +148,51 @@ this and nothing else:
   `uv`, `git` and whatever the e2e suites start; `scripts/check_engine_linux.sh` lists what
   the engine needs.
 
+### The editor measurement and a warm worktree
+
+`post_merge.py` runs the gate in a worktree of its own, which has no
+`.cache/editor-performance-vm.json`, the VM1 report. Pass the report with
+`--editor-meter REPORT` (or `SOYEHT_EDITOR_METER`, also read by `main_watch.py`): it is copied into
+the run's worktree before the gate. The report is valid for as long as the editor files it
+measured are unchanged (`check_editor_performance.editor_tree_hash`).
+
+Without a valid report for the commit, `editor-performance:check` fails with "missing ..." or
+"editor paths changed; measure this editor version again on VM1". That is not a red main:
+
+- the steps after the check still run (the gate stops at its first failure), and if one fails the
+  run is red as usual;
+- otherwise the run is recorded as `needs-measurement` with the `editor_tree_hash` to measure, in
+  the health record and in `watch.json`, and the exit code is 4 (`main_watch.py` and
+  `post_merge.py`). No culprit is searched and nothing is reverted;
+- measure that editor version on VM1 (above), then run the watch again with `--editor-meter`: a
+  commit recorded as `needs-measurement` runs again only when the report carries its hash;
+- the Rust half of the editor check, which stops at the missing report, runs anyway with the same
+  limits, and a failure there is red (`editor-performance:rust`, no culprit search);
+- a measured latency at or over 8 ms on a matching hash stays red, and its culprit search treats a
+  commit whose probe fails as stale or missing as skipped, not blamed.
+
+`--worktree DIR` (or `SOYEHT_POST_MERGE_WORKTREE`) keeps one worktree between runs, so a run does not
+build the Rust crates from cold. Each run checks the commit out there with
+`git checkout --detach --force` and cleans it with `git clean -fdx`, keeping `engine/target`,
+`apps/desktop/target`, `.cache/apple-packages` and `.cache/editor-performance-vm.json`; the culprit
+search checks out its probes in the same directory. The Swift `.build` directories and Xcode's
+derived data (`.cache/mac-derived`, `.cache/ios-derived`) are cleaned, not kept: SwiftPM's and
+Xcode's incremental builds miss cross-module changes across checkouts and leave stale objects
+("Undefined symbols" in `swift test`), while cargo's targets are safe to reuse.
+
+DIR is the script's own. It is created on the first run, with a marker in its git directory, and
+only a worktree with that marker is reused: the main checkout (or a path inside it), the checkout
+the script runs from, a worktree you made yourself and any other directory are refused with exit 2,
+and nothing in them is touched. A relative DIR is resolved against the working directory. A
+worktree that cannot be prepared (a killed git left an `index.lock`, which the next run removes, or
+a damaged one) is removed and created again. Never share it, or its target directories, with a
+worktree you build in. Without the option each run uses a temporary worktree and removes it.
+
+```sh
+FORBIDDEN_TERMS=... uv run python scripts/main_watch.py --apply \
+  --worktree ~/.cache/soyeht-post-merge --editor-meter /path/to/editor-performance-vm.json
+```
+
 ## Local quality ratchet
 
 Once per machine, with network access, install the pinned copy/paste detector
