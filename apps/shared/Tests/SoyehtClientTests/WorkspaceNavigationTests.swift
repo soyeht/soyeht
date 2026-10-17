@@ -77,3 +77,10 @@ private func pane(
     state: .idle, source: .protocol, confidence: 1, phrase: "Ready", generation: 1, cols: 80,
     rows: 24, record: mode == .agent, writingKind: kind, writingSection: section)
 }
+
+@Test func onlyPaneGridsDrawUnderAnOverlaidRail() {
+  let grids = WorkspaceDestination.allCases.filter(\.drawsUnderOverlaidRail)
+  #expect(Set(grids) == [.agents, .editor, .web, .terminal])
+  #expect(!WorkspaceDestination.presentations.drawsUnderOverlaidRail)
+  #expect(!WorkspaceDestination.tasks.drawsUnderOverlaidRail)
+}

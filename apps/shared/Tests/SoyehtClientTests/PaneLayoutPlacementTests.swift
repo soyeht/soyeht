@@ -40,3 +40,24 @@ func railOpenPlacementMatchesTheApprovedFrame(width: Double) {
   #expect(placement.paneLeading == placement.paneTrailing)
   #expect(placement.railLeading == max(0, placement.paneTrailing - PaneLayoutSpacing.gridPadding))
 }
+
+@Test func aPageClearsTheOverlaidRailAtTheNarrowestWindow() {
+  let width = 375.0
+  let placement = window.horizontalPlacement(windowWidth: width, railOpen: true)
+  let clearance = window.railClearance(windowWidth: width, railOpen: true)
+  #expect(placement.railOverlays)
+  #expect(placement.paneLeading + clearance >= placement.railLeading + 56)
+  #expect(
+    placement.paneLeading + clearance
+      == placement.railLeading + 56 + PaneLayoutSpacing.gridPadding)
+  let viewport = window.paneViewport(
+    window: PaneLayoutSize(width: width, height: 375), railOpen: true)
+  #expect(viewport.width - clearance > 0)
+}
+
+@Test(arguments: [1440.0, 1024.0])
+func aPageNeedsNoClearanceWhenTheRailIsClosedOrBesideThePanes(width: Double) {
+  #expect(window.railClearance(windowWidth: width, railOpen: true) == 0)
+  #expect(window.railClearance(windowWidth: width, railOpen: false) == 0)
+  #expect(window.railClearance(windowWidth: 375, railOpen: false) == 0)
+}

@@ -150,6 +150,7 @@ struct NewPaneSheet: View {
         }
         .padding(.vertical, PaneLayoutContentMetrics.newPaneBodyVerticalInset)
         .frame(maxWidth: .infinity)
+        .forceEnclosingOverlayScrollers()
       }
       .scrollBounceBehavior(.basedOnSize)
       .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))

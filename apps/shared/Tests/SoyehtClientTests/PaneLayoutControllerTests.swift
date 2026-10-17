@@ -145,10 +145,7 @@ func aPaneCreatedBeforeLayoutFailureRemainsVisibleThroughReconciliation() async 
 
 @Test @MainActor
 func firstSplitUsesTheReconciledLiveTreeWhenNoLayoutWasStoredYet() async throws {
-  let probe = PaneLayoutPersistProbe()
-  let controller = PaneLayoutController(persist: probe.persist)
-  controller.synchronize(
-    workspaceId: "workspace", confirmed: PaneLayoutState(tree: nil, mode: .automatic))
+  let (probe, controller) = unstoredAutomaticWorkspace()
 
   let reconciled = try controller.reconciledPresentation(
     for: "workspace", livePanes: [terminalPane("anchor"), terminalPane("created")],
@@ -163,6 +160,43 @@ func firstSplitUsesTheReconciledLiveTreeWhenNoLayoutWasStoredYet() async throws 
   await expectEventually { probe.requests.count == 1 }
   #expect(probe.requests[0].state.tree == split)
   #expect(probe.requests[0].state.mode == .custom)
+}
+
+@Test @MainActor
+func firstPaneMoveInAnAutomaticWorkspaceDraftsFromTheReconciledTree() async throws {
+  let (probe, controller) = unstoredAutomaticWorkspace()
+
+  #expect(throws: PaneLayoutControllerError.missingTree("workspace")) {
+    try controller.beginDraft(workspaceId: "workspace")
+  }
+  let base = try controller.beginDraft(
+    workspaceId: "workspace", livePanes: [terminalPane("anchor"), terminalPane("created")],
+    sizing: testSizing)
+  #expect(Set(base.paneIdsInCanonicalOrder) == ["anchor", "created"])
+  #expect(controller.presentation(for: "workspace")?.draftTree == base)
+  #expect(controller.presentation(for: "workspace")?.confirmed.tree == nil)
+
+  let moved = try PaneLayoutTreeMutation.moving(
+    base, paneId: "created", relativeTo: "anchor", zone: .left)
+  try controller.updateDraft(workspaceId: "workspace", tree: moved)
+  try controller.commitDraft(workspaceId: "workspace")
+  await expectEventually { probe.requests.first?.state.tree == moved }
+  #expect(probe.requests.first?.state.mode == .custom)
+}
+
+@Test @MainActor
+func draftWithLivePanesKeepsTheStoredTreeAndRejectsAnUnknownWorkspace() throws {
+  let controller = PaneLayoutController(persist: PaneLayoutPersistProbe().persist)
+  let stored = horizontalTree("a", "b")
+  controller.synchronize(
+    workspaceId: "workspace", confirmed: PaneLayoutState(tree: stored, mode: .custom))
+
+  #expect(
+    try controller.beginDraft(
+      workspaceId: "workspace", livePanes: [terminalPane("a")], sizing: testSizing) == stored)
+  #expect(throws: PaneLayoutControllerError.missingWorkspace("other")) {
+    try controller.beginDraft(workspaceId: "other", livePanes: [], sizing: testSizing)
+  }
 }
 
 @Test @MainActor
@@ -308,4 +342,13 @@ private func terminalPane(_ paneId: String) -> Pane {
     paneId: paneId, workspaceId: "workspace", name: paneId, cwd: "/workspace", mode: .terminal,
     state: .idle, source: .protocol, confidence: 1, phrase: "Ready", generation: 1, cols: 80,
     rows: 24, record: false)
+}
+
+@MainActor
+private func unstoredAutomaticWorkspace() -> (PaneLayoutPersistProbe, PaneLayoutController) {
+  let probe = PaneLayoutPersistProbe()
+  let controller = PaneLayoutController(persist: probe.persist)
+  controller.synchronize(
+    workspaceId: "workspace", confirmed: PaneLayoutState(tree: nil, mode: .automatic))
+  return (probe, controller)
 }

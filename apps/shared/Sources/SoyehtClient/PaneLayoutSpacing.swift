@@ -51,4 +51,16 @@ extension PaneLayoutWindowPolicy {
       paneLeading: inset + (railOpen && !overlays ? railWidth : 0), paneTrailing: inset,
       railOverlays: overlays)
   }
+
+  /// How far a page that is not a pane grid (Tasks, the writing sections) starts past the
+  /// pane viewport's leading edge so an overlaid rail never covers it. Zero when the rail is
+  /// closed or sits beside the panes, where the viewport already starts after it.
+  public func railClearance(
+    windowWidth: Double, railOpen: Bool, gridPadding: Double = PaneLayoutSpacing.gridPadding
+  ) -> Double {
+    let placement = horizontalPlacement(
+      windowWidth: windowWidth, railOpen: railOpen, gridPadding: gridPadding)
+    guard railOpen, placement.railOverlays else { return 0 }
+    return max(0, placement.railLeading + railWidth + gridPadding - placement.paneLeading)
+  }
 }

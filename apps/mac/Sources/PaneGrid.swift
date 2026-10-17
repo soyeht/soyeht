@@ -250,7 +250,9 @@ struct PaneGrid: View {
       return
     }
     do {
-      let tree = try client.paneLayouts.beginDraft(workspaceId: workspaceId)
+      let tree = try client.paneLayouts.beginDraft(
+        workspaceId: workspaceId, livePanes: client.layoutPanes(workspacePanes),
+        sizing: MacPaneLayoutMetrics.sizing)
       let moved = try PaneLayoutTreeMutation.moving(
         tree, paneId: sourcePaneId, relativeTo: targetPaneId, zone: zone)
       try client.paneLayouts.updateDraft(workspaceId: workspaceId, tree: moved)

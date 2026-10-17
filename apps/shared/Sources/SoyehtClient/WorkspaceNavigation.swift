@@ -13,6 +13,15 @@ public enum WorkspaceDestination: String, CaseIterable, Sendable {
   case presentations
   case screenplays
 
+  /// Pane grids draw under a rail that overlays a narrow window, and the grid's own padding
+  /// keeps its cards readable. Every other destination is a page that must start after it.
+  public var drawsUnderOverlaidRail: Bool {
+    switch self {
+    case .agents, .editor, .web, .terminal: true
+    case .tasks, .phone, .texts, .presentations, .screenplays: false
+    }
+  }
+
   public var writingSection: WritingSection? {
     switch self {
     case .texts: .texts

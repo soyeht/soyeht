@@ -143,6 +143,28 @@ public final class PaneLayoutController {
     return tree
   }
 
+  /// Starts a gesture draft from the tree on screen. A workspace in automatic mode has no
+  /// stored tree until its first arrangement, so the draft starts from the live panes reconciled
+  /// the way the view shows them; the repair is not confirmed until the gesture commits.
+  @discardableResult
+  public func beginDraft(
+    workspaceId: String, livePanes: [Pane], sizing: PaneLayoutSizingPolicy
+  ) throws -> PaneLayoutTree {
+    guard let entry = entries[workspaceId] else {
+      throw PaneLayoutControllerError.missingWorkspace(workspaceId)
+    }
+    if presentedState(entry).tree != nil { return try beginDraft(workspaceId: workspaceId) }
+    guard
+      let tree = try reconciledPresentation(
+        for: workspaceId, livePanes: livePanes, sizing: sizing
+      ).state.tree
+    else { throw PaneLayoutControllerError.missingTree(workspaceId) }
+    var started = entry
+    started.draftTree = tree
+    entries[workspaceId] = started
+    return tree
+  }
+
   public func updateDraft(workspaceId: String, tree: PaneLayoutTree) throws {
     guard var entry = entries[workspaceId] else {
       throw PaneLayoutControllerError.missingWorkspace(workspaceId)

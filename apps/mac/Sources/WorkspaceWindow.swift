@@ -160,6 +160,12 @@ struct WorkspaceWindow: View {
     let placement = policy.horizontalPlacement(
       windowWidth: windowSize.width, railOpen: navigation.appBarOpen)
 
+    let clearance =
+      navigation.destination.drawsUnderOverlaidRail
+      ? 0 : policy.railClearance(windowWidth: windowSize.width, railOpen: navigation.appBarOpen)
+    let contentSize = CGSize(
+      width: max(0, paneViewport.width - clearance), height: paneViewport.height)
+
     return VStack(spacing: CGFloat(policy.paneVerticalInset)) {
       WorkspaceTopBar(
         client: client, workspaceId: selectedTaskWorkspaceId,
@@ -167,11 +173,9 @@ struct WorkspaceWindow: View {
         onNewPane: presentNewPane,
         onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() })
       ZStack(alignment: .leading) {
-        workspaceContent(
-          viewportSize: CGSize(width: paneViewport.width, height: paneViewport.height)
-        )
-        .frame(width: paneViewport.width, height: paneViewport.height)
-        .offset(x: placement.paneLeading - horizontalInset)
+        workspaceContent(viewportSize: contentSize)
+          .frame(width: contentSize.width, height: contentSize.height)
+          .offset(x: placement.paneLeading - horizontalInset + clearance)
         if navigation.appBarOpen {
           appRail
             .frame(width: MacPaneLayoutMetrics.railWidth, height: paneViewport.height)
