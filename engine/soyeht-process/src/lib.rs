@@ -5,9 +5,6 @@
 //! (its process group on Unix, its job object on Windows) and reported as
 //! [`Error::TimedOut`].
 //!
-//! Every start in the engine process goes through one lock, [`starting`], so that no command
-//! inherits the pipes of another that is starting at the same moment.
-//!
 //! A thread that holds the engine's Core lock marks itself with [`forbid`].
 //! [`run`] refuses to start a command on a marked thread, so a slow command can
 //! never stall the terminal path behind that lock (ADR 0079).
@@ -28,7 +25,7 @@ use std::{
     marker::PhantomData,
     process::{Command, ExitStatus},
     sync::{
-        Mutex, MutexGuard, PoisonError, TryLockError,
+        Mutex,
         mpsc::{self, Receiver, RecvTimeoutError, Sender},
     },
     thread,
@@ -39,7 +36,7 @@ use system::Running;
 
 /// How long the pipes may stay open after the command exits or is killed.
 /// A descendant that left the process group can hold them; it is abandoned.
-/// [`starting`] keeps a concurrent start from holding them too.
+/// [`spawn`] keeps a concurrent start from holding them too.
 const PIPE_GRACE: Duration = Duration::from_secs(1);
 const FIRST_POLL: Duration = Duration::from_millis(1);
 const LONGEST_POLL: Duration = Duration::from_millis(20);
@@ -47,19 +44,11 @@ const READ_CHUNK: usize = 8 * 1024;
 /// Diagnostic text kept from standard error.
 pub const STDERR_BYTES: usize = 16 * 1024;
 
-/// Held while a process starts. A start creates the child's pipes, and a process another
-/// thread starts at the same moment can inherit their write ends:
-///
-/// - On Unix a fork copies every open descriptor, `CLOEXEC` ones included, and drops them only
-///   at `exec`. Until the second program image has loaded, which on a loaded macOS host takes
-///   seconds because the system assesses the first run of a new binary, it holds the first
-///   command's write ends.
-/// - macOS has no atomic `pipe2`: `pipe()` and then `fcntl(FD_CLOEXEC)` leave a window in
-///   which a concurrent fork inherits the new descriptors for good.
-///
-/// Either way the first command's output stays open long after it exited, and its collector
-/// waits for an end that does not come. One start at a time leaves no overlap. [`run`] holds
-/// the lock for its own starts, and every other start in the process uses [`starting`].
+/// Held while a command starts. A start creates the command's pipes, and a command another
+/// thread starts at the same moment inherits their write ends until its own program image
+/// has loaded. On a loaded macOS host that takes seconds (the first run of a new binary is
+/// assessed by the system), and the first command's output then stays open for as long, long
+/// after it exited. One start at a time leaves no overlap.
 static SPAWN_LOCK: Mutex<()> = Mutex::new(());
 
 thread_local! {
@@ -200,50 +189,6 @@ impl Drop for Forbidden {
     }
 }
 
-/// Runs `start`, which starts the process `program`, with no other start in progress in this
-/// process. A thread that holds the Core lock is refused, as [`run`] refuses it: it would make
-/// every other start wait behind that lock.
-///
-/// Hold only the start itself: a handshake with the new process, or anything else that waits,
-/// belongs after it, since every other start queues behind this one.
-pub fn starting<T>(program: &str, start: impl FnOnce() -> T) -> Result<T> {
-    if let Some(holder) = forbidden() {
-        return Err(Error::UnderLock {
-            program: program.to_owned(),
-            holder,
-        });
-    }
-    let _starting = lock_starts();
-    Ok(start())
-}
-
-fn lock_starts() -> MutexGuard<'static, ()> {
-    // The lock guards no data, so a start that panicked left nothing to repair.
-    SPAWN_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// [`starting`], unless another start keeps the lock until `deadline`: the time a command
-/// queues behind other starts counts against its own timeout.
-fn starting_before<T>(deadline: Instant, start: impl FnOnce() -> T) -> Option<T> {
-    let mut pause = FIRST_POLL;
-    loop {
-        match SPAWN_LOCK.try_lock() {
-            Ok(_starting) => return Some(start()),
-            Err(TryLockError::Poisoned(poisoned)) => {
-                let _starting = poisoned.into_inner();
-                return Some(start());
-            }
-            Err(TryLockError::WouldBlock) => {}
-        }
-        let now = Instant::now();
-        if now >= deadline {
-            return None;
-        }
-        thread::sleep(pause.min(deadline - now));
-        pause = (pause * 2).min(LONGEST_POLL);
-    }
-}
-
 /// Runs `command` with no standard input, within `limits`.
 pub fn run(command: Command, limits: Limits) -> Result<Output> {
     execute(command, None, limits)
@@ -269,21 +214,14 @@ fn execute(command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<O
     if let Some(holder) = forbidden() {
         return Err(Error::UnderLock { program, holder });
     }
-    let deadline = Instant::now() + limits.timeout;
-    let timed_out = || Error::TimedOut {
+    let mut running = spawn(command, input.is_some()).map_err(|source| Error::Spawn {
         program: program.clone(),
-        after: limits.timeout,
-    };
-    let mut running = starting_before(deadline, || Running::spawn(command, input.is_some()))
-        .ok_or_else(timed_out)?
-        .map_err(|source| Error::Spawn {
-            program: program.clone(),
-            source,
-        })?;
+        source,
+    })?;
     let streams = running.take_streams();
     let written = input.map(|input| write_in_background(streams.input, input));
     let pipes = Pipes::start((streams.output, streams.error), limits);
-    let exited = match wait_until(&mut running, deadline) {
+    let exited = match wait_until(&mut running, Instant::now() + limits.timeout) {
         Ok(exited) => exited,
         Err(source) => {
             running.kill();
@@ -301,8 +239,12 @@ fn execute(command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<O
             program: program.clone(),
             source,
         })?;
+    let timed_out = Error::TimedOut {
+        program: program.clone(),
+        after: limits.timeout,
+    };
     let (Some(status), Some(collected)) = (exited, collected) else {
-        return Err(timed_out());
+        return Err(timed_out);
     };
     let (Some(stdout), Some(stderr)) = (collected.stdout, collected.stderr) else {
         return Err(Error::OutputTooLarge { program });
@@ -316,6 +258,14 @@ fn execute(command: Command, input: Option<Vec<u8>>, limits: Limits) -> Result<O
         stdout,
         stderr,
     })
+}
+
+/// Starts `command` with its pipes, never at the same time as another command.
+fn spawn(command: Command, input: bool) -> io::Result<Running> {
+    let _starting = SPAWN_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    Running::spawn(command, input)
 }
 
 /// Starts the thread that writes `input` to the command and closes its standard input.
@@ -602,13 +552,10 @@ mod tests {
     fn a_command_that_finishes_leaves_its_background_process_running() {
         let pidfile = scratch("detached");
         let _ = fs::remove_file(&pidfile);
-        let mut running = starting("helper", || {
-            Running::spawn(
-                helper_command(&format!("detach:{}", pidfile.display())),
-                false,
-            )
-        })
-        .unwrap()
+        let mut running = spawn(
+            helper_command(&format!("detach:{}", pidfile.display())),
+            false,
+        )
         .unwrap();
         // The pipes stay open so the helper never fails writing to them.
         let _streams = running.take_streams();
@@ -697,64 +644,5 @@ mod tests {
             .unwrap()
             .success()
         );
-    }
-
-    #[test]
-    fn a_thread_holding_the_core_lock_cannot_queue_a_start() {
-        let _held = forbid("Core");
-        let error = starting("helper", || ()).unwrap_err();
-        assert!(
-            matches!(error, Error::UnderLock { holder: "Core", .. }),
-            "{error}"
-        );
-    }
-
-    #[test]
-    fn commands_started_together_all_finish_and_none_reports_a_timeout() {
-        let runners: Vec<_> = (0..8)
-            .map(|_| {
-                thread::spawn(|| {
-                    (0..3)
-                        .map(|_| {
-                            run(
-                                helper_command("emit"),
-                                Limits::new(Duration::from_secs(60), 8192),
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                })
-            })
-            .collect();
-        for runner in runners {
-            for result in runner.join().unwrap() {
-                let output = result.unwrap();
-                assert_eq!(output.status.code(), Some(3));
-                assert!(String::from_utf8_lossy(&output.stdout).contains("out"));
-                assert!(output.stderr_text().contains("err"));
-            }
-        }
-    }
-
-    #[test]
-    fn the_time_a_command_queues_behind_other_starts_counts_against_its_timeout() {
-        let (held, holding) = mpsc::channel();
-        let blocker = thread::spawn(move || {
-            starting("helper", || {
-                held.send(()).unwrap();
-                thread::sleep(Duration::from_secs(3));
-            })
-            .unwrap();
-        });
-        holding.recv().unwrap();
-        let started = Instant::now();
-        let error = run(
-            helper_command("quiet"),
-            Limits::new(Duration::from_millis(200), 8192),
-        )
-        .unwrap_err();
-        assert!(error.timed_out(), "{error}");
-        // It gave up at its own deadline instead of waiting out the start in front of it.
-        assert!(started.elapsed() < Duration::from_millis(2500), "{error}");
-        blocker.join().unwrap();
     }
 }

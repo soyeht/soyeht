@@ -23,7 +23,7 @@ use soyeht_store::{
     segments::Record,
 };
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -52,11 +52,7 @@ pub struct Core {
     pub panes: BTreeMap<String, RunningPane>,
     pub(crate) terminal_captures: BTreeMap<String, crate::terminal_capture::TerminalCapture>,
     pub(crate) agent_captures: BTreeMap<String, crate::agent_capture::AgentCapture>,
-    pub(crate) engine_build: &'static crate::engine_build::EngineBuildCell,
-    /// Panes whose capture is on and waits for the engine build to restore (see `experiment_build`).
-    pub(crate) capture_restore: BTreeSet<String>,
-    /// When the panes in `capture_restore` stop waiting for the build.
-    pub(crate) capture_restore_deadline: Option<std::time::Instant>,
+    pub(crate) experiment_capture_build: Option<soyeht_pane_state::EngineBuild>,
     pub(crate) terminal_harnesses:
         BTreeMap<String, crate::terminal_harness::TerminalHarnessSession>,
     pub agents: BTreeMap<String, crate::agents::Running>,
@@ -137,9 +133,7 @@ impl Core {
             panes: BTreeMap::new(),
             terminal_captures: BTreeMap::new(),
             agent_captures: BTreeMap::new(),
-            engine_build: crate::engine_build::cell(),
-            capture_restore: BTreeSet::new(),
-            capture_restore_deadline: None,
+            experiment_capture_build: None,
             terminal_harnesses: BTreeMap::new(),
             agents: BTreeMap::new(),
             harness_switches: BTreeMap::new(),
@@ -658,10 +652,6 @@ impl Core {
             .map(|(id, _)| id.clone())
             .collect();
         for id in ids {
-            // Its output waits in the supervisor until the capture it belongs to is restored.
-            if self.capture_restore_pending(&id) {
-                continue;
-            }
             if self.agents.contains_key(&id) {
                 if let Err(error) = self.poll_agent(&id) {
                     if errors::missing_supervisor_instance(&error) {

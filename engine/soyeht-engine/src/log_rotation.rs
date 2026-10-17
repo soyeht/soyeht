@@ -7,7 +7,6 @@
 //! files of about `max_bytes` each, rotated only between lines so every record
 //! stays a whole JSON line.
 
-use soyeht_platform::log;
 use std::{
     fs::{self, File, OpenOptions},
     io::{self, PipeWriter, Read, Write},
@@ -25,9 +24,7 @@ pub const LOG_KEEP_ROTATED: usize = 4;
 const LINE_MAX_BYTES: usize = 64 * 1024;
 const READ_CHUNK_BYTES: usize = 16 * 1024;
 /// A line the engine writes into its own pipe on shutdown. Everything written before it has
-/// been copied into the file by the time the copy thread reads it. A writer that stopped in
-/// the middle of a line leaves the marker glued to its end, so the marker is recognised at the
-/// end of a line too.
+/// been copied into the file by the time the copy thread reads it.
 const FLUSH_MARKER: &[u8] = b"\0soyeht-log-flush\0\n";
 /// The longest a shutdown waits for the copy thread to reach the marker. The copy thread's
 /// progress depends on nothing outside this process but the disk, so a loaded host only
@@ -145,20 +142,15 @@ fn copy(
     Ok(())
 }
 
-/// `lines` without the flush markers, and how many there were. Bytes in front of a marker are
-/// a partial line: they stay, ended with a newline, so the next record starts on its own line.
+/// `lines` without the flush markers, and how many there were.
 fn without_markers(lines: &[u8]) -> (Vec<u8>, usize) {
     let mut kept = Vec::with_capacity(lines.len());
     let mut markers = 0;
     for line in lines.split_inclusive(|byte| *byte == b'\n') {
-        let Some(partial) = line.strip_suffix(FLUSH_MARKER) else {
+        if line == FLUSH_MARKER {
+            markers += 1;
+        } else {
             kept.extend_from_slice(line);
-            continue;
-        };
-        markers += 1;
-        if !partial.is_empty() {
-            kept.extend_from_slice(partial);
-            kept.push(b'\n');
         }
     }
     (kept, markers)
@@ -227,17 +219,10 @@ pub fn capture_stderr(max_bytes: u64, keep: usize) -> io::Result<Option<StderrRo
 
 impl Drop for StderrRotation {
     fn drop(&mut self) {
-        // A failure is logged on whatever stderr is by then: the original file once it is back.
-        // Without it the line goes through the pipe, which the flush below still drains.
-        if let Err(error) = system::restore_stderr(&self.original) {
-            log::failure("engine.log_restore_failed", &error);
-        }
-        if !flush(&self.writer, &self.flushed, FLUSH_DEADLINE) {
-            log::event(
-                "engine.log_flush_failed",
-                &[("deadline_ms", &FLUSH_DEADLINE.as_millis().to_string())],
-            );
-        }
+        // Shutdown path: if stderr cannot be restored or the flush fails, the process
+        // is exiting and there is no better place to log it.
+        let _ = system::restore_stderr(&self.original);
+        flush(&self.writer, &self.flushed, FLUSH_DEADLINE);
     }
 }
 
@@ -360,53 +345,24 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
-    /// Copies `input` into a fresh log at `path` and returns what the file held each time the
-    /// copy acknowledged a flush marker.
-    fn acknowledged_contents(input: Vec<u8>, path: &Path) -> Vec<String> {
-        let mut log = RotatingFile::open(path, 1_000_000, 1).unwrap();
-        let mut seen = Vec::new();
-        copy(Cursor::new(input), &mut log, || {
-            seen.push(fs::read_to_string(path).unwrap());
-        })
-        .unwrap();
-        seen
-    }
-
     #[test]
     fn a_flush_marker_is_not_logged_and_acknowledges_the_lines_before_it() {
         let directory = directory();
         let path = directory.join("engine.log");
+        let mut log = RotatingFile::open(&path, 1_000_000, 1).unwrap();
         let mut input = b"{\"event\":\"before\"}\n".to_vec();
         input.extend_from_slice(FLUSH_MARKER);
         input.extend_from_slice(b"{\"event\":\"after\"}\n");
-        let seen = acknowledged_contents(input, &path);
+        let mut seen = Vec::new();
+        copy(Cursor::new(input), &mut log, || {
+            seen.push(fs::read_to_string(&path).unwrap());
+        })
+        .unwrap();
         assert_eq!(seen.len(), 1);
         assert!(seen[0].starts_with("{\"event\":\"before\"}\n"));
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
             "{\"event\":\"before\"}\n{\"event\":\"after\"}\n"
-        );
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn a_partial_line_glued_to_the_flush_marker_is_kept_and_acknowledged() {
-        let directory = directory();
-        let path = directory.join("engine.log");
-        let mut input = b"{\"event\":\"whole\"}\n{\"event\":\"cut-off".to_vec();
-        input.extend_from_slice(FLUSH_MARKER);
-        input.extend_from_slice(b"{\"event\":\"after\"}\n");
-        // The acknowledgement comes after the partial line is in the file.
-        let seen = acknowledged_contents(input, &path);
-        assert_eq!(seen.len(), 1);
-        assert!(
-            seen[0].starts_with("{\"event\":\"whole\"}\n{\"event\":\"cut-off\n"),
-            "{:?}",
-            seen[0]
-        );
-        assert_eq!(
-            fs::read_to_string(&path).unwrap(),
-            "{\"event\":\"whole\"}\n{\"event\":\"cut-off\n{\"event\":\"after\"}\n"
         );
         fs::remove_dir_all(directory).unwrap();
     }

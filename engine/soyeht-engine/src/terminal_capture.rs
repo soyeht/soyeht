@@ -464,6 +464,15 @@ impl Core {
         experiment_root(&self.directory)
     }
 
+    pub(crate) fn capture_build(&mut self) -> Result<EngineBuild> {
+        if let Some(build) = &self.experiment_capture_build {
+            return Ok(build.clone());
+        }
+        let build = crate::engine_build::installed_engine_build()?;
+        self.experiment_capture_build = Some(build.clone());
+        Ok(build)
+    }
+
     pub(crate) fn prepare_terminal_capture(&mut self, pane_id: &str) -> Result<TerminalCapture> {
         let stored = self
             .panes
@@ -545,6 +554,40 @@ impl Core {
         delete_pane(&self.observation_root()?, pane_id)
     }
 
+    pub(crate) fn restore_experiment_captures(&mut self) -> Result<()> {
+        let ids: Vec<_> = self
+            .panes
+            .iter()
+            .filter(|(_, pane)| {
+                !pane.stored.closed
+                    && matches!(pane.stored.pane.mode, PaneMode::Terminal | PaneMode::Agent)
+                    && pane
+                        .stored
+                        .pane
+                        .experiment_capture
+                        .as_ref()
+                        .is_some_and(|capture| capture.on)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            let mode = self.panes[&id].stored.pane.mode.clone();
+            let restored = match mode {
+                PaneMode::Terminal => self.prepare_terminal_capture(&id).map(|capture| {
+                    self.terminal_captures.insert(id.clone(), capture);
+                }),
+                PaneMode::Agent => self.prepare_agent_capture(&id).map(|capture| {
+                    self.agent_captures.insert(id.clone(), capture);
+                }),
+                _ => unreachable!("experiment capture mode was filtered"),
+            };
+            if let Err(error) = restored {
+                self.fail_experiment_capture(&id, Some(error.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
     pub(crate) fn observe_terminal(&mut self, pane_id: &str, bytes: Arc<Vec<u8>>) -> Result<()> {
         let timestamp_ms = self.now_ms();
         let failure = self
@@ -593,7 +636,6 @@ impl Core {
     }
 
     pub(crate) fn reconcile_experiment_captures(&mut self) -> Result<()> {
-        self.expire_capture_restore()?;
         let mut failed = Vec::new();
         for (pane_id, capture) in &self.terminal_captures {
             if let Some(failure) = capture.failure_reason()? {
@@ -670,12 +712,15 @@ mod tests {
     use super::*;
     use crate::{
         dispatch::Outcome,
+        model::{RunningPane, StoredPane},
         outbox,
         pane_observations::label_write_timeout_message,
         ports::testing::{EmptyPortScan, FakeSupervisor, FixedClock},
+        screen::Screen,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use soyeht_pane_state::RecordedRow;
+    use soyeht_protocol::{Pane, PaneState, StateSource};
     use soyeht_ptyd::wire::{Output, Response};
     use std::{collections::VecDeque, fs, time::Instant};
     use uuid::Uuid;
@@ -1161,23 +1206,73 @@ mod tests {
     }
 
     fn replay_cadence_rows(directory: &Path, build: EngineBuild) -> Vec<RecordedRow> {
-        crate::test_panes::replay_rows(
+        SegmentStore::open(
             &directory.join("on/experiments/pane-state"),
             "cadence-pane",
+            ObservationPaneKind::Terminal,
+            HarnessIdentity::Unknown,
             build,
         )
+        .unwrap()
+        .replay()
+        .unwrap()
+        .into_iter()
+        .flat_map(|segment| segment.rows)
+        .collect()
     }
 
     fn cadence_core(root: &Path, chunks: &[Vec<u8>], capture: bool) -> Core {
         fs::create_dir(root).unwrap();
         let mut core = Core::open(root).unwrap();
-        // The capture below needs the build, which no test waits for under the lock.
-        core.engine_build.wait().unwrap();
         // This benchmark measures poll_output and the capture handoff. Keep
         // unrelated local-server discovery deterministic across retries.
         core.clock = Arc::new(FixedClock(0));
         core.web = crate::web::Service::new(Box::new(EmptyPortScan));
-        let pane_id = crate::test_panes::insert_terminal_pane(&mut core, root, "cadence", capture);
+        let pane_id = "cadence-pane".to_owned();
+        let pane = Pane {
+            pane_id: pane_id.clone(),
+            workspace_id: "workspace".into(),
+            name: "Cadence".into(),
+            cwd: root.display().to_string(),
+            mode: PaneMode::Terminal,
+            state: PaneState::Unknown,
+            source: StateSource::None,
+            confidence: 0.0,
+            phrase: "Shell active".into(),
+            generation: 1,
+            cols: 120,
+            rows: 40,
+            record: false,
+            experiment_capture: Some(PaneExperimentCapture {
+                on: capture,
+                failure: None,
+            }),
+            pid: Some(1),
+            stream_id: Some("cadence-stream".into()),
+            agent: None,
+            url: None,
+            title: None,
+            viewport: None,
+            incognito: None,
+            web_session: None,
+            writing_kind: None,
+            writing_section: None,
+        };
+        let screen = Screen::open(&root.join("sessions").join(&pane_id), false).unwrap();
+        core.panes.insert(
+            pane_id.clone(),
+            RunningPane {
+                stored: StoredPane {
+                    pane,
+                    closed: false,
+                    instance_key: "cadence-key".into(),
+                    instance_id: Some("cadence-instance".into()),
+                    supervisor_id: Some("cadence-supervisor".into()),
+                    sequence_base: 0,
+                },
+                screen,
+            },
+        );
         let mut responses = VecDeque::new();
         let mut offset = 0_u64;
         for chunk in chunks {
@@ -1359,7 +1454,7 @@ mod tests {
             &off_micros,
             &on_micros,
         );
-        let build = on.engine_build.ready().unwrap().unwrap();
+        let build = on.experiment_capture_build.clone().unwrap();
         drop(on);
         let fixture_wall_micros = fixture_started.elapsed().as_micros();
         drop(off);
