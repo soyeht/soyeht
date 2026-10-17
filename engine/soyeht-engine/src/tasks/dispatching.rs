@@ -509,6 +509,7 @@ impl Core {
             "open:{}:{}:{}",
             task.workspace_id, task.task_id, task.current_attempt
         );
+        let created = model::pane_created(&saved.pane)?;
         let mutation = StorePort::mutate(
             &mut self.store,
             "engine-dispatch",
@@ -516,10 +517,7 @@ impl Core {
             "task-pane-open",
             |change| {
                 persist_new_pane(change, &saved, Some(&state))?;
-                Ok((
-                    json!({}),
-                    vec![(event::PANE_CREATED.into(), json!({"pane":saved.pane}))],
-                ))
+                Ok((json!({}), vec![created]))
             },
         )
         .map_err(errors::storage)?;

@@ -1,12 +1,17 @@
-use super::{Changes, state::Phase, transcript};
+use super::{
+    Changes,
+    state::{Phase, State},
+    transcript,
+};
 use crate::{
     core::Core,
     errors::{self, Result},
+    model::{config_failed, turn_ended},
     ports::StorePort,
 };
 use serde_json::json;
 use soyeht_protocol::{
-    AttentionItem, PaneState, StateSource, TranscriptKind, TranscriptRole, event, limits,
+    AttentionItem, PaneState, StateSource, TranscriptKind, TranscriptRole, TurnStopReason, limits,
 };
 use soyeht_ptyd::wire::Request;
 
@@ -86,21 +91,7 @@ impl Core {
             reason.into(),
             true,
         )?);
-        if let Some(prompt) = state.active.take() {
-            changes.events.push((
-                event::PANE_TURN_ENDED.into(),
-                json!({"paneId":pane,"promptId":prompt.prompt_id,"stopReason":"error"}),
-            ));
-        }
-        if let Some(operation) = state.operation.take() {
-            changes.events.push((event::PANE_CONFIG_FAILED.into(),json!({"paneId":pane,"configId":operation.config_id,"value":operation.value,"reason":reason})));
-        }
-        if let Some(user) = state.operation_user.take() {
-            changes.completed_user = Some(super::pending::Completion {
-                user,
-                result: Err(errors::wire(errors::harness_unavailable(reason))),
-            });
-        }
+        fail_work_in_flight(&mut state, &mut changes, pane, reason)?;
         state.client = Default::default();
         state.cancel_at_ms = None;
         state.phase = Phase::Faulted;
@@ -139,9 +130,12 @@ impl Core {
             let reason = "Configuration confirmation timed out; the session remains open and the pending request is retained";
             state.operation_timed_out = true;
             let mut changes = Changes::default();
-            changes.events.push((event::PANE_CONFIG_FAILED.into(), json!({
-                "paneId":pane,"configId":operation.config_id,"value":operation.value,"reason":reason
-            })));
+            changes.events.push(config_failed(
+                pane,
+                operation.config_id.clone(),
+                operation.value.clone(),
+                reason,
+            )?);
             if let Some(user) = state.operation_user.take() {
                 changes.completed_user = Some(super::pending::Completion {
                     user,
@@ -248,4 +242,34 @@ impl Core {
         }
         Ok(())
     }
+}
+
+/// The turn, the configuration change and the caller waiting on it end together, with `reason`,
+/// when the process that held them is gone.
+pub(super) fn fail_work_in_flight(
+    state: &mut State,
+    changes: &mut Changes,
+    pane: &str,
+    reason: &str,
+) -> Result<()> {
+    if let Some(prompt) = state.active.take() {
+        changes
+            .events
+            .push(turn_ended(pane, prompt.prompt_id, TurnStopReason::Error)?);
+    }
+    if let Some(operation) = state.operation.take() {
+        changes.events.push(config_failed(
+            pane,
+            operation.config_id,
+            operation.value,
+            reason,
+        )?);
+    }
+    if let Some(user) = state.operation_user.take() {
+        changes.completed_user = Some(super::pending::Completion {
+            user,
+            result: Err(errors::wire(errors::harness_unavailable(reason))),
+        });
+    }
+    Ok(())
 }

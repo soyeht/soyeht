@@ -223,7 +223,7 @@ impl Core {
         for (caller, request) in waiter.callers {
             if let Some(client) = self.clients.get(&caller) {
                 let frame = match &result {
-                    Ok(value) => model::response(request, value.clone())?,
+                    Ok(value) => model::response(&waiter.method, request, value.clone())?,
                     Err(error) => model::failure(request, error.clone())?,
                 };
                 send_web_response(&client.outbox, attachment.as_ref(), frame)?;

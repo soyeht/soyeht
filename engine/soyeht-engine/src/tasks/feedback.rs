@@ -249,7 +249,7 @@ impl Core {
             &decision.task,
             prompt.as_ref().map(|prompt| (prompt, state.queue.len())),
             &attention,
-        );
+        )?;
         let mut changes = Changes {
             events,
             task_feedback: Some(feedback_change(&current, &decision)),
@@ -268,7 +268,7 @@ impl Core {
         attention: AttentionChange,
     ) -> Result<()> {
         let key = Uuid::new_v4().to_string();
-        let events = feedback_events(&current, &decision.task, None, &attention);
+        let events = feedback_events(&current, &decision.task, None, &attention)?;
         let update = feedback_change(&current, &decision);
         let workspace = current.workspace_id;
         let mutation = StorePort::mutate(
@@ -340,25 +340,24 @@ fn feedback_events(
     updated: &Task,
     prompt: Option<(&soyeht_protocol::PromptItem, usize)>,
     attention: &AttentionChange,
-) -> Vec<(String, Value)> {
+) -> Result<Vec<(String, Value)>> {
     let mut events = Vec::new();
     if current != updated {
-        events.push((
-            event::TASK_UPDATED.into(),
-            json!({"workspaceId":updated.workspace_id,"taskId":updated.task_id,"version":updated.version}),
-        ));
+        events.push(super::events::updated(updated));
         if current.phrase != updated.phrase {
-            events.push((
-                event::TASK_PHRASE_CHANGED.into(),
-                json!({"workspaceId":updated.workspace_id,"taskId":updated.task_id,"phrase":updated.phrase}),
-            ));
+            events.push(super::events::phrase_changed(updated));
         }
     }
     if let Some((prompt, count)) = prompt {
-        events.push((
-            event::PANE_QUEUED.into(),
-            json!({"paneId":updated.owner_pane_id,"n":count,"promptIds":[prompt.prompt_id],"draft":false}),
-        ));
+        events.push(crate::model::pane_queued(
+            updated
+                .owner_pane_id
+                .as_deref()
+                .ok_or_else(|| errors::internal("Queued feedback has no owner pane"))?,
+            count,
+            vec![prompt.prompt_id.clone()],
+            false,
+        )?);
     }
     if attention.next.is_some() && attention.next != attention.prior {
         events.push((
@@ -366,7 +365,7 @@ fn feedback_events(
             json!({"workspaceId":updated.workspace_id,"taskId":updated.task_id,"n":1}),
         ));
     }
-    events
+    Ok(events)
 }
 
 pub fn evaluate(

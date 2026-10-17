@@ -398,11 +398,11 @@ impl Core {
         let error = errors::wire(error);
         for context in contexts {
             let waiters = self.language_waiters.remove(context).unwrap_or_default();
-            for (connection, id) in waiters {
-                if let Some(client) = self.clients.get(&connection) {
+            for waiter in waiters {
+                if let Some(client) = self.clients.get(&waiter.connection) {
                     client
                         .outbox
-                        .send(crate::model::failure(id, error.clone())?);
+                        .send(crate::model::failure(waiter.request_id, error.clone())?);
                 }
             }
         }

@@ -6,6 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# Checks every event and result against the generated models (ADR 0090). The merge gate
+# builds and tests with it on; a shipping build leaves it off and checks nothing.
+contract-checks = ["soyeht-protocol/contract-checks"]
+test-hooks = []
+
 [[bin]]
 name = "soyeht-fake-worktrunk"
 path = "tests/fake-worktrunk/program.rs"
@@ -20,9 +26,6 @@ path = "tests/test-engine/program.rs"
 required-features = ["test-hooks"]
 test = false
 bench = false
-
-[features]
-test-hooks = []
 
 [dependencies]
 soyeht-acp = { path = "../soyeht-acp" }

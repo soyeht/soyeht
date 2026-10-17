@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4215ca4da68a5c1aac0c2c6e622a61375a04c6157e0a895566c3946275077d19). Do not edit.
+// Generated from contracts/protocol.json (sha256 0fae169dadd6d5c6bf76481a29509c3f62e9018799bfb9a7817b97bca607da72). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -963,6 +963,8 @@ pub struct WorkspaceCreatedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspace")]
     pub workspace: Workspace,
 }
@@ -972,6 +974,8 @@ pub struct WorkspaceRenamedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspace")]
     pub workspace: Workspace,
 }
@@ -992,6 +996,8 @@ pub struct WorkspaceClosedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
 }
@@ -1001,6 +1007,8 @@ pub struct PaneCreatedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "pane")]
     pub pane: Pane,
     #[serde(rename = "file", skip_serializing_if = "Option::is_none")]
@@ -1014,6 +1022,8 @@ pub struct PaneRenamedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "pane")]
     pub pane: Pane,
 }
@@ -1023,6 +1033,8 @@ pub struct PaneClosedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "workspaceId")]
@@ -1034,6 +1046,8 @@ pub struct PaneStateChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "state")]
@@ -1080,6 +1094,8 @@ pub struct DevicePairRequestedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "requestId")]
     pub request_id: Id,
     #[serde(rename = "deviceName")]
@@ -1093,6 +1109,8 @@ pub struct DevicePairedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "device")]
     pub device: Device,
 }
@@ -1102,6 +1120,8 @@ pub struct DeviceRevokedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "deviceId")]
     pub device_id: Id,
 }
@@ -1124,6 +1144,8 @@ pub struct EngineUpdatingEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "generation")]
     pub generation: u32,
 }
@@ -1133,6 +1155,8 @@ pub struct EngineRestartedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "generation")]
     pub generation: u32,
 }
@@ -1142,6 +1166,8 @@ pub struct PtydReconnectedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "generation")]
     pub generation: u32,
 }
@@ -1151,6 +1177,8 @@ pub struct PtydLostEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "reason")]
     pub reason: String,
 }
@@ -1218,6 +1246,8 @@ pub struct PaneUpdatedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "pane")]
     pub pane: Pane,
 }
@@ -1227,6 +1257,8 @@ pub struct SettingsChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "key")]
     pub key: String,
     #[serde(rename = "value")]
@@ -1661,6 +1693,8 @@ pub struct PaneCommandsChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
 }
@@ -2198,6 +2232,8 @@ pub struct PaneHarnessSwitchStartedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "fromHarness")]
@@ -2211,6 +2247,8 @@ pub struct PaneHarnessSwitchDoneEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "fromHarness")]
@@ -2228,6 +2266,8 @@ pub struct PaneHarnessSwitchFailedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "fromHarness")]
@@ -2395,6 +2435,8 @@ pub struct PaneSessionStartedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "harness")]
@@ -2414,6 +2456,8 @@ pub struct PaneTurnEndedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "promptId")]
@@ -2427,6 +2471,8 @@ pub struct PaneQueuedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "n")]
@@ -2442,6 +2488,8 @@ pub struct PanePermissionRequestedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "requestId")]
@@ -2471,6 +2519,8 @@ pub struct PanePermissionAnsweredEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "requestId")]
@@ -2488,6 +2538,8 @@ pub struct PaneElicitationRequestedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "requestId")]
@@ -2509,6 +2561,8 @@ pub struct PaneElicitationAnsweredEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "requestId")]
@@ -2524,6 +2578,8 @@ pub struct PaneConfigChangingEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "configId")]
@@ -2539,6 +2595,8 @@ pub struct PaneConfigChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "configId")]
@@ -2556,6 +2614,8 @@ pub struct PaneConfigFailedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "configId")]
@@ -2571,6 +2631,8 @@ pub struct PaneSessionLostEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "reason")]
@@ -2584,6 +2646,8 @@ pub struct PaneNeedsLoginEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "harness")]
@@ -2597,6 +2661,8 @@ pub struct PaneAuthFinishedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "ok")]
@@ -2819,6 +2885,8 @@ pub struct TerminalOutputUpdate {
     pub offset: Decimal,
     #[serde(rename = "truncated")]
     pub truncated: bool,
+    #[serde(rename = "exitCode", skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i64>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ConfigOptionUpdateKind {
@@ -2876,6 +2944,8 @@ pub struct AttentionChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "count")]
@@ -2931,6 +3001,8 @@ pub struct PaneQueueStateEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "paused")]
@@ -3648,6 +3720,8 @@ pub struct TaskCreatedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "task")]
     pub task: Task,
 }
@@ -3676,6 +3750,8 @@ pub struct TaskClaimedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3691,6 +3767,8 @@ pub struct TaskReleasedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3706,6 +3784,8 @@ pub struct TaskCommentedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3719,6 +3799,8 @@ pub struct TaskSubitemChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3732,6 +3814,8 @@ pub struct TaskBlockedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3747,6 +3831,8 @@ pub struct TaskUnblockedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3760,6 +3846,8 @@ pub struct TaskPhraseChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3773,6 +3861,8 @@ pub struct TaskUpdatedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3786,6 +3876,8 @@ pub struct TaskAttentionEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "taskId")]
@@ -3799,6 +3891,8 @@ pub struct LoopTickEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "round")]
@@ -3812,6 +3906,8 @@ pub struct LoopStoppedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "reason")]
@@ -3952,6 +4048,8 @@ pub struct UsageChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "provider")]
     pub provider: UsageProvider,
     #[serde(rename = "state")]
@@ -4408,6 +4506,8 @@ pub struct ProjectEntryRenamedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "from")]
@@ -4488,6 +4588,8 @@ pub struct EditorTabsUpdatedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
     #[serde(rename = "tabs")]
@@ -4821,6 +4923,8 @@ pub struct FileChangedOnDiskEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "fileId")]
     pub file_id: Id,
     #[serde(rename = "diskRevision")]
@@ -4834,6 +4938,8 @@ pub struct FileSavedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "file")]
     pub file: FileDocument,
     #[serde(rename = "by")]
@@ -4845,6 +4951,8 @@ pub struct FileConflictEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "fileId")]
     pub file_id: Id,
     #[serde(rename = "baseRevision")]
@@ -4860,6 +4968,8 @@ pub struct LspDiagnosticsEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "fileId")]
     pub file_id: Id,
     #[serde(rename = "revision")]
@@ -4873,6 +4983,8 @@ pub struct EditorAgentCursorEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "fileId")]
     pub file_id: Id,
     #[serde(rename = "paneId")]
@@ -4888,6 +5000,8 @@ pub struct EditorReviewRequestedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "fileId")]
     pub file_id: Id,
     #[serde(rename = "revision")]
@@ -5459,6 +5573,8 @@ pub struct WebNavigatedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "navigationGeneration")]
@@ -5967,6 +6083,8 @@ pub struct WritingChangedEvent {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "fileId")]
     pub file_id: Id,
     #[serde(rename = "paneId")]
@@ -7635,6 +7753,785 @@ pub const EVENTS: &[EventDescriptor] = &[
         durable: true,
     },
 ];
+// Events with no `EventParams` type:
+// pane.update: has union params (PaneUpdateEvent), so the engine builds it as JSON.
+// pane.queue.paused, pane.queue.resumed: share one params type (PaneQueueStateEvent), so the engine builds it as JSON.
+/// The parameters of one event as the engine builds them.
+pub trait EventParams: serde::Serialize {
+    const NAME: EventName;
+    /// The event name and its JSON parameters, ready for the store or the wire.
+    fn to_event(&self) -> Result<(String, serde_json::Value), serde_json::Error> {
+        Ok((Self::NAME.as_str().to_owned(), serde_json::to_value(self)?))
+    }
+}
+impl EventParams for AuthChallengeEvent {
+    const NAME: EventName = EventName::AuthChallenge;
+}
+impl EventParams for StateSnapshotPartEvent {
+    const NAME: EventName = EventName::StateSnapshotPart;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WorkspaceCreatedDraft {
+    #[serde(rename = "workspace")]
+    pub workspace: Workspace,
+}
+impl EventParams for WorkspaceCreatedDraft {
+    const NAME: EventName = EventName::WorkspaceCreated;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WorkspaceRenamedDraft {
+    #[serde(rename = "workspace")]
+    pub workspace: Workspace,
+}
+impl EventParams for WorkspaceRenamedDraft {
+    const NAME: EventName = EventName::WorkspaceRenamed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WorkspaceLayoutUpdatedDraft {
+    #[serde(rename = "workspace")]
+    pub workspace: Workspace,
+}
+impl EventParams for WorkspaceLayoutUpdatedDraft {
+    const NAME: EventName = EventName::WorkspaceLayoutUpdated;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WorkspaceClosedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+}
+impl EventParams for WorkspaceClosedDraft {
+    const NAME: EventName = EventName::WorkspaceClosed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneCreatedDraft {
+    #[serde(rename = "pane")]
+    pub pane: Pane,
+    #[serde(rename = "file", skip_serializing_if = "Option::is_none")]
+    pub file: Option<FileDocument>,
+    #[serde(rename = "writingDocument", skip_serializing_if = "Option::is_none")]
+    pub writing_document: Option<WritingDocument>,
+}
+impl EventParams for PaneCreatedDraft {
+    const NAME: EventName = EventName::PaneCreated;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneRenamedDraft {
+    #[serde(rename = "pane")]
+    pub pane: Pane,
+}
+impl EventParams for PaneRenamedDraft {
+    const NAME: EventName = EventName::PaneRenamed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneClosedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+}
+impl EventParams for PaneClosedDraft {
+    const NAME: EventName = EventName::PaneClosed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneStateChangedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "state")]
+    pub state: PaneState,
+    #[serde(rename = "confidence")]
+    pub confidence: f64,
+    #[serde(rename = "phrase")]
+    pub phrase: String,
+    #[serde(rename = "source")]
+    pub source: StateSource,
+}
+impl EventParams for PaneStateChangedDraft {
+    const NAME: EventName = EventName::PaneStateChanged;
+}
+impl EventParams for StreamReplayStartEvent {
+    const NAME: EventName = EventName::StreamReplayStart;
+}
+impl EventParams for StreamReplayDoneEvent {
+    const NAME: EventName = EventName::StreamReplayDone;
+}
+impl EventParams for StreamGapEvent {
+    const NAME: EventName = EventName::StreamGap;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct DevicePairRequestedDraft {
+    #[serde(rename = "requestId")]
+    pub request_id: Id,
+    #[serde(rename = "deviceName")]
+    pub device_name: String,
+    #[serde(rename = "fingerprint")]
+    pub fingerprint: String,
+}
+impl EventParams for DevicePairRequestedDraft {
+    const NAME: EventName = EventName::DevicePairRequested;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct DevicePairedDraft {
+    #[serde(rename = "device")]
+    pub device: Device,
+}
+impl EventParams for DevicePairedDraft {
+    const NAME: EventName = EventName::DevicePaired;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct DeviceRevokedDraft {
+    #[serde(rename = "deviceId")]
+    pub device_id: Id,
+}
+impl EventParams for DeviceRevokedDraft {
+    const NAME: EventName = EventName::DeviceRevoked;
+}
+impl EventParams for PairResultEvent {
+    const NAME: EventName = EventName::PairResult;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EngineUpdatingDraft {
+    #[serde(rename = "generation")]
+    pub generation: u32,
+}
+impl EventParams for EngineUpdatingDraft {
+    const NAME: EventName = EventName::EngineUpdating;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EngineRestartedDraft {
+    #[serde(rename = "generation")]
+    pub generation: u32,
+}
+impl EventParams for EngineRestartedDraft {
+    const NAME: EventName = EventName::EngineRestarted;
+}
+impl EventParams for EngineReachability {
+    const NAME: EventName = EventName::EngineReachabilityChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PtydReconnectedDraft {
+    #[serde(rename = "generation")]
+    pub generation: u32,
+}
+impl EventParams for PtydReconnectedDraft {
+    const NAME: EventName = EventName::PtydReconnected;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PtydLostDraft {
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+impl EventParams for PtydLostDraft {
+    const NAME: EventName = EventName::PtydLost;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneUpdatedDraft {
+    #[serde(rename = "pane")]
+    pub pane: Pane,
+}
+impl EventParams for PaneUpdatedDraft {
+    const NAME: EventName = EventName::PaneUpdated;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SettingsChangedDraft {
+    #[serde(rename = "key")]
+    pub key: String,
+    #[serde(rename = "value")]
+    pub value: JsonValue,
+}
+impl EventParams for SettingsChangedDraft {
+    const NAME: EventName = EventName::SettingsChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneSessionStartedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "version")]
+    pub version: String,
+    #[serde(rename = "sessionId")]
+    pub session_id: Id,
+    #[serde(rename = "generation")]
+    pub generation: u32,
+    #[serde(rename = "options")]
+    pub options: Vec<ConfigOption>,
+}
+impl EventParams for PaneSessionStartedDraft {
+    const NAME: EventName = EventName::PaneSessionStarted;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneTurnEndedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "promptId")]
+    pub prompt_id: Id,
+    #[serde(rename = "stopReason")]
+    pub stop_reason: TurnStopReason,
+}
+impl EventParams for PaneTurnEndedDraft {
+    const NAME: EventName = EventName::PaneTurnEnded;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneQueuedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "n")]
+    pub n: u32,
+    #[serde(rename = "promptIds")]
+    pub prompt_ids: Vec<Id>,
+    #[serde(rename = "draft")]
+    pub draft: bool,
+}
+impl EventParams for PaneQueuedDraft {
+    const NAME: EventName = EventName::PaneQueued;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PanePermissionRequestedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "requestId")]
+    pub request_id: Id,
+    #[serde(rename = "generation")]
+    pub generation: u32,
+    #[serde(rename = "promptId")]
+    pub prompt_id: Id,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "detail")]
+    pub detail: String,
+    #[serde(rename = "presentation", skip_serializing_if = "Option::is_none")]
+    pub presentation: Option<PermissionPresentation>,
+    #[serde(rename = "options")]
+    pub options: Vec<PermissionOption>,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<PermissionRequestKind>,
+    #[serde(rename = "domain", skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+}
+impl EventParams for PanePermissionRequestedDraft {
+    const NAME: EventName = EventName::PanePermissionRequested;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PanePermissionAnsweredDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "requestId")]
+    pub request_id: Id,
+    #[serde(rename = "result")]
+    pub result: PermissionResult,
+    #[serde(rename = "optionId", skip_serializing_if = "Option::is_none")]
+    pub option_id: Option<Id>,
+    #[serde(rename = "by")]
+    pub by: DecisionBy,
+}
+impl EventParams for PanePermissionAnsweredDraft {
+    const NAME: EventName = EventName::PanePermissionAnswered;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneElicitationRequestedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "requestId")]
+    pub request_id: Id,
+    #[serde(rename = "generation")]
+    pub generation: u32,
+    #[serde(rename = "promptId")]
+    pub prompt_id: Id,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "schema")]
+    pub schema: JsonValue,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: String,
+}
+impl EventParams for PaneElicitationRequestedDraft {
+    const NAME: EventName = EventName::PaneElicitationRequested;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneElicitationAnsweredDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "requestId")]
+    pub request_id: Id,
+    #[serde(rename = "result")]
+    pub result: ElicitationResult,
+    #[serde(rename = "by")]
+    pub by: DecisionBy,
+}
+impl EventParams for PaneElicitationAnsweredDraft {
+    const NAME: EventName = EventName::PaneElicitationAnswered;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneConfigChangingDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "configId")]
+    pub config_id: Id,
+    #[serde(rename = "value")]
+    pub value: ConfigValue,
+    #[serde(rename = "operationId")]
+    pub operation_id: Id,
+}
+impl EventParams for PaneConfigChangingDraft {
+    const NAME: EventName = EventName::PaneConfigChanging;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneConfigChangedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "configId")]
+    pub config_id: Id,
+    #[serde(rename = "value")]
+    pub value: ConfigValue,
+    #[serde(rename = "options")]
+    pub options: Vec<ConfigOption>,
+    #[serde(rename = "sessionPreserved")]
+    pub session_preserved: bool,
+}
+impl EventParams for PaneConfigChangedDraft {
+    const NAME: EventName = EventName::PaneConfigChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneHarnessSwitchStartedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+}
+impl EventParams for PaneHarnessSwitchStartedDraft {
+    const NAME: EventName = EventName::PaneHarnessSwitchStarted;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneHarnessSwitchDoneDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+    #[serde(rename = "newSessionId")]
+    pub new_session_id: Id,
+    #[serde(rename = "markerSeq")]
+    pub marker_seq: Decimal,
+}
+impl EventParams for PaneHarnessSwitchDoneDraft {
+    const NAME: EventName = EventName::PaneHarnessSwitchDone;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneHarnessSwitchFailedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "fromHarness")]
+    pub from_harness: Id,
+    #[serde(rename = "toHarness")]
+    pub to_harness: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "restored")]
+    pub restored: bool,
+}
+impl EventParams for PaneHarnessSwitchFailedDraft {
+    const NAME: EventName = EventName::PaneHarnessSwitchFailed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneConfigFailedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "configId")]
+    pub config_id: Id,
+    #[serde(rename = "value")]
+    pub value: ConfigValue,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+impl EventParams for PaneConfigFailedDraft {
+    const NAME: EventName = EventName::PaneConfigFailed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneSessionLostDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "recovery")]
+    pub recovery: SessionRecovery,
+}
+impl EventParams for PaneSessionLostDraft {
+    const NAME: EventName = EventName::PaneSessionLost;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneNeedsLoginDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "authMethods")]
+    pub auth_methods: Vec<AuthMethod>,
+}
+impl EventParams for PaneNeedsLoginDraft {
+    const NAME: EventName = EventName::PaneNeedsLogin;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneAuthFinishedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "ok")]
+    pub ok: bool,
+    #[serde(rename = "reason", skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+impl EventParams for PaneAuthFinishedDraft {
+    const NAME: EventName = EventName::PaneAuthFinished;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct PaneCommandsChangedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+}
+impl EventParams for PaneCommandsChangedDraft {
+    const NAME: EventName = EventName::PaneCommandsChanged;
+}
+impl EventParams for SkillsChangedEvent {
+    const NAME: EventName = EventName::SkillsChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct AttentionChangedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "count")]
+    pub count: u32,
+    #[serde(rename = "items")]
+    pub items: Vec<AttentionItem>,
+}
+impl EventParams for AttentionChangedDraft {
+    const NAME: EventName = EventName::AttentionChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskCreatedDraft {
+    #[serde(rename = "task")]
+    pub task: Task,
+}
+impl EventParams for TaskCreatedDraft {
+    const NAME: EventName = EventName::TaskCreated;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskMovedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "actor")]
+    pub actor: String,
+    #[serde(rename = "from")]
+    pub from: TaskState,
+    #[serde(rename = "to")]
+    pub to: TaskState,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+impl EventParams for TaskMovedDraft {
+    const NAME: EventName = EventName::TaskMoved;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskClaimedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "attempt")]
+    pub attempt: u32,
+}
+impl EventParams for TaskClaimedDraft {
+    const NAME: EventName = EventName::TaskClaimed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskReleasedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+    #[serde(rename = "attempt")]
+    pub attempt: u32,
+}
+impl EventParams for TaskReleasedDraft {
+    const NAME: EventName = EventName::TaskReleased;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskCommentedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "comment")]
+    pub comment: Comment,
+}
+impl EventParams for TaskCommentedDraft {
+    const NAME: EventName = EventName::TaskCommented;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskSubitemChangedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "subitem")]
+    pub subitem: Subitem,
+}
+impl EventParams for TaskSubitemChangedDraft {
+    const NAME: EventName = EventName::TaskSubitemChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskBlockedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "kind")]
+    pub kind: BlockingKind,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+impl EventParams for TaskBlockedDraft {
+    const NAME: EventName = EventName::TaskBlocked;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskUnblockedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+impl EventParams for TaskUnblockedDraft {
+    const NAME: EventName = EventName::TaskUnblocked;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskPhraseChangedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "phrase")]
+    pub phrase: String,
+}
+impl EventParams for TaskPhraseChangedDraft {
+    const NAME: EventName = EventName::TaskPhraseChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskUpdatedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "version")]
+    pub version: u32,
+}
+impl EventParams for TaskUpdatedDraft {
+    const NAME: EventName = EventName::TaskUpdated;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct TaskAttentionDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "taskId")]
+    pub task_id: Id,
+    #[serde(rename = "n")]
+    pub n: u32,
+}
+impl EventParams for TaskAttentionDraft {
+    const NAME: EventName = EventName::TaskAttention;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct LoopTickDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "round")]
+    pub round: u32,
+    #[serde(rename = "of")]
+    pub of: u32,
+}
+impl EventParams for LoopTickDraft {
+    const NAME: EventName = EventName::LoopTick;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct LoopStoppedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: String,
+}
+impl EventParams for LoopStoppedDraft {
+    const NAME: EventName = EventName::LoopStopped;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct UsageChangedDraft {
+    #[serde(rename = "provider")]
+    pub provider: UsageProvider,
+    #[serde(rename = "state")]
+    pub state: UsageState,
+    #[serde(rename = "unavailableReason", skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<UsageUnavailableReason>,
+    #[serde(rename = "primary", skip_serializing_if = "Option::is_none")]
+    pub primary: Option<UsageWindow>,
+    #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<UsageWindow>,
+    #[serde(rename = "source")]
+    pub source: UsageSource,
+    #[serde(rename = "fetchedAt")]
+    pub fetched_at: String,
+}
+impl EventParams for UsageChangedDraft {
+    const NAME: EventName = EventName::UsageChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct FileChangedOnDiskDraft {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "diskRevision")]
+    pub disk_revision: Decimal,
+    #[serde(rename = "changedLines")]
+    pub changed_lines: Vec<u32>,
+}
+impl EventParams for FileChangedOnDiskDraft {
+    const NAME: EventName = EventName::FileChangedOnDisk;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct FileSavedDraft {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
+    #[serde(rename = "by")]
+    pub by: FileAuthor,
+}
+impl EventParams for FileSavedDraft {
+    const NAME: EventName = EventName::FileSaved;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct FileConflictDraft {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "draftRevision")]
+    pub draft_revision: Decimal,
+    #[serde(rename = "diskRevision")]
+    pub disk_revision: Decimal,
+}
+impl EventParams for FileConflictDraft {
+    const NAME: EventName = EventName::FileConflict;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct LspDiagnosticsDraft {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "items")]
+    pub items: Vec<FileDiagnostic>,
+}
+impl EventParams for LspDiagnosticsDraft {
+    const NAME: EventName = EventName::LspDiagnostics;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EditorAgentCursorDraft {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "position")]
+    pub position: TextPosition,
+}
+impl EventParams for EditorAgentCursorDraft {
+    const NAME: EventName = EventName::EditorAgentCursor;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EditorReviewRequestedDraft {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "hunks")]
+    pub hunks: Vec<DiffHunk>,
+}
+impl EventParams for EditorReviewRequestedDraft {
+    const NAME: EventName = EventName::EditorReviewRequested;
+}
+impl EventParams for ProjectTreeChangedEvent {
+    const NAME: EventName = EventName::ProjectTreeChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ProjectEntryRenamedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "from")]
+    pub from: String,
+    #[serde(rename = "to")]
+    pub to: String,
+    #[serde(rename = "files")]
+    pub files: Vec<FileDocument>,
+}
+impl EventParams for ProjectEntryRenamedDraft {
+    const NAME: EventName = EventName::ProjectEntryRenamed;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct EditorTabsUpdatedDraft {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "tabs")]
+    pub tabs: Vec<EditorTab>,
+}
+impl EventParams for EditorTabsUpdatedDraft {
+    const NAME: EventName = EventName::EditorTabsUpdated;
+}
+impl EventParams for ServersLocalChangedEvent {
+    const NAME: EventName = EventName::ServersLocalChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WebNavigatedDraft {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "navigationGeneration")]
+    pub navigation_generation: Decimal,
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "title")]
+    pub title: String,
+}
+impl EventParams for WebNavigatedDraft {
+    const NAME: EventName = EventName::WebNavigated;
+}
+impl EventParams for WebConsoleCountsEvent {
+    const NAME: EventName = EventName::WebConsoleCounts;
+}
+impl EventParams for WebAgentDrivingEvent {
+    const NAME: EventName = EventName::WebAgentDriving;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct WritingChangedDraft {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+    #[serde(rename = "sidecarRevision")]
+    pub sidecar_revision: Decimal,
+}
+impl EventParams for WritingChangedDraft {
+    const NAME: EventName = EventName::WritingChanged;
+}
 pub mod method {
     pub const HELLO: &str = "hello";
     pub const STATE_SNAPSHOT: &str = "state.snapshot";

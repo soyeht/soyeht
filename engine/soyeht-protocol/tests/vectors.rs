@@ -1,15 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::*;
 
-fn roundtrip<T: Serialize + DeserializeOwned>(value: Value) -> Value {
-    serde_json::to_value(serde_json::from_value::<T>(value).expect("decode typed value"))
-        .expect("encode typed value")
+fn dispatch(name: &str, value: Value) -> Value {
+    soyeht_protocol::contract::roundtrip(name, &value).expect("round trip a typed value")
 }
-
-include!("support/dispatch.rs");
 
 #[test]
 fn rejects_invalid_types_and_preserves_forward_compatibility() {

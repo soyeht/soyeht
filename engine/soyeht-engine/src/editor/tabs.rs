@@ -37,7 +37,7 @@ pub(crate) struct EditorPaneOpening<'a> {
     pub file: EditorFile,
     pub syntax: soyeht_editor::SyntaxDocument,
     pub reply: Value,
-    pub created_event: Value,
+    pub created_event: (String, Value),
     pub version: Option<StoredFileVersion>,
     pub preview: bool,
 }
@@ -110,7 +110,7 @@ impl Core {
                 if let Some(version) = &opening.version {
                     change.record_file_version(version)?;
                 }
-                let mut events = vec![(event::PANE_CREATED.into(), opening.created_event.clone())];
+                let mut events = vec![opening.created_event.clone()];
                 if let Some(replaced) = &replaced {
                     persist_pane(change, &replaced.saved)?;
                     if let Some(workspace) = &replaced.layout {

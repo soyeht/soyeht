@@ -1,7 +1,7 @@
 use crate::{
     errors::{self, Error, Result},
     hooks::{Hooks, NoHooks},
-    model::{self, Connected, RunningPane, StoredPane},
+    model::{self, Connected, RunningPane, StoredPane, Waiter},
     offload::SharedPort,
     ports::{Clock, StorePort, SupervisorPort, SystemClock, call_supervisor},
     screen::Screen,
@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_platform::log::{self, Line};
 use soyeht_protocol::{
-    PaneState, StateSource, event,
+    PaneState, PaneStateChangedDraft, StateSource, event,
     profile::{DEV_PTYD_SOCKET, DEV_TCP_PORT},
 };
 use soyeht_ptyd::{
@@ -61,8 +61,8 @@ pub struct Core {
         BTreeMap<String, crate::terminal_harness::TerminalHarnessSession>,
     pub agents: BTreeMap<String, crate::agents::Running>,
     pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
-    pub native_waiters: BTreeMap<(String, String), Vec<(String, Value)>>,
-    pub language_waiters: BTreeMap<String, Vec<(String, Value)>>,
+    pub native_waiters: BTreeMap<(String, String), Vec<Waiter>>,
+    pub language_waiters: BTreeMap<String, Vec<Waiter>>,
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
@@ -264,6 +264,10 @@ impl Core {
     }
 
     pub fn publish(&self, events: &[Event]) -> Result<()> {
+        // Checked for every event, whether or not a client is subscribed to hear it.
+        for event in events {
+            model::check_event(&event.method, &event.params)?;
+        }
         self.notify_push(events);
         for client in self
             .clients
@@ -591,7 +595,8 @@ impl Core {
     }
 
     pub fn save_runtime(&mut self, id: &str, saved: StoredPane) -> Result<()> {
-        let event = state_event(&saved);
+        let state_changed = state_event(&saved)?;
+        let updated = model::pane_updated(&saved.pane)?;
         let change = StorePort::mutate(
             &mut self.store,
             "engine",
@@ -599,13 +604,7 @@ impl Core {
             "runtime",
             |tx| {
                 write_pane(tx, &saved)?;
-                Ok((
-                    json!({}),
-                    vec![
-                        (event::PANE_STATE_CHANGED.into(), event),
-                        (event::PANE_UPDATED.into(), json!({"pane": saved.pane})),
-                    ],
-                ))
+                Ok((json!({}), vec![state_changed, updated]))
             },
         )
         .map_err(errors::storage)?;
@@ -766,6 +765,12 @@ pub fn persist_pane(tx: &Change<'_>, saved: &StoredPane) -> soyeht_store::databa
     }
     Ok(())
 }
-pub fn state_event(saved: &StoredPane) -> Value {
-    json!({"paneId":saved.pane.pane_id,"state":saved.pane.state,"source":saved.pane.source,"confidence":saved.pane.confidence,"phrase":saved.pane.phrase,"generation":saved.pane.generation})
+pub fn state_event(saved: &StoredPane) -> Result<(String, Value)> {
+    model::pending(&PaneStateChangedDraft {
+        pane_id: saved.pane.pane_id.clone(),
+        state: saved.pane.state.clone(),
+        source: saved.pane.source.clone(),
+        confidence: saved.pane.confidence,
+        phrase: saved.pane.phrase.clone(),
+    })
 }

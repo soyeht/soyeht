@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4215ca4da68a5c1aac0c2c6e622a61375a04c6157e0a895566c3946275077d19). Do not edit.
+// Generated from contracts/protocol.json (sha256 0fae169dadd6d5c6bf76481a29509c3f62e9018799bfb9a7817b97bca607da72). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -526,12 +526,14 @@ export interface StateSnapshotPartEvent {
 export interface WorkspaceCreatedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspace": Workspace;
 }
 
 export interface WorkspaceRenamedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspace": Workspace;
 }
 
@@ -545,12 +547,14 @@ export interface WorkspaceLayoutUpdatedEvent {
 export interface WorkspaceClosedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
 }
 
 export interface PaneCreatedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "pane": Pane;
   "file"?: FileDocument;
   "writingDocument"?: WritingDocument;
@@ -559,12 +563,14 @@ export interface PaneCreatedEvent {
 export interface PaneRenamedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "pane": Pane;
 }
 
 export interface PaneClosedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "workspaceId": Id;
 }
@@ -572,6 +578,7 @@ export interface PaneClosedEvent {
 export interface PaneStateChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "state": PaneState;
   "confidence": number;
@@ -601,6 +608,7 @@ export interface StreamGapEvent {
 export interface DevicePairRequestedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "requestId": Id;
   "deviceName": string;
   "fingerprint": string;
@@ -609,12 +617,14 @@ export interface DevicePairRequestedEvent {
 export interface DevicePairedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "device": Device;
 }
 
 export interface DeviceRevokedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "deviceId": Id;
 }
 
@@ -629,24 +639,28 @@ export interface PairResultEvent {
 export interface EngineUpdatingEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "generation": number;
 }
 
 export interface EngineRestartedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "generation": number;
 }
 
 export interface PtydReconnectedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "generation": number;
 }
 
 export interface PtydLostEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "reason": string;
 }
 
@@ -690,12 +704,14 @@ export interface ErrorEnvelope {
 export interface PaneUpdatedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "pane": Pane;
 }
 
 export interface SettingsChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "key": string;
   "value": JsonValue;
 }
@@ -903,6 +919,7 @@ export interface PaneCommandsListResult {
 export interface PaneCommandsChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
 }
 
@@ -1228,6 +1245,7 @@ export interface PaneHarnessSwitchResult {
 export interface PaneHarnessSwitchStartedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "fromHarness": Id;
   "toHarness": Id;
@@ -1236,6 +1254,7 @@ export interface PaneHarnessSwitchStartedEvent {
 export interface PaneHarnessSwitchDoneEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "fromHarness": Id;
   "toHarness": Id;
@@ -1246,6 +1265,7 @@ export interface PaneHarnessSwitchDoneEvent {
 export interface PaneHarnessSwitchFailedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "fromHarness": Id;
   "toHarness": Id;
@@ -1364,6 +1384,7 @@ export interface ModelListResult {
 export interface PaneSessionStartedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "harness": Id;
   "version": string;
@@ -1375,6 +1396,7 @@ export interface PaneSessionStartedEvent {
 export interface PaneTurnEndedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "promptId": Id;
   "stopReason": TurnStopReason;
@@ -1383,6 +1405,7 @@ export interface PaneTurnEndedEvent {
 export interface PaneQueuedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "n": number;
   "promptIds": Array<Id>;
@@ -1392,6 +1415,7 @@ export interface PaneQueuedEvent {
 export interface PanePermissionRequestedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "requestId": Id;
   "generation": number;
@@ -1408,6 +1432,7 @@ export interface PanePermissionRequestedEvent {
 export interface PanePermissionAnsweredEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "requestId": Id;
   "result": PermissionResult;
@@ -1418,6 +1443,7 @@ export interface PanePermissionAnsweredEvent {
 export interface PaneElicitationRequestedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "requestId": Id;
   "generation": number;
@@ -1430,6 +1456,7 @@ export interface PaneElicitationRequestedEvent {
 export interface PaneElicitationAnsweredEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "requestId": Id;
   "result": ElicitationResult;
@@ -1439,6 +1466,7 @@ export interface PaneElicitationAnsweredEvent {
 export interface PaneConfigChangingEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "configId": Id;
   "value": ConfigValue;
@@ -1448,6 +1476,7 @@ export interface PaneConfigChangingEvent {
 export interface PaneConfigChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "configId": Id;
   "value": ConfigValue;
@@ -1458,6 +1487,7 @@ export interface PaneConfigChangedEvent {
 export interface PaneConfigFailedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "configId": Id;
   "value": ConfigValue;
@@ -1467,6 +1497,7 @@ export interface PaneConfigFailedEvent {
 export interface PaneSessionLostEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "reason": string;
   "recovery": SessionRecovery;
@@ -1475,6 +1506,7 @@ export interface PaneSessionLostEvent {
 export interface PaneNeedsLoginEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "harness": Id;
   "authMethods": Array<AuthMethod>;
@@ -1483,6 +1515,7 @@ export interface PaneNeedsLoginEvent {
 export interface PaneAuthFinishedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "ok": boolean;
   "reason"?: string;
@@ -1601,6 +1634,7 @@ export interface TerminalOutputUpdate {
   "bytes": ByteString;
   "offset": Decimal;
   "truncated": boolean;
+  "exitCode"?: number;
 }
 
 export type ConfigOptionUpdateKind = "config_option_update";
@@ -1629,6 +1663,7 @@ export interface AttentionItem {
 export interface AttentionChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "count": number;
   "items": Array<AttentionItem>;
@@ -1657,6 +1692,7 @@ export interface PaneQueueResumeResult {
 export interface PaneQueueStateEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "paused": boolean;
   "reason"?: string;
@@ -2052,6 +2088,7 @@ export interface LoopSetResult {
 export interface TaskCreatedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "task": Task;
 }
 
@@ -2069,6 +2106,7 @@ export interface TaskMovedEvent {
 export interface TaskClaimedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "paneId": Id;
@@ -2078,6 +2116,7 @@ export interface TaskClaimedEvent {
 export interface TaskReleasedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "reason": string;
@@ -2087,6 +2126,7 @@ export interface TaskReleasedEvent {
 export interface TaskCommentedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "comment": Comment;
@@ -2095,6 +2135,7 @@ export interface TaskCommentedEvent {
 export interface TaskSubitemChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "subitem": Subitem;
@@ -2103,6 +2144,7 @@ export interface TaskSubitemChangedEvent {
 export interface TaskBlockedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "kind": BlockingKind;
@@ -2112,6 +2154,7 @@ export interface TaskBlockedEvent {
 export interface TaskUnblockedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "reason": string;
@@ -2120,6 +2163,7 @@ export interface TaskUnblockedEvent {
 export interface TaskPhraseChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "phrase": string;
@@ -2128,6 +2172,7 @@ export interface TaskPhraseChangedEvent {
 export interface TaskUpdatedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "version": number;
@@ -2136,6 +2181,7 @@ export interface TaskUpdatedEvent {
 export interface TaskAttentionEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "taskId": Id;
   "n": number;
@@ -2144,6 +2190,7 @@ export interface TaskAttentionEvent {
 export interface LoopTickEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "round": number;
   "of": number;
@@ -2152,6 +2199,7 @@ export interface LoopTickEvent {
 export interface LoopStoppedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "reason": string;
 }
@@ -2211,6 +2259,7 @@ export interface UsageRefreshResult {
 export interface UsageChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "provider": UsageProvider;
   "state": UsageState;
   "unavailableReason"?: UsageUnavailableReason;
@@ -2449,6 +2498,7 @@ export interface ProjectEntryRenameResult {
 export interface ProjectEntryRenamedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "from": string;
   "to": string;
@@ -2497,6 +2547,7 @@ export interface EditorTabsMoveParams {
 export interface EditorTabsUpdatedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "workspaceId": Id;
   "tabs": Array<EditorTab>;
 }
@@ -2713,6 +2764,7 @@ export interface LspStatusResult {
 export interface FileChangedOnDiskEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "fileId": Id;
   "diskRevision": Decimal;
   "changedLines": Array<number>;
@@ -2721,6 +2773,7 @@ export interface FileChangedOnDiskEvent {
 export interface FileSavedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "file": FileDocument;
   "by": FileAuthor;
 }
@@ -2728,6 +2781,7 @@ export interface FileSavedEvent {
 export interface FileConflictEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "fileId": Id;
   "baseRevision": Decimal;
   "draftRevision": Decimal;
@@ -2737,6 +2791,7 @@ export interface FileConflictEvent {
 export interface LspDiagnosticsEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "fileId": Id;
   "revision": Decimal;
   "items": Array<FileDiagnostic>;
@@ -2745,6 +2800,7 @@ export interface LspDiagnosticsEvent {
 export interface EditorAgentCursorEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "fileId": Id;
   "paneId": Id;
   "name": string;
@@ -2754,6 +2810,7 @@ export interface EditorAgentCursorEvent {
 export interface EditorReviewRequestedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "fileId": Id;
   "revision": Decimal;
   "paneId": Id;
@@ -3081,6 +3138,7 @@ export interface WebHostConsoleCountsResult {
 export interface WebNavigatedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "navigationGeneration": Decimal;
   "url": string;
@@ -3361,6 +3419,7 @@ export interface WritingBeatResult {
 export interface WritingChangedEvent {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "fileId": Id;
   "paneId": Id;
   "revision": Decimal;

@@ -2,6 +2,8 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod client_policy;
+#[cfg(feature = "contract-checks")]
+pub mod contract;
 mod generated;
 pub mod limits;
 pub use generated::*;

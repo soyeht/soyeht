@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 4215ca4da68a5c1aac0c2c6e622a61375a04c6157e0a895566c3946275077d19). Do not edit.
+// Generated from contracts/protocol.json (sha256 0fae169dadd6d5c6bf76481a29509c3f62e9018799bfb9a7817b97bca607da72). Do not edit.
 import Foundation
 
 
@@ -1069,10 +1069,12 @@ public struct StateSnapshotPartEvent: Codable, Sendable {
 public struct WorkspaceCreatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspace`: Workspace
-    public init(`eventId`: Decimal, `at`: String, `workspace`: Workspace) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspace`: Workspace) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspace` = `workspace`
     }
 }
@@ -1080,10 +1082,12 @@ public struct WorkspaceCreatedEvent: Codable, Sendable {
 public struct WorkspaceRenamedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspace`: Workspace
-    public init(`eventId`: Decimal, `at`: String, `workspace`: Workspace) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspace`: Workspace) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspace` = `workspace`
     }
 }
@@ -1104,10 +1108,12 @@ public struct WorkspaceLayoutUpdatedEvent: Codable, Sendable {
 public struct WorkspaceClosedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
     }
 }
@@ -1115,12 +1121,14 @@ public struct WorkspaceClosedEvent: Codable, Sendable {
 public struct PaneCreatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `pane`: Pane
     public var `file`: FileDocument?
     public var `writingDocument`: WritingDocument?
-    public init(`eventId`: Decimal, `at`: String, `pane`: Pane, `file`: FileDocument? = nil, `writingDocument`: WritingDocument? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `pane`: Pane, `file`: FileDocument? = nil, `writingDocument`: WritingDocument? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`pane` = `pane`
         self.`file` = `file`
         self.`writingDocument` = `writingDocument`
@@ -1130,10 +1138,12 @@ public struct PaneCreatedEvent: Codable, Sendable {
 public struct PaneRenamedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `pane`: Pane
-    public init(`eventId`: Decimal, `at`: String, `pane`: Pane) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `pane`: Pane) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`pane` = `pane`
     }
 }
@@ -1141,11 +1151,13 @@ public struct PaneRenamedEvent: Codable, Sendable {
 public struct PaneClosedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `workspaceId`: Id
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `workspaceId`: Id) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `workspaceId`: Id) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`workspaceId` = `workspaceId`
     }
@@ -1154,14 +1166,16 @@ public struct PaneClosedEvent: Codable, Sendable {
 public struct PaneStateChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `state`: PaneState
     public var `confidence`: Double
     public var `phrase`: String
     public var `source`: StateSource
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `state`: PaneState, `confidence`: Double, `phrase`: String, `source`: StateSource) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `state`: PaneState, `confidence`: Double, `phrase`: String, `source`: StateSource) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`state` = `state`
         self.`confidence` = `confidence`
@@ -1208,12 +1222,14 @@ public struct StreamGapEvent: Codable, Sendable {
 public struct DevicePairRequestedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `requestId`: Id
     public var `deviceName`: String
     public var `fingerprint`: String
-    public init(`eventId`: Decimal, `at`: String, `requestId`: Id, `deviceName`: String, `fingerprint`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `requestId`: Id, `deviceName`: String, `fingerprint`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`requestId` = `requestId`
         self.`deviceName` = `deviceName`
         self.`fingerprint` = `fingerprint`
@@ -1223,10 +1239,12 @@ public struct DevicePairRequestedEvent: Codable, Sendable {
 public struct DevicePairedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `device`: Device
-    public init(`eventId`: Decimal, `at`: String, `device`: Device) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `device`: Device) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`device` = `device`
     }
 }
@@ -1234,10 +1252,12 @@ public struct DevicePairedEvent: Codable, Sendable {
 public struct DeviceRevokedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `deviceId`: Id
-    public init(`eventId`: Decimal, `at`: String, `deviceId`: Id) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `deviceId`: Id) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`deviceId` = `deviceId`
     }
 }
@@ -1260,10 +1280,12 @@ public struct PairResultEvent: Codable, Sendable {
 public struct EngineUpdatingEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `generation`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `generation`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `generation`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`generation` = `generation`
     }
 }
@@ -1271,10 +1293,12 @@ public struct EngineUpdatingEvent: Codable, Sendable {
 public struct EngineRestartedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `generation`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `generation`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `generation`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`generation` = `generation`
     }
 }
@@ -1282,10 +1306,12 @@ public struct EngineRestartedEvent: Codable, Sendable {
 public struct PtydReconnectedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `generation`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `generation`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `generation`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`generation` = `generation`
     }
 }
@@ -1293,10 +1319,12 @@ public struct PtydReconnectedEvent: Codable, Sendable {
 public struct PtydLostEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `reason`: String
-    public init(`eventId`: Decimal, `at`: String, `reason`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `reason`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`reason` = `reason`
     }
 }
@@ -1385,10 +1413,12 @@ public struct ErrorEnvelope: Codable, Sendable {
 public struct PaneUpdatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `pane`: Pane
-    public init(`eventId`: Decimal, `at`: String, `pane`: Pane) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `pane`: Pane) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`pane` = `pane`
     }
 }
@@ -1396,11 +1426,13 @@ public struct PaneUpdatedEvent: Codable, Sendable {
 public struct SettingsChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `key`: String
     public var `value`: JsonValue
-    public init(`eventId`: Decimal, `at`: String, `key`: String, `value`: JsonValue) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `key`: String, `value`: JsonValue) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`key` = `key`
         self.`value` = `value`
     }
@@ -1839,10 +1871,12 @@ public struct PaneCommandsListResult: Codable, Sendable {
 public struct PaneCommandsChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
     }
 }
@@ -2451,12 +2485,14 @@ public struct PaneHarnessSwitchResult: Codable, Sendable {
 public struct PaneHarnessSwitchStartedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `fromHarness`: Id
     public var `toHarness`: Id
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`fromHarness` = `fromHarness`
         self.`toHarness` = `toHarness`
@@ -2466,14 +2502,16 @@ public struct PaneHarnessSwitchStartedEvent: Codable, Sendable {
 public struct PaneHarnessSwitchDoneEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `fromHarness`: Id
     public var `toHarness`: Id
     public var `newSessionId`: Id
     public var `markerSeq`: Decimal
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id, `newSessionId`: Id, `markerSeq`: Decimal) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id, `newSessionId`: Id, `markerSeq`: Decimal) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`fromHarness` = `fromHarness`
         self.`toHarness` = `toHarness`
@@ -2485,14 +2523,16 @@ public struct PaneHarnessSwitchDoneEvent: Codable, Sendable {
 public struct PaneHarnessSwitchFailedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `fromHarness`: Id
     public var `toHarness`: Id
     public var `reason`: String
     public var `restored`: Bool
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id, `reason`: String, `restored`: Bool) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `fromHarness`: Id, `toHarness`: Id, `reason`: String, `restored`: Bool) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`fromHarness` = `fromHarness`
         self.`toHarness` = `toHarness`
@@ -2699,15 +2739,17 @@ public struct ModelListResult: Codable, Sendable {
 public struct PaneSessionStartedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `harness`: Id
     public var `version`: String
     public var `sessionId`: Id
     public var `generation`: UInt32
     public var `options`: [ConfigOption]
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `harness`: Id, `version`: String, `sessionId`: Id, `generation`: UInt32, `options`: [ConfigOption]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `harness`: Id, `version`: String, `sessionId`: Id, `generation`: UInt32, `options`: [ConfigOption]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`harness` = `harness`
         self.`version` = `version`
@@ -2720,12 +2762,14 @@ public struct PaneSessionStartedEvent: Codable, Sendable {
 public struct PaneTurnEndedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `promptId`: Id
     public var `stopReason`: TurnStopReason
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `promptId`: Id, `stopReason`: TurnStopReason) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `promptId`: Id, `stopReason`: TurnStopReason) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`promptId` = `promptId`
         self.`stopReason` = `stopReason`
@@ -2735,13 +2779,15 @@ public struct PaneTurnEndedEvent: Codable, Sendable {
 public struct PaneQueuedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `n`: UInt32
     public var `promptIds`: [Id]
     public var `draft`: Bool
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `n`: UInt32, `promptIds`: [Id], `draft`: Bool) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `n`: UInt32, `promptIds`: [Id], `draft`: Bool) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`n` = `n`
         self.`promptIds` = `promptIds`
@@ -2752,6 +2798,7 @@ public struct PaneQueuedEvent: Codable, Sendable {
 public struct PanePermissionRequestedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `requestId`: Id
     public var `generation`: UInt32
@@ -2763,9 +2810,10 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
     public var `expiresAt`: String
     public var `kind`: PermissionRequestKind?
     public var `domain`: String?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `detail`: String, `presentation`: PermissionPresentation? = nil, `options`: [PermissionOption], `expiresAt`: String, `kind`: PermissionRequestKind? = nil, `domain`: String? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`requestId` = `requestId`
         self.`generation` = `generation`
@@ -2783,14 +2831,16 @@ public struct PanePermissionRequestedEvent: Codable, Sendable {
 public struct PanePermissionAnsweredEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `requestId`: Id
     public var `result`: PermissionResult
     public var `optionId`: Id?
     public var `by`: DecisionBy
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `result`: PermissionResult, `optionId`: Id? = nil, `by`: DecisionBy) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `requestId`: Id, `result`: PermissionResult, `optionId`: Id? = nil, `by`: DecisionBy) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`requestId` = `requestId`
         self.`result` = `result`
@@ -2802,6 +2852,7 @@ public struct PanePermissionAnsweredEvent: Codable, Sendable {
 public struct PaneElicitationRequestedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `requestId`: Id
     public var `generation`: UInt32
@@ -2809,9 +2860,10 @@ public struct PaneElicitationRequestedEvent: Codable, Sendable {
     public var `title`: String
     public var `schema`: JsonValue
     public var `expiresAt`: String
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `schema`: JsonValue, `expiresAt`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `requestId`: Id, `generation`: UInt32, `promptId`: Id, `title`: String, `schema`: JsonValue, `expiresAt`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`requestId` = `requestId`
         self.`generation` = `generation`
@@ -2825,13 +2877,15 @@ public struct PaneElicitationRequestedEvent: Codable, Sendable {
 public struct PaneElicitationAnsweredEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `requestId`: Id
     public var `result`: ElicitationResult
     public var `by`: DecisionBy
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `requestId`: Id, `result`: ElicitationResult, `by`: DecisionBy) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `requestId`: Id, `result`: ElicitationResult, `by`: DecisionBy) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`requestId` = `requestId`
         self.`result` = `result`
@@ -2842,13 +2896,15 @@ public struct PaneElicitationAnsweredEvent: Codable, Sendable {
 public struct PaneConfigChangingEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `configId`: Id
     public var `value`: ConfigValue
     public var `operationId`: Id
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `configId`: Id, `value`: ConfigValue, `operationId`: Id) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `configId`: Id, `value`: ConfigValue, `operationId`: Id) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`configId` = `configId`
         self.`value` = `value`
@@ -2859,14 +2915,16 @@ public struct PaneConfigChangingEvent: Codable, Sendable {
 public struct PaneConfigChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `configId`: Id
     public var `value`: ConfigValue
     public var `options`: [ConfigOption]
     public var `sessionPreserved`: Bool
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `configId`: Id, `value`: ConfigValue, `options`: [ConfigOption], `sessionPreserved`: Bool) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `configId`: Id, `value`: ConfigValue, `options`: [ConfigOption], `sessionPreserved`: Bool) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`configId` = `configId`
         self.`value` = `value`
@@ -2878,13 +2936,15 @@ public struct PaneConfigChangedEvent: Codable, Sendable {
 public struct PaneConfigFailedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `configId`: Id
     public var `value`: ConfigValue
     public var `reason`: String
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `configId`: Id, `value`: ConfigValue, `reason`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `configId`: Id, `value`: ConfigValue, `reason`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`configId` = `configId`
         self.`value` = `value`
@@ -2895,12 +2955,14 @@ public struct PaneConfigFailedEvent: Codable, Sendable {
 public struct PaneSessionLostEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `reason`: String
     public var `recovery`: SessionRecovery
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `reason`: String, `recovery`: SessionRecovery) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `reason`: String, `recovery`: SessionRecovery) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`reason` = `reason`
         self.`recovery` = `recovery`
@@ -2910,12 +2972,14 @@ public struct PaneSessionLostEvent: Codable, Sendable {
 public struct PaneNeedsLoginEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `harness`: Id
     public var `authMethods`: [AuthMethod]
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `harness`: Id, `authMethods`: [AuthMethod]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `harness`: Id, `authMethods`: [AuthMethod]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`harness` = `harness`
         self.`authMethods` = `authMethods`
@@ -2925,12 +2989,14 @@ public struct PaneNeedsLoginEvent: Codable, Sendable {
 public struct PaneAuthFinishedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `ok`: Bool
     public var `reason`: String?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `ok`: Bool, `reason`: String? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `ok`: Bool, `reason`: String? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`ok` = `ok`
         self.`reason` = `reason`
@@ -3145,7 +3211,8 @@ public struct TerminalOutputUpdate: Codable, Sendable {
     public var `bytes`: ByteString
     public var `offset`: Decimal
     public var `truncated`: Bool
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: TerminalOutputUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `terminalId`: Id, `bytes`: ByteString, `offset`: Decimal, `truncated`: Bool) {
+    public var `exitCode`: Int64?
+    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: TerminalOutputUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `terminalId`: Id, `bytes`: ByteString, `offset`: Decimal, `truncated`: Bool, `exitCode`: Int64? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`paneId` = `paneId`
@@ -3157,6 +3224,7 @@ public struct TerminalOutputUpdate: Codable, Sendable {
         self.`bytes` = `bytes`
         self.`offset` = `offset`
         self.`truncated` = `truncated`
+        self.`exitCode` = `exitCode`
     }
 }
 
@@ -3242,12 +3310,14 @@ public struct AttentionItem: Codable, Sendable {
 public struct AttentionChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `count`: UInt32
     public var `items`: [AttentionItem]
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `count`: UInt32, `items`: [AttentionItem]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `count`: UInt32, `items`: [AttentionItem]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`count` = `count`
         self.`items` = `items`
@@ -3299,12 +3369,14 @@ public struct PaneQueueResumeResult: Codable, Sendable {
 public struct PaneQueueStateEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `paused`: Bool
     public var `reason`: String?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `paused`: Bool, `reason`: String? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `paused`: Bool, `reason`: String? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`paused` = `paused`
         self.`reason` = `reason`
@@ -4072,10 +4144,12 @@ public struct LoopSetResult: Codable, Sendable {
 public struct TaskCreatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `task`: TaskRecord
-    public init(`eventId`: Decimal, `at`: String, `task`: TaskRecord) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `task`: TaskRecord) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`task` = `task`
     }
 }
@@ -4104,13 +4178,15 @@ public struct TaskMovedEvent: Codable, Sendable {
 public struct TaskClaimedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `paneId`: Id
     public var `attempt`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `paneId`: Id, `attempt`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `paneId`: Id, `attempt`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`paneId` = `paneId`
@@ -4121,13 +4197,15 @@ public struct TaskClaimedEvent: Codable, Sendable {
 public struct TaskReleasedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `reason`: String
     public var `attempt`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `reason`: String, `attempt`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `reason`: String, `attempt`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`reason` = `reason`
@@ -4138,12 +4216,14 @@ public struct TaskReleasedEvent: Codable, Sendable {
 public struct TaskCommentedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `comment`: Comment
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `comment`: Comment) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `comment`: Comment) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`comment` = `comment`
@@ -4153,12 +4233,14 @@ public struct TaskCommentedEvent: Codable, Sendable {
 public struct TaskSubitemChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `subitem`: Subitem
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `subitem`: Subitem) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `subitem`: Subitem) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`subitem` = `subitem`
@@ -4168,13 +4250,15 @@ public struct TaskSubitemChangedEvent: Codable, Sendable {
 public struct TaskBlockedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `kind`: BlockingKind
     public var `reason`: String
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `kind`: BlockingKind, `reason`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `kind`: BlockingKind, `reason`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`kind` = `kind`
@@ -4185,12 +4269,14 @@ public struct TaskBlockedEvent: Codable, Sendable {
 public struct TaskUnblockedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `reason`: String
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `reason`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `reason`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`reason` = `reason`
@@ -4200,12 +4286,14 @@ public struct TaskUnblockedEvent: Codable, Sendable {
 public struct TaskPhraseChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `phrase`: String
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `phrase`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `phrase`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`phrase` = `phrase`
@@ -4215,12 +4303,14 @@ public struct TaskPhraseChangedEvent: Codable, Sendable {
 public struct TaskUpdatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `version`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `version`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `version`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`version` = `version`
@@ -4230,12 +4320,14 @@ public struct TaskUpdatedEvent: Codable, Sendable {
 public struct TaskAttentionEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `taskId`: Id
     public var `n`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `taskId`: Id, `n`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `taskId`: Id, `n`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`taskId` = `taskId`
         self.`n` = `n`
@@ -4245,12 +4337,14 @@ public struct TaskAttentionEvent: Codable, Sendable {
 public struct LoopTickEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `round`: UInt32
     public var `of`: UInt32
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `round`: UInt32, `of`: UInt32) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `round`: UInt32, `of`: UInt32) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`round` = `round`
         self.`of` = `of`
@@ -4260,11 +4354,13 @@ public struct LoopTickEvent: Codable, Sendable {
 public struct LoopStoppedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `reason`: String
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `reason`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `reason`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`reason` = `reason`
     }
@@ -4393,6 +4489,7 @@ public struct UsageRefreshResult: Codable, Sendable {
 public struct UsageChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `provider`: UsageProvider
     public var `state`: UsageState
     public var `unavailableReason`: UsageUnavailableReason?
@@ -4400,9 +4497,10 @@ public struct UsageChangedEvent: Codable, Sendable {
     public var `secondary`: UsageWindow?
     public var `source`: UsageSource
     public var `fetchedAt`: String
-    public init(`eventId`: Decimal, `at`: String, `provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`provider` = `provider`
         self.`state` = `state`
         self.`unavailableReason` = `unavailableReason`
@@ -4871,13 +4969,15 @@ public struct ProjectEntryRenameResult: Codable, Sendable {
 public struct ProjectEntryRenamedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `from`: String
     public var `to`: String
     public var `files`: [FileDocument]
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `from`: String, `to`: String, `files`: [FileDocument]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `from`: String, `to`: String, `files`: [FileDocument]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`from` = `from`
         self.`to` = `to`
@@ -4962,11 +5062,13 @@ public struct EditorTabsMoveParams: Codable, Sendable {
 public struct EditorTabsUpdatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `workspaceId`: Id
     public var `tabs`: [EditorTab]
-    public init(`eventId`: Decimal, `at`: String, `workspaceId`: Id, `tabs`: [EditorTab]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceId`: Id, `tabs`: [EditorTab]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`workspaceId` = `workspaceId`
         self.`tabs` = `tabs`
     }
@@ -5361,12 +5463,14 @@ public struct LspStatusResult: Codable, Sendable {
 public struct FileChangedOnDiskEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `fileId`: Id
     public var `diskRevision`: Decimal
     public var `changedLines`: [UInt32]
-    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `diskRevision`: Decimal, `changedLines`: [UInt32]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `fileId`: Id, `diskRevision`: Decimal, `changedLines`: [UInt32]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`fileId` = `fileId`
         self.`diskRevision` = `diskRevision`
         self.`changedLines` = `changedLines`
@@ -5376,11 +5480,13 @@ public struct FileChangedOnDiskEvent: Codable, Sendable {
 public struct FileSavedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `file`: FileDocument
     public var `by`: FileAuthor
-    public init(`eventId`: Decimal, `at`: String, `file`: FileDocument, `by`: FileAuthor) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `file`: FileDocument, `by`: FileAuthor) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`file` = `file`
         self.`by` = `by`
     }
@@ -5389,13 +5495,15 @@ public struct FileSavedEvent: Codable, Sendable {
 public struct FileConflictEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `fileId`: Id
     public var `baseRevision`: Decimal
     public var `draftRevision`: Decimal
     public var `diskRevision`: Decimal
-    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `baseRevision`: Decimal, `draftRevision`: Decimal, `diskRevision`: Decimal) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `fileId`: Id, `baseRevision`: Decimal, `draftRevision`: Decimal, `diskRevision`: Decimal) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`fileId` = `fileId`
         self.`baseRevision` = `baseRevision`
         self.`draftRevision` = `draftRevision`
@@ -5406,12 +5514,14 @@ public struct FileConflictEvent: Codable, Sendable {
 public struct LspDiagnosticsEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `fileId`: Id
     public var `revision`: Decimal
     public var `items`: [FileDiagnostic]
-    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `revision`: Decimal, `items`: [FileDiagnostic]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `fileId`: Id, `revision`: Decimal, `items`: [FileDiagnostic]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`fileId` = `fileId`
         self.`revision` = `revision`
         self.`items` = `items`
@@ -5421,13 +5531,15 @@ public struct LspDiagnosticsEvent: Codable, Sendable {
 public struct EditorAgentCursorEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `fileId`: Id
     public var `paneId`: Id
     public var `name`: String
     public var `position`: TextPosition
-    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `paneId`: Id, `name`: String, `position`: TextPosition) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `fileId`: Id, `paneId`: Id, `name`: String, `position`: TextPosition) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`fileId` = `fileId`
         self.`paneId` = `paneId`
         self.`name` = `name`
@@ -5438,13 +5550,15 @@ public struct EditorAgentCursorEvent: Codable, Sendable {
 public struct EditorReviewRequestedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `fileId`: Id
     public var `revision`: Decimal
     public var `paneId`: Id
     public var `hunks`: [DiffHunk]
-    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `revision`: Decimal, `paneId`: Id, `hunks`: [DiffHunk]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `fileId`: Id, `revision`: Decimal, `paneId`: Id, `hunks`: [DiffHunk]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`fileId` = `fileId`
         self.`revision` = `revision`
         self.`paneId` = `paneId`
@@ -6072,13 +6186,15 @@ public struct WebHostConsoleCountsResult: Codable, Sendable {
 public struct WebNavigatedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `navigationGeneration`: Decimal
     public var `url`: String
     public var `title`: String
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `navigationGeneration`: Decimal, `url`: String, `title`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `navigationGeneration`: Decimal, `url`: String, `title`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`navigationGeneration` = `navigationGeneration`
         self.`url` = `url`
@@ -6621,13 +6737,15 @@ public struct WritingBeatResult: Codable, Sendable {
 public struct WritingChangedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `fileId`: Id
     public var `paneId`: Id
     public var `revision`: Decimal
     public var `sidecarRevision`: Decimal
-    public init(`eventId`: Decimal, `at`: String, `fileId`: Id, `paneId`: Id, `revision`: Decimal, `sidecarRevision`: Decimal) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `fileId`: Id, `paneId`: Id, `revision`: Decimal, `sidecarRevision`: Decimal) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`fileId` = `fileId`
         self.`paneId` = `paneId`
         self.`revision` = `revision`

@@ -5,7 +5,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::json;
-use soyeht_protocol::{PaneState, StateSource, event, ndjson::Decoder};
+use soyeht_protocol::{PaneState, StateSource, ndjson::Decoder};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
 
 impl Core {
@@ -45,23 +45,12 @@ impl Core {
         // Close its decisions locally, without delivering them to a new process.
         changes.outgoing.clear();
         super::transcript::close(&self.store, id, &mut state, &mut changes)?;
-        if let Some(prompt) = state.active.take() {
-            changes.events.push((
-                event::PANE_TURN_ENDED.into(),
-                json!({"paneId":id,"promptId":prompt.prompt_id,"stopReason":"error"}),
-            ));
-        }
-        if let Some(operation) = state.operation.take() {
-            changes.events.push((event::PANE_CONFIG_FAILED.into(),json!({"paneId":id,"configId":operation.config_id,"value":operation.value,"reason":"Agent process was lost before confirmation"})));
-        }
-        if let Some(user) = state.operation_user.take() {
-            changes.completed_user = Some(super::pending::Completion {
-                user,
-                result: Err(errors::wire(errors::harness_unavailable(
-                    "Agent process was lost before confirmation",
-                ))),
-            });
-        }
+        super::failures::fail_work_in_flight(
+            &mut state,
+            &mut changes,
+            id,
+            "Agent process was lost before confirmation",
+        )?;
         saved.pane.state = PaneState::Recovering;
         saved.pane.phrase = "Recovering native agent session".into();
         state.phase = Phase::Recovering;

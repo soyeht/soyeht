@@ -1,4 +1,5 @@
 use super::Changes;
+use crate::model::turn_ended;
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -6,6 +7,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::client;
+use soyeht_protocol::TurnStopReason;
 use soyeht_protocol::{
     AgentMessageSource, PaneMode, PaneState, PromptOrigin, event, limits, method,
 };
@@ -25,11 +27,16 @@ pub(crate) fn handles(method: &str) -> bool {
     )
 }
 
-pub(crate) fn queued(pane: &str, state: &super::state::State, now_ms: i64) -> (String, Value) {
-    (
-        event::PANE_QUEUED.into(),
-        json!({"paneId":pane,"n":state.queue.len(),
-        "promptIds":state.queue.iter().map(|p| &p.prompt_id).collect::<Vec<_>>(),"draft":state.draft_until_ms > now_ms}),
+pub(crate) fn queued(
+    pane: &str,
+    state: &super::state::State,
+    now_ms: i64,
+) -> Result<(String, Value)> {
+    crate::model::pane_queued(
+        pane,
+        state.queue.len(),
+        state.queue.iter().map(|p| p.prompt_id.clone()).collect(),
+        state.draft_until_ms > now_ms,
     )
 }
 
@@ -233,7 +240,7 @@ impl Core {
             message_rate: Some((sender_id, target_id.to_owned(), now_ms, since_ms)),
             ..Changes::default()
         };
-        changes.events.push(queued(target_id, &state, now_ms));
+        changes.events.push(queued(target_id, &state, now_ms)?);
         let result = json!({"promptId":prompt.prompt_id,"queued":true});
         Ok(self
             .commit_agent(
@@ -296,10 +303,11 @@ impl Core {
         }
         state.operation = None;
         if let Some(prompt) = state.active.take() {
-            changes.events.push((
-                event::PANE_TURN_ENDED.into(),
-                json!({"paneId":pane,"promptId":prompt.prompt_id,"stopReason":"cancelled"}),
-            ));
+            changes.events.push(turn_ended(
+                pane,
+                prompt.prompt_id,
+                TurnStopReason::Cancelled,
+            )?);
         }
         state.phase = super::state::Phase::Faulted;
         saved.pane.state = PaneState::Dead;
@@ -370,21 +378,21 @@ impl Core {
                 for prepared in &prompt_attachments {
                     prepared.publish()?;
                 }
-                changes.events.push(queued(pane, &state, now_ms));
+                changes.events.push(queued(pane, &state, now_ms)?);
                 json!({"promptId":prompt.prompt_id,"queued":true})
             }
             method::PANE_QUEUE_REMOVE => {
                 let prompt = errors::param_str(params, "promptId")?;
                 let removed = state.remove(prompt)?;
                 if removed {
-                    changes.events.push(queued(pane, &state, now_ms));
+                    changes.events.push(queued(pane, &state, now_ms)?);
                 }
                 json!({"promptId":prompt,"removed":removed})
             }
             method::PANE_DRAFT => {
                 let active = errors::param_bool(params, "active")?;
                 state.draft_until_ms = if active { now_ms + 10_000 } else { 0 };
-                changes.events.push(queued(pane, &state, now_ms));
+                changes.events.push(queued(pane, &state, now_ms)?);
                 json!({"active":active})
             }
             method::PANE_CANCEL => cancel(

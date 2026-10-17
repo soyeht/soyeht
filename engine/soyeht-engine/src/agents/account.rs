@@ -112,7 +112,7 @@ impl Core {
         let mut changes = Changes::default();
         changes
             .events
-            .push(auth_finished(id, false, "Sign-in was cancelled."));
+            .push(auth_finished(id, false, "Sign-in was cancelled.")?);
         if let Some(mut child) = self
             .panes
             .get(&child_id)
@@ -177,7 +177,7 @@ pub(super) fn logout_response(
     saved: &crate::model::StoredPane,
     changes: &mut Changes,
     ok: std::result::Result<(), String>,
-) {
+) -> Result<()> {
     match ok {
         Ok(()) => {
             state.phase = Phase::RestartAfterProbe;
@@ -186,8 +186,9 @@ pub(super) fn logout_response(
             &saved.pane.pane_id,
             false,
             &format!("Signing out failed: {reason}"),
-        )),
+        )?),
     }
+    Ok(())
 }
 
 #[cfg(test)]

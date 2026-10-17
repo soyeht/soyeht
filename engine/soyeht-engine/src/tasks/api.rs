@@ -13,9 +13,9 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, Comment, Role, Subitem, SubitemState, Task, TaskCommentParams, TaskCommentsParams,
-    TaskCreateParams, TaskCreateResult, TaskDispatchParams, TaskDispatchResult, TaskExecutor,
-    TaskListParams, TaskShowParams, TaskSubitemAddParams, TaskSubitemDoneParams, TaskUpdateParams,
-    event, method,
+    TaskCommentsResult, TaskCreateParams, TaskCreateResult, TaskDispatchParams, TaskDispatchResult,
+    TaskExecutor, TaskListParams, TaskListResult, TaskShowParams, TaskSubitemAddParams,
+    TaskSubitemDoneParams, TaskUpdateParams, event, method,
 };
 use soyeht_store::database::Error as StoreError;
 use uuid::Uuid;
@@ -201,7 +201,11 @@ impl Core {
                     .map(|value| value.to_string())
             })
             .transpose()?;
-        Ok(json!({"items":items,"nextCursor":next}))
+        serde_json::to_value(TaskListResult {
+            items,
+            next_cursor: next,
+        })
+        .map_err(|_| errors::internal("Task list result cannot be encoded"))
     }
 
     fn task_comments(&self, connection: &str, params: TaskCommentsParams) -> Result<Value> {
@@ -221,7 +225,11 @@ impl Core {
             .store
             .comments_page(&params.workspace_id, &params.task_id, before, params.limit)
             .map_err(errors::storage)?;
-        Ok(json!({"items":page.items,"nextCursor":page.next_before.map(|value|value.to_string())}))
+        serde_json::to_value(TaskCommentsResult {
+            items: page.items,
+            next_cursor: page.next_before.map(|value| value.to_string()),
+        })
+        .map_err(|_| errors::internal("Task comments result cannot be encoded"))
     }
 
     fn task_create(

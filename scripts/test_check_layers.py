@@ -26,6 +26,10 @@ class LayerTests(unittest.TestCase):
         self.assertEqual(len(found), 1)
         self.assertIn("soyeht-editor depends on soyeht-store", found[0])
 
+    def test_a_crate_may_enable_its_own_feature_for_its_tests(self):
+        own = manifest("soyeht-protocol", '[dev-dependencies]\nsoyeht-protocol = { path = ".", features = ["x"] }\n')
+        self.assertEqual(manifest_problems("p/Cargo.toml", own), [])
+
     def test_a_lower_layer_cannot_depend_on_the_engine(self):
         upward = manifest("soyeht-protocol", '[dependencies]\nsoyeht-engine = { path = "../e" }\n')
         self.assertEqual(len(manifest_problems("p/Cargo.toml", upward)), 1)

@@ -165,6 +165,18 @@ lint_windows() {
     fi
 }
 
+# The engine's contract checks (ADR 0090) are on in every build and test run of the gate, so
+# each engine test and end-to-end run also checks the events and results against the contract.
+# A changed-crates run turns them on whenever it tests the engine crate.
+engine_test_changed() {
+    local features=()
+    case " $GATE_ENGINE_TEST_ARGS " in
+        *" --workspace "* | *" -p soyeht-engine "*) features=(--features soyeht-engine/contract-checks) ;;
+    esac
+    # shellcheck disable=SC2086
+    cargo test --locked $GATE_ENGINE_TEST_ARGS ${features[@]+"${features[@]}"} "$@"
+}
+
 capture_test() {
     local test="$1"
     run_exact_rust_test "$test" cargo test --locked -p soyeht-engine "$test" \
@@ -224,6 +236,8 @@ step always both logging:unit uv run python -m unittest discover -s scripts -p '
 step always both logging:check uv run python scripts/check_logging.py
 step always both desktop-tokens:unit uv run python -m unittest discover -s scripts -p 'test_check_desktop_tokens.py'
 step always both desktop-tokens:check uv run python scripts/check_desktop_tokens.py
+step always both event-literals:unit uv run python -m unittest discover -s scripts -p 'test_check_event_literals.py'
+step always both event-literals:check uv run python scripts/check_event_literals.py
 
 step always both contracts:generate-check uv run python contracts/generate.py --check
 step always both contracts:unit uv run python -m unittest discover -s contracts -p 'test_*.py'
@@ -231,19 +245,27 @@ step always both install-dev:unit uv run python -m unittest discover -s scripts 
 
 step engine both engine:fmt in_dir engine cargo fmt --all --check
 step engine both engine:clippy in_dir engine cargo clippy --locked --workspace --all-targets -- -D warnings
-step engine both engine:build in_dir engine cargo build --locked --workspace
+# A shipping build checks nothing against the contract; lint it and the checked one.
+step engine both engine:clippy-contract-checks in_dir engine cargo clippy --locked --workspace --all-targets --features soyeht-engine/contract-checks -- -D warnings
+# The engine is built with the checks on (ADR 0090), so the tests that start it and the
+# end-to-end runs also check its events and results against the contract.
+step engine both engine:build in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
 # Integration tests (the crates' tests/ directories, which start sibling binaries) run here only.
-step engine full engine:test in_dir engine cargo test --locked --workspace
+step engine full engine:test in_dir engine cargo test --locked --workspace --features soyeht-engine/contract-checks
 # `cargo test` links target/debug/soyeht-engine from the library with the test-hooks feature
 # on (the engine lists itself as a development dependency). The acceptances below must run the
-# shipped build, so rebuild the product programs without it.
-step engine full engine:build-product in_dir engine cargo build --locked --workspace
+# shipped build, so rebuild the product programs without it (the contract checks stay on, ADR 0090).
+step engine full engine:build-product in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
 # The engine with the test hooks (ADR 0091), which the editor acceptance starts. No product
 # build has it.
-step engine full engine:build-test-engine in_dir engine cargo build --locked -p soyeht-engine --features test-hooks --bin soyeht-engine-test
+step engine full engine:build-test-engine in_dir engine cargo build --locked -p soyeht-engine --features test-hooks,contract-checks --bin soyeht-engine-test
 # Unit tests (src/ of libraries and binaries) of the changed crates and their reverse dependencies.
-# shellcheck disable=SC2086
-step engine fast engine:test-changed in_dir engine cargo test --locked $GATE_ENGINE_TEST_ARGS --lib --bins
+step engine fast engine:test-changed in_dir engine engine_test_changed --lib --bins
+# The shipping configuration has the checks off: the one test that says an unchecked build
+# validates nothing runs without the feature, as the timing steps below do.
+step engine both engine:test-unchecked in_dir engine run_exact_rust_test \
+    model::tests::without_the_checks_nothing_is_validated \
+    cargo test --locked -p soyeht-engine --lib model::tests::without_the_checks_nothing_is_validated -- --exact
 step engine both engine:clippy-windows in_dir engine lint_windows
 step timing full engine:timing-frame-dense in_dir engine capture_test \
     terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage
@@ -281,8 +303,8 @@ step always both mac-view-colors:unit uv run python -m unittest discover -s scri
 step always both mac-view-colors:check uv run python scripts/check_mac_view_colors.py
 step swift both swift:format-lint swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/dictation/Sources apps/dictation/Tests apps/mac/Sources apps/ios/Sources
 # EngineConnectionTests and PhoneConnectionTests launch the engine binaries from engine/target,
-# so the Swift tests need them built.
-step swift full swift:engine-binaries in_dir engine cargo build --locked --workspace
+# so the Swift tests need them built (with the contract checks on, like every engine build).
+step swift full swift:engine-binaries in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
 step swift full swift:test-shared swift test --package-path apps/shared
 # The fast stand-in compiles the shared package without running its tests.
 step swift fast swift:test-shared-build swift build --package-path apps/shared

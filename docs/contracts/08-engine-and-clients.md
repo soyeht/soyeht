@@ -285,7 +285,11 @@ carries the same `reachability` when it changes (ADR 0078).
 Names **match those published in contracts 01–04 and 07** (R01); fields are
 English in every contract (mapping table at the end). Durable state events
 carry `eventId`, `at`, `actor?`. Notifications declared non-durable in the
-executable schema carry no state cursor and never enter replay.
+executable schema carry no state cursor and never enter replay. Every durable event schema
+declares `actor?`, the actor of the mutation that made it, because the store adds it. The engine
+builds its events from the generated types of these schemas (the `...Draft` types, which leave
+out what the store assigns), and the `contract-checks` feature checks every event and result it
+sends against them (ADR 0090).
 - `workspace.created|renamed|closed`
 - `pane.created|closed|renamed|arranged`
 - `pane.session_started {harness, version, sessionId, generation, options}`

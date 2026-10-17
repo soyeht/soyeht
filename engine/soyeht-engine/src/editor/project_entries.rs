@@ -195,10 +195,7 @@ impl Core {
                 workspace.layout = layout;
                 layout_changed = true;
             }
-            events.push((
-                event::PANE_CLOSED.into(),
-                json!({"paneId":pane_id,"workspaceId":workspace_id}),
-            ));
+            events.push(model::pane_closed(pane_id, workspace_id)?);
             closing.push(saved);
         }
         if layout_changed {

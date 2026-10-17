@@ -160,7 +160,11 @@ impl Core {
         )?;
         let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
         let document = public_document(&file, &record)?;
-        let created_event = pane_created_event(&saved_pane.pane, &opened.file, &document);
+        let created_event = crate::editor::api::pane_created_event(
+            &saved_pane.pane,
+            &opened.file,
+            Some(&document),
+        )?;
         let result = serde_json::to_value(WritingDocumentCreateResult {
             document,
             pane: opened.pane,
@@ -182,10 +186,7 @@ impl Core {
                 change.remove_writing_create_intent(&intent.scope, &intent.idempotency_key)?;
                 Ok((
                     result,
-                    vec![
-                        (event::PANE_CREATED.into(), created_event),
-                        (event::WRITING_CHANGED.into(), event),
-                    ],
+                    vec![created_event, (event::WRITING_CHANGED.into(), event)],
                 ))
             },
         )?;
@@ -392,11 +393,11 @@ impl Core {
         let saved_pane = stored_pane(pane.clone());
         let record = self.record_or_default(file.file_id.clone(), context.kind, context.section)?;
         let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
-        let created_event = pane_created_event(
+        let created_event = crate::editor::api::pane_created_event(
             &saved_pane.pane,
             &opened.file,
-            &public_document(&file, &record)?,
-        );
+            Some(&public_document(&file, &record)?),
+        )?;
         let result = open_result(&file, &record, opened, context.pane_only)?;
         let screen = self.open_pane_screen(&pane.pane_id)?;
         let saved_file = file.clone();
@@ -412,7 +413,7 @@ impl Core {
                 if let Some(version) = &version {
                     change.record_file_version(version)?;
                 }
-                Ok((result, vec![(event::PANE_CREATED.into(), created_event)]))
+                Ok((result, vec![created_event]))
             },
         )?;
         if !mutation.repeated {
@@ -440,11 +441,11 @@ impl Core {
         );
         let record = self.record_or_default(file.file_id.clone(), context.kind, context.section)?;
         let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
-        let created_event = pane_created_event(
+        let created_event = crate::editor::api::pane_created_event(
             &saved_pane.pane,
             &opened.file,
-            &public_document(&file, &record)?,
-        );
+            Some(&public_document(&file, &record)?),
+        )?;
         let result = open_result(&file, &record, opened, context.pane_only)?;
         let screen = self.open_pane_screen(&pane.pane_id)?;
         let saved_file = file.clone();
@@ -457,7 +458,7 @@ impl Core {
                 persist_new_pane(change, &saved_pane, None)?;
                 change.save_editor_file(&saved_file)?;
                 change.save_writing_document(&saved_record)?;
-                Ok((result, vec![(event::PANE_CREATED.into(), created_event)]))
+                Ok((result, vec![created_event]))
             },
         )?;
         if !mutation.repeated {
@@ -730,14 +731,6 @@ fn open_result(
         viewport: opened.viewport,
     })
     .map_err(|_| errors::internal("Writing open result cannot be encoded"))
-}
-
-fn pane_created_event(
-    pane: &Pane,
-    file: &soyeht_protocol::FileDocument,
-    writing_document: &WritingDocument,
-) -> Value {
-    json!({"pane": pane, "file": file, "writingDocument": writing_document})
 }
 
 pub(super) fn changed_event(file: &EditorFile, record: &WritingDocumentRecord) -> Result<Value> {

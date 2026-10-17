@@ -92,9 +92,9 @@ impl Core {
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             false,
         )?;
+        let (_, events) = pane_created(&saved)?;
         let mutation = self.mutate(connection, method, raw_params, |change| {
             persist_new_pane(change, &saved, None)?;
-            let (_, events) = pane_created(&saved);
             let result = if method == method::WEB_OPEN {
                 serde_json::to_value(WebOpenResult {
                     pane_id: saved.pane.pane_id.clone(),

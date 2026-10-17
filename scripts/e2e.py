@@ -266,6 +266,7 @@ class Services:
             client.close()
         if self.launcher.exists("engine"):
             self.launcher.stop("engine")
+        mismatches = self.contract_mismatches()
         try:
             self.close_supervised_processes()
         finally:
@@ -273,6 +274,14 @@ class Services:
                 self.launcher.stop("ptyd")
         # Every service has exited by now, so no process holds a file of the folder.
         remove_directory(self.data)
+        require(not mismatches, "the engine sent what the contract does not describe: " + "".join(mismatches[:1]))
+
+    def contract_mismatches(self):
+        """The engine, built with `contract-checks`, logs each event or result that breaks the contract."""
+        # The engine rotates its log: `engine.log` and up to four older files beside it.
+        logs = [self.data / "engine.log", *(self.data / f"engine.log.{n}" for n in range(1, 5))]
+        lines = [line for log in logs if log.is_file() for line in log.read_text(errors="replace").splitlines()]
+        return [line for line in lines if "engine.contract_mismatch" in line]
 
 
 def wait_pane(client, pane_id):

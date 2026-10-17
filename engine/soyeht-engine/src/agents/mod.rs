@@ -433,17 +433,14 @@ impl Core {
                 || running.stored.pane.confidence != saved.pane.confidence
                 || running.stored.pane.phrase != saved.pane.phrase
         }) {
-            events.push((
-                event::PANE_STATE_CHANGED.into(),
-                crate::core::state_event(&saved),
-            ));
+            events.push(crate::core::state_event(&saved)?);
         }
         if self
             .panes
             .get(&id)
             .is_none_or(|running| running.stored.pane != saved.pane)
         {
-            events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
+            events.push(crate::model::pane_updated(&saved.pane)?);
         }
         let persistence = AgentPersistence {
             id: &id,

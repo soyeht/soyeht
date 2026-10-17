@@ -54,8 +54,7 @@ def type_name(schema, lang):
     return primitives[lang][kind]
 
 
-def rust_definition(name, schema):
-    derive = "#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]"
+def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]"):
     if "enum" in schema:
         fields = [f'    #[serde(rename = {json.dumps(v, ensure_ascii=False)})]\n    {variant(v)},' for v in schema["enum"]]
         return derive + f"\npub enum {name} {{\n" + "\n".join(fields) + "\n}"
@@ -65,6 +64,8 @@ def rust_definition(name, schema):
     if schema.get("type") == "object":
         fields = []
         for key, value in schema["properties"].items():
+            if key in skip:
+                continue
             kind = type_name(value, "rust")
             attrs = f'    #[serde(rename = "{key}")]'
             if key not in schema["required"]:
@@ -151,6 +152,48 @@ def registry_rust(schema):
         if route is not None:
             pane_routes.append(f'    ("{name}", "{route}"),')
     return "#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]\n#[serde(tag = \"method\", content = \"params\")]\npub enum Request {\n" + "\n".join(cases) + "\n}\npub const METHODS: &[(&str, &str, &str, bool)] = &[\n" + "\n".join(rows) + "\n];\npub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[\n" + "\n".join(pane_routes) + "\n];"
+
+
+STORE_ASSIGNED = ("eventId", "at", "actor")
+
+
+def event_params_rust(schema):
+    """One struct per event the engine builds, and the trait that names its event.
+
+    A durable event gets its `eventId`, `at` and `actor` from the store, so the engine builds the struct
+    without them (`...Draft`); a live event has neither and is built as its own schema.
+    """
+    uses = {}
+    for name, event in schema["x-events"].items():
+        uses.setdefault(event["params"]["$ref"].rsplit("/", 1)[1], []).append(name)
+    out = [
+        """/// The parameters of one event as the engine builds them.
+pub trait EventParams: serde::Serialize {
+    const NAME: EventName;
+    /// The event name and its JSON parameters, ready for the store or the wire.
+    fn to_event(&self) -> Result<(String, serde_json::Value), serde_json::Error> {
+        Ok((Self::NAME.as_str().to_owned(), serde_json::to_value(self)?))
+    }
+}"""
+    ]
+    skipped = []
+    for type_, names in uses.items():
+        definition = schema["$defs"][type_]
+        if len(names) != 1 or definition.get("type") != "object":
+            reason = "share one params type" if len(names) > 1 else "has union params"
+            skipped.append(f"// {', '.join(names)}: {reason} ({type_}), so the engine builds it as JSON.")
+            continue
+        event = schema["x-events"][names[0]]
+        derive = "#[derive(Debug, Clone, PartialEq, serde::Serialize)]"
+        if event["durable"]:
+            target = type_.removesuffix("Event") + "Draft"
+            # An `actor` the event requires is its own (a task movement's); the store's is optional.
+            skip = tuple(k for k in STORE_ASSIGNED if k != "actor" or k not in definition["required"])
+            out.append(rust_definition(target, definition, skip, derive))
+        else:
+            target = type_
+        out.append(f"impl EventParams for {target} {{\n    const NAME: EventName = EventName::{variant(names[0])};\n}}")
+    return "\n".join(["// Events with no `EventParams` type:", *skipped, *out])
 
 
 def event_registry_rust(schema):
@@ -497,15 +540,19 @@ DEV_LAUNCHD_PREFIX = {value["label_prefix"]!r}
     }
 
 
+def rustfmt(source):
+    return subprocess.run(["rustfmt", "--edition", "2024"], input=source, text=True, capture_output=True, check=True).stdout
+
+
 def render(schema, digest):
     outputs = {}
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
     header = f"// Generated from contracts/protocol.json (sha256 {digest}). Do not edit.\n"
     rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items())
-    rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n" + rust_names(schema) + "\n"
+    rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n" + event_params_rust(schema) + "\n" + rust_names(schema) + "\n"
     rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items()) + "\n    }\n}\n"
     # Formatting in memory keeps --check read-only and identical across invocations.
-    rust = subprocess.run(["rustfmt", "--edition", "2024"], input=rust, text=True, capture_output=True, check=True).stdout
+    rust = rustfmt(rust)
     outputs["engine/soyeht-protocol/src/generated.rs"] = rust
     swift = header + "import Foundation\n\n"
     swift += "\n\n".join(swift_definition(n, s) for n, s in schema["$defs"].items())
@@ -529,9 +576,15 @@ def render(schema, digest):
     for name in schema["$defs"]:
         swift_name = "TaskRecord" if name == "Task" else name
         swift_cases.append(f'        case "{name}": return try codec(SoyehtProtocol.{swift_name}.self, data)')
-        rust_cases.append(f'        "{name}" => roundtrip::<{name}>(value),')
+        rust_cases.append(f'        "{name}" => decode_encode::<{name}>(name, value),')
     outputs["contracts/swift/Sources/ProtocolVectors/Dispatch.swift"] = header + "import Foundation\nimport SoyehtProtocol\n\nfunc roundtrip(_ name: String, _ data: Data) throws -> Data {\n    switch name {\n" + "\n".join(swift_cases) + '\n    default: throw NSError(domain: "Unknown schema", code: 1)\n    }\n}\n'
-    outputs["engine/soyeht-protocol/tests/support/dispatch.rs"] = header + "fn dispatch(name: &str, value: serde_json::Value) -> serde_json::Value {\n    match name {\n" + "\n".join(rust_cases) + '\n        _ => panic!("unknown schema: {name}"),\n    }\n}\n'
+    outputs["engine/soyeht-protocol/src/contract/roundtrip.rs"] = rustfmt(
+        header
+        + "use super::{Mismatch, decode_encode};\nuse crate::generated::*;\nuse serde_json::Value;\n\n"
+        + "pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {\n    match name {\n"
+        + "\n".join(rust_cases)
+        + "\n        _ => Err(Mismatch::Unknown(name.to_owned())),\n    }\n}\n"
+    )
     return outputs
 
 

@@ -668,7 +668,7 @@ impl Core {
         // The prompt left the queue when it became active; clients drop its queued row now.
         changes
             .events
-            .push(super::methods::queued(pane, &state, self.now_ms()));
+            .push(super::methods::queued(pane, &state, self.now_ms())?);
         transcript::user_prompt(&mut state, saved.pane.generation, &prompt, &mut changes)?;
         let payload = prompt_payload(&state, &session, &prompt)?;
         responses::call(
@@ -726,6 +726,13 @@ mod tests {
         assert_eq!(changes.events.len(), 1);
         assert_eq!(changes.events[0].0, "pane.update");
         assert_eq!(changes.events[0].1["kind"], "system_message");
+        // The update names its text and that it is complete, as the contract requires.
+        assert!(
+            changes.events[0].1["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("Nothing was approved"))
+        );
+        assert_eq!(changes.events[0].1["complete"], true);
         assert_eq!(changes.outgoing.len(), 1);
         assert!(matches!(
             &changes.outgoing[0],

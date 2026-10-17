@@ -35,7 +35,7 @@ impl Core {
         } else {
             self.persist_language_server(&key, Vec::new())?;
         }
-        self.add_language_waiter(&context, connection, request_id)?;
+        self.add_language_waiter(&context, connection, request_id, method::FILE_FORMAT)?;
         Ok(Outcome::Queued)
     }
 

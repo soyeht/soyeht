@@ -58,11 +58,11 @@ pub(crate) fn persist_new_pane(
     Ok(())
 }
 
-pub(crate) fn pane_created(saved: &StoredPane) -> (Value, Vec<(String, Value)>) {
-    (
+pub(crate) fn pane_created(saved: &StoredPane) -> Result<(Value, Vec<(String, Value)>)> {
+    Ok((
         json!({"paneId":saved.pane.pane_id}),
-        vec![(event::PANE_CREATED.into(), json!({"pane":saved.pane}))],
-    )
+        vec![model::pane_created(&saved.pane)?],
+    ))
 }
 
 fn new_agent(
@@ -226,12 +226,13 @@ impl Core {
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             saved.pane.record,
         )?;
+        let created = pane_created(&saved)?;
         let mutation = self.mutate(connection, method::PANE_CREATE, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }
-            Ok(pane_created(&saved))
+            Ok(created)
         })?;
         if !mutation.repeated {
             let id = saved.pane.pane_id.clone();
@@ -266,10 +267,10 @@ impl Core {
         saved.closed = true;
         let workspace =
             self.workspace_after_closing_pane(&saved.pane.workspace_id, &saved.pane.pane_id)?;
-        events.push((
-            event::PANE_CLOSED.into(),
-            json!({"paneId":saved.pane.pane_id,"workspaceId":saved.pane.workspace_id}),
-        ));
+        events.push(model::pane_closed(
+            &saved.pane.pane_id,
+            &saved.pane.workspace_id,
+        )?);
         if let Some(workspace) = &workspace {
             events.push((
                 event::WORKSPACE_LAYOUT_UPDATED.into(),
@@ -380,7 +381,7 @@ impl Core {
             method,
             method::PANE_RESIZE | method::PANE_RECORD_SET | method::PANE_EXPERIMENT_SET
         ) {
-            events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
+            events.push(model::pane_updated(&saved.pane)?);
         }
         let closes_editor = saved.closed && saved.pane.mode == PaneMode::Editor;
         let mutation = self.mutate(connection, method, params, |tx| {

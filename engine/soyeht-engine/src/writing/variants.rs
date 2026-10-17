@@ -1,6 +1,6 @@
 use super::documents::{changed_event, public_document, require_revision};
 use crate::{core::Core, errors, errors::Result};
-use serde_json::{Value, json};
+use serde_json::Value;
 use soyeht_protocol::{
     Actor, FileAuthor, PaneState, Role, TextEdit, TextPosition, TextRange, WritingLineVariants,
     WritingVariant, WritingVariantAddParams, WritingVariantRemoveParams,
@@ -46,10 +46,12 @@ impl Core {
             .ok_or_else(|| errors::not_found("Variant agent pane is unavailable"))?
             .stored
             .clone();
-        let events = vec![(
-            event::PANE_QUEUED.into(),
-            json!({"paneId":request.agent_pane_id,"n":state.queue.len(),"promptIds":[queued.prompt_id],"draft":false}),
-        )];
+        let events = vec![crate::model::pane_queued(
+            &request.agent_pane_id,
+            state.queue.len(),
+            vec![queued.prompt_id.clone()],
+            false,
+        )?];
         Ok(self
             .commit_agent(
                 pane,

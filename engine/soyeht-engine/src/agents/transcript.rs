@@ -175,7 +175,7 @@ pub fn event(pane: &str, message: &TranscriptMessage, kind: &str) -> Value {
         result["subagentId"] = json!(subagent);
     }
     match kind {
-        "agent_message_chunk" | "agent_thought_chunk" => {
+        "agent_message_chunk" | "agent_thought_chunk" | "system_message" => {
             result["text"] = json!(message.text);
             result["complete"] = json!(message.complete);
         }

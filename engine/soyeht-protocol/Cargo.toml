@@ -12,5 +12,13 @@ serde_json.workspace = true
 base64.workspace = true
 uuid.workspace = true
 
+[features]
+# Checks the engine's events and results against the generated models (ADR 0090).
+# Off in every shipping build.
+contract-checks = []
+
+[dev-dependencies]
+soyeht-protocol = { path = ".", features = ["contract-checks"] }
+
 [lints]
 workspace = true

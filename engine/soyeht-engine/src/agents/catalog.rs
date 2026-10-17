@@ -346,7 +346,9 @@ impl Core {
             for entry in entries {
                 items.push(harness_info(self, entry, issue.is_some())?);
             }
-            return page(items, json!({"environmentIssue":issue}), params);
+            // An optional field is left out when it has no value, never sent as null.
+            let fixed = issue.map_or_else(|| json!({}), |issue| json!({"environmentIssue": issue}));
+            return page(items, fixed, params);
         }
         let PreparedCatalog::Model { harness, prepared } = prepared else {
             return Err(errors::internal("Wrong catalogue preparation"));

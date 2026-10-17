@@ -174,10 +174,12 @@ impl Core {
             self.timestamp(),
         )?;
         let mut events = vec![
-            (
-                event::PANE_QUEUED.into(),
-                json!({"paneId":pane,"n":state.queue.len(),"promptIds":[prompt.prompt_id],"draft":false}),
-            ),
+            crate::model::pane_queued(
+                pane,
+                state.queue.len(),
+                vec![prompt.prompt_id.clone()],
+                false,
+            )?,
             (
                 event::LOOP_TICK.into(),
                 json!({"paneId":pane,"round":round,"of":config.max_rounds}),

@@ -134,7 +134,7 @@ impl Core {
             connection,
             method,
             params,
-            created_event: pane_created_event(&saved.pane, &opened.file),
+            created_event: pane_created_event(&saved.pane, &opened.file, None)?,
             reply: open_reply(opened, pane_only)?,
             saved,
             file,
@@ -167,7 +167,7 @@ impl Core {
             connection: request.connection,
             method: request.method,
             params: request.params,
-            created_event: pane_created_event(&saved.pane, &opened.file),
+            created_event: pane_created_event(&saved.pane, &opened.file, None)?,
             reply: open_reply(opened, request.pane_only)?,
             saved,
             file,
@@ -328,8 +328,17 @@ fn open_reply(result: FileOpenResult, pane_only: bool) -> Result<Value> {
     }
 }
 
-fn pane_created_event(pane: &Pane, file: &soyeht_protocol::FileDocument) -> Value {
-    json!({"pane": pane, "file": file})
+/// `pane.created` for an editor pane, with the writing document when it opens one.
+pub(crate) fn pane_created_event(
+    pane: &Pane,
+    file: &soyeht_protocol::FileDocument,
+    writing_document: Option<&soyeht_protocol::WritingDocument>,
+) -> Result<(String, Value)> {
+    crate::model::pending(&soyeht_protocol::PaneCreatedDraft {
+        pane: pane.clone(),
+        file: Some(file.clone()),
+        writing_document: writing_document.cloned(),
+    })
 }
 
 pub(crate) fn initial_open_result(

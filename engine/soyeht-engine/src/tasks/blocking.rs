@@ -366,13 +366,14 @@ impl Core {
             .map_or_else(|| self.agent_state(pane), |(state, _)| Ok(state.clone()))?;
         let saved = self.panes[pane].stored.clone();
         let mut events = change.events();
-        if let Some((_, prompt_id)) = &queued {
-            let prompt_ids: Vec<_> = state.queue.iter().map(|item| &item.prompt_id).collect();
-            events.push((
-                event::PANE_QUEUED.into(),
-                json!({"paneId":pane,"n":state.queue.len(),"promptIds":prompt_ids,
-                    "addedPromptId":prompt_id,"draft":false}),
-            ));
+        if queued.is_some() {
+            let prompt_ids = state.queue.iter().map(|item| item.prompt_id.clone());
+            events.push(crate::model::pane_queued(
+                pane,
+                state.queue.len(),
+                prompt_ids.collect(),
+                false,
+            )?);
         }
         if needs_attention.is_some() {
             events.push((

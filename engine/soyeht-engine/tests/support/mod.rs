@@ -70,6 +70,13 @@ impl Rig {
         rig.start();
         rig
     }
+    fn engine_log(&self) -> fs::File {
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.path.join("engine.log"))
+            .unwrap()
+    }
     /// Where the engine looks for fake usage sources (the test engine only).
     pub fn usage_readers(&self) -> PathBuf {
         self.path.join("usage-readers")
@@ -88,6 +95,8 @@ impl Rig {
                 // reading them, not by file events a loaded machine delivers late.
                 .env("SOYEHT_TEST_SKILL_POLL", "1")
                 .stdout(Stdio::null())
+                // The engine writes its log here, as the launch agent has it do.
+                .stderr(self.engine_log())
                 .spawn()
                 .unwrap(),
         );
@@ -388,8 +397,31 @@ impl Drop for Rig {
         }
         let _ = self.ptyd.kill();
         let _ = self.ptyd.wait();
+        // With `contract-checks` the engine logs every event or result the contract does not
+        // describe; a background publication fails no request, so this is where it fails a test.
+        let mismatches = contract_mismatches(&self.path);
         let _ = fs::remove_dir_all(&self.path);
+        assert!(
+            thread::panicking() || mismatches.is_empty(),
+            "the engine sent what the contract does not describe: {}",
+            mismatches.join("\n")
+        );
     }
+}
+
+/// The `engine.contract_mismatch` lines of the engine log and its rotated files.
+fn contract_mismatches(path: &Path) -> Vec<String> {
+    let rotated = (1..=4).map(|index| format!("engine.log.{index}"));
+    std::iter::once("engine.log".to_owned())
+        .chain(rotated)
+        .filter_map(|name| fs::read_to_string(path.join(name)).ok())
+        .flat_map(|log| {
+            log.lines()
+                .filter(|line| line.contains("engine.contract_mismatch"))
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 pub struct Client {

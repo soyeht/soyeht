@@ -136,18 +136,13 @@ impl Core {
             .filter(|p| p.stored.pane.workspace_id == id && !p.stored.closed)
             .map(|p| p.stored.clone())
             .collect();
+        let mut events = closed
+            .iter()
+            .map(|p| model::pane_closed(&p.pane.pane_id, id))
+            .collect::<Result<Vec<_>>>()?;
         let result = self
             .mutate(connection, method, params, |tx| {
                 tx.close_workspace(id)?;
-                let mut events: Vec<_> = closed
-                    .iter()
-                    .map(|p| {
-                        (
-                            event::PANE_CLOSED.into(),
-                            json!({"paneId":p.pane.pane_id,"workspaceId":id}),
-                        )
-                    })
-                    .collect();
                 events.push((event::WORKSPACE_CLOSED.into(), json!({"workspaceId":id})));
                 Ok((json!({"workspaceId":id}), events))
             })?

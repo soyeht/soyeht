@@ -220,10 +220,12 @@ impl Core {
         let mut events = task_feedback
             .as_ref()
             .map_or_else(Vec::new, |feedback| feedback.events());
-        events.push((
-            event::PANE_QUEUED.into(),
-            json!({"paneId":pane_id,"n":state.queue.len(),"promptIds":[prompt.prompt_id],"draft":false}),
-        ));
+        events.push(model::pane_queued(
+            &pane_id,
+            state.queue.len(),
+            vec![prompt.prompt_id.clone()],
+            false,
+        )?);
         let result = review_comment_result(comment_id, task_id, true)?;
         let saved = self.panes[&pane_id].stored.clone();
         let changes = crate::agents::Changes {

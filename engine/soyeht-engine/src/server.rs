@@ -394,7 +394,9 @@ async fn read_requests(
             other => other,
         };
         operation.finish(&outcome);
-        if let Err(reason) = send_outcome(outbox, request_id, failed_handshake, outcome).await {
+        if let Err(reason) =
+            send_outcome(outbox, method, request_id, failed_handshake, outcome).await
+        {
             return reason;
         }
     }
@@ -402,13 +404,14 @@ async fn read_requests(
 
 async fn send_outcome(
     outbox: &Outbox,
+    method: &str,
     request_id: Value,
     failed_handshake: bool,
     outcome: crate::errors::Result<Outcome>,
 ) -> Result<(), CloseReason> {
     match outcome {
         Ok(Outcome::Reply(result)) => {
-            let Ok(frame) = model::response(request_id, result) else {
+            let Ok(frame) = model::response(method, request_id, result) else {
                 return Err(CloseReason::WorkerFailed);
             };
             if !outbox.send(frame) {
@@ -420,7 +423,7 @@ async fn send_outcome(
             reference,
             bytes,
         }) => {
-            send_attachment_response(outbox, request_id, result, &reference, &bytes)?;
+            send_attachment_response(outbox, method, request_id, result, &reference, &bytes)?;
         }
         Ok(Outcome::Queued) => (),
         Ok(Outcome::Snapshot { parts, result }) => {
@@ -431,7 +434,7 @@ async fn send_outcome(
                         .unwrap_or(CloseReason::SnapshotWriteFailed));
                 }
             }
-            let Ok(frame) = model::response(request_id, result) else {
+            let Ok(frame) = model::response(method, request_id, result) else {
                 return Err(CloseReason::WorkerFailed);
             };
             if !outbox.send(frame) {
@@ -492,7 +495,9 @@ async fn catalog_worker(core: Shared, mut rx: mpsc::Receiver<CatalogJob>) {
                 continue;
             }
             let frame = match (&value, &wire_error) {
-                (Some(value), _) => model::response(recipient.request_id, value.clone()),
+                (Some(value), _) => {
+                    model::response(&recipient.method, recipient.request_id, value.clone())
+                }
                 (_, Some(error)) => model::failure(recipient.request_id, error.clone()),
                 _ => continue,
             };
@@ -591,6 +596,7 @@ async fn resolve_offload(
 
 fn send_attachment_response(
     outbox: &Outbox,
+    method: &str,
     request_id: Value,
     result: Value,
     reference: &AttachmentRef,
@@ -602,7 +608,8 @@ fn send_attachment_response(
             return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
         }
     }
-    let frame = model::response(request_id, result).map_err(|_| CloseReason::WorkerFailed)?;
+    let frame =
+        model::response(method, request_id, result).map_err(|_| CloseReason::WorkerFailed)?;
     if !outbox.send_ordered(frame) {
         return Err(outbox.close_reason().unwrap_or(CloseReason::WriterStopped));
     }

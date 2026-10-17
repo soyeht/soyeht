@@ -11,7 +11,7 @@ use crate::{
     agents::{Running, state::State},
     core::Core,
     errors::{self, Result},
-    model::{RunningPane, StoredPane},
+    model::{self, RunningPane, StoredPane},
     panes::persist_new_pane,
     ports::StorePort,
     screen::Screen,
@@ -108,6 +108,7 @@ impl Core {
         let expected_task = current.version;
         let prior_version = existing.as_ref().map(|item| item.version);
         let result = json!({"task":updated});
+        let start_events = review_start_events(&updated, &movement, &prepared.saved)?;
         let mutation = self.mutate(connection, method::TASK_REQUEST_REVIEW, raw, |change| {
             persist_review_start(
                 change,
@@ -118,10 +119,7 @@ impl Core {
                 &prepared,
                 prior_version,
             )?;
-            Ok((
-                result,
-                review_start_events(&updated, &movement, &prepared.saved),
-            ))
+            Ok((result, start_events))
         })?;
         if !mutation.repeated {
             self.install_reviewer(prepared)?;
@@ -721,13 +719,13 @@ fn review_start_events(
     task: &Task,
     movement: &TaskMove,
     reviewer: &StoredPane,
-) -> Vec<(String, Value)> {
-    vec![
+) -> Result<Vec<(String, Value)>> {
+    Ok(vec![
         events::moved(task, movement),
         events::updated(task),
         events::phrase_changed(task),
-        (event::PANE_CREATED.into(), json!({"pane":reviewer.pane})),
-    ]
+        model::pane_created(&reviewer.pane)?,
+    ])
 }
 
 fn review_comment(task: &Task, decision: &DriftDecision, at: &str) -> Comment {

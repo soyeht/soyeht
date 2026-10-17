@@ -4,6 +4,7 @@ use super::{
     registry, responses,
     state::{Phase, State},
 };
+use crate::model::pending;
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -13,7 +14,8 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_acp::session::AuthKind;
 use soyeht_platform::log::Line;
-use soyeht_protocol::{HarnessLaunch, PaneMode, PaneState, StateSource, event, method};
+use soyeht_protocol::PaneAuthFinishedDraft;
+use soyeht_protocol::{HarnessLaunch, PaneMode, PaneState, StateSource, method};
 use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
 use std::path::Path;
 use uuid::Uuid;
@@ -85,14 +87,14 @@ fn verified_terminal_auth_argv(
 fn auth_pane_created(
     agent: &soyeht_protocol::Pane,
     child: &soyeht_protocol::Pane,
-) -> (Value, Vec<(String, Value)>) {
-    (
+) -> Result<(Value, Vec<(String, Value)>)> {
+    Ok((
         json!({"paneId":agent.pane_id,"terminalPaneId":child.pane_id}),
         vec![
-            (event::PANE_CREATED.into(), json!({"pane":child})),
-            (event::PANE_UPDATED.into(), json!({"pane":agent})),
+            crate::model::pane_created(child)?,
+            crate::model::pane_updated(agent)?,
         ],
-    )
+    ))
 }
 
 fn embedded_auth(state: &mut super::state::State, method_id: &str, now_ms: i64) -> Result<Changes> {
@@ -240,12 +242,13 @@ impl Core {
         let mut saved = self.panes[id].stored.clone();
         saved.pane.agent = Some(state.public(self.now_ms()));
         let generation = saved.pane.generation;
+        let created = auth_pane_created(&saved.pane, &child.pane)?;
         let mutation = self.mutate(connection, method::PANE_AUTH_START, params, |tx| {
             tx.insert_pane(&child)?;
             tx.insert_pane_launch(&child_id, &launch)?;
             crate::core::write_pane(tx, &saved)?;
             soyeht_store::agents::save_runtime(tx, id, generation, &state)?;
-            Ok(auth_pane_created(&saved.pane, &child.pane))
+            Ok(created)
         })?;
         if !mutation.repeated {
             self.replace_agent_state(id, state)?;
@@ -325,7 +328,7 @@ impl Core {
             }
             changes
                 .events
-                .push(auth_finished(id, false, unfinished_reason(&child)));
+                .push(auth_finished(id, false, unfinished_reason(&child))?);
         }
         self.commit_agent(
             self.panes[id].stored.clone(),
@@ -366,7 +369,7 @@ impl Core {
             changes.workspace_layout = self.prepare_pane_close(&mut child, &mut changes.events)?;
             changes.closed_login_pane = Some(child);
         }
-        changes.events.push(auth_finished(id, signed_in, reason));
+        changes.events.push(auth_finished(id, signed_in, reason)?);
         self.commit_agent(
             self.panes[id].stored.clone(),
             state,
@@ -392,11 +395,12 @@ fn unfinished_reason(terminal: &StoredPane) -> &'static str {
     }
 }
 
-pub(super) fn auth_finished(id: &str, ok: bool, reason: &str) -> (String, Value) {
-    (
-        event::PANE_AUTH_FINISHED.into(),
-        json!({"paneId":id,"ok":ok,"reason":reason}),
-    )
+pub(super) fn auth_finished(id: &str, ok: bool, reason: &str) -> Result<(String, Value)> {
+    pending(&PaneAuthFinishedDraft {
+        pane_id: id.into(),
+        ok,
+        reason: Some(reason.into()),
+    })
 }
 
 #[cfg(test)]

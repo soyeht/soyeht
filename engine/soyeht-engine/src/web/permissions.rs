@@ -3,6 +3,7 @@ use crate::{
     agents::questions::QUESTION_TIMEOUT_MS,
     core::{Core, write_pane},
     errors::{self, Result},
+    model,
     ports::StorePort,
     tasks::ports::TaskStorePort,
 };
@@ -262,7 +263,7 @@ impl Core {
             .map_err(|_| errors::internal("Permission serialization failed"))?;
         let mut events = vec![(event::PANE_PERMISSION_REQUESTED.into(), public)];
         if request.kind == PermissionRequestKind::WebSession {
-            events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
+            events.push(model::pane_updated(&saved.pane)?);
         }
         let request_for_write = request.clone();
         let mutation = StorePort::mutate(
@@ -372,7 +373,7 @@ impl Core {
         let saved = self.permission_pane_state(&request, allowed)?;
         let result_value = serde_json::to_value(&result)
             .map_err(|_| errors::internal("Permission result serialization failed"))?;
-        let events = permission_events(&request, &saved, result_value.clone());
+        let events = permission_events(&request, &saved, &result)?;
         let grant = grant.map(|scope| WebSessionGrant {
             workspace_id: request.workspace_id.clone(),
             domain: request.domain.clone(),
@@ -509,9 +510,7 @@ impl Core {
             by: DecisionBy::System,
         };
         let saved = self.permission_pane_state(&request, false)?;
-        let result_value = serde_json::to_value(&result)
-            .map_err(|_| errors::internal("Permission result serialization failed"))?;
-        let events = permission_events(&request, &saved, result_value);
+        let events = permission_events(&request, &saved, &result)?;
         let request_id = request.request_id.clone();
         let mutation = StorePort::mutate(
             &mut self.store,
@@ -562,13 +561,13 @@ fn permission_decision(request: WebPermissionRequest) -> PermissionDecision {
 fn permission_events(
     request: &WebPermissionRequest,
     saved: &crate::model::StoredPane,
-    result: Value,
-) -> Vec<(String, Value)> {
-    let mut events = vec![(event::PANE_PERMISSION_ANSWERED.into(), result)];
+    result: &PanePermissionAnswerResult,
+) -> Result<Vec<(String, Value)>> {
+    let mut events = vec![model::permission_answered(&request.pane_id, result)?];
     if request.kind == PermissionRequestKind::WebSession {
-        events.push((event::PANE_UPDATED.into(), json!({"pane":saved.pane})));
+        events.push(model::pane_updated(&saved.pane)?);
     }
-    events
+    Ok(events)
 }
 
 fn permission_answer(

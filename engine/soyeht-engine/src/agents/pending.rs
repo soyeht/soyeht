@@ -2,7 +2,7 @@ use crate::{
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
-    model,
+    model::{self, Waiter},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -33,7 +33,8 @@ impl Core {
         &mut self,
         connection: &str,
         id: Value,
-        key: &str,
+        method: &str,
+        params: &Value,
         value: Value,
     ) -> Result<Outcome> {
         if let Some(error) = value.get("_nativeError") {
@@ -45,15 +46,20 @@ impl Core {
             return Ok(Outcome::Reply(value));
         }
         let scope = self.clients[connection].scope.clone();
-        let waiters = self.native_waiters.entry((scope, key.into())).or_default();
+        let key = errors::param_str(params, "idempotencyKey")?.to_owned();
+        let waiters = self.native_waiters.entry((scope, key)).or_default();
         if !waiters
             .iter()
-            .any(|(owner, request)| owner == connection && *request == id)
+            .any(|waiter| waiter.connection == connection && waiter.request_id == id)
         {
             if waiters.len() >= 128 {
                 return Err(errors::pane_busy("Native operation waiter limit reached"));
             }
-            waiters.push((connection.into(), id));
+            waiters.push(Waiter {
+                connection: connection.into(),
+                request_id: id,
+                method: method.into(),
+            });
         }
         Ok(Outcome::Queued)
     }
@@ -63,15 +69,15 @@ impl Core {
             .native_waiters
             .remove(&(completion.user.scope.clone(), completion.user.key.clone()))
             .unwrap_or_default();
-        for (connection, id) in waiters {
+        for waiter in waiters {
             if let Some(client) = self
                 .clients
-                .get(&connection)
+                .get(&waiter.connection)
                 .filter(|client| client.scope == completion.user.scope && client.actor.is_some())
             {
                 let frame = match &completion.result {
-                    Ok(value) => model::response(id, value.clone())?,
-                    Err(error) => model::failure(id, error.clone())?,
+                    Ok(value) => model::response(&waiter.method, waiter.request_id, value.clone())?,
+                    Err(error) => model::failure(waiter.request_id, error.clone())?,
                 };
                 client.outbox.send(frame);
             }

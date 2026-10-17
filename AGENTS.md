@@ -79,6 +79,13 @@ ADR when you change a boundary.
   form of the codes; the supervisor's own kinds live in `soyeht_ptyd::wire_kind`).
   `scripts/check_doc_names.py` fails when a document in `docs/` or `contracts/` (dated
   `docs/reports/` excepted) names a method, event, setting or field that does not exist.
+- The engine builds an event from the generated type of its schema: the `...Draft` types
+  (without the `eventId`, `at` and `actor` the store assigns) and `model::pending`, never a new
+  `json!` literal with a `"paneId"` key. `scripts/check_event_literals.py` holds the count of
+  those literals down. The `contract-checks` feature (ADR 0090) checks every event and result
+  the engine sends against the contract; the merge gate builds and tests with it, so a field
+  the contract does not have fails the request or, for a background publication, the engine
+  integration rig and the end-to-end run that read the engine log.
 - Rules every client must share that are not wire values (the Markdown subset of agent
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
   the same file. Change the vectors first.
@@ -259,6 +266,8 @@ inherit the main actor.
   if it cannot be resolved, so run `git fetch origin main` first. Pass
   `--base FULL_OID` to override it.
 - Rust: `export PATH="$HOME/.cargo/bin:$PATH"; (cd engine && cargo build --workspace)`.
+  Add `--features soyeht-engine/contract-checks` to build or test with the contract checks on, as
+  the merge gate does.
 - Linux and Windows engine checks (not gate steps): `scripts/check_engine_linux.sh` and
   `scripts/check_engine_windows.ps1`, or `scripts/vmpal_check_engine.sh` from a Mac
   (`docs/platforms.md`). New platform-specific code goes behind `soyeht-platform`

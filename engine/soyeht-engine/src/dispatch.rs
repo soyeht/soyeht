@@ -114,11 +114,11 @@ impl Core {
         let web_result = self.disconnect_web_host(id);
         self.clients.remove(id);
         self.native_waiters.retain(|_, waiters| {
-            waiters.retain(|(connection, _)| connection != id);
+            waiters.retain(|waiter| waiter.connection != id);
             !waiters.is_empty()
         });
         self.language_waiters.retain(|_, waiters| {
-            waiters.retain(|(connection, _)| connection != id);
+            waiters.retain(|waiter| waiter.connection != id);
             !waiters.is_empty()
         });
         web_result
@@ -358,7 +358,7 @@ impl Core {
                 let value = previous.result;
                 if uses_native_rpc_result(method) {
                     return self
-                        .native_rpc_result(connection, request_id.clone(), key, value)
+                        .native_rpc_result(connection, request_id.clone(), method, params, value)
                         .map(Some);
                 }
                 return Ok(Some(Outcome::Reply(value)));
@@ -478,12 +478,7 @@ impl Core {
             _ => return Err(errors::invalid("Method unavailable")),
         };
         if uses_native_rpc_result(method) {
-            return self.native_rpc_result(
-                connection,
-                request_id,
-                errors::param_str(params, "idempotencyKey")?,
-                result,
-            );
+            return self.native_rpc_result(connection, request_id, method, params, result);
         }
         Ok(Outcome::Reply(result))
     }

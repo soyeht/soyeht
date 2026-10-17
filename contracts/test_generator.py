@@ -29,6 +29,34 @@ class SchemaTests(unittest.TestCase):
         for name in self.schema["x-events"]:
             self.assertIn("event:" + name, names)
 
+    def test_contract_checks_name_every_schema_and_every_event_has_typed_parameters(self):
+        outputs = render(self.schema, "test-digest")
+        checks = outputs["engine/soyeht-protocol/src/contract/roundtrip.rs"]
+        for name in self.schema["$defs"]:
+            self.assertRegex(checks, rf'"{name}" =>\s*\{{?\s*decode_encode::<\s*{name},?\s*>\(')
+        rust = outputs["engine/soyeht-protocol/src/generated.rs"]
+        uses = {}
+        for name, event in self.schema["x-events"].items():
+            uses.setdefault(event["params"]["$ref"].split("/")[-1], []).append(name)
+        for type_, names in uses.items():
+            if len(names) != 1 or self.schema["$defs"][type_].get("type") != "object":
+                continue
+            durable = self.schema["x-events"][names[0]]["durable"]
+            target = type_.removesuffix("Event") + "Draft" if durable else type_
+            self.assertIn(f"impl EventParams for {target} {{", rust)
+            if durable:
+                # The store assigns these; the engine never types them.
+                draft = rust.split(f"pub struct {target} {{", 1)[1].split("\n}", 1)[0]
+                for key in ("eventId", "at"):
+                    self.assertNotIn(f'rename = "{key}"', draft)
+
+    def test_every_durable_event_may_carry_the_actor_the_store_adds(self):
+        for name, event in self.schema["x-events"].items():
+            if event["durable"]:
+                definition = self.schema["$defs"][event["params"]["$ref"].split("/")[-1]]
+                if definition.get("type") == "object":
+                    self.assertIn("actor", definition["properties"], name)
+
     def test_mutations_require_an_idempotency_key(self):
         for name, method in self.schema["x-methods"].items():
             if method["mutation"]:

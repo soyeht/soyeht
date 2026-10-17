@@ -3,6 +3,7 @@ use crate::{
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
+    model::Waiter,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -42,7 +43,7 @@ impl Core {
         } else {
             self.persist_language_server(&key, Vec::new())?;
         }
-        self.add_language_waiter(&context, connection, request_id)?;
+        self.add_language_waiter(&context, connection, request_id, method)?;
         Ok(Outcome::Queued)
     }
 
@@ -87,15 +88,19 @@ impl Core {
                 Err(error) => Err(errors::wire(error)),
             };
             let waiters = self.language_waiters.remove(&context).unwrap_or_default();
-            for (connection, id) in waiters {
+            for waiter in waiters {
                 if let Some(client) = self
                     .clients
-                    .get(&connection)
+                    .get(&waiter.connection)
                     .filter(|client| client.actor.is_some())
                 {
                     let frame = match &result {
-                        Ok(value) => crate::model::response(id, value.clone())?,
-                        Err(error) => crate::model::failure(id, error.clone())?,
+                        Ok(value) => crate::model::response(
+                            &waiter.method,
+                            waiter.request_id,
+                            value.clone(),
+                        )?,
+                        Err(error) => crate::model::failure(waiter.request_id, error.clone())?,
                     };
                     client.outbox.send(frame);
                 }
@@ -187,18 +192,23 @@ impl Core {
         context: &str,
         connection: &str,
         request_id: Value,
+        method: &str,
     ) -> Result<()> {
         let waiters = self.language_waiters.entry(context.into()).or_default();
         if waiters
             .iter()
-            .any(|(owner, id)| owner == connection && id == &request_id)
+            .any(|waiter| waiter.connection == connection && waiter.request_id == request_id)
         {
             return Ok(());
         }
         if waiters.len() >= WAITER_LIMIT {
             return Err(errors::pane_busy("Language request waiter limit reached"));
         }
-        waiters.push((connection.into(), request_id));
+        waiters.push(Waiter {
+            connection: connection.into(),
+            request_id,
+            method: method.into(),
+        });
         Ok(())
     }
 

@@ -4,6 +4,7 @@ use super::{
     state::{Phase, State},
     transcript,
 };
+use crate::model::{config_failed, pending, turn_ended};
 use crate::{
     errors::{self, Result},
     model::StoredPane,
@@ -16,6 +17,7 @@ use soyeht_acp::{
     config::Options,
     session::{self, Initialization},
 };
+use soyeht_protocol::{PaneConfigChangedDraft, PaneSessionStartedDraft};
 use soyeht_protocol::{
     PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole, event,
 };
@@ -167,7 +169,13 @@ fn finish_configuration(
             }
             super::configuration::confirmed(state, options, &operation.config_id);
             state.initial_config_failed = false;
-            changes.events.push((event::PANE_CONFIG_CHANGED.into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"options":state.options.values,"sessionPreserved":true})));
+            changes.events.push(pending(&PaneConfigChangedDraft {
+                pane_id: saved.pane.pane_id.clone(),
+                config_id: operation.config_id.clone(),
+                value: operation.value.clone(),
+                options: state.options.values.clone(),
+                session_preserved: true,
+            })?);
             Ok(super::configuration::applied(&operation.value))
         }
         Err(error) => {
@@ -183,7 +191,12 @@ fn finish_configuration(
                 Some(_) => state.initial_config_failed = true,
                 None => {}
             }
-            changes.events.push((event::PANE_CONFIG_FAILED.into(),json!({"paneId":saved.pane.pane_id,"configId":operation.config_id,"value":operation.value,"reason":error.to_string()})));
+            changes.events.push(config_failed(
+                &saved.pane.pane_id,
+                operation.config_id.clone(),
+                operation.value.clone(),
+                &error.to_string(),
+            )?);
             Err(error)
         }
     };
@@ -279,7 +292,7 @@ fn auth_response(
     saved: &StoredPane,
     changes: &mut Changes,
     result: NativeResult,
-) {
+) -> Result<()> {
     let ok = result.is_ok();
     state.auth_required = !ok;
     state.phase = if ok {
@@ -289,7 +302,16 @@ fn auth_response(
     };
     state.probe_started_ms = None;
     changes.clear_failed_probes = ok;
-    changes.events.push((event::PANE_AUTH_FINISHED.into(),json!({"paneId":saved.pane.pane_id,"ok":ok,"reason":result.err().map(|error|error.message).unwrap_or_else(||"Sign-in completed".into())})));
+    let reason = result
+        .err()
+        .map(|error| error.message)
+        .unwrap_or_else(|| "Sign-in completed".into());
+    changes.events.push(super::authentication::auth_finished(
+        &saved.pane.pane_id,
+        ok,
+        &reason,
+    )?);
+    Ok(())
 }
 
 fn initialize_response(
@@ -525,7 +547,17 @@ fn session_opened(
         PaneState::Starting
     };
     saved.pane.phrase = "Agent session ready".into();
-    changes.events.push((event::PANE_SESSION_STARTED.into(),json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"version":initialized_version(state)?,"sessionId":state.session_id,"generation":saved.pane.generation,"options":state.options.values})));
+    changes.events.push(pending(&PaneSessionStartedDraft {
+        pane_id: saved.pane.pane_id.clone(),
+        harness: state.launch.id.clone(),
+        version: initialized_version(state)?.into(),
+        session_id: state
+            .session_id
+            .clone()
+            .ok_or_else(|| errors::internal("Started session has no id"))?,
+        generation: saved.pane.generation,
+        options: state.options.values.clone(),
+    })?);
     Ok(())
 }
 
@@ -658,10 +690,12 @@ fn prompt_response(
     }
     saved.pane.state = PaneState::Idle;
     saved.pane.phrase = "Agent turn ended".into();
-    changes.events.push((
-        event::PANE_TURN_ENDED.into(),
-        json!({"paneId":saved.pane.pane_id,"promptId":context,"stopReason":reason}),
-    ));
+    changes.events.push(turn_ended(
+        &saved.pane.pane_id,
+        context.into(),
+        serde_json::from_value(Value::String(reason))
+            .map_err(|_| errors::internal("Unknown stop reason"))?,
+    )?);
     if authentication_required {
         needs_login(state, saved, changes);
     }
@@ -679,17 +713,15 @@ pub fn response(
     let (request, result) = state.client.response(message).map_err(native_error)?;
     match Purpose::parse(&request.context) {
         Purpose::Authenticate => {
-            auth_response(state, saved, changes, result);
-            return Ok(());
+            return auth_response(state, saved, changes, result);
         }
         Purpose::Logout => {
-            super::account::logout_response(
+            return super::account::logout_response(
                 state,
                 saved,
                 changes,
                 result.map(|_| ()).map_err(|error| error.message),
             );
-            return Ok(());
         }
         Purpose::Initialize => {
             return initialize_response(store, runtime, state, saved, changes, result);

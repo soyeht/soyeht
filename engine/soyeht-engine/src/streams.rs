@@ -80,7 +80,7 @@ impl Core {
         // Mapping precedes every binary frame. All tail boundaries were captured
         // while holding the same engine lock used by output ingestion.
         client.streams.remove(pane_id);
-        client.outbox.send(model::response(id,json!({"streamId":stream_id,"paneId":pane_id,"generation":generation,"firstRetainedOffset":running.screen.first_offset().to_string(),"nextOffset":high.to_string(),"binaryPaneRef":binary_ref}))?);
+        client.outbox.send(model::response(method::PANE_STREAM_SUBSCRIBE,id,json!({"streamId":stream_id,"paneId":pane_id,"generation":generation,"firstRetainedOffset":running.screen.first_offset().to_string(),"nextOffset":high.to_string(),"binaryPaneRef":binary_ref}))?);
         client.outbox.send_stream(model::notification(event::STREAM_REPLAY_START,json!({"streamId":stream_id,"generation":generation,"fromOffset":from.to_string(),"toOffset":high.to_string(),"reset":tail}))?,Arc::clone(&current));
         client.streams.insert(
             pane_id.into(),
