@@ -120,9 +120,11 @@ a value right after restart, marked stale until refreshed.
   chains outside the engine lock, providers in parallel, and may take as long
   as the slowest chain (a keychain prompt, a hidden CLI session).
 - `unavailableReason` says why there is no reading or, with a `stale`
-  reading, why the latest refresh failed: `not_checked`, `tool_not_found`,
+  reading, why the latest refresh failed: `not_checked`, `no_data`, `tool_not_found`,
   `app_server_failed`, `invalid_response`, `rate_limited`, `network_error`,
-  `login_needed`, `no_access`, `source_failed`.
+  `login_needed`, `no_access`, `source_failed`. `no_data` means the provider
+  answered with a well-formed reply that reports no window yet; it is not
+  `invalid_response`, which is a reply of the wrong shape.
 - Event `usage.changed {provider, ...}` after every manual refresh and
   every background refresh that changed what a ring shows. iPhone reads the
   same method and shows the rings in Settings.

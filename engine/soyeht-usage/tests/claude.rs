@@ -290,3 +290,48 @@ fn a_declined_browser_key_is_no_access_and_not_asked_again_for_six_hours() {
     );
     assert_eq!(asked(&host), 2);
 }
+
+fn empty_answer_host(body: &[u8]) -> Arc<FakeHost> {
+    Arc::new(
+        FakeHost::new(Platform::Linux)
+            .file(".claude/.credentials.json", &valid_login())
+            .respond(USAGE, 200, body),
+    )
+}
+
+#[test]
+fn a_missing_cache_block_is_no_data_even_when_the_later_sources_fail() {
+    // No tool is installed, so the screen source fails after the OAuth answer.
+    let outcome = refresh(&empty_answer_host(b"{}"), Trigger::Manual, NOW);
+    assert_eq!(outcome.reading.state, UsageState::Unavailable);
+    assert_eq!(
+        outcome.reading.unavailable_reason,
+        Some(UsageUnavailableReason::NoData)
+    );
+    assert_eq!(outcome.reading.source, UsageSource::ClaudeOauthEndpoint);
+    assert!(outcome.reading.primary.is_none() && outcome.reading.secondary.is_none());
+}
+
+#[test]
+fn empty_windows_are_no_data_not_invalid_data() {
+    for body in [
+        &br#"{"five_hour": null, "seven_day": null}"#[..],
+        br#"{"five_hour": {"resets_at": null}, "extra_usage": {"utilization": null}}"#,
+    ] {
+        let outcome = refresh(&empty_answer_host(body), Trigger::Manual, NOW);
+        assert_eq!(
+            outcome.reading.unavailable_reason,
+            Some(UsageUnavailableReason::NoData),
+            "{}",
+            String::from_utf8_lossy(body)
+        );
+    }
+}
+
+#[test]
+fn a_populated_answer_is_a_reading() {
+    let outcome = refresh(&empty_answer_host(usage_body()), Trigger::Manual, NOW);
+    assert_eq!(outcome.reading.state, UsageState::Ok);
+    assert!(outcome.reading.unavailable_reason.is_none());
+    assert_eq!(outcome.reading.primary.as_ref().unwrap().used, 0.23);
+}

@@ -125,6 +125,7 @@ impl Presentation<'_> {
         let provider = self.0.provider.display_name();
         Some(match self.0.unavailable_reason.as_ref()? {
             UsageUnavailableReason::NotChecked => "Usage has not been checked yet.".to_owned(),
+            UsageUnavailableReason::NoData => format!("{provider} has no usage data yet."),
             UsageUnavailableReason::ToolNotFound => format!("{provider} not found on this Mac."),
             UsageUnavailableReason::AppServerFailed => {
                 format!("{provider} app server could not provide usage.")

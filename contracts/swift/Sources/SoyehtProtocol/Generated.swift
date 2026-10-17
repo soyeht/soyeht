@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9bb117402f4ec1fb09eae31802dbe473e93d71604bc115885ff580588304f488). Do not edit.
+// Generated from contracts/protocol.json (sha256 4215ca4da68a5c1aac0c2c6e622a61375a04c6157e0a895566c3946275077d19). Do not edit.
 import Foundation
 
 
@@ -4306,6 +4306,7 @@ public enum UsageState: String, Codable, Sendable {
 
 public enum UsageUnavailableReason: String, Codable, Sendable {
     case `not_checked` = "not_checked"
+    case `no_data` = "no_data"
     case `tool_not_found` = "tool_not_found"
     case `app_server_failed` = "app_server_failed"
     case `invalid_response` = "invalid_response"

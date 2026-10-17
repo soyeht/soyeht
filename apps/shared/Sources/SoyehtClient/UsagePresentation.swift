@@ -121,6 +121,7 @@ public struct UsagePresentation: Sendable {
   ) -> String? {
     switch reason {
     case .not_checked: "Usage has not been checked yet."
+    case .no_data: "\(provider.displayName) has no usage data yet."
     case .tool_not_found: "\(provider.displayName) not found on this Mac."
     case .app_server_failed: "\(provider.displayName) app server could not provide usage."
     case .invalid_response: "Usage reader returned invalid data."

@@ -54,6 +54,8 @@ pub enum Failure {
     Network,
     /// A response that does not have the expected shape.
     InvalidResponse,
+    /// A well-formed answer that carries no reading yet: every window is absent or null.
+    NoData,
     /// A tool that ran but could not produce usage (failed app server, incomplete screen).
     Failed,
 }

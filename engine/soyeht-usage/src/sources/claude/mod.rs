@@ -50,8 +50,10 @@ fn parse_windows(document: &Value) -> Result<ParsedReading, Failure> {
             break;
         }
     }
+    // Every window absent or null is a well-formed account with nothing reported yet, not a
+    // malformed answer.
     let Some((primary_key, primary)) = primary else {
-        return Err(Failure::InvalidResponse);
+        return Err(Failure::NoData);
     };
     let secondary = if primary_key == "seven_day" {
         None
@@ -105,9 +107,32 @@ mod tests {
         assert_eq!(reading.primary.label, WEEKLY_LABEL);
         assert_eq!(reading.primary.resets_at, "");
         assert!(reading.secondary.is_none());
-        assert_eq!(
-            parse_windows(&json!({"five_hour": null})),
-            Err(Failure::InvalidResponse)
-        );
+    }
+
+    #[test]
+    fn absent_or_empty_windows_are_no_data_not_an_invalid_response() {
+        for document in [
+            json!({}),
+            json!({"five_hour": null, "seven_day": null}),
+            json!({"five_hour": {}, "seven_day": {"utilization": null, "resets_at": null}}),
+            json!({"extra_usage": {"is_enabled": false, "utilization": null}}),
+        ] {
+            assert_eq!(parse_windows(&document), Err(Failure::NoData), "{document}");
+        }
+    }
+
+    #[test]
+    fn malformed_windows_stay_an_invalid_response() {
+        for document in [
+            json!([]),
+            json!("text"),
+            json!({"five_hour": {"utilization": "high"}}),
+        ] {
+            assert_eq!(
+                parse_windows(&document),
+                Err(Failure::InvalidResponse),
+                "{document}"
+            );
+        }
     }
 }

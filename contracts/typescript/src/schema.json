@@ -7740,6 +7740,7 @@
       "type": "string",
       "enum": [
         "not_checked",
+        "no_data",
         "tool_not_found",
         "app_server_failed",
         "invalid_response",

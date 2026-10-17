@@ -3,7 +3,8 @@
 //! The rules come from CodexBar's `ProviderFetchPipeline` and the provider descriptors: a source
 //! with nothing to read is skipped, a failure continues to the next source only when that
 //! source's fallback rule allows it, and when every source fails the error shown is the last one
-//! that was actually attempted. Cooldowns and the CLI reuse window protect automatic refreshes
+//! that was actually attempted, except that a source's well-formed answer of no usage yet
+//! (`NoData`) is kept over the failures of the sources after it. Cooldowns and the CLI reuse window protect automatic refreshes
 //! only; a manual refresh always tries every source, as a click does in CodexBar.
 
 use crate::{
@@ -125,7 +126,10 @@ impl Planner {
                 Err(failure) => {
                     self.remember_failure(source.as_ref(), &failure, trigger, now_sec);
                     let continues = source.falls_back(&failure);
-                    if failure.attempted() {
+                    // A source that answered with no usage yet is the answer: a later source
+                    // that is missing or fails must not turn it into a tool or login error.
+                    let answered_empty = matches!(last, Some((_, Failure::NoData)));
+                    if failure.attempted() && !answered_empty {
                         last = Some((id, failure));
                     }
                     if !continues {
@@ -311,6 +315,7 @@ fn public_failure(
             Some(TransientFailure::Network),
         ),
         Failure::InvalidResponse => (UsageState::Unavailable, Some(Reason::InvalidResponse), None),
+        Failure::NoData => (UsageState::Unavailable, Some(Reason::NoData), None),
         Failure::Failed if *source == UsageSource::CodexAppServer => {
             (UsageState::Unavailable, Some(Reason::AppServerFailed), None)
         }

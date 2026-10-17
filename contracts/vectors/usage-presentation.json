@@ -227,6 +227,22 @@
       "staleHint": null
     },
     {
+      "name": "unavailable because the provider reports no usage yet",
+      "reading": {
+        "provider": "claude",
+        "state": "unavailable",
+        "source": "claude_oauth_endpoint",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "no_data"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Claude has no usage data yet.",
+      "staleHint": null
+    },
+    {
       "name": "unavailable for a failing app server",
       "reading": {
         "provider": "codex",

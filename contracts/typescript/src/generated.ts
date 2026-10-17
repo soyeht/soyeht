@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 9bb117402f4ec1fb09eae31802dbe473e93d71604bc115885ff580588304f488). Do not edit.
+// Generated from contracts/protocol.json (sha256 4215ca4da68a5c1aac0c2c6e622a61375a04c6157e0a895566c3946275077d19). Do not edit.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
 export type Id = string;
@@ -2171,7 +2171,7 @@ export type UsageProvider = "claude" | "codex" | "cursor";
 
 export type UsageState = "ok" | "stale" | "login_needed" | "no_access" | "unavailable";
 
-export type UsageUnavailableReason = "not_checked" | "tool_not_found" | "app_server_failed" | "invalid_response" | "rate_limited" | "network_error" | "login_needed" | "no_access" | "source_failed";
+export type UsageUnavailableReason = "not_checked" | "no_data" | "tool_not_found" | "app_server_failed" | "invalid_response" | "rate_limited" | "network_error" | "login_needed" | "no_access" | "source_failed";
 
 export type UsageSource = "claude_cli_usage" | "claude_oauth_endpoint" | "claude_desktop_cache" | "claude_web" | "codex_app_server" | "codex_account_endpoint" | "codex_access_token" | "cursor_current_period" | "cursor_app_login" | "cursor_browser_cookies";
 
