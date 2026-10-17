@@ -9,6 +9,7 @@ pub mod dispatch;
 pub mod editor;
 pub mod engine_build;
 pub mod errors;
+mod experiment_build;
 mod experiment_export;
 mod frames;
 pub mod hooks;
@@ -39,6 +40,8 @@ mod terminal_harness;
 pub mod terminal_projection;
 #[cfg(feature = "test-hooks")]
 pub mod test_hooks;
+#[cfg(test)]
+mod test_panes;
 #[cfg(test)]
 mod test_paths;
 mod tick;

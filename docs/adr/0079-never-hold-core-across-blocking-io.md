@@ -87,6 +87,58 @@ it.
 | `lsof +D` | 30 s |
 | local-server `lsof` | 5 s |
 
+**Starts are serialised.** `run` creates a pipe pair for the child, and a
+process another thread starts at the same moment can inherit the write ends
+before it has replaced its own image. Two mechanisms do this:
+
+- On Unix a fork copies every open descriptor, `CLOEXEC` ones included, and the
+  copies are dropped only at `exec`. Until the second program is loaded, the
+  new process holds the first command's write ends. On a loaded macOS host that
+  load takes seconds, because the system assesses the first run of a new binary.
+- macOS has no `pipe2`. `pipe()` followed by `fcntl(FD_CLOEXEC)` leaves a window
+  in which a concurrent fork inherits the new descriptors for good, not only
+  until its `exec`.
+
+Either way the first command has exited, but its output never reaches the end of
+the file, and its collector waits out the pipe grace and reports a timeout for a
+command that finished. One start at a time leaves no overlap, so
+`soyeht_process::starting` holds one lock per process, in the engine, around
+every process start there: `run` itself, the usage JSON-RPC conversation and
+the login-shell probe. `soyeht-ptyd` is a separate process with its own pipes,
+and it already holds its global state mutex across every request, `Spawn`
+included, so it needs no second lock. Hold the engine's lock for the start only;
+anything that waits for the new process belongs after it, since every other
+start queues behind this one. The time a `run` spends queued counts against its
+own timeout, so a stuck start cannot keep a caller past its deadline: the call
+returns `Error::TimedOut` when the lock is not free in time. A thread that holds
+the Core lock is refused before it can queue, by `run` and by `starting`
+alike (`Error::UnderLock`).
+
+What is not done: after a command exits, `run` still waits for the end of its
+pipes (up to one second) instead of reading what is already there. Reading
+without waiting needs `poll` on Unix and `PeekNamedPipe` on Windows, and a wait
+that gives up early could cut off output on a loaded host. The start lock removes
+the cause that made that wait long.
+
+**The engine build is never hashed under the lock.** Every experiment capture
+records the SHA-256 of the engine's executable, which reads the whole file.
+`engine_build::cell()` holds it, started at launch by `prefetch_engine_build`,
+and `ready()` only looks. Under the lock `Core::capture_build` is that look and
+nothing more. `pane.experiment.set` turning a capture on while the hash is still
+running answers with an `Offload` that waits for it and then runs the request
+again. Restoring the captures a restart left on does not hold up the first
+listen: the wait is a background job, the output of those panes stays in the
+supervisor until the job restores them, and so the capture still starts at the
+first byte after the restart. That hold is bounded: if the hash is not known
+within 60 s the waiting captures stop with a reason and the panes drain again
+(the supervisor keeps 8 MiB of output per pane, so a longer wait loses the first
+bytes anyway). A `pane.experiment.hook` that comes while captures wait is not
+answered as a no-op, which its sender never repeats: it answers with an `Offload`
+that waits for the hash, settles the waiting captures and then records. The count of waiting panes is logged once, never their paths. The
+result of the hash is kept, a failure included: it is logged once, by kind, and
+a later enable answers with it at once. `EngineBuildCell::wait`, like `run`,
+refuses a thread that holds the Core lock.
+
 **The lock is taken in one place.** `core_lock::lock` and `core_lock::with`
 are the only ways to take it. `with` runs on a blocking thread, so no async
 worker ever waits for the lock. The guard marks its thread with

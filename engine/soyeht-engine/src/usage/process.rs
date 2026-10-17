@@ -183,13 +183,19 @@ enum Line {
 
 /// One JSON-RPC exchange with a child that speaks one JSON document per line.
 pub(super) fn json_rpc(program: &Path, path_env: &str, request: &RpcRequest) -> RpcRun {
-    let spawned = Command::new(program)
+    let mut command = Command::new(program);
+    command
         .args(&request.args)
         .env("PATH", path_env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn();
+        .stderr(Stdio::null());
+    // The exchange is a conversation over the pipes, which `soyeht_process::run` does not
+    // offer; the start still queues with every other.
+    let Ok(spawned) = soyeht_process::starting("usage source", || command.spawn()) else {
+        // Refused under the Core lock; `Failed` reaches the reading as an unavailable source.
+        return RpcRun::Failed;
+    };
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

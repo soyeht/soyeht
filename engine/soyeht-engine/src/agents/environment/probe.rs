@@ -103,12 +103,16 @@ fn run_probe_command(
     command: &str,
     timeout: Duration,
 ) -> Result<String, LaunchPathIssue> {
-    let mut child = Command::new(shell)
+    let mut probe = Command::new(shell);
+    probe
         .args(["-l", "-i", "-c", command])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    // Not through `soyeht_process::run`: the probe reads its pipe by hand, so it can end at
+    // the first complete answer. Its start still queues with every other.
+    let mut child = soyeht_process::starting("shell", || probe.spawn())
+        .map_err(|_| LaunchPathIssue::ProbeFailed)?
         .map_err(|_| LaunchPathIssue::ProbeFailed)?;
     let Some(mut stdout) = child.stdout.take() else {
         return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed));

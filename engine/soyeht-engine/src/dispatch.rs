@@ -389,10 +389,10 @@ impl Core {
             | method::PANE_RENAME
             | method::PANE_RESIZE
             | method::PANE_RECORD_SET
-            | method::PANE_EXPERIMENT_SET
             | method::PANE_EXPERIMENT_DELETE => self.pane_edit(connection, method, params)?,
+            method::PANE_EXPERIMENT_SET => return self.pane_experiment_set(connection, params),
             method::PANE_EXPERIMENT_EXPORT => self.export_experiment(connection, params)?,
-            method::PANE_EXPERIMENT_HOOK => self.record_hook_event(connection, params)?,
+            method::PANE_EXPERIMENT_HOOK => return self.pane_experiment_hook(connection, params),
             method::PANE_INPUT => self.pane_input(connection, params)?,
             method::PANE_HARNESS_SWITCH => self.agent_harness_switch(connection, params)?,
             method::PANE_ROLE_SET => self.pane_role_set(connection, params)?,
