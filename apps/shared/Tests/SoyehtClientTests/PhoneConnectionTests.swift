@@ -11,6 +11,17 @@
     let bins =
       ProcessInfo.processInfo.environment["SOYEHT_TEST_BIN_DIR"].map { URL(fileURLWithPath: $0) }
       ?? root.appendingPathComponent("engine/target/debug")
+    // The engine refuses to start an agent without `soyeht-mcp` next to it, and the pane then
+    // waits for a session that never opens. Name the missing program before the 30 s wait.
+    let missing = ["soyeht-engine", "soyeht-ptyd", "soyeht", "soyeht-fake-acp", "soyeht-mcp"]
+      .filter {
+        !FileManager.default.isExecutableFile(atPath: bins.appendingPathComponent($0).path)
+      }
+    guard missing.isEmpty else {
+      throw ClientFailure.remote(
+        "test_setup",
+        "missing \(missing.joined(separator: ", ")) in \(bins.path); build the whole workspace")
+    }
     let data = URL(fileURLWithPath: "/tmp/sn-phone-" + UUID().uuidString.prefix(8))
     try FileManager.default.createDirectory(
       at: data, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -111,7 +122,10 @@
   ) async throws {
     _ = try await local.createAgentPaneNow(
       directory: data, harness: "swift-test", model: nil, effort: nil)
-    try await phoneWait("local agent session did not open") {
+    try await phoneWait(
+      "local agent session did not open",
+      details: local.panes.first { $0.mode == .agent }?.phrase ?? "no agent pane"
+    ) {
       local.panes.contains { $0.mode == .agent && $0.agent?.sessionId != nil }
     }
     let agent = try #require(local.panes.first { $0.mode == .agent }?.paneId)
