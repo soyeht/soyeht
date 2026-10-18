@@ -297,6 +297,8 @@ step e2e full e2e:tcc-check uv run python scripts/tcc_guard.py check .cache/tcc-
 step swift full swift:check-swift bash scripts/check_swift.sh
 step always both mac-text-fonts:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'
 step always both mac-text-fonts:check uv run python scripts/check_mac_text_fonts.py
+step always both mac-environment:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_environment.py'
+step always both mac-environment:check uv run python scripts/check_mac_environment.py
 step always both mac-identifier-text:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_identifier_text.py'
 step always both mac-identifier-text:check uv run python scripts/check_mac_identifier_text.py
 step always both mac-view-colors:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_view_colors.py'

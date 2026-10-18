@@ -13,6 +13,7 @@ struct SoyehtMacApp: App {
   @State private var themeStore = SoyehtThemeStore.shared
   @State private var attentionNotifications = AgentAttentionNotifications()
   @State private var editorInputPreferences = EditorInputPreferences()
+  @State private var webLinkPreferences = WebLinkPreferences()
   private let webHost: MacWebHost
 
   init() {
@@ -115,6 +116,7 @@ struct SoyehtMacApp: App {
       .environment(themeStore)
       .environment(attentionNotifications)
       .environment(editorInputPreferences)
+      .environment(webLinkPreferences)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
   }

@@ -7,9 +7,6 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
   case appearance
   case harnesses
   case usage
-  case engine
-  case phone
-  case tasks
   case links
   case editor
   case skills
@@ -23,9 +20,6 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
     case .appearance: "Appearance"
     case .harnesses: "Harnesses"
     case .usage: "Usage"
-    case .engine: "Engine"
-    case .phone: "Phone"
-    case .tasks: "Tasks & loops"
     case .editor: "Shortcuts"
     case .links: "Links"
     case .skills: "Skills"
@@ -39,18 +33,12 @@ private enum PreferencesNavigationItem: CaseIterable, Identifiable {
     case .appearance: "paintpalette"
     case .harnesses: "cpu"
     case .usage: "gauge.with.dots.needle.50percent"
-    case .engine: "memorychip"
-    case .phone: "iphone"
-    case .tasks: "list.bullet.clipboard"
     case .editor: "keyboard"
     case .links: "link"
     case .skills: "wand.and.stars"
     case .dictation: "mic"
     }
   }
-
-  /// The sections still without a detail page are the placeholders.
-  var hasDetail: Bool { ![.engine, .phone, .tasks].contains(self) }
 }
 
 struct PreferencesPanel: View {
@@ -122,7 +110,7 @@ struct PreferencesPanel: View {
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
             .padding(.horizontal, MacTheme.Space.x8)
           ForEach(PreferencesNavigationItem.allCases) { item in
-            if item.hasDetail { compactButton(item) } else { compactPlaceholder(item) }
+            compactButton(item)
           }
         }
         .padding(MacTheme.Space.x8)
@@ -155,21 +143,6 @@ struct PreferencesPanel: View {
     .buttonStyle(.plain)
   }
 
-  private func compactPlaceholder(_ item: PreferencesNavigationItem) -> some View {
-    HStack(spacing: MacTheme.Space.x10) {
-      Image(systemName: item.icon)
-        .frame(width: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationIconWidth))
-      Text(item.title)
-      Spacer()
-    }
-    .font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
-    .foregroundStyle(MacTheme.muted)
-    .padding(.horizontal, MacTheme.Space.x12)
-    .frame(
-      maxWidth: .infinity,
-      minHeight: CGFloat(MacSheetLayoutMetrics.standard.compactNavigationRowHeight))
-  }
-
   @ViewBuilder private func preferenceDetail(_ selected: PreferencesNavigationItem) -> some View {
     switch selected {
     case .general: GeneralPreferencesPanel()
@@ -181,7 +154,6 @@ struct PreferencesPanel: View {
     case .links: WebLinkPreferencesPanel()
     case .skills: SkillsPreferencesPanel(client: client)
     case .dictation: DictationPreferencesPanel()
-    case .engine, .phone, .tasks: EmptyView()
     }
   }
 
@@ -205,7 +177,7 @@ private struct PreferencesSidebar: View {
         .padding(.horizontal, MacTheme.Space.x4)
       Color.clear.frame(height: MacTheme.Space.x8)
       ForEach(PreferencesNavigationItem.allCases) { item in
-        if item.hasDetail { sidebarButton(item) } else { sidebarRow(item) }
+        sidebarButton(item)
       }
       Spacer()
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
@@ -224,9 +196,7 @@ private struct PreferencesSidebar: View {
     .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 
-  private func sidebarRow(
-    _ item: PreferencesNavigationItem, selected: Bool = false
-  ) -> some View {
+  private func sidebarRow(_ item: PreferencesNavigationItem, selected: Bool) -> some View {
     HStack(spacing: MacTheme.Space.x10) {
       Image(systemName: item.icon)
         .font(.system(size: 13, weight: .semibold))

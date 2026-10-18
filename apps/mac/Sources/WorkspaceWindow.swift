@@ -7,10 +7,10 @@ import SwiftUI
 
 struct WorkspaceWindow: View {
   @Environment(AgentAttentionNotifications.self) private var attentionNotifications
+  @Environment(WebLinkPreferences.self) private var webLinkPreferences
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
-  @State private var webLinkPreferences = WebLinkPreferences()
   @State private var paneToClose: String?
   @State private var newPaneDraft: NewPaneDraft?
   @State private var showPairing = false
@@ -28,7 +28,6 @@ struct WorkspaceWindow: View {
           PaneLayoutSize(width: geometry.size.width, height: geometry.size.height))
     }
     .background(MacTheme.canvas).foregroundStyle(MacTheme.ink).buttonStyle(.plain)
-    .environment(webLinkPreferences)
     .environment(
       \.terminalKeyboardInputEnabled, editorPaletteMode == nil && !slideShow.isPresenting
     )
