@@ -10,7 +10,7 @@ from pathlib import Path
 from e2e import ROOT, Services, receive, require, send
 from e2e_agents import request
 
-LOCAL_SERVER_WINDOW_SECONDS = 15
+LOCAL_SERVER_HANG_SECONDS = 120
 
 
 def web_panes(client):
@@ -128,36 +128,57 @@ def open_low_listener():
     raise OSError("no free unprivileged port for the local server acceptance")
 
 
-def wait_for_local_server(client, port, listed, message):
-    """Poll servers.local.list until this process's listener is (not) listed.
-
-    The engine rescans every 5s, and a scan under host load can come back
-    empty, so allow three rescan periods. Matching on pid as well as port keeps
-    another process that reuses the port from changing the verdict.
-    """
-    deadline = time.monotonic() + LOCAL_SERVER_WINDOW_SECONDS
+def next_local_servers(client, deadline, message):
+    """The list of the next `servers.local.changed` event, once the engine publishes it."""
     while True:
-        servers = client.call("servers.local.list", {})["servers"]
-        require(len(servers) <= 50, "local server list exceeded its bound")
-        if any(server["port"] == port and server["pid"] == os.getpid()
-               for server in servers) == listed:
-            return
-        require(time.monotonic() < deadline, message)
-        time.sleep(1)
+        for index, event in enumerate(client.pending):
+            if event.get("method") == "servers.local.changed":
+                del client.pending[:index + 1]
+                return event["params"]["servers"]
+        client.pending.clear()
+        remaining = deadline - time.monotonic()
+        require(remaining > 0, message)
+        previous = client.stream.gettimeout()
+        client.stream.settimeout(remaining)
+        try:
+            client.pending.append(receive(client.stream))
+        except socket.timeout:
+            require(False, message)
+        finally:
+            client.stream.settimeout(previous)
+
+
+def wait_for_local_server(client, port, listed, message, servers=None):
+    """Wait until this process's listener is (not) in the engine's list of local servers.
+
+    The engine publishes `servers.local.changed` when a scan finds a different list, so
+    this waits for that event instead of asking again on a timer: how long a scan takes
+    on a busy host is the engine's business, and `LOCAL_SERVER_HANG_SECONDS` only stops
+    a wait on an engine that never answers. `servers` is the list already known; without
+    one the wait starts with the next event. Matching on pid as well as port keeps another
+    process that reuses the port from changing the verdict. Returns the list that settled it.
+    """
+    deadline = time.monotonic() + LOCAL_SERVER_HANG_SECONDS
+    while True:
+        if servers is not None:
+            require(len(servers) <= 50, "local server list exceeded its bound")
+            if any(server["port"] == port and server["pid"] == os.getpid()
+                   for server in servers) == listed:
+                return servers
+        servers = next_local_servers(client, deadline, message)
 
 
 def acceptance_local_server_changes(client, listener, results):
     port = listener.getsockname()[1]
     cursor = client.snapshot()[0]["cursor"]
     client.call("events.subscribe", {"since": cursor})
-    wait_for_local_server(client, port, True, "live local server was not discovered")
+    # Asked after subscribing, so a scan that finished earlier is in the answer and one that
+    # finishes later is an event.
+    known = client.call("servers.local.list", {})["servers"]
+    wait_for_local_server(client, port, True, "live local server was not discovered", known)
     listener.close()
     client.pending.clear()
     wait_for_local_server(client, port, False, "closed local server remained listed")
-    changes = [message for message in client.pending
-               if message.get("method") == "servers.local.changed"]
-    require(changes and len(changes[-1]["params"]["servers"]) <= 50,
-            "local server change was not published as a bounded event")
     results.append({"acceptance": 4, "name": "bounded_local_server_changes", "passed": True})
 
 

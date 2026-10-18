@@ -85,7 +85,7 @@ it.
 | `wt list` | 30 s |
 | `wt switch`, `wt remove` | 120 s |
 | `lsof +D` | 30 s |
-| local-server `lsof` | 5 s |
+| local-server `lsof` | 5 s per run; after a run times out, the next gets twice as long, up to 15 s, and 5 s again once a run finishes |
 
 **Starts are serialised.** `run` creates a pipe pair for the child, and a
 process another thread starts at the same moment can inherit the write ends

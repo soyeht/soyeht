@@ -7,25 +7,55 @@ use {
     std::{ffi::OsStr, path::Path, process::Command},
 };
 
-const SCAN_TIMEOUT: Duration = Duration::from_secs(5);
+/// What one `lsof` run is given on an ordinary host.
+pub(super) const SCAN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How many times [`SCAN_TIMEOUT`] one run may be given after runs that timed out.
+pub(super) const SCAN_PATIENCE: u32 = 3;
 
 pub struct SystemPortScan {
     // Windows has no program to run: its scan reports that listing is unavailable.
     #[cfg_attr(windows, allow(dead_code))]
     program: PathBuf,
+    /// What each run is given while the host keeps up.
     #[cfg_attr(windows, allow(dead_code))]
     timeout: Duration,
+    /// What the next run is given: `timeout`, or more after a run that timed out. A host
+    /// busy enough to outlive `timeout` once usually does so again, and killing the same
+    /// slow run every period would leave the list empty for as long as the load lasts.
+    #[cfg_attr(windows, allow(dead_code))]
+    allowance: Duration,
+}
+
+impl SystemPortScan {
+    fn with(program: PathBuf, timeout: Duration) -> Self {
+        Self {
+            program,
+            timeout,
+            allowance: timeout,
+        }
+    }
+
+    /// Doubles the allowance, up to `SCAN_PATIENCE` times `timeout`, after a run that timed
+    /// out; any other outcome means the host keeps up, and the allowance returns to `timeout`.
+    #[cfg(unix)]
+    fn learn(&mut self, outcome: &Result<PortScanObservation, PortScanError>) {
+        let timed_out = matches!(outcome, Err(PortScanError::Process(error)) if error.timed_out());
+        self.allowance = if timed_out {
+            (self.allowance * 2).min(self.timeout * SCAN_PATIENCE)
+        } else {
+            self.timeout
+        };
+    }
 }
 
 impl Default for SystemPortScan {
     fn default() -> Self {
-        Self {
-            #[cfg(unix)]
-            program: lsof_program(),
-            #[cfg(windows)]
-            program: PathBuf::new(),
-            timeout: SCAN_TIMEOUT,
-        }
+        #[cfg(unix)]
+        let program = lsof_program();
+        #[cfg(windows)]
+        let program = PathBuf::new();
+        Self::with(program, SCAN_TIMEOUT)
     }
 }
 
@@ -79,9 +109,18 @@ const UNAVAILABLE: &str = "Listing local servers is not available on Windows";
 #[cfg(unix)]
 impl PortScanPort for SystemPortScan {
     fn scan(&mut self) -> Result<PortScanObservation, PortScanError> {
+        let outcome = self.observe();
+        self.learn(&outcome);
+        outcome
+    }
+}
+
+#[cfg(unix)]
+impl SystemPortScan {
+    fn observe(&self) -> Result<PortScanObservation, PortScanError> {
         let listeners = run_lsof(
             &self.program,
-            self.timeout,
+            self.allowance,
             &["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-F0pcn"],
         )?;
         let pids = LocalServerScan::listener_pids(&listeners).map_err(PortScanError::Unreadable)?;
@@ -95,7 +134,7 @@ impl PortScanPort for SystemPortScan {
                 .join(",");
             run_lsof(
                 &self.program,
-                self.timeout,
+                self.allowance,
                 &["-nP", "-a", "-p", &list, "-d", "cwd", "-F0pn"],
             )?
         };
@@ -162,10 +201,7 @@ mod tests {
     }
 
     fn scanner(program: PathBuf) -> SystemPortScan {
-        SystemPortScan {
-            program,
-            timeout: Duration::from_secs(10),
-        }
+        SystemPortScan::with(program, Duration::from_secs(10))
     }
 
     /// Scans with a stand-in `lsof` running `body`, then removes it.
@@ -280,14 +316,50 @@ printf 'p17\0cnode\0n127.0.0.1:5173\0'"#,
             "{missing}"
         );
         let program = script("sleep 30");
-        let mut hung = scanner(program.clone());
-        hung.timeout = Duration::from_millis(200);
+        let mut hung = SystemPortScan::with(program.clone(), Duration::from_millis(200));
         let error = hung.scan().unwrap_err();
         fs::remove_file(program).unwrap();
         assert!(
             matches!(&error, PortScanError::Process(inner) if inner.timed_out()),
             "{error}"
         );
+    }
+
+    #[test]
+    fn a_host_that_outlives_the_deadline_is_given_more_time_until_it_keeps_up() {
+        let hanging = script("sleep 30");
+        let base = Duration::from_millis(100);
+        let mut adapter = SystemPortScan::with(hanging.clone(), base);
+        let mut allowances = Vec::new();
+        for _ in 0..4 {
+            let error = adapter.scan().unwrap_err();
+            assert!(
+                matches!(&error, PortScanError::Process(inner) if inner.timed_out()),
+                "{error}"
+            );
+            allowances.push(adapter.allowance);
+        }
+        // Doubled, then held at the patience limit rather than growing without bound.
+        assert_eq!(
+            allowances,
+            [200, 300, 300, 300].map(Duration::from_millis),
+            "base {base:?}"
+        );
+        // A run that finished is the host keeping up: the base deadline returns.
+        adapter.learn(&Ok(PortScanObservation {
+            listeners: Vec::new(),
+            directories: Vec::new(),
+        }));
+        assert_eq!(adapter.allowance, base);
+        fs::remove_file(hanging).unwrap();
+    }
+
+    #[test]
+    fn a_failure_that_is_not_a_timeout_does_not_widen_the_deadline() {
+        let mut adapter = SystemPortScan::with(script("exit 2"), Duration::from_secs(10));
+        assert!(adapter.scan().is_err());
+        assert_eq!(adapter.allowance, adapter.timeout);
+        fs::remove_file(adapter.program).unwrap();
     }
 
     #[test]

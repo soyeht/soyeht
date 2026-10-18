@@ -12,6 +12,7 @@ pub use host::WebWaiter;
 pub use system::SystemPortScan;
 #[cfg(unix)]
 pub(crate) use system::lsof_program;
+use system::{SCAN_PATIENCE, SCAN_TIMEOUT};
 
 use crate::{
     core::Core,
@@ -27,8 +28,10 @@ use std::time::Duration;
 
 const REFRESH_INTERVAL_MS: i64 = 5_000;
 const SCAN_JOB: &str = "local_servers";
-/// Two bounded `lsof` runs, plus a wait behind a scan already running.
-const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+/// A scan at its longest, which is two `lsof` runs at their longest allowance, plus a wait
+/// behind a scan already running.
+const LIST_TIMEOUT: Duration =
+    Duration::from_secs(2 * 2 * SCAN_PATIENCE as u64 * SCAN_TIMEOUT.as_secs());
 
 pub(crate) fn handles_host_update(method: &str) -> bool {
     matches!(
