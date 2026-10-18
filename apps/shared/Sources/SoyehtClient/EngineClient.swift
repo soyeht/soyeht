@@ -87,6 +87,9 @@ public final class EngineClient {
     }
   }
   @ObservationIgnored private var wire: Wire?
+  /// Answers requests in place of the wire; tests set it to play the engine.
+  @ObservationIgnored var requestStub:
+    (@MainActor (RequestMethod, JsonValue) async throws -> JsonValue)?
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
   @ObservationIgnored private var snapshot = SnapshotAssembly()
@@ -317,7 +320,7 @@ public final class EngineClient {
         #endif
       case .agent:
         await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
-      case .editor: try await loadEditorPane(pane.paneId)
+      case .editor: await loadEditorPane(pane.paneId)
       case .web: break
       case .writing: try await loadWritingPane(pane.paneId)
       }
@@ -336,6 +339,9 @@ public final class EngineClient {
     _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = defaultRequestTimeout,
     attachments: [WebHostAttachment] = []
   ) async throws -> EngineResponse {
+    if let requestStub {
+      return EngineResponse(value: try await requestStub(method, params), attachment: nil)
+    }
     guard let wire else { throw ClientFailure.disconnected }
     return try await pendingResponse(
       method, params, timeoutSeconds: timeoutSeconds,
@@ -618,33 +624,7 @@ public final class EngineClient {
     }
   }
 
-  func applyPaneCreated(_ event: PaneCreatedEvent) throws {
-    let pane = event.pane
-    switch pane.mode {
-    case .editor:
-      if event.file == nil, event.writingDocument == nil { break }
-      guard let file = event.file, event.writingDocument == nil,
-        file.paneId == pane.paneId, file.workspaceId == pane.workspaceId
-      else { throw ClientFailure.invalidFrame }
-      upsertEditor(file)
-    case .writing:
-      if event.file == nil, event.writingDocument == nil { break }
-      guard let file = event.file, let document = event.writingDocument,
-        file.paneId == pane.paneId, file.workspaceId == pane.workspaceId,
-        try JsonValue.encoded(file) == JsonValue.encoded(document.file),
-        pane.writingKind == document.kind, pane.writingSection == document.section
-      else { throw ClientFailure.invalidFrame }
-      upsertEditor(file)
-      writingDocuments[file.fileId] = WritingDocumentView(document: document)
-    case .terminal, .agent, .web:
-      guard event.file == nil, event.writingDocument == nil else {
-        throw ClientFailure.invalidFrame
-      }
-    }
-    acceptPane(pane)
-  }
-
-  private func acceptPane(_ pane: Pane) {
+  func acceptPane(_ pane: Pane) {
     upsertPane(pane)
     #if os(macOS)
       if pane.mode == .terminal, connected, !terminalStreams.contains(pane.paneId) {
@@ -754,7 +734,7 @@ public final class EngineClient {
             await self.hydratePresentedAgentPanes([
               PresentedPane(paneId: paneId, isVisible: true)
             ])
-          case .editor: try await self.loadEditorPane(paneId)
+          case .editor: await self.loadEditorPane(paneId)
           case .web: break
           case .writing: try await self.loadWritingPane(paneId)
           }

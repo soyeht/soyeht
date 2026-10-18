@@ -61,10 +61,11 @@ struct EditorPaneView: View {
           languageStatus: languageStatus, diff: currentDiff.map(EditorDiffPresentation.init),
           vimEnabled: inputPreferences.vimEnabled, vimMode: $vimMode,
           vimCommandLine: $vimCommandLine,
-          definition: openDefinition, findReferences: findReferences
+          definition: openDefinition, findReferences: findReferences,
+          load: client.editorPaneLoad(pane.paneId), retry: loadPage
         )
       } else {
-        editorLoading
+        EditorLoadStateView(load: client.editorPaneLoad(pane.paneId), retry: loadPage)
       }
     }
     .padding(PaneLayoutContentMetrics.paneCardInset)
@@ -92,7 +93,7 @@ struct EditorPaneView: View {
     }
     .task(id: languageStatusKey) { await pollLanguageStatus() }
     .task(id: diffKey) { await loadDiff() }
-    .task(id: viewportLoadKey) { await loadViewportIfNeeded() }
+    .task(id: viewportLoadKey) { await client.loadEditorPane(pane.paneId, refreshing: false) }
   }
 
   private var branch: String? {
@@ -112,20 +113,14 @@ struct EditorPaneView: View {
   }
 
   private var viewportLoadKey: String {
-    guard let view else { return "none:\(client.connectionRevision)" }
-    return
-      "\(view.file.fileId):\(view.file.revision):\(view.viewport == nil):\(client.connectionRevision)"
+    let held = view.map { "\($0.file.fileId):\($0.viewport == nil)" } ?? "none"
+    return "\(pane.paneId):\(held):\(client.connectionRevision)"
   }
 
-  private func loadViewportIfNeeded() async {
-    guard let view, view.viewport == nil else { return }
-    do {
-      try await client.loadEditorViewport(fileId: view.file.fileId, fromLine: 0)
-    } catch is CancellationError {
-      return
-    } catch {
-      client.problem = error.localizedDescription
-    }
+  /// Reads the first page, also for a pane whose file this client does not hold yet. A failure
+  /// is the pane's state (`EditorPaneLoad`), shown with a retry, never a spinner that stays.
+  private func loadPage() {
+    Task { await client.loadEditorPane(pane.paneId, refreshing: false) }
   }
 
   private func pollLanguageStatus() async {
@@ -187,17 +182,6 @@ struct EditorPaneView: View {
         showReferences = true
       } catch { client.problem = error.localizedDescription }
     }
-  }
-
-  private var editorLoading: some View {
-    VStack(spacing: MacTheme.Space.x10) {
-      ProgressView()
-      Text("Loading editor viewport")
-        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
-        .foregroundStyle(MacTheme.secondary)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 }
 
@@ -319,6 +303,8 @@ private struct EditorPaneBody: View {
   @Binding var vimCommandLine: String?
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
+  let load: EditorPaneLoad
+  let retry: () -> Void
 
   var body: some View {
     HStack(spacing: 0) {
@@ -328,12 +314,16 @@ private struct EditorPaneBody: View {
       }
       VStack(spacing: 0) {
         EditorTabBar(client: client, selected: view.file)
-        EditorCodeViewport(
-          client: client, view: view, selectedPosition: $selectedPosition,
-          navigationTarget: navigationTarget,
-          diff: diff, vimEnabled: vimEnabled, vimMode: $vimMode,
-          vimCommandLine: $vimCommandLine, definition: definition,
-          findReferences: findReferences)
+        if load == .ready {
+          EditorCodeViewport(
+            client: client, view: view, selectedPosition: $selectedPosition,
+            navigationTarget: navigationTarget,
+            diff: diff, vimEnabled: vimEnabled, vimMode: $vimMode,
+            vimCommandLine: $vimCommandLine, definition: definition,
+            findReferences: findReferences)
+        } else {
+          EditorLoadStateView(load: load, retry: retry)
+        }
         if view.review != nil {
           EditorAgentReviewBar(
             client: client, view: view, selectedPosition: selectedPosition)
@@ -755,5 +745,37 @@ private struct EditorReferencesSheet: View {
         isPresented = false
       } catch { client.problem = error.localizedDescription }
     }
+  }
+}
+
+/// Stands in for the text of a pane until its first page is here: a spinner while the page is
+/// on its way, and the engine's reason with a retry when the read failed.
+private struct EditorLoadStateView: View {
+  let load: EditorPaneLoad
+  let retry: () -> Void
+
+  var body: some View {
+    VStack(spacing: MacTheme.Space.x10) {
+      if case .failed(let reason) = load {
+        Text("Could not open this file")
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
+          .foregroundStyle(MacTheme.ink)
+        Text(reason)
+          .font(MacTheme.ui(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.secondary)
+          .multilineTextAlignment(.center)
+        Button("Retry", action: retry)
+          .buttonStyle(.paneSecondary)
+          .accessibilityIdentifier("editor-load-retry")
+      } else {
+        ProgressView()
+        Text("Loading editor viewport")
+          .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
+          .foregroundStyle(MacTheme.secondary)
+      }
+    }
+    .padding(MacTheme.Space.x12)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
   }
 }

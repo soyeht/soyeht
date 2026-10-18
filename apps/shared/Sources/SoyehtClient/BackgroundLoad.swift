@@ -7,6 +7,7 @@ public enum BackgroundLoad: Hashable, Sendable {
   case customHarnesses
   case defaultPermissionModes
   case catalogue(harness: String)
+  case editorPane(paneId: String)
 
   /// What a screen says when this load failed, ahead of a retry. The engine's own
   /// reason stays available through `EngineClient.loadFailure`.
@@ -16,6 +17,7 @@ public enum BackgroundLoad: Hashable, Sendable {
     case .customHarnesses: "Could not load your custom agents."
     case .defaultPermissionModes: "Could not load the default permission modes."
     case .catalogue: "Could not load the models. The engine may be busy."
+    case .editorPane: "Could not load this file. The engine may be busy."
     }
   }
 }

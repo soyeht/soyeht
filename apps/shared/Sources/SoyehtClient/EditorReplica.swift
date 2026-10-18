@@ -135,19 +135,11 @@ extension EngineClient {
       editorRefreshTasks[fileId] = nil
       editorRefreshGeneration[fileId] = nil
     }
+    backgroundLoads[.editorPane(paneId: paneId)] = nil
     editorFiles = editorFiles.filter { $0.value.file.paneId != paneId }
     if let target = editorNavigationTarget, discardedFileIds.contains(target.fileId) {
       editorNavigationTarget = nil
     }
-  }
-
-  func loadEditorPane(_ paneId: String) async throws {
-    guard let view = editorFiles.values.first(where: { $0.file.paneId == paneId }) else {
-      throw ClientFailure.invalidSnapshot
-    }
-    let start = view.viewport?.fromLine ?? 0
-    let count = view.viewport.map { $0.toLine - $0.fromLine } ?? 200
-    _ = try await readEditorFile(fileId: view.file.fileId, fromLine: start, lineCount: count)
   }
 
   @discardableResult
