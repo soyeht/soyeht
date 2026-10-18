@@ -140,6 +140,13 @@ class CulpritSearchTests(unittest.TestCase):
         self.assertEqual(result.candidates, ["c2", "c3"])
 
 
+def isolate_environment():
+    """Inside a `mock.patch.dict(os.environ)`: forget the variables post_merge reads, which a
+    watch wrapper may export (they would send the tests to a real worktree, meter or host)."""
+    for name in (post_merge.WORKTREE_ENV, post_merge.EDITOR_METER_ENV, post_merge.SSH_ENV):
+        os.environ.pop(name, None)
+
+
 class SyntheticRepositoryCase(unittest.TestCase):
     FILES = {"scripts/check_all.sh": FAKE_GATE, "a": "1"}
 
@@ -158,6 +165,7 @@ class SyntheticRepositoryCase(unittest.TestCase):
         )
         environment.start()
         self.addCleanup(environment.stop)
+        isolate_environment()
         self.addCleanup(shutil.rmtree, self.root.parent, ignore_errors=True)
 
     def add(self, name, files):
@@ -710,6 +718,96 @@ class RemoteGateTests(SyntheticRepositoryCase):
             self.assertEqual(self.run_remote(self.shas[0]), 2)
         self.assertFalse(list(self.health.glob("*.json")))
 
+    def test_a_root_with_a_tilde_is_the_hosts_home(self):
+        with mock.patch.dict(os.environ, {"HOME": str(self.root.parent)}):
+            self.assertEqual(self.run_remote(self.shas[0], root="~/host"), 0)
+        self.assertEqual(post_merge.Remote("h", "~").remote_path(), '"$HOME"\'\'')
+        self.assertEqual(post_merge.Remote("h", "/a b").remote_path(), "'/a b'")
+
+    def wrapped_git(self):
+        """A git that logs each use, and the log."""
+        real = subprocess.run(["which", "git"], capture_output=True, text=True).stdout.strip()
+        log = self.root.parent / "git-used.txt"
+        wrapper = self.root.parent / "wrapped-git"
+        wrapper.write_text(f'#!/bin/bash\necho "$@" >> {log}\nexec {real} "$@"\n')
+        wrapper.chmod(0o755)
+        return wrapper, log
+
+    def test_the_host_reads_its_git_from_the_environment_or_the_env_file(self):
+        wrapper, log = self.wrapped_git()
+        head = self.shas[0]
+        with mock.patch.dict(os.environ, {"SOYEHT_GATE_GIT": str(wrapper)}):
+            self.assertEqual(self.script_run("--sha", head, "--steps", "unit").returncode, 0)
+        self.assertIn("worktree", log.read_text())
+        log.unlink()
+        state = self.host_checkout / ".cache/remote-gate"
+        (state / "gate.env").write_text(f"SOYEHT_GATE_GIT={wrapper}\n")
+        self.assertEqual(self.script_run("--sha", head, "--steps", "unit").returncode, 0)
+        self.assertIn("checkout", log.read_text())
+
+    def test_a_failing_env_file_is_a_host_problem(self):
+        env_file = self.host_checkout / ".cache/remote-gate/gate.env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        for body in ("false\nA=1\n", "cd /nonexistent/dir\n", "A=$((\n"):
+            env_file.write_text(body)
+            result = self.script_run("--sha", self.shas[0], "--steps", "unit")
+            self.assertEqual(result.returncode, 2, body)
+            self.assertIn("gate.env failed", result.stderr)
+
+    def test_an_env_file_others_can_write_is_refused(self):
+        env_file = self.host_checkout / ".cache/remote-gate/gate.env"
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        env_file.write_text("A=1\n")
+        for mode in (0o664, 0o646):
+            env_file.chmod(mode)
+            result = self.script_run("--sha", self.shas[0], "--steps", "unit")
+            self.assertEqual(result.returncode, 2, oct(mode))
+            self.assertIn("not writable by others", result.stderr)
+        env_file.chmod(0o644)
+        self.assertEqual(self.script_run("--sha", self.shas[0], "--steps", "unit").returncode, 0)
+
+    def test_a_host_without_a_usable_git_is_a_host_problem(self):
+        with mock.patch.dict(os.environ, {"SOYEHT_GATE_GIT": "/nonexistent/git"}):
+            result = self.script_run("--sha", self.shas[0], "--steps", "unit")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("SOYEHT_GATE_GIT", result.stderr)
+
+    def test_a_host_that_is_busy_on_the_rerun_blames_no_commit(self):
+        self.assertEqual(self.run_remote(self.shas[0]), 0)
+        self.add("two", {"b": "2"})
+        self.add("breaks the engine step", {"broken": "x"})
+        head = self.add("four", {"c": "3"})
+        seen = self.root.parent / "gate-calls"
+        flaky_ssh = self.root.parent / "flaky_ssh"
+        flaky_ssh.write_text(f"""#!/bin/bash
+# The first gate call goes through; every later one finds the host's worktree busy.
+if [[ "$*" == *"--sha"* ]]; then
+    [[ -e {seen} ]] && exit 75
+    touch {seen}
+fi
+exec {self.fake_ssh} "$@"
+""")
+        flaky_ssh.chmod(0o755)
+        with mock.patch.dict(os.environ, {post_merge.SSH_ENV: str(flaky_ssh), "FAKE_STEP": "eng"}):
+            self.assertEqual(self.run_remote(head), 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "fail")
+        self.assertEqual(record["failed_step"], "eng")
+        self.assertNotIn("culprit", record)
+        self.assertNotIn("candidates", record)
+        self.assertIn("rerun", record["note"])
+
+    def test_a_busy_host_worktree_records_nothing_and_blames_no_commit(self):
+        busy_ssh = self.root.parent / "busy_ssh"
+        busy_ssh.write_text("#!/bin/bash\nexit 75\n")
+        busy_ssh.chmod(0o755)
+        with mock.patch.dict(os.environ, {post_merge.SSH_ENV: str(busy_ssh)}):
+            self.assertEqual(self.run_remote(self.shas[0]), post_merge.INFRASTRUCTURE_EXIT)
+            self.add("two", {"b": "2"})
+            head = self.add("three", {"c": "3"})
+            self.assertEqual(self.run_remote(head), post_merge.INFRASTRUCTURE_EXIT)
+        self.assertFalse(list(self.health.glob("*.json")))
+
     def test_a_host_without_the_checkout_or_the_script_records_nothing(self):
         self.assertEqual(self.run_remote(self.shas[0], root=self.root.parent / "missing"), 2)
         (self.host_checkout / "scripts/remote_gate.sh").unlink()
@@ -743,6 +841,35 @@ class RemoteGateTests(SyntheticRepositoryCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("cannot fetch", result.stderr)
+
+    def script_run(self, *arguments):
+        script = self.host_checkout / "scripts/remote_gate.sh"
+        return subprocess.run(["bash", str(script), *arguments], capture_output=True, text=True)
+
+    def test_a_slot_has_its_own_worktree_and_timings(self):
+        head = self.shas[0]
+        result = self.script_run("--sha", head, "--steps", "unit", "--slot", "slot1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        state = self.host_checkout / ".cache/remote-gate"
+        self.assertEqual(git(state / "tree-slot1", "rev-parse", "HEAD"), head)
+        self.assertFalse((state / "tree").exists())
+        self.assertTrue((state / "timings-slot1.json").is_file())
+        self.assertIn("remote_gate: 1.0s 0 unit", result.stdout)
+        self.assertIn(f"remote_gate: gate-timings {state / 'timings-slot1.json'}", result.stdout)
+        self.assertEqual(result.stdout.splitlines()[-1], "remote_gate: exit 0")
+        printed = self.script_run("--print-timings", "--slot", "slot1")
+        self.assertIn('"unit"', printed.stdout)
+
+    def test_the_exit_line_carries_the_gates_code(self):
+        broken = self.add("broken", {"broken": "x"})
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "unit"}):
+            result = self.script_run("--sha", broken, "--steps", "unit")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout.splitlines()[-1], "remote_gate: exit 1")
+
+    def test_a_bad_slot_name_is_refused(self):
+        result = self.script_run("--sha", self.shas[0], "--steps", "unit", "--slot", "../x")
+        self.assertEqual(result.returncode, 64)
 
 
 if __name__ == "__main__":

@@ -139,6 +139,9 @@ this and nothing else:
   the gate's, so `check_all: FAILED step ID` reaches the log. Exit 2 means the host could not
   run the gate (no checkout, no script, the commit cannot be fetched); ssh's own exit 255 is
   the same. Neither records anything or reverts anything.
+- PATH may start with `~`, which is the host's home (quote it on the command line). A host
+  with no credential for the hosting service is fed by a push mirror; its git and other
+  settings come from `PATH/.cache/remote-gate/gate.env` (docs/platforms.md, "A Linux gate host").
 - `remote_gate.sh --print-timings` prints that timings file; `post_merge.py` merges it into
   the record of the run.
 - The restricted vocabulary is not sent: the remote steps do not scan for it, and a
@@ -146,7 +149,9 @@ this and nothing else:
 - One run at a time per clone (`post_merge.py` holds the lock). Set
   `SOYEHT_REMOTE_GATE_DIR` to move the state directory. The host needs the Rust toolchain,
   `uv`, `git` and whatever the e2e suites start; `scripts/check_engine_linux.sh` lists what
-  the engine needs.
+  the engine needs. On a host with Nix (NixOS) the script enters `scripts/linux-gate.nix`
+  itself and needs none of that; `--slot NAME` adds a second persistent worktree
+  (docs/platforms.md, "A Linux gate host").
 
 ### The editor measurement and a warm worktree
 

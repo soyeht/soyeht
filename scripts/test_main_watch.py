@@ -10,7 +10,7 @@ from unittest import mock
 
 import main_watch
 import post_merge
-from test_post_merge import FAKE_EDITOR_GATE, FAKE_GATE, commit, git
+from test_post_merge import FAKE_EDITOR_GATE, FAKE_GATE, commit, git, isolate_environment
 
 # A stand-in for the GitHub CLI. `pr create` records what the pushed branch changes relative to
 # main and what it says; `pr merge` squashes that branch into main of the bare origin, like the
@@ -68,6 +68,7 @@ class WatchCase(unittest.TestCase):
         })
         environment.start()
         self.addCleanup(environment.stop)
+        isolate_environment()
         self.start = self.land("start", {"scripts/check_all.sh": FAKE_GATE, "a": "1"})
 
     def land(self, name, files):

@@ -112,6 +112,9 @@ REMOTE_AREAS = ("engine", "desktop", "e2e")
 SSH_ENV = "SOYEHT_REMOTE_SSH"
 REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
 SSH_FAILED_EXIT = 255  # ssh itself could not connect or run the command
+# scripts/remote_gate.sh: the host's worktree is held by another run. Not BUSY_EXIT, which is
+# this machine's own lock; neither says anything about the commit.
+REMOTE_BUSY_EXIT = 75
 
 
 @dataclass(frozen=True)
@@ -119,11 +122,17 @@ class Remote:
     host: str
     root: str  # a checkout of the repository on the host that has scripts/remote_gate.sh
 
+    def remote_path(self) -> str:
+        """The root as the host's shell should read it: a leading `~` is the host's home."""
+        if self.root == "~" or self.root.startswith("~/"):
+            return '"$HOME"' + shlex.quote(self.root[1:])
+        return shlex.quote(self.root)
+
     def ssh(self, command: str) -> list[str]:
         ssh = os.environ.get(SSH_ENV, "ssh -o BatchMode=yes").split()
         # A login shell, so that the host's toolchain is on PATH. A missing checkout or script is
         # a problem of the host (exit 2), not a red main.
-        script = (f"cd {shlex.quote(self.root)} || exit 2; "
+        script = (f"cd {self.remote_path()} || exit 2; "
                   f"[ -f scripts/remote_gate.sh ] || exit 2; {command}")
         return [*ssh, self.host, "bash -lc " + shlex.quote(script)]
 
@@ -237,7 +246,7 @@ def run_split_gate(worktree: Path, base: str | None, only: str | None, log: Path
         if base:
             arguments += f" --base {base}"
         code = run_process_logged(remote.ssh(arguments), worktree, log)
-        if code == SSH_FAILED_EXIT:
+        if code in (SSH_FAILED_EXIT, REMOTE_BUSY_EXIT):
             code = INFRASTRUCTURE_EXIT
         steps += remote_steps_timings(remote)
     if not code and local_ids:
@@ -381,6 +390,8 @@ def investigate(root: Path, worktree: Path, scratch: Path, health: Path, record:
         return
     again = run_gate(worktree, parent_of(root, sha), step_with_prerequisites(step), None,
                      scratch / "rerun.json", command, remote)
+    if again in INFRASTRUCTURE_EXITS:  # a busy or unreachable host says nothing about a commit
+        raise InfrastructureError(f"the rerun of {step} could not run (exit {again})")
     if again == 0:
         record["result"] = "flaky"
         record["note"] = (f"step {step} passed when run again on the same commit; no commit is blamed, "

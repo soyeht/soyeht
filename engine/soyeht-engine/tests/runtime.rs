@@ -6748,10 +6748,7 @@ fn managed_terminal_hook_and_screen_observation_share_one_recording() {
     drop(client);
     rig.kill_engine();
     let capability = "c".repeat(64);
-    let generation = rig
-        .database_probe()
-        .install_terminal_harness_session(&pane, &terminal, &capability)
-        .unwrap();
+    let generation = rig.install_terminal_harness_session(&pane, &terminal, &capability);
     rig.start();
     let mut client = rig.client();
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
@@ -7287,8 +7284,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
         .unwrap()
         .to_owned();
     let worktrunk = rig.path.join("bin/wt");
-    let healthy_worktrunk = fs::read(&worktrunk).unwrap();
-    fs::write(&worktrunk, "#!/bin/sh\nexit 2\n").unwrap();
+    let healthy_worktrunk = replace_link_with_script(&worktrunk, "#!/bin/sh\nexit 2\n");
     let params = json!({
         "workspaceId":workspace,"title":"Create and dispatch","description":"Run both steps",
         "howToVerify":"Observe one pane","mustNotChange":"Do not duplicate effects",
@@ -7298,7 +7294,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     let failed = client.request("task.create", params.clone());
     assert!(failed["error"].is_object(), "{failed}");
 
-    fs::write(&worktrunk, healthy_worktrunk).unwrap();
+    restore_link(&worktrunk, &healthy_worktrunk);
     let resumed = client.call("task.create", params.clone());
     assert_eq!(client.call("task.create", params), resumed);
     let pane = resumed["paneId"].as_str().unwrap();

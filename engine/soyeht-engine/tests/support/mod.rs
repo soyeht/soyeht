@@ -266,6 +266,28 @@ impl Rig {
             .set_agent_silent_since(pane, value)
             .unwrap();
     }
+    /// Replaces the stopped engine's terminal pane with a terminal harness process, and
+    /// returns the pane's generation. The new process numbers its output from zero, and the
+    /// engine drains a process from the end of what the pane has recorded; the shell's output
+    /// (more or less, by timing) would hide the first bytes of the replacement. Recovery of a
+    /// real replacement moves the base offset, so this starts the pane's recording afresh.
+    pub fn install_terminal_harness_session(
+        &self,
+        pane: &str,
+        command: &Path,
+        capability: &str,
+    ) -> u32 {
+        let generation = self
+            .database_probe()
+            .install_terminal_harness_session(pane, command, capability)
+            .unwrap();
+        match fs::remove_dir_all(self.path.join("sessions").join(pane)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => panic!("pane recording could not be removed: {error}"),
+        }
+        generation
+    }
     pub fn kill_engine(&mut self) {
         if let Some(mut child) = self.engine.take() {
             child.kill().unwrap();
@@ -337,6 +359,24 @@ pub fn write_script(path: &Path, body: &str) {
     use std::os::unix::fs::PermissionsExt;
     fs::write(path, body).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Replaces the link `link` (to a program every rig shares) with a script of this rig alone, and
+/// returns what it pointed to. Writing through the link would change the shared program for
+/// every other test, and fail with "text file busy" while one runs it.
+#[cfg(unix)]
+pub fn replace_link_with_script(link: &Path, body: &str) -> PathBuf {
+    let target = fs::read_link(link).unwrap();
+    fs::remove_file(link).unwrap();
+    write_script(link, body);
+    target
+}
+
+/// Puts back the link [`replace_link_with_script`] replaced.
+#[cfg(unix)]
+pub fn restore_link(link: &Path, target: &Path) {
+    fs::remove_file(link).unwrap();
+    std::os::unix::fs::symlink(target, link).unwrap();
 }
 
 /// Where rigs live. Windows reports the temporary folder by its 8.3 short name, while the engine

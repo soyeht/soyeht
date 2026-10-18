@@ -246,7 +246,7 @@
     "engine/soyeht-engine/src/terminal_capture.rs": 1463,
     "engine/soyeht-engine/src/web/host.rs": 956,
     "engine/soyeht-engine/src/web/permissions.rs": 1114,
-    "engine/soyeht-engine/tests/runtime.rs": 8672,
+    "engine/soyeht-engine/tests/runtime.rs": 8668,
     "engine/soyeht-mcp/src/tools.rs": 1189,
     "engine/soyeht-store/src/editor.rs": 840,
     "engine/soyeht-store/tests/agents.rs": 1066,

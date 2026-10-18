@@ -46,7 +46,9 @@ pub struct ContentMatcher {
 }
 
 enum ContentPattern {
-    Sensitive(memmem::Finder<'static>),
+    // Boxed: the finder holds its SIMD searchers inline, which is much larger than a regex
+    // handle on x86_64 (clippy::large_enum_variant).
+    Sensitive(Box<memmem::Finder<'static>>),
     Expression(regex::Regex),
 }
 
@@ -76,7 +78,7 @@ impl ContentMatcher {
             return Err(Error::EmptySearch);
         }
         let pattern = if options.case_sensitive && !options.regex {
-            ContentPattern::Sensitive(memmem::Finder::new(query.as_bytes()).into_owned())
+            ContentPattern::Sensitive(Box::new(memmem::Finder::new(query.as_bytes()).into_owned()))
         } else {
             let source = if options.regex {
                 query.to_owned()

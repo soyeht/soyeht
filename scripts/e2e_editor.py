@@ -11,11 +11,22 @@ import time
 from pathlib import Path
 
 from e2e import ROOT, TEST_ENGINE, require
-from e2e_platform import database
+from e2e_platform import MACOS, WINDOWS, database
 from e2e_agents import AgentServices, request, until
 
 
 AUTHOR = {"actor": {"role": "human_local", "client": "editor-e2e"}, "name": "you"}
+
+
+def cursor_state_path(home):
+    """Where the engine looks for Cursor's state database under `home` (usage/sources/cursor.rs)."""
+    if MACOS:
+        root = home / "Library/Application Support"
+    elif WINDOWS:
+        root = home / "AppData/Roaming"
+    else:
+        root = home / ".config"
+    return root / "Cursor/User/globalStorage/state.vscdb"
 
 
 class EditorServices(AgentServices):
@@ -33,7 +44,7 @@ class EditorServices(AgentServices):
         home = readers / "home"
         self.claude_login = home / ".claude/.credentials.json"
         self.claude_login.parent.mkdir(parents=True)
-        cursor_state = home / "Library/Application Support/Cursor/User/globalStorage/state.vscdb"
+        cursor_state = cursor_state_path(home)
         cursor_state.parent.mkdir(parents=True)
         with database(cursor_state) as db:
             db.execute("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB)")

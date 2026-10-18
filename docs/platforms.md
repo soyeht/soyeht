@@ -151,6 +151,84 @@ shows the driver in use. The client prints one line to stderr when it draws on a
 renderer, naming it and its Mesa version, and when no driver can open the window it prints the
 packages above.
 
+## A Linux gate host
+
+A Linux machine can run the merge gate's engine, desktop and end-to-end steps for a commit that
+a Mac sends it (`post_merge.py --remote HOST --remote-root PATH`, docs/dev-local.md), so the Mac
+does not build them. `scripts/remote_gate.sh` is the entry point on the host and
+`scripts/linux-gate.nix` the Nix shell it runs the gate in. The shell holds the pinned Rust
+toolchain (`rust-toolchain.toml`, with the Windows target for the engine's Windows lint), a C
+toolchain, the GPUI libraries, git, zsh (without its first-run wizard, as on a Mac), uv, Python
+and sccache, so it works on NixOS, where a rustup toolchain cannot run, and needs no
+administrator rights. NixOS has no `/bin/bash` or `/usr/bin/git`, which some tests and the
+end-to-end scripts name, so the gate runs inside `soyeht-gate-fhs`, a user-namespace root that
+has them (the shell exports `SHELL` as zsh, which the end-to-end suites configure through a
+startup file). The shell has no Node: a fake `npx` in the engine tests must come first on the
+search path, and the TypeScript steps (`typescript:*`) are not run on this host. A host with
+another distribution installs the same tools and runs the script without Nix; the script uses
+Nix only on Linux when `nix-shell` exists.
+
+```sh
+scripts/remote_gate.sh --sha FULL_SHA --steps ID[,ID...] [--base FULL_SHA] [--slot NAME]
+ssh HOST 'cd PATH && bash scripts/remote_gate.sh --sha <sha> --steps engine:fmt,engine:clippy'
+```
+
+The ids are those of `scripts/check_all.sh --list`. The script fetches the commit into the
+clone at PATH, checks it out (detached) in a persistent worktree, removes untracked files but
+not the ignored ones (`target` directories), enters the commit's shell file (the clone's when
+the commit has none) and runs `check_all.sh --tier full --only IDS` at `nice` 15 with sccache.
+Its last lines are `remote_gate: SECONDS STATUS STEP_ID` for each step, `remote_gate:
+gate-timings PATH` and `remote_gate: exit CODE`. It exits with the gate's code, 2 when the host
+cannot run the gate, 64 for a bad request and 75 when the worktree is busy.
+
+The worktree is `.cache/remote-gate/tree`; `--slot NAME` uses `tree-NAME` and its own timings
+file, so two slots run two commits at once. Its `engine/target` and `apps/desktop/target` stay
+between runs, so a second run is incremental. On a Nix host the cargo, sccache and uv caches
+live in `.cache/remote-gate` too; the temporary files are in `/tmp/soyeht-gate-UID` (a short
+path, for the engine tests' Unix sockets; `SOYEHT_GATE_TMPDIR` names another). `SOYEHT_GATE_JOBS`
+(default 32), `SOYEHT_GATE_TEST_THREADS` (default 16) and `SOYEHT_GATE_NICE` (default 15) keep a
+machine shared with other work usable. `FORBIDDEN_TERMS` defaults to a placeholder that scans
+nothing.
+
+One-time setup of a host. The host needs Nix and a clone of the repository; it needs no
+credential for the hosting service if you feed it by mirror instead of letting it fetch:
+
+- **Fetching.** Clone from the hosting service with a read-only deploy key (never a person's
+  token): `git clone git@HOSTING:ORG/REPO.git PATH`, and, for a key that is not the account's
+  default, `git -C PATH config core.sshCommand 'ssh -i ~/deploy_key -o IdentitiesOnly=yes'`.
+- **Mirror (no credential on the host).** Create a bare repository on the host, MIRROR, and
+  clone it to PATH, so that the clone's `origin` is MIRROR. The coordinator pushes `main` to
+  MIRROR before each watch pass (and any commit a manual run needs), from a machine that can
+  reach the hosting service:
+  `git push --receive-pack=GIT_RECEIVE_PACK ssh://HOST/MIRROR origin/main:refs/heads/main`.
+  `GIT_RECEIVE_PACK` is the full path to the host's `git-receive-pack` when a non-interactive
+  ssh session has no git on its PATH. The script fetches `origin` in PATH, so a commit that is
+  not in MIRROR is a host problem (exit 2), not a red main.
+
+A non-interactive ssh session may have no git on its PATH. Give the script one with
+`SOYEHT_GATE_GIT=/full/path/to/git` (the Nix shell has its own). A call over ssh cannot pass
+variables, so the host reads them from `gate.env` in the state directory
+(`PATH/.cache/remote-gate/gate.env`; `SOYEHT_GATE_ENV_FILE` names another): shell assignments,
+owned by the account and not writable by others, for example
+
+```sh
+SOYEHT_GATE_GIT=$HOME/ci/git/bin/git
+SOYEHT_GATE_TMPDIR=$HOME/ci/tmp
+```
+
+`post_merge.py --remote-root` takes a path with a leading `~` as the host's home; quote it
+(`--remote-root '~/ci/repo'`) so that the local shell does not expand it first.
+
+The host runs the commit's own code: its `check_all.sh`, its `build.rs` files, its tests and
+its `scripts/linux-gate.nix` (once the script has entered the clone's shell file, it enters the
+commit's). Whoever can get a commit sent to the host can run commands as the host's account. So
+the account must stay unprivileged (no sudo, no access to other people's files or secrets) and
+the deploy key read-only; send it only commits you would run yourself.
+
+The first run downloads the toolchain and libraries into the Nix store. Keep the clone on a
+recent main (`git pull`): the script and shell file that run are the clone's, the gate is the
+commit's. Raise the Nix pins in `scripts/linux-gate.nix` together with their hashes.
+
 ## Running the Windows check
 
 On Windows with rustup, the Visual Studio C++ build tools (MSVC and a Windows SDK),
