@@ -98,6 +98,13 @@ import SoyehtClient
     }
   }
 
+  /// The window of the loaded page that the view holds grows to the page first, so that the
+  /// selection covers all of it.
+  override func selectAll(_ sender: Any?) {
+    inputDelegate?.holdWholePage()
+    super.selectAll(sender)
+  }
+
   @objc func undo(_ sender: Any?) {
     inputDelegate?.replayHistory(.undo)
   }

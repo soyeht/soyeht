@@ -54,12 +54,27 @@ struct EditorNativeViewport: NSViewRepresentable {
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
     private static let lineHeight = EditorTextMetrics.lineHeight
     var parent: EditorNativeViewport
-    private let textView = EditorTextView()
+    /// TextKit 1 on purpose: a plain text view starts on TextKit 2, which lays out every line
+    /// of the page before the first draw, and the editor measurements run on TextKit 1.
+    private let textView = EditorTextView(usingTextLayoutManager: false)
     private weak var scrollView: NSScrollView?
     private var gutter: EditorLineGutter?
     private var renderedIdentity: String?
     private var appliedNavigationId: String?
     private var viewportStart: UInt32 = 0
+    /// The first line of the loaded page the text view holds (`EditorDisplayWindow`), and the
+    /// page it was placed for.
+    private var displayTop: UInt32?
+    private var displayedFileId: String?
+    private var shownViewport: FileReadResult?
+    /// What the text on screen was rendered from: the file, revision, diagnostics and theme,
+    /// and the last line of the page. Only lines above the window can then be missing.
+    private var renderedContent: String?
+    private var renderedTo: UInt32 = 0
+    /// The first line of the selections on screen, so the window keeps them.
+    private var selectionFloorLine: UInt32?
+    private var wholePageRequested = false
+    private var updating = false
     private var language = EditorLanguage.plain_text
     private var vim = EditorVimMachine()
     private var wasVimEnabled = false
@@ -111,16 +126,16 @@ struct EditorNativeViewport: NSViewRepresentable {
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
         self.renderedIdentity = nil
+        self.renderedContent = nil
         self.update(self.parent.view)
       }
       return host
     }
 
     func update(_ view: EditorFileView) {
-      guard let viewport = view.viewport else { return }
+      guard let page = view.viewport else { return }
       applyTheme()
       let previousViewportStart = viewportStart
-      viewportStart = viewport.fromLine
       language = view.file.language
       textView.inputDelegate = self
       textView.onToggleSoftWrap = parent.onToggleSoftWrap
@@ -129,23 +144,36 @@ struct EditorNativeViewport: NSViewRepresentable {
       wasVimEnabled = parent.vimEnabled
       publishVimState()
       applyWrap()
+      updating = true
+      defer { updating = false }
+      let content =
+        "\(page.file.fileId):\(page.file.revision):\(diagnosticIdentity(view.diagnostics)):\(SoyehtThemeStore.shared.activeTheme.rawValue)"
+      let viewport = placeWindow(page, content: content, diagnostics: view.diagnostics)
+      viewportStart = viewport.fromLine
+      if requestedViewportStart == page.fromLine { requestedViewportStart = nil }
       gutter?.update(
         startLine: viewport.fromLine, markers: parent.diffMarkers,
         agentReviewLines: parent.agentReviewLines,
         agentCursors: parent.agentCursors, selectedLine: parent.selectedPosition?.line,
         lineCount: viewport.file.lineCount)
       updateVirtualGeometry(viewport)
-      let identity =
-        "\(viewport.file.fileId):\(viewport.file.revision):\(viewport.fromLine):\(viewport.toLine):\(diagnosticIdentity(view.diagnostics)):\(SoyehtThemeStore.shared.activeTheme.rawValue)"
+      let identity = "\(content):\(viewport.fromLine):\(viewport.toLine)"
       if renderedIdentity != identity {
         let selection = textView.selectedRanges
+        let carried = EditorDisplayWindow.carried(
+          selection.map(\.rangeValue), text: textView.string, from: previousViewportStart,
+          into: viewport)
         guard let storage = textView.textStorage else { return }
         storage.setAttributedString(attributed(viewport, diagnostics: view.diagnostics))
         renderedIdentity = identity
+        renderedContent = content
+        renderedTo = viewport.toLine
         measureWrap()
         updateVirtualGeometry(viewport)
-        textView.selectedRanges = selections(
-          afterLoading: viewport, previousStart: previousViewportStart, previous: selection)
+        textView.selectedRanges =
+          carried.map { $0.map(NSValue.init(range:)) }
+          ?? selections(
+            afterLoading: viewport, previousStart: previousViewportStart, previous: selection)
         textView.needsDisplay = true
         gutter?.needsDisplay = true
         // The text under the caret changed, so the status bar must re-read it.
@@ -158,6 +186,9 @@ struct EditorNativeViewport: NSViewRepresentable {
         replayingHistory = false
       }
       requestViewportIfNeeded()
+      if windowTop(page) != displayTop, !textView.hasMarkedText() {
+        DispatchQueue.main.async { [weak self] in self?.moveWindowIfNeeded() }
+      }
     }
 
     /// Highlights the engine's matches on the loaded page and hands focus
@@ -233,12 +264,32 @@ struct EditorNativeViewport: NSViewRepresentable {
     }
 
     @objc private func visibleBoundsChanged(_ notification: Notification) {
+      moveWindowIfNeeded()
       requestViewportIfNeeded()
+    }
+
+    /// Moves the window up when the view scrolled back to its top, or a line that has to be held
+    /// lies above it. Text being composed waits for the end of the composition.
+    private func moveWindowIfNeeded() {
+      guard !updating, let page = parent.view.viewport, !textView.hasMarkedText(),
+        windowTop(page) != displayTop
+      else { return }
+      update(parent.view)
+    }
+
+    /// Select All covers the whole loaded page, not only the window.
+    func holdWholePage() {
+      guard !updating, !textView.hasMarkedText(), let page = parent.view.viewport,
+        displayTop != page.fromLine
+      else { return }
+      wholePageRequested = true
+      update(parent.view)
+      wholePageRequested = false
     }
 
     @objc private func visibleFrameChanged(_ notification: Notification) {
       guard let scrollView else { return }
-      if applyWrap(), let viewport = parent.view.viewport {
+      if applyWrap(), let viewport = shownViewport {
         updateVirtualGeometry(viewport)
         return
       }
@@ -288,7 +339,76 @@ struct EditorNativeViewport: NSViewRepresentable {
         + CGFloat(wrapLayout.documentRows(totalLines: viewport.file.lineCount)) * Self.lineHeight
       EditorTextLayout.fit(
         textView, visible: scrollView.contentSize, documentHeight: documentHeight)
-      if requestedViewportStart == viewport.fromLine { requestedViewportStart = nil }
+    }
+
+    /// The page as the text view holds it. The text is made to match: kept, extended upwards
+    /// with the lines the window now covers, or left for the render that follows.
+    private func placeWindow(
+      _ page: FileReadResult, content: String, diagnostics: [FileDiagnostic]
+    ) -> FileReadResult {
+      if displayedFileId != page.file.fileId {
+        displayedFileId = page.file.fileId
+        displayTop = nil
+        renderedContent = nil
+      }
+      let desired = windowTop(page)
+      let change = EditorDisplayWindow.change(
+        desired: desired, current: displayTop,
+        holdsPage: renderedContent == content && renderedTo == page.toLine,
+        composing: textView.hasMarkedText())
+      var top = displayTop ?? desired
+      switch change {
+      case .keep: break
+      case .replace(let replaced): top = replaced
+      case .extendUp(let extended):
+        extend(page, to: extended, diagnostics: diagnostics)
+        top = extended
+        renderedIdentity = "\(content):\(top):\(page.toLine)"
+      }
+      displayTop = top
+      let shown = EditorDisplayWindow.viewport(page, top: top)
+      shownViewport = shown
+      return shown
+    }
+
+    private func extend(_ page: FileReadResult, to top: UInt32, diagnostics: [FileDiagnostic]) {
+      guard let current = displayTop else { return }
+      let head = EditorDisplayWindow.lines(page, from: top, to: current)
+      let text = NSMutableAttributedString(
+        attributedString: attributed(head, diagnostics: diagnostics))
+      text.append(NSAttributedString(string: "\n", attributes: baseAttributes(wraps: false)))
+      EditorTextLayout.prepend(text, to: textView)
+      measureWrap()
+    }
+
+    /// The first line of `page` the text view holds. Soft wrap holds the whole page: the rows
+    /// of lines above the window are estimates, so a window would move the text when it moves.
+    /// Selections and a navigation target on the page stay in the window.
+    private func windowTop(_ page: FileReadResult) -> UInt32 {
+      guard wrapLayout.columns == nil else { return page.fromLine }
+      var required = wholePageRequested ? page.fromLine : selectionFloorLine
+      if let target = parent.navigationTarget, target.fileId == page.file.fileId,
+        target.id != appliedNavigationId
+      {
+        // The target lands with the window's lead above it, so that putting it in view does
+        // not call for another move.
+        let line = target.position.line
+        if line >= page.fromLine, line < page.toLine {
+          let held = max(
+            page.fromLine, line > EditorDisplayWindow.lead ? line - EditorDisplayWindow.lead : 0)
+          required = min(required ?? held, held)
+        }
+      }
+      return EditorDisplayWindow.top(
+        pageFrom: page.fromLine, pageTo: page.toLine, current: displayTop,
+        visibleFrom: firstVisibleLine(), required: required)
+    }
+
+    private func firstVisibleLine() -> UInt32 {
+      guard let scrollView else { return 0 }
+      let top = max(
+        0, scrollView.contentView.bounds.minY - PaneLayoutContentMetrics.editorTextInset)
+      return UInt32(clamping: Int(top / Self.lineHeight))
     }
 
     private func requestViewportIfNeeded() {
@@ -301,7 +421,8 @@ struct EditorNativeViewport: NSViewRepresentable {
       let visibleTop = max(
         0, scrollView.contentView.bounds.minY - PaneLayoutContentMetrics.editorTextInset)
       let visibleFrom = wrapLayout.logicalLine(
-        atDocumentRow: Int(visibleTop / Self.lineHeight), fromLine: viewport.fromLine)
+        atDocumentRow: Int(visibleTop / Self.lineHeight),
+        fromLine: shownViewport?.fromLine ?? viewport.fromLine)
       let visibleLines = UInt32(
         clamping: Int(ceil(scrollView.contentSize.height / Self.lineHeight)) + 2)
       guard
@@ -587,10 +708,17 @@ struct EditorNativeViewport: NSViewRepresentable {
         guard let self else { return }
         self.selectionPublishScheduled = false
         let position = self.position(at: self.textView.selectedRange().location)
+        self.selectionFloorLine = self.floorLine(of: self.textView.selectedRanges, first: position)
         self.parent.selectedPosition = position
         self.gutter?.selectedLine = position?.line
         self.gutter?.needsDisplay = true
       }
+    }
+
+    /// The line of the first selection end; with several selections, the topmost.
+    private func floorLine(of ranges: [NSValue], first: TextPosition?) -> UInt32? {
+      guard ranges.count > 1 else { return first?.line }
+      return ranges.compactMap { position(at: $0.rangeValue.location)?.line }.min()
     }
 
     private func publishVimState() {

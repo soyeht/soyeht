@@ -31,6 +31,19 @@
         width: width, height: CGFloat.greatestFiniteMagnitude)
     }
 
+    /// Puts `head` before the text and keeps every selection on the text it was on. The text
+    /// after it keeps its attributes; nothing reaches the delegate, as with a page render.
+    public static func prepend(_ head: NSAttributedString, to textView: NSTextView) {
+      guard let storage = textView.textStorage, head.length > 0 else { return }
+      let selections = textView.selectedRanges.map(\.rangeValue)
+      storage.beginEditing()
+      storage.insert(head, at: 0)
+      storage.endEditing()
+      textView.selectedRanges = selections.map {
+        NSValue(range: NSRange(location: $0.location + head.length, length: $0.length))
+      }
+    }
+
     /// The paragraph style of code: fixed line height, tab stops every
     /// `EditorWrapLayout.tabWidth` cells and, with soft wrap, breaks between any two characters.
     public static func paragraphStyle(
