@@ -178,11 +178,13 @@ struct AgentHarnessPicker: View {
 
   @ViewBuilder private var selectedConfiguration: some View {
     if let selected, selected.available {
-      Text(HarnessPickerModel.statusReason(for: selected))
-        .font(MacTheme.ui(MacTheme.TypeScale.small))
-        .foregroundStyle(MacTheme.secondary)
-        .fixedSize(horizontal: false, vertical: true)
-        .accessibilityIdentifier("agent-setup-reason")
+      if let notice = HarnessPickerModel.pickerNotice(for: selected) {
+        Text(notice)
+          .font(MacTheme.ui(MacTheme.TypeScale.small))
+          .foregroundStyle(MacTheme.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("agent-setup-reason")
+      }
       Text("MODEL").pickerHeading()
       if modelContentState == .loading {
         HStack(spacing: MacTheme.Space.x8) {

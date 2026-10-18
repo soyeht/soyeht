@@ -135,6 +135,12 @@ pub fn status_reason(harness: &HarnessInfo) -> &'static str {
     }
 }
 
+/// The line a harness picker shows above the model choices: why the harness needs attention, and
+/// nothing for a ready one, whose "opened successfully" is no news while choosing a model.
+pub fn picker_notice(harness: &HarnessInfo) -> Option<&'static str> {
+    (setup_state(harness) != HarnessSetupState::Ready).then(|| status_reason(harness))
+}
+
 /// A harness name without the ACP adapter's suffix ("Claude Agent" becomes "Claude"), the rule
 /// the engine names agent panes by.
 pub fn short_name(name: &str) -> &str {

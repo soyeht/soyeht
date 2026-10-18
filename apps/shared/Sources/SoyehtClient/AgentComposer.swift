@@ -68,7 +68,8 @@ struct AgentComposer<HarnessControl: View>: View {
     .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
     .paneInteriorFill(style.canvas, radius: PaneInteriorMetrics.composerRadius)
     .slashCompletionList(
-      client: client, paneId: paneId, text: $prompt, state: slash, style: style
+      client: client, paneId: paneId, text: $prompt, state: slash, style: style,
+      accept: acceptSlash
     )
     .onAppear { dictation.onTranscript = insert }
     .onDisappear { dictation.cancel() }
@@ -121,7 +122,9 @@ struct AgentComposer<HarnessControl: View>: View {
         client.cyclePermissionMode(paneId)
         return .handled
       }
-      .slashCompletionKeys(client: client, paneId: paneId, text: $prompt, state: slash)
+      .slashCompletionKeys(
+        client: client, paneId: paneId, text: $prompt, state: slash, accept: acceptSlash
+      )
       #if os(macOS)
         .modifier(AgentComposerPaste(isFocused: focus.wrappedValue, attachments: attachments))
       #endif
@@ -141,6 +144,14 @@ struct AgentComposer<HarnessControl: View>: View {
 
   private func select(_ value: String, in menu: AgentConfigMenu) {
     client.setAgentConfig(paneId, configId: menu.configId, value: .v0(value))
+  }
+
+  /// Puts the chosen "/" entry in the field with the caret after it, ready for arguments.
+  private func acceptSlash(_ suggestion: SlashSuggestion) {
+    let result = SlashCatalog.accept(suggestion)
+    prompt = result.text
+    caret.place(at: result.cursor, in: result.text)
+    focus.wrappedValue = true
   }
 
   private func insert(_ transcript: String) {

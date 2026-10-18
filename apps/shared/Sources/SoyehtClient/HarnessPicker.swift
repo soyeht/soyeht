@@ -189,6 +189,12 @@ public enum HarnessPickerModel {
     }
   }
 
+  /// The line a harness picker shows above the model choices: why the harness needs attention,
+  /// and nothing for a ready one, whose "opened successfully" is no news while choosing a model.
+  public static func pickerNotice(for harness: HarnessInfo) -> String? {
+    setupState(for: harness) == .ready ? nil : statusReason(for: harness)
+  }
+
   private static func fallbackReason(for state: HarnessSetupState) -> HarnessSetupReason? {
     switch state {
     case .ready: nil

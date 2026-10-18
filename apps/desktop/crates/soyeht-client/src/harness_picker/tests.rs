@@ -101,6 +101,12 @@ fn statuses_follow_the_shared_vectors() {
             case["harness"]
         );
         assert_eq!(
+            picker_notice(&harness),
+            case["notice"].as_str(),
+            "{}",
+            case["harness"]
+        );
+        assert_eq!(
             is_installed(&harness),
             case["installed"],
             "{}",

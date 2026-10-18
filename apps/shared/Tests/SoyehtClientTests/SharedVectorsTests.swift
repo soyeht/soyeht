@@ -65,6 +65,7 @@ private func catalogue(_ vector: [String: Any], _ keys: Any?) throws -> [Harness
       HarnessInfo.self, try #require(known[entry["harness"] as? String ?? ""]))
     #expect(HarnessPickerModel.statusLabel(for: harness) == entry["label"] as? String)
     #expect(HarnessPickerModel.statusReason(for: harness) == entry["reason"] as? String)
+    #expect(HarnessPickerModel.pickerNotice(for: harness) == entry["notice"] as? String)
     #expect(HarnessPickerModel.isInstalled(harness) == entry["installed"] as? Bool)
   }
   for entry in try cases(vector, "reasons") {

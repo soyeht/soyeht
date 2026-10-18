@@ -57,9 +57,9 @@ public struct AgentACPTickerSource: AgentTickerSource {
   public init() {}
 
   public func snapshot(for context: AgentTickerContext) -> AgentTickerSnapshot {
-    let messages = context.view.messages
+    let messages = Self.latestTurn(context.view.messages)
     var items: [AgentTickerItem] = []
-    let tools = messages.reversed().compactMap(\.tool)
+    let tools = Self.liveTools(messages)
     if let now = current(messages: messages, latestTool: tools.first) {
       items.append(now)
     }
@@ -75,6 +75,26 @@ public struct AgentACPTickerSource: AgentTickerSource {
     return AgentTickerSnapshot(items: items, elapsed: elapsed(context))
   }
 
+  /// The messages since the person's last prompt. An earlier turn's tool calls and plan say
+  /// nothing about what the agent is doing now, so a new turn starts the ticker clean.
+  static func latestTurn(_ messages: [TranscriptMessage]) -> ArraySlice<TranscriptMessage> {
+    let start = messages.lastIndex { $0.role == .user && $0.kind == .message }
+    return messages[(start.map { $0 + 1 } ?? messages.startIndex)...]
+  }
+
+  /// The turn's tool calls, newest first, without a failure that a later call of the same
+  /// turn has since got past: the retry succeeded, so the header no longer reports it.
+  static func liveTools(_ messages: ArraySlice<TranscriptMessage>) -> [ToolCall] {
+    var recovered = false
+    var tools: [ToolCall] = []
+    for tool in messages.reversed().compactMap(\.tool) {
+      if tool.status == .failed, recovered { continue }
+      if tool.status == .completed { recovered = true }
+      tools.append(tool)
+    }
+    return tools
+  }
+
   private func elapsed(_ context: AgentTickerContext) -> String? {
     guard let pane = context.pane, pane.state.isTurnRunning,
       let start = context.turnStartedAt
@@ -83,7 +103,9 @@ public struct AgentACPTickerSource: AgentTickerSource {
   }
 
   /// The current activity: the plan step in progress and the latest tool call.
-  private func current(messages: [TranscriptMessage], latestTool: ToolCall?) -> AgentTickerItem? {
+  private func current(messages: ArraySlice<TranscriptMessage>, latestTool: ToolCall?)
+    -> AgentTickerItem?
+  {
     var parts: [String] = []
     if let plan = messages.last(where: { $0.kind == .plan })?.plan, !plan.isEmpty,
       let step = plan.firstIndex(where: { $0.status == .in_progress })

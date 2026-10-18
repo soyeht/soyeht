@@ -35,15 +35,16 @@ private struct SlashCompletionKeys: ViewModifier {
   let paneId: String
   @Binding var text: String
   let state: SlashCompletionState
+  let accept: (SlashSuggestion) -> Void
 
   func body(content: Content) -> some View {
     let matches = state.matches(client: client, paneId: paneId, text: text)
     content
       .onKeyPress(.downArrow) { state.move(1, in: matches) }
       .onKeyPress(.upArrow) { state.move(-1, in: matches) }
-      .onKeyPress(.return) { accept(in: matches) }
+      .onKeyPress(.return) { acceptSelected(in: matches) }
       .onKeyPress(.tab, phases: .down) { press in
-        press.modifiers.contains(.shift) ? .ignored : accept(in: matches)
+        press.modifiers.contains(.shift) ? .ignored : acceptSelected(in: matches)
       }
       .onKeyPress(.escape) {
         guard !matches.isEmpty else { return .ignored }
@@ -54,9 +55,9 @@ private struct SlashCompletionKeys: ViewModifier {
       .task(id: client.connectionRevision) { await client.loadSlashSources(paneId: paneId) }
   }
 
-  private func accept(in matches: [SlashSuggestion]) -> KeyPress.Result {
+  private func acceptSelected(in matches: [SlashSuggestion]) -> KeyPress.Result {
     guard let suggestion = state.selected(in: matches) else { return .ignored }
-    text = SlashCatalog.accept(suggestion)
+    accept(suggestion)
     return .handled
   }
 }
@@ -67,6 +68,7 @@ private struct SlashCompletionList: ViewModifier {
   @Bindable var client: EngineClient
   let paneId: String
   @Binding var text: String
+  let accept: (SlashSuggestion) -> Void
   let state: SlashCompletionState
   let style: AgentConversationStyle
 
@@ -88,7 +90,7 @@ private struct SlashCompletionList: ViewModifier {
     return VStack(alignment: .leading, spacing: 0) {
       ForEach(matches) { suggestion in
         Button {
-          text = SlashCatalog.accept(suggestion)
+          accept(suggestion)
         } label: {
           row(suggestion, selected: suggestion.id == selected?.id)
         }
@@ -142,17 +144,20 @@ extension VerticalAlignment {
 extension View {
   /// The "/" keys, on the message field.
   func slashCompletionKeys(
-    client: EngineClient, paneId: String, text: Binding<String>, state: SlashCompletionState
+    client: EngineClient, paneId: String, text: Binding<String>, state: SlashCompletionState,
+    accept: @escaping (SlashSuggestion) -> Void
   ) -> some View {
-    modifier(SlashCompletionKeys(client: client, paneId: paneId, text: text, state: state))
+    modifier(
+      SlashCompletionKeys(client: client, paneId: paneId, text: text, state: state, accept: accept))
   }
 
   /// The "/" list, on the composer card it floats above.
   func slashCompletionList(
     client: EngineClient, paneId: String, text: Binding<String>, state: SlashCompletionState,
-    style: AgentConversationStyle
+    style: AgentConversationStyle, accept: @escaping (SlashSuggestion) -> Void
   ) -> some View {
     modifier(
-      SlashCompletionList(client: client, paneId: paneId, text: text, state: state, style: style))
+      SlashCompletionList(
+        client: client, paneId: paneId, text: text, accept: accept, state: state, style: style))
   }
 }

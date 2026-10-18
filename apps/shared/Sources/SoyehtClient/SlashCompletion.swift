@@ -76,8 +76,11 @@ public struct SlashCatalog: Sendable {
       .map(\.element.1)
   }
 
-  public static func accept(_ suggestion: SlashSuggestion) -> String {
-    "/\(suggestion.name) "
+  /// What choosing `suggestion` leaves in the composer: `/name ` with the caret after the
+  /// space (a character offset), so typing goes on with the arguments, not inside the name.
+  public static func accept(_ suggestion: SlashSuggestion) -> (text: String, cursor: Int) {
+    let text = "/\(suggestion.name) "
+    return (text, text.count)
   }
 
   /// The prompt to send for composer text. Only `/skill arguments` for a

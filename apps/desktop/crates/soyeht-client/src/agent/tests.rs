@@ -11,6 +11,13 @@ fn message(id: &str, seq: &str, text: &str) -> TranscriptMessage {
     serde_json::from_value(message_json(id, seq, "message", text)).unwrap()
 }
 
+fn tool(seq: &str, title: &str, status: &str) -> TranscriptMessage {
+    let mut value = message_json(seq, seq, "tool", "");
+    value["tool"] = json!({"toolCallId": seq, "title": title, "status": status,
+                           "locations": []});
+    serde_json::from_value(value).unwrap()
+}
+
 #[test]
 fn merging_replaces_by_local_id_and_orders_by_sequence() {
     let mut view = AgentView::default();
@@ -120,12 +127,6 @@ fn a_commands_output_is_its_bytes_read_as_text() {
 
 #[test]
 fn the_ticker_lists_the_current_step_then_earlier_tool_calls_then_the_title() {
-    let tool = |seq: &str, title: &str, status: &str| {
-        let mut value = message_json(seq, seq, "tool", "");
-        value["tool"] = json!({"toolCallId": seq, "title": title, "status": status,
-                               "locations": []});
-        serde_json::from_value::<TranscriptMessage>(value).unwrap()
-    };
     let mut view = AgentView::default();
     assert_eq!(view.ticker(None), None);
     assert_eq!(view.ticker(Some("  ")), None);
@@ -153,6 +154,27 @@ fn the_ticker_lists_the_current_step_then_earlier_tool_calls_then_the_title() {
         ]
         .join(TICKER_SEPARATOR)
     );
+}
+
+#[test]
+fn a_failed_tool_call_leaves_the_ticker_when_the_next_turn_starts_or_a_retry_succeeds() {
+    let prompt = |seq: &str| {
+        let mut value = message_json(seq, seq, "message", "go");
+        value["role"] = json!("user");
+        serde_json::from_value::<TranscriptMessage>(value).unwrap()
+    };
+    let mut view = AgentView::default();
+    for message in [prompt("1"), tool("2", "Write out", "failed")] {
+        view.merge(message).unwrap();
+    }
+    assert_eq!(view.ticker(None).as_deref(), Some("Failed: Write out"));
+    view.merge(tool("3", "Write out", "completed")).unwrap();
+    assert_eq!(view.ticker(None).as_deref(), Some("Done: Write out"));
+    let mut next = AgentView::default();
+    for message in [prompt("1"), tool("2", "Write out", "failed"), prompt("3")] {
+        next.merge(message).unwrap();
+    }
+    assert_eq!(next.ticker(None), None);
 }
 
 #[test]

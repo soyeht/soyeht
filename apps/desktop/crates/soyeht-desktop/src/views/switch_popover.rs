@@ -163,12 +163,15 @@ impl Workbench {
             catalogue.is_none() && failure.is_none(),
             failure.is_some(),
         );
-        let mut section = column().gap(px(space::X8)).child(
-            div()
-                .text_size(px(type_scale::SMALL))
-                .text_color(rgb(palette.secondary))
-                .child(reason),
-        );
+        let mut section =
+            column()
+                .gap(px(space::X8))
+                .children(harness_picker::picker_notice(target).map(|notice| {
+                    div()
+                        .text_size(px(type_scale::SMALL))
+                        .text_color(rgb(palette.secondary))
+                        .child(notice)
+                }));
         section = section.child(menus::heading(palette, "Model"));
         section = section.child(model_field(
             catalogue.as_ref(),

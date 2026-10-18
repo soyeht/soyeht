@@ -44,7 +44,9 @@ private func command(_ name: String, _ detail: String = "Built in.") -> AgentCom
   #expect(catalog.matches("RE").map(\.name) == ["$review-branch", "pr-summary"])
   #expect(catalog.matches("pull").map(\.name) == ["pr-summary"])
   #expect(catalog.matches("zzz").isEmpty)
-  #expect(SlashCatalog.accept(catalog.matches("dep")[0]) == "/deploy ")
+  let accepted = SlashCatalog.accept(catalog.matches("dep")[0])
+  #expect(accepted.text == "/deploy ")
+  #expect(accepted.cursor == accepted.text.count)
 }
 
 @Test func sendingUsesTheHarnessInvocationAndFallsBackToTheSkillFile() {
@@ -62,4 +64,13 @@ private func command(_ name: String, _ detail: String = "Built in.") -> AgentCom
       + "\n\nto staging")
   #expect(other.prompt(for: "/unknown text") == "/unknown text")
   #expect(other.prompt(for: "plain text") == "plain text")
+}
+
+@Test func acceptingASkillPutsTheCaretAfterTheNameAndOneSpace() {
+  let skill = SlashSuggestion(name: "qa-skill", detail: "", hint: nil, source: .skill(.user))
+  let accepted = SlashCatalog.accept(skill)
+  #expect(accepted.text == "/qa-skill ")
+  #expect(accepted.cursor == 10)
+  let index = accepted.text.index(accepted.text.startIndex, offsetBy: accepted.cursor)
+  #expect(accepted.text[index...].isEmpty)
 }

@@ -112,7 +112,7 @@ impl AgentView {
         let mut items = Vec::new();
         let mut now = Vec::new();
         if let Some(plan) = self
-            .messages
+            .latest_turn()
             .iter()
             .rev()
             .find(|message| message.kind == TranscriptKind::Plan)
@@ -151,12 +151,29 @@ impl AgentView {
         (!items.is_empty()).then(|| items.join(TICKER_SEPARATOR))
     }
 
-    /// The latest tool calls, newest first, for callers that list more than the current one.
+    /// The messages since the person's last prompt. An earlier turn's tool calls and plan say
+    /// nothing about what the agent is doing now, so a new turn starts the ticker clean.
+    fn latest_turn(&self) -> &[TranscriptMessage] {
+        let start = self.messages.iter().rposition(|message| {
+            message.role == TranscriptRole::User && message.kind == TranscriptKind::Message
+        });
+        &self.messages[start.map_or(0, |index| index + 1)..]
+    }
+
+    /// The latest turn's tool calls, newest first, for callers that list more than the current
+    /// one. A failure that a later call of the same turn got past is left out: the retry
+    /// succeeded, so the header no longer reports it.
     pub fn tools(&self) -> impl Iterator<Item = &ToolCall> {
-        self.messages
+        let mut recovered = false;
+        self.latest_turn()
             .iter()
             .rev()
             .filter_map(|message| message.tool.as_ref())
+            .filter(move |tool| {
+                let keep = !(recovered && tool.status == ToolStatus::Failed);
+                recovered |= tool.status == ToolStatus::Completed;
+                keep
+            })
             .take(1 + TICKER_HISTORY)
     }
 

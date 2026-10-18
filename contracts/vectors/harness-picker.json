@@ -383,43 +383,50 @@
       "harness": "codex",
       "label": "Ready",
       "reason": "An agent session opened successfully.",
-      "installed": true
+      "installed": true,
+      "notice": null
     },
     {
       "harness": "tool",
       "label": "Not checked",
       "reason": "Installed; this agent has not been started yet. You can start it now.",
-      "installed": true
+      "installed": true,
+      "notice": "Installed; this agent has not been started yet. You can start it now."
     },
     {
       "harness": "legacySignIn",
       "label": "Sign in",
       "reason": "This agent requires sign-in before it can start.",
-      "installed": true
+      "installed": true,
+      "notice": "This agent requires sign-in before it can start."
     },
     {
       "harness": "broken",
       "label": "Check setup",
       "reason": "The agent could not start. Check its installation and try again.",
-      "installed": true
+      "installed": true,
+      "notice": "The agent could not start. Check its installation and try again."
     },
     {
       "harness": "alpha",
       "label": "Not installed",
       "reason": "Executable not found on the engine's launch PATH.",
-      "installed": false
+      "installed": false,
+      "notice": "Executable not found on the engine's launch PATH."
     },
     {
       "harness": "runner",
       "label": "Not checked",
       "reason": "Installed; this agent has not been started yet. You can start it now.",
-      "installed": false
+      "installed": false,
+      "notice": "Installed; this agent has not been started yet. You can start it now."
     },
     {
       "harness": "signInRunner",
       "label": "Sign in",
       "reason": "This agent requires sign-in before it can start.",
-      "installed": false
+      "installed": false,
+      "notice": "This agent requires sign-in before it can start."
     }
   ],
   "reasons": [

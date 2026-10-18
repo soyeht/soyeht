@@ -54,6 +54,43 @@ private func plan(_ entries: [(String, PlanStatus)]) -> TranscriptMessage {
   #expect(snapshot.elapsed == "2m 14s")
 }
 
+private func prompt(_ seq: String) -> TranscriptMessage {
+  TranscriptMessage(
+    localId: "prompt-\(seq)", generation: 1, seq: seq, role: .user, kind: .message, text: "go",
+    complete: true)
+}
+
+private func ticker(_ messages: [TranscriptMessage]) -> [String] {
+  var view = AgentPaneView()
+  view.messages = messages
+  return AgentACPTickerSource().snapshot(
+    for: AgentTickerContext(
+      pane: pane(state: .idle, activePromptId: nil), view: view, turnStartedAt: nil, now: start)
+  ).items.map(\.text)
+}
+
+@Test func aFailedToolCallLeavesTheTickerWhenTheNextTurnStarts() {
+  let failed = [prompt("1"), tool("2", "Write qa-out.txt", .failed)]
+  #expect(ticker(failed) == ["Failed: Write qa-out.txt"])
+  #expect(ticker(failed + [prompt("3")]).isEmpty)
+  #expect(
+    ticker(failed + [prompt("3"), tool("4", "Read notes", .completed)]) == ["Done: Read notes"])
+}
+
+@Test func aFailedToolCallLeavesTheTickerOnceALaterCallOfTheTurnSucceeds() {
+  let messages = [
+    prompt("1"), tool("2", "Write qa-out.txt", .failed), tool("3", "Write qa-out.txt", .completed),
+  ]
+  #expect(ticker(messages) == ["Done: Write qa-out.txt"])
+}
+
+@Test func anEarlierTurnsPlanDoesNotLeadTheTicker() {
+  let messages = [
+    prompt("1"), plan([("Old step", .in_progress)]), prompt("3"),
+  ]
+  #expect(ticker(messages).isEmpty)
+}
+
 @Test func acpTickerShowsNoElapsedTimeOnceTheTurnEnds() {
   var view = AgentPaneView()
   view.messages = [tool("1", "cargo test", .completed)]
