@@ -1,4 +1,4 @@
-use super::{PhraseFacts, phrase};
+use super::{PhraseFacts, next_version, phrase};
 use crate::{
     agents::{Changes, state::State},
     core::Core,
@@ -80,12 +80,6 @@ impl TaskBlockingChange {
         }
         events
     }
-}
-
-fn next_version(task: &Task) -> Result<u32> {
-    task.version
-        .checked_add(1)
-        .ok_or_else(|| errors::internal("Task version exhausted"))
 }
 
 fn dependency_action(task: &Task, dependency: &Task) -> Result<BlockingAction> {

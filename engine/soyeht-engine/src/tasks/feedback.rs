@@ -5,7 +5,7 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::StorePort,
-    tasks::{PhraseFacts, phrase, review_badge, revision::RevisionSnapshot},
+    tasks::{PhraseFacts, next_version, phrase, review_badge, revision::RevisionSnapshot},
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
@@ -106,10 +106,7 @@ impl Core {
             return Ok(None);
         };
         let mut task = current.clone();
-        task.version = task
-            .version
-            .checked_add(1)
-            .ok_or_else(|| errors::internal("Task version exhausted"))?;
+        task.version = next_version(&task)?;
         task.phrase = "review requested changes".into();
         task.review_badge = Some(TaskReviewBadge::SystemTurn);
         let comment = Comment {
@@ -440,10 +437,7 @@ fn task_with_revision(task: &Task, revision: &RevisionSnapshot, owner_alive: boo
     updated.review_badge = review_badge(&updated, owner_alive);
     updated.phrase = phrase(&updated, &PhraseFacts::default());
     if updated != *task {
-        updated.version = task
-            .version
-            .checked_add(1)
-            .ok_or_else(|| errors::internal("Task version exhausted"))?;
+        updated.version = next_version(task)?;
     }
     Ok(updated)
 }

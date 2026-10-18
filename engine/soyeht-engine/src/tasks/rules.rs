@@ -147,10 +147,7 @@ pub fn apply_update(task: &Task, params: &TaskUpdateParams) -> Result<Task> {
     if let Some(owner) = &params.planned_owner {
         updated.planned_owner = Some(owner.clone());
     }
-    updated.version = updated
-        .version
-        .checked_add(1)
-        .ok_or_else(|| errors::internal("Task version exhausted"))?;
+    updated.version = next_version(&updated)?;
     updated.phrase = phrase(&updated, &PhraseFacts::default());
     Ok(updated)
 }
@@ -360,7 +357,8 @@ pub fn new_loop_config(params: &LoopSetParams) -> Result<LoopConfig> {
     })
 }
 
-fn next_version(task: &Task) -> Result<u32> {
+/// The version a task takes when it changes: the one place that bumps it.
+pub(crate) fn next_version(task: &Task) -> Result<u32> {
     task.version
         .checked_add(1)
         .ok_or_else(|| errors::internal("Task version exhausted"))

@@ -2,7 +2,7 @@
 
 use super::{
     api::parameters,
-    events, looping,
+    events, looping, next_version,
     worktree::{self, PreparedWorktree, WorktreePort},
 };
 use crate::{
@@ -635,10 +635,7 @@ impl Core {
         let mut state = self.agent_state(&pane_id)?;
         state.enqueue_identified(prompt_id, text, PromptOrigin::Automatic, self.timestamp())?;
         let mut updated = current.clone();
-        updated.version = updated
-            .version
-            .checked_add(1)
-            .ok_or_else(|| errors::internal("Task version exhausted"))?;
+        updated.version = next_version(&updated)?;
         updated.executor = Some(request.preset);
         updated.worktree = Some(TaskWorktree {
             path: checkpoint

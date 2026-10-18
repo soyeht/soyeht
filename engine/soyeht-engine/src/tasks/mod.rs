@@ -22,6 +22,7 @@ mod worktree_clean;
 pub(crate) use lifecycle::TaskOwnerLoss;
 pub(crate) use movement::TaskHumanMove;
 pub use phrase::{PhraseFacts, phrase, review_badge};
+pub(crate) use rules::next_version;
 #[cfg(test)]
 pub(crate) use rules::tests::task_fixture;
 pub use rules::{
