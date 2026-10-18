@@ -114,7 +114,16 @@ fn every_engine_command_runs_through_the_bounded_runner() {
             if runs_process_directly(shipped) {
                 violations.push(format!("{relative}: runs a process directly"));
             }
-            if shipped.contains("Command::new(") && !shipped.contains("soyeht_process::run(") {
+            // `run_git` and `run_git_with` are `run` behind the check that git can start without a
+            // system prompt (ADR 0093).
+            let bounded = [
+                "soyeht_process::run(",
+                "soyeht_process::run_git(",
+                "soyeht_process::run_git_with(",
+            ];
+            if shipped.contains("Command::new(")
+                && !bounded.iter().any(|call| shipped.contains(call))
+            {
                 violations.push(format!(
                     "{relative}: builds a Command but never runs it through soyeht_process::run"
                 ));
