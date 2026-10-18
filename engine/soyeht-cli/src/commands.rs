@@ -1,6 +1,5 @@
-use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
-use soyeht_cli::{Client, Error, Result};
+use soyeht_cli::{Client, Result};
 use soyeht_protocol::*;
 use std::{
     io::{self, Read},
@@ -8,7 +7,10 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::{editor_commands, task_commands};
+use crate::{
+    args::{invalid, rpc},
+    editor_commands, task_commands,
+};
 
 pub const USAGE: &str = "soyeht --profile dev [--data-dir PATH] [--bound] COMMAND\n\
 status\n\
@@ -41,16 +43,6 @@ Executor commands accept --pane ID --generation N --attempt N together.\n\
 Use --bound to read SOYEHT_MCP_BINDING from the pane environment for agent-only calls.\n\
 Mutating commands accept --idempotency-key KEY as the final option for safe retries.";
 
-fn invalid(message: impl Into<String>) -> Error {
-    Error::InvalidArguments(message.into())
-}
-fn rpc<T: DeserializeOwned + Serialize>(
-    client: &mut Client,
-    method: &str,
-    params: Value,
-) -> Result<Value> {
-    Ok(serde_json::to_value(client.request::<T>(method, params)?)?)
-}
 fn options(rest: &[&str], allowed: &[(&str, &str)]) -> Result<Value> {
     let mut value = json!({});
     let mut args = rest.iter();

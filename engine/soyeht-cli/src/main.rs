@@ -1,5 +1,6 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod args;
 mod commands;
 mod editor_commands;
 mod task_commands;

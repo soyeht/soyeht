@@ -1,65 +1,10 @@
-use serde::{Serialize, de::DeserializeOwned};
+use crate::args::{Flags, insert, invalid, number, optional, rpc};
 use serde_json::{Map, Value, json};
-use soyeht_cli::{Client, Error, Result};
+use soyeht_cli::{Client, Result};
 use soyeht_protocol::*;
-use std::collections::BTreeMap;
 
 const DEFAULT_VIEWPORT_LINES: u32 = 200;
 const DEFAULT_PAGE: u32 = 100;
-
-fn invalid(message: impl Into<String>) -> Error {
-    Error::InvalidArguments(message.into())
-}
-
-fn rpc<T: DeserializeOwned + Serialize>(
-    client: &mut Client,
-    method: &str,
-    params: Value,
-) -> Result<Value> {
-    Ok(serde_json::to_value(client.request::<T>(method, params)?)?)
-}
-
-struct Flags {
-    values: BTreeMap<String, String>,
-}
-
-impl Flags {
-    fn parse(args: &[&str], allowed: &[&str]) -> Result<Self> {
-        let mut values = BTreeMap::new();
-        let mut index = 0;
-        while index < args.len() {
-            let name = args[index];
-            if !allowed.contains(&name) {
-                return Err(invalid(format!("Unknown option: {name}")));
-            }
-            let value = args
-                .get(index + 1)
-                .ok_or_else(|| invalid(format!("Missing value for {name}")))?;
-            if values.insert(name.into(), (*value).into()).is_some() {
-                return Err(invalid(format!("Repeated option: {name}")));
-            }
-            index += 2;
-        }
-        Ok(Self { values })
-    }
-
-    fn get(&self, name: &str) -> Option<&str> {
-        self.values.get(name).map(String::as_str)
-    }
-
-    fn number(&self, name: &str, default: u32) -> Result<u32> {
-        self.get(name)
-            .map_or(Ok(default), |value| number(value, name))
-    }
-
-    fn boolean(&self, name: &str, default: bool) -> Result<bool> {
-        self.get(name).map_or(Ok(default), |value| match value {
-            "true" => Ok(true),
-            "false" => Ok(false),
-            _ => Err(invalid(format!("{name} must be true or false"))),
-        })
-    }
-}
 
 enum Request {
     Open(Value),
@@ -168,10 +113,13 @@ fn read(file: &str, rest: &[&str]) -> Result<Request> {
     optional(&mut params, "revision", flags.get("--revision"));
     optional(&mut params, "source", flags.get("--source"));
     optional(&mut params, "versionId", flags.get("--version"));
-    params.insert("fromLine".into(), json!(flags.number("--from", 0)?));
+    params.insert(
+        "fromLine".into(),
+        json!(flags.number("--from")?.unwrap_or(0)),
+    );
     params.insert(
         "lineCount".into(),
-        json!(flags.number("--lines", DEFAULT_VIEWPORT_LINES)?),
+        json!(flags.number("--lines")?.unwrap_or(DEFAULT_VIEWPORT_LINES)),
     );
     Ok(Request::Read(params.into()))
 }
@@ -202,7 +150,7 @@ fn history(file: &str, rest: &[&str]) -> Result<Request> {
     optional(&mut params, "cursor", flags.get("--cursor"));
     params.insert(
         "limit".into(),
-        json!(flags.number("--limit", DEFAULT_PAGE)?),
+        json!(flags.number("--limit")?.unwrap_or(DEFAULT_PAGE)),
     );
     Ok(Request::History(params.into()))
 }
@@ -230,11 +178,11 @@ fn search(workspace: &str, query: &str, rest: &[&str], key: &str) -> Result<Requ
     optional(&mut params, "replacement", flags.get("--replacement"));
     params.insert(
         "caseSensitive".into(),
-        json!(flags.boolean("--case-sensitive", false)?),
+        json!(flags.boolean("--case-sensitive")?.unwrap_or(false)),
     );
     params.insert(
         "limit".into(),
-        json!(flags.number("--limit", DEFAULT_PAGE)?),
+        json!(flags.number("--limit")?.unwrap_or(DEFAULT_PAGE)),
     );
     insert(&mut params, "idempotencyKey", key);
     Ok(Request::Search(params.into()))
@@ -253,22 +201,6 @@ fn optional_number(params: &mut Map<String, Value>, name: &str, value: Option<&s
         params.insert(name.into(), json!(number(value, name)?));
     }
     Ok(())
-}
-
-fn optional(params: &mut Map<String, Value>, name: &str, value: Option<&str>) {
-    if let Some(value) = value {
-        insert(params, name, value);
-    }
-}
-
-fn insert(params: &mut Map<String, Value>, name: &str, value: &str) {
-    params.insert(name.into(), json!(value));
-}
-
-fn number(value: &str, name: &str) -> Result<u32> {
-    value
-        .parse()
-        .map_err(|_| invalid(format!("{name} must be an integer")))
 }
 
 #[cfg(test)]
