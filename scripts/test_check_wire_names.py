@@ -66,7 +66,7 @@ class WireNameTests(unittest.TestCase):
             "engine/crate/tests/api.rs": 'const A: &str = "pane.list";',
             "engine/crate/src/generated.rs": 'pub const A: &str = "pane.list";',
             "engine/crate/src/setting.rs": (
-                '// Generated from contracts/protocol.json (sha256 x). Do not edit.\n'
+                '// Generated from contracts/protocol.json. Do not edit.\n'
                 'pub const A: &str = "terminal.defaultCols";'
             ),
             "engine/soyeht-ptyd/src/wire_kind.rs": 'pub const A: &str = "not_found";\nconst B: &str = "pane.list";',

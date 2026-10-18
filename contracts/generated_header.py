@@ -6,7 +6,8 @@ every output. `generate.py --check` compares the whole regenerated content, so a
 caught without it.
 """
 
-# The prefix `scripts/check_wire_names.py` and AGENTS.md rely on to recognise an output.
+# The prefix that marks an output. `scripts/check_wire_names.py` reads it from here to skip
+# outputs, and the generator's tests check every output against it.
 PREFIX = "Generated from contracts/"
 
 

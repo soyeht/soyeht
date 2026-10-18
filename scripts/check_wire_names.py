@@ -23,6 +23,7 @@ checked for the other kinds only. Run the script to list every offending literal
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import re
 from pathlib import Path
@@ -54,7 +55,18 @@ OWN_VOCABULARIES = {
     "engine/soyeht-ptyd/src/wire_kind.rs": "the supervisor's own error kinds, a private protocol (ADR 0003)",
     "engine/soyeht-engine/src/outbox.rs": "log labels of why a connection closed",
 }
-GENERATED = ("// Generated from contracts/", "# Generated from contracts/")
+
+
+def generated_prefix() -> str:
+    """The text every generated output starts with, read from the one place that defines it."""
+    path = ROOT / "contracts/generated_header.py"
+    spec = importlib.util.spec_from_file_location("generated_header", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.PREFIX
+
+
+GENERATED = tuple(comment + generated_prefix() for comment in ("// ", "# "))
 LITERAL = re.compile(r'"([a-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_{}]*)*)"')
 
 

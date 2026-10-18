@@ -27,6 +27,21 @@ pub enum LaunchPathIssue {
     InvalidOutput,
 }
 
+impl soyeht_platform::log::Failure for LaunchPathIssue {
+    fn failure_kind(&self) -> String {
+        match self {
+            Self::MissingShell => "missing_shell",
+            Self::UnsupportedShell => "unsupported_shell",
+            Self::UnavailableShell => "unavailable_shell",
+            Self::ProbeFailed => "probe_failed",
+            Self::ProbeTimedOut => "probe_timed_out",
+            Self::OutputTooLarge => "output_too_large",
+            Self::InvalidOutput => "invalid_output",
+        }
+        .into()
+    }
+}
+
 /// An interactive login shell knows the `PATH` the person's terminals have; the engine, which
 /// the desktop may have started without it, asks that shell and falls back to its own.
 #[cfg(unix)]

@@ -8,7 +8,7 @@
 //! a plain spawn failure with no dialog.
 
 use std::{
-    ffi::OsString,
+    ffi::{OsStr, OsString},
     fs,
     path::{Path, PathBuf},
 };
@@ -76,9 +76,7 @@ impl Probe {
 
     /// The `git` the system would start: the first executable one on the path.
     fn first_git(&self) -> Option<PathBuf> {
-        std::env::split_paths(&self.path)
-            .map(|directory| directory.join("git"))
-            .find(|candidate| is_executable(candidate))
+        git_candidates(&self.path).find(|candidate| is_executable(candidate))
     }
 
     /// The directory the launcher consults, in its order, holds a `git`.
@@ -89,6 +87,14 @@ impl Probe {
         };
         is_executable(&directory.join("usr/bin/git"))
     }
+}
+
+/// Where `git` could be, in path order. An empty entry is skipped: it would join to a bare
+/// `git`, which names a file of the current directory, not a program of the search path.
+fn git_candidates(path: &OsStr) -> impl Iterator<Item = PathBuf> {
+    std::env::split_paths(path)
+        .filter(|directory| !directory.as_os_str().is_empty())
+        .map(|directory| directory.join("git"))
 }
 
 fn is_launcher(candidate: &Path, launcher: &Path) -> bool {
@@ -290,6 +296,17 @@ mod tests {
             machine.probe(&["usr/bin"]).availability(),
             Availability::Unavailable
         );
+    }
+
+    #[test]
+    fn an_empty_path_entry_is_not_the_current_directory() {
+        let path = std::env::join_paths(["", "/opt/bin", "", "/usr/bin"]).unwrap();
+        let candidates: Vec<PathBuf> = git_candidates(&path).collect();
+        assert_eq!(
+            candidates,
+            [PathBuf::from("/opt/bin/git"), PathBuf::from("/usr/bin/git")]
+        );
+        assert_eq!(git_candidates(OsStr::new("")).count(), 0);
     }
 
     #[test]
