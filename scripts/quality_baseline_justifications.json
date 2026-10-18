@@ -1,1 +1,6 @@
-{}
+{
+  "loose_literals.engine/soyeht-engine/src/experiment_export/tests.rs.rust_limits": {
+    "value": 1,
+    "reason": "Pure move: the single 512 literal is a test value that moved with its test out of experiment_export.rs, whose entry of 1 is removed in the same change; the repository total does not grow."
+  }
+}

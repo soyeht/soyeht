@@ -14,7 +14,7 @@
     },
     "engine": {
       "clones": 381,
-      "duplicated_lines": 3391
+      "duplicated_lines": 3389
     },
     "ios": {
       "clones": 4,
@@ -156,7 +156,7 @@
     "engine/soyeht-engine/src/dispatch.rs": {
       "rust_limits": 2
     },
-    "engine/soyeht-engine/src/experiment_export.rs": {
+    "engine/soyeht-engine/src/experiment_export/tests.rs": {
       "rust_limits": 1
     },
     "engine/soyeht-engine/src/languages/runtime.rs": {
@@ -236,18 +236,11 @@
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 965,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-cli/src/task_commands.rs": 862,
-    "engine/soyeht-engine/src/agents/questions.rs": 1119,
     "engine/soyeht-engine/src/agents/state.rs": 862,
     "engine/soyeht-engine/src/agents/switching.rs": 1009,
-    "engine/soyeht-engine/src/editor/service.rs": 1027,
-    "engine/soyeht-engine/src/experiment_export.rs": 1194,
-    "engine/soyeht-engine/src/pane_observations.rs": 1636,
-    "engine/soyeht-engine/src/tasks/feedback.rs": 892,
-    "engine/soyeht-engine/src/terminal_capture.rs": 1463,
-    "engine/soyeht-engine/src/web/host.rs": 956,
-    "engine/soyeht-engine/src/web/permissions.rs": 1114,
+    "engine/soyeht-engine/src/pane_observations.rs": 1053,
     "engine/soyeht-engine/tests/runtime.rs": 8668,
-    "engine/soyeht-mcp/src/tools.rs": 1189,
+    "engine/soyeht-mcp/src/tools.rs": 801,
     "engine/soyeht-store/src/editor.rs": 840,
     "engine/soyeht-store/tests/agents.rs": 1066,
     "engine/soyeht-store/tests/tasks.rs": 958
