@@ -30,6 +30,8 @@ extension ButtonStyle where Self == PanePillButtonStyle {
   @MainActor static var panePrimary: PanePillButtonStyle { pane(.primary) }
   /// `well` pill with `ink` text.
   @MainActor static var paneSecondary: PanePillButtonStyle { pane(.secondary) }
+  /// `well` pill with `danger` text.
+  @MainActor static var paneDestructive: PanePillButtonStyle { pane(.destructive) }
 
   @MainActor private static func pane(_ role: PanePillButtonStyle.Role) -> PanePillButtonStyle {
     PanePillButtonStyle(

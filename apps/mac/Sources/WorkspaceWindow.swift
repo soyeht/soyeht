@@ -64,9 +64,10 @@ struct WorkspaceWindow: View {
             .textSelection(.enabled)
           HStack {
             Button("Deny") { client.decidePairing(request, approve: false) }
+              .buttonStyle(.paneSecondary)
             Spacer()
-            Button("Allow") { client.decidePairing(request, approve: true) }.buttonStyle(
-              .borderedProminent)
+            Button("Allow") { client.decidePairing(request, approve: true) }
+              .buttonStyle(.panePrimary)
           }
         }.padding(22).frame(width: 420).neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
           .padding(.bottom, 40)
@@ -472,11 +473,12 @@ struct WorkspaceWindow: View {
           .textSelection(.enabled)
         HStack {
           Button("Deny") { client.decidePairing(request, approve: false) }
+            .buttonStyle(.paneSecondary)
           Button("Allow") {
             client.decidePairing(request, approve: true)
             showPairing = false
           }
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.panePrimary)
         }
       }
       if !client.devices.isEmpty {
@@ -492,7 +494,7 @@ struct WorkspaceWindow: View {
           }
         }.padding(.vertical, 12)
       }
-      Button("Close") { showPairing = false }
+      Button("Close") { showPairing = false }.buttonStyle(.paneSecondary)
     }.padding(32).frame(maxWidth: .infinity).background(MacTheme.canvas).foregroundStyle(
       MacTheme.ink
     )

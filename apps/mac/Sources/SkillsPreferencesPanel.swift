@@ -88,7 +88,7 @@ struct SkillsPreferencesPanel: View {
         .background(MacTheme.well, in: RoundedRectangle(cornerRadius: MacTheme.Radius.compact))
       HStack {
         Spacer()
-        Button("Cancel") { reset() }
+        Button("Cancel") { reset() }.buttonStyle(.paneSecondary)
         Button("Create") {
           Task {
             await run {
@@ -98,6 +98,7 @@ struct SkillsPreferencesPanel: View {
             }
           }
         }
+        .buttonStyle(.panePrimary)
         .keyboardShortcut(.defaultAction)
         .disabled(name.isEmpty || summary.isEmpty)
       }

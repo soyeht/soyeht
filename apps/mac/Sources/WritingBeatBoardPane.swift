@@ -295,10 +295,10 @@ private struct BeatEditorSheet: View {
       }
       .font(MacTheme.chrome(MacTheme.TypeScale.control))
       HStack {
-        Button("Cancel") { dismiss() }
+        Button("Cancel") { dismiss() }.buttonStyle(.paneSecondary)
         Spacer()
         Button("Save idea") { save() }
-          .buttonStyle(.borderedProminent).disabled(!valid || saving)
+          .buttonStyle(.panePrimary).disabled(!valid || saving)
       }
     }
     .padding(MacTheme.Space.x18).macSheetSurface(.ideaEditor).background(MacTheme.canvas)

@@ -206,28 +206,30 @@ private struct WritingDocumentCreateSheet: View {
   let section: WritingSection
   let onCreated: (String) -> Void
   @Environment(\.dismiss) private var dismiss
-  @State private var title = ""
-  @State private var folder = ""
+  @State private var draft = WritingDocumentDraft()
   @State private var creating = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
       Text("New \(section.singularTitle)")
         .font(MacTheme.chrome(MacTheme.TypeScale.title, weight: .bold))
-      TextField("Title", text: $title)
+      TextField("Title", text: $draft.title)
         .textFieldStyle(.plain).font(MacTheme.chrome(MacTheme.TypeScale.control))
         .padding(MacTheme.Space.x10).neoWell(radius: MacTheme.Radius.control)
-      TextField("Subfolder (optional)", text: $folder)
+        .onSubmit(create)
+      TextField("Subfolder (optional)", text: $draft.folder)
         .textFieldStyle(.plain).font(MacTheme.mono(MacTheme.TypeScale.control))
         .padding(MacTheme.Space.x10).neoWell(radius: MacTheme.Radius.control)
+        .onSubmit(create)
       Text("The document is created inside the \(section.folderLabel) folder.")
         .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
       HStack {
-        Button("Cancel") { dismiss() }
+        Button("Cancel") { dismiss() }.buttonStyle(.paneSecondary)
         Spacer()
         Button("Create") { create() }
-          .disabled(!valid || creating)
-          .buttonStyle(.borderedProminent)
+          .buttonStyle(.panePrimary)
+          .keyboardShortcut(.defaultAction)
+          .disabled(draft.submission(creating: creating) == nil)
       }
     }
     .padding(MacTheme.Space.x18)
@@ -235,16 +237,14 @@ private struct WritingDocumentCreateSheet: View {
     .background(MacTheme.canvas)
   }
 
-  private var valid: Bool { !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
   private func create() {
+    guard let submission = draft.submission(creating: creating) else { return }
     creating = true
     Task { @MainActor in
       do {
         let result = try await client.createWritingDocument(
-          workspaceId: workspaceId, section: section,
-          title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-          relativeFolder: folder.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty)
+          workspaceId: workspaceId, section: section, title: submission.title,
+          relativeFolder: submission.relativeFolder)
         onCreated(result.pane.paneId)
       } catch {
         creating = false
@@ -290,8 +290,4 @@ extension WritingSection {
     case .screenplays: "screenplays"
     }
   }
-}
-
-extension String {
-  fileprivate var nilIfEmpty: String? { isEmpty ? nil : self }
 }

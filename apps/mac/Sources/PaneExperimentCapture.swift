@@ -86,11 +86,13 @@ private struct ExperimentCaptureDialogs: ViewModifier {
               capture.notice = "Captured data kept on this Mac."
               capture.isAskingDeletion = false
             }
+            .buttonStyle(.paneSecondary)
             Spacer()
             Button("Delete captured data", role: .destructive) {
               capture.isAskingDeletion = false
               capture.deleteData(pane, client: client)
             }
+            .buttonStyle(.paneDestructive)
             .keyboardShortcut(.defaultAction)
           }
         }
