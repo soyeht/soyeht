@@ -5,6 +5,8 @@ pub enum Error {
     InvalidRepository,
     InvalidPath,
     CommandUnavailable,
+    /// `git` was not started: it would open the system installer, or it is not installed.
+    GitUnavailable,
     CommandFailed,
     TimedOut,
     InvalidUtf8,
@@ -21,6 +23,7 @@ impl fmt::Display for Error {
             Self::InvalidRepository => "source-control repository is unavailable",
             Self::InvalidPath => "source-control path is outside the repository",
             Self::CommandUnavailable => "source-control command is unavailable",
+            Self::GitUnavailable => soyeht_process::GIT_UNAVAILABLE_MESSAGE,
             Self::CommandFailed => "source-control command failed",
             Self::TimedOut => "source-control command timed out and was stopped",
             Self::InvalidUtf8 => "source-control output is not UTF-8",

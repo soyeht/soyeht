@@ -11,10 +11,13 @@
 //! - [`process`]: ending a process together with everything it started (a process group on
 //!   Unix, a job object on Windows), and the Windows launch of a child into one.
 //! - [`fs`]: owner-only files and directories and opens that never follow a link.
+//! - [`git`]: whether `git` can run, decided without starting it (the macOS launcher opens
+//!   the system installer when the Command Line Tools are missing).
 //!
 //! The crate has no Soyeht dependencies.
 
 pub mod fs;
+pub mod git;
 pub mod local;
 pub mod log;
 pub mod process;

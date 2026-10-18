@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 230818b5f2ad0fae9840e1fa388036a3a72b6df9d0b201f9f054dc7169c935cd). Do not edit.
+// Generated from contracts/protocol.json (sha256 a83e5a091c82349a4173728fab5308dc11fe83521977008e26f2fb81c3b50038). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -171,6 +171,8 @@ pub enum ErrorKind {
     AttachmentLimitExceeded,
     #[serde(rename = "platform_unsupported")]
     PlatformUnsupported,
+    #[serde(rename = "git_unavailable")]
+    GitUnavailable,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -8797,5 +8799,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::HarnessSwitchFailed => -32035,
         ErrorKind::AttachmentLimitExceeded => -32036,
         ErrorKind::PlatformUnsupported => -32037,
+        ErrorKind::GitUnavailable => -32038,
     }
 }

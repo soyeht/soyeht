@@ -125,7 +125,8 @@
         "writing_section_refused",
         "harness_switch_failed",
         "attachment_limit_exceeded",
-        "platform_unsupported"
+        "platform_unsupported",
+        "git_unavailable"
       ]
     },
     "RpcError": {
@@ -14511,7 +14512,8 @@
     "writing_section_refused": -32034,
     "harness_switch_failed": -32035,
     "attachment_limit_exceeded": -32036,
-    "platform_unsupported": -32037
+    "platform_unsupported": -32037,
+    "git_unavailable": -32038
   },
   "x-clientPolicy": {
     "timeouts": {

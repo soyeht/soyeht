@@ -13,6 +13,8 @@
 //! never stall the terminal path behind that lock (ADR 0079).
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+mod git;
+
 #[cfg(unix)]
 #[path = "system/unix.rs"]
 mod system;
@@ -35,6 +37,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub use git::{GIT_UNAVAILABLE_MESSAGE, require_git, require_git_with, run_git, run_git_with};
 use system::Running;
 
 /// How long the pipes may stay open after the command exits or is killed.
@@ -132,6 +135,8 @@ pub enum Error {
         program: String,
         holder: &'static str,
     },
+    /// `git` was not started: it would open the system installer, or it is not installed.
+    GitUnavailable,
 }
 
 impl Error {
@@ -167,6 +172,7 @@ impl fmt::Display for Error {
                 formatter,
                 "{program} was refused because the {holder} lock is held; blocking work runs off that lock"
             ),
+            Self::GitUnavailable => formatter.write_str(GIT_UNAVAILABLE_MESSAGE),
         }
     }
 }

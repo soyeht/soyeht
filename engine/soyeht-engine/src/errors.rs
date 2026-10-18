@@ -33,6 +33,7 @@ pub enum Error {
     PtydUnavailable(String),
     StaleEngineGeneration(String),
     WorktreeUnavailable(String),
+    GitUnavailable(String),
     WebHostUnavailable(String),
     WritingKindRefused(String),
     AttachmentLimitExceeded(String),
@@ -104,6 +105,16 @@ constructor!(disk_full, DiskFull);
 constructor!(ptyd_unavailable, PtydUnavailable);
 constructor!(stale_engine_generation, StaleEngineGeneration);
 constructor!(worktree_unavailable, WorktreeUnavailable);
+constructor!(git_unavailable, GitUnavailable);
+
+/// The error of a `git` or `wt` command that did not run: `git_unavailable` when the machine
+/// has no usable `git`, `worktree_unavailable` for any other reason.
+pub fn worktree_process(error: soyeht_process::Error) -> Error {
+    match error {
+        soyeht_process::Error::GitUnavailable => git_unavailable(error.to_string()),
+        other => worktree_unavailable(other.to_string()),
+    }
+}
 constructor!(web_host_unavailable, WebHostUnavailable);
 constructor!(writing_kind_refused, WritingKindRefused);
 constructor!(attachment_limit_exceeded, AttachmentLimitExceeded);
@@ -239,6 +250,7 @@ fn vcs_kind(error: &soyeht_vcs::Error) -> ErrorKind {
         soyeht_vcs::Error::InvalidRepository | soyeht_vcs::Error::InvalidPath => {
             ErrorKind::InvalidParams
         }
+        soyeht_vcs::Error::GitUnavailable => ErrorKind::GitUnavailable,
         _ => ErrorKind::InternalError,
     }
 }
@@ -352,6 +364,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::PtydUnavailable(_) => ErrorKind::PtydUnavailable,
         Error::StaleEngineGeneration(_) => ErrorKind::StaleEngineGeneration,
         Error::WorktreeUnavailable(_) => ErrorKind::InternalError,
+        Error::GitUnavailable(_) => ErrorKind::GitUnavailable,
         Error::WebHostUnavailable(_) => ErrorKind::WebHostUnavailable,
         Error::WritingKindRefused(_) => ErrorKind::WritingKindRefused,
         Error::AttachmentLimitExceeded(_) => ErrorKind::AttachmentLimitExceeded,
@@ -448,6 +461,7 @@ fn message(error: &Error) -> String {
         | Error::PtydUnavailable(message)
         | Error::StaleEngineGeneration(message)
         | Error::WorktreeUnavailable(message)
+        | Error::GitUnavailable(message)
         | Error::WebHostUnavailable(message)
         | Error::WritingKindRefused(message)
         | Error::AttachmentLimitExceeded(message)
@@ -629,6 +643,20 @@ impl From<tokio::task::JoinError> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_git_is_its_own_kind_from_every_path_that_runs_it() {
+        let wire_error = wire(Error::Vcs(soyeht_vcs::Error::GitUnavailable));
+        assert_eq!(wire_error.data.kind, ErrorKind::GitUnavailable);
+        assert_eq!(wire_error.message, soyeht_process::GIT_UNAVAILABLE_MESSAGE);
+        let wire_error = wire(worktree_process(soyeht_process::Error::GitUnavailable));
+        assert_eq!(wire_error.data.kind, ErrorKind::GitUnavailable);
+        let wire_error = wire(worktree_process(soyeht_process::Error::TimedOut {
+            program: "git".into(),
+            after: std::time::Duration::from_secs(1),
+        }));
+        assert_eq!(wire_error.data.kind, ErrorKind::InternalError);
+    }
 
     #[test]
     fn every_public_kind_is_assigned_at_the_single_wire_boundary() {

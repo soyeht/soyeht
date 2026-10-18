@@ -92,11 +92,11 @@ fn git(repository: &Path, args: &[&str]) -> Result<Output> {
         .arg(repository)
         .args(args)
         .env("GIT_OPTIONAL_LOCKS", "0");
-    soyeht_process::run(
+    soyeht_process::run_git(
         command,
         soyeht_process::Limits::new(GIT_TIMEOUT, OUTPUT_LIMIT),
     )
-    .map_err(|error| errors::worktree_unavailable(error.to_string()))
+    .map_err(errors::worktree_process)
 }
 
 fn bytes(output: Output) -> Result<Vec<u8>> {

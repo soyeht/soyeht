@@ -375,7 +375,11 @@ sends against them (ADR 0090).
 `needs_login`, `cursor_too_old`, `resync_required`, `slow_consumer`,
 `protocol_version_unsupported`, `disk_full`, `ptyd_unavailable`,
 `platform_unsupported` (the operating system the engine runs on cannot do what was
-asked: for example, `servers.local.list` on Windows; the message says what).
+asked: for example, `servers.local.list` on Windows; the message says what),
+`git_unavailable` (the engine did not start `git`, or `wt` which starts it, because on a Mac
+without the Command Line Tools `/usr/bin/git` opens the system installer; the message says
+what is missing and that nothing was installed. Features that do not need Git keep working,
+and a later request succeeds once Git is installed).
 
 ## 8. Limits (R20) — single table, overrides every other mention
 | Item | Limit |

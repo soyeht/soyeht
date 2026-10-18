@@ -60,6 +60,8 @@ impl CommandWorktree {
     }
 
     fn wt(&self, repository: &Path, args: &[&str], timeout: Duration) -> Result<Output> {
+        // `wt` starts git itself, so the check comes before `wt` does.
+        soyeht_process::require_git().map_err(errors::worktree_process)?;
         let mut command = Command::new(&self.executable);
         command.arg("-C").arg(repository).args(args);
         bounded_command(command, timeout)
@@ -181,7 +183,7 @@ fn validate_target(repository: &Path, branch: &str) -> Result<()> {
 
 fn bounded_command(command: Command, timeout: Duration) -> Result<Output> {
     soyeht_process::run(command, Limits::new(timeout, OUTPUT_LIMIT))
-        .map_err(|error| errors::worktree_unavailable(error.to_string()))
+        .map_err(errors::worktree_process)
 }
 
 fn checked_json(output: Output) -> Result<Value> {

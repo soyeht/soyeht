@@ -1,4 +1,5 @@
 use crate::{Error, Result};
+use soyeht_platform::git::Probe;
 use soyeht_process::Output;
 use std::{
     ffi::{OsStr, OsString},
@@ -141,11 +142,17 @@ where
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GIT_LITERAL_PATHSPECS", "1")
         .env("GIT_PAGER", "cat");
-    soyeht_process::run(
+    run_git(&Probe::system(), command)
+}
+
+fn run_git(probe: &Probe, command: Command) -> Result<Output> {
+    soyeht_process::run_git_with(
+        probe,
         command,
         soyeht_process::Limits::new(COMMAND_TIMEOUT, COMMAND_OUTPUT_BYTES),
     )
     .map_err(|error| match error {
+        soyeht_process::Error::GitUnavailable => Error::GitUnavailable,
         soyeht_process::Error::Spawn { .. } | soyeht_process::Error::UnderLock { .. } => {
             Error::CommandUnavailable
         }
@@ -178,6 +185,35 @@ mod tests {
             Err(Error::InvalidPath)
         );
         assert_eq!(validate_relative(Path::new("")), Err(Error::InvalidPath));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_is_not_started_without_the_command_line_tools() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("soyeht-vcs-no-clt-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("usr/bin")).unwrap();
+        let launcher = root.join("usr/bin/git");
+        let marker = root.join("ran");
+        fs::write(
+            &launcher,
+            format!("#!/bin/sh\ntouch '{}'\n", marker.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        let probe = Probe {
+            launcher: Some(launcher),
+            path: root.join("usr/bin").into_os_string(),
+            developer_dir: None,
+            select_link: root.join("xcode_select_link"),
+            default_tools: root.join("Library/CommandLineTools"),
+        };
+        let result = run_git(&probe, Command::new("git"));
+        let started = marker.exists();
+        fs::remove_dir_all(&root).unwrap();
+        assert!(matches!(result, Err(Error::GitUnavailable)));
+        assert!(!started, "the launcher must never start");
     }
 
     #[test]
