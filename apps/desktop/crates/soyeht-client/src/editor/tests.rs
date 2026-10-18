@@ -136,7 +136,8 @@ fn a_new_connection_reads_the_page_of_every_open_file_and_the_tabs_of_its_worksp
     )));
     let commands = sent(&effects);
     assert!(commands.contains(&super::EditorCommand::Tabs {
-        workspace_id: "w".into()
+        workspace_id: "w".into(),
+        attempt: 1
     }));
     let reads: Vec<_> = commands
         .iter()
@@ -148,7 +149,8 @@ fn a_new_connection_reads_the_page_of_every_open_file_and_the_tabs_of_its_worksp
         super::EditorCommand::Read(PageRequest {
             file_id: "main".into(),
             from_line: 0,
-            lines: super::PAGE_LINES
+            lines: super::PAGE_LINES,
+            attempt: 0
         })
     );
 }
@@ -240,7 +242,8 @@ fn scrolling_far_in_a_long_file_asks_for_the_page_that_leads_the_view() {
         [super::EditorCommand::Read(PageRequest {
             file_id: "main".into(),
             from_line: 1400,
-            lines: super::PAGE_LINES
+            lines: super::PAGE_LINES,
+            attempt: 0
         })]
     );
     // The same view does not ask again while the page is on its way.
@@ -256,7 +259,8 @@ fn a_page_that_arrives_keeps_the_caret_and_a_caret_far_away_waits_for_its_page()
         [super::EditorCommand::Read(PageRequest {
             file_id: "main".into(),
             from_line: 4499,
-            lines: super::PAGE_LINES
+            lines: super::PAGE_LINES,
+            attempt: 0
         })]
     );
     state.apply(read_tail());
@@ -597,6 +601,7 @@ fn a_file_that_got_shorter_than_the_page_is_read_from_its_end_and_a_second_failu
             super::Failure::Read {
                 file_id: "main".into(),
                 from_line,
+                attempt: 0,
                 reason: "refused".into(),
             },
         )))

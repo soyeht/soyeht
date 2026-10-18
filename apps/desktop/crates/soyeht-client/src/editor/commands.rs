@@ -18,6 +18,9 @@ pub struct PageRequest {
     pub file_id: String,
     pub from_line: u32,
     pub lines: u32,
+    /// Which ask for the file's first page this is, numbered by the replica (`load::Attempts`);
+    /// 0 for any other read. An answer to a superseded ask is ignored.
+    pub attempt: u64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +49,9 @@ pub enum EditorCommand {
     Save(PageRequest),
     Tabs {
         workspace_id: String,
+        /// Which ask for the workspace's tabs this is, numbered by the replica
+        /// (`load::Attempts`).
+        attempt: u64,
     },
     List {
         workspace_id: String,
@@ -94,11 +100,15 @@ pub enum Failure {
     Read {
         file_id: String,
         from_line: u32,
+        /// The `attempt` of the request that failed.
+        attempt: u64,
         reason: String,
     },
     /// The tabs of a workspace could not be listed: a pane that waits for its file has none.
     Tabs {
         workspace_id: String,
+        /// The `attempt` of the request that failed.
+        attempt: u64,
         reason: String,
     },
     /// A folder that could not be listed.
@@ -184,7 +194,7 @@ fn request(command: &EditorCommand, author: &FileAuthor) -> Option<Request> {
             }
         }
         EditorCommand::Save(_) => return None,
-        EditorCommand::Tabs { workspace_id } => Request::EditorTabsList(EditorTabsListParams {
+        EditorCommand::Tabs { workspace_id, .. } => Request::EditorTabsList(EditorTabsListParams {
             workspace_id: workspace_id.clone(),
         }),
         EditorCommand::List {
@@ -277,17 +287,28 @@ pub(crate) fn failure(command: &EditorCommand, reason: &str) -> Option<Event> {
             Failure::Edit(file_id.clone())
         }
         EditorCommand::Read(PageRequest {
-            file_id, from_line, ..
+            file_id,
+            from_line,
+            attempt,
+            ..
         })
         | EditorCommand::Save(PageRequest {
-            file_id, from_line, ..
+            file_id,
+            from_line,
+            attempt,
+            ..
         }) => Failure::Read {
             file_id: file_id.clone(),
             from_line: *from_line,
+            attempt: *attempt,
             reason: reason.to_owned(),
         },
-        EditorCommand::Tabs { workspace_id } => Failure::Tabs {
+        EditorCommand::Tabs {
+            workspace_id,
+            attempt,
+        } => Failure::Tabs {
             workspace_id: workspace_id.clone(),
+            attempt: *attempt,
             reason: reason.to_owned(),
         },
         EditorCommand::List {
@@ -343,6 +364,7 @@ mod tests {
             file_id: "f".into(),
             from_line: 40,
             lines: 100,
+            attempt: 0,
         });
         let Some(Request::FileRead(params)) = request(&command, &author()) else {
             panic!("no read");
@@ -357,6 +379,7 @@ mod tests {
             file_id: "f".into(),
             from_line: 0,
             lines: 10,
+            attempt: 0,
         };
         assert!(request(&EditorCommand::Save(page), &author()).is_none());
     }

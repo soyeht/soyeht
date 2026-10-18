@@ -172,6 +172,7 @@ impl EditorFile {
             file_id: self.doc.file_id.clone(),
             from_line,
             lines: PAGE_LINES,
+            attempt: 0,
         }
     }
 
@@ -579,6 +580,7 @@ impl EditorFile {
                 file_id: self.doc.file_id.clone(),
                 from_line: page.from_line,
                 lines: page.len(),
+                attempt: 0,
             },
         })]
     }

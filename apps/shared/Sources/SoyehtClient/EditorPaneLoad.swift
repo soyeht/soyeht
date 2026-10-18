@@ -51,7 +51,7 @@ extension EngineClient {
     guard
       let tab = editorWorkspace.tabs[pane.workspaceId]?.first(where: { $0.paneId == paneId })
     else {
-      throw ClientFailure.editorCommand("The engine has no file for this editor tab.")
+      throw ClientFailure.editorCommand(ClientPolicy.editorNoFile)
     }
     _ = try await readEditorFile(
       fileId: tab.fileId, fromLine: 0, lineCount: EditorViewportPaging.pageLines)

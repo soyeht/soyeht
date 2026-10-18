@@ -56,6 +56,7 @@ pub struct Editors {
     asked: HashSet<String>,
     /// Why the first page of an editor pane could not be had, by pane: the pane's load failed.
     failures: HashMap<String, String>,
+    attempts: load::Attempts,
     pub trees: ProjectTrees,
 }
 
@@ -198,8 +199,10 @@ impl Editors {
         if !self.asked.insert(workspace_id.to_owned()) {
             return Vec::new();
         }
+        let attempt = self.attempts.next_tabs(workspace_id);
         vec![Effect::Send(crate::Command::Editor(EditorCommand::Tabs {
             workspace_id: workspace_id.to_owned(),
+            attempt,
         }))]
     }
 
@@ -207,12 +210,20 @@ impl Editors {
     /// engine listed it before the pane existed.
     pub fn pane_arrived(&mut self, pane: &Pane) -> Vec<Effect> {
         self.failures.remove(&pane.pane_id);
-        self.fetch(pane)
+        self.fetch(pane, false)
     }
 
     /// A pane closed with its file.
     pub fn pane_closed(&mut self, pane_id: &str) {
         self.failures.remove(pane_id);
+        let listed = self
+            .tabs
+            .values()
+            .flatten()
+            .filter(|tab| tab.pane_id == pane_id);
+        for tab in listed {
+            self.attempts.forget_file(&tab.file_id);
+        }
         self.files.retain(|_, file| file.doc.pane_id != pane_id);
         for history in self.history.values_mut() {
             history.retain(|other| other != pane_id);
@@ -224,6 +235,7 @@ impl Editors {
         self.tabs.remove(workspace_id);
         self.history.remove(workspace_id);
         self.asked.remove(workspace_id);
+        self.attempts.forget_workspace(workspace_id);
         self.trees.forget(workspace_id);
     }
 
@@ -334,18 +346,6 @@ impl Editors {
             .collect()
     }
 
-    /// A file the engine lists that this client has not read: its first page is asked for, and
-    /// the file joins the replica when it arrives.
-    fn read_unknown(&self, file_id: &str) -> Vec<Effect> {
-        vec![Effect::Send(crate::Command::Editor(EditorCommand::Read(
-            commands::PageRequest {
-                file_id: file_id.to_owned(),
-                from_line: 0,
-                lines: PAGE_LINES,
-            },
-        )))]
-    }
-
     fn failed(&mut self, failure: Failure, panes: &[Pane]) -> Vec<Effect> {
         match failure {
             Failure::Edit(file_id) => self
@@ -354,9 +354,18 @@ impl Editors {
                 .map(EditorFile::edit_failed)
                 .unwrap_or_default(),
             Failure::Read {
+                file_id, attempt, ..
+            } if self.attempts.read_superseded(&file_id, attempt) => Vec::new(),
+            Failure::Tabs {
+                workspace_id,
+                attempt,
+                ..
+            } if self.attempts.tabs_superseded(&workspace_id, attempt) => Vec::new(),
+            Failure::Read {
                 file_id,
                 from_line,
                 reason,
+                ..
             } => {
                 let effects = self
                     .files
@@ -369,6 +378,7 @@ impl Editors {
             Failure::Tabs {
                 workspace_id,
                 reason,
+                ..
             } => {
                 self.tabs_failed(&workspace_id, &reason, panes);
                 Vec::new()

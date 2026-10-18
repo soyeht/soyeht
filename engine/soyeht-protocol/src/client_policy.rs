@@ -16,6 +16,7 @@ pub const PAGE_SIZE_TASKS: u32 = 100;
 pub const HARNESS_SWITCH_TITLE: &str = "Switch agent";
 pub const HARNESS_SWITCH_HANDOVER: &str = "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.";
 pub const TASK_MOVE_REASON: &str = "Moved on the workspace board";
+pub const EDITOR_NO_FILE: &str = "The engine has no file for this editor tab.";
 pub const USAGE_BAND_WARNING_FROM: f64 = 0.5;
 pub const USAGE_BAND_DANGER_ABOVE: f64 = 0.8;
 pub const CONTEXT_BAND_WARNING_ABOVE: f64 = 0.75;

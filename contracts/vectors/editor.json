@@ -1,5 +1,5 @@
 {
-  "description": "The editor rules the clients agree on: when the visible lines need another page of the file (x-clientPolicy editor prefetchLines and pageLeadDivisor, over the viewport limit; a page the engine cut short at its byte budget is not read again), which tab shows and which one takes over, what a keystroke changes and sends (a character is a grapheme cluster, and a CRLF line break is one character that the new lines of a CRLF file repeat), which line break a file has, how wide the line-number gutter is for the digits of the file's last line number (a number is never clipped), and how the project tree answers the keys. Ranges are UTF-16 offsets into the page text (its lines joined by a newline, a CRLF line keeping its carriage return), as the Mac's text view holds them. The Mac (EditorViewportPaging, EditorTabPolicy, EditorEditing, EditorProjectTree) and the desktop client (soyeht_client::editor) pass the same cases.",
+  "description": "The editor rules the clients agree on: when the visible lines need another page of the file (x-clientPolicy editor prefetchLines and pageLeadDivisor, over the viewport limit; a page the engine cut short at its byte budget is not read again), which tab shows and which one takes over, what a keystroke changes and sends (a character is a grapheme cluster, and a CRLF line break is one character that the new lines of a CRLF file repeat), which line break a file has, how wide the line-number gutter is for the digits of the file's last line number (a number is never clipped), how the project tree answers the keys, and how an editor pane loads its first page (loading, ready or failed, and what a retry asks). Ranges are UTF-16 offsets into the page text (its lines joined by a newline, a CRLF line keeping its carriage return), as the Mac's text view holds them. The Mac (EditorViewportPaging, EditorTabPolicy, EditorEditing, EditorProjectTree, EditorPaneLoad) and the desktop client (soyeht_client::editor) pass the same cases.",
   "pageLines": 2000,
   "requestedStart": [
     {
@@ -1908,6 +1908,237 @@
         "lineCount": 10000000,
         "digitWidth": 6.5,
         "width": 72
+      }
+    ]
+  },
+  "paneLoad": {
+    "description": "What an editor pane shows before its text is on screen (the Mac's EditorPaneLoad, the desktop's PaneLoad). Each case starts with a pane the engine created, and the file held already when fileHeld. A step is the person or the client asking (load: a pane is shown; retry: its Retry; refresh: the page is read again while one is held) against what the engine answers: tabs is lists (the pane with the file named by file, file-1 by default), omits (a list without the pane) or fails; read is succeeds or fails. state is the pane's load afterwards. A failed state has a reason: noFile is the text of x-clientPolicy texts.editorNoFile, engine is any reason the engine's failure gave. requests, where present, are the engine requests the step made in order (read:ID names the file read); a client may make more where a case leaves them out.",
+    "cases": [
+      {
+        "name": "a pane the engine lists a file for ends in its page",
+        "fileHeld": false,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds"
+            },
+            "requests": [
+              "editor.tabs.list",
+              "file.read:file-1"
+            ],
+            "state": "ready"
+          }
+        ]
+      },
+      {
+        "name": "a pane with no file in the tab list fails with the shared text, and a retry that finds it is ready",
+        "fileHeld": false,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "omits",
+              "read": "succeeds"
+            },
+            "requests": [
+              "editor.tabs.list"
+            ],
+            "state": "failed",
+            "reason": "noFile"
+          },
+          {
+            "do": "retry",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds"
+            },
+            "requests": [
+              "editor.tabs.list",
+              "file.read:file-1"
+            ],
+            "state": "ready"
+          }
+        ]
+      },
+      {
+        "name": "a tab list that cannot be read fails the pane with the engine's reason, and a retry is ready",
+        "fileHeld": false,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "fails",
+              "read": "succeeds"
+            },
+            "requests": [
+              "editor.tabs.list"
+            ],
+            "state": "failed",
+            "reason": "engine"
+          },
+          {
+            "do": "retry",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds"
+            },
+            "requests": [
+              "editor.tabs.list",
+              "file.read:file-1"
+            ],
+            "state": "ready"
+          }
+        ]
+      },
+      {
+        "name": "a first read that fails is failed, and a retry that succeeds is ready",
+        "fileHeld": false,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "lists",
+              "read": "fails"
+            },
+            "requests": [
+              "editor.tabs.list",
+              "file.read:file-1"
+            ],
+            "state": "failed",
+            "reason": "engine"
+          },
+          {
+            "do": "retry",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds"
+            },
+            "requests": [
+              "editor.tabs.list",
+              "file.read:file-1"
+            ],
+            "state": "ready"
+          }
+        ]
+      },
+      {
+        "name": "a retry lists the tabs again, so a stale file id cannot fail forever",
+        "fileHeld": false,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "lists",
+              "read": "fails"
+            },
+            "requests": [
+              "editor.tabs.list",
+              "file.read:file-1"
+            ],
+            "state": "failed",
+            "reason": "engine"
+          },
+          {
+            "do": "retry",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds",
+              "file": "file-2"
+            },
+            "requests": [
+              "editor.tabs.list",
+              "file.read:file-2"
+            ],
+            "state": "ready"
+          }
+        ]
+      },
+      {
+        "name": "a first read that fails twice is failed again, not loading",
+        "fileHeld": false,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "lists",
+              "read": "fails"
+            },
+            "state": "failed",
+            "reason": "engine"
+          },
+          {
+            "do": "retry",
+            "engine": {
+              "tabs": "lists",
+              "read": "fails"
+            },
+            "state": "failed",
+            "reason": "engine"
+          },
+          {
+            "do": "retry",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds"
+            },
+            "state": "ready"
+          }
+        ]
+      },
+      {
+        "name": "a first read of a file the client holds fails, and a retry that succeeds is ready",
+        "fileHeld": true,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "lists",
+              "read": "fails"
+            },
+            "state": "failed",
+            "reason": "engine"
+          },
+          {
+            "do": "retry",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds"
+            },
+            "state": "ready"
+          }
+        ]
+      },
+      {
+        "name": "a refresh that fails keeps the page ready",
+        "fileHeld": false,
+        "initial": "loading",
+        "steps": [
+          {
+            "do": "load",
+            "engine": {
+              "tabs": "lists",
+              "read": "succeeds"
+            },
+            "state": "ready"
+          },
+          {
+            "do": "refresh",
+            "engine": {
+              "tabs": "lists",
+              "read": "fails"
+            },
+            "state": "ready"
+          }
+        ]
       }
     ]
   }

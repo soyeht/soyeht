@@ -45,7 +45,8 @@ export const clientPolicy = {
   "texts": {
     "harnessSwitchTitle": "Switch agent",
     "harnessSwitchHandover": "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.",
-    "taskMoveReason": "Moved on the workspace board"
+    "taskMoveReason": "Moved on the workspace board",
+    "editorNoFile": "The engine has no file for this editor tab."
   },
   "inlineImageTypes": [
     "image/png",

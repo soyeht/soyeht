@@ -87,9 +87,9 @@ public final class EngineClient {
     }
   }
   @ObservationIgnored private var wire: Wire?
-  /// Answers requests in place of the wire; tests set it to play the engine.
-  @ObservationIgnored var requestStub:
-    (@MainActor (RequestMethod, JsonValue) async throws -> JsonValue)?
+  #if DEBUG
+    @ObservationIgnored var requestStub: RequestStub?
+  #endif
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
   @ObservationIgnored private var snapshot = SnapshotAssembly()
@@ -339,9 +339,7 @@ public final class EngineClient {
     _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = defaultRequestTimeout,
     attachments: [WebHostAttachment] = []
   ) async throws -> EngineResponse {
-    if let requestStub {
-      return EngineResponse(value: try await requestStub(method, params), attachment: nil)
-    }
+    if let stubbed = try await stubbedResponse(method, params) { return stubbed }
     guard let wire else { throw ClientFailure.disconnected }
     return try await pendingResponse(
       method, params, timeoutSeconds: timeoutSeconds,

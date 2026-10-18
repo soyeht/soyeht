@@ -59,7 +59,8 @@ impl Workbench {
             PaneLoad::Failed(_)
         );
         let (status, color) = match file {
-            None if failed => ("\u{b7} failed", palette.danger()),
+            // A pane that holds a file but no page, whose read failed, shows what its body shows.
+            _ if failed => ("\u{b7} failed", palette.danger()),
             None => ("\u{b7} loading", palette.muted),
             Some(file) if file.doc.conflicted => ("\u{b7} conflict", palette.danger()),
             // The caret is on its way to a page the engine has not sent: keys wait for it.
