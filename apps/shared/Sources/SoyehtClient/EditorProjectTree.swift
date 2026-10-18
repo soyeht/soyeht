@@ -111,11 +111,6 @@ public struct EditorProjectTree: Equatable, Sendable {
     return expand(directory)
   }
 
-  /// Drops a folder's listing so the next load reads it again.
-  public mutating func invalidate(_ directory: String) {
-    children[directory] = nil
-  }
-
   /// Switching ignored files forgets every listing; expanded folders reload.
   public mutating func setShowIgnored(_ show: Bool) {
     guard show != showIgnored else { return }

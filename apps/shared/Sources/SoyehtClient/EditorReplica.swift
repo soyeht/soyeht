@@ -227,16 +227,6 @@ extension EngineClient {
     }
   }
 
-  @discardableResult
-  public func watchEditorFile(_ fileId: String, watch: Bool) async throws -> FileWatchResult {
-    let result = try await mutation(
-      .fileWatch,
-      FileWatchParams(fileId: fileId, watch: watch, idempotencyKey: UUID().uuidString)
-    ).decoded(FileWatchResult.self)
-    updateEditor(fileId) { $0.file.watching = result.watching }
-    return result
-  }
-
   public func editorHistory(
     _ fileId: String, cursor: String? = nil, limit: UInt32 = 50
   ) async throws -> FileHistoryResult {
@@ -423,14 +413,6 @@ extension EngineClient {
       .fileReferences,
       .encoded(FilePositionParams(fileId: fileId, revision: revision, position: position))
     ).decoded(FileReferencesResult.self)
-  }
-
-  public func editorDiagnostics(
-    fileId: String, revision: String
-  ) async throws -> FileDiagnosticsResult {
-    try await request(
-      .fileDiagnostics, .encoded(FileDiagnosticsParams(fileId: fileId, revision: revision))
-    ).decoded(FileDiagnosticsResult.self)
   }
 
   public func editorDiff(fileId: String, revision: String) async throws -> FileDiffResult {
