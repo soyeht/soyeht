@@ -24,7 +24,7 @@ INTERIOR_FILES = (
     "apps/shared/Sources/SoyehtClient/AgentConversation.swift",
     "apps/shared/Sources/SoyehtClient/AgentConversationCards.swift",
     "apps/shared/Sources/SoyehtClient/AgentConversationStyle.swift",
-    "apps/shared/Sources/SoyehtClient/AgentMarkdownViews.swift",
+    "apps/shared/Sources/SoyehtClient/MarkdownViews.swift",
     "apps/shared/Sources/SoyehtClient/AgentPermissionModeMenu.swift",
     "apps/shared/Sources/SoyehtClient/AgentAccountPanel.swift",
     "apps/shared/Sources/SoyehtClient/AgentSignInCard.swift",

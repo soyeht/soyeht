@@ -5,14 +5,11 @@ import SwiftUI
 struct EditorMarkdownPreview: View {
   let viewport: FileReadResult
 
-  private var preview: MarkdownViewportPreview? {
-    try? MarkdownViewportPreview(
+  var body: some View {
+    let preview = try? MarkdownViewportPreview(
       lines: viewport.lines.map(\.text), fromLine: viewport.fromLine,
       totalLineCount: viewport.file.lineCount)
-  }
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    return VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: MacTheme.Space.x6) {
         Text("PREVIEW")
           .font(MacTheme.ui(MacTheme.TypeScale.micro, weight: .bold))
@@ -28,9 +25,7 @@ struct EditorMarkdownPreview: View {
 
       if let preview {
         ScrollView {
-          Text(preview.content)
-            .font(MacTheme.ui(MacTheme.TypeScale.body))
-            .foregroundStyle(MacTheme.ink)
+          MarkdownBlocksView(blocks: preview.blocks, style: MacTheme.agentConversation)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .padding(MacTheme.Space.x14)

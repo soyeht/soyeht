@@ -39,6 +39,11 @@ A rule changes by changing the vector first. The rules beyond CommonMark itself:
 - Empty code blocks and empty list items are dropped.
 - Only agent replies and thoughts are drawn as Markdown. What a person or a peer agent typed,
   and system notices, stay plain text.
+- The editor's Markdown preview (a Markdown file open in the editor, split view) is drawn by the
+  same parse and the same view as an agent reply (`MarkdownReply.parse`, `MarkdownBlocksView`),
+  so a document keeps its headings, paragraphs, lists, quotes and code. A file's content is not
+  trusted to open anything: the preview's links take the accent and an underline and open
+  nothing.
 
 ### Existing parsers, not our own
 
@@ -66,7 +71,7 @@ Each client keeps the parse of a reply until its text changes (`MarkdownReplyCac
 Pane interiors stay flat and palette-only (ADR 0065): code sits in a `well` in the mono face,
 the same surface as a command's output; inline code is the mono face at body size on a `well`
 background; a quote is a `well` bar; rules and table lines are the `well` tone; links take the
-accent. Headings are bold at body size. The Mac draws in `AgentMarkdownViews.swift`, the
+accent. Headings are bold at body size. The Mac draws in `MarkdownViews.swift`, the
 desktop in `views/markdown.rs`. The desktop opens a link in the system browser; the Mac routes
 it to its web pane.
 

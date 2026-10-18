@@ -1,10 +1,9 @@
 import Foundation
 import SwiftUI
 
-/// An agent's words with their Markdown drawn: paragraphs, headings, lists, quotes, tables, rules
-/// and code in a mono well, in the approved flat interior (palette roles only, no shadow). A reply
-/// that is still arriving is parsed with its open spans closed, so a bold word or a code span
-/// shows its style as it is typed.
+/// An agent's words with their Markdown drawn by `MarkdownBlocksView`. A reply that is still
+/// arriving is parsed with its open spans closed, so a bold word or a code span shows its style as
+/// it is typed.
 struct AgentMarkdownText: View {
   let text: String
   let streaming: Bool
@@ -13,19 +12,36 @@ struct AgentMarkdownText: View {
   var ink: Color?
 
   var body: some View {
-    AgentMarkdownBlocks(
+    MarkdownBlocksView(
       blocks: MarkdownReplyCache.blocks(for: text, streaming: streaming), workspaceId: workspaceId,
       style: style, ink: ink ?? style.ink)
   }
 }
 
-private struct AgentMarkdownBlocks: View {
+/// Parsed Markdown drawn once for every pane that shows it: paragraphs, headings, lists, quotes,
+/// tables, rules and code in a mono well, in the approved flat interior (palette roles only, no
+/// shadow). The agent conversation and the editor's Markdown preview both draw through it.
+///
+/// With a `workspaceId`, file references and web addresses in the text open through the
+/// environment's actions. Without one the text is inert: links keep their look (the accent,
+/// underlined) and open nothing, which is how the preview treats a file's untrusted content.
+public struct MarkdownBlocksView: View {
   let blocks: [MarkdownBlock]
-  let workspaceId: String
+  let workspaceId: String?
   let style: AgentConversationStyle
   let ink: Color
 
-  var body: some View {
+  public init(
+    blocks: [MarkdownBlock], workspaceId: String? = nil, style: AgentConversationStyle,
+    ink: Color? = nil
+  ) {
+    self.blocks = blocks
+    self.workspaceId = workspaceId
+    self.style = style
+    self.ink = ink ?? style.ink
+  }
+
+  public var body: some View {
     VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
       ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
         blockView(block)
@@ -34,13 +50,21 @@ private struct AgentMarkdownBlocks: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private func nested(_ blocks: [MarkdownBlock]) -> AgentMarkdownBlocks {
-    AgentMarkdownBlocks(blocks: blocks, workspaceId: workspaceId, style: style, ink: ink)
+  private func nested(_ blocks: [MarkdownBlock]) -> MarkdownBlocksView {
+    MarkdownBlocksView(blocks: blocks, workspaceId: workspaceId, style: style, ink: ink)
+  }
+
+  @ViewBuilder private func drawn(_ text: AttributedString) -> some View {
+    if let workspaceId {
+      FilePathText(text, workspaceId: workspaceId)
+    } else {
+      Text(text)
+    }
   }
 
   private func inline(_ runs: [MarkdownRun], bold: Bool = false) -> some View {
-    FilePathText(
-      MarkdownAttributedString.make(runs, style: style, bold: bold), workspaceId: workspaceId
+    drawn(
+      MarkdownAttributedString.make(runs, style: style, bold: bold, opensLinks: workspaceId != nil)
     )
     .foregroundStyle(ink).tint(style.accent)
     .textSelection(.enabled)
@@ -52,7 +76,7 @@ private struct AgentMarkdownBlocks: View {
     case .paragraph(let runs): inline(runs)
     case .heading(_, let runs): inline(runs, bold: true)
     case .code(_, let text):
-      FilePathText(text, workspaceId: workspaceId)
+      drawn(AttributedString(text))
         .font(style.monoFont).foregroundStyle(ink).tint(style.accent).textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(PaneInteriorMetrics.rowSpacing)
@@ -60,7 +84,7 @@ private struct AgentMarkdownBlocks: View {
     case .quote(let blocks):
       HStack(alignment: .top, spacing: PaneInteriorMetrics.rowSpacing) {
         Rectangle().fill(style.well).frame(width: PaneInteriorMetrics.tightSpacing)
-        AgentMarkdownBlocks(
+        MarkdownBlocksView(
           blocks: blocks, workspaceId: workspaceId, style: style, ink: style.secondary)
       }
       .fixedSize(horizontal: false, vertical: true)
@@ -95,12 +119,14 @@ private struct AgentMarkdownBlocks: View {
   }
 }
 
-/// A line of runs as one `AttributedString`: the bold, italic, struck, code and link looks (a link
-/// takes the `tint` the view sets to the accent).
+/// A line of runs as one `AttributedString`: the bold, italic, struck, code and link looks. A link
+/// that opens takes the `tint` the view sets to the accent; one that does not open carries the
+/// accent and an underline itself.
 enum MarkdownAttributedString {
-  static func make(_ runs: [MarkdownRun], style: AgentConversationStyle, bold: Bool = false)
-    -> AttributedString
-  {
+  static func make(
+    _ runs: [MarkdownRun], style: AgentConversationStyle, bold: Bool = false,
+    opensLinks: Bool = true
+  ) -> AttributedString {
     var result = AttributedString()
     for run in runs {
       var piece = AttributedString(run.text)
@@ -115,7 +141,12 @@ enum MarkdownAttributedString {
       }
       if run.strike { piece.strikethroughStyle = .single }
       if let link = run.link, let url = URL(string: link) {
-        piece.link = url
+        if opensLinks {
+          piece.link = url
+        } else {
+          piece.foregroundColor = style.accent
+          piece.underlineStyle = .single
+        }
       }
       result += piece
     }

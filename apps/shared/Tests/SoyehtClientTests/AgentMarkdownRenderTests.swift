@@ -39,4 +39,35 @@
       try bitmap.representation(using: .png, properties: [:])?.write(to: url)
     }
   }
+
+  /// The editor's Markdown preview draws through the same view with inert links: the blocks stay
+  /// apart, the code block sits in the `well`, and no pixel is white.
+  @MainActor @Test(arguments: [TerminalColorTheme.neoMilk, .neoDeepHarbor])
+  func aMarkdownPreviewDrawsItsBlocksInThePalette(theme: TerminalColorTheme) throws {
+    PaneInteriorRendering.registerFonts()
+    let blocks = MarkdownReply.parse(
+      "# Title\nSome **bold** text and a [link](https://example.com).\n- one\n- two\n\n"
+        + "```\nlet x = 1\n```")
+    let style = AgentConversationStyle.pane(SoyehtThemeColorSet(palette: theme.palette))
+    let view = MarkdownBlocksView(blocks: blocks, style: style)
+      .padding(PaneInteriorMetrics.cardPadding)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .background(style.face)
+    let pixels = try PaneInteriorRendering.shot(
+      "markdown-preview", view, size: CGSize(width: 360, height: 300), theme: theme)
+    #expect(PaneInteriorRendering.share(of: theme.palette.well, in: pixels) > 0.01, "\(theme) well")
+  }
+
+  /// A link in an inert document (the editor preview) looks like a link, and opens nothing.
+  @MainActor @Test func aLinkThatDoesNotOpenKeepsItsLookWithoutALink() throws {
+    let style = AgentConversationStyle.pane(
+      SoyehtThemeColorSet(palette: TerminalColorTheme.neoMilk.palette))
+    let runs = [MarkdownRun("docs", link: "https://example.com")]
+    let inert = MarkdownAttributedString.make(runs, style: style, opensLinks: false)
+    #expect(inert.runs.allSatisfy { $0.link == nil })
+    #expect(inert.runs.allSatisfy { $0.foregroundColor == style.accent })
+    #expect(inert.runs.allSatisfy { $0.underlineStyle == .single })
+    let live = MarkdownAttributedString.make(runs, style: style)
+    #expect(live.runs.allSatisfy { $0.link == URL(string: "https://example.com") })
+  }
 #endif

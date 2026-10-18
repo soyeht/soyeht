@@ -1,6 +1,6 @@
 //! An agent's words with their Markdown drawn, in the approved flat interior: paragraphs,
 //! headings, lists, quotes, tables and rules in the palette, and code in a mono well like the
-//! one a command's output sits in. The Mac draws the same blocks (`AgentMarkdownViews.swift`);
+//! one a command's output sits in. The Mac draws the same blocks (`MarkdownViews.swift`);
 //! both read them from `contracts/vectors/markdown.json`'s rules.
 
 use super::ui::{code_well, column, row, rule};

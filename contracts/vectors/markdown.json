@@ -632,5 +632,53 @@
     "blocks": [
       {"type": "paragraph", "inlines": [{"text": "a **bol"}]}
     ]
+  },
+  {
+    "name": "a README opening keeps heading, paragraph and list apart",
+    "markdown": "# Title\nSome **bold** text and a [link](https://example.com).\n- one\n- two",
+    "streaming": false,
+    "blocks": [{"type": "heading", "level": 1, "inlines": [{"text": "Title"}]}, {"type": "paragraph", "inlines": [{"text": "Some "}, {"text": "bold", "bold": true}, {"text": " text and a "}, {"text": "link", "link": "https://example.com"}, {"text": "."}]}, {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "one"}]}], [{"type": "paragraph", "inlines": [{"text": "two"}]}]]}]
+  },
+  {
+    "name": "a heading needs no blank line after it",
+    "markdown": "## Title\ntext right below",
+    "streaming": false,
+    "blocks": [{"type": "heading", "level": 2, "inlines": [{"text": "Title"}]}, {"type": "paragraph", "inlines": [{"text": "text right below"}]}]
+  },
+  {
+    "name": "a bullet list interrupts a paragraph",
+    "markdown": "intro\n- one\n- two\nafter?",
+    "streaming": false,
+    "blocks": [{"type": "paragraph", "inlines": [{"text": "intro"}]}, {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "one"}]}], [{"type": "paragraph", "inlines": [{"text": "two\nafter?"}]}]]}]
+  },
+  {
+    "name": "an ordered list interrupts a paragraph only when it starts at 1",
+    "markdown": "intro\n1. one\n2. two",
+    "streaming": false,
+    "blocks": [{"type": "paragraph", "inlines": [{"text": "intro"}]}, {"type": "list", "ordered": true, "start": 1, "items": [[{"type": "paragraph", "inlines": [{"text": "one"}]}], [{"type": "paragraph", "inlines": [{"text": "two"}]}]]}]
+  },
+  {
+    "name": "an ordered list starting at 2 stays in the paragraph",
+    "markdown": "intro\n2. one",
+    "streaming": false,
+    "blocks": [{"type": "paragraph", "inlines": [{"text": "intro\n2. one"}]}]
+  },
+  {
+    "name": "a fence ends a paragraph and text follows it",
+    "markdown": "intro\n```sh\nls\n```\nafter",
+    "streaming": false,
+    "blocks": [{"type": "paragraph", "inlines": [{"text": "intro"}]}, {"type": "code", "language": "sh", "text": "ls"}, {"type": "paragraph", "inlines": [{"text": "after"}]}]
+  },
+  {
+    "name": "a quote interrupts a paragraph",
+    "markdown": "intro\n> quoted",
+    "streaming": false,
+    "blocks": [{"type": "paragraph", "inlines": [{"text": "intro"}]}, {"type": "quote", "blocks": [{"type": "paragraph", "inlines": [{"text": "quoted"}]}]}]
+  },
+  {
+    "name": "paragraphs and a star list keep all three blocks",
+    "markdown": "one\n\ntwo\n\n* a\n* b",
+    "streaming": false,
+    "blocks": [{"type": "paragraph", "inlines": [{"text": "one"}]}, {"type": "paragraph", "inlines": [{"text": "two"}]}, {"type": "list", "ordered": false, "start": null, "items": [[{"type": "paragraph", "inlines": [{"text": "a"}]}], [{"type": "paragraph", "inlines": [{"text": "b"}]}]]}]
   }
 ]
