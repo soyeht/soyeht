@@ -1,10 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use serde_json::json;
 use soyeht_protocol::{
-    DecisionBy, Pane, PaneMode, PanePermissionAnswerResult, PaneState, PermissionOption,
-    PermissionOptionKind, PermissionRequest, PermissionRequestKind, PermissionResult, StateSource,
-    WebSessionState, WebViewport, WebViewportPreset, Workspace,
+    DecisionBy, Pane, PaneMode, PanePermissionAnswerResult, PermissionOption, PermissionOptionKind,
+    PermissionRequest, PermissionRequestKind, PermissionResult, WebSessionState, WebViewport,
+    WebViewportPreset, Workspace,
 };
 use soyeht_store::{
     Error,
@@ -47,23 +49,8 @@ fn workspace() -> Workspace {
 fn web_pane() -> PaneRecord {
     PaneRecord {
         pane: Pane {
-            pane_id: "web-pane-1".into(),
-            workspace_id: "workspace-1".into(),
             name: "Local app".into(),
-            cwd: "/tmp/web".into(),
-            mode: PaneMode::Web,
-            state: PaneState::Idle,
-            source: StateSource::Protocol,
-            confidence: 1.0,
             phrase: "ready".into(),
-            generation: 1,
-            cols: 80,
-            rows: 24,
-            record: false,
-            experiment_capture: None,
-            pid: None,
-            stream_id: None,
-            agent: None,
             url: Some("https://example.test/path".into()),
             title: Some("Local app".into()),
             viewport: Some(WebViewport {
@@ -73,9 +60,8 @@ fn web_pane() -> PaneRecord {
                 zoom_percent: 100,
             }),
             incognito: Some(true),
-            writing_kind: None,
-            writing_section: None,
             web_session: Some(WebSessionState::Incognito),
+            ..support::pane("web-pane-1", "workspace-1", PaneMode::Web, "/tmp/web")
         },
         closed: false,
         instance_key: "web:web-pane-1".into(),

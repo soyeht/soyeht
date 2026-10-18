@@ -1,9 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use serde_json::json;
 use soyeht_protocol::{
-    Actor, EditorLanguage, FileAuthor, FileSearchMatch, FileVersion, Pane, PaneMode, PaneState,
-    Role, StateSource, TextPosition, TextRange, Workspace,
+    Actor, EditorLanguage, FileAuthor, FileSearchMatch, FileVersion, Pane, PaneMode, Role,
+    TextPosition, TextRange, Workspace,
 };
 use soyeht_store::{
     database::Store,
@@ -154,30 +156,9 @@ fn seed(store: &mut Store) {
     };
     let pane = PaneRecord {
         pane: Pane {
-            pane_id: "pane-1".into(),
-            workspace_id: "workspace-1".into(),
             name: "main.rs".into(),
-            cwd: "/tmp/editor".into(),
-            mode: PaneMode::Editor,
-            state: PaneState::Idle,
-            source: StateSource::Protocol,
-            confidence: 1.0,
             phrase: "editing main.rs".into(),
-            generation: 1,
-            cols: 80,
-            rows: 24,
-            record: false,
-            experiment_capture: None,
-            pid: None,
-            stream_id: None,
-            agent: None,
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            writing_kind: None,
-            writing_section: None,
-            web_session: None,
+            ..support::pane("pane-1", "workspace-1", PaneMode::Editor, "/tmp/editor")
         },
         closed: false,
         instance_key: "editor-pane-1".into(),

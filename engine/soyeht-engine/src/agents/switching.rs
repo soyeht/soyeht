@@ -951,7 +951,7 @@ mod tests {
         model::{RunningPane, StoredPane},
         screen::Screen,
     };
-    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState, StateSource};
+    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState};
     use std::fs;
 
     #[test]
@@ -974,30 +974,16 @@ mod tests {
         )
         .unwrap();
         let pane = Pane {
-            pane_id: pane_id.clone(),
-            workspace_id: "workspace".into(),
             name: "Closed agent".into(),
-            cwd: root.display().to_string(),
-            mode: PaneMode::Agent,
             state: PaneState::Dead,
-            source: StateSource::Protocol,
-            confidence: 1.0,
             phrase: "Agent pane closed".into(),
-            generation: 1,
-            cols: 80,
-            rows: 24,
             record: true,
-            experiment_capture: None,
-            pid: None,
-            stream_id: None,
-            agent: None,
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            web_session: None,
-            writing_kind: None,
-            writing_section: None,
+            ..crate::test_panes::pane(
+                &pane_id,
+                "workspace",
+                PaneMode::Agent,
+                &root.display().to_string(),
+            )
         };
         let screen = Screen::open(&root.join("sessions").join(&pane_id), true).unwrap();
         core.panes.insert(

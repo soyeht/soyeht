@@ -252,6 +252,37 @@ fn login_completes_after_the_adapter_process_died_meanwhile() {
 }
 
 #[test]
+fn a_sign_in_that_crashed_keeps_its_failed_exit_status_for_clients_to_show() {
+    let (_rig, mut client, _pane, terminal, _port) = login_in_progress();
+    assert!(client.pane(&terminal)["exitCode"].is_null());
+    kill_pane_process(&mut client, &terminal);
+    let dead = client.wait_state(&terminal, "dead");
+    assert!(
+        dead["exitCode"].as_i64().is_some_and(|code| code != 0),
+        "{dead}"
+    );
+}
+
+#[test]
+fn a_sign_in_that_exits_cleanly_keeps_a_zero_exit_status_for_clients_to_show() {
+    let Agent {
+        rig,
+        mut client,
+        pane,
+    } = agent(false, false);
+    let native = rig.path.join("native");
+    fs::remove_file(native.join("login.listen")).unwrap();
+    fs::write(native.join("login.cancel"), b"fixture").unwrap();
+    let terminal = start_login(&mut client, &pane, "login-start");
+    wait_until("the sign-in started", || {
+        native.join("login.started").exists()
+    });
+    fs::write(native.join("login.release"), b"release").unwrap();
+    let dead = client.wait_state(&terminal, "dead");
+    assert_eq!(dead["exitCode"].as_i64(), Some(0), "{dead}");
+}
+
+#[test]
 fn a_running_sign_in_can_be_cancelled_and_started_again() {
     let Agent {
         rig,

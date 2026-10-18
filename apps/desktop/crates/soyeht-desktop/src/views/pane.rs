@@ -312,7 +312,10 @@ impl Workbench {
         column()
             .flex_1()
             .min_h_0()
-            .children(terminal_state::notice(&pane.state).map(|notice| banner(notice, palette)))
+            .children(
+                terminal_state::notice(&pane.state, pane.exit_code)
+                    .map(|notice| banner(notice, palette)),
+            )
             .child(
                 column()
                     .id(super::ui::id("terminal", &pane.pane_id))

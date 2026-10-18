@@ -1,5 +1,5 @@
 {
-  "description": "How a pane state is shown: the palette role of its dot, whether a turn is running in it (the agent can be stopped, typing queues, the header counts time), and the word at the header's trailing edge. The Mac (PaneState.dot, isTurnRunning, AgentPaneStatusPresentation) and the desktop client (PaneState::dot, is_turn_running, agent::status_word) pass every case. The dot roles and the running set are defined once in x-clientPolicy paneStates; this file fixes what they come to. A palette role is resolved by each client: success, accent, warning, muted or secondary.",
+  "description": "How a pane state is shown: the palette role of its dot, whether a turn is running in it (the agent can be stopped, typing queues, the header counts time), and the word at the header's trailing edge. The Mac (PaneState.dot, isTurnRunning, AgentPaneStatusPresentation) and the desktop client (PaneState::dot, is_turn_running, agent::status_word) pass every case. The dot roles and the running set are defined once in x-clientPolicy paneStates; this file fixes what they come to. A palette role is resolved by each client: success, accent, warning, muted or secondary. terminalNotices fixes the line above a terminal's screen: the exit status of a dead process decides whether the line informs or warns (a clean exit never warns; a failed or interrupted one does), so a finished one-shot command such as an agent sign-in does not read as a failure.",
   "states": [
     {
       "state": "starting",
@@ -105,6 +105,57 @@
       "needsAuthentication": true,
       "hasSession": true,
       "title": "Sign in"
+    }
+  ],
+  "terminalNotices": [
+    {
+      "name": "a running terminal says nothing",
+      "state": "idle",
+      "exitCode": null,
+      "text": null,
+      "severity": null
+    },
+    {
+      "name": "a clean exit only informs",
+      "state": "dead",
+      "exitCode": 0,
+      "text": "Terminal process finished.",
+      "severity": "neutral"
+    },
+    {
+      "name": "a failed exit warns with its status",
+      "state": "dead",
+      "exitCode": 1,
+      "text": "Terminal process exited with status 1.",
+      "severity": "warning"
+    },
+    {
+      "name": "an interrupted process warns with its status",
+      "state": "dead",
+      "exitCode": 130,
+      "text": "Terminal process exited with status 130.",
+      "severity": "warning"
+    },
+    {
+      "name": "a process ended without a status warns",
+      "state": "dead",
+      "exitCode": -1,
+      "text": "Terminal process ended without an exit status.",
+      "severity": "warning"
+    },
+    {
+      "name": "an exit with no recorded status only informs",
+      "state": "dead",
+      "exitCode": null,
+      "text": "Terminal process exited.",
+      "severity": "neutral"
+    },
+    {
+      "name": "silence warns",
+      "state": "no_signal",
+      "exitCode": null,
+      "text": "The terminal has stopped sending signals. You can keep waiting or press Control-C.",
+      "severity": "warning"
     }
   ]
 }

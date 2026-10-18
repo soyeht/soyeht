@@ -1,10 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    HarnessSetupReason, HarnessSetupState, Pane, PaneMode, PaneState, ProbeCapability, ProbeResult,
-    PromptAttachment, PromptAttachmentKind, PromptItem, PromptOrigin, PromptStatus, StateSource,
+    HarnessSetupReason, HarnessSetupState, Pane, PaneMode, ProbeCapability, ProbeResult,
+    PromptAttachment, PromptAttachmentKind, PromptItem, PromptOrigin, PromptStatus,
     TranscriptMessage, Workspace, limits,
 };
 use soyeht_store::{
@@ -81,30 +83,9 @@ fn seed(store: &mut Store) {
             })?;
             change.insert_pane(&PaneRecord {
                 pane: Pane {
-                    pane_id: "p".into(),
-                    workspace_id: "w".into(),
                     name: "Agent".into(),
-                    cwd: "/tmp".into(),
-                    mode: PaneMode::Agent,
-                    state: PaneState::Idle,
-                    source: StateSource::Protocol,
-                    confidence: 1.0,
-                    phrase: String::new(),
-                    generation: 1,
-                    cols: 80,
-                    rows: 24,
                     record: true,
-                    experiment_capture: None,
-                    pid: None,
-                    stream_id: None,
-                    agent: None,
-                    url: None,
-                    title: None,
-                    viewport: None,
-                    incognito: None,
-                    writing_kind: None,
-                    writing_section: None,
-                    web_session: None,
+                    ..support::pane("p", "w", PaneMode::Agent, "/tmp")
                 },
                 closed: false,
                 instance_key: "process".into(),

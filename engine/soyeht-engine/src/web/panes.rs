@@ -173,6 +173,7 @@ fn web_pane(
         incognito: Some(incognito),
         writing_kind: None,
         writing_section: None,
+        exit_code: None,
         web_session: Some(if incognito {
             WebSessionState::Incognito
         } else {

@@ -59,7 +59,7 @@ struct PaneCardBody: View {
 
   private var terminalBody: some View {
     VStack(spacing: 0) {
-      if let notice = TerminalStatePresentation.notice(for: pane.state) {
+      if let notice = TerminalStatePresentation.notice(for: pane.state, exitCode: pane.exitCode) {
         Label(notice.text, systemImage: notice.systemImage)
           .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .semibold))
           .foregroundStyle(noticeColor(notice))

@@ -727,6 +727,7 @@ fn prepare_new_pane(
         incognito: None,
         writing_kind: None,
         writing_section: None,
+        exit_code: None,
         web_session: None,
     };
     let saved = StoredPane {

@@ -460,3 +460,39 @@ fn closing_a_terminal_keeps_the_group_only_rule() {
     assert!(is_running(escaped));
     let _ = Command::new("kill").arg(escaped.to_string()).status();
 }
+
+#[test]
+fn a_process_reported_as_exited_already_has_its_exit_status() {
+    let (daemon, mut client) = Daemon::start();
+    for expected in [0, 3] {
+        let mut config = daemon.shell();
+        config.instance_key = Uuid::new_v4().to_string();
+        config.argv = vec!["/bin/sh".into(), "-c".into(), format!("exit {expected}")];
+        let instance = spawn(&mut client, config);
+        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+        loop {
+            let Response::Output(output) = client
+                .request(Request::Drain {
+                    instance_id: instance.instance_id.clone(),
+                    from_seq: 0,
+                })
+                .unwrap()
+            else {
+                panic!("expected output");
+            };
+            if output.exited {
+                break;
+            }
+            assert!(Instant::now() < deadline, "the process never exited");
+        }
+        // Read at the first moment the exit is visible: no wait for the status to follow.
+        let Response::Instances(instances) = client.request(Request::List).unwrap() else {
+            panic!("expected a list");
+        };
+        let listed = instances
+            .iter()
+            .find(|candidate| candidate.instance_id == instance.instance_id)
+            .unwrap();
+        assert_eq!(listed.exit_code, Some(expected));
+    }
+}

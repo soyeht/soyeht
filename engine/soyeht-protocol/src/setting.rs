@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 0fae169dadd6d5c6bf76481a29509c3f62e9018799bfb9a7817b97bca607da72). Do not edit.
+// Generated from contracts/protocol.json (sha256 230818b5f2ad0fae9840e1fa388036a3a72b6df9d0b201f9f054dc7169c935cd). Do not edit.
 
 use serde_json::Value;
 

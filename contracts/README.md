@@ -33,7 +33,7 @@ palette role of its dot) and the category rule of the model, effort and permissi
 generator emits `engine/soyeht-protocol/src/client_policy.rs` (with `PaneState::as_str`,
 `is_turn_running` and `dot`), `contracts/swift/Sources/SoyehtProtocol/ClientPolicy.swift` and
 `contracts/typescript/src/clientPolicy.ts`. `vectors/usage.json` holds the cases of the usage
-presentation and the selector roles, `vectors/pane-state-presentation.json` the dot, running flag
+presentation and the selector roles, `vectors/pane-state-presentation.json` the dot, running flag, terminal exit notice
 and status word of every pane state, `vectors/reconnect.json` the waits between reconnects and
 `vectors/permission-preview.json` the lines a file change shows before it is approved and how many
 lines a text takes, and `vectors/editor.json` when the visible lines need another page of a file,

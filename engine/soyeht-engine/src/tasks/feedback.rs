@@ -514,8 +514,8 @@ mod tests {
         },
     };
     use soyeht_protocol::{
-        HarnessLaunch, Pane, PaneMode, PromptOrigin, StateSource, TaskReviewBadge, TaskState,
-        TaskWorktree, Workspace,
+        HarnessLaunch, Pane, PaneMode, PromptOrigin, TaskReviewBadge, TaskState, TaskWorktree,
+        Workspace,
     };
     use std::{fs, path::PathBuf, sync::Arc};
 
@@ -766,30 +766,16 @@ mod tests {
             )
             .unwrap();
         let pane = Pane {
-            pane_id: "pane-1".into(),
-            workspace_id: "workspace-1".into(),
-            cwd: repository.to_string_lossy().into(),
             name: "Executor".into(),
-            mode: PaneMode::Agent,
-            state: PaneState::Idle,
-            source: StateSource::Protocol,
-            confidence: 1.0,
             phrase: "idle".into(),
-            generation: 1,
-            cols: 80,
-            rows: 24,
             record: true,
-            experiment_capture: None,
-            pid: None,
-            stream_id: None,
             agent: Some(state.public(10_000)),
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            writing_kind: None,
-            writing_section: None,
-            web_session: None,
+            ..crate::test_panes::pane(
+                "pane-1",
+                "workspace-1",
+                PaneMode::Agent,
+                &repository.to_string_lossy(),
+            )
         };
         let saved = StoredPane {
             pane,

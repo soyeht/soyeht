@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 0fae169dadd6d5c6bf76481a29509c3f62e9018799bfb9a7817b97bca607da72). Do not edit.
+// Generated from contracts/protocol.json (sha256 230818b5f2ad0fae9840e1fa388036a3a72b6df9d0b201f9f054dc7169c935cd). Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;
@@ -322,6 +322,8 @@ pub struct Pane {
     pub experiment_capture: Option<PaneExperimentCapture>,
     #[serde(rename = "pid", skip_serializing_if = "Option::is_none")]
     pub pid: Option<u32>,
+    #[serde(rename = "exitCode", skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i64>,
     #[serde(rename = "streamId", skip_serializing_if = "Option::is_none")]
     pub stream_id: Option<Id>,
     #[serde(rename = "agent", skip_serializing_if = "Option::is_none")]

@@ -1,8 +1,10 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttentionItem, Pane, PaneMode, PaneState, ProbeCapability, ProbeResult, StateSource, Workspace,
+    AttentionItem, Pane, PaneMode, PaneState, ProbeCapability, ProbeResult, Workspace,
 };
 use soyeht_store::{
     agents::{self, Outgoing},
@@ -53,30 +55,9 @@ fn workspace_with_id(id: &str) -> Workspace {
 fn pane() -> PaneRecord {
     PaneRecord {
         pane: Pane {
-            pane_id: "p".into(),
-            workspace_id: "w".into(),
             name: "Agent".into(),
-            cwd: "/tmp/project".into(),
-            mode: PaneMode::Agent,
-            state: PaneState::Idle,
-            source: StateSource::Protocol,
-            confidence: 1.0,
-            phrase: String::new(),
-            generation: 1,
-            cols: 80,
-            rows: 24,
             record: true,
-            experiment_capture: None,
-            pid: None,
-            stream_id: None,
-            agent: None,
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            writing_kind: None,
-            writing_section: None,
-            web_session: None,
+            ..support::pane("p", "w", PaneMode::Agent, "/tmp/project")
         },
         closed: false,
         instance_key: "instance-key".into(),

@@ -142,6 +142,7 @@ mod tests {
                 incognito: None,
                 writing_kind: None,
                 writing_section: None,
+                exit_code: None,
                 web_session: None,
             },
             closed: false,

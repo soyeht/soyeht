@@ -701,6 +701,7 @@ fn writing_pane_with_id(
         incognito: None,
         writing_kind: Some(kind),
         writing_section: Some(section),
+        exit_code: None,
         web_session: None,
     }
 }

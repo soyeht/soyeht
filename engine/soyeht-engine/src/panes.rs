@@ -134,6 +134,7 @@ impl Core {
             incognito: None,
             writing_kind: None,
             writing_section: None,
+            exit_code: None,
             web_session: None,
             pane_id: Uuid::new_v4().to_string(),
             workspace_id: workspace.workspace_id,

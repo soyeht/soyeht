@@ -605,7 +605,6 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
             };
             match exit {
                 Ok(Some(status)) => {
-                    live.exited.store(true, Ordering::Release);
                     let guarded_code = live.guard.as_ref().and_then(|control| {
                         let Ok(mut control) = control.lock() else {
                             log::event("ptyd.guard_lock_poisoned", &[]);
@@ -616,11 +615,15 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     let code = guarded_code.unwrap_or_else(|| status.code().unwrap_or(-1));
                     let Ok(mut state) = shared.lock() else {
                         log::event("ptyd.state_lock_poisoned", &[]);
+                        live.exited.store(true, Ordering::Release);
                         break;
                     };
                     if let Some(instance) = state.registry.instances.get_mut(&key) {
                         instance.exit_code = Some(code);
                     }
+                    // Published after the status, under the lock a `List` takes, so a reader
+                    // that sees the process exited also finds its exit status.
+                    live.exited.store(true, Ordering::Release);
                     if state.registry.save(&state.directory).is_err() {
                         log::event("ptyd.registry_write_failed", &[]);
                     }

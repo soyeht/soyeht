@@ -578,6 +578,7 @@ impl Core {
         } else {
             PaneState::Unknown
         };
+        saved.pane.exit_code = instance.exit_code.map(i64::from);
         saved.pane.source = StateSource::None;
         saved.pane.confidence = 0.0;
         saved.pane.phrase = if instance.exit_code.is_some() {
@@ -724,20 +725,36 @@ impl Core {
             };
             // Segment sync completed before returning ownership to the supervisor.
             self.pty_request(Request::Ack {
-                instance_id,
+                instance_id: instance_id.clone(),
                 seq: output.next_seq,
             })?;
             if let Some(bytes) = capture_bytes {
                 self.observe_terminal(&id, bytes)?;
             }
             if output.exited && saved.pane.state != PaneState::Dead {
+                // The supervisor records the status just after it marks the process exited,
+                // so a status that is not there yet stays unknown rather than guessed.
+                let exit_code = self.exit_code_of(&instance_id)?;
                 let mut dead = saved;
+                dead.pane.exit_code = exit_code;
                 dead.pane.state = PaneState::Dead;
                 dead.pane.phrase = "Shell exited".into();
                 self.save_runtime(&id, dead)?;
             }
         }
         Ok(())
+    }
+
+    /// The exit status the supervisor recorded for an instance, if it has recorded one.
+    fn exit_code_of(&mut self, instance_id: &str) -> Result<Option<i64>> {
+        let Response::Instances(instances) = self.pty_request(Request::List)? else {
+            return Err(errors::ptyd_unavailable("Invalid process registry"));
+        };
+        Ok(instances
+            .iter()
+            .find(|i| i.instance_id == instance_id)
+            .and_then(|i| i.exit_code)
+            .map(i64::from))
     }
 
     pub fn now_ms(&self) -> i64 {

@@ -615,12 +615,11 @@ fn reviewer_mode(options: &soyeht_acp::config::Options) -> Option<String> {
 }
 
 fn copy_review_options(executor: &State, reviewer: &mut State) {
-    for option in &executor.options.values {
-        if matches!(option.id.as_str(), "model" | "effort") {
-            reviewer
-                .requested_options
-                .insert(option.id.clone(), option.current_value.clone());
-        }
+    let shared = |id: &str| matches!(id, "model" | "effort");
+    for option in executor.options.values.iter().filter(|o| shared(&o.id)) {
+        reviewer
+            .requested_options
+            .insert(option.id.clone(), option.current_value.clone());
     }
 }
 
@@ -660,6 +659,7 @@ fn reviewer_pane(core: &Core, task: &Task, state: &State, repository: &Path) -> 
         incognito: None,
         writing_kind: None,
         writing_section: None,
+        exit_code: None,
         web_session: None,
     };
     Ok(StoredPane {

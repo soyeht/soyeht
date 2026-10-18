@@ -1,11 +1,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use soyeht_protocol::{
-    Attempt, AttemptResult, Comment, LoopConfig, LoopStopWhen, Pane, PaneMode, PaneState,
-    StateSource, Subitem, SubitemState, Task, TaskExecutor, TaskMove, TaskPriority, TaskState,
-    Workspace,
+    Attempt, AttemptResult, Comment, LoopConfig, LoopStopWhen, Pane, PaneMode, Subitem,
+    SubitemState, Task, TaskExecutor, TaskMove, TaskPriority, TaskState, Workspace,
 };
 use soyeht_store::{
     database::Store,
@@ -56,30 +57,9 @@ fn workspace() -> Workspace {
 fn pane(id: &str) -> PaneRecord {
     PaneRecord {
         pane: Pane {
-            pane_id: id.into(),
-            workspace_id: "workspace-1".into(),
-            name: id.into(),
-            cwd: "/tmp/tasks".into(),
-            mode: PaneMode::Agent,
-            state: PaneState::Idle,
-            source: StateSource::Protocol,
-            confidence: 1.0,
             phrase: "idle".into(),
-            generation: 1,
-            cols: 80,
-            rows: 24,
             record: true,
-            experiment_capture: None,
-            pid: None,
-            stream_id: None,
-            agent: None,
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            writing_kind: None,
-            writing_section: None,
-            web_session: None,
+            ..support::pane(id, "workspace-1", PaneMode::Agent, "/tmp/tasks")
         },
         closed: false,
         instance_key: format!("instance-{id}"),

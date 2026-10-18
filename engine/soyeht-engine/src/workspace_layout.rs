@@ -282,9 +282,7 @@ fn kind_for(pane: &Pane) -> WorkspacePaneLayoutKind {
 mod tests {
     use super::*;
     use serde_json::json;
-    use soyeht_protocol::{
-        PaneState, StateSource, WorkspacePaneLayoutLeaf, WorkspacePaneLayoutMode,
-    };
+    use soyeht_protocol::{WorkspacePaneLayoutLeaf, WorkspacePaneLayoutMode};
 
     fn pane(id: &str) -> Pane {
         pane_as(id, PaneMode::Terminal, None)
@@ -292,30 +290,8 @@ mod tests {
 
     fn pane_as(id: &str, mode: PaneMode, writing_kind: Option<WritingKind>) -> Pane {
         Pane {
-            pane_id: id.into(),
-            workspace_id: "workspace".into(),
-            name: id.into(),
-            cwd: "/tmp".into(),
-            mode,
-            state: PaneState::Idle,
-            source: StateSource::Protocol,
-            confidence: 1.0,
-            phrase: String::new(),
-            generation: 1,
-            cols: 80,
-            rows: 24,
-            record: false,
-            experiment_capture: None,
-            pid: None,
-            stream_id: None,
-            agent: None,
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            web_session: None,
             writing_kind,
-            writing_section: None,
+            ..crate::test_panes::pane(id, "workspace", mode, "/tmp")
         }
     }
 

@@ -401,6 +401,10 @@
           "minimum": 0,
           "maximum": 4294967295
         },
+        "exitCode": {
+          "type": "integer",
+          "description": "Exit status of a dead terminal's process; absent while it runs or when none was recorded. A negative value means it ended without an exit status (for example a signal on Unix)."
+        },
         "streamId": {
           "$ref": "#/$defs/Id"
         },

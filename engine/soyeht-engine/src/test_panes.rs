@@ -1,4 +1,4 @@
-//! A running terminal pane for unit tests that need one without a process behind it.
+//! Panes for unit tests: a bare one to build on, and a running terminal with no process behind it.
 
 use crate::{
     core::Core,
@@ -8,7 +8,7 @@ use crate::{
 };
 use serde_json::json;
 use soyeht_pane_state::{EngineBuild, HarnessIdentity, ObservationPaneKind, RecordedRow};
-use soyeht_protocol::Pane;
+use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource};
 use std::path::Path;
 
 /// Adds the pane `{label}-pane` to `core`, with its experiment capture `capture`, and returns
@@ -61,4 +61,36 @@ pub(crate) fn replay_rows(root: &Path, pane_id: &str, build: EngineBuild) -> Vec
     .into_iter()
     .flat_map(|segment| segment.rows)
     .collect()
+}
+
+/// An idle pane with no optional field set: a test overrides what it exercises with
+/// `Pane { name: .., ..pane(..) }`.
+pub(crate) fn pane(id: &str, workspace_id: &str, mode: PaneMode, cwd: &str) -> Pane {
+    Pane {
+        pane_id: id.into(),
+        workspace_id: workspace_id.into(),
+        name: id.into(),
+        cwd: cwd.into(),
+        mode,
+        state: PaneState::Idle,
+        source: StateSource::Protocol,
+        confidence: 1.0,
+        phrase: String::new(),
+        generation: 1,
+        cols: 80,
+        rows: 24,
+        record: false,
+        experiment_capture: None,
+        pid: None,
+        exit_code: None,
+        stream_id: None,
+        agent: None,
+        url: None,
+        title: None,
+        viewport: None,
+        incognito: None,
+        web_session: None,
+        writing_kind: None,
+        writing_section: None,
+    }
 }

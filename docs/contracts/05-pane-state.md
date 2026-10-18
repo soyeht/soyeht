@@ -58,3 +58,11 @@ the labels; decide per harness. Learn from issues: “notification with two mean
 
 ## Review applied (2026-09-10, finding R12)
 One enum for both pane types: `starting`, `working`, `idle`, `waiting_for_you`, `cancelling`, `no_signal`, `recovering` (engine reconnecting to ptyd), `dead`, `unknown`. Each state carries `source` (`protocol | hook | osc | screen | none`) and `confidence` (0–1). `waiting_for_you` requires an open request; `no_signal` neither clears a request nor releases the loop/`task_next`; `starting` never becomes `idle` without a real signal.
+
+## Exit status of a dead terminal
+A terminal pane in the `dead` state carries `exitCode` when the supervisor recorded the process's
+exit status (a pane adopted without one has none). Clients decide from it how the exit reads: a
+status of 0 only informs ("Terminal process finished."), so a one-shot command such as an agent
+sign-in ends clean; a positive status warns ("Terminal process exited with status N."); a process
+that ended without a status (a negative value) warns too. `terminalNotices` of
+`contracts/vectors/pane-state-presentation.json` fixes the cases that the Mac and desktop clients pass.

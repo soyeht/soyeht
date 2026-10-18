@@ -409,6 +409,7 @@ fn editor_pane(workspace: &soyeht_protocol::Workspace, relative_path: &str) -> P
         incognito: None,
         writing_kind: None,
         writing_section: None,
+        exit_code: None,
         web_session: None,
     }
 }
