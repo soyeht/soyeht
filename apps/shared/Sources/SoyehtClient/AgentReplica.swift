@@ -255,6 +255,7 @@ extension EngineClient {
       do {
         try await loadAgentPane(paneId, replacing: true)
       } catch {
+        if absorbMissingPane(paneId, error) { continue }
         if connected && connectionRevision == revision { problem = error.localizedDescription }
       }
     }

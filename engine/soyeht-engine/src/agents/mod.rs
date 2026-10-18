@@ -427,18 +427,23 @@ impl Core {
             .unwrap_or_default();
         let outgoing = outgoing_messages(&id, &saved, &changes.outgoing)?;
         let mut events = changes.events.clone();
-        if self.panes.get(&id).is_none_or(|running| {
-            running.stored.pane.state != saved.pane.state
-                || running.stored.pane.source != saved.pane.source
-                || running.stored.pane.confidence != saved.pane.confidence
-                || running.stored.pane.phrase != saved.pane.phrase
-        }) {
+        // A closing commit already carries `pane.closed`; a client that applied a state or pane
+        // update after it would bring the closed pane back.
+        if !saved.closed
+            && self.panes.get(&id).is_none_or(|running| {
+                running.stored.pane.state != saved.pane.state
+                    || running.stored.pane.source != saved.pane.source
+                    || running.stored.pane.confidence != saved.pane.confidence
+                    || running.stored.pane.phrase != saved.pane.phrase
+            })
+        {
             events.push(crate::core::state_event(&saved)?);
         }
-        if self
-            .panes
-            .get(&id)
-            .is_none_or(|running| running.stored.pane != saved.pane)
+        if !saved.closed
+            && self
+                .panes
+                .get(&id)
+                .is_none_or(|running| running.stored.pane != saved.pane)
         {
             events.push(crate::model::pane_updated(&saved.pane)?);
         }

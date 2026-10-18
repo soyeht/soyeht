@@ -24,7 +24,7 @@ struct EngineTimeoutDiagnostic: Equatable {
 
 @MainActor @Observable
 public final class EngineClient {
-  public private(set) var panes: [Pane] = []
+  public internal(set) var panes: [Pane] = []
   public private(set) var workspaces: [Workspace] = []
   public private(set) var devices: [Device] = []
   public internal(set) var pairRequests: [PairPrompt] = []
@@ -103,6 +103,8 @@ public final class EngineClient {
   @ObservationIgnored private var resizeGenerations: [String: UInt64] = [:]
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var responseAttachments = ResponseAttachmentAssembly()
+  /// Panes the engine closed since the last snapshot; a late event about one never brings it back.
+  @ObservationIgnored var closedPaneIds: Set<String> = []
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
   @ObservationIgnored var agentTranscriptRevisions: [String: UInt64] = [:]
   @ObservationIgnored var agentTranscriptLoadsInFlight: [String: UInt64] = [:]
@@ -592,23 +594,14 @@ public final class EngineClient {
     workspaces.removeAll { $0.workspaceId == workspaceId }
     if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
   }
-  private func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
+  func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
     switch eventName {
     case .paneCreated:
       try applyPaneCreated(params.decoded(PaneCreatedEvent.self))
     case .paneUpdated, .paneRenamed:
       let pane = try params["pane"].decoded(Pane.self)
       acceptPane(pane)
-    case .paneClosed:
-      let id = params["paneId"].string
-      panes.removeAll { $0.paneId == id }
-      if let id { discardTerminalPane(id) }
-      if let id { agentPanes.removeValue(forKey: id) }
-      if let id { agentWebDrafts.removeValue(forKey: id) }
-      if let id { discardEditorPane(id) }
-      if let id { discardWritingPane(id) }
-      if let id { discardWebPane(id) }
-      if selectedPaneId == id { select(panes.first?.paneId) }
+    case .paneClosed: removePane(params["paneId"].string)
     case .paneStateChanged:
       let event = try params.decoded(PaneStateChangedEvent.self)
       if let index = panes.firstIndex(where: { $0.paneId == event.paneId }) {
@@ -623,6 +616,7 @@ public final class EngineClient {
   }
 
   func acceptPane(_ pane: Pane) {
+    guard !closedPaneIds.contains(pane.paneId) else { return }
     upsertPane(pane)
     #if os(macOS)
       if pane.mode == .terminal, connected, !terminalStreams.contains(pane.paneId) {
@@ -671,6 +665,7 @@ public final class EngineClient {
       !$0.revoked
     }
     self.panes = panes
+    closedPaneIds.removeAll()
     let terminalPaneIds = Set(panes.lazy.filter { $0.mode == .terminal }.map(\.paneId))
     terminalStreams.retainOnly(terminalPaneIds)
     terminalOutputSinks = terminalOutputSinks.filter { terminalPaneIds.contains($0.key) }
@@ -716,8 +711,7 @@ public final class EngineClient {
         }
       #endif
       if let paneId, self.selectedPaneId == paneId {
-        _ = try await self.mutation(
-          .paneFocus, PaneFocusParams(paneId: paneId, idempotencyKey: UUID().uuidString))
+        guard try await self.focusEnginePane(paneId) else { return }
         if self.selectedPaneId == paneId,
           let pane = self.panes.first(where: { $0.paneId == paneId })
         {
@@ -805,7 +799,7 @@ public final class EngineClient {
   }
   var terminalOutputSinkCount: Int { terminalOutputSinks.count }
 
-  private func discardTerminalPane(_ paneId: String) {
+  func discardTerminalPane(_ paneId: String) {
     terminalStreams.remove(paneId)
     terminalSubscriptionsInFlight.remove(paneId)
     terminalOutputSinks.removeValue(forKey: paneId)

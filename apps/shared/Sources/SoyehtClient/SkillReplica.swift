@@ -26,7 +26,7 @@ extension EngineClient {
       try await loadSkills(workspaceId: workspaceId)
       try await loadCommands(paneId: paneId)
     } catch {
-      problem = error.localizedDescription
+      if !absorbMissingPane(paneId, error) { problem = error.localizedDescription }
     }
   }
 
