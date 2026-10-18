@@ -85,3 +85,75 @@ private let notFound = ClientFailure.remote(ErrorKind.not_found.rawValue, "Pane 
   #expect(client.panes.map(\.paneId) == ["a"])
   #expect(client.problem == "Engine failed")
 }
+
+@MainActor private func settle(until done: () -> Bool) async {
+  for _ in 0..<200 where !done() { await Task.yield() }
+}
+
+@MainActor @Test func everyWayToStoreAPaneRefusesOneThatClosed() throws {
+  let client = try client(holding: [agentPane("a"), agentPane("b")])
+  try client.applyPaneEvent(.paneClosed, .object(["paneId": .string("b")]))
+
+  #expect(!client.upsertPane(agentPane("b")))
+  #expect(client.upsertPane(agentPane("c")))
+  try client.applyPaneCreated(
+    PaneCreatedEvent(eventId: "9", at: "2026-10-18T12:00:00Z", pane: agentPane("b")))
+
+  #expect(client.panes.map(\.paneId) == ["a", "c"])
+}
+
+@MainActor private func dropsQuietly(
+  _ start: (EngineClient) -> Void
+) async throws {
+  let client = try client(holding: [agentPane("a"), agentPane("gone")])
+  client.requestStub = { _, _ in throw notFound }
+
+  start(client)
+  await settle { client.panes.count == 1 }
+
+  #expect(client.panes.map(\.paneId) == ["a"])
+  #expect(client.problem == nil)
+}
+
+@MainActor @Test func aMissingPaneDropsQuietlyWhenItsQueueRefreshIsRefused() async throws {
+  try await dropsQuietly { $0.refreshAgentQueue("gone") }
+}
+
+@MainActor @Test func aMissingPaneDropsQuietlyWhenItsTranscriptRefreshIsRefused() async throws {
+  try await dropsQuietly { $0.refreshAgent("gone") }
+}
+
+@MainActor @Test func aMissingPaneDropsQuietlyWhenOlderMessagesAreRefused() async throws {
+  try await dropsQuietly { client in
+    var view = AgentPaneView()
+    view.nextTranscriptCursor = "older"
+    client.agentPanes["gone"] = view
+    client.loadOlderAgentMessages("gone")
+  }
+}
+
+@MainActor @Test func aBackgroundPaneRequestThatFailsOtherwiseIsStillShown() async throws {
+  let client = try client(holding: [agentPane("a")])
+  client.requestStub = { _, _ in throw ClientFailure.remote("internal_error", "Engine failed") }
+
+  client.refreshAgentQueue("a")
+  await settle { client.problem != nil }
+
+  #expect(client.problem == "Engine failed")
+  #expect(client.panes.map(\.paneId) == ["a"])
+}
+
+@MainActor @Test func aWorkspaceTheEngineDoesNotHoldKeepsItsPaneAndRaisesNothing() async throws {
+  let client = try client(holding: [agentPane("a")])
+  client.requestStub = { method, _ in
+    if method == .skillsList {
+      throw ClientFailure.remote(ErrorKind.not_found.rawValue, "Workspace not found")
+    }
+    throw ClientFailure.invalidFrame
+  }
+
+  await client.loadSlashSources(paneId: "a")
+
+  #expect(client.panes.map(\.paneId) == ["a"])
+  #expect(client.problem == nil)
+}

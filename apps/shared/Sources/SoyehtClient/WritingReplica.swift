@@ -330,7 +330,7 @@ extension EngineClient {
   private func acceptWritingOpen(
     document: WritingDocument, pane: Pane, viewport: FileReadResult, selectPane: Bool
   ) {
-    upsertPane(pane)
+    guard upsertPane(pane) else { return }
     acceptEditorRead(viewport)
     writingDocuments[document.file.fileId] = WritingDocumentView(document: document)
     if selectPane { select(pane.paneId) }

@@ -616,11 +616,10 @@ public final class EngineClient {
   }
 
   func acceptPane(_ pane: Pane) {
-    guard !closedPaneIds.contains(pane.paneId) else { return }
-    upsertPane(pane)
+    guard upsertPane(pane) else { return }
     #if os(macOS)
       if pane.mode == .terminal, connected, !terminalStreams.contains(pane.paneId) {
-        perform { try await self.subscribe(pane.paneId) }
+        perform(onPane: pane.paneId) { try await self.subscribe(pane.paneId) }
       }
     #endif
     if pane.mode == .agent {
@@ -742,13 +741,6 @@ public final class EngineClient {
       return pane
     }
     return panes.first { $0.workspaceId == workspaceId && $0.mode == .agent }
-  }
-  func upsertPane(_ pane: Pane) {
-    if let index = panes.firstIndex(where: { $0.paneId == pane.paneId }) {
-      panes[index] = pane
-    } else {
-      panes.append(pane)
-    }
   }
   private func subscribe(_ pane: String) async throws {
     guard !terminalSubscriptionsInFlight.contains(pane) else { return }

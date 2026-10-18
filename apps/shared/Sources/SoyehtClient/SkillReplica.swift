@@ -24,6 +24,13 @@ extension EngineClient {
     }
     do {
       try await loadSkills(workspaceId: workspaceId)
+    } catch {
+      // A workspace the engine no longer holds is on its way out of the replica (its close
+      // event follows); its pane and its listing are not at fault, so nothing is raised.
+      if !Self.isNotFound(error) { problem = error.localizedDescription }
+      return
+    }
+    do {
       try await loadCommands(paneId: paneId)
     } catch {
       if !absorbMissingPane(paneId, error) { problem = error.localizedDescription }

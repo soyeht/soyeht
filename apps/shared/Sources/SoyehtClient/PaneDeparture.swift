@@ -19,6 +19,27 @@ extension EngineClient {
     return true
   }
 
+  /// The one way a pane enters the replica: a pane closed since the last snapshot is refused.
+  @discardableResult func upsertPane(_ pane: Pane) -> Bool {
+    guard !closedPaneIds.contains(pane.paneId) else { return false }
+    if let index = panes.firstIndex(where: { $0.paneId == pane.paneId }) {
+      panes[index] = pane
+    } else {
+      panes.append(pane)
+    }
+    return true
+  }
+
+  /// Runs a request about `paneId` without waiting for it. A failure becomes the visible
+  /// `problem`, except that the engine not holding the pane drops it quietly.
+  func perform(onPane paneId: String, _ action: @escaping @MainActor () async throws -> Void) {
+    Task {
+      do { try await action() } catch {
+        if !absorbMissingPane(paneId, error) { problem = error.localizedDescription }
+      }
+    }
+  }
+
   /// Tells the engine which pane has focus. False when the pane is gone, which drops it.
   func focusEnginePane(_ paneId: String) async throws -> Bool {
     do {

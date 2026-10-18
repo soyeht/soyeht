@@ -484,7 +484,7 @@ extension EngineClient {
 
   public func loadOlderAgentMessages(_ paneId: String) {
     guard let params = olderTranscriptParams(paneId) else { return }
-    perform {
+    perform(onPane: paneId) {
       let result = try await self.request(
         .paneTranscript,
         .encoded(params)
@@ -516,11 +516,11 @@ extension EngineClient {
   }
 
   func refreshAgent(_ paneId: String, replacing: Bool = false) {
-    perform { try await self.loadAgentPane(paneId, replacing: replacing) }
+    perform(onPane: paneId) { try await self.loadAgentPane(paneId, replacing: replacing) }
   }
 
   func refreshAgentQueue(_ paneId: String) {
-    perform { try await self.loadAgentQueue(paneId) }
+    perform(onPane: paneId) { try await self.loadAgentQueue(paneId) }
   }
 
   private func loadHarnesses(rescan: Bool) async throws {
