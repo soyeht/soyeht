@@ -4,9 +4,61 @@ import re
 import unittest
 from pathlib import Path
 
-from generate import lower_camel, render, snake, validate_profiles, validate_schema, variant
+from design_tokens import render_tokens
+from generate import (
+    lower_camel,
+    render,
+    render_profiles,
+    snake,
+    validate_profiles,
+    validate_schema,
+    variant,
+)
+from generated_header import PREFIX, header_text
 
 ROOT = Path(__file__).resolve().parent
+
+
+class GeneratedHeaderTests(unittest.TestCase):
+    """A header that changes with the source makes every output conflict between two pull requests."""
+
+    def outputs(self):
+        schema = json.loads((ROOT / "protocol.json").read_text())
+        profiles = json.loads((ROOT / "profiles.json").read_text())
+        tokens = json.loads((ROOT / "design-tokens.json").read_text())
+        return {**render(schema), **render_profiles(profiles), **render_tokens(tokens)}
+
+    def test_header_names_the_source_and_carries_no_hash(self):
+        generated = 0
+        for path, text in self.outputs().items():
+            header = next((line for line in text.splitlines()[:2] if "Generated from" in line), None)
+            if header is None:
+                continue  # schema.json is a copy of the source and has no header
+            generated += 1
+            self.assertRegex(header, rf"^(// |# |<!-- )?{PREFIX}[a-z-]+\.json\. Do not edit\.( -->)?$", path)
+            self.assertNotRegex(header, r"[0-9a-f]{16}|sha256", path)
+        self.assertGreaterEqual(generated, 15)
+
+    def test_header_is_a_fixed_line_per_source(self):
+        self.assertEqual(
+            header_text("contracts/protocol.json"),
+            "Generated from contracts/protocol.json. Do not edit.",
+        )
+        with self.assertRaises(ValueError):
+            header_text("elsewhere/protocol.json")
+
+    def test_every_output_is_marked_generated_for_reviewers(self):
+        attributes = (ROOT.parent / ".gitattributes").read_text().splitlines()
+        marked = {line.split()[0] for line in attributes if line.endswith("linguist-generated=true")}
+        self.assertEqual(marked, set(self.outputs()))
+
+    def test_output_does_not_depend_on_unrelated_source_edits(self):
+        schema = json.loads((ROOT / "protocol.json").read_text())
+        changed = copy.deepcopy(schema)
+        changed["x-limits"]["jsonBytes"] += 1  # any edit to the source
+        before = render(schema)["engine/soyeht-protocol/src/limits.rs"].splitlines()[0]
+        after = render(changed)["engine/soyeht-protocol/src/limits.rs"].splitlines()[0]
+        self.assertEqual(before, after)
 
 
 class SchemaTests(unittest.TestCase):
@@ -30,7 +82,7 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("event:" + name, names)
 
     def test_contract_checks_name_every_schema_and_every_event_has_typed_parameters(self):
-        outputs = render(self.schema, "test-digest")
+        outputs = render(self.schema)
         checks = outputs["engine/soyeht-protocol/src/contract/roundtrip.rs"]
         for name in self.schema["$defs"]:
             self.assertRegex(checks, rf'"{name}" =>\s*\{{?\s*decode_encode::<\s*{name},?\s*>\(')
@@ -64,7 +116,7 @@ class SchemaTests(unittest.TestCase):
                 self.assertIn("idempotencyKey", definition["required"], name)
 
     def test_pane_route_registry_follows_every_declared_parameter(self):
-        rust = render(self.schema, "test-digest")["engine/soyeht-protocol/src/generated.rs"]
+        rust = render(self.schema)["engine/soyeht-protocol/src/generated.rs"]
         registry = rust.split("pub const PANE_ROUTE_METHODS", 1)[1].split("];", 1)[0]
         actual = dict(re.findall(r'\("([^"]+)", "([^"]+)"\)', registry))
         expected = {}
@@ -117,7 +169,7 @@ class SchemaTests(unittest.TestCase):
                     validate_schema(changed)
 
     def test_event_registry_is_generated_for_every_language(self):
-        outputs = render(self.schema, "test-digest")
+        outputs = render(self.schema)
         rust = outputs["engine/soyeht-protocol/src/generated.rs"]
         swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]
         typescript = outputs["contracts/typescript/src/generated.ts"]
@@ -143,7 +195,7 @@ class SchemaTests(unittest.TestCase):
                 )
 
     def test_every_method_and_event_name_has_a_generated_form(self):
-        outputs = render(self.schema, "test-digest")
+        outputs = render(self.schema)
         rust = outputs["engine/soyeht-protocol/src/generated.rs"]
         swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]
         for kind, names in (("method", self.schema["x-methods"]), ("event", self.schema["x-events"])):
@@ -153,7 +205,7 @@ class SchemaTests(unittest.TestCase):
                     self.assertIn(f'case {lower_camel(name)} = "{name}"', swift)
 
     def test_frame_kinds_are_generated_for_both_languages(self):
-        outputs = render(self.schema, "test-digest")
+        outputs = render(self.schema)
         rust = outputs["engine/soyeht-protocol/src/limits.rs"]
         swift = outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"]
         for name, value in self.schema["x-framing"]["types"].items():
@@ -351,7 +403,7 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(self.schema["x-limits"]["harnessContinuationMessages"], 6)
 
     def test_swift_task_name_does_not_shadow_concurrency(self):
-        outputs = render(self.schema, "test-digest")
+        outputs = render(self.schema)
         swift = outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"]
         dispatch = outputs["contracts/swift/Sources/ProtocolVectors/Dispatch.swift"]
         self.assertIn("public struct TaskRecord", swift)

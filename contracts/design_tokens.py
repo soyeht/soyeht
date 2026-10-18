@@ -5,10 +5,11 @@ fonts) are defined once in the JSON. The Mac client and the desktop client consu
 generated forms and keep no copy of their own.
 """
 
-import hashlib
 import json
 import re
 import subprocess
+
+from generated_header import header_text
 
 TOKENS_PATH = "contracts/design-tokens.json"
 SWIFT_OUTPUT = "apps/shared/Sources/SoyehtClient/Generated.swift"
@@ -57,7 +58,7 @@ NUMERIC_SECTIONS = {
     "editor": "Editor",
 }
 # Values only the desktop client has (window frame, popups, glyph sizes). They are Rust-only: the
-# Mac output does not mention them, and it does not change when they do (see `mac_digest`).
+# Mac output does not mention them, so it does not change when they do.
 DESKTOP_SECTION = "desktop"
 ELEVATION_FIELDS = ("lightOffset", "lightBlur", "darkOffset", "darkBlur")
 
@@ -210,7 +211,7 @@ def rust_themes(document):
         "#[derive(Debug, Clone, Copy, PartialEq, Eq)]\n"
         f"pub enum ThemeName {{\n{cases}\n}}\n\n"
         "impl ThemeName {\n"
-        f"pub const ALL: [Self; {len(variants)}] = [{listed}];\n"
+        f"pub const ALL: &[Self] = &[{listed}];\n"
         "pub const DEFAULT: Self = Self::ALL[0];\n\n"
         f"pub fn palette(self) -> &'static Palette {{\nmatch self {{\n{palette_arms}\n}}\n}}\n\n"
         f"pub fn display_name(self) -> &'static str {{\nmatch self {{\n{name_arms}\n}}\n}}\n"
@@ -335,22 +336,11 @@ def render_rust(document, header):
     ).stdout
 
 
-def mac_digest(data):
-    """The digest the Mac output carries: of the file without its desktop-only last section, so
-    that editing a desktop value leaves every Mac file byte for byte as it was."""
-    text = data.decode()
-    start = text.index(f',\n  "{DESKTOP_SECTION}": {{')
-    if not text.endswith("\n  }\n}\n"):
-        raise ValueError("the desktop section must close the file")
-    return hashlib.sha256((text[:start] + "\n}\n").encode()).hexdigest()
-
-
-def render_tokens(document, data):
-    """The generated files for the token file `data` (bytes) that parsed to `document`."""
+def render_tokens(document):
+    """The generated files for the parsed token file `document`."""
     validate_tokens(document)
-    swift_header = f"// Generated from {TOKENS_PATH} (sha256 {mac_digest(data)}). Do not edit."
-    rust_header = f"// Generated from {TOKENS_PATH} (sha256 {hashlib.sha256(data).hexdigest()}). Do not edit."
+    header = f"// {header_text(TOKENS_PATH)}"
     return {
-        SWIFT_OUTPUT: render_swift(document, swift_header),
-        RUST_OUTPUT: render_rust(document, rust_header),
+        SWIFT_OUTPUT: render_swift(document, header),
+        RUST_OUTPUT: render_rust(document, header),
     }

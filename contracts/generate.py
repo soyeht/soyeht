@@ -2,7 +2,6 @@
 """Deterministic, offline generator for the documented schema vocabulary."""
 
 import argparse
-import hashlib
 import json
 import re
 import subprocess
@@ -10,11 +9,14 @@ from pathlib import Path
 
 from client_policy import render_client_policy
 from design_tokens import TOKENS_PATH, render_tokens
+from generated_header import header_text
 from settings import render_settings
 
 ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_PATH = ROOT / "contracts/protocol.json"
-PROFILES_PATH = ROOT / "contracts/profiles.json"
+SCHEMA_SOURCE = "contracts/protocol.json"
+PROFILES_SOURCE = "contracts/profiles.json"
+SCHEMA_PATH = ROOT / SCHEMA_SOURCE
+PROFILES_PATH = ROOT / PROFILES_SOURCE
 PROFILE_COMPONENTS = ("engine", "ptyd")
 
 
@@ -477,9 +479,9 @@ def profile_values(document):
     }
 
 
-def launchd_plist(component, label, digest):
+def launchd_plist(component, label):
     return f'''<?xml version="1.0" encoding="UTF-8"?>
-<!-- Generated from contracts/profiles.json (sha256 {digest}). Do not edit. -->
+<!-- {header_text(PROFILES_SOURCE)} -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>{label}</string>
@@ -494,9 +496,9 @@ def launchd_plist(component, label, digest):
 '''
 
 
-def render_profiles(document, digest):
+def render_profiles(document):
     value = profile_values(document)
-    header = f"Generated from contracts/profiles.json (sha256 {digest}). Do not edit."
+    header = header_text(PROFILES_SOURCE)
     rust = f'''// {header}
 pub const DEV_DATA_DIRECTORY_FROM_HOME: &str = {json.dumps(value["data"])};
 pub const DEV_ENGINE_SOCKET: &str = {json.dumps(value["engine_socket"])};
@@ -532,10 +534,10 @@ DEV_LAUNCHD_PREFIX = {value["label_prefix"]!r}
         "contracts/swift/Sources/SoyehtProtocol/Profile.swift": swift,
         "scripts/generated_profile.py": python,
         "engine/soyeht-engine/launchd/dev.plist": launchd_plist(
-            "engine", value["engine_label"], digest
+            "engine", value["engine_label"]
         ),
         "engine/soyeht-ptyd/launchd/dev.plist": launchd_plist(
-            "ptyd", value["ptyd_label"], digest
+            "ptyd", value["ptyd_label"]
         ),
     }
 
@@ -544,10 +546,10 @@ def rustfmt(source):
     return subprocess.run(["rustfmt", "--edition", "2024"], input=source, text=True, capture_output=True, check=True).stdout
 
 
-def render(schema, digest):
+def render(schema):
     outputs = {}
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
-    header = f"// Generated from contracts/protocol.json (sha256 {digest}). Do not edit.\n"
+    header = f"// {header_text(SCHEMA_SOURCE)}\n"
     rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items())
     rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n" + event_params_rust(schema) + "\n" + rust_names(schema) + "\n"
     rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items()) + "\n    }\n}\n"
@@ -595,13 +597,13 @@ def main():
     data = SCHEMA_PATH.read_bytes()
     schema = json.loads(data)
     validate_schema(schema)
-    outputs = render(schema, hashlib.sha256(data).hexdigest())
+    outputs = render(schema)
     profile_data = PROFILES_PATH.read_bytes()
     profiles = json.loads(profile_data)
     validate_profiles(profiles)
-    outputs.update(render_profiles(profiles, hashlib.sha256(profile_data).hexdigest()))
+    outputs.update(render_profiles(profiles))
     token_data = (ROOT / TOKENS_PATH).read_bytes()
-    outputs.update(render_tokens(json.loads(token_data), token_data))
+    outputs.update(render_tokens(json.loads(token_data)))
     mismatches = []
     for relative, content in outputs.items():
         path = ROOT / relative

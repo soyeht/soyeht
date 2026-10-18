@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 33619c1f2b3ad3c6dc0ad7ac5f090d23ec25255e2decdc61a44121fa8635ab5a). Do not edit.
+// Generated from contracts/design-tokens.json. Do not edit.
 import CoreGraphics
 
 /// The reviewed themes, in the order of `palettes` in the token file. The first one is

@@ -3,11 +3,12 @@ import json
 import unittest
 from pathlib import Path
 
+from generated_header import header_text
 from client_policy import RUST_OUTPUT, SWIFT_OUTPUT, TS_OUTPUT, render_client_policy, validate
 
 ROOT = Path(__file__).resolve().parent
 SCHEMA = json.loads((ROOT / "protocol.json").read_text())
-HEADER = "// Generated from contracts/protocol.json (sha256 test). Do not edit.\n"
+HEADER = f"// {header_text('contracts/protocol.json')}\n"
 
 
 class ClientPolicyTests(unittest.TestCase):

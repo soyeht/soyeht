@@ -1,4 +1,4 @@
-// Generated from contracts/design-tokens.json (sha256 bbfb602d5e67c209ebc25d9087b9611544d464dd7d7e3dc1664c25e9bfbd8ca0). Do not edit.
+// Generated from contracts/design-tokens.json. Do not edit.
 use super::Palette;
 
 /// The reviewed themes, in the order of `palettes` in the token file. The first one is the
@@ -17,7 +17,7 @@ pub enum ThemeName {
 }
 
 impl ThemeName {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: &[Self] = &[
         Self::NeoMilk,
         Self::NeoPaleMist,
         Self::NeoMistyBlue,

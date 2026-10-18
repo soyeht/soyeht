@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a83e5a091c82349a4173728fab5308dc11fe83521977008e26f2fb81c3b50038). Do not edit.
+// Generated from contracts/protocol.json. Do not edit.
 
 use serde_json::Value;
 
@@ -18,7 +18,7 @@ pub const HARNESS_PREFERRED_ID: &str = "harness.preferredId";
 pub const HARNESS_DEFAULT_MODE_PREFIX: &str = "harness.defaultMode.";
 
 /// Every setting that stands alone.
-pub const KEYS: [&str; 4] = [
+pub const KEYS: &[&str] = &[
     TERMINAL_DEFAULT_COLS,
     TERMINAL_DEFAULT_ROWS,
     RECORD_DEFAULT,

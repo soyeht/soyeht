@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a83e5a091c82349a4173728fab5308dc11fe83521977008e26f2fb81c3b50038). Do not edit.
+// Generated from contracts/protocol.json. Do not edit.
 
 /// The settings the engine stores, from `x-settings` in `contracts/protocol.json`.
 public enum Setting {

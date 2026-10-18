@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a83e5a091c82349a4173728fab5308dc11fe83521977008e26f2fb81c3b50038). Do not edit.
+// Generated from contracts/protocol.json. Do not edit.
 pub type JsonValue = serde_json::Value;
 pub type Id = String;
 pub type Decimal = String;

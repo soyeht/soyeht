@@ -1,0 +1,23 @@
+# Outputs of contracts/generate.py: collapsed in review diffs. Regenerate them, never edit them.
+apps/desktop/crates/soyeht-desktop/src/theme/generated.rs linguist-generated=true
+apps/shared/Sources/SoyehtClient/Generated.swift linguist-generated=true
+contracts/swift/Sources/ProtocolVectors/Dispatch.swift linguist-generated=true
+contracts/swift/Sources/SoyehtProtocol/ClientPolicy.swift linguist-generated=true
+contracts/swift/Sources/SoyehtProtocol/Generated.swift linguist-generated=true
+contracts/swift/Sources/SoyehtProtocol/Limits.swift linguist-generated=true
+contracts/swift/Sources/SoyehtProtocol/Profile.swift linguist-generated=true
+contracts/swift/Sources/SoyehtProtocol/Setting.swift linguist-generated=true
+contracts/typescript/src/clientPolicy.ts linguist-generated=true
+contracts/typescript/src/generated.ts linguist-generated=true
+contracts/typescript/src/limits.ts linguist-generated=true
+contracts/typescript/src/schema.json linguist-generated=true
+contracts/typescript/src/settings.ts linguist-generated=true
+engine/soyeht-engine/launchd/dev.plist linguist-generated=true
+engine/soyeht-protocol/src/client_policy.rs linguist-generated=true
+engine/soyeht-protocol/src/contract/roundtrip.rs linguist-generated=true
+engine/soyeht-protocol/src/generated.rs linguist-generated=true
+engine/soyeht-protocol/src/limits.rs linguist-generated=true
+engine/soyeht-protocol/src/profile.rs linguist-generated=true
+engine/soyeht-protocol/src/setting.rs linguist-generated=true
+engine/soyeht-ptyd/launchd/dev.plist linguist-generated=true
+scripts/generated_profile.py linguist-generated=true

@@ -145,7 +145,7 @@ def render_rust(settings, header):
     lines += [
         "",
         "/// Every setting that stands alone.",
-        f"pub const KEYS: [&str; {len(singles)}] = [",
+        "pub const KEYS: &[&str] = &[",
         *[f"    {rust_name(key)}," for key, _ in singles],
         "];",
         "",

@@ -27,7 +27,7 @@ fn every_setting_of_the_contract_has_its_default_and_no_other_exists() {
     }
     let alone = contract.keys().filter(|key| !key.contains('<')).count();
     assert_eq!(setting::KEYS.len(), alone);
-    for key in setting::KEYS {
+    for key in setting::KEYS.iter().copied() {
         assert!(contract.contains_key(key), "{key}");
     }
     for key in [

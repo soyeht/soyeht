@@ -22,11 +22,8 @@ SHARED = "apps/shared/Sources/SoyehtClient/"
 MAC = "apps/mac/Sources/"
 
 
-TOKEN_BYTES = (ROOT / "contracts/design-tokens.json").read_bytes()
-
-
 def tokens():
-    return json.loads(TOKEN_BYTES)
+    return json.loads((ROOT / "contracts/design-tokens.json").read_bytes())
 
 
 def git(*arguments):
@@ -125,20 +122,20 @@ def static_numbers(source, header):
 
 class TokenGenerationTests(unittest.TestCase):
     def test_both_outputs_render_from_one_source(self):
-        outputs = render_tokens(tokens(), TOKEN_BYTES)
+        outputs = render_tokens(tokens())
         self.assertEqual(set(outputs), {SWIFT_OUTPUT, RUST_OUTPUT})
         for text in outputs.values():
             self.assertTrue(text.startswith("// Generated from contracts/design-tokens.json"))
 
     def test_generated_swift_palettes_read_back_as_the_json(self):
-        swift = render_tokens(tokens(), TOKEN_BYTES)[SWIFT_OUTPUT]
+        swift = render_tokens(tokens())[SWIFT_OUTPUT]
         parsed = swift_palettes(swift)
         self.assertEqual(tuple(parsed), tuple(tokens()["palettes"]))
         for name, palette in tokens()["palettes"].items():
             self.assertEqual(parsed[name], resolved(palette), name)
 
     def test_generated_rust_carries_every_palette_color(self):
-        rust = render_tokens(tokens(), TOKEN_BYTES)[RUST_OUTPUT]
+        rust = render_tokens(tokens())[RUST_OUTPUT]
         for name, palette in tokens()["palettes"].items():
             block = rust.split(f"static {re.sub(r'(?<=[a-z])(?=[A-Z])', '_', name).upper()}:")[1]
             block = block.split("};")[0]
@@ -158,20 +155,18 @@ class TokenGenerationTests(unittest.TestCase):
 
     def test_desktop_values_are_rust_only_and_never_change_the_mac_output(self):
         document = tokens()
-        outputs = render_tokens(document, TOKEN_BYTES)
+        outputs = render_tokens(document)
         self.assertIn("pub mod desktop", outputs[RUST_OUTPUT])
         self.assertNotIn("windowWidth", outputs[SWIFT_OUTPUT])
         changed = copy.deepcopy(document)
         changed[DESKTOP_SECTION]["windowWidth"] += 1
-        changed_bytes = TOKEN_BYTES.replace(b'"windowWidth": 1280', b'"windowWidth": 1281')
-        self.assertNotEqual(changed_bytes, TOKEN_BYTES)
-        again = render_tokens(changed, changed_bytes)
+        again = render_tokens(changed)
         self.assertEqual(again[SWIFT_OUTPUT], outputs[SWIFT_OUTPUT])
         self.assertNotEqual(again[RUST_OUTPUT], outputs[RUST_OUTPUT])
 
     def test_generated_swift_fits_the_formatter_line_length(self):
         """swift-format lints the generated file: no line past 100 columns but the header."""
-        swift = render_tokens(tokens(), TOKEN_BYTES)[SWIFT_OUTPUT]
+        swift = render_tokens(tokens())[SWIFT_OUTPUT]
         for number, line in enumerate(swift.splitlines()[1:], start=2):
             self.assertLessEqual(len(line), 100, f"line {number}")
 

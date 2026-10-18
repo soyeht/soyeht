@@ -78,7 +78,7 @@ impl ThemeName {
     /// The theme whose name, without example, ends with `wanted` (`milk`, `deepharbor`, ...):
     /// how the examples that compare themes are told which one to draw.
     pub fn named(wanted: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|theme| {
+        Self::ALL.iter().copied().find(|theme| {
             let name = theme
                 .display_name()
                 .replace([' ', '\u{b7}'], "")

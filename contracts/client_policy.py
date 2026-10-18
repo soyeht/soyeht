@@ -186,7 +186,7 @@ def render_rust(policy, header):
     lines += [
         "/// Image types that claude-agent-acp and codex-acp forward as model input and that both",
         "/// providers accept; any other image is linked.",
-        f"pub const INLINE_IMAGE_TYPES: [&str; {len(types)}] = [{', '.join(map(json.dumps, types))}];",
+        f"pub const INLINE_IMAGE_TYPES: &[&str] = &[{', '.join(map(json.dumps, types))}];",
     ]
     lines += [
         f"pub const {category}: &str = {json.dumps(policy[CONFIG_ROLES][role]['category'])};"

@@ -1,4 +1,4 @@
-// Generated from contracts/protocol.json (sha256 a83e5a091c82349a4173728fab5308dc11fe83521977008e26f2fb81c3b50038). Do not edit.
+// Generated from contracts/protocol.json. Do not edit.
 
 use crate::{ConfigOption, HighlightKind, PaneState, UsageProvider};
 
@@ -33,7 +33,7 @@ pub const EDITOR_INDENT_UNIT: &str = "    ";
 pub const EDITOR_INDENT_OPENERS: &str = "{[(";
 /// Image types that claude-agent-acp and codex-acp forward as model input and that both
 /// providers accept; any other image is linked.
-pub const INLINE_IMAGE_TYPES: [&str; 4] = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+pub const INLINE_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
 pub const MODEL_CATEGORY: &str = "model";
 pub const EFFORT_CATEGORY: &str = "thought_level";
 pub const PERMISSION_MODE_CATEGORY: &str = "mode";
