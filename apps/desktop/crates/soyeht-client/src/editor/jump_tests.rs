@@ -115,6 +115,7 @@ fn fail_read(state: &mut State, from_line: u32) -> Vec<Effect> {
     state.apply(Event::Editor(EditorEvent::Failed(Failure::Read {
         file_id: "main".into(),
         from_line,
+        reason: "refused".into(),
     })))
 }
 

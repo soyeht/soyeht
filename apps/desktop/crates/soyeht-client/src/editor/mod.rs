@@ -11,6 +11,7 @@ pub mod editing;
 mod file;
 pub mod gutter;
 pub mod keys;
+mod load;
 pub mod page;
 pub mod selection;
 pub mod tabs;
@@ -22,6 +23,7 @@ mod viewport;
 pub use commands::{EditorCommand, EditorEvent, Failure};
 use file::Action;
 pub use file::EditorFile;
+pub use load::PaneLoad;
 pub use trees::ProjectTrees;
 pub use viewport::PAGE_LINES;
 
@@ -52,6 +54,8 @@ pub struct Editors {
     history: HashMap<String, Vec<String>>,
     /// The workspaces whose tabs were asked for on this connection.
     asked: HashSet<String>,
+    /// Why the first page of an editor pane could not be had, by pane: the pane's load failed.
+    failures: HashMap<String, String>,
     pub trees: ProjectTrees,
 }
 
@@ -199,17 +203,16 @@ impl Editors {
         }))]
     }
 
-    /// A pane arrived: an editor pane brings the tabs of its workspace.
+    /// A pane arrived: an editor pane brings the tabs of its workspace, and its file when the
+    /// engine listed it before the pane existed.
     pub fn pane_arrived(&mut self, pane: &Pane) -> Vec<Effect> {
-        if pane.mode == PaneMode::Editor {
-            self.ask_tabs(&pane.workspace_id)
-        } else {
-            Vec::new()
-        }
+        self.failures.remove(&pane.pane_id);
+        self.fetch(pane)
     }
 
     /// A pane closed with its file.
     pub fn pane_closed(&mut self, pane_id: &str) {
+        self.failures.remove(pane_id);
         self.files.retain(|_, file| file.doc.pane_id != pane_id);
         for history in self.history.values_mut() {
             history.retain(|other| other != pane_id);
@@ -244,6 +247,7 @@ impl Editors {
             self.files.insert(file.doc.file_id.clone(), file);
         }
         self.asked.clear();
+        self.failures.clear();
         let workspaces: HashSet<&str> = panes
             .iter()
             .filter(|pane| pane.mode == PaneMode::Editor)
@@ -264,6 +268,7 @@ impl Editors {
                 if !live(&opened.file) {
                     return Vec::new();
                 }
+                self.failures.remove(&opened.file.pane_id);
                 let file = self
                     .files
                     .entry(opened.file.file_id.clone())
@@ -274,6 +279,7 @@ impl Editors {
                 if !live(&read.file) {
                     return Vec::new();
                 }
+                self.failures.remove(&read.file.pane_id);
                 self.files
                     .entry(read.file.file_id.clone())
                     .or_insert_with(|| EditorFile::new(read.file.clone()))
@@ -289,7 +295,7 @@ impl Editors {
                 .get_mut(&file_id)
                 .map(|file| file.replayed(*result))
                 .unwrap_or_default(),
-            EditorEvent::Tabs(listed) => self.set_tabs(listed.workspace_id, listed.tabs),
+            EditorEvent::Tabs(listed) => self.set_tabs(listed.workspace_id, listed.tabs, panes),
             EditorEvent::Listed(listing) => self.trees.listed(&listing),
             EditorEvent::Found {
                 seq,
@@ -300,19 +306,28 @@ impl Editors {
                 .get_mut(&file_id)
                 .map(|file| file.found(seq, result))
                 .unwrap_or_default(),
-            EditorEvent::Failed(failure) => self.failed(failure),
+            EditorEvent::Failed(failure) => self.failed(failure, panes),
         }
     }
 
-    /// The engine's order of a workspace's tabs; the files it lists that are not known yet are
-    /// read.
-    fn set_tabs(&mut self, workspace_id: String, tabs: Vec<EditorTab>) -> Vec<Effect> {
+    /// The engine's order of a workspace's tabs; the files it lists for panes that exist and are
+    /// not known yet are read. A pane the list leaves out has no file to wait for.
+    fn set_tabs(
+        &mut self,
+        workspace_id: String,
+        tabs: Vec<EditorTab>,
+        panes: &[Pane],
+    ) -> Vec<Effect> {
         let unknown: Vec<String> = tabs
             .iter()
-            .filter(|tab| !self.files.contains_key(&tab.file_id))
+            .filter(|tab| {
+                !self.files.contains_key(&tab.file_id)
+                    && panes.iter().any(|pane| pane.pane_id == tab.pane_id)
+            })
             .map(|tab| tab.file_id.clone())
             .collect();
-        self.tabs.insert(workspace_id, tabs);
+        self.tabs.insert(workspace_id.clone(), tabs);
+        self.unlisted(&workspace_id, panes);
         unknown
             .iter()
             .flat_map(|id| self.read_unknown(id))
@@ -331,18 +346,33 @@ impl Editors {
         )))]
     }
 
-    fn failed(&mut self, failure: Failure) -> Vec<Effect> {
+    fn failed(&mut self, failure: Failure, panes: &[Pane]) -> Vec<Effect> {
         match failure {
             Failure::Edit(file_id) => self
                 .files
                 .get_mut(&file_id)
                 .map(EditorFile::edit_failed)
                 .unwrap_or_default(),
-            Failure::Read { file_id, from_line } => self
-                .files
-                .get_mut(&file_id)
-                .map(|file| file.read_failed(from_line))
-                .unwrap_or_default(),
+            Failure::Read {
+                file_id,
+                from_line,
+                reason,
+            } => {
+                let effects = self
+                    .files
+                    .get_mut(&file_id)
+                    .map(|file| file.read_failed(from_line))
+                    .unwrap_or_default();
+                self.page_failed(&file_id, &reason, panes);
+                effects
+            }
+            Failure::Tabs {
+                workspace_id,
+                reason,
+            } => {
+                self.tabs_failed(&workspace_id, &reason, panes);
+                Vec::new()
+            }
             Failure::List { workspace_id, path } => self.trees.list_failed(&workspace_id, &path),
         }
     }
@@ -365,6 +395,7 @@ impl Editors {
         &mut self,
         name: &EventName,
         params: Value,
+        panes: &[Pane],
     ) -> serde_json::Result<Vec<Effect>> {
         Ok(match name {
             EventName::FileChangedOnDisk => {
@@ -401,7 +432,7 @@ impl Editors {
             EventName::EditorTabsUpdated => {
                 let event: soyeht_protocol::EditorTabsUpdatedEvent =
                     serde_json::from_value(params)?;
-                self.set_tabs(event.workspace_id, event.tabs)
+                self.set_tabs(event.workspace_id, event.tabs, panes)
             }
             EventName::ProjectTreeChanged => {
                 let event: ProjectTreeChangedEvent = serde_json::from_value(params)?;
@@ -529,5 +560,7 @@ impl Editors {
 
 #[cfg(test)]
 mod jump_tests;
+#[cfg(test)]
+mod load_tests;
 #[cfg(test)]
 mod tests;

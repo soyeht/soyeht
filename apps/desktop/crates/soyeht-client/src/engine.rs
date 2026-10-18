@@ -217,7 +217,7 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
                 });
                 // An editor command that failed leaves the replica waiting for its answer.
                 let told = command
-                    .failure()
+                    .failure(&error)
                     .is_none_or(|event| events.send_blocking(event).is_ok());
                 released && told && report(events, &error)
             }

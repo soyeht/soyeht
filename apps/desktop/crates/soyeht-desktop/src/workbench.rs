@@ -228,7 +228,7 @@ impl Workbench {
             Effect::Send(command) => {
                 // A command the queue refuses never gets an answer: the replica is told, so that
                 // what waits for it is not stuck.
-                let failure = command.failure();
+                let failure = command.failure(&soyeht_client::Error::Busy);
                 if !self.send(command)
                     && let Some(event) = failure
                 {

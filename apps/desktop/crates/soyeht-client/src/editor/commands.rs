@@ -90,7 +90,17 @@ pub enum Failure {
     /// page again.
     Edit(String),
     /// A read or a save, of the page that starts at `from_line`: nothing waits for it any more.
-    Read { file_id: String, from_line: u32 },
+    /// `reason` is what the pane shows when it holds no page.
+    Read {
+        file_id: String,
+        from_line: u32,
+        reason: String,
+    },
+    /// The tabs of a workspace could not be listed: a pane that waits for its file has none.
+    Tabs {
+        workspace_id: String,
+        reason: String,
+    },
     /// A folder that could not be listed.
     List { workspace_id: String, path: String },
 }
@@ -259,8 +269,9 @@ fn outcome(command: &EditorCommand, result: Value) -> Result<Option<Event>> {
     Ok(Some(Event::Editor(event)))
 }
 
-/// What the replica learns when `command` fails, so that it does not wait for an answer.
-pub(crate) fn failure(command: &EditorCommand) -> Option<Event> {
+/// What the replica learns when `command` fails for `reason`, so that it does not wait for an
+/// answer.
+pub(crate) fn failure(command: &EditorCommand, reason: &str) -> Option<Event> {
     let failure = match command {
         EditorCommand::Write { file_id, .. } | EditorCommand::Replay { file_id, .. } => {
             Failure::Edit(file_id.clone())
@@ -273,6 +284,11 @@ pub(crate) fn failure(command: &EditorCommand) -> Option<Event> {
         }) => Failure::Read {
             file_id: file_id.clone(),
             from_line: *from_line,
+            reason: reason.to_owned(),
+        },
+        EditorCommand::Tabs { workspace_id } => Failure::Tabs {
+            workspace_id: workspace_id.clone(),
+            reason: reason.to_owned(),
         },
         EditorCommand::List {
             workspace_id, path, ..
@@ -352,15 +368,20 @@ mod tests {
             base: "3".into(),
             edits: Vec::new(),
         };
-        let Some(Event::Editor(EditorEvent::Failed(Failure::Edit(file)))) = failure(&command)
+        let Some(Event::Editor(EditorEvent::Failed(Failure::Edit(file)))) =
+            failure(&command, "refused")
         else {
             panic!("no failure");
         };
         assert_eq!(file, "f");
         assert!(
-            failure(&EditorCommand::Tabs {
-                workspace_id: "w".into()
-            })
+            failure(
+                &EditorCommand::Watch {
+                    workspace_id: "w".into(),
+                    paths: Vec::new()
+                },
+                "refused"
+            )
             .is_none()
         );
     }

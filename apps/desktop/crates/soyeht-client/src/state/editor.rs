@@ -26,11 +26,23 @@ impl State {
         name: &EventName,
         params: serde_json::Value,
     ) -> serde_json::Result<Vec<Effect>> {
-        self.editors.notification(name, params)
+        self.editors.notification(name, params, &self.panes)
     }
 
     pub(super) fn handles_editor_event(name: &EventName) -> bool {
         Editors::handles(name)
+    }
+
+    /// Asks again for the first page of an editor pane that could not get one.
+    pub fn editor_retry(&mut self, pane_id: &str) -> Vec<Effect> {
+        match self
+            .pane(pane_id)
+            .filter(|pane| pane.mode == PaneMode::Editor)
+            .cloned()
+        {
+            Some(pane) => self.editors.retry(&pane),
+            None => Vec::new(),
+        }
     }
 
     /// Opens a file of the workspace in a tab: a preview that the next file replaces, or a

@@ -183,6 +183,13 @@ impl EditorFile {
         vec![send(EditorCommand::Read(self.request(from_line)))]
     }
 
+    /// Reads the first page again for a pane that holds none, as its Retry asks: the read that
+    /// failed is over, so a new one is not the same read.
+    pub fn read_first_page(&mut self) -> Vec<Effect> {
+        self.reading = None;
+        self.read(0)
+    }
+
     /// The first line of the page to read: the one that holds the caret that is on its way, else
     /// the one loaded.
     fn start(&self) -> u32 {

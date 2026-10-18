@@ -3,6 +3,7 @@
 //! is the only raised surface; everything inside is flat.
 
 use super::{
+    cards::{Role, button},
     pane::Action,
     prelude::*,
     switch_popover::well_row,
@@ -13,7 +14,7 @@ use crate::{
     theme::{Palette, desktop, editor, glyph, radius, space, type_scale},
 };
 use gpui::MouseButton;
-use soyeht_client::editor::{EditorFile, page::CRLF};
+use soyeht_client::editor::{EditorFile, PaneLoad, page::CRLF};
 use soyeht_protocol::{EditorLanguage, Pane};
 
 /// The language as the status bar names it.
@@ -53,7 +54,12 @@ impl Workbench {
     ) -> Div {
         let file = self.state.editors.file_of_pane(&pane.pane_id);
         let label = file.map_or_else(|| "Editor".to_owned(), |file| path_label(&file.doc.path));
+        let failed = matches!(
+            self.state.editors.pane_load(&pane.pane_id),
+            PaneLoad::Failed(_)
+        );
         let (status, color) = match file {
+            None if failed => ("\u{b7} failed", palette.danger()),
             None => ("\u{b7} loading", palette.muted),
             Some(file) if file.doc.conflicted => ("\u{b7} conflict", palette.danger()),
             // The caret is on its way to a page the engine has not sent: keys wait for it.
@@ -149,16 +155,19 @@ impl Workbench {
         let text = if loaded {
             self.editor_text(cx, palette, &pane_id, focused)
         } else {
-            div()
-                .flex_1()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(type_scale::CAPTION))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgb(palette.secondary))
-                .child("Loading editor viewport")
-                .into_any_element()
+            match self.state.editors.pane_load(&pane_id) {
+                PaneLoad::Failed(reason) => Self::load_failed(reason, &pane_id, palette, cx),
+                PaneLoad::Loading | PaneLoad::Ready => div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(type_scale::CAPTION))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.secondary))
+                    .child("Loading editor viewport")
+                    .into_any_element(),
+            }
         };
         face_row(palette)
             .children(panel)
@@ -174,6 +183,40 @@ impl Workbench {
                     .child(status_bar(status, notice, palette)),
             )
             .into_any_element()
+    }
+
+    /// What a pane shows when its file could not be read: the engine's reason, and a button that
+    /// asks again.
+    fn load_failed(
+        reason: String,
+        pane_id: &str,
+        palette: &Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        empty_state(
+            palette,
+            Some(Icon::Alert),
+            "This file could not be loaded",
+            Some(SharedString::from(reason)),
+        )
+        .child(
+            button(
+                id("editor-retry", pane_id),
+                Role::Secondary,
+                "Retry",
+                palette,
+            )
+            .own_press()
+            .on_click(acting(cx, pane_id, Workbench::retry_editor_load)),
+        )
+        .into_any_element()
+    }
+
+    /// Asks again for the first page of a pane that could not get one.
+    fn retry_editor_load(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        let effects = self.state.editor_retry(pane_id);
+        self.run_effects(effects);
+        cx.notify();
     }
 
     /// The lines, with the mouse and the wheel wired to the pane.

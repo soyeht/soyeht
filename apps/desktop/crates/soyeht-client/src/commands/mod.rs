@@ -523,11 +523,11 @@ impl Command {
         }
     }
 
-    /// What the application learns when this command fails, so that it stops waiting for the
-    /// answer.
-    pub fn failure(&self) -> Option<Event> {
+    /// What the application learns when this command fails for `error`, so that it stops waiting
+    /// for the answer.
+    pub fn failure(&self, error: &crate::Error) -> Option<Event> {
         match self {
-            Self::Editor(editor) => crate::editor::commands::failure(editor),
+            Self::Editor(editor) => crate::editor::commands::failure(editor, &error.to_string()),
             _ => None,
         }
     }

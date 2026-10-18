@@ -597,6 +597,7 @@ fn a_file_that_got_shorter_than_the_page_is_read_from_its_end_and_a_second_failu
             super::Failure::Read {
                 file_id: "main".into(),
                 from_line,
+                reason: "refused".into(),
             },
         )))
     };
