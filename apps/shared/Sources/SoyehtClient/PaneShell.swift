@@ -14,6 +14,10 @@ public enum PaneShellMetrics {
 
 /// Draws the shell behind a pane. SwiftUI's shadow radius is half the design tool's blur: the
 /// rendered halo matches the approved frames pixel for pixel at the pane edges.
+///
+/// The content is clipped to the card, so whatever a pane's chrome fails to fit is cut at the
+/// card's edge and never paints over a neighbouring pane or into the gap that holds the halos.
+/// The shadows sit in the background, outside the clip.
 public struct PaneShell: ViewModifier {
   let face: Color
   let shadowDark: Color
@@ -25,9 +29,13 @@ public struct PaneShell: ViewModifier {
     shadowLight = colors.shadowLight
   }
 
+  private var cardShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: PaneShellMetrics.cornerRadius, style: .continuous)
+  }
+
   public func body(content: Content) -> some View {
-    content.background {
-      RoundedRectangle(cornerRadius: PaneShellMetrics.cornerRadius, style: .continuous)
+    content.clipShape(cardShape).background {
+      cardShape
         .fill(face)
         .compositingGroup()
         .shadow(
