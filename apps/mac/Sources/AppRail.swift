@@ -31,7 +31,8 @@ struct AppRail: View {
           }
         }
       }
-      .scrollIndicators(.visible)
+      // The scroller would sit over the rings: the column is as wide as a ring.
+      .scrollIndicators(.hidden)
       AppRailButton(
         glyph: .system("gearshape"), label: "Settings", selected: false, action: onSettings)
     }

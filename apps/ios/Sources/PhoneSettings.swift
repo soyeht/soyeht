@@ -113,9 +113,9 @@ private struct PhoneUsageRing: View {
   var body: some View {
     VStack(spacing: 5) {
       ZStack {
-        Circle()
-          .stroke(PhonePalette.secondary.opacity(0.28), lineWidth: 7)
-        UsageRingArc(presentation, lineWidth: 5)
+        UsageRingGauge(
+          presentation, geometry: UsageRingGeometry(arcWidth: 5, trackWidth: 7),
+          track: PhonePalette.secondary.opacity(0.28))
         ProviderGlyph(reading.provider)
           .foregroundStyle(PhonePalette.ink)
           .frame(width: 24, height: 24)

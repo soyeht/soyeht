@@ -140,27 +140,6 @@ public struct UsagePresentation: Sendable {
   }
 }
 
-/// The band-coloured arc of a usage ring, drawn the same way on every device.
-public struct UsageRingArc: View {
-  private let presentation: UsagePresentation
-  private let lineWidth: CGFloat
-
-  public init(_ presentation: UsagePresentation, lineWidth: CGFloat) {
-    self.presentation = presentation
-    self.lineWidth = lineWidth
-  }
-
-  public var body: some View {
-    if let fraction = presentation.fraction, let band = presentation.band {
-      Circle()
-        .trim(from: 0, to: fraction)
-        .stroke(band.color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-        .rotationEffect(.degrees(-90))
-        .opacity(presentation.emphasis.arcOpacity)
-    }
-  }
-}
-
 public struct ProviderGlyph: View {
   private let provider: UsageProvider
 

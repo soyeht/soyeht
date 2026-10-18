@@ -16,13 +16,10 @@ struct UsageRing: View {
         ZStack {
           Circle()
             .fill(MacTheme.face)
-            .overlay {
-              Circle().stroke(MacTheme.well, lineWidth: DesignTokens.UsageRing.trackWidth)
-            }
             .frame(
               width: DesignTokens.UsageRing.faceDiameter,
               height: DesignTokens.UsageRing.faceDiameter)
-          UsageRingArc(presentation, lineWidth: DesignTokens.UsageRing.arcWidth)
+          UsageRingGauge(presentation, geometry: Self.geometry, track: MacTheme.well)
             .frame(width: DesignTokens.UsageRing.diameter, height: DesignTokens.UsageRing.diameter)
           ProviderGlyph(reading.provider)
             .foregroundStyle(MacTheme.ink)
@@ -56,6 +53,9 @@ struct UsageRing: View {
     }
     .zIndex(hovering ? 20 : 0)
   }
+
+  private static let geometry = UsageRingGeometry(
+    arcWidth: DesignTokens.UsageRing.arcWidth, trackWidth: DesignTokens.UsageRing.trackWidth)
 
   private var presentation: UsagePresentation { UsagePresentation(reading) }
 }

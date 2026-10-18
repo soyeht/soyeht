@@ -33,6 +33,10 @@ colors use the existing tokens: below 50 % `success`, 50–80 % `warning`
 the Mac rail, the Mac balloon and Settings, and the iPhone and iPad Settings
 all draw through it. A provider that is signed in but has no reader draws
 nothing: no ring, no placeholder.
+The track and the arc share one path, inset by half the widest line
+(`UsageRingGeometry`, drawn by `UsageRingGauge`), so no stroke reaches past the
+ring's bounds: the rail scrolls and clips at its column, and the rail draws no
+scroll indicator over the rings.
 
 **Ring states** (`UsageEmphasis`):
 
