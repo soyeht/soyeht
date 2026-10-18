@@ -72,9 +72,29 @@ impl Cache {
         self.answer(probe(), None)
     }
 
-    /// Forgets the answer: the next caller asks the shell again.
-    pub(super) fn invalidate(&self) {
-        self.state().resolved = None;
+    /// Asks the shell again and returns the new answer. Only this caller waits: until the
+    /// shell replies, every other caller keeps the previous answer, so a thread that holds
+    /// the Core lock never waits on a shell (ADR 0079). A refresh that finds the shell
+    /// already being asked waits for that answer instead of asking again.
+    ///
+    /// Call it from a thread that holds no lock.
+    pub(super) fn refresh(&self, probe: Probe) -> LaunchPath {
+        let mut state = self.state();
+        if state.probing {
+            while state.probing {
+                state = self
+                    .answered
+                    .wait(state)
+                    .unwrap_or_else(PoisonError::into_inner);
+            }
+            if let Some(path) = &state.resolved {
+                return path.clone();
+            }
+        }
+        state.probing = true;
+        let previous = state.resolved.as_ref().map(|path| path.value.clone());
+        drop(state);
+        self.answer(probe(), previous)
     }
 
     /// Starts with the answer remembered in `directory`, if any, and refreshes it on a thread.
@@ -233,8 +253,7 @@ mod tests {
         let kept = cache.answer(failed.clone(), Some("/remembered".into()));
         assert_eq!(kept.value, "/remembered");
         assert_eq!(kept.issue, Some(LaunchPathIssue::ProbeTimedOut));
-        cache.invalidate();
-        assert_eq!(cache.answer(failed.clone(), None), failed);
+        assert_eq!(Cache::new().answer(failed.clone(), None), failed);
     }
 
     static GATE: AtomicBool = AtomicBool::new(false);
@@ -282,5 +301,39 @@ mod tests {
         assert_eq!(second.resolution(slow_shell), good("/fresh:/usr/bin"));
         GATE.store(true, Ordering::SeqCst);
         fs::remove_dir_all(&directory).unwrap();
+    }
+
+    static REFRESH_GATE: AtomicBool = AtomicBool::new(false);
+
+    fn refreshed_shell() -> LaunchPath {
+        while !REFRESH_GATE.load(Ordering::SeqCst) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        good("/refreshed:/usr/bin")
+    }
+
+    /// A rescan asks the shell again, which takes seconds. Whoever holds the Core lock reads
+    /// the path meanwhile, and must get the previous answer at once instead of waiting.
+    #[test]
+    fn a_refresh_leaves_readers_the_previous_path_until_the_shell_answers() {
+        let cache: &'static Cache = Box::leak(Box::new(Cache::new()));
+        cache.answer(good("/previous:/usr/bin"), None);
+        let refreshing = thread::spawn(move || cache.refresh(refreshed_shell));
+        thread::sleep(Duration::from_millis(50));
+        assert!(!refreshing.is_finished(), "the shell has not answered");
+        let started = std::time::Instant::now();
+        assert_eq!(
+            cache.resolution(refreshed_shell),
+            good("/previous:/usr/bin")
+        );
+        // A reader that waited would block until the gate opens below; the bound is loose so a
+        // busy host does not fail it.
+        assert!(started.elapsed() < Duration::from_secs(2));
+        REFRESH_GATE.store(true, Ordering::SeqCst);
+        assert_eq!(refreshing.join().unwrap(), good("/refreshed:/usr/bin"));
+        assert_eq!(
+            cache.resolution(refreshed_shell),
+            good("/refreshed:/usr/bin")
+        );
     }
 }

@@ -43,6 +43,8 @@ pub struct Rig {
     pub path: PathBuf,
     pub engine: Option<Child>,
     pub ptyd: Child,
+    /// The login shell the engine asks for its launch `PATH`; the machine's own when `None`.
+    pub login_shell: Option<PathBuf>,
 }
 
 impl Rig {
@@ -66,6 +68,7 @@ impl Rig {
             path,
             engine: None,
             ptyd,
+            login_shell: None,
         };
         rig.start();
         rig
@@ -83,8 +86,12 @@ impl Rig {
     }
     pub fn start(&mut self) {
         warm_up_binaries();
+        let mut engine = Command::new(env!("CARGO_BIN_EXE_soyeht-engine-test"));
+        if let Some(shell) = &self.login_shell {
+            engine.env("SHELL", shell);
+        }
         self.engine = Some(
-            Command::new(env!("CARGO_BIN_EXE_soyeht-engine-test"))
+            engine
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
                 .arg(&self.path)
                 .env("PATH", test_path(&self.path))

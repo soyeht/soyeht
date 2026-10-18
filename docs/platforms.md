@@ -63,7 +63,9 @@ can make slow. Two things used to hold the socket back for seconds on a busy mac
   uses it at once, and asks the shell again on a thread. Only a first start, which has
   nothing remembered, waits for the shell when something needs the `PATH`. A shell
   that fails keeps the remembered `PATH` and reports the failure in the harness
-  catalogue. Windows has no login shell to ask.
+  catalogue. A catalogue rescan asks the shell again on its own thread, and every other
+  request keeps using the previous answer meanwhile, so nothing under the Core lock
+  waits for the shell. Windows has no login shell to ask.
 - The file-event stream of the user's skill folder. The system's file-event service
   can take seconds to start a stream. It starts on its own thread and the folder is
   read by polling until it is live, then once more.

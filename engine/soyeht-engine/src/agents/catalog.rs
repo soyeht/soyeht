@@ -29,10 +29,13 @@ fn wire_environment_issue(issue: super::environment::LaunchPathIssue) -> Harness
     }
 }
 
-fn environment_issue() -> Option<HarnessEnvironmentIssue> {
-    super::environment::launch_path_resolution()
-        .issue
-        .map(wire_environment_issue)
+fn environment_issue(rescan: bool) -> Option<HarnessEnvironmentIssue> {
+    let resolution = if rescan {
+        super::environment::refresh_launch_path()
+    } else {
+        super::environment::launch_path_resolution()
+    };
+    resolution.issue.map(wire_environment_issue)
 }
 
 fn setup_state(
@@ -187,10 +190,8 @@ pub(crate) fn prepare_catalog(
 ) -> Result<PreparedCatalog> {
     if method == method::HARNESS_LIST {
         let started = Instant::now();
-        if params["rescan"].as_bool() == Some(true) && params["cursor"].is_null() {
-            super::environment::invalidate_launch_path();
-        }
-        let issue = environment_issue();
+        let rescan = params["rescan"].as_bool() == Some(true) && params["cursor"].is_null();
+        let issue = environment_issue(rescan);
         let environment_ms = started.elapsed().as_millis();
         let mut resolve_ms = 0;
         let mut prepare_ms = 0;

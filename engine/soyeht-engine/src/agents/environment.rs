@@ -64,8 +64,10 @@ pub fn launch_path() -> String {
     launch_path_resolution().value
 }
 
-pub fn invalidate_launch_path() {
-    LAUNCH_PATH.invalidate();
+/// Asks the shell again, for a rescan. Waits for the shell, so it never runs under the Core
+/// lock; every other reader keeps the previous answer meanwhile.
+pub fn refresh_launch_path() -> LaunchPath {
+    LAUNCH_PATH.refresh(resolve_launch_path)
 }
 
 pub fn launch_environment() -> BTreeMap<String, String> {
