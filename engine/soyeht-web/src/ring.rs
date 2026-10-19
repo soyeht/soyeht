@@ -136,7 +136,10 @@ impl NetworkRing {
 }
 
 fn validate_console(item: &ConsoleMetadata) -> Result<()> {
-    if item.text.len() <= 16_384 && item.source.len() <= 4096 && item.at.len() <= 64 {
+    if item.text.len() <= limits::WEB_TEXT_BYTES
+        && item.source.len() <= limits::WEB_FIELD_BYTES
+        && item.at.len() <= 64
+    {
         Ok(())
     } else {
         Err(Error::InvalidConsoleEntry)
@@ -147,7 +150,7 @@ fn validate_network(item: &NetworkMetadata) -> Result<()> {
     let valid = !item.method.is_empty()
         && item.method.len() <= 32
         && !item.url.is_empty()
-        && item.url.len() <= 4096
+        && item.url.len() <= limits::WEB_FIELD_BYTES
         && item.status <= 999
         && item.at.len() <= 64;
     if valid {

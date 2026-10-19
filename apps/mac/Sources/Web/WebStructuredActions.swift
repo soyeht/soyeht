@@ -113,8 +113,9 @@ private struct ActionOutcome: Decodable {
   ) -> JsonValue {
     .object([
       "navigationGeneration": .string(String(generation)),
-      "title": .string(String((webView.title ?? "").prefix(1_024))),
-      "url": .string(String((webView.url?.absoluteString ?? "").prefix(4_096))),
+      "title": .string(String((webView.title ?? "").prefix(ProtocolLimits.webTitleBytes))),
+      "url": .string(
+        String((webView.url?.absoluteString ?? "").prefix(ProtocolLimits.webFieldBytes))),
       "nodes": .array(nodes), "truncated": .bool(truncated),
     ])
   }
@@ -183,10 +184,10 @@ extension WebStructuredActions {
       element.checked === true ? "checked" : "",
       element.selected === true ? "selected" : "",
       element.getAttribute("aria-expanded") ? `expanded=${element.getAttribute("aria-expanded")}` : ""
-    ].filter(Boolean).join(" ").slice(0, 2048);
+    ].filter(Boolean).join(" ").slice(0, \#(ProtocolLimits.webLabelBytes));
     const candidates = Array.from(document.querySelectorAll(
       "a,button,input,select,textarea,summary,[role],[aria-label],h1,h2,h3,h4,h5,h6,label"));
-    const eligible = candidates.filter(element => visible(element) && (textOf(element, 2048) ||
+    const eligible = candidates.filter(element => visible(element) && (textOf(element, \#(ProtocolLimits.webLabelBytes)) ||
       ["INPUT","SELECT","TEXTAREA"].includes(element.tagName)));
     const selected = eligible.slice(0, 700);
     const refs = new Map();
@@ -199,13 +200,13 @@ extension WebStructuredActions {
       let parent = element.parentElement;
       while (parent && !refs.has(parent)) parent = parent.parentElement;
       const rect = element.getBoundingClientRect();
-      const value = "value" in element ? String(element.value).slice(0, 4096) : null;
-      return {ref, role:roleOf(element).slice(0,256), name:textOf(element,2048),
+      const value = "value" in element ? String(element.value).slice(0, \#(ProtocolLimits.webFieldBytes)) : null;
+      return {ref, role:roleOf(element).slice(0,\#(ProtocolLimits.webTokenBytes)), name:textOf(element,\#(ProtocolLimits.webLabelBytes)),
         state:stateOf(element), value,
         rect:{x:Math.max(-2147483648,Math.min(2147483647,Math.round(rect.x))),
           y:Math.max(-2147483648,Math.min(2147483647,Math.round(rect.y))),
-          width:Math.max(0,Math.min(16384,Math.round(rect.width))),
-          height:Math.max(0,Math.min(16384,Math.round(rect.height)))},
+          width:Math.max(0,Math.min(\#(ProtocolLimits.webExtentMax),Math.round(rect.width))),
+          height:Math.max(0,Math.min(\#(ProtocolLimits.webExtentMax),Math.round(rect.height)))},
         parentRef:parent ? refs.get(parent) : null};
     });
     return JSON.stringify({nodes, truncated:eligible.length > selected.length});

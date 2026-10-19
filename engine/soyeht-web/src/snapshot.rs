@@ -67,13 +67,16 @@ pub fn build_snapshot(
 }
 
 fn validate_input(input: &SnapshotNodeInput, accepted: usize) -> Result<()> {
-    let valid = input.role.len() <= 256
-        && input.name.len() <= 2048
-        && input.state.len() <= 2048
-        && input.value.as_ref().is_none_or(|value| value.len() <= 4096)
+    let valid = input.role.len() <= limits::WEB_TOKEN_BYTES
+        && input.name.len() <= limits::WEB_LABEL_BYTES
+        && input.state.len() <= limits::WEB_LABEL_BYTES
+        && input
+            .value
+            .as_ref()
+            .is_none_or(|value| value.len() <= limits::WEB_FIELD_BYTES)
         && input.parent_index.is_none_or(|index| index < accepted)
-        && input.rect.width <= 16_384
-        && input.rect.height <= 16_384;
+        && input.rect.width as usize <= limits::WEB_EXTENT_MAX
+        && input.rect.height as usize <= limits::WEB_EXTENT_MAX;
     if valid {
         Ok(())
     } else {

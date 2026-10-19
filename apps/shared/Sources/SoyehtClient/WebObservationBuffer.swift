@@ -35,7 +35,9 @@ public struct WebObservationBuffer: Sendable {
   public mutating func appendConsole(
     level: WebConsoleLevel, text: String, source: String, at: String
   ) throws {
-    guard text.utf8.count <= 16_384, source.utf8.count <= 4_096, validTimestamp(at) else {
+    guard text.utf8.count <= ProtocolLimits.webTextBytes,
+      source.utf8.count <= ProtocolLimits.webFieldBytes, validTimestamp(at)
+    else {
       throw WebObservationError.invalidConsoleEntry
     }
     let entry = WebConsoleEntry(
@@ -48,7 +50,8 @@ public struct WebObservationBuffer: Sendable {
   public mutating func appendNetwork(
     method: String, url: String, status: UInt32, durationMs: UInt32, bytes: UInt64, at: String
   ) throws {
-    guard !method.isEmpty, method.utf8.count <= 32, !url.isEmpty, url.utf8.count <= 4_096,
+    guard !method.isEmpty, method.utf8.count <= 32, !url.isEmpty,
+      url.utf8.count <= ProtocolLimits.webFieldBytes,
       status <= 999, validTimestamp(at)
     else { throw WebObservationError.invalidNetworkEntry }
     let entry = WebNetworkEntry(

@@ -365,6 +365,67 @@ class SchemaTests(unittest.TestCase):
             self.assertNotIn("eventId", properties, name)
             self.assertNotIn("at", properties, name)
 
+    def test_web_field_bounds_are_the_named_limits(self):
+        """Each web string or extent is bounded by the limit that names it."""
+        limits = self.schema["x-limits"]
+        bounds = {
+            "webFieldBytes": [
+                ("WebSnapshotNode", "value"),
+                ("WebConsoleEntry", "source"),
+                ("WebNetworkEntry", "url"),
+                ("WebComponentSource", "sourceFile"),
+                ("WebPickedElement", "selector"),
+                ("WebElementPackage", "url"),
+                ("WebOpenParams", "url"),
+                ("WebNavigateParams", "url"),
+                ("WebWaitParams", "text"),
+                ("WebWaitParams", "selector"),
+                ("WebSelectParams", "value"),
+            ],
+            "webTextBytes": [("WebConsoleEntry", "text")],
+            "webLabelBytes": [
+                ("WebSnapshotNode", "name"),
+                ("WebSnapshotNode", "state"),
+                ("WebAccessibility", "name"),
+                ("WebAccessibility", "state"),
+            ],
+            "webTitleBytes": [("WebElementPackage", "title")],
+            "webPartBytes": [
+                ("WebComputedStyles", "background"),
+                ("WebComputedStyles", "font"),
+                ("WebComputedStyles", "border"),
+                ("WebComponentSource", "component"),
+            ],
+            "webTokenBytes": [
+                ("WebSnapshotNode", "role"),
+                ("WebAccessibility", "role"),
+                ("WebComputedStyles", "boxSizing"),
+                ("WebComputedStyles", "color"),
+                ("WebComputedStyles", "borderRadius"),
+                ("WebComputedStyles", "display"),
+                ("WebComputedStyles", "position"),
+            ],
+        }
+        definitions = self.schema["$defs"]
+        for limit, fields in bounds.items():
+            for definition, field in fields:
+                self.assertEqual(
+                    definitions[definition]["properties"][field]["maxLength"],
+                    limits[limit],
+                    f"{definition}.{field} against {limit}",
+                )
+        self.assertEqual(
+            definitions["WebPickedElement"]["properties"]["path"]["items"]["maxLength"],
+            limits["webPartBytes"],
+        )
+        for definition in ("WebViewport", "WebRect"):
+            for field in ("width", "height"):
+                self.assertEqual(
+                    definitions[definition]["properties"][field]["maximum"],
+                    limits["webExtentMax"],
+                    f"{definition}.{field}",
+                )
+
     def test_browser_mutations_require_idempotency_but_reverse_commands_use_operation_keys(self):
         for name, method in self.schema["x-methods"].items():
             if not name.startswith("web.") or not method["mutation"]:

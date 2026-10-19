@@ -108,8 +108,8 @@ private struct PageObservationMessage: Decodable {
 
   private func appendConsole(_ item: PageObservationMessage) {
     guard let level = item.level.flatMap(WebConsoleLevel.init(rawValue:)),
-      let text = item.text.flatMap({ bounded($0, bytes: 16_384) }),
-      let source = item.source.flatMap({ bounded($0, bytes: 4_096) }),
+      let text = item.text.flatMap({ bounded($0, bytes: ProtocolLimits.webTextBytes) }),
+      let source = item.source.flatMap({ bounded($0, bytes: ProtocolLimits.webFieldBytes) }),
       let at = boundedTimestamp(item.at)
     else { return }
     guard (try? buffer.appendConsole(level: level, text: text, source: source, at: at)) != nil
@@ -119,7 +119,8 @@ private struct PageObservationMessage: Decodable {
 
   private func appendNetwork(_ item: PageObservationMessage) {
     guard let method = item.method.flatMap({ bounded($0, bytes: 32) }), !method.isEmpty,
-      let url = item.url.flatMap({ bounded($0, bytes: 4_096) }), !url.isEmpty,
+      let url = item.url.flatMap({ bounded($0, bytes: ProtocolLimits.webFieldBytes) }),
+      !url.isEmpty,
       let status = item.status, status <= 999, let at = boundedTimestamp(item.at),
       let bytes = item.bytes.flatMap(UInt64.init)
     else { return }
@@ -187,19 +188,19 @@ extension WebPageObservation {
           return bounded(encoded === undefined ? value : encoded, 2048);
         } catch (_) { return bounded(value, 2048); }
       };
-      const source = () => bounded(location.href || "", 4096);
+      const source = () => bounded(location.href || "", \#(ProtocolLimits.webFieldBytes));
       const state = globalThis.__soyehtObservation = {active:0,lastActivity:Date.now()};
       for (const level of ["debug", "log", "info", "warn", "error"]) {
         const original = console[level].bind(console);
         console[level] = (...args) => {
           original(...args);
           send({kind:"console", level:level === "warn" ? "warning" : level === "log" ? "info" : level,
-            text:bounded(args.slice(0,32).map(text).join(" "),16384), source:source(), at:at()});
+            text:bounded(args.slice(0,32).map(text).join(" "),\#(ProtocolLimits.webTextBytes)), source:source(), at:at()});
         };
       }
       const finish = (started, method, url, status) => {
         state.active = Math.max(0, state.active - 1); state.lastActivity = Date.now();
-        send({kind:"network", method:bounded(method,32), url:bounded(url,4096),
+        send({kind:"network", method:bounded(method,32), url:bounded(url,\#(ProtocolLimits.webFieldBytes)),
           status:Number(status) || 0, durationMs:Math.min(4294967295,Math.round(performance.now()-started)),
           bytes:"0", at:at()});
       };

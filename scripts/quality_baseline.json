@@ -184,9 +184,6 @@
     "engine/soyeht-lsp/tests/fake-server/program.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-mcp/src/tools/schemas.rs": {
-      "rust_limits": 5
-    },
     "engine/soyeht-pane-state/src/model.rs": {
       "rust_limits": 2
     },
@@ -205,20 +202,14 @@
     "engine/soyeht-store/tests/storage.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-web/src/command.rs": {
-      "rust_limits": 2
-    },
-    "engine/soyeht-web/src/element.rs": {
-      "rust_limits": 7
-    },
     "engine/soyeht-web/src/local_server.rs": {
       "rust_limits": 2
     },
     "engine/soyeht-web/src/ring.rs": {
-      "rust_limits": 3
+      "rust_limits": 1
     },
     "engine/soyeht-web/src/snapshot.rs": {
-      "rust_limits": 2
+      "rust_limits": 1
     },
     "engine/soyeht-writing/src/beats.rs": {
       "rust_limits": 1

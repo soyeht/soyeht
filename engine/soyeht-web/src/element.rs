@@ -14,7 +14,10 @@ pub fn build_element_package(
     captures: Vec<ElementCapture>,
 ) -> Result<WebElementPackage> {
     let url = NormalizedUrl::parse(url)?;
-    if captures.is_empty() || captures.len() > limits::WEB_PICKED_ELEMENTS || title.len() > 1024 {
+    if captures.is_empty()
+        || captures.len() > limits::WEB_PICKED_ELEMENTS
+        || title.len() > limits::WEB_TITLE_BYTES
+    {
         return Err(Error::ElementLimit);
     }
     let mut elements = Vec::with_capacity(captures.len());
@@ -41,8 +44,11 @@ fn validate_element(capture: &ElementCapture) -> Result<()> {
     let element = &capture.element;
     let image_bytes = element.image.bytes.parse::<usize>().ok();
     let valid = !element.selector.is_empty()
-        && element.selector.len() <= 4096
-        && element.path.iter().all(|part| part.len() <= 512)
+        && element.selector.len() <= limits::WEB_FIELD_BYTES
+        && element
+            .path
+            .iter()
+            .all(|part| part.len() <= limits::WEB_PART_BYTES)
         && element.outer_html.len() <= limits::WEB_OUTER_HTML_BYTES
         && valid_styles(element)
         && valid_accessibility(element)
@@ -63,34 +69,34 @@ fn validate_element(capture: &ElementCapture) -> Result<()> {
 
 fn valid_styles(element: &WebPickedElement) -> bool {
     let styles = &element.styles;
-    styles.box_sizing.len() <= 256
-        && styles.color.len() <= 256
-        && styles.background.len() <= 512
-        && styles.font.len() <= 512
-        && styles.border.len() <= 512
-        && styles.border_radius.len() <= 256
-        && styles.display.len() <= 256
-        && styles.position.len() <= 256
+    styles.box_sizing.len() <= limits::WEB_TOKEN_BYTES
+        && styles.color.len() <= limits::WEB_TOKEN_BYTES
+        && styles.background.len() <= limits::WEB_PART_BYTES
+        && styles.font.len() <= limits::WEB_PART_BYTES
+        && styles.border.len() <= limits::WEB_PART_BYTES
+        && styles.border_radius.len() <= limits::WEB_TOKEN_BYTES
+        && styles.display.len() <= limits::WEB_TOKEN_BYTES
+        && styles.position.len() <= limits::WEB_TOKEN_BYTES
 }
 
 fn valid_accessibility(element: &WebPickedElement) -> bool {
-    element.accessibility.role.len() <= 256
-        && element.accessibility.name.len() <= 2048
-        && element.accessibility.state.len() <= 2048
+    element.accessibility.role.len() <= limits::WEB_TOKEN_BYTES
+        && element.accessibility.name.len() <= limits::WEB_LABEL_BYTES
+        && element.accessibility.state.len() <= limits::WEB_LABEL_BYTES
 }
 
 fn valid_component(element: &WebPickedElement) -> bool {
     element.component.as_ref().is_none_or(|component| {
         component.framework.len() <= 64
-            && component.component.len() <= 512
+            && component.component.len() <= limits::WEB_PART_BYTES
             && component
                 .source_file
                 .as_ref()
-                .is_none_or(|source| source.len() <= 4096)
+                .is_none_or(|source| source.len() <= limits::WEB_FIELD_BYTES)
             && component.line.is_none_or(|line| line > 0)
     })
 }
 
 fn valid_rect(rect: &soyeht_protocol::WebRect) -> bool {
-    rect.width <= 16_384 && rect.height <= 16_384
+    rect.width as usize <= limits::WEB_EXTENT_MAX && rect.height as usize <= limits::WEB_EXTENT_MAX
 }

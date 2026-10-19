@@ -56,6 +56,13 @@ public enum ProtocolLimits {
     public static let localServerEntries = 50
     public static let webPickedElements = 20
     public static let webOuterHtmlBytes = 2048
+    public static let webFieldBytes = 4096
+    public static let webTextBytes = 16384
+    public static let webLabelBytes = 2048
+    public static let webTitleBytes = 1024
+    public static let webPartBytes = 512
+    public static let webTokenBytes = 256
+    public static let webExtentMax = 16384
     public static let webPickCropWidth = 640
     public static let promptAttachments = 20
     public static let promptAttachmentBytes = 10485760

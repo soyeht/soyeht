@@ -221,7 +221,7 @@ pub(super) fn web_open_schema() -> Value {
         fields(&[
             (
                 "url",
-                json!({"type":"string","minLength":1,"maxLength":4096}),
+                json!({"type":"string","minLength":1,"maxLength":soyeht_protocol::limits::WEB_FIELD_BYTES}),
             ),
             ("workspaceId", id()),
             ("newPane", boolean()),
@@ -238,7 +238,7 @@ pub(super) fn web_navigate_schema() -> Value {
             ("paneId", id()),
             (
                 "url",
-                json!({"type":"string","minLength":1,"maxLength":4096}),
+                json!({"type":"string","minLength":1,"maxLength":soyeht_protocol::limits::WEB_FIELD_BYTES}),
             ),
             (
                 "action",
@@ -297,7 +297,10 @@ pub(super) fn web_select_schema() -> Value {
         fields(&[
             ("paneId", id()),
             ("ref", id()),
-            ("value", bounded_string(4096)),
+            (
+                "value",
+                bounded_string(soyeht_protocol::limits::WEB_FIELD_BYTES),
+            ),
         ]),
         &["paneId", "ref", "value"],
     )
@@ -319,8 +322,14 @@ pub(super) fn web_wait_schema() -> Value {
     object(
         fields(&[
             ("paneId", id()),
-            ("text", bounded_string(4096)),
-            ("selector", bounded_string(4096)),
+            (
+                "text",
+                bounded_string(soyeht_protocol::limits::WEB_FIELD_BYTES),
+            ),
+            (
+                "selector",
+                bounded_string(soyeht_protocol::limits::WEB_FIELD_BYTES),
+            ),
             ("networkIdle", boolean()),
             ("timeoutMs", integer(0, 60_000)),
         ]),

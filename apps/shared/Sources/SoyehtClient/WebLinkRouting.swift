@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SoyehtProtocol
 import SwiftUI
 
 public enum WebLinkDestination: Equatable, Sendable {
@@ -39,7 +40,8 @@ public enum WebLinkRouting {
   }
 
   private static func normalized(_ value: String) -> URL? {
-    guard value.utf8.count <= 4_096, let components = URLComponents(string: value),
+    guard value.utf8.count <= ProtocolLimits.webFieldBytes,
+      let components = URLComponents(string: value),
       let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
       components.host?.isEmpty == false, components.user == nil, components.password == nil,
       let url = components.url

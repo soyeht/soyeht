@@ -369,7 +369,9 @@ import WebKit
           unsigned(args, "height").requiredViewportValue()
         )
       }
-    guard size.0 <= 16_384, size.1 <= 16_384 else {
+    guard size.0 <= UInt32(ProtocolLimits.webExtentMax),
+      size.1 <= UInt32(ProtocolLimits.webExtentMax)
+    else {
       throw ClientFailure.webHost(.internal_error, "The web viewport is invalid.")
     }
     return size

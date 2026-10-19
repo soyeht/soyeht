@@ -25,7 +25,11 @@ pub fn viewport(
             height.ok_or(Error::InvalidViewport)?,
         ),
     };
-    if width == 0 || height == 0 || width > 16_384 || height > 16_384 {
+    if width == 0
+        || height == 0
+        || width as usize > limits::WEB_EXTENT_MAX
+        || height as usize > limits::WEB_EXTENT_MAX
+    {
         return Err(Error::InvalidViewport);
     }
     if rotate {
@@ -83,8 +87,10 @@ fn validate_wait(args: &serde_json::Value, timeout_ms: u32) -> Result<()> {
         .get("networkIdle")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    let has_condition = text.is_some_and(|value| !value.is_empty() && value.len() <= 4096)
-        || selector.is_some_and(|value| !value.is_empty() && value.len() <= 4096)
+    let has_condition = text
+        .is_some_and(|value| !value.is_empty() && value.len() <= limits::WEB_FIELD_BYTES)
+        || selector
+            .is_some_and(|value| !value.is_empty() && value.len() <= limits::WEB_FIELD_BYTES)
         || network_idle;
     if has_condition && timeout_ms as usize <= limits::WEB_WAIT_TIMEOUT_MS {
         Ok(())

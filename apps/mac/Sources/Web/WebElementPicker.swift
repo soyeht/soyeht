@@ -40,7 +40,8 @@ private struct PickedMetadata: Decodable {
     else { return nil }
     return WebElementSelection(
       package: WebElementPackage(
-        url: String(url.prefix(4_096)), title: String((webView.title ?? "").prefix(1_024)),
+        url: String(url.prefix(ProtocolLimits.webFieldBytes)),
+        title: String((webView.title ?? "").prefix(ProtocolLimits.webTitleBytes)),
         elements: elements),
       images: images)
   }
@@ -198,7 +199,7 @@ extension WebElementPicker {
       const parts = [];
       for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
         parts.unshift(bytes(node.tagName.toLowerCase() + Array.from(node.classList).slice(0, 6)
-          .map(value => `.${value}`).join(""), 512));
+          .map(value => `.${value}`).join(""), \#(ProtocolLimits.webPartBytes)));
       }
       return parts.slice(-64);
     };
@@ -206,9 +207,9 @@ extension WebElementPicker {
       INPUT:element.type === "checkbox" ? "checkbox" : "textbox",SELECT:"combobox",
       TEXTAREA:"textbox",SUMMARY:"button"}[element.tagName] || element.tagName.toLowerCase());
     const accessibility = element => ({
-      role: bytes(role(element), 256),
+      role: bytes(role(element), \#(ProtocolLimits.webTokenBytes)),
       name: bytes(String(element.getAttribute("aria-label") || element.alt || element.title ||
-        element.innerText || "").trim(), 2048),
+        element.innerText || "").trim(), \#(ProtocolLimits.webLabelBytes)),
       state: bytes([
         element.disabled ? "disabled" : "enabled",
         element.checked === true ? "checked" : "",
@@ -216,7 +217,7 @@ extension WebElementPicker {
         element.required === true ? "required" : "",
         element.getAttribute("aria-expanded") ? `expanded=${element.getAttribute("aria-expanded")}` : "",
         element.getAttribute("aria-invalid") ? `invalid=${element.getAttribute("aria-invalid")}` : ""
-      ].filter(Boolean).join(" "), 2048)
+      ].filter(Boolean).join(" "), \#(ProtocolLimits.webLabelBytes))
     });
     const component = element => {
       const keys = Object.getOwnPropertyNames(element);
@@ -226,8 +227,8 @@ extension WebElementPicker {
           const type = fiber.elementType || fiber.type;
           const name = type?.displayName || type?.name;
           const source = fiber._debugSource;
-          if (name) return {framework:"React",component:bytes(String(name),512),
-            ...(source?.fileName ? {sourceFile:bytes(String(source.fileName),4096)} : {}),
+          if (name) return {framework:"React",component:bytes(String(name),\#(ProtocolLimits.webPartBytes)),
+            ...(source?.fileName ? {sourceFile:bytes(String(source.fileName),\#(ProtocolLimits.webFieldBytes))} : {}),
             ...(source?.lineNumber > 0 ? {line:Math.min(4294967295,source.lineNumber)} : {})};
         }
       }
@@ -236,13 +237,13 @@ extension WebElementPicker {
       if (vue || inspector) {
         const file = vue?.type?.__file || inspector?.replace(/:\d+:\d+$/, "");
         const line = inspector?.match(/:(\d+):\d+$/)?.[1];
-        return {framework:"Vue",component:bytes(String(vue?.type?.name || file?.split("/").pop() || "component"),512),
-          ...(file ? {sourceFile:bytes(String(file),4096)} : {}),
+        return {framework:"Vue",component:bytes(String(vue?.type?.name || file?.split("/").pop() || "component"),\#(ProtocolLimits.webPartBytes)),
+          ...(file ? {sourceFile:bytes(String(file),\#(ProtocolLimits.webFieldBytes))} : {}),
           ...(line ? {line:Number(line)} : {})};
       }
       const svelte = element.__svelte_meta;
-      if (svelte) return {framework:"Svelte",component:bytes(String(svelte.component || "component"),512),
-        ...(svelte.loc?.file ? {sourceFile:bytes(String(svelte.loc.file),4096)} : {}),
+      if (svelte) return {framework:"Svelte",component:bytes(String(svelte.component || "component"),\#(ProtocolLimits.webPartBytes)),
+        ...(svelte.loc?.file ? {sourceFile:bytes(String(svelte.loc.file),\#(ProtocolLimits.webFieldBytes))} : {}),
         ...(svelte.loc?.line > 0 ? {line:Number(svelte.loc.line)} : {})};
       return null;
     };
@@ -250,14 +251,14 @@ extension WebElementPicker {
       const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       const bounded = value => Math.max(-2147483648, Math.min(2147483647, Math.round(value)));
-      const size = value => Math.max(0, Math.min(16384, Math.round(value)));
+      const size = value => Math.max(0, Math.min(\#(ProtocolLimits.webExtentMax), Math.round(value)));
       return {
-        selector: bytes(selector(element), 4096), path: path(element),
-        outerHtml: bytes(element.outerHTML || "", 2048),
-        styles: {boxSizing:bytes(style.boxSizing,256),color:bytes(style.color,256),
-          background:bytes(style.background,512),font:bytes(style.font,512),
-          border:bytes(style.border,512),borderRadius:bytes(style.borderRadius,256),
-          display:bytes(style.display,256),position:bytes(style.position,256)},
+        selector: bytes(selector(element), \#(ProtocolLimits.webFieldBytes)), path: path(element),
+        outerHtml: bytes(element.outerHTML || "", \#(ProtocolLimits.webOuterHtmlBytes)),
+        styles: {boxSizing:bytes(style.boxSizing,\#(ProtocolLimits.webTokenBytes)),color:bytes(style.color,\#(ProtocolLimits.webTokenBytes)),
+          background:bytes(style.background,\#(ProtocolLimits.webPartBytes)),font:bytes(style.font,\#(ProtocolLimits.webPartBytes)),
+          border:bytes(style.border,\#(ProtocolLimits.webPartBytes)),borderRadius:bytes(style.borderRadius,\#(ProtocolLimits.webTokenBytes)),
+          display:bytes(style.display,\#(ProtocolLimits.webTokenBytes)),position:bytes(style.position,\#(ProtocolLimits.webTokenBytes))},
         accessibility: accessibility(element),
         viewportRect:{x:bounded(rect.x),y:bounded(rect.y),width:size(rect.width),height:size(rect.height)},
         pageRect:{x:bounded(rect.x + scrollX),y:bounded(rect.y + scrollY),width:size(rect.width),height:size(rect.height)},
