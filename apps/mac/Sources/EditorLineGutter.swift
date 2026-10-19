@@ -27,11 +27,24 @@ import SoyehtProtocol
   private var agentCursors: [UInt32: String] = [:]
   var selectedLine: UInt32?
 
+  /// Draws again whenever the text scrolls or the text view moves (`EditorGutterInvalidation`);
+  /// the gutter sits beside the scroll view, so AppKit does not do it.
+  private var invalidation: EditorGutterInvalidation?
+
   init(scrollView: NSScrollView, textView: NSTextView) {
     self.scrollView = scrollView
     self.textView = textView
     super.init(frame: .zero)
     wantsLayer = true
+    invalidation = EditorGutterInvalidation(scrollView: scrollView, textView: textView) {
+      [weak self] in
+      self?.needsDisplay = true
+    }
+  }
+
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    needsDisplay = true
   }
 
   required init?(coder: NSCoder) {
@@ -60,10 +73,12 @@ import SoyehtProtocol
     needsDisplay = true
   }
 
-  override func draw(_ rect: NSRect) {
-    super.draw(rect)
+  /// Always paints the whole gutter: a partial dirty rect would leave what an earlier draw put
+  /// in the rest of it.
+  override func draw(_ dirtyRect: NSRect) {
+    super.draw(dirtyRect)
     NSColor(MacTheme.face).setFill()
-    rect.fill()
+    bounds.fill()
     guard let textView, let scrollView, layout.lineCount > 0 else { return }
     let offset = scrollView.contentView.bounds.minY
     let inset = textView.textContainerInset.height
@@ -75,9 +90,9 @@ import SoyehtProtocol
     for index in layout.line(atRow: max(0, topRow - slack))..<layout.lineCount {
       let line = startLine + UInt32(clamping: index)
       let y = inset + lineTop(index, in: textView) - offset
-      if y > rect.maxY { break }
+      if y > bounds.maxY { break }
       let height = CGFloat(layout.rows(ofLine: index)) * Self.rowHeight
-      guard y + height >= rect.minY else { continue }
+      guard y + height >= bounds.minY else { continue }
       if selectedLine == line {
         NSColor(MacTheme.well).setFill()
         NSRect(x: 0, y: y, width: bounds.width, height: height).fill()
