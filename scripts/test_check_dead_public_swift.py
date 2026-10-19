@@ -97,6 +97,22 @@ class DeadPublicSwiftTests(unittest.TestCase):
     def test_a_name_after_a_url_string_on_the_same_line_is_still_a_reference(self):
         self.assertNotIn("calledAfterAUrl", self.names(self.fixture()))
 
+    def test_a_comment_opener_inside_a_string_hides_no_code(self):
+        root = self.fixture()
+        (root / "apps/shared/Sources/Client/Library.swift").write_text(
+            'public func glob() -> String { "src/*.swift" }\n'
+            'public func slashes() -> String { #"a // b /* c"# }\n'
+            'public func block() -> String { """\n  /* text\n  """ }\n'
+            "public func deadAfterTheLiterals() {}\n"
+            "public func nested() {} /* outer /* inner */\n"
+            "public func hiddenByTheComment() {} */\n"
+            "public func after() {}\n"
+        )
+        (root / "apps/mac/Sources/App.swift").write_text(
+            "func run() { _ = glob(); _ = slashes(); _ = block() }\n"
+        )
+        self.assertEqual(self.names(root), ["deadAfterTheLiterals", "nested", "after"])
+
     def test_framework_names_and_internal_declarations_are_never_listed(self):
         names = self.names(self.fixture())
         self.assertNotIn("body", names)

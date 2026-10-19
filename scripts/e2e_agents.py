@@ -13,7 +13,7 @@ from e2e import (
     run_suite,
     send,
 )
-from e2e_platform import connect_endpoint, database
+from e2e_platform import connect_endpoint, database, executable
 from generated_profile import DEV_PTYD_SOCKET
 
 
@@ -112,7 +112,7 @@ def supervisor_pending(services, generation, instance):
 
 
 def harness_registry(services):
-    fake = services.binaries / "soyeht-fake-acp"
+    fake = services.binaries / executable("soyeht-fake-acp")
     entries = []
     for harness, policy in [("test", "supported"), ("no-load", "unsupported"),
                             ("advertised", "advertised-only"), ("login", "supported")]:

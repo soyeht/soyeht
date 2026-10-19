@@ -8,8 +8,9 @@ its own declaration names stays in the shared package for ever. The check lists 
 (`apps/shared`, `apps/dictation`, `apps/mac`, `apps/ios`, their tests, and the generated
 `contracts/swift` sources), comments left out. The match is by name, so a name shared with
 another declaration, a protocol requirement or a member of the standard library counts as
-used: the check misses some dead code and never reports live code, apart from the reviewed
-entries of `scripts/dead_public_swift_allowlist.json`.
+used: the check misses some dead code. It can also report a declaration that a framework
+calls without naming it; the names in `CALLED_BY_FRAMEWORK` and the reviewed entries of
+`scripts/dead_public_swift_allowlist.json` cover those.
 
 Delete the declaration (and the tests that only exercise it), make it `internal` when only the
 package itself uses it, or, when the framework reaches it in a way the name does not show,
@@ -42,7 +43,7 @@ PUBLIC_DECLARATION = re.compile(
     re.M,
 )
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
-BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+STRING_START = re.compile(r'(#*)("""|")')
 # The framework calls these by name: a SwiftUI view's `body`, the `Codable`, `Hashable` and
 # `LocalizedError` witnesses, the representable and style hooks, and `callAsFunction`.
 CALLED_BY_FRAMEWORK = {
@@ -78,23 +79,62 @@ def swift_files(root: Path, relative: str) -> list[Path]:
     )
 
 
-def without_line_comment(line: str) -> str:
-    """Cut a line at its `//` unless the `//` sits inside a string literal of the line."""
-    position = line.find("//")
-    while position >= 0:
-        inside = line.count('"', 0, position) - line.count('\\"', 0, position)
-        if inside % 2 == 0:
-            return line[:position]
-        position = line.find("//", position + 2)
-    return line
+def blank_comments(source: str) -> str:
+    """Replace the comments of Swift source with example, keeping its line numbers.
+
+    String literals are skipped whole, so a `//` or a `/*` inside one is text, not a comment.
+    Block comments nest, as they do in Swift.
+    """
+    out: list[str] = []
+    i, n = 0, len(source)
+    while i < n:
+        if source.startswith("//", i):
+            end = source.find("\n", i)
+            end = n if end < 0 else end
+            out.append(" " * (end - i))
+            i = end
+        elif source.startswith("/*", i):
+            depth, end = 1, i + 2
+            while end < n and depth:
+                if source.startswith("/*", end):
+                    depth, end = depth + 1, end + 2
+                elif source.startswith("*/", end):
+                    depth, end = depth - 1, end + 2
+                else:
+                    end += 1
+            out.append(re.sub(r"[^\n]", " ", source[i:end]))
+            i = end
+        elif opening := STRING_START.match(source, i):
+            hashes, quotes = opening.group(1), opening.group(2)
+            end = string_end(source, opening.end(), hashes, quotes)
+            out.append(source[i:end])
+            i = end
+        else:
+            out.append(source[i])
+            i += 1
+    return "".join(out)
+
+
+def string_end(source: str, start: int, hashes: str, quotes: str) -> int:
+    """The offset after the string literal whose body begins at `start`."""
+    closing = quotes + hashes
+    escape = "\\" + hashes
+    i, n = start, len(source)
+    while i < n:
+        if source.startswith(escape, i):
+            i += len(escape) + 1
+        elif source.startswith(closing, i):
+            return i + len(closing)
+        elif len(quotes) == 1 and source[i] == "\n":
+            return i  # An unterminated single-line literal ends with its line.
+        else:
+            i += 1
+    return n
 
 
 def code_of(path: Path) -> str:
     """The source with its comments blanked and its line numbers kept."""
-    source = BLOCK_COMMENT.sub(
-        lambda match: re.sub(r"[^\n]", " ", match.group(0)), path.read_text(encoding="utf-8")
-    )
-    return "\n".join(without_line_comment(line) for line in source.split("\n"))
+    return blank_comments(path.read_text(encoding="utf-8"))
 
 
 def referenced_names(root: Path) -> Counter[str]:

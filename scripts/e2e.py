@@ -252,7 +252,8 @@ class Services:
 
     def install_fake_acp(self, binaries):
         """Puts the fake ACP agent where the harness registry of a run looks for it."""
-        shutil.copy2(binaries / "soyeht-fake-acp", self.binaries / "soyeht-fake-acp")
+        fake = executable("soyeht-fake-acp")
+        shutil.copy2(binaries / fake, self.binaries / fake)
 
     def close_supervised_processes(self):
         try:

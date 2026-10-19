@@ -8,7 +8,7 @@ import signal
 import subprocess
 
 from e2e import TEST_ENGINE, argument_parser, require, require_binaries, run_suite
-from e2e_platform import MACOS, WINDOWS, database
+from e2e_platform import MACOS, WINDOWS, database, executable
 from e2e_agents import AgentServices, request, until
 
 
@@ -32,8 +32,9 @@ class EditorServices(AgentServices):
         super().__init__(binaries, engine=TEST_ENGINE)
 
     def install_fakes(self, binaries):
-        shutil.copy2(binaries / "soyeht-fake-lsp", self.binaries / "rust-analyzer")
-        (self.binaries / "rust-analyzer").chmod(0o700)
+        analyzer = self.binaries / executable("rust-analyzer")
+        shutil.copy2(binaries / executable("soyeht-fake-lsp"), analyzer)
+        analyzer.chmod(0o700)
         readers = self.data / "usage-readers"
         readers.mkdir(mode=0o700)
         # The fixture layout the test engine's FixtureHost reads (engine usage/fixture_host.rs): home/

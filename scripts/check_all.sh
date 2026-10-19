@@ -232,6 +232,7 @@ step always both layers:check uv run python scripts/check_layers.py
 step always both quality:check uv run python scripts/check_quality.py
 step always both dead-pub:unit uv run python -m unittest discover -s scripts -p 'test_check_dead_pub.py'
 step always both dead-pub:check uv run python scripts/check_dead_pub.py
+step always both e2e:unit uv run python -m unittest discover -s scripts -p 'test_e2e_platform.py'
 step always both dead-public-swift:unit uv run python -m unittest discover -s scripts -p 'test_check_dead_public_swift.py'
 step always both dead-public-swift:check uv run python scripts/check_dead_public_swift.py
 step always both logging:unit uv run python -m unittest discover -s scripts -p 'test_check_logging.py'
