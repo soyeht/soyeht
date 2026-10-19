@@ -1,28 +1,11 @@
 use super::*;
+use crate::web::test_support::{next_json, reply, request, temp_root};
 use crate::{
     dispatch::Outcome, model::RunningPane, outbox, ports::testing::FixedClock, screen::Screen,
 };
 use serde_json::json;
-use soyeht_protocol::{Actor, ErrorKind, WebCommandKind, frame::Frame};
-use std::{fs, path::PathBuf, sync::Arc};
-
-fn request(id: u64, method: &str, params: Value) -> Value {
-    json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})
-}
-
-fn reply(core: &mut Core, connection: &str, request: Value) -> Value {
-    let Outcome::Reply(value) = core.dispatch(connection, request).unwrap() else {
-        panic!("expected reply")
-    };
-    value
-}
-
-async fn next_json(receiver: &mut outbox::Receiver) -> Value {
-    let Frame::Json(bytes) = receiver.next().await.unwrap().unwrap().frame else {
-        panic!("expected JSON frame")
-    };
-    serde_json::from_slice(&bytes).unwrap()
-}
+use soyeht_protocol::{Actor, ErrorKind, WebCommandKind};
+use std::{path::PathBuf, sync::Arc};
 
 async fn connect(core: &mut Core, host: bool) -> (String, outbox::Receiver) {
     let (sender, mut receiver) = outbox::channel();
@@ -39,12 +22,6 @@ async fn connect(core: &mut Core, host: bool) -> (String, outbox::Receiver) {
         ),
     );
     (connection, receiver)
-}
-
-fn temp_root() -> PathBuf {
-    let root = std::env::temp_dir().join(format!("soyeht-web-permission-{}", Uuid::new_v4()));
-    fs::create_dir_all(&root).unwrap();
-    root
 }
 
 async fn setup() -> (

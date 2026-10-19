@@ -157,29 +157,10 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{dispatch::Outcome, outbox};
+    use crate::outbox;
+    use crate::web::test_support::{next_json, reply, request, temp_root};
     use serde_json::json;
-    use soyeht_protocol::{ErrorKind, frame::Frame};
-    use std::{fs, path::PathBuf};
-    use uuid::Uuid;
-
-    fn request(id: u64, method: &str, params: Value) -> Value {
-        json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})
-    }
-
-    fn reply(core: &mut Core, connection: &str, request: Value) -> Value {
-        let Outcome::Reply(value) = core.dispatch(connection, request).unwrap() else {
-            panic!("expected reply")
-        };
-        value
-    }
-
-    async fn next_json(receiver: &mut outbox::Receiver) -> Value {
-        let Frame::Json(bytes) = receiver.next().await.unwrap().unwrap().frame else {
-            panic!("expected JSON frame")
-        };
-        serde_json::from_slice(&bytes).unwrap()
-    }
+    use soyeht_protocol::ErrorKind;
 
     async fn connect(
         core: &mut Core,
@@ -201,12 +182,6 @@ mod tests {
         );
         assert_eq!(welcome["role"], "human_local");
         (connection, receiver)
-    }
-
-    fn temp_root() -> PathBuf {
-        let root = std::env::temp_dir().join(format!("soyeht-web-open-{}", Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        root
     }
 
     #[tokio::test]

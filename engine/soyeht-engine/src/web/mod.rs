@@ -7,6 +7,8 @@ mod navigation;
 mod panes;
 mod permissions;
 mod system;
+#[cfg(test)]
+mod test_support;
 
 pub use host::WebWaiter;
 pub use system::SystemPortScan;
