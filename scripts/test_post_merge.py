@@ -907,11 +907,23 @@ class LoadRuleTests(RemoteHostCase):
         with mock.patch.dict(os.environ, {"FAKE_STEP": step}):
             return head, self.run_main(head, *extra)
 
-    def test_a_timing_step_that_failed_on_a_busy_host_is_rerun_after_the_load_drops(self):
-        head, code = self.fail_under_load("tm")
+    def flaky_record_under_load(self, *extra):
+        """The record of a timing step that failed on a busy host and passed on the rerun."""
+        head, code = self.fail_under_load("tm", *extra)
         self.assertEqual(code, 1)
         record = self.record(head)
         self.assertEqual(record["result"], "flaky")
+        return record
+
+    def probe_record(self, head, local_load):
+        """The record of a run whose culprit search reads the Mac's load from `local_load`."""
+        with mock.patch.object(post_merge, "local_load", local_load), \
+                mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
+            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
+        return self.record(head)
+
+    def test_a_timing_step_that_failed_on_a_busy_host_is_rerun_after_the_load_drops(self):
+        record = self.flaky_record_under_load()
         self.assertEqual(record["load"], {"host": "local", "average": 80.0, "cpus": 8})
         self.assertEqual(record["load_before_rerun"]["average"], 2.0)
         self.assertIn("busy; rerun after waiting", record["note"])
@@ -920,10 +932,7 @@ class LoadRuleTests(RemoteHostCase):
 
     def test_a_timing_step_that_failed_on_a_busy_host_is_rerun_on_the_remote_host(self):
         remote = ("--remote", "linux-host", "--remote-root", str(self.host_checkout))
-        head, code = self.fail_under_load("tm", *remote)
-        self.assertEqual(code, 1)
-        record = self.record(head)
-        self.assertEqual(record["result"], "flaky")
+        record = self.flaky_record_under_load(*remote)
         self.assertIn("rerun on linux-host", record["note"])
         self.assertEqual(self.pauses, [], "a quiet host needs no wait")
         directory, arguments = self.runs()[-1]
@@ -1028,10 +1037,7 @@ class LoadRuleTests(RemoteHostCase):
 
     def test_a_rerun_that_fails_on_a_host_that_is_still_busy_is_inconclusive(self):
         self.stay_busy()
-        head, code = self.fail_under_load("tm")
-        self.assertEqual(code, 1)
-        record = self.record(head)
-        self.assertEqual(record["result"], "flaky")
+        record = self.flaky_record_under_load()
         self.assertIn("inconclusive", record["note"])
         self.assertNotIn("culprit", record)
         self.assertNotIn("candidates", record)
@@ -1047,10 +1053,7 @@ class LoadRuleTests(RemoteHostCase):
         # The record of the run, then the load at the failure (busy), the first wait and the end of
         # the rerun (quiet); every later reading, the probes', is busy.
         readings = iter([QUIET, BUSY, QUIET, QUIET])
-        with mock.patch.object(post_merge, "local_load", lambda: next(readings, BUSY)), \
-                mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
-            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
-        record = self.record(head)
+        record = self.probe_record(head, lambda: next(readings, BUSY))
         self.assertNotIn("culprit", record, "a probe on a busy host blames nobody")
         self.assertEqual(len(record["candidates"]), 4)
         self.assertEqual(sum(self.pauses), post_merge.LOAD_WAIT_BUDGET_SECONDS, "one budget for all the probes")
@@ -1063,10 +1066,7 @@ class LoadRuleTests(RemoteHostCase):
         # The record of the run, the load at the failure and the end of the rerun are quiet (the
         # step fails because of `broken`); every reading of the probes is busy.
         readings = iter([QUIET, QUIET, QUIET])
-        with mock.patch.object(post_merge, "local_load", lambda: next(readings, BUSY)), \
-                mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
-            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
-        record = self.record(head)
+        record = self.probe_record(head, lambda: next(readings, BUSY))
         self.assertNotIn("culprit", record)
         self.assertEqual([c["subject"] for c in record["candidates"]], ["slows it down", "four", "five"],
                          "the pass of the older commit on a busy host counts as good")
@@ -1082,29 +1082,20 @@ class LoadRuleTests(RemoteHostCase):
             calls.append(1)
             return QUIET if len(calls) <= 4 or len(calls) % 2 == 0 else BUSY
 
-        with mock.patch.object(post_merge, "local_load", local_load), \
-                mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
-            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
-        record = self.record(head)
+        record = self.probe_record(head, local_load)
         self.assertNotIn("culprit", record)
         self.assertEqual([c["subject"] for c in record["candidates"]], ["slows it down", "four"])
 
     def test_an_unreachable_host_is_not_waited_for_and_the_rerun_waits_here(self):
         with mock.patch.object(post_merge, "remote_load", lambda remote: None):
-            head, code = self.fail_under_load("tm", *self.remote_options())
-        self.assertEqual(code, 1)
-        record = self.record(head)
-        self.assertEqual(record["result"], "flaky")
+            record = self.flaky_record_under_load(*self.remote_options())
         self.assertIn("rerun after waiting", record["note"])
         self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS], "the wait is the Mac's only")
 
     def test_a_busy_host_uses_the_budget_and_leaves_a_busy_mac_inconclusive(self):
         self.stay_busy()
         with mock.patch.object(post_merge, "remote_load", lambda remote: post_merge.Load(remote.host, 90.0, 8)):
-            head, code = self.fail_under_load("tm", *self.remote_options())
-        self.assertEqual(code, 1)
-        record = self.record(head)
-        self.assertEqual(record["result"], "flaky")
+            record = self.flaky_record_under_load(*self.remote_options())
         self.assertIn("inconclusive", record["note"])
         self.assertEqual(sum(self.pauses), post_merge.LOAD_WAIT_BUDGET_SECONDS)
 
