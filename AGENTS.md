@@ -108,7 +108,9 @@ ADR when you change a boundary.
 
 `scripts/check_quality.py` must match `scripts/quality_baseline.json` exactly:
 
-- jscpd clones and duplicated lines per area may not grow.
+- jscpd clones and duplicated lines per area may not grow. The areas are the engine, the
+  desktop (and its views at a smaller window), each Swift package, and the Python of
+  `scripts/` and `contracts/`.
 - A new file may not exceed 800 lines. A file already above 800 lines may not
   grow past its recorded cap. Split it instead.
 - Loose Swift padding, corner-radius, font-size and font-name literals, and Rust

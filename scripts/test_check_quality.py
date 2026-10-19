@@ -360,6 +360,21 @@ class QualityRatchetTests(unittest.TestCase):
         self.assertGreater(views["clones"], 0)
         self.assertEqual(default["clones"], 0)
 
+    def test_the_python_scan_counts_a_body_repeated_in_two_scripts(self):
+        jscpd, _ = tool_paths(ROOT)
+        body = "def run(values):\n" + "".join(
+            f"    value_{i} = values[{i}] + {i} * 2\n" for i in range(12)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            (scripts / "one.py").write_text(body)
+            (scripts / "two.py").write_text(body)
+            # `contracts` is absent: a folder the checkout lacks does not fail the scan.
+            actual = duplicate_measurement(root, "python", jscpd)
+        self.assertEqual(actual["clones"], 1)
+
     def test_disposable_file_at_801_lines_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -596,6 +611,12 @@ class GateFixture:
         self.mac_item.write_text(MAC_ITEM)
         self.rail = root / "apps/mac/Sources/AppRail.swift"
         self.rail.write_text(RAIL)
+        # jscpd writes no report for a folder whose sources are too short to measure.
+        (root / "scripts/tool.py").write_text(
+            "def run(values):\n"
+            + "".join(f"    value_{i} = values[{i}] + {i} * 2\n" for i in range(12))
+            + "    return value_0\n"
+        )
         self.refresh_baseline()
         publish_as_origin_main(root)
 

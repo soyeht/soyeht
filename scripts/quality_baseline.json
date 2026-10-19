@@ -24,6 +24,10 @@
       "clones": 29,
       "duplicated_lines": 203
     },
+    "python": {
+      "clones": 36,
+      "duplicated_lines": 341
+    },
     "shared": {
       "clones": 63,
       "duplicated_lines": 468

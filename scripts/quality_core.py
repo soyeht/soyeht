@@ -47,6 +47,9 @@ DUPLICATION_SCANS = {
     # The desktop views are built from chained calls that the 40-token scan never sees as
     # repeated: a smaller window finds the widgets written twice.
     "desktop_views": (("apps/desktop/crates/soyeht-desktop/src",), "rust"),
+    # The gate scripts, the end-to-end harness and the contract generator are code too: the
+    # e2e files repeat their setup, and nothing else counts it.
+    "python": (("scripts", "contracts"), "python"),
 }
 # (minimum lines, minimum tokens) of a clone; the scans not listed use the default.
 DEFAULT_CLONE_SIZE = (5, 40)
@@ -178,7 +181,9 @@ def rust_roots(repo: Path) -> list[Path]:
 def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int | float]:
     paths, language = DUPLICATION_SCANS[area]
     min_lines, min_tokens = CLONE_SIZES.get(area, DEFAULT_CLONE_SIZE)
-    if not any((repo / path).is_dir() for path in paths):
+    # A scan may span several folders; one a checkout does not have yet is not an error.
+    paths = tuple(path for path in paths if (repo / path).is_dir())
+    if not paths:
         return {"clones": 0, "duplicated_lines": 0, "percent": 0}
     with tempfile.TemporaryDirectory(prefix="soyeht-quality-jscpd-") as output:
         command = [
