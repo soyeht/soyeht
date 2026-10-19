@@ -94,8 +94,12 @@ in its git directory, is reused: the main checkout, the checkout the script runs
 worktree and any other directory are refused, so the force and the clean cannot reach anyone's
 work. A relative path is resolved before any check. A worktree that cannot be prepared (a
 killed git left `index.lock`) is recreated, and the persistent worktree is never removed as a
-stale one. The Rust half of the editor check, which stops at a missing report, is run here with
-the same limits, and its failure is red. The probes of a latency failure run older commits with the
+stale one. The Rust half of the editor check is the engine step `editor-performance:rust`, run
+before the check and, with `--remote`, on the quiet Linux host. A timing-sensitive step (that one
+and the `timing` area) records the host's load average, and one that fails on a busy host is rerun
+once on the remote host, or after the load drops, before main is called red: the extension of the
+flaky rerun above (see docs/dev-local.md). A host that stays busy, or a rerun on the remote host that
+passes where the Mac failed, blames no commit: the result is `flaky`. The probes of a latency failure run older commits with the
 newest report: a probe that fails as stale or missing is skipped, so such a commit is never
 blamed and the revert is not made on a guess.
 

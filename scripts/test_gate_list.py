@@ -47,6 +47,7 @@ STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast|build)$")
 AFTER_MERGE = (
     "engine:test", "desktop:test", "swift:test-shared", "swift:test-dictation", "swift:engine-binaries",
     "mac-app:build", "ios-app:build", "swift:check-swift", "editor-performance:check",
+    "editor-performance:rust",
 )
 
 

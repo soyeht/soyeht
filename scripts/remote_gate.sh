@@ -3,6 +3,7 @@
 #
 #   remote_gate.sh --sha FULL_SHA --steps ID[,ID...] [--base FULL_SHA] [--slot NAME]
 #   remote_gate.sh --print-timings [--slot NAME]
+#   remote_gate.sh --print-load
 #
 # Run from a checkout of the repository on a Linux host. It fetches the commit, checks it out
 # in a persistent worktree of that checkout (`.cache/remote-gate/tree`, so the build
@@ -11,7 +12,9 @@
 # host could not run the gate (the commit cannot be fetched or checked out). The restricted
 # vocabulary is never sent to the host: the steps that run here do not scan for it, and a
 # placeholder satisfies the gate's check that it is set. `--print-timings` prints the
-# per-step times of the last run.
+# per-step times of the last run; `--print-load` prints the host's 1-minute load average and its
+# processor count (`LOAD CPUS`), which post_merge.py reads to tell a timing failure caused by a
+# busy host from a regression.
 #
 # `--slot NAME` uses the worktree `.cache/remote-gate/tree-NAME` and its own timings file, so
 # two commits can run at once on one host; a worktree takes one run at a time (exit 75 when it
@@ -58,7 +61,7 @@ if [[ -f "$env_file" ]]; then
     . "$env_file" || exit 2
     set +a
 fi
-sha="" steps="" base="" slot="" print_timings=0
+sha="" steps="" base="" slot="" print_timings=0 print_load=0
 while (($#)); do
     case "$1" in
         --sha) sha="${2:?--sha needs a commit}"; shift 2 ;;
@@ -66,6 +69,7 @@ while (($#)); do
         --base) base="${2:?--base needs a commit}"; shift 2 ;;
         --slot) slot="${2:?--slot needs a name}"; shift 2 ;;
         --print-timings) print_timings=1; shift ;;
+        --print-load) print_load=1; shift ;;
         *) echo "remote_gate: unknown argument $1" >&2; exit 64 ;;
     esac
 done
@@ -76,6 +80,18 @@ fi
 tree="$state/tree${slot:+-$slot}"
 timings="$state/timings${slot:+-$slot}.json"
 
+if ((print_load)); then
+    if [[ -r /proc/loadavg ]]; then
+        read -r load _ < /proc/loadavg
+        cpus="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN)"
+    else
+        # macOS prints `{ 1.2 3.4 5.6 }`
+        load="$(sysctl -n vm.loadavg | tr -d '{}' | awk '{print $1}')"
+        cpus="$(sysctl -n hw.ncpu)"
+    fi
+    echo "$load $cpus"
+    exit
+fi
 if ((print_timings)); then
     cat "$timings"
     exit

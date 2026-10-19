@@ -313,6 +313,9 @@ step swift fast swift:test-shared-build swift build --package-path apps/shared
 step dictation full swift:test-dictation swift test --package-path apps/dictation
 step mac_app full mac-app:build bash scripts/check_mac.sh
 step always both editor-performance:unit uv run python -m unittest discover -s scripts -p 'test_check_editor_performance.py'
+# The Rust half of the editor check is an engine step: the post-merge run sends it to the quiet
+# Linux host when one is given, because a loaded host trips its latency limits (ADR 0092).
+step engine full editor-performance:rust uv run python scripts/check_editor_performance.py --rust
 step editor_perf full editor-performance:check uv run python scripts/check_editor_performance.py
 step ios_app full ios-app:build bash scripts/check_ios.sh
 

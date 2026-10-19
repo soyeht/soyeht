@@ -3,6 +3,11 @@
 
 Run --measure in a VM1 checkout and copy .cache/editor-performance-vm.json to
 the review checkout. The ordinary gate never launches a UI test on the host.
+
+`--rust` is the other half: the Rust editor benchmark (open 100k lines, search 1 GB) against its
+limits. It is its own gate step, `editor-performance:rust`, in the `engine` area, so that the
+post-merge run can send it to the quiet Linux host (docs/dev-local.md). It prints the host's
+load average, because a latency over the limit on a loaded host says little about the commit.
 """
 
 from __future__ import annotations
@@ -188,13 +193,17 @@ def run_vm_measurement() -> dict:
     return report
 
 
-def check() -> dict:
-    if not VM_REPORT.is_file():
-        raise RuntimeError(f"missing {VM_REPORT}; run Release UI measurement on VM1")
-    vm_report = json.loads(VM_REPORT.read_text())
-    failures = report_failures(vm_report, editor_tree_hash())
-    if failures:
-        raise RuntimeError("; ".join(failures))
+def load_summary() -> str:
+    """The 1-minute load average and the processor count, for a message."""
+    try:
+        return f"load average {os.getloadavg()[0]:.1f} on {os.cpu_count() or 1} cpus"
+    except OSError:
+        return "load average unknown"
+
+
+def check_rust() -> dict:
+    """Run the Rust editor benchmark and compare it with RUST_LIMITS."""
+    RUST_REPORT.parent.mkdir(exist_ok=True)  # the example does not create its directory
     subprocess.run(
         [
             "cargo", "run", "--locked", "--release", "--quiet", "-p", "soyeht-editor",
@@ -203,10 +212,22 @@ def check() -> dict:
         cwd=ROOT / "engine", check=True,
     )
     rust = json.loads(RUST_REPORT.read_text())
+    measured = ", ".join(f"{key}={rust[key]} ms" for key in RUST_LIMITS)
+    print(f"editor-performance: rust {measured} ({load_summary()})")
     for key, limit in RUST_LIMITS.items():
         if float(rust[key]) >= limit:
-            raise RuntimeError(f"{key}={rust[key]} ms >= {limit} ms")
-    report = vm_report | {"rust": rust, "checked_head": head()}
+            raise RuntimeError(f"{key}={rust[key]} ms >= {limit} ms ({load_summary()})")
+    return rust
+
+
+def check() -> dict:
+    if not VM_REPORT.is_file():
+        raise RuntimeError(f"missing {VM_REPORT}; run Release UI measurement on VM1")
+    vm_report = json.loads(VM_REPORT.read_text())
+    failures = report_failures(vm_report, editor_tree_hash())
+    if failures:
+        raise RuntimeError("; ".join(failures))
+    report = vm_report | {"checked_head": head()}
     REPORT.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return report
 
@@ -214,8 +235,14 @@ def check() -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--measure", action="store_true", help="run signed Release UI test on VM1")
+    parser.add_argument("--rust", action="store_true",
+                        help="run only the Rust editor benchmark against its limits")
     options = parser.parse_args()
     try:
+        if options.rust:
+            check_rust()
+            print("editor-performance: rust gate passed")
+            return 0
         report = run_vm_measurement() if options.measure else check()
         values = [run["key_work_p95_ms"] for run in report["runs"]]
         counts = [run["key_work_samples"] for run in report["runs"]]

@@ -297,8 +297,7 @@ class MeasurementTests(WatchCase):
         self.assertNotIn("last_sha", status)
         self.assertNotEqual(main_watch.NEEDS_MEASUREMENT_EXIT, main_watch.RED_EXIT)
 
-    @mock.patch.object(post_merge, "rust_editor_failures", return_value=[])  # no engine in the repository
-    def test_a_missing_measurement_found_by_the_real_gate_starts_no_search(self, _rust):
+    def test_a_missing_measurement_found_by_the_real_gate_starts_no_search(self):
         self.land("editor gate", {"scripts/check_all.sh": FAKE_EDITOR_GATE})
         report = self.base / "report.json"
         head = self.land("three", {"c": "3"})

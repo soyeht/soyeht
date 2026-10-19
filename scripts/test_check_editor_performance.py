@@ -79,6 +79,48 @@ class EditorPerformanceGateTests(unittest.TestCase):
             editor.write_text("different editor")
             self.assertNotEqual(gate.editor_tree_hash(root), initial)
 
+    def rust_check(self, open_ms: float):
+        with tempfile.TemporaryDirectory() as directory:
+            rust_report = Path(directory) / "rust.json"
+
+            def fake_cargo(_command, **_kwargs):
+                rust_report.write_text(json.dumps({"open_100k_ms": open_ms, "search_1gb_ms": 10.0}))
+
+            with (
+                mock.patch.object(gate, "CACHE", Path(directory)),
+                mock.patch.object(gate, "RUST_REPORT", rust_report),
+                mock.patch.object(gate.subprocess, "run", side_effect=fake_cargo) as cargo,
+                mock.patch.object(gate.os, "getloadavg", return_value=(61.5, 40.0, 30.0)),
+                mock.patch.object(gate.os, "cpu_count", return_value=24),
+            ):
+                try:
+                    return gate.check_rust(), cargo
+                except RuntimeError as error:
+                    return error, cargo
+
+    def test_the_rust_half_is_its_own_step_and_names_the_load_when_it_fails(self):
+        rust, cargo = self.rust_check(92.0)
+        self.assertEqual(rust["open_100k_ms"], 92.0)
+        self.assertIn("editor_performance", cargo.call_args.args[0])
+        error, _ = self.rust_check(243.0)
+        self.assertIsInstance(error, RuntimeError)
+        self.assertIn("open_100k_ms=243.0 ms >= 150.0 ms", str(error))
+        self.assertIn("load average 61.5 on 24 cpus", str(error))
+
+    def test_the_vm_check_no_longer_runs_the_rust_benchmark(self):
+        with tempfile.TemporaryDirectory() as directory:
+            vm_report = Path(directory) / "vm.json"
+            vm_report.write_text(json.dumps(report(run(), run(), run())))
+            with (
+                mock.patch.object(gate, "VM_REPORT", vm_report),
+                mock.patch.object(gate, "REPORT", Path(directory) / "report.json"),
+                mock.patch.object(gate, "editor_tree_hash", return_value="editor-hash"),
+                mock.patch.object(gate, "head", return_value="head"),
+                mock.patch.object(gate.subprocess, "run") as cargo,
+            ):
+                self.assertNotIn("rust", gate.check())
+            cargo.assert_not_called()
+
     def test_vm_command_uses_test_runner_environment_and_redacts_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             cache = Path(directory)

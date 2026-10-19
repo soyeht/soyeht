@@ -144,6 +144,22 @@ this and nothing else:
   settings come from `PATH/.cache/remote-gate/gate.env` (docs/platforms.md, "A Linux gate host").
 - `remote_gate.sh --print-timings` prints that timings file; `post_merge.py` merges it into
   the record of the run.
+- A timing-sensitive step (the `timing` area and `editor-performance:rust`, whose latency limits a
+  loaded machine trips: 243 ms against 150 ms at a load of 60 to 140, 92 ms when quiet) records the
+  load average of the host it ran on (`load` in the record; `local_load` is the Mac's, in every
+  record, and `remote_gate.sh --print-load` is the host's). The one rerun of such a step that failed
+  with a load over `LOAD_PER_CPU_LIMIT` (1.0 per processor, `SOYEHT_LOAD_PER_CPU_LIMIT`) goes to the
+  remote host when it is a Mac-side step and `--remote` is given (and the host is quiet and can run
+  it), else it waits for the load to drop. All the waiting of a run, the rerun and every probe of
+  the culprit search together, shares `LOAD_WAIT_BUDGET_SECONDS` (30 minutes), and the ssh that
+  reads the host's load times out after `LOAD_PROBE_TIMEOUT_SECONDS`. A pass is `flaky` as usual.
+  The culprit search probes on the host the rerun used, waiting for it to be quiet before each probe.
+  A host still busy when the budget is spent is inconclusive: a failed rerun is recorded `flaky` with
+  that note (no culprit, the next pass measures again), and a probe that fails on a busy host (or one
+  that turned busy) is skipped, so it gives candidates and reverts nothing. A probe that passes is
+  good on any host, because load can only slow a step.
+  The tradeoff: a regression that only the Mac shows in a `timing` step and that passes on Linux is
+  recorded `flaky`, not red, so it does not advance `last_green.json`; nothing is reverted for it.
 - The restricted vocabulary is not sent: the remote steps do not scan for it, and a
   placeholder satisfies the gate's check that it is set.
 - One run at a time per clone (`post_merge.py` holds the lock). Set
@@ -171,8 +187,8 @@ Without a valid report for the commit, `editor-performance:check` fails with "mi
   `post_merge.py`). No culprit is searched and nothing is reverted;
 - measure that editor version on VM1 (above), then run the watch again with `--editor-meter`: a
   commit recorded as `needs-measurement` runs again only when the report carries its hash;
-- the Rust half of the editor check, which stops at the missing report, runs anyway with the same
-  limits, and a failure there is red (`editor-performance:rust`, no culprit search);
+- the Rust half of the editor check is its own engine step, `editor-performance:rust`, which runs
+  before the check (so a missing report does not hide it) and, with `--remote`, on the Linux host;
 - a measured latency at or over 8 ms on a matching hash stays red, and its culprit search treats a
   commit whose probe fails as stale or missing as skipped, not blamed.
 

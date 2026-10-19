@@ -14,7 +14,7 @@ from unittest import mock
 import check_editor_performance
 import post_merge
 
-REAL_RUST_EDITOR_FAILURES = post_merge.rust_editor_failures
+REAL_REMOTE_LOAD = post_merge.remote_load  # LoadRuleTests replaces the module's
 
 # A stand-in for check_all.sh. The step named by FAKE_STEP (default `unit`) fails once the
 # file `broken` exists; `tcc` also fails without its prerequisite `snap` in `--only`.
@@ -302,10 +302,6 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         environment = mock.patch.dict(os.environ, {"FAKE_TRACE": str(self.trace)})
         environment.start()
         self.addCleanup(environment.stop)
-        # The synthetic repository has no engine to benchmark; one test runs the real function.
-        rust = mock.patch.object(post_merge, "rust_editor_failures", return_value=[])
-        rust.start()
-        self.addCleanup(rust.stop)
 
     def meter(self, content="ok", name="report.json", **fields):
         path = self.meters / name
@@ -390,41 +386,6 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         self.assertEqual(self.run_main(head, "--editor-meter", str(self.meter())), 0)
         self.assertEqual(self.record(head)["result"], "pass")
         self.assertGreater(len(self.runs()), runs)
-
-    def test_the_rust_half_of_the_editor_check_still_runs_and_its_failure_is_red(self):
-        head = self.add("two", {"b": "2"})
-        for failures, expected in (([], post_merge.NEEDS_MEASUREMENT_EXIT), (["open_100k_ms=200 ms >= 150 ms"], 1)):
-            with mock.patch.object(post_merge, "rust_editor_failures", return_value=failures) as rust:
-                self.assertEqual(self.run_main(head, "--force"), expected)
-            rust.assert_called_once()
-        record = self.record(head)
-        self.assertEqual((record["result"], record["failed_step"]), ("fail", post_merge.EDITOR_RUST_STEP))
-        self.assertIn("open_100k_ms=200", record["note"])
-        self.assertNotIn("culprit", record)
-        self.assertNotIn("candidates", record)  # no search: the step cannot be probed alone
-
-    def test_the_rust_benchmark_is_run_with_the_limits_of_the_editor_check(self):
-        bin_dir = self.root.parent / "bin"
-        bin_dir.mkdir()
-        cargo = bin_dir / "cargo"
-        cargo.write_text(
-            '#!/bin/bash\nreport="${@: -1}"\n[[ "${FAKE_CARGO_EXIT:-0}" == 0 ]] || exit "$FAKE_CARGO_EXIT"\n'
-            'echo "$PWD $*" >> "$FAKE_CARGO_LOG"\n'
-            'printf \'{"open_100k_ms": %s, "search_1gb_ms": 10}\' "${FAKE_OPEN_MS:-1}" > "$report"\n')
-        cargo.chmod(0o755)
-        tree = self.root.parent / "tree"
-        (tree / "engine").mkdir(parents=True)
-        log = self.root.parent / "rust.log"
-        environment = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_CARGO_LOG": str(self.root.parent / "cargo.txt")}
-        with mock.patch.dict(os.environ, environment):
-            self.assertEqual(REAL_RUST_EDITOR_FAILURES(tree, log), [])
-            with mock.patch.dict(os.environ, {"FAKE_OPEN_MS": "150.0"}):
-                self.assertEqual(len(REAL_RUST_EDITOR_FAILURES(tree, log)), 1)
-            with mock.patch.dict(os.environ, {"FAKE_CARGO_EXIT": "3"}):
-                self.assertIn("exited with 3", REAL_RUST_EDITOR_FAILURES(tree, log)[0])
-        call = (self.root.parent / "cargo.txt").read_text().splitlines()[0]
-        self.assertTrue(call.startswith(str((tree / "engine").resolve())))
-        self.assertIn("-p soyeht-editor --example editor_performance -- --report", call)
 
     def test_a_stale_report_on_an_older_commit_does_not_blame_it(self):
         """The probes run older commits with the newest report: stale says nothing about latency."""
@@ -636,8 +597,8 @@ exec bash -c "$*"
 """
 
 
-class RemoteGateTests(SyntheticRepositoryCase):
-    """--remote: engine, desktop and e2e steps through scripts/remote_gate.sh, the rest here."""
+class RemoteHostCase(SyntheticRepositoryCase):
+    """A repository whose clone stands in for the Linux host, reached through a fake ssh."""
 
     FILES = {
         **SyntheticRepositoryCase.FILES,
@@ -666,6 +627,10 @@ class RemoteGateTests(SyntheticRepositoryCase):
 
     def runs(self):
         return [line.split(" ", 1) for line in self.trace.read_text().splitlines()]
+
+
+class RemoteGateTests(RemoteHostCase):
+    """--remote: engine, desktop and e2e steps through scripts/remote_gate.sh, the rest here."""
 
     def test_remote_steps_run_on_the_host_first_and_the_rest_here(self):
         head = self.add("two", {"b": "2"})
@@ -867,9 +832,310 @@ exec {self.fake_ssh} "$@"
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout.splitlines()[-1], "remote_gate: exit 1")
 
+    def test_the_host_reports_its_load_and_processor_count(self):
+        result = self.script_run("--print-load")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        average, cpus = result.stdout.split()
+        self.assertGreaterEqual(float(average), 0.0)
+        self.assertGreaterEqual(int(cpus), 1)
+        load = post_merge.remote_load(post_merge.Remote("linux-host", str(self.host_checkout)))
+        self.assertEqual((load.host, load.cpus >= 1), ("linux-host", True))
+
     def test_a_bad_slot_name_is_refused(self):
         result = self.script_run("--sha", self.shas[0], "--steps", "unit", "--slot", "../x")
         self.assertEqual(result.returncode, 64)
+
+
+# A stand-in with the three kinds of step the load rules tell apart: `unit` (no latency limit), `tm`
+# (area `timing`, runs on this machine) and the Rust editor step (area `engine`, runs on the host).
+# A step named by FAKE_STEP fails while the file FAKE_NOISE exists (a loaded host) or `broken` does.
+# On the host (the checkout `remote-gate`) the noise is not heard: that host is quiet.
+FAKE_LOAD_GATE = """#!/bin/bash
+# supports --only
+only=""; list=0
+while (($#)); do case "$1" in --only) only="$2"; shift 2;; --list) list=1; shift;; *) shift;; esac; done
+if ((list)); then printf 'always both unit\\ntiming full tm\\nengine full editor-performance:rust\\n'; exit 0; fi
+step="${FAKE_STEP:-tm}"
+echo "$PWD only=$only" >> "${FAKE_TRACE:?}"
+[[ -z "$only" || ",$only," == *",$step,"* ]] || exit 0
+status=0
+[[ -e broken ]] && status=1
+[[ -n "${FAKE_NOISE:-}" && -e "$FAKE_NOISE" && "$PWD" != *remote-gate* ]] && status=1
+printf '{"latest":{"steps":[{"id":"%s","area":"x","seconds":1.0,"status":%s}]}}' "$step" "$status" > "${SOYEHT_GATE_TIMINGS:?}"
+((status)) && echo "check_all: FAILED step $step (area x, exit 1)" >&2
+exit "$status"
+"""
+
+BUSY, QUIET = post_merge.Load("local", 80.0, 8), post_merge.Load("local", 2.0, 8)
+
+
+class LoadRuleTests(RemoteHostCase):
+    """A timing step that fails on a busy host is rerun on a quiet one before main is called red."""
+
+    FILES = {
+        "scripts/check_all.sh": FAKE_LOAD_GATE, "a": "1",
+        "scripts/remote_gate.sh": (Path(__file__).with_name("remote_gate.sh")).read_text(),
+    }
+
+    def setUp(self):
+        super().setUp()
+        self.noise = self.root.parent / "noise"
+        environment = mock.patch.dict(os.environ, {"FAKE_NOISE": str(self.noise)})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.pauses = []
+
+        def pause(seconds):
+            self.pauses.append(seconds)
+            self.noise.unlink(missing_ok=True)  # the load drops while we wait
+
+        for target, replacement in (
+            ("pause", pause),
+            ("local_load", lambda: BUSY if self.noise.exists() else QUIET),
+            ("remote_load", lambda remote: post_merge.Load(remote.host, 1.0, 32)),
+        ):
+            patch = mock.patch.object(post_merge, target, replacement)
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.assertEqual(self.run_main(self.shas[0]), 0)
+        self.trace.unlink()
+
+    def fail_under_load(self, step, *extra):
+        self.add("two", {"b": "2"})
+        head = self.add("three", {"c": "3"})
+        self.noise.write_text("")
+        with mock.patch.dict(os.environ, {"FAKE_STEP": step}):
+            return head, self.run_main(head, *extra)
+
+    def test_a_timing_step_that_failed_on_a_busy_host_is_rerun_after_the_load_drops(self):
+        head, code = self.fail_under_load("tm")
+        self.assertEqual(code, 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertEqual(record["load"], {"host": "local", "average": 80.0, "cpus": 8})
+        self.assertEqual(record["load_before_rerun"]["average"], 2.0)
+        self.assertIn("busy; rerun after waiting", record["note"])
+        self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS])
+        self.assertNotIn("culprit", record)
+
+    def test_a_timing_step_that_failed_on_a_busy_host_is_rerun_on_the_remote_host(self):
+        remote = ("--remote", "linux-host", "--remote-root", str(self.host_checkout))
+        head, code = self.fail_under_load("tm", *remote)
+        self.assertEqual(code, 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertIn("rerun on linux-host", record["note"])
+        self.assertEqual(self.pauses, [], "a quiet host needs no wait")
+        directory, arguments = self.runs()[-1]
+        self.assertIn("remote-gate/tree", directory)
+        self.assertEqual(arguments, "only=tm")
+
+    def test_a_step_without_a_latency_limit_is_rerun_at_once_whatever_the_load(self):
+        head, code = self.fail_under_load("unit")
+        self.assertEqual(code, 1)
+        record = self.record(head)
+        self.assertEqual(self.pauses, [])
+        self.assertNotIn("load", record)
+        self.assertNotIn("load_before_rerun", record)
+        self.assertEqual(record["local_load"]["host"], "local")  # every record says how loaded the Mac was
+
+    def test_a_timing_step_that_fails_on_a_quiet_host_is_still_a_regression(self):
+        self.add("two", {"b": "2"})
+        culprit = self.add("slows it down", {"broken": "x"})
+        head = self.add("four", {"c": "3"})
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
+            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
+        record = self.record(head)
+        self.assertEqual((record["result"], record["culprit"]["sha"]), ("fail", culprit))
+        self.assertEqual(record["load"]["average"], 2.0)
+        self.assertEqual(self.pauses, [])
+
+    def test_the_culprit_search_waits_for_a_quiet_host_before_each_probe_of_a_timing_step(self):
+        self.add("two", {"b": "2"})
+        culprit = self.add("slows it down", {"broken": "x"})
+        self.add("four", {"c": "3"})
+        head = self.add("five", {"d": "4"})
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}), \
+                mock.patch.object(post_merge, "wait_until_quiet", return_value=QUIET) as waited:
+            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
+        self.assertEqual(self.record(head)["culprit"]["sha"], culprit)
+        # The gate, the rerun, then one run per probe; each probe was preceded by a wait.
+        probes = len(self.trace.read_text().splitlines()) - 2
+        self.assertGreaterEqual(probes, 2)
+        self.assertEqual(waited.call_count, probes)
+
+    def test_the_rust_editor_step_runs_on_the_remote_host_with_the_other_engine_steps(self):
+        head = self.add("two", {"b": "2"})
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "editor-performance:rust"}):
+            self.assertEqual(self.run_remote(head), 0)
+        (remote_directory, remote_arguments), (local_directory, local_arguments) = self.runs()
+        self.assertIn("remote-gate/tree", remote_directory)
+        self.assertEqual(remote_arguments.split()[0], "only=editor-performance:rust")
+        self.assertNotIn("remote-gate", local_directory)
+        self.assertEqual(local_arguments.split()[0], "only=unit,tm")
+
+    def test_a_remote_step_is_judged_by_the_load_of_the_host_it_ran_on(self):
+        self.add("two", {"b": "2"})
+        head = self.add("three", {"c": "3"})
+        self.noise.write_text("")  # the Mac is busy; the host does not hear it, and its own load is quiet
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "editor-performance:rust", "FAKE_NOISE": ""}):
+            self.assertEqual(self.run_remote(head), 0)
+        self.assertEqual(self.pauses, [])
+        self.assertEqual(self.record(head)["local_load"]["average"], 80.0)
+
+    def test_load_is_busy_per_processor_and_the_wait_is_bounded(self):
+        self.assertTrue(post_merge.Load("h", 16.1, 16).busy())
+        self.assertFalse(post_merge.Load("h", 16.0, 16).busy())
+        with mock.patch.dict(os.environ, {post_merge.LOAD_LIMIT_ENV: "4"}):
+            self.assertFalse(post_merge.Load("h", 60.0, 16).busy())
+        waits = []
+        budget = post_merge.WaitBudget()
+        with mock.patch.object(post_merge, "pause", waits.append), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(post_merge.wait_until_quiet(lambda: BUSY, budget), BUSY)
+            self.assertEqual(post_merge.wait_until_quiet(lambda: BUSY, budget), BUSY, "the budget is shared")
+            self.assertIsNone(post_merge.wait_until_quiet(lambda: None, budget), "a host that cannot say is not waited for")
+        self.assertEqual(sum(waits), post_merge.LOAD_WAIT_BUDGET_SECONDS)
+
+    # The cases of the review of the first version: a host that never quiets down, or cannot be asked.
+
+    def stay_busy(self):
+        """The Mac never quiets down: waiting does not clear the noise."""
+        patch = mock.patch.object(post_merge, "pause", self.pauses.append)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def remote_options(self):
+        return ("--remote", "linux-host", "--remote-root", str(self.host_checkout))
+
+    def test_probes_of_a_step_rerun_on_the_host_run_on_the_host_too(self):
+        self.stay_busy()
+        self.add("two", {"b": "2"})
+        culprit = self.add("slows it down", {"broken": "x"})
+        self.add("four", {"c": "3"})
+        head = self.add("five", {"d": "4"})
+        self.noise.write_text("")  # the Mac is busy for good; the host is quiet
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
+            self.assertEqual(self.run_main(head, "--since", self.shas[0], *self.remote_options()), 1)
+        record = self.record(head)
+        self.assertEqual(record["culprit"]["sha"], culprit, "a busy Mac must not fail a good commit")
+        runs = self.runs()
+        # The first run (the engine step on the host, the rest here) and the rerun are not probes.
+        probes = runs[3:]
+        self.assertGreaterEqual(len(probes), 2)
+        self.assertTrue(all("remote-gate/tree" in directory and arguments == "only=tm"
+                            for directory, arguments in probes), probes)
+        self.assertEqual(self.pauses, [])
+
+    def test_a_rerun_that_fails_on_a_host_that_is_still_busy_is_inconclusive(self):
+        self.stay_busy()
+        head, code = self.fail_under_load("tm")
+        self.assertEqual(code, 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertIn("inconclusive", record["note"])
+        self.assertNotIn("culprit", record)
+        self.assertNotIn("candidates", record)
+        self.assertEqual(sum(self.pauses), post_merge.LOAD_WAIT_BUDGET_SECONDS)
+        self.assertEqual(record["load_after_rerun"]["average"], 80.0)
+
+    def test_probes_that_fail_on_a_host_that_stays_busy_are_skipped_and_the_waiting_is_bounded_in_all(self):
+        self.stay_busy()
+        for name in ("two", "three", "four"):
+            self.add(name, {name: "x"})
+        head = self.add("five", {"e": "5"})
+        self.noise.write_text("")
+        # The record of the run, then the load at the failure (busy), the first wait and the end of
+        # the rerun (quiet); every later reading, the probes', is busy.
+        readings = iter([QUIET, BUSY, QUIET, QUIET])
+        with mock.patch.object(post_merge, "local_load", lambda: next(readings, BUSY)), \
+                mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
+            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
+        record = self.record(head)
+        self.assertNotIn("culprit", record, "a probe on a busy host blames nobody")
+        self.assertEqual(len(record["candidates"]), 4)
+        self.assertEqual(sum(self.pauses), post_merge.LOAD_WAIT_BUDGET_SECONDS, "one budget for all the probes")
+
+    def test_a_probe_that_passes_on_a_busy_host_still_narrows_the_range(self):
+        self.add("two", {"b": "2"})
+        self.add("slows it down", {"broken": "x"})
+        self.add("four", {"c": "3"})
+        head = self.add("five", {"d": "4"})
+        # The record of the run, the load at the failure and the end of the rerun are quiet (the
+        # step fails because of `broken`); every reading of the probes is busy.
+        readings = iter([QUIET, QUIET, QUIET])
+        with mock.patch.object(post_merge, "local_load", lambda: next(readings, BUSY)), \
+                mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
+            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
+        record = self.record(head)
+        self.assertNotIn("culprit", record)
+        self.assertEqual([c["subject"] for c in record["candidates"]], ["slows it down", "four", "five"],
+                         "the pass of the older commit on a busy host counts as good")
+
+    def test_a_probe_that_fails_after_the_host_turned_busy_is_skipped(self):
+        self.add("two", {"b": "2"})
+        self.add("slows it down", {"broken": "x"})
+        head = self.add("four", {"c": "3"})
+        # Quiet up to the first probe's wait, then busy on every odd reading: after a failed probe.
+        calls = []
+
+        def local_load():
+            calls.append(1)
+            return QUIET if len(calls) <= 4 or len(calls) % 2 == 0 else BUSY
+
+        with mock.patch.object(post_merge, "local_load", local_load), \
+                mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
+            self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
+        record = self.record(head)
+        self.assertNotIn("culprit", record)
+        self.assertEqual([c["subject"] for c in record["candidates"]], ["slows it down", "four"])
+
+    def test_an_unreachable_host_is_not_waited_for_and_the_rerun_waits_here(self):
+        with mock.patch.object(post_merge, "remote_load", lambda remote: None):
+            head, code = self.fail_under_load("tm", *self.remote_options())
+        self.assertEqual(code, 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertIn("rerun after waiting", record["note"])
+        self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS], "the wait is the Mac's only")
+
+    def test_a_busy_host_uses_the_budget_and_leaves_a_busy_mac_inconclusive(self):
+        self.stay_busy()
+        with mock.patch.object(post_merge, "remote_load", lambda remote: post_merge.Load(remote.host, 90.0, 8)):
+            head, code = self.fail_under_load("tm", *self.remote_options())
+        self.assertEqual(code, 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertIn("inconclusive", record["note"])
+        self.assertEqual(sum(self.pauses), post_merge.LOAD_WAIT_BUDGET_SECONDS)
+
+    def test_a_host_rerun_that_cannot_run_falls_back_to_waiting_on_the_mac(self):
+        self.add("two", {"b": "2"})
+        head = self.add("three", {"c": "3"})
+        seen = self.root.parent / "gate-calls"
+        busy_ssh = self.root.parent / "busy_ssh"
+        busy_ssh.write_text(f"""#!/bin/bash
+# The first gate call goes through; every later one finds the host's worktree busy (exit 75).
+if [[ "$*" == *"--sha"* ]]; then
+    [[ -e {seen} ]] && exit 75
+    touch {seen}
+fi
+exec {self.fake_ssh} "$@"
+""")
+        busy_ssh.chmod(0o755)
+        self.noise.write_text("")
+        with mock.patch.dict(os.environ, {post_merge.SSH_ENV: str(busy_ssh), "FAKE_STEP": "tm"}):
+            self.assertEqual(self.run_main(head, *self.remote_options()), 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertIn("rerun after waiting", record["note"])
+        self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS])
+
+    def test_asking_a_silent_host_for_its_load_times_out(self):
+        remote = post_merge.Remote("linux-host", str(self.host_checkout))
+        with mock.patch.object(post_merge.subprocess, "run",
+                               side_effect=subprocess.TimeoutExpired("ssh", 1)) as run:
+            self.assertIsNone(REAL_REMOTE_LOAD(remote))
+        self.assertEqual(run.call_args.kwargs["timeout"], post_merge.LOAD_PROBE_TIMEOUT_SECONDS)
 
 
 if __name__ == "__main__":
