@@ -93,7 +93,7 @@ impl EditorFixture {
     pub fn try_call(&mut self, method: &str, params: Value) -> crate::errors::Result<Value> {
         self.next_id += 1;
         let request = json!({"jsonrpc":"2.0","id":self.next_id,"method":method,"params":params});
-        match self.core.dispatch(&self.connection, request)? {
+        match self.core.dispatch_inline(&self.connection, request)? {
             Outcome::Reply(value) => Ok(value),
             _ => panic!("expected a reply to {method}"),
         }

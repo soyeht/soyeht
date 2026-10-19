@@ -11,7 +11,9 @@
 //! falls back to reading its watched folders once a second. With events and no
 //! changes on disk, the engine touches no folder at all.
 
-use super::project_files::is_save_temporary;
+use super::{
+    project_files::is_save_temporary, project_paths::ProjectRoot, project_tree::project_error,
+};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -23,6 +25,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::mpsc::TryRecvError,
+    thread,
 };
 
 /// The fallback reads every watched folder at this period.
@@ -43,38 +46,78 @@ pub struct Watches {
     poll_due_ms: i64,
     /// Folder listings read since the engine started; tests assert idleness.
     reads: u64,
+    /// Counts the turns that took events out of `dirty` or dropped a source. A request that
+    /// listed its folders off the lock while one happened may have missed an event.
+    epoch: u64,
     #[cfg(test)]
     pub(super) force_polling: bool,
-    /// Folder reads made before each source started; tests assert that the
-    /// source is live before the first listing is fingerprinted.
-    #[cfg(test)]
-    pub(super) reads_at_source_start: BTreeMap<String, u64>,
 }
 
-enum Source {
+pub(super) enum Source {
     Events { root: PathBuf, stream: EventStream },
     Polling,
 }
 
 impl Watches {
-    /// Starts the event source of `workspace_id` if it has none yet.
-    pub(super) fn ensure_source(&mut self, workspace_id: &str, root: &Path) {
-        if self.sources.contains_key(workspace_id) {
-            return;
+    /// What a request needs before it leaves the lock: how to start the event source of
+    /// `workspace_id` (`None` when it has one) and the epoch to hand back to
+    /// [`Watches::adopt`].
+    pub(super) fn plan(&self, workspace_id: &str) -> Plan {
+        let starter = if self.sources.contains_key(workspace_id) {
+            None
+        } else {
+            #[cfg(test)]
+            let starter: Starter = if self.force_polling {
+                |_| Source::Polling
+            } else {
+                start_source
+            };
+            #[cfg(not(test))]
+            let starter: Starter = start_source;
+            Some(starter)
+        };
+        Plan {
+            starter,
+            epoch: self.epoch,
         }
-        #[cfg(test)]
-        if self.force_polling {
-            self.insert_source(workspace_id, Source::Polling);
-            return;
+    }
+
+    /// Keeps the source a request started, once it is back under the lock, and returns the
+    /// one that is not needed so the caller drops it after the lock is released. The folders
+    /// the request listed may be older than the source that stays, or than a turn that
+    /// consumed events meanwhile: a change in between is in no event and in no fingerprint,
+    /// so then every folder is read once more.
+    fn adopt(
+        &mut self,
+        workspace_id: &str,
+        started: Option<Source>,
+        epoch: u64,
+        now: i64,
+    ) -> Option<Source> {
+        let (reread, surplus) = match (self.sources.contains_key(workspace_id), started) {
+            (false, Some(source)) => {
+                self.insert_source(workspace_id, source);
+                (false, None)
+            }
+            (false, None) => {
+                self.insert_source(workspace_id, Source::Polling);
+                (true, None)
+            }
+            (true, Some(source)) => (true, Some(source)),
+            (true, None) => (self.epoch != epoch, None),
+        };
+        if reread {
+            self.reread(workspace_id, now);
         }
-        let source = event_source(root).unwrap_or(Source::Polling);
-        self.insert_source(workspace_id, source);
+        surplus
+    }
+
+    fn reread(&mut self, workspace_id: &str, now: i64) {
+        self.dirty.insert(workspace_id.to_owned(), None);
+        self.burst.note(now);
     }
 
     fn insert_source(&mut self, workspace_id: &str, source: Source) {
-        #[cfg(test)]
-        self.reads_at_source_start
-            .insert(workspace_id.to_owned(), self.reads);
         self.sources.insert(workspace_id.to_owned(), source);
     }
 
@@ -117,8 +160,12 @@ impl Watches {
             .keys()
             .map(|(_, workspace)| workspace.clone())
             .collect::<BTreeSet<_>>();
+        let sources = self.sources.len();
         self.sources
             .retain(|workspace, _| watched.contains(workspace));
+        if self.sources.len() != sources {
+            self.epoch += 1;
+        }
         self.dirty
             .retain(|workspace, _| watched.contains(workspace));
     }
@@ -194,6 +241,7 @@ impl Watches {
             return BTreeMap::new();
         }
         self.burst.end();
+        self.epoch += 1;
         std::mem::take(&mut self.dirty)
     }
 }
@@ -275,19 +323,84 @@ impl Core {
         Ok(())
     }
 
-    /// Starts watching `workspace_id` when a connection first shows it.
-    pub(super) fn start_project_source(&mut self, workspace_id: &str) -> Result<()> {
-        let project = self.project_root(workspace_id)?;
-        self.project_watches
-            .ensure_source(workspace_id, project.root());
+    /// Records what [`prepare_watch`] made off the lock: the connection's folders and, when
+    /// the workspace had no event source, the one just started. A workspace closed meanwhile
+    /// is not found, and nothing is kept.
+    pub(super) fn apply_project_watch(
+        &mut self,
+        key: (String, String),
+        prepared: Prepared,
+    ) -> Result<()> {
+        if let Err(error) = model::workspace(&self.store, &key.1) {
+            drop_off_lock(prepared.source);
+            return Err(error);
+        }
+        let now = self.now_ms();
+        let surplus = self
+            .project_watches
+            .adopt(&key.1, prepared.source, prepared.epoch, now);
+        drop_off_lock(surplus);
+        let mut folders = BTreeMap::new();
+        for (path, fingerprint) in prepared.fingerprints {
+            self.project_watches.record_read();
+            folders.insert(path, fingerprint);
+        }
+        self.project_watches.folders.insert(key, folders);
         Ok(())
     }
 }
 
-fn event_source(root: &Path) -> Option<Source> {
-    Some(Source::Events {
-        root: root.to_owned(),
-        stream: EventStream::follow(root)?,
+/// Stops a watcher that is not kept on a thread of its own: dropping one can take
+/// milliseconds, and this runs under the Core lock (ADR 0079).
+fn drop_off_lock(source: Option<Source>) {
+    if source.is_some() {
+        thread::spawn(move || drop(source));
+    }
+}
+
+/// Starts the event source of a workspace root; where no watcher can start, it is polled.
+pub(super) type Starter = fn(&Path) -> Source;
+
+fn start_source(root: &Path) -> Source {
+    match EventStream::follow(root) {
+        Some(stream) => Source::Events {
+            root: root.to_owned(),
+            stream,
+        },
+        None => Source::Polling,
+    }
+}
+
+/// What a request takes off the lock, from [`Watches::plan`].
+pub(super) struct Plan {
+    pub(super) starter: Option<Starter>,
+    pub(super) epoch: u64,
+}
+
+/// What a `project.tree.watch` request makes off the Core lock.
+pub(super) struct Prepared {
+    source: Option<Source>,
+    pub(super) fingerprints: Vec<(String, Option<u64>)>,
+    epoch: u64,
+}
+
+/// Checks the folders, starts the event source when the plan has a starter, then reads each
+/// folder's first listing. The source goes live before the first listing is fingerprinted:
+/// a change after that fingerprint is then always an event, never lost between the two.
+pub(super) fn prepare_watch(root: &Path, paths: &[String], plan: Plan) -> Result<Prepared> {
+    let project = ProjectRoot::open(root).map_err(errors::io)?;
+    for path in paths {
+        project.directory(path).map_err(project_error)?;
+    }
+    let source = plan.starter.map(|start| start(project.root()));
+    let fingerprints = paths
+        .iter()
+        .map(|path| (path.clone(), project.fingerprint(path)))
+        .collect();
+    Ok(Prepared {
+        source,
+        fingerprints,
+        epoch: plan.epoch,
     })
 }
 
@@ -340,8 +453,33 @@ impl Touched {
 
 #[cfg(test)]
 mod tests {
-    use super::Touched;
+    use super::{Source, Touched, Watches};
     use std::path::Path;
+
+    fn reread(watches: &Watches) -> bool {
+        watches.dirty.get("w").is_some_and(Option::is_none)
+    }
+
+    #[test]
+    fn a_source_started_by_a_slower_request_is_dropped_and_the_workspace_read_again() {
+        let mut watches = Watches::default();
+        watches.adopt("w", Some(Source::Polling), 0, 0);
+        assert!(watches.sources.contains_key("w"));
+        assert!(!reread(&watches), "the first source needs no second read");
+        // Two requests found no source and both started one: their listings may predate
+        // the source that stays.
+        let surplus = watches.adopt("w", Some(Source::Polling), 0, 5);
+        assert!(surplus.is_some() && reread(&watches));
+        assert!(watches.plan("w").starter.is_none());
+    }
+
+    #[test]
+    fn a_source_dropped_while_a_request_listed_is_replaced_and_the_workspace_read_again() {
+        let mut watches = Watches::default();
+        watches.adopt("w", None, 0, 0);
+        assert!(matches!(watches.sources.get("w"), Some(Source::Polling)));
+        assert!(reread(&watches));
+    }
 
     #[test]
     fn a_change_touches_its_parent_folder_itself_and_the_folders_below_it() {

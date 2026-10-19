@@ -439,6 +439,7 @@ impl Core {
             method::WRITING_ASSET_READ => return self.writing_asset_read(params),
             method::WRITING_SECTION_LIST => return self.writing_section_list(params),
             method::FILE_SEARCH => return self.file_search(connection, params),
+            method::PROJECT_TREE_WATCH => return self.project_tree_watch(connection, params),
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
                 self.document_request(connection, method, params, writing_image)?
             }

@@ -88,7 +88,6 @@ impl Core {
             FILE_FIND => self.file_find(params),
             FILE_REPLACE => self.file_replace(connection, params),
             PROJECT_TREE_LIST => self.project_tree_list(params),
-            PROJECT_TREE_WATCH => self.project_tree_watch(connection, params),
             PROJECT_ENTRY_CREATE => self.project_entry_create(connection, params),
             PROJECT_ENTRY_RENAME => self.project_entry_rename(connection, params),
             PROJECT_ENTRY_DELETE => self.project_entry_delete(connection, params),

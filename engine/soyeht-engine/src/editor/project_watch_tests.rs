@@ -7,7 +7,11 @@
 //! do not depend on how fast a loaded machine delivers file events. One test
 //! at the end waits for real events.
 
-use super::test_fixture::EditorFixture;
+use super::{
+    project_paths::ProjectRoot,
+    project_watch::{Plan, Source, prepare_watch},
+    test_fixture::EditorFixture,
+};
 use notify::{
     Event, EventKind,
     event::{CreateKind, DataChange, Flag, ModifyKind, RemoveKind, RenameMode},
@@ -288,12 +292,74 @@ async fn an_idle_workspace_costs_no_folder_reads() {
 }
 
 #[tokio::test]
-async fn the_event_source_is_live_before_the_first_listing_is_read() {
-    let fixture = polling(&["", "src"]).await;
-    // A change between the two would be in no event and in no fingerprint.
-    let started = &fixture.core.project_watches.reads_at_source_start;
-    assert_eq!(started[&fixture.workspace_id], 0);
-    assert_eq!(fixture.core.project_watches.reads(), 2);
+async fn the_event_source_starts_before_the_first_listing_is_read() {
+    let fixture = EditorFixture::new(&[("src/lib.rs", "lib\n")]).await;
+    let root = fixture.project();
+    let project = ProjectRoot::open(&root).unwrap();
+    let before = project.fingerprint("src");
+    // A source that changes the folder while it starts: a listing read before the start
+    // would miss the change, and no event would report it.
+    let plan = Plan {
+        starter: Some(|root| {
+            fs::write(root.join("src/during_start.rs"), "").unwrap();
+            Source::Polling
+        }),
+        epoch: 0,
+    };
+    let prepared = prepare_watch(&root, &["src".to_owned()], plan).unwrap();
+    assert_ne!(prepared.fingerprints[0].1, before);
+    assert_eq!(prepared.fingerprints[0].1, project.fingerprint("src"));
+}
+
+#[tokio::test]
+async fn a_change_while_a_watch_lists_its_folders_is_not_lost_when_a_tick_consumed_it() {
+    let mut followed = Followed::watching(&[""]).await;
+    let workspace_id = followed.workspace_id.clone();
+    let plan = followed.fixture.core.project_watches.plan(&workspace_id);
+    assert!(plan.starter.is_none(), "the workspace has a live source");
+    // The request lists its folder off the lock ...
+    let root = followed.fixture.project();
+    let prepared = prepare_watch(&root, &["src".to_owned()], plan).unwrap();
+    // ... a file appears, the live source reports it and a tick consumes the burst before the
+    // request is applied: the event reaches nobody and the listing is stale.
+    fs::write(root.join("src/new.rs"), "").unwrap();
+    followed.emit(CREATED, &["src/new.rs"]);
+    followed.step(0);
+    followed.step(TURN_MS);
+    followed.fixture.notifications().await;
+    let key = (followed.fixture.connection.clone(), workspace_id.clone());
+    followed
+        .fixture
+        .core
+        .apply_project_watch(key, prepared)
+        .unwrap();
+    let mut told = Vec::new();
+    for _ in 0..5 {
+        followed.step(TURN_MS);
+        told.extend(followed.fixture.notifications().await);
+    }
+    assert_eq!(told, changed(&workspace_id, &["src"]));
+}
+
+#[tokio::test]
+async fn a_workspace_closed_while_a_watch_lists_its_folders_is_not_found_and_keeps_nothing() {
+    let mut fixture = EditorFixture::new(&[("src/lib.rs", "lib\n")]).await;
+    let workspace_id = fixture.workspace_id.clone();
+    let plan = fixture.core.project_watches.plan(&workspace_id);
+    let prepared = prepare_watch(&fixture.project(), &["src".to_owned()], plan).unwrap();
+    fixture.call(
+        "workspace.close",
+        json!({"workspaceId":workspace_id,"idempotencyKey":"close"}),
+    );
+    let key = (fixture.connection.clone(), workspace_id.clone());
+    assert!(
+        fixture
+            .core
+            .apply_project_watch(key.clone(), prepared)
+            .is_err()
+    );
+    assert!(!fixture.core.project_watches.folders.contains_key(&key));
+    assert!(!fixture.core.project_watches.uses_events(&workspace_id));
 }
 
 #[tokio::test]

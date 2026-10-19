@@ -32,6 +32,9 @@ const POLL_SKILLS_VARIABLE: &str = "SOYEHT_TEST_SKILL_POLL";
 /// Milliseconds every flush of a terminal segment to the disk takes, as on a busy machine.
 const SLOW_DISK_VARIABLE: &str = "SOYEHT_TEST_SLOW_DISK_MS";
 
+/// Milliseconds starting a file-event stream takes, as on a busy machine.
+const SLOW_WATCH_VARIABLE: &str = "SOYEHT_TEST_SLOW_WATCH_MS";
+
 pub struct FileHooks {
     directory: PathBuf,
     usage_fixtures: Option<PathBuf>,
@@ -45,6 +48,11 @@ impl FileHooks {
             && let Ok(pause) = value.parse()
         {
             soyeht_store::segments::slow_disk::set(std::time::Duration::from_millis(pause));
+        }
+        if let Ok(value) = std::env::var(SLOW_WATCH_VARIABLE)
+            && let Ok(pause) = value.parse()
+        {
+            crate::file_events::slow_start::set(pause);
         }
         Self {
             directory: directory.into(),

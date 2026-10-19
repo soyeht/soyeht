@@ -13,6 +13,25 @@ pub(crate) const QUIET_MS: i64 = 75;
 /// ... or once it has lasted this long, so a steady stream still shows up.
 pub(crate) const BURST_LIMIT_MS: i64 = 500;
 
+/// Makes starting an event stream slow, as the system's file-event service is on a busy
+/// machine, so a test can show what waits for it. Compiled only with `test-hooks`.
+#[cfg(feature = "test-hooks")]
+pub mod slow_start {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static PAUSE_MS: AtomicU64 = AtomicU64::new(0);
+
+    pub fn set(milliseconds: u64) {
+        PAUSE_MS.store(milliseconds, Ordering::Relaxed);
+    }
+
+    pub(super) fn wait() {
+        std::thread::sleep(std::time::Duration::from_millis(
+            PAUSE_MS.load(Ordering::Relaxed),
+        ));
+    }
+}
+
 /// The file events of one folder tree. Dropping it stops the stream.
 pub(crate) struct EventStream {
     pub(crate) receiver: Receiver<notify::Result<Event>>,
@@ -22,6 +41,8 @@ pub(crate) struct EventStream {
 impl EventStream {
     /// Follows `root` and everything below it; `None` where no watcher can start.
     pub(crate) fn follow(root: &Path) -> Option<Self> {
+        #[cfg(feature = "test-hooks")]
+        slow_start::wait();
         let (sender, receiver) = mpsc::channel();
         let mut watcher = notify::recommended_watcher(sender).ok()?;
         watcher.watch(root, RecursiveMode::Recursive).ok()?;
