@@ -5,7 +5,7 @@ use crate::{
     fonts, graphics,
     theme::{ThemeName, desktop},
     window_size::{self, opening_size},
-    workbench::{NewTerminal, Paste, Quit, Workbench},
+    workbench::{CopySelection, NewTerminal, Paste, Quit, Workbench},
 };
 use gpui::{
     App, AppContext, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds,
@@ -96,11 +96,13 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
             KeyBinding::new(&format!("{MODIFIER}-q"), Quit, None),
             KeyBinding::new(&format!("{MODIFIER}-t"), NewTerminal, Some("Workbench")),
             KeyBinding::new(&format!("{MODIFIER}-v"), Paste, Some("Workbench")),
+            KeyBinding::new(&format!("{MODIFIER}-c"), CopySelection, Some("Workbench")),
         ]);
         cx.set_menus([
             Menu::new("Soyeht").items([MenuItem::action("Quit Soyeht", Quit)]),
             Menu::new("Terminal").items([
                 MenuItem::action("New Terminal", NewTerminal),
+                MenuItem::action("Copy", CopySelection),
                 MenuItem::action("Paste", Paste),
             ]),
         ]);

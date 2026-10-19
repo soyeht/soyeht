@@ -44,6 +44,8 @@ pub(crate) struct PaneUi {
     pub form_fields: HashMap<(String, String), Entity<ComposerField>>,
     /// What an editor pane keeps: the scroll, the find bar, the tabs' and the panel's scroll.
     pub editor: EditorUi,
+    /// What a terminal pane keeps: where its screen is, a drag, the address under the pointer.
+    pub terminal: crate::terminal_input::TerminalUi,
 }
 
 impl PaneUi {
@@ -169,6 +171,7 @@ mod tests {
             open_subagents: HashSet::from(["subagent".to_owned()]),
             form_fields: HashMap::new(),
             editor: EditorUi::default(),
+            terminal: Default::default(),
         }
     }
 

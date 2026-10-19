@@ -27,6 +27,7 @@ mod pane_ui;
 mod prefs;
 mod switch_flow;
 mod tasks_ui;
+mod terminal_input;
 mod terminal_view;
 pub mod theme;
 mod views;

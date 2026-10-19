@@ -18,6 +18,8 @@ pub enum Menu {
     Config { pane_id: String, config_id: String },
     /// The loop button of an agent pane's header: the pane.
     Loop(String),
+    /// The context menu of a terminal pane: the pane.
+    Terminal(String),
     /// The settings entry at the bottom of the rail: Preferences.
     Settings,
     /// A header button the desktop client does not serve yet: the pane and the button.

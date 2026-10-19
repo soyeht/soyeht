@@ -28,6 +28,7 @@ mod resize_handles;
 mod settings;
 mod switch_popover;
 mod tasks;
+mod terminal_menu;
 mod tiles;
 
 pub(crate) use tiles::sizing;
@@ -61,6 +62,7 @@ impl Render for Workbench {
             .on_key_down(cx.listener(Self::key_down))
             .on_action(cx.listener(Self::new_terminal))
             .on_action(cx.listener(Self::paste))
+            .on_action(cx.listener(Self::copy_selection))
             .relative()
             .size_full()
             .flex()

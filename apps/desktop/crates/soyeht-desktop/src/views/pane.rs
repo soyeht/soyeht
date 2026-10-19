@@ -15,7 +15,9 @@ use gpui::{
     Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, IntoElement, ParentElement,
     SharedString, Styled, div, prelude::FluentBuilder, px, rgb,
 };
-use gpui::{InteractiveElement, MouseButton, StatefulInteractiveElement};
+use gpui::{
+    InteractiveElement, MouseButton, MouseDownEvent, MouseMoveEvent, StatefulInteractiveElement,
+};
 use soyeht_client::{
     agent::{elapsed_text, status_word},
     terminal_state::{self, Severity},
@@ -305,6 +307,11 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let id = pane.pane_id.clone();
+        let over_link = self
+            .panes
+            .get(&id)
+            .is_some_and(|ui| ui.terminal.hover.is_some());
+        let menu = self.terminal_menu((&id, palette), cx);
         let gap = self
             .state
             .has_gap(&pane.pane_id)
@@ -327,8 +334,35 @@ impl Workbench {
                         let id = id.clone();
                         move |this, event, _, cx| this.scroll_terminal(&id, event, cx)
                     }))
+                    // Select with the primary button, open an address with the link key held,
+                    // and the menu on the secondary one.
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener({
+                            let id = id.clone();
+                            move |this, event, _, cx| this.terminal_mouse_down(&id, event, cx)
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener({
+                            let id = id.clone();
+                            move |this, event: &MouseDownEvent, _, cx| {
+                                this.terminal_context_menu(&id, event.position, cx)
+                            }
+                        }),
+                    )
+                    .on_mouse_move(cx.listener({
+                        let id = id.clone();
+                        move |this, event: &MouseMoveEvent, _, cx| {
+                            this.terminal_hover(&id, (event.position, &event.modifiers), cx)
+                        }
+                    }))
+                    .when(over_link, |screen| screen.cursor_pointer())
+                    .when(!over_link, |screen| screen.cursor_text())
                     .child(terminal_view::surface(cx.entity(), id, palette, focused)),
             )
+            .children(menu)
             .children(gap.map(|notice| {
                 div()
                     .flex_none()

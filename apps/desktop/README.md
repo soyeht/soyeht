@@ -34,6 +34,16 @@ agent works.
   of a pane header split it to the right or below and store the new arrangement.
 - Terminal panes show live output (the engine streams raw terminal bytes, parsed
   with `vt100`), accept typing, paste, resize with the window, and scroll back.
+- Text in a terminal is selected with the mouse: a drag selects cells (a drag past the top or
+  bottom scrolls), a double-click a word (a path or an address is one word), a triple-click a line,
+  and Shift+click grows the selection. A selection stays on its text while the view scrolls and new
+  output arrives, and goes when output rewrites that text, when the screen is resized or switches to
+  the alternate screen, and when the person types. Copy is Ctrl+Shift+C on Linux and Windows
+  (Command+C on the Mac) and the context menu's Copy; Ctrl+C stays the interrupt. The context menu
+  (secondary button) also has Paste and, over an address, Open Link. Ctrl+click (Command+click on
+  the Mac) opens an `http` or `https` address, even one that wraps over rows, in the system browser;
+  no other scheme opens. The selection and the address rules are `soyeht_client::screen`'s, with
+  unit tests; the painter only draws them.
 - Agent panes show the transcript (the person's messages, replies drawn as Markdown, thoughts, tool rows, plans,
   command output in a mono well, hand-overs), take a
   message from the composer (text comes through GPUI's input handler, so dead keys, input
@@ -135,7 +145,7 @@ SOYEHT_ENGINE_SOCKET=/path/to/engine.sock cargo run -p soyeht-desktop
 
 Shortcuts use Command on macOS and Control+Shift on Linux and Windows, so that
 they never take keys a terminal program needs: New Terminal (`t`), Paste (`v`),
-Quit (`q`).
+Copy (`c`), Quit (`q`).
 
 GPUI needs the platform SDKs: Xcode with the Metal toolchain on macOS; Vulkan
 drivers and the Wayland or X11 development libraries on Linux; the Windows SDK

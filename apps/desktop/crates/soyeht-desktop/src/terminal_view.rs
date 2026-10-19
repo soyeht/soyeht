@@ -5,8 +5,9 @@ use crate::{
     workbench::Workbench,
 };
 use gpui::{
-    App, BorderStyle, Bounds, Entity, Hsla, IntoElement, Pixels, Styled, TextAlign, TextRun,
-    UnderlineStyle, Window, canvas, fill, font, outline, point, px, rgb, size,
+    App, BorderStyle, Bounds, DispatchPhase, Entity, Hsla, IntoElement, MouseMoveEvent,
+    MouseUpEvent, Pixels, Styled, TextAlign, TextRun, UnderlineStyle, Window, canvas, fill, font,
+    outline, point, px, rgb, size,
 };
 use soyeht_client::screen::{CellColor, Cursor, Run};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -62,6 +63,12 @@ struct Frame {
     cell: CellSize,
     rows: Vec<Vec<Run>>,
     cursor: Option<(Cursor, String)>,
+    /// For each row, the columns that are selected, and the ones of the address under the
+    /// pointer: from the first to one past the last.
+    selected: Vec<Option<(u16, u16)>>,
+    link: Vec<Option<(u16, u16)>>,
+    /// A drag that selects is under way, so the pointer is followed wherever it goes.
+    dragging: bool,
 }
 
 /// A canvas that gathers what a frame draws from the app, then draws it. `gather` runs while the
@@ -88,26 +95,60 @@ pub fn surface(
     palette: &'static Palette,
     focused: bool,
 ) -> impl IntoElement {
+    let (drag_workbench, drag_pane) = (workbench.clone(), pane_id.clone());
     frame_canvas(
         move |bounds, cx| {
             let cell = CellSize::measure(cx);
             let (rows, cols) = cell.grid(bounds);
             workbench.update(cx, |workbench, _| {
-                workbench.fit_terminal(&pane_id, rows, cols)
+                workbench.fit_terminal(&pane_id, rows, cols);
+                workbench.record_terminal_geometry(&pane_id, bounds, cell);
             });
             let workbench = workbench.read(cx);
             let screen = workbench.screen(&pane_id)?;
             let (shown_rows, _) = screen.size();
+            let hovered = workbench.hovered_link(&pane_id);
             Some(Frame {
                 cell,
                 rows: (0..shown_rows).map(|row| screen.row_runs(row)).collect(),
                 cursor: screen
                     .cursor()
                     .map(|cursor| (cursor, screen.text_at(cursor.row, cursor.column))),
+                selected: (0..shown_rows)
+                    .map(|row| screen.selection_columns(row))
+                    .collect(),
+                link: (0..shown_rows)
+                    .map(|row| hovered.and_then(|span| screen.columns_of(span, row)))
+                    .collect(),
+                dragging: workbench.terminal_dragging(&pane_id),
             })
         },
-        move |frame, bounds, window, cx| paint(frame, bounds, palette, focused, window, cx),
+        move |frame, bounds, window, cx| {
+            if frame.dragging {
+                follow_drag(&drag_workbench, &drag_pane, window);
+            }
+            paint(frame, bounds, palette, focused, window, cx);
+        },
     )
+}
+
+/// While a selection is dragged the pointer is followed over the whole window, not only over the
+/// screen: past an edge the drag scrolls, and the button released anywhere ends it.
+fn follow_drag(workbench: &Entity<Workbench>, pane_id: &str, window: &mut Window) {
+    let (moved, pane) = (workbench.clone(), pane_id.to_owned());
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
+        if phase == DispatchPhase::Bubble {
+            moved.update(cx, |workbench, cx| {
+                workbench.terminal_drag(&pane, event, cx)
+            });
+        }
+    });
+    let (released, pane) = (workbench.clone(), pane_id.to_owned());
+    window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
+        if phase == DispatchPhase::Bubble {
+            released.update(cx, |workbench, cx| workbench.terminal_release(&pane, cx));
+        }
+    });
 }
 
 fn paint(
@@ -123,14 +164,25 @@ fn paint(
     for (row, runs) in frame.rows.iter().enumerate() {
         let y = origin.y + cell.height * row as f32;
         for run in runs {
-            let x = origin.x + cell.width * f32::from(run.column);
             if run.bg != CellColor::DefaultBg {
+                let x = origin.x + cell.width * f32::from(run.column);
                 let area = Bounds::new(
                     point(x, y),
                     size(cell.width * f32::from(run.columns), cell.height),
                 );
                 window.paint_quad(fill(area, rgb(palette.terminal(run.bg))));
             }
+        }
+        // The selection is under the text, over the cells' own backgrounds.
+        if let Some(Some((from, to))) = frame.selected.get(row) {
+            let area = Bounds::new(
+                point(origin.x + cell.width * f32::from(*from), y),
+                size(cell.width * f32::from(to - from), cell.height),
+            );
+            window.paint_quad(fill(area, rgb(palette.selection)));
+        }
+        for run in runs {
+            let x = origin.x + cell.width * f32::from(run.column);
             if run.text.trim().is_empty() && !run.underline {
                 continue;
             }
@@ -142,6 +194,18 @@ fn paint(
                 window,
                 cx,
             );
+        }
+        // The address under the pointer, while the key that opens it is down.
+        if let Some(Some((from, to))) = frame.link.get(row) {
+            let thickness = px(desktop::HAIRLINE);
+            let area = Bounds::new(
+                point(
+                    origin.x + cell.width * f32::from(*from),
+                    y + cell.height - thickness,
+                ),
+                size(cell.width * f32::from(to - from), thickness),
+            );
+            window.paint_quad(fill(area, rgb(palette.accent)));
         }
     }
     if let Some((cursor, glyph)) = &frame.cursor {

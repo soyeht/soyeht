@@ -9,8 +9,8 @@ use crate::{
     workbench::Workbench,
 };
 use gpui::{
-    Anchor, AnyElement, ClickEvent, Context, Div, FontWeight, SharedString, Stateful, anchored,
-    deferred, div, point, prelude::*, px, rgb,
+    Anchor, Anchored, AnyElement, ClickEvent, Context, Div, FontWeight, Pixels, Point,
+    SharedString, Stateful, anchored, deferred, div, point, prelude::*, px, rgb,
 };
 
 /// `body` opened below or beside the element it is placed in. The element must be `relative`.
@@ -40,8 +40,48 @@ pub fn popup_up_to(
     body: Div,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    // The card of the approved harness picker: radius 20 and the panel elevation.
-    let card = neo::raised(palette, radius::CARD, elevation::PANEL)
+    float(
+        anchored()
+            .anchor(anchor)
+            .offset(point(px(offset.0), px(offset.1))),
+        card(palette, max_height, body, cx),
+    )
+}
+
+/// `body` opened at a place in the window, as a context menu is: the pointer's.
+pub fn popup_at(
+    palette: &Palette,
+    at: Point<Pixels>,
+    body: Div,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    let height = layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT;
+    float(
+        anchored().position(at).anchor(Anchor::TopLeft),
+        card(palette, height, body, cx),
+    )
+}
+
+/// `card` placed by `place` above everything else, out of the flow of the element it is in.
+fn float(place: Anchored, card: Stateful<Div>) -> AnyElement {
+    div()
+        .absolute()
+        .top_0()
+        .left_0()
+        .child(deferred(
+            place.snap_to_window_with_margin(px(space::X8)).child(card),
+        ))
+        .into_any_element()
+}
+
+/// The card of the approved harness picker: radius 20 and the panel elevation.
+fn card(
+    palette: &Palette,
+    max_height: f32,
+    body: Div,
+    cx: &mut Context<Workbench>,
+) -> Stateful<Div> {
+    neo::raised(palette, radius::CARD, elevation::PANEL)
         .flex()
         .flex_col()
         .px(px(space::X14))
@@ -54,19 +94,7 @@ pub fn popup_up_to(
         .overflow_y_scroll()
         .occlude()
         .on_mouse_down_out(cx.listener(|this, _, _, cx| this.dismiss_menu(cx)))
-        .child(body);
-    div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .child(deferred(
-            anchored()
-                .anchor(anchor)
-                .offset(point(px(offset.0), px(offset.1)))
-                .snap_to_window_with_margin(px(space::X8))
-                .child(card),
-        ))
-        .into_any_element()
+        .child(body)
 }
 
 /// The frame of a row of the approved menus: a rounded row that fills with the well while it is
@@ -115,6 +143,27 @@ pub fn item(
     row_frame(palette, key, checked, true)
         .child(div().flex_1().min_w_0().truncate().child(label.into()))
         .children(checked.then(|| check(palette)))
+}
+
+/// A row that runs a command, with its shortcut at the trailing edge. `enabled` false draws it
+/// dimmed and without hover or a pointer.
+pub fn command(
+    palette: &Palette,
+    key: &str,
+    label: impl Into<SharedString>,
+    shortcut: &'static str,
+    enabled: bool,
+) -> Stateful<Div> {
+    row_frame(palette, key, false, enabled)
+        .gap(px(space::X18))
+        .child(div().flex_1().min_w_0().truncate().child(label.into()))
+        .child(
+            div()
+                .flex_none()
+                .text_color(rgb(palette.muted))
+                .text_size(px(type_scale::SMALL))
+                .child(shortcut),
+        )
 }
 
 /// A row of the harness lists, as the Mac's picker draws it: a mark of how ready the harness

@@ -31,7 +31,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-actions!(soyeht, [Quit, NewTerminal, Paste]);
+actions!(soyeht, [Quit, NewTerminal, Paste, CopySelection]);
 
 /// Engine events applied per frame at most, so a burst of output cannot starve painting.
 const EVENTS_PER_BATCH: usize = 256;
@@ -649,17 +649,10 @@ impl Workbench {
             }
             return;
         }
-        let Some(text) = item.text() else {
-            return;
-        };
         let Some(pane_id) = self.focused_terminal() else {
             return;
         };
-        let bracketed = self
-            .state
-            .screen(&pane_id)
-            .is_some_and(TerminalScreen::bracketed_paste);
-        self.send_input(&pane_id, keys::paste(&text, bracketed), cx);
+        self.paste_terminal(&pane_id, cx);
     }
 
     pub(crate) fn key_down(
@@ -734,18 +727,24 @@ impl Workbench {
     }
 
     /// Typing returns the view to the live bottom, as in every terminal.
-    fn send_input(&mut self, pane_id: &str, bytes: Vec<u8>, cx: &mut Context<Self>) {
+    pub(crate) fn send_input(&mut self, pane_id: &str, bytes: Vec<u8>, cx: &mut Context<Self>) {
         if self.state.connection != Connection::Connected {
             // Keystrokes cannot reach a dead connection; say so instead of dropping them.
             self.state.problem = Some(Error::Disconnected.to_string());
             cx.notify();
             return;
         }
-        if let Some(screen) = self.state.screen_mut(pane_id)
-            && screen.scrolled_back()
-        {
-            screen.scroll_to_bottom();
-            cx.notify();
+        if let Some(screen) = self.state.screen_mut(pane_id) {
+            // What is typed or pasted ends a selection, as in every terminal.
+            let selected = screen.has_selection();
+            screen.clear_selection();
+            let scrolled = screen.scrolled_back();
+            if scrolled {
+                screen.scroll_to_bottom();
+            }
+            if selected || scrolled {
+                cx.notify();
+            }
         }
         self.send(Command::Input {
             pane_id: pane_id.to_owned(),

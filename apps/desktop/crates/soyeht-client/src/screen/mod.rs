@@ -1,6 +1,13 @@
 //! The screen of one terminal pane. The engine streams raw terminal bytes, exactly as it does
 //! to the Mac client; this type turns them into styled rows a view can paint.
 
+mod lines;
+pub mod links;
+mod pointer;
+pub mod selection;
+
+use lines::Lines;
+
 /// Lines of history kept per terminal on the client.
 const SCROLLBACK_LINES: usize = 10_000;
 
@@ -40,6 +47,10 @@ pub struct TerminalScreen {
     parser: vt100::Parser,
     /// The part of a line the wheel has moved that is too small to scroll yet.
     scroll_remainder: f32,
+    /// What the person has selected, if anything.
+    selection: Option<selection::Selection>,
+    /// The lines above the live screen, which places on the screen are counted from.
+    history: usize,
 }
 
 impl TerminalScreen {
@@ -47,23 +58,33 @@ impl TerminalScreen {
         Self {
             parser: vt100::Parser::new(rows.max(1), cols.max(1), SCROLLBACK_LINES),
             scroll_remainder: 0.0,
+            selection: None,
+            history: 0,
         }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
+        let guard = self.selection_guard();
         self.parser.process(bytes);
+        self.history = Lines::new(&mut self.parser).history();
+        self.keep_selection_if_intact(guard);
     }
 
     /// Forgets everything shown, as a replay that starts from scratch requires.
     pub fn reset(&mut self) {
         let (rows, cols) = self.size();
         self.parser = vt100::Parser::new(rows, cols, SCROLLBACK_LINES);
+        self.selection = None;
+        self.history = 0;
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = (rows.max(1), cols.max(1));
         if (rows, cols) != self.size() {
             self.parser.screen_mut().set_size(rows, cols);
+            // The cells the selection names are not the same ones any more.
+            self.selection = None;
+            self.history = Lines::new(&mut self.parser).history();
         }
     }
 
