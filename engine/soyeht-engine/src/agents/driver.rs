@@ -1,5 +1,8 @@
 use super::{
-    Changes, native_error, purpose::Purpose, questions, responses, sign_in, state::Phase,
+    Changes, native_error,
+    purpose::Purpose,
+    questions, responses, sign_in,
+    state::{Phase, State},
     transcript, updates,
 };
 use crate::{
@@ -22,6 +25,9 @@ use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::segments::Record;
 use std::sync::Arc;
 use uuid::Uuid;
+
+/// How long a probe may stay silent before the agent restarts without its answers.
+const PROBE_DEADLINE_MS: i64 = 10_000;
 
 fn next_prompt<S: StorePort, C: Clock + ?Sized>(
     store: &S,
@@ -571,55 +577,66 @@ impl Core {
         self.run_native_files(pane)?;
         self.run_native_terminals(pane)?;
         let mut state = self.agent_state(pane)?;
-        if state.phase == Phase::RestartAfterProbe {
-            return self.restart_after_probe(pane);
-        }
-        if state.phase == Phase::Ready && !state.requested_options.is_empty() {
-            return self.configure_initial_agent(pane);
+        match state.phase {
+            Phase::RestartAfterProbe => return self.restart_after_probe(pane),
+            Phase::Ready if !state.requested_options.is_empty() => {
+                return self.configure_initial_agent(pane);
+            }
+            _ => {}
         }
         if state
             .probe_started_ms
-            .is_some_and(|start| self.now_ms() - start >= 10_000)
+            .is_some_and(|start| self.now_ms() - start >= PROBE_DEADLINE_MS)
         {
-            let mut changes = Changes::default();
-            for method in responses::PROBED_METHODS {
-                if self
-                    .store
-                    .agent_probe(&state.fingerprint, method)
-                    .map_err(errors::storage)?
-                    .is_none()
-                {
-                    changes.probes.push(ProbeCapability {
-                        method: method.into(),
-                        result: ProbeResult::Inconclusive,
-                        checked_at: self.timestamp(),
-                    });
-                }
-            }
-            state.phase = Phase::RestartAfterProbe;
-            self.commit_agent(
-                self.panes[pane].stored.clone(),
-                state,
-                changes,
-                None,
-                json!({}),
-            )?;
-            return self.restart_after_probe(pane);
+            return self.restart_after_stalled_probe(pane, state);
         }
-        let mut open = self
+        self.decide_open_questions(pane, &mut state)?;
+        self.start_next_prompt(pane, state)
+    }
+
+    /// The probe went quiet: records what it did not answer as inconclusive and restarts.
+    fn restart_after_stalled_probe(&mut self, pane: &str, mut state: State) -> Result<()> {
+        let mut changes = Changes::default();
+        for method in responses::PROBED_METHODS {
+            if self
+                .store
+                .agent_probe(&state.fingerprint, method)
+                .map_err(errors::storage)?
+                .is_none()
+            {
+                changes.probes.push(ProbeCapability {
+                    method: method.into(),
+                    result: ProbeResult::Inconclusive,
+                    checked_at: self.timestamp(),
+                });
+            }
+        }
+        state.phase = Phase::RestartAfterProbe;
+        self.commit_agent(
+            self.panes[pane].stored.clone(),
+            state,
+            changes,
+            None,
+            json!({}),
+        )?;
+        self.restart_after_probe(pane)
+    }
+
+    /// Answers the open questions that a rule decides or whose time ran out.
+    fn decide_open_questions(&mut self, pane: &str, state: &mut State) -> Result<()> {
+        let open = self
             .store
             .agent_open_requests(pane)
             .map_err(errors::storage)?;
         for request in &open {
-            let selected =
-                questions::automatic(&state, request, &self.panes[pane].stored.pane.cwd)?;
+            let selected = questions::automatic(state, request, &self.panes[pane].stored.pane.cwd)?;
             let expired = request.expires_ms <= self.now_ms();
             if !expired && selected.is_none() {
                 continue;
             }
             let mut changes = Changes::default();
             questions::decision(
-                &mut state,
+                state,
                 request,
                 questions::Decision {
                     option: if expired { None } else { selected.as_deref() },
@@ -638,15 +655,19 @@ impl Core {
                 json!({}),
             )?;
         }
+        Ok(())
+    }
+
+    /// Sends the next queued prompt, and shows the pane as working while one is active.
+    fn start_next_prompt(&mut self, pane: &str, mut state: State) -> Result<()> {
         let mut saved = self.panes[pane].stored.clone();
-        let (next_open, next) = next_prompt(
+        let (open, next) = next_prompt(
             &self.store,
             self.clock.as_ref(),
             pane,
             saved.pane.generation,
             &mut state,
         )?;
-        open = next_open;
         if open.is_empty() && saved.pane.state == PaneState::WaitingForYou && state.active.is_some()
         {
             saved.pane.state = PaneState::Working;
