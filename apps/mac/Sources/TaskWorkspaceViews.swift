@@ -2,7 +2,7 @@ import SoyehtClient
 import SoyehtProtocol
 import SwiftUI
 
-private enum TaskViewMode: String, CaseIterable {
+enum TaskViewMode: String, CaseIterable {
   case board = "Board"
   case list = "List"
 }
@@ -72,11 +72,13 @@ struct TaskWorkspaceView: View {
       Image(systemName: "checklist").font(.system(size: 13, weight: .semibold))
       Text("tasks · \(workspaceName)")
         .font(MacTheme.mono(MacTheme.TypeScale.small, weight: .bold))
-      Spacer()
+        .lineLimit(1).truncationMode(.tail).layoutPriority(2)
+      Spacer(minLength: MacTheme.Space.x6)
       Button {
         showAttention.toggle()
       } label: {
         Text(summary).font(MacTheme.mono(MacTheme.TypeScale.small, weight: .medium))
+          .lineLimit(1).truncationMode(.tail)
       }
       .popover(isPresented: $showAttention, arrowEdge: .bottom) {
         AttentionPopover(
@@ -101,27 +103,50 @@ struct TaskWorkspaceView: View {
     .background(MacTheme.well, in: Capsule())
   }
 
+  /// The first density of `TaskToolbarDensity` that fits the width: labels give way to icons,
+  /// then the chips go, so nothing wraps or overlaps.
   private var toolbar: some View {
-    HStack(spacing: MacTheme.Space.x12) {
-      TaskViewToggle(mode: $mode)
-      TaskToolbarLabel(
-        "Filter", icon: "line.3.horizontal.decrease", trailingIcon: "chevron.down"
-      ).accessibilityHidden(true)
-      TaskToolbarLabel(
-        "Priority", icon: "arrow.up.arrow.down", trailingIcon: "chevron.down"
-      ).accessibilityHidden(true)
-      if mode == .list {
-        TaskToolbarLabel("Group: state", icon: "rectangle.3.group", trailingIcon: "chevron.down")
-          .accessibilityHidden(true)
-      }
-      Spacer()
-      dispatchMenu
-      Button {
-        showNewTask = true
-      } label: {
-        TaskToolbarLabel("New task", icon: "plus", trailingIcon: nil, accent: true)
-      }.disabled(!client.connected).buttonStyle(.plain)
+    ViewThatFits(in: .horizontal) {
+      ForEach(TaskToolbarDensity.allCases, id: \.self) { toolbar(density: $0) }
     }.frame(maxWidth: .infinity, minHeight: 34)
+  }
+
+  private func toolbar(density: TaskToolbarDensity) -> some View {
+    HStack(spacing: MacTheme.Space.x12) {
+      ForEach(density.items(listMode: mode == .list), id: \.self) { item in
+        switch item {
+        case .viewToggle:
+          TaskViewToggle(mode: $mode, showsLabels: density.showsLabel(of: item))
+          Spacer(minLength: 0)
+        case .filter:
+          TaskToolbarLabel(
+            "Filter", icon: "line.3.horizontal.decrease", trailingIcon: "chevron.down",
+            showsTitle: density.showsLabel(of: item)
+          ).accessibilityHidden(true)
+        case .priority:
+          TaskToolbarLabel(
+            "Priority", icon: "arrow.up.arrow.down", trailingIcon: "chevron.down",
+            showsTitle: density.showsLabel(of: item)
+          ).accessibilityHidden(true)
+        case .group:
+          TaskToolbarLabel(
+            "Group: state", icon: "rectangle.3.group", trailingIcon: "chevron.down",
+            showsTitle: density.showsLabel(of: item)
+          ).accessibilityHidden(true)
+        case .dispatch:
+          Spacer(minLength: 0)
+          dispatchMenu(showsTitle: density.showsLabel(of: item))
+        case .newTask:
+          Button {
+            showNewTask = true
+          } label: {
+            TaskToolbarLabel(
+              "New task", icon: "plus", trailingIcon: nil, accent: true,
+              showsTitle: density.showsLabel(of: item))
+          }.disabled(!client.connected).buttonStyle(.plain)
+        }
+      }
+    }
   }
 
   private var emptyState: some View {
@@ -143,7 +168,7 @@ struct TaskWorkspaceView: View {
     client.workspaces.first { $0.workspaceId == workspaceId }?.name ?? "Workspace"
   }
 
-  private var dispatchMenu: some View {
+  private func dispatchMenu(showsTitle: Bool) -> some View {
     Menu {
       let ready = TaskPresentation.readyToDispatch(tasks)
       if ready.isEmpty {
@@ -154,7 +179,8 @@ struct TaskWorkspaceView: View {
         }
       }
     } label: {
-      TaskToolbarLabel("Dispatch", icon: "paperplane", trailingIcon: "chevron.down")
+      TaskToolbarLabel(
+        "Dispatch", icon: "paperplane", trailingIcon: "chevron.down", showsTitle: showsTitle)
     }.menuIndicator(.hidden).buttonStyle(.plain).fixedSize().disabled(!client.connected)
   }
 
@@ -166,78 +192,6 @@ struct TaskWorkspaceView: View {
   private func openAttentionPane(_ paneId: String) {
     showAttention = false
     onOpenPane(paneId)
-  }
-}
-
-private struct TaskViewToggle: View {
-  @Binding var mode: TaskViewMode
-
-  var body: some View {
-    HStack(spacing: MacTheme.Space.x2) {
-      choice(.board, icon: "square.grid.2x2")
-      choice(.list, icon: "list.bullet")
-    }
-    .padding(MacTheme.Space.x3).background(MacTheme.well, in: Capsule())
-  }
-
-  private func choice(_ value: TaskViewMode, icon: String) -> some View {
-    Button {
-      mode = value
-    } label: {
-      Label(value.rawValue, systemImage: icon)
-        .font(
-          MacTheme.chrome(MacTheme.TypeScale.control, weight: mode == value ? .bold : .semibold)
-        )
-        .foregroundStyle(mode == value ? MacTheme.ink : MacTheme.muted)
-        .padding(.horizontal, MacTheme.Space.x12).padding(.vertical, MacTheme.Space.x6)
-        .background {
-          if mode == value {
-            RoundedRectangle(cornerRadius: MacTheme.Radius.pill).fill(MacTheme.face)
-              .shadow(color: MacTheme.shadowDark, radius: 2, x: 2, y: 2)
-              .shadow(color: MacTheme.shadowLight, radius: 2, x: -2, y: -2)
-          }
-        }
-    }.buttonStyle(.plain)
-  }
-}
-
-private struct TaskToolbarLabel: View {
-  let title: String
-  let icon: String
-  let trailingIcon: String?
-  let accent: Bool
-
-  init(_ title: String, icon: String, trailingIcon: String?, accent: Bool = false) {
-    self.title = title
-    self.icon = icon
-    self.trailingIcon = trailingIcon
-    self.accent = accent
-  }
-
-  var body: some View {
-    HStack(spacing: MacTheme.Space.x5) {
-      Image(systemName: icon).font(.system(size: 13, weight: .semibold))
-      Text(title).font(
-        MacTheme.chrome(MacTheme.TypeScale.control, weight: accent ? .bold : .semibold))
-      if let trailingIcon {
-        Image(systemName: trailingIcon).font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(accent ? MacTheme.onAccent : MacTheme.muted)
-      }
-    }
-    .foregroundStyle(accent ? MacTheme.onAccent : MacTheme.secondary)
-    .padding(.leading, MacTheme.Space.x10).padding(.trailing, MacTheme.Space.x10)
-    .padding(.vertical, MacTheme.Space.x6)
-    .background {
-      if accent {
-        RoundedRectangle(cornerRadius: MacTheme.Radius.pill).fill(MacTheme.accent)
-          .shadow(color: MacTheme.accent.opacity(0.4), radius: 5, x: 4, y: 4)
-          .shadow(color: MacTheme.shadowLight, radius: 3, x: -3, y: -3)
-      } else {
-        RoundedRectangle(cornerRadius: MacTheme.Radius.pill).fill(MacTheme.face)
-          .shadow(color: MacTheme.shadowDark, radius: 2.5, x: 3, y: 3)
-          .shadow(color: MacTheme.shadowLight, radius: 2.5, x: -3, y: -3)
-      }
-    }
   }
 }
 

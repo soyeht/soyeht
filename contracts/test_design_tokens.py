@@ -26,6 +26,8 @@ ADDED_AFTER_GENERATION = {
     ("paneLayout", "headerTickerMinimumWidth"),
     ("composer", "chipsMinimumWidth"),
     ("composer", "contextPercentageWidth"),
+    ("glyph", "taskToolbarIcon"),
+    ("glyph", "taskToolbarChevron"),
 }
 
 

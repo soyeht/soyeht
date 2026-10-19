@@ -230,6 +230,8 @@ public enum DesignTokens {
     public static let topBarNewPane: CGFloat = 14
     public static let tabClose: CGFloat = 9
     public static let chevron: CGFloat = 11
+    public static let taskToolbarIcon: CGFloat = 13
+    public static let taskToolbarChevron: CGFloat = 10
   }
 
   public enum UsageRing {

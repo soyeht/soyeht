@@ -282,7 +282,9 @@
     "topBarToggle": 15,
     "topBarNewPane": 14,
     "tabClose": 9,
-    "chevron": 11
+    "chevron": 11,
+    "taskToolbarIcon": 13,
+    "taskToolbarChevron": 10
   },
   "usageRing": {
     "diameter": 40,

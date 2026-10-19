@@ -358,6 +358,8 @@ pub mod glyph {
     pub const TOP_BAR_NEW_PANE: f32 = 14.0;
     pub const TAB_CLOSE: f32 = 9.0;
     pub const CHEVRON: f32 = 11.0;
+    pub const TASK_TOOLBAR_ICON: f32 = 13.0;
+    pub const TASK_TOOLBAR_CHEVRON: f32 = 10.0;
 }
 pub mod usage_ring {
     pub const DIAMETER: f32 = 40.0;

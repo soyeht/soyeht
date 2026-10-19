@@ -93,7 +93,7 @@
     "apps/mac/Sources/TaskWorkspaceViews.swift": {
       "corner_radius": 1,
       "padding": 37,
-      "system_font_size": 23
+      "system_font_size": 21
     },
     "apps/mac/Sources/UsageViews.swift": {
       "padding": 1
@@ -236,7 +236,7 @@
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1453,
     "apps/mac/Sources/PreferencesPanel.swift": 832,
-    "apps/mac/Sources/TaskWorkspaceViews.swift": 1250,
+    "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 949,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-engine/src/pane_observations.rs": 1053,
