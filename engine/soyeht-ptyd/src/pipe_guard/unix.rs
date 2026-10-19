@@ -50,7 +50,7 @@ impl Guard {
 pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawned> {
     // Validate before starting any child; this is also used by the native child.
     let _ = process::command(config)?;
-    let stderr = super::open_diagnostic_log(directory, id)?;
+    let stderr = super::open_diagnostic_log(directory, id).map_err(Error::guardian_setup)?;
     let (mut parent, child_socket) = UnixStream::pair()?;
     parent.set_read_timeout(Some(Duration::from_secs(5)))?;
     parent.set_write_timeout(Some(Duration::from_secs(5)))?;
@@ -62,7 +62,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
     }
     // SAFETY: fcntl returned a new descriptor owned exclusively here.
     let inherited = unsafe { File::from_raw_fd(fd) };
-    let mut command = Command::new(std::env::current_exe()?);
+    let mut command = Command::new(std::env::current_exe().map_err(Error::guardian_setup)?);
     command
         .args(["--pipe-guard", &fd.to_string()])
         .stdin(Stdio::piped())
@@ -77,7 +77,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
             Ok(())
         });
     }
-    let mut child = Child::new(command.spawn()?);
+    let mut child = Child::new(command.spawn().map_err(Error::guardian_setup)?);
     drop(inherited);
     drop(child_socket);
     let setup: Result<(u32, File, Output)> = (|| {

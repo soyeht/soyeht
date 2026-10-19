@@ -87,7 +87,7 @@ fn control_from_stdin(command: &mut Command) {
 }
 
 pub(super) fn spawn(mut command: Command, rows: u16, cols: u16) -> io::Result<Session> {
-    let (master, slave) = open(rows, cols)?;
+    let (master, slave) = open(rows, cols).map_err(crate::error::setup_failed)?;
     command.stdin(Stdio::from(slave.try_clone()?));
     command.stdout(Stdio::from(slave.try_clone()?));
     command.stderr(Stdio::from(slave));

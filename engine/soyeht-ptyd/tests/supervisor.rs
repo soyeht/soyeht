@@ -221,6 +221,24 @@ fn a_spawn_the_system_refuses_is_reported_as_spawn_refused() {
 }
 
 #[test]
+fn a_pipe_process_whose_log_folder_cannot_be_made_is_not_a_refusal() {
+    let (daemon, mut client) = Daemon::start();
+    let mut config = daemon.shell();
+    config.kind = ProcessKind::PipesAcp;
+    // The data folder is where `harness-logs` is made; the working folder is fine.
+    let mut permissions = fs::metadata(&daemon.directory).unwrap().permissions();
+    permissions.set_mode(0o500);
+    fs::set_permissions(&daemon.directory, permissions.clone()).unwrap();
+    let response = client.request(Request::Spawn(config)).unwrap();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&daemon.directory, permissions).unwrap();
+    assert!(
+        matches!(&response, Response::Error { kind, .. } if kind == soyeht_ptyd::wire_kind::OPERATION_FAILED),
+        "{response:?}"
+    );
+}
+
+#[test]
 fn pipes_recover_native_requests_after_ack_and_reconnect_without_echoing_stdin() {
     let (daemon, mut client) = Daemon::start();
     let mut config = daemon.shell();

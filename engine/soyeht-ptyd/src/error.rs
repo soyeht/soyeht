@@ -53,7 +53,25 @@ pub fn refuses_to_start(kind: io::ErrorKind) -> bool {
     )
 }
 
+/// An `io::Error` from the setup around a spawn (the diagnostic log, the job, the console),
+/// which says nothing about the folder or the program: its kind is made one that does not
+/// count as a refusal, so a missing log folder is not taken for a missing working folder.
+pub(crate) fn setup_failed(error: io::Error) -> io::Error {
+    if refuses_to_start(error.kind()) {
+        io::Error::other(error)
+    } else {
+        error
+    }
+}
+
 impl Error {
+    /// A failure of the setup around starting a pipe process or its guardian (the
+    /// diagnostic log, the supervisor's own executable, the guardian's start). It is never a
+    /// refusal, whatever its kind.
+    pub(crate) fn guardian_setup(error: io::Error) -> Self {
+        Self::GuardianFailed(error.to_string())
+    }
+
     /// A start failure of the guardian or of a pipe process, kept apart by whether it can pass.
     pub fn guardian(error: &io::Error) -> Self {
         let message = error.to_string();
@@ -213,6 +231,8 @@ mod tests {
                 Error::GuardianFailed(_)
             ));
         }
+        assert!(!Error::Io(setup_failed(io::ErrorKind::NotFound.into())).spawn_refused());
+        assert!(!Error::guardian_setup(io::ErrorKind::PermissionDenied.into()).spawn_refused());
         assert!(!Error::MissingGuardianResponse.spawn_refused());
         assert!(!Error::GuardianFailed("x".into()).spawn_refused());
     }

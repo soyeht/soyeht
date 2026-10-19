@@ -12,10 +12,12 @@ pub(super) type Terminal = Console;
 pub(super) fn spawn(command: Command, rows: u16, cols: u16) -> io::Result<Session> {
     let (input_read, input_write) = winproc::pipe()?;
     let (output_read, output_write) = winproc::pipe()?;
-    let console = Arc::new(Console::new(rows, cols, &input_read, &output_write)?);
+    let console = Arc::new(
+        Console::new(rows, cols, &input_read, &output_write).map_err(crate::error::setup_failed)?,
+    );
     // The console now holds its own ends of both pipes.
     drop((input_read, output_write));
-    let job = Job::new()?;
+    let job = Job::new().map_err(crate::error::setup_failed)?;
     let (process, pid) = winproc::create_process(&Launch {
         command: &command,
         job: &job,

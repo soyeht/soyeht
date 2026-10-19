@@ -23,11 +23,11 @@ impl Guard {
 
 pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawned> {
     let command = process::command(config)?;
-    let stderr = super::open_diagnostic_log(directory, id)?;
+    let stderr = super::open_diagnostic_log(directory, id).map_err(Error::guardian_setup)?;
     let (child_input, input_write) = winproc::pipe()?;
     let (output_read, child_output) = winproc::pipe()?;
     let stderr = std::os::windows::io::OwnedHandle::from(stderr);
-    let job = Job::new()?;
+    let job = Job::new().map_err(Error::guardian_setup)?;
     let (process, pid) = winproc::create_process(&Launch {
         job: &job,
         command: &command,
