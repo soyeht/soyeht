@@ -2,29 +2,15 @@ import Testing
 
 @testable import SoyehtClient
 
-private let fonts = acceptedFontMetrics
-private let halo = PaneLayoutSpacing.paneHalo
-private let floors = PaneLayoutFloorFormula.footprintFloors(fonts: fonts, halo: halo)
-private let compactFloors = PaneLayoutFloorFormula.compactFootprintFloors(fonts: fonts, halo: halo)
-private let sizing = PaneLayoutSizingPolicy(
-  floors: floors, gaps: PaneLayoutSpacing.gaps,
-  compactFloors: compactFloors)
-private let window = PaneLayoutWindowPolicy(
-  minimumExercisedViewport: PaneLayoutSize(width: 375, height: 375),
-  largestPaneFootprintWidth: floors.values.map(\.width).max() ?? 0,
-  standardHorizontalInset: PaneLayoutSpacing.outerMargin, topInset: 8, topBarHeight: 42,
-  paneVerticalInset: PaneLayoutSpacing.outerMargin,
-  railWidth: 56)
+private let fonts = PaneLayoutFixture.fonts
+private let halo = PaneLayoutFixture.halo
+private let floors = PaneLayoutFixture.floors
+private let compactFloors = PaneLayoutFixture.compactFloors
+private let sizing = PaneLayoutFixture.sizing
+private let window = PaneLayoutFixture.window(largestWidth: floors.values.map(\.width).max() ?? 0)
 
-/// The automatic layout the Mac builds as panes open, editor first.
 private func workspace(_ kinds: [PaneLayoutKind]) throws -> PaneLayoutTree {
-  var tree: PaneLayoutTree?
-  for (index, kind) in kinds.enumerated() {
-    tree = try PaneLayoutArrangement.inserting(
-      PaneLayoutLeaf(paneId: "\(kind)-\(index)", kind: kind), into: tree,
-      rule: .initialByType, sizing: sizing)
-  }
-  return try #require(tree)
+  try PaneLayoutFixture.workspace(kinds)
 }
 
 /// Every pane of the stored tree lies inside the viewport with at least its own minimum: its

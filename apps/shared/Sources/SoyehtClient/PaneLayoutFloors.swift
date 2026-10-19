@@ -286,7 +286,10 @@ public enum PaneLayoutFloorFormula {
 public struct PaneLayoutWindowPolicy: Equatable, Sendable {
   /// The lowest width and height exercised by the accepted floor report.
   public var minimumExercisedViewport: PaneLayoutSize
+  /// The widest footprint any pane needs once its optional chrome has folded away.
   public var largestPaneFootprintWidth: Double
+  /// The shortest footprint of any pane kind.
+  public var smallestPaneFootprintHeight: Double
   public var standardHorizontalInset: Double
   public var topInset: Double
   public var topBarHeight: Double
@@ -295,11 +298,13 @@ public struct PaneLayoutWindowPolicy: Equatable, Sendable {
 
   public init(
     minimumExercisedViewport: PaneLayoutSize, largestPaneFootprintWidth: Double,
+    smallestPaneFootprintHeight: Double = 0,
     standardHorizontalInset: Double, topInset: Double, topBarHeight: Double,
     paneVerticalInset: Double, railWidth: Double
   ) {
     self.minimumExercisedViewport = minimumExercisedViewport
     self.largestPaneFootprintWidth = largestPaneFootprintWidth
+    self.smallestPaneFootprintHeight = smallestPaneFootprintHeight
     self.standardHorizontalInset = standardHorizontalInset
     self.topInset = topInset
     self.topBarHeight = topBarHeight
@@ -309,6 +314,26 @@ public struct PaneLayoutWindowPolicy: Equatable, Sendable {
 
   public var verticalOverhead: Double {
     topInset + topBarHeight + 2 * paneVerticalInset
+  }
+
+  /// The narrowest window that holds the open rail beside any pane at its folded floor, with
+  /// the standard inset on both sides: below it the rail would be drawn over a pane. The window
+  /// is never narrower, so a pane card keeps its whole halo clear of the window's edge too.
+  public var minimumWindowWidth: Double {
+    largestPaneFootprintWidth + railWidth + 2 * standardHorizontalInset
+  }
+
+  /// The shortest window that shows the top bar and the shortest pane whole. A taller pane
+  /// scrolls in a window this short.
+  public var minimumWindowHeight: Double {
+    verticalOverhead + smallestPaneFootprintHeight
+  }
+
+  /// The top bar's leading space, measured from the content's edge so the first control starts
+  /// the same distance from the window's edge at every width: past the traffic lights, which a
+  /// window too narrow for the standard inset would otherwise be drawn over.
+  public func topBarLeading(windowWidth: Double, leadingInset: Double) -> Double {
+    leadingInset + standardHorizontalInset - horizontalInset(windowWidth: windowWidth)
   }
 
   public func horizontalInset(windowWidth: Double) -> Double {

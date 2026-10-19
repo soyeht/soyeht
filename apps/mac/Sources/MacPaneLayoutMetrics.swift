@@ -74,10 +74,17 @@ import SoyehtProtocol
   }
   static let window = PaneLayoutWindowPolicy(
     minimumExercisedViewport: minimumExercisedViewport,
-    largestPaneFootprintWidth: footprintFloors.values.map(\.width).max() ?? 0,
+    largestPaneFootprintWidth: sizing.foldedFloors.values.map(\.width).max() ?? 0,
+    smallestPaneFootprintHeight: sizing.foldedFloors.values.map(\.height).min() ?? 0,
     standardHorizontalInset: PaneLayoutSpacing.outerMargin,
     topInset: Double(MacTheme.Space.x8), topBarHeight: topBarHeight,
     paneVerticalInset: PaneLayoutSpacing.outerMargin, railWidth: railWidth)
+
+  /// The smallest window the chrome fits: the open rail beside the widest folded pane, and the
+  /// top bar over the shortest one. `minimumExercisedViewport` is the floor report's own.
+  static let minimumWindow = PaneLayoutSize(
+    width: max(minimumExercisedViewport.width, ceil(window.minimumWindowWidth)),
+    height: max(minimumExercisedViewport.height, ceil(window.minimumWindowHeight)))
 
   static let paneHeader = PaneHeaderLayoutPolicy(
     metrics: PaneHeaderLayoutMetrics(

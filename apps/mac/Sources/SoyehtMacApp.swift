@@ -110,8 +110,8 @@ struct SoyehtMacApp: App {
     WorkspaceWindow(client: client, webHost: webHost)
       .ignoresSafeArea(.container, edges: .top)
       .frame(
-        minWidth: MacPaneLayoutMetrics.minimumExercisedViewport.width,
-        minHeight: MacPaneLayoutMetrics.minimumExercisedViewport.height
+        minWidth: MacPaneLayoutMetrics.minimumWindow.width,
+        minHeight: MacPaneLayoutMetrics.minimumWindow.height
       )
       .environment(themeStore)
       .environment(attentionNotifications)

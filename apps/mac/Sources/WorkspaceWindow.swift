@@ -171,7 +171,10 @@ struct WorkspaceWindow: View {
         client: client, workspaceId: selectedTaskWorkspaceId,
         onSelectWorkspace: selectWorkspace, onCloseWorkspace: closeWorkspace,
         onNewPane: presentNewPane,
-        onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() })
+        onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() },
+        leadingSpace: policy.topBarLeading(
+          windowWidth: windowSize.width,
+          leadingInset: Double(DesignTokens.Layout.topBarLeadingInset)))
       ZStack(alignment: .leading) {
         workspaceContent(viewportSize: contentSize)
           .frame(width: contentSize.width, height: contentSize.height)

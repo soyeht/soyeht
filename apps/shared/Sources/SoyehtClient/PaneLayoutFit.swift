@@ -15,6 +15,23 @@ public struct PaneLayoutTabGroup: Equatable, Sendable {
     self.stripRect = stripRect
     self.paneRect = paneRect
   }
+
+  /// The room under the strip in a slot of `slot`: the viewport the shown pane scrolls in.
+  public func paneArea(inSlot slot: PaneLayoutSize) -> PaneLayoutSize {
+    PaneLayoutSize(
+      width: max(0, slot.width), height: max(0, slot.height - stripRect.size.height))
+  }
+
+  /// The axes on which the shown pane, at its floor, is larger than `paneArea(inSlot:)`. A
+  /// window too small for the pane scrolls it; it never lets the pane spill over the strip or
+  /// the window's chrome.
+  public func overflowAxes(inSlot slot: PaneLayoutSize) -> Set<PaneLayoutAxis> {
+    let area = paneArea(inSlot: slot)
+    var axes: Set<PaneLayoutAxis> = []
+    if paneRect.size.width > area.width { axes.insert(.horizontal) }
+    if paneRect.size.height > area.height { axes.insert(.vertical) }
+    return axes
+  }
 }
 
 public struct PaneLayoutFitResult: Equatable, Sendable {
@@ -49,7 +66,7 @@ public enum PaneLayoutFit {
     projectPanel: EditorProjectPanelPreference = .automatic
   ) throws -> PaneLayoutFitResult {
     var compact = sizing
-    compact.floors.merge(sizing.compactFloors) { _, compactFloor in compactFloor }
+    compact.floors = sizing.foldedFloors
     let candidates: [Candidate]
     switch projectPanel {
     case .automatic:
@@ -95,14 +112,15 @@ public enum PaneLayoutFit {
     for axis in [PaneLayoutAxis.horizontal, .vertical] {
       candidates.append(Candidate(tree: try sizing.arranging(units, along: axis), sizing: sizing))
     }
-    let auxiliaries = units.filter { $0.groupableRole == .auxiliary }
+    let roles = units.map { $0.groupableRole(in: sizing) }
+    let auxiliaries = units.indices.filter { roles[$0] == .auxiliary }.map { units[$0] }
     if auxiliaries.count > 1 {
-      let others = units.filter { $0.groupableRole != .auxiliary }
+      let others = units.indices.filter { roles[$0] != .auxiliary }.map { units[$0] }
       candidates.append(try sizing.tabbing(auxiliaries, beside: others))
     }
-    let groupable = units.filter { $0.groupableRole != nil }
+    let groupable = units.indices.filter { roles[$0] != nil }.map { units[$0] }
     if groupable.count > 1 {
-      let others = units.filter { $0.groupableRole == nil }
+      let others = units.indices.filter { roles[$0] == nil }.map { units[$0] }
       candidates.append(try sizing.tabbing(groupable, beside: others))
     }
     return candidates
@@ -131,9 +149,11 @@ extension PaneLayoutTree {
     }
   }
 
-  /// The role of a unit that may join a tab group; a companion keeps its own presentation.
-  fileprivate var groupableRole: PaneLayoutRole? {
-    guard case .leaf(let leaf) = self else { return nil }
+  /// The role of a unit that may join a tab group; a companion keeps its own presentation, and
+  /// so does a leaf with a presentation-only floor (the new-pane chooser), which has no pane
+  /// to show in a tab.
+  fileprivate func groupableRole(in sizing: PaneLayoutSizingPolicy) -> PaneLayoutRole? {
+    guard case .leaf(let leaf) = self, sizing.paneFloors[leaf.paneId] == nil else { return nil }
     return leaf.kind.role
   }
 }

@@ -279,6 +279,11 @@ public struct PaneLayoutSizingPolicy: Equatable, Sendable {
     self.compactFloors = compactFloors
   }
 
+  /// The floors of every kind once optional chrome has folded away (`compactFloors`).
+  public var foldedFloors: [PaneLayoutKind: PaneLayoutSize] {
+    floors.merging(compactFloors) { _, compact in compact }
+  }
+
   public func overridingFloor(forPaneId paneId: String, with floor: PaneLayoutSize) -> Self {
     var copy = self
     copy.paneFloors[paneId] = floor

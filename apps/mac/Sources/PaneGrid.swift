@@ -178,15 +178,11 @@ struct PaneGrid: View {
           tree: tree, viewport: viewport,
           sizing: MacPaneLayoutMetrics.sizing(
             newPanePlaceholderId: newPane.draft.placeholderPaneId), projectPanel: projectPanel)
-        // The chooser cannot sit in a tab group, so a preview keeps its arrangement and takes
-        // only the compact floors.
-        let plan =
-          fit.keepsArrangement
-          ? fit.plan
-          : try PaneLayoutGeometry.layout(tree: tree, viewport: viewport, sizing: fit.sizing)
+        // The chooser has a presentation-only floor, so the fit never tabs it: when the stored
+        // arrangement does not fit, the other panes share a tab group beside it.
         return ResolvedPaneGridLayout(
-          workspaceId: workspaceId ?? "", state: PaneLayoutState(), tree: tree, plan: plan,
-          insertedPaneIds: [], isProvisional: true, keepsArrangement: true)
+          workspaceId: workspaceId ?? "", state: PaneLayoutState(), tree: fit.tree,
+          plan: fit.plan, insertedPaneIds: [], isProvisional: true, keepsArrangement: true)
       } catch {
         Self.logger.error(
           "new_pane_layout_resolution_failed error=\(error.localizedDescription)")
@@ -461,32 +457,42 @@ struct PaneLayoutNodeSurface: View {
     .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
   }
 
-  /// Every grouped pane stays mounted; only the selected one, or the first, is visible.
+  /// Every grouped pane stays mounted; only the selected one, or the first, is visible. The
+  /// strip stays put and the pane scrolls under it when the window is smaller than the pane's
+  /// floor, so nothing is drawn past the slot.
   private func tabGroupSurface(
     _ group: PaneLayoutTabGroup, geometry: PaneLayoutNodeGeometry
   ) -> some View {
     let panes = group.paneIds.compactMap { panesById[$0] }
     let shown = panes.first { $0.paneId == client.selectedPaneId }?.paneId ?? group.paneIds.first
-    let area = group.paneRect.size
+    let content = group.paneRect.size
+    let slot = geometry.frame.size
+    let area = group.paneArea(inSlot: slot)
     return VStack(spacing: 0) {
       PaneTabStrip(
         panes: panes, selectedPaneId: shown, identifier: "pane-group-tab",
         onSelect: { client.select($0) })
-      ZStack(alignment: .topLeading) {
-        ForEach(panes, id: \.paneId) { pane in
-          let visible = pane.paneId == shown
-          paneSurface(
-            pane: pane, halo: CGFloat(MacPaneLayoutMetrics.paneHalo),
-            contentWidth: area.width, contentHeight: area.height, visible: visible
-          )
-          .id(pane.paneId)
-          .opacity(visible ? 1 : 0)
-          .allowsHitTesting(visible)
-          .accessibilityHidden(!visible)
+      PaneLayoutContainer(
+        overflowAxes: Axis.Set(overflow: group.overflowAxes(inSlot: slot)),
+        size: CGSize(width: area.width, height: area.height),
+        contentSize: CGSize(width: content.width, height: content.height)
+      ) {
+        ZStack(alignment: .topLeading) {
+          ForEach(panes, id: \.paneId) { pane in
+            let visible = pane.paneId == shown
+            paneSurface(
+              pane: pane, halo: CGFloat(MacPaneLayoutMetrics.paneHalo),
+              contentWidth: content.width, contentHeight: content.height, visible: visible
+            )
+            .id(pane.paneId)
+            .opacity(visible ? 1 : 0)
+            .allowsHitTesting(visible)
+            .accessibilityHidden(!visible)
+          }
         }
       }
     }
-    .frame(width: geometry.frame.size.width, height: geometry.frame.size.height)
+    .frame(width: slot.width, height: slot.height, alignment: .top)
   }
 
   private func paneTint(_ index: Int) -> Color {

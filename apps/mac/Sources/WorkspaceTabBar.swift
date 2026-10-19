@@ -42,6 +42,8 @@ struct WorkspaceTopBar: View {
   let onNewPane: () -> Void
   let onTasks: () -> Void
   let onToggleAppBar: () -> Void
+  /// Space before the first control, so it starts past the window's traffic lights.
+  let leadingSpace: Double
 
   @State private var measurement = WorkspaceTabStripMeasurement.empty
   @State private var scrollOffset = 0.0
@@ -58,7 +60,7 @@ struct WorkspaceTopBar: View {
     ScrollViewReader { proxy in
       HStack(spacing: MacTheme.Space.x10) {
         Color.clear.frame(
-          width: DesignTokens.Layout.topBarLeadingInset,
+          width: leadingSpace,
           height: MacPaneLayoutMetrics.topBarControlHeight)
         Button(action: onToggleAppBar) {
           Image(systemName: "rectangle.grid.2x2")
