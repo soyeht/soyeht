@@ -1,0 +1,69 @@
+//! What the two file followers (the project panel and the skill folders) share: the
+//! operating-system event stream of one folder, and the timing that turns a burst of events
+//! into one read.
+
+use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use std::{
+    path::Path,
+    sync::mpsc::{self, Receiver},
+};
+
+/// A burst is read once no event arrived for this long ...
+pub(crate) const QUIET_MS: i64 = 75;
+/// ... or once it has lasted this long, so a steady stream still shows up.
+pub(crate) const BURST_LIMIT_MS: i64 = 500;
+
+/// The file events of one folder tree. Dropping it stops the stream.
+pub(crate) struct EventStream {
+    pub(crate) receiver: Receiver<notify::Result<Event>>,
+    _watcher: Option<RecommendedWatcher>,
+}
+
+impl EventStream {
+    /// Follows `root` and everything below it; `None` where no watcher can start.
+    pub(crate) fn follow(root: &Path) -> Option<Self> {
+        let (sender, receiver) = mpsc::channel();
+        let mut watcher = notify::recommended_watcher(sender).ok()?;
+        watcher.watch(root, RecursiveMode::Recursive).ok()?;
+        Some(Self {
+            receiver,
+            _watcher: Some(watcher),
+        })
+    }
+
+    /// A stream the test feeds, so event handling runs without the operating system.
+    #[cfg(test)]
+    pub(crate) fn fed(receiver: Receiver<notify::Result<Event>>) -> Self {
+        Self {
+            receiver,
+            _watcher: None,
+        }
+    }
+}
+
+/// When the events seen so far are ready to be read.
+#[derive(Default)]
+pub(crate) struct Burst {
+    started_ms: Option<i64>,
+    last_event_ms: i64,
+}
+
+impl Burst {
+    /// Records that an event arrived at `now`.
+    pub(crate) fn note(&mut self, now: i64) {
+        self.started_ms.get_or_insert(now);
+        self.last_event_ms = now;
+    }
+
+    /// True once events stopped for `QUIET_MS` or the burst ran `BURST_LIMIT_MS`.
+    pub(crate) fn settled(&self, now: i64) -> bool {
+        self.started_ms.is_some_and(|started| {
+            now - self.last_event_ms >= QUIET_MS || now - started >= BURST_LIMIT_MS
+        })
+    }
+
+    /// Starts the next burst from nothing.
+    pub(crate) fn end(&mut self) {
+        self.started_ms = None;
+    }
+}

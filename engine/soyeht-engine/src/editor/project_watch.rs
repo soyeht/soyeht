@@ -15,20 +15,16 @@ use super::project_files::is_save_temporary;
 use crate::{
     core::Core,
     errors::{self, Result},
+    file_events::{Burst, EventStream},
     model,
 };
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use soyeht_protocol::{ProjectTreeChangedEvent, event};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::mpsc::TryRecvError,
 };
 
-/// A burst is read once no event arrived for this long ...
-const QUIET_MS: i64 = 75;
-/// ... or once it has lasted this long, so a steady stream still shows up.
-const BURST_LIMIT_MS: i64 = 500;
 /// The fallback reads every watched folder at this period.
 const POLL_INTERVAL_MS: i64 = 1_000;
 
@@ -43,8 +39,7 @@ pub struct Watches {
     sources: BTreeMap<String, Source>,
     /// Workspace → what events touched; `None` means every folder.
     dirty: Dirty,
-    burst_started_ms: Option<i64>,
-    last_event_ms: i64,
+    burst: Burst,
     poll_due_ms: i64,
     /// Folder listings read since the engine started; tests assert idleness.
     reads: u64,
@@ -57,12 +52,7 @@ pub struct Watches {
 }
 
 enum Source {
-    Events {
-        root: PathBuf,
-        events: Receiver<notify::Result<Event>>,
-        // Dropping the watcher stops the stream. Tests feed `events` directly.
-        _watcher: Option<RecommendedWatcher>,
-    },
+    Events { root: PathBuf, stream: EventStream },
     Polling,
 }
 
@@ -95,12 +85,11 @@ impl Watches {
         &mut self,
         workspace_id: &str,
         root: &Path,
-    ) -> mpsc::Sender<notify::Result<Event>> {
-        let (sender, events) = mpsc::channel();
+    ) -> std::sync::mpsc::Sender<notify::Result<notify::Event>> {
+        let (sender, events) = std::sync::mpsc::channel();
         let source = Source::Events {
             root: root.to_owned(),
-            events,
-            _watcher: None,
+            stream: EventStream::fed(events),
         };
         self.insert_source(workspace_id, source);
         sender
@@ -139,11 +128,11 @@ impl Watches {
         let mut arrived = false;
         let mut failed = Vec::new();
         for (workspace, source) in &self.sources {
-            let Source::Events { root, events, .. } = source else {
+            let Source::Events { root, stream } = source else {
                 continue;
             };
             loop {
-                match events.try_recv() {
+                match stream.receiver.try_recv() {
                     Ok(Ok(event)) if !event.need_rescan() => {
                         arrived = true;
                         let entry = self.dirty.entry(workspace.clone());
@@ -172,8 +161,7 @@ impl Watches {
             arrived = true;
         }
         if arrived {
-            self.burst_started_ms.get_or_insert(now);
-            self.last_event_ms = now;
+            self.burst.note(now);
         }
         arrived
     }
@@ -201,13 +189,11 @@ impl Watches {
 
     /// The burst to read now, once events stopped or ran long enough.
     fn take_settled(&mut self, now: i64, polled: bool) -> Dirty {
-        let settled = self.burst_started_ms.is_some_and(|started| {
-            now - self.last_event_ms >= QUIET_MS || now - started >= BURST_LIMIT_MS
-        });
+        let settled = self.burst.settled(now);
         if !(settled || polled) || self.dirty.is_empty() {
             return BTreeMap::new();
         }
-        self.burst_started_ms = None;
+        self.burst.end();
         std::mem::take(&mut self.dirty)
     }
 }
@@ -299,13 +285,9 @@ impl Core {
 }
 
 fn event_source(root: &Path) -> Option<Source> {
-    let (sender, events) = mpsc::channel();
-    let mut watcher = notify::recommended_watcher(sender).ok()?;
-    watcher.watch(root, RecursiveMode::Recursive).ok()?;
     Some(Source::Events {
         root: root.to_owned(),
-        events,
-        _watcher: Some(watcher),
+        stream: EventStream::follow(root)?,
     })
 }
 

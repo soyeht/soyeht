@@ -11,6 +11,7 @@ pub mod engine_build;
 pub mod errors;
 mod experiment_build;
 mod experiment_export;
+mod file_events;
 mod frames;
 pub mod hooks;
 mod immutable_file;

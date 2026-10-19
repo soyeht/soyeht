@@ -247,7 +247,7 @@
   "swallowed_errors": {
     "rust_err_wildcard": 34,
     "rust_let_underscore": 47,
-    "rust_ok": 104,
+    "rust_ok": 102,
     "swift_try_optional": 31
   },
   "version": 3

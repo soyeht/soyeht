@@ -9,7 +9,7 @@
 //! start nor a request waits for it: the folder is looked at every two seconds
 //! until the stream is live, and read once more when it goes live.
 
-use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
+use crate::file_events::{Burst, EventStream};
 use soyeht_protocol::Skill;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -19,26 +19,16 @@ use std::{
     thread,
 };
 
-/// A burst is read once no event arrived for this long ...
-const QUIET_MS: i64 = 75;
-/// ... or once it has lasted this long.
-const BURST_LIMIT_MS: i64 = 500;
 const PROBE_INTERVAL_MS: i64 = 2_000;
 
 /// `None` is the user's folder, `Some(id)` a workspace's.
 type Key = Option<String>;
 
-struct Events {
-    receiver: Receiver<notify::Result<Event>>,
-    // Dropping the watcher stops the stream. Tests feed `receiver` directly.
-    _watcher: Option<RecommendedWatcher>,
-}
-
 struct Folder {
     root: PathBuf,
-    events: Option<Events>,
+    events: Option<EventStream>,
     /// The thread that is starting the event stream; it answers once.
-    starting: Option<Receiver<Option<Events>>>,
+    starting: Option<Receiver<Option<EventStream>>>,
     fingerprint: u64,
     /// The listing the fingerprint comes from was read before the event
     /// stream started, so one more read is due: a change in between is in no
@@ -53,8 +43,7 @@ pub struct Watches {
     /// Workspace folders with the connections that listed them.
     workspaces: BTreeMap<String, (Folder, BTreeSet<String>)>,
     dirty: BTreeSet<Key>,
-    burst_started_ms: Option<i64>,
-    last_event_ms: i64,
+    burst: Burst,
     probe_due_ms: i64,
     /// Never start event streams: every folder is looked at on the probe.
     polling_only: bool,
@@ -67,13 +56,10 @@ impl Watches {
     pub(super) fn inject_events(
         &mut self,
         workspace_id: Option<&str>,
-    ) -> mpsc::Sender<notify::Result<Event>> {
+    ) -> mpsc::Sender<notify::Result<notify::Event>> {
         let (sender, receiver) = mpsc::channel();
         if let Some(folder) = self.folder_mut(workspace_id) {
-            folder.events = Some(Events {
-                receiver,
-                _watcher: None,
-            });
+            folder.events = Some(EventStream::fed(receiver));
         }
         sender
     }
@@ -109,8 +95,7 @@ impl Watches {
     /// burst even before its file events arrive.
     pub(super) fn touch(&mut self, workspace_id: Option<&str>, now: i64) {
         self.dirty.insert(workspace_id.map(Into::into));
-        self.burst_started_ms.get_or_insert(now);
-        self.last_event_ms = now;
+        self.burst.note(now);
     }
 
     /// The folders to list again, once their burst of events settled.
@@ -136,16 +121,12 @@ impl Watches {
             }
         }
         if arrived {
-            self.burst_started_ms.get_or_insert(now);
-            self.last_event_ms = now;
+            self.burst.note(now);
         }
-        let settled = self.burst_started_ms.is_some_and(|started| {
-            now - self.last_event_ms >= QUIET_MS || now - started >= BURST_LIMIT_MS
-        });
-        if !settled {
+        if !self.burst.settled(now) {
             return Vec::new();
         }
-        self.burst_started_ms = None;
+        self.burst.end();
         std::mem::take(&mut self.dirty)
             .into_iter()
             .filter_map(|key| {
@@ -200,12 +181,12 @@ impl Folder {
     /// Follows the folder while it exists. True when it appeared, vanished,
     /// or cannot be followed by events and must be read again.
     fn reattach(&mut self) -> bool {
-        self.reattach_with(event_source)
+        self.reattach_with(EventStream::follow)
     }
 
     fn reattach_with(
         &mut self,
-        start: impl FnOnce(&Path) -> Option<Events> + Send + 'static,
+        start: impl FnOnce(&Path) -> Option<EventStream> + Send + 'static,
     ) -> bool {
         match (self.root.is_dir(), self.events.is_some()) {
             (true, false) => {
@@ -266,8 +247,8 @@ impl Folder {
 
 fn start_in_background(
     root: &Path,
-    start: impl FnOnce(&Path) -> Option<Events> + Send + 'static,
-) -> Option<Receiver<Option<Events>>> {
+    start: impl FnOnce(&Path) -> Option<EventStream> + Send + 'static,
+) -> Option<Receiver<Option<EventStream>>> {
     let (sender, receiver) = mpsc::channel();
     let root = root.to_owned();
     thread::Builder::new()
@@ -281,16 +262,6 @@ fn start_in_background(
     Some(receiver)
 }
 
-fn event_source(root: &Path) -> Option<Events> {
-    let (sender, receiver) = mpsc::channel();
-    let mut watcher = notify::recommended_watcher(sender).ok()?;
-    watcher.watch(root, RecursiveMode::Recursive).ok()?;
-    Some(Events {
-        receiver,
-        _watcher: Some(watcher),
-    })
-}
-
 fn fingerprint(listed: &[Skill]) -> u64 {
     let mut hasher = DefaultHasher::new();
     serde_json::to_string(listed)
@@ -302,6 +273,7 @@ fn fingerprint(listed: &[Skill]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file_events::{BURST_LIMIT_MS, QUIET_MS};
     use soyeht_protocol::SkillScope;
 
     fn skill(name: &str) -> Skill {
@@ -349,7 +321,11 @@ mod tests {
     }
 
     /// An existing watched folder fed by the returned channel.
-    fn injected() -> (PathBuf, Watches, mpsc::Sender<notify::Result<Event>>) {
+    fn injected() -> (
+        PathBuf,
+        Watches,
+        mpsc::Sender<notify::Result<notify::Event>>,
+    ) {
         let root = temp_folder();
         std::fs::create_dir_all(&root).unwrap();
         let mut watches = followed(&root, false);
@@ -395,7 +371,7 @@ mod tests {
     fn a_burst_of_events_is_read_once_after_it_settles() {
         let (root, mut watches, events) = injected();
         for _ in 0..50 {
-            events.send(Ok(Event::default())).unwrap();
+            events.send(Ok(notify::Event::default())).unwrap();
         }
         assert_eq!(
             settle(&mut watches, 1_000),
@@ -462,10 +438,7 @@ mod tests {
         let (_sender, receiver) = mpsc::channel();
         assert!(folder.reattach_with(move |_| {
             gate.recv().ok();
-            Some(Events {
-                receiver,
-                _watcher: None,
-            })
+            Some(EventStream::fed(receiver))
         }));
         assert!(folder.events.is_none() && folder.starting.is_some());
         assert!(!folder.drain() && !folder.take_catch_up(), "still starting");
