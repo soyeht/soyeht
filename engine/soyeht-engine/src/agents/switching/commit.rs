@@ -64,8 +64,7 @@ impl Core {
             candidate.state.session_id.clone(),
             "Candidate session did not open",
         )?;
-        candidate.state.queue = original.queue.clone();
-        candidate.state.queue_revision = original.queue_revision;
+        candidate.state.adopt_queue(&original);
         for prompt_id in incorporated_pending {
             candidate.state.remove(prompt_id)?;
         }

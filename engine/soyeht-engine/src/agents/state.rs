@@ -6,7 +6,7 @@ use soyeht_protocol::{
     HarnessLaunch, PaneQueueListResult, PromptAttachment, PromptItem, PromptOrigin, PromptStatus,
     QueuedPromptSummary, Role, TaskExecutor, limits,
 };
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use uuid::Uuid;
 
 pub(crate) use super::continuation::InternalContinuation;
@@ -131,6 +131,10 @@ pub struct State {
     #[serde(skip)]
     pub queue: VecDeque<PromptItem>,
     pub queue_revision: u64,
+    /// Queued prompts already written to the transcript because the agent could
+    /// not start them (it waits for sign-in). Starting one does not record it again.
+    #[serde(default)]
+    pub(crate) transcribed_prompts: BTreeSet<String>,
     #[serde(default)]
     pub queue_paused: bool,
     pub active: Option<PromptItem>,
@@ -214,6 +218,7 @@ impl State {
             initial_config_failed: false,
             queue: VecDeque::new(),
             queue_revision: 0,
+            transcribed_prompts: BTreeSet::new(),
             queue_paused: false,
             active: None,
             active_output_observed: true,
@@ -436,6 +441,14 @@ impl State {
         self.enqueue_identified(prompt_id, text, PromptOrigin::Automatic, at)
     }
 
+    /// Takes over the queue of the state this one replaces, with the record of
+    /// which of its prompts the transcript already holds.
+    pub(crate) fn adopt_queue(&mut self, from: &State) {
+        self.queue = from.queue.clone();
+        self.queue_revision = from.queue_revision;
+        self.transcribed_prompts = from.transcribed_prompts.clone();
+    }
+
     pub(crate) fn restore_queue(&mut self, queue: Vec<PromptItem>) {
         self.queue = queue.into();
         self.prioritize_queue();
@@ -451,6 +464,7 @@ impl State {
         };
         self.changed_queue()?;
         self.queue.remove(index);
+        self.transcribed_prompts.remove(id);
         Ok(true)
     }
 

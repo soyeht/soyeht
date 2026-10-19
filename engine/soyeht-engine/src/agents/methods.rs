@@ -97,6 +97,20 @@ fn prompt_origin(params: &Value) -> Result<PromptOrigin> {
         .map(|origin| origin.unwrap_or(PromptOrigin::Human))
 }
 
+/// A prompt joined the queue: clients learn of it, and a pane that waits for
+/// sign-in reacts to a prompt of the person.
+fn prompt_queued(
+    pane: &str,
+    state: &mut super::state::State,
+    saved: &crate::model::StoredPane,
+    changes: &mut Changes,
+    now_ms: i64,
+    prompt: &soyeht_protocol::PromptItem,
+) -> Result<()> {
+    changes.events.push(queued(pane, state, now_ms)?);
+    super::sign_in::prompt_arrived(state, saved, changes, &prompt.origin)
+}
+
 pub(crate) fn cancel(
     store: &impl StorePort,
     pane: &str,
@@ -379,7 +393,7 @@ impl Core {
                 for prepared in &prompt_attachments {
                     prepared.publish()?;
                 }
-                changes.events.push(queued(pane, &state, now_ms)?);
+                prompt_queued(pane, &mut state, &saved, &mut changes, now_ms, &prompt)?;
                 json!({"promptId":prompt.prompt_id,"queued":true})
             }
             method::PANE_QUEUE_REMOVE => {

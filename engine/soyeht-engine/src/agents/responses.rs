@@ -1,6 +1,7 @@
 use super::{
     Changes, native_error, prompt_errors,
     purpose::{ProbeStep, Purpose},
+    sign_in::needs_login,
     state::{Phase, State},
     transcript,
 };
@@ -116,28 +117,6 @@ fn open(
             runtime.now_ms,
         )
     }
-}
-
-fn needs_login(state: &mut State, saved: &mut StoredPane, changes: &mut Changes) {
-    state.phase = Phase::NeedsLogin;
-    state.auth_required = true;
-    state.probe_started_ms = None;
-    saved.pane.state = PaneState::Starting;
-    saved.pane.phrase = "Sign-in required".into();
-    let methods = state
-        .initialized
-        .as_ref()
-        .map(|i| {
-            i.auth_methods
-                .iter()
-                .map(|m| m.public.clone())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    changes.events.push((
-        event::PANE_NEEDS_LOGIN.into(),
-        json!({"paneId":saved.pane.pane_id,"harness":state.launch.id,"authMethods":methods}),
-    ));
 }
 
 fn finish_configuration(
@@ -306,8 +285,7 @@ fn probe_new_response(
             )
         }
         Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
-            needs_login(state, saved, changes);
-            Ok(())
+            needs_login(state, saved, changes)
         }
         Err(error) => Err(errors::harness_unavailable(error.message)),
     }
@@ -427,8 +405,7 @@ fn session_response(
     match result {
         Ok(value) => session_opened(store, state, saved, purpose, changes, &value),
         Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
-            needs_login(state, saved, changes);
-            Ok(())
+            needs_login(state, saved, changes)
         }
         Err(error) if *purpose == Purpose::Load && matches!(error.code, -32601 | -32002) => {
             session_lost(store, runtime, state, saved, changes, error.message)
@@ -455,6 +432,9 @@ fn session_opened(
         state.session_id = Some(id);
     }
     if *purpose == Purpose::Load {
+        // The replay replaces the stored transcript, so a prompt written while
+        // it waited is gone; it is written again when it starts.
+        state.transcribed_prompts.clear();
         changes.replay_messages = true;
         super::updates::finish_replayed_user(
             store,
@@ -615,7 +595,7 @@ fn prompt_response(
         .events
         .push(turn_ended(&saved.pane.pane_id, context.into(), reason)?);
     if authentication_required {
-        needs_login(state, saved, changes);
+        needs_login(state, saved, changes)?;
     }
     Ok(())
 }

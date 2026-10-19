@@ -192,6 +192,21 @@ in progress. Every ending of a sign-in without a sign-in says why in
 or lost because the supervisor restarted. The engine writes an
 `engine.sign_in_ended` log record with the exit code and cause.
 
+### Waiting for sign-in
+
+A pane that needs sign-in keeps the person's prompts. The prompts of the person
+that cannot start are written to the transcript at once, followed by a `system`
+message that says the agent waits for sign-in and that sending another prompt
+checks again (one message for each batch of prompts recorded together). A queued
+prompt is written once: starting it later does not repeat it. A reopened session
+that is loaded replaces the transcript with the agent's replay, so a prompt that
+had been written but did not start is written again when it starts. A prompt of
+the person sent to such a pane, with no sign-in running, restarts the agent so
+that it reports whether it still needs a sign-in; an automatic prompt only waits.
+A sign-in repaired outside Soyeht (the person signed in with the agent's own
+command) therefore recovers on the next prompt, without closing the pane, and
+the queued prompts run in order. While a sign-in runs, a prompt only waits.
+
 ### Switching account and signing out
 
 A pane that is signed in offers the same flow as an account switch:

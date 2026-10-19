@@ -140,8 +140,7 @@ impl Core {
         state.mcp_role = original.mcp_role.clone();
         state.mcp_enabled = original.mcp_enabled;
         state.permission_rules = original.permission_rules.clone();
-        state.queue = original.queue.clone();
-        state.queue_revision = original.queue_revision;
+        state.adopt_queue(&original);
         state.queue_paused = checkpoint.previous_queue_paused;
         state.next_message_seq = original.next_message_seq;
         state.has_finished_turn = original.has_finished_turn;

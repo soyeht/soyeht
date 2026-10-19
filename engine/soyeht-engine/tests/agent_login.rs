@@ -10,7 +10,7 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 mod support;
@@ -84,14 +84,6 @@ fn login_in_progress() -> (Rig, Client, String, String, u16) {
     let terminal = start_login(&mut client, &pane, "login-start");
     let port = callback_port(&rig);
     (rig, client, pane, terminal, port)
-}
-
-fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while !ready() {
-        assert!(Instant::now() < deadline, "timed out waiting for: {what}");
-        thread::sleep(Duration::from_millis(20));
-    }
 }
 
 fn start_login(client: &mut Client, pane: &str, key: &str) -> String {

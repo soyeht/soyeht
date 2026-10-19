@@ -1,6 +1,6 @@
 use super::{
-    Changes, native_error, purpose::Purpose, questions, responses, state::Phase, transcript,
-    updates,
+    Changes, native_error, purpose::Purpose, questions, responses, sign_in, state::Phase,
+    transcript, updates,
 };
 use crate::{
     core::Core,
@@ -671,7 +671,7 @@ impl Core {
         changes
             .events
             .push(super::methods::queued(pane, &state, self.now_ms())?);
-        transcript::user_prompt(&mut state, saved.pane.generation, &prompt, &mut changes)?;
+        sign_in::record_started(&mut state, saved.pane.generation, &prompt, &mut changes)?;
         let payload = prompt_payload(&state, &session, &prompt)?;
         responses::call(
             &mut state,

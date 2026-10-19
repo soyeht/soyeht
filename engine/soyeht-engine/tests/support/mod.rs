@@ -224,14 +224,7 @@ impl Rig {
         workspace: &Value,
         harness: &str,
     ) -> (Client, String) {
-        let pane = client.call(
-            "pane.create",
-            json!({"workspaceId":workspace,"mode":"agent",
-            "harness":harness,"idempotencyKey":Uuid::new_v4().to_string()}),
-        )["paneId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let pane = create_agent_pane(&mut client, workspace, harness);
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         loop {
             let view = client.pane(&pane);
@@ -505,6 +498,25 @@ pub fn transcript_items(client: &mut Client, pane: &str) -> Vec<Value> {
         .as_array()
         .unwrap()
         .clone()
+}
+
+pub fn create_agent_pane(client: &mut Client, workspace: &Value, harness: &str) -> String {
+    client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent",
+        "harness":harness,"idempotencyKey":Uuid::new_v4().to_string()}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+pub fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    while !ready() {
+        assert!(Instant::now() < deadline, "timed out waiting for: {what}");
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 pub fn wait_for_user_message(client: &mut Client, pane: &str, text: &str) -> Vec<Value> {

@@ -30,6 +30,7 @@ pub mod questions;
 pub mod recovery;
 pub mod registry;
 pub mod responses;
+mod sign_in;
 pub mod state;
 pub mod subagents;
 pub mod switching;
