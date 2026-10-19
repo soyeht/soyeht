@@ -28,6 +28,8 @@ public struct AgentPaneView: Sendable {
   /// Why the last sign-in did not finish; cleared when the next one starts or succeeds.
   public var signInFailure: String?
   public var harnessSwitch: AgentHarnessSwitchView?
+  /// Where the transcript was left; a reference, so scrolling does not redraw every pane.
+  public let scroll = AgentTranscriptScroll()
 
   public init() {}
 

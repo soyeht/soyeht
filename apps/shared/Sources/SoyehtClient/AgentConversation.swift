@@ -93,6 +93,8 @@ extension AgentConversationView where HarnessControl == EmptyView {
   @State private var prompt = ""
   @State private var attachments: AgentComposerAttachments
   @State private var follow = AgentConversationFollow()
+  @State private var bottomVisibleId: String?
+  @State private var scrollRestored = false
   @State private var subagents = AgentSubagentDisclosure()
   @FocusState private var promptFocused: Bool
 
@@ -191,9 +193,15 @@ extension AgentConversationView where HarnessControl == EmptyView {
           ForEach(entries) { entry in transcriptEntry(entry).id(entry.id) }
           AgentSubagentWaitingStatus(entries: entries, style: style)
           Color.clear.frame(height: 1).id(AgentConversationFollow.bottomAnchor)
-        }.padding(.horizontal, inset)
+        }.scrollTargetLayout()
+          .padding(.horizontal, inset)
           .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
       }
+      .scrollPosition(id: $bottomVisibleId, anchor: .bottom)
+      .onChange(of: bottomVisibleId) { _, id in
+        if scrollRestored { view.scroll.record(bottomVisibleId: id) }
+      }
+      .task { await restoreScroll(proxy) }
       .onChange(of: view.messages.count) { _, _ in
         guard follow.messagesChanged(isVisible: isVisible) else { return }
         withAnimation(.easeOut(duration: 0.18)) {
@@ -209,6 +217,24 @@ extension AgentConversationView where HarnessControl == EmptyView {
         follow.revealed()
       }
     }
+  }
+
+  /// The view is new each time its workspace is shown: go back to where the person left it.
+  /// Rows not laid out yet have estimated heights, so one jump only gets near a row; the
+  /// next ones, once rows have been laid out, land closer.
+  private func restoreScroll(_ proxy: ScrollViewProxy) async {
+    for _ in 0..<AgentTranscriptScroll.restorePasses {
+      // Sleep throws only when the view goes away, which ends the restore.
+      do { try await Task.sleep(for: .milliseconds(AgentTranscriptScroll.restorePassMs)) } catch {
+        return
+      }
+      let rows = AgentTranscriptGrouping.entries(view.messages).map(\.id)
+      switch view.scroll.restoration(rowIds: rows) {
+      case .bottom: proxy.scrollTo(AgentConversationFollow.bottomAnchor, anchor: .bottom)
+      case .row(let id): proxy.scrollTo(id, anchor: .bottom)
+      }
+    }
+    scrollRestored = true
   }
 
   /// Type-erased so subagent rows can hold nested subagent rows.
