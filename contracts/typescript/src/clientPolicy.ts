@@ -5,7 +5,8 @@ export const clientPolicy = {
     "greetingTimeoutMs": 5000,
     "reconnectDelayMs": 1000,
     "reconnectCeilingMs": 30000,
-    "draftBeatMs": 8000
+    "draftBeatMs": 8000,
+    "agentPartialFlushMs": 16
   },
   "terminal": {
     "inputChunkBytes": 16384

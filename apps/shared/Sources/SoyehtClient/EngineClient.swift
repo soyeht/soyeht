@@ -107,6 +107,7 @@ public final class EngineClient {
   @ObservationIgnored var closedPaneIds: Set<String> = []
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
   @ObservationIgnored var agentTranscriptRevisions: [String: UInt64] = [:]
+  @ObservationIgnored lazy var partials = AgentPartialFlusher(self)
   @ObservationIgnored var agentTranscriptLoadsInFlight: [String: UInt64] = [:]
   @ObservationIgnored var harnessRefreshGeneration: UInt64 = 0
   @ObservationIgnored var modelRefreshGenerations: [String: UInt64] = [:]
@@ -209,8 +210,7 @@ public final class EngineClient {
   }
   private func disconnect() {
     connected = false
-    agentTranscriptRevisions.removeAll()
-    agentTranscriptLoadsInFlight.removeAll()
+    resetAgentSession()
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
     editorWriteQueues.removeAll()

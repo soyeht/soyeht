@@ -3,7 +3,7 @@ import SwiftUI
 /// Colors and fonts of the agent conversation. The approved pane interior is flat: the pane
 /// shell is the only raised surface, so this style carries no shadow colors at all. Every
 /// color is a role of the active palette (`SoyehtThemeColorSet`).
-public struct AgentConversationStyle: Sendable {
+public struct AgentConversationStyle: Equatable, Sendable {
   /// Fill of flat cards inside the pane: messages, permission and question cards, composer.
   public let canvas: Color
   /// The pane face behind the transcript; also the label color of the primary button.

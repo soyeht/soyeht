@@ -7,6 +7,7 @@ pub const GREETING_TIMEOUT_MS: u64 = 5000;
 pub const RECONNECT_DELAY_MS: u64 = 1000;
 pub const RECONNECT_CEILING_MS: u64 = 30000;
 pub const DRAFT_BEAT_MS: u64 = 8000;
+pub const AGENT_PARTIAL_FLUSH_MS: u64 = 16;
 pub const TERMINAL_INPUT_CHUNK_BYTES: usize = 16384;
 pub const PAGE_SIZE_QUEUE: u32 = 64;
 pub const PAGE_SIZE_HARNESSES: u32 = 64;

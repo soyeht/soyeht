@@ -59,6 +59,23 @@ public enum MarkdownReply {
     return blocks(Document(parsing: source, options: [.disableSmartOpts]).children)
   }
 
+  /// A paragraph's runs split at its line breaks, each break ending a line. A span that crosses
+  /// a break keeps its style on both sides.
+  public static func lines(of runs: [MarkdownRun]) -> [[MarkdownRun]] {
+    var lines: [[MarkdownRun]] = [[]]
+    for run in runs {
+      let parts = run.text.split(separator: "\n", omittingEmptySubsequences: false)
+      for (index, part) in parts.enumerated() {
+        if index > 0 { lines.append([]) }
+        guard !part.isEmpty else { continue }
+        var piece = run
+        piece.text = String(part)
+        lines[lines.count - 1].append(piece)
+      }
+    }
+    return lines.filter { !$0.isEmpty }
+  }
+
   private static func blocks(_ children: some Sequence<Markup>) -> [MarkdownBlock] {
     children.compactMap(block)
   }
@@ -220,9 +237,13 @@ enum MarkdownReplyCache {
     return cache
   }()
 
+  /// How many replies were parsed rather than found, for the tests that bound the work.
+  private(set) nonisolated(unsafe) static var parseCount = 0
+
   static func blocks(for text: String, streaming: Bool) -> [MarkdownBlock] {
     let key = (streaming ? "s" : "f") + text as NSString
     if let known = cache.object(forKey: key) { return known.blocks }
+    parseCount += 1
     let parsed = MarkdownReply.parse(text, streaming: streaming)
     cache.setObject(Parsed(parsed), forKey: key)
     return parsed

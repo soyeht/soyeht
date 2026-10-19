@@ -23,46 +23,6 @@ public enum AgentPaneStatusPresentation {
   }
 }
 
-public struct AgentPaneView: Sendable {
-  public var messages: [TranscriptMessage] = []
-  public var permission: PermissionRequest?
-  public var elicitation: ElicitationRequest?
-  public var queue: [PromptItem] = []
-  public var queuePaused = false
-  public internal(set) var nextTranscriptCursor: String?
-  public var hasOlderMessages: Bool { nextTranscriptCursor != nil }
-  public var notice: String?
-  public var authMethods: [AuthMethod] = []
-  /// Why the last sign-in did not finish; cleared when the next one starts or succeeds.
-  public var signInFailure: String?
-  public var harnessSwitch: AgentHarnessSwitchView?
-  /// Where the transcript was left; a reference, so scrolling does not redraw every pane.
-  public let scroll = AgentTranscriptScroll()
-
-  public init() {}
-
-  mutating func merge(_ message: TranscriptMessage) {
-    if let index = messages.firstIndex(where: { $0.localId == message.localId }) {
-      messages[index] = message
-    } else {
-      messages.append(message)
-    }
-    messages.sort {
-      (UInt64($0.seq) ?? 0, $0.localId) < (UInt64($1.seq) ?? 0, $1.localId)
-    }
-  }
-
-  mutating func merge(_ page: [TranscriptMessage]) {
-    for message in page { merge(message) }
-  }
-
-  mutating func mergeTranscriptPage(_ page: PaneTranscriptResult, replacing: Bool) {
-    if replacing { messages = [] }
-    merge(page.items)
-    nextTranscriptCursor = page.nextCursor
-  }
-}
-
 /// A surface reports which layout leaves are presented; the shared client decides
 /// which agent transcripts need hydration without changing the engine's focus.
 public struct PresentedPane: Equatable, Sendable {
@@ -272,6 +232,7 @@ extension EngineClient {
   }
 
   func applyAgentSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
+    partials.flush()
     let paneIds = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
     agentPanes = agentPanes.filter { paneIds.contains($0.key) }
     agentTranscriptRevisions = agentTranscriptRevisions.filter { paneIds.contains($0.key) }
@@ -302,11 +263,17 @@ extension EngineClient {
   }
 
   func applyAgentEvent(_ eventName: EventName, _ params: JsonValue) throws {
+    if eventName != .paneUpdate { partials.flush() }
     switch eventName {
     case .paneUpdate:
       let update = try params.decoded(PaneUpdateEvent.self)
       let (paneId, message) = transcriptMessage(update)
-      agentPanes[paneId, default: AgentPaneView()].merge(message)
+      if AgentPartialUpdates.isPartial(message) {
+        partials.offer(paneId: paneId, message)
+      } else {
+        partials.flush()
+        agentPanes[paneId, default: AgentPaneView()].merge(message)
+      }
     case .panePermissionRequested:
       let event = try params.decoded(PanePermissionRequestedEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].permission = PermissionRequest(
@@ -469,6 +436,27 @@ extension EngineClient {
     }
   }
 
+  /// The newest text of each reply that was streaming, written to the transcript.
+  func applyPartialUpdates(_ batch: [AgentPartialUpdates.Update]) {
+    for update in batch {
+      agentPanes[update.paneId, default: AgentPaneView()].merge(update.message)
+    }
+  }
+
+  /// A connection ends: the reply that was waiting for its frame is written before anything is
+  /// dropped, and what the next connection must load again is forgotten.
+  func resetAgentSession() {
+    partials.flush()
+    agentTranscriptRevisions.removeAll()
+    agentTranscriptLoadsInFlight.removeAll()
+  }
+
+  func discardAgentPane(_ paneId: String) {
+    partials.flush()
+    agentPanes.removeValue(forKey: paneId)
+    agentWebDrafts.removeValue(forKey: paneId)
+  }
+
   func loadAgentPane(_ paneId: String, replacing: Bool) async throws {
     let revision = connectionRevision
     let result = try await request(
@@ -479,6 +467,7 @@ extension EngineClient {
     guard connected && connectionRevision == revision,
       panes.contains(where: { $0.paneId == paneId && $0.mode == .agent })
     else { return }
+    partials.flush()
     var view = agentPanes[paneId] ?? AgentPaneView()
     view.mergeTranscriptPage(result, replacing: replacing)
     agentPanes[paneId] = view
@@ -500,6 +489,7 @@ extension EngineClient {
         .encoded(params)
       )
       .decoded(PaneTranscriptResult.self)
+      self.partials.flush()
       var view = self.agentPanes[paneId] ?? AgentPaneView()
       view.mergeTranscriptPage(result, replacing: false)
       self.agentPanes[paneId] = view

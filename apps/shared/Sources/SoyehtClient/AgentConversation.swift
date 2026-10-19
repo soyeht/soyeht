@@ -242,7 +242,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
     switch entry {
     case .message(let message):
       AnyView(
-        AgentTranscriptRow(message: message, workspaceId: pane?.workspaceId ?? "", style: style))
+        AgentTranscriptRow(
+          message: message, revision: view.revision(of: message.localId),
+          workspaceId: pane?.workspaceId ?? "", style: style
+        ).equatable())
     case .subagent(let group):
       AnyView(
         AgentSubagentRow(

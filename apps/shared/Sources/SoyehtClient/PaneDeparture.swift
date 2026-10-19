@@ -60,8 +60,7 @@ extension EngineClient {
     let workspaceId = panes.first { $0.paneId == paneId }?.workspaceId
     panes.removeAll { $0.paneId == paneId }
     discardTerminalPane(paneId)
-    agentPanes.removeValue(forKey: paneId)
-    agentWebDrafts.removeValue(forKey: paneId)
+    discardAgentPane(paneId)
     agentTranscriptRevisions.removeValue(forKey: paneId)
     agentTranscriptLoadsInFlight.removeValue(forKey: paneId)
     slashSources.commands.removeValue(forKey: paneId)

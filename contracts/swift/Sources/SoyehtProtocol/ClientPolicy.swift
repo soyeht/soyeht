@@ -12,6 +12,8 @@ public enum ClientPolicy {
     public static let reconnectCeilingSeconds: Double = 30.0
     public static let draftBeatMs = 8000
     public static let draftBeatSeconds: Double = 8.0
+    public static let agentPartialFlushMs = 16
+    public static let agentPartialFlushSeconds: Double = 0.016
     public static let terminalInputChunkBytes = 16384
     public static let pageSizeQueue: UInt32 = 64
     public static let pageSizeHarnesses: UInt32 = 64

@@ -325,7 +325,12 @@ fn ordinary_turn(runtime: &Runtime, session: &str, text: &str, cancelled: &Atomi
         emit(runtime, session, output);
         return output.into();
     }
-    let chunks = if text == "slow" {
+    let counted = text
+        .strip_prefix("count ")
+        .and_then(|limit| limit.trim().parse::<u32>().ok());
+    let chunks = if let Some(limit) = counted {
+        (1..=limit).map(|number| format!("{number}\n")).collect()
+    } else if text == "slow" {
         (0..30).map(|number| format!("chunk-{number} ")).collect()
     } else {
         vec!["Echo: ".into(), text.into()]
@@ -337,7 +342,11 @@ fn ordinary_turn(runtime: &Runtime, session: &str, text: &str, cancelled: &Atomi
         }
         emit(runtime, session, &chunk);
         output.push_str(&chunk);
-        thread::sleep(Duration::from_millis(if text == "slow" { 100 } else { 20 }));
+        thread::sleep(Duration::from_millis(match (text == "slow", counted) {
+            (true, _) => 100,
+            (_, Some(_)) => 2,
+            _ => 20,
+        }));
     }
     output
 }

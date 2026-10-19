@@ -9,11 +9,20 @@ import SwiftUI
 /// One transcript entry in the approved flat interior: a person's or a peer agent's message is
 /// a `canvas` card, the agent's reply is plain text, and a tool call is a plain row over a thin
 /// `border` line.
-struct AgentTranscriptRow: View {
+///
+/// A row is `Equatable` on its message's revision: the rows of a transcript that did not change
+/// skip their body, so a streamed reply redraws one row and not the conversation.
+struct AgentTranscriptRow: View, Equatable {
   let message: TranscriptMessage
+  let revision: UInt64
   let workspaceId: String
   let style: AgentConversationStyle
   @State private var showsThought = false
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.message.localId == rhs.message.localId && lhs.revision == rhs.revision
+      && lhs.workspaceId == rhs.workspaceId && lhs.style == rhs.style
+  }
 
   var body: some View {
     Group {
