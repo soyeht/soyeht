@@ -18,10 +18,7 @@ use soyeht_ptyd::{
     client::Client,
     wire::{Instance, ProcessKind, Request, Response, Spawn},
 };
-use soyeht_store::{
-    database::{Change, Event, Mutation, Store},
-    segments::Record,
-};
+use soyeht_store::database::{Change, Event, Mutation, Store};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -677,84 +674,9 @@ impl Core {
                 }
                 continue;
             }
-            let saved = self.panes[&id].stored.clone();
-            let instance_id = errors::invariant(
-                saved.instance_id.clone(),
-                "Running pane has no adopted process",
-            )?;
-            let next = self.panes[&id].screen.next_offset();
-            let seq = next.saturating_sub(saved.sequence_base);
-            let Response::Output(output) = self.pty_request(Request::Drain {
-                instance_id: instance_id.clone(),
-                from_seq: seq,
-            })?
-            else {
-                return Err(errors::ptyd_unavailable("Invalid output response"));
-            };
-            let running = errors::invariant(
-                self.panes.get_mut(&id),
-                "Pane disappeared while polling output",
-            )?;
-            let from = saved
-                .sequence_base
-                .checked_add(output.from_seq)
-                .ok_or_else(|| errors::internal("Output offset exhausted"))?;
-            if from > running.screen.next_offset() {
-                running.screen.append(Record::Gap {
-                    from: running.screen.next_offset(),
-                    to: from,
-                })?;
-            }
-            let bytes = STANDARD
-                .decode(output.bytes)
-                .map_err(|_| errors::ptyd_unavailable("Invalid output encoding"))?;
-            let capture_bytes = if !bytes.is_empty() && self.terminal_captures.contains_key(&id) {
-                let shared = Arc::new(bytes);
-                running
-                    .screen
-                    .append_shared_data(from, Arc::clone(&shared))?;
-                Some(shared)
-            } else if !bytes.is_empty() {
-                running.screen.append(Record::Data {
-                    offset: from,
-                    bytes,
-                })?;
-                None
-            } else {
-                None
-            };
-            // Segment sync completed before returning ownership to the supervisor.
-            self.pty_request(Request::Ack {
-                instance_id: instance_id.clone(),
-                seq: output.next_seq,
-            })?;
-            if let Some(bytes) = capture_bytes {
-                self.observe_terminal(&id, bytes)?;
-            }
-            if output.exited && saved.pane.state != PaneState::Dead {
-                // The supervisor records the status just after it marks the process exited,
-                // so a status that is not there yet stays unknown rather than guessed.
-                let exit_code = self.exit_code_of(&instance_id)?;
-                let mut dead = saved;
-                dead.pane.exit_code = exit_code;
-                dead.pane.state = PaneState::Dead;
-                dead.pane.phrase = "Shell exited".into();
-                self.save_runtime(&id, dead)?;
-            }
+            self.drain_terminal(&id)?;
         }
         Ok(())
-    }
-
-    /// The exit status the supervisor recorded for an instance, if it has recorded one.
-    fn exit_code_of(&mut self, instance_id: &str) -> Result<Option<i64>> {
-        let Response::Instances(instances) = self.pty_request(Request::List)? else {
-            return Err(errors::ptyd_unavailable("Invalid process registry"));
-        };
-        Ok(instances
-            .iter()
-            .find(|i| i.instance_id == instance_id)
-            .and_then(|i| i.exit_code)
-            .map(i64::from))
     }
 
     pub fn now_ms(&self) -> i64 {

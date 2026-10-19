@@ -46,25 +46,31 @@ impl Core {
         let reader = self.editor.project_reader(&request.workspace_id);
         let connection = connection.to_owned();
         let params = params.clone();
-        Ok(Outcome::Offload(Offload::new(
-            "File search timed out",
-            SEARCH_TIMEOUT,
-            move || {
-                let files = reader.project_files(&root)?;
-                let items = match request.scope.clone().unwrap_or(FileSearchScope::Content) {
-                    FileSearchScope::Content => search_project_content(&request, &reader, &files)?,
-                    FileSearchScope::Path => search_project_paths(&request, &files)?,
-                };
-                search_result(items, 0)
-            },
-            move |core, result| {
-                let result = result?;
-                let mutation = core.mutate(&connection, method::FILE_SEARCH, &params, |_| {
-                    Ok((result, Vec::new()))
-                })?;
-                Ok(Outcome::Reply(mutation.result))
-            },
-        )))
+        Ok(Outcome::Offload(
+            Offload::new(
+                "File search timed out",
+                SEARCH_TIMEOUT,
+                move || {
+                    let files = reader.project_files(&root)?;
+                    let items = match request.scope.clone().unwrap_or(FileSearchScope::Content) {
+                        FileSearchScope::Content => {
+                            search_project_content(&request, &reader, &files)?
+                        }
+                        FileSearchScope::Path => search_project_paths(&request, &files)?,
+                    };
+                    search_result(items, 0)
+                },
+                move |core, result| {
+                    let result = result?;
+                    let mutation =
+                        core.mutate(&connection, method::FILE_SEARCH, &params, |_| {
+                            Ok((result, Vec::new()))
+                        })?;
+                    Ok(Outcome::Reply(mutation.result))
+                },
+            )
+            .concurrent(),
+        ))
     }
 
     fn replace_project(
@@ -339,7 +345,7 @@ impl Core {
         let events = if open {
             vec![(
                 event::FILE_SAVED.into(),
-                json!({"file":document(file.clone()).map_err(errors::storage)?,"by":journal.author}),
+                json!({"file":document(&file).map_err(errors::storage)?,"by":journal.author}),
             )]
         } else {
             Vec::new()

@@ -157,7 +157,7 @@ impl Core {
             self.now_ms(),
         )?;
         let result = serde_json::to_value(FileFormatResult {
-            file: document(prepared.file.clone()).map_err(errors::storage)?,
+            file: document(&prepared.file).map_err(errors::storage)?,
         })
         .map_err(|_| errors::internal("File format result serialization failed"))?;
         let file = prepared.file.clone();

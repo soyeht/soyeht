@@ -20,6 +20,10 @@ use std::{
 };
 use uuid::Uuid;
 
+mod ticker;
+#[allow(unused_imports)] // each test crate uses the part it needs
+pub use ticker::{Ticker, longest_gap};
+
 // Process-heavy integration tests share the runner. Wait for the observable
 // effect rather than assuming it will occur within one scheduling quantum.
 pub const ASYNC_ASSERTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -45,10 +49,17 @@ pub struct Rig {
     pub ptyd: Child,
     /// The login shell the engine asks for its launch `PATH`; the machine's own when `None`.
     pub login_shell: Option<PathBuf>,
+    /// Variables the engine starts with, on top of the rig's own (the test hooks read them).
+    pub environment: Vec<(String, String)>,
 }
 
 impl Rig {
     pub fn new() -> Self {
+        Self::with_environment(&[])
+    }
+
+    /// A rig whose engine starts with `environment` set.
+    pub fn with_environment(environment: &[(&str, &str)]) -> Self {
         let runtime_slot = runtime_rig_slot();
         warm_up_binaries();
         let path = rig_root().join(format!("sn-{}", Uuid::new_v4()));
@@ -69,6 +80,10 @@ impl Rig {
             engine: None,
             ptyd,
             login_shell: None,
+            environment: environment
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect(),
         };
         rig.start();
         rig
@@ -90,6 +105,7 @@ impl Rig {
         if let Some(shell) = &self.login_shell {
             engine.env("SHELL", shell);
         }
+        engine.envs(self.environment.iter().map(|(name, value)| (name, value)));
         self.engine = Some(
             engine
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
@@ -615,6 +631,11 @@ impl Client {
         client
     }
     pub fn request(&mut self, method: &str, params: Value) -> Value {
+        let id = self.send(method, params);
+        self.wait(id)
+    }
+    /// Sends a request without waiting for its reply; `wait` collects it.
+    pub fn send(&mut self, method: &str, params: Value) -> u64 {
         self.next += 1;
         let id = self.next;
         Frame::Json(
@@ -623,6 +644,17 @@ impl Client {
         )
         .write_to(&mut self.socket)
         .unwrap();
+        id
+    }
+    /// Reads until the reply to request `id`, keeping every other frame in `messages`.
+    pub fn wait(&mut self, id: u64) -> Value {
+        let early = self.messages.iter().position(|frame| {
+            matches!(frame, Frame::Json(bytes)
+                if serde_json::from_slice::<Value>(bytes).is_ok_and(|value| value["id"] == id))
+        });
+        if let Some(Frame::Json(bytes)) = early.map(|index| self.messages.remove(index)) {
+            return serde_json::from_slice(&bytes).unwrap();
+        }
         loop {
             let frame = Frame::read_from(&mut self.socket)
                 .unwrap()
@@ -640,6 +672,23 @@ impl Client {
         let response = self.request(method, params);
         assert!(response.get("error").is_none(), "{response}");
         response["result"].clone()
+    }
+    /// Adds the folder `path` as a workspace and returns its id.
+    pub fn add_workspace(&mut self, path: &Path, key: &str) -> String {
+        self.call(
+            "workspace.create",
+            json!({"name":key,"path":path,"idempotencyKey":key}),
+        )["workspace"]["workspaceId"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+    /// Opens `path` of a workspace in a preview tab.
+    pub fn open_file(&mut self, workspace: &str, path: &str) -> Value {
+        self.call(
+            "file.open",
+            json!({"workspaceId":workspace,"path":path,"preview":true,"idempotencyKey":format!("open-{path}")}),
+        )
     }
     pub fn snapshot(&mut self) -> (Value, Vec<Value>) {
         self.messages.clear();

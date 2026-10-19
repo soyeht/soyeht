@@ -10,7 +10,7 @@ publish.workspace = true
 # Checks every event and result against the generated models (ADR 0090). The merge gate
 # builds and tests with it on; a shipping build leaves it off and checks nothing.
 contract-checks = ["soyeht-protocol/contract-checks"]
-test-hooks = []
+test-hooks = ["soyeht-store/test-support"]
 
 [[bin]]
 name = "soyeht-fake-worktrunk"

@@ -41,12 +41,15 @@ impl Core {
         let relative = PathBuf::from(resolved.relative);
         let file_id = file.file_id;
         let revision = file.revision.to_string();
-        Ok(Outcome::Offload(Offload::new(
-            "File diff timed out",
-            DIFF_TIMEOUT,
-            move || Ok(vcs.inspect(&workspace, &relative, &current)?),
-            move |_, diff| diff_result(file_id, revision, diff?).map(Outcome::Reply),
-        )))
+        Ok(Outcome::Offload(
+            Offload::new(
+                "File diff timed out",
+                DIFF_TIMEOUT,
+                move || Ok(vcs.inspect(&workspace, &relative, &current)?),
+                move |_, diff| diff_result(file_id, revision, diff?).map(Outcome::Reply),
+            )
+            .concurrent(),
+        ))
     }
 }
 

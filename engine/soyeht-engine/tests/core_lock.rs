@@ -6,26 +6,18 @@
 
 mod support;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::frame::Frame;
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
     thread,
     time::{Duration, Instant},
 };
-use support::{Client, Rig};
+use support::{Rig, Ticker, longest_gap};
 
 /// How long the fake usage source blocks. Before ADR 0079 the engine held its
 /// Core lock for all of it, and no terminal output reached any client.
 const SLOW_SOURCE: Duration = Duration::from_secs(5);
-/// The shell loop prints this often.
-const PRINT_INTERVAL: &str = "0.02";
 /// A window with no slow work, measured first on the same rig and load.
 const CONTROL_WINDOW: Duration = Duration::from_secs(2);
 /// A gap under the slow source is allowed this many times the control gap,
@@ -50,58 +42,13 @@ fn install_slow_usage_source(rig: &Rig) {
     fs::set_permissions(&source, fs::Permissions::from_mode(0o755)).unwrap();
 }
 
-/// Reads the pane's live terminal frames until `stop`, returning when each
-/// frame arrived. The ticker prints every 20 ms, so a blocking read returns
-/// soon after `stop` is set; a read timeout could split a frame.
-fn record_arrivals(mut watcher: Client, pane_ref: u64, stop: Arc<AtomicBool>) -> Vec<Instant> {
-    let mut arrivals = Vec::new();
-    while !stop.load(Ordering::SeqCst) {
-        match Frame::read_from(&mut watcher.socket).unwrap() {
-            Some(Frame::Terminal {
-                pane_ref: found, ..
-            }) if u64::from(found) == pane_ref => {
-                arrivals.push(Instant::now());
-            }
-            Some(_) => {}
-            None => panic!("engine closed the watcher"),
-        }
-    }
-    arrivals
-}
-
-/// The longest stretch inside `[from, to]` with no terminal frame.
-fn longest_gap(arrivals: &[Instant], from: Instant, to: Instant) -> Duration {
-    let mut previous = from;
-    let mut longest = Duration::ZERO;
-    for arrival in arrivals
-        .iter()
-        .filter(|arrival| **arrival > from && **arrival <= to)
-    {
-        longest = longest.max(*arrival - previous);
-        previous = *arrival;
-    }
-    longest.max(to - previous)
-}
-
 #[test]
 fn terminal_output_keeps_flowing_while_a_usage_source_blocks() {
     let rig = Rig::new();
     install_slow_usage_source(&rig);
     let mut client = rig.client();
     let (_, pane) = client.create(&rig);
-    let command = format!("while :; do printf 'tick\\n'; sleep {PRINT_INTERVAL}; done\n");
-    client.call(
-        "pane.input",
-        json!({"paneId":pane,"bytes":STANDARD.encode(command),"idempotencyKey":"ticker"}),
-    );
-    let mut watcher = rig.client();
-    let (info, _) = watcher.tail(&pane);
-    let pane_ref = info["binaryPaneRef"].as_u64().unwrap();
-    let stop = Arc::new(AtomicBool::new(false));
-    let recorder = {
-        let stop = Arc::clone(&stop);
-        thread::spawn(move || record_arrivals(watcher, pane_ref, stop))
-    };
+    let ticker = Ticker::start(&rig, &mut client, &pane);
     // Let the loop start printing before the control window opens.
     let warmed = Instant::now() + Duration::from_millis(500);
     while Instant::now() < warmed {
@@ -128,8 +75,7 @@ fn terminal_output_keeps_flowing_while_a_usage_source_blocks() {
     let status_latency = status_started.elapsed();
     let reply: Value = refresh.join().unwrap();
     let slow_end = Instant::now();
-    stop.store(true, Ordering::SeqCst);
-    let arrivals = recorder.join().unwrap();
+    let arrivals = ticker.finish();
 
     let refresh_duration = slow_end - slow_start;
     let control_gap = longest_gap(&arrivals, control_start, control_end);

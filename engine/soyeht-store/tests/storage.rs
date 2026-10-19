@@ -441,6 +441,58 @@ fn incomplete_last_record_is_truncated_but_checksum_corruption_is_refused() {
 }
 
 #[test]
+fn unsynced_records_are_readable_and_owe_one_flush_per_segment_until_it_is_taken() {
+    let directory = Directory::new();
+    let mut log = Log::open(&directory.0).unwrap();
+    assert!(log.take_unsynced().is_none());
+    // Enough output to fill the first segment and move on to the next.
+    for n in 0..10 {
+        log.append_unsynced(Record::Data {
+            offset: n * 65536,
+            bytes: vec![66; 65536],
+        })
+        .unwrap();
+    }
+    assert_eq!(log.next_offset(), 10 * 65536);
+    assert_eq!(
+        log.read(0, 3, 3).unwrap(),
+        vec![Record::Data {
+            offset: 0,
+            bytes: vec![66; 3]
+        }]
+    );
+
+    let owed = log.take_unsynced().unwrap();
+    owed.flush().unwrap();
+    assert!(log.take_unsynced().is_none(), "the flush is owed once");
+
+    // A flush that failed is owed again, and a later synchronous append covers its segment.
+    log.append_unsynced(Record::Gap {
+        from: 10 * 65536,
+        to: 10 * 65536 + 1,
+    })
+    .unwrap();
+    let failed = log.take_unsynced().unwrap();
+    log.restore_unsynced(&failed);
+    assert!(log.take_unsynced().is_some());
+    log.append_unsynced(Record::Gap {
+        from: 10 * 65536 + 1,
+        to: 10 * 65536 + 2,
+    })
+    .unwrap();
+    log.append(Record::Gap {
+        from: 10 * 65536 + 2,
+        to: 10 * 65536 + 3,
+    })
+    .unwrap();
+    assert!(log.take_unsynced().is_none());
+
+    drop(log);
+    let log = Log::open(&directory.0).unwrap();
+    assert_eq!(log.next_offset(), 10 * 65536 + 3);
+}
+
+#[test]
 fn segments_rotate_and_retention_removes_only_whole_old_segments() {
     let directory = Directory::new();
     let mut log = Log::open(&directory.0).unwrap();

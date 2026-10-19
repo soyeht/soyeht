@@ -61,6 +61,8 @@ impl<P: ?Sized> SharedPort<P> {
 
 /// The off-lock part of one request and the step that answers it.
 pub struct Offload {
+    /// The reply may come after the replies to the requests behind this one.
+    concurrent: bool,
     timeout: Duration,
     work: Box<dyn FnOnce() -> ApplyOutcome + Send>,
     expire: ApplyOutcome,
@@ -84,6 +86,7 @@ impl Offload {
         let slot = Arc::new(Mutex::new(Some(apply)));
         let worker_slot = Arc::clone(&slot);
         Self {
+            concurrent: false,
             timeout,
             work: Box::new(move || {
                 let result = work();
@@ -91,6 +94,18 @@ impl Offload {
             }),
             expire: answer(&slot, Err(errors::internal(timeout_message))),
         }
+    }
+
+    /// Lets the connection go on with the requests behind this one while the work runs, so
+    /// a slow read does not hold back the ones that follow it (ADR 0095). Only for a request
+    /// that no later request on the connection depends on: a read whose reply carries its id.
+    pub(crate) fn concurrent(mut self) -> Self {
+        self.concurrent = true;
+        self
+    }
+
+    pub(crate) fn is_concurrent(&self) -> bool {
+        self.concurrent
     }
 
     /// Runs both steps on this thread, for callers that hold no lock.
@@ -134,6 +149,7 @@ impl Offload {
         let worker_slot = Arc::clone(&slot);
         let work = self.work;
         Self {
+            concurrent: self.concurrent,
             timeout: self.timeout,
             work: Box::new(move || mapped(work(), worker_slot)),
             expire: mapped(self.expire, slot),
@@ -198,6 +214,16 @@ impl Background {
 
     pub(crate) fn is_active(&self, key: &str) -> bool {
         self.active.contains(key)
+    }
+
+    /// Whether `spawn_background` would start `key` now: it is neither running nor cooling
+    /// down after a failure.
+    pub(crate) fn accepts(&self, key: &str) -> bool {
+        !self.active.contains(key)
+            && self
+                .retry_after
+                .get(key)
+                .is_none_or(|after| *after <= Instant::now())
     }
 
     /// Whether any job is running or waiting to be applied.
@@ -303,13 +329,7 @@ impl Core {
         A: FnOnce(&mut Core, Result<T>) -> Result<()> + Send + 'static,
     {
         let now = Instant::now();
-        if self.background.active.contains(&key)
-            || self
-                .background
-                .retry_after
-                .get(&key)
-                .is_some_and(|after| *after > now)
-        {
+        if !self.background.accepts(&key) {
             return Ok(());
         }
         self.background.active.insert(key.clone());

@@ -657,6 +657,12 @@ impl Service {
         }
     }
 
+    fn open_item(&mut self, file_id: &str) -> Result<&mut OpenDocument> {
+        self.open
+            .get_mut(file_id)
+            .ok_or_else(|| errors::not_found("Open file not found"))
+    }
+
     pub fn viewport(
         &mut self,
         file_id: &str,
@@ -665,21 +671,26 @@ impl Service {
         from_line: usize,
         line_count: usize,
     ) -> Result<Vec<EditorLine>> {
-        let item = self
-            .open
-            .get_mut(file_id)
-            .ok_or_else(|| errors::not_found("Open file not found"))?;
-        let needs_document = item
-            .syntax
-            .as_ref()
-            .is_none_or(|document| document.buffer().text() != text);
-        if needs_document {
-            item.syntax = Some(SyntaxDocument::new(text, language)?);
-        }
-        let document = item
-            .syntax
-            .as_ref()
-            .ok_or_else(|| errors::internal("Editor document was not initialized"))?;
+        let item = self.open_item(file_id)?;
+        let document = current_document(&mut item.syntax, text, language)?;
+        soyeht_editor::project(document, from_line, line_count).map_err(Into::into)
+    }
+
+    /// The lines of the file's current buffer (its draft, else its disk text), read from the
+    /// text the service already holds: a large file is not copied for each page.
+    pub fn viewport_of_buffer(
+        &mut self,
+        file_id: &str,
+        from_line: usize,
+        line_count: usize,
+    ) -> Result<Vec<EditorLine>> {
+        let item = self.open_item(file_id)?;
+        let text = item
+            .file
+            .draft_text
+            .as_deref()
+            .unwrap_or(&item.file.disk_text);
+        let document = current_document(&mut item.syntax, text, item.file.language.clone())?;
         soyeht_editor::project(document, from_line, line_count).map_err(Into::into)
     }
 
@@ -687,6 +698,23 @@ impl Service {
         self.open
             .retain(|_, item| item.file.pane_id.as_deref() != Some(pane_id));
     }
+}
+
+/// The syntax document of `text`: the one held when it holds exactly this text, else a new one.
+fn current_document<'a>(
+    syntax: &'a mut Option<SyntaxDocument>,
+    text: &str,
+    language: EditorLanguage,
+) -> Result<&'a SyntaxDocument> {
+    if syntax
+        .as_ref()
+        .is_none_or(|document| !document.buffer().matches(text))
+    {
+        *syntax = Some(SyntaxDocument::new(text, language)?);
+    }
+    syntax
+        .as_ref()
+        .ok_or_else(|| errors::internal("Editor document was not initialized"))
 }
 
 pub(super) fn autosave_ms() -> i64 {

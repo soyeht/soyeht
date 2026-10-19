@@ -178,7 +178,7 @@ impl Core {
         let resolved =
             self.resolve_review(method, connection, current, review, &request.hunk_id)?;
         let result = serde_json::to_value(EditorReviewResult {
-            file: document(resolved.file.clone()).map_err(errors::storage)?,
+            file: document(&resolved.file).map_err(errors::storage)?,
             hunk_id: request.hunk_id,
         })
         .map_err(|_| errors::internal("Editor review result serialization failed"))?;
@@ -399,7 +399,7 @@ fn agent_write_events(
     author: &FileAuthor,
     hunks: Vec<soyeht_vcs::Hunk>,
 ) -> Result<Vec<(String, Value)>> {
-    let wire = document(file.clone()).map_err(errors::storage)?;
+    let wire = document(file).map_err(errors::storage)?;
     Ok(vec![
         (event::FILE_SAVED.into(), json!({"file":wire,"by":author})),
         (

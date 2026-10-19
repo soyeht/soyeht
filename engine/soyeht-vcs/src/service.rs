@@ -23,7 +23,17 @@ impl Service {
             .commands
             .lock()
             .map_err(|_| Error::CommandUnavailable)?;
-        let root = commands.repository_root(workspace)?;
+        let root = match commands.repository_root(workspace) {
+            Ok(root) => root,
+            // A folder that is not a repository has no baseline to compare with: no hunks.
+            Err(Error::InvalidRepository) => {
+                return Ok(Diff {
+                    hunks: Vec::new(),
+                    blame: Vec::new(),
+                });
+            }
+            Err(error) => return Err(error),
+        };
         let path = repository_path(&root, workspace, path)?;
         let Some(baseline) = commands.head_file(&root, &path)? else {
             return diff::build(current, "", vec![]);
@@ -251,6 +261,19 @@ mod tests {
             .inspect(&root, Path::new("new.rs"), "new\n")
             .unwrap();
         assert_eq!(result.hunks[0].lines[0].kind, LineKind::Added);
+        assert!(result.blame.is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_folder_that_is_not_a_repository_has_no_hunks_and_no_blame() {
+        let root = temporary("no-repository");
+        fs::create_dir_all(&root).unwrap();
+        let service = Service::new(Box::new(SystemGit));
+        let result = service
+            .inspect(&root, Path::new("note.txt"), "one\ntwo\n")
+            .unwrap();
+        assert!(result.hunks.is_empty());
         assert!(result.blame.is_empty());
         fs::remove_dir_all(root).unwrap();
     }

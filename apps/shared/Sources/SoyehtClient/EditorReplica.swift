@@ -14,6 +14,8 @@ public struct EditorFileView: Sendable {
   /// How many lines were asked for when the viewport was read; nil for the page `file.open`
   /// returned, which is a short one by choice.
   public var viewportRequestedLines: UInt32?
+  /// The diff against HEAD, read after the text is shown (`EngineClient.loadEditorDiff`).
+  public var diff: EditorDiffState = .none
 
   public init(file: FileDocument, viewport: FileReadResult? = nil) {
     self.file = file
@@ -586,7 +588,7 @@ extension EngineClient {
     synchronizeWritingFile(file)
   }
 
-  private func updateEditor(_ fileId: String, update: (inout EditorFileView) -> Void) {
+  func updateEditor(_ fileId: String, update: (inout EditorFileView) -> Void) {
     guard var view = editorFiles[fileId] else { return }
     update(&view)
     editorFiles[fileId] = view

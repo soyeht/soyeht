@@ -112,15 +112,18 @@ impl Core {
         let Some(scanner) = self.claim_local_server_scan() else {
             return self.cached_local_servers().map(Outcome::Reply);
         };
-        Ok(Outcome::Offload(Offload::new(
-            "Local server scan timed out",
-            LIST_TIMEOUT,
-            move || scan(&scanner),
-            |core, observation| {
-                core.record_local_servers(observation?)?;
-                core.cached_local_servers().map(Outcome::Reply)
-            },
-        )))
+        Ok(Outcome::Offload(
+            Offload::new(
+                "Local server scan timed out",
+                LIST_TIMEOUT,
+                move || scan(&scanner),
+                |core, observation| {
+                    core.record_local_servers(observation?)?;
+                    core.cached_local_servers().map(Outcome::Reply)
+                },
+            )
+            .concurrent(),
+        ))
     }
 
     pub(crate) fn advance_local_servers(&mut self) -> Result<()> {

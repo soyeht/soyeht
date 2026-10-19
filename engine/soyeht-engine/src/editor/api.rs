@@ -185,7 +185,7 @@ impl Core {
     pub fn file_read(&mut self, params: &Value) -> Result<Value> {
         let request: FileReadParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid file read parameters"))?;
-        let file = self.editor.stored(&request.file_id)?.clone();
+        let file = self.editor.stored(&request.file_id)?;
         if request
             .revision
             .as_deref()
@@ -193,17 +193,34 @@ impl Core {
         {
             return Err(errors::stale_version("File revision changed"));
         }
-        let (source, text) = self.read_source(&file, &request)?;
-        let lines = self.editor.viewport(
-            &file.file_id,
-            &text,
-            file.language.clone(),
-            request.from_line as usize,
-            request.line_count as usize,
-        )?;
+        let buffer = request.version_id.is_none()
+            && request
+                .source
+                .as_ref()
+                .is_none_or(|source| *source == EditorContentSource::Buffer);
+        let (source, lines) = if buffer {
+            // The common read: the lines come from the text the editor holds, not from a copy.
+            let lines = self.editor.viewport_of_buffer(
+                &request.file_id,
+                request.from_line as usize,
+                request.line_count as usize,
+            )?;
+            (EditorContentSource::Buffer, lines)
+        } else {
+            let file = file.clone();
+            let (source, text) = self.read_source(&file, &request)?;
+            let lines = self.editor.viewport(
+                &file.file_id,
+                &text,
+                file.language.clone(),
+                request.from_line as usize,
+                request.line_count as usize,
+            )?;
+            (source, lines)
+        };
         let to_line = request.from_line.saturating_add(lines.len() as u32);
         serde_json::to_value(FileReadResult {
-            file: document(file).map_err(errors::storage)?,
+            file: document(self.editor.stored(&request.file_id)?).map_err(errors::storage)?,
             source,
             from_line: request.from_line,
             to_line,
@@ -357,7 +374,7 @@ pub(crate) fn initial_open_result(
     })?;
     let lines = soyeht_editor::project(&syntax, from, INITIAL_VIEWPORT_LINES)?;
     let viewport = FileReadResult {
-        file: document(file.clone()).map_err(errors::storage)?,
+        file: document(file).map_err(errors::storage)?,
         source: if file.draft_text.is_some() {
             EditorContentSource::Draft
         } else {

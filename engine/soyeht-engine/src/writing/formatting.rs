@@ -42,7 +42,7 @@ impl Core {
             self.now_ms(),
         )?;
         let result = serde_json::to_value(WritingFormatResult {
-            file: document(prepared.file.clone()).map_err(errors::storage)?,
+            file: document(&prepared.file).map_err(errors::storage)?,
         })
         .map_err(|_| errors::internal("Writing format result cannot be encoded"))?;
         let file = prepared.file.clone();

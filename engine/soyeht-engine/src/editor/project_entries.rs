@@ -85,7 +85,7 @@ impl Core {
         }
         let documents = files
             .iter()
-            .map(|file| document(file.clone()))
+            .map(document)
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(errors::storage)?;
         let result = serde_json::to_value(ProjectEntryRenameResult {

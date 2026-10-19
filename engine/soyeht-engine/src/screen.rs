@@ -1,6 +1,6 @@
 use crate::errors::{self, Result};
 use soyeht_protocol::limits;
-use soyeht_store::segments::{Log, Record};
+use soyeht_store::segments::{Log, Record, Unsynced};
 use std::{collections::VecDeque, path::Path, sync::Arc};
 
 enum LiveRecord {
@@ -29,7 +29,32 @@ pub struct Screen {
     live: VecDeque<LiveRecord>,
     live_bytes: usize,
     next: u64,
+    /// The supervisor's output position this screen has taken in and not yet told it to drop.
+    unacknowledged: Option<u64>,
     pub recording: bool,
+}
+
+/// Output a screen holds that the supervisor may drop once its flush to the disk is done.
+pub struct Durable {
+    unsynced: Option<Unsynced>,
+    /// The supervisor's output position the flush makes safe.
+    pub through: u64,
+}
+
+impl Durable {
+    /// Whether there is a flush to wait for. Output that was never written to the disk
+    /// (recording is off) is safe to acknowledge at once.
+    pub fn pending(&self) -> bool {
+        self.unsynced.is_some()
+    }
+
+    /// Waits for the disk. Call it off the Core lock.
+    pub fn flush(&self) -> Result<()> {
+        match &self.unsynced {
+            Some(unsynced) => unsynced.flush().map_err(errors::storage),
+            None => Ok(()),
+        }
+    }
 }
 
 impl Screen {
@@ -40,6 +65,7 @@ impl Screen {
             disk,
             live: VecDeque::new(),
             live_bytes: 0,
+            unacknowledged: None,
             recording,
         })
     }
@@ -53,31 +79,70 @@ impl Screen {
     }
 
     pub fn append(&mut self, record: Record) -> Result<()> {
+        self.append_record(record, true)
+    }
+
+    /// Like `append`, without waiting for the disk: the terminal tick holds the Core lock, and
+    /// a flush can take seconds. `take_durable` hands out the flush that is owed.
+    pub fn append_deferred(&mut self, record: Record) -> Result<()> {
+        self.append_record(record, false)
+    }
+
+    fn append_record(&mut self, record: Record, flush: bool) -> Result<()> {
         match record {
-            Record::Data { offset, bytes } => self.append_shared_data(offset, Arc::new(bytes)),
-            Record::Gap { from, to } => self.append_gap(from, to),
+            Record::Data { offset, bytes } => {
+                self.append_data_record(offset, Arc::new(bytes), flush)
+            }
+            Record::Gap { from, to } => self.append_gap(from, to, flush),
         }
     }
 
-    pub fn append_shared_data(&mut self, offset: u64, bytes: Arc<Vec<u8>>) -> Result<()> {
+    pub fn append_shared_data_deferred(&mut self, offset: u64, bytes: Arc<Vec<u8>>) -> Result<()> {
+        self.append_data_record(offset, bytes, false)
+    }
+
+    /// Notes that the supervisor's output through `position` is in this screen.
+    pub fn take_in_through(&mut self, position: u64) {
+        self.unacknowledged = Some(
+            self.unacknowledged
+                .map_or(position, |held| held.max(position)),
+        );
+    }
+
+    /// The output waiting to be acknowledged and the flush it needs, once.
+    pub fn take_durable(&mut self) -> Option<Durable> {
+        let through = self.unacknowledged.take()?;
+        Some(Durable {
+            unsynced: self.disk.take_unsynced(),
+            through,
+        })
+    }
+
+    /// Owes `durable` again, when its flush failed: the next one retries it.
+    pub fn restore_durable(&mut self, durable: &Durable) {
+        self.take_in_through(durable.through);
+        if let Some(unsynced) = &durable.unsynced {
+            self.disk.restore_unsynced(unsynced);
+        }
+    }
+
+    fn append_data_record(&mut self, offset: u64, bytes: Arc<Vec<u8>>, flush: bool) -> Result<()> {
         let record = LiveRecord::Data { offset, bytes };
         if record.from() != self.next {
             return Err(errors::internal("Noncontiguous screen record"));
         }
         if self.recording {
-            if self.disk.next_offset() < record.from() {
-                self.disk.append(Record::Gap {
-                    from: self.disk.next_offset(),
-                    to: record.from(),
-                })?;
-            }
+            self.bridge_disk_gap(record.from(), flush)?;
             let LiveRecord::Data { offset, bytes } = &record else {
                 unreachable!()
             };
-            self.disk.append(Record::Data {
-                offset: *offset,
-                bytes: bytes.as_ref().clone(),
-            })?;
+            self.disk_append(
+                Record::Data {
+                    offset: *offset,
+                    bytes: bytes.as_ref().clone(),
+                },
+                flush,
+            )?;
         }
         self.next = record.end();
         if let LiveRecord::Data { bytes, .. } = &record {
@@ -92,19 +157,31 @@ impl Screen {
         Ok(())
     }
 
-    fn append_gap(&mut self, from: u64, to: u64) -> Result<()> {
+    /// Records the stretch the disk missed (while recording was off) before a record at `to`.
+    fn bridge_disk_gap(&mut self, to: u64, flush: bool) -> Result<()> {
+        let from = self.disk.next_offset();
+        if from < to {
+            self.disk_append(Record::Gap { from, to }, flush)?;
+        }
+        Ok(())
+    }
+
+    fn disk_append(&mut self, record: Record, flush: bool) -> Result<()> {
+        Ok(if flush {
+            self.disk.append(record)
+        } else {
+            self.disk.append_unsynced(record)
+        }?)
+    }
+
+    fn append_gap(&mut self, from: u64, to: u64, flush: bool) -> Result<()> {
         let record = LiveRecord::Gap { from, to };
         if record.from() != self.next {
             return Err(errors::internal("Noncontiguous screen record"));
         }
         if self.recording {
-            if self.disk.next_offset() < from {
-                self.disk.append(Record::Gap {
-                    from: self.disk.next_offset(),
-                    to: from,
-                })?;
-            }
-            self.disk.append(Record::Gap { from, to })?;
+            self.bridge_disk_gap(from, flush)?;
+            self.disk_append(Record::Gap { from, to }, flush)?;
         }
         self.next = record.end();
         self.live.push_back(record);

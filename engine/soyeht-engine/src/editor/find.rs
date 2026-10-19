@@ -65,7 +65,7 @@ impl Core {
         };
         if edits.is_empty() {
             let result = replace_result(FileReplaceResult {
-                file: document(file.clone()).map_err(errors::storage)?,
+                file: document(file).map_err(errors::storage)?,
                 replaced: 0,
                 changed_lines: Vec::new(),
                 cursor: None,
@@ -84,7 +84,7 @@ impl Core {
             self.now_ms(),
         )?;
         let result = replace_result(FileReplaceResult {
-            file: document(prepared.file.clone()).map_err(errors::storage)?,
+            file: document(&prepared.file).map_err(errors::storage)?,
             replaced: u32::try_from(replaced).unwrap_or(u32::MAX),
             changed_lines: prepared.changed_lines.clone(),
             cursor: prepared.cursor.clone(),

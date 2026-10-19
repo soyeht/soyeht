@@ -48,7 +48,7 @@ work's result, or with an `internal` error carrying `timeout_message` when the
 work is late or panics. A handler can therefore release what it reserved in
 step 1. For example, usage frees its in-flight providers. A request keeps
 its place in its connection's order, while other connections and the tick go
-on. The protocol is unchanged: a client still gets one reply per request.
+on (ADR 0095 lets a few reads overtake the requests behind them). The protocol is unchanged: a client still gets one reply per request.
 `writing.section.list` used to have its own deferred outcome and timeout. It
 now uses `Offload`. `task.dispatch` and `task.create` with `dispatch` still
 report a failed worktree creation to their caller. They create the worktree

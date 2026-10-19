@@ -1,10 +1,49 @@
 use crate::{Error, Result};
 use soyeht_platform::fs::{OpenOptionsPrivateExt, sync_directory};
 use soyeht_protocol::limits;
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
-use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
+use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+
+/// Makes the disk flush of a segment slow, as it is on a busy machine, so a test can show
+/// what waits for it. Compiled only with `test-support`.
+#[cfg(feature = "test-support")]
+pub mod slow_disk {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
+
+    static PAUSE_MS: AtomicU64 = AtomicU64::new(0);
+
+    pub fn set(pause: Duration) {
+        PAUSE_MS.store(
+            u64::try_from(pause.as_millis()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(super) fn wait() {
+        let pause = PAUSE_MS.load(Ordering::Relaxed);
+        if pause > 0 {
+            std::thread::sleep(Duration::from_millis(pause));
+        }
+    }
+}
+
+/// Flushes a segment to the disk. On macOS this is a full flush of the drive, which takes
+/// seconds when the machine writes a lot.
+fn flush_to_disk(file: &File) -> io::Result<()> {
+    #[cfg(feature = "test-support")]
+    slow_disk::wait();
+    file.sync_all()
+}
+
+/// Flushes the entries of a directory (created and removed segments).
+fn flush_directory(directory: &Path) -> io::Result<()> {
+    #[cfg(feature = "test-support")]
+    slow_disk::wait();
+    sync_directory(directory)
+}
 
 const MAGIC: &[u8; 8] = b"SOYPT001";
 const HEADER: usize = 13;
@@ -46,7 +85,36 @@ pub struct Log {
     segments: VecDeque<Segment>,
     index: VecDeque<Entry>,
     next: u64,
+    /// Segments that hold records written but not yet flushed (see `append_unsynced`).
+    unsynced: BTreeSet<u64>,
+    /// A segment was created or removed since the directory was last flushed.
+    directory_unsynced: bool,
     pub recovered_truncated_tail: bool,
+}
+
+/// The segment files whose newest records are written but not flushed. Flushing them takes as
+/// long as the disk takes, so it is done off any lock that readers of the log share.
+pub struct Unsynced {
+    files: Vec<(u64, PathBuf)>,
+    /// The log's directory, when a segment was created or removed since it was last flushed.
+    directory: Option<PathBuf>,
+}
+
+impl Unsynced {
+    pub fn flush(&self) -> Result<()> {
+        for (_, path) in &self.files {
+            match OpenOptions::new().write(true).open_no_follow(path) {
+                Ok(file) => flush_to_disk(&file)?,
+                // Retention removed the segment: there is nothing left to flush.
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        if let Some(directory) = &self.directory {
+            flush_directory(directory)?;
+        }
+        Ok(())
+    }
 }
 
 fn filename(number: u64) -> String {
@@ -73,6 +141,8 @@ impl Log {
             segments: VecDeque::new(),
             index: VecDeque::new(),
             next: 0,
+            unsynced: BTreeSet::new(),
+            directory_unsynced: false,
             recovered_truncated_tail: false,
         };
         for (index, number) in numbers.iter().enumerate() {
@@ -148,7 +218,46 @@ impl Log {
             .unwrap_or(self.next)
     }
 
+    /// Writes the record and flushes it to the disk before returning.
     pub fn append(&mut self, record: Record) -> Result<()> {
+        self.write(record, true)
+    }
+
+    /// Writes the record and returns without flushing it. The record is readable at once;
+    /// `take_unsynced` hands out the flush that makes it survive a power loss.
+    pub fn append_unsynced(&mut self, record: Record) -> Result<()> {
+        self.write(record, false)
+    }
+
+    /// The flush owed for the records `append_unsynced` wrote, once.
+    pub fn take_unsynced(&mut self) -> Option<Unsynced> {
+        if self.unsynced.is_empty() && !self.directory_unsynced {
+            return None;
+        }
+        let files = std::mem::take(&mut self.unsynced)
+            .into_iter()
+            .map(|number| (number, self.directory.join(filename(number))))
+            .collect();
+        let directory =
+            std::mem::take(&mut self.directory_unsynced).then(|| self.directory.clone());
+        Some(Unsynced { files, directory })
+    }
+
+    /// Owes the flush again, when the one `take_unsynced` handed out failed.
+    pub fn restore_unsynced(&mut self, unsynced: &Unsynced) {
+        self.directory_unsynced |= unsynced.directory.is_some();
+        for (number, _) in &unsynced.files {
+            if self
+                .segments
+                .iter()
+                .any(|segment| segment.number == *number)
+            {
+                self.unsynced.insert(*number);
+            }
+        }
+    }
+
+    fn write(&mut self, record: Record, flush: bool) -> Result<()> {
         if record.from() != self.next || record.end() <= record.from() {
             return Err(Error::InvalidTerminalRecord);
         }
@@ -165,8 +274,14 @@ impl Log {
                 .owner_only()
                 .open(path)?;
             file.write_all(MAGIC)?;
-            file.sync_all()?;
-            sync_directory(&self.directory)?;
+            if flush {
+                flush_to_disk(&file)?;
+                flush_directory(&self.directory)?;
+                self.directory_unsynced = false;
+            } else {
+                // The flush of the segment and of the directory is owed with the records.
+                self.directory_unsynced = true;
+            }
             self.segments.push_back(Segment {
                 number,
                 size: MAGIC.len() as u64,
@@ -179,7 +294,13 @@ impl Log {
         file.set_len(segment.size)?;
         file.seek(SeekFrom::Start(segment.size))?;
         file.write_all(&encoded)?;
-        file.sync_all()?;
+        if flush {
+            // One flush covers every earlier write to this file.
+            flush_to_disk(&file)?;
+            self.unsynced.remove(&segment.number);
+        } else {
+            self.unsynced.insert(segment.number);
+        }
         self.index.push_back(Entry {
             file: segment.number,
             position: segment.size,
@@ -196,7 +317,13 @@ impl Log {
                 .ok_or(Error::SegmentIndexMissing)?
                 .number;
             fs::remove_file(self.directory.join(filename(oldest_number)))?;
-            sync_directory(&self.directory)?;
+            self.unsynced.remove(&oldest_number);
+            if flush {
+                flush_directory(&self.directory)?;
+                self.directory_unsynced = false;
+            } else {
+                self.directory_unsynced = true;
+            }
             let oldest = self
                 .segments
                 .pop_front()

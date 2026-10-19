@@ -6,6 +6,7 @@ use crate::{
     errors::{self, Error},
     hooks::Hooks,
     model, network,
+    offload::Offload,
     operation_log::{OperationTimer, connection_close_record, logged_method, operation_pane_id},
     outbox::{self, CloseReason, Outbox},
     transport, ui_attestation,
@@ -33,8 +34,12 @@ use std::{
 };
 use tokio::{
     net::TcpListener,
-    sync::{Semaphore, mpsc},
+    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
 };
+
+/// Requests of one connection whose reply may overtake the ones behind it, in progress at once.
+/// A connection with this many waits for one to finish before it reads the next request.
+const CONCURRENT_OFFLOADS: usize = 8;
 
 struct CatalogJob {
     method: String,
@@ -318,6 +323,7 @@ async fn read_requests(
     reader: &mut transport::Reader,
 ) -> CloseReason {
     let mut authenticated = false;
+    let concurrent = Arc::new(Semaphore::new(CONCURRENT_OFFLOADS));
     loop {
         let frame = match crate::frames::next_frame(&core, id, reader, &mut authenticated).await {
             Ok(Frame::Json(bytes)) => bytes,
@@ -359,7 +365,27 @@ async fn read_requests(
             state.dispatch(&connection, request)
         })
         .await;
-        let outcome = resolve_offload(&core, outcome).await;
+        let outcome = match outcome {
+            Ok(Outcome::Offload(offload)) if offload.is_concurrent() => {
+                // Its reply goes out when the work is done. The requests behind it do not wait.
+                let Ok(permit) = Arc::clone(&concurrent).acquire_owned().await else {
+                    return CloseReason::WorkerFailed;
+                };
+                tokio::spawn(answer_concurrent(
+                    Arc::clone(&core),
+                    outbox.clone(),
+                    Concurrent {
+                        method,
+                        request_id,
+                        operation,
+                        offload,
+                    },
+                    permit,
+                ));
+                continue;
+            }
+            other => resolve_offload(&core, other).await,
+        };
         let outcome = match outcome {
             Ok(Outcome::Catalog { method, params }) => {
                 let job = CatalogJob {
@@ -399,6 +425,29 @@ async fn read_requests(
         {
             return reason;
         }
+    }
+}
+
+/// A request whose work runs while the connection reads the next ones.
+struct Concurrent {
+    method: &'static str,
+    request_id: Value,
+    operation: OperationTimer,
+    offload: Offload,
+}
+
+async fn answer_concurrent(
+    core: Shared,
+    outbox: Outbox,
+    request: Concurrent,
+    _permit: OwnedSemaphorePermit,
+) {
+    let outcome = resolve_offload(&core, Ok(Outcome::Offload(request.offload))).await;
+    request.operation.finish(&outcome);
+    if let Err(reason) =
+        send_outcome(&outbox, request.method, request.request_id, false, outcome).await
+    {
+        outbox.close(reason);
     }
 }
 

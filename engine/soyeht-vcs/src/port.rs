@@ -25,6 +25,13 @@ impl CommandPort for SystemGit {
     fn repository_root(&mut self, workspace: &Path) -> Result<PathBuf> {
         let workspace =
             soyeht_platform::fs::canonicalize(workspace).map_err(|_| Error::InvalidRepository)?;
+        // A folder with no repository above it is answered without starting git.
+        if !workspace
+            .ancestors()
+            .any(|directory| directory.join(".git").exists())
+        {
+            return Err(Error::InvalidRepository);
+        }
         let output = run(
             &workspace,
             [
@@ -224,6 +231,6 @@ mod tests {
         fs::create_dir_all(&directory).unwrap();
         let result = SystemGit.repository_root(&directory);
         fs::remove_dir_all(&directory).unwrap();
-        assert_eq!(result, Err(Error::CommandFailed));
+        assert_eq!(result, Err(Error::InvalidRepository));
     }
 }

@@ -521,7 +521,7 @@ pub(super) fn public_document(
     record: &WritingDocumentRecord,
 ) -> Result<WritingDocument> {
     Ok(WritingDocument {
-        file: document(file.clone()).map_err(errors::storage)?,
+        file: document(file).map_err(errors::storage)?,
         kind: record.kind.clone(),
         section: record.section.clone(),
         sidecar_revision: record.sidecar_revision.to_string(),

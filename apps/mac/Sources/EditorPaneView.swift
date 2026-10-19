@@ -17,8 +17,6 @@ struct EditorPaneView: View {
   @State private var references: [FileLocation] = []
   @State private var showReferences = false
   @State private var languageStatus: LspServerStatus?
-  @State private var diff: FileDiffResult?
-  @State private var diffProblem: String?
   @State private var showDiff = false
   @State private var vimMode = EditorVimMode.normal
   @State private var vimCommandLine: String?
@@ -37,12 +35,7 @@ struct EditorPaneView: View {
     inputPreferences.setProjectPanel(.toggled(from: showsProjectPanel), for: pane.workspaceId)
   }
 
-  private var currentDiff: FileDiffResult? {
-    guard let file = view?.file, let diff,
-      file.fileId == diff.fileId, file.revision == diff.revision
-    else { return nil }
-    return diff
-  }
+  private var currentDiff: FileDiffResult? { view?.readyDiff }
 
   var body: some View {
     VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
@@ -50,7 +43,7 @@ struct EditorPaneView: View {
         file: view?.file, branch: branch, projectPanelShown: showsProjectPanel,
         toggleProjectPanel: toggleProjectPanel, showHistory: { showHistory = true },
         showConflict: { showConflict = true }, showDiff: { showDiff = true },
-        diffReady: currentDiff != nil, diffProblem: diffProblem, headerDrag: headerDrag)
+        diffReady: currentDiff != nil, diffProblem: view?.diffProblem, headerDrag: headerDrag)
       if let view {
         if view.file.conflicted {
           EditorConflictBanner(showConflict: { showConflict = true })
@@ -92,7 +85,9 @@ struct EditorPaneView: View {
       if isVisible { toggleProjectPanel() }
     }
     .task(id: languageStatusKey) { await pollLanguageStatus() }
-    .task(id: diffKey) { await loadDiff() }
+    .task(id: diffKey) {
+      if let fileId = view?.file.fileId { await client.loadEditorDiff(fileId: fileId) }
+    }
     .task(id: viewportLoadKey) { await client.loadEditorPane(pane.paneId, refreshing: false) }
   }
 
@@ -109,7 +104,7 @@ struct EditorPaneView: View {
 
   private var diffKey: String {
     guard let file = view?.file else { return "none:\(client.connectionRevision)" }
-    return "\(file.fileId):\(file.revision):\(client.connectionRevision)"
+    return "\(file.fileId):\(file.revision):\(view?.viewport != nil):\(client.connectionRevision)"
   }
 
   private var viewportLoadKey: String {
@@ -134,26 +129,6 @@ struct EditorPaneView: View {
         languageStatus = nil
       }
       do { try await Task.sleep(for: .seconds(2)) } catch { return }
-    }
-  }
-
-  private func loadDiff() async {
-    diff = nil
-    diffProblem = nil
-    guard let file = view?.file else { return }
-    do {
-      try await Task.sleep(for: .milliseconds(120))
-      let result = try await client.editorDiff(fileId: file.fileId, revision: file.revision)
-      guard !Task.isCancelled,
-        view?.file.fileId == result.fileId,
-        view?.file.revision == result.revision
-      else { return }
-      diff = result
-    } catch is CancellationError {
-      return
-    } catch {
-      guard !Task.isCancelled else { return }
-      diffProblem = error.localizedDescription
     }
   }
 

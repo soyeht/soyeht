@@ -67,6 +67,18 @@ impl TextBuffer {
         self.line_starts.len()
     }
 
+    /// Whether the buffer holds exactly `text`. Unlike `text() == text`, it builds no copy.
+    pub fn matches(&self, text: &str) -> bool {
+        let mut rest = text.as_bytes();
+        for piece in &self.pieces {
+            match rest.strip_prefix(self.piece_text(*piece).as_bytes()) {
+                Some(after) => rest = after,
+                None => return false,
+            }
+        }
+        rest.is_empty()
+    }
+
     pub fn text(&self) -> String {
         let mut text = String::with_capacity(self.byte_len());
         for piece in &self.pieces {

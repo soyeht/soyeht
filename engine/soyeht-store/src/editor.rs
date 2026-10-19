@@ -270,19 +270,19 @@ pub(crate) fn snapshot_files(transaction: &rusqlite::Transaction<'_>) -> Result<
         "SELECT e.file_id,e.pane_id,e.workspace_id,e.relative_path,e.language,e.revision,e.disk_revision,e.disk_text,e.draft_text,e.draft_author,e.conflict_text,e.watching,e.updated_ms FROM editor_files e JOIN panes p ON p.id=e.pane_id WHERE p.closed=0 ORDER BY e.workspace_id,e.relative_path",
     )?;
     let rows = statement.query_map([], decode_file)?;
-    rows.map(|row| validate_file(row?).and_then(document))
+    rows.map(|row| validate_file(row?).and_then(|file| document(&file)))
         .collect()
 }
 
-pub fn document(file: EditorFile) -> Result<FileDocument> {
+pub fn document(file: &EditorFile) -> Result<FileDocument> {
     let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
-    let pane_id = file.pane_id.ok_or(Error::InvalidEditorFile)?;
+    let pane_id = file.pane_id.clone().ok_or(Error::InvalidEditorFile)?;
     Ok(FileDocument {
-        file_id: file.file_id,
+        file_id: file.file_id.clone(),
         pane_id,
-        workspace_id: file.workspace_id,
-        path: file.relative_path,
-        language: file.language,
+        workspace_id: file.workspace_id.clone(),
+        path: file.relative_path.clone(),
+        language: file.language.clone(),
         revision: file.revision.to_string(),
         disk_revision: file.disk_revision.to_string(),
         line_count: text.bytes().filter(|byte| *byte == b'\n').count() as u32 + 1,

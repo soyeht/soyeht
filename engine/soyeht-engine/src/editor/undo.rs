@@ -34,7 +34,7 @@ impl Core {
         let Some(prepared) = prepared else {
             let file = self.editor.stored(&request.file_id)?.clone();
             let result = undo_result(FileUndoResult {
-                file: document(file).map_err(errors::storage)?,
+                file: document(&file).map_err(errors::storage)?,
                 applied: false,
                 changed_lines: Vec::new(),
                 cursor: None,
@@ -44,7 +44,7 @@ impl Core {
                 .result);
         };
         let result = undo_result(FileUndoResult {
-            file: document(prepared.file.clone()).map_err(errors::storage)?,
+            file: document(&prepared.file).map_err(errors::storage)?,
             applied: true,
             changed_lines: prepared.changed_lines.clone(),
             cursor: prepared.cursor.clone(),
