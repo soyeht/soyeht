@@ -13,6 +13,7 @@ pub mod gutter;
 pub mod keys;
 mod load;
 pub mod page;
+pub mod refusal;
 pub mod selection;
 pub mod tabs;
 pub mod text;
@@ -56,6 +57,9 @@ pub struct Editors {
     asked: HashSet<String>,
     /// Why the first page of an editor pane could not be had, by pane: the pane's load failed.
     failures: HashMap<String, String>,
+    /// The file each workspace's editor last refused to open, until another opens or a tab is
+    /// chosen.
+    refusals: HashMap<String, refusal::Refusal>,
     attempts: load::Attempts,
     pub trees: ProjectTrees,
 }
@@ -149,6 +153,17 @@ impl Editors {
         }
         let history = self.history.entry(pane.workspace_id.clone()).or_default();
         *history = tabs::recorded(&pane.pane_id, history);
+        self.refusals.remove(&pane.workspace_id);
+    }
+
+    /// Forgets what the editor of a workspace said about a file it would not open.
+    pub fn clear_refusal(&mut self, workspace_id: &str) {
+        self.refusals.remove(workspace_id);
+    }
+
+    /// The file the editor of a workspace would not open as text, with what its pane says.
+    pub fn refusal(&self, workspace_id: &str) -> Option<&refusal::Refusal> {
+        self.refusals.get(workspace_id)
     }
 
     /// The tab after (or before) the active one.
@@ -210,6 +225,10 @@ impl Editors {
     /// engine listed it before the pane existed.
     pub fn pane_arrived(&mut self, pane: &Pane) -> Vec<Effect> {
         self.failures.remove(&pane.pane_id);
+        // A file that opened, whoever asked (an agent or the CLI too), is what the editor shows.
+        if pane.mode == PaneMode::Editor {
+            self.refusals.remove(&pane.workspace_id);
+        }
         self.fetch(pane, false)
     }
 
@@ -233,6 +252,7 @@ impl Editors {
     /// A workspace closed with its tabs and its tree.
     pub fn workspace_closed(&mut self, workspace_id: &str) {
         self.tabs.remove(workspace_id);
+        self.refusals.remove(workspace_id);
         self.history.remove(workspace_id);
         self.asked.remove(workspace_id);
         self.attempts.forget_workspace(workspace_id);
@@ -277,6 +297,7 @@ impl Editors {
         let live = |doc: &FileDocument| panes.iter().any(|pane| pane.pane_id == doc.pane_id);
         match event {
             EditorEvent::Opened(opened) => {
+                self.refusals.remove(&opened.file.workspace_id);
                 if !live(&opened.file) {
                     return Vec::new();
                 }
@@ -384,6 +405,17 @@ impl Editors {
                 Vec::new()
             }
             Failure::List { workspace_id, path } => self.trees.list_failed(&workspace_id, &path),
+            Failure::OpenFailed(workspace_id) => {
+                self.refusals.remove(&workspace_id);
+                Vec::new()
+            }
+            Failure::Refused {
+                workspace_id,
+                refusal,
+            } => {
+                self.refusals.insert(workspace_id, refusal);
+                Vec::new()
+            }
         }
     }
 
@@ -572,5 +604,7 @@ impl Editors {
 mod jump_tests;
 #[cfg(test)]
 mod load_tests;
+#[cfg(test)]
+mod refusal_tests;
 #[cfg(test)]
 mod tests;

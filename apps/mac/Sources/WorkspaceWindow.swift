@@ -428,7 +428,13 @@ struct WorkspaceWindow: View {
           column: reference.column)
         taskWorkspaceId = workspaceId
         navigation.select(.editor)
-      } catch { client.problem = error.localizedDescription }
+      } catch {
+        client.reportEditorOpenFailure(error, workspaceId: workspaceId, path: reference.path)
+        if client.editorOpenRefusal(in: workspaceId) != nil {
+          taskWorkspaceId = workspaceId
+          navigation.select(.editor)
+        }
+      }
     }
   }
   private func openWebLink(workspaceId: String, url: URL) {

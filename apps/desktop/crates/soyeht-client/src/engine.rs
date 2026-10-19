@@ -219,7 +219,10 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
                 let told = command
                     .failure(&error)
                     .is_none_or(|event| events.send_blocking(event).is_ok());
-                released && told && report(events, &error)
+                // A file the engine refused as text is told in its pane, not as a problem.
+                released
+                    && told
+                    && (command.failure_is_shown_in_place(&error) || report(events, &error))
             }
         };
         if !delivered {

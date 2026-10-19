@@ -14,7 +14,7 @@ use crate::{
     theme::{Palette, desktop, editor, glyph, radius, space, type_scale},
 };
 use gpui::MouseButton;
-use soyeht_client::editor::{EditorFile, PaneLoad, page::CRLF};
+use soyeht_client::editor::{EditorFile, PaneLoad, page::CRLF, refusal::Refusal};
 use soyeht_protocol::{EditorLanguage, Pane};
 
 /// The language as the status bar names it.
@@ -153,7 +153,9 @@ impl Workbench {
         let panel =
             (!hidden).then(|| self.project_panel(cx, palette, Some(&pane.pane_id), &workspace));
         let pane_id = pane.pane_id.clone();
-        let text = if loaded {
+        let text = if let Some(refusal) = self.state.editors.refusal(&workspace) {
+            refusal_state(refusal, palette).into_any_element()
+        } else if loaded {
             self.editor_text(cx, palette, &pane_id, focused)
         } else {
             match self.state.editors.pane_load(&pane_id) {
@@ -291,16 +293,30 @@ impl Workbench {
         } else {
             "Waiting for the engine."
         };
-        let message = empty_state(
-            palette,
-            Some(Icon::FileText),
-            "Open a file to begin",
-            Some(detail.into()),
-        );
+        let message = match self.state.editors.refusal(workspace_id) {
+            Some(refusal) => refusal_state(refusal, palette),
+            None => empty_state(
+                palette,
+                Some(Icon::FileText),
+                "Open a file to begin",
+                Some(detail.into()),
+            ),
+        };
         pane_card_shell(palette)
             .child(face_row(palette).child(panel).child(message))
             .into_any_element()
     }
+}
+
+/// What stands in place of the text of a file the engine refused as text: its path and the
+/// reason, with nothing to confirm.
+fn refusal_state(refusal: &Refusal, palette: &Palette) -> Div {
+    empty_state(
+        palette,
+        Some(Icon::FileText),
+        path_label(&refusal.path),
+        Some(refusal.text.into()),
+    )
 }
 
 /// The face the panel and the text of an editor sit on, in a row.

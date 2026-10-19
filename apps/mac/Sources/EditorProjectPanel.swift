@@ -183,7 +183,9 @@ struct EditorProjectPanel: View {
       do {
         try await client.openEditorFile(
           workspaceId: workspaceId, path: node.path, preview: preview)
-      } catch { client.problem = error.localizedDescription }
+      } catch {
+        client.reportEditorOpenFailure(error, workspaceId: workspaceId, path: node.path)
+      }
     }
   }
 
@@ -330,6 +332,33 @@ private struct EditorProjectRow: View {
   }
 }
 
+/// Stands in for the text of a file the engine would not open as text (`EditorOpenRefusal`):
+/// the name and the reason in the pane, with nothing to confirm.
+struct EditorRefusalView: View {
+  let refusal: EditorOpenRefusal
+
+  var body: some View {
+    VStack(spacing: MacTheme.Space.x10) {
+      Image(systemName: "doc")
+        .font(MacTheme.ui(MacTheme.TypeScale.title, weight: .light))
+        .foregroundStyle(MacTheme.secondary)
+      Text(refusal.path)
+        .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
+        .foregroundStyle(MacTheme.ink)
+        .lineLimit(1).truncationMode(.middle)
+      Text(refusal.text)
+        .font(MacTheme.ui(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
+        .multilineTextAlignment(.center)
+    }
+    .padding(MacTheme.Space.x12)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(MacTheme.face)
+    .accessibilityElement(children: .combine)
+    .accessibilityIdentifier("editor-open-refusal")
+  }
+}
+
 /// The editor surface before any file is open: the project panel to browse,
 /// beside the system open panel for files outside it.
 struct EditorEmptySurface: View {
@@ -340,22 +369,30 @@ struct EditorEmptySurface: View {
   var body: some View {
     HStack(spacing: 0) {
       EditorProjectPanel(client: client, workspaceId: workspaceId, activePath: nil)
-      VStack(spacing: MacTheme.Space.x18) {
-        Image(systemName: "doc.text")
-          .font(MacTheme.ui(MacTheme.TypeScale.title, weight: .light))
-          .foregroundStyle(MacTheme.secondary)
-        Text("Open a file to begin")
-          .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .bold))
-        Text("Pick one in Files, or press ⌘P to find it by name.")
-          .font(MacTheme.ui(MacTheme.TypeScale.caption))
-          .foregroundStyle(MacTheme.secondary)
-        Button("Open file", action: openFile)
-          .buttonStyle(.panePrimary)
-          .disabled(!client.connected)
+      if let refusal = client.editorOpenRefusal(in: workspaceId) {
+        EditorRefusalView(refusal: refusal)
+      } else {
+        emptyState
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     .background(MacTheme.face)
     .clipShape(RoundedRectangle(cornerRadius: MacTheme.Radius.control))
+  }
+
+  private var emptyState: some View {
+    VStack(spacing: MacTheme.Space.x18) {
+      Image(systemName: "doc.text")
+        .font(MacTheme.ui(MacTheme.TypeScale.title, weight: .light))
+        .foregroundStyle(MacTheme.secondary)
+      Text("Open a file to begin")
+        .font(MacTheme.ui(MacTheme.TypeScale.heading, weight: .bold))
+      Text("Pick one in Files, or press ⌘P to find it by name.")
+        .font(MacTheme.ui(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
+      Button("Open file", action: openFile)
+        .buttonStyle(.panePrimary)
+        .disabled(!client.connected)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

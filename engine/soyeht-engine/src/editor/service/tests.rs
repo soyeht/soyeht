@@ -265,3 +265,27 @@ fn binary_creation_publishes_exact_content_once_and_never_clobbers() {
     assert_eq!(fs::read(&canonical).unwrap(), bytes);
     fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_file_that_cannot_be_text_is_refused_with_its_own_code() {
+    use soyeht_protocol::ErrorKind;
+    let root = std::env::temp_dir().join(format!("sn-refusal-{}", Uuid::new_v4()));
+    fs::create_dir(&root).unwrap();
+    let binary = root.join("blob.bin");
+    fs::write(&binary, [0xff, 0xfe, 0x00, 0x9f]).unwrap();
+    let large = root.join("large.txt");
+    fs::write(
+        &large,
+        vec![b'a'; soyeht_protocol::limits::EDITOR_HISTORY_BYTES + 1],
+    )
+    .unwrap();
+    let service = Service::new(Box::new(SystemFiles));
+    let kind = |path: &Path| match service.read_disk(path) {
+        Ok(_) => None,
+        Err(error) => Some(errors::wire(error).data.kind),
+    };
+    assert_eq!(kind(&binary), Some(ErrorKind::FileNotText));
+    assert_eq!(kind(&large), Some(ErrorKind::FileTooLarge));
+    assert_eq!(kind(&root), Some(ErrorKind::InvalidParams));
+    fs::remove_dir_all(root).unwrap();
+}

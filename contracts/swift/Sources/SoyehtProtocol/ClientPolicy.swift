@@ -24,6 +24,8 @@ public enum ClientPolicy {
     public static let harnessSwitchHandover = "This starts a new agent session. Recent messages and pending prompts are handed over as historical data."
     public static let taskMoveReason = "Moved on the workspace board"
     public static let editorNoFile = "The engine has no file for this editor tab."
+    public static let editorFileNotText = "Binary file, can't be shown."
+    public static let editorFileTooLarge = "This file is too large to open in the editor."
     public static let usageBandWarningFrom: Double = 0.5
     public static let usageBandDangerAbove: Double = 0.8
     public static let contextBandWarningAbove: Double = 0.75

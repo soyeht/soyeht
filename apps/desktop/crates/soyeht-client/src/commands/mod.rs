@@ -527,9 +527,16 @@ impl Command {
     /// for the answer.
     pub fn failure(&self, error: &crate::Error) -> Option<Event> {
         match self {
-            Self::Editor(editor) => crate::editor::commands::failure(editor, &error.to_string()),
+            Self::Editor(editor) => crate::editor::commands::refused(editor, error)
+                .or_else(|| crate::editor::commands::failure(editor, &error.to_string())),
             _ => None,
         }
+    }
+
+    /// Whether `error` is shown where it happened, in the pane of a file the engine refused as
+    /// text, so that the problem banner stays closed.
+    pub fn failure_is_shown_in_place(&self, error: &crate::Error) -> bool {
+        matches!(self, Self::Editor(editor) if crate::editor::commands::refused(editor, error).is_some())
     }
 
     /// Fetches that the interface does not wait on. They run apart from the commands that carry

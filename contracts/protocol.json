@@ -126,7 +126,9 @@
         "harness_switch_failed",
         "attachment_limit_exceeded",
         "platform_unsupported",
-        "git_unavailable"
+        "git_unavailable",
+        "file_not_text",
+        "file_too_large"
       ]
     },
     "RpcError": {
@@ -14428,7 +14430,9 @@
     "harness_switch_failed": -32035,
     "attachment_limit_exceeded": -32036,
     "platform_unsupported": -32037,
-    "git_unavailable": -32038
+    "git_unavailable": -32038,
+    "file_not_text": -32039,
+    "file_too_large": -32040
   },
   "x-clientPolicy": {
     "timeouts": {
@@ -14478,7 +14482,9 @@
       "harnessSwitchTitle": "Switch agent",
       "harnessSwitchHandover": "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.",
       "taskMoveReason": "Moved on the workspace board",
-      "editorNoFile": "The engine has no file for this editor tab."
+      "editorNoFile": "The engine has no file for this editor tab.",
+      "editorFileNotText": "Binary file, can't be shown.",
+      "editorFileTooLarge": "This file is too large to open in the editor."
     },
     "inlineImageTypes": ["image/png", "image/jpeg", "image/gif", "image/webp"],
     "paneStates": {

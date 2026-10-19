@@ -6,6 +6,8 @@ extension EngineClient {
     let pane = event.pane
     switch pane.mode {
     case .editor:
+      // A file that opened, whoever asked (an agent or the CLI too), is what the editor shows.
+      editorWorkspace.refusals[pane.workspaceId] = nil
       if event.file == nil, event.writingDocument == nil { break }
       guard let file = event.file, event.writingDocument == nil,
         file.paneId == pane.paneId, file.workspaceId == pane.workspaceId

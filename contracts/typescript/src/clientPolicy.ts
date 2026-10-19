@@ -47,7 +47,9 @@ export const clientPolicy = {
     "harnessSwitchTitle": "Switch agent",
     "harnessSwitchHandover": "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.",
     "taskMoveReason": "Moved on the workspace board",
-    "editorNoFile": "The engine has no file for this editor tab."
+    "editorNoFile": "The engine has no file for this editor tab.",
+    "editorFileNotText": "Binary file, can't be shown.",
+    "editorFileTooLarge": "This file is too large to open in the editor."
   },
   "inlineImageTypes": [
     "image/png",

@@ -3,6 +3,7 @@ use super::schedule::{WATCH_INTERVAL_MS, save_backoff, watch_backoff};
 use super::{
     project_files::{ProjectFile, save_temporary_name},
     project_reader::{ProjectReader, disk_text, list_project_files},
+    text_refusal::TextRefusal,
 };
 use crate::{errors, errors::Result, streak::Streak};
 use soyeht_editor::{
@@ -49,21 +50,20 @@ impl FileSystemPort for SystemFiles {
 
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String> {
         let metadata = fs::metadata(path)?;
-        if !metadata.is_file() || metadata.len() > limit as u64 {
+        if !metadata.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "file is not regular text within the editor size limit",
+                "file is not a regular file",
             ));
+        }
+        if metadata.len() > limit as u64 {
+            return Err(TextRefusal::TooLarge.into());
         }
         let bytes = fs::read(path)?;
         if bytes.len() > limit {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "file exceeds the editor size limit",
-            ));
+            return Err(TextRefusal::TooLarge.into());
         }
-        String::from_utf8(bytes)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "file is not UTF-8"))
+        String::from_utf8(bytes).map_err(|_| TextRefusal::NotText.into())
     }
 
     fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
@@ -335,10 +335,16 @@ impl Service {
         self.files
             .read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)
             .map_err(|error| {
-                if error.kind() == io::ErrorKind::InvalidData {
-                    errors::invalid(error.to_string())
-                } else {
-                    errors::io(error)
+                match error
+                    .get_ref()
+                    .and_then(|inner| inner.downcast_ref::<TextRefusal>())
+                {
+                    Some(TextRefusal::NotText) => errors::file_not_text(error.to_string()),
+                    Some(TextRefusal::TooLarge) => errors::file_too_large(error.to_string()),
+                    None if error.kind() == io::ErrorKind::InvalidData => {
+                        errors::invalid(error.to_string())
+                    }
+                    None => errors::io(error),
                 }
             })
     }

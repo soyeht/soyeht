@@ -38,6 +38,8 @@ pub enum Error {
     WritingKindRefused(String),
     AttachmentLimitExceeded(String),
     PlatformUnsupported(String),
+    FileNotText(String),
+    FileTooLarge(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -119,6 +121,8 @@ constructor!(web_host_unavailable, WebHostUnavailable);
 constructor!(writing_kind_refused, WritingKindRefused);
 constructor!(attachment_limit_exceeded, AttachmentLimitExceeded);
 constructor!(platform_unsupported, PlatformUnsupported);
+constructor!(file_not_text, FileNotText);
+constructor!(file_too_large, FileTooLarge);
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -371,6 +375,8 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::WritingKindRefused(_) => ErrorKind::WritingKindRefused,
         Error::AttachmentLimitExceeded(_) => ErrorKind::AttachmentLimitExceeded,
         Error::PlatformUnsupported(_) => ErrorKind::PlatformUnsupported,
+        Error::FileNotText(_) => ErrorKind::FileNotText,
+        Error::FileTooLarge(_) => ErrorKind::FileTooLarge,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -468,6 +474,8 @@ fn message(error: &Error) -> String {
         | Error::WritingKindRefused(message)
         | Error::AttachmentLimitExceeded(message)
         | Error::PlatformUnsupported(message)
+        | Error::FileNotText(message)
+        | Error::FileTooLarge(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),

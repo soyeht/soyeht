@@ -289,7 +289,9 @@ private struct EditorPaneBody: View {
       }
       VStack(spacing: 0) {
         EditorTabBar(client: client, selected: view.file)
-        if load == .ready {
+        if let refusal = client.editorOpenRefusal(in: view.file.workspaceId) {
+          EditorRefusalView(refusal: refusal)
+        } else if load == .ready {
           EditorCodeViewport(
             client: client, view: view, selectedPosition: $selectedPosition,
             navigationTarget: navigationTarget,

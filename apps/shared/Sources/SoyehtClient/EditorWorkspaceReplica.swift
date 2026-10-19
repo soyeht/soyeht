@@ -9,6 +9,9 @@ public struct EditorWorkspaceReplica: Sendable {
   public internal(set) var tabs: [String: [EditorTab]] = [:]
   public internal(set) var history: [String: [String]] = [:]
   public internal(set) var trees: [String: EditorProjectTree] = [:]
+  /// The file each workspace's editor last refused to open, until another opens or a tab is
+  /// chosen.
+  public internal(set) var refusals: [String: EditorOpenRefusal] = [:]
   var watched: [String: [String]] = [:]
   /// The connection each workspace's tabs and watches were last loaded on;
   /// watches belong to a connection, so a new one starts them over.
@@ -54,6 +57,7 @@ extension EngineClient {
     if let workspaceId = panes.first(where: { $0.paneId == paneId })?.workspaceId {
       editorWorkspace.history[workspaceId] = EditorTabPolicy.recorded(
         paneId, in: editorWorkspace.history[workspaceId] ?? [])
+      editorWorkspace.refusals[workspaceId] = nil
     }
     select(paneId)
   }

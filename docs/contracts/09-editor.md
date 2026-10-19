@@ -37,6 +37,9 @@ watches the disk, keeps history); the app renders and edits.
     replaces; a double click, Return, `Cmd+P`, a link or the first edit keeps it.
     The italic face is bundled (`JetBrainsMono-Italic.ttf`), since a Mac
     without the family installed has none.
+    A file that is not UTF-8 text, or is over the size limit, opens no tab: the
+    pane says "Binary file, can't be shown." or that the file is too large, in
+    place of the text, with no dialog (ADR 0094).
 
 **Editing**
 7. Syntax highlighting (tree-sitter) for Rust, Swift, TypeScript, Python,

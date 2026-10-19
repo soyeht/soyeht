@@ -1,6 +1,7 @@
 //! What the editor asks of the engine, the typed requests that carry it out, and what the
 //! engine's answers tell the replica.
 
+use super::refusal::{self, Refusal};
 use crate::{Error, Result, commands::key, event::Event, rpc::Rpc};
 use serde_json::Value;
 use soyeht_protocol::{
@@ -113,6 +114,14 @@ pub enum Failure {
     },
     /// A folder that could not be listed.
     List { workspace_id: String, path: String },
+    /// An open that failed for a reason other than a refusal as text: it is the problem banner's,
+    /// and an earlier refusal of the workspace no longer describes what the person tried.
+    OpenFailed(String),
+    /// A file the engine refused to open as text: its pane says why (`refusal`).
+    Refused {
+        workspace_id: String,
+        refusal: Refusal,
+    },
 }
 
 /// What the engine told the editor, in the order it happened.
@@ -279,6 +288,25 @@ fn outcome(command: &EditorCommand, result: Value) -> Result<Option<Event>> {
     Ok(Some(Event::Editor(event)))
 }
 
+/// What the replica learns when an open of a file fails because the engine refused it as text:
+/// the editor says why, and the problem banner stays closed.
+pub(crate) fn refused(command: &EditorCommand, error: &Error) -> Option<Event> {
+    let EditorCommand::Open {
+        workspace_id, path, ..
+    } = command
+    else {
+        return None;
+    };
+    let text = refusal::of_error(error)?;
+    Some(Event::Editor(EditorEvent::Failed(Failure::Refused {
+        workspace_id: workspace_id.clone(),
+        refusal: Refusal {
+            path: path.clone(),
+            text,
+        },
+    })))
+}
+
 /// What the replica learns when `command` fails for `reason`, so that it does not wait for an
 /// answer.
 pub(crate) fn failure(command: &EditorCommand, reason: &str) -> Option<Event> {
@@ -303,6 +331,7 @@ pub(crate) fn failure(command: &EditorCommand, reason: &str) -> Option<Event> {
             attempt: *attempt,
             reason: reason.to_owned(),
         },
+        EditorCommand::Open { workspace_id, .. } => Failure::OpenFailed(workspace_id.clone()),
         EditorCommand::Tabs {
             workspace_id,
             attempt,

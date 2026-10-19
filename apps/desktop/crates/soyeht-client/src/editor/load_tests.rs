@@ -27,7 +27,8 @@ fn created(state: &mut State) -> Vec<Effect> {
     ))
 }
 
-fn closed(state: &mut State) {
+/// The engine closes the editor pane `e1`.
+pub(super) fn closed(state: &mut State) {
     state.apply(event(
         EventName::PaneClosed,
         json!({"paneId": "e1", "workspaceId": "w"}),

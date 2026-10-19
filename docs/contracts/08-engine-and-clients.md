@@ -381,7 +381,10 @@ asked: for example, `servers.local.list` on Windows; the message says what),
 `git_unavailable` (the engine did not start `git`, or `wt` which starts it, because on a Mac
 without the Command Line Tools `/usr/bin/git` opens the system installer; the message says
 what is missing and that nothing was installed. Features that do not need Git keep working,
-and a later request succeeds once Git is installed).
+and a later request succeeds once Git is installed),
+`file_not_text` (a file the editor was asked to open is not UTF-8 text) and `file_too_large`
+(it exceeds the editor's size limit); a client shows both in the editor pane, not as a dialog
+(ADR 0094).
 
 ## 8. Limits (R20) — single table, overrides every other mention
 | Item | Limit |

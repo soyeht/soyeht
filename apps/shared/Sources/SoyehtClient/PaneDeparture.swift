@@ -52,13 +52,26 @@ extension EngineClient {
     }
   }
 
+  /// A workspace the engine closed leaves with its layout and what its editor said.
+  func forgetWorkspace(_ workspaceId: String?) {
+    guard let workspaceId else { return }
+    paneLayouts.remove(workspaceId: workspaceId)
+    editorWorkspace.refusals[workspaceId] = nil
+  }
   /// Forgets a pane and everything this client kept for it. When it was selected, the selection
   /// moves to another pane of the same workspace before any other workspace's.
   func removePane(_ paneId: String?) {
     guard let paneId else { return }
     closedPaneIds.insert(paneId)
-    let workspaceId = panes.first { $0.paneId == paneId }?.workspaceId
+    let closing = panes.first { $0.paneId == paneId }
+    let workspaceId = closing?.workspaceId
     panes.removeAll { $0.paneId == paneId }
+    // The last tab closing leaves the empty editor place, which has no file to explain.
+    if let closing, closing.mode == .editor,
+      !panes.contains(where: { $0.mode == .editor && $0.workspaceId == closing.workspaceId })
+    {
+      editorWorkspace.refusals[closing.workspaceId] = nil
+    }
     discardTerminalPane(paneId)
     discardAgentPane(paneId)
     agentTranscriptRevisions.removeValue(forKey: paneId)

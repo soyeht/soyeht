@@ -589,10 +589,10 @@ public final class EngineClient {
     case .writingChanged: try applyWritingEvent(params)
     }
   }
-  private func applyWorkspaceClosed(_ params: JsonValue) {
+  func applyWorkspaceClosed(_ params: JsonValue) {
     let workspaceId = params["workspaceId"].string
     workspaces.removeAll { $0.workspaceId == workspaceId }
-    if let workspaceId { paneLayouts.remove(workspaceId: workspaceId) }
+    forgetWorkspace(workspaceId)
   }
   func applyPaneEvent(_ eventName: EventName, _ params: JsonValue) throws {
     switch eventName {

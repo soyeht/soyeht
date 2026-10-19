@@ -152,7 +152,10 @@ struct PaneGrid: View {
     Task { @MainActor in
       do {
         _ = try await client.openEditorFile(workspaceId: workspace.workspaceId, path: relative)
-      } catch { client.problem = error.localizedDescription }
+      } catch {
+        client.reportEditorOpenFailure(
+          error, workspaceId: workspace.workspaceId, path: relative)
+      }
     }
   }
 

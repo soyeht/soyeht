@@ -103,6 +103,8 @@ public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `attachment_limit_exceeded` = "attachment_limit_exceeded"
     case `platform_unsupported` = "platform_unsupported"
     case `git_unavailable` = "git_unavailable"
+    case `file_not_text` = "file_not_text"
+    case `file_too_large` = "file_too_large"
 }
 
 public struct RpcError: Codable, Sendable {

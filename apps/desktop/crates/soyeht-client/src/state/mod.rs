@@ -540,10 +540,25 @@ impl State {
 
     fn remove_pane(&mut self, pane_id: &str) {
         self.closed.insert(pane_id.to_owned());
+        let closing = self
+            .panes
+            .iter()
+            .find(|pane| pane.pane_id == pane_id)
+            .filter(|pane| pane.mode == PaneMode::Editor)
+            .map(|pane| pane.workspace_id.clone());
         self.panes.retain(|pane| pane.pane_id != pane_id);
         self.screens.remove(pane_id);
         self.agents.remove(pane_id);
         self.editors.pane_closed(pane_id);
+        // The last tab closing leaves the empty editor place, which has no file to explain.
+        if let Some(workspace_id) = closing.filter(|workspace_id| {
+            !self
+                .panes
+                .iter()
+                .any(|pane| pane.mode == PaneMode::Editor && pane.workspace_id == *workspace_id)
+        }) {
+            self.editors.clear_refusal(&workspace_id);
+        }
         self.gaps.remove(pane_id);
         if self.focused_pane.as_deref() == Some(pane_id) {
             self.focused_pane = None;

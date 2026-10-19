@@ -1,5 +1,5 @@
 {
-  "description": "The editor rules the clients agree on: when the visible lines need another page of the file (x-clientPolicy editor prefetchLines and pageLeadDivisor, over the viewport limit; a page the engine cut short at its byte budget is not read again), which tab shows and which one takes over, what a keystroke changes and sends (a character is a grapheme cluster, and a CRLF line break is one character that the new lines of a CRLF file repeat), which line break a file has, how wide the line-number gutter is for the digits of the file's last line number (a number is never clipped), how the project tree answers the keys, and how an editor pane loads its first page (loading, ready or failed, and what a retry asks). Ranges are UTF-16 offsets into the page text (its lines joined by a newline, a CRLF line keeping its carriage return), as the Mac's text view holds them. The Mac (EditorViewportPaging, EditorTabPolicy, EditorEditing, EditorProjectTree, EditorPaneLoad) and the desktop client (soyeht_client::editor) pass the same cases.",
+  "description": "The editor rules the clients agree on: when the visible lines need another page of the file (x-clientPolicy editor prefetchLines and pageLeadDivisor, over the viewport limit; a page the engine cut short at its byte budget is not read again), which tab shows and which one takes over, what a keystroke changes and sends (a character is a grapheme cluster, and a CRLF line break is one character that the new lines of a CRLF file repeat), which line break a file has, how wide the line-number gutter is for the digits of the file's last line number (a number is never clipped), how the project tree answers the keys, and how an editor pane loads its first page (loading, ready or failed, and what a retry asks), and where a failed open of a file is shown (in the pane for a file that cannot be text, else the problem dialog or banner). Ranges are UTF-16 offsets into the page text (its lines joined by a newline, a CRLF line keeping its carriage return), as the Mac's text view holds them. The Mac (EditorViewportPaging, EditorTabPolicy, EditorEditing, EditorProjectTree, EditorPaneLoad, EditorOpenRefusal) and the desktop client (soyeht_client::editor) pass the same cases.",
   "pageLines": 2000,
   "requestedStart": [
     {
@@ -2139,6 +2139,38 @@
             "state": "ready"
           }
         ]
+      }
+    ]
+  },
+  "openFailure": {
+    "description": "Where a failed open of a file is shown (the Mac's EditorOpenRefusal, the desktop's editor::refusal). A file the engine refuses as text is a state of the editor: the pane says why in place of the text (placement inline, with the x-clientPolicy texts key named by text) and no dialog or banner opens. Any other failure of the open is the client's problem dialog or banner (placement modal): it is something the person must know, not a state of a file. kind is the engine's error kind.",
+    "cases": [
+      {
+        "name": "a binary file is a state of the editor, not a dialog",
+        "kind": "file_not_text",
+        "placement": "inline",
+        "text": "editorFileNotText"
+      },
+      {
+        "name": "a file over the editor size limit says so in the pane",
+        "kind": "file_too_large",
+        "placement": "inline",
+        "text": "editorFileTooLarge"
+      },
+      {
+        "name": "a refused path stays a dialog",
+        "kind": "invalid_params",
+        "placement": "modal"
+      },
+      {
+        "name": "a file that is gone stays a dialog",
+        "kind": "not_found",
+        "placement": "modal"
+      },
+      {
+        "name": "an engine failure stays a dialog",
+        "kind": "internal_error",
+        "placement": "modal"
       }
     ]
   }
