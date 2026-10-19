@@ -6,6 +6,14 @@ enum AgentCatalogResponseOrder {
 }
 
 public enum AgentPaneStatusPresentation {
+  /// The widest status word a header can show, which the header reserves room for.
+  public static var longestTitle: String {
+    let titles =
+      ["Sign in", "ready"]
+      + PaneState.allCases.map { title(state: $0, needsAuthentication: false, hasSession: false) }
+    return titles.max { $0.count < $1.count } ?? ""
+  }
+
   public static func title(
     state: PaneState, needsAuthentication: Bool, hasSession: Bool
   ) -> String {

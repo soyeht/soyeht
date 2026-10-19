@@ -336,6 +336,7 @@ pub mod pane_layout {
     pub const HEADER_HEIGHT: f32 = 26.0;
     pub const HEADER_STATE_DOT: f32 = 8.0;
     pub const HEADER_ACTION_WIDTH: f32 = 24.0;
+    pub const HEADER_TICKER_MINIMUM_WIDTH: f32 = 80.0;
     pub const TERMINAL_FONT_SIZE: f32 = 13.0;
 }
 pub mod layout {

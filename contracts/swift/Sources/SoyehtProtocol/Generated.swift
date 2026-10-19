@@ -9,19 +9,19 @@ public typealias Decimal = String
 
 public typealias ByteString = String
 
-public enum Role: String, Codable, Sendable {
+public enum Role: String, Codable, Sendable, CaseIterable {
     case `human_local` = "human_local"
     case `human_device` = "human_device"
     case `agent` = "agent"
     case `chief` = "chief"
 }
 
-public enum AgentPaneRole: String, Codable, Sendable {
+public enum AgentPaneRole: String, Codable, Sendable, CaseIterable {
     case `worker` = "worker"
     case `chief` = "chief"
 }
 
-public enum PaneMode: String, Codable, Sendable {
+public enum PaneMode: String, Codable, Sendable, CaseIterable {
     case `terminal` = "terminal"
     case `agent` = "agent"
     case `editor` = "editor"
@@ -29,7 +29,7 @@ public enum PaneMode: String, Codable, Sendable {
     case `writing` = "writing"
 }
 
-public enum PaneState: String, Codable, Sendable {
+public enum PaneState: String, Codable, Sendable, CaseIterable {
     case `starting` = "starting"
     case `working` = "working"
     case `idle` = "idle"
@@ -41,7 +41,7 @@ public enum PaneState: String, Codable, Sendable {
     case `unknown` = "unknown"
 }
 
-public enum StateSource: String, Codable, Sendable {
+public enum StateSource: String, Codable, Sendable, CaseIterable {
     case `protocol` = "protocol"
     case `hook` = "hook"
     case `osc` = "osc"
@@ -49,7 +49,7 @@ public enum StateSource: String, Codable, Sendable {
     case `none` = "none"
 }
 
-public enum SnapshotSection: String, Codable, Sendable {
+public enum SnapshotSection: String, Codable, Sendable, CaseIterable {
     case `workspaces` = "workspaces"
     case `panes` = "panes"
     case `tasks` = "tasks"
@@ -63,7 +63,7 @@ public enum SnapshotSection: String, Codable, Sendable {
     case `writing` = "writing"
 }
 
-public enum ErrorKind: String, Codable, Sendable {
+public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `not_found` = "not_found"
     case `invalid_params` = "invalid_params"
     case `unauthorized` = "unauthorized"
@@ -140,12 +140,12 @@ public struct Actor: Codable, Sendable {
     }
 }
 
-public enum WorkspacePaneLayoutMode: String, Codable, Sendable {
+public enum WorkspacePaneLayoutMode: String, Codable, Sendable, CaseIterable {
     case `automatic` = "automatic"
     case `custom` = "custom"
 }
 
-public enum WorkspacePaneLayoutKind: String, Codable, Sendable {
+public enum WorkspacePaneLayoutKind: String, Codable, Sendable, CaseIterable {
     case `terminal` = "terminal"
     case `agent` = "agent"
     case `editor` = "editor"
@@ -156,7 +156,7 @@ public enum WorkspacePaneLayoutKind: String, Codable, Sendable {
     case `unknown_writing` = "unknown_writing"
 }
 
-public enum WorkspacePaneLayoutAxis: String, Codable, Sendable {
+public enum WorkspacePaneLayoutAxis: String, Codable, Sendable, CaseIterable {
     case `horizontal` = "horizontal"
     case `vertical` = "vertical"
 }
@@ -888,11 +888,11 @@ public struct DeviceRevokeResult: Codable, Sendable {
     }
 }
 
-public enum PushPlatform: String, Codable, Sendable {
+public enum PushPlatform: String, Codable, Sendable, CaseIterable {
     case `apns` = "apns"
 }
 
-public enum PushEnvironment: String, Codable, Sendable {
+public enum PushEnvironment: String, Codable, Sendable, CaseIterable {
     case `sandbox` = "sandbox"
     case `production` = "production"
 }
@@ -971,7 +971,7 @@ public struct PairProveResult: Codable, Sendable {
     }
 }
 
-public enum EngineReachabilityReason: String, Codable, Sendable {
+public enum EngineReachabilityReason: String, Codable, Sendable, CaseIterable {
     case `tailnet_address_not_found` = "tailnet_address_not_found"
     case `tailnet_lookup_failed` = "tailnet_lookup_failed"
     case `tailnet_listen_failed` = "tailnet_listen_failed"
@@ -1332,11 +1332,11 @@ public struct PtydLostEvent: Codable, Sendable {
     }
 }
 
-public enum TailSelector: String, Codable, Sendable {
+public enum TailSelector: String, Codable, Sendable, CaseIterable {
     case `tail` = "tail"
 }
 
-public enum RpcVersion: String, Codable, Sendable {
+public enum RpcVersion: String, Codable, Sendable, CaseIterable {
     case `v20` = "2.0"
 }
 
@@ -1465,25 +1465,25 @@ public struct ClientFocus: Codable, Sendable {
     }
 }
 
-public enum PromptOrigin: String, Codable, Sendable {
+public enum PromptOrigin: String, Codable, Sendable, CaseIterable {
     case `human` = "human"
     case `automatic` = "automatic"
 }
 
-public enum PromptStatus: String, Codable, Sendable {
+public enum PromptStatus: String, Codable, Sendable, CaseIterable {
     case `queued` = "queued"
     case `active` = "active"
     case `completed` = "completed"
     case `cancelled` = "cancelled"
 }
 
-public enum TranscriptRole: String, Codable, Sendable {
+public enum TranscriptRole: String, Codable, Sendable, CaseIterable {
     case `user` = "user"
     case `assistant` = "assistant"
     case `system` = "system"
 }
 
-public enum TranscriptKind: String, Codable, Sendable {
+public enum TranscriptKind: String, Codable, Sendable, CaseIterable {
     case `message` = "message"
     case `thought` = "thought"
     case `tool` = "tool"
@@ -1495,64 +1495,64 @@ public enum TranscriptKind: String, Codable, Sendable {
     case `subagent` = "subagent"
 }
 
-public enum PermissionOptionKind: String, Codable, Sendable {
+public enum PermissionOptionKind: String, Codable, Sendable, CaseIterable {
     case `allow_once` = "allow_once"
     case `allow_always` = "allow_always"
     case `reject_once` = "reject_once"
     case `reject_always` = "reject_always"
 }
 
-public enum PermissionResult: String, Codable, Sendable {
+public enum PermissionResult: String, Codable, Sendable, CaseIterable {
     case `selected` = "selected"
     case `cancelled` = "cancelled"
     case `expired` = "expired"
 }
 
-public enum ElicitationResult: String, Codable, Sendable {
+public enum ElicitationResult: String, Codable, Sendable, CaseIterable {
     case `submitted` = "submitted"
     case `cancelled` = "cancelled"
     case `expired` = "expired"
 }
 
-public enum DecisionBy: String, Codable, Sendable {
+public enum DecisionBy: String, Codable, Sendable, CaseIterable {
     case `mac` = "mac"
     case `iphone` = "iphone"
     case `rule` = "rule"
     case `system` = "system"
 }
 
-public enum ProbeResult: String, Codable, Sendable {
+public enum ProbeResult: String, Codable, Sendable, CaseIterable {
     case `worked` = "worked"
     case `unsupported` = "unsupported"
     case `unauthenticated` = "unauthenticated"
     case `inconclusive` = "inconclusive"
 }
 
-public enum ConfigType: String, Codable, Sendable {
+public enum ConfigType: String, Codable, Sendable, CaseIterable {
     case `select` = "select"
     case `boolean` = "boolean"
 }
 
-public enum ToolStatus: String, Codable, Sendable {
+public enum ToolStatus: String, Codable, Sendable, CaseIterable {
     case `pending` = "pending"
     case `in_progress` = "in_progress"
     case `completed` = "completed"
     case `failed` = "failed"
 }
 
-public enum PlanStatus: String, Codable, Sendable {
+public enum PlanStatus: String, Codable, Sendable, CaseIterable {
     case `pending` = "pending"
     case `in_progress` = "in_progress"
     case `completed` = "completed"
 }
 
-public enum PlanPriority: String, Codable, Sendable {
+public enum PlanPriority: String, Codable, Sendable, CaseIterable {
     case `high` = "high"
     case `medium` = "medium"
     case `low` = "low"
 }
 
-public enum SessionRecovery: String, Codable, Sendable {
+public enum SessionRecovery: String, Codable, Sendable, CaseIterable {
     case `resumed` = "resumed"
     case `new_session` = "new_session"
     case `needs_login` = "needs_login"
@@ -1781,7 +1781,7 @@ public struct ElicitationRequest: Codable, Sendable {
     }
 }
 
-public enum AgentLoginPhase: String, Codable, Sendable {
+public enum AgentLoginPhase: String, Codable, Sendable, CaseIterable {
     case `waiting` = "waiting"
     case `verifying` = "verifying"
     case `signing_out` = "signing_out"
@@ -1886,7 +1886,7 @@ public struct PaneCommandsChangedEvent: Codable, Sendable {
 
 public typealias SkillName = String
 
-public enum SkillScope: String, Codable, Sendable {
+public enum SkillScope: String, Codable, Sendable, CaseIterable {
     case `user` = "user"
     case `workspace` = "workspace"
 }
@@ -2091,7 +2091,7 @@ public struct ModelInfo: Codable, Sendable {
     }
 }
 
-public enum ModelListSource: String, Codable, Sendable {
+public enum ModelListSource: String, Codable, Sendable, CaseIterable {
     case `not_probed` = "not_probed"
     case `native_session` = "native_session"
 }
@@ -2184,7 +2184,7 @@ public struct TerminalOutput: Codable, Sendable {
     }
 }
 
-public enum SubagentStatus: String, Codable, Sendable {
+public enum SubagentStatus: String, Codable, Sendable, CaseIterable {
     case `running` = "running"
     case `completed` = "completed"
     case `failed` = "failed"
@@ -2250,7 +2250,7 @@ public struct TranscriptMessage: Codable, Sendable {
     }
 }
 
-public enum PromptAttachmentKind: String, Codable, Sendable {
+public enum PromptAttachmentKind: String, Codable, Sendable, CaseIterable {
     case `image` = "image"
     case `audio` = "audio"
     case `text` = "text"
@@ -3006,7 +3006,7 @@ public struct PaneAuthFinishedEvent: Codable, Sendable {
     }
 }
 
-public enum AgentMessageUpdateKind: String, Codable, Sendable {
+public enum AgentMessageUpdateKind: String, Codable, Sendable, CaseIterable {
     case `agent_message_chunk` = "agent_message_chunk"
     case `system_message` = "system_message"
 }
@@ -3036,7 +3036,7 @@ public struct AgentMessageUpdate: Codable, Sendable {
     }
 }
 
-public enum AgentThoughtUpdateKind: String, Codable, Sendable {
+public enum AgentThoughtUpdateKind: String, Codable, Sendable, CaseIterable {
     case `agent_thought_chunk` = "agent_thought_chunk"
 }
 
@@ -3065,7 +3065,7 @@ public struct AgentThoughtUpdate: Codable, Sendable {
     }
 }
 
-public enum ToolCallUpdateKind: String, Codable, Sendable {
+public enum ToolCallUpdateKind: String, Codable, Sendable, CaseIterable {
     case `tool_call` = "tool_call"
 }
 
@@ -3092,7 +3092,7 @@ public struct ToolCallUpdate: Codable, Sendable {
     }
 }
 
-public enum ToolProgressUpdateKind: String, Codable, Sendable {
+public enum ToolProgressUpdateKind: String, Codable, Sendable, CaseIterable {
     case `tool_call_update` = "tool_call_update"
 }
 
@@ -3119,7 +3119,7 @@ public struct ToolProgressUpdate: Codable, Sendable {
     }
 }
 
-public enum PlanUpdateKind: String, Codable, Sendable {
+public enum PlanUpdateKind: String, Codable, Sendable, CaseIterable {
     case `plan` = "plan"
 }
 
@@ -3146,7 +3146,7 @@ public struct PlanUpdate: Codable, Sendable {
     }
 }
 
-public enum SubagentUpdateKind: String, Codable, Sendable {
+public enum SubagentUpdateKind: String, Codable, Sendable, CaseIterable {
     case `subagent` = "subagent"
 }
 
@@ -3173,7 +3173,7 @@ public struct SubagentUpdate: Codable, Sendable {
     }
 }
 
-public enum UsageUpdateKind: String, Codable, Sendable {
+public enum UsageUpdateKind: String, Codable, Sendable, CaseIterable {
     case `usage` = "usage"
 }
 
@@ -3198,7 +3198,7 @@ public struct UsageUpdate: Codable, Sendable {
     }
 }
 
-public enum TerminalOutputUpdateKind: String, Codable, Sendable {
+public enum TerminalOutputUpdateKind: String, Codable, Sendable, CaseIterable {
     case `terminal_output` = "terminal_output"
 }
 
@@ -3231,7 +3231,7 @@ public struct TerminalOutputUpdate: Codable, Sendable {
     }
 }
 
-public enum ConfigOptionUpdateKind: String, Codable, Sendable {
+public enum ConfigOptionUpdateKind: String, Codable, Sendable, CaseIterable {
     case `config_option_update` = "config_option_update"
 }
 
@@ -3327,7 +3327,7 @@ public struct AttentionChangedEvent: Codable, Sendable {
     }
 }
 
-public enum TurnStopReason: String, Codable, Sendable {
+public enum TurnStopReason: String, Codable, Sendable, CaseIterable {
     case `end_turn` = "end_turn"
     case `max_tokens` = "max_tokens"
     case `max_turn_requests` = "max_turn_requests"
@@ -3386,7 +3386,7 @@ public struct PaneQueueStateEvent: Codable, Sendable {
     }
 }
 
-public enum TaskState: String, Codable, Sendable {
+public enum TaskState: String, Codable, Sendable, CaseIterable {
     case `todo` = "todo"
     case `in_progress` = "in_progress"
     case `in_review` = "in_review"
@@ -3394,32 +3394,32 @@ public enum TaskState: String, Codable, Sendable {
     case `cancelled` = "cancelled"
 }
 
-public enum TaskPriority: String, Codable, Sendable {
+public enum TaskPriority: String, Codable, Sendable, CaseIterable {
     case `urgent` = "urgent"
     case `high` = "high"
     case `medium` = "medium"
     case `low` = "low"
 }
 
-public enum SubitemState: String, Codable, Sendable {
+public enum SubitemState: String, Codable, Sendable, CaseIterable {
     case `open` = "open"
     case `done` = "done"
 }
 
-public enum AttemptResult: String, Codable, Sendable {
+public enum AttemptResult: String, Codable, Sendable, CaseIterable {
     case `completed` = "completed"
     case `returned` = "returned"
     case `failed` = "failed"
     case `cancelled` = "cancelled"
 }
 
-public enum BlockingKind: String, Codable, Sendable {
+public enum BlockingKind: String, Codable, Sendable, CaseIterable {
     case `dependency` = "dependency"
     case `missing_information` = "missing_information"
     case `external_error` = "external_error"
 }
 
-public enum TaskCheckState: String, Codable, Sendable {
+public enum TaskCheckState: String, Codable, Sendable, CaseIterable {
     case `unknown` = "unknown"
     case `pending` = "pending"
     case `green` = "green"
@@ -3427,25 +3427,25 @@ public enum TaskCheckState: String, Codable, Sendable {
     case `conflict` = "conflict"
 }
 
-public enum TaskReviewState: String, Codable, Sendable {
+public enum TaskReviewState: String, Codable, Sendable, CaseIterable {
     case `none` = "none"
     case `awaiting_person` = "awaiting_person"
     case `changes_requested` = "changes_requested"
     case `approved` = "approved"
 }
 
-public enum TaskReviewBadge: String, Codable, Sendable {
+public enum TaskReviewBadge: String, Codable, Sendable, CaseIterable {
     case `system_turn` = "system_turn"
     case `your_turn` = "your_turn"
 }
 
-public enum LoopStopWhen: String, Codable, Sendable {
+public enum LoopStopWhen: String, Codable, Sendable, CaseIterable {
     case `round_limit` = "round_limit"
     case `three_empty` = "three_empty"
     case `explicit_off` = "explicit_off"
 }
 
-public enum DriftLabel: String, Codable, Sendable {
+public enum DriftLabel: String, Codable, Sendable, CaseIterable {
     case `equivalent` = "equivalent"
     case `style` = "style"
     case `algorithm` = "algorithm"
@@ -4389,13 +4389,13 @@ public struct PaneRoleSetResult: Codable, Sendable {
     }
 }
 
-public enum UsageProvider: String, Codable, Sendable {
+public enum UsageProvider: String, Codable, Sendable, CaseIterable {
     case `claude` = "claude"
     case `codex` = "codex"
     case `cursor` = "cursor"
 }
 
-public enum UsageState: String, Codable, Sendable {
+public enum UsageState: String, Codable, Sendable, CaseIterable {
     case `ok` = "ok"
     case `stale` = "stale"
     case `login_needed` = "login_needed"
@@ -4403,7 +4403,7 @@ public enum UsageState: String, Codable, Sendable {
     case `unavailable` = "unavailable"
 }
 
-public enum UsageUnavailableReason: String, Codable, Sendable {
+public enum UsageUnavailableReason: String, Codable, Sendable, CaseIterable {
     case `not_checked` = "not_checked"
     case `no_data` = "no_data"
     case `tool_not_found` = "tool_not_found"
@@ -4416,7 +4416,7 @@ public enum UsageUnavailableReason: String, Codable, Sendable {
     case `source_failed` = "source_failed"
 }
 
-public enum UsageSource: String, Codable, Sendable {
+public enum UsageSource: String, Codable, Sendable, CaseIterable {
     case `claude_cli_usage` = "claude_cli_usage"
     case `claude_oauth_endpoint` = "claude_oauth_endpoint"
     case `claude_desktop_cache` = "claude_desktop_cache"
@@ -4514,7 +4514,7 @@ public struct UsageChangedEvent: Codable, Sendable {
     }
 }
 
-public enum EditorLanguage: String, Codable, Sendable {
+public enum EditorLanguage: String, Codable, Sendable, CaseIterable {
     case `plain_text` = "plain_text"
     case `rust` = "rust"
     case `swift` = "swift"
@@ -4525,19 +4525,19 @@ public enum EditorLanguage: String, Codable, Sendable {
     case `shell` = "shell"
 }
 
-public enum EditorContentSource: String, Codable, Sendable {
+public enum EditorContentSource: String, Codable, Sendable, CaseIterable {
     case `buffer` = "buffer"
     case `disk` = "disk"
     case `draft` = "draft"
     case `history` = "history"
 }
 
-public enum FileSearchScope: String, Codable, Sendable {
+public enum FileSearchScope: String, Codable, Sendable, CaseIterable {
     case `content` = "content"
     case `path` = "path"
 }
 
-public enum HighlightKind: String, Codable, Sendable {
+public enum HighlightKind: String, Codable, Sendable, CaseIterable {
     case `keyword` = "keyword"
     case `string` = "string"
     case `comment` = "comment"
@@ -4551,14 +4551,14 @@ public enum HighlightKind: String, Codable, Sendable {
     case `variable` = "variable"
 }
 
-public enum DiagnosticSeverity: String, Codable, Sendable {
+public enum DiagnosticSeverity: String, Codable, Sendable, CaseIterable {
     case `error` = "error"
     case `warning` = "warning"
     case `information` = "information"
     case `hint` = "hint"
 }
 
-public enum FileSymbolKind: String, Codable, Sendable {
+public enum FileSymbolKind: String, Codable, Sendable, CaseIterable {
     case `function` = "function"
     case `type` = "type"
     case `method` = "method"
@@ -4567,13 +4567,13 @@ public enum FileSymbolKind: String, Codable, Sendable {
     case `module` = "module"
 }
 
-public enum DiffLineKind: String, Codable, Sendable {
+public enum DiffLineKind: String, Codable, Sendable, CaseIterable {
     case `context` = "context"
     case `added` = "added"
     case `removed` = "removed"
 }
 
-public enum LspState: String, Codable, Sendable {
+public enum LspState: String, Codable, Sendable, CaseIterable {
     case `starting` = "starting"
     case `ready` = "ready"
     case `restarting` = "restarting"
@@ -4852,7 +4852,7 @@ public struct FileUndoResult: Codable, Sendable {
     }
 }
 
-public enum ProjectEntryKind: String, Codable, Sendable {
+public enum ProjectEntryKind: String, Codable, Sendable, CaseIterable {
     case `file` = "file"
     case `directory` = "directory"
 }
@@ -4988,7 +4988,7 @@ public struct ProjectEntryRenamedEvent: Codable, Sendable {
     }
 }
 
-public enum ProjectDeleteOutcome: String, Codable, Sendable {
+public enum ProjectDeleteOutcome: String, Codable, Sendable, CaseIterable {
     case `trashed` = "trashed"
     case `deleted` = "deleted"
     case `needs_confirmation` = "needs_confirmation"
@@ -5118,7 +5118,7 @@ public struct FileSearchResult: Codable, Sendable {
     }
 }
 
-public enum FileFindDirection: String, Codable, Sendable {
+public enum FileFindDirection: String, Codable, Sendable, CaseIterable {
     case `next` = "next"
     case `previous` = "previous"
 }
@@ -5569,44 +5569,44 @@ public struct EditorReviewRequestedEvent: Codable, Sendable {
     }
 }
 
-public enum ClientCapability: String, Codable, Sendable {
+public enum ClientCapability: String, Codable, Sendable, CaseIterable {
     case `web_host` = "web_host"
 }
 
-public enum WebInteractionMode: String, Codable, Sendable {
+public enum WebInteractionMode: String, Codable, Sendable, CaseIterable {
     case `structured` = "structured"
     case `human` = "human"
 }
 
-public enum WebNavigationAction: String, Codable, Sendable {
+public enum WebNavigationAction: String, Codable, Sendable, CaseIterable {
     case `back` = "back"
     case `forward` = "forward"
     case `reload` = "reload"
     case `reload_ignoring_cache` = "reload_ignoring_cache"
 }
 
-public enum WebViewportPreset: String, Codable, Sendable {
+public enum WebViewportPreset: String, Codable, Sendable, CaseIterable {
     case `iphone_se` = "iphone_se"
     case `iphone15_pro` = "iphone_15_pro"
     case `ipad` = "ipad"
     case `responsive` = "responsive"
 }
 
-public enum WebConsoleLevel: String, Codable, Sendable {
+public enum WebConsoleLevel: String, Codable, Sendable, CaseIterable {
     case `debug` = "debug"
     case `info` = "info"
     case `warning` = "warning"
     case `error` = "error"
 }
 
-public enum WebSessionState: String, Codable, Sendable {
+public enum WebSessionState: String, Codable, Sendable, CaseIterable {
     case `anonymous` = "anonymous"
     case `permission_required` = "permission_required"
     case `granted` = "granted"
     case `incognito` = "incognito"
 }
 
-public enum WebCommandKind: String, Codable, Sendable {
+public enum WebCommandKind: String, Codable, Sendable, CaseIterable {
     case `navigate` = "navigate"
     case `snapshot` = "snapshot"
     case `click` = "click"
@@ -6234,31 +6234,31 @@ public struct ServersLocalChangedEvent: Codable, Sendable {
     }
 }
 
-public enum PermissionRequestKind: String, Codable, Sendable {
+public enum PermissionRequestKind: String, Codable, Sendable, CaseIterable {
     case `agent` = "agent"
     case `web_session` = "web_session"
     case `web_evaluate` = "web_evaluate"
 }
 
-public enum WritingKind: String, Codable, Sendable {
+public enum WritingKind: String, Codable, Sendable, CaseIterable {
     case `text` = "text"
     case `presentation` = "presentation"
     case `screenplay` = "screenplay"
 }
 
-public enum WritingSection: String, Codable, Sendable {
+public enum WritingSection: String, Codable, Sendable, CaseIterable {
     case `texts` = "texts"
     case `presentations` = "presentations"
     case `screenplays` = "screenplays"
 }
 
-public enum WritingFont: String, Codable, Sendable {
+public enum WritingFont: String, Codable, Sendable, CaseIterable {
     case `reading_serif` = "reading_serif"
     case `classic_serif` = "classic_serif"
     case `sans` = "sans"
 }
 
-public enum WritingFormatKind: String, Codable, Sendable {
+public enum WritingFormatKind: String, Codable, Sendable, CaseIterable {
     case `heading1` = "heading_1"
     case `heading2` = "heading_2"
     case `heading3` = "heading_3"
@@ -6271,7 +6271,7 @@ public enum WritingFormatKind: String, Codable, Sendable {
     case `image` = "image"
 }
 
-public enum ScreenplayElementKind: String, Codable, Sendable {
+public enum ScreenplayElementKind: String, Codable, Sendable, CaseIterable {
     case `scene_heading` = "scene_heading"
     case `action` = "action"
     case `character` = "character"
@@ -6281,7 +6281,7 @@ public enum ScreenplayElementKind: String, Codable, Sendable {
     case `shot` = "shot"
 }
 
-public enum BeatCategory: String, Codable, Sendable {
+public enum BeatCategory: String, Codable, Sendable, CaseIterable {
     case `story` = "story"
     case `character` = "character"
     case `setting` = "setting"
@@ -6756,12 +6756,12 @@ public struct WritingChangedEvent: Codable, Sendable {
     }
 }
 
-public enum HarnessSource: String, Codable, Sendable {
+public enum HarnessSource: String, Codable, Sendable, CaseIterable {
     case `built_in` = "built_in"
     case `custom` = "custom"
 }
 
-public enum HarnessSetupState: String, Codable, Sendable {
+public enum HarnessSetupState: String, Codable, Sendable, CaseIterable {
     case `ready` = "ready"
     case `not_checked` = "not_checked"
     case `not_installed` = "not_installed"
@@ -6769,7 +6769,7 @@ public enum HarnessSetupState: String, Codable, Sendable {
     case `check_setup` = "check_setup"
 }
 
-public enum HarnessSetupReason: String, Codable, Sendable {
+public enum HarnessSetupReason: String, Codable, Sendable, CaseIterable {
     case `never_started` = "never_started"
     case `executable_missing` = "executable_missing"
     case `registry_package_unverified` = "registry_package_unverified"
@@ -6779,7 +6779,7 @@ public enum HarnessSetupReason: String, Codable, Sendable {
     case `environment_unavailable` = "environment_unavailable"
 }
 
-public enum HarnessEnvironmentIssue: String, Codable, Sendable {
+public enum HarnessEnvironmentIssue: String, Codable, Sendable, CaseIterable {
     case `missing_shell` = "missing_shell"
     case `unsupported_shell` = "unsupported_shell"
     case `unavailable_shell` = "unavailable_shell"
@@ -6798,7 +6798,7 @@ public struct HarnessEnvironmentVariable: Codable, Sendable {
     }
 }
 
-public enum ExperimentHookEvent: String, Codable, Sendable {
+public enum ExperimentHookEvent: String, Codable, Sendable, CaseIterable {
     case `user_prompt_submit` = "UserPromptSubmit"
     case `permission_request` = "PermissionRequest"
     case `post_tool_use` = "PostToolUse"

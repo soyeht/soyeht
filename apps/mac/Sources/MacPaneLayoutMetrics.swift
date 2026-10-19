@@ -97,16 +97,24 @@ import SoyehtProtocol
             font(named: PaneInteriorFont.uiFamily, size: MacTheme.TypeScale.body), character: "0"
           ).characterWidth),
       summaryWidth: ceil(
-        PaneLayoutContentMetrics.genericPaneHeaderSummaryCharacters
+        PaneLayoutContentMetrics.genericPaneHeaderTickerMinimumWidth
+          + Double(AgentTickerMetrics.trailingPadding + PaneInteriorMetrics.tightSpacing)
+          + PaneLayoutContentMetrics.genericPaneHeaderElapsedCharacters
           * metric(
-            font(named: MacTheme.monoFamily, size: MacTheme.TypeScale.micro), character: "0"
+            font(named: MacTheme.monoFamily, size: MacTheme.TypeScale.small), character: "0"
           ).characterWidth),
-      statusWidth: ceil(
-        PaneLayoutContentMetrics.genericPaneHeaderStatusCharacters
-          * metric(
-            font(named: MacTheme.monoFamily, size: MacTheme.TypeScale.micro), character: "0"
-          ).characterWidth),
+      statusWidth: statusWordWidth,
       actionWidth: PaneLayoutContentMetrics.genericPaneHeaderActionWidth))
+
+  /// The widest status word at the weight the header draws it in (the bold face, which is a
+  /// little wider than the semibold one), so the word never needs truncating.
+  private static var statusWordWidth: Double {
+    let face = NSFontManager.shared.convert(
+      font(named: PaneInteriorFont.uiFamily, size: MacTheme.TypeScale.small),
+      toHaveTrait: .boldFontMask)
+    let word = AgentPaneStatusPresentation.longestTitle as NSString
+    return ceil(Double(word.size(withAttributes: [.font: face]).width))
+  }
 
   static func paneHeaderAvailableWidth(cardWidth: CGFloat) -> Double {
     max(

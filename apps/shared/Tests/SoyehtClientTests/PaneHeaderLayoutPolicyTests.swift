@@ -2,7 +2,7 @@ import Testing
 
 @testable import SoyehtClient
 
-private let headerPolicy = PaneHeaderLayoutPolicy(
+let headerPolicy = PaneHeaderLayoutPolicy(
   metrics: PaneHeaderLayoutMetrics(
     horizontalPadding: 24, spacing: 7, stateDotWidth: 7,
     readableTitleWidth: 56, summaryWidth: 72, statusWidth: 84,

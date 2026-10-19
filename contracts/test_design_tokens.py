@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parent.parent
 BASE = "0d33cdd483697fbc35495221023886dd34c90355"
 SHARED = "apps/shared/Sources/SoyehtClient/"
 MAC = "apps/mac/Sources/"
+# Tokens added after the tokens were generated: no pre-generation Mac literal exists to prove
+# them against, so the contract is their only source. Add one only for a rule that is new.
+ADDED_AFTER_GENERATION = {
+    ("paneLayout", "headerTickerMinimumWidth"),
+}
 
 
 def tokens():
@@ -254,7 +259,7 @@ class MacValuesAreUnchangedTests(unittest.TestCase):
         proved |= {(s, k) for _, _, s, m in NUMERIC_SOURCES if m is None for k in document[s]}
         proved |= {(s, k) for _, _, s, k in INLINE_LITERALS}
         every = {(s, k) for s in NUMERIC_SECTIONS for k in document[s]}
-        self.assertEqual(every - proved, set())
+        self.assertEqual(every - proved - ADDED_AFTER_GENERATION, set())
 
     def test_elevations_and_fonts_equal_the_old_literals(self):
         document = tokens()

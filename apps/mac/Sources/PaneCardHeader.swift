@@ -56,17 +56,19 @@ struct PaneCardHeader: View {
           client: client, paneId: pane.paneId,
           font: MacTheme.ui(MacTheme.TypeScale.control, weight: .medium),
           timeFont: MacTheme.mono(MacTheme.TypeScale.small, weight: .medium),
-          color: MacTheme.secondary)
+          color: MacTheme.secondary
+        )
+        .frame(maxWidth: plan.summaryMaximumWidth ?? .infinity)
+        .clipped()
       } else {
         Spacer(minLength: MacTheme.Space.x2)
       }
-      if pane.mode == .agent {
+      if pane.mode == .agent, plan.showsStatus {
+        // Whole, never truncated: the plan reserves the widest status word.
         Text(statusText)
           .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .semibold))
           .foregroundStyle(needsYou ? MacTheme.accent : MacTheme.secondary)
-          .lineLimit(1).truncationMode(.tail)
-          .frame(maxWidth: MacPaneLayoutMetrics.paneHeader.metrics.statusWidth)
-          .fixedSize().layoutPriority(2)
+          .lineLimit(1).fixedSize(horizontal: true, vertical: false).layoutPriority(4)
       }
       if plan.actionPlacement == .inline {
         inlineActions

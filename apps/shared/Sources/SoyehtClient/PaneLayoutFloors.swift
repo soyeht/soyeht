@@ -69,8 +69,13 @@ public enum PaneLayoutContentMetrics {
   public static let genericPaneHeaderHeight = Double(DesignTokens.PaneLayout.headerHeight)
   public static let genericPaneHeaderStateDotWidth = Double(DesignTokens.PaneLayout.headerStateDot)
   public static let genericPaneHeaderReadableTitleCharacters = 8.0
-  public static let genericPaneHeaderSummaryCharacters = 12.0
-  public static let genericPaneHeaderStatusCharacters = 15.0
+  /// The shortest stretch of the activity line worth drawing: a header too narrow for it
+  /// drops the line (`PaneHeaderLayoutPolicy`), because a ticker rolling through a few
+  /// characters reads as garbled text.
+  public static let genericPaneHeaderTickerMinimumWidth = Double(
+    DesignTokens.PaneLayout.headerTickerMinimumWidth)
+  /// "· 59m 59s": the running turn's time, which follows the activity line.
+  public static let genericPaneHeaderElapsedCharacters = 10.0
   public static let genericPaneHeaderActionWidth = Double(DesignTokens.PaneLayout.headerActionWidth)
   public static let terminalFontPointSize = Double(DesignTokens.PaneLayout.terminalFontSize)
   public static let terminalStateVerticalInset = 7.0

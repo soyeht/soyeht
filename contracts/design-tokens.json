@@ -261,6 +261,7 @@
     "headerHeight": 26,
     "headerStateDot": 8,
     "headerActionWidth": 24,
+    "headerTickerMinimumWidth": 80,
     "terminalFontSize": 13
   },
   "layout": {

@@ -85,7 +85,7 @@ def swift_definition(name, schema):
     name = "TaskRecord" if name == "Task" else name
     if "enum" in schema:
         fields = [f'    case `{snake(variant(v))}` = {json.dumps(v, ensure_ascii=False)}' for v in schema["enum"]]
-        return f"public enum {name}: String, Codable, Sendable {{\n" + "\n".join(fields) + "\n}"
+        return f"public enum {name}: String, Codable, Sendable, CaseIterable {{\n" + "\n".join(fields) + "\n}"
     if "oneOf" in schema:
         types = [type_name(t, "swift") for t in schema["oneOf"]]
         fields = [f"    case v{i}({t})" for i, t in enumerate(types)]

@@ -206,6 +206,7 @@ public enum DesignTokens {
     public static let headerHeight: CGFloat = 26
     public static let headerStateDot: CGFloat = 8
     public static let headerActionWidth: CGFloat = 24
+    public static let headerTickerMinimumWidth: CGFloat = 80
     public static let terminalFontSize: CGFloat = 13
   }
 
