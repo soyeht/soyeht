@@ -32,7 +32,11 @@ watches the disk, keeps history); the app renders and edits.
     `.gitignore` (toggle to show ignored files, `.git` hidden), opens on click,
     creates, renames and deletes (to the system trash) entries confined to the
     workspace, reveals the active file, works from the keyboard and follows
-    disk changes. Closable, reorderable tabs with one preview tab (ADR 0072).
+    disk changes. Closable, reorderable tabs with one preview tab (ADR 0072): a
+    single click on a file previews it in an italic tab that the next preview
+    replaces; a double click, Return, `Cmd+P`, a link or the first edit keeps it.
+    The italic face is bundled (`JetBrainsMono-Italic.ttf`), since a Mac
+    without the family installed has none.
 
 **Editing**
 7. Syntax highlighting (tree-sitter) for Rust, Swift, TypeScript, Python,
