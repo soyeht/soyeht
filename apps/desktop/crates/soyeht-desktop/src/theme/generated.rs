@@ -338,6 +338,9 @@ pub mod pane_layout {
     pub const HEADER_ACTION_WIDTH: f32 = 24.0;
     pub const HEADER_TICKER_MINIMUM_WIDTH: f32 = 80.0;
     pub const TERMINAL_FONT_SIZE: f32 = 13.0;
+    pub const TERMINAL_FONT_SIZE_MINIMUM: f32 = 8.0;
+    pub const TERMINAL_FONT_SIZE_MAXIMUM: f32 = 32.0;
+    pub const TERMINAL_FONT_SIZE_STEP: f32 = 1.0;
 }
 pub mod layout {
     pub const RAIL_WIDTH: f32 = 56.0;

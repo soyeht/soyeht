@@ -23,6 +23,9 @@ private struct PhonePane: View {
   let client: EngineClient
   let paneId: String
   @Environment(\.horizontalSizeClass) private var sizeClass
+  private let fontStore = TerminalFontSizeStore.shared
+  private let sizeModes = TerminalSizeModeStore.shared
+  private let copyNotice = TerminalCopyNotice.shared
 
   /// A wide layout or an attached hardware keyboard means typing is the next thing to do,
   /// so the terminal takes the keyboard; on a bare iPhone a tap still brings it up.
@@ -46,7 +49,9 @@ private struct PhonePane: View {
             if pane.generation > 1 { Text("· new shell") }
             Spacer()
           }.font(.caption).padding(12).foregroundStyle(PhonePalette.secondary)
-          PhoneTerminal(client: client, claimsKeyboardFocus: terminalClaimsKeyboard)
+          PhoneTerminal(
+            client: client, claimsKeyboardFocus: terminalClaimsKeyboard, fontStore: fontStore,
+            sizeMode: sizeModes.mode(for: paneId))
           if let gap = client.gapText {
             Label(gap, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(
               PhonePalette.warning
@@ -59,9 +64,54 @@ private struct PhonePane: View {
           description: Text(client.connectionText))
       }
     }.background(PhonePalette.face)
+      .overlay(alignment: .bottom) {
+        if copyNotice.visible { PhoneCopyNotice() }
+      }
       .navigationTitle(client.panes.first(where: { $0.paneId == paneId })?.name ?? "Pane")
       .navigationBarTitleDisplayMode(.inline)
       .onAppear { client.select(paneId) }
+      .toolbar {
+        if client.panes.first(where: { $0.paneId == paneId })?.mode == .terminal {
+          ToolbarItem(placement: .primaryAction) {
+            PhoneTerminalMenu(
+              client: client, paneId: paneId, fontStore: fontStore, sizeModes: sizeModes)
+          }
+        }
+      }
+  }
+}
+
+/// The terminal's text size and which screen decides the pane's size.
+private struct PhoneTerminalMenu: View {
+  let client: EngineClient
+  let paneId: String
+  let fontStore: TerminalFontSizeStore
+  let sizeModes: TerminalSizeModeStore
+
+  var body: some View {
+    let mode = sizeModes.mode(for: paneId)
+    Menu {
+      Section("Text size \(Int(fontStore.size)) pt") {
+        Button("Larger", systemImage: "plus.magnifyingglass") { fontStore.apply(.larger) }
+          .disabled(!fontStore.canGrow)
+        Button("Smaller", systemImage: "minus.magnifyingglass") { fontStore.apply(.smaller) }
+          .disabled(!fontStore.canShrink)
+        Button("Default size", systemImage: "arrow.counterclockwise") {
+          fontStore.apply(.reset)
+        }
+      }
+      Section("Pane size") {
+        Button(
+          "Use the Mac's size", systemImage: mode == .followMac ? "checkmark" : "macbook"
+        ) { sizeModes.choose(.followMac, for: paneId, client: client) }
+        Button(
+          "Fit to this screen", systemImage: mode == .fitThisScreen ? "checkmark" : "ipad"
+        ) { sizeModes.choose(.fitThisScreen, for: paneId, client: client) }
+      }
+    } label: {
+      Label("Terminal", systemImage: "textformat.size")
+    }
+    .accessibilityIdentifier("terminal-menu")
   }
 }
 
@@ -139,5 +189,19 @@ private struct PhoneWebPane: View {
         client.problem = error.localizedDescription
       }
     }
+  }
+}
+
+/// Shown for a moment when a program in the terminal wrote to the clipboard.
+private struct PhoneCopyNotice: View {
+  var body: some View {
+    Label(TerminalCopyNotice.text, systemImage: "doc.on.clipboard")
+      .font(.caption.weight(.semibold))
+      .foregroundStyle(PhonePalette.ink)
+      .padding(PaneInteriorMetrics.phoneInset)
+      .background(PhonePalette.face, in: Capsule())
+      .padding(PaneInteriorMetrics.phoneInset)
+      .accessibilityAddTraits(.isStaticText)
+      .transition(.opacity)
   }
 }

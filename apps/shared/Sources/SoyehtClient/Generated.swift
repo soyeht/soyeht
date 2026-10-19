@@ -208,6 +208,9 @@ public enum DesignTokens {
     public static let headerActionWidth: CGFloat = 24
     public static let headerTickerMinimumWidth: CGFloat = 80
     public static let terminalFontSize: CGFloat = 13
+    public static let terminalFontSizeMinimum: CGFloat = 8
+    public static let terminalFontSizeMaximum: CGFloat = 32
+    public static let terminalFontSizeStep: CGFloat = 1
   }
 
   public enum Layout {

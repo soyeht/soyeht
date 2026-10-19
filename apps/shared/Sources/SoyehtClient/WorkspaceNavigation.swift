@@ -53,6 +53,8 @@ extension WritingSection {
 public protocol ClientPreferenceStore: AnyObject {
   func bool(forKey key: String) -> Bool
   func set(_ value: Bool, forKey key: String)
+  func integer(forKey key: String) -> Int?
+  func set(_ value: Int, forKey key: String)
 }
 
 public final class UserDefaultsClientPreferenceStore: ClientPreferenceStore {
@@ -67,6 +69,14 @@ public final class UserDefaultsClientPreferenceStore: ClientPreferenceStore {
   }
 
   public func set(_ value: Bool, forKey key: String) {
+    defaults.set(value, forKey: key)
+  }
+
+  public func integer(forKey key: String) -> Int? {
+    defaults.object(forKey: key) == nil ? nil : defaults.integer(forKey: key)
+  }
+
+  public func set(_ value: Int, forKey key: String) {
     defaults.set(value, forKey: key)
   }
 }

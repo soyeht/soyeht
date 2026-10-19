@@ -82,10 +82,15 @@ struct TerminalStreamReplica {
   private var paneByReference: [UInt32: String] = [:]
   private var paneByStream: [String: String] = [:]
   private(set) var gapTextByPane: [String: String] = [:]
+  /// Panes between `stream.replay_start` and `stream.replay_done`: the bytes that arrive are a
+  /// recording being played again, not output the program is producing now.
+  private var replaying: Set<String> = []
 
   var count: Int { positions.count }
 
   func contains(_ paneId: String) -> Bool { positions[paneId] != nil }
+
+  func isReplaying(_ paneId: String) -> Bool { replaying.contains(paneId) }
 
   func gapText(for paneId: String) -> String? { gapTextByPane[paneId] }
 
@@ -118,6 +123,7 @@ struct TerminalStreamReplica {
     }
     let reset = try position.start(event)
     positions[paneId] = position
+    replaying.insert(paneId)
     if reset { gapTextByPane.removeValue(forKey: paneId) }
     return TerminalStreamReset(paneId: paneId, reset: reset)
   }
@@ -137,6 +143,7 @@ struct TerminalStreamReplica {
     guard let paneId = paneByStream[event.streamId], let position = positions[paneId] else {
       return nil
     }
+    replaying.remove(paneId)
     guard event.nextOffset == position.next.map(String.init) else {
       throw ClientFailure.invalidStream
     }
@@ -144,6 +151,7 @@ struct TerminalStreamReplica {
   }
 
   mutating func remove(_ paneId: String) {
+    replaying.remove(paneId)
     guard let position = positions.removeValue(forKey: paneId) else {
       gapTextByPane.removeValue(forKey: paneId)
       return
@@ -167,6 +175,7 @@ struct TerminalStreamReplica {
     paneByReference.removeAll()
     paneByStream.removeAll()
     gapTextByPane.removeAll()
+    replaying.removeAll()
   }
 
   private static func reference(in frame: Frame) throws -> UInt32 {

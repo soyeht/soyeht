@@ -262,7 +262,10 @@
     "headerStateDot": 8,
     "headerActionWidth": 24,
     "headerTickerMinimumWidth": 80,
-    "terminalFontSize": 13
+    "terminalFontSize": 13,
+    "terminalFontSizeMinimum": 8,
+    "terminalFontSizeMaximum": 32,
+    "terminalFontSizeStep": 1
   },
   "layout": {
     "railWidth": 56,

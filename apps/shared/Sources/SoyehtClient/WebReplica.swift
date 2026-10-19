@@ -130,7 +130,8 @@ extension EngineClient {
   }
 
   public func openWeb(
-    workspaceId: String, url: String, newPane: Bool = false, incognito: Bool = false
+    workspaceId: String, url: String, newPane: Bool = false, incognito: Bool = false,
+    select showsPane: Bool = true
   ) async throws -> WebOpenResult {
     let result = try await mutation(
       .webOpen,
@@ -138,7 +139,7 @@ extension EngineClient {
         url: url, workspaceId: workspaceId, newPane: newPane, incognito: incognito,
         idempotencyKey: UUID().uuidString))
     let opened = try result.decoded(WebOpenResult.self)
-    select(opened.paneId)
+    if showsPane { select(opened.paneId) }
     return opened
   }
 

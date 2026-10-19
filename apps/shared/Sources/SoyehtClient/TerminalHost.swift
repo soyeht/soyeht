@@ -10,17 +10,26 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   private let sendInput: (Data) -> Void
   private let resizeTerminal: (String?, Int, Int) -> Void
   private let ringBell: () -> Void
+  private let writeClipboard: (String, TerminalView) -> Void
+  private let replayOverride: (() -> Bool)?
   private var openFile: (String, FilePathReference) -> Void
   private var openWeb: (String, URL) -> Void
   private var feeding = false
   private var selection: String?
   private var applyingRemoteSize = false
+  private var sizeMode: TerminalSizeMode
+  private var requestedSize: (grid: TerminalGrid, at: ContinuousClock.Instant)?
+  /// How long a size asked of the engine is waited for before the pane's size is trusted again.
+  private static let requestGrace = Duration.seconds(2)
 
   init(
     client: EngineClient, paneId: String? = nil, acceptsInput: Bool,
     ringBell: @escaping () -> Void = {},
     openFile: @escaping (String, FilePathReference) -> Void = { _, _ in },
     openWeb: @escaping (String, URL) -> Void = { _, _ in },
+    sizeMode: TerminalSizeMode = .fitThisScreen,
+    writeClipboard: @escaping (String, TerminalView) -> Void = { _, _ in },
+    isReplaying: (() -> Bool)? = nil,
     sendInput: ((Data) -> Void)? = nil,
     resizeTerminal: ((String?, Int, Int) -> Void)? = nil
   ) {
@@ -39,6 +48,9 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
           client.resize(cols: cols, rows: rows)
         }
       }
+    self.sizeMode = sizeMode
+    self.writeClipboard = writeClipboard
+    self.replayOverride = isReplaying
     self.ringBell = ringBell
     self.openFile = openFile
     self.openWeb = openWeb
@@ -51,6 +63,16 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   func updateOpenWeb(_ action: @escaping (String, URL) -> Void) { openWeb = action }
 
   func updateAcceptsInput(_ acceptsInput: Bool) { self.acceptsInput = acceptsInput }
+
+  /// Returns whether the mode changed, so the caller can have the view measure itself again.
+  @discardableResult
+  func updateSizeMode(_ mode: TerminalSizeMode) -> Bool {
+    guard mode != sizeMode else { return false }
+    sizeMode = mode
+    selection = nil
+    requestedSize = nil
+    return true
+  }
 
   func attach(_ view: TerminalView, refresh: Bool = true) {
     view.terminalDelegate = self
@@ -68,18 +90,50 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
     }
   }
 
+  /// Replays the screen after the view changed its grid, so the lines are laid out again from
+  /// the pane's own bytes instead of reflowed in place.
+  func redraw() {
+    if let paneId { client.refreshTerminal(paneId) } else { client.refreshTerminal() }
+  }
+
   func update(_ view: TerminalView) {
     guard client.connected, let pane = representedPane else { return }
+    update(view, pane: pane, connectionRevision: client.connectionRevision)
+  }
+
+  func update(_ view: TerminalView, pane: Pane, connectionRevision: UInt64) {
     let terminal = view.getTerminal()
-    let revision = "\(pane.paneId):\(client.connectionRevision)"
-    if selection != revision {
-      selection = revision
-      resizeTerminal(paneId, terminal.cols, terminal.rows)
-    } else if pane.cols != terminal.cols || pane.rows != terminal.rows {
+    let revision = "\(pane.paneId):\(connectionRevision)"
+    let action = TerminalSizePolicy.reconcile(
+      mode: sizeMode, pane: grid(of: pane),
+      local: TerminalGrid(cols: terminal.cols, rows: terminal.rows),
+      announced: selection == revision, requestInFlight: requestInFlight(for: pane))
+    selection = revision
+    perform(action, on: terminal)
+  }
+
+  private func grid(of pane: Pane) -> TerminalGrid {
+    TerminalGrid(cols: Int(pane.cols), rows: Int(pane.rows))
+  }
+
+  private func perform(_ action: TerminalSizeAction, on terminal: Terminal) {
+    switch action {
+    case .none:
+      break
+    case .request(let grid):
+      requestedSize = (grid, .now)
+      resizeTerminal(paneId, grid.cols, grid.rows)
+    case .adopt(let grid):
       applyingRemoteSize = true
-      terminal.resize(cols: Int(pane.cols), rows: Int(pane.rows))
+      terminal.resize(cols: grid.cols, rows: grid.rows)
       applyingRemoteSize = false
     }
+  }
+
+  private func requestInFlight(for pane: Pane) -> Bool {
+    guard let requestedSize else { return false }
+    return grid(of: pane) != requestedSize.grid
+      && requestedSize.at.duration(to: .now) < Self.requestGrace
   }
 
   func detach(_ view: TerminalView) {
@@ -88,7 +142,12 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   }
 
   public func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
-    if !applyingRemoteSize { resizeTerminal(paneId, newCols, newRows) }
+    guard !applyingRemoteSize else { return }
+    perform(
+      TerminalSizePolicy.layoutChanged(
+        mode: sizeMode, pane: representedPane.map(grid(of:)),
+        natural: TerminalGrid(cols: newCols, rows: newRows)),
+      on: source.getTerminal())
   }
 
   public func send(source: TerminalView, data: ArraySlice<UInt8>) {
@@ -117,10 +176,21 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
     }
   }
   public func bell(source: TerminalView) { ringBell() }
-  public func clipboardCopy(source: TerminalView, content: Data) {}
+  public func clipboardCopy(source: TerminalView, content: Data) {
+    // A replay plays recorded output again, and its copy requests were answered when they
+    // first happened: only what the program writes now may reach the clipboard.
+    guard !isReplaying, let text = TerminalClipboardPolicy.copiedText(content) else { return }
+    writeClipboard(text, source)
+  }
+  /// A program in the terminal never reads the clipboard; the person pastes on purpose.
   public func clipboardRead(source: TerminalView) -> Data? { nil }
   public func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
   public func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
+
+  private var isReplaying: Bool {
+    if let replayOverride { return replayOverride() }
+    return representedPane.map { client.terminalStreams.isReplaying($0.paneId) } ?? false
+  }
 
   private var representedPane: Pane? {
     if let paneId { return client.panes.first { $0.paneId == paneId } }

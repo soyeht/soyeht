@@ -81,6 +81,32 @@ also appear in the iPad menu bar and when holding Command:
 | Command-1 … Command-9 | Jump to that workspace |
 | Command-Return | Send the agent prompt (Return adds a line) |
 | Shift-Tab (agent prompt) | Move to the harness's next permission mode, as on the Mac |
+| Command-= / Command-- / Command-0 (terminal) | Larger, smaller and default terminal text |
+| Command-C / Command-V (terminal) | Copy the selection, paste the clipboard |
+
+Arrows, Page Up and Down, Home, End, Esc, Tab, Shift-Tab, function keys and Control
+combinations go to the terminal through SwiftTerm. Two-finger scrolling on a trackpad
+moves the scrollback; a full-screen program that asks for the mouse gets wheel events, and
+one on the alternate screen gets arrow keys.
+
+## Terminal text and size
+
+The terminal menu (top right of a terminal pane) and a pinch change the text size, one
+setting for every terminal between the limits of `paneLayout` in
+`contracts/design-tokens.json`.
+
+By default the iPad uses the size the pane already has and never reflows the Mac; a pane wider
+than the screen scrolls sideways. “Fit to this screen” in the same menu sizes the pane to the
+iPad instead, and “Use the Mac's size” asks for the size the pane had before the fit. The
+choice lasts until the app closes (ADR 0013). When the iPad is the only viewer, for example
+a pane the Mac made and no longer shows, the pane keeps the last size it had, which can look
+small; “Fit to this screen” fixes that.
+
+Links open in Safari, or in a web pane on the Mac for an address on the Mac itself. Settings
+has a Terminal section with the web-link switch and “Let programs copy to the clipboard”, off
+by default: when on, a program can copy to the iPad's clipboard while the app is open and the
+terminal is on screen, and the app says “Copied by the terminal”. A program can never read the
+clipboard.
 
 ## Access
 

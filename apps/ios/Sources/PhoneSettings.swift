@@ -7,6 +7,8 @@ struct PhoneSettings: View {
   @Environment(\.dismiss) private var dismiss
   @State private var selectedProvider: UsageProvider?
   @State private var scrolledTo: String?
+  private let webLinks = WebLinkPreferences.shared
+  private let clipboard = TerminalClipboardPreferences.shared
 
   var body: some View {
     NavigationStack {
@@ -25,6 +27,7 @@ struct PhoneSettings: View {
             if let reading = selectedReading { PhoneUsageDetail(reading: reading) }
           }
           dictation.id(Self.dictationSection)
+          terminal
         }
         .scrollTargetLayout()
         .padding(20)
@@ -57,6 +60,46 @@ struct PhoneSettings: View {
   }
 
   private static let dictationSection = "dictation"
+
+  private var terminal: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Terminal").font(.title2.bold())
+      Toggle(isOn: webLinkBinding) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Open external links in Soyeht")
+          Text(
+            "When off, external links open in Safari. Links to the Mac itself open in a web pane on the Mac."
+          )
+          .font(.caption)
+          .foregroundStyle(PhonePalette.secondary)
+        }
+      }
+      .accessibilityIdentifier("terminal-web-links")
+      Toggle(isOn: copyBinding) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Let programs copy to the clipboard")
+          Text(
+            "Off by default. A program running on the Mac could replace what you copied, and other devices may share this clipboard. Taken only while the app is open and the terminal is on screen."
+          )
+          .font(.caption)
+          .foregroundStyle(PhonePalette.secondary)
+        }
+      }
+      .accessibilityIdentifier("terminal-program-copy")
+    }
+  }
+
+  private var webLinkBinding: Binding<Bool> {
+    Binding(
+      get: { webLinks.openExternalLinksInSoyeht },
+      set: { webLinks.setOpenExternalLinksInSoyeht($0) })
+  }
+
+  private var copyBinding: Binding<Bool> {
+    Binding(
+      get: { clipboard.allowsProgramCopy },
+      set: { clipboard.setAllowsProgramCopy($0) })
+  }
 
   private var dictation: some View {
     VStack(alignment: .leading, spacing: 12) {

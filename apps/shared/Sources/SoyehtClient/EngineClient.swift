@@ -93,7 +93,7 @@ public final class EngineClient {
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
   @ObservationIgnored private var snapshot = SnapshotAssembly()
-  private var terminalStreams = TerminalStreamReplica()
+  private(set) var terminalStreams = TerminalStreamReplica()
   @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
   @ObservationIgnored private var inputTask: Task<Void, Never>?

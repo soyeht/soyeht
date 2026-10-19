@@ -53,6 +53,7 @@ public enum WebLinkRouting {
 @MainActor @Observable
 public final class WebLinkPreferences {
   public static let openExternalKey = "soyeht.webLinks.openExternal"
+  public static let shared = WebLinkPreferences()
   public private(set) var openExternalLinksInSoyeht: Bool
   @ObservationIgnored private let preferences: any ClientPreferenceStore
 

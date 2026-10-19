@@ -3,8 +3,6 @@
   "apps/shared/Sources/SoyehtClient/TerminalHost.swift::hostCurrentDirectoryUpdate": "SwiftTerm TerminalViewDelegate callback hostCurrentDirectoryUpdate(source:directory:), called when the shell reports its directory; nothing in Soyeht names it.",
   "apps/shared/Sources/SoyehtClient/TerminalHost.swift::requestOpenLink": "SwiftTerm TerminalViewDelegate callback requestOpenLink(source:link:params:), called when the person activates a link in the terminal; nothing in Soyeht names it.",
   "apps/shared/Sources/SoyehtClient/TerminalHost.swift::bell": "SwiftTerm TerminalViewDelegate callback bell(source:), called when the terminal receives the bell character; nothing in Soyeht names it.",
-  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::clipboardCopy": "SwiftTerm TerminalViewDelegate callback clipboardCopy(source:content:), called when the terminal asks to copy to the clipboard; nothing in Soyeht names it.",
-  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::clipboardRead": "SwiftTerm TerminalViewDelegate callback clipboardRead(source:), called when the terminal asks to read the clipboard; nothing in Soyeht names it.",
   "apps/shared/Sources/SoyehtClient/TerminalHost.swift::iTermContent": "SwiftTerm TerminalViewDelegate callback iTermContent(source:content:), called for the iTerm2 inline-content escape sequence; nothing in Soyeht names it.",
   "apps/shared/Sources/SoyehtClient/TerminalHost.swift::rangeChanged": "SwiftTerm TerminalViewDelegate callback rangeChanged(source:startY:endY:), called when the terminal reports that rows changed; nothing in Soyeht names it."
 }

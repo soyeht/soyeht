@@ -24,6 +24,9 @@ MAC = "apps/mac/Sources/"
 # them against, so the contract is their only source. Add one only for a rule that is new.
 ADDED_AFTER_GENERATION = {
     ("paneLayout", "headerTickerMinimumWidth"),
+    ("paneLayout", "terminalFontSizeMinimum"),
+    ("paneLayout", "terminalFontSizeMaximum"),
+    ("paneLayout", "terminalFontSizeStep"),
     ("composer", "chipsMinimumWidth"),
     ("composer", "contextPercentageWidth"),
     ("glyph", "taskToolbarIcon"),
