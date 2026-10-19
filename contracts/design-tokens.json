@@ -334,7 +334,9 @@
     "ringDiameter": 16,
     "ringLineWidth": 3,
     "contextSpacing": 6,
-    "contextHorizontalPadding": 4
+    "contextHorizontalPadding": 4,
+    "chipsMinimumWidth": 112,
+    "contextPercentageWidth": 30
   },
   "editor": {
     "fontPointSize": 11.5,

@@ -49,20 +49,11 @@ struct AgentComposer<HarnessControl: View>: View {
     VStack(alignment: .leading, spacing: AgentComposerMetrics.rowSpacing) {
       AgentComposerAttachmentRow(attachments: attachments, style: style)
       field(placeholder: controls.placeholder)
-      HStack(spacing: AgentComposerMetrics.controlSpacing) {
-        AgentAttachButton(attachments: attachments, style: style)
-        ScrollView(.horizontal) { chips(controls).fixedSize() }.scrollIndicators(.hidden)
-          .frame(height: AgentComposerMetrics.controlHeight)
-        if controls.showsContext {
-          AgentContextGauge(
-            fraction: controls.contextFraction, percentage: controls.contextPercentage,
-            style: style
-          )
-          .fixedSize()
-        }
-        AgentDictationButton(dictation: dictation, style: style)
-        sendButton(controls.action)
+      GeometryReader { row in
+        controlRow(
+          controls, plan: .plan(rowWidth: row.size.width, hasContext: controls.showsContext))
       }
+      .frame(height: AgentComposerMetrics.controlHeight)
     }
     .padding(.horizontal, PaneInteriorMetrics.cardPadding)
     .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
@@ -73,6 +64,28 @@ struct AgentComposer<HarnessControl: View>: View {
     )
     .onAppear { dictation.onTranscript = insert }
     .onDisappear { dictation.cancel() }
+  }
+
+  private func controlRow(
+    _ controls: AgentComposerControls, plan: AgentComposerRowPlan
+  ) -> some View {
+    HStack(spacing: AgentComposerMetrics.controlSpacing) {
+      AgentAttachButton(attachments: attachments, style: style)
+      ScrollView(.horizontal) { chips(controls).fixedSize() }.scrollIndicators(.hidden)
+        .frame(minWidth: AgentComposerMetrics.chipsMinimumWidth)
+        .frame(height: AgentComposerMetrics.controlHeight)
+      if plan.showsContext {
+        AgentContextGauge(
+          fraction: controls.contextFraction, percentage: controls.contextPercentage,
+          style: style, showsPercentage: plan.showsContextPercentage
+        )
+        .fixedSize()
+      }
+      if plan.showsDictation {
+        AgentDictationButton(dictation: dictation, style: style)
+      }
+      sendButton(controls.action)
+    }
   }
 
   private func chips(_ controls: AgentComposerControls) -> some View {
@@ -110,6 +123,7 @@ struct AgentComposer<HarnessControl: View>: View {
       .overlay(alignment: .topLeading) {
         if prompt.isEmpty {
           Text(placeholder).foregroundStyle(style.secondary)
+            .lineLimit(1).truncationMode(.tail)
             .allowsHitTesting(false).accessibilityHidden(true)
         }
       }

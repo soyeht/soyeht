@@ -23,6 +23,47 @@ public enum AgentComposerMetrics {
   public static let contextSpacing: CGFloat = DesignTokens.Composer.contextSpacing
   public static let contextHorizontalPadding: CGFloat = DesignTokens.Composer
     .contextHorizontalPadding
+  /// The narrowest the chips may be scrolled in: the harness chip, whole.
+  public static let chipsMinimumWidth = Double(DesignTokens.Composer.chipsMinimumWidth)
+  /// The context gauge's percentage ("100%") beside its ring.
+  public static let contextPercentageWidth = Double(DesignTokens.Composer.contextPercentageWidth)
+}
+
+/// What the control row keeps when its width runs out. The chips (harness, model, effort,
+/// permission) scroll sideways, but never below `chipsMinimumWidth`; "+" and send always stay.
+/// The rest gives way in a fixed order: the gauge's percentage, then the gauge, then the mic.
+public struct AgentComposerRowPlan: Equatable, Sendable {
+  public var showsContext: Bool
+  public var showsContextPercentage: Bool
+  public var showsDictation: Bool
+
+  public static func plan(rowWidth: Double, hasContext: Bool) -> AgentComposerRowPlan {
+    let spacing = Double(AgentComposerMetrics.controlSpacing)
+    let button = Double(AgentComposerMetrics.controlHeight)
+    let ring =
+      Double(AgentComposerMetrics.ringDiameter + 2 * AgentComposerMetrics.contextHorizontalPadding)
+    let percentage =
+      Double(AgentComposerMetrics.contextSpacing) + AgentComposerMetrics.contextPercentageWidth
+    let base =
+      button + Double(AgentComposerMetrics.sendWidth) + AgentComposerMetrics.chipsMinimumWidth
+      + 2 * spacing
+    let steps: [(context: Double?, percentage: Bool, dictation: Bool)] = [
+      (ring + percentage, true, true), (ring, false, true), (nil, false, true),
+      (nil, false, false),
+    ]
+    for step in steps where hasContext || step.context == nil {
+      let width =
+        base + (step.dictation ? button + spacing : 0)
+        + (step.context.map { $0 + spacing } ?? 0)
+      if rowWidth >= width {
+        return AgentComposerRowPlan(
+          showsContext: step.context != nil, showsContextPercentage: step.percentage,
+          showsDictation: step.dictation)
+      }
+    }
+    return AgentComposerRowPlan(
+      showsContext: false, showsContextPercentage: false, showsDictation: false)
+  }
 }
 
 /// A borderless chip of the control row: optional leading mark, the label and a chevron.
@@ -148,6 +189,7 @@ struct AgentContextGauge: View {
   let fraction: Double?
   let percentage: String?
   let style: AgentConversationStyle
+  var showsPercentage = true
 
   private var color: Color {
     let used = fraction ?? 0
@@ -165,7 +207,10 @@ struct AgentContextGauge: View {
       }
       .padding(AgentComposerMetrics.ringLineWidth / 2)
       .frame(width: AgentComposerMetrics.ringDiameter, height: AgentComposerMetrics.ringDiameter)
-      Text(percentage ?? "–").font(style.monoSmallFont.weight(.medium)).foregroundStyle(color)
+      if showsPercentage {
+        Text(percentage ?? "–").font(style.monoSmallFont.weight(.medium)).foregroundStyle(color)
+          .lineLimit(1).fixedSize()
+      }
     }
     .padding(.horizontal, AgentComposerMetrics.contextHorizontalPadding)
     .accessibilityElement(children: .ignore)

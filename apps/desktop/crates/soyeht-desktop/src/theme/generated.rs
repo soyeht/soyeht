@@ -410,6 +410,8 @@ pub mod composer {
     pub const RING_LINE_WIDTH: f32 = 3.0;
     pub const CONTEXT_SPACING: f32 = 6.0;
     pub const CONTEXT_HORIZONTAL_PADDING: f32 = 4.0;
+    pub const CHIPS_MINIMUM_WIDTH: f32 = 112.0;
+    pub const CONTEXT_PERCENTAGE_WIDTH: f32 = 30.0;
 }
 pub mod editor {
     pub const FONT_POINT_SIZE: f32 = 11.5;

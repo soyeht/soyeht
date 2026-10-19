@@ -24,6 +24,8 @@ MAC = "apps/mac/Sources/"
 # them against, so the contract is their only source. Add one only for a rule that is new.
 ADDED_AFTER_GENERATION = {
     ("paneLayout", "headerTickerMinimumWidth"),
+    ("composer", "chipsMinimumWidth"),
+    ("composer", "contextPercentageWidth"),
 }
 
 
@@ -245,7 +247,8 @@ class MacValuesAreUnchangedTests(unittest.TestCase):
                 with self.subTest(path=path, name=name):
                     self.assertEqual(float(document[section][key]), numbers[name])
             if mapping is None:
-                self.assertEqual(set(document[section]) - set(numbers), set(), section)
+                added = {key for name, key in ADDED_AFTER_GENERATION if name == section}
+                self.assertEqual(set(document[section]) - set(numbers) - added, set(), section)
 
     def test_inline_metrics_equal_the_old_literals(self):
         document = tokens()

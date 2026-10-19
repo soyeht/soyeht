@@ -285,6 +285,8 @@ public enum DesignTokens {
     public static let ringLineWidth: CGFloat = 3
     public static let contextSpacing: CGFloat = 6
     public static let contextHorizontalPadding: CGFloat = 4
+    public static let chipsMinimumWidth: CGFloat = 112
+    public static let contextPercentageWidth: CGFloat = 30
   }
 
   public enum Editor {
