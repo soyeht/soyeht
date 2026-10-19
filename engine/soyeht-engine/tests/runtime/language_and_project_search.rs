@@ -332,11 +332,11 @@ fn editor_open_rejects_absolute_parent_symlink_escape_and_oversized_files() {
         .as_str()
         .unwrap()
         .to_owned();
-    for (index, path) in [
-        outside.to_str().unwrap(),
-        "../outside.rs",
-        "link.rs",
-        "large.rs",
+    for (index, (path, kind)) in [
+        (outside.to_str().unwrap(), "invalid_params"),
+        ("../outside.rs", "invalid_params"),
+        ("link.rs", "invalid_params"),
+        ("large.rs", "file_too_large"),
     ]
     .into_iter()
     .enumerate()
@@ -345,7 +345,7 @@ fn editor_open_rejects_absolute_parent_symlink_escape_and_oversized_files() {
             "file.open",
             json!({"workspaceId":workspace,"path":path,"idempotencyKey":format!("refused-{index}")}),
         );
-        assert_eq!(response["error"]["data"]["kind"], "invalid_params");
+        assert_eq!(response["error"]["data"]["kind"], kind, "{path}");
     }
 }
 
