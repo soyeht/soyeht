@@ -2,5 +2,9 @@
   "loose_literals.engine/soyeht-engine/src/experiment_export/tests.rs.rust_limits": {
     "value": 1,
     "reason": "Pure move: the single 512 literal is a test value that moved with its test out of experiment_export.rs, whose entry of 1 is removed in the same change; the repository total does not grow."
+  },
+  "loose_literals.engine/soyeht-mcp/src/tools/schemas.rs.rust_limits": {
+    "value": 5,
+    "reason": "Pure move: the five 4096 literals are argument maxima of the web tool schemas that moved from tools.rs into tools/schemas.rs, whose entry of 5 is removed in the same change; the repository total does not grow."
   }
 }
