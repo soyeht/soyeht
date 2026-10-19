@@ -398,6 +398,29 @@ fn execute_turn(
         }
         return "Failed to authenticate: OAuth session expired\n\nNo response requested.".into();
     }
+    if let Some(model) = match text {
+        "reject-model-as-reply" => Some("model-a"),
+        "reject-other-model-as-reply" => Some("model-z"),
+        _ => None,
+    } {
+        // The provider's refusal of a model, written as an ordinary reply that ends the turn.
+        let reply = format!(
+            "There's an issue with the selected model ({model}). It may not exist or you may not have access to it. Run /model to pick a different model."
+        );
+        emit(runtime, session, &reply);
+        return reply;
+    }
+    if text == "reject-model-after-a-message" {
+        // The refusal sentence follows an earlier reply of the same turn.
+        let reply = "There's an issue with the selected model (model-a). It may not exist or you may not have access to it.";
+        for (id, chunk) in [("first", "Checking the account."), ("second", reply)] {
+            runtime.update(
+                session,
+                json!({"sessionUpdate":"agent_message_chunk","messageId":id,"content":{"type":"text","text":chunk}}),
+            );
+        }
+        return format!("Checking the account.\n\n{reply}");
+    }
     if let Some(output) = review_turn(text) {
         emit(runtime, session, &output);
         return output;

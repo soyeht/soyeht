@@ -48,6 +48,20 @@ Raw terminal panes continue to exist and do not use this path.
    ends when `idle` arrives with a `stopReason` (`end_turn`, `cancelled`,
    `max_tokens`, `refusal`…).
 
+   **A refused model.** A turn that fails ends with `stopReason: error` and a
+   `system` message that says why. When the provider refuses the pane's model, the
+   message names it (`The agent refused model "M": reason`) and `model.list`
+   keeps the refusal as `observedRefusal` of that model. Adapters report the
+   refusal as a protocol error, or only as the text of a reply. The engine takes
+   the second form for a refusal only when the turn wrote nothing but that one
+   reply (besides thoughts and usage) and the reply is exactly the provider's
+   sentence for the pane's selected model (`There's an issue with the selected
+   model (ID). It may not exist or you may not have access to it…`, ID equal to
+   the model's id); a reply that quotes or explains the sentence is an answer. It
+   then ends that turn with `error` instead of `end_turn`. The engine never picks a model: a pane that names none uses the
+   agent's own current value, so a default the account cannot use comes from the
+   agent and shows as this refusal.
+
    **Subagents.** A harness can run subagents inside the turn. The engine
    follows the ACP subagent draft (agentclientprotocol/agent-client-protocol#1992),
    which the pinned Claude and Codex adapters implement: the parent session

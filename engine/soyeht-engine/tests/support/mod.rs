@@ -323,6 +323,13 @@ impl Rig {
     pub fn client(&self) -> Client {
         Client::new(self.path.join("engine.sock"))
     }
+    /// A client that follows the engine's events from now on.
+    pub fn subscribed_client(&self) -> Client {
+        let mut client = self.client();
+        let (snapshot, _) = client.snapshot();
+        client.call("events.subscribe", json!({"since":snapshot["cursor"]}));
+        client
+    }
     pub fn hook_client(&self) -> Client {
         Client::new_named(self.path.join("engine.sock"), "soyeht-hook", json!([]))
     }

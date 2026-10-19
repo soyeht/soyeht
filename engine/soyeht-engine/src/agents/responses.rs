@@ -1,5 +1,5 @@
 use super::{
-    Changes, native_error,
+    Changes, native_error, prompt_errors,
     purpose::{ProbeStep, Purpose},
     state::{Phase, State},
     transcript,
@@ -19,9 +19,8 @@ use soyeht_acp::{
 };
 use soyeht_protocol::{PaneConfigChangedDraft, PaneSessionStartedDraft};
 use soyeht_protocol::{
-    PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole, event,
+    PaneState, ProbeCapability, ProbeResult, TranscriptKind, TranscriptRole, TurnStopReason, event,
 };
-use soyeht_store::agents::AgentModelRefusal;
 use std::path::Path;
 
 pub const PROBED_METHODS: [&str; 3] = ["session/list", "session/load", "session/set_config_option"];
@@ -223,69 +222,6 @@ fn fingerprint(state: &State, version: &str) -> Result<String> {
 }
 
 type NativeResult = std::result::Result<Value, soyeht_acp::RpcError>;
-
-fn clean_agent_error(message: &str) -> String {
-    const INTERNAL_PREFIX: &str = "Internal error:";
-    message
-        .get(..INTERNAL_PREFIX.len())
-        .filter(|prefix| prefix.eq_ignore_ascii_case(INTERNAL_PREFIX))
-        .and_then(|_| message.get(INTERNAL_PREFIX.len()..))
-        .unwrap_or(message)
-        .trim()
-        .to_owned()
-}
-
-fn assistant_already_reported_error(
-    store: &impl StorePort,
-    pane: &str,
-    state: &State,
-    error: &str,
-) -> Result<bool> {
-    for (key, seq) in &state.open_messages {
-        if (key == "message" || key.starts_with("message:"))
-            && let Some(message) = transcript::message(store, pane, *seq)?
-            && message.text.trim() == error
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-fn selected_model(state: &State) -> Option<&str> {
-    state
-        .options
-        .values
-        .iter()
-        .find(|option| option.category.as_deref() == Some("model") || option.id == "model")
-        .and_then(|option| match &option.current_value {
-            soyeht_protocol::ConfigValue::V0(value) => Some(value.as_str()),
-            _ => None,
-        })
-}
-
-fn observed_model_refusal(code: i32, reason: &str) -> bool {
-    if code != -32603 {
-        return false;
-    }
-    let reason = reason.to_ascii_lowercase();
-    reason.contains("model is disabled")
-        || (reason.contains("package has expired") && reason.contains("unavailable"))
-}
-
-fn bounded_refusal_reason(reason: &str) -> Option<String> {
-    if reason.is_empty() {
-        return None;
-    }
-    let mut end = reason
-        .len()
-        .min(soyeht_protocol::limits::MODEL_REFUSAL_REASON_BYTES);
-    while !reason.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
-    let reason = reason.get(..end)?.trim_end();
-    (!reason.is_empty()).then(|| reason.to_owned())
-}
 
 fn auth_response(
     state: &mut State,
@@ -612,41 +548,29 @@ fn prompt_response(
         Err(error) if soyeht_acp::rpc::is_auth_required(error)
     );
     let reason = match result {
-        Ok(value) => session::stop_reason(&value)
-            .map_err(native_error)?
-            .to_owned(),
-        Err(error) => {
-            let clean = clean_agent_error(&error.message);
-            let model = selected_model(state).map(str::to_owned);
-            let refusal = model
-                .as_ref()
-                .filter(|_| observed_model_refusal(error.code, &clean));
-            let text = if let Some(model) = refusal {
-                if let Some(reason) = bounded_refusal_reason(&clean) {
-                    changes.model_refusal = Some(AgentModelRefusal {
-                        harness_id: state.launch.id.clone(),
-                        model_id: model.clone(),
-                        reason,
-                        observed_at: timestamp.to_owned(),
-                    });
+        Ok(value) => {
+            let reason: TurnStopReason = serde_json::from_value(Value::String(
+                session::stop_reason(&value)
+                    .map_err(native_error)?
+                    .to_owned(),
+            ))
+            .map_err(|_| errors::internal("Unknown stop reason"))?;
+            match prompt_errors::rejected_model_reply(store, &saved.pane.pane_id, state)? {
+                Some(reply) if reason == TurnStopReason::EndTurn => {
+                    let failure = prompt_errors::Failure::RejectedModelReply;
+                    prompt_errors::report(
+                        store, saved, state, changes, &reply, failure, timestamp,
+                    )?;
+                    TurnStopReason::Error
                 }
-                format!("The agent refused model \"{model}\": {clean}")
-            } else {
-                format!("Agent error: {clean}")
-            };
-            // Some adapters emit the error as an assistant chunk before returning
-            // the same typed RPC error. Keep one visible copy for this turn.
-            if !assistant_already_reported_error(store, &saved.pane.pane_id, state, &clean)? {
-                changes.messages.push(transcript::new_message(
-                    state,
-                    saved.pane.generation,
-                    TranscriptRole::System,
-                    TranscriptKind::System,
-                    text,
-                    true,
-                )?);
+                _ => reason,
             }
-            "error".into()
+        }
+        Err(error) => {
+            let clean = prompt_errors::clean_agent_error(&error.message);
+            let failure = prompt_errors::Failure::Rpc(error.code);
+            prompt_errors::report(store, saved, state, changes, &clean, failure, timestamp)?;
+            TurnStopReason::Error
         }
     };
     for request in store
@@ -667,7 +591,7 @@ fn prompt_response(
         )?;
     }
     transcript::complete(store, &saved.pane.pane_id, state, changes)?;
-    if cancel_requested && reason == "cancelled" {
+    if cancel_requested && reason == TurnStopReason::Cancelled {
         changes.messages.push(transcript::new_message(
             state,
             saved.pane.generation,
@@ -682,17 +606,14 @@ fn prompt_response(
     state.active_silent_since_ms = None;
     state.cancel_at_ms = None;
     state.has_finished_turn = true;
-    if !matches!(reason.as_str(), "error" | "cancelled") {
+    if !matches!(reason, TurnStopReason::Error | TurnStopReason::Cancelled) {
         state.auth_required = false;
     }
     saved.pane.state = PaneState::Idle;
     saved.pane.phrase = "Agent turn ended".into();
-    changes.events.push(turn_ended(
-        &saved.pane.pane_id,
-        context.into(),
-        serde_json::from_value(Value::String(reason))
-            .map_err(|_| errors::internal("Unknown stop reason"))?,
-    )?);
+    changes
+        .events
+        .push(turn_ended(&saved.pane.pane_id, context.into(), reason)?);
     if authentication_required {
         needs_login(state, saved, changes);
     }
@@ -762,33 +683,4 @@ pub fn response(
         return Ok(());
     }
     Err(errors::invalid("Unexpected ACP response context"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{clean_agent_error, observed_model_refusal};
-
-    #[test]
-    fn provider_subscription_refusal_keeps_the_actionable_message() {
-        let raw = "Internal error: Your coding plan package has expired and is temporarily unavailable. Renew the subscription on the provider website.";
-        let clean = clean_agent_error(raw);
-
-        assert_eq!(
-            clean,
-            "Your coding plan package has expired and is temporarily unavailable. Renew the subscription on the provider website."
-        );
-        assert!(observed_model_refusal(-32603, &clean));
-    }
-
-    #[test]
-    fn generic_internal_errors_do_not_mark_a_model_as_refused() {
-        let clean = clean_agent_error("Internal error: Temporary upstream failure");
-
-        assert_eq!(clean, "Temporary upstream failure");
-        assert!(!observed_model_refusal(-32603, &clean));
-        assert!(!observed_model_refusal(
-            -32000,
-            "Model is disabled for this account"
-        ));
-    }
 }
