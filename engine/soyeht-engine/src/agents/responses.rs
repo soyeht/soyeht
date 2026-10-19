@@ -541,11 +541,8 @@ fn session_opened(
         )?;
     }
     state.phase = Phase::Ready;
-    saved.pane.state = if state.has_finished_turn {
-        PaneState::Idle
-    } else {
-        PaneState::Starting
-    };
+    // A pane with an open session waits for a prompt; it is not still starting.
+    saved.pane.state = PaneState::Idle;
     saved.pane.phrase = "Agent session ready".into();
     changes.events.push(pending(&PaneSessionStartedDraft {
         pane_id: saved.pane.pane_id.clone(),

@@ -257,7 +257,7 @@ Rule: the engine has ONE internal lifecycle (prompt accepted → working → end
 
 **R04 · reconnecting to a live harness is not resuming a session.** After engine restart (contract 07), the engine↔ptyd channel delivers: harness instance ID, generation and unanswered harness requests (permission, `fs/*`, `terminal/*`) with sequence numbers. The engine answers those pending requests from persisted state; a request with an ambiguous effect (e.g. write completed, response not sent) is marked for reconciliation and never blindly repeated. On this path the engine does NOT call `session/new` or `session/resume`. `session/resume` is only for a dead process (ptyd or machine restarted).
 
-**R12 · states.** Single enum (contract 05 §1): `starting`, `working`, `idle`, `waiting_for_you`, `cancelling`, `no_signal`, `recovering`, `dead`, `unknown`. `waiting_for_you` exists only while a permission or elicitation request is open; never derived from silence. `no_signal` is a suspicion with source and confidence; it neither releases work nor clears an open request. A pane starts in `starting` and becomes `idle` only after the first real `idle` (or first prompt response in v1).
+**R12 · states.** Single enum (contract 05 §1): `starting`, `working`, `idle`, `waiting_for_you`, `cancelling`, `no_signal`, `recovering`, `dead`, `unknown`. `waiting_for_you` exists only while a permission or elicitation request is open; never derived from silence. `no_signal` is a suspicion with source and confidence; it neither releases work nor clears an open request. A pane starts in `starting` and becomes `idle` once its agent session is open (`pane.session_started`) and no turn runs; it does not wait for a first turn.
 
 **R14 · permission requests have identity and deadline.** Engine `requestId` (not the native ID), bound to generation and turn. The first valid response wins. On expiry (30 min), cancellation or session switch: the engine closes the request, responds `cancelled` to the harness and publishes `pane.permission_answered {result: expired|cancelled}`; the attention inbox shows “permission expired” with a “resume” action, never the old question.
 
@@ -278,7 +278,9 @@ or event and disables the action with the tooltip "this agent only reads new
 messages between turns". The method and its `{promptId}` event
 must be added together with the first proven adapter. The queue pauses by itself
 when the user cancels the current turn (⌘.) and shows "queue paused because you
-interrupted" with a "Resume" button; nothing is sent until the user resumes.
+interrupted" with a "Resume" button; nothing is sent until the user resumes. A
+cancel while no turn runs (`cancelling: false`) interrupts nothing and does not pause
+the queue.
 Slice 2 events are `pane.queue.paused` and `pane.queue.resumed`.
 
 **Context meter.** The agent pane header shows a small ring with the

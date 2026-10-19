@@ -106,7 +106,8 @@ pub(crate) fn cancel(
     now_ms: i64,
     timestamp: &str,
 ) -> Result<Value> {
-    if !state.queue_paused {
+    // A cancel with no turn to interrupt changes nothing, so it must not hold the queue.
+    if state.active.is_some() && !state.queue_paused {
         state.queue_paused = true;
         changes.events.push((
             event::PANE_QUEUE_PAUSED.into(),

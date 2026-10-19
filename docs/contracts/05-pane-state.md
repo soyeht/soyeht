@@ -57,7 +57,7 @@ the labels; decide per harness. Learn from issues: “notification with two mean
 “sticky state”, “background shell”, “permission prompt that looks idle”.
 
 ## Review applied (2026-09-10, finding R12)
-One enum for both pane types: `starting`, `working`, `idle`, `waiting_for_you`, `cancelling`, `no_signal`, `recovering` (engine reconnecting to ptyd), `dead`, `unknown`. Each state carries `source` (`protocol | hook | osc | screen | none`) and `confidence` (0–1). `waiting_for_you` requires an open request; `no_signal` neither clears a request nor releases the loop/`task_next`; `starting` never becomes `idle` without a real signal.
+One enum for both pane types: `starting`, `working`, `idle`, `waiting_for_you`, `cancelling`, `no_signal`, `recovering` (engine reconnecting to ptyd), `dead`, `unknown`. Each state carries `source` (`protocol | hook | osc | screen | none`) and `confidence` (0–1). `waiting_for_you` requires an open request; `no_signal` neither clears a request nor releases the loop/`task_next`; `starting` never becomes `idle` without a real signal; for an agent pane that signal is the open session (`pane.session_started`).
 
 ## Exit status of a dead terminal
 A terminal pane in the `dead` state carries `exitCode` when the supervisor recorded the process's

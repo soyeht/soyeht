@@ -558,7 +558,7 @@ impl Client {
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         loop {
             let view = self.pane(pane);
-            if view["state"] == state {
+            if view["state"] == state && !(state == "idle" && has_pending_turn(&view)) {
                 return view;
             }
             assert!(Instant::now() < deadline, "expected {state}: {view}");
@@ -714,4 +714,15 @@ impl Client {
         });
         (info, frames)
     }
+}
+
+/// An idle pane that is about to take a queued prompt, or still holds a turn,
+/// is not at rest yet. A paused queue is at rest.
+fn has_pending_turn(view: &Value) -> bool {
+    let agent = &view["agent"];
+    agent["activePromptId"].is_string()
+        || (agent["queuePaused"] != true
+            && agent["queue"]
+                .as_array()
+                .is_some_and(|queue| !queue.is_empty()))
 }

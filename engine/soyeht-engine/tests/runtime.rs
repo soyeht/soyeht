@@ -3123,7 +3123,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
     assert!(signed_in["items"][0]["lastReadyAtMs"].is_string());
     let resumed = client.pane(&pane);
     assert_eq!(resumed["paneId"], pane);
-    assert_eq!(resumed["state"], "starting");
+    assert_eq!(resumed["state"], "idle");
     assert_eq!(resumed["agent"]["authMethods"], json!([]));
     let models = client.call("model.list", json!({"harness":"auth-test","paneId":pane}));
     assert_eq!(models["source"], "native_session");

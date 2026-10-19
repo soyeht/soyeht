@@ -331,6 +331,8 @@ impl Core {
         {
             saved.pane.state = if state.active.is_some() {
                 PaneState::Working
+            } else if state.phase == Phase::Ready {
+                PaneState::Idle
             } else {
                 PaneState::Starting
             };

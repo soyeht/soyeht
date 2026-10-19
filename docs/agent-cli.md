@@ -17,14 +17,14 @@ session; never put credentials in this file or a command-line argument.
 
 ```sh
 soyeht --profile dev harness list
-soyeht --profile dev pane create --agent HARNESS --cwd /absolute/worktree --model MODEL --effort EFFORT --permission ask
+soyeht --profile dev pane create --agent HARNESS --cwd /absolute/worktree --model MODEL --effort EFFORT --permission-mode MODE
 soyeht --profile dev pane list
 soyeht --profile dev model list HARNESS --pane PANE_ID
 soyeht --profile dev pane prompt PANE_ID 'Explain the current directory' --idempotency-key request-1
 ```
 
 Creation returns a pane ID before initialization and the disposable probes are
-finished. Initial model, effort and permission selections are applied before a
+finished. Initial model, effort and permission mode selections are applied before a
 queued prompt can run. A selection the native session cannot confirm produces
 a visible configuration failure and holds the queue.
 
