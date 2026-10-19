@@ -12,19 +12,31 @@ A harness that is not signed in is skipped by name, and the steps that need it a
 nothing fails because of a missing sign-in. Set SOYEHT_REAL_ACP=1 to run it.
 """
 
-import argparse
-import json
 import os
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 
-from e2e import ROOT, Services, require
+from e2e import (
+    PRODUCT_NAMES,
+    ROOT,
+    Services,
+    argument_parser,
+    describe_failure,
+    finish_timed_report,
+    require,
+    require_binaries,
+)
 from e2e_agents import assistant_text, ended, transcript, turn_items
-from e2e_platform import executable, raise_file_limit
-from e2e_real_acp import HARNESSES, quiet_workspace
-from e2e_real_agent_messaging import Run, SignedOut, exchange, register_adapters
+from e2e_real_acp import HARNESSES, authorize_real_run, quiet_workspace
+from e2e_real_agent_messaging import (
+    Run,
+    SignedOut,
+    exchange,
+    print_transcripts,
+    register_adapters,
+)
 
 SWITCH_SECONDS = 240
 REMEMBERED = "orchid"
@@ -131,9 +143,7 @@ def run_real(binaries, models, report):
             # A sign-in that expires mid-run ends the run without failing it.
             report["skipped"] = str(error)
         except Exception:
-            for agent in run.agents if run else []:
-                for item in transcript(run.client, agent.pane):
-                    print(f"{agent.name} {item['role']}/{item['kind']}: {json.dumps(item)[:600]}")
+            print_transcripts(run)
             raise
         finally:
             services.close()
@@ -148,38 +158,26 @@ def build_binaries():
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bin-dir", type=Path, default=Path(
-        os.environ.get("CARGO_TARGET_DIR", ROOT / "engine/target")) / "debug")
+    parser = argument_parser(
+        __doc__, Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "engine/target")) / "debug")
     parser.add_argument("--build", action="store_true",
                         help="build the engine programs from this checkout first (needs cargo)")
     parser.add_argument("--model", action="append", default=[], metavar="HARNESS=MODEL",
                         help="select a model option for a harness, such as codex=gpt-5.5")
-    parser.add_argument("--report", type=Path)
     args = parser.parse_args()
-    if os.environ.get("SOYEHT_REAL_ACP") != "1":
-        raise SystemExit("Set SOYEHT_REAL_ACP=1 to authorize the authenticated local test")
-    raise_file_limit()
+    authorize_real_run()
     if args.build:
         build_binaries()
     binaries = args.bin_dir.resolve()
-    require(all((binaries / executable(name)).is_file() for name in
-                ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")),
-            "build workspace binaries before running the real harness acceptance")
+    require_binaries(binaries, PRODUCT_NAMES,
+                     "build workspace binaries before running the real harness acceptance")
     started = time.monotonic()
     report = {"harnesses": {}, "steps": {}}
     try:
         run_real(binaries, dict(choice.split("=", 1) for choice in args.model), report)
     except Exception as error:
-        report["error"] = f"{type(error).__name__}: {error}"
-    report["passed"] = "error" not in report
-    report["seconds"] = round(time.monotonic() - started, 2)
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report, indent=2))
-    if not report["passed"]:
-        raise SystemExit(1)
+        report["error"] = describe_failure(error)
+    finish_timed_report(report, started, args.report)
 
 
 if __name__ == "__main__":

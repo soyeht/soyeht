@@ -10,17 +10,29 @@ mode: every Soyeht tool call must then be presented as
 "Use soyeht-workspace · <tool>", approved, and the reply still delivered.
 """
 
-import argparse
 import json
-import os
 import tempfile
 import time
 from pathlib import Path
 
-from e2e import ROOT, Services, require
+from e2e import (
+    PRODUCT_NAMES,
+    Services,
+    argument_parser,
+    describe_failure,
+    finish_timed_report,
+    require,
+    require_binaries,
+)
 from e2e_agents import events, question, transcript
-from e2e_platform import executable, raise_file_limit
-from e2e_real_acp import HARNESSES, install_adapter, pinned_package, quiet_workspace, set_mode
+from e2e_real_acp import (
+    HARNESSES,
+    authorize_real_run,
+    install_adapter,
+    pinned_package,
+    quiet_workspace,
+    set_mode,
+)
 
 
 SERVER = "soyeht-workspace"
@@ -220,6 +232,13 @@ def register_adapters(services, pair, directory):
     return [Path(entry["command"]) for entry in entries]
 
 
+def print_transcripts(run):
+    """The transcript of a failing run; no credentials reach it."""
+    for agent in run.agents if run else []:
+        for item in transcript(run.client, agent.pane):
+            print(f"{agent.name} {item['role']}/{item['kind']}: {json.dumps(item)[:600]}")
+
+
 def run_real(binaries, pair, models, modes):
     with tempfile.TemporaryDirectory(prefix="soyeht-real-messaging-") as directory:
         services = Services(binaries)
@@ -241,33 +260,25 @@ def run_real(binaries, pair, models, modes):
             draft_hold(run, sender, recipient)
             return run.log
         except Exception:
-            # Diagnostic transcript for the failing run; no credentials reach it.
-            for agent in run.agents if run else []:
-                for item in transcript(run.client, agent.pane):
-                    print(f"{agent.name} {item['role']}/{item['kind']}: {json.dumps(item)[:600]}")
+            print_transcripts(run)
             raise
         finally:
             services.close()
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bin-dir", type=Path, default=ROOT / "engine/target/debug")
+    parser = argument_parser(__doc__)
     parser.add_argument("--pair", nargs=2, choices=sorted(HARNESSES),
                         default=["claude", "codex"], metavar=("SENDER", "RECIPIENT"))
     parser.add_argument("--model", action="append", default=[], metavar="HARNESS=MODEL",
                         help="select a model option for a harness, such as codex=gpt-5.5")
     parser.add_argument("--mode", action="append", default=[], metavar="HARNESS=MODE",
                         help="run a harness in a permission mode, such as codex=read-only")
-    parser.add_argument("--report", type=Path)
     args = parser.parse_args()
-    if os.environ.get("SOYEHT_REAL_ACP") != "1":
-        raise SystemExit("Set SOYEHT_REAL_ACP=1 to authorize the authenticated local test")
-    raise_file_limit()
+    authorize_real_run()
     binaries = args.bin_dir.resolve()
-    require(all((binaries / executable(name)).is_file() for name in
-                ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")),
-            "build workspace binaries before running the real messaging acceptance")
+    require_binaries(binaries, PRODUCT_NAMES,
+                     "build workspace binaries before running the real messaging acceptance")
     started = time.monotonic()
     report = {"pair": args.pair}
     try:
@@ -276,15 +287,8 @@ def main():
         report["modes"] = modes
         report["log"] = run_real(binaries, args.pair, models, modes)
     except Exception as error:
-        report["error"] = f"{type(error).__name__}: {error}"
-    report["passed"] = "error" not in report
-    report["seconds"] = round(time.monotonic() - started, 2)
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report, indent=2))
-    if not report["passed"]:
-        raise SystemExit(1)
+        report["error"] = describe_failure(error)
+    finish_timed_report(report, started, args.report)
 
 
 if __name__ == "__main__":

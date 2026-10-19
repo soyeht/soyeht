@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Exercise the authenticated Claude and Codex ACP adapters in disposable local profiles."""
 
-import argparse
 import base64
 import json
 import os
@@ -15,10 +14,10 @@ import time
 import zlib
 from pathlib import Path
 
-from e2e import ROOT, Services, require
+from e2e import ROOT, Services, argument_parser, finish_report, require, require_binaries
 from e2e_agents import assistant_text, ended, events, question, turn_items, until
 from e2e_platform import (
-    WINDOWS, executable, raise_file_limit, user_cache_directory, write_launcher_script,
+    WINDOWS, raise_file_limit, user_cache_directory, write_launcher_script,
 )
 
 
@@ -490,10 +489,15 @@ def run_skills(binaries, adapter, version, report):
         services.close()
 
 
+def authorize_real_run():
+    """The authenticated tests spend a signed-in account: they run only when asked for."""
+    if os.environ.get("SOYEHT_REAL_ACP") != "1":
+        raise SystemExit("Set SOYEHT_REAL_ACP=1 to authorize the authenticated local test")
+    raise_file_limit()
+
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bin-dir", type=Path, default=ROOT / "engine/target/debug")
-    parser.add_argument("--report", type=Path)
+    parser = argument_parser(__doc__)
     parser.add_argument("--harness", choices=sorted(HARNESSES), action="append")
     parser.add_argument(
         "--model", action="append", default=[], metavar="HARNESS=MODEL",
@@ -506,13 +510,10 @@ def main():
         "--only", choices=["image"],
         help="run only the named check after the session opens")
     args = parser.parse_args()
-    if os.environ.get("SOYEHT_REAL_ACP") != "1":
-        raise SystemExit("Set SOYEHT_REAL_ACP=1 to authorize the authenticated local test")
-    raise_file_limit()
+    authorize_real_run()
     binaries = args.bin_dir.resolve()
-    require(all((binaries / executable(name)).is_file() for name in
-                ("soyeht", "soyeht-engine", "soyeht-ptyd")),
-            "build workspace binaries before running the real ACP acceptance")
+    require_binaries(binaries, ("soyeht", "soyeht-engine", "soyeht-ptyd"),
+                     "build workspace binaries before running the real ACP acceptance")
     models = dict(value.split("=", 1) for value in args.model)
     started = time.monotonic()
     harnesses = {}
@@ -544,12 +545,7 @@ def main():
         "seconds": round(time.monotonic() - started, 2),
         "harnesses": harnesses,
     }
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(summary, indent=2) + "\n")
-    print(json.dumps(summary, indent=2))
-    if not summary["passed"]:
-        raise SystemExit(1)
+    finish_report(summary, args.report)
 
 
 if __name__ == "__main__":

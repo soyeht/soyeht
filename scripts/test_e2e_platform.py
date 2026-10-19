@@ -1,4 +1,5 @@
 import hmac
+import json
 import os
 import socket
 import sqlite3
@@ -286,6 +287,115 @@ class Teardown(unittest.TestCase):
                 for _ in range(100):
                     os.kill(pid, 0)
                     platform.time.sleep(0.05)
+
+
+class FakeServices:
+    """What `run_suite` asks of the services: start two components, then close."""
+
+    def __init__(self, close_error=None):
+        self.events = []
+        self.close_error = close_error
+
+    def start(self, component):
+        self.events.append(f"start {component}")
+
+    def close(self):
+        self.events.append("close")
+        if self.close_error:
+            raise self.close_error
+
+
+class SuiteReport(unittest.TestCase):
+    def run_suite(self, services, run, expected=2, setup=lambda: None):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "nested/report.json"
+            code = None
+            try:
+                with mock.patch("builtins.print"):
+                    e2e.run_suite(services, setup, run, expected, path)
+            except SystemExit as exit_request:
+                code = exit_request.code
+            report = json.loads(path.read_text()) if path.is_file() else None
+        return code, report
+
+    def test_a_run_with_every_result_passes_and_writes_its_report(self):
+        services = FakeServices()
+        code, report = self.run_suite(
+            services, lambda results: results.extend([{"name": "a"}, {"name": "b"}]))
+        self.assertIsNone(code)
+        self.assertTrue(report["passed"])
+        self.assertEqual([item["name"] for item in report["results"]], ["a", "b"])
+        self.assertNotIn("error", report)
+        self.assertEqual(services.events, ["start ptyd", "start engine", "close"])
+
+    def test_a_missing_result_fails_the_run(self):
+        code, report = self.run_suite(FakeServices(), lambda results: results.append({}))
+        self.assertEqual(code, 1)
+        self.assertFalse(report["passed"])
+
+    def test_a_failure_names_its_type_and_still_closes_the_services(self):
+        services = FakeServices()
+
+        def run(results):
+            raise AssertionError("no pane")
+
+        code, report = self.run_suite(services, run)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "AssertionError: no pane")
+        self.assertEqual(services.events[-1], "close")
+
+    def test_a_failed_setup_stops_before_the_services_start(self):
+        services = FakeServices()
+
+        def setup():
+            raise OSError("no binary")
+
+        code, report = self.run_suite(services, lambda results: None, setup=setup)
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "OSError: no binary")
+        self.assertEqual(services.events, ["close"])
+
+    def test_a_failed_cleanup_is_reported_over_a_passing_run(self):
+        services = FakeServices(close_error=RuntimeError("still running"))
+        code, report = self.run_suite(
+            services, lambda results: results.extend([{}, {}]))
+        self.assertEqual(code, 1)
+        self.assertEqual(report["error"], "cleanup failed: still running")
+
+    def test_a_report_without_a_path_is_only_printed(self):
+        with mock.patch("builtins.print") as printed:
+            e2e.finish_report({"passed": True}, None)
+        printed.assert_called_once()
+        with self.assertRaises(SystemExit):
+            with mock.patch("builtins.print"):
+                e2e.finish_report({"passed": False}, None)
+
+    def test_a_timed_report_passes_unless_it_holds_an_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "report.json"
+            with mock.patch("builtins.print"):
+                e2e.finish_timed_report({}, e2e.time.monotonic(), path)
+                self.assertTrue(json.loads(path.read_text())["passed"])
+                with self.assertRaises(SystemExit):
+                    e2e.finish_timed_report(
+                        {"error": "x"}, e2e.time.monotonic(), path)
+            self.assertFalse(json.loads(path.read_text())["passed"])
+
+    def test_the_binaries_are_found_by_their_platform_file_names(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binaries = Path(directory)
+            (binaries / platform.executable("soyeht")).write_text("")
+            e2e.require_binaries(binaries, ("soyeht",), "present")
+            with self.assertRaises(AssertionError):
+                e2e.require_binaries(binaries, ("soyeht", "soyeht-engine"), "missing")
+
+    def test_the_parser_takes_the_binary_folder_and_the_report(self):
+        arguments = e2e.argument_parser("doc").parse_args(
+            ["--bin-dir", "x", "--report", "y"])
+        self.assertEqual((arguments.bin_dir, arguments.report), (Path("x"), Path("y")))
+        defaults = e2e.argument_parser("doc").parse_args([])
+        self.assertEqual(defaults.bin_dir, e2e.ROOT / "engine/target/debug")
+        self.assertIsNone(defaults.report)
 
 
 if __name__ == "__main__":

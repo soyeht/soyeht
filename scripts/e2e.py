@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -29,8 +30,8 @@ from generated_profile import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-PRODUCT_EXECUTABLES = tuple(executable(name) for name in
-                            ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd"))
+PRODUCT_NAMES = ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")
+PRODUCT_EXECUTABLES = tuple(executable(name) for name in PRODUCT_NAMES)
 # The engine with the test hooks installed (ADR 0091); built with `--features test-hooks`.
 TEST_ENGINE = "soyeht-engine-test"
 
@@ -249,6 +250,10 @@ class Services:
                                 capture_output=True, check=True)
         return json.loads(output.stdout)
 
+    def install_fake_acp(self, binaries):
+        """Puts the fake ACP agent where the harness registry of a run looks for it."""
+        shutil.copy2(binaries / "soyeht-fake-acp", self.binaries / "soyeht-fake-acp")
+
     def close_supervised_processes(self):
         try:
             with connect_endpoint(self.data / DEV_PTYD_SOCKET, timeout=5) as stream:
@@ -388,39 +393,79 @@ def acceptances(services, results):
     return results
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bin-dir", type=Path, default=ROOT / "engine/target/debug")
+def argument_parser(description, bin_dir=ROOT / "engine/target/debug"):
+    """The parser every acceptance script starts from: where the programs are, where to report."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--bin-dir", type=Path, default=bin_dir)
     parser.add_argument("--report", type=Path)
-    args = parser.parse_args()
-    binaries = args.bin_dir.resolve()
-    require(all((binaries / name).is_file() for name in
-                PRODUCT_EXECUTABLES),
-            "build workspace binaries before running acceptances")
-    services = Services(binaries)
-    started = time.monotonic()
-    results=[]
-    failure=None
+    return parser
+
+
+def require_binaries(binaries, names, hint):
+    require(all((binaries / executable(name)).is_file() for name in names), hint)
+
+
+def finish_report(report, path):
+    """Writes the report where asked, prints it, and fails the run unless it passed."""
+    if path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report, indent=2))
+    if not report["passed"]:
+        raise SystemExit(1)
+
+
+def describe_failure(error):
+    return f"{type(error).__name__}: {error}"
+
+
+def finish_timed_report(report, started, path):
+    """Closes a report that holds an `error` when the run failed: pass flag, duration, output."""
+    report["passed"] = "error" not in report
+    report["seconds"] = round(time.monotonic() - started, 2)
+    finish_report(report, path)
+
+
+def run_suite(services, setup, run, expected, report_path):
+    """Starts the supervisor and the engine, runs `run(results)` and reports `expected` results.
+
+    `setup` runs first; the services are closed at the end whatever happens, and a failure of
+    either ends the report with its error.
+    """
+    started, results, failure = time.monotonic(), [], None
     try:
+        setup()
         services.start("ptyd")
         services.start("engine")
-        client = services.client()
-        client.close()
-        acceptances(services,results)
+        run(results)
     except Exception as error:
-        failure=str(error)
+        failure = describe_failure(error)
     finally:
         try:
             services.close()
         except Exception as error:
-            failure=f"cleanup failed: {error}"
-    report = {"passed":failure is None and len(results)==6, "seconds": round(time.monotonic() - started, 2), "results": results}
-    if failure:report["error"]=failure
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report, indent=2))
-    if not report["passed"]:raise SystemExit(1)
+            failure = f"cleanup failed: {error}"
+    report = {
+        "passed": failure is None and len(results) == expected,
+        "seconds": round(time.monotonic() - started, 2),
+        "results": results,
+    }
+    if failure:
+        report["error"] = failure
+    finish_report(report, report_path)
+
+
+def main():
+    args = argument_parser(__doc__).parse_args()
+    binaries = args.bin_dir.resolve()
+    require_binaries(binaries, PRODUCT_NAMES, "build workspace binaries before running acceptances")
+    services = Services(binaries)
+
+    def run(results):
+        services.client().close()
+        acceptances(services, results)
+
+    run_suite(services, lambda: None, run, 6, args.report)
 
 
 if __name__ == "__main__":

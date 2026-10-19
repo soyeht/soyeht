@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """Exercise editor, language, and usage integrations under disposable launchd jobs."""
-import argparse
 import base64
 import json
 import os
 import shutil
 import signal
 import subprocess
-import time
-from pathlib import Path
 
-from e2e import ROOT, TEST_ENGINE, require
+from e2e import TEST_ENGINE, argument_parser, require, require_binaries, run_suite
 from e2e_platform import MACOS, WINDOWS, database
 from e2e_agents import AgentServices, request, until
 
@@ -285,39 +282,16 @@ def run_acceptances(services, results):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bin-dir", type=Path, default=ROOT / "engine/target/debug")
-    parser.add_argument("--report", type=Path)
-    args = parser.parse_args()
+    args = argument_parser(__doc__).parse_args()
     binaries = args.bin_dir.resolve()
     names = ("soyeht", "soyeht-engine", TEST_ENGINE, "soyeht-mcp", "soyeht-ptyd", "soyeht-fake-lsp")
-    require(all((binaries / name).is_file() for name in names),
-            "build workspace binaries and the test engine (cargo build -p soyeht-engine --features test-hooks)"
-            " before running editor acceptances")
+    require_binaries(
+        binaries, names,
+        "build workspace binaries and the test engine (cargo build -p soyeht-engine --features test-hooks)"
+        " before running editor acceptances")
     services = EditorServices(binaries)
-    started, results, failure = time.monotonic(), [], None
-    try:
-        services.install_fakes(binaries)
-        services.start("ptyd")
-        services.start("engine")
-        run_acceptances(services, results)
-    except Exception as error:
-        failure = f"{type(error).__name__}: {error}"
-    finally:
-        try:
-            services.close()
-        except Exception as error:
-            failure = f"cleanup failed: {error}"
-    report = {"passed": failure is None and len(results) == 4,
-              "seconds": round(time.monotonic() - started, 2), "results": results}
-    if failure:
-        report["error"] = failure
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report, indent=2))
-    if not report["passed"]:
-        raise SystemExit(1)
+    run_suite(services, lambda: services.install_fakes(binaries),
+              lambda results: run_acceptances(services, results), 4, args.report)
 
 
 if __name__ == "__main__":

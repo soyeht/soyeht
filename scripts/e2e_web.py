@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """Exercise web-pane routing and discovery under disposable launchd jobs."""
-import argparse
-import json
 import os
 import socket
 import time
-from pathlib import Path
 
-from e2e import ROOT, Services, receive, require, send
+from e2e import (
+    PRODUCT_NAMES,
+    Services,
+    argument_parser,
+    receive,
+    require,
+    require_binaries,
+    run_suite,
+    send,
+)
 from e2e_agents import request
 
 LOCAL_SERVER_HANG_SECONDS = 120
@@ -196,41 +202,16 @@ def run_acceptances(services, listener, results):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bin-dir", type=Path, default=ROOT / "engine/target/debug")
-    parser.add_argument("--report", type=Path)
-    args = parser.parse_args()
+    args = argument_parser(__doc__).parse_args()
     binaries = args.bin_dir.resolve()
-    require(all((binaries / name).is_file() for name in
-                ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")),
-            "build workspace binaries before running web acceptances")
+    require_binaries(binaries, PRODUCT_NAMES, "build workspace binaries before running web acceptances")
     listener = open_low_listener()
     services = Services(binaries)
-    started, results, failure = time.monotonic(), [], None
     try:
-        services.start("ptyd")
-        services.start("engine")
-        run_acceptances(services, listener, results)
-    except Exception as error:
-        failure = str(error)
+        run_suite(services, lambda: None,
+                  lambda results: run_acceptances(services, listener, results), 4, args.report)
     finally:
         listener.close()
-        try:
-            services.close()
-        except Exception as error:
-            failure = f"cleanup failed: {error}"
-    report = {
-        "passed": failure is None and len(results) == 4,
-        "seconds": round(time.monotonic() - started, 2), "results": results,
-    }
-    if failure:
-        report["error"] = failure
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report, indent=2))
-    if not report["passed"]:
-        raise SystemExit(1)
 
 
 if __name__ == "__main__":
