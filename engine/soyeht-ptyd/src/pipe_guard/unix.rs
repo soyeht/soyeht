@@ -21,7 +21,12 @@ use std::time::Duration;
 enum Reply {
     Started(u32),
     Exited(i32),
-    Failed(String),
+    /// The program could not be started; `refused` when the system said it is not there or
+    /// not allowed.
+    Failed {
+        message: String,
+        refused: bool,
+    },
 }
 
 fn reply(control: &mut UnixStream, message: Reply) -> Result<()> {
@@ -82,7 +87,13 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
         };
         let pid = match reply {
             Reply::Started(pid) => pid,
-            Reply::Failed(message) => return Err(Error::GuardianFailed(message)),
+            Reply::Failed {
+                message,
+                refused: true,
+            } => {
+                return Err(Error::GuardianRefused(message));
+            }
+            Reply::Failed { message, .. } => return Err(Error::GuardianFailed(message)),
             _ => return Err(Error::InvalidGuardianResponse),
         };
         let (input, output) = child_pipes(&mut child)?;
@@ -142,7 +153,9 @@ pub fn run(fd: i32) -> Result<()> {
     let mut child = match process::command(&config)?.spawn() {
         Ok(child) => child,
         Err(error) => {
-            reply(&mut control, Reply::Failed(error.to_string()))?;
+            let refused = crate::error::refuses_to_start(error.kind());
+            let message = error.to_string();
+            reply(&mut control, Reply::Failed { message, refused })?;
             return Ok(());
         }
     };

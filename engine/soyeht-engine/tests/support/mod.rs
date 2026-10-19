@@ -722,20 +722,24 @@ impl Client {
             .expect("pane in snapshot")
     }
     pub fn create(&mut self, rig: &Rig) -> (String, String) {
-        let workspace = self.call(
+        self.create_in(&rig.path, "create-pane")
+    }
+    /// A workspace at `path` with a started terminal pane created under `key`; both ids.
+    pub fn create_in(&mut self, path: &Path, key: &str) -> (String, String) {
+        let workspace: String = self.call(
             "workspace.create",
-            json!({"name":"Test","path":rig.path,"idempotencyKey":Uuid::new_v4().to_string()}),
+            json!({"name":"Test","path":path,"idempotencyKey":Uuid::new_v4().to_string()}),
         )["workspace"]["workspaceId"]
             .as_str()
             .unwrap()
-            .to_owned();
-        let pane = self.call(
+            .into();
+        let pane: String = self.call(
             "pane.create",
-            json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":"create-pane"}),
+            json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":key}),
         )["paneId"]
             .as_str()
             .unwrap()
-            .to_owned();
+            .into();
         let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
         while self.pane(&pane)["pid"].is_null() {
             assert!(Instant::now() < deadline);

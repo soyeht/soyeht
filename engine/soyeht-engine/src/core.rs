@@ -32,6 +32,7 @@ pub struct Core {
     pub generation: u64,
     pub(crate) catalog_epoch: u64,
     pub ptyd: Option<Box<dyn SupervisorPort>>,
+    pub(crate) supervisor_retry: crate::supervisor_link::Retry,
     pub clock: Arc<dyn Clock>,
     /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
     pub hooks: Arc<dyn Hooks>,
@@ -118,6 +119,7 @@ impl Core {
             generation,
             catalog_epoch: 0,
             ptyd: None,
+            supervisor_retry: Default::default(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
             revision: SharedPort::new(Box::new(GitRevision)),
@@ -423,7 +425,9 @@ impl Core {
             .collect();
         let ids: Vec<_> = self.panes.keys().cloned().collect();
         for id in ids {
-            self.reconcile_pane(&id, &instances, &reserved_panes)?;
+            if let Err(error) = self.reconcile_pane(&id, &instances, &reserved_panes) {
+                self.stop_unrestartable_pane(&id, error)?;
+            }
         }
         self.close_orphaned_agent_processes(&instances)?;
         self.reconcile_language_servers(&instances)
@@ -624,8 +628,8 @@ impl Core {
         self.isolated("skills", Self::advance_skills);
         self.isolated("local_servers", Self::advance_local_servers);
         self.isolated("web_commands", Self::advance_web_commands);
-        if self.ptyd.is_none() {
-            self.connect_supervisor()?;
+        if self.ensure_supervisor() == crate::supervisor_link::Link::Down {
+            return Ok(());
         }
         self.isolated("harness_switches", Self::advance_harness_switches);
         self.isolated("retired_agents", Self::cleanup_retired_agent_processes);

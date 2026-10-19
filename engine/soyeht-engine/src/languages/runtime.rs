@@ -157,11 +157,23 @@ impl Core {
                 self.persist_language_server(&key, Vec::new())?;
                 self.resume_language_writes(&key)?;
                 self.publish_language_completions(&key)?;
-            } else {
-                self.restart_language_server(&key, "Language server process was lost")?;
+            } else if let Err(error) =
+                self.restart_language_server(&key, "Language server process was lost")
+            {
+                self.leave_language_server_unavailable(&key, error)?;
             }
         }
         Ok(())
+    }
+
+    /// A language server the supervisor refuses to start (its project folder is gone) is
+    /// marked unavailable. It must not keep the engine from reaching the supervisor.
+    fn leave_language_server_unavailable(&mut self, key: &str, error: errors::Error) -> Result<()> {
+        if !self.refused_by_supervisor(&error) {
+            return Err(error);
+        }
+        log::failure("engine.lsp_not_restarted", &error);
+        self.mark_language_unavailable(key, "Language server could not be restarted")
     }
 
     fn language_server_requires_process(&self, key: &str) -> Result<bool> {

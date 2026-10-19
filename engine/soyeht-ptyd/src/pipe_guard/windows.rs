@@ -39,7 +39,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
             error: &stderr,
         }),
     })
-    .map_err(|error| Error::GuardianFailed(error.to_string()))?;
+    .map_err(|error| Error::guardian(&error))?;
     let input = File::from(input_write);
     input_without_waiting(&input)?;
     Ok(Spawned {

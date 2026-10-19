@@ -35,6 +35,7 @@ pub mod settings;
 pub mod skills;
 pub mod streak;
 pub mod streams;
+mod supervisor_link;
 pub mod tasks;
 mod terminal_capture;
 mod terminal_drain;

@@ -229,7 +229,9 @@ fn supervisor_kind(error: &soyeht_ptyd::Error) -> ErrorKind {
         soyeht_ptyd::Error::Remote { kind, .. } if kind == wire_kind::STALE_ENGINE_GENERATION => {
             ErrorKind::StaleEngineGeneration
         }
-        soyeht_ptyd::Error::Remote { kind, .. } if kind == wire_kind::SPAWN_FAILED => {
+        soyeht_ptyd::Error::Remote { kind, .. }
+            if kind == wire_kind::SPAWN_FAILED || kind == wire_kind::SPAWN_REFUSED =>
+        {
             ErrorKind::HarnessUnavailable
         }
         _ => ErrorKind::PtydUnavailable,

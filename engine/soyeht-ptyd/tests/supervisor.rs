@@ -202,6 +202,25 @@ fn assert_private_diagnostic(daemon: &Daemon, instance_id: &str) {
 }
 
 #[test]
+fn a_spawn_the_system_refuses_is_reported_as_spawn_refused() {
+    let (daemon, mut client) = Daemon::start();
+    for kind in [
+        ProcessKind::Pty,
+        ProcessKind::PipesAcp,
+        ProcessKind::PipesLsp,
+    ] {
+        let mut config = daemon.shell();
+        config.kind = kind;
+        config.cwd = daemon.directory.join("gone").to_string_lossy().into_owned();
+        assert!(matches!(
+            client.request(Request::Spawn(config)).unwrap(),
+            Response::Error { kind, .. } if kind == soyeht_ptyd::wire_kind::SPAWN_REFUSED
+        ));
+    }
+    spawn(&mut client, daemon.shell());
+}
+
+#[test]
 fn pipes_recover_native_requests_after_ack_and_reconnect_without_echoing_stdin() {
     let (daemon, mut client) = Daemon::start();
     let mut config = daemon.shell();

@@ -299,9 +299,13 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         guard,
     } = match process::spawn(&config, &state.directory, &instance_id) {
         Ok(spawned) => spawned,
+        Err(failure) if failure.spawn_refused() => {
+            // Setup either never starts a child or kills and reaps it before returning an
+            // error. No process needs adoption.
+            return Ok(error(wire_kind::SPAWN_REFUSED, &failure.to_string()));
+        }
         Err(failure) if config.kind == ProcessKind::Pty => {
-            // PTY setup either never starts a child or kills and reaps it before
-            // returning an error. No process needs adoption.
+            // Terminal setup also leaves no process behind, whatever the cause.
             return Ok(error(wire_kind::SPAWN_FAILED, &failure.to_string()));
         }
         Err(failure) => return Err(failure),

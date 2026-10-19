@@ -19,8 +19,11 @@ replaced the Yolo override described here before). Private history replay does n
 notifications before the replay is committed.
 
 The local supervisor protocol is version 4. `Kill` terminates a process group
-while preserving retained output; `Close` releases it. A PTY spawn that fails
-before any process survives returns `spawn_failed`. The engine settles that
+while preserving retained output; `Close` releases it. A spawn (PTY or pipes) that the
+system refuses because the folder or program is missing or not allowed returns
+`spawn_refused`, which repeating cannot fix and which the engine takes as the end of
+that pane's restoration. A PTY spawn that fails before any process survives for
+another reason returns `spawn_failed`. The engine settles that
 native terminal request with an error and frees its reservation. A transport or
 storage failure remains ambiguous and retains the original spawn key for
 reconciliation; it must not be reported as proof that nothing started.

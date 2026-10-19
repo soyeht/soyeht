@@ -6,7 +6,10 @@ pub enum Error {
     Protocol(soyeht_protocol::Error),
     Json(serde_json::Error),
     Base64(base64::DecodeError),
-    Remote { kind: String, message: String },
+    Remote {
+        kind: String,
+        message: String,
+    },
     InvalidWelcome,
     InvalidResponse,
     ZeroRetentionLimit,
@@ -26,6 +29,8 @@ pub enum Error {
     InvalidTerminalSize,
     MissingGuardianResponse,
     GuardianFailed(String),
+    /// The pipe guardian could not start the program because the system refused it.
+    GuardianRefused(String),
     InvalidGuardianResponse,
     GuardianStdinMissing,
     GuardianStdoutMissing,
@@ -38,7 +43,36 @@ pub enum Error {
     InvalidArguments,
 }
 
+/// Whether the system refused to start a program for a reason that does not pass: the folder
+/// or the program is not there, or is not allowed. Running out of a resource (processes,
+/// descriptors, disk) or a timeout is not one, and may pass.
+pub fn refuses_to_start(kind: io::ErrorKind) -> bool {
+    matches!(
+        kind,
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory | io::ErrorKind::PermissionDenied
+    )
+}
+
 impl Error {
+    /// A start failure of the guardian or of a pipe process, kept apart by whether it can pass.
+    pub fn guardian(error: &io::Error) -> Self {
+        let message = error.to_string();
+        if refuses_to_start(error.kind()) {
+            Self::GuardianRefused(message)
+        } else {
+            Self::GuardianFailed(message)
+        }
+    }
+
+    /// Whether this failure to spawn is a refusal that repeating cannot fix.
+    pub fn spawn_refused(&self) -> bool {
+        match self {
+            Self::Io(error) => refuses_to_start(error.kind()),
+            Self::GuardianRefused(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn wire_kind(&self) -> &'static str {
         match self {
             Self::AckAhead => crate::wire_kind::ACK_AHEAD,
@@ -79,7 +113,9 @@ impl fmt::Display for Error {
             }
             Self::InvalidTerminalSize => formatter.write_str("invalid terminal size"),
             Self::MissingGuardianResponse => formatter.write_str("missing pipe guardian response"),
-            Self::GuardianFailed(message) => write!(formatter, "pipe guardian failed: {message}"),
+            Self::GuardianFailed(message) | Self::GuardianRefused(message) => {
+                write!(formatter, "pipe guardian failed: {message}")
+            }
             Self::InvalidGuardianResponse => formatter.write_str("invalid pipe guardian response"),
             Self::GuardianStdinMissing => {
                 formatter.write_str("pipe guardian stdin was not created")
@@ -145,3 +181,39 @@ impl From<base64::DecodeError> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_missing_or_forbidden_folder_or_program_is_a_refusal() {
+        for kind in [
+            io::ErrorKind::NotFound,
+            io::ErrorKind::NotADirectory,
+            io::ErrorKind::PermissionDenied,
+        ] {
+            assert!(Error::Io(kind.into()).spawn_refused(), "{kind:?}");
+            assert!(matches!(
+                Error::guardian(&kind.into()),
+                Error::GuardianRefused(_)
+            ));
+        }
+        // Resource and timing failures may pass.
+        for kind in [
+            io::ErrorKind::WouldBlock,
+            io::ErrorKind::OutOfMemory,
+            io::ErrorKind::StorageFull,
+            io::ErrorKind::TimedOut,
+            io::ErrorKind::Other,
+        ] {
+            assert!(!Error::Io(kind.into()).spawn_refused(), "{kind:?}");
+            assert!(matches!(
+                Error::guardian(&kind.into()),
+                Error::GuardianFailed(_)
+            ));
+        }
+        assert!(!Error::MissingGuardianResponse.spawn_refused());
+        assert!(!Error::GuardianFailed("x".into()).spawn_refused());
+    }
+}
