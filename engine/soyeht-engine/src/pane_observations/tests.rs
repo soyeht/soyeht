@@ -1,10 +1,16 @@
-use super::*;
+use super::{store::*, *};
+use soyeht_pane_state::{EngineBuild, MAX_RETAINED_SEGMENTS};
 use soyeht_pane_state::{
     MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame, ObservationReason,
 };
 use soyeht_platform::fs::symlink;
+use soyeht_platform::fs::{create_private_dir, dir_is_owner_only, file_is_owner_only};
 use soyeht_protocol::{PaneState, StateSource};
 use std::sync::mpsc;
+use std::{
+    fs::{self, File, OpenOptions},
+    path::PathBuf,
+};
 use uuid::Uuid;
 
 struct Fixture {

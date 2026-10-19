@@ -3,26 +3,8 @@ use soyeht_protocol::limits;
 use soyeht_store::segments::{Log, Record, Unsynced};
 use std::{collections::VecDeque, path::Path, sync::Arc};
 
-enum LiveRecord {
-    Data { offset: u64, bytes: Arc<Vec<u8>> },
-    Gap { from: u64, to: u64 },
-}
-
-impl LiveRecord {
-    fn from(&self) -> u64 {
-        match self {
-            Self::Data { offset, .. } => *offset,
-            Self::Gap { from, .. } => *from,
-        }
-    }
-
-    fn end(&self) -> u64 {
-        match self {
-            Self::Data { offset, bytes } => offset.saturating_add(bytes.len() as u64),
-            Self::Gap { to, .. } => *to,
-        }
-    }
-}
+/// A record kept in memory: the output bytes are shared with the supervisor, so a clone is cheap.
+type LiveRecord = Record<Arc<Vec<u8>>>;
 
 pub struct Screen {
     disk: Log,
@@ -75,7 +57,7 @@ impl Screen {
     pub fn first_offset(&self) -> u64 {
         self.disk
             .first_offset()
-            .min(self.live.front().map(LiveRecord::from).unwrap_or(self.next))
+            .min(self.live.front().map(Record::from).unwrap_or(self.next))
     }
 
     pub fn append(&mut self, record: Record) -> Result<()> {
@@ -211,14 +193,14 @@ impl Screen {
             .next
             .saturating_sub(limits::TAIL_BYTES as u64)
             .max(self.first_offset());
-        let live_first = self.live.front().map(LiveRecord::from).unwrap_or(self.next);
+        let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
         if desired < live_first {
             self.disk.align_forward(desired).min(live_first)
         } else {
             self.live
                 .iter()
                 .find(|record| record.from() >= desired)
-                .map(LiveRecord::from)
+                .map(Record::from)
                 .unwrap_or(self.next)
         }
     }
@@ -230,7 +212,7 @@ impl Screen {
         let mut result = Vec::new();
         let mut position = from;
         let mut remaining = maximum;
-        let live_first = self.live.front().map(LiveRecord::from).unwrap_or(self.next);
+        let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
         if position < live_first && position < self.disk.next_offset() {
             for record in self.disk.read(
                 position,

@@ -4,6 +4,7 @@ use soyeht_protocol::limits;
 use std::collections::{BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 /// Makes the disk flush of a segment slow, as it is on a busy machine, so a test can show
@@ -49,12 +50,17 @@ const MAGIC: &[u8; 8] = b"SOYPT001";
 const HEADER: usize = 13;
 const CHECKSUM: usize = 4;
 
+/// One stretch of a pane's output. `B` is how the bytes are held: owned by default, or behind a
+/// shared pointer when a caller keeps the record in memory and writes it to the log too.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Record {
-    Data { offset: u64, bytes: Vec<u8> },
+pub enum Record<B = Vec<u8>> {
+    Data { offset: u64, bytes: B },
     Gap { from: u64, to: u64 },
 }
-impl Record {
+impl<B: Deref> Record<B>
+where
+    B::Target: AsRef<[u8]>,
+{
     pub fn from(&self) -> u64 {
         match self {
             Self::Data { offset, .. } => *offset,
@@ -63,7 +69,7 @@ impl Record {
     }
     pub fn end(&self) -> u64 {
         match self {
-            Self::Data { offset, bytes } => offset.saturating_add(bytes.len() as u64),
+            Self::Data { offset, bytes } => offset.saturating_add((**bytes).as_ref().len() as u64),
             Self::Gap { to, .. } => *to,
         }
     }
