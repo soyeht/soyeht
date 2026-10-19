@@ -48,6 +48,8 @@ pub struct Service {
     unavailable: Option<&'static str>,
     servers: Vec<LocalServer>,
     next_refresh_ms: i64,
+    /// This engine, which listens on its own port but is no project to open.
+    own_pid: u32,
 }
 
 pub struct Refresh {
@@ -62,6 +64,7 @@ impl Service {
             scan: SharedPort::new(scan),
             servers: Vec::new(),
             next_refresh_ms: 0,
+            own_pid: std::process::id(),
         }
     }
 
@@ -76,9 +79,10 @@ impl Service {
     }
 
     fn finish(&mut self, observation: PortScanObservation) -> Result<Refresh> {
-        let servers =
+        let mut servers =
             LocalServerScan::parse_lsof(&observation.listeners, &observation.directories, &[])?
                 .into_servers();
+        servers.retain(|server| server.pid != self.own_pid);
         let changed = servers != self.servers;
         self.servers.clone_from(&servers);
         Ok(Refresh { servers, changed })
@@ -216,6 +220,30 @@ mod tests {
         assert!(!refresh_if_due(5_100).unwrap().changed);
         assert!(refresh_if_due(10_100).unwrap().changed);
         assert_eq!(service.servers()[0].command, "python");
+    }
+
+    #[test]
+    fn the_engine_and_other_soyeht_programs_are_not_offered_as_local_servers() {
+        let own = std::process::id();
+        let engine_port = soyeht_protocol::profile::DEV_TCP_PORT;
+        let listeners = format!(
+            "p{own}\0cnode\0n127.0.0.1:4000\0p11\0csoyeht-en\0n127.0.0.1:{engine_port}\0\
+             p12\0cSoyeht\0n127.0.0.1:4100\0p10\0cnode\0n127.0.0.1:3000\0"
+        );
+        let directories =
+            format!("p{own}\0fcwd\0n/\0p11\0fcwd\0n/\0p12\0fcwd\0n/\0p10\0fcwd\0n/tmp/site\0");
+        let mut service = Service::new(Box::new(ScriptedScan {
+            observations: [PortScanObservation {
+                listeners: listeners.into_bytes(),
+                directories: directories.into_bytes(),
+            }]
+            .into(),
+            calls: 0,
+        }));
+        let scanner = service.claim_refresh(100).unwrap();
+        let refresh = service.finish(scan(&scanner).unwrap()).unwrap();
+        let ports: Vec<u32> = refresh.servers.iter().map(|server| server.port).collect();
+        assert_eq!(ports, [3000]);
     }
 
     #[test]

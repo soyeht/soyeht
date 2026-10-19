@@ -92,6 +92,21 @@ fn local_server_scan_is_machine_parsed_sorted_deduplicated_and_bounded() {
 }
 
 #[test]
+fn soyeht_programs_are_never_listed_or_looked_up_as_local_servers() {
+    // lsof shortens a command to nine characters, so the engine reads "soyeht-en".
+    let listeners = b"p5\0csoyeht-en\0n127.0.0.1:4300\0p6\0cSoyeht\0n*:4100\0\
+        p7\0csoyeht-pt\0n*:4200\0p10\0cnode\0n*:3000\0p11\0csoy\0n*:3001\0";
+    let cwds = [5, 6, 7, 10, 11].map(|pid| CwdObservation {
+        pid,
+        cwd: "/".into(),
+    });
+    assert_eq!(LocalServerScan::listener_pids(listeners).unwrap(), [10, 11]);
+    let scan = LocalServerScan::parse(listeners, &cwds, &[]).unwrap();
+    let ports: Vec<u32> = scan.servers().iter().map(|server| server.port).collect();
+    assert_eq!(ports, [3000, 3001]);
+}
+
+#[test]
 fn lsof_listener_and_cwd_records_are_parsed_by_the_pure_core() {
     let listeners = b"p20\0cnode\0f7\0n127.0.0.1:5173\0\np10\0cpython\0f8\0n*:3000\0\n";
     let directories = b"p10\0fcwd\0n/tmp/site-a\0\np20\0fcwd\0n/tmp/site-b\0\n";

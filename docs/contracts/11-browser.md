@@ -105,7 +105,9 @@ record and routes agent calls to that client.
   result. When no connected client hosts the pane (the Mac app is closed)
   tools fail with `WEB_HOST_UNAVAILABLE`.
 - `servers.local.list` → `[{port, pid, command, cwd, title?}]`; event
-  `servers.local.changed`.
+  `servers.local.changed`. The list leaves out the engine itself and any
+  other program whose command starts with `soyeht`: they listen on ports but
+  are not a project to open.
 - Events `web.navigated {paneId, url, title}`, `web.console_counts {paneId,
   warnings, errors}`, `web.agent_driving {paneId, on}`.
 - Errors: `STALE_REFERENCE`, `HUMAN_TOOK_OVER`, `WEB_HOST_UNAVAILABLE`,

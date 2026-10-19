@@ -152,10 +152,14 @@ fn parse_listeners(output: &[u8]) -> Result<Vec<Listener>> {
             Some(b'n') => {
                 let current_pid = pid.ok_or(Error::InvalidPortRecord)?;
                 let current_command = command.clone().ok_or(Error::InvalidPortRecord)?;
+                let port = parse_port(&field[1..])?;
+                if is_soyeht_process(&current_command) {
+                    continue;
+                }
                 listeners.push(Listener {
                     pid: current_pid,
                     command: current_command,
-                    port: parse_port(&field[1..])?,
+                    port,
                 });
             }
             _ => {}
@@ -163,6 +167,18 @@ fn parse_listeners(output: &[u8]) -> Result<Vec<Listener>> {
     }
     Ok(listeners)
 }
+
+/// Soyeht's own programs (the engine, the supervisor, the command line, the app) listen on
+/// ports too, but they are not a project the person is working on, so they are never offered.
+/// `lsof` shortens a command to nine characters, which still holds the prefix.
+fn is_soyeht_process(command: &str) -> bool {
+    command
+        .as_bytes()
+        .get(..SOYEHT_PROCESS_PREFIX.len())
+        .is_some_and(|start| start.eq_ignore_ascii_case(SOYEHT_PROCESS_PREFIX.as_bytes()))
+}
+
+const SOYEHT_PROCESS_PREFIX: &str = "soyeht";
 
 fn parse_u32(value: &str) -> Result<u32> {
     value
