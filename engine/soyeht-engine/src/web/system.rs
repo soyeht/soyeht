@@ -118,31 +118,33 @@ impl PortScanPort for SystemPortScan {
 #[cfg(unix)]
 impl SystemPortScan {
     fn observe(&self) -> Result<PortScanObservation, PortScanError> {
-        let listeners = run_lsof(
-            &self.program,
-            self.allowance,
-            &["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-F0pcn"],
-        )?;
-        let pids = LocalServerScan::listener_pids(&listeners).map_err(PortScanError::Unreadable)?;
-        let directories = if pids.is_empty() {
-            Vec::new()
-        } else {
-            let list = pids
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
-            run_lsof(
-                &self.program,
-                self.allowance,
-                &["-nP", "-a", "-p", &list, "-d", "cwd", "-F0pn"],
-            )?
-        };
-        Ok(PortScanObservation {
-            listeners,
-            directories,
-        })
+        observe_with(|arguments| run_lsof(&self.program, self.allowance, arguments))
     }
+}
+
+/// The two observations of one scan, each produced by `run` for the `lsof` arguments given:
+/// the listening processes, then the working directory of each. `run` is the seam that lets
+/// the tests supply `lsof` output without starting a program.
+#[cfg(unix)]
+fn observe_with(
+    mut run: impl FnMut(&[&str]) -> Result<Vec<u8>, PortScanError>,
+) -> Result<PortScanObservation, PortScanError> {
+    let listeners = run(&["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-F0pcn"])?;
+    let pids = LocalServerScan::listener_pids(&listeners).map_err(PortScanError::Unreadable)?;
+    let directories = if pids.is_empty() {
+        Vec::new()
+    } else {
+        let list = pids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        run(&["-nP", "-a", "-p", &list, "-d", "cwd", "-F0pn"])?
+    };
+    Ok(PortScanObservation {
+        listeners,
+        directories,
+    })
 }
 
 #[cfg(unix)]
@@ -190,7 +192,10 @@ fn listing(output: soyeht_process::Output) -> Result<Vec<u8>, PortScanError> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{
+        fs,
+        os::unix::{fs::PermissionsExt, process::ExitStatusExt},
+    };
     use uuid::Uuid;
 
     fn script(body: &str) -> PathBuf {
@@ -204,12 +209,44 @@ mod tests {
         SystemPortScan::with(program, Duration::from_secs(10))
     }
 
-    /// Scans with a stand-in `lsof` running `body`, then removes it.
-    fn scan_with(body: &str) -> Result<PortScanObservation, PortScanError> {
-        let program = script(body);
-        let result = scanner(program.clone()).scan();
-        fs::remove_file(program).unwrap();
-        result
+    /// What `lsof` left behind: an exit status, or the signal that ended it.
+    fn finished(
+        status: std::process::ExitStatus,
+        stdout: &[u8],
+        stderr: &str,
+    ) -> soyeht_process::Output {
+        soyeht_process::Output {
+            status,
+            stdout: stdout.to_vec(),
+            stderr: stderr.as_bytes().to_vec(),
+        }
+    }
+
+    fn exited(code: i32, stdout: &[u8], stderr: &str) -> soyeht_process::Output {
+        finished(ExitStatusExt::from_raw(code << 8), stdout, stderr)
+    }
+
+    fn killed(signal: i32) -> soyeht_process::Output {
+        finished(ExitStatusExt::from_raw(signal), b"", "")
+    }
+
+    /// Scans with `lsof` answering each run with `answer(arguments)`. No program is started,
+    /// so the result does not depend on how quickly the host starts one: the first run of a
+    /// file written a moment ago waits for the system to assess it, and on a busy macOS host
+    /// that wait grows by about half a second for every other new file waiting with it.
+    fn scan_answering(
+        mut answer: impl FnMut(&[&str]) -> soyeht_process::Output,
+    ) -> Result<PortScanObservation, PortScanError> {
+        observe_with(|arguments| listing(answer(arguments)))
+    }
+
+    /// A system program, which has been assessed already, that prints nothing.
+    fn system_program(name: &str) -> PathBuf {
+        ["/usr/bin", "/bin"]
+            .iter()
+            .map(|directory| Path::new(directory).join(name))
+            .find(|candidate| is_executable_file(candidate))
+            .unwrap()
     }
 
     fn directory_with(name: &str, mode: u32) -> PathBuf {
@@ -265,42 +302,61 @@ mod tests {
     #[test]
     fn no_listener_is_an_empty_observation() {
         // Real lsof: status 1, nothing on standard output or standard error.
-        let observation = scan_with("exit 1").unwrap();
+        let observation = scan_answering(|_| exited(1, b"", "")).unwrap();
         assert!(observation.listeners.is_empty());
         assert!(observation.directories.is_empty());
-        assert!(scan_with("exit 0").unwrap().listeners.is_empty());
+        assert!(
+            scan_answering(|_| exited(0, b"", ""))
+                .unwrap()
+                .listeners
+                .is_empty()
+        );
     }
 
     #[test]
     fn a_process_that_vanished_between_the_two_runs_keeps_the_listing() {
-        let observation = scan_with(
-            r#"if [ "$3" = "-p" ]; then
-  printf 'p17\0fcwd\0n/tmp/site\0'
-  exit 1
-fi
-printf 'p17\0cnode\0n127.0.0.1:5173\0'"#,
-        )
+        let observation = scan_answering(|arguments| {
+            if arguments[2] == "-p" {
+                exited(1, b"p17\0fcwd\0n/tmp/site\0", "")
+            } else {
+                exited(0, b"p17\0cnode\0n127.0.0.1:5173\0", "")
+            }
+        })
         .unwrap();
         assert!(!observation.directories.is_empty());
     }
 
     #[test]
     fn a_failed_lsof_is_an_error_not_an_empty_list() {
-        let refused = scan_with("echo 'lsof: illegal option' >&2; exit 1").unwrap_err();
+        let refused = scan_answering(|_| exited(1, b"", "lsof: illegal option")).unwrap_err();
         assert!(
             matches!(&refused, PortScanError::Failed { code: Some(1), detail } if detail.contains("illegal option")),
             "{refused}"
         );
-        let crashed = scan_with("exit 2").unwrap_err();
+        let crashed = scan_answering(|_| exited(2, b"", "")).unwrap_err();
         assert!(
             matches!(crashed, PortScanError::Failed { code: Some(2), .. }),
             "{crashed}"
         );
-        let signalled = scan_with("kill -9 $$").unwrap_err();
+        let signalled = scan_answering(|_| killed(9)).unwrap_err();
         assert!(
             matches!(signalled, PortScanError::Failed { code: None, .. }),
             "{signalled}"
         );
+    }
+
+    #[test]
+    fn a_program_that_runs_is_read_by_its_status() {
+        // The one test that starts a program on the success path. Its deadline is far longer
+        // than any start it waits for, since the deadline is not what it tests.
+        let slow_host = Duration::from_secs(120);
+        for name in ["false", "true"] {
+            let observation = SystemPortScan::with(system_program(name), slow_host)
+                .scan()
+                .unwrap();
+            assert!(observation.listeners.is_empty(), "{name}");
+            assert!(observation.directories.is_empty(), "{name}");
+        }
     }
 
     #[test]
@@ -356,27 +412,42 @@ printf 'p17\0cnode\0n127.0.0.1:5173\0'"#,
 
     #[test]
     fn a_failure_that_is_not_a_timeout_does_not_widen_the_deadline() {
-        let mut adapter = SystemPortScan::with(script("exit 2"), Duration::from_secs(10));
-        assert!(adapter.scan().is_err());
+        let mut adapter = scanner(PathBuf::new());
+        adapter.allowance = adapter.timeout * 2;
+        adapter.learn(&Err(PortScanError::Failed {
+            code: Some(2),
+            detail: String::new(),
+        }));
         assert_eq!(adapter.allowance, adapter.timeout);
-        fs::remove_file(adapter.program).unwrap();
     }
 
     #[test]
     fn system_adapter_uses_two_bounded_machine_readable_observations() {
-        let program = script(
-            r#"if [ "$3" = "-p" ]; then
-  printf 'p17\0fcwd\0n/tmp/site\0'
-else
-  printf 'p17\0cnode\0n127.0.0.1:5173\0'
-fi"#,
+        let mut runs: Vec<Vec<String>> = Vec::new();
+        let observation = scan_answering(|arguments| {
+            runs.push(
+                arguments
+                    .iter()
+                    .map(|argument| (*argument).to_owned())
+                    .collect(),
+            );
+            if arguments[2] == "-p" {
+                exited(0, b"p17\0fcwd\0n/tmp/site\0", "")
+            } else {
+                exited(0, b"p17\0cnode\0n127.0.0.1:5173\0", "")
+            }
+        })
+        .unwrap();
+        assert_eq!(runs.len(), 2);
+        assert!(runs[0].contains(&"-sTCP:LISTEN".to_owned()));
+        assert_eq!(&runs[1][2..4], ["-p", "17"]);
+        assert!(
+            runs.iter()
+                .all(|run| run.last().is_some_and(|last| last.starts_with("-F0")))
         );
-        let mut adapter = scanner(program.clone());
-        let observation = adapter.scan().unwrap();
         let scan =
             LocalServerScan::parse_lsof(&observation.listeners, &observation.directories, &[])
                 .unwrap();
         assert_eq!(scan.servers()[0].cwd, "/tmp/site");
-        fs::remove_file(program).unwrap();
     }
 }
