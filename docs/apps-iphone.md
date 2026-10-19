@@ -50,6 +50,24 @@ the detail moves to the nearest pane in the same workspace, then anywhere; at
 compact width it returns to the list instead. The app supports every iPad
 orientation, Split View and Stage Manager.
 
+## Panes and workspaces
+
+The “+” of the sidebar opens a new pane or a new workspace; each workspace header
+has a menu to open a pane in it, rename it or close it.
+
+- A new pane is a terminal, an agent (harness, model, effort, permission mode and an
+  optional first message) or a writing document, started in a folder on the Mac. The
+  sheet edits the same `NewPaneForm` as the Mac's and follows the same rules.
+- A new workspace is made for a folder. The Mac lists folders only inside workspaces it
+  already has, so the picker offers the folders the Mac works in, their sub-folders, and a
+  path field; the Mac refuses a path that is not an existing folder. A folder that already
+  has a workspace opens that one.
+- A pane closes from a swipe, the context menu of its row, or the button above the pane.
+  Terminals, agents and web panes ask first (“The process in this pane will be
+  terminated.”); a document asks only while it has unsaved changes. Closing a workspace
+  asks when it holds panes, since they close with it; its folder is not touched.
+  `PaneClosePolicy` holds these rules for both apps.
+
 ## Hardware keyboard
 
 A terminal takes the keyboard as soon as it is shown at regular width or while

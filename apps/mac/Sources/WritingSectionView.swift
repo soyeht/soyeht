@@ -255,32 +255,11 @@ private struct WritingDocumentCreateSheet: View {
 }
 
 extension WritingSection {
-  fileprivate var title: String {
-    switch self {
-    case .texts: "Texts"
-    case .presentations: "Presentations"
-    case .screenplays: "Screenplays"
-    }
-  }
-  fileprivate var singularTitle: String {
-    switch self {
-    case .texts: "text"
-    case .presentations: "presentation"
-    case .screenplays: "screenplay"
-    }
-  }
   fileprivate var subtitle: String {
     switch self {
     case .texts: "Essays, notes, and long-form Markdown"
     case .presentations: "Slide documents with speaker notes"
     case .screenplays: "Fountain scripts and scene plans"
-    }
-  }
-  fileprivate var icon: String {
-    switch self {
-    case .texts: "text.page"
-    case .presentations: "rectangle.on.rectangle"
-    case .screenplays: "movieclapper"
     }
   }
   fileprivate var folderLabel: String {

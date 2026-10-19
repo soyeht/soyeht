@@ -814,14 +814,7 @@ public final class EngineClient {
     return paneId
   }
   func workspaceId(for directory: URL, path: String) async throws -> String {
-    if let existing = workspaces.first(where: { $0.path == path })?.workspaceId {
-      return existing
-    }
-    let result = try await mutation(
-      .workspaceCreate,
-      WorkspaceCreateParams(
-        name: directory.lastPathComponent, path: path, idempotencyKey: UUID().uuidString))
-    return try result.decoded(WorkspaceCreateResult.self).workspace.workspaceId
+    try await createWorkspace(path: path, name: directory.lastPathComponent).workspaceId
   }
   public func setWorkspacePaneLayout(
     workspaceId: String, state: PaneLayoutState

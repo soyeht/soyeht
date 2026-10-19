@@ -149,6 +149,26 @@ public enum HarnessPickerModel {
     return .not_checked
   }
 
+  /// Whether a picker shows the "More harnesses" entries: on request, while searching, when
+  /// nothing installed is left to show, or when the chosen harness lives there.
+  public static func moreExpanded(
+    requested: Bool, query: String, layout: HarnessPickerLayout, selectedId: String
+  ) -> Bool {
+    requested || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || layout.sections.isEmpty || layout.more.contains { $0.id == selectedId }
+  }
+
+  /// The symbol a picker row shows for a setup state.
+  public static func statusSymbol(_ state: HarnessSetupState) -> String {
+    switch state {
+    case .ready: "checkmark.circle.fill"
+    case .not_checked: "circle.dotted"
+    case .sign_in: "person.crop.circle.badge.exclamationmark"
+    case .check_setup: "wrench.and.screwdriver"
+    case .not_installed: "minus.circle"
+    }
+  }
+
   public static func pickerGroup(for harness: HarnessInfo) -> HarnessPickerGroup {
     switch setupState(for: harness) {
     case .ready: return .ready

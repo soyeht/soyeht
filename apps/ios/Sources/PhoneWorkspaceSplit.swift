@@ -16,6 +16,7 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var selection: String?
   @State private var columns = NavigationSplitViewVisibility.all
+  @State private var action: PhoneWorkspaceAction?
   @FocusState private var sidebarFocused: Bool
 
   private var sections: [PaneSidebarSection] {
@@ -31,10 +32,16 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
         if client.connected { sidebar(sections) } else { status() }
       }
       .phoneHomeColumn()
-      .toolbar { ToolbarItem(placement: .topBarTrailing) { options() } }
+      .toolbar {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+          if client.connected { PhoneAddMenu(action: $action) }
+          options()
+        }
+      }
     } detail: {
       if let selection {
         PhonePaneDetail(client: client, paneId: selection).id(selection)
+          .toolbar { closePaneButton(selection) }
       } else {
         ContentUnavailableView(
           "Choose a pane", systemImage: "sidebar.left",
@@ -50,23 +57,64 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
     .onChange(of: requestedPaneId) { showRequestedPane() }
     .onChange(of: fillsDetail) { reconcile(order, previous: order) }
     .focusedSceneValue(\.phonePaneNavigation, navigation(order, sections: sections))
+    .phoneWorkspaceActions(client: client, action: $action, show: $requestedPaneId)
+  }
+
+  /// Closes the pane on screen. A document closes from its own menu.
+  @ToolbarContentBuilder private func closePaneButton(_ paneId: String) -> some ToolbarContent {
+    if client.panes.first(where: { $0.paneId == paneId })?.mode != .writing {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button(role: .destructive) {
+          action = .closePane(paneId)
+        } label: {
+          Label("Close Pane", systemImage: "xmark.circle")
+        }
+        .accessibilityIdentifier("close-pane")
+      }
+    }
   }
 
   private func sidebar(_ sections: [PaneSidebarSection]) -> some View {
     List(selection: $selection) {
-      if client.panes.isEmpty {
-        ContentUnavailableView(
-          "No open panes", systemImage: "rectangle.split.2x1",
-          description: Text("Open a pane on the Mac to continue here.")
-        )
+      if client.workspaces.isEmpty {
+        ContentUnavailableView {
+          Label("No workspaces", systemImage: "rectangle.split.2x1")
+        } description: {
+          Text("Open a folder on the Mac to start here.")
+        } actions: {
+          Button("New Workspace") { action = .newWorkspace }
+            .buttonStyle(.borderedProminent)
+        }
         .listRowBackground(Color.clear)
       }
       ForEach(sections) { section in
-        Section(section.workspace.name) {
+        Section {
           ForEach(section.panes, id: \.paneId) { pane in
             NavigationLink(value: pane.paneId) { PhonePaneRow(pane: pane) }
               .listRowBackground(rowBackground(pane.paneId))
+              .swipeActions(edge: .trailing) {
+                Button(role: .destructive) {
+                  action = .closePane(pane.paneId)
+                } label: {
+                  Label("Close", systemImage: "xmark")
+                }
+              }
+              .contextMenu {
+                Button(role: .destructive) {
+                  action = .closePane(pane.paneId)
+                } label: {
+                  Label("Close Pane", systemImage: "xmark.circle")
+                }
+              }
           }
+          if section.panes.isEmpty {
+            Button("New pane in \(section.workspace.name)") {
+              action = .newPane(workspaceId: section.workspace.workspaceId)
+            }
+            .listRowBackground(PhonePalette.face)
+          }
+        } header: {
+          PhoneWorkspaceHeader(workspace: section.workspace, action: $action)
         }
       }
     }

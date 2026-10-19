@@ -9,19 +9,22 @@ struct NewPaneSheet: View {
   @Binding var mode: PaneMode
   let onCancel: () -> Void
   let onCreated: (String, PaneLayoutKind) -> Void
-  @State private var directory: URL?
-  @State private var harness = ""
-  @State private var model = ""
-  @State private var effort = ""
-  @State private var permissionMode: String?
+  @State private var form = NewPaneForm()
   @State private var showsAgentPicker = false
   @State private var submitting = false
-  @State private var prompt = ""
   @FocusState private var promptFocused: Bool
 
-  private var selectedHarness: HarnessInfo? { client.harness(id: harness) }
-  private var catalogue: AgentCatalogue? { client.agentCatalogues[harness] }
-  private var effortOption: ConfigOption? { client.effortOption(harness: harness) }
+  /// The form with the kind the mode switch shows.
+  private var current: NewPaneForm {
+    var value = form
+    value.kind = NewPaneKind(mode: mode)
+    return value
+  }
+  private var canCreate: Bool {
+    current.canCreate(harnesses: client.harnesses, submitting: submitting)
+  }
+  private var catalogue: AgentCatalogue? { client.agentCatalogues[form.harness] }
+  private var effortOption: ConfigOption? { client.effortOption(harness: form.harness) }
 
   var body: some View {
     VStack(spacing: MacTheme.Space.x8) {
@@ -50,7 +53,7 @@ struct NewPaneSheet: View {
           VStack(spacing: 0) {
             if mode == .agent {
               ZStack(alignment: .topLeading) {
-                TextField("", text: $prompt, axis: .vertical)
+                TextField("", text: $form.prompt, axis: .vertical)
                   .textFieldStyle(.plain)
                   .lineLimit(1...4)
                   .font(MacTheme.ui(MacTheme.TypeScale.body))
@@ -59,7 +62,7 @@ struct NewPaneSheet: View {
                   .padding(.trailing, PaneLayoutContentMetrics.newPanePromptTrailingInset)
                   .accessibilityLabel("Ask anything")
                   .accessibilityHint("Type the first message for the new agent")
-                if prompt.isEmpty {
+                if form.prompt.isEmpty {
                   Text("Ask anything. Choose a directory and an agent below.")
                     .font(MacTheme.ui(MacTheme.TypeScale.body))
                     .foregroundStyle(MacTheme.muted)
@@ -97,11 +100,11 @@ struct NewPaneSheet: View {
                 } label: {
                   HStack(spacing: MacTheme.Space.x6) {
                     Image(systemName: "cpu")
-                    Text(selectedAgentLabel)
+                    Text(current.agentLabel(harnesses: client.harnesses, catalogue: catalogue))
                       .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
-                    if !effort.isEmpty {
+                    if !form.effort.isEmpty {
                       Text("·").foregroundStyle(MacTheme.muted)
-                      Text(effort.capitalized)
+                      Text(form.effort.capitalized)
                         .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
                         .foregroundStyle(MacTheme.secondary)
                     }
@@ -117,7 +120,7 @@ struct NewPaneSheet: View {
                     .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .bold))
                 }
                 .buttonStyle(.plain)
-                .disabled(directory == nil || submitting)
+                .disabled(!canCreate)
                 .accessibilityHint("Open a terminal in the selected directory")
               }
               Spacer()
@@ -125,10 +128,7 @@ struct NewPaneSheet: View {
                 PaneSendButtonLabel.mac
               }
               .buttonStyle(.plain)
-              .disabled(
-                directory == nil || (mode == .agent && selectedHarness?.available != true)
-                  || prompt.utf8.count > ProtocolLimits.promptBytes || submitting
-              )
+              .disabled(!canCreate)
               .keyboardShortcut(.return, modifiers: [.command, .shift])
             }
           }
@@ -165,11 +165,8 @@ struct NewPaneSheet: View {
     .onChange(of: HarnessPickerModel.availabilityKeys(client.harnesses)) { _, _ in
       selectFirstHarness()
     }
-    .onChange(of: harness) { _, value in
-      model = ""
-      effort = ""
-      permissionMode = nil
-      if selectedHarness?.available == true { client.refreshCatalogue(harness: value) }
+    .onChange(of: form.harness) { _, value in
+      if client.harness(id: value)?.available == true { client.refreshCatalogue(harness: value) }
     }
   }
 
@@ -207,7 +204,8 @@ struct NewPaneSheet: View {
     HStack(spacing: MacTheme.Space.x8) {
       Button(action: chooseDirectory) {
         Label(
-          directory?.lastPathComponent ?? "Project", systemImage: "folder"
+          form.directory.isEmpty ? "Project" : WorkspaceFolderPolicy.name(of: form.directory),
+          systemImage: "folder"
         )
         .lineLimit(1)
       }
@@ -219,12 +217,12 @@ struct NewPaneSheet: View {
       Spacer()
       if mode == .agent {
         Menu {
-          PermissionModeChoices(modes: permissionModes, selection: $permissionMode)
+          PermissionModeChoices(modes: permissionModes, selection: $form.permissionMode)
         } label: {
           Label(
             PermissionModeChoices.title(
-              modes: permissionModes, selection: permissionMode,
-              preferred: client.defaultPermissionMode(harness: harness)),
+              modes: permissionModes, selection: form.permissionMode,
+              preferred: client.defaultPermissionMode(harness: form.harness)),
             systemImage: "checkmark.shield")
         }.menuStyle(.borderlessButton).fixedSize()
       }
@@ -236,13 +234,10 @@ struct NewPaneSheet: View {
 
   private var agentPicker: some View {
     AgentHarnessPicker(
-      client: client, harness: $harness, model: $model, effort: $effort,
+      client: client,
+      harness: Binding(get: { form.harness }, set: { form.chooseHarness($0) }),
+      model: $form.model, effort: $form.effort,
       catalogue: catalogue, effortOption: effortOption, excludingHarness: nil)
-  }
-
-  private var selectedAgentLabel: String {
-    let modelName = catalogue?.models.first { $0.id == model }?.name
-    return modelName ?? selectedHarness?.name ?? "Choose agent"
   }
 
   private var permissionModes: AgentPermissionModes? {
@@ -250,11 +245,7 @@ struct NewPaneSheet: View {
   }
 
   private func selectFirstHarness() {
-    guard selectedHarness?.available != true,
-      let first = HarnessPickerModel.defaultHarness(
-        in: client.harnesses, preferredId: client.preferredHarnessId)
-    else { return }
-    harness = first.id
+    form.keepOrChooseHarness(in: client.harnesses, preferredId: client.preferredHarnessId)
   }
 
   private func chooseDirectory() {
@@ -264,37 +255,27 @@ struct NewPaneSheet: View {
     panel.allowsMultipleSelection = false
     panel.prompt = "Choose"
     panel.begin { response in
-      if response == .OK { directory = panel.url }
+      if response == .OK, let url = panel.url { form.directory = url.standardizedFileURL.path }
     }
   }
 
   private func selectWorkspaceDirectory() {
-    guard directory == nil,
+    guard form.directory.isEmpty,
       let workspace = client.workspaces.first(where: { $0.workspaceId == workspaceId })
     else { return }
-    directory = URL(fileURLWithPath: workspace.path, isDirectory: true)
+    form.directory = workspace.path
   }
 
   private func create() {
-    guard let directory, !submitting else { return }
-    let firstPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard firstPrompt.utf8.count <= ProtocolLimits.promptBytes else { return }
+    guard canCreate else { return }
+    let request = current
     submitting = true
     Task { @MainActor in
       do {
-        let paneId: String
-        if mode == .terminal {
-          paneId = try await client.createTerminalPane(directory: directory)
-        } else {
-          paneId = try await client.createAgentPaneNow(
-            directory: directory, harness: harness, model: model.isEmpty ? nil : model,
-            effort: effort.isEmpty ? nil : effort, permissionMode: permissionMode)
-        }
+        let paneId = try await client.createPane(request)
         onCreated(paneId, PaneLayoutKind(mode: mode))
-        if mode == .agent {
-          if !firstPrompt.isEmpty {
-            try await client.sendPromptNow(paneId, text: firstPrompt)
-          }
+        if request.kind == .agent, !request.firstPrompt.isEmpty {
+          try await client.sendPromptNow(paneId, text: request.firstPrompt)
         }
       } catch {
         submitting = false

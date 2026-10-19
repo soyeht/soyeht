@@ -33,16 +33,16 @@ struct WorkspaceWindow: View {
     )
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
     .alert(
-      "Close pane?",
+      CloseConfirmation.runningPane.title,
       isPresented: Binding(get: { paneToClose != nil }, set: { if !$0 { paneToClose = nil } })
     ) {
       Button("Cancel", role: .cancel) { paneToClose = nil }
-      Button("Close", role: .destructive) {
+      Button(CloseConfirmation.runningPane.confirmTitle, role: .destructive) {
         if let id = paneToClose { client.closePane(id) }
         paneToClose = nil
       }
     } message: {
-      Text("The process in this pane will be terminated.")
+      Text(CloseConfirmation.runningPane.message)
     }
     .alert(
       "Could not complete",
@@ -284,13 +284,10 @@ struct WorkspaceWindow: View {
       }
     }
     Task { @MainActor in
-      do {
-        try await client.closeWorkspace(workspaceId)
-      } catch {
-        if wasSelected, client.workspaces.contains(where: { $0.workspaceId == workspaceId }) {
-          selectWorkspace(workspaceId)
-        }
-        client.problem = "Couldn't close the workspace. It is still available."
+      let closed = await client.closeWorkspaceReportingFailure(workspaceId)
+      if !closed, wasSelected, client.workspaces.contains(where: { $0.workspaceId == workspaceId })
+      {
+        selectWorkspace(workspaceId)
       }
     }
   }

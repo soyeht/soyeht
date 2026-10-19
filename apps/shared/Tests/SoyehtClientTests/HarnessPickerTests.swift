@@ -179,3 +179,27 @@ private func harness(
     HarnessPickerModel.availabilityKeys([signIn]) != HarnessPickerModel.availabilityKeys([ready]))
   #expect(HarnessPickerModel.availabilityKeys([signIn]).count == 1)
 }
+
+@Test func moreHarnessesOpenOnRequestWhileSearchingOrWhenTheChoiceLivesThere() {
+  let ready = harness(id: "ready", name: "Ready", state: .ready, installed: true)
+  let missing = harness(id: "missing", name: "Missing", state: .not_installed)
+  let layout = HarnessPickerModel.layout([ready, missing])
+  func expanded(requested: Bool = false, query: String = "", selected: String = "") -> Bool {
+    HarnessPickerModel.moreExpanded(
+      requested: requested, query: query, layout: layout, selectedId: selected)
+  }
+
+  #expect(!expanded())
+  #expect(expanded(requested: true))
+  #expect(expanded(query: " x "))
+  #expect(!expanded(query: "   "))
+  #expect(expanded(selected: "missing"))
+  #expect(
+    HarnessPickerModel.moreExpanded(
+      requested: false, query: "", layout: HarnessPickerModel.layout([missing]), selectedId: ""))
+}
+
+@Test func everySetupStateHasItsOwnSymbol() {
+  let symbols = HarnessSetupState.allCases.map(HarnessPickerModel.statusSymbol)
+  #expect(Set(symbols).count == HarnessSetupState.allCases.count)
+}
