@@ -1,0 +1,10 @@
+{
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::setTerminalTitle": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it.",
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::hostCurrentDirectoryUpdate": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it.",
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::requestOpenLink": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it.",
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::bell": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it.",
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::clipboardCopy": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it.",
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::clipboardRead": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it.",
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::iTermContent": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it.",
+  "apps/shared/Sources/SoyehtClient/TerminalHost.swift::rangeChanged": "Requirement of SwiftTerm's TerminalViewDelegate, which TerminalView calls on its delegate; no Soyeht code names it."
+}

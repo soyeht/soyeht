@@ -19,20 +19,22 @@ list cannot go stale.
 
 from __future__ import annotations
 
-import argparse
-import json
 import re
 from collections import Counter
 from pathlib import Path
 
+from dead_declarations import problems_of, run
 from check_swallowed_errors import (
     blank_literals_and_comments,
     production_files,
     without_test_items,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = Path(__file__).resolve().with_name("dead_pub_allowlist.json")
+UNLISTED = (
+    "{path}:{line}: pub fn {name} is never called by production code; delete it "
+    "(and the tests that only use it), or allowlist it with a reason"
+)
 DEFINITION_ROOTS = ("engine", "apps/desktop")
 REFERENCE_ROOTS = DEFINITION_ROOTS
 PUB_FN = re.compile(r"^[ \t]*pub(?:[ \t]+(?:const|async|unsafe))*[ \t]+fn[ \t]+(\w+)", re.M)
@@ -84,38 +86,8 @@ def candidates(root: Path) -> list[tuple[str, int, str]]:
     return found
 
 
-def problems(root: Path, allowlist: dict[str, str]) -> list[str]:
-    found = candidates(root)
-    keys = {f"{path}::{name}" for path, _, name in found}
-    messages = [
-        f"{path}:{line}: pub fn {name} is never called by production code; delete it "
-        "(and the tests that only use it), or allowlist it with a reason"
-        for path, line, name in found
-        if f"{path}::{name}" not in allowlist
-    ]
-    messages += [
-        f"{key}: allowlist entry matches no dead pub fn; remove it"
-        for key in sorted(set(allowlist) - keys)
-    ]
-    messages += [
-        f"{key}: allowlist entry needs a reason"
-        for key, reason in sorted(allowlist.items())
-        if not reason.strip()
-    ]
-    return messages
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
-    parser.add_argument("--allowlist", type=Path, default=ALLOWLIST, help=argparse.SUPPRESS)
-    arguments = parser.parse_args()
-    allowlist = json.loads(arguments.allowlist.read_text(encoding="utf-8"))
-    messages = problems(arguments.root.resolve(), allowlist)
-    for message in messages:
-        print(message)
-    return 1 if messages else 0
+problems = problems_of(candidates, UNLISTED, "dead pub fn")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run(__doc__, ALLOWLIST, problems))

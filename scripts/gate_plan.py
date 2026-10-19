@@ -51,7 +51,11 @@ ALL_AREAS = ("always", *CODE_AREAS, *FULL_ONLY_AREAS)
 # Data files of the ratchets: the always-on checks read them, no code depends on them.
 GATE_DATA_PATTERNS = ("scripts/*baseline*.json", "scripts/*allowlist*.json")
 # Ratchet data that records a reason or an exception, so a change to it needs a reviewer.
-RATCHET_EXCEPTIONS = ("scripts/quality_baseline_justifications.json", "scripts/dead_pub_allowlist.json")
+RATCHET_EXCEPTIONS = (
+    "scripts/quality_baseline_justifications.json",
+    "scripts/dead_pub_allowlist.json",
+    "scripts/dead_public_swift_allowlist.json",
+)
 CONTRACT_SOURCES = {"contracts/protocol.json", "contracts/profiles.json", "contracts/design-tokens.json"}
 WORKSPACE_FILES = {
     "engine/Cargo.toml", "engine/Cargo.lock", "apps/desktop/Cargo.toml",

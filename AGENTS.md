@@ -138,6 +138,9 @@ ADR when you change a boundary.
   that no production code references (`pub` hides it from the compiler's unused-code lint). Delete
   it and the tests that only exercise it. An entry of `scripts/dead_pub_allowlist.json`
   needs a reason, and fails once it is no longer needed.
+  `scripts/check_dead_public_swift.py` does the same for a `public` declaration of `apps/shared`
+  that no Swift code in `apps`, the tests or the generated `contracts/swift` refers to, with
+  `scripts/dead_public_swift_allowlist.json` for the names a framework calls.
 - When a number improves, lower the baseline in the same PR:
   `uv run python scripts/check_quality.py --print-baseline > scripts/quality_baseline.json`.
   The check fails until you do.

@@ -141,7 +141,8 @@ class DeadPubTests(unittest.TestCase):
         self.assertTrue(messages[0].startswith("engine/crate/src/lib.rs:3: pub fn dead "))
 
     def test_the_repository_has_no_dead_pub_fn(self):
-        from check_dead_pub import ALLOWLIST, ROOT
+        from check_dead_pub import ALLOWLIST
+        from dead_declarations import ROOT
         import json
 
         allowlist = json.loads(ALLOWLIST.read_text(encoding="utf-8"))

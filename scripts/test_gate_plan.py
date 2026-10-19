@@ -43,7 +43,8 @@ class AreaTests(unittest.TestCase):
 
     def test_ratchet_data_is_not_gate_tooling(self):
         for path in ("scripts/quality_baseline.json", "scripts/quality_baseline_justifications.json",
-                     "scripts/dead_pub_allowlist.json", "scripts/other_allowlist.json"):
+                     "scripts/dead_pub_allowlist.json", "scripts/dead_public_swift_allowlist.json",
+                     "scripts/other_allowlist.json"):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).areas, ("always",))
 
@@ -200,6 +201,7 @@ class ReviewTests(unittest.TestCase):
             "Cargo.lock",
             "scripts/quality_baseline_justifications.json",
             "scripts/dead_pub_allowlist.json",
+            "scripts/dead_public_swift_allowlist.json",
             "apps/mac/Sources/EditorView.swift",
             "apps/desktop/crates/soyeht-desktop/src/editor_view.rs",
             "apps/desktop/crates/soyeht-client/src/editor/state.rs",
