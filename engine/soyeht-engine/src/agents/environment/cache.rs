@@ -21,6 +21,9 @@ use std::{
 };
 
 const FILE: &str = "launch-path";
+/// Only where a login shell exists is its answer worth remembering. Elsewhere the engine's own
+/// `PATH` is the answer and it is free to read, so nothing is written or read back.
+const REMEMBERS: bool = cfg!(unix);
 /// A `PATH` is a few kilobytes; the shell probe itself refuses more than this.
 const MAX_BYTES: u64 = 64 * 1024;
 
@@ -232,7 +235,8 @@ impl Cache {
         if let Some(line) = line {
             line.emit();
         }
-        if path.issue.is_none()
+        if REMEMBERS
+            && path.issue.is_none()
             && remembered.as_deref() != Some(path.value.as_str())
             && let Some(file) = file
             && let Err(error) = remember(&file, &path.value)
@@ -244,8 +248,7 @@ impl Cache {
 }
 
 fn remembered(file: &Path) -> Option<String> {
-    if !cfg!(unix) {
-        // Elsewhere the engine's own `PATH` is the answer, and it is free to read.
+    if !REMEMBERS {
         return None;
     }
     // A missing, unreadable or malformed file is no memory: the shell is asked.
@@ -300,7 +303,11 @@ mod tests {
         let file = directory.join(FILE);
         assert_eq!(remembered(&file), None);
         remember(&file, "/opt/bin:/usr/bin").unwrap();
-        assert_eq!(remembered(&file).as_deref(), Some("/opt/bin:/usr/bin"));
+        // Written either way, but read back only where a login shell makes it worth keeping.
+        assert_eq!(
+            remembered(&file).as_deref(),
+            REMEMBERS.then_some("/opt/bin:/usr/bin")
+        );
         fs::write(&file, "").unwrap();
         assert_eq!(remembered(&file), None);
         fs::write(&file, b"/usr/bin\0/bin").unwrap();
@@ -323,6 +330,17 @@ mod tests {
         fs::write(&target, "/tmp/evil").unwrap();
         std::os::unix::fs::symlink(&target, &file).unwrap();
         assert_eq!(remembered(&file), None);
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn an_answer_is_written_only_where_it_is_read_back() {
+        let directory = directory();
+        let file = directory.join(FILE);
+        let cache = Cache::new();
+        cache.state().file = Some(file.clone());
+        cache.answer(good("/fresh:/usr/bin"), None);
+        assert_eq!(file.exists(), REMEMBERS);
         fs::remove_dir_all(&directory).unwrap();
     }
 
@@ -376,20 +394,22 @@ mod tests {
             1,
             "one question for all callers"
         );
-        // The answer is stored after the waiters are woken.
-        while remembered(&directory.join(FILE)).is_none() {
-            thread::sleep(Duration::from_millis(5));
+        if REMEMBERS {
+            // The answer is stored after the waiters are woken.
+            while remembered(&directory.join(FILE)).is_none() {
+                thread::sleep(Duration::from_millis(5));
+            }
+            assert_eq!(
+                remembered(&directory.join(FILE)).as_deref(),
+                Some("/fresh:/usr/bin")
+            );
+            // The restart: the shell is slow again, yet the answer is there before it replies.
+            GATE.store(false, Ordering::SeqCst);
+            let second: &'static Cache = Box::leak(Box::new(Cache::new()));
+            second.warm(&directory, slow_shell);
+            assert_eq!(second.resolution(slow_shell), good("/fresh:/usr/bin"));
+            GATE.store(true, Ordering::SeqCst);
         }
-        assert_eq!(
-            remembered(&directory.join(FILE)).as_deref(),
-            Some("/fresh:/usr/bin")
-        );
-        // The restart: the shell is slow again, yet the answer is there before it replies.
-        GATE.store(false, Ordering::SeqCst);
-        let second: &'static Cache = Box::leak(Box::new(Cache::new()));
-        second.warm(&directory, slow_shell);
-        assert_eq!(second.resolution(slow_shell), good("/fresh:/usr/bin"));
-        GATE.store(true, Ordering::SeqCst);
         fs::remove_dir_all(&directory).unwrap();
     }
 

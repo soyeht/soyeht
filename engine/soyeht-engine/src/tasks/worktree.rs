@@ -412,13 +412,19 @@ pub(crate) fn first_prompt(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // The one test that needs a directory writes a shell script as the fake program, so the
+    // directory helper exists on Unix only, as the test does.
+    #[cfg(unix)]
     use std::{
         fs,
         path::{Path, PathBuf},
     };
 
+    #[cfg(unix)]
     struct TestDirectory(PathBuf);
 
+    #[cfg(unix)]
     impl TestDirectory {
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!("sn-worktree-{}", uuid::Uuid::new_v4()));
@@ -431,6 +437,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl Drop for TestDirectory {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);

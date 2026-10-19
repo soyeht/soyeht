@@ -51,7 +51,8 @@ does nothing silently.
   task worktree (the processes inside it cannot be listed), moving to the trash,
   reading the macOS keychain and browser cookies, the signed-UI check.
   Writing over a read-only file is refused.
-- The default shell is `%COMSPEC%`. The engine does not ask a login shell for `PATH`.
+- The default shell is `%COMSPEC%`. The engine does not ask a login shell for `PATH`, so it
+  keeps no remembered launch `PATH` (`launch-path`) either.
 
 ## Starting the engine
 

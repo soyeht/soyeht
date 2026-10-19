@@ -430,12 +430,15 @@ mod tests {
             })
         });
         let mut producer = writer.try_clone().unwrap();
-        producer.write_all(&records(50)).unwrap();
+        // Few enough to fit the smallest pipe buffer (4 KiB on Windows, where a write into a full
+        // pipe waits for the reader), so writing them does not wait for the late copy thread:
+        // the wait under test is the flush's.
+        producer.write_all(&records(16)).unwrap();
         let started = std::time::Instant::now();
         assert!(flush(&writer, &flushed, Duration::from_secs(60)));
         assert!(started.elapsed() >= late / 2, "{:?}", started.elapsed());
         let live = fs::read_to_string(&path).unwrap();
-        assert!(live.contains("\"index\":49,"), "the last record is kept");
+        assert!(live.contains("\"index\":15,"), "the last record is kept");
         assert!(!live.contains('\0'));
         // Closing every holder ends the copy thread; the one that was held open is released.
         drop((writer, producer, other_holder));
