@@ -21,7 +21,7 @@ use soyeht_platform::log::{self, Failure as _};
 use std::{
     collections::{BTreeMap, BTreeSet},
     panic::{AssertUnwindSafe, catch_unwind},
-    sync::{Arc, Mutex, PoisonError, mpsc},
+    sync::{Arc, Condvar, Mutex, PoisonError, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -201,6 +201,40 @@ pub struct Background {
     finished: Arc<Mutex<Vec<(String, ApplyJob)>>>,
     retry_after: BTreeMap<String, Instant>,
     failures: BTreeMap<String, Streak>,
+    /// Keys whose next job runs on a thread of its own (see `run_alone`).
+    alone: BTreeSet<String>,
+    /// The signal of each job running alone, so a request can wait for it off the lock.
+    done: BTreeMap<String, Arc<Done>>,
+}
+
+/// Set when a job on a thread of its own has ended and its result waits to be applied.
+pub(crate) struct Done {
+    ended: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl Done {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            ended: Mutex::new(false),
+            changed: Condvar::new(),
+        })
+    }
+
+    fn end(&self) {
+        *self.ended.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.changed.notify_all();
+    }
+
+    /// Waits up to `timeout` for the job to end; whether it did.
+    pub(crate) fn wait(&self, timeout: Duration) -> bool {
+        let ended = self.ended.lock().unwrap_or_else(PoisonError::into_inner);
+        let (ended, _) = self
+            .changed
+            .wait_timeout_while(ended, timeout, |ended| !*ended)
+            .unwrap_or_else(PoisonError::into_inner);
+        *ended
+    }
 }
 
 impl Background {
@@ -232,7 +266,23 @@ impl Background {
         !self.active.is_empty() || self.finished.lock().is_ok_and(|done| !done.is_empty())
     }
 
-    fn submit(&mut self, task: Task) -> Result<()> {
+    /// Makes the next job for `key` run on a thread of its own, for work that waits on a disk
+    /// that may hang: it never holds one of the shared workers, so a hung disk cannot starve the
+    /// terminal's flushes. Its key stays running until the work ends.
+    pub(crate) fn run_alone(&mut self, key: &str) {
+        self.alone.insert(key.to_owned());
+    }
+
+    fn submit(&mut self, task: Task, own_thread: bool) -> Result<()> {
+        if own_thread {
+            // A job that may block for as long as a disk does must not take one of the shared
+            // workers, which the terminal path also needs.
+            return thread::Builder::new()
+                .name("soyeht-background-own".into())
+                .spawn(task)
+                .map(drop)
+                .map_err(errors::io);
+        }
         let sender = match &mut self.pool {
             Some(sender) => sender,
             None => self.pool.insert(start_pool()?),
@@ -242,8 +292,20 @@ impl Background {
             .map_err(|_| errors::internal("Background workers stopped"))
     }
 
+    /// The jobs running alone, by key, with their signals.
+    pub(crate) fn alone_jobs(&self) -> impl Iterator<Item = (&String, &Arc<Done>)> {
+        self.done.iter()
+    }
+
+    /// The signal of the job running alone for `key`, if one is.
+    #[cfg(test)]
+    pub(crate) fn done_of(&self, key: &str) -> Option<Arc<Done>> {
+        self.done.get(key).cloned()
+    }
+
     fn settle(&mut self, key: &str, result: &Result<()>, now: Instant) {
         self.active.remove(key);
+        self.done.remove(key);
         if result.is_ok() {
             self.retry_after.remove(key);
         } else {
@@ -328,6 +390,7 @@ impl Core {
         W: FnOnce() -> Result<T> + Send + 'static,
         A: FnOnce(&mut Core, Result<T>) -> Result<()> + Send + 'static,
     {
+        let own_thread = self.background.alone.remove(&key);
         let now = Instant::now();
         if !self.background.accepts(&key) {
             return Ok(());
@@ -342,16 +405,26 @@ impl Core {
         }
         let finished = Arc::clone(&self.background.finished);
         let job_key = key.clone();
-        let submitted = self.background.submit(Box::new(move || {
-            let result = run_caught(work);
-            let job: ApplyJob = Box::new(move |core| apply(core, result));
-            // The list only gains and loses whole jobs, so a poisoned lock still holds a valid
-            // one; dropping the job here would leave its key active for good.
-            finished
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push((job_key, job));
-        }));
+        let done = own_thread.then(Done::new);
+        if let Some(done) = &done {
+            self.background.done.insert(key.clone(), Arc::clone(done));
+        }
+        let submitted = self.background.submit(
+            Box::new(move || {
+                let result = run_caught(work);
+                let job: ApplyJob = Box::new(move |core| apply(core, result));
+                // The list only gains and loses whole jobs, so a poisoned lock still holds a
+                // valid one; dropping the job here would leave its key active for good.
+                finished
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push((job_key, job));
+                if let Some(done) = done {
+                    done.end();
+                }
+            }),
+            own_thread,
+        );
         if let Err(error) = &submitted {
             self.background
                 .settle(&key, &Err(errors::internal(error.to_string())), now);

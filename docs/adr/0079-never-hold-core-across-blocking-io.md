@@ -198,9 +198,10 @@ under the lock, and each is bounded:
   Taking that path off the lock entirely needs per-pane state or a Core actor.
   That is the long-term item H3 of the 2026-10-03 quality audit.
 - SQLite reads and writes, and the minute prune.
-- Single-file reads and writes of bounded size: editor open, autosave and
-  watch, one project folder listing, one skill folder listing after a
-  file event (ADR 0075), writing documents, settings and registry files.
+- Single-file reads and writes of bounded size: editor open, the save of a pending
+  draft before a delete (the autosave, the disk watch and the save of a closed tab run off the
+  lock, ADR 0097), one project folder listing, one skill folder listing after a file event
+  (ADR 0075), writing documents, settings and registry files.
 - `file.search` with a replacement still plans and writes under the lock, so
   the editor buffers, the disk and the replacement journal stay consistent.
   A plain search runs off the lock.

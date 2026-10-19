@@ -1,6 +1,7 @@
 //! A real engine core over a temporary project, driven through `dispatch`
 //! by one signed-in local connection, for editor tests.
 
+use super::{FileSystemPort, Service, SystemFiles};
 use crate::{core::Core, dispatch::Outcome, hooks::Hooks, outbox, ports::testing::FixedClock};
 use serde_json::{Value, json};
 use soyeht_protocol::frame::Frame;
@@ -38,6 +39,11 @@ pub(crate) struct EditorFixture {
 impl EditorFixture {
     /// A workspace at `<temp>/project` holding `files`.
     pub async fn new(files: &[(&str, &str)]) -> Self {
+        Self::over(files, Box::new(SystemFiles)).await
+    }
+
+    /// The same, with the editor reaching the disk through `port`.
+    pub async fn over(files: &[(&str, &str)], port: Box<dyn FileSystemPort>) -> Self {
         let root = std::env::temp_dir().join(format!("soyeht-editor-{}", Uuid::new_v4()));
         let project = root.join("project");
         fs::create_dir_all(&project).unwrap();
@@ -49,6 +55,9 @@ impl EditorFixture {
         let autosave = Arc::new(AutosaveHold::default());
         let mut core = Core::open_with(&root.join("engine"), autosave.clone()).unwrap();
         core.clock = Arc::new(FixedClock(1_000));
+        core.editor = Service::new(port);
+        // The disk jobs of the tick run and apply in the caller, for determinism.
+        core.background = crate::offload::Background::inline();
         let (sender, mut receiver) = outbox::channel();
         let connection = core.connect(true, false, sender).unwrap();
         let Frame::Json(_) = receiver.next().await.unwrap().unwrap().frame else {

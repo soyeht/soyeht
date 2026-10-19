@@ -10,7 +10,7 @@
 //! in the test program: the rule against blocking IO under the Core lock (ADR 0079) is for
 //! code a person's engine runs.
 
-use crate::{core::Core, errors::Result, model::RunningPane};
+use crate::{core::Core, editor::FileSystemPort, errors::Result, model::RunningPane};
 use soyeht_usage::host::Host;
 use std::sync::Arc;
 
@@ -38,6 +38,12 @@ pub trait Hooks: Send + Sync {
     /// Whether skill folders are read on the probe instead of by file events.
     fn poll_skills_only(&self) -> bool {
         false
+    }
+
+    /// A disk that replaces the machine's for the files the editor opens, saves and watches,
+    /// for example a slow one.
+    fn editor_disk(&self) -> Option<Box<dyn FileSystemPort>> {
+        None
     }
 
     /// A host that replaces the machine's files, commands and network for the usage sources.

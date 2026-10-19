@@ -91,30 +91,33 @@ impl FileSystemPort for SystemFiles {
     }
 
     fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool> {
-        if self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)? != expected {
-            return Ok(false);
-        }
-        let parent = path.parent().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "file has no parent directory")
-        })?;
-        let temporary = parent.join(save_temporary_name());
-        let permissions = fs::metadata(path)?.permissions();
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary)?;
-        let result = (|| {
-            file.write_all(text.as_bytes())?;
-            file.sync_all()?;
-            fs::set_permissions(&temporary, permissions)?;
-            fs::rename(&temporary, path)?;
-            soyeht_platform::fs::sync_directory(parent)?;
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(temporary); // Best effort: the write error is returned.
-        }
-        result.map(|()| true)
+        // One writer per file between the comparison and the rename (see `write_lock`).
+        super::write_lock::exclusive(path, || {
+            if self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)? != expected {
+                return Ok(false);
+            }
+            let parent = path.parent().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidInput, "file has no parent directory")
+            })?;
+            let temporary = parent.join(save_temporary_name());
+            let permissions = fs::metadata(path)?.permissions();
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)?;
+            let result = (|| {
+                file.write_all(text.as_bytes())?;
+                file.sync_all()?;
+                fs::set_permissions(&temporary, permissions)?;
+                fs::rename(&temporary, path)?;
+                soyeht_platform::fs::sync_directory(parent)?;
+                Ok(())
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(temporary); // Best effort: the write error is returned.
+            }
+            result.map(|()| true)
+        })
     }
 
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool> {
@@ -221,8 +224,10 @@ pub(super) struct OpenDocument {
 }
 
 pub struct Service {
-    files: Arc<dyn FileSystemPort>,
+    pub(super) files: Arc<dyn FileSystemPort>,
     pub(super) open: BTreeMap<String, OpenDocument>,
+    /// Log lines of applied background disk jobs, until the next tick returns them.
+    pub(super) records: Vec<soyeht_platform::log::Line>,
 }
 
 pub struct ResolvedPath {
@@ -249,6 +254,7 @@ impl Service {
         Self {
             files: Arc::from(files),
             open: BTreeMap::new(),
+            records: Vec::new(),
         }
     }
 
@@ -270,26 +276,7 @@ impl Service {
     }
 
     pub fn resolve(&self, workspace_root: &Path, requested: &str) -> Result<ResolvedPath> {
-        let requested_path = Path::new(requested);
-        if requested_path.is_absolute()
-            || requested_path.components().any(|part| {
-                matches!(
-                    part,
-                    Component::ParentDir | Component::RootDir | Component::Prefix(_)
-                )
-            })
-        {
-            return Err(errors::invalid("File path must stay within the workspace"));
-        }
-        let root = self
-            .files
-            .canonicalize(workspace_root)
-            .map_err(errors::io)?;
-        let target = self
-            .files
-            .canonicalize(&root.join(requested_path))
-            .map_err(errors::io)?;
-        contained_path(&root, target)
+        resolve_in(&*self.files, workspace_root, requested)
     }
 
     pub fn resolve_absolute(
@@ -332,21 +319,7 @@ impl Service {
     }
 
     pub fn read_disk(&self, path: &Path) -> Result<String> {
-        self.files
-            .read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)
-            .map_err(|error| {
-                match error
-                    .get_ref()
-                    .and_then(|inner| inner.downcast_ref::<TextRefusal>())
-                {
-                    Some(TextRefusal::NotText) => errors::file_not_text(error.to_string()),
-                    Some(TextRefusal::TooLarge) => errors::file_too_large(error.to_string()),
-                    None if error.kind() == io::ErrorKind::InvalidData => {
-                        errors::invalid(error.to_string())
-                    }
-                    None => errors::io(error),
-                }
-            })
+        read_disk_from(&*self.files, path)
     }
 
     pub fn read_binary(&self, path: &Path, limit: usize) -> Result<Vec<u8>> {
@@ -387,33 +360,13 @@ impl Service {
     pub fn creation_target_exists(&self, workspace_root: &Path, relative: &str) -> Result<bool> {
         self.files
             .creation_target_exists(workspace_root, Path::new(relative))
-            .map_err(|error| {
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::InvalidInput | io::ErrorKind::PermissionDenied
-                ) {
-                    errors::invalid(error.to_string())
-                } else {
-                    errors::io(error)
-                }
-            })
+            .map_err(creation_error)
     }
 
     pub fn create_empty_text(&self, workspace_root: &Path, relative: &str) -> Result<PathBuf> {
         self.files
             .create_empty_text(workspace_root, Path::new(relative))
-            .map_err(|error| {
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::AlreadyExists
-                        | io::ErrorKind::InvalidInput
-                        | io::ErrorKind::PermissionDenied
-                ) {
-                    errors::invalid(error.to_string())
-                } else {
-                    errors::io(error)
-                }
-            })
+            .map_err(creation_error)
     }
 
     pub fn create_binary_if_absent_or_matching(
@@ -424,18 +377,7 @@ impl Service {
     ) -> Result<PathBuf> {
         self.files
             .create_binary_if_absent_or_matching(workspace_root, Path::new(relative), bytes)
-            .map_err(|error| {
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::AlreadyExists
-                        | io::ErrorKind::InvalidInput
-                        | io::ErrorKind::PermissionDenied
-                ) {
-                    errors::invalid(error.to_string())
-                } else {
-                    errors::io(error)
-                }
-            })
+            .map_err(creation_error)
     }
 
     pub fn project_disk_text(&self, file: &ProjectFile) -> Result<Option<String>> {
@@ -703,6 +645,62 @@ impl Service {
     pub fn remove_pane(&mut self, pane_id: &str) {
         self.open
             .retain(|_, item| item.file.pane_id.as_deref() != Some(pane_id));
+    }
+}
+
+/// The file `requested` names inside `workspace_root`, canonical and contained in it.
+pub(super) fn resolve_in(
+    files: &dyn FileSystemPort,
+    workspace_root: &Path,
+    requested: &str,
+) -> Result<ResolvedPath> {
+    let requested_path = Path::new(requested);
+    if requested_path.is_absolute()
+        || requested_path.components().any(|part| {
+            matches!(
+                part,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(errors::invalid("File path must stay within the workspace"));
+    }
+    let root = files.canonicalize(workspace_root).map_err(errors::io)?;
+    let target = files
+        .canonicalize(&root.join(requested_path))
+        .map_err(errors::io)?;
+    contained_path(&root, target)
+}
+
+/// The text of the file at `path`, with the refusals of a file the editor cannot show.
+pub(super) fn read_disk_from(files: &dyn FileSystemPort, path: &Path) -> Result<String> {
+    files
+        .read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)
+        .map_err(|error| {
+            match error
+                .get_ref()
+                .and_then(|inner| inner.downcast_ref::<TextRefusal>())
+            {
+                Some(TextRefusal::NotText) => errors::file_not_text(error.to_string()),
+                Some(TextRefusal::TooLarge) => errors::file_too_large(error.to_string()),
+                None if error.kind() == io::ErrorKind::InvalidData => {
+                    errors::invalid(error.to_string())
+                }
+                None => errors::io(error),
+            }
+        })
+}
+
+fn creation_error(error: io::Error) -> errors::Error {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::AlreadyExists
+            | io::ErrorKind::InvalidInput
+            | io::ErrorKind::PermissionDenied
+    ) {
+        errors::invalid(error.to_string())
+    } else {
+        errors::io(error)
     }
 }
 

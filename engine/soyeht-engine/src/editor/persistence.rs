@@ -1,12 +1,10 @@
-use super::{Effect, Failure, service::PreparedEdit};
+use super::service::PreparedEdit;
 use crate::{
     core::Core,
     errors::{self, Result},
-    model,
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_platform::log::Line;
 use soyeht_protocol::{
     Actor, FileAuthor, FileHistoryParams, FileHistoryResult, FileRevertParams, FileRevertResult,
     FileWatchParams, FileWatchResult, FileWriteParams, FileWriteResult, Role, event, method,
@@ -137,110 +135,12 @@ impl Core {
         Ok(mutation.result)
     }
 
-    pub fn advance_editor(&mut self) -> Result<()> {
-        for line in self.advance_editor_effects() {
-            line.emit();
-        }
-        Ok(())
-    }
-
-    /// Runs the autosaves and disk checks that are due and returns the log
-    /// records they produced. A failing effect backs off (see `schedule`), so
-    /// a file that stays unreadable is retried less and less often and logged
-    /// only at attempts 1, 2, 4, 8 and so on.
-    pub(super) fn advance_editor_effects(&mut self) -> Vec<Line> {
-        let now = self.now_ms();
-        let mut records = Vec::new();
-        if !self.hooks.pause_editor_autosave() {
-            for file_id in self.editor.due_saves(now) {
-                let outcome = self.advance_editor_save(&file_id, now);
-                records.extend(self.settle_editor_effect(&file_id, Effect::Save, now, outcome));
-            }
-        }
-        for file_id in self.editor.due_watches(now) {
-            let outcome = self.advance_editor_watch(&file_id, now);
-            records.extend(self.settle_editor_effect(&file_id, Effect::Watch, now, outcome));
-        }
-        records
-    }
-
-    fn settle_editor_effect(
+    pub(super) fn apply_disk_change(
         &mut self,
-        file_id: &str,
-        effect: Effect,
+        file: EditorFile,
+        disk: String,
         now: i64,
-        outcome: Result<()>,
-    ) -> Option<Line> {
-        match outcome {
-            Ok(()) => self
-                .editor
-                .effect_succeeded(file_id, effect)
-                .map(|attempts| {
-                    Line::new("engine.editor_effect_recovered")
-                        .field("action", effect.name())
-                        .field("fileId", file_id)
-                        .field("attempts", attempts)
-                }),
-            Err(error) => {
-                // Only the class of the failure: an error's text can carry paths.
-                let kind = soyeht_platform::log::Failure::failure_kind(&error);
-                let failure = self.editor.effect_failed(file_id, effect, &kind, now)?;
-                failure
-                    .report
-                    .then(|| failure_line(effect, file_id, kind, failure))
-            }
-        }
-    }
-
-    /// Runs a pending autosave now instead of waiting for its debounce; used
-    /// before a tab closes or its file moves. A conflict is left untouched.
-    pub(super) fn save_editor_now(&mut self, file_id: &str) -> Result<()> {
-        let pending = self
-            .editor
-            .stored(file_id)
-            .is_ok_and(|file| file.draft_text.is_some() && file.conflict_text.is_none());
-        if !pending || self.hooks.pause_editor_autosave() {
-            return Ok(());
-        }
-        self.advance_editor_save(file_id, self.now_ms())
-    }
-
-    fn advance_editor_save(&mut self, file_id: &str, now: i64) -> Result<()> {
-        let file = self.editor.stored(file_id)?.clone();
-        let Some(draft) = file.draft_text.clone() else {
-            return Ok(());
-        };
-        if file.conflict_text.is_some() {
-            return Ok(());
-        }
-        let workspace = model::workspace(&self.store, &file.workspace_id)?;
-        let disk = self.editor.current_disk(workspace.path.as_ref(), &file)?;
-        if disk != file.disk_text {
-            return self.apply_disk_change(file, disk, now);
-        }
-        if !self
-            .editor
-            .save_disk(workspace.path.as_ref(), &file, &file.disk_text, &draft)?
-        {
-            let disk = self.editor.current_disk(workspace.path.as_ref(), &file)?;
-            return self.apply_disk_change(file, disk, now);
-        }
-        self.finish_editor_save(file, now)
-    }
-
-    fn advance_editor_watch(&mut self, file_id: &str, now: i64) -> Result<()> {
-        let file = self.editor.stored(file_id)?.clone();
-        self.editor.checked_watch(file_id, now);
-        let workspace = model::workspace(&self.store, &file.workspace_id)?;
-        let disk = self.editor.current_disk(workspace.path.as_ref(), &file)?;
-        let known = file.conflict_text.as_ref().unwrap_or(&file.disk_text);
-        if disk == *known {
-            return Ok(());
-        }
-        self.apply_disk_change(file, disk, now)
-    }
-
-    fn apply_disk_change(&mut self, file: EditorFile, disk: String, now: i64) -> Result<()> {
+    ) -> Result<()> {
         if file.draft_text.as_deref() == Some(&disk) {
             return self.finish_editor_save(file, now);
         }
@@ -251,7 +151,7 @@ impl Core {
         }
     }
 
-    fn finish_editor_save(&mut self, mut file: EditorFile, now: i64) -> Result<()> {
+    pub(super) fn finish_editor_save(&mut self, mut file: EditorFile, now: i64) -> Result<()> {
         let content = file
             .draft_text
             .take()
@@ -265,6 +165,16 @@ impl Core {
         file.conflict_text = None;
         file.updated_ms = now;
         let version = stored_version(&file, content, author.clone(), self.timestamp());
+        self.persist_saved(file, version, author)
+    }
+
+    /// Stores a file whose draft reached the disk, with the version written, and announces it.
+    pub(super) fn persist_saved(
+        &mut self,
+        file: EditorFile,
+        version: StoredFileVersion,
+        author: FileAuthor,
+    ) -> Result<()> {
         let wire = document(&file).map_err(errors::storage)?;
         let result = json!({"file":wire});
         let events = vec![(event::FILE_SAVED.into(), json!({"file":wire,"by":author}))];
@@ -425,13 +335,4 @@ fn changed_lines(before: &str, after: &str) -> Vec<u32> {
         .take(soyeht_protocol::limits::EDITOR_VIEWPORT_LINES)
         .filter_map(|index| u32::try_from(index).ok())
         .collect()
-}
-
-fn failure_line(effect: Effect, file_id: &str, kind: String, failure: Failure) -> Line {
-    Line::new("engine.editor_effect_failed")
-        .field("action", effect.name())
-        .field("fileId", file_id)
-        .field("kind", kind)
-        .field("attempts", failure.attempts)
-        .field("retryInMs", failure.retry_in_ms)
 }

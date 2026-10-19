@@ -7,11 +7,16 @@
 //! pending drafts first, refuses while a draft conflicts with the disk, and
 //! closes the tabs of what it removed.
 
-use super::{persistence::parameters, project_paths::normalized, project_tree::project_error};
+use super::{
+    disk_effects::SETTLE_WAIT, persistence::parameters, project_paths::normalized,
+    project_tree::project_error,
+};
 use crate::{
     core::{Core, persist_pane},
+    dispatch::Outcome,
     errors::{self, Result},
     model,
+    offload::Offload,
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
@@ -20,9 +25,62 @@ use soyeht_protocol::{
     ProjectEntryRenameResult, event, method,
 };
 use soyeht_store::editor::{EditorFile, document};
-use std::path::Path;
+use std::{
+    path::Path,
+    time::{Duration, Instant},
+};
+
+/// How much longer than its own wait the offloaded request may take before it is answered late.
+const OFFLOAD_SLACK: Duration = Duration::from_secs(1);
 
 impl Core {
+    /// A rename or a delete. When a disk job is working on a file it moves or removes, the
+    /// request waits for that job off the Core lock (ADR 0097), then runs again under the lock:
+    /// a write that is renaming its temporary file over the old path would recreate the file
+    /// after it moved. A disk that does not answer in time refuses it as `stale_version`, and
+    /// so does a second pass (`retried`) that finds another job started meanwhile: an offload
+    /// is resolved once, so the apply step cannot offload again.
+    pub(crate) fn project_entry_request(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+        retried: bool,
+    ) -> Result<Outcome> {
+        let (workspace_id, path) = project_entry_target(method, params)?;
+        let signals = self.disk_job_signals_under(&workspace_id, &path)?;
+        if signals.is_empty() {
+            let reply = if method == method::PROJECT_ENTRY_RENAME {
+                self.project_entry_rename(connection, params)
+            } else {
+                self.project_entry_delete(connection, params)
+            };
+            return reply.map(Outcome::Reply);
+        }
+        if retried {
+            return Err(errors::stale_version("The file is being saved"));
+        }
+        let (connection, method, params) =
+            (connection.to_owned(), method.to_owned(), params.clone());
+        Ok(Outcome::Offload(Offload::new(
+            "The file is still being saved",
+            SETTLE_WAIT + OFFLOAD_SLACK,
+            move || {
+                let deadline = Instant::now() + SETTLE_WAIT;
+                Ok(signals
+                    .iter()
+                    .all(|signal| signal.wait(deadline.saturating_duration_since(Instant::now()))))
+            },
+            move |core, ended| {
+                if !matches!(ended, Ok(true)) {
+                    return Err(errors::stale_version("The file is being saved"));
+                }
+                core.apply_background();
+                core.project_entry_request(&connection, &method, &params, true)
+            },
+        )))
+    }
+
     pub fn project_entry_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let request: ProjectEntryCreateParams = parameters(params, "project entry create")?;
         let entry = self
@@ -55,6 +113,8 @@ impl Core {
         }
         let moving = self.live_files_under(&request.workspace_id, &from)?;
         self.refuse_open_writing(&moving)?;
+        // `project_entry_request` waited for the jobs; one that started since is refused.
+        self.refuse_while_saving(&request.workspace_id, &from)?;
         self.project_root(&request.workspace_id)?
             .rename(&from, &to)
             .map_err(project_error)?;
@@ -131,6 +191,7 @@ impl Core {
         project.entry(&path).map_err(project_error)?;
         let open = self.live_files_under(&request.workspace_id, &path)?;
         self.refuse_open_writing(&open)?;
+        self.refuse_while_saving(&request.workspace_id, &path)?;
         for file in &open {
             self.save_editor_now(&file.file_id)?;
         }
@@ -258,6 +319,18 @@ impl Core {
             })
             .collect())
     }
+}
+
+/// The workspace and the normalized path a rename or a delete acts on.
+fn project_entry_target(method: &str, params: &Value) -> Result<(String, String)> {
+    if method == method::PROJECT_ENTRY_RENAME {
+        let request: ProjectEntryRenameParams = parameters(params, "project entry rename")?;
+        let from = normalized(&request.from).map_err(project_error)?;
+        return Ok((request.workspace_id, from));
+    }
+    let request: ProjectEntryDeleteParams = parameters(params, "project entry delete")?;
+    let path = normalized(&request.path).map_err(project_error)?;
+    Ok((request.workspace_id, path))
 }
 
 /// A pane named after its file follows the rename; a name the person chose stays.

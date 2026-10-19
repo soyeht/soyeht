@@ -23,7 +23,8 @@ pub mod slow_disk {
         );
     }
 
-    pub(super) fn wait() {
+    /// Pauses for the time set, as a slow disk would.
+    pub fn wait() {
         let pause = PAUSE_MS.load(Ordering::Relaxed);
         if pause > 0 {
             std::thread::sleep(Duration::from_millis(pause));

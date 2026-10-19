@@ -5,11 +5,22 @@
 //! setting an environment variable before it starts. No shipped engine contains this module,
 //! so no file or variable changes how it behaves.
 
-use crate::{core::Core, errors, hooks::Hooks, model::RunningPane, usage::FixtureHost};
+use crate::{
+    core::Core,
+    editor::{
+        FileSystemPort,
+        interfered_files::{InterferedFiles, Interference},
+    },
+    errors,
+    hooks::Hooks,
+    model::RunningPane,
+    usage::FixtureHost,
+};
 use soyeht_ptyd::wire::Request;
 use soyeht_store::segments::Record;
 use soyeht_usage::host::Host;
 use std::{
+    io,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -37,6 +48,7 @@ const SLOW_WATCH_VARIABLE: &str = "SOYEHT_TEST_SLOW_WATCH_MS";
 
 pub struct FileHooks {
     directory: PathBuf,
+    slow_disk: bool,
     usage_fixtures: Option<PathBuf>,
     poll_skills: bool,
 }
@@ -44,10 +56,12 @@ pub struct FileHooks {
 impl FileHooks {
     /// The hooks of an engine whose data lives in `directory`, with the environment it started in.
     pub fn from_environment(directory: &Path) -> Self {
+        let mut slow_disk = false;
         if let Ok(value) = std::env::var(SLOW_DISK_VARIABLE)
             && let Ok(pause) = value.parse()
         {
             soyeht_store::segments::slow_disk::set(std::time::Duration::from_millis(pause));
+            slow_disk = true;
         }
         if let Ok(value) = std::env::var(SLOW_WATCH_VARIABLE)
             && let Ok(pause) = value.parse()
@@ -56,6 +70,7 @@ impl FileHooks {
         }
         Self {
             directory: directory.into(),
+            slow_disk,
             usage_fixtures: std::env::var_os(USAGE_FIXTURES_VARIABLE).map(PathBuf::from),
             poll_skills: std::env::var_os(POLL_SKILLS_VARIABLE).is_some(),
         }
@@ -109,8 +124,24 @@ impl Hooks for FileHooks {
         self.poll_skills
     }
 
+    fn editor_disk(&self) -> Option<Box<dyn FileSystemPort>> {
+        self.slow_disk
+            .then(|| Box::new(InterferedFiles(SlowWrites)) as Box<dyn FileSystemPort>)
+    }
+
     fn usage_host(&self) -> Option<Arc<dyn Host>> {
         let directory = self.usage_fixtures.clone()?;
         Some(Arc::new(FixtureHost::new(directory)))
+    }
+}
+
+/// Makes every write of the editor take as long as the slow-disk setting says (the pause that
+/// delays the flush of a terminal segment), so a test can show what waits for a save.
+struct SlowWrites;
+
+impl Interference for SlowWrites {
+    fn before_write(&self, _path: &Path) -> io::Result<()> {
+        soyeht_store::segments::slow_disk::wait();
+        Ok(())
     }
 }

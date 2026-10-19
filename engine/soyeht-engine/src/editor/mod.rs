@@ -3,9 +3,12 @@
 pub(crate) mod agent_review;
 pub(crate) mod api;
 mod creation;
+mod disk_effects;
 #[cfg(test)]
 mod effect_backoff_tests;
 mod find;
+#[cfg(any(test, feature = "test-hooks"))]
+pub(crate) mod interfered_files;
 #[cfg(test)]
 mod keystroke_tests;
 mod persistence;
@@ -32,6 +35,7 @@ mod test_support;
 mod text_refusal;
 mod trash;
 mod undo;
+mod write_lock;
 
 pub(crate) use project_files::{ProjectFile, checked_wire_path, enumerate_project_files, language};
 pub use project_watch::Watches as ProjectWatches;

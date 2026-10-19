@@ -128,7 +128,11 @@ impl Core {
             usage: crate::usage::service_over(usage_readings, hooks.usage_host()),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
-            editor: crate::editor::Service::new(Box::new(crate::editor::SystemFiles)),
+            editor: crate::editor::Service::new(
+                hooks
+                    .editor_disk()
+                    .unwrap_or_else(|| Box::new(crate::editor::SystemFiles)),
+            ),
             project_watches: Default::default(),
             skill_watches: Default::default(),
             languages: crate::languages::Service::restore(language_servers)?,
