@@ -158,11 +158,25 @@ run_exact_rust_test() {
 
 # Windows-only code has no host build here, so lint it for the Windows target.
 lint_windows() {
-    if rustup target list --installed | grep -qx x86_64-pc-windows-msvc; then
-        cargo clippy --locked --target x86_64-pc-windows-msvc -p soyeht-platform -p soyeht-process -p soyeht-ptyd --all-targets -- -D warnings
-    else
+    if ! rustup target list --installed | grep -qx x86_64-pc-windows-msvc; then
         echo 'check_all: skipped the Windows lint; run: rustup target add x86_64-pc-windows-msvc'
+        return 0
     fi
+    local packages=(-p soyeht-platform -p soyeht-process -p soyeht-ptyd -p soyeht-mcp)
+    if windows_c_compiler; then
+        packages+=(-p soyeht-engine -p soyeht-cli)
+    else
+        echo 'check_all: skipped the Windows lint of the engine and cli: their SQLite and tree-sitter build scripts need a C compiler that targets Windows (clang-cl with the Windows SDK, for instance through cargo-xwin)'
+    fi
+    cargo clippy --locked --target x86_64-pc-windows-msvc "${packages[@]}" --all-targets -- -D warnings
+}
+
+# Whether the C compiler the `cc` crate would pick can build for Windows. The engine's
+# dependencies compile C, and a host without a Windows sysroot fails in their build scripts.
+windows_c_compiler() {
+    local compiler="${CC_x86_64_pc_windows_msvc:-${TARGET_CC:-${CC:-cc}}}"
+    printf '#include <stdlib.h>\n' |
+        $compiler --target=x86_64-pc-windows-msvc -fsyntax-only -x c - >/dev/null 2>&1
 }
 
 # The engine's contract checks (ADR 0090) are on in every build and test run of the gate, so

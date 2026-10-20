@@ -278,8 +278,11 @@ inherit the main actor.
   (`docs/platforms.md`). New platform-specific code goes behind `soyeht-platform`
   or a `cfg` module with the same public shape on every system; where a feature
   cannot exist on a system it returns a typed `Unsupported` error.
-  The merge gate lints `soyeht-platform`, `soyeht-process` and `soyeht-ptyd` for
-  `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`).
+  The merge gate lints `soyeht-platform`, `soyeht-process`, `soyeht-ptyd` and `soyeht-mcp`
+  for `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`), and
+  `soyeht-engine` and `soyeht-cli` as well when the host also has a C compiler that targets
+  Windows (their dependencies compile C); `scripts/check_engine_windows.ps1` checks all of
+  it on Windows itself.
 
 ## Repository hygiene
 
