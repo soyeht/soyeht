@@ -150,16 +150,13 @@ private func terminalPane(cols: UInt32, rows: UInt32) -> Pane {
   #expect(!TerminalClipboardPreferences(preferences: preferences).allowsProgramCopy)
 }
 
-@MainActor @Test func theCopyNoticeShowsThenHides() async throws {
+@MainActor @Test func theCopyNoticeShowsThenHides() async {
   let notice = TerminalCopyNotice(duration: .milliseconds(50))
   #expect(!notice.visible)
   notice.show()
   #expect(notice.visible)
-  // Other tests share the main actor, so wait for the timer instead of a fixed time.
-  let deadline = ContinuousClock.now + .seconds(120)
-  while notice.visible, ContinuousClock.now < deadline {
-    try await Task.sleep(for: .milliseconds(100))
-  }
+  // Wait for the hide itself: a loaded host can delay it far past any fixed time.
+  await notice.hiding?.value
   #expect(!notice.visible)
 }
 

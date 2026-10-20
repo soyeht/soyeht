@@ -32,7 +32,8 @@ public final class TerminalCopyNotice {
 
   public private(set) var visible = false
   @ObservationIgnored private let duration: Duration
-  @ObservationIgnored private var hiding: Task<Void, Never>?
+  /// The pending hide, so a test can wait for it instead of for a fixed time.
+  @ObservationIgnored private(set) var hiding: Task<Void, Never>?
 
   public init(duration: Duration = .seconds(2)) { self.duration = duration }
 
