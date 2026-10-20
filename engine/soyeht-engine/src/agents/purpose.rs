@@ -6,6 +6,7 @@ const INITIALIZE: &str = "initialize";
 const OPEN: &str = "open";
 const LOAD: &str = "load";
 const AUTHENTICATE: &str = "auth";
+const REAUTHENTICATE: &str = "reauth";
 const LOGOUT: &str = "logout";
 const PROBE_PREFIX: &str = "probe:";
 
@@ -39,8 +40,12 @@ pub enum Purpose {
     Open,
     /// `session/load` of the pane's existing session.
     Load,
-    /// `authenticate` through the protocol.
+    /// `authenticate` through the protocol, started by the person.
     Authenticate,
+    /// `authenticate` with the method the person already signed in with, sent to a
+    /// new agent process before it opens a session. Some agents (Cursor) ask for it
+    /// from every process, not once per account.
+    Reauthenticate,
     /// `logout`: the agent forgets its account.
     Logout,
     Probe(ProbeStep),
@@ -56,6 +61,7 @@ impl Purpose {
             Self::Open => OPEN.into(),
             Self::Load => LOAD.into(),
             Self::Authenticate => AUTHENTICATE.into(),
+            Self::Reauthenticate => REAUTHENTICATE.into(),
             Self::Logout => LOGOUT.into(),
             Self::Probe(step) => format!("{PROBE_PREFIX}{}", step.name()),
             Self::Identified(id) => id.clone(),
@@ -68,6 +74,7 @@ impl Purpose {
             OPEN => Self::Open,
             LOAD => Self::Load,
             AUTHENTICATE => Self::Authenticate,
+            REAUTHENTICATE => Self::Reauthenticate,
             LOGOUT => Self::Logout,
             _ => context
                 .strip_prefix(PROBE_PREFIX)
@@ -92,6 +99,7 @@ mod tests {
             Purpose::Open,
             Purpose::Load,
             Purpose::Authenticate,
+            Purpose::Reauthenticate,
             Purpose::Logout,
             Purpose::Probe(ProbeStep::New),
             Purpose::Probe(ProbeStep::List),
@@ -107,6 +115,7 @@ mod tests {
     #[test]
     fn stored_contexts_keep_the_strings_checkpoints_were_written_with() {
         assert_eq!(Purpose::Authenticate.context(), "auth");
+        assert_eq!(Purpose::Reauthenticate.context(), "reauth");
         assert_eq!(Purpose::Probe(ProbeStep::New).context(), "probe:new");
         assert_eq!(
             Purpose::parse("probe:config"),

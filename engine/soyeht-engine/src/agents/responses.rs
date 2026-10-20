@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use soyeht_acp::{
     Message, client,
     config::Options,
-    session::{self, Initialization},
+    session::{self, AuthKind, Initialization},
 };
 use soyeht_protocol::{PaneConfigChangedDraft, PaneSessionStartedDraft};
 use soyeht_protocol::{
@@ -210,6 +210,9 @@ fn auth_response(
 ) -> Result<()> {
     let ok = result.is_ok();
     state.auth_required = !ok;
+    if !ok {
+        state.agent_sign_in = None;
+    }
     state.phase = if ok {
         Phase::RestartAfterProbe
     } else {
@@ -241,6 +244,64 @@ fn initialize_response(
     let info = Initialization::parse(&value).map_err(native_error)?;
     state.fingerprint = fingerprint(state, &info.version)?;
     state.initialized = Some(info);
+    // A process that has not authenticated yet cannot open the session the person's
+    // sign-in was for, so it is signed in again before the probe or the session.
+    if let Some(method) = reauthentication_method(state) {
+        return call(
+            state,
+            changes,
+            "authenticate",
+            json!({"methodId":method}),
+            &Purpose::Reauthenticate,
+            runtime.now_ms,
+        );
+    }
+    after_initialize(state, changes, saved, (store, runtime))
+}
+
+/// The method the person signed in with, when this agent still offers it as a protocol sign-in.
+fn reauthentication_method(state: &State) -> Option<String> {
+    let chosen = state.agent_sign_in.as_ref()?;
+    state
+        .initialized
+        .as_ref()?
+        .auth_methods
+        .iter()
+        .any(|method| method.kind == AuthKind::Agent && &method.public.id == chosen)
+        .then(|| chosen.clone())
+}
+
+fn reauthentication_response(
+    store: &(impl StorePort + TaskStorePort),
+    runtime: &Runtime<'_>,
+    state: &mut State,
+    saved: &mut StoredPane,
+    changes: &mut Changes,
+    result: NativeResult,
+) -> Result<()> {
+    if result.is_ok() {
+        return after_initialize(state, changes, saved, (store, runtime));
+    }
+    refuse_reauthentication(state, saved, changes)
+}
+
+/// The agent no longer accepts that sign-in: the person signs in again.
+fn refuse_reauthentication(
+    state: &mut State,
+    saved: &mut StoredPane,
+    changes: &mut Changes,
+) -> Result<()> {
+    state.agent_sign_in = None;
+    needs_login(state, saved, changes)
+}
+
+/// The probe of an agent version nobody has probed yet, or else the pane's session.
+fn after_initialize(
+    state: &mut State,
+    changes: &mut Changes,
+    saved: &StoredPane,
+    (store, runtime): (&(impl StorePort + TaskStorePort), &Runtime<'_>),
+) -> Result<()> {
     let mut all_known = true;
     for method in PROBED_METHODS {
         all_known &= store
@@ -613,6 +674,9 @@ pub fn response(
         Purpose::Authenticate => {
             return auth_response(state, saved, changes, result);
         }
+        Purpose::Reauthenticate => {
+            return reauthentication_response(store, runtime, state, saved, changes, result);
+        }
         Purpose::Logout => {
             return super::account::logout_response(
                 state,
@@ -664,3 +728,6 @@ pub fn response(
     }
     Err(errors::invalid("Unexpected ACP response context"))
 }
+
+#[cfg(test)]
+mod tests;

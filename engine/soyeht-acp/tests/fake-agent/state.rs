@@ -29,6 +29,10 @@ pub struct Settings {
     pub version: String,
     pub require_login: bool,
     pub login: bool,
+    /// Like Cursor: every process asks to be authenticated with the protocol sign-in
+    /// `existing-login` before it opens a session, and the person's `login.ok` is what
+    /// that request checks.
+    pub session_auth: bool,
     /// Advertises and serves the ACP `logout` request.
     pub logout: bool,
     pub initialize_padding_bytes: usize,
@@ -50,6 +54,7 @@ impl Settings {
         let mut version = "1".to_owned();
         let mut require_login = false;
         let mut login = false;
+        let mut session_auth = false;
         let mut logout = false;
         let mut initialize_padding_bytes = 0;
         let mut replay_user_chunk_bytes = None;
@@ -63,6 +68,7 @@ impl Settings {
                 "--version-label" => version = args.next().ok_or(Error::MissingVersionLabel)?,
                 "--require-login" => require_login = true,
                 "--login" => login = true,
+                "--session-auth" => session_auth = true,
                 "--logout" => logout = true,
                 "--modes" => {
                     modes = args
@@ -128,6 +134,7 @@ impl Settings {
             version,
             require_login,
             login,
+            session_auth,
             logout,
             initialize_padding_bytes,
             replay_user_chunk_bytes,

@@ -40,8 +40,9 @@ fn terminal_auth_argv(
             }
         },
         Some("uvx") => match launch.args.first() {
+            // The stem, so Windows' `uvx.exe` and `uv.exe` are the same runners as `uvx` and `uv`.
             Some(package) if registry::pinned_package(package) => match Path::new(&launch.command)
-                .file_name()
+                .file_stem()
                 .and_then(|name| name.to_str())
             {
                 Some("uvx") => vec![package.clone()],
@@ -99,6 +100,8 @@ fn auth_pane_created(
 
 fn embedded_auth(state: &mut super::state::State, method_id: &str, now_ms: i64) -> Result<Changes> {
     let mut changes = Changes::default();
+    // Kept until the agent refuses it; every new process of the pane is signed in with it.
+    state.agent_sign_in = Some(method_id.to_owned());
     responses::call(
         state,
         &mut changes,
@@ -463,6 +466,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(argv, ["/usr/local/bin/uvx", package, "--package", "evil"]);
+    }
+
+    #[test]
+    fn a_windows_uv_runner_is_recognised_by_its_stem() {
+        let package = "fast-agent-acp==0.10.1";
+        let argv = terminal_auth_argv(
+            &launch("/tools/uv.exe", &[package, "--acp"]),
+            "uvx",
+            vec!["login".into()],
+        )
+        .unwrap();
+        assert_eq!(argv, ["/tools/uv.exe", "tool", "run", package, "login"]);
+        let argv = terminal_auth_argv(
+            &launch("/tools/uvx.exe", &[package, "--acp"]),
+            "uvx",
+            vec!["login".into()],
+        )
+        .unwrap();
+        assert_eq!(argv, ["/tools/uvx.exe", package, "login"]);
     }
 
     #[test]

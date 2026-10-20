@@ -110,6 +110,10 @@ pub struct State {
     /// A prompt-level auth failure survives native session reopen until sign-in or a valid turn.
     #[serde(default)]
     pub auth_required: bool,
+    /// The protocol sign-in method (`agent` type) the person signed in with. A new agent
+    /// process is authenticated with it before it opens a session.
+    #[serde(default)]
+    pub(crate) agent_sign_in: Option<String>,
     pub session_id: Option<String>,
     pub options: Options,
     /// The slash commands the agent last advertised, served by `pane.commands.list`.
@@ -198,6 +202,7 @@ impl State {
             initialized: None,
             phase: Phase::Initializing,
             auth_required: false,
+            agent_sign_in: None,
             session_id: None,
             options: Options::default(),
             commands: Vec::new(),

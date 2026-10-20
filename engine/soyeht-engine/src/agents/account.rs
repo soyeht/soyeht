@@ -180,6 +180,7 @@ pub(super) fn logout_response(
 ) -> Result<()> {
     match ok {
         Ok(()) => {
+            state.agent_sign_in = None;
             state.phase = Phase::RestartAfterProbe;
         }
         Err(reason) => changes.events.push(auth_finished(
@@ -209,6 +210,31 @@ mod tests {
             .extend(authentication.as_object().unwrap().clone());
         state.initialized = Some(Initialization::parse(&initialize).unwrap());
         state
+    }
+
+    #[test]
+    fn signing_out_clears_the_remembered_protocol_sign_in_and_a_refusal_keeps_it() {
+        let pane = crate::test_panes::pane("p", "w", soyeht_protocol::PaneMode::Agent, "/tmp");
+        let stored = crate::model::StoredPane {
+            pane,
+            closed: false,
+            instance_key: "key".into(),
+            instance_id: None,
+            supervisor_id: None,
+            sequence_base: 0,
+        };
+        let mut state = state_with(json!({}));
+        state.agent_sign_in = Some("login".into());
+        logout_response(
+            &mut state,
+            &stored,
+            &mut Changes::default(),
+            Err("no".into()),
+        )
+        .unwrap();
+        assert_eq!(state.agent_sign_in.as_deref(), Some("login"));
+        logout_response(&mut state, &stored, &mut Changes::default(), Ok(())).unwrap();
+        assert_eq!(state.agent_sign_in, None);
     }
 
     #[test]

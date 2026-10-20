@@ -173,6 +173,11 @@ binary with login arguments in a raw terminal pane for the user to authenticate,
 then relaunches the agent; `agent` type = `auth/login` through the protocol.
 Until logged in, the pane shows “login required” with a button.
 
+An `agent` method that the person pressed is remembered by the pane. Some agents ask
+every process for it, so the engine sends the same `authenticate` request to each new
+process of the pane before the capability probe or the session (ADR 0098); a refusal
+clears it and the pane asks again.
+
 A zero exit status from the login terminal is not proof of sign-in. The engine
 closes that terminal, with `pane.auth_finished {ok: true}`, only after the
 relaunched agent opens a session. If the command fails, is interrupted, or exits 0

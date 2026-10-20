@@ -104,12 +104,26 @@ message after it on its own. `--pair SENDER RECIPIENT` chooses other harnesses a
 `--model codex=MODEL` selects a model the account accepts through the pinned
 adapter. A harness that is not signed in fails the run with its name.
 
-The same opt-in check for every system is `scripts/e2e_real_harnesses.py`: a real reply
-from each signed-in harness, one pane switched Claude to Codex and back (it answers on
-each side and the transcript shows both handovers), and Claude and Codex messaging each
-other. It skips a harness that is not signed in by name instead of failing, and reports
-the model each harness used. It runs on macOS, Linux and Windows; see "Agents messaging
-each other" in `platforms.md`.
+The same opt-in check for every system is `scripts/e2e_real_harnesses.py`. It covers the
+four supported harnesses: the two pinned registry adapters (`claude`, `codex`) and the two
+native ACP commands of the built-in registry (`cursor` is `cursor-agent acp`, `opencode` is
+`opencode acp`), each launched by the engine from its registry id as the app launches it
+(the engine finds the command through the login shell's `PATH`, which the script leaves to
+the person's own shell configuration). Per harness it proves a streamed reply, a change and
+a restore of each model, effort and permission selector the harness exposes without
+replacing the session, a turn stopped with `pane.cancel` followed by an answer, and a turn
+that survives an engine kill. Across harnesses it proves a ring of messages (every harness
+messages the next through the Soyeht MCP tools and is answered), one pane switched through
+every harness and back (it answers on each side and the transcript shows each handover), and
+the engine kill with every pane mid-turn. The report lists each harness as `passed`,
+`failed` (with the step) or `skipped` (with the reason): a CLI that is not on the `PATH`,
+a harness that asks for sign-in (the script never signs in), or a provider that ends the
+first turn with an error (an expired plan, no balance) are skipped, never passed, and a run
+where nothing ran fails. `--harness` selects some of the four, `--model HARNESS=MODEL`
+starts one on a model its account accepts, and `--confirm-sign-in cursor` presses the
+pane's protocol sign-in for a harness that asks every process to confirm the CLI's existing
+login (ADR 0098); a harness confirmed that way is not a switch target. It runs on macOS,
+Linux and Windows; see "Agents messaging each other" in `platforms.md`.
 
 Permission expiry is accelerated by changing only the pending test request's
 timestamp while the disposable engine is stopped. No shorter production timeout

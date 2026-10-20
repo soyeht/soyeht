@@ -1,13 +1,14 @@
 #!/bin/bash
 # Runs the real-harness acceptance (scripts/e2e_real_harnesses.py) for another operating system
-# inside a VMPal VM, from a Mac: a real Claude Code reply, a real Codex reply, a pane switched
-# between them both ways, and each messaging the other through the Soyeht MCP tools.
+# inside a VMPal VM, from a Mac: a real reply from each of the four supported harnesses that
+# is installed and signed in, their selectors, a stopped turn, a pane switched through them,
+# and a ring of messages through the Soyeht MCP tools.
 #
 #   scripts/vmpal_check_real_agents.sh linux   "Ubuntu VM 1"
 #   scripts/vmpal_check_real_agents.sh windows "Windows VM 1" [extra e2e_real_harnesses.py arguments]
 #
-# Opt-in and costly: it uses the VM account's own Claude Code and Codex sign-ins, so sign both in
-# first (a harness that is not signed in is skipped by name) and run it only when you mean to
+# Opt-in and costly: it uses the VM account's own sign-ins, so sign the harnesses in first (a
+# harness that is not installed or not signed in is skipped by name) and run it only when you mean to
 # spend that quota. It never signs in or out and never reads a credential. The prompts are one
 # line each.
 #

@@ -26,8 +26,10 @@ from e2e import (
 )
 from e2e_agents import events, question, transcript
 from e2e_real_acp import (
+    ALL_HARNESSES,
     HARNESSES,
     authorize_real_run,
+    harness_id,
     install_adapter,
     pinned_package,
     quiet_workspace,
@@ -54,6 +56,8 @@ class Agent:
         self.name = name
         self.mode = None
         self.approvals = 0
+        # The sign-in requests already answered; a new one ends the harness's run.
+        self.sign_ins = 0
 
 
 class Run:
@@ -97,7 +101,7 @@ class Run:
         while True:
             for agent in self.agents:
                 # Adapters report an expired sign-in at session open or mid-turn.
-                if events(self.services, "pane.needs_login", agent.pane):
+                if len(events(self.services, "pane.needs_login", agent.pane)) > agent.sign_ins:
                     raise SignedOut(agent.key)
                 self.approve_soyeht_tools(agent)
             self.require_own_server()
@@ -108,20 +112,29 @@ class Run:
             require(time.monotonic() < deadline, message)
             time.sleep(0.5)
 
-    def open(self, workspace, key, model=None, mode=None):
+    def open(self, workspace, key, model=None, mode=None, confirm_sign_in=False):
         pane = self.client.mutate("pane.create", workspaceId=workspace, mode="agent",
-                                  harness=f"real-{key}")["paneId"]
+                                  harness=harness_id(key))["paneId"]
         agent = Agent(key, pane, None)
         self.agents.append(agent)
+
         def session_or_sign_in():
             session = self.client.pane(pane).get("agent", {})
             return session if session.get("sessionId") or session.get("authMethods") else None
 
-        if not self.until(session_or_sign_in, f"{key} session did not open",
-                          seconds=240).get("sessionId"):
-            # The adapter offers sign-in methods instead of a session.
-            self.agents.remove(agent)
-            raise SignedOut(key)
+        try:
+            # The adapter may offer sign-in methods instead of a session.
+            signed_out = not self.until(session_or_sign_in, f"{key} session did not open",
+                                        seconds=240).get("sessionId")
+        except SignedOut:
+            signed_out = True
+        if signed_out:
+            if confirm_sign_in:
+                self.confirm_sign_in(agent)
+            else:
+                # A pane that waits for sign-in is no longer part of the run.
+                self.agents.remove(agent)
+                raise SignedOut(key)
         if model:
             # A host's default model may not be available through the pinned adapter.
             changed = self.client.mutate("pane.config.set", paneId=pane,
@@ -133,6 +146,24 @@ class Run:
         self.agents[-1].name = self.client.pane(pane)["name"]
         self.note(f"{key}: session ready as {self.agents[-1].name!r}")
         return self.agents[-1]
+
+    def confirm_sign_in(self, agent):
+        """Press the pane's protocol sign-in, as its button does. The harness reuses the login of
+        its own CLI (Cursor asks every process to confirm it); a login the CLI lacks fails here
+        and the harness is skipped."""
+        methods = self.client.pane(agent.pane)["agent"].get("authMethods", [])
+        method = next((item for item in methods if not item.get("terminal")), None)
+        if method is None:
+            self.agents.remove(agent)
+            raise SignedOut(agent.key)
+        self.client.mutate("pane.auth.start", paneId=agent.pane, authMethodId=method["id"])
+        agent.sign_ins = len(events(self.services, "pane.needs_login", agent.pane))
+        try:
+            self.until(lambda: self.client.pane(agent.pane).get("agent", {}).get("sessionId"),
+                       f"{agent.key} did not open its session after the sign-in", seconds=240)
+        except (SignedOut, AssertionError):
+            self.agents.remove(agent)
+            raise SignedOut(agent.key) from None
 
     def queue(self, agent):
         return self.client.call("pane.queue.list", {"paneId": agent.pane, "limit": 64})["items"]
@@ -223,7 +254,7 @@ def register_adapters(services, pair, directory):
     # The pinned registry adapters, launched without the user's own extensions
     # or login-shell PATH, so nothing they start reaches protected folders.
     entries = []
-    for key in sorted(set(pair)):
+    for key in sorted(set(pair) & set(HARNESSES)):
         package, version = pinned_package(HARNESSES[key])
         adapter = install_adapter(directory / key, package, version)
         entries.append({"id": f"real-{key}", "name": key.capitalize(),
@@ -232,9 +263,12 @@ def register_adapters(services, pair, directory):
     return [Path(entry["command"]) for entry in entries]
 
 
-def print_transcripts(run):
-    """The transcript of a failing run; no credentials reach it."""
+def print_transcripts(run, key=None):
+    """The transcript of a failing run (of one harness's panes when `key` is given); no
+    credentials reach it."""
     for agent in run.agents if run else []:
+        if key and agent.key != key:
+            continue
         for item in transcript(run.client, agent.pane):
             print(f"{agent.name} {item['role']}/{item['kind']}: {json.dumps(item)[:600]}")
 
@@ -268,7 +302,7 @@ def run_real(binaries, pair, models, modes):
 
 def main():
     parser = argument_parser(__doc__)
-    parser.add_argument("--pair", nargs=2, choices=sorted(HARNESSES),
+    parser.add_argument("--pair", nargs=2, choices=ALL_HARNESSES,
                         default=["claude", "codex"], metavar=("SENDER", "RECIPIENT"))
     parser.add_argument("--model", action="append", default=[], metavar="HARNESS=MODEL",
                         help="select a model option for a harness, such as codex=gpt-5.5")

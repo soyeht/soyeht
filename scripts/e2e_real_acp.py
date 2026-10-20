@@ -24,6 +24,11 @@ from e2e_platform import (
 # The engine's registry snapshot pins the adapter versions the app launches.
 REGISTRY = ROOT / "engine/soyeht-engine/src/agents/acp_registry_snapshot.json"
 HARNESSES = {"claude": "registry.claude-acp", "codex": "registry.codex-acp"}
+# Harnesses whose registry entry is the CLI itself (`cursor-agent acp`, `opencode acp`): nothing
+# to install, and the engine resolves and launches them from its built-in id exactly as the app
+# does. The pinned-adapter harnesses above are launched through a disposable launcher script.
+NATIVE_HARNESSES = {"cursor": "registry.cursor", "opencode": "registry.opencode"}
+ALL_HARNESSES = (*sorted(HARNESSES), *sorted(NATIVE_HARNESSES))
 FULL_ACCESS = "full_access"
 # A person's own agent extensions (MCP servers, hooks, plugins) often run from
 # other apps' bundles or from privacy-protected folders. Started under the
@@ -35,6 +40,11 @@ CODEX_PROJECT = "codex-project.toml"
 
 class NotSignedIn(Exception):
     """The adapter asked for sign-in; the harness is skipped, not failed."""
+
+
+def harness_id(key):
+    """The harness id a pane of `key` is created with."""
+    return NATIVE_HARNESSES.get(key) or f"real-{key}"
 
 
 def pinned_package(registry_id):

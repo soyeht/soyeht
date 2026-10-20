@@ -25,6 +25,9 @@ use std::{
 // budget does not delay a passing run.
 pub(crate) const FIXTURE_RELEASE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// The protocol sign-in `--session-auth` offers.
+const SESSION_AUTH_METHOD: &str = "existing-login";
+
 pub struct Runtime {
     settings: Settings,
     output: Mutex<io::Stdout>,
@@ -33,6 +36,8 @@ pub struct Runtime {
     active: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
     mcp_clients: Mutex<BTreeMap<String, mcp::Client>>,
     native_subagents: AtomicBool,
+    /// Whether this process has been authenticated (`--session-auth`).
+    authenticated: AtomicBool,
 }
 impl Runtime {
     fn send(&self, message: Message) {
@@ -74,6 +79,11 @@ impl Runtime {
             Ordering::SeqCst,
         );
         let directory = self.settings.directory.to_string_lossy();
+        let methods = if self.settings.session_auth {
+            json!([{"id":SESSION_AUTH_METHOD,"name":"Existing login"}])
+        } else {
+            json!([{"id":"login","name":"Test sign in","type":"terminal","args":["--state-dir",directory,"--login"]}])
+        };
         self.answer(id,json!({"protocolVersion":1,"agentInfo":{"name":"Soyeht Test Agent","version":self.settings.version},
             "agentCapabilities":{"loadSession":self.settings.load!="unsupported",
                 "auth":if self.settings.logout { json!({"logout":{}}) } else { json!({}) },
@@ -81,7 +91,7 @@ impl Runtime {
                 "promptCapabilities":self.settings.prompt_capabilities.iter()
                     .map(|flag|(flag.clone(),json!(true))).collect::<serde_json::Map<_,_>>()},
             "testPadding":"x".repeat(self.settings.initialize_padding_bytes),
-            "authMethods":[{"id":"login","name":"Test sign in","type":"terminal","args":["--state-dir",directory,"--login"]}]}));
+            "authMethods":methods}));
     }
 
     fn new_session(&self, id: Value, params: &Value) {
@@ -399,7 +409,20 @@ impl Runtime {
             self.answer(id, json!({}));
             return;
         }
-        if !self.settings.logged_in() {
+        if self.settings.session_auth && method == "authenticate" {
+            if params["methodId"] == SESSION_AUTH_METHOD && self.settings.logged_in() {
+                self.authenticated.store(true, Ordering::SeqCst);
+                self.answer(id, json!({}));
+            } else {
+                self.error(id, -32000, "Authentication required");
+            }
+            return;
+        }
+        let opens_session = matches!(method.as_str(), "session/new" | "session/load");
+        let unauthenticated = self.settings.session_auth
+            && opens_session
+            && !self.authenticated.load(Ordering::SeqCst);
+        if unauthenticated || !self.settings.logged_in() {
             self.error(id, -32000, "Authentication required");
             return;
         }
@@ -501,6 +524,7 @@ fn main() -> Result<()> {
         active: Mutex::new(BTreeMap::new()),
         mcp_clients: Mutex::new(BTreeMap::new()),
         native_subagents: AtomicBool::new(false),
+        authenticated: AtomicBool::new(false),
     });
     for line in io::stdin().lock().split(b'\n') {
         match Message::parse(&line?)? {

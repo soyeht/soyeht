@@ -103,15 +103,18 @@ The real-harness checks (`scripts/e2e_real_acp.py`, `e2e_real_agent_messaging.py
 `scripts/e2e_platform.py`: launchd on macOS, plain child processes elsewhere
 (`SOYEHT_E2E_LAUNCHER=process|launchd` forces one), and a client reaches the engine
 through the Unix socket or, on Windows, the loopback endpoint file of contract 08, section
-2.5. They are opt-in (`SOYEHT_REAL_ACP=1`) and need the person to sign Claude Code and
-Codex in first; a harness that is not signed in is skipped by name in
-`e2e_real_harnesses.py` (Claude's adapter starts `soyeht-mcp` even when signed out,
-Codex's creates no session until it is signed in). That script proves, with one-line
-prompts, a real reply from each harness, a pane switched Claude to Codex and back, and
-Codex and Claude messaging each other through `list_agents` and `message_agent`. On the
+2.5. They are opt-in (`SOYEHT_REAL_ACP=1`) and need the person to sign the harnesses in
+first; a harness that is not signed in, or whose command is not installed, is skipped by
+name in `e2e_real_harnesses.py` (Claude's adapter starts `soyeht-mcp` even when signed out,
+Codex's creates no session until it is signed in). That script covers Claude Code, Codex,
+Cursor and OpenCode: a streamed reply, the model, effort and permission selectors, a stopped
+turn, messaging between them through `list_agents` and `message_agent`, one pane switched
+through all of them, and an engine kill during turns. On the
 Mac run it with `SOYEHT_REAL_ACP=1 uv run python scripts/e2e_real_harnesses.py`; from a
 Mac into a VM use `scripts/vmpal_check_real_agents.sh linux|windows "<VM>"` (the VM needs
-Node.js 22 or later and Python 3.10 or later besides the engine prerequisites).
+Node.js 22 or later and Python 3.10 or later besides the engine prerequisites, and the Cursor
+and OpenCode commands on the account's `PATH`; on Windows they are `.cmd` shims or `.exe`
+files, which the engine resolves by extension).
 
 ## Running the Linux check
 
