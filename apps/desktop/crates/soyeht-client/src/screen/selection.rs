@@ -231,30 +231,52 @@ pub struct Located {
     pub above: bool,
     /// The pointer is below the last row.
     pub below: bool,
+    /// How many rows past the edge the pointer is, from one; zero over the grid.
+    pub beyond: u16,
+}
+
+/// The most lines a drag scrolls in one step: the pointer can only go so far past an edge.
+const MAX_EDGE_SCROLL: u16 = 8;
+
+impl Located {
+    /// How many lines a drag held past an edge scrolls in one step, toward older lines when it is
+    /// positive: one for a pointer just past the edge, more the further it is. Zero over the grid.
+    pub fn edge_scroll(&self) -> i32 {
+        let lines = i32::from(self.beyond.min(MAX_EDGE_SCROLL));
+        if self.above {
+            lines
+        } else if self.below {
+            -lines
+        } else {
+            0
+        }
+    }
 }
 
 /// The cell of a terminal drawn from the top-left corner `origin` that the pointer `at` is over.
 /// A pointer outside the grid is placed on the nearest cell; `above` and `below` say it was out.
 pub fn locate(at: (f32, f32), origin: (f32, f32), cell: (f32, f32), grid: (u16, u16)) -> Located {
     let (rows, columns) = grid;
-    let index = |offset: f32, size: f32, count: u16| -> (u16, bool, bool) {
+    let index = |offset: f32, size: f32, count: u16| -> (u16, bool, bool, u16) {
         let place = (offset / size.max(f32::EPSILON)).floor();
         let last = f32::from(count.saturating_sub(1));
         if place < 0.0 {
-            (0, true, false)
+            (0, true, false, (-place).min(f32::from(u16::MAX)) as u16)
         } else if place > last {
-            (count.saturating_sub(1), false, true)
+            let beyond = (place - last).min(f32::from(u16::MAX)) as u16;
+            (count.saturating_sub(1), false, true, beyond)
         } else {
-            (place as u16, false, false)
+            (place as u16, false, false, 0)
         }
     };
-    let (row, above, below) = index(at.1 - origin.1, cell.1, rows);
-    let (column, _, _) = index(at.0 - origin.0, cell.0, columns);
+    let (row, above, below, beyond) = index(at.1 - origin.1, cell.1, rows);
+    let (column, _, _, _) = index(at.0 - origin.0, cell.0, columns);
     Located {
         row,
         column,
         above,
         below,
+        beyond,
     }
 }
 
@@ -285,6 +307,20 @@ mod tests {
         let inside = locate(edge, (10.0, 20.0), CELL, (24, 80));
         assert_eq!((inside.row, inside.column), (23, 79));
         assert!(!inside.below);
+    }
+
+    #[test]
+    fn a_drag_past_an_edge_scrolls_further_the_further_the_pointer_is() {
+        let grid = (24, 80);
+        let scroll = |y: f32| locate((50.0, y), (10.0, 20.0), CELL, grid).edge_scroll();
+        assert_eq!(scroll(100.0), 0);
+        assert_eq!(scroll(19.0), 1, "just above the first row");
+        assert_eq!(scroll(20.0 - 16.0 * 3.0), 3);
+        assert_eq!(scroll(-1000.0), i32::from(MAX_EDGE_SCROLL));
+        let bottom = 20.0 + 16.0 * 24.0;
+        assert_eq!(scroll(bottom + 1.0), -1, "just below the last row");
+        assert_eq!(scroll(bottom + 16.0 * 4.0), -5);
+        assert_eq!(scroll(bottom + 5000.0), -i32::from(MAX_EDGE_SCROLL));
     }
 
     #[test]

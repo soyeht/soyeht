@@ -34,11 +34,12 @@ agent works.
   of a pane header split it to the right or below and store the new arrangement.
 - Terminal panes show live output (the engine streams raw terminal bytes, parsed
   with `vt100`), accept typing, paste, resize with the window, and scroll back.
-- Text in a terminal is selected with the mouse: a drag selects cells (a drag past the top or
-  bottom scrolls), a double-click a word (a path or an address is one word), a triple-click a line,
-  and Shift+click grows the selection. A selection stays on its text while the view scrolls and new
-  output arrives, and goes when output rewrites that text, when the screen is resized or switches to
-  the alternate screen, and when the person types. Copy is Ctrl+Shift+C on Linux and Windows
+- Text in a terminal is selected with the mouse: a drag selects cells (a drag held past the top
+  or bottom keeps scrolling, faster the further the pointer is), a double-click a word (a path or
+  an address is one word), a triple-click a line, and Shift+click grows the selection. A selection
+  stays on its text while the view scrolls and new output arrives, and goes when output rewrites
+  that text, when the screen is resized or switches to the alternate screen, and when the person
+  types. Copy is Ctrl+Shift+C on Linux and Windows
   (Command+C on the Mac) and the context menu's Copy; Ctrl+C stays the interrupt. The context menu
   (secondary button) also has Paste and, over an address, Open Link. Ctrl+click (Command+click on
   the Mac) opens an `http` or `https` address, even one that wraps over rows, in the system browser;

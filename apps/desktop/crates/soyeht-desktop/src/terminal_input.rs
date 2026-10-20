@@ -7,6 +7,8 @@ use crate::{
     terminal_view::CellSize,
     workbench::{CopySelection, Workbench},
 };
+use std::time::Duration;
+
 use gpui::{
     Bounds, ClipboardItem, Context, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, Pixels,
     Point, Window,
@@ -34,6 +36,18 @@ pub(crate) const PASTE_SHORTCUT: &str = "\u{2318}V";
 #[cfg(not(target_os = "macos"))]
 pub(crate) const PASTE_SHORTCUT: &str = "Ctrl+Shift+V";
 
+/// How often a drag held past an edge scrolls.
+const DRAG_SCROLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// The cell the pointer is over in a drag, and the lines a step of the timer scrolls (toward
+/// older lines when positive, none while the pointer is over the screen).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DragPoint {
+    row: u16,
+    column: u16,
+    lines: i32,
+}
+
 /// What the window keeps for a terminal pane besides its screen.
 #[derive(Default)]
 pub(crate) struct TerminalUi {
@@ -41,6 +55,11 @@ pub(crate) struct TerminalUi {
     pub geometry: Option<(Bounds<Pixels>, CellSize)>,
     /// A drag that selects text is under way.
     pub dragging: bool,
+    /// Which drag it is, so that the timer of one that ended does not scroll the next.
+    pub drag_epoch: u32,
+    /// Where the pointer is in the drag, and how far it scrolls each step: what the timer acts on
+    /// while the pointer rests past an edge.
+    pub drag_point: Option<DragPoint>,
     /// The address under the pointer while the link key is down.
     pub hover: Option<Link>,
     /// Where the context menu was opened, and the address that was under the pointer there.
@@ -120,8 +139,50 @@ impl Workbench {
         } else {
             screen.begin_selection(at.row, at.column, event.click_count);
         }
-        self.panes.of(pane_id).terminal.dragging = true;
+        let ui = &mut self.panes.of(pane_id).terminal;
+        let started = !ui.dragging;
+        ui.dragging = true;
+        ui.drag_point = None;
+        if started {
+            ui.drag_epoch = ui.drag_epoch.wrapping_add(1);
+            let epoch = ui.drag_epoch;
+            self.scroll_while_dragging(pane_id, epoch, cx);
+        }
         cx.notify();
+    }
+
+    /// While the pointer rests past an edge no event comes, so a timer keeps scrolling the drag
+    /// and growing the selection until it ends.
+    fn scroll_while_dragging(&self, pane_id: &str, epoch: u32, cx: &mut Context<Self>) {
+        let pane_id = pane_id.to_owned();
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(DRAG_SCROLL_INTERVAL).await;
+                let again = this.update(cx, |this, cx| this.step_drag_scroll(&pane_id, epoch, cx));
+                if !matches!(again, Ok(true)) {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// One step of the timer. Whether the drag it belongs to is still under way.
+    fn step_drag_scroll(&mut self, pane_id: &str, epoch: u32, cx: &mut Context<Self>) -> bool {
+        let Some(ui) = self.panes.get(pane_id).map(|ui| &ui.terminal) else {
+            return false;
+        };
+        if !ui.dragging || ui.drag_epoch != epoch {
+            return false;
+        }
+        if let Some(point) = ui.drag_point.filter(|point| point.lines != 0)
+            && let Some(screen) = self.state.screen_mut(pane_id)
+        {
+            screen.scroll(point.lines);
+            screen.extend_selection(point.row, point.column);
+            cx.notify();
+        }
+        true
     }
 
     /// The pointer moved anywhere in the window while a drag was under way.
@@ -141,13 +202,12 @@ impl Workbench {
         let Some(at) = self.terminal_cell(pane_id, event.position) else {
             return;
         };
+        self.panes.of(pane_id).terminal.drag_point = Some(DragPoint {
+            row: at.row,
+            column: at.column,
+            lines: at.edge_scroll(),
+        });
         if let Some(screen) = self.state.screen_mut(pane_id) {
-            // A drag past an edge scrolls toward the lines beyond it.
-            if at.above {
-                screen.scroll(1);
-            } else if at.below {
-                screen.scroll(-1);
-            }
             screen.extend_selection(at.row, at.column);
             cx.notify();
         }
@@ -155,7 +215,9 @@ impl Workbench {
 
     pub(crate) fn terminal_release(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         if self.terminal_dragging(pane_id) {
-            self.panes.of(pane_id).terminal.dragging = false;
+            let ui = &mut self.panes.of(pane_id).terminal;
+            ui.dragging = false;
+            ui.drag_point = None;
             cx.notify();
         }
     }
