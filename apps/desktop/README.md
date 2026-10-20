@@ -241,6 +241,9 @@ Fonts and the provider logos are the Mac app's own resources, embedded from `app
   Mac client's system symbols, which cannot be redistributed.
 - The provider logos are the marks of their owners. They are drawn only to identify a provider's
   agent and usage, as in the Mac app, and are not covered by the licenses above.
+- The application icon is the Mac app's, repackaged without resizing into `packaging/` (the Windows
+  `.ico` and resource script, the Linux icon theme and `.desktop` entry). `docs/platforms.md`, "Release
+  builds", describes them, the release profile and the build id.
 - Desktop-only measurements (window frame, popups, glyph sizes, the line height of each face: GPUI's
   default line is 1.618 times the size, SwiftUI's is the font's own) are in the `desktop` section of
   `contracts/design-tokens.json`. They are generated for Rust only: the Mac output does not

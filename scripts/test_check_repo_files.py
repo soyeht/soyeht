@@ -50,6 +50,13 @@ class ProblemsForTests(unittest.TestCase):
         self.assertEqual(problems_for("docs/reports/slice-1/a.png", png, 10), [])
         self.assertEqual(problems_for("apps/mac/Resources/Fonts/A.ttf", b"\x00\x01\x00\x00", 4), [])
         self.assertTrue(problems_for("scripts/a.png", png, 10))
+        icon = b"\x00\x00\x01\x00\x01\x00"
+        self.assertEqual(problems_for("apps/desktop/packaging/windows/soyeht.ico", icon, 6), [])
+        self.assertEqual(
+            problems_for("apps/desktop/packaging/linux/icons/hicolor/16x16/apps/soyeht.png", png, 10),
+            [],
+        )
+        self.assertTrue(problems_for("scripts/soyeht.ico", icon, 6))
         self.assertTrue(problems_for("docs/notes.mp4", b"\x00\x00\x00\x18ftyp", 8))
         self.assertTrue(problems_for("data/blob", b"\x00\x01\x02", 3))
 

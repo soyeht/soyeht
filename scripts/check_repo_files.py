@@ -64,7 +64,9 @@ BINARY_HOMES = {
         "apps/mac/Resources/Assets.xcassets/",
         "apps/ios/Resources/Assets.xcassets/",
         "apps/shared/Sources/SoyehtClient/Resources/",
+        "apps/desktop/packaging/linux/icons/",
     ),
+    ".ico": ("apps/desktop/packaging/windows/",),
     ".ttf": (
         "apps/mac/Resources/Fonts/",
         "apps/desktop/crates/soyeht-desktop/assets/fonts/",

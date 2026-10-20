@@ -1,0 +1,32 @@
+// The resources `build.rs` of `soyeht-desktop` embeds in the Windows executable: the icon the
+// taskbar and the title bar show, and the version Explorer and Task Manager read. The version
+// numbers come from the package version through the macros `build.rs` defines. The constants
+// of <winver.h> are written as numbers so the file needs no include path.
+
+// The icon with the lowest id is the executable's icon.
+1 ICON "soyeht.ico"
+
+1 VERSIONINFO
+FILEVERSION VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,0
+PRODUCTVERSION VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,0
+FILEFLAGSMASK 0x3F
+FILEFLAGS 0x0
+FILEOS 0x40004
+FILETYPE 0x1
+FILESUBTYPE 0x0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "ProductName", "Soyeht"
+            VALUE "FileDescription", "Soyeht"
+            VALUE "InternalName", "soyeht-desktop"
+            VALUE "OriginalFilename", "soyeht-desktop.exe"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04B0
+    END
+END

@@ -8,6 +8,7 @@ mod agent_actions;
 mod app;
 mod assets;
 mod attach;
+mod build_info;
 mod composer_field;
 mod destination;
 mod draft;

@@ -50,3 +50,15 @@ debug = 0
 
 [profile.test]
 debug = 0
+
+# A shipping build. The engine and the clients rely on unwinding: a poisoned lock is recovered
+# (`PoisonError`), a panicked thread is joined and reported, and a panicked task ends only itself,
+# so `panic = "abort"` would turn each of those into the death of the whole process. The symbols
+# are stripped from the binary: a release is smaller and the engine hashes its whole executable at
+# start. `docs/platforms.md` describes the profile.
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = "symbols"

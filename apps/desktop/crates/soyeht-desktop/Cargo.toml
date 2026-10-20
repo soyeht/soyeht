@@ -35,3 +35,8 @@ gpui_platform.workspace = true
 
 [lints]
 workspace = true
+
+# Embeds the Windows icon and version resource (`build.rs`). It is already in the lockfile, as a
+# dependency of GPUI, so this adds an edge and no new crate.
+[build-dependencies]
+embed-resource = "3"

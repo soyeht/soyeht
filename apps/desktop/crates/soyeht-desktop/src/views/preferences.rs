@@ -5,7 +5,7 @@
 use super::ui::{OwnPress, Typeface, chrome_text, column, icon, id, row};
 use crate::{
     assets::Icon,
-    neo,
+    build_info, neo,
     prefs::{Section, page_width, sheet_extent},
     theme::{Palette, desktop, elevation, radius, space, type_scale},
     workbench::Workbench,
@@ -158,10 +158,8 @@ impl Workbench {
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(px(type_scale::MICRO))
                     .text_color(rgb(palette.muted))
-                    .child(format!(
-                        "Soyeht {} \u{b7} Dev profile",
-                        env!("CARGO_PKG_VERSION")
-                    ))
+                    .child(format!("Soyeht {}", build_info::id()))
+                    .child("Dev profile")
                     .child(format!("{engine} \u{b7} ACP v1")),
             )
     }
