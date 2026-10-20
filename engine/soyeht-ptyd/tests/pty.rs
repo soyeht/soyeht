@@ -80,3 +80,79 @@ fn a_killed_terminal_is_collected_within_a_bound_even_when_nobody_reads_its_outp
         .unwrap();
     assert!(exit.is_some());
 }
+
+/// Runs a program that interrupts itself in a terminal and checks that the signal ended it.
+#[cfg(unix)]
+fn assert_interrupt_ends_a_program() {
+    let mut session = pty::spawn(shell("kill -INT $$; echo survived"), 24, 80).unwrap();
+    let exit = session
+        .child
+        .wait_within(Duration::from_secs(10))
+        .unwrap()
+        .expect("the program was not interrupted");
+    assert_eq!(exit.code(), None, "the program ended on its own");
+}
+
+/// Makes this process ignore Ctrl+C for as long as it lives, as a supervisor started in the
+/// background of a non-interactive shell does; restores what was there.
+#[cfg(unix)]
+struct IgnoringInterrupts(libc::sighandler_t);
+
+#[cfg(unix)]
+impl IgnoringInterrupts {
+    fn new() -> Self {
+        // SAFETY: SIGINT is a valid signal and SIG_IGN a valid disposition.
+        Self(unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) })
+    }
+}
+
+#[cfg(unix)]
+impl Drop for IgnoringInterrupts {
+    fn drop(&mut self) {
+        // SAFETY: restores the disposition the constructor read.
+        unsafe { libc::signal(libc::SIGINT, self.0) };
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_interrupt_ends_a_terminal_program_even_when_the_supervisor_ignores_it() {
+    let _ignoring = IgnoringInterrupts::new();
+    assert_interrupt_ends_a_program();
+}
+
+/// Blocks Ctrl+C on the calling thread, as a supervisor started with it blocked has it; restores
+/// the mask of the thread.
+#[cfg(unix)]
+struct BlockingInterrupts(libc::sigset_t);
+
+#[cfg(unix)]
+impl BlockingInterrupts {
+    fn new() -> Self {
+        // SAFETY: the sets are initialised by sigemptyset and sigaddset before they are used, and
+        // pthread_sigmask changes only the mask of this thread.
+        unsafe {
+            let mut blocked: libc::sigset_t = std::mem::zeroed();
+            let mut before: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut blocked);
+            libc::sigaddset(&mut blocked, libc::SIGINT);
+            libc::pthread_sigmask(libc::SIG_BLOCK, &blocked, &mut before);
+            Self(before)
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for BlockingInterrupts {
+    fn drop(&mut self) {
+        // SAFETY: restores the mask the constructor read.
+        unsafe { libc::pthread_sigmask(libc::SIG_SETMASK, &self.0, std::ptr::null_mut()) };
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn an_interrupt_ends_a_terminal_program_even_when_the_supervisor_blocks_it() {
+    let _blocking = BlockingInterrupts::new();
+    assert_interrupt_ends_a_program();
+}

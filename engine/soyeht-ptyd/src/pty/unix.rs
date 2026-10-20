@@ -68,13 +68,38 @@ fn open(rows: u16, cols: u16) -> io::Result<(File, File)> {
     Ok((master, slave))
 }
 
+/// The signals a terminal's keys and a shell's job control rely on. A supervisor started from a
+/// background job of a non-interactive shell inherits some of them as ignored, and an ignored
+/// signal stays ignored through `exec`, as does a blocked one: Ctrl+C would then end nothing.
+const TERMINAL_SIGNALS: [libc::c_int; 7] = [
+    libc::SIGHUP,
+    libc::SIGINT,
+    libc::SIGQUIT,
+    libc::SIGTERM,
+    libc::SIGTSTP,
+    libc::SIGTTIN,
+    libc::SIGTTOU,
+];
+
 /// Makes the child lead a new session whose controlling terminal is its standard input, which
-/// the caller has attached to the slave side.
+/// the caller has attached to the slave side, and start with the default action for the signals
+/// of the terminal and none of them blocked.
 fn control_from_stdin(command: &mut Command) {
     // SAFETY: the closure uses only async-signal-safe syscalls between fork and
     // exec. Stdio has been attached by Command before this closure executes.
     unsafe {
         command.pre_exec(|| {
+            for signal in TERMINAL_SIGNALS {
+                if libc::signal(signal, libc::SIG_DFL) == libc::SIG_ERR {
+                    return Err(io::Error::last_os_error());
+                }
+            }
+            let mut none: libc::sigset_t = std::mem::zeroed();
+            if libc::sigemptyset(&mut none) == -1
+                || libc::sigprocmask(libc::SIG_SETMASK, &none, std::ptr::null_mut()) == -1
+            {
+                return Err(io::Error::last_os_error());
+            }
             if libc::setsid() == -1 {
                 return Err(io::Error::last_os_error());
             }
