@@ -1,3 +1,4 @@
+import SoyehtProtocol
 import Testing
 
 @testable import SoyehtClient
@@ -12,6 +13,14 @@ enum PaneLayoutFixture {
     fonts: fonts, halo: halo)
   static let sizing = PaneLayoutSizingPolicy(
     floors: floors, gaps: PaneLayoutSpacing.gaps, compactFloors: compactFloors)
+
+  /// A live idle pane of `mode` in `workspace`.
+  static func pane(_ id: String, workspace: String, mode: PaneMode) -> Pane {
+    Pane(
+      paneId: id, workspaceId: workspace, name: id, cwd: "/repo", mode: mode, state: .idle,
+      source: .protocol, confidence: 1, phrase: "idle", generation: 1, cols: 80, rows: 24,
+      record: false)
+  }
 
   /// The Mac's window policy around a pane footprint of at most `largestWidth` and at least
   /// `smallestHeight`.

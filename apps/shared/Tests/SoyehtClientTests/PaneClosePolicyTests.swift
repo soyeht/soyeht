@@ -4,10 +4,7 @@ import Testing
 @testable import SoyehtClient
 
 private func pane(_ id: String, mode: PaneMode, workspace: String = "w") -> Pane {
-  Pane(
-    paneId: id, workspaceId: workspace, name: id, cwd: "/repo", mode: mode, state: .idle,
-    source: .protocol, confidence: 1, phrase: "idle", generation: 1, cols: 80, rows: 24,
-    record: false)
+  PaneLayoutFixture.pane(id, workspace: workspace, mode: mode)
 }
 
 private func file(path: String, dirty: Bool = false, conflicted: Bool = false) -> FileDocument {

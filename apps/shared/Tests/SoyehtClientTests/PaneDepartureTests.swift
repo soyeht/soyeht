@@ -4,10 +4,7 @@ import Testing
 @testable import SoyehtClient
 
 private func agentPane(_ id: String, workspace: String = "work") -> Pane {
-  Pane(
-    paneId: id, workspaceId: workspace, name: id, cwd: "/repo", mode: .agent, state: .idle,
-    source: .protocol, confidence: 1, phrase: "idle", generation: 1, cols: 80, rows: 24,
-    record: false)
+  PaneLayoutFixture.pane(id, workspace: workspace, mode: .agent)
 }
 
 @MainActor private func client(holding panes: [Pane]) throws -> EngineClient {

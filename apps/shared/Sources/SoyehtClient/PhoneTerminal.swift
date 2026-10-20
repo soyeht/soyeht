@@ -13,25 +13,32 @@
   /// screen (`TerminalSizePolicy`).
   @MainActor public struct PhoneTerminal: UIViewRepresentable {
     let client: EngineClient
+    let paneId: String?
     let claimsKeyboardFocus: Bool
     let fontStore: TerminalFontSizeStore
     let sizeMode: TerminalSizeMode
+    let onActivate: (() -> Void)?
 
     /// With `claimsKeyboardFocus` the terminal becomes first responder as soon as it is on
-    /// screen, so a hardware keyboard types into it without a tap first.
+    /// screen, so a hardware keyboard types into it without a tap first. Without a `paneId` the
+    /// terminal shows whichever pane the client has selected, alone on the screen; with one it is
+    /// one of several on a pane board, and `onActivate` tells that it took the keyboard.
     public init(
-      client: EngineClient, claimsKeyboardFocus: Bool = false,
-      fontStore: TerminalFontSizeStore = .shared, sizeMode: TerminalSizeMode = .followMac
+      client: EngineClient, paneId: String? = nil, claimsKeyboardFocus: Bool = false,
+      fontStore: TerminalFontSizeStore = .shared, sizeMode: TerminalSizeMode = .followMac,
+      onActivate: (() -> Void)? = nil
     ) {
       self.client = client
+      self.paneId = paneId
       self.claimsKeyboardFocus = claimsKeyboardFocus
       self.fontStore = fontStore
       self.sizeMode = sizeMode
+      self.onActivate = onActivate
     }
     public func makeCoordinator() -> TerminalHost {
       let links = PhoneTerminalLinks(client: client)
       return TerminalHost(
-        client: client, acceptsInput: true,
+        client: client, paneId: paneId, acceptsInput: true,
         openWeb: { workspaceId, url in links.open(url, workspaceId: workspaceId) },
         sizeMode: sizeMode,
         writeClipboard: { text, source in
@@ -46,6 +53,7 @@
     }
     public func makeUIView(context: Context) -> PhoneTerminalSurface {
       let view = PhoneTerminalSurface(frame: .zero, font: Self.font(fontStore.size))
+      view.onActivate = onActivate
       view.claimsKeyboardFocus = claimsKeyboardFocus
       view.linkReporting = .implicit
       view.linkHighlightMode = .hover
@@ -63,6 +71,7 @@
       return view
     }
     public func updateUIView(_ view: PhoneTerminalSurface, context: Context) {
+      view.onActivate = onActivate
       view.claimsKeyboardFocus = claimsKeyboardFocus
       applyTheme(to: view)
       if context.coordinator.updateSizeMode(sizeMode) {
@@ -90,7 +99,12 @@
   }
 
   public final class PhoneTerminalSurface: TerminalView {
-    var claimsKeyboardFocus = false
+    var onActivate: (() -> Void)?
+    var claimsKeyboardFocus = false {
+      didSet {
+        if claimsKeyboardFocus && !oldValue { claimFocus() }
+      }
+    }
     var appliedFontSize = TerminalFontSizePolicy.defaultSize
     var onZoomCommand: ((TerminalZoomCommand) -> Void)?
     var onPinchedSize: ((Double) -> Void)?
@@ -113,7 +127,18 @@
 
     public override func didMoveToWindow() {
       super.didMoveToWindow()
-      guard claimsKeyboardFocus, window != nil else { return }
+      if claimsKeyboardFocus { claimFocus() }
+    }
+
+    /// A tap that gives this terminal the keyboard also gives it the focus.
+    public override func becomeFirstResponder() -> Bool {
+      let became = super.becomeFirstResponder()
+      if became { onActivate?() }
+      return became
+    }
+
+    private func claimFocus() {
+      guard window != nil else { return }
       // SwiftUI inserts the view before its transition settles; claim focus on the next turn.
       DispatchQueue.main.async { [weak self] in
         guard let self, self.window != nil, !self.isFirstResponder else { return }

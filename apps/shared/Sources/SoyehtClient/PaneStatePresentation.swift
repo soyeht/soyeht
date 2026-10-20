@@ -14,3 +14,19 @@ extension StateDot {
     }
   }
 }
+
+/// The state dot at the head of a pane's header and tab.
+@MainActor public struct PaneStateDot: View {
+  private let state: PaneState
+
+  public init(_ state: PaneState) {
+    self.state = state
+  }
+
+  public var body: some View {
+    Circle().fill(state.dot.color)
+      .frame(
+        width: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth,
+        height: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth)
+  }
+}

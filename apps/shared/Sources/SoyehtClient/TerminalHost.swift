@@ -76,14 +76,25 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
 
   func attach(_ view: TerminalView, refresh: Bool = true) {
     view.terminalDelegate = self
+    let sink: (Data, Bool) -> Void = { [weak self, weak view] bytes, reset in
+      guard let self, let view else { return }
+      feeding = true
+      defer { feeding = false }
+      if reset { view.getTerminal().resetToInitialState() }
+      view.feed(byteArray: Array(bytes)[...])
+    }
     if paneId == nil {
-      client.claimTerminalOutput(owner: self) { [weak self, weak view] bytes, reset in
-        guard let self, let view else { return }
-        feeding = true
-        defer { feeding = false }
-        if reset { view.getTerminal().resetToInitialState() }
-        view.feed(byteArray: Array(bytes)[...])
-      }
+      client.claimTerminalOutput(owner: self, sink: sink)
+    } else {
+      #if !os(macOS)
+        // A board draws several terminals, each taking its own pane's output, and asks for the
+        // pane's screen itself. The Mac surface claims its pane itself.
+        if let paneId {
+          client.claimTerminalOutput(paneId: paneId, owner: self, sink: sink)
+          client.attachBoardTerminal(paneId: paneId, owner: self)
+          return
+        }
+      #endif
     }
     if refresh {
       if let paneId { client.refreshTerminal(paneId) } else { client.refreshTerminal() }
@@ -93,7 +104,13 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   /// Replays the screen after the view changed its grid, so the lines are laid out again from
   /// the pane's own bytes instead of reflowed in place.
   func redraw() {
-    if let paneId { client.refreshTerminal(paneId) } else { client.refreshTerminal() }
+    guard let paneId else { return client.refreshTerminal() }
+    #if os(macOS)
+      client.refreshTerminal(paneId)
+    #else
+      // A board terminal asks again whatever stream exists: its own screen is what is stale.
+      client.attachBoardTerminal(paneId: paneId, owner: self)
+    #endif
   }
 
   func update(_ view: TerminalView) {
@@ -138,7 +155,13 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
 
   func detach(_ view: TerminalView) {
     if view.terminalDelegate === self { view.terminalDelegate = nil }
-    if paneId == nil { client.releaseTerminalOutput(owner: self) }
+    if paneId == nil {
+      client.releaseTerminalOutput(owner: self)
+    } else {
+      #if !os(macOS)
+        if let paneId { client.detachBoardTerminal(paneId: paneId, owner: self) }
+      #endif
+    }
   }
 
   public func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {

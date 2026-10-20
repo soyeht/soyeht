@@ -40,7 +40,7 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
       }
     } detail: {
       if let selection {
-        PhonePaneDetail(client: client, paneId: selection).id(selection)
+        detail(of: selection)
           .toolbar { closePaneButton(selection) }
       } else {
         ContentUnavailableView(
@@ -71,6 +71,21 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
         }
         .accessibilityIdentifier("close-pane")
       }
+    }
+  }
+
+  /// A wide layout shows the selected pane's workspace as a board of panes side by side, with
+  /// focus following the selection; the narrow layout shows the one pane.
+  @ViewBuilder private func detail(of paneId: String) -> some View {
+    if let pane = client.panes.first(where: { $0.paneId == paneId }),
+      PaneBoardPolicy.usesBoard(
+        regularWidth: fillsDetail,
+        panes: client.layoutPanes(client.panes.filter { $0.workspaceId == pane.workspaceId }))
+    {
+      PhonePaneBoardView(client: client, workspaceId: pane.workspaceId, focusedPaneId: $selection)
+        .id(pane.workspaceId)
+    } else {
+      PhonePaneDetail(client: client, paneId: paneId).id(paneId)
     }
   }
 

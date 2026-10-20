@@ -82,7 +82,7 @@ private struct PhonePane: View {
 }
 
 /// The terminal's text size and which screen decides the pane's size.
-private struct PhoneTerminalMenu: View {
+struct PhoneTerminalMenu: View {
   let client: EngineClient
   let paneId: String
   let fontStore: TerminalFontSizeStore
@@ -117,7 +117,7 @@ private struct PhoneTerminalMenu: View {
 
 /// The agent pane's "what is happening" line under the navigation title, as in the Mac
 /// pane header: the rolling ticker and the status word, `accent` when the agent needs you.
-private struct PhoneAgentTicker: View {
+struct PhoneAgentTicker: View {
   let client: EngineClient
   let pane: Pane
 
@@ -142,7 +142,7 @@ private struct PhoneAgentTicker: View {
   }
 }
 
-private struct PhoneWebPane: View {
+struct PhoneWebPane: View {
   let client: EngineClient
   let pane: Pane
 
@@ -193,7 +193,7 @@ private struct PhoneWebPane: View {
 }
 
 /// Shown for a moment when a program in the terminal wrote to the clipboard.
-private struct PhoneCopyNotice: View {
+struct PhoneCopyNotice: View {
   var body: some View {
     Label(TerminalCopyNotice.text, systemImage: "doc.on.clipboard")
       .font(.caption.weight(.semibold))

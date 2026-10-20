@@ -51,13 +51,14 @@ public final class EngineClient {
   public internal(set) var writingDocuments: [String: WritingDocumentView] = [:]
   public internal(set) var webPanes: [String: WebPaneView] = [:]
   public internal(set) var localServers: [LocalServer] = []
-  public private(set) var connected = false
-  public private(set) var connectionRevision: UInt64 = 0
+  public internal(set) var connected = false
+  public internal(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
-  public private(set) var connectionText = "Connecting to the Dev profile…"
+  public internal(set) var connectionText = "Connecting to the Dev profile…"
   public var problem: String?
   var backgroundLoads: [BackgroundLoad: BackgroundLoadRecord] = [:]
-  public private(set) var selectedPaneId: String?
+  public internal(set) var selectedPaneId: String?
+  @ObservationIgnored lazy var terminalPresenters = TerminalPresenters(control: self)
   @ObservationIgnored public lazy var paneLayouts = PaneLayoutController {
     [weak self] workspaceId, state in
     guard let self else { throw ClientFailure.disconnected }
@@ -93,7 +94,7 @@ public final class EngineClient {
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
   @ObservationIgnored private var snapshot = SnapshotAssembly()
-  private(set) var terminalStreams = TerminalStreamReplica()
+  var terminalStreams = TerminalStreamReplica()
   @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
   @ObservationIgnored private var inputTask: Task<Void, Never>?
@@ -305,28 +306,7 @@ public final class EngineClient {
     _ = try await request(.eventsSubscribe, .object(["since": .string(String(cursor))]))
     try await loadUsage()
     if !pairedDevice { try await loadLocalServers() }
-    connectionRevision &+= 1
-    connected = true
-    connectionText = "Dev profile · connected"
-    if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
-    #if os(macOS)
-      // The tmux-style Mac surface keeps every terminal current, including hidden workspaces.
-      for pane in panes where pane.mode == .terminal { try await subscribe(pane.paneId) }
-    #endif
-    if let pane = selectedPane {
-      switch pane.mode {
-      case .terminal:
-        #if !os(macOS)
-          // Phone still has one selected terminal surface; Block D will define its final policy.
-          try await subscribe(pane.paneId)
-        #endif
-      case .agent:
-        await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
-      case .editor: await loadEditorPane(pane.paneId)
-      case .web: break
-      case .writing: try await loadWritingPane(pane.paneId)
-      }
-    }
+    try await settleConnection()
     await reader.value
   }
   func request(
@@ -703,11 +683,7 @@ public final class EngineClient {
     guard connected else { return }
     perform {
       #if !os(macOS)
-        if let old, self.panes.first(where: { $0.paneId == old })?.mode == .terminal {
-          _ = try await self.request(
-            .paneStreamUnsubscribe, .object(["paneId": .string(old)]))
-          self.terminalStreams.remove(old)
-        }
+        if let old { try await self.unsubscribeAfterSelecting(from: old) }
       #endif
       if let paneId, self.selectedPaneId == paneId {
         guard try await self.focusEnginePane(paneId) else { return }
@@ -716,11 +692,7 @@ public final class EngineClient {
         {
           switch pane.mode {
           case .terminal:
-            #if os(macOS)
-              if !self.terminalStreams.contains(paneId) { try await self.subscribe(paneId) }
-            #else
-              try await self.subscribe(paneId)
-            #endif
+            if !self.terminalStreams.contains(paneId) { try await self.subscribe(paneId) }
           case .agent:
             await self.hydratePresentedAgentPanes([
               PresentedPane(paneId: paneId, isVisible: true)
@@ -742,7 +714,7 @@ public final class EngineClient {
     }
     return panes.first { $0.workspaceId == workspaceId && $0.mode == .agent }
   }
-  private func subscribe(_ pane: String) async throws {
+  func subscribe(_ pane: String) async throws {
     guard !terminalSubscriptionsInFlight.contains(pane) else { return }
     terminalSubscriptionsInFlight.insert(pane)
     defer { terminalSubscriptionsInFlight.remove(pane) }
@@ -781,9 +753,10 @@ public final class EngineClient {
     terminalOutputSinks[paneId] = TerminalOutputTarget(
       owner: ObjectIdentifier(owner), sink: sink)
   }
-  func releaseTerminalOutput(paneId: String, owner: AnyObject) {
-    guard terminalOutputSinks[paneId]?.owner == ObjectIdentifier(owner) else { return }
-    terminalOutputSinks.removeValue(forKey: paneId)
+  /// Whether `owner` held the pane's sink, which is now released.
+  @discardableResult func releaseTerminalOutput(paneId: String, owner: AnyObject) -> Bool {
+    guard terminalOutputSinks[paneId]?.owner == ObjectIdentifier(owner) else { return false }
+    return terminalOutputSinks.removeValue(forKey: paneId) != nil
   }
   func deliverTerminalOutput(to paneId: String, bytes: Data, reset: Bool) {
     terminalOutputSinks[paneId]?.sink(bytes, reset)

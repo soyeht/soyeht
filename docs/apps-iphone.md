@@ -43,12 +43,20 @@ permission requests and changes the harness's permission mode after engine confi
 At compact width (iPhone, or an iPad app in a narrow Split View or Stage
 Manager window) the home screen is the list of workspaces and their panes, and
 choosing a pane pushes it full screen. At regular width the same list becomes a
-sidebar and the selected pane fills the detail column: agent conversation,
-terminal with input, writing surfaces, or a web pane's “Open on the Mac”.
-The detail starts on the pane focused on the Mac. When the shown pane closes,
-the detail moves to the nearest pane in the same workspace, then anywhere; at
-compact width it returns to the list instead. The app supports every iPad
-orientation, Split View and Stage Manager.
+sidebar and the detail column shows the selected pane's workspace as a board:
+its panes side by side, arranged from the layout the Mac stores for the workspace
+(`workspace.layout.set`), with the same fit rules as the Mac and the desktop
+(`PaneLayoutFit`, ADR 0099). Panes that do not fit side by side stack, and when
+they do not stack either they share one tab group. The board never edits the
+stored layout; a wider window shows the stored arrangement again. A tap on a pane
+focuses it (the accent outline), and the focused pane takes the keyboard. Each
+pane is an agent conversation, a terminal with input, or a web pane's “Open on the
+Mac”; an editor pane is shown on the Mac only. A workspace with one pane, or with a
+writing pane (the writing workspace arranges that pane and its companion itself),
+shows the selected pane alone, as before. The detail starts on the pane focused on
+the Mac. When the focused pane closes, focus moves to the nearest pane in the same
+workspace, then anywhere; at compact width the app returns to the list instead. The
+app supports every iPad orientation, Split View and Stage Manager.
 
 ## Panes and workspaces
 
@@ -76,7 +84,8 @@ also appear in the iPad menu bar and when holding Command:
 
 | Shortcut | Action |
 | --- | --- |
-| Command-] / Command-[ | Next or previous pane, across workspaces |
+| Command-] / Command-[ | Next or previous pane: across workspaces in the list, in visual order on a board |
+| Option-Command-arrow | On a board, focus the pane beside the focused one |
 | Control-Command-S | Show and focus the sidebar |
 | Command-1 … Command-9 | Jump to that workspace |
 | Command-Return | Send the agent prompt (Return adds a line) |

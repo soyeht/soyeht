@@ -34,10 +34,7 @@ struct PaneCardHeader: View {
 
   private func content(plan: PaneHeaderLayoutPlan) -> some View {
     HStack(spacing: MacTheme.Space.x7) {
-      Circle().fill(pane.state.dot.color)
-        .frame(
-          width: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth,
-          height: PaneLayoutContentMetrics.genericPaneHeaderStateDotWidth)
+      PaneStateDot(pane.state)
       Text(pane.name)
         .font(MacTheme.ui(MacTheme.TypeScale.body, weight: .heavy))
         .foregroundStyle(MacTheme.ink)
