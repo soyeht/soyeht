@@ -233,6 +233,11 @@ inherit the main actor.
   `check_all.sh --list --tier fast` shows the steps without running them. Moving a step from
   `both` to `full` lowers the count the verification ratchet watches and needs a
   `Verification change:` line in the PR body.
+- A contributor without the vocabulary sets `SOYEHT_SKIP_FORBIDDEN_TERMS=1`: `forbidden_terms.py` then
+  skips the vocabulary scan with a loud banner, still rejects AI attribution in commit messages, and
+  `check_all.sh` repeats the reminder at the end. Supplied `FORBIDDEN_TERMS` always win, and
+  `post_merge.py` still refuses to run without them. A maintainer runs the real scan before the merge
+  (`CONTRIBUTING.md`).
 - Full gate, after the merge: `scripts/main_watch.py` (one pass; the coordinator runs it
   continuously) fetches `origin/main` and, when it moved, calls `scripts/post_merge.py` once
   on the newest commit. That runs `check_all.sh --tier full` in a clean worktree and writes

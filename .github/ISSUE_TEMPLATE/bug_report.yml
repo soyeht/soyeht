@@ -1,0 +1,58 @@
+name: Bug report
+description: Something does not work as the contracts or the docs say it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security problems here; see SECURITY.md.
+        Do not paste tokens, pairing codes, device identifiers or private paths.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Engine
+        - Mac app
+        - iPhone app
+        - Desktop client (Linux or Windows)
+        - CLI or MCP server
+        - Contracts or generated code
+        - Gate scripts or docs
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Operating system and version, and the architecture.
+      placeholder: macOS 15 arm64, Ubuntu 26.04 arm64, Windows 11 24H2 arm64
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: Output of `git rev-parse HEAD`.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence that shows it. A `soyeht --profile dev` command or a failing test is ideal.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behaviour
+      description: Quote the contract or doc that says what should happen, if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log lines
+      description: The engine log lines around the failure. They log a failure's kind, not its message text; check them for paths before you paste.
+      render: text

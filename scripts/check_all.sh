@@ -46,8 +46,16 @@ done
 case "$tier" in fast | full) ;; *) echo "check_all: --tier must be fast or full" >&2; exit 64 ;; esac
 known_areas=" always engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing "
 set -- ${gate_args[@]+"${gate_args[@]}"}
+# A contributor without the vocabulary sets SOYEHT_SKIP_FORBIDDEN_TERMS=1: the scan prints
+# that it was skipped (scripts/forbidden_terms.py), the run is recorded as not merge-grade, and
+# a maintainer runs the real scan before the merge. Supplied terms always mean a real scan.
+skipped_vocabulary=0
 if ((!list)); then
-    : "${FORBIDDEN_TERMS:?Provide the restricted vocabulary through the environment}"
+    if [[ "${SOYEHT_SKIP_FORBIDDEN_TERMS:-}" != 1 || -n "${FORBIDDEN_TERMS:-}" ]]; then
+        : "${FORBIDDEN_TERMS:?Provide the restricted vocabulary through the environment (outside contributors: SOYEHT_SKIP_FORBIDDEN_TERMS=1, see CONTRIBUTING.md)}"
+    else
+        skipped_vocabulary=1
+    fi
 fi
 
 # A shared, content-addressed compile cache: safe across worktrees, unlike a shared
@@ -81,6 +89,7 @@ finish() {
     if [[ -s "$step_log" ]]; then
         local label="$tier"
         [[ -z "$only" ]] || label="only:$only"
+        ((!skipped_vocabulary)) || label="$label+vocabulary-skipped"
         uv run python scripts/gate_timings.py finalize --steps "$step_log" \
             --tier "$label" --exit-code "$code" \
             --areas "$GATE_AREAS" --out "$timings_out" || echo 'check_all: could not write the timings' >&2
@@ -343,4 +352,10 @@ if [[ -n "$only" && $matched -eq 0 ]]; then
     echo "check_all: no step with id $only" >&2
     exit 78
 fi
-((list)) || echo "check_all: passed (tier $tier)"
+if ((!list)); then
+    if ((skipped_vocabulary)); then
+        echo "check_all: passed (tier $tier; vocabulary scan SKIPPED, not merge-grade)"
+    else
+        echo "check_all: passed (tier $tier)"
+    fi
+fi

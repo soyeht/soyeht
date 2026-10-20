@@ -32,7 +32,7 @@ Early. macOS is the supported platform. The engine and the desktop client build 
 
 ## Contributing
 
-Every feature starts in `docs/contracts/`; if it is not in a contract, it is not in scope yet. Open an issue before a large change. CI must be green to merge. Developer setup and verification commands live in `docs/dev-local.md`.
+Every feature starts in `docs/contracts/`; if it is not in a contract, it is not in scope yet. Open an issue before a large change. `CONTRIBUTING.md` explains how to build Soyeht on macOS, Linux and Windows, run it, test it and prepare a pull request; `docs/add-a-pane-type.md` and `docs/add-a-harness.md` are the guides for the two most common extensions. Report security problems as `SECURITY.md` says.
 
 ## License
 

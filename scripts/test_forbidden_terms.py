@@ -1,8 +1,11 @@
 import contextlib
 import io
+import os
+import sys
 import unittest
+from unittest import mock
 
-from forbidden_terms import matches, parse_terms, scan, scan_message
+from forbidden_terms import SKIP_ENV, main, matches, parse_terms, scan, scan_message, skipping
 
 
 class VocabularyTests(unittest.TestCase):
@@ -40,6 +43,34 @@ class VocabularyTests(unittest.TestCase):
                 self.assertTrue(scan_message("commit", "fix: change\n" + phrase))
             self.assertEqual(output.getvalue(), "commit:2\n")
         self.assertFalse(scan_message("commit", "feat(protocol): define message types"))
+
+
+class SkipTests(unittest.TestCase):
+    def test_only_the_flag_with_no_vocabulary_skips(self):
+        self.assertTrue(skipping({SKIP_ENV: "1"}))
+        self.assertTrue(skipping({SKIP_ENV: "1", "FORBIDDEN_TERMS": " \n"}))
+        self.assertFalse(skipping({}))
+        self.assertFalse(skipping({SKIP_ENV: "0"}))
+        self.assertFalse(skipping({SKIP_ENV: "yes"}))
+
+    def test_supplied_terms_always_win_over_the_flag(self):
+        self.assertFalse(skipping({SKIP_ENV: "1", "FORBIDDEN_TERMS": "sampleword"}))
+
+    def test_a_skipped_run_says_so_loudly_and_still_runs(self):
+        errors = io.StringIO()
+        output = io.StringIO()
+        with (mock.patch.dict(os.environ, {SKIP_ENV: "1", "FORBIDDEN_TERMS": ""}),
+              mock.patch.object(sys, "argv", ["forbidden_terms.py"]),
+              contextlib.redirect_stderr(errors), contextlib.redirect_stdout(output)):
+            self.assertEqual(main(), 0)
+        self.assertIn("SKIPPED", errors.getvalue())
+        self.assertIn("SKIPPED", output.getvalue())
+
+    def test_without_the_flag_a_missing_vocabulary_still_fails(self):
+        with mock.patch.dict(os.environ, {"FORBIDDEN_TERMS": ""}, clear=False):
+            os.environ.pop(SKIP_ENV, None)
+            with mock.patch.object(sys, "argv", ["forbidden_terms.py"]), self.assertRaises(ValueError):
+                main()
 
 
 if __name__ == "__main__":

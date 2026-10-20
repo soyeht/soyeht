@@ -143,6 +143,46 @@ class StepListTests(unittest.TestCase):
                     self.assertIn("swift:test-shared-build", listed)
 
 
+class VocabularySkipTests(unittest.TestCase):
+    """Runs the script itself: a variable that is read but never set only fails when it runs."""
+
+    def run_script(self, *arguments: str, **environment: str):
+        timings = Path(tempfile.mkdtemp()) / "timings.json"
+        env = {key: value for key, value in os.environ.items()
+               if key not in ("FORBIDDEN_TERMS", "SOYEHT_SKIP_FORBIDDEN_TERMS")}
+        env.update(environment, SOYEHT_GATE_TIMINGS=str(timings))
+        result = subprocess.run(
+            ["bash", "-u", "scripts/check_all.sh", *arguments],
+            cwd=ROOT, capture_output=True, text=True, env=env,
+        )
+        return result, timings
+
+    def test_listing_works_with_and_without_the_vocabulary_or_the_flag(self):
+        for environment in ({}, {"FORBIDDEN_TERMS": "dummy"}, {"SOYEHT_SKIP_FORBIDDEN_TERMS": "1"},
+                            {"FORBIDDEN_TERMS": "dummy", "SOYEHT_SKIP_FORBIDDEN_TERMS": "1"}):
+            with self.subTest(environment=environment):
+                result, _ = self.run_script("--list", "--tier", "fast", **environment)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_run_without_the_vocabulary_or_the_flag_is_refused(self):
+        result, _ = self.run_script("--only", "gate-timings:unit")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SOYEHT_SKIP_FORBIDDEN_TERMS", result.stderr)
+
+    def test_a_skipped_run_passes_but_says_and_records_that_it_is_not_merge_grade(self):
+        result, timings = self.run_script("--only", "gate-timings:unit", SOYEHT_SKIP_FORBIDDEN_TERMS="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("vocabulary scan SKIPPED, not merge-grade", result.stdout)
+        self.assertIn("vocabulary-skipped", timings.read_text())
+
+    def test_supplied_terms_make_a_normal_run_even_with_the_flag(self):
+        result, timings = self.run_script(
+            "--only", "gate-timings:unit", FORBIDDEN_TERMS="dummy", SOYEHT_SKIP_FORBIDDEN_TERMS="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("SKIPPED", result.stdout + result.stderr)
+        self.assertNotIn("vocabulary-skipped", timings.read_text())
+
+
 class GateListTests(unittest.TestCase):
     def test_every_workflow_delegates_to_check_all(self):
         problems = [

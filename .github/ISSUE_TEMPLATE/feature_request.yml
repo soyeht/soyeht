@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a change. A feature starts in docs/contracts/.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every feature starts in `docs/contracts/`: if it is not in a contract, it is not in
+        scope yet. Open an issue before a large change, and say here whether you would build it.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and cannot, or do badly, today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What should happen. Name the contract it belongs to, or say it needs a new one.
+    validations:
+      required: true
+  - type: checkboxes
+    id: layers
+    attributes:
+      label: What it touches
+      options:
+        - label: The protocol or `contracts/` (wire methods, events, limits, tokens)
+        - label: The engine
+        - label: The Mac or iPhone apps
+        - label: The desktop client (Linux and Windows)
+        - label: A new pane type (docs/add-a-pane-type.md)
+        - label: A new harness (docs/add-a-harness.md)
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: dropdown
+    id: contribute
+    attributes:
+      label: Will you build it?
+      options:
+        - "Yes"
+        - "With guidance"
+        - "No"
+    validations:
+      required: true
