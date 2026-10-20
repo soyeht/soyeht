@@ -89,6 +89,15 @@ impl Workbench {
             .state
             .selected_workspace()
             .map(|w| w.workspace_id.clone());
+        if ids.is_empty() {
+            // With no tab the strip shrinks to nothing while its padding stays, which reads as
+            // content hidden past the right end and drew a stray chevron on the empty state.
+            self.hidden_tabs = 0;
+            return TabStrip {
+                element: div().into_any_element(),
+                hidden: Vec::new(),
+            };
+        }
         let active = ids.iter().position(|(id, _)| Some(id) == selected.as_ref());
         let viewport = self.tab_scroll.bounds();
         // The active tab is brought into view by the smallest move that shows all of it, once the
