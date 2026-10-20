@@ -16,6 +16,7 @@ mod editor_ui;
 mod editor_view;
 #[cfg(feature = "dev-tools")]
 mod fixture;
+mod folder;
 mod fonts;
 #[cfg(feature = "dev-tools")]
 mod gallery;
@@ -25,6 +26,7 @@ mod neo;
 mod open_menu;
 mod pane_ui;
 mod prefs;
+mod rename;
 mod switch_flow;
 mod tasks_ui;
 mod terminal_input;

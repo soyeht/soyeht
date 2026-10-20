@@ -16,12 +16,13 @@ use soyeht_protocol::{
     PaneConfigSetParams, PaneCreateParams, PaneCreateResult, PaneDraftParams,
     PaneElicitationAnswerParams, PaneFocusParams, PaneHarnessSwitchParams, PaneInputParams,
     PaneMode, PanePermissionAnswerParams, PanePromptParams, PaneQueueRemoveParams,
-    PaneQueueResumeParams, PaneResizeParams, PaneRoleSetParams, PaneStreamSubscribeParams,
-    PaneTranscriptParams, PaneTranscriptResult, PromptOrigin, ReplayFrom, Request,
-    SkillsListResult, TailSelector, TaskCreateParams, TaskCreateResult, TaskDispatchParams,
-    TaskDispatchResult, TaskExecutor, TaskMoveParams, TaskMoveResult, TaskPriority, TaskShowParams,
-    TaskShowResult, TaskState, UsageListParams, UsageListResult, UsageProvider,
-    WorkspaceCloseParams, WorkspaceLayoutSetParams, WorkspacePaneLayoutEnvelope, client_policy,
+    PaneQueueResumeParams, PaneRenameParams, PaneResizeParams, PaneRoleSetParams,
+    PaneStreamSubscribeParams, PaneTranscriptParams, PaneTranscriptResult, PromptOrigin,
+    ReplayFrom, Request, SkillsListResult, TailSelector, TaskCreateParams, TaskCreateResult,
+    TaskDispatchParams, TaskDispatchResult, TaskExecutor, TaskMoveParams, TaskMoveResult,
+    TaskPriority, TaskShowParams, TaskShowResult, TaskState, UsageListParams, UsageListResult,
+    UsageProvider, WorkspaceCloseParams, WorkspaceCreateParams, WorkspaceCreateResult,
+    WorkspaceLayoutSetParams, WorkspacePaneLayoutEnvelope, WorkspaceRenameParams, client_policy,
 };
 use std::sync::mpsc;
 use uuid::Uuid;
@@ -48,6 +49,8 @@ pub enum Command {
     },
     CreateTerminal {
         workspace_id: String,
+        /// The folder the shell starts in; `None` is the workspace's folder.
+        cwd: Option<String>,
         /// Names this request in the answer (`Event::Opened`, `Event::OpenFailed`).
         ticket: u64,
     },
@@ -58,7 +61,24 @@ pub enum Command {
     CreateAgent {
         workspace_id: String,
         harness: String,
+        /// The folder the agent works in; `None` is the workspace's folder.
+        cwd: Option<String>,
         ticket: u64,
+    },
+    /// Make a workspace of the folder at `path`. The answer (`Event::WorkspaceOpened`) carries
+    /// the ticket.
+    CreateWorkspace {
+        name: String,
+        path: String,
+        ticket: u64,
+    },
+    RenameWorkspace {
+        workspace_id: String,
+        name: String,
+    },
+    RenamePane {
+        pane_id: String,
+        name: String,
     },
     /// Send the person's message, and the files attached to it, to an agent.
     Prompt {
@@ -277,14 +297,15 @@ pub fn request(command: &Command) -> Option<Request> {
             pane_id: pane_id.clone(),
             idempotency_key: key(),
         }),
-        Command::CreateTerminal { workspace_id, .. } => {
-            create(workspace_id, PaneMode::Terminal, None)
-        }
+        Command::CreateTerminal {
+            workspace_id, cwd, ..
+        } => create(workspace_id, PaneMode::Terminal, None, cwd.as_ref()),
         Command::CreateAgent {
             workspace_id,
             harness,
+            cwd,
             ..
-        } => create(workspace_id, PaneMode::Agent, Some(harness)),
+        } => create(workspace_id, PaneMode::Agent, Some(harness), cwd.as_ref()),
         Command::ClosePane { pane_id } => Request::PaneClose(PaneCloseParams {
             pane_id: pane_id.clone(),
             idempotency_key: key(),
@@ -467,6 +488,32 @@ fn follow_up_request(command: &Command) -> Option<Request> {
             pane_id: pane_id.clone(),
             idempotency_key: key(),
         }),
+        _ => return naming_request(command),
+    })
+}
+
+/// The requests that make a workspace of a folder and that name workspaces and panes.
+fn naming_request(command: &Command) -> Option<Request> {
+    Some(match command {
+        Command::CreateWorkspace { name, path, .. } => {
+            Request::WorkspaceCreate(WorkspaceCreateParams {
+                name: name.clone(),
+                path: path.clone(),
+                idempotency_key: key(),
+            })
+        }
+        Command::RenameWorkspace { workspace_id, name } => {
+            Request::WorkspaceRename(WorkspaceRenameParams {
+                workspace_id: workspace_id.clone(),
+                name: name.clone(),
+                idempotency_key: key(),
+            })
+        }
+        Command::RenamePane { pane_id, name } => Request::PaneRename(PaneRenameParams {
+            pane_id: pane_id.clone(),
+            name: name.clone(),
+            idempotency_key: key(),
+        }),
         _ => return None,
     })
 }
@@ -490,11 +537,16 @@ fn transcript_page(pane_id: &str, before: Option<&String>) -> Request {
     })
 }
 
-fn create(workspace_id: &str, mode: PaneMode, harness: Option<&String>) -> Request {
+fn create(
+    workspace_id: &str,
+    mode: PaneMode,
+    harness: Option<&String>,
+    cwd: Option<&String>,
+) -> Request {
     Request::PaneCreate(PaneCreateParams {
         workspace_id: workspace_id.to_owned(),
         mode,
-        cwd: None,
+        cwd: cwd.cloned(),
         name: None,
         cols: None,
         rows: None,
@@ -517,6 +569,7 @@ impl Command {
         match self {
             Self::CreateTerminal { ticket, .. }
             | Self::CreateAgent { ticket, .. }
+            | Self::CreateWorkspace { ticket, .. }
             | Self::CreateTask { ticket, .. }
             | Self::DispatchTask { ticket, .. } => Some(*ticket),
             _ => None,
@@ -603,6 +656,10 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
         Command::LoadSkills => Some(Event::Skills(serde_json::from_value::<SkillsListResult>(
             result,
         )?)),
+        Command::CreateWorkspace { ticket, .. } => Some(Event::WorkspaceOpened {
+            ticket: *ticket,
+            workspace: serde_json::from_value::<WorkspaceCreateResult>(result)?.workspace,
+        }),
         Command::CreateTerminal { ticket, .. } | Command::CreateAgent { ticket, .. } => {
             Some(Event::Opened {
                 ticket: *ticket,

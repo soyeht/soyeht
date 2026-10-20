@@ -38,7 +38,8 @@ and status word of every pane state, `vectors/reconnect.json` the waits between 
 `vectors/permission-preview.json` the lines a file change shows before it is approved and how many
 lines a text takes, and `vectors/editor.json` when the visible lines need another page of a file,
 which editor tab shows and which takes over, what a keystroke changes and sends, and how the
-project tree answers the keys; the Mac and the desktop client both pass them. The editor's
+project tree answers the keys, and `vectors/workspaces.json` how a folder is named, resolved and reused as a
+workspace, which folders are offered again, what a rename sends and which workspace is selected when one closes; the Mac, iOS and desktop clients all pass them. The editor's
 constants (`editor`: the read-ahead, the tab width, the bounded tab history, the save wait, the
 indent), the pairs it closes (`editorPairs`) and the palette role of each syntax highlight
 (`highlightRoles`) are generated with the rest, and the editor's metrics (`editor` in

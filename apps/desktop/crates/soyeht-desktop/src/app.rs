@@ -2,6 +2,7 @@
 
 use crate::{
     assets::Assets,
+    folder::OpenFolder,
     fonts, graphics,
     theme::{ThemeName, desktop},
     window_size::{self, opening_size},
@@ -94,12 +95,14 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.bind_keys([
             KeyBinding::new(&format!("{MODIFIER}-q"), Quit, None),
+            KeyBinding::new(&format!("{MODIFIER}-o"), OpenFolder, Some("Workbench")),
             KeyBinding::new(&format!("{MODIFIER}-t"), NewTerminal, Some("Workbench")),
             KeyBinding::new(&format!("{MODIFIER}-v"), Paste, Some("Workbench")),
             KeyBinding::new(&format!("{MODIFIER}-c"), CopySelection, Some("Workbench")),
         ]);
         cx.set_menus([
             Menu::new("Soyeht").items([MenuItem::action("Quit Soyeht", Quit)]),
+            Menu::new("File").items([MenuItem::action("Open Folder\u{2026}", OpenFolder)]),
             Menu::new("Terminal").items([
                 MenuItem::action("New Terminal", NewTerminal),
                 MenuItem::action("Copy", CopySelection),

@@ -311,6 +311,7 @@ fn opening_a_pane_is_answered_with_its_ticket_and_a_failure_releases_it() {
     engine
         .send(Command::CreateTerminal {
             workspace_id: "w1".into(),
+            cwd: None,
             ticket: 5,
         })
         .unwrap();
@@ -324,6 +325,7 @@ fn opening_a_pane_is_answered_with_its_ticket_and_a_failure_releases_it() {
     engine
         .send(Command::CreateTerminal {
             workspace_id: "w1".into(),
+            cwd: None,
             ticket: 6,
         })
         .unwrap();

@@ -93,6 +93,7 @@ fn requests_use_the_generated_method_names_and_wire_shapes() {
     );
     let create = body(Command::CreateTerminal {
         workspace_id: "w".into(),
+        cwd: None,
         ticket: 7,
     });
     assert_eq!(create["method"], "pane.create");
@@ -102,6 +103,67 @@ fn requests_use_the_generated_method_names_and_wire_shapes() {
             .as_str()
             .is_some_and(|key| key.len() == 36)
     );
+}
+
+#[test]
+fn a_pane_is_created_in_the_folder_it_is_asked_for() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let terminal = body(Command::CreateTerminal {
+        workspace_id: "w".into(),
+        cwd: Some("/home/ana/notes".into()),
+        ticket: 1,
+    });
+    assert_eq!(terminal["params"]["cwd"], "/home/ana/notes");
+    let agent = body(Command::CreateAgent {
+        workspace_id: "w".into(),
+        harness: "claude".into(),
+        cwd: Some("/home/ana/notes".into()),
+        ticket: 2,
+    });
+    assert_eq!(agent["params"]["cwd"], "/home/ana/notes");
+    let default = body(Command::CreateTerminal {
+        workspace_id: "w".into(),
+        cwd: None,
+        ticket: 3,
+    });
+    assert!(default["params"].get("cwd").is_none());
+}
+
+#[test]
+fn a_workspace_is_made_from_a_folder_and_renamed_with_the_engines_methods() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let made = Command::CreateWorkspace {
+        name: "notes".into(),
+        path: "/home/ana/notes".into(),
+        ticket: 4,
+    };
+    assert_eq!(made.ticket(), Some(4));
+    let sent = body(made.clone());
+    assert_eq!(sent["method"], "workspace.create");
+    assert_eq!(sent["params"]["name"], "notes");
+    assert_eq!(sent["params"]["path"], "/home/ana/notes");
+    let answer = crate::testing::workspace_json("w9");
+    let event = outcome(&made, serde_json::json!({ "workspace": answer })).unwrap();
+    assert!(matches!(
+        event,
+        Some(Event::WorkspaceOpened { ticket: 4, workspace }) if workspace.workspace_id == "w9"
+    ));
+    let renamed = body(Command::RenameWorkspace {
+        workspace_id: "w".into(),
+        name: "Docs".into(),
+    });
+    assert_eq!(renamed["method"], "workspace.rename");
+    assert_eq!(renamed["params"]["workspaceId"], "w");
+    assert_eq!(renamed["params"]["name"], "Docs");
+    let pane = body(Command::RenamePane {
+        pane_id: "p".into(),
+        name: "Build".into(),
+    });
+    assert_eq!(pane["method"], "pane.rename");
+    assert_eq!(pane["params"]["paneId"], "p");
+    assert_eq!(pane["params"]["name"], "Build");
 }
 
 #[test]
@@ -230,6 +292,7 @@ fn only_fetches_run_in_the_background_and_only_opening_a_pane_has_a_ticket() {
     assert!(!input("p", "x").is_background());
     let open = Command::CreateTerminal {
         workspace_id: "w".into(),
+        cwd: None,
         ticket: 3,
     };
     assert_eq!(open.ticket(), Some(3));
@@ -240,6 +303,7 @@ fn only_fetches_run_in_the_background_and_only_opening_a_pane_has_a_ticket() {
 fn the_answer_to_opening_a_pane_carries_its_ticket() {
     let open = Command::CreateTerminal {
         workspace_id: "w".into(),
+        cwd: None,
         ticket: 3,
     };
     let event = outcome(&open, serde_json::json!({"paneId": "p9"})).unwrap();

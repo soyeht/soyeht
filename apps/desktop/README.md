@@ -115,6 +115,15 @@ agent works.
   history and the conflict comparison (a conflict is shown on a banner), Markdown preview, tab
   drag and drop, creating, renaming and deleting entries of the project panel, and input method
   composition (typed text is the key's own text).
+- A window with no workspace says "Open a folder to start" and offers the platform's folder picker
+  (the same entry is in the "+" menu and on Ctrl+Shift+O, Command+O on the Mac). A folder that
+  already has a workspace opens that one; otherwise the engine makes a workspace named for the
+  folder and a terminal opens in it. Panes start in the folder of their workspace. A double click
+  on a workspace tab or on a pane's title renames it in place (Return keeps the name, Escape drops
+  it), and the tab's close mark closes the workspace and selects the next tab, or the previous one
+  when it was last. The "+" menu also lists the recent folders (the roots of the workspaces, then
+  the folders panes run in). The naming, path, reuse, recent-folder, rename and close rules are
+  `contracts/vectors/workspaces.json`, which the Mac and iOS clients pass too.
 - Web and writing panes and dictation are listed with a notice.
 - Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
   General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone

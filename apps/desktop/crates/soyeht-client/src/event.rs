@@ -5,7 +5,7 @@ use crate::{
 use serde_json::Value;
 use soyeht_protocol::{
     EventName, HarnessInfo, LoopConfig, PromptItem, SkillsListResult, Task, TranscriptMessage,
-    UsageReading,
+    UsageReading, Workspace,
 };
 
 /// What the connection tells the application, in the order it happened.
@@ -46,6 +46,8 @@ pub enum Event {
     },
     /// The pane a request to open one (`Command::CreateTerminal`, `CreateAgent`) created.
     Opened { ticket: u64, pane_id: String },
+    /// The workspace a request to open a folder (`Command::CreateWorkspace`) made.
+    WorkspaceOpened { ticket: u64, workspace: Workspace },
     /// The request to open a pane that `ticket` names failed.
     OpenFailed { ticket: u64 },
     /// The usage of every provider.

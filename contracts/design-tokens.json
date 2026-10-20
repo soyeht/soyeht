@@ -394,6 +394,7 @@
     "menuCheckGlyph": 14,
     "menuHarnessRowHeight": 42,
     "paneTitleMaxWidth": 260,
+    "renameFieldMinWidth": 120,
     "popupGap": 4,
     "fadeWidth": 28,
     "paneFloorLabelCharacters": 8,

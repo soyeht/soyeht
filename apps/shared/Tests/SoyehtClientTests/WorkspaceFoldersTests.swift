@@ -9,7 +9,7 @@ private func workspace(_ id: String, _ path: String, name: String? = nil) -> Wor
     layout: .object([:]))
 }
 
-private func pane(_ id: String, cwd: String) -> Pane {
+func pane(_ id: String, cwd: String) -> Pane {
   Pane(
     paneId: id, workspaceId: "w1", name: id, cwd: cwd, mode: .terminal, state: .idle,
     source: .protocol, confidence: 1, phrase: "idle", generation: 1, cols: 80, rows: 24,

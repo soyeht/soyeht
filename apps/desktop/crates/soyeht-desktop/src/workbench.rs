@@ -8,6 +8,7 @@ use crate::{
     open_menu::{Menu, OpenMenu},
     pane_ui::PaneUis,
     prefs::Prefs,
+    rename::Rename,
     switch_flow::SwitchDraft,
     tasks_ui::TasksUi,
     theme::ThemeName,
@@ -75,7 +76,9 @@ pub struct Workbench {
     /// The pane to bring into view on the next frame, once the stage has been laid out.
     pub(crate) reveal: Option<String>,
     /// The pane whose input takes keyboard focus on the next frame.
-    focus_request: Option<String>,
+    pub(crate) focus_request: Option<String>,
+    /// The name of a workspace or pane being edited in place.
+    pub(crate) rename: Option<Rename>,
     /// The workspaces whose editors have their project panel folded away.
     pub(crate) project_panel_hidden: HashSet<String>,
     /// The scroll of the project panel of each workspace's editor place that has no file open.
@@ -144,6 +147,7 @@ impl Workbench {
             hidden_tabs: 0,
             reveal: None,
             focus_request: None,
+            rename: None,
             project_panel_hidden: HashSet::new(),
             empty_tree_scroll: HashMap::new(),
             _events: events,
@@ -480,14 +484,21 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         self.menus.close();
+        // A pane starts in the folder of its workspace, as the Mac asks.
+        let cwd = self
+            .state
+            .workspace(&workspace_id)
+            .map(|workspace| workspace.path.clone());
         let taken = self.send(match harness {
             Some(harness) => Command::CreateAgent {
                 workspace_id,
                 harness,
+                cwd,
                 ticket,
             },
             None => Command::CreateTerminal {
                 workspace_id,
+                cwd,
                 ticket,
             },
         });
@@ -662,6 +673,10 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         let keystroke = &event.keystroke;
+        // A name being edited takes the keys its field does not handle: they are not the pane's.
+        if self.rename.is_some() {
+            return;
+        }
         // Escape closes an open menu, as on the Mac, and is not typed into the terminal.
         if keystroke.key == "escape"
             && (self.prefs.mode_menu.take().is_some() || self.menus.escape())

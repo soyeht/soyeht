@@ -7,6 +7,7 @@ use super::ui::{
 use crate::{
     assets::Icon,
     open_menu::Menu,
+    rename::RenameTarget,
     terminal_view,
     theme::{Palette, desktop, pane_interior, pane_layout, radius, space, type_scale},
     workbench::Workbench,
@@ -160,17 +161,7 @@ impl Workbench {
                     .rounded_full()
                     .bg(rgb(state_color(&pane.state, palette))),
             )
-            .child(
-                // The title gives way first, so the header buttons always fit a narrow pane.
-                div()
-                    .min_w_0()
-                    .max_w(px(desktop::PANE_TITLE_MAX_WIDTH))
-                    .truncate()
-                    .font_weight(FontWeight::EXTRA_BOLD)
-                    .text_size(px(type_scale::BODY))
-                    .text_color(rgb(palette.ink))
-                    .child(SharedString::from(pane.name.clone())),
-            )
+            .child(self.pane_title(palette, cx, pane))
             .child(
                 row()
                     .flex_1()
@@ -213,6 +204,42 @@ impl Workbench {
                 )
             })
             .children(buttons)
+    }
+
+    /// The pane's name, which a double click turns into a field to rename it in. The title gives
+    /// way first, so the header buttons always fit a narrow pane.
+    fn pane_title(
+        &mut self,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+        pane: &Pane,
+    ) -> AnyElement {
+        let target = RenameTarget::Pane(pane.pane_id.clone());
+        let title = div()
+            .min_w_0()
+            .max_w(px(desktop::PANE_TITLE_MAX_WIDTH))
+            .font_weight(FontWeight::EXTRA_BOLD)
+            .text_size(px(type_scale::BODY))
+            .text_color(rgb(palette.ink));
+        if let Some(field) = self.rename_field(&target) {
+            field.update(cx, |field, _| field.style(palette, "Name"));
+            return title
+                .min_w(px(desktop::RENAME_FIELD_MIN_WIDTH))
+                .child(field)
+                .into_any_element();
+        }
+        let name = pane.name.clone();
+        title
+            .id(id("pane-title", &pane.pane_id))
+            .truncate()
+            .tooltip(hint("Double-click to rename", palette))
+            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                if event.click_count() >= 2 {
+                    this.begin_rename(target.clone(), &name, window, cx);
+                }
+            }))
+            .child(SharedString::from(pane.name.clone()))
+            .into_any_element()
     }
 
     /// A button of a pane's header; a header of its own kind (an editor's) draws the ones it shares.

@@ -15,6 +15,7 @@ use crate::{
     assets::Icon,
     neo,
     open_menu::Menu,
+    rename::RenameTarget,
     theme::{Palette, desktop, elevation, glyph, layout, pane_interior, radius, space, type_scale},
     workbench::Workbench,
 };
@@ -210,10 +211,34 @@ impl Workbench {
         let working = self.state.has_working_agent(Some(workspace_id));
         let select_id = workspace_id.to_owned();
         let close_id = workspace_id.to_owned();
+        let current_name = name.to_owned();
+        let target = RenameTarget::Workspace(workspace_id.to_owned());
+        let editing = self.rename_field(&target);
         let surface = if selected {
             neo::well(palette, radius::PILL, desktop::WELL_DEPTH)
         } else {
             neo::raised(palette, radius::PILL, elevation::PILL)
+        };
+        let label = div()
+            .chrome()
+            .font_weight(FontWeight::SEMIBOLD)
+            .text_size(px(type_scale::CAPTION));
+        let label = match editing {
+            Some(field) => {
+                field.update(cx, |field, _| field.style(palette, "Name"));
+                label
+                    .min_w(px(desktop::RENAME_FIELD_MIN_WIDTH))
+                    .child(field)
+            }
+            None => label
+                .min_w_0()
+                .truncate()
+                .text_color(rgb(if selected {
+                    palette.accent
+                } else {
+                    palette.ink
+                }))
+                .child(SharedString::from(name.to_owned())),
         };
         surface
             .id(id("workspace-tab", workspace_id))
@@ -226,7 +251,15 @@ impl Workbench {
             .gap(px(space::X6))
             .px(px(space::X12))
             .cursor_pointer()
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
+            .on_click(cx.listener(move |this, event: &ClickEvent, window, cx| {
+                // The name is a field while it is edited: a click in it is the caret's.
+                if this.rename_field(&target).is_some() {
+                    return;
+                }
+                if event.click_count() >= 2 {
+                    this.begin_rename(target.clone(), &current_name, window, cx);
+                    return;
+                }
                 this.select_workspace(&select_id, cx);
                 if let Some(pane_id) = this.state.focused_pane().map(|p| p.pane_id.clone()) {
                     this.focus_input(&pane_id, window, cx);
@@ -241,20 +274,7 @@ impl Workbench {
                 row()
                     .min_w_0()
                     .gap(px(space::X8))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .truncate()
-                            .chrome()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_size(px(type_scale::CAPTION))
-                            .text_color(rgb(if selected {
-                                palette.accent
-                            } else {
-                                palette.ink
-                            }))
-                            .child(SharedString::from(name.to_owned())),
-                    )
+                    .child(label)
                     .children((waiting > 0).then(|| waiting_badge(waiting, palette)))
                     .children((waiting == 0 && working).then(|| working_dot(palette))),
             )
@@ -332,28 +352,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let open = self.menus.is_open(&Menu::NewPane);
-        let rows = if open {
-            let pick: Pick =
-                Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
-            let agents = self.harness_rows(Picker::default(), palette, &pick, cx);
-            std::iter::once(menus::heading(palette, "Open a pane").into_any_element())
-                .chain([
-                    menus::on_pick(
-                        menus::item(palette, "terminal", "Terminal", false),
-                        cx,
-                        |this, cx| this.open_pane(None, cx),
-                    ),
-                    menus::on_pick(
-                        menus::item(palette, "editor", "Editor", false),
-                        cx,
-                        Workbench::open_editor_place,
-                    ),
-                ])
-                .chain(agents)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let rows = self.new_pane_rows(open, palette, cx);
         with_list(
             palette,
             open,
@@ -379,6 +378,67 @@ impl Workbench {
             }))
             .child(icon(Icon::Plus, glyph::TOP_BAR_NEW_PANE, palette.ink)),
         )
+    }
+}
+
+impl Workbench {
+    /// The list of the "+" button while it is `open`: a folder to open as a workspace and, once there is a workspace,
+    /// the panes it can open.
+    fn new_pane_rows(
+        &mut self,
+        open: bool,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        if !open {
+            return Vec::new();
+        }
+        let folder = menus::on_pick(
+            menus::item(palette, "folder", "Folder\u{2026}", false),
+            cx,
+            Workbench::choose_folder,
+        );
+        let mut rows = vec![
+            menus::heading(palette, "Open a workspace").into_any_element(),
+            folder,
+        ];
+        let recent = self.state.recent_folders();
+        if !recent.is_empty() {
+            rows.push(menus::heading(palette, "Recent folders").into_any_element());
+        }
+        for folder in recent {
+            let path = folder.path.clone();
+            rows.push(menus::on_pick(
+                menus::detail_item(
+                    palette,
+                    &id("recent-folder", &folder.path),
+                    div().into_any_element(),
+                    folder.name,
+                    folder.path,
+                    false,
+                    true,
+                ),
+                cx,
+                move |this, cx| this.open_folder_path(std::path::Path::new(&path), cx),
+            ));
+        }
+        if self.state.selected_workspace().is_none() {
+            return rows;
+        }
+        let pick: Pick = Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
+        rows.push(menus::heading(palette, "Open a pane").into_any_element());
+        rows.push(menus::on_pick(
+            menus::item(palette, "terminal", "Terminal", false),
+            cx,
+            |this, cx| this.open_pane(None, cx),
+        ));
+        rows.push(menus::on_pick(
+            menus::item(palette, "editor", "Editor", false),
+            cx,
+            Workbench::open_editor_place,
+        ));
+        rows.extend(self.harness_rows(Picker::default(), palette, &pick, cx));
+        rows
     }
 }
 

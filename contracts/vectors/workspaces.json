@@ -1,0 +1,52 @@
+{
+  "description": "How a folder becomes a workspace, shared by the Mac and iOS clients (WorkspaceFolderPolicy, WorkspaceNaming, WorkspaceTabStripPolicy) and the desktop client (soyeht_client::state, `workspaces`). A typed or chosen path is trimmed, must be absolute and loses its trailing separators; a workspace is named for the last component of its folder; a folder that already has a workspace opens that one; the recent folders are the roots of the workspaces, then the folders panes run in that are not roots; a rename needs a different name that is not blank; and closing the selected workspace selects the next one, or the previous one when the closed one was last. Both clients pass every case.",
+  "names": [
+    {"name": "the last component names the workspace", "path": "/Users/ana/soyeht", "workspaceName": "soyeht"},
+    {"name": "example stay", "path": "/Users/ana/my project", "workspaceName": "my project"},
+    {"name": "a dot folder keeps its dot", "path": "/srv/.config", "workspaceName": ".config"},
+    {"name": "a backslash path is split too", "path": "C:\\work\\app", "workspaceName": "app"},
+    {"name": "the root is named for itself", "path": "/", "workspaceName": "/"}
+  ],
+  "resolve": [
+    {"name": "a path is kept", "typed": "/Users/ana/soyeht", "path": "/Users/ana/soyeht"},
+    {"name": "space and a trailing separator go", "typed": "  /Users/ana/soyeht/  ", "path": "/Users/ana/soyeht"},
+    {"name": "several trailing separators go", "typed": "/Users/ana/soyeht///", "path": "/Users/ana/soyeht"},
+    {"name": "the root keeps its separator", "typed": "/", "path": "/"},
+    {"name": "a Windows path loses its trailing separator", "typed": "C:\\work\\app\\", "path": "C:\\work\\app"},
+    {"name": "a drive keeps its separator", "typed": "C:\\", "path": "C:\\"},
+    {"name": "nothing typed", "typed": "   ", "problem": "empty"},
+    {"name": "a tilde is not expanded", "typed": "~/app", "problem": "notAbsolute"},
+    {"name": "a relative path is refused", "typed": "app", "problem": "notAbsolute"}
+  ],
+  "reuse": [
+    {"name": "no workspace has the folder", "workspaces": [{"workspaceId": "w1", "path": "/a"}], "path": "/b", "reuses": null},
+    {"name": "the workspace with the same path is reused", "workspaces": [{"workspaceId": "w1", "path": "/a"}, {"workspaceId": "w2", "path": "/b"}], "path": "/b", "reuses": "w2"},
+    {"name": "a parent folder is another workspace", "workspaces": [{"workspaceId": "w1", "path": "/a/b"}], "path": "/a", "reuses": null},
+    {"name": "no workspaces at all", "workspaces": [], "path": "/a", "reuses": null}
+  ],
+  "recent": [
+    {
+      "name": "workspace roots first, then the folders of panes once each",
+      "workspaces": [{"workspaceId": "w1", "path": "/Users/me/app"}, {"workspaceId": "w2", "path": "/Users/me/site"}],
+      "paneFolders": ["/Users/me/app", "/Users/me/app/tools", "/Users/me/app/tools", ""],
+      "folders": [
+        {"path": "/Users/me/app", "name": "app", "workspaceId": "w1"},
+        {"path": "/Users/me/site", "name": "site", "workspaceId": "w2"},
+        {"path": "/Users/me/app/tools", "name": "tools", "workspaceId": null}
+      ]
+    },
+    {"name": "nothing open, nothing recent", "workspaces": [], "paneFolders": [], "folders": []}
+  ],
+  "submission": [
+    {"name": "a different name is kept, trimmed", "typed": "  Site  ", "current": "app", "submitted": "Site"},
+    {"name": "the same name is not sent again", "typed": "app", "current": "app", "submitted": null},
+    {"name": "a blank name is not sent", "typed": "   ", "current": "app", "submitted": null}
+  ],
+  "closing": [
+    {"name": "closing the first selects the next", "order": ["first", "middle", "last"], "closed": "first", "selected": "middle"},
+    {"name": "closing a middle one selects the next", "order": ["first", "middle", "last"], "closed": "middle", "selected": "last"},
+    {"name": "closing the last selects the previous", "order": ["first", "middle", "last"], "closed": "last", "selected": "middle"},
+    {"name": "closing the only one selects nothing", "order": ["only"], "closed": "only", "selected": null},
+    {"name": "closing one that is not listed selects nothing", "order": ["first", "last"], "closed": "other", "selected": null}
+  ]
+}

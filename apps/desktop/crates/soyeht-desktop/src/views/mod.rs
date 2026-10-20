@@ -35,6 +35,7 @@ pub(crate) use tiles::sizing;
 mod top_bar;
 mod ui;
 mod usage_ring;
+mod welcome;
 mod window_controls;
 
 use crate::{
@@ -52,6 +53,7 @@ use soyeht_client::Connection;
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_focus_request(window, cx);
+        self.settle_rename(window, cx);
         self.window_height = f32::from(window.viewport_size().height);
         self.window_width = f32::from(window.viewport_size().width);
         let palette = self.theme.palette();
@@ -61,6 +63,7 @@ impl Render for Workbench {
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
             .on_action(cx.listener(Self::new_terminal))
+            .on_action(cx.listener(Self::open_folder_action))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::copy_selection))
             .relative()
@@ -155,13 +158,14 @@ impl Workbench {
     }
 }
 
-/// What the stage says when there is nothing else to show, by how the connection stands.
-pub(crate) fn connection_hint(connection: &Connection) -> &'static str {
+/// What the stage says when the connection is not up, and so there is nothing else to show. A
+/// live connection with no workspace shows the welcome instead.
+pub(crate) fn connection_hint(connection: &Connection) -> Option<&'static str> {
     match connection {
-        Connection::Connecting => "Connecting to the engine\u{2026}",
-        Connection::Connected => "No workspaces yet. Create one with the soyeht command line.",
+        Connection::Connecting => Some("Connecting to the engine\u{2026}"),
+        Connection::Connected => None,
         Connection::Disconnected(_) => {
-            "The engine is not running. Start it and this window reconnects."
+            Some("The engine is not running. Start it and this window reconnects.")
         }
     }
 }

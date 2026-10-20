@@ -469,6 +469,7 @@ pub mod desktop {
     pub const MENU_CHECK_GLYPH: f32 = 14.0;
     pub const MENU_HARNESS_ROW_HEIGHT: f32 = 42.0;
     pub const PANE_TITLE_MAX_WIDTH: f32 = 260.0;
+    pub const RENAME_FIELD_MIN_WIDTH: f32 = 120.0;
     pub const POPUP_GAP: f32 = 4.0;
     pub const FADE_WIDTH: f32 = 28.0;
     pub const PANE_FLOOR_LABEL_CHARACTERS: f32 = 8.0;

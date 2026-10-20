@@ -159,11 +159,14 @@ impl State {
             .filter(move |pane| pane.workspace_id == workspace_id)
     }
 
-    pub fn selected_workspace(&self) -> Option<&Workspace> {
-        let id = self.selected_workspace.as_deref()?;
+    pub fn workspace(&self, workspace_id: &str) -> Option<&Workspace> {
         self.workspaces
             .iter()
-            .find(|workspace| workspace.workspace_id == id)
+            .find(|workspace| workspace.workspace_id == workspace_id)
+    }
+
+    pub fn selected_workspace(&self) -> Option<&Workspace> {
+        self.workspace(self.selected_workspace.as_deref()?)
     }
 
     pub fn pane(&self, pane_id: &str) -> Option<&Pane> {
@@ -304,6 +307,9 @@ impl State {
                 Vec::new()
             }
             Event::Opened { ticket, pane_id } => self.opened(ticket, pane_id),
+            Event::WorkspaceOpened { ticket, workspace } => {
+                self.workspace_opened(ticket, workspace)
+            }
             Event::OpenFailed { ticket } => {
                 self.expected.retain(|expected| expected.ticket != ticket);
                 Vec::new()
@@ -464,10 +470,15 @@ impl State {
     }
 
     fn close_workspace(&mut self, workspace_id: &str) {
+        let order: Vec<String> = self
+            .workspaces
+            .iter()
+            .map(|w| w.workspace_id.clone())
+            .collect();
         self.workspaces.retain(|w| w.workspace_id != workspace_id);
         self.editors.workspace_closed(workspace_id);
         if self.selected_workspace.as_deref() == Some(workspace_id) {
-            self.selected_workspace = self.workspaces.first().map(|w| w.workspace_id.clone());
+            self.selected_workspace = workspaces::selection_after_closing(&order, workspace_id);
             self.focused_pane = None;
             self.repair_selection();
         }
@@ -597,5 +608,7 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
 }
 
 mod editor;
+mod workspaces;
+pub use workspaces::{FolderOpening, FolderPathProblem, RecentFolder, submission};
 #[cfg(test)]
 mod tests;

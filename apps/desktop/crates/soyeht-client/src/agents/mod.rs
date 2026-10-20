@@ -78,10 +78,7 @@ impl State {
         workspace_id: &str,
         shows: impl Fn(&Pane) -> bool,
     ) -> Option<WorkspacePaneLayoutNode> {
-        let workspace = self
-            .workspaces
-            .iter()
-            .find(|workspace| workspace.workspace_id == workspace_id)?;
+        let workspace = self.workspace(workspace_id)?;
         let waiting = self.waiting_for_place(workspace_id);
         let panes: Vec<&Pane> = self
             .panes_of(workspace_id)

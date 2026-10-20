@@ -42,15 +42,10 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let held: Vec<Task> = self.state.tasks_in(workspace_id).cloned().collect();
-        let name = self
-            .state
-            .workspaces()
-            .iter()
-            .find(|workspace| workspace.workspace_id == workspace_id)
-            .map_or_else(
-                || "Workspace".to_owned(),
-                |workspace| workspace.name.clone(),
-            );
+        let name = self.state.workspace(workspace_id).map_or_else(
+            || "Workspace".to_owned(),
+            |workspace| workspace.name.clone(),
+        );
         let attention = self.state.attention_in(workspace_id).len();
         let summary = tasks::summary(&held.iter().collect::<Vec<_>>(), attention);
         let connected = self.state.connection == Connection::Connected;

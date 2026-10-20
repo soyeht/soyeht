@@ -45,11 +45,10 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let Some(workspace) = self.state.selected_workspace() else {
-            return empty(
-                palette,
-                None,
-                super::connection_hint(&self.state.connection),
-            );
+            return match super::connection_hint(&self.state.connection) {
+                Some(hint) => empty(palette, None, hint),
+                None => self.welcome(palette, cx),
+            };
         };
         let workspace_id = workspace.workspace_id.clone();
         let place = self.destination;
