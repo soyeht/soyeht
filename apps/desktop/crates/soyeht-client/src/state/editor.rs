@@ -7,7 +7,7 @@ use crate::{
     Command,
     editor::{EditorCommand, EditorEvent, Editors},
 };
-use soyeht_protocol::{EventName, PaneMode};
+use soyeht_protocol::{EventName, PaneMode, TextPosition};
 
 impl State {
     pub(super) fn editor_event(&mut self, event: EditorEvent) -> Vec<Effect> {
@@ -52,6 +52,24 @@ impl State {
             workspace_id: workspace_id.to_owned(),
             path: path.to_owned(),
             preview,
+            at: None,
+        }))]
+    }
+
+    /// Opens a file of the workspace in a permanent tab with the caret at `at`, as a click on
+    /// `path:line` does: the file is shown from that line and the caret waits there.
+    pub fn editor_open_at(
+        &mut self,
+        workspace_id: &str,
+        path: &str,
+        at: TextPosition,
+    ) -> Vec<Effect> {
+        self.editors.jump_after_open(workspace_id, path, at.clone());
+        vec![Effect::Send(Command::Editor(EditorCommand::Open {
+            workspace_id: workspace_id.to_owned(),
+            path: path.to_owned(),
+            preview: false,
+            at: Some(at),
         }))]
     }
 

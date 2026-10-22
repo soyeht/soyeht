@@ -4,7 +4,7 @@
 //! the window's: choosing in one block ends it in the other. Copy takes it from here
 //! (`selected_text`), with the keys of any text field.
 
-use crate::{pointer::follow, theme::Palette};
+use crate::{file_open::OpenFile, pointer::follow, theme::Palette};
 use gpui::{
     AnyElement, App, ElementId, Global, HighlightStyle, InteractiveElement, InteractiveText,
     IntoElement, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, RenderOnce,
@@ -33,8 +33,17 @@ pub(crate) fn clear_selection(cx: &mut App) {
     }
 }
 
+/// What a click on a link in the text does.
+#[derive(Clone)]
+pub(super) enum Link {
+    /// Opens the address in the system browser.
+    Web(String),
+    /// Opens the file in the editor.
+    File(OpenFile),
+}
+
 /// A block of read-only text: `content` with the looks in `highlights` (ranges of bytes that do
-/// not overlap, in order), the font of `mono` ranges and the addresses of `links`. `key` names
+/// not overlap, in order), the font of `mono` ranges and the links in `links`. `key` names
 /// the block among all that can be selected.
 #[derive(IntoElement)]
 pub(super) struct Selectable {
@@ -42,7 +51,7 @@ pub(super) struct Selectable {
     pub content: SharedString,
     pub highlights: Vec<(Range<usize>, HighlightStyle)>,
     pub mono: Vec<(Range<usize>, SharedString)>,
-    pub links: Vec<(Range<usize>, String)>,
+    pub links: Vec<(Range<usize>, Link)>,
     pub palette: &'static Palette,
 }
 
@@ -126,11 +135,13 @@ impl RenderOnce for Selectable {
         let text: AnyElement = if self.links.is_empty() {
             styled.into_any_element()
         } else {
-            let (ranges, addresses): (Vec<_>, Vec<_>) = self.links.into_iter().unzip();
+            let (ranges, targets): (Vec<_>, Vec<_>) = self.links.into_iter().unzip();
             InteractiveText::new(ElementId::from(self.key.clone()), styled)
                 .on_click(ranges, move |index, _, cx: &mut App| {
-                    if let Some(address) = addresses.get(index) {
-                        cx.open_url(address);
+                    match targets.get(index) {
+                        Some(Link::Web(address)) => cx.open_url(address),
+                        Some(Link::File(file)) => file.open(cx),
+                        None => {}
                     }
                 })
                 .into_any_element()

@@ -1,11 +1,14 @@
-//! Web addresses in terminal output. Only `http` and `https` addresses are links: a terminal
-//! prints text from programs and files it does not control, and an address of another scheme
-//! (`file:`, `ssh:`, an application's own) would start another program.
+//! Links in terminal output: web addresses and file references. Only `http` and `https`
+//! addresses are links: a terminal prints text from programs and files it does not control, and
+//! an address of another scheme (`file:`, `ssh:`, an application's own) would start another
+//! program. A file reference (`src/main.rs:12`, the rule of [`crate::file_links`]) is found here
+//! by its text; whether the file is in the workspace is the window's to say.
 
 use super::{
     lines::{Glyph, Lines, Logical},
     selection::{Point, Span},
 };
+use crate::file_links::{self, Reference};
 
 /// The schemes of the addresses that open, with what follows them.
 const SCHEMES: [&str; 2] = ["https://", "http://"];
@@ -17,14 +20,17 @@ const ENDS_ADDRESS: &str = "<>\"`\\";
 /// is not.
 const TRAILING_PUNCTUATION: &str = ".,;:!?'*";
 
-/// A web address in the output, and the cells it takes.
+/// A web address or a file reference in the output, and the cells it takes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
+    /// The text of the link: the address, or the reference as it is written.
     pub url: String,
     pub span: Span,
+    /// What a file reference points at; `None` for a web address.
+    pub file: Option<Reference>,
 }
 
-/// The web address that takes the cell at `at`, if there is one.
+/// The link that takes the cell at `at`, if there is one.
 pub(crate) fn link_at(lines: &mut Lines, at: Point) -> Option<Link> {
     let logical = Logical::around(lines, at.line);
     let index = logical.index_of(at.line, at.column)?;
@@ -52,7 +58,10 @@ pub(crate) fn link_at(lines: &mut Lines, at: Point) -> Option<Link> {
         // Past the address, the next one starts after it.
         start += length.max(1);
     }
-    None
+    let found = file_links::find_at(&characters, index)?;
+    let mut link = link_of(glyphs, found.range.start, found.range.len());
+    link.file = Some(found.reference);
+    Some(link)
 }
 
 fn link_of(glyphs: &[Glyph], start: usize, length: usize) -> Link {
@@ -70,6 +79,7 @@ fn link_of(glyphs: &[Glyph], start: usize, length: usize) -> Link {
                 column: last.last_column(),
             },
         },
+        file: None,
     }
 }
 
@@ -230,6 +240,50 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_file_reference_is_a_link_with_what_it_points_at() {
+        let output = "error at src/main.rs:12:5 here";
+        let mut screen = TerminalScreen::new(2, 60);
+        screen.feed(output.as_bytes());
+        let link = screen.link_at(0, 14).unwrap();
+        assert_eq!(link.url, "src/main.rs:12:5");
+        assert_eq!(link.span.start, Point { line: 0, column: 9 });
+        assert_eq!(
+            link.span.end,
+            Point {
+                line: 0,
+                column: 24
+            }
+        );
+        let reference = link.file.unwrap();
+        assert_eq!(reference.path, "src/main.rs");
+        assert_eq!((reference.line, reference.column), (11, Some(4)));
+        // The words around it are not part of it.
+        assert_eq!(url_in(2, 60, output, 0, 3), None);
+        assert!(screen.link_at(0, 26).is_none());
+    }
+
+    #[test]
+    fn a_web_address_with_a_port_is_still_an_address() {
+        let output = "see http://localhost:3000/app.js:4 now";
+        let mut screen = TerminalScreen::new(2, 60);
+        screen.feed(output.as_bytes());
+        let link = screen.link_at(0, 20).unwrap();
+        assert_eq!(link.file, None);
+        assert_eq!(link.url, "http://localhost:3000/app.js:4");
+    }
+
+    #[test]
+    fn a_file_reference_that_wraps_is_one_link_on_every_row() {
+        let output = "x packages/pkg-name/src/index.ts:40:2";
+        let mut screen = TerminalScreen::new(4, 20);
+        screen.feed(output.as_bytes());
+        let first = screen.link_at(0, 6).unwrap();
+        let second = screen.link_at(1, 6).unwrap();
+        assert_eq!(first.url, "packages/pkg-name/src/index.ts:40:2");
+        assert_eq!(first, second);
     }
 
     #[test]

@@ -1,5 +1,7 @@
-import SoyehtClient
+import SoyehtProtocol
 import Testing
+
+@testable import SoyehtClient
 
 @Test func filePathLinksCoverAgentTerminalAndCiLocations() {
   let text =
@@ -46,4 +48,28 @@ import Testing
   }.joined()
   #expect(rebuilt == text)
   #expect(segments.count == 5)
+}
+
+/// The cases of `contracts/vectors/file-paths.json`, which the desktop client passes as well.
+@Test func filePathLinksPassTheSharedVectorCases() throws {
+  let cases = ContractVector.cases(try ContractVector.load("file-paths"), "cases")
+  #expect(cases.count > 10)
+  for item in cases {
+    let text = try #require(item["text"].string)
+    let found: [(String, FilePathReference)] = FilePathLinks.segments(in: text).compactMap {
+      guard case .reference(let label, let reference) = $0 else { return nil }
+      return (label, reference)
+    }
+    let expected: [(String, FilePathReference)] = try (item["references"].array ?? []).map {
+      let line = try #require($0["line"].int)
+      return (
+        try #require($0["label"].string),
+        FilePathReference(
+          path: try #require($0["path"].string), line: UInt32(line),
+          column: $0["column"].int.map { UInt32($0) })
+      )
+    }
+    #expect(found.map(\.0) == expected.map(\.0), "\(item["name"].string ?? "")")
+    #expect(found.map(\.1) == expected.map(\.1), "\(item["name"].string ?? "")")
+  }
 }

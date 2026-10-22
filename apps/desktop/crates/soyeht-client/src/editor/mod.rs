@@ -29,7 +29,7 @@ pub use trees::ProjectTrees;
 pub use viewport::PAGE_LINES;
 
 use crate::Effect;
-use selection::Motion;
+use selection::{Motion, Selection};
 use serde_json::Value;
 use soyeht_protocol::{
     EditorTab, EventName, FileChangedOnDiskEvent, FileConflictEvent, FileDocument, FileSavedEvent,
@@ -61,6 +61,9 @@ pub struct Editors {
     /// chosen.
     refusals: HashMap<String, refusal::Refusal>,
     attempts: load::Attempts,
+    /// Where the caret goes when the file the person asked to open at a place is open: by
+    /// workspace, the path asked for and the place.
+    jumps: HashMap<String, (String, TextPosition)>,
     pub trees: ProjectTrees,
 }
 
@@ -280,6 +283,7 @@ impl Editors {
         }
         self.asked.clear();
         self.failures.clear();
+        self.jumps.clear();
         let workspaces: HashSet<&str> = panes
             .iter()
             .filter(|pane| pane.mode == PaneMode::Editor)
@@ -292,6 +296,32 @@ impl Editors {
         effects
     }
 
+    /// Remembers that the file at `path` was asked for at `at`: its caret goes there once it is
+    /// open. A later ask in the workspace replaces this one.
+    pub fn jump_after_open(&mut self, workspace_id: &str, path: &str, at: TextPosition) {
+        self.jumps
+            .insert(workspace_id.to_owned(), (path.to_owned(), at));
+    }
+
+    /// The place `file` was asked for, taken: it is used once. A line past the end of the file is
+    /// its last line; the column is clamped when the caret is placed.
+    fn jumps_to(&mut self, file: &FileDocument) -> Option<TextPosition> {
+        let (path, _) = self.jumps.get(&file.workspace_id)?;
+        if *path != file.path {
+            return None;
+        }
+        let (_, at) = self.jumps.remove(&file.workspace_id)?;
+        Some(TextPosition {
+            line: at.line.min(file.line_count.saturating_sub(1)),
+            column: at.column,
+        })
+    }
+
+    /// The connection was lost: a place asked for will not be answered.
+    pub fn connection_lost(&mut self) {
+        self.jumps.clear();
+    }
+
     /// Something the engine told the replica.
     pub fn apply(&mut self, event: EditorEvent, panes: &[Pane]) -> Vec<Effect> {
         let live = |doc: &FileDocument| panes.iter().any(|pane| pane.pane_id == doc.pane_id);
@@ -302,11 +332,16 @@ impl Editors {
                     return Vec::new();
                 }
                 self.failures.remove(&opened.file.pane_id);
+                let jump = self.jumps_to(&opened.file);
                 let file = self
                     .files
                     .entry(opened.file.file_id.clone())
                     .or_insert_with(|| EditorFile::new(opened.file.clone()));
-                file.opened(&opened.file, &opened.viewport)
+                let mut effects = file.opened(&opened.file, &opened.viewport);
+                if let Some(at) = jump {
+                    effects.extend(file.place(Selection::caret(at)));
+                }
+                effects
             }
             EditorEvent::Page(read) => {
                 if !live(&read.file) {
@@ -407,12 +442,14 @@ impl Editors {
             Failure::List { workspace_id, path } => self.trees.list_failed(&workspace_id, &path),
             Failure::OpenFailed(workspace_id) => {
                 self.refusals.remove(&workspace_id);
+                self.jumps.remove(&workspace_id);
                 Vec::new()
             }
             Failure::Refused {
                 workspace_id,
                 refusal,
             } => {
+                self.jumps.remove(&workspace_id);
                 self.refusals.insert(workspace_id, refusal);
                 Vec::new()
             }
@@ -604,6 +641,8 @@ impl Editors {
 mod jump_tests;
 #[cfg(test)]
 mod load_tests;
+#[cfg(test)]
+mod open_at_tests;
 #[cfg(test)]
 mod refusal_tests;
 #[cfg(test)]

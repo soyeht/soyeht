@@ -367,6 +367,8 @@
     "tabCharacterWidth": 7.4,
     "minimumDragWidth": 48,
     "windowControlGlyph": 12,
+    "startFormWidth": 640,
+    "startPromptMinHeight": 96,
     "resizeEdge": 5,
     "resizeCorner": 12,
     "headerActionGlyph": 14,

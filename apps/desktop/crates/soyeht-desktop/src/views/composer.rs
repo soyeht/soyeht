@@ -64,17 +64,10 @@ impl Workbench {
             Some(controls) => self.control_row(pane, controls, palette, cx),
             None => row().into_any_element(),
         };
-        column()
+        card_frame(palette)
             .relative()
-            .flex_none()
             .mx(px(pane_interior::CARD_PADDING))
             .mb(px(pane_interior::CARD_VERTICAL_PADDING))
-            .px(px(pane_interior::CARD_PADDING))
-            .py(px(pane_interior::CARD_VERTICAL_PADDING))
-            .gap(px(composer::ROW_SPACING))
-            .rounded(px(pane_interior::COMPOSER_RADIUS))
-            .bg(rgb(palette.canvas))
-            .text_size(px(pane_interior::BODY_POINT_SIZE))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, _, window, cx| this.focus_input(&focus_id, window, cx)),
@@ -246,19 +239,7 @@ impl Workbench {
             Action::Send { enabled } => (false, enabled),
             Action::Stop { enabled } => (true, enabled),
         };
-        row()
-            .id(id("composer-send", &pane_id))
-            .w(px(composer::SEND_WIDTH))
-            .h(px(composer::CONTROL_HEIGHT))
-            .flex_none()
-            .justify_center()
-            .rounded_full()
-            .bg(rgb(palette.ink))
-            .when(enabled, |button| {
-                button
-                    .cursor_pointer()
-                    .active(|style| style.opacity(pane_interior::PRESSED_OPACITY))
-            })
+        ink_button(id("composer-send", &pane_id), enabled, palette)
             .own_press()
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 if enabled {
@@ -402,21 +383,59 @@ fn round_frame(name: &str, glyph: Icon, palette: &Palette) -> gpui::Stateful<Div
         .child(icon(glyph, desktop::COMPOSER_GLYPH, palette.secondary))
 }
 
-/// A borderless chip of the control row: an optional mark, the label and a chevron.
-struct ControlChip<'a> {
-    key: SharedString,
-    label: &'a str,
-    emphasized: bool,
-    leading: Option<AnyElement>,
+/// The flat card of the composer: the message line over the row of controls.
+pub(super) fn card_frame(palette: &Palette) -> Div {
+    column()
+        .flex_none()
+        .px(px(pane_interior::CARD_PADDING))
+        .py(px(pane_interior::CARD_VERTICAL_PADDING))
+        .gap(px(composer::ROW_SPACING))
+        .rounded(px(pane_interior::COMPOSER_RADIUS))
+        .bg(rgb(palette.canvas))
+        .text_size(px(pane_interior::BODY_POINT_SIZE))
+}
+
+/// The round ink button at the end of the control row, which sends. It shows a pointer and
+/// presses while `enabled`; what a click does is the caller's.
+pub(super) fn ink_button(
+    key: impl Into<gpui::ElementId>,
     enabled: bool,
+    palette: &Palette,
+) -> gpui::Stateful<Div> {
+    row()
+        .id(key)
+        .w(px(composer::SEND_WIDTH))
+        .h(px(composer::CONTROL_HEIGHT))
+        .flex_none()
+        .justify_center()
+        .rounded_full()
+        .bg(rgb(palette.ink))
+        .when(enabled, |button| {
+            button
+                .cursor_pointer()
+                .active(|style| style.opacity(pane_interior::PRESSED_OPACITY))
+        })
+}
+
+/// A borderless chip of the control row: an optional mark, the label and a chevron.
+pub(super) struct ControlChip<'a> {
+    pub key: SharedString,
+    pub label: &'a str,
+    pub emphasized: bool,
+    pub leading: Option<AnyElement>,
+    pub enabled: bool,
     /// The menu a click opens.
-    menu: Menu,
+    pub menu: Menu,
     /// What the open menu shows, and the most it may be tall.
-    popup: Option<(Div, f32)>,
+    pub popup: Option<(Div, f32)>,
 }
 
 impl ControlChip<'_> {
-    fn build(self, palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyElement {
+    pub(super) fn build(
+        self,
+        palette: &'static Palette,
+        cx: &mut Context<Workbench>,
+    ) -> AnyElement {
         let Self {
             key,
             label,

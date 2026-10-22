@@ -9,9 +9,11 @@ use crate::{
     pane_ui::PaneUis,
     prefs::Prefs,
     rename::Rename,
+    start_flow::StartUi,
     switch_flow::SwitchDraft,
     tasks_ui::TasksUi,
     theme::ThemeName,
+    views::Replies,
 };
 use gpui::{
     Context, Entity, FocusHandle, Focusable, KeyDownEvent, ScrollHandle, ScrollWheelEvent, Task,
@@ -20,7 +22,6 @@ use gpui::{
 use soyeht_client::{
     Command, Connection, Effect, Engine, Error, Event, State,
     keys::{self, Modifiers},
-    markdown,
     screen::TerminalScreen,
     text_input::keys::{Completion, Edit},
     transcript_rows::Rows,
@@ -65,7 +66,9 @@ pub struct Workbench {
     /// The tasks surface: its view, the task open and the new-task form.
     pub(crate) tasks_ui: TasksUi,
     /// The Markdown of the replies on screen, parsed once per change.
-    pub(crate) markdown: markdown::Cache,
+    pub(crate) markdown: Replies,
+    /// The "Start with an agent" form while it is open.
+    pub(crate) start: Option<StartUi>,
     /// The sideways scroll of the stage, when the panes need more room than the window has.
     pub(crate) stage_scroll: ScrollHandle,
     /// The sideways scroll of the workspace tabs.
@@ -141,7 +144,8 @@ impl Workbench {
             panes: PaneUis::default(),
             next_ticket: 0,
             tasks_ui: TasksUi::default(),
-            markdown: markdown::Cache::default(),
+            markdown: Replies::default(),
+            start: None,
             stage_scroll: ScrollHandle::new(),
             tab_scroll: ScrollHandle::new(),
             revealed_tab: None,
@@ -170,6 +174,7 @@ impl Workbench {
             self.run_effects(effects);
         }
         self.forget_closed_panes();
+        self.restore_failed_start(cx);
         if self.switch.is_some() {
             self.choose_first_harness(cx);
         }
@@ -288,6 +293,7 @@ impl Workbench {
     }
 
     pub(crate) fn select_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
+        self.hide_start();
         self.state.select_workspace(workspace_id);
         self.announce_focus();
         self.menus.close();
@@ -411,6 +417,7 @@ impl Workbench {
 
     /// Called at the start of a frame: honours a request to move keyboard focus.
     pub(crate) fn apply_focus_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.focus_start(window, cx);
         if let Some(pane_id) = self.focus_request.take() {
             self.focus_input(&pane_id, window, cx);
         }
@@ -568,6 +575,7 @@ impl Workbench {
     }
 
     pub(crate) fn select_destination(&mut self, destination: Destination, cx: &mut Context<Self>) {
+        self.hide_start();
         self.destination = destination;
         if destination == Destination::Tasks {
             self.refresh_tasks();

@@ -15,7 +15,7 @@ use gpui::{
 };
 use soyeht_client::{
     editor::keys::Action as EditorAction,
-    keys,
+    file_links, keys,
     screen::{
         TerminalScreen,
         links::Link,
@@ -125,15 +125,15 @@ impl Workbench {
         let Some(at) = self.terminal_cell(pane_id, event.position) else {
             return;
         };
+        if opens_links(&event.modifiers)
+            && let Some(link) = self.link_under_cell(pane_id, &at)
+        {
+            self.open_link(pane_id, &link, cx);
+            return;
+        }
         let Some(screen) = self.state.screen_mut(pane_id) else {
             return;
         };
-        if opens_links(&event.modifiers)
-            && let Some(link) = screen.link_at(at.row, at.column)
-        {
-            cx.open_url(&link.url);
-            return;
-        }
         if event.modifiers.shift && screen.has_selection() {
             screen.extend_selection(at.row, at.column);
         } else {
@@ -246,7 +246,34 @@ impl Workbench {
 
     fn link_under(&mut self, pane_id: &str, at: Point<Pixels>) -> Option<Link> {
         let at = self.terminal_cell(pane_id, at)?;
-        self.state.screen_mut(pane_id)?.link_at(at.row, at.column)
+        self.link_under_cell(pane_id, &at)
+    }
+
+    /// The link at a cell: a web address, or a file reference whose file is in the pane's
+    /// workspace. Text that only looks like a reference is not a link.
+    fn link_under_cell(&mut self, pane_id: &str, at: &Located) -> Option<Link> {
+        let link = self.state.screen_mut(pane_id)?.link_at(at.row, at.column)?;
+        match &link.file {
+            Some(reference) => {
+                let (_, root) = self.pane_root(pane_id)?;
+                self.resolve_shown(&root, reference).map(|_| link)
+            }
+            None => Some(link),
+        }
+    }
+
+    /// Opens a link: an address in the system browser, a file in the editor at its line.
+    fn open_link(&mut self, pane_id: &str, link: &Link, cx: &mut Context<Self>) {
+        let opening = link.file.as_ref().and_then(|reference| {
+            let (workspace_id, root) = self.pane_root(pane_id)?;
+            Some((workspace_id, file_links::resolve(&root, reference)?))
+        });
+        match opening {
+            Some((workspace_id, opening)) => self.open_reference(&workspace_id, opening, cx),
+            None if link.file.is_none() => cx.open_url(&link.url),
+            // The file went away between the hover and the click.
+            None => {}
+        }
     }
 
     /// The secondary button: the menu of what can be done here.
@@ -318,10 +345,10 @@ impl Workbench {
         self.send_input(pane_id, keys::paste(&text, bracketed), cx);
     }
 
-    /// Opens the address the context menu was opened on.
+    /// Opens the link the context menu was opened on.
     pub(crate) fn open_menu_link(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         if let Some(link) = self.panes.of(pane_id).terminal.menu_link.take() {
-            cx.open_url(&link.url);
+            self.open_link(pane_id, &link, cx);
         }
     }
 }

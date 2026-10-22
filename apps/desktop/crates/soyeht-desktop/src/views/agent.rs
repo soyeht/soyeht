@@ -6,6 +6,7 @@ use super::{
     attachments::sent_chips,
     cards::Windowing,
     copy_button::copyable,
+    markdown::Replies,
     selectable::Selectable,
     ui::{Typeface, code_well, column, disclosure_chevron, icon, id, row},
 };
@@ -18,7 +19,7 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, ExternalPaths, FontWeight, InteractiveElement,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
 };
-use soyeht_client::{agent::terminal_text, markdown, transcript_rows::Viewport};
+use soyeht_client::{agent::terminal_text, transcript_rows::Viewport};
 use soyeht_protocol::{
     PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind, TranscriptMessage,
     TranscriptRole,
@@ -59,6 +60,7 @@ impl Workbench {
         // `limit` messages, never a copy of all of them. The Markdown cache is taken out of
         // the workbench while the rows are built, so the transcript is only read.
         let mut markdown = std::mem::take(&mut self.markdown);
+        markdown.files = self.files_of(&pane.pane_id, markdown.probes.clone(), cx);
         let notice = self
             .state
             .agent(&pane.pane_id)
@@ -170,7 +172,7 @@ pub(super) fn transcript_row(
     pane_id: &str,
     message: &TranscriptMessage,
     open: bool,
-    markdown: &mut markdown::Cache,
+    markdown: &mut Replies,
     palette: &'static Palette,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
@@ -219,12 +221,12 @@ fn owner_of(pane_id: &str, message: &TranscriptMessage) -> String {
 fn markdown_body(
     owner: &str,
     message: &TranscriptMessage,
-    markdown: &mut markdown::Cache,
+    markdown: &mut Replies,
     palette: &'static Palette,
     ink: u32,
 ) -> AnyElement {
     let blocks = markdown.blocks(&message.local_id, &message.text, !message.complete);
-    super::markdown::reply(&blocks, owner, palette, ink)
+    super::markdown::reply(&blocks, owner, palette, ink, markdown.files.as_ref())
 }
 
 /// A message: a card for the person or a peer agent, plain text for what they typed, and the
@@ -232,7 +234,7 @@ fn markdown_body(
 fn text_row(
     pane_id: &str,
     message: &TranscriptMessage,
-    markdown: &mut markdown::Cache,
+    markdown: &mut Replies,
     palette: &'static Palette,
 ) -> AnyElement {
     let owner = owner_of(pane_id, message);

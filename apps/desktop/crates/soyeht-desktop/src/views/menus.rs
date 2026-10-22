@@ -253,3 +253,36 @@ pub fn on_pick(
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| handler(this, cx)))
         .into_any_element()
 }
+
+/// The recent folders as rows, with the one at `chosen` marked; a row does `pick` with its path.
+/// `key` names the rows among the window's.
+pub fn folder_rows(
+    (key, chosen): (&str, &str),
+    palette: &Palette,
+    folders: Vec<soyeht_client::state::RecentFolder>,
+    cx: &mut Context<Workbench>,
+    pick: fn(&mut Workbench, &str, &mut Context<Workbench>),
+) -> Vec<AnyElement> {
+    let mut rows = Vec::new();
+    if !folders.is_empty() {
+        rows.push(heading(palette, "Recent folders").into_any_element());
+    }
+    for folder in folders {
+        let path = folder.path.clone();
+        let is_chosen = folder.path == chosen;
+        rows.push(on_pick(
+            detail_item(
+                palette,
+                &id(key, &folder.path),
+                div().into_any_element(),
+                folder.name,
+                folder.path,
+                is_chosen,
+                true,
+            ),
+            cx,
+            move |this, cx| pick(this, &path, cx),
+        ));
+    }
+    rows
+}

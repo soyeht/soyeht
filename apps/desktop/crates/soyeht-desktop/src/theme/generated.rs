@@ -442,6 +442,8 @@ pub mod desktop {
     pub const TAB_CHARACTER_WIDTH: f32 = 7.4;
     pub const MINIMUM_DRAG_WIDTH: f32 = 48.0;
     pub const WINDOW_CONTROL_GLYPH: f32 = 12.0;
+    pub const START_FORM_WIDTH: f32 = 640.0;
+    pub const START_PROMPT_MIN_HEIGHT: f32 = 96.0;
     pub const RESIZE_EDGE: f32 = 5.0;
     pub const RESIZE_CORNER: f32 = 12.0;
     pub const HEADER_ACTION_GLYPH: f32 = 14.0;

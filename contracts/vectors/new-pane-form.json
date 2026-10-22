@@ -1,0 +1,226 @@
+{
+  "description": "The agent half of the new-pane form, shared by the Mac (NewPaneForm) and the desktop client (soyeht_client::new_agent). blockers: what stops an agent from starting, by the rule of the form (folder, agent, ready agent, first message within promptBytes of the protocol limits; promptBytes names a message of exactly that size or one byte more). firstPrompts: the first message as it is sent. keepOrChoose: the agent that is chosen after the list of agents changes. Both clients pass every case. Each case's harnesses name entries of catalogue.",
+  "catalogue": {
+    "alpha": {
+      "id": "alpha",
+      "name": "Alpha",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "ready",
+      "lastReadyAtMs": "100"
+    },
+    "beta": {
+      "id": "beta",
+      "name": "Beta",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "ready",
+      "lastReadyAtMs": "200"
+    },
+    "gone": {
+      "id": "gone",
+      "name": "Gone",
+      "available": false,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": false,
+      "setupState": "not_installed"
+    }
+  },
+  "blockers": [
+    {
+      "name": "a form with nothing chosen needs a folder first",
+      "directory": "",
+      "harness": "",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": "noFolder",
+      "prompt": ""
+    },
+    {
+      "name": "a folder without an agent needs an agent",
+      "directory": "/work",
+      "harness": "",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": "noAgent",
+      "prompt": ""
+    },
+    {
+      "name": "an agent that is not installed cannot start",
+      "directory": "/work",
+      "harness": "gone",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": "agentUnavailable",
+      "prompt": "hi"
+    },
+    {
+      "name": "an agent the list does not know cannot start",
+      "directory": "/work",
+      "harness": "unknown",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": "agentUnavailable",
+      "prompt": "hi"
+    },
+    {
+      "name": "a ready agent with a folder starts",
+      "directory": "/work",
+      "harness": "alpha",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": null,
+      "prompt": "hi"
+    },
+    {
+      "name": "the first message is optional",
+      "directory": "/work",
+      "harness": "alpha",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": null,
+      "prompt": ""
+    },
+    {
+      "name": "a message of only blank space is optional",
+      "directory": "/work",
+      "harness": "alpha",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": null,
+      "prompt": "  \n "
+    },
+    {
+      "name": "a message at the limit is allowed",
+      "directory": "/work",
+      "harness": "alpha",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": null,
+      "promptBytes": "limit"
+    },
+    {
+      "name": "a message past the limit is too long",
+      "directory": "/work",
+      "harness": "alpha",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "blocker": "promptTooLong",
+      "promptBytes": "limitPlusOne"
+    }
+  ],
+  "firstPrompts": [
+    {
+      "name": "blank space around the message is dropped",
+      "prompt": "  hello \n",
+      "first": "hello"
+    },
+    {
+      "name": "a blank message is nothing",
+      "prompt": "  \n",
+      "first": ""
+    },
+    {
+      "name": "blank space inside is kept",
+      "prompt": "a\n\nb",
+      "first": "a\n\nb"
+    }
+  ],
+  "keepOrChoose": [
+    {
+      "name": "an available agent stays chosen",
+      "harness": "beta",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "preferred": "alpha",
+      "expected": "beta"
+    },
+    {
+      "name": "with none chosen the preferred one is taken",
+      "harness": "",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "preferred": "alpha",
+      "expected": "alpha"
+    },
+    {
+      "name": "with none chosen and no preference the one ready most recently is taken",
+      "harness": "",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "preferred": null,
+      "expected": "beta"
+    },
+    {
+      "name": "an agent that went away is replaced by the default",
+      "harness": "gone",
+      "harnesses": [
+        "alpha",
+        "beta",
+        "gone"
+      ],
+      "preferred": null,
+      "expected": "beta"
+    },
+    {
+      "name": "with no agent able to run the choice is left as it was",
+      "harness": "gone",
+      "harnesses": [
+        "gone"
+      ],
+      "preferred": null,
+      "expected": "gone"
+    },
+    {
+      "name": "with no agents at all nothing is chosen",
+      "harness": "",
+      "harnesses": [],
+      "preferred": null,
+      "expected": ""
+    }
+  ]
+}

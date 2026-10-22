@@ -407,30 +407,24 @@ impl Workbench {
             cx,
             Workbench::choose_folder,
         );
+        let start = menus::on_pick(
+            menus::item(palette, "start-agent", "Start with an agent\u{2026}", false),
+            cx,
+            Workbench::open_start,
+        );
         let mut rows = vec![
+            menus::heading(palette, "Start").into_any_element(),
+            start,
             menus::heading(palette, "Open a workspace").into_any_element(),
             folder,
         ];
-        let recent = self.state.recent_folders();
-        if !recent.is_empty() {
-            rows.push(menus::heading(palette, "Recent folders").into_any_element());
-        }
-        for folder in recent {
-            let path = folder.path.clone();
-            rows.push(menus::on_pick(
-                menus::detail_item(
-                    palette,
-                    &id("recent-folder", &folder.path),
-                    div().into_any_element(),
-                    folder.name,
-                    folder.path,
-                    false,
-                    true,
-                ),
-                cx,
-                move |this, cx| this.open_folder_path(std::path::Path::new(&path), cx),
-            ));
-        }
+        rows.extend(menus::folder_rows(
+            ("recent-folder", ""),
+            palette,
+            self.state.recent_folders(),
+            cx,
+            |this, path, cx| this.open_folder_path(std::path::Path::new(path), cx),
+        ));
         if self.state.selected_workspace().is_none() {
             return rows;
         }

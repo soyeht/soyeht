@@ -6,7 +6,7 @@
 //! after it is not part of it. An address with no host, or with a name and password in it, is
 //! not linked. Code is never linked: a code span or block is shown as it was written.
 
-use super::{Block, Run};
+use super::{Block, Run, Style};
 use std::ops::Range;
 
 /// The most addresses linked in one run of text.
@@ -41,30 +41,38 @@ pub fn bare_addresses(text: &str) -> Vec<Range<usize>> {
 /// The blocks with their bare addresses linked: in the runs of text that are neither code nor
 /// already a link. Code blocks stay as they are.
 pub fn link_blocks(blocks: Vec<Block>) -> Vec<Block> {
-    blocks.into_iter().map(link_block).collect()
+    map_runs(blocks, &link_runs)
 }
 
-fn link_block(block: Block) -> Block {
-    match block {
-        Block::Paragraph(runs) => Block::Paragraph(link_runs(runs)),
-        Block::Heading { level, runs } => Block::Heading {
-            level,
-            runs: link_runs(runs),
-        },
-        Block::Quote(blocks) => Block::Quote(link_blocks(blocks)),
-        Block::List { start, items } => Block::List {
-            start,
-            items: items.into_iter().map(link_blocks).collect(),
-        },
-        Block::Table { header, rows } => Block::Table {
-            header: header.into_iter().map(link_runs).collect(),
-            rows: rows
-                .into_iter()
-                .map(|row| row.into_iter().map(link_runs).collect())
-                .collect(),
-        },
-        other @ (Block::Code { .. } | Block::Rule) => other,
-    }
+/// The blocks with `change` applied to the runs of every paragraph, heading, quote, list item and
+/// table cell. Code blocks and rules stay as they are.
+pub(super) fn map_runs(blocks: Vec<Block>, change: &dyn Fn(Vec<Run>) -> Vec<Run>) -> Vec<Block> {
+    blocks
+        .into_iter()
+        .map(|block| match block {
+            Block::Paragraph(runs) => Block::Paragraph(change(runs)),
+            Block::Heading { level, runs } => Block::Heading {
+                level,
+                runs: change(runs),
+            },
+            Block::Quote(blocks) => Block::Quote(map_runs(blocks, change)),
+            Block::List { start, items } => Block::List {
+                start,
+                items: items
+                    .into_iter()
+                    .map(|item| map_runs(item, change))
+                    .collect(),
+            },
+            Block::Table { header, rows } => Block::Table {
+                header: header.into_iter().map(change).collect(),
+                rows: rows
+                    .into_iter()
+                    .map(|row| row.into_iter().map(change).collect())
+                    .collect(),
+            },
+            other @ (Block::Code { .. } | Block::Rule) => other,
+        })
+        .collect()
 }
 
 fn link_runs(runs: Vec<Run>) -> Vec<Run> {
@@ -76,26 +84,33 @@ fn link_runs(runs: Vec<Run>) -> Vec<Run> {
         }
         let mut rest = 0;
         for range in bare_addresses(&run.text) {
-            push(&mut linked, &run, rest..range.start, false);
-            push(&mut linked, &run, range.clone(), true);
+            push(&mut linked, &run, rest..range.start, None);
+            let address = run.text[range.clone()].to_owned();
+            let link = |style: &mut Style| style.link = Some(address.clone());
+            push(&mut linked, &run, range.clone(), Some(&link));
             rest = range.end;
         }
-        push(&mut linked, &run, rest..run.text.len(), false);
+        push(&mut linked, &run, rest..run.text.len(), None);
     }
     linked
 }
 
-/// Appends the part `range` of `run`, as a link when `address`, merged into the run before it
-/// when the two look the same.
-fn push(runs: &mut Vec<Run>, run: &Run, range: Range<usize>, address: bool) {
+/// Appends the part `range` of `run`, with `mark` applied to its style when there is one, merged
+/// into the run before it when the two look the same.
+pub(super) fn push(
+    runs: &mut Vec<Run>,
+    run: &Run,
+    range: Range<usize>,
+    mark: Option<&dyn Fn(&mut Style)>,
+) {
     if range.is_empty() {
         return;
     }
-    let text = &run.text[range];
     let mut style = run.style.clone();
-    if address {
-        style.link = Some(text.to_owned());
+    if let Some(mark) = mark {
+        mark(&mut style);
     }
+    let text = &run.text[range];
     match runs.last_mut() {
         Some(last) if last.style == style => last.text.push_str(text),
         _ => runs.push(Run {

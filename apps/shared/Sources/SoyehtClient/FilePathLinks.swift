@@ -1,4 +1,5 @@
 import Foundation
+import SoyehtProtocol
 import SwiftUI
 
 public struct FilePathReference: Equatable, Sendable {
@@ -48,7 +49,6 @@ public enum FilePathLinks {
       #"(?<![A-Za-z0-9_./-])((?:\./)?(?:(?:[A-Za-z0-9_@+.-]+/)+[A-Za-z0-9_@+.-]+|[A-Za-z0-9_@+.-]+\.[A-Za-z0-9_@+.-]+)):([1-9][0-9]*)(?::([1-9][0-9]*))?(?![A-Za-z0-9_:])"#
   )
   private static let maximumLinks = 128
-  private static let maximumPathBytes = 4_096
 
   public static func segments(in text: String) -> [FilePathTextSegment] {
     guard let matcher else { return [.plain(text)] }
@@ -75,7 +75,8 @@ public enum FilePathLinks {
   }
 
   static func valid(_ path: String) -> Bool {
-    guard !path.isEmpty, path.utf8.count <= maximumPathBytes, !path.hasPrefix("/") else {
+    guard !path.isEmpty, path.utf8.count <= ProtocolLimits.editorPathBytes, !path.hasPrefix("/")
+    else {
       return false
     }
     return path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy {

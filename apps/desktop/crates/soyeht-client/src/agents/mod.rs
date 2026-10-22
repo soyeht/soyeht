@@ -2,6 +2,7 @@
 //! requests, usage, harnesses, and where a pane that was just split goes.
 
 use crate::{
+    Command,
     agent::{self, AgentView},
     layout,
     state::{Connection, Effect, Expected, State},
@@ -126,6 +127,7 @@ impl State {
             split: None,
             pane_id: None,
             arrivals: Vec::new(),
+            start: None,
         });
     }
 
@@ -180,6 +182,15 @@ impl State {
         };
         let expected = self.expected.remove(at);
         let mut effects = vec![Effect::FocusPane(pane_id.to_owned())];
+        if let Some(start) = &expected.start
+            && !start.first_prompt().is_empty()
+        {
+            effects.push(Effect::Send(Command::Prompt {
+                pane_id: pane_id.to_owned(),
+                text: start.first_prompt().to_owned(),
+                attachments: Vec::new(),
+            }));
+        }
         let (Some((anchor, axis)), Some(pane)) = (expected.split, self.pane(pane_id).cloned())
         else {
             return effects;

@@ -5,6 +5,7 @@
 
 use super::{
     agent::{labelled, pill, transcript_row},
+    markdown::Replies,
     prelude::*,
     ui::disclosure_chevron,
 };
@@ -16,7 +17,7 @@ use soyeht_client::{
         SubagentPresentation, elicitation, queue as queue_words, sign_in as sign_in_words,
         silence as silence_words,
     },
-    markdown, timestamp,
+    timestamp,
     transcript_rows::{self, Child, Rows, Viewport},
 };
 use soyeht_protocol::{ElicitationRequest, Pane};
@@ -516,7 +517,7 @@ impl Workbench {
     pub(super) fn transcript_entries(
         &self,
         shown: &[soyeht_protocol::TranscriptMessage],
-        markdown: &mut markdown::Cache,
+        markdown: &mut Replies,
         windowing: Windowing<'_>,
         palette: &'static Palette,
         cx: &mut Context<Self>,
@@ -586,7 +587,7 @@ impl Workbench {
         &self,
         pane_id: &str,
         entry: &Entry<'_>,
-        markdown: &mut markdown::Cache,
+        markdown: &mut Replies,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
@@ -605,7 +606,7 @@ impl Workbench {
         &self,
         pane_id: &str,
         group: &Group<'_>,
-        markdown: &mut markdown::Cache,
+        markdown: &mut Replies,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {

@@ -116,3 +116,47 @@ private func harness(_ id: String, name: String? = nil, available: Bool = true) 
   #expect(created["effort"].string == nil)
   #expect(created["permissionMode"].string == "plan")
 }
+
+/// The cases of `contracts/vectors/new-pane-form.json`, which the desktop client passes as well.
+private func vectorHarnesses(_ vector: JsonValue, _ item: JsonValue) throws -> [HarnessInfo] {
+  try (item["harnesses"].array ?? []).compactMap(\.string).map {
+    try vector["catalogue"][$0].decoded(HarnessInfo.self)
+  }
+}
+
+@Test func theAgentFormSaysWhatTheSharedVectorSays() throws {
+  let vector = try ContractVector.load("new-pane-form")
+  let blockers = ContractVector.cases(vector, "blockers")
+  #expect(blockers.count > 5)
+  for item in blockers {
+    var form = NewPaneForm(kind: .agent, directory: item["directory"].string ?? "")
+    form.harness = item["harness"].string ?? ""
+    switch item["promptBytes"].string {
+    case "limit": form.prompt = String(repeating: "a", count: ProtocolLimits.promptBytes)
+    case "limitPlusOne": form.prompt = String(repeating: "a", count: ProtocolLimits.promptBytes + 1)
+    default: form.prompt = item["prompt"].string ?? ""
+    }
+    let expected: NewPaneBlocker? =
+      switch item["blocker"].string {
+      case "noFolder": .noFolder
+      case "noAgent": .noAgent
+      case "agentUnavailable": .agentUnavailable
+      case "promptTooLong": .promptTooLong
+      default: nil
+      }
+    let name = item["name"].string ?? ""
+    #expect(form.blocker(harnesses: try vectorHarnesses(vector, item)) == expected, "\(name)")
+  }
+  for item in ContractVector.cases(vector, "firstPrompts") {
+    var form = NewPaneForm()
+    form.prompt = item["prompt"].string ?? ""
+    #expect(form.firstPrompt == item["first"].string, "\(item["name"].string ?? "")")
+  }
+  for item in ContractVector.cases(vector, "keepOrChoose") {
+    var form = NewPaneForm()
+    form.harness = item["harness"].string ?? ""
+    form.keepOrChooseHarness(
+      in: try vectorHarnesses(vector, item), preferredId: item["preferred"].string)
+    #expect(form.harness == item["expected"].string, "\(item["name"].string ?? "")")
+  }
+}

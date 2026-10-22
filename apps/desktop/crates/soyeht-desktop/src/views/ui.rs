@@ -280,6 +280,25 @@ pub fn icon_button(
         .child(icon(glyph, desktop::INLINE_GLYPH, color))
 }
 
+/// A control that does `act` when pressed while `enabled`, and is dimmed while it is not.
+pub fn pressable(
+    control: gpui::Stateful<Div>,
+    enabled: bool,
+    cx: &mut Context<Workbench>,
+    act: impl Fn(&mut Workbench, &mut Context<Workbench>) + 'static,
+) -> gpui::Stateful<Div> {
+    control
+        .when(!enabled, |control| {
+            control.opacity(pane_interior::DISABLED_OPACITY)
+        })
+        .own_press()
+        .on_click(cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
+            if enabled {
+                act(this, cx);
+            }
+        }))
+}
+
 /// A line of caption text in the secondary ink.
 pub fn caption(palette: &Palette) -> Div {
     div()

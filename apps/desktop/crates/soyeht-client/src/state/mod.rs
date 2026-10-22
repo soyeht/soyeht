@@ -4,7 +4,8 @@
 
 use crate::{
     Command, agent::AgentView, catalogue::Catalogue, editor::Editors, event::Event,
-    preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput,
+    new_agent::NewAgent, preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot,
+    streams::StreamOutput,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -75,6 +76,8 @@ pub(crate) struct Expected {
     /// the new pane, and until the answer says which, none of them is drawn (a split pane
     /// must never show in the automatic place first and then move).
     pub(crate) arrivals: Vec<String>,
+    /// The agent started from the first-run form, whose first message goes once its pane is here.
+    pub(crate) start: Option<NewAgent>,
 }
 
 pub struct State {
@@ -116,6 +119,12 @@ pub struct State {
     /// The files open in editor panes, the tabs and the project trees.
     pub editors: Editors,
     pub(crate) expected: Vec<Expected>,
+    /// The agents to start in workspaces the engine has not made yet, by the ticket of the
+    /// request that makes the workspace.
+    pub(crate) starts: HashMap<u64, NewAgent>,
+    /// The agent the person asked for that could not start, until the window takes it back to
+    /// its form: what they typed is not lost.
+    failed_start: Option<NewAgent>,
     /// Panes closed since the last snapshot. The engine may still announce one more update
     /// about a pane as it closes; it must not bring the pane back.
     closed: HashSet<String>,
@@ -150,6 +159,8 @@ impl Default for State {
             readiness: None,
             editors: Editors::default(),
             expected: Vec::new(),
+            starts: HashMap::new(),
+            failed_start: None,
             closed: HashSet::new(),
         }
     }
@@ -271,7 +282,8 @@ impl State {
             Event::Disconnected(reason) => {
                 self.connection = Connection::Disconnected(reason);
                 // A request in flight is lost with the connection.
-                self.expected.clear();
+                self.forget_requests();
+                self.editors.connection_lost();
                 Vec::new()
             }
             Event::Starting => {
@@ -332,7 +344,7 @@ impl State {
                 self.workspace_opened(ticket, workspace)
             }
             Event::OpenFailed { ticket } => {
-                self.expected.retain(|expected| expected.ticket != ticket);
+                self.fail_request(ticket);
                 Vec::new()
             }
             Event::Usage(readings) => {
@@ -382,7 +394,7 @@ impl State {
         }
         self.workspaces = snapshot.workspaces;
         self.panes = snapshot.panes;
-        self.expected.clear();
+        self.forget_requests();
         self.screens.retain(|id, _| {
             self.panes
                 .iter()
@@ -645,6 +657,8 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
 
 mod editor;
 mod workspaces;
-pub use workspaces::{FolderOpening, FolderPathProblem, RecentFolder, submission};
+pub use workspaces::{
+    FolderOpening, FolderPathProblem, RecentFolder, Started, name_of, submission,
+};
 #[cfg(test)]
 mod tests;

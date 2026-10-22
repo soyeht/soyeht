@@ -5,16 +5,35 @@
 
 use super::{
     copy_button::copyable,
-    selectable::Selectable,
+    selectable::{Link, Selectable},
     ui::{code_well, column, row, rule},
 };
-use crate::theme::{Palette, fonts, pane_interior};
+use crate::{
+    file_open::{Files, Probes},
+    theme::{Palette, fonts, pane_interior},
+};
 use gpui::{
     AnyElement, Div, FontStyle, FontWeight, HighlightStyle, IntoElement, ParentElement,
     SharedString, StrikethroughStyle, Styled, UnderlineStyle, div, px, rgb,
 };
-use soyeht_client::markdown::{Block, Run};
-use std::ops::Range;
+use soyeht_client::markdown::{self, Block, Run};
+use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
+
+/// The Markdown of the replies on screen, parsed once per change, and the files that the pane
+/// being drawn names (`src/main.rs:12` opens in the editor when the file is in its workspace).
+#[derive(Default)]
+pub(crate) struct Replies {
+    cache: markdown::Cache,
+    pub(super) files: Option<Files>,
+    /// What the window knows of whether the files that replies name are there.
+    pub(crate) probes: Rc<RefCell<Probes>>,
+}
+
+impl Replies {
+    pub(super) fn blocks(&mut self, owner: &str, text: &str, streaming: bool) -> Arc<[Block]> {
+        self.cache.blocks(owner, text, streaming)
+    }
+}
 
 /// What a block needs to draw: the palette, the text color of the surrounding block, and a name
 /// for the links' click targets.
@@ -22,6 +41,7 @@ struct Draw<'a> {
     palette: &'static Palette,
     ink: u32,
     owner: &'a str,
+    files: Option<&'a Files>,
     paragraphs: usize,
     codes: usize,
 }
@@ -32,11 +52,13 @@ pub(super) fn reply(
     owner: &str,
     palette: &'static Palette,
     ink: u32,
+    files: Option<&Files>,
 ) -> AnyElement {
     let mut draw = Draw {
         palette,
         ink,
         owner,
+        files,
         paragraphs: 0,
         codes: 0,
     };
@@ -157,18 +179,24 @@ fn text(runs: &[Run], bold: bool, draw: &mut Draw) -> AnyElement {
     let mut content = String::new();
     let mut highlights: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
     let mut mono: Vec<(Range<usize>, SharedString)> = Vec::new();
-    let mut links: Vec<(Range<usize>, String)> = Vec::new();
+    let mut links: Vec<(Range<usize>, Link)> = Vec::new();
     for run in runs {
         let start = content.len();
         content.push_str(&run.text);
         let range = start..content.len();
         let style = &run.style;
+        // A file reference is a link only when its file is in the workspace.
+        let file = style
+            .file
+            .as_ref()
+            .and_then(|reference| draw.files?.resolve(reference));
+        let linked = style.link.is_some() || file.is_some();
         let highlight = HighlightStyle {
-            color: style.link.as_ref().map(|_| rgb(palette.accent).into()),
+            color: linked.then(|| rgb(palette.accent).into()),
             font_weight: (bold || style.bold).then_some(FontWeight::BOLD),
             font_style: style.italic.then_some(FontStyle::Italic),
             background_color: style.code.then(|| rgb(palette.well).into()),
-            underline: style.link.as_ref().map(|_| UnderlineStyle {
+            underline: linked.then(|| UnderlineStyle {
                 thickness: px(pane_interior::SEPARATOR_WIDTH),
                 color: None,
                 wavy: false,
@@ -186,7 +214,9 @@ fn text(runs: &[Run], bold: bool, draw: &mut Draw) -> AnyElement {
             mono.push((range.clone(), SharedString::from(fonts::MONO)));
         }
         if let Some(link) = &style.link {
-            links.push((range, link.clone()));
+            links.push((range, Link::Web(link.clone())));
+        } else if let Some(file) = file {
+            links.push((range, Link::File(file)));
         }
     }
     let key = format!("{}-text-{}", draw.owner, draw.paragraphs);

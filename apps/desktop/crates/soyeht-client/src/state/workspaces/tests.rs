@@ -211,3 +211,146 @@ fn the_workspace_the_engine_made_is_selected_and_gets_a_terminal_in_its_folder()
             .contains(&Effect::FocusPane("p".into()))
     );
 }
+
+fn with_agent(state: &mut State) {
+    let agent: soyeht_protocol::HarnessInfo = serde_json::from_value(json!({
+        "id": "ada", "name": "Ada", "available": true, "capabilities": [], "options": [],
+        "authMethods": [], "installed": true, "setupState": "ready"
+    }))
+    .unwrap();
+    state.apply(Event::Harnesses(vec![agent]));
+}
+
+/// The agent pane `ticket` asked for arrives in workspace `workspace_id`: the effects it brings.
+fn agent_arrives(state: &mut State, ticket: u64, pane_id: &str, workspace_id: &str) -> Vec<Effect> {
+    state.apply(Event::Opened {
+        ticket,
+        pane_id: pane_id.into(),
+    });
+    let arrival = crate::testing::event(
+        soyeht_protocol::EventName::PaneCreated,
+        json!({"pane": crate::testing::pane_json(pane_id, workspace_id, "agent")}),
+    );
+    state.apply(arrival)
+}
+
+fn sent_prompt(effects: &[Effect]) -> Option<&str> {
+    effects.iter().find_map(|effect| match effect {
+        Effect::Send(Command::Prompt { text, .. }) => Some(text.as_str()),
+        _ => None,
+    })
+}
+
+fn form(directory: &str, prompt: &str) -> NewAgent {
+    NewAgent {
+        directory: directory.to_owned(),
+        harness: "ada".to_owned(),
+        prompt: prompt.to_owned(),
+    }
+}
+
+#[test]
+fn an_agent_started_in_a_new_folder_gets_its_workspace_first_and_then_its_first_message() {
+    let mut state = state_with(&[("a", "/a")]);
+    with_agent(&mut state);
+    let started = state
+        .start_agent(7, &form("/home/ana/notes/", "  hello\n"))
+        .unwrap();
+    assert_eq!(started.select, None);
+    assert_eq!(
+        started.effects,
+        [Effect::Send(Command::CreateWorkspace {
+            name: "notes".into(),
+            path: "/home/ana/notes".into(),
+            ticket: 7,
+        })]
+    );
+    let mut made = workspace("new");
+    made.path = "/home/ana/notes".to_owned();
+    let effects = state.apply(Event::WorkspaceOpened {
+        ticket: 7,
+        workspace: made,
+    });
+    assert_eq!(
+        effects,
+        [Effect::Send(Command::CreateAgent {
+            workspace_id: "new".into(),
+            harness: "ada".into(),
+            cwd: Some("/home/ana/notes".into()),
+            ticket: 7,
+        })]
+    );
+    let effects = agent_arrives(&mut state, 7, "p", "new");
+    assert!(effects.contains(&Effect::FocusPane("p".into())));
+    assert_eq!(sent_prompt(&effects), Some("hello"));
+}
+
+#[test]
+fn an_agent_started_in_a_folder_that_has_a_workspace_uses_it_and_a_blank_message_sends_nothing() {
+    let mut state = state_with(&[("a", "/a")]);
+    with_agent(&mut state);
+    let started = state.start_agent(3, &form("/a", "   ")).unwrap();
+    assert_eq!(started.select.as_deref(), Some("a"));
+    assert_eq!(
+        started.effects,
+        [Effect::Send(Command::CreateAgent {
+            workspace_id: "a".into(),
+            harness: "ada".into(),
+            cwd: None,
+            ticket: 3,
+        })]
+    );
+    let effects = agent_arrives(&mut state, 3, "p", "a");
+    assert!(effects.contains(&Effect::FocusPane("p".into())));
+    assert_eq!(sent_prompt(&effects), None);
+}
+
+#[test]
+fn an_agent_that_the_form_does_not_allow_does_not_start() {
+    let mut state = state_with(&[("a", "/a")]);
+    with_agent(&mut state);
+    assert_eq!(
+        state.start_agent(1, &form("", "hi")),
+        Err("Choose a folder.")
+    );
+    assert_eq!(
+        state.start_agent(1, &form("a/b", "hi")),
+        Err("Use the full path from the top of the disk, such as /home/you/project.")
+    );
+    let mut no_agent = form("/a", "hi");
+    no_agent.harness.clear();
+    assert_eq!(state.start_agent(1, &no_agent), Err("Choose an agent."));
+    assert!(state.expected.is_empty() && state.starts.is_empty());
+}
+
+#[test]
+fn a_workspace_that_could_not_be_made_forgets_the_agent_waiting_for_it() {
+    let mut state = state_with(&[]);
+    with_agent(&mut state);
+    state.start_agent(9, &form("/new", "hi")).unwrap();
+    state.apply(Event::OpenFailed { ticket: 9 });
+    assert!(state.starts.is_empty());
+    // What the person typed comes back, once.
+    assert_eq!(state.take_failed_start(), Some(form("/new", "hi")));
+    assert_eq!(state.take_failed_start(), None);
+}
+
+#[test]
+fn an_agent_that_could_not_be_created_in_its_workspace_comes_back_with_its_message() {
+    let mut state = state_with(&[("a", "/a")]);
+    with_agent(&mut state);
+    state.start_agent(4, &form("/a", "make it")).unwrap();
+    state.apply(Event::OpenFailed { ticket: 4 });
+    assert!(state.expected.is_empty());
+    assert_eq!(state.take_failed_start(), Some(form("/a", "make it")));
+}
+
+#[test]
+fn a_connection_lost_while_an_agent_starts_keeps_its_message_for_the_form() {
+    let mut state = state_with(&[]);
+    with_agent(&mut state);
+    state.start_agent(6, &form("/new", "keep me")).unwrap();
+    state.apply(Event::Disconnected("gone".into()));
+    assert!(state.starts.is_empty() && state.expected.is_empty());
+    assert_eq!(state.take_failed_start(), Some(form("/new", "keep me")));
+}

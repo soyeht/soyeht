@@ -14,6 +14,7 @@ mod destination;
 mod editor_input;
 mod editor_ui;
 mod editor_view;
+mod file_open;
 #[cfg(feature = "dev-tools")]
 mod fixture;
 mod folder;
@@ -30,6 +31,7 @@ mod pointer;
 mod prefs;
 mod rename;
 mod slash_ui;
+mod start_flow;
 mod switch_flow;
 mod tasks_ui;
 mod terminal_input;

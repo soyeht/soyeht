@@ -20,6 +20,10 @@ pub enum Menu {
     Loop(String),
     /// The context menu of a terminal pane: the pane.
     Terminal(String),
+    /// The folder chip of the "Start with an agent" form: the folders to start in.
+    StartFolder,
+    /// The agent chip of the "Start with an agent" form.
+    StartAgent,
     /// The settings entry at the bottom of the rail: Preferences.
     Settings,
     /// A header button the desktop client does not serve yet: the pane and the button.

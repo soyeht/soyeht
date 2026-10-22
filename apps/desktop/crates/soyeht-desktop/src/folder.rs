@@ -5,7 +5,7 @@
 use crate::workbench::Workbench;
 use gpui::{Context, PathPromptOptions, Window, actions};
 use soyeht_client::{Command, Connection, state::FolderOpening};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 actions!(soyeht, [OpenFolder]);
 
@@ -20,6 +20,9 @@ pub(crate) const SHORTCUT: &str = if cfg!(target_os = "macos") {
 /// open.
 type Picked = Result<Option<Vec<PathBuf>>, String>;
 
+/// What a chosen folder is for.
+pub(crate) type Chosen = fn(&mut Workbench, &Path, &mut Context<Workbench>);
+
 impl Workbench {
     pub(crate) fn open_folder_action(
         &mut self,
@@ -32,17 +35,37 @@ impl Workbench {
 
     /// Shows the platform's folder picker and opens what it returns.
     pub(crate) fn choose_folder(&mut self, cx: &mut Context<Self>) {
-        self.menus.close();
-        if self.state.connection != Connection::Connected {
+        self.pick_folder("Open", Self::open_folder_path, cx);
+    }
+
+    /// Says so and returns false while the engine is not connected: nothing that needs it can
+    /// start.
+    pub(crate) fn require_connection(&mut self, cx: &mut Context<Self>) -> bool {
+        let connected = self.state.connection == Connection::Connected;
+        if !connected {
             self.state.problem = Some(soyeht_client::Error::Disconnected.to_string());
             cx.notify();
+        }
+        connected
+    }
+
+    /// Shows the platform's folder picker, labelled `prompt`, and hands the folder it returns to
+    /// `chosen`. A cancelled picker does nothing.
+    pub(crate) fn pick_folder(
+        &mut self,
+        prompt: &'static str,
+        chosen: Chosen,
+        cx: &mut Context<Self>,
+    ) {
+        self.menus.close();
+        if !self.require_connection(cx) {
             return;
         }
         let picker = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("Open".into()),
+            prompt: Some(prompt.into()),
         });
         cx.spawn(async move |this, cx| {
             // A picker dropped before it answered is a cancelled one.
@@ -50,18 +73,18 @@ impl Workbench {
                 .await
                 .map_or(Ok(None), |answer| answer.map_err(|error| error.to_string()));
             // The window closed while the picker was open: nothing is left to open it in.
-            let Ok(()) = this.update(cx, |this, cx| this.folder_chosen(answer, cx)) else {
+            let Ok(()) = this.update(cx, |this, cx| this.folder_chosen(answer, chosen, cx)) else {
                 return;
             };
         })
         .detach();
     }
 
-    fn folder_chosen(&mut self, answer: Picked, cx: &mut Context<Self>) {
+    fn folder_chosen(&mut self, answer: Picked, chosen: Chosen, cx: &mut Context<Self>) {
         match answer {
             Ok(Some(folders)) => {
                 if let Some(folder) = folders.first() {
-                    self.open_folder_path(folder, cx);
+                    chosen(self, folder, cx);
                 }
             }
             Ok(None) => {}
@@ -74,7 +97,7 @@ impl Workbench {
 
     /// Opens `folder`: its workspace when it has one (with a terminal if that has no pane), else
     /// a new workspace, which gets a terminal once the engine has made it.
-    pub(crate) fn open_folder_path(&mut self, folder: &std::path::Path, cx: &mut Context<Self>) {
+    pub(crate) fn open_folder_path(&mut self, folder: &Path, cx: &mut Context<Self>) {
         let Some(path) = folder.to_str() else {
             self.state.problem = Some("That folder's name is not text Soyeht can use.".to_owned());
             cx.notify();

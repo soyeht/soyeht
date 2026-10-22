@@ -31,6 +31,8 @@ pub enum EditorCommand {
         workspace_id: String,
         path: String,
         preview: bool,
+        /// Where the file opens, when the person asked for a place in it.
+        at: Option<TextPosition>,
     },
     /// Read the lines of a page.
     Read(PageRequest),
@@ -166,10 +168,13 @@ fn request(command: &EditorCommand, author: &FileAuthor) -> Option<Request> {
             workspace_id,
             path,
             preview,
+            at,
         } => Request::FileOpen(FileOpenParams {
             workspace_id: workspace_id.clone(),
             path: path.clone(),
-            line: None,
+            line: at.as_ref().map(|at| at.line),
+            // The engine refuses a column past the end of its line, which this client cannot
+            // know yet; the caret is placed with the column once the file is open.
             column: None,
             preview: preview.then_some(true),
             idempotency_key: key(),
@@ -385,6 +390,23 @@ mod tests {
             },
             name: "you".into(),
         }
+    }
+
+    #[test]
+    fn a_file_is_opened_at_a_line_and_never_asks_for_a_column() {
+        let command = EditorCommand::Open {
+            workspace_id: "w".into(),
+            path: "a.rs".into(),
+            preview: false,
+            at: Some(TextPosition {
+                line: 8,
+                column: 200,
+            }),
+        };
+        let Some(Request::FileOpen(params)) = request(&command, &author()) else {
+            panic!("no open");
+        };
+        assert_eq!((params.line, params.column), (Some(8), None));
     }
 
     #[test]

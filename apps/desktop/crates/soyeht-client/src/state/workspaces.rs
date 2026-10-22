@@ -4,7 +4,7 @@
 //! the cases all of them pass.
 
 use super::{Effect, State};
-use crate::Command;
+use crate::{Command, new_agent::NewAgent};
 use soyeht_protocol::Workspace;
 
 /// Why a typed or chosen path cannot be a workspace's folder.
@@ -44,6 +44,14 @@ pub struct RecentFolder {
     pub workspace_id: Option<String>,
 }
 
+/// What starting an agent asks for: the workspace the window selects (the one the folder
+/// already has) and the commands to carry out.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Started {
+    pub select: Option<String>,
+    pub effects: Vec<Effect>,
+}
+
 fn is_separator(character: char) -> bool {
     character == '/' || character == '\\'
 }
@@ -81,7 +89,7 @@ fn is_absolute(path: &str) -> bool {
 }
 
 /// The last component of a path, which names the workspace made for it.
-fn name_of(path: &str) -> String {
+pub fn name_of(path: &str) -> String {
     path.split(is_separator)
         .rfind(|part| !part.is_empty())
         .unwrap_or(path)
@@ -138,19 +146,107 @@ impl State {
         folders
     }
 
+    /// Starts an agent as the Mac's new-pane form does: in the workspace of the form's folder
+    /// (made first when the folder has none), running its harness, and sent the first message
+    /// once its pane is here. Says why it cannot start when the form does not allow it.
+    pub fn start_agent(&mut self, ticket: u64, form: &NewAgent) -> Result<Started, &'static str> {
+        if let Some(blocker) = form.blocker(&self.harnesses) {
+            return Err(blocker.explanation());
+        }
+        let harness = form.harness.clone();
+        match self
+            .open_folder(&form.directory)
+            .map_err(FolderPathProblem::explanation)?
+        {
+            FolderOpening::Existing(workspace_id) => {
+                self.select_workspace(&workspace_id);
+                self.expect_open(ticket, &workspace_id);
+                if let Some(expected) = self.expected.last_mut() {
+                    expected.start = Some(form.clone());
+                }
+                Ok(Started {
+                    select: Some(workspace_id.clone()),
+                    effects: vec![Effect::Send(Command::CreateAgent {
+                        workspace_id,
+                        harness,
+                        cwd: None,
+                        ticket,
+                    })],
+                })
+            }
+            FolderOpening::New { name, path } => {
+                self.starts.insert(ticket, form.clone());
+                Ok(Started {
+                    select: None,
+                    effects: vec![Effect::Send(Command::CreateWorkspace {
+                        name,
+                        path,
+                        ticket,
+                    })],
+                })
+            }
+        }
+    }
+
+    /// The requests in flight are lost with the connection; an agent that was starting is kept
+    /// for the window to take back to its form.
+    pub(super) fn forget_requests(&mut self) {
+        let waiting = self.starts.drain().map(|(_, form)| form);
+        let opening = self
+            .expected
+            .drain(..)
+            .filter_map(|expected| expected.start);
+        if let Some(form) = waiting.chain(opening).last() {
+            self.failed_start = Some(form);
+        }
+    }
+
+    /// Request `ticket` to open a pane or a workspace failed: nothing waits for it any more.
+    pub(super) fn fail_request(&mut self, ticket: u64) {
+        let opening = self
+            .expected
+            .iter()
+            .position(|expected| expected.ticket == ticket)
+            .and_then(|at| self.expected.remove(at).start);
+        if let Some(form) = opening.or_else(|| self.starts.remove(&ticket)) {
+            self.failed_start = Some(form);
+        }
+    }
+
+    /// The agent that could not start, with what the person typed, once.
+    pub fn take_failed_start(&mut self) -> Option<NewAgent> {
+        self.failed_start.take()
+    }
+
     /// The engine made the workspace that request `ticket` asked for: it is selected and a
-    /// terminal opens in its folder, as the Mac does when a folder is chosen for a pane.
+    /// terminal opens in its folder, as the Mac does when a folder is chosen for a pane, or the
+    /// agent that was waiting for the workspace starts.
     pub(crate) fn workspace_opened(&mut self, ticket: u64, workspace: Workspace) -> Vec<Effect> {
         let workspace_id = workspace.workspace_id.clone();
-        let cwd = workspace.path.clone();
+        let cwd = Some(workspace.path.clone());
         self.upsert_workspace(workspace);
         self.select_workspace(&workspace_id);
         self.expect_open(ticket, &workspace_id);
-        vec![Effect::Send(Command::CreateTerminal {
-            workspace_id,
-            cwd: Some(cwd),
-            ticket,
-        })]
+        let command = match self.starts.remove(&ticket) {
+            Some(start) => {
+                let harness = start.harness.clone();
+                if let Some(expected) = self.expected.last_mut() {
+                    expected.start = Some(start);
+                }
+                Command::CreateAgent {
+                    workspace_id,
+                    harness,
+                    cwd,
+                    ticket,
+                }
+            }
+            None => Command::CreateTerminal {
+                workspace_id,
+                cwd,
+                ticket,
+            },
+        };
+        vec![Effect::Send(command)]
     }
 }
 

@@ -30,6 +30,7 @@ fn open(path: &str) -> Command {
         workspace_id: "w".into(),
         path: path.into(),
         preview: true,
+        at: None,
     })
 }
 

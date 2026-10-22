@@ -43,8 +43,13 @@ agent works.
   (Command+C on the Mac) and the context menu's Copy; Ctrl+C stays the interrupt. The context menu
   (secondary button) also has Paste and, over an address, Open Link. Ctrl+click (Command+click on
   the Mac) opens an `http` or `https` address, even one that wraps over rows, in the system browser;
-  no other scheme opens. The selection and the address rules are `soyeht_client::screen`'s, with
-  unit tests; the painter only draws them.
+  no other scheme opens. A relative `path:line` or `path:line:column` (`src/main.rs:12`) is a link
+  too when the file is in the pane's workspace: the same key opens it in the editor with the caret
+  at that line, and the same holds for such text in an agent's reply (a code span included), where
+  a plain click opens it. A path that is absolute, outside the workspace (a symbolic link out of it
+  too) or not there is not a link. What a reference is: `soyeht_client::file_links`, the Mac's
+  `FilePathLinks`, both passing `contracts/vectors/file-paths.json`. The selection and the address
+  rules are `soyeht_client::screen`'s, with unit tests; the painter only draws them.
 - Agent panes show the transcript (the person's messages, replies drawn as Markdown, thoughts, tool rows, plans,
   command output in a mono well, hand-overs), take a
   message from the composer (text comes through GPUI's input handler, so dead keys, input
@@ -137,7 +142,14 @@ agent works.
   history and the conflict comparison (a conflict is shown on a banner), Markdown preview, tab
   drag and drop, creating, renaming and deleting entries of the project panel, and input method
   composition (typed text is the key's own text).
-- A window with no workspace says "Open a folder to start" and offers the platform's folder picker
+- A window with no workspace asks "What do you want to make?" and offers "Start with an agent"
+  (also the first entry of the "+" menu): one card with the first message, the folder (the
+  selected workspace's, or one chosen from the picker or the recent folders) and the agent, chosen
+  from the installed ones (the default is the one chosen in Preferences, else the one that was
+  ready most recently, as on the Mac). Enter makes the workspace if the folder has none, opens the
+  agent in it and sends the message. What stops it and which agent stays chosen are
+  `soyeht_client::new_agent`, which passes `contracts/vectors/new-pane-form.json` with the Mac's
+  `NewPaneForm`. It also offers the platform's folder picker
   (the same entry is in the "+" menu and on Ctrl+Shift+O, Command+O on the Mac). A folder that
   already has a workspace opens that one; otherwise the engine makes a workspace named for the
   folder and a terminal opens in it. Panes start in the folder of their workspace. A double click

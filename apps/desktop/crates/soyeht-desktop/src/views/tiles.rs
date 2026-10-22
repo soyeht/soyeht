@@ -44,6 +44,12 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if self.start.as_ref().is_some_and(|start| start.shown)
+            && super::connection_hint(&self.state.connection).is_none()
+            && let Some(form) = self.start_form(cx, palette)
+        {
+            return form;
+        }
         let Some(workspace) = self.state.selected_workspace() else {
             return match super::connection_hint(&self.state.connection) {
                 Some(hint) => empty(palette, None, hint),

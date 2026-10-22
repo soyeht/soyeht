@@ -307,6 +307,11 @@ def method_registry_swift(schema):
     )
 
 
+def doc_line(notes, key, indent):
+    """The doc comment line of a limit that has a note in `x-limitNotes`, or nothing."""
+    return f"{indent}/// {notes[key]}\n" if key in notes else ""
+
+
 def frame_kinds(schema):
     return schema["x-framing"]["types"]
 
@@ -566,11 +571,12 @@ def render(schema):
     ts += "\n" + event_registry_ts(schema) + "\n"
     outputs["contracts/typescript/src/generated.ts"] = ts
     constants = header + f'pub const PROTOCOL_VERSION: u32 = {schema["x-protocolVersion"]};\n'
-    constants += "\n".join(f"pub const {snake(k).upper()}: usize = {v};" for k, v in schema["x-limits"].items()) + "\n"
+    notes = schema.get("x-limitNotes", {})
+    constants += "\n".join(f"{doc_line(notes, k, '')}pub const {snake(k).upper()}: usize = {v};" for k, v in schema["x-limits"].items()) + "\n"
     constants += "\n".join(f"pub const FRAME_KIND_{k.upper()}: u8 = {v};" for k, v in frame_kinds(schema).items()) + "\n"
     outputs["engine/soyeht-protocol/src/limits.rs"] = constants
     outputs["contracts/typescript/src/limits.ts"] = header + "export const limits = " + json.dumps(schema["x-limits"], indent=2) + " as const;\n"
-    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
+    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"{doc_line(notes, k, '    ')}    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
     outputs.update(render_client_policy(schema, header))
     outputs.update(render_readiness(schema, header))
     outputs.update(render_settings(schema, header))

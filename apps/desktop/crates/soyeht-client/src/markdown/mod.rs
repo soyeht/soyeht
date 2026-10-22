@@ -6,18 +6,23 @@
 //! tables and rules, with runs of text styled bold, italic, struck, code or linked.
 //! A link is kept only for http, https and mailto addresses, and one whose text is its own
 //! address is plain text; the pane links bare addresses itself ([`link_blocks`], whose cases are
-//! `contracts/vectors/web-links.json`). Raw HTML stays literal.
+//! `contracts/vectors/web-links.json`), and marks the file references in it the same way
+//! ([`link_references`], whose cases are `contracts/vectors/file-paths.json`). Raw HTML stays
+//! literal.
 //! A line break is a `\n` in the text. Empty code blocks and empty list items are dropped.
 //!
 //! Parsing is a pure function of the text, so a reply that is still arriving is re-parsed each
 //! time it grows; [`streaming::close`] first closes what the reply has left open, so a bold
 //! word or a code span shows its style as it is typed instead of showing raw markers.
 
+mod file_refs;
 mod streaming;
 mod web_links;
 
+pub use file_refs::link_references;
 pub use web_links::{bare_addresses, link_blocks};
 
+use crate::file_links::Reference;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use std::{collections::HashMap, sync::Arc};
 
@@ -29,6 +34,9 @@ pub struct Style {
     pub strike: bool,
     pub code: bool,
     pub link: Option<String>,
+    /// A file reference (`src/main.rs:12`) that opens in the editor when the file is in the
+    /// workspace: see [`link_references`].
+    pub file: Option<Reference>,
 }
 
 /// Text in one style. Neighbouring runs of the same style are merged.
@@ -294,6 +302,7 @@ impl Builder {
             strike: self.strike > 0,
             code,
             link: self.links.iter().rev().find_map(Clone::clone),
+            file: None,
         };
         match self.runs.last_mut() {
             Some(last) if last.style == style => last.text.push_str(text),
@@ -437,7 +446,7 @@ impl Cache {
         if self.entries.len() >= CACHE_LIMIT {
             self.entries.clear();
         }
-        let blocks: Arc<[Block]> = link_blocks(parse(text, streaming)).into();
+        let blocks: Arc<[Block]> = link_references(link_blocks(parse(text, streaming))).into();
         self.entries.insert(
             owner.to_owned(),
             Entry {
