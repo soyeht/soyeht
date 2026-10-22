@@ -113,7 +113,8 @@ impl Workbench {
                 notice_body(palette, mode_notice(&pane.mode)),
             ),
         };
-        pane_card_shell(palette)
+        let header = self.draggable_header(header, pane, palette);
+        let card = pane_card_shell(palette)
             .id(id("pane", &pane.pane_id))
             .on_mouse_down(
                 MouseButton::Left,
@@ -121,7 +122,8 @@ impl Workbench {
             )
             .child(header)
             .child(rule(palette.well, desktop::HAIRLINE))
-            .child(body)
+            .child(body);
+        self.drop_target(card, &pane.pane_id, palette, cx)
             .into_any_element()
     }
 

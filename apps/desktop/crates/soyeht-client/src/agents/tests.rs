@@ -488,3 +488,133 @@ fn what_the_engine_sends_is_the_layout_a_refusal_goes_back_to() {
     });
     assert_eq!(weights(&state), [0.75, 0.25]);
 }
+
+/// The panes of the workspace in the order the window draws them.
+fn order(state: &State) -> Vec<String> {
+    layout::pane_ids(&drawn(state))
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn a_pane_dropped_on_the_edge_of_another_goes_beside_it_and_is_stored_at_once() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal"), ("c", "terminal")]);
+    let effects = state.move_pane("c", "a", layout::Zone::Left).unwrap();
+    assert_eq!(
+        order(&state),
+        ["c", "a", "b"],
+        "drawn before the engine echoes it"
+    );
+    let [
+        Effect::StoreLayout {
+            workspace_id,
+            layout,
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("one layout is stored: {effects:?}")
+    };
+    assert_eq!(workspace_id, "w");
+    assert_eq!(
+        layout.mode,
+        soyeht_protocol::WorkspacePaneLayoutMode::Custom
+    );
+
+    // What is stored is what a later connection gets back.
+    let mut reconnected = State::default();
+    let mut stored = workspace("w");
+    stored.layout = serde_json::to_value(layout).unwrap();
+    reconnected.apply(Event::Connected(Snapshot {
+        workspaces: vec![stored],
+        panes: ["a", "b", "c"].map(|id| pane(id, "w", "terminal")).into(),
+        ..Snapshot::default()
+    }));
+    assert_eq!(order(&reconnected), ["c", "a", "b"]);
+}
+
+#[test]
+fn a_pane_dropped_in_the_middle_of_another_changes_places_with_it() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal"), ("c", "terminal")]);
+    let effects = state.move_pane("a", "c", layout::Zone::Center).unwrap();
+    assert_eq!(effects.len(), 1);
+    assert_eq!(order(&state), ["c", "b", "a"]);
+}
+
+#[test]
+fn a_pane_dropped_on_itself_or_where_it_already_is_stores_nothing() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    let before = drawn(&state);
+    assert!(
+        state
+            .move_pane("a", "a", layout::Zone::Left)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        state
+            .move_pane("b", "b", layout::Zone::Center)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(drawn(&state), before);
+}
+
+#[test]
+fn a_pane_that_is_not_in_the_same_workspace_is_not_moved() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    let mut other = pane("x", "other", "terminal");
+    other.workspace_id = "other".into();
+    state.panes.push(other);
+    let before = drawn(&state);
+    for (moved, target) in [("x", "a"), ("a", "x"), ("a", "gone"), ("gone", "a")] {
+        assert_eq!(
+            state.move_pane(moved, target, layout::Zone::Right),
+            Err(layout::Refused::NoSuchPane),
+            "{moved} onto {target}"
+        );
+    }
+    assert_eq!(drawn(&state), before);
+}
+
+#[test]
+fn a_move_the_engine_refuses_is_undone_with_a_notice() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal"), ("c", "terminal")]);
+    let confirmed = order(&state);
+    let effects = state.move_pane("c", "a", layout::Zone::Left).unwrap();
+    let [
+        Effect::StoreLayout {
+            workspace_id,
+            layout,
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("one layout is stored: {effects:?}")
+    };
+    let command = Command::SetLayout {
+        workspace_id: workspace_id.clone(),
+        layout: layout.clone(),
+    };
+    state.apply(command.failure(&crate::Error::Busy).expect("reported"));
+    assert_eq!(
+        order(&state),
+        confirmed,
+        "the confirmed arrangement is back"
+    );
+    assert_eq!(
+        state.problem.as_deref(),
+        Some("Couldn't save the layout. The last saved arrangement is back.")
+    );
+}
+
+#[test]
+fn a_move_replaces_a_divider_drag_that_was_still_showing() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    state.draft_layout("w", moved(&state, 0.75));
+    state.move_pane("b", "a", layout::Zone::Left).unwrap();
+    assert_eq!(order(&state), ["b", "a"]);
+    assert!(
+        state.commit_layout_draft().is_empty(),
+        "no draft is left over"
+    );
+}

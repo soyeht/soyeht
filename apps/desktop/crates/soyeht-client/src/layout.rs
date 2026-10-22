@@ -11,9 +11,11 @@
 //! goes) are the cases of `contracts/vectors/pane-layout.json`, which both clients pass.
 
 mod arrange;
+mod dock;
 mod resize;
 
 pub use arrange::Sizing;
+pub use dock::{EDGE_FRACTION, Rect, Zone, move_pane, zone_at, zone_rect};
 pub use resize::{Refused, equalize, resize};
 use serde_json::Value;
 use soyeht_protocol::{
@@ -314,6 +316,25 @@ fn normalize(node: Node) -> Node {
     Node::V1(parent)
 }
 
+/// `node` with the pane `pane_id` replaced by what `with` makes of it. `None` when the pane is
+/// not in the tree. A split keeps its axis, its weights and its companion.
+fn replace_leaf(node: &Node, pane_id: &str, with: &impl Fn(&Node) -> Node) -> Option<Node> {
+    match node {
+        Node::V0(leaf) if leaf.pane_id == pane_id => Some(with(node)),
+        Node::V0(_) => None,
+        Node::V1(parent) => parent
+            .children
+            .iter()
+            .enumerate()
+            .find_map(|(index, child)| {
+                let replaced = replace_leaf(&child.node, pane_id, with)?;
+                let mut parent = parent.clone();
+                parent.children[index].node = replaced;
+                Some(Node::V1(parent))
+            }),
+    }
+}
+
 /// `anchor` with a new pane placed beside it (to its right for `Axis::Horizontal`, below it
 /// for `Axis::Vertical`), the two sharing the room the anchor had. `None` when `anchor` is not
 /// in the tree or the new pane is.
@@ -321,25 +342,11 @@ pub fn split_pane(tree: &Node, anchor: &str, new: &Pane, axis: Axis) -> Option<N
     if contains(tree, &new.pane_id) {
         return None;
     }
-    fn replace(node: &Node, anchor: &str, new: &Node, axis: &Axis) -> Option<Node> {
-        match node {
-            Node::V0(leaf) if leaf.pane_id == anchor => {
-                Some(split(axis.clone(), vec![node.clone(), new.clone()]))
-            }
-            Node::V0(_) => None,
-            Node::V1(parent) => {
-                for (index, child) in parent.children.iter().enumerate() {
-                    if let Some(replaced) = replace(&child.node, anchor, new, axis) {
-                        let mut parent = parent.clone();
-                        parent.children[index].node = replaced;
-                        return Some(Node::V1(parent));
-                    }
-                }
-                None
-            }
-        }
-    }
-    replace(tree, anchor, &leaf(new), &axis).map(normalize)
+    let new = leaf(new);
+    replace_leaf(tree, anchor, &|anchor| {
+        split(axis.clone(), vec![anchor.clone(), new.clone()])
+    })
+    .map(normalize)
 }
 
 /// The envelope to store: an arrangement the person chose, so it is `custom`.

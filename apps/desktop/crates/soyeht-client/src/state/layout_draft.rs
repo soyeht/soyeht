@@ -3,7 +3,7 @@
 //! `updateDraft`, `commitDraft`).
 
 use super::{Effect, State};
-use crate::layout;
+use crate::layout::{self, Refused, Zone};
 use soyeht_protocol::{Workspace, WorkspacePaneLayoutNode as Node};
 
 /// What the person is told when the engine does not store an arrangement; the Mac's words.
@@ -44,6 +44,32 @@ impl State {
             return Vec::new();
         }
         vec![self.store_layout(&draft.workspace_id, draft.tree)]
+    }
+
+    /// Drops pane `pane_id` on `zone` of pane `target` and stores the arrangement that makes, as
+    /// the Mac's drop does (`commitPaneDrop`). Both panes must be in the same workspace. The
+    /// change shows at once; the arrangement goes back if the engine refuses it.
+    pub fn move_pane(
+        &mut self,
+        pane_id: &str,
+        target: &str,
+        zone: Zone,
+    ) -> Result<Vec<Effect>, Refused> {
+        self.cancel_layout_draft();
+        let workspace_id = self
+            .pane(pane_id)
+            .map(|pane| pane.workspace_id.clone())
+            .filter(|id| {
+                self.pane(target)
+                    .is_some_and(|pane| &pane.workspace_id == id)
+            })
+            .ok_or(Refused::NoSuchPane)?;
+        let tree = self
+            .layout(&workspace_id, |_| true)
+            .ok_or(Refused::NoSuchPane)?;
+        let moved = layout::move_pane(&tree, pane_id, target, zone)?;
+        self.draft_layout(&workspace_id, moved);
+        Ok(self.commit_layout_draft())
     }
 
     /// Remembers the layout the engine sent for `workspace`.

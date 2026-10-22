@@ -502,6 +502,8 @@ pub mod desktop {
     pub const ATTACHMENT_THUMBNAIL_RADIUS: f32 = 4.0;
     pub const ATTACHMENT_CHIP_NAME_WIDTH: f32 = 160.0;
     pub const DROP_BORDER: f32 = 2.0;
+    pub const DROP_ZONE_OPACITY: f32 = 0.24;
+    pub const DRAG_GHOST_OPACITY: f32 = 0.92;
     pub const LOOP_PANEL_WIDTH: f32 = 400.0;
     pub const LOOP_PANEL_CONTENT_WIDTH: f32 = 372.0;
     pub const LOOP_PANEL_TITLE_SIZE: f32 = 14.0;

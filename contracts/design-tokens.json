@@ -427,6 +427,8 @@
     "attachmentThumbnailRadius": 4,
     "attachmentChipNameWidth": 160,
     "dropBorder": 2,
+    "dropZoneOpacity": 0.24,
+    "dragGhostOpacity": 0.92,
     "loopPanelWidth": 400,
     "loopPanelContentWidth": 372,
     "loopPanelTitleSize": 14,

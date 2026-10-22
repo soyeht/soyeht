@@ -44,7 +44,7 @@ impl Workbench {
             Axis::Horizontal => gap.w(px(pane_layout::PANE_GAP)),
             Axis::Vertical => gap.h(px(pane_layout::PANE_GAP)),
         };
-        if !self.dividers_move() {
+        if !self.arrangement_editable() {
             return gap.into_any_element();
         }
         let key = DividerKey {

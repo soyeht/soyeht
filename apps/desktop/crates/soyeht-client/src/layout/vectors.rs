@@ -226,3 +226,77 @@ fn equalizing_a_split_shares_it_as_the_mac_does() {
         assert_same(equalized, &case);
     }
 }
+
+fn rect_of(value: &Value) -> Rect {
+    Rect {
+        x: value["x"].as_f64().unwrap(),
+        y: value["y"].as_f64().unwrap(),
+        width: value["width"].as_f64().unwrap(),
+        height: value["height"].as_f64().unwrap(),
+    }
+}
+
+fn zone_named(name: &str) -> Zone {
+    match name {
+        "left" => Zone::Left,
+        "right" => Zone::Right,
+        "top" => Zone::Top,
+        "bottom" => Zone::Bottom,
+        "center" => Zone::Center,
+        other => panic!("no zone is called {other}"),
+    }
+}
+
+#[test]
+fn the_edge_of_a_pane_is_the_quarter_the_mac_uses() {
+    assert_eq!(
+        vector("pane-layout")["edgeFraction"].as_f64().unwrap(),
+        EDGE_FRACTION
+    );
+}
+
+#[test]
+fn a_drop_lands_in_the_zone_the_mac_finds() {
+    let all = vector("pane-layout");
+    let found = all["dropZone"].as_array().unwrap();
+    assert!(!found.is_empty());
+    for case in found {
+        let point = (
+            case["point"]["x"].as_f64().unwrap(),
+            case["point"]["y"].as_f64().unwrap(),
+        );
+        let expected = case["expected"].as_str().map(zone_named);
+        assert_eq!(
+            zone_at(rect_of(&case["rect"]), point),
+            expected,
+            "{}",
+            name(case)
+        );
+    }
+}
+
+#[test]
+fn a_zone_lights_up_the_part_of_the_pane_the_mac_does() {
+    for case in cases("pane-layout", "dropZoneRect") {
+        let zone = zone_named(case["zone"].as_str().unwrap());
+        assert_eq!(
+            zone_rect(zone, rect_of(&case["rect"])),
+            rect_of(&case["expected"]),
+            "{}",
+            name(&case)
+        );
+    }
+}
+
+#[test]
+fn moving_a_pane_rearranges_as_the_mac_does() {
+    for case in cases("pane-layout", "move") {
+        let moved = move_pane(
+            &tree(&case["tree"]),
+            case["paneId"].as_str().unwrap(),
+            case["target"].as_str().unwrap(),
+            zone_named(case["zone"].as_str().unwrap()),
+        );
+        assert_same(moved, &case);
+    }
+}

@@ -79,8 +79,8 @@ pub struct Workbench {
     pub(crate) hidden_tabs: usize,
     /// The pane to bring into view on the next frame, once the stage has been laid out.
     pub(crate) reveal: Option<String>,
-    /// The divider being dragged.
-    pub(crate) dividers: crate::layout_edit::Dividers,
+    /// The divider or the pane being dragged.
+    pub(crate) gestures: crate::layout_edit::Gestures,
     /// The pane whose input takes keyboard focus on the next frame.
     pub(crate) focus_request: Option<String>,
     /// The name of a workspace or pane being edited in place.
@@ -153,7 +153,7 @@ impl Workbench {
             revealed_tab: None,
             hidden_tabs: 0,
             reveal: None,
-            dividers: Default::default(),
+            gestures: Default::default(),
             focus_request: None,
             rename: None,
             project_panel_hidden: HashSet::new(),

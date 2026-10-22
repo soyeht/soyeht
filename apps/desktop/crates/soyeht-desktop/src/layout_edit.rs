@@ -27,9 +27,11 @@ struct Gesture {
     base: Node,
 }
 
+/// What the pointer is dragging in the arrangement of the panes: a divider or a pane.
 #[derive(Default)]
-pub(crate) struct Dividers {
+pub(crate) struct Gestures {
     gesture: Option<Gesture>,
+    pub(crate) redock: crate::redock::Redock,
 }
 
 impl Workbench {
@@ -45,16 +47,16 @@ impl Workbench {
         }
     }
 
-    /// Whether the dividers of the panes can be moved: the arrangement stored for a workspace
-    /// is of all its panes, which only the agents' place shows.
-    pub(crate) fn dividers_move(&self) -> bool {
+    /// Whether the panes can be rearranged, by their dividers or their headers: the arrangement
+    /// stored for a workspace is of all its panes, which only the agents' place shows.
+    pub(crate) fn arrangement_editable(&self) -> bool {
         self.destination == Destination::Agents
     }
 
     /// The pointer went down on a divider: remember the arrangement the drag starts from.
     pub(crate) fn divider_pressed(&mut self, key: DividerKey, axis: Axis, start: Point<Pixels>) {
         self.state.cancel_layout_draft();
-        self.dividers.gesture = self.arrangement().map(|(_, base)| Gesture {
+        self.gestures.gesture = self.arrangement().map(|(_, base)| Gesture {
             key,
             axis,
             start,
@@ -69,7 +71,7 @@ impl Workbench {
         pointer: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        let (Some(workspace_id), Some(gesture)) = (self.workspace_id(), &self.dividers.gesture)
+        let (Some(workspace_id), Some(gesture)) = (self.workspace_id(), &self.gestures.gesture)
         else {
             return;
         };
@@ -99,7 +101,7 @@ impl Workbench {
 
     /// The pointer let go: store the arrangement the drag made.
     pub(crate) fn divider_released(&mut self, cx: &mut Context<Self>) {
-        if self.dividers.gesture.take().is_some() {
+        if self.gestures.gesture.take().is_some() {
             let effects = self.state.commit_layout_draft();
             self.run_effects(effects);
             cx.notify();
@@ -108,7 +110,7 @@ impl Workbench {
 
     /// A double click: the panes of the split share the room equally.
     pub(crate) fn divider_equalized(&mut self, key: &DividerKey, cx: &mut Context<Self>) {
-        self.dividers.gesture = None;
+        self.gestures.gesture = None;
         self.state.cancel_layout_draft();
         let Some((workspace_id, tree)) = self.arrangement() else {
             return;
@@ -125,7 +127,7 @@ impl Workbench {
     }
 
     fn drop_gesture(&mut self, message: &str) {
-        self.dividers.gesture = None;
+        self.gestures.gesture = None;
         self.state.cancel_layout_draft();
         self.state.problem = Some(message.to_owned());
     }

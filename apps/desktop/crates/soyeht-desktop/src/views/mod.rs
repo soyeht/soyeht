@@ -21,6 +21,7 @@ mod markdown;
 pub(crate) use markdown::Replies;
 pub(crate) mod menus;
 mod pane;
+mod pane_drag;
 mod permission;
 mod preferences;
 mod prefs_harnesses;
@@ -52,9 +53,9 @@ use crate::{
     workbench::Workbench,
 };
 use gpui::{
-    AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, prelude::FluentBuilder, px,
-    relative, rgb,
+    AnyElement, ClickEvent, Context, Div, InteractiveElement, IntoElement, MouseButton,
+    ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
+    prelude::FluentBuilder, px, relative, rgb,
 };
 use soyeht_client::Connection;
 
@@ -69,7 +70,11 @@ impl Render for Workbench {
             .id("workbench")
             .key_context("Workbench")
             .track_focus(&self.focus)
+            // Escape cancels the drag of a pane before the pane in front takes the key.
+            .capture_key_down(cx.listener(Self::pane_drag_key))
             .on_key_down(cx.listener(Self::key_down))
+            .on_mouse_up(MouseButton::Left, pane_drag::ended(cx))
+            .on_mouse_up_out(MouseButton::Left, pane_drag::ended(cx))
             .on_action(cx.listener(Self::new_terminal))
             .on_action(cx.listener(Self::open_folder_action))
             .on_action(cx.listener(Self::paste))

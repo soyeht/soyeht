@@ -30,6 +30,7 @@ mod open_menu;
 mod pane_ui;
 mod pointer;
 mod prefs;
+mod redock;
 mod rename;
 mod slash_ui;
 mod start_flow;

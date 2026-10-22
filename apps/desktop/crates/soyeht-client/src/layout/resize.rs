@@ -8,7 +8,7 @@
 
 use super::{Axis, Branch, DEFAULT_WEIGHT, Node, Sizing, Split};
 
-/// Why a tree was not resized.
+/// Why a tree was not changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refused {
     /// The distance of the drag is not a number.
@@ -19,6 +19,8 @@ pub enum Refused {
     NoSuchDivider,
     /// The weights of the split cannot be shared out.
     BadWeights,
+    /// A pane to move is not in the tree.
+    NoSuchPane,
 }
 
 /// A split laid out in the room it is given.

@@ -136,5 +136,10 @@ sits at that width, and where a pane goes that the tree does not list (`PaneLayo
 smallest size its panes need. It also fixes dragging a divider and double-clicking one
 (`PaneLayoutTreeMutation.resizing` and `.equalizing`, `layout::resize` and `layout::equalize`):
 only the two weights beside the divider change, by the distance dragged, and a floor stops
-the move. Each case gives the floors to weigh with; the Mac measures one
-per kind, the desktop passes one for all.
+the move. Moving a pane by its header (`PaneLayoutDropGeometry` and
+`PaneLayoutTreeMutation.moving`, `layout::zone_at`, `layout::zone_rect` and `layout::move_pane`) is
+fixed as well: the zone of a pane a drop lands on (the quarter along each edge, the nearest edge
+on a corner, else the center), the part of the pane a zone lights up, and the tree a drop makes
+(the pane is taken out and put beside, above or below the target; the center swaps the two panes;
+the two panes of a writing companion only change sides). Each case gives the floors to weigh
+with; the Mac measures one per kind, the desktop passes one for all.

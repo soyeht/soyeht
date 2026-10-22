@@ -171,3 +171,48 @@ private func viewport(_ item: JsonValue) throws -> PaneLayoutSize {
     #expect(equalized == (try optionalTree(item["expected"])), "\(name)")
   }
 }
+
+private func dropRect(_ value: JsonValue) throws -> PaneLayoutRect {
+  PaneLayoutRect(
+    origin: PaneLayoutPoint(
+      x: try #require(value["x"].double), y: try #require(value["y"].double)),
+    size: PaneLayoutSize(
+      width: try #require(value["width"].double), height: try #require(value["height"].double)))
+}
+
+@Test func theEdgeOfAPaneIsTheVectorFraction() throws {
+  #expect(try vector()["edgeFraction"].double == PaneLayoutDropGeometry.edgeFraction)
+}
+
+@Test func aDropLandsInTheZoneTheVectorSays() throws {
+  for item in ContractVector.cases(try vector(), "dropZone") {
+    let name = item["name"].string ?? ""
+    let rect = try dropRect(item["rect"])
+    let point = PaneLayoutPoint(
+      x: try #require(item["point"]["x"].double), y: try #require(item["point"]["y"].double))
+    let target = PaneLayoutDropGeometry.target(
+      at: point, sourceWorkspaceId: "w", targetWorkspaceId: "w", targetPaneId: "t",
+      paneArea: rect, targetPaneRect: rect)
+    #expect(target?.zone.rawValue == item["expected"].string, "\(name)")
+  }
+}
+
+@Test func aZoneLightsUpThePartOfThePaneTheVectorSays() throws {
+  for item in ContractVector.cases(try vector(), "dropZoneRect") {
+    let name = item["name"].string ?? ""
+    let zone = try #require(item["zone"].string.flatMap(PaneLayoutDropZone.init(rawValue:)))
+    let rect = PaneLayoutDropGeometry.rect(for: zone, in: try dropRect(item["rect"]))
+    #expect(rect == (try dropRect(item["expected"])), "\(name)")
+  }
+}
+
+@Test func movingAPaneRearrangesAsTheVectorSays() throws {
+  for item in ContractVector.cases(try vector(), "move") {
+    let name = item["name"].string ?? ""
+    let zone = try #require(item["zone"].string.flatMap(PaneLayoutDropZone.init(rawValue:)))
+    let moved = try? PaneLayoutTreeMutation.moving(
+      try tree(item["tree"]), paneId: item["paneId"].string ?? "",
+      relativeTo: item["target"].string ?? "", zone: zone)
+    #expect(moved == (try optionalTree(item["expected"])), "\(name)")
+  }
+}
