@@ -204,7 +204,7 @@ mod tests {
             store
                 .connection()
                 .execute_batch(
-                    "DROP TABLE push_registrations; DROP TABLE editor_tabs; PRAGMA user_version = 27;",
+                    "DROP TABLE harness_sign_in; DROP TABLE push_registrations; DROP TABLE editor_tabs; PRAGMA user_version = 27;",
                 )
                 .unwrap();
             drop(store);

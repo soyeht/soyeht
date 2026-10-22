@@ -23,36 +23,38 @@ impl Core {
                     &json!(candidate.state.launch),
                 )
                 .map_err(native_error)?;
+                // A harness that asks every process for `authenticate` cannot open the session
+                // before the method the person chose for it has been answered.
+                let method = harness_sign_in::method_to_send(
+                    &self.store,
+                    &candidate.state.launch.id,
+                    &initialized,
+                )?;
                 candidate.state.initialized = Some(initialized);
-                let servers = if candidate.state.mcp_enabled {
-                    vec![crate::agents::mcp::declaration(
-                        &self.store,
-                        &self.directory,
-                        &candidate.state,
-                        &candidate.saved,
-                    )?]
-                } else {
-                    Vec::new()
+                let Some(method) = method else {
+                    self.open_candidate_session(candidate)?;
+                    return Ok(false);
                 };
                 let request = candidate
                     .state
                     .client
                     .request(
-                        "session/new",
-                        crate::agents::opening::parameters(
-                            &self.directory,
-                            &candidate.state,
-                            soyeht_acp::client::new_session_with_mcp(
-                                &candidate.saved.pane.cwd,
-                                &servers,
-                            ),
-                        )?,
-                        "switch:open",
+                        "authenticate",
+                        json!({"methodId":method}),
+                        "switch:auth",
                         self.now_ms() as u64,
                     )
                     .map_err(native_error)?;
                 self.write_candidate(&candidate.instance.instance_id, request)?;
-                candidate.phase = CandidatePhase::Opening;
+                candidate.phase = CandidatePhase::Authenticating;
+                Ok(false)
+            }
+            CandidatePhase::Authenticating if call.context == "switch:auth" => {
+                if let Err(error) = response {
+                    candidate.sign_in_refused = true;
+                    return Err(candidate_rpc_error(error));
+                }
+                self.open_candidate_session(candidate)?;
                 Ok(false)
             }
             CandidatePhase::Opening if call.context == "switch:open" => {
@@ -108,6 +110,36 @@ impl Core {
                 "The selected harness answered out of order",
             )),
         }
+    }
+
+    fn open_candidate_session(&mut self, candidate: &mut Candidate) -> Result<()> {
+        let servers = if candidate.state.mcp_enabled {
+            vec![crate::agents::mcp::declaration(
+                &self.store,
+                &self.directory,
+                &candidate.state,
+                &candidate.saved,
+            )?]
+        } else {
+            Vec::new()
+        };
+        let request = candidate
+            .state
+            .client
+            .request(
+                "session/new",
+                crate::agents::opening::parameters(
+                    &self.directory,
+                    &candidate.state,
+                    soyeht_acp::client::new_session_with_mcp(&candidate.saved.pane.cwd, &servers),
+                )?,
+                "switch:open",
+                self.now_ms() as u64,
+            )
+            .map_err(native_error)?;
+        self.write_candidate(&candidate.instance.instance_id, request)?;
+        candidate.phase = CandidatePhase::Opening;
+        Ok(())
     }
 
     pub(super) fn spawn_switch_candidate(
@@ -169,6 +201,7 @@ impl Core {
             raw_output: Vec::new(),
             phase: CandidatePhase::Initializing,
             default_mode: crate::settings::default_agent_mode(&self.store, &runtime.launch.id)?,
+            sign_in_refused: false,
         })
     }
 

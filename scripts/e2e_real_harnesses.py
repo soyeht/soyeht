@@ -333,14 +333,13 @@ def messaging_ring(run, opened, report):
                    lambda: exchange(run, opened[sender], opened[recipient]))
 
 
-def switch_through(run, opened, workspace, models, confirmed, report):
-    # The engine's switch candidate has no protocol sign-in step, so a harness that needs one
-    # (Cursor) is not a switch target.
-    keys = [key for key in opened if key not in confirmed]
+def switch_through(run, opened, workspace, models, report):
+    # A harness whose protocol sign-in was confirmed in its messaging pane authenticates the
+    # switch candidate and the pane opened for the switch by itself (ADR 0100).
+    keys = list(opened)
     if len(keys) < 2:
         report["switch_through_all"] = {
-            "status": "skipped",
-            "reason": "needs two available harnesses that sign in without a protocol step"}
+            "status": "skipped", "reason": "needs two available harnesses"}
         return
     first = keys[0]
 
@@ -371,7 +370,7 @@ def scenarios(run, workspace, keys, models, confirmed, outcomes, report):
     opened = open_available(run, workspace, keys, models, outcomes, confirmed)
     per_harness(run, outcomes, opened)
     messaging_ring(run, opened, report)
-    switch_through(run, opened, workspace, models, confirmed, report)
+    switch_through(run, opened, workspace, models, report)
     restart(run, opened, report)
 
 

@@ -6,7 +6,7 @@ use soyeht_platform::fs::{set_private_dir, set_private_file, sync_directory};
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 30;
+pub const SCHEMA_VERSION: u32 = 31;
 
 #[derive(Debug)]
 pub enum Error {
@@ -93,6 +93,7 @@ pub enum Error {
     InvalidWritingSidecar,
     InvalidWritingCreateIntent,
     InvalidAgentModelRefusal,
+    InvalidHarnessSignIn,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -195,6 +196,7 @@ impl fmt::Display for Error {
             Self::InvalidWritingSidecar => f.write_str("invalid writing sidecar"),
             Self::InvalidWritingCreateIntent => f.write_str("invalid writing create intent"),
             Self::InvalidAgentModelRefusal => f.write_str("invalid agent model refusal"),
+            Self::InvalidHarnessSignIn => f.write_str("invalid harness sign-in"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -289,6 +291,10 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
             "../migrations/030-prompt-attachment-files.sql"
         ))?;
         drop_legacy_prompt_attachments(tx)?;
+    }
+    if version < 31 {
+        tx.execute_batch(include_str!("../migrations/031-harness-sign-in.sql"))?;
+        crate::harness_sign_in::adopt_pane_choices(tx)?;
     }
     Ok(())
 }

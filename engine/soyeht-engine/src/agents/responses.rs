@@ -1,5 +1,7 @@
 use super::{
-    Changes, native_error, prompt_errors,
+    Changes,
+    harness_sign_in::{self, SignInChange},
+    native_error, prompt_errors,
     purpose::{ProbeStep, Purpose},
     sign_in::needs_login,
     state::{Phase, State},
@@ -16,7 +18,7 @@ use serde_json::{Value, json};
 use soyeht_acp::{
     Message, client,
     config::Options,
-    session::{self, AuthKind, Initialization},
+    session::{self, Initialization},
 };
 use soyeht_protocol::{PaneConfigChangedDraft, PaneSessionStartedDraft};
 use soyeht_protocol::{
@@ -211,7 +213,7 @@ fn auth_response(
     let ok = result.is_ok();
     state.auth_required = !ok;
     if !ok {
-        state.agent_sign_in = None;
+        changes.sign_in = Some(SignInChange::forget(&state.launch.id));
     }
     state.phase = if ok {
         Phase::RestartAfterProbe
@@ -243,10 +245,12 @@ fn initialize_response(
     let value = result.map_err(|error| errors::harness_unavailable(error.message))?;
     let info = Initialization::parse(&value).map_err(native_error)?;
     state.fingerprint = fingerprint(state, &info.version)?;
-    state.initialized = Some(info);
     // A process that has not authenticated yet cannot open the session the person's
-    // sign-in was for, so it is signed in again before the probe or the session.
-    if let Some(method) = reauthentication_method(state) {
+    // sign-in was for, so it is signed in with the method the person chose for this harness
+    // before the probe or the session.
+    let method = harness_sign_in::method_to_send(store, &state.launch.id, &info)?;
+    state.initialized = Some(info);
+    if let Some(method) = method {
         return call(
             state,
             changes,
@@ -257,18 +261,6 @@ fn initialize_response(
         );
     }
     after_initialize(state, changes, saved, (store, runtime))
-}
-
-/// The method the person signed in with, when this agent still offers it as a protocol sign-in.
-fn reauthentication_method(state: &State) -> Option<String> {
-    let chosen = state.agent_sign_in.as_ref()?;
-    state
-        .initialized
-        .as_ref()?
-        .auth_methods
-        .iter()
-        .any(|method| method.kind == AuthKind::Agent && &method.public.id == chosen)
-        .then(|| chosen.clone())
 }
 
 fn reauthentication_response(
@@ -291,7 +283,7 @@ fn refuse_reauthentication(
     saved: &mut StoredPane,
     changes: &mut Changes,
 ) -> Result<()> {
-    state.agent_sign_in = None;
+    changes.sign_in = Some(SignInChange::forget(&state.launch.id));
     needs_login(state, saved, changes)
 }
 

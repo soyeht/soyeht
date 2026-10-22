@@ -14,6 +14,7 @@ pub mod environment;
 pub mod failures;
 pub mod filesystem;
 pub mod forms;
+mod harness_sign_in;
 pub mod hooks;
 pub mod idle;
 pub mod lifecycle;
@@ -91,6 +92,8 @@ pub struct Changes {
     pub probes: Vec<ProbeCapability>,
     pub events: Vec<(String, Value)>,
     pub model_refusal: Option<AgentModelRefusal>,
+    /// The harness's remembered protocol sign-in changes with this commit.
+    pub(crate) sign_in: Option<harness_sign_in::SignInChange>,
     pub workspace_layout: Option<Workspace>,
     /// A sign-in terminal closed with this commit once the agent confirmed sign-in.
     pub closed_login_pane: Option<StoredPane>,
@@ -157,6 +160,9 @@ fn persist_agent_metadata(
 ) -> soyeht_store::database::Result<()> {
     if let Some(refusal) = &changes.model_refusal {
         agents::save_model_refusal(tx, refusal)?;
+    }
+    if let Some(change) = &changes.sign_in {
+        change.persist(tx)?;
     }
     if let Some((sender, target, at_ms, since_ms)) = &changes.message_rate {
         agents::record_message(tx, sender, target, *at_ms, *since_ms)?;

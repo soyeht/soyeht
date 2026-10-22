@@ -22,55 +22,32 @@ fn pane() -> StoredPane {
 }
 
 #[test]
-fn no_method_is_sent_when_the_person_chose_none() {
-    let state = offering(json!([{"id":"login","name":"Login"}]));
-    assert_eq!(reauthentication_method(&state), None);
-}
-
-#[test]
-fn the_chosen_protocol_method_is_sent_while_the_agent_offers_it() {
+fn a_refused_reauthentication_forgets_the_harness_sign_in_and_asks_for_sign_in() {
     let mut state = offering(json!([{"id":"login","name":"Login"}]));
-    state.agent_sign_in = Some("login".into());
-    assert_eq!(reauthentication_method(&state), Some("login".into()));
-}
-
-#[test]
-fn a_method_the_agent_no_longer_offers_is_not_sent() {
-    let mut state = offering(json!([{"id":"other","name":"Other"}]));
-    state.agent_sign_in = Some("login".into());
-    assert_eq!(reauthentication_method(&state), None);
-    let mut state = offering(json!([]));
-    state.agent_sign_in = Some("login".into());
-    assert_eq!(reauthentication_method(&state), None);
-}
-
-#[test]
-fn a_method_offered_only_as_a_terminal_sign_in_is_not_sent() {
-    let mut state = offering(json!([{"id":"login","name":"Login","type":"terminal"}]));
-    state.agent_sign_in = Some("login".into());
-    assert_eq!(reauthentication_method(&state), None);
-}
-
-#[test]
-fn a_refused_reauthentication_clears_the_choice_and_asks_for_sign_in() {
-    let mut state = offering(json!([{"id":"login","name":"Login"}]));
-    state.agent_sign_in = Some("login".into());
-    refuse_reauthentication(&mut state, &mut pane(), &mut Changes::default()).unwrap();
-    assert_eq!(state.agent_sign_in, None);
+    let mut changes = Changes::default();
+    refuse_reauthentication(&mut state, &mut pane(), &mut changes).unwrap();
+    assert_eq!(
+        changes.sign_in,
+        Some(SignInChange::forget(&state.launch.id))
+    );
     assert_eq!(state.phase, Phase::NeedsLogin);
 }
 
 #[test]
-fn a_refused_authenticate_clears_the_choice_and_an_accepted_one_keeps_it() {
+fn a_refused_authenticate_forgets_the_harness_sign_in_and_an_accepted_one_keeps_it() {
     let refused = soyeht_acp::RpcError {
         code: -32000,
         message: "Authentication required".into(),
         data: None,
     };
     let mut state = offering(json!([{"id":"login","name":"Login"}]));
-    state.agent_sign_in = Some("login".into());
-    auth_response(&mut state, &pane(), &mut Changes::default(), Ok(json!({}))).unwrap();
-    assert_eq!(state.agent_sign_in.as_deref(), Some("login"));
-    auth_response(&mut state, &pane(), &mut Changes::default(), Err(refused)).unwrap();
-    assert_eq!(state.agent_sign_in, None);
+    let mut accepted = Changes::default();
+    auth_response(&mut state, &pane(), &mut accepted, Ok(json!({}))).unwrap();
+    assert_eq!(accepted.sign_in, None);
+    let mut rejected = Changes::default();
+    auth_response(&mut state, &pane(), &mut rejected, Err(refused)).unwrap();
+    assert_eq!(
+        rejected.sign_in,
+        Some(SignInChange::forget(&state.launch.id))
+    );
 }

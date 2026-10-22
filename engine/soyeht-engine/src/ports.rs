@@ -219,6 +219,8 @@ pub trait StorePort {
     fn agent_probe(&self, fingerprint: &str, method: &str) -> StoreResult<Option<ProbeCapability>>;
     fn harness_readiness(&self, harness: &str) -> StoreResult<Option<HarnessReadiness>>;
     fn agent_model_refusals(&self, harness: &str) -> StoreResult<Vec<AgentModelRefusal>>;
+    /// The protocol sign-in method the person chose for a harness (ADR 0100).
+    fn harness_sign_in(&self, harness: &str) -> StoreResult<Option<String>>;
     fn web_session_grant(
         &self,
         workspace_id: &str,
@@ -410,6 +412,10 @@ impl StorePort for Store {
         soyeht_store::agents::model_refusals(self, harness)
     }
 
+    fn harness_sign_in(&self, harness: &str) -> StoreResult<Option<String>> {
+        soyeht_store::harness_sign_in::chosen(self, harness)
+    }
+
     fn web_session_grant(
         &self,
         workspace_id: &str,
@@ -513,6 +519,7 @@ pub(crate) mod testing {
         pub probes: BTreeMap<(String, String), ProbeCapability>,
         pub harness_readiness: BTreeMap<String, HarnessReadiness>,
         pub model_refusals: BTreeMap<(String, String), AgentModelRefusal>,
+        pub sign_ins: BTreeMap<String, String>,
     }
 
     impl StorePort for MemoryStore {
@@ -741,6 +748,10 @@ pub(crate) mod testing {
                 .filter(|refusal| refusal.harness_id == harness)
                 .cloned()
                 .collect())
+        }
+
+        fn harness_sign_in(&self, harness: &str) -> StoreResult<Option<String>> {
+            Ok(self.sign_ins.get(harness).cloned())
         }
 
         fn web_session_grant(

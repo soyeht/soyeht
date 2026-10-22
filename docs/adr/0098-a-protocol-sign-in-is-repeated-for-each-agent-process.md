@@ -18,10 +18,11 @@ and the pane asked for the same sign-in without end.
 
 ## Decision
 
-The engine remembers the protocol method the person chose in the pane's durable agent state
-(`agent_sign_in`). Each new process of that pane, once initialized, is sent `authenticate`
-with that method before the probe or the session, as a request of its own purpose (`reauth`).
-The pane never opens a session on a process that has not been authenticated.
+The engine remembers the protocol method the person chose (ADR 0100 keeps it per harness, in
+the store; this ADR first kept it in the pane's agent state). Each new process, once
+initialized, is sent `authenticate` with that method before the probe or the session, as a
+request of its own purpose (`reauth`). The pane never opens a session on a process that has
+not been authenticated.
 
 - It sends only the method the person pressed, and only while the agent still offers it as a
   protocol method. A method the person never chose is never sent, whatever the agent offers.
@@ -32,7 +33,8 @@ The pane never opens a session on a process that has not been authenticated.
 
 - A pane of such a harness needs one press of its sign-in, then survives the probe restart,
   an engine restart and a supervisor restart.
-- The choice belongs to the pane. A new pane of the same harness, and a switch into the harness,
-  still ask once; keeping the choice per harness would need a stored record and is left open.
+- The choice belonged to the pane, so a new pane of the same harness, and a switch into the
+  harness, still asked once. ADR 0100 keeps the choice per harness instead; the rules above
+  are unchanged.
 - `scripts/e2e_real_harnesses.py --confirm-sign-in HARNESS` presses that button for a harness,
   so the acceptance can exercise it; without the flag the harness is skipped as not signed in.

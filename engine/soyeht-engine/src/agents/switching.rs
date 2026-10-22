@@ -6,7 +6,9 @@
 //! package may replace the pane's durable runtime.
 
 use super::{
-    Changes, naming, native_error,
+    Changes,
+    harness_sign_in::{self, SignInChange},
+    naming, native_error,
     pending::{Completion, UserOperation},
     state::{HarnessSwitchCheckpoint, InternalContinuation, Phase, RetiredAgentProcess, State},
     transcript,
@@ -59,10 +61,14 @@ struct Candidate {
     /// The new harness's preferred mode, used when it does not offer the
     /// mode the pane kept from the previous harness.
     default_mode: Option<String>,
+    /// The agent refused the sign-in remembered for its harness.
+    sign_in_refused: bool,
 }
 
 enum CandidatePhase {
     Initializing,
+    /// Answering `authenticate` with the method the person chose for this harness.
+    Authenticating,
     Opening,
     Configuring {
         option_id: String,
@@ -174,11 +180,15 @@ impl Core {
                 Ok(None) => {}
                 Err(failure) => {
                     let (mut runtime, error) = *failure;
+                    let mut forget = None;
                     if let Some(candidate) = runtime.candidate.take() {
                         self.retire_failed_candidate(&pane, &candidate.instance)?;
+                        if candidate.sign_in_refused {
+                            forget = Some(SignInChange::forget(&candidate.state.launch.id));
+                        }
                     }
                     let reason = bounded_reason(&error.to_string());
-                    self.restore_failed_switch(&pane, &reason)?;
+                    self.restore_failed_switch(&pane, &reason, forget)?;
                 }
             }
         }
@@ -250,7 +260,11 @@ impl Core {
             {
                 self.retire_failed_candidate(&pane, &candidate)?;
             }
-            self.restore_failed_switch(&pane, "Engine restarted before the new harness committed")?;
+            self.restore_failed_switch(
+                &pane,
+                "Engine restarted before the new harness committed",
+                None,
+            )?;
         }
         Ok(())
     }

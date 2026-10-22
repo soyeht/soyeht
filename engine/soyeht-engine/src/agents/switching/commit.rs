@@ -228,7 +228,12 @@ impl Core {
         .map_err(native_error)
     }
 
-    pub(super) fn restore_failed_switch(&mut self, pane: &str, reason: &str) -> Result<()> {
+    pub(super) fn restore_failed_switch(
+        &mut self,
+        pane: &str,
+        reason: &str,
+        sign_in: Option<SignInChange>,
+    ) -> Result<()> {
         let mut state = self.agent_state(pane)?;
         let checkpoint = errors::invariant(
             state.harness_switch.take(),
@@ -260,6 +265,7 @@ impl Core {
                 user: checkpoint.user,
                 result: Err(errors::wire(errors::harness_switch_failed(reason))),
             }),
+            sign_in,
             ..Changes::default()
         };
         transcript::put(&mut changes, pane, marker_message, "agent_message_chunk")?;

@@ -1,5 +1,6 @@
 use super::{
     Changes,
+    harness_sign_in::SignInChange,
     purpose::Purpose,
     registry, responses,
     state::{Phase, State},
@@ -99,9 +100,12 @@ fn auth_pane_created(
 }
 
 fn embedded_auth(state: &mut super::state::State, method_id: &str, now_ms: i64) -> Result<Changes> {
-    let mut changes = Changes::default();
-    // Kept until the agent refuses it; every new process of the pane is signed in with it.
-    state.agent_sign_in = Some(method_id.to_owned());
+    // Kept for the harness until the agent refuses it or the person signs out; every new
+    // process of the harness is signed in with it.
+    let mut changes = Changes {
+        sign_in: Some(SignInChange::remember(&state.launch.id, method_id)),
+        ..Changes::default()
+    };
     responses::call(
         state,
         &mut changes,

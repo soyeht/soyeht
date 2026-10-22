@@ -5,6 +5,7 @@
 use super::{
     Changes,
     authentication::auth_finished,
+    harness_sign_in::SignInChange,
     purpose::Purpose,
     responses,
     state::{Phase, State},
@@ -180,7 +181,7 @@ pub(super) fn logout_response(
 ) -> Result<()> {
     match ok {
         Ok(()) => {
-            state.agent_sign_in = None;
+            changes.sign_in = Some(SignInChange::forget(&state.launch.id));
             state.phase = Phase::RestartAfterProbe;
         }
         Err(reason) => changes.events.push(auth_finished(
@@ -213,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn signing_out_clears_the_remembered_protocol_sign_in_and_a_refusal_keeps_it() {
+    fn signing_out_forgets_the_harness_sign_in_and_a_refusal_keeps_it() {
         let pane = crate::test_panes::pane("p", "w", soyeht_protocol::PaneMode::Agent, "/tmp");
         let stored = crate::model::StoredPane {
             pane,
@@ -224,17 +225,15 @@ mod tests {
             sequence_base: 0,
         };
         let mut state = state_with(json!({}));
-        state.agent_sign_in = Some("login".into());
-        logout_response(
-            &mut state,
-            &stored,
-            &mut Changes::default(),
-            Err("no".into()),
-        )
-        .unwrap();
-        assert_eq!(state.agent_sign_in.as_deref(), Some("login"));
-        logout_response(&mut state, &stored, &mut Changes::default(), Ok(())).unwrap();
-        assert_eq!(state.agent_sign_in, None);
+        let mut refused = Changes::default();
+        logout_response(&mut state, &stored, &mut refused, Err("no".into())).unwrap();
+        assert_eq!(refused.sign_in, None);
+        let mut signed_out = Changes::default();
+        logout_response(&mut state, &stored, &mut signed_out, Ok(())).unwrap();
+        assert_eq!(
+            signed_out.sign_in,
+            Some(SignInChange::forget(&state.launch.id))
+        );
     }
 
     #[test]

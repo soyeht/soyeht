@@ -122,7 +122,8 @@ first turn with an error (an expired plan, no balance) are skipped, never passed
 where nothing ran fails. `--harness` selects some of the four, `--model HARNESS=MODEL`
 starts one on a model its account accepts, and `--confirm-sign-in cursor` presses the
 pane's protocol sign-in for a harness that asks every process to confirm the CLI's existing
-login (ADR 0098); a harness confirmed that way is not a switch target. It runs on macOS,
+login (ADR 0098); the engine remembers that choice for the harness, so the pane the switch
+starts on and the switch itself need no second press (ADR 0100). It runs on macOS,
 Linux and Windows; see "Agents messaging each other" in `platforms.md`.
 
 Permission expiry is accelerated by changing only the pending test request's
