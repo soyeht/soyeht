@@ -36,23 +36,17 @@ fn snapshot_cursor_replays_changes_exactly_once_before_live_events() {
         prior = id;
         assert_eq!(event["params"]["workspace"]["name"], format!("Name {n}"));
     }
+    // Engine-wide notifications (`servers.local.changed`, `skills.changed`) reach every
+    // subscriber whenever their scan finishes, so the next frame is not necessarily the
+    // rename. The next rename must still be the live one: a replayed duplicate would be first.
+    observer.messages.clear();
     writer.call(
         "workspace.rename",
         json!({"workspaceId":workspace,"name":"Live","idempotencyKey":Uuid::new_v4().to_string()}),
     );
-    let Some(Frame::Json(bytes)) = Frame::read_from(&mut observer.socket).unwrap() else {
-        panic!("live event")
-    };
-    let event: Value = serde_json::from_slice(&bytes).unwrap();
-    assert_eq!(event["params"]["workspace"]["name"], "Live");
-    assert!(
-        event["params"]["eventId"]
-            .as_str()
-            .unwrap()
-            .parse::<u64>()
-            .unwrap()
-            > prior
-    );
+    let event = observer.wait_for_notification("workspace.renamed", |_| true);
+    assert_eq!(event["workspace"]["name"], "Live");
+    assert!(event["eventId"].as_str().unwrap().parse::<u64>().unwrap() > prior);
 }
 
 #[test]
