@@ -278,7 +278,8 @@
     "workspaceTabMaximumWidth": 216,
     "workspaceOverflowButtonWidth": 44,
     "workspaceOverflowPopoverWidth": 340,
-    "workspaceOverflowPopoverMaximumHeight": 420
+    "workspaceOverflowPopoverMaximumHeight": 420,
+    "readinessWidth": 480
   },
   "glyph": {
     "rail": 18,

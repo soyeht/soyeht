@@ -16,6 +16,7 @@ engine/soyeht-engine/launchd/dev.plist linguist-generated=true
 engine/soyeht-protocol/src/client_policy.rs linguist-generated=true
 engine/soyeht-protocol/src/contract/roundtrip.rs linguist-generated=true
 engine/soyeht-protocol/src/generated.rs linguist-generated=true
+engine/soyeht-protocol/src/readiness.rs linguist-generated=true
 engine/soyeht-protocol/src/limits.rs linguist-generated=true
 engine/soyeht-protocol/src/profile.rs linguist-generated=true
 engine/soyeht-protocol/src/setting.rs linguist-generated=true

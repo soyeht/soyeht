@@ -8,11 +8,11 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    AttentionItem, EventName, HarnessInfo, LoopConfig, Pane, PaneClosedEvent, PaneCreatedEvent,
-    PaneMode, PaneStateChangedEvent, PaneUpdatedEvent, SkillsListResult, Task, TaskShowResult,
-    UsageReading, Workspace, WorkspaceClosedEvent, WorkspaceCreatedEvent,
-    WorkspaceLayoutUpdatedEvent, WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope,
-    WorkspaceRenamedEvent,
+    AttentionItem, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, Pane,
+    PaneClosedEvent, PaneCreatedEvent, PaneMode, PaneStateChangedEvent, PaneUpdatedEvent,
+    SkillsListResult, Task, TaskShowResult, UsageReading, Workspace, WorkspaceClosedEvent,
+    WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent, WorkspacePaneLayoutAxis,
+    WorkspacePaneLayoutEnvelope, WorkspaceRenamedEvent,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -38,6 +38,8 @@ pub enum Effect {
     LoadHarnesses,
     /// Fetch the skills again: they changed on the engine.
     LoadSkills,
+    /// Ask what this machine has of what the app needs.
+    LoadReadiness,
     /// Fetch one task again, with its detail.
     LoadTask {
         workspace_id: String,
@@ -99,6 +101,7 @@ pub struct State {
     pub(crate) catalogue_failures: HashMap<String, String>,
     pub(crate) preferences: Preferences,
     pub(crate) skills: Option<SkillsListResult>,
+    pub(crate) readiness: Option<EngineReadinessResult>,
     /// The files open in editor panes, the tabs and the project trees.
     pub editors: Editors,
     pub(crate) expected: Vec<Expected>,
@@ -131,6 +134,7 @@ impl Default for State {
             catalogue_failures: HashMap::new(),
             preferences: Preferences::default(),
             skills: None,
+            readiness: None,
             editors: Editors::default(),
             expected: Vec::new(),
             closed: HashSet::new(),
@@ -334,6 +338,10 @@ impl State {
             }
             Event::Skills(skills) => {
                 self.skills = Some(skills);
+                Vec::new()
+            }
+            Event::Readiness(readiness) => {
+                self.readiness = Some(readiness);
                 Vec::new()
             }
             Event::Preferences(preferences) => {

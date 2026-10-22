@@ -1011,6 +1011,54 @@ public struct EngineStatusResult: Codable, Sendable {
     }
 }
 
+public enum ReadinessSystem: String, Codable, Sendable, CaseIterable {
+    case `macos` = "macos"
+    case `debian` = "debian"
+    case `fedora` = "fedora"
+    case `windows` = "windows"
+    case `other` = "other"
+}
+
+public enum ReadinessKind: String, Codable, Sendable, CaseIterable {
+    case `tool` = "tool"
+    case `harness` = "harness"
+}
+
+public struct ReadinessItem: Codable, Sendable {
+    public var `id`: String
+    public var `name`: String
+    public var `kind`: ReadinessKind
+    public var `required`: Bool
+    public var `found`: Bool
+    public var `hint`: String?
+    public var `note`: String?
+    public init(`id`: String, `name`: String, `kind`: ReadinessKind, `required`: Bool, `found`: Bool, `hint`: String? = nil, `note`: String? = nil) {
+        self.`id` = `id`
+        self.`name` = `name`
+        self.`kind` = `kind`
+        self.`required` = `required`
+        self.`found` = `found`
+        self.`hint` = `hint`
+        self.`note` = `note`
+    }
+}
+
+public struct EngineReadinessParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct EngineReadinessResult: Codable, Sendable {
+    public var `system`: ReadinessSystem
+    public var `items`: [ReadinessItem]
+    public init(`system`: ReadinessSystem, `items`: [ReadinessItem]) {
+        self.`system` = `system`
+        self.`items` = `items`
+    }
+}
+
 public struct SettingsGetParams: Codable, Sendable {
     public var `key`: String
     public init(`key`: String) {
@@ -6858,6 +6906,7 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case pairBegin = "pair.begin"
     case pairProve = "pair.prove"
     case engineStatus = "engine.status"
+    case engineReadiness = "engine.readiness"
     case settingsGet = "settings.get"
     case settingsSet = "settings.set"
     case panePrompt = "pane.prompt"

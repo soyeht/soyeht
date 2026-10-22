@@ -383,7 +383,7 @@ pub fn entries(directory: &Path) -> Result<Vec<HarnessLaunch>> {
         .collect())
 }
 
-fn resolve_executable(
+pub(crate) fn resolve_executable(
     command: &str,
     directories: impl IntoIterator<Item = PathBuf>,
 ) -> Option<PathBuf> {

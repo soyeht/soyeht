@@ -1,0 +1,857 @@
+{
+  "description": "The readiness checklist shared by the Mac (ReadinessChecklist) and the desktop client (soyeht_client::readiness). `connected` is whether the client has a connection to the engine; `result` is the answer to `engine.readiness`, or null before one arrived. Both clients pass every case.",
+  "cases": [
+    {
+      "name": "the engine is not running",
+      "connected": false,
+      "result": null,
+      "expected": {
+        "complete": false,
+        "blockers": 1,
+        "headline": "The Soyeht engine is not running",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "missing"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a connection that has not been answered yet",
+      "connected": true,
+      "result": null,
+      "expected": {
+        "complete": false,
+        "blockers": 0,
+        "headline": "Checking this machine",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          }
+        ]
+      }
+    },
+    {
+      "name": "everything is installed",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "wt",
+            "name": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "lsof",
+            "name": "lsof",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.codex-acp",
+            "name": "Codex",
+            "kind": "harness",
+            "required": false,
+            "found": false,
+            "hint": "brew install --cask codex",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      },
+      "expected": {
+        "complete": true,
+        "blockers": 0,
+        "headline": "Everything is ready",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "wt",
+            "title": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "lsof",
+            "title": "lsof",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "registry.claude-acp",
+            "title": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "registry.codex-acp",
+            "title": "Codex",
+            "kind": "harness",
+            "required": false,
+            "state": "missing",
+            "hint": "brew install --cask codex",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a missing optional tool does not stop the setup",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "wt",
+            "name": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "found": false,
+            "hint": "brew install worktrunk",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "lsof",
+            "name": "lsof",
+            "kind": "tool",
+            "required": false,
+            "found": false,
+            "hint": "brew install lsof",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": true
+          }
+        ]
+      },
+      "expected": {
+        "complete": true,
+        "blockers": 0,
+        "headline": "Everything is ready",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "wt",
+            "title": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "state": "missing",
+            "hint": "brew install worktrunk",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "lsof",
+            "title": "lsof",
+            "kind": "tool",
+            "required": false,
+            "state": "missing",
+            "hint": "brew install lsof",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "registry.claude-acp",
+            "title": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "state": "ready"
+          }
+        ]
+      }
+    },
+    {
+      "name": "one required tool is missing",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": false,
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "wt",
+            "name": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "lsof",
+            "name": "lsof",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": true
+          }
+        ]
+      },
+      "expected": {
+        "complete": false,
+        "blockers": 1,
+        "headline": "1 required item missing",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "missing",
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "wt",
+            "title": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "lsof",
+            "title": "lsof",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "registry.claude-acp",
+            "title": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "state": "ready"
+          }
+        ]
+      }
+    },
+    {
+      "name": "two required tools are missing",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": false,
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": false,
+            "hint": "brew install node",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "wt",
+            "name": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "lsof",
+            "name": "lsof",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": true
+          }
+        ]
+      },
+      "expected": {
+        "complete": false,
+        "blockers": 2,
+        "headline": "2 required items missing",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "missing",
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "missing",
+            "hint": "brew install node",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "wt",
+            "title": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "lsof",
+            "title": "lsof",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "registry.claude-acp",
+            "title": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "state": "ready"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no agent is installed",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "wt",
+            "name": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "lsof",
+            "name": "lsof",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": false,
+            "hint": "brew install --cask claude-code",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "registry.codex-acp",
+            "name": "Codex",
+            "kind": "harness",
+            "required": false,
+            "found": false,
+            "hint": "brew install --cask codex",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      },
+      "expected": {
+        "complete": false,
+        "blockers": 0,
+        "headline": "Install an agent to start",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "wt",
+            "title": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "lsof",
+            "title": "lsof",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "registry.claude-acp",
+            "title": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "state": "missing",
+            "hint": "brew install --cask claude-code",
+            "note": "Needs Homebrew: https://brew.sh"
+          },
+          {
+            "id": "registry.codex-acp",
+            "title": "Codex",
+            "kind": "harness",
+            "required": false,
+            "state": "missing",
+            "hint": "brew install --cask codex",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the engine lists no agent",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          }
+        ]
+      },
+      "expected": {
+        "complete": false,
+        "blockers": 0,
+        "headline": "Install an agent to start",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a missing required tool comes before the missing agent",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": false,
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": false,
+            "hint": "brew install --cask claude-code",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      },
+      "expected": {
+        "complete": false,
+        "blockers": 1,
+        "headline": "1 required item missing",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "missing",
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "registry.claude-acp",
+            "title": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "state": "missing",
+            "hint": "brew install --cask claude-code",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a program that is found shows no command",
+      "connected": true,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": true,
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "wt",
+            "name": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "lsof",
+            "name": "lsof",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.codex-acp",
+            "name": "Codex",
+            "kind": "harness",
+            "required": false,
+            "found": false,
+            "hint": "brew install --cask codex",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      },
+      "expected": {
+        "complete": true,
+        "blockers": 0,
+        "headline": "Everything is ready",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "git",
+            "title": "Git",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "node",
+            "title": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "state": "ready"
+          },
+          {
+            "id": "wt",
+            "title": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "lsof",
+            "title": "lsof",
+            "kind": "tool",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "registry.claude-acp",
+            "title": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "state": "ready"
+          },
+          {
+            "id": "registry.codex-acp",
+            "title": "Codex",
+            "kind": "harness",
+            "required": false,
+            "state": "missing",
+            "hint": "brew install --cask codex",
+            "note": "Needs Homebrew: https://brew.sh"
+          }
+        ]
+      }
+    },
+    {
+      "name": "an answer that arrives after the connection dropped is ignored",
+      "connected": false,
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": false,
+            "hint": "xcode-select --install"
+          },
+          {
+            "id": "node",
+            "name": "Node.js",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "wt",
+            "name": "Worktrunk",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "lsof",
+            "name": "lsof",
+            "kind": "tool",
+            "required": false,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": true
+          }
+        ]
+      },
+      "expected": {
+        "complete": false,
+        "blockers": 1,
+        "headline": "The Soyeht engine is not running",
+        "rows": [
+          {
+            "id": "engine",
+            "title": "Soyeht engine",
+            "kind": "engine",
+            "required": true,
+            "state": "missing"
+          }
+        ]
+      }
+    }
+  ]
+}

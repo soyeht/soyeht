@@ -31,6 +31,7 @@ ADDED_AFTER_GENERATION = {
     ("composer", "contextPercentageWidth"),
     ("glyph", "taskToolbarIcon"),
     ("glyph", "taskToolbarChevron"),
+    ("layout", "readinessWidth"),
 }
 
 

@@ -11,6 +11,7 @@
 //! - [`process`]: ending a process together with everything it started (a process group on
 //!   Unix, a job object on Windows), and the Windows launch of a child into one.
 //! - [`fs`]: owner-only files and directories and opens that never follow a link.
+//! - [`worktrunk`]: the name of the worktree program, which Windows spells `git-wt`.
 //! - [`git`]: whether `git` can run, decided without starting it (the macOS launcher opens
 //!   the system installer when the Command Line Tools are missing).
 //!
@@ -26,3 +27,4 @@ pub mod shutdown;
 #[cfg(feature = "test-support")]
 pub mod testing;
 pub mod user;
+pub mod worktrunk;

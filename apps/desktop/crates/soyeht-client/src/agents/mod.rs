@@ -233,7 +233,11 @@ impl State {
             .map(|pane| pane.pane_id.clone())
             .collect();
         self.agents.retain(|id, _| ids.contains(id));
-        let mut effects = vec![Effect::LoadUsage, Effect::LoadHarnesses];
+        let mut effects = vec![
+            Effect::LoadUsage,
+            Effect::LoadHarnesses,
+            Effect::LoadReadiness,
+        ];
         for id in ids {
             let view = self.agents.entry(id.clone()).or_default();
             view.permission = None;

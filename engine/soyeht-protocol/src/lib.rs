@@ -15,6 +15,7 @@ pub mod frame;
 pub mod handshake;
 pub mod ndjson;
 pub mod profile;
+pub mod readiness;
 pub mod setting;
 pub mod snapshot;
 pub mod validate;

@@ -9,9 +9,9 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    HarnessListParams, ModelListParams, ModelListResult, PaneAuthLogoutParams, Request,
-    SettingsGetParams, SettingsSetParams, SkillsCreateParams, SkillsDeleteParams, SkillsListParams,
-    UsageRefreshParams, client_policy, setting,
+    EngineReadinessParams, HarnessListParams, ModelListParams, ModelListResult,
+    PaneAuthLogoutParams, Request, SettingsGetParams, SettingsSetParams, SkillsCreateParams,
+    SkillsDeleteParams, SkillsListParams, UsageRefreshParams, client_policy, setting,
 };
 
 /// A model list page; the next one is `cursor`.
@@ -51,6 +51,7 @@ pub(crate) fn request(command: &Command) -> Option<Request> {
             rescan: rescan.then_some(true),
         }),
         Command::LoadCatalogue { harness } => catalogue_request(harness, None),
+        Command::LoadReadiness => Request::EngineReadiness(EngineReadinessParams {}),
         Command::LoadSkills => Request::SkillsList(SkillsListParams { workspace_id: None }),
         Command::CreateSkill {
             name,

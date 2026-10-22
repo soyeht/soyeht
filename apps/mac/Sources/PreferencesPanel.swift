@@ -145,7 +145,7 @@ struct PreferencesPanel: View {
 
   @ViewBuilder private func preferenceDetail(_ selected: PreferencesNavigationItem) -> some View {
     switch selected {
-    case .general: GeneralPreferencesPanel()
+    case .general: GeneralPreferencesPanel(client: client)
     case .appearance: ThemePreferencesPanel()
     case .harnesses: PreferencesHarnesses(client: client)
     case .usage:

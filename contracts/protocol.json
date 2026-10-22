@@ -1725,6 +1725,82 @@
       ],
       "additionalProperties": true
     },
+    "ReadinessSystem": {
+      "type": "string",
+      "enum": [
+        "macos",
+        "debian",
+        "fedora",
+        "windows",
+        "other"
+      ]
+    },
+    "ReadinessKind": {
+      "type": "string",
+      "enum": [
+        "tool",
+        "harness"
+      ]
+    },
+    "ReadinessItem": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ReadinessKind"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "found": {
+          "type": "boolean"
+        },
+        "hint": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "required",
+        "found"
+      ],
+      "additionalProperties": true
+    },
+    "EngineReadinessParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "EngineReadinessResult": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "$ref": "#/$defs/ReadinessSystem"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ReadinessItem"
+          }
+        }
+      },
+      "required": [
+        "system",
+        "items"
+      ],
+      "additionalProperties": true
+    },
     "SettingsGetParams": {
       "type": "object",
       "properties": {
@@ -12768,6 +12844,15 @@
       },
       "mutation": false
     },
+    "engine.readiness": {
+      "params": {
+        "$ref": "#/$defs/EngineReadinessParams"
+      },
+      "result": {
+        "$ref": "#/$defs/EngineReadinessResult"
+      },
+      "mutation": false
+    },
     "settings.get": {
       "params": {
         "$ref": "#/$defs/SettingsGetParams"
@@ -14535,5 +14620,119 @@
       "constant": "warning",
       "variable": "ink"
     }
+  },
+  "x-readiness": {
+    "tools": [
+      {
+        "id": "git",
+        "name": "Git",
+        "required": true,
+        "systems": [
+          "macos",
+          "debian",
+          "fedora",
+          "windows"
+        ],
+        "hints": {
+          "macos": "xcode-select --install",
+          "debian": "sudo apt install git",
+          "fedora": "sudo dnf install git",
+          "windows": "winget install --id Git.Git -e"
+        }
+      },
+      {
+        "id": "node",
+        "name": "Node.js",
+        "required": true,
+        "systems": [
+          "macos",
+          "debian",
+          "fedora",
+          "windows"
+        ],
+        "hints": {
+          "macos": "brew install node",
+          "debian": "sudo apt install nodejs npm",
+          "fedora": "sudo dnf install nodejs npm",
+          "windows": "winget install --id OpenJS.NodeJS.LTS -e"
+        }
+      },
+      {
+        "id": "wt",
+        "name": "Worktrunk",
+        "required": false,
+        "systems": [
+          "macos",
+          "debian",
+          "fedora",
+          "windows"
+        ],
+        "hints": {
+          "macos": "brew install worktrunk",
+          "debian": "brew install worktrunk",
+          "fedora": "brew install worktrunk",
+          "windows": "winget install max-sixty.worktrunk"
+        }
+      },
+      {
+        "id": "lsof",
+        "name": "lsof",
+        "required": false,
+        "systems": [
+          "macos",
+          "debian",
+          "fedora"
+        ],
+        "hints": {
+          "macos": "brew install lsof",
+          "debian": "sudo apt install lsof",
+          "fedora": "sudo dnf install lsof"
+        }
+      }
+    ],
+    "harnesses": [
+      {
+        "id": "registry.claude-acp",
+        "hints": {
+          "macos": "brew install --cask claude-code",
+          "debian": "curl -fsSL https://claude.ai/install.sh | bash",
+          "fedora": "curl -fsSL https://claude.ai/install.sh | bash",
+          "windows": "irm https://claude.ai/install.ps1 | iex"
+        }
+      },
+      {
+        "id": "registry.codex-acp",
+        "hints": {
+          "macos": "brew install --cask codex",
+          "debian": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+          "fedora": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+          "windows": "npm install -g @openai/codex"
+        }
+      },
+      {
+        "id": "registry.cursor",
+        "hints": {
+          "macos": "curl https://cursor.com/install -fsS | bash",
+          "debian": "curl https://cursor.com/install -fsS | bash",
+          "fedora": "curl https://cursor.com/install -fsS | bash",
+          "windows": "irm 'https://cursor.com/install?win32=true' | iex"
+        }
+      },
+      {
+        "id": "registry.opencode",
+        "hints": {
+          "macos": "curl -fsSL https://opencode.ai/install | bash",
+          "debian": "curl -fsSL https://opencode.ai/install | bash",
+          "fedora": "curl -fsSL https://opencode.ai/install | bash",
+          "windows": "npm install -g opencode-ai"
+        }
+      }
+    ],
+    "notes": [
+      {
+        "prefix": "brew ",
+        "text": "Needs Homebrew: https://brew.sh"
+      }
+    ]
   }
 }

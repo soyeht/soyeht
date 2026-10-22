@@ -200,6 +200,9 @@ impl Workbench {
             Effect::LoadHarnesses => {
                 self.send(Command::LoadHarnesses { rescan: false });
             }
+            Effect::LoadReadiness => {
+                self.send(Command::LoadReadiness);
+            }
             Effect::LoadTask {
                 workspace_id,
                 task_id,

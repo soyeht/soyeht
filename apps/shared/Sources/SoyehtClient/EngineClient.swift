@@ -32,6 +32,8 @@ public final class EngineClient {
   public internal(set) var agentWebDrafts: [String: AgentWebAttachmentDraft] = [:]
   public internal(set) var harnesses: [HarnessInfo] = []
   public internal(set) var harnessLoadCount = 0
+  /// What the engine last said this machine has of what the app needs; `nil` until it does.
+  public internal(set) var readiness: EngineReadinessResult?
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
   public internal(set) var preferredHarnessId: String?
@@ -819,23 +821,6 @@ public final class EngineClient {
       _ = try await self.mutation(
         .paneClose, PaneCloseParams(paneId: id, idempotencyKey: UUID().uuidString))
     }
-  }
-  public func setExperimentCapture(
-    paneId: String, on: Bool
-  ) async throws -> PaneExperimentSetResult {
-    try await mutation(
-      .paneExperimentSet,
-      PaneExperimentSetParams(
-        paneId: paneId, on: on, idempotencyKey: UUID().uuidString)
-    ).decoded(PaneExperimentSetResult.self)
-  }
-  public func deleteExperimentCaptureData(
-    paneId: String
-  ) async throws -> PaneExperimentDeleteResult {
-    try await mutation(
-      .paneExperimentDelete,
-      PaneExperimentDeleteParams(paneId: paneId, idempotencyKey: UUID().uuidString)
-    ).decoded(PaneExperimentDeleteResult.self)
   }
   public func input(_ data: Data) {
     guard let pane = selectedPaneId else { return }

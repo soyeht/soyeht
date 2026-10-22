@@ -280,6 +280,8 @@ a workspace's skill folders (ADR 0075), `engine.status` → `{version, generatio
 ptyd: {connected, version, generation}, db: {id, schemaVersion},
 reachability?: {remote, reason?}}`. `engine.reachability_changed` (transient)
 carries the same `reachability` when it changes (ADR 0078).
+`engine.readiness` → `{system, items}` lists the programs the engine and the harnesses need and
+which of them this machine has, with the install command for it (contract 12).
 
 ## 5. Events (notifications)
 Names **match those published in contracts 01–04 and 07** (R01); fields are

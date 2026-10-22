@@ -4,6 +4,7 @@
 
 use serde_json::{Value, json};
 use soyeht_platform::local::{Stream, connect};
+use soyeht_platform::worktrunk::PROGRAM;
 use soyeht_protocol::frame::Frame;
 use soyeht_ptyd::{
     client::Client as PtyClient,
@@ -114,8 +115,7 @@ impl Rig {
                 .env("ZDOTDIR", &self.path)
                 // Usage sources read only the rig's fakes, never the machine's.
                 .env("SOYEHT_TEST_USAGE_READER_DIR", self.usage_readers())
-                // The engine runs in another process: it follows skill folders by
-                // reading them, not by file events a loaded machine delivers late.
+                // Another process: skill folders are read, not watched (events arrive late).
                 .env("SOYEHT_TEST_SKILL_POLL", "1")
                 .stdout(Stdio::null())
                 // The engine writes its log here, as the launch agent has it do.
@@ -440,7 +440,7 @@ pub fn install_fake_lsp(root: &Path) {
 }
 
 pub fn install_fake_worktrunk(root: &Path) {
-    install_fake(root, "soyeht-fake-worktrunk", "wt");
+    install_fake(root, "soyeht-fake-worktrunk", PROGRAM);
 }
 
 impl Drop for Rig {

@@ -4,7 +4,8 @@
 use crate::{
     catalogue::Catalogue,
     preferences::Preferences,
-    state::{Effect, State},
+    readiness::{self, Checklist},
+    state::{Connection, Effect, State},
     switch::{HarnessSwitchView, Phase},
 };
 use serde_json::Value;
@@ -36,6 +37,15 @@ impl State {
     /// The skills every harness loads, once the engine has listed them.
     pub fn skills(&self) -> Option<&SkillsListResult> {
         self.skills.as_ref()
+    }
+
+    /// The readiness checklist: the engine's answer, once there is one, and whether there is a
+    /// connection to the engine at all.
+    pub fn readiness(&self) -> Checklist {
+        readiness::checklist(
+            matches!(self.connection, Connection::Connected),
+            self.readiness.as_ref(),
+        )
     }
 
     /// Events about accounts, switching and settings. Unknown names change nothing.

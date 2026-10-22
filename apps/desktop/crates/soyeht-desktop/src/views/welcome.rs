@@ -39,6 +39,12 @@ impl Workbench {
                 .text_color(rgb(palette.muted))
                 .child(SHORTCUT),
         )
+        .when(!self.state.readiness().complete, |stage| {
+            stage.child(
+                self.readiness_list(palette, cx)
+                    .w(px(layout::READINESS_WIDTH)),
+            )
+        })
         .into_any_element()
     }
 }

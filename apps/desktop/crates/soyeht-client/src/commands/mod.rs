@@ -11,11 +11,11 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use soyeht_protocol::{
-    AgentPaneRole, ConfigValue, HarnessInfo, HarnessListResult, LoopSetParams, LoopSetResult,
-    LoopStopWhen, PaneAuthCancelParams, PaneAuthStartParams, PaneCancelParams, PaneCloseParams,
-    PaneConfigSetParams, PaneCreateParams, PaneCreateResult, PaneDraftParams,
-    PaneElicitationAnswerParams, PaneFocusParams, PaneHarnessSwitchParams, PaneInputParams,
-    PaneMode, PanePermissionAnswerParams, PanePromptParams, PaneQueueRemoveParams,
+    AgentPaneRole, ConfigValue, EngineReadinessResult, HarnessInfo, HarnessListResult,
+    LoopSetParams, LoopSetResult, LoopStopWhen, PaneAuthCancelParams, PaneAuthStartParams,
+    PaneCancelParams, PaneCloseParams, PaneConfigSetParams, PaneCreateParams, PaneCreateResult,
+    PaneDraftParams, PaneElicitationAnswerParams, PaneFocusParams, PaneHarnessSwitchParams,
+    PaneInputParams, PaneMode, PanePermissionAnswerParams, PanePromptParams, PaneQueueRemoveParams,
     PaneQueueResumeParams, PaneRenameParams, PaneResizeParams, PaneRoleSetParams,
     PaneStreamSubscribeParams, PaneTranscriptParams, PaneTranscriptResult, PromptOrigin,
     ReplayFrom, Request, SkillsListResult, TailSelector, TaskCreateParams, TaskCreateResult,
@@ -123,6 +123,8 @@ pub enum Command {
     },
     /// Fetch the skills every harness loads.
     LoadSkills,
+    /// Ask the engine which of the programs the app needs this machine has.
+    LoadReadiness,
     /// Make a skill of the user's: its folder with a `SKILL.md`.
     CreateSkill {
         name: String,
@@ -607,6 +609,7 @@ impl Command {
                 | Self::LoadCatalogue { .. }
                 | Self::LoadPreferences { .. }
                 | Self::LoadSkills
+                | Self::LoadReadiness
         ) || matches!(self, Self::Editor(editor) if editor.is_background())
     }
 }
@@ -653,6 +656,9 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
             serde_json::from_value::<UsageListResult>(result)?.providers,
         )),
         Command::LoadHarnesses { .. } => Some(Event::Harnesses(harnesses(result)?)),
+        Command::LoadReadiness => Some(Event::Readiness(serde_json::from_value::<
+            EngineReadinessResult,
+        >(result)?)),
         Command::LoadSkills => Some(Event::Skills(serde_json::from_value::<SkillsListResult>(
             result,
         )?)),

@@ -115,6 +115,10 @@ struct PaneGrid: View {
           Text("Your space to begin")
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
           Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))
+          if !client.readinessChecklist.complete {
+            ReadinessChecklistView(client: client)
+              .frame(maxWidth: DesignTokens.Layout.readinessWidth)
+          }
         }
         .frame(width: viewportSize.width, height: viewportSize.height)
       }

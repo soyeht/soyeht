@@ -2482,6 +2482,87 @@
     }
   },
   {
+    "name": "ReadinessSystem",
+    "type": "ReadinessSystem",
+    "value": "fedora"
+  },
+  {
+    "name": "ReadinessKind",
+    "type": "ReadinessKind",
+    "value": "harness"
+  },
+  {
+    "name": "ReadinessItem",
+    "type": "ReadinessItem",
+    "value": {
+      "id": "wt",
+      "name": "Worktrunk",
+      "kind": "tool",
+      "required": false,
+      "found": false,
+      "hint": "cargo install worktrunk"
+    }
+  },
+  {
+    "name": "EngineReadinessParams",
+    "type": "EngineReadinessParams",
+    "value": {}
+  },
+  {
+    "name": "EngineReadinessResult",
+    "type": "EngineReadinessResult",
+    "value": {
+      "system": "windows",
+      "items": [
+        {
+          "id": "git",
+          "name": "Git",
+          "kind": "tool",
+          "required": true,
+          "found": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "request:engine.readiness",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "engine.readiness",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:engine.readiness",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "system": "macos",
+        "items": [
+          {
+            "id": "git",
+            "name": "Git",
+            "kind": "tool",
+            "required": true,
+            "found": true
+          },
+          {
+            "id": "registry.claude-acp",
+            "name": "Claude Agent",
+            "kind": "harness",
+            "required": false,
+            "found": false,
+            "hint": "brew install --cask claude-code"
+          }
+        ]
+      }
+    }
+  },
+  {
     "name": "request:settings.get",
     "type": "RequestEnvelope",
     "value": {

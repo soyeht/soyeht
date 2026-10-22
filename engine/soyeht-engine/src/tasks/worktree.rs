@@ -43,7 +43,7 @@ pub struct CommandWorktree {
 impl Default for CommandWorktree {
     fn default() -> Self {
         Self {
-            executable: "wt".into(),
+            executable: soyeht_platform::worktrunk::PROGRAM.into(),
         }
     }
 }
@@ -412,6 +412,16 @@ pub(crate) fn first_prompt(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn the_engine_runs_the_programs_name_on_this_system() {
+        let port = CommandWorktree::default();
+        assert_eq!(port.executable, soyeht_platform::worktrunk::PROGRAM);
+        assert!(
+            !cfg!(windows) || port.executable != "wt",
+            "that is Windows Terminal"
+        );
+    }
 
     // The one test that needs a directory writes a shell script as the fake program, so the
     // directory helper exists on Unix only, as the test does.

@@ -24,6 +24,7 @@ mod prefs_skills;
 mod prefs_usage;
 mod prelude;
 mod rail;
+mod readiness;
 mod resize_handles;
 mod settings;
 mod switch_popover;

@@ -918,6 +918,52 @@ pub struct EngineStatusResult {
     pub reachability: Option<EngineReachability>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ReadinessSystem {
+    #[serde(rename = "macos")]
+    Macos,
+    #[serde(rename = "debian")]
+    Debian,
+    #[serde(rename = "fedora")]
+    Fedora,
+    #[serde(rename = "windows")]
+    Windows,
+    #[serde(rename = "other")]
+    Other,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ReadinessKind {
+    #[serde(rename = "tool")]
+    Tool,
+    #[serde(rename = "harness")]
+    Harness,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ReadinessItem {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "kind")]
+    pub kind: ReadinessKind,
+    #[serde(rename = "required")]
+    pub required: bool,
+    #[serde(rename = "found")]
+    pub found: bool,
+    #[serde(rename = "hint", skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EngineReadinessParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EngineReadinessResult {
+    #[serde(rename = "system")]
+    pub system: ReadinessSystem,
+    #[serde(rename = "items")]
+    pub items: Vec<ReadinessItem>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SettingsGetParams {
     #[serde(rename = "key")]
     pub key: String,
@@ -6255,6 +6301,8 @@ pub enum Request {
     PairProve(PairProveParams),
     #[serde(rename = "engine.status")]
     EngineStatus(EngineStatusParams),
+    #[serde(rename = "engine.readiness")]
+    EngineReadiness(EngineReadinessParams),
     #[serde(rename = "settings.get")]
     SettingsGet(SettingsGetParams),
     #[serde(rename = "settings.set")]
@@ -6617,6 +6665,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "engine.status",
         "EngineStatusParams",
         "EngineStatusResult",
+        false,
+    ),
+    (
+        "engine.readiness",
+        "EngineReadinessParams",
+        "EngineReadinessResult",
         false,
     ),
     (
@@ -8572,6 +8626,7 @@ pub mod method {
     pub const PAIR_BEGIN: &str = "pair.begin";
     pub const PAIR_PROVE: &str = "pair.prove";
     pub const ENGINE_STATUS: &str = "engine.status";
+    pub const ENGINE_READINESS: &str = "engine.readiness";
     pub const SETTINGS_GET: &str = "settings.get";
     pub const SETTINGS_SET: &str = "settings.set";
     pub const PANE_PROMPT: &str = "pane.prompt";

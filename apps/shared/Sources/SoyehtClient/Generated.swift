@@ -225,6 +225,7 @@ public enum DesignTokens {
     public static let workspaceOverflowButtonWidth: CGFloat = 44
     public static let workspaceOverflowPopoverWidth: CGFloat = 340
     public static let workspaceOverflowPopoverMaximumHeight: CGFloat = 420
+    public static let readinessWidth: CGFloat = 480
   }
 
   public enum Glyph {

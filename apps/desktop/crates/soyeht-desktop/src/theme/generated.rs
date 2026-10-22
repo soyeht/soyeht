@@ -354,6 +354,7 @@ pub mod layout {
     pub const WORKSPACE_OVERFLOW_BUTTON_WIDTH: f32 = 44.0;
     pub const WORKSPACE_OVERFLOW_POPOVER_WIDTH: f32 = 340.0;
     pub const WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT: f32 = 420.0;
+    pub const READINESS_WIDTH: f32 = 480.0;
 }
 pub mod glyph {
     pub const RAIL: f32 = 18.0;

@@ -59,6 +59,7 @@ fn a_snapshot_lists_workspaces_and_panes_and_subscribes_every_terminal() {
             Effect::SubscribeTerminal("t2".into()),
             Effect::LoadUsage,
             Effect::LoadHarnesses,
+            Effect::LoadReadiness,
             Effect::LoadTranscript("a1".into()),
         ]
     );

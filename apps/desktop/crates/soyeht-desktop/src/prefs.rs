@@ -14,6 +14,7 @@ use soyeht_protocol::UsageProvider;
 /// A panel of Preferences, in the order of the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
+    Setup,
     Appearance,
     Harnesses,
     Usage,
@@ -21,10 +22,17 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Self; 4] = [Self::Appearance, Self::Harnesses, Self::Usage, Self::Skills];
+    pub const ALL: [Self; 5] = [
+        Self::Setup,
+        Self::Appearance,
+        Self::Harnesses,
+        Self::Usage,
+        Self::Skills,
+    ];
 
     pub fn title(self) -> &'static str {
         match self {
+            Self::Setup => "Setup",
             Self::Appearance => "Appearance",
             Self::Harnesses => "Harnesses",
             Self::Usage => "Usage",
@@ -109,6 +117,7 @@ impl Workbench {
         }
         self.send(Command::LoadUsage);
         self.send(Command::LoadSkills);
+        self.send(Command::LoadReadiness);
         cx.notify();
     }
 

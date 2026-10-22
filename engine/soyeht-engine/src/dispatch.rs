@@ -420,6 +420,7 @@ impl Core {
             method::USAGE_LIST => self.usage_list()?,
             method::USAGE_REFRESH => return self.usage_refresh(connection, params),
             method::SERVERS_LOCAL_LIST => return self.local_servers_list(),
+            method::ENGINE_READINESS => return self.engine_readiness(),
             method::WEB_OPEN => self.web_open(connection, params)?,
             method::WEB_NAVIGATE => return self.web_navigate(connection, request_id, params),
             method::WEB_CLOSE => self.web_close(connection, params)?,

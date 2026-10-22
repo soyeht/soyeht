@@ -4,6 +4,7 @@ import Foundation
 /// for it. A load that is slow or fails is a state of that list, never a modal alert.
 public enum BackgroundLoad: Hashable, Sendable {
   case harnesses
+  case readiness
   case customHarnesses
   case defaultPermissionModes
   case catalogue(harness: String)
@@ -15,6 +16,7 @@ public enum BackgroundLoad: Hashable, Sendable {
     switch self {
     case .harnesses: "Could not load the agent list. The engine may be busy."
     case .customHarnesses: "Could not load your custom agents."
+    case .readiness: "Could not check this machine. The engine may be busy."
     case .defaultPermissionModes: "Could not load the default permission modes."
     case .catalogue: "Could not load the models. The engine may be busy."
     case .editorPane: "Could not load this file. The engine may be busy."

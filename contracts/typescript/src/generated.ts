@@ -491,6 +491,29 @@ export interface EngineStatusResult {
   "reachability"?: EngineReachability;
 }
 
+export type ReadinessSystem = "macos" | "debian" | "fedora" | "windows" | "other";
+
+export type ReadinessKind = "tool" | "harness";
+
+export interface ReadinessItem {
+  "id": string;
+  "name": string;
+  "kind": ReadinessKind;
+  "required": boolean;
+  "found": boolean;
+  "hint"?: string;
+  "note"?: string;
+}
+
+export interface EngineReadinessParams {
+
+}
+
+export interface EngineReadinessResult {
+  "system": ReadinessSystem;
+  "items": Array<ReadinessItem>;
+}
+
 export interface SettingsGetParams {
   "key": string;
 }
@@ -3484,6 +3507,7 @@ export interface Methods {
   "pair.begin": { params: PairBeginParams; result: PairBeginResult };
   "pair.prove": { params: PairProveParams; result: PairProveResult };
   "engine.status": { params: EngineStatusParams; result: EngineStatusResult };
+  "engine.readiness": { params: EngineReadinessParams; result: EngineReadinessResult };
   "settings.get": { params: SettingsGetParams; result: SettingsGetResult };
   "settings.set": { params: SettingsSetParams; result: SettingsSetResult };
   "pane.prompt": { params: PanePromptParams; result: PanePromptResult };

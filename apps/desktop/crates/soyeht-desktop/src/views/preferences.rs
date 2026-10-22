@@ -28,6 +28,7 @@ impl Workbench {
         self.prefs.detail_width = page_width(width);
         let section = self.prefs.section();
         let detail = match section {
+            Section::Setup => self.setup_page(palette, cx),
             Section::Appearance => self.appearance_page(palette, cx),
             Section::Harnesses => self.harnesses_page(palette, cx),
             Section::Usage => self.usage_page(palette, cx),
@@ -167,6 +168,7 @@ impl Workbench {
 
 fn section_icon(section: Section) -> Icon {
     match section {
+        Section::Setup => Icon::ListChecks,
         Section::Appearance => Icon::Palette,
         Section::Harnesses => Icon::Cpu,
         Section::Usage => Icon::Gauge,
