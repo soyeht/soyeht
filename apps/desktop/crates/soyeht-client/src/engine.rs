@@ -2,7 +2,9 @@
 //! alive, and a worker thread that carries out commands in the order they were issued.
 
 use crate::{
-    Error, Result, catalogue,
+    Error, Result,
+    autostart::{self, Autostart},
+    catalogue,
     commands::{self, Command, INPUT_CHUNK_BYTES},
     editor,
     event::Event,
@@ -69,13 +71,21 @@ pub struct Engine {
 impl Engine {
     /// Starts connecting. Everything that happens arrives on the returned receiver.
     pub fn start(socket: PathBuf) -> (Self, async_channel::Receiver<Event>) {
+        Self::start_with(socket, Autostart::Off)
+    }
+
+    /// [`start`](Self::start), starting an engine when none answers and `autostart` says so.
+    pub fn start_with(
+        socket: PathBuf,
+        autostart: Autostart,
+    ) -> (Self, async_channel::Receiver<Event>) {
         let (events, inbox) = async_channel::bounded(EVENT_QUEUE);
         let (commands, queue) = mpsc::sync_channel(COMMAND_QUEUE);
         let (fetches, fetch_queue) = mpsc::sync_channel(COMMAND_QUEUE);
         let shared = Arc::new(Shared::default());
         {
             let (shared, events) = (Arc::clone(&shared), events.clone());
-            std::thread::spawn(move || supervise(&socket, &events, &shared));
+            std::thread::spawn(move || supervise(&socket, &autostart, &events, &shared));
         }
         // One worker for what the person does, one for fetching: a transcript per pane, usage and
         // the harness list queue up at every connection and must not delay a keystroke.
@@ -128,12 +138,17 @@ impl Drop for Engine {
     }
 }
 
-fn supervise(socket: &Path, events: &EventSink, shared: &Shared) {
+fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &Shared) {
     let mut backoff = Backoff::default();
+    // An engine is started once for each time none answers; a connection that was made allows
+    // the next start, so an engine that ends later is started again but a start that fails is
+    // not repeated at every retry.
+    let mut may_start = true;
     while !shared.stopped.load(Ordering::Relaxed) {
         let ended = run_connection(socket, events, shared);
         if shared.rpc().is_some() {
             backoff.reset();
+            may_start = true;
         }
         shared.set(None);
         if events
@@ -142,7 +157,72 @@ fn supervise(socket: &Path, events: &EventSink, shared: &Shared) {
         {
             return;
         }
+        if let Autostart::On(plan) = autostart
+            && may_start
+            && engine_absent(&ended)
+        {
+            may_start = false;
+            match start_engine(plan, socket, events, shared) {
+                Started::Up => continue,
+                Started::Failed => {}
+                Started::Gone => return,
+            }
+        }
         wait(shared, backoff.next());
+    }
+}
+
+/// Whether the connection failed because nothing listens at the endpoint.
+fn engine_absent(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Io(error) if matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+        )
+    )
+}
+
+enum Started {
+    /// An engine answers.
+    Up,
+    /// It could not be started; the person was told.
+    Failed,
+    /// The application is gone or stopping.
+    Gone,
+}
+
+/// Starts an engine and says so. The start waits for the engine to answer, on this thread: until
+/// then there is nothing to connect to.
+fn start_engine(
+    plan: &autostart::Plan,
+    socket: &Path,
+    events: &EventSink,
+    shared: &Shared,
+) -> Started {
+    if events.send_blocking(Event::Starting).is_err() {
+        return Started::Gone;
+    }
+    let stopped = || shared.stopped.load(Ordering::Relaxed);
+    let host = autostart::Local {
+        plan,
+        socket,
+        stopped: &stopped,
+    };
+    match autostart::ensure(plan, &host) {
+        Ok(()) => {
+            soyeht_platform::log::event("desktop.engine_ready", &[]);
+            Started::Up
+        }
+        Err(autostart::StartError::Stopped) => Started::Gone,
+        Err(error) => {
+            soyeht_platform::log::failure("desktop.engine_start_failed", &error);
+            let told = report(events, &error.to_string())
+                && events
+                    .send_blocking(Event::Disconnected(error.to_string()))
+                    .is_ok();
+            if told { Started::Failed } else { Started::Gone }
+        }
     }
 }
 
@@ -222,7 +302,8 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
                 // A file the engine refused as text is told in its pane, not as a problem.
                 released
                     && told
-                    && (command.failure_is_shown_in_place(&error) || report(events, &error))
+                    && (command.failure_is_shown_in_place(&error)
+                        || report(events, &error.to_string()))
             }
         };
         if !delivered {
@@ -232,9 +313,9 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
 }
 
 /// Tells the user. False when the application is gone and nobody can be told.
-fn report(events: &EventSink, error: &Error) -> bool {
+fn report(events: &EventSink, message: &str) -> bool {
     events
-        .send_blocking(Event::Problem(error.to_string()))
+        .send_blocking(Event::Problem(message.to_owned()))
         .is_ok()
 }
 
@@ -288,4 +369,61 @@ fn send_input(rpc: &Rpc, pane_id: &str, bytes: &[u8]) -> Result<()> {
         offset += accepted;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::autostart::Plan;
+
+    fn absent_socket(name: &str) -> (PathBuf, PathBuf) {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-engine-start-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).unwrap();
+        (directory.join("engine.sock"), directory)
+    }
+
+    fn next(inbox: &async_channel::Receiver<Event>) -> Event {
+        inbox.recv_blocking().unwrap()
+    }
+
+    #[test]
+    fn an_engine_that_cannot_be_found_is_started_once_and_the_failure_is_told() {
+        let (socket, directory) = absent_socket("missing");
+        let plan = Plan {
+            directory: directory.clone(),
+            programs: Some(directory.join("no-programs")),
+        };
+        let (engine, inbox) = Engine::start_with(socket, Autostart::On(plan));
+        assert!(matches!(next(&inbox), Event::Disconnected(_)));
+        assert!(matches!(next(&inbox), Event::Starting));
+        let Event::Problem(message) = next(&inbox) else {
+            panic!("expected the problem");
+        };
+        assert!(message.contains("soyeht-engine"), "{message}");
+        assert!(matches!(next(&inbox), Event::Disconnected(_)));
+        // The retry that follows does not start again: it only reports the engine missing.
+        assert!(matches!(next(&inbox), Event::Disconnected(_)));
+        std::thread::sleep(Duration::from_millis(300));
+        engine.stop();
+        // Nothing queued behind it starts an engine or tells of a failure.
+        while let Ok(event) = inbox.try_recv() {
+            assert!(
+                matches!(event, Event::Disconnected(_)),
+                "unexpected {event:?}"
+            );
+        }
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn without_a_start_the_engine_that_is_missing_is_only_reported() {
+        let (socket, directory) = absent_socket("off");
+        let (engine, inbox) = Engine::start_with(socket, Autostart::Off);
+        assert!(matches!(next(&inbox), Event::Disconnected(_)));
+        assert!(matches!(next(&inbox), Event::Disconnected(_)));
+        engine.stop();
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
 }

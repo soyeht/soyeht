@@ -3,8 +3,10 @@
 //! On Unix a child leads its own process group, [`signal_group`] reaches the group and
 //! [`kill_tree`] also reaches the descendants that left it. On Windows a child runs in a job
 //! object and [`windows::Spawned::kill_tree`] ends the job. Both are the one place the engine
-//! knows how to end "a process and what it started".
+//! knows how to end "a process and what it started". [`detached::spawn_detached`] starts a
+//! program that outlives the process that started it.
 
+pub mod detached;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]

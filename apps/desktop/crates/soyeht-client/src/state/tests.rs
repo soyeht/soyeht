@@ -84,6 +84,16 @@ fn selection_defaults_to_the_engine_focus_then_the_first_workspace() {
 }
 
 #[test]
+fn starting_an_engine_is_a_connection_state_of_its_own() {
+    let (mut state, _) = connected(across_workspaces());
+    state.apply(Event::Disconnected("gone".into()));
+    state.apply(Event::Starting);
+    assert_eq!(state.connection, Connection::Starting);
+    state.apply(Event::Connected(across_workspaces()));
+    assert_eq!(state.connection, Connection::Connected);
+}
+
+#[test]
 fn reconnecting_keeps_the_selection_and_resubscribes() {
     let (mut state, _) = connected(across_workspaces());
     state.focus_pane("t2");

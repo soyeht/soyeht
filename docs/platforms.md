@@ -71,6 +71,19 @@ can make slow. Two things used to hold the socket back for seconds on a busy mac
   can take seconds to start a stream. It starts on its own thread and the folder is
   read by polling until it is live, then once more.
 
+## Starting the engine from the desktop window
+
+Linux and Windows have no service for the engine yet. When the desktop client finds nothing at the
+engine endpoint it starts `soyeht-ptyd` (unless it answers) and `soyeht-engine` itself, from the
+folder of its own executable, with `--data-dir` set to the directory it resolved, and connects
+(ADR 0102). The programs are started by `soyeht_platform::process::detached::spawn_detached`, so
+they outlive the window: a session of their own on Linux, a hidden console and a process group of
+their own on Windows (outside the launcher's job when the job lets them go). Their output goes to
+`logs/engine.log` and `logs/ptyd.log` in the data directory, and `desktop-start.lock` there keeps
+two windows from starting two engines. `SOYEHT_ENGINE_SOCKET` turns this off. A missing program
+or a failed start is a line under the top bar that names the program, and a `desktop.engine_start_failed`
+log line with the kind of the failure.
+
 ## Tests
 
 Tests that need a POSIX shell, `ps`, `perl`, permission modes, or a shell script as
@@ -90,7 +103,9 @@ turn each of those into the death of the whole process (and of every terminal th
 holds). Build with `cargo build --release --locked -p soyeht-engine -p soyeht-ptyd -p soyeht-cli -p soyeht-mcp`
 in `engine/` (the engine needs `soyeht-mcp` next to it; a whole-workspace build also makes the
 `soyeht-fake-*` programs that only tests use, and they are not shipped) and
-`cargo build --release --locked` in `apps/desktop/`. The engine's `contract-checks` and
+`cargo build --release --locked` in `apps/desktop/`. A package puts `soyeht-desktop`,
+`soyeht-engine`, `soyeht-ptyd` and `soyeht-mcp` in one folder: the desktop starts the engine and the
+supervisor from the folder of its own executable. The engine's `contract-checks` and
 `test-hooks` features, and their `test-support` features below them, are off unless named, so a
 release has none of them. The desktop's `dev-tools` feature (the fixture replay and the surface
 gallery) is off by default and only the examples that need it ask for it, so a packaging step

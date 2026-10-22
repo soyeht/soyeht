@@ -188,6 +188,7 @@ fn banner_line(
 pub(crate) fn connection_hint(connection: &Connection) -> Option<&'static str> {
     match connection {
         Connection::Connecting => Some("Connecting to the engine\u{2026}"),
+        Connection::Starting => Some("Starting the engine\u{2026}"),
         Connection::Connected => None,
         Connection::Disconnected(_) => {
             Some("The engine is not running. Start it and this window reconnects.")

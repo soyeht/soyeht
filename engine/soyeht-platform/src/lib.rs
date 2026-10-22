@@ -10,7 +10,8 @@
 //! - [`log`]: one structured, escaped log line on standard error.
 //! - [`shutdown`]: when a stop is requested (the `tokio` feature).
 //! - [`process`]: ending a process together with everything it started (a process group on
-//!   Unix, a job object on Windows), and the Windows launch of a child into one.
+//!   Unix, a job object on Windows), the Windows launch of a child into one, and the start of a
+//!   program that outlives its parent (`process::detached`).
 //! - [`fs`]: owner-only files and directories and opens that never follow a link.
 //! - [`worktrunk`]: the name of the worktree program, which Windows spells `git-wt`.
 //! - [`git`]: whether `git` can run, decided without starting it (the macOS launcher opens

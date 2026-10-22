@@ -15,6 +15,8 @@ pub enum Event {
     Connected(Snapshot),
     /// The connection ended. The supervisor is already reconnecting.
     Disconnected(String),
+    /// No engine answered and the window is starting one (`autostart`).
+    Starting,
     /// A notification the engine pushed after the snapshot.
     Notification { name: EventName, params: Value },
     /// Output of a subscribed terminal.

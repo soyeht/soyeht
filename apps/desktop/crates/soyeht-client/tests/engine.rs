@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use soyeht_client::{
     CLIENT_NAME, Command, Connection, Effect, Engine, Error, Event, State,
     attachments::{Draft, Source},
+    autostart::Autostart,
     editor::selection::Motion,
 };
 use soyeht_platform::local::{Listener, Stream};
@@ -118,6 +119,14 @@ fn connected(name: &str) -> (Engine, async_channel::Receiver<Event>, FakeEngine,
     let mut remote = FakeEngine::accept(&listener);
     remote.handshake();
     (engine, inbox, remote, path)
+}
+
+/// An engine that starts listening at `path` and answers the handshake of the client's connection.
+fn bring_up(path: &std::path::Path) -> (Listener, FakeEngine) {
+    let listener = Listener::bind(path).unwrap();
+    let mut remote = FakeEngine::accept(&listener);
+    remote.handshake();
+    (listener, remote)
 }
 
 fn finish(engine: &Engine, remote: FakeEngine, path: &PathBuf) {
@@ -241,12 +250,45 @@ fn an_engine_that_is_not_running_is_reported_and_retried() {
     let (engine, inbox) = Engine::start(path.clone());
     assert!(matches!(next(&inbox), Event::Disconnected(_)));
 
-    let listener = Listener::bind(&path).unwrap();
-    let mut remote = FakeEngine::accept(&listener);
-    remote.handshake();
+    let (_listener, remote) = bring_up(&path);
     assert!(matches!(next(&inbox), Event::Connected(_)));
 
     finish(&engine, remote, &path);
+}
+
+/// The next event that satisfies `wanted`, within ten seconds.
+fn wait_for(inbox: &async_channel::Receiver<Event>, wanted: impl Fn(&Event) -> bool) -> Event {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        match inbox.try_recv() {
+            Ok(event) if wanted(&event) => return event,
+            Ok(_) => {}
+            Err(_) => std::thread::sleep(Duration::from_millis(20)),
+        }
+    }
+    panic!("the event did not come");
+}
+
+#[test]
+fn an_engine_that_ends_after_a_connection_is_started_again() {
+    let path = socket_path("rearm");
+    let _ = std::fs::remove_file(&path);
+    let nowhere = std::env::temp_dir().join(format!("soyeht-no-programs-{}", std::process::id()));
+    let start = Autostart::in_directory(nowhere.clone(), Some(nowhere));
+    let (engine, inbox) = Engine::start_with(path.clone(), start);
+    // The first start fails, as there are no programs, and is not tried again at the retry.
+    wait_for(&inbox, |event| matches!(event, Event::Starting));
+    wait_for(&inbox, |event| matches!(event, Event::Problem(_)));
+
+    let (listener, remote) = bring_up(&path);
+    wait_for(&inbox, |event| matches!(event, Event::Connected(_)));
+
+    // The engine goes away: a connection was made, so the next absence is started again.
+    drop(remote);
+    drop(listener);
+    let _ = std::fs::remove_file(&path);
+    wait_for(&inbox, |event| matches!(event, Event::Starting));
+    engine.stop();
 }
 
 #[test]

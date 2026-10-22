@@ -19,6 +19,8 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Connection {
     Connecting,
+    /// No engine answered, and the window is starting one.
+    Starting,
     Connected,
     Disconnected(String),
 }
@@ -263,6 +265,10 @@ impl State {
                 self.connection = Connection::Disconnected(reason);
                 // A request in flight is lost with the connection.
                 self.expected.clear();
+                Vec::new()
+            }
+            Event::Starting => {
+                self.connection = Connection::Starting;
                 Vec::new()
             }
             Event::Notification { name, params } => self.notify(name, params),

@@ -148,12 +148,18 @@ agent works.
 
 ## Run
 
-Start the engine first (`docs/dev-local.md`), then:
-
 ```sh
 cd apps/desktop
 cargo run --release -p soyeht-desktop
 ```
+
+When nothing answers at the engine socket, the window starts `soyeht-ptyd` and `soyeht-engine`
+from the folder of its own executable (ADR 0102): a release puts the four programs
+(`soyeht-desktop`, `soyeht-engine`, `soyeht-ptyd`, `soyeht-mcp`) side by side. They keep running
+when the window closes. A `cargo run` build has them elsewhere, so start the engine first as
+`docs/dev-local.md` says, or copy `engine/target/release/soyeht-{engine,ptyd,mcp}` next to
+`target/release/soyeht-desktop`. The window shows "Starting the engine..." meanwhile, and a
+problem line naming the missing program when one is not there.
 
 On Linux the window needs a Vulkan driver; a machine without a graphics card uses Mesa's
 software renderer, which needs an up-to-date Mesa (see "Graphics on Linux" in
@@ -161,7 +167,8 @@ software renderer, which needs an up-to-date Mesa (see "Graphics on Linux" in
 Fedora).
 
 The socket is found from the Dev profile directory under the user's home, which is where the
-engine keeps it on macOS, Linux and Windows. To reach another engine, set the socket path:
+engine keeps it on macOS, Linux and Windows. To reach another engine, set the socket path; the
+window then starts no engine of its own:
 
 ```sh
 SOYEHT_ENGINE_SOCKET=/path/to/engine.sock cargo run -p soyeht-desktop

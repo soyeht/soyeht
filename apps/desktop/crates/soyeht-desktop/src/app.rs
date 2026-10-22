@@ -13,7 +13,7 @@ use gpui::{
     WindowDecorations, WindowOptions, point, px, size,
 };
 use gpui_platform::application;
-use soyeht_client::{Engine, Event, profile};
+use soyeht_client::{Engine, Event, autostart::Autostart, profile};
 
 /// Where the macOS window buttons sit; the top bar leaves room for them.
 const TRAFFIC_LIGHTS: (f32, f32) = (desktop::TRAFFIC_LIGHT_INSET, desktop::TRAFFIC_LIGHT_INSET);
@@ -74,7 +74,7 @@ pub fn run(notice: Notice) {
         }
     };
     launch(notice, move || {
-        let (engine, inbox) = Engine::start(socket);
+        let (engine, inbox) = Engine::start_with(socket, Autostart::resolve());
         Setup {
             engine,
             inbox,
