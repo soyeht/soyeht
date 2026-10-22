@@ -309,3 +309,18 @@ fn problems_are_kept_until_the_next_connection() {
     state.apply(Event::Connected(Snapshot::default()));
     assert_eq!(state.problem, None);
 }
+
+#[test]
+fn a_connection_clears_the_problem_but_not_the_clients_standing_notice() {
+    let mut state = State {
+        problem: Some("A request failed.".to_owned()),
+        notice: Some("Drawing on a software renderer.".to_owned()),
+        ..State::default()
+    };
+    state.apply(Event::Connected(Snapshot::default()));
+    assert!(state.problem.is_none());
+    assert_eq!(
+        state.notice.as_deref(),
+        Some("Drawing on a software renderer.")
+    );
+}

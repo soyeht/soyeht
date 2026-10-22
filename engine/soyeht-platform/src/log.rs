@@ -1,13 +1,40 @@
-//! One structured log line: a JSON object on standard error.
+//! One structured log line: a JSON object on standard error, and in a file when the program
+//! has no terminal to keep it (see [`to_file`]).
 //!
 //! Every crate that logs a failure nothing else reports uses this, so no log line is
 //! assembled by hand and every value is escaped the same way. A line that is built where
 //! it cannot be written (under a lock, or for a test to read) is a [`Line`].
 
+pub mod rotating;
+
+use crate::fs::set_private_dir;
+use rotating::{KEEP_ROTATED, MAX_BYTES, RotatingFile};
 use std::{
     fmt::Display,
     io::{self, Write},
+    path::Path,
+    sync::Mutex,
 };
+
+/// The file every line is also written to, once a program asks for one.
+static FILE: Mutex<Option<RotatingFile>> = Mutex::new(None);
+
+/// Also writes every log line to the rotating file at `path` (at most [`KEEP_ROTATED`] + 1 files
+/// of [`MAX_BYTES`]), from now on. A program started from a menu or an icon has no terminal, and
+/// on Windows a release desktop client has no console at all, so standard error goes nowhere.
+/// The file's directory is created owner-only when it does not exist. A second call replaces the
+/// file.
+pub fn to_file(path: &Path) -> io::Result<()> {
+    if let Some(directory) = path.parent() {
+        std::fs::create_dir_all(directory)?;
+        set_private_dir(directory)?;
+    }
+    let file = RotatingFile::open(path, MAX_BYTES, KEEP_ROTATED)?;
+    if let Ok(mut current) = FILE.lock() {
+        *current = Some(file);
+    }
+    Ok(())
+}
 
 /// Writes `{"event":name, ...fields}` as one line to standard error.
 pub fn event(name: &str, fields: &[(&str, &str)]) {
@@ -90,9 +117,25 @@ fn failure_record(name: &str, fields: &[(&str, &str)], error: &dyn Failure) -> S
     record(name, &all)
 }
 
-/// Writes one line to standard error. `eprintln!` panics when standard error is closed, and a
-/// log line must never stop the program that writes it.
+/// Writes one line to standard error, and to the file of [`to_file`] when there is one.
+/// `eprintln!` panics when standard error is closed, and a log line must never stop the program
+/// that writes it. A file that fails to take a line is dropped and the failure is said once on
+/// standard error, so a full disk is not retried on every line.
 fn write_line(line: &str) {
+    write_to_stderr(line);
+    let Ok(mut file) = FILE.lock() else {
+        return;
+    };
+    let Some(open) = file.as_mut() else {
+        return;
+    };
+    if let Err(error) = open.write_lines(format!("{line}\n").as_bytes()) {
+        *file = None;
+        write_to_stderr(&failure_record("log.file_write_failed", &[], &error));
+    }
+}
+
+fn write_to_stderr(line: &str) {
     // A closed standard error (a broken pipe) has nowhere to report itself.
     let _ = writeln!(io::stderr(), "{line}");
 }

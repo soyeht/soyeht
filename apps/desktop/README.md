@@ -167,6 +167,10 @@ engine keeps it on macOS, Linux and Windows. To reach another engine, set the so
 SOYEHT_ENGINE_SOCKET=/path/to/engine.sock cargo run -p soyeht-desktop
 ```
 
+Every log line is written to standard error and also to `logs/desktop.log` in that profile
+directory, rotated at 16 MiB (see "The desktop client's log" in `docs/platforms.md`): a client
+started from a menu, or a Windows release build, has no terminal to show them.
+
 Shortcuts use Command on macOS and Control+Shift on Linux and Windows, so that
 they never take keys a terminal program needs: New Terminal (`t`), Paste (`v`),
 Copy (`c`), Quit (`q`).

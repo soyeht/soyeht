@@ -5,6 +5,7 @@
 //!
 //! - [`local`]: the endpoint other processes of the same user connect to. A Unix socket on
 //!   macOS and Linux; an authenticated loopback connection on Windows.
+//! - [`dialog`]: a native message box for a program with no terminal (Windows; no-op elsewhere).
 //! - [`user`]: who is running the process.
 //! - [`log`]: one structured, escaped log line on standard error.
 //! - [`shutdown`]: when a stop is requested (the `tokio` feature).
@@ -17,6 +18,7 @@
 //!
 //! The crate has no Soyeht dependencies.
 
+pub mod dialog;
 pub mod fs;
 pub mod git;
 pub mod local;

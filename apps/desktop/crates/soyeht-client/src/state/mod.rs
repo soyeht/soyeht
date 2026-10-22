@@ -75,6 +75,9 @@ pub(crate) struct Expected {
 pub struct State {
     pub connection: Connection,
     pub problem: Option<String>,
+    /// A standing note about this client rather than about a request (it draws on a software
+    /// renderer): a connection, which clears `problem`, leaves it. The person dismisses it.
+    pub notice: Option<String>,
     /// What the weights of an arrangement are measured with; the window sets it.
     pub(crate) sizing: crate::layout::Sizing,
     pub(crate) workspaces: Vec<Workspace>,
@@ -115,6 +118,7 @@ impl Default for State {
         Self {
             connection: Connection::Connecting,
             problem: None,
+            notice: None,
             sizing: crate::layout::Sizing::default(),
             workspaces: Vec::new(),
             panes: Vec::new(),

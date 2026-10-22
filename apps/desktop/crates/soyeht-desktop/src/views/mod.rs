@@ -81,7 +81,7 @@ impl Render for Workbench {
             // The Mac's top inset: the bar floats this far under the window's edge.
             .pt(px(space::X8))
             .child(self.top_bar(palette, window, cx))
-            .children(self.problem_banner(palette, cx))
+            .children(self.banners(palette, cx))
             .child(
                 div()
                     .flex_1()
@@ -106,36 +106,27 @@ impl Render for Workbench {
 }
 
 impl Workbench {
-    /// A request that failed, in one line under the top bar until the person dismisses it.
-    fn problem_banner(
+    /// The warning lines under the top bar, each until the person dismisses it: a request that
+    /// failed, then the client's standing note (a software renderer), which a connection does
+    /// not clear.
+    fn banners(
         &mut self,
         palette: &'static crate::theme::Palette,
         cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let problem = self.state.problem.clone()?;
-        Some(
-            ui::row()
-                .id("problem")
-                .flex_none()
-                .gap(px(space::X8))
-                .px(px(pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING))
-                .text_size(px(type_scale::CONTROL))
-                .text_color(rgb(palette.warning()))
-                .cursor_pointer()
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.state.problem = None;
-                    cx.notify();
-                }))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(SharedString::from(problem)),
-                )
-                .child(ui::icon(Icon::Close, glyph::TAB_CLOSE, palette.warning()))
-                .into_any_element(),
-        )
+    ) -> Vec<AnyElement> {
+        type Dismiss = fn(&mut soyeht_client::state::State);
+        let lines: [(&'static str, Option<String>, Dismiss); 2] = [
+            ("problem", self.state.problem.clone(), |state| {
+                state.problem = None;
+            }),
+            ("notice", self.state.notice.clone(), |state| {
+                state.notice = None;
+            }),
+        ];
+        lines
+            .into_iter()
+            .filter_map(|(id, text, dismiss)| Some(banner_line(id, text?, palette, cx, dismiss)))
+            .collect()
     }
 
     /// The panes of the selected workspace, tiled as its layout says. The outermost panes keep
@@ -159,6 +150,37 @@ impl Workbench {
             }));
         stage.child(self.tiles(palette, cx))
     }
+}
+
+/// One warning line under the top bar; a click dismisses it through `dismiss`.
+fn banner_line(
+    id: &'static str,
+    text: String,
+    palette: &'static crate::theme::Palette,
+    cx: &mut Context<Workbench>,
+    dismiss: fn(&mut soyeht_client::state::State),
+) -> AnyElement {
+    ui::row()
+        .id(id)
+        .flex_none()
+        .gap(px(space::X8))
+        .px(px(pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING))
+        .text_size(px(type_scale::CONTROL))
+        .text_color(rgb(palette.warning()))
+        .cursor_pointer()
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            dismiss(&mut this.state);
+            cx.notify();
+        }))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .child(SharedString::from(text)),
+        )
+        .child(ui::icon(Icon::Close, glyph::TAB_CLOSE, palette.warning()))
+        .into_any_element()
 }
 
 /// What the stage says when the connection is not up, and so there is nothing else to show. A

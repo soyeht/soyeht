@@ -5,24 +5,21 @@
 //! a regular file the engine now puts a pipe in its place and a thread copies
 //! the lines into a [`RotatingFile`] at the same path: at most `keep + 1`
 //! files of about `max_bytes` each, rotated only between lines so every record
-//! stays a whole JSON line.
+//! stays a whole JSON line. The file and its bound are `soyeht_platform::log::rotating`, which
+//! the desktop client's own log file uses too.
 
-use soyeht_platform::log;
+use soyeht_platform::log::{
+    self,
+    rotating::{LINE_MAX_BYTES, RotatingFile},
+};
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::File,
     io::{self, PipeWriter, Read, Write},
-    path::{Path, PathBuf},
     sync::mpsc,
     thread,
     time::Duration,
 };
 
-/// Size at which `engine.log` rotates.
-pub const LOG_MAX_BYTES: u64 = 16 * 1024 * 1024;
-/// Rotated files kept next to the live one (`engine.log.1` to `engine.log.4`).
-pub const LOG_KEEP_ROTATED: usize = 4;
-/// A single log line is cut here, so one record cannot defeat the size bound.
-const LINE_MAX_BYTES: usize = 64 * 1024;
 const READ_CHUNK_BYTES: usize = 16 * 1024;
 /// A line the engine writes into its own pipe on shutdown. Everything written before it has
 /// been copied into the file by the time the copy thread reads it. A writer that stopped in
@@ -33,76 +30,6 @@ const FLUSH_MARKER: &[u8] = b"\0soyeht-log-flush\0\n";
 /// progress depends on nothing outside this process but the disk, so a loaded host only
 /// makes the wait longer, never wrong; this bounds a disk that has stopped answering.
 const FLUSH_DEADLINE: Duration = Duration::from_secs(10);
-
-pub struct RotatingFile {
-    path: PathBuf,
-    max_bytes: u64,
-    keep: usize,
-    file: File,
-    written: u64,
-}
-
-impl RotatingFile {
-    /// Opens `path` for appending. A file that is already over `max_bytes`
-    /// rotates first, so a log that grew before this existed stops growing.
-    pub fn open(path: &Path, max_bytes: u64, keep: usize) -> io::Result<Self> {
-        let file = append(path)?;
-        let written = file.metadata()?.len();
-        let mut log = Self {
-            path: path.to_owned(),
-            max_bytes,
-            keep,
-            file,
-            written,
-        };
-        if log.written >= max_bytes {
-            log.rotate()?;
-        }
-        Ok(log)
-    }
-
-    /// Writes whole lines. The file rotates before a line that would pass the
-    /// cap, never in the middle of one.
-    pub fn write_lines(&mut self, lines: &[u8]) -> io::Result<()> {
-        for line in lines.split_inclusive(|byte| *byte == b'\n') {
-            let length = u64::try_from(line.len()).unwrap_or(u64::MAX);
-            if self.written > 0 && self.written.saturating_add(length) > self.max_bytes {
-                self.rotate()?;
-            }
-            self.file.write_all(line)?;
-            self.written = self.written.saturating_add(length);
-        }
-        Ok(())
-    }
-
-    fn rotate(&mut self) -> io::Result<()> {
-        if self.keep == 0 {
-            self.file.set_len(0)?;
-        } else {
-            // Best effort: a missing oldest file is the normal case, and a real failure
-            // surfaces in the final rename that this rotation must complete.
-            let _ = fs::remove_file(self.numbered(self.keep));
-            for index in (1..self.keep).rev() {
-                // Best effort: a gap in the numbered files is normal.
-                let _ = fs::rename(self.numbered(index), self.numbered(index + 1));
-            }
-            fs::rename(&self.path, self.numbered(1))?;
-            self.file = append(&self.path)?;
-        }
-        self.written = 0;
-        Ok(())
-    }
-
-    fn numbered(&self, index: usize) -> PathBuf {
-        let mut name = self.path.clone().into_os_string();
-        name.push(format!(".{index}"));
-        PathBuf::from(name)
-    }
-}
-
-fn append(path: &Path) -> io::Result<File> {
-    OpenOptions::new().create(true).append(true).open(path)
-}
 
 /// Copies `source` into `log` line by line until it ends. A line longer than
 /// `LINE_MAX_BYTES` is cut and terminated; a final line without a newline gets
@@ -126,7 +53,7 @@ fn copy(
         if let Some(end) = pending.iter().rposition(|byte| *byte == b'\n') {
             let rest = pending.split_off(end + 1);
             let (lines, markers) = without_markers(&pending);
-            log.write_lines(&bounded_lines(&lines))?;
+            log.write_lines(&lines)?;
             for _ in 0..markers {
                 flushed();
             }
@@ -134,13 +61,13 @@ fn copy(
         }
         if pending.len() > LINE_MAX_BYTES {
             pending.push(b'\n');
-            log.write_lines(&bounded_lines(&pending))?;
+            log.write_lines(&pending)?;
             pending.clear();
         }
     }
     if !pending.is_empty() {
         pending.push(b'\n');
-        log.write_lines(&bounded_lines(&pending))?;
+        log.write_lines(&pending)?;
     }
     Ok(())
 }
@@ -162,20 +89,6 @@ fn without_markers(lines: &[u8]) -> (Vec<u8>, usize) {
         }
     }
     (kept, markers)
-}
-
-/// `lines` with every line cut to `LINE_MAX_BYTES`.
-fn bounded_lines(lines: &[u8]) -> Vec<u8> {
-    let mut bounded = Vec::with_capacity(lines.len());
-    for line in lines.split_inclusive(|byte| *byte == b'\n') {
-        if line.len() > LINE_MAX_BYTES {
-            bounded.extend_from_slice(&line[..LINE_MAX_BYTES]);
-            bounded.push(b'\n');
-        } else {
-            bounded.extend_from_slice(line);
-        }
-    }
-    bounded
 }
 
 #[cfg(unix)]
@@ -262,7 +175,11 @@ fn flush(writer: &PipeWriter, flushed: &mpsc::Receiver<()>, deadline: Duration) 
 mod tests {
     use super::*;
     use serde_json::json;
-    use std::io::Cursor;
+    use std::{
+        fs,
+        io::Cursor,
+        path::{Path, PathBuf},
+    };
     use uuid::Uuid;
 
     fn pump(source: impl Read, log: &mut RotatingFile) -> io::Result<()> {
@@ -298,50 +215,6 @@ mod tests {
             .collect();
         found.sort();
         found
-    }
-
-    #[test]
-    fn a_flood_stays_within_the_cap_and_keeps_whole_json_lines() {
-        let directory = directory();
-        let path = directory.join("engine.log");
-        let mut log = RotatingFile::open(&path, 10_000, 3).unwrap();
-        // 20000 records is about 2 MB, two hundred times the cap.
-        pump(Cursor::new(records(20_000)), &mut log).unwrap();
-
-        let files = sizes(&directory);
-        assert_eq!(files.len(), 4, "{files:?}");
-        for (name, size) in &files {
-            assert!(*size <= 10_000, "{name} is {size} bytes");
-            let text = fs::read_to_string(directory.join(name)).unwrap();
-            for line in text.lines() {
-                let record: serde_json::Value = serde_json::from_str(line).unwrap();
-                assert_eq!(record["event"], "engine.test");
-            }
-        }
-        // The newest records are in the live file.
-        let live = fs::read_to_string(&path).unwrap();
-        assert!(live.contains("\"index\":19999"));
-        fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn a_log_that_is_already_over_the_cap_rotates_on_open() {
-        let directory = directory();
-        let path = directory.join("engine.log");
-        fs::write(&path, records(500)).unwrap();
-        let before = fs::metadata(&path).unwrap().len();
-        let mut log = RotatingFile::open(&path, 10_000, 2).unwrap();
-        log.write_lines(b"{\"event\":\"engine.after\"}\n").unwrap();
-
-        assert_eq!(
-            fs::metadata(directory.join("engine.log.1")).unwrap().len(),
-            before
-        );
-        assert_eq!(
-            fs::read_to_string(&path).unwrap(),
-            "{\"event\":\"engine.after\"}\n"
-        );
-        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

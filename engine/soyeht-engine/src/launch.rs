@@ -6,16 +6,17 @@
 use crate::{
     errors::{Error, Result},
     hooks::Hooks,
-    log_rotation::{self, LOG_KEEP_ROTATED, LOG_MAX_BYTES},
+    log_rotation,
     server::{self, Config},
 };
+use soyeht_platform::log::rotating::{KEEP_ROTATED, MAX_BYTES};
 use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_TCP_PORT};
 use std::{net::SocketAddr, path::Path, path::PathBuf, sync::Arc};
 
 /// Runs the engine until it stops. `hooks` receives the data directory the arguments chose.
 pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
     // Bound the log the launch agent points stderr at; kept until `run` ends.
-    let _log_rotation = match log_rotation::capture_stderr(LOG_MAX_BYTES, LOG_KEEP_ROTATED) {
+    let _log_rotation = match log_rotation::capture_stderr(MAX_BYTES, KEEP_ROTATED) {
         Ok(rotation) => rotation,
         Err(error) => {
             soyeht_platform::log::failure("engine.log_rotation_unavailable", &error);

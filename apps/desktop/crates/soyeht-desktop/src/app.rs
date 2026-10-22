@@ -3,7 +3,7 @@
 use crate::{
     assets::Assets,
     folder::OpenFolder,
-    fonts, graphics,
+    fonts, graphics, logging,
     theme::{ThemeName, desktop},
     window_size::{self, opening_size},
     workbench::{CopySelection, NewTerminal, Paste, Quit, Workbench},
@@ -59,15 +59,17 @@ pub(crate) struct Setup {
 }
 
 /// Where the application prints what it tells the person (the program's `main` owns the
-/// terminal): advice such as which driver to install, not a log line.
+/// terminal): advice such as which driver to install. The same text is a log line too
+/// ([`logging::announce`]), since a program with no terminal prints it nowhere.
 pub type Notice = fn(&str);
 
 /// Opens the window and runs until the application quits.
 pub fn run(notice: Notice) {
+    logging::start();
     let socket = match profile::engine_socket() {
         Ok(path) => path,
         Err(error) => {
-            notice(&format!("soyeht: {error}"));
+            logging::announce_fatal(notice, "profile_unavailable", &format!("soyeht: {error}"));
             std::process::exit(2);
         }
     };
@@ -155,12 +157,18 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
             let focus = workbench.read(cx).focus.clone();
             window.focus(&focus, cx);
             if let Some(note) = graphics::software_note(window.gpu_specs().as_ref()) {
-                notice(&note);
+                logging::announce(notice, &note);
+                // The window shows it too, in a line a connection does not clear.
+                workbench.update(cx, |workbench, _| workbench.state.notice = Some(note));
             }
             workbench
         });
         if let Err(error) = opened {
-            notice(&graphics::open_failure(&error, cfg!(target_os = "linux")));
+            logging::announce_fatal(
+                notice,
+                "window_open_failed",
+                &graphics::open_failure(&error, cfg!(target_os = "linux")),
+            );
             cx.quit();
         }
         cx.activate(true);
