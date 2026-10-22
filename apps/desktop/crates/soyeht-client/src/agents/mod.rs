@@ -5,7 +5,7 @@ use crate::{
     Command,
     agent::{self, AgentView},
     layout,
-    state::{Connection, Effect, Expected, State},
+    state::{Connection, Effect, Expected, State, same_panes},
     switch::{HarnessSwitchView, Phase},
 };
 use serde_json::Value;
@@ -90,7 +90,16 @@ impl State {
                 self.editors.shows(pane, selected, &self.panes)
             })
             .collect();
-        layout::resolve(&workspace.layout, &panes, &self.sizing)
+        let resolved = layout::resolve(&workspace.layout, &panes, &self.sizing)?;
+        // A dragged arrangement shows while it still has the panes that are on show.
+        match &self.layout_draft {
+            Some(draft)
+                if draft.workspace_id == workspace_id && same_panes(&draft.tree, &resolved) =>
+            {
+                Some(draft.tree.clone())
+            }
+            _ => Some(resolved),
+        }
     }
 
     /// The panes of `workspace_id` that wait to be told whether they are the one a split is
@@ -201,23 +210,32 @@ impl State {
             return effects;
         };
         if let Some(placed) = layout::split_pane(&tree, &anchor, &pane, axis) {
-            let envelope = layout::envelope(placed);
-            // Draw it at once: the engine's echo of the stored layout comes a round trip later,
-            // and until then the new pane would show in the automatic place.
-            if let (Some(workspace), Ok(stored)) = (
-                self.workspaces
-                    .iter_mut()
-                    .find(|workspace| workspace.workspace_id == expected.workspace_id),
-                serde_json::to_value(&envelope),
-            ) {
-                workspace.layout = stored;
-            }
-            effects.push(Effect::StoreLayout {
-                workspace_id: expected.workspace_id,
-                layout: envelope,
-            });
+            effects.push(self.store_layout(&expected.workspace_id, placed));
         }
         effects
+    }
+
+    /// The command that stores `tree` as the arrangement of a workspace. The workspace draws it
+    /// at once: the engine's echo of the stored layout comes a round trip later, and until then
+    /// a new pane would show in the automatic place and a dragged divider would jump back.
+    pub(crate) fn store_layout(
+        &mut self,
+        workspace_id: &str,
+        tree: WorkspacePaneLayoutNode,
+    ) -> Effect {
+        let envelope = layout::envelope(tree);
+        if let (Some(workspace), Ok(stored)) = (
+            self.workspaces
+                .iter_mut()
+                .find(|workspace| workspace.workspace_id == workspace_id),
+            serde_json::to_value(&envelope),
+        ) {
+            workspace.layout = stored;
+        }
+        Effect::StoreLayout {
+            workspace_id: workspace_id.to_owned(),
+            layout: envelope,
+        }
     }
 
     /// Says so when a stored layout cannot be read: the panes are tiled automatically then, and

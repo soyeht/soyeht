@@ -133,5 +133,8 @@ merging and collapsing splits, splitting a pane, the width a tree needs, where e
 sits at that width, and where a pane goes that the tree does not list (`PaneLayoutArrangement`,
 `layout::arrange`): primary panes (editor, web, writing) left to right, auxiliary panes
 (terminal, agent) stacked on the right, and in the automatic mode every branch weighed by the
-smallest size its panes need. Each case gives the floors to weigh with; the Mac measures one
+smallest size its panes need. It also fixes dragging a divider and double-clicking one
+(`PaneLayoutTreeMutation.resizing` and `.equalizing`, `layout::resize` and `layout::equalize`):
+only the two weights beside the divider change, by the distance dragged, and a floor stops
+the move. Each case gives the floors to weigh with; the Mac measures one
 per kind, the desktop passes one for all.

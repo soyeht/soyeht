@@ -595,14 +595,20 @@ impl Command {
         match self {
             Self::Editor(editor) => crate::editor::commands::refused(editor, error)
                 .or_else(|| crate::editor::commands::failure(editor, &error.to_string())),
+            // The arrangement on screen goes back to the stored one, and the person is told.
+            Self::SetLayout { workspace_id, .. } => Some(Event::LayoutRejected {
+                workspace_id: workspace_id.clone(),
+            }),
             _ => None,
         }
     }
 
-    /// Whether `error` is shown where it happened, in the pane of a file the engine refused as
-    /// text, so that the problem banner stays closed.
+    /// Whether `error` is shown where it happened, so that the problem banner shows nothing of
+    /// its own: in the pane of a file the engine refused as text, or by the command's own
+    /// failure event (a layout the engine refused says so in its message).
     pub fn failure_is_shown_in_place(&self, error: &crate::Error) -> bool {
-        matches!(self, Self::Editor(editor) if crate::editor::commands::refused(editor, error).is_some())
+        matches!(self, Self::SetLayout { .. })
+            || matches!(self, Self::Editor(editor) if crate::editor::commands::refused(editor, error).is_some())
     }
 
     /// Fetches that the interface does not wait on. They run apart from the commands that carry

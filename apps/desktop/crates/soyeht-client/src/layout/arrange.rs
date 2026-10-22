@@ -41,7 +41,8 @@ impl Sizing {
             .map_or(self.floor, |(_, floor)| *floor)
     }
 
-    fn minimum(&self, node: &Node) -> (f64, f64) {
+    /// The smallest width and height `node` can be drawn at.
+    pub fn minimum(&self, node: &Node) -> (f64, f64) {
         match node {
             Node::V0(leaf) => self.floor_of(&leaf.kind),
             Node::V1(split) => {
@@ -57,7 +58,8 @@ impl Sizing {
                         .children
                         .iter()
                         .all(|branch| matches!(branch.node, Node::V0(_)));
-                if split.companion.is_some() && pair_of_panes {
+                // A sizing without a strip draws a companion pair as any other split.
+                if split.companion.is_some() && pair_of_panes && self.companion_strip > 0.0 {
                     return (widest, tallest + self.companion_strip);
                 }
                 let gaps = sizes.len().saturating_sub(1) as f64;

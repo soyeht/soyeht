@@ -348,3 +348,143 @@ fn a_workspace_layout_event_changes_how_panes_are_arranged() {
     let tree = state.layout("w", |_| true).unwrap();
     assert_eq!(layout::pane_ids(&tree), ["b", "a"]);
 }
+
+/// The weights of the two panes `a` and `b` side by side, as the window draws them.
+fn weights(state: &State) -> Vec<f64> {
+    match drawn(state) {
+        WorkspacePaneLayoutNode::V1(split) => {
+            split.children.iter().map(|branch| branch.weight).collect()
+        }
+        WorkspacePaneLayoutNode::V0(_) => Vec::new(),
+    }
+}
+
+fn moved(state: &State, share: f64) -> WorkspacePaneLayoutNode {
+    let WorkspacePaneLayoutNode::V1(mut split) = drawn(state) else {
+        panic!("two panes tile")
+    };
+    split.children[0].weight = share;
+    split.children[1].weight = 1.0 - share;
+    WorkspacePaneLayoutNode::V1(split)
+}
+
+/// Lets go of the dragged divider: the layout that is stored, and the workspace it is for.
+fn store_draft(state: &mut State) -> (String, soyeht_protocol::WorkspacePaneLayoutEnvelope) {
+    let effects = state.commit_layout_draft();
+    let [
+        Effect::StoreLayout {
+            workspace_id,
+            layout,
+        },
+    ] = effects.as_slice()
+    else {
+        panic!("one layout is stored: {effects:?}")
+    };
+    (workspace_id.clone(), layout.clone())
+}
+
+#[test]
+fn a_divider_being_dragged_shows_its_arrangement_until_it_is_stored_or_dropped() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    let before = weights(&state);
+    state.draft_layout("w", moved(&state, 0.75));
+    assert_eq!(weights(&state), [0.75, 0.25]);
+    state.cancel_layout_draft();
+    assert_eq!(weights(&state), before);
+    assert!(state.commit_layout_draft().is_empty());
+}
+
+#[test]
+fn letting_go_of_a_divider_stores_the_weights_as_the_persons_arrangement() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    state.draft_layout("w", moved(&state, 0.75));
+    let (workspace_id, layout) = store_draft(&mut state);
+    assert_eq!(workspace_id, "w");
+    assert_eq!(
+        layout.mode,
+        soyeht_protocol::WorkspacePaneLayoutMode::Custom
+    );
+    assert_eq!(
+        weights(&state),
+        [0.75, 0.25],
+        "drawn before the engine echoes it"
+    );
+
+    // The stored layout is what a later connection gets back, so the weights survive it.
+    let stored = serde_json::to_value(&layout).unwrap();
+    state.apply(Event::Disconnected("gone".into()));
+    let mut reconnected = State::default();
+    let mut workspace = workspace("w");
+    workspace.layout = stored;
+    reconnected.apply(Event::Connected(Snapshot {
+        workspaces: vec![workspace],
+        panes: vec![pane("a", "w", "terminal"), pane("b", "w", "terminal")],
+        ..Snapshot::default()
+    }));
+    assert_eq!(weights(&reconnected), [0.75, 0.25]);
+}
+
+#[test]
+fn a_drag_that_changes_nothing_stores_nothing() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    state.draft_layout("w", drawn(&state));
+    assert!(state.commit_layout_draft().is_empty());
+}
+
+#[test]
+fn a_drag_is_dropped_when_the_panes_it_arranges_are_no_longer_the_workspace_s() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    state.draft_layout("w", moved(&state, 0.75));
+    state.apply(created("c"));
+    assert!(layout::contains(&drawn(&state), "c"), "the new pane shows");
+    assert!(state.commit_layout_draft().is_empty());
+}
+
+#[test]
+fn a_layout_the_engine_refuses_is_replaced_by_the_one_it_confirmed_with_a_notice() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    let confirmed = weights(&state);
+    state.draft_layout("w", moved(&state, 0.75));
+    let (workspace_id, layout) = store_draft(&mut state);
+    assert_eq!(weights(&state), [0.75, 0.25]);
+
+    // The command fails: the engine's answer is an error, and the replica hears of it.
+    let command = Command::SetLayout {
+        workspace_id,
+        layout,
+    };
+    let refused = command
+        .failure(&crate::Error::Busy)
+        .expect("a refused layout is reported");
+    assert!(command.failure_is_shown_in_place(&crate::Error::Busy));
+    state.apply(refused);
+    assert_eq!(
+        weights(&state),
+        confirmed,
+        "the confirmed arrangement is back"
+    );
+    assert_eq!(
+        state.problem.as_deref(),
+        Some("Couldn't save the layout. The last saved arrangement is back.")
+    );
+}
+
+#[test]
+fn what_the_engine_sends_is_the_layout_a_refusal_goes_back_to() {
+    let (mut state, _) = connected(&[("a", "terminal"), ("b", "terminal")]);
+    // A first arrangement is stored and the engine echoes it: that is now the confirmed one.
+    state.draft_layout("w", moved(&state, 0.75));
+    state.commit_layout_draft();
+    let echoed = state.workspace("w").unwrap().clone();
+    state.apply(notification(
+        EventName::WorkspaceLayoutUpdated,
+        json!({"eventId": "7", "at": "now", "workspace": serde_json::to_value(&echoed).unwrap()}),
+    ));
+    state.draft_layout("w", moved(&state, 0.4));
+    state.commit_layout_draft();
+    assert_eq!(weights(&state), [0.4, 0.6]);
+    state.apply(Event::LayoutRejected {
+        workspace_id: "w".into(),
+    });
+    assert_eq!(weights(&state), [0.75, 0.25]);
+}

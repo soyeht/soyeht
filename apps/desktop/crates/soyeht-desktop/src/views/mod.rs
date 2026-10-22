@@ -9,6 +9,7 @@ mod attachments;
 mod cards;
 mod composer;
 mod copy_button;
+mod dividers;
 mod editor;
 mod editor_find;
 mod editor_preview;

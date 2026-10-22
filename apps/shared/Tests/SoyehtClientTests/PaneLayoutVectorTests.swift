@@ -136,3 +136,38 @@ private func sizing(_ all: JsonValue, floors listed: JsonValue = .null) throws
     #expect(state.tree == (try optionalTree(item["expected"])), "\(name)")
   }
 }
+
+private func nodePath(_ item: JsonValue) -> PaneLayoutNodePath {
+  PaneLayoutNodePath(
+    components: (item["splitPath"].array ?? []).compactMap { $0.double.map(Int.init) })
+}
+
+private func viewport(_ item: JsonValue) throws -> PaneLayoutSize {
+  PaneLayoutSize(
+    width: try #require(item["viewport"]["width"].double),
+    height: try #require(item["viewport"]["height"].double))
+}
+
+@Test func draggingADividerResizesAsTheVectorSays() throws {
+  let all = try vector()
+  for item in ContractVector.cases(all, "resize") {
+    let name = item["name"].string ?? ""
+    let resized = try? PaneLayoutTreeMutation.resizing(
+      try tree(item["tree"]), splitAt: nodePath(item),
+      dividerIndex: Int(try #require(item["dividerIndex"].double)),
+      delta: try #require(item["delta"].double), viewport: try viewport(item),
+      sizing: try sizing(all, floors: item["floors"]))
+    #expect(resized == (try optionalTree(item["expected"])), "\(name)")
+  }
+}
+
+@Test func equalizingASplitSharesItAsTheVectorSays() throws {
+  let all = try vector()
+  for item in ContractVector.cases(all, "equalize") {
+    let name = item["name"].string ?? ""
+    let equalized = try? PaneLayoutTreeMutation.equalizing(
+      try tree(item["tree"]), splitAt: nodePath(item), viewport: try viewport(item),
+      sizing: try sizing(all, floors: item["floors"]))
+    #expect(equalized == (try optionalTree(item["expected"])), "\(name)")
+  }
+}

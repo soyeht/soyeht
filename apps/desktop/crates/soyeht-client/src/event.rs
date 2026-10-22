@@ -52,6 +52,8 @@ pub enum Event {
     WorkspaceOpened { ticket: u64, workspace: Workspace },
     /// The request to open a pane that `ticket` names failed.
     OpenFailed { ticket: u64 },
+    /// The engine did not store the arrangement of a workspace (`Command::SetLayout`).
+    LayoutRejected { workspace_id: String },
     /// The usage of every provider.
     Usage(Vec<UsageReading>),
     /// The agent harnesses the engine can start.

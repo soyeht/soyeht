@@ -26,7 +26,7 @@ use soyeht_client::{
     text_input::keys::{Completion, Edit},
     transcript_rows::Rows,
 };
-use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
+use soyeht_protocol::PaneMode;
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -79,6 +79,8 @@ pub struct Workbench {
     pub(crate) hidden_tabs: usize,
     /// The pane to bring into view on the next frame, once the stage has been laid out.
     pub(crate) reveal: Option<String>,
+    /// The divider being dragged.
+    pub(crate) dividers: crate::layout_edit::Dividers,
     /// The pane whose input takes keyboard focus on the next frame.
     pub(crate) focus_request: Option<String>,
     /// The name of a workspace or pane being edited in place.
@@ -151,6 +153,7 @@ impl Workbench {
             revealed_tab: None,
             hidden_tabs: 0,
             reveal: None,
+            dividers: Default::default(),
             focus_request: None,
             rename: None,
             project_panel_hidden: HashSet::new(),
@@ -225,10 +228,11 @@ impl Workbench {
                 workspace_id,
                 layout,
             } => {
-                self.send(Command::SetLayout {
+                // A queue that is full refuses it the way an engine does: the layout goes back.
+                self.run_effect(Effect::Send(Command::SetLayout {
                     workspace_id,
                     layout,
-                });
+                }));
             }
             // The pane the person opened takes the keyboard, as a new terminal does on the Mac.
             Effect::FocusPane(pane_id) => {
@@ -476,23 +480,6 @@ impl Workbench {
         self.request_pane(workspace_id, harness, ticket, cx);
     }
 
-    /// Splits a pane: the new pane opens beside it, of the same kind.
-    pub(crate) fn split_pane(
-        &mut self,
-        pane_id: &str,
-        axis: WorkspacePaneLayoutAxis,
-        cx: &mut Context<Self>,
-    ) {
-        let harness = self
-            .state
-            .pane(pane_id)
-            .and_then(|pane| pane.agent.as_ref().map(|agent| agent.harness.clone()));
-        let ticket = self.next_ticket();
-        if let Some(workspace_id) = self.state.expect_split(ticket, pane_id, axis) {
-            self.request_pane(workspace_id, harness, ticket, cx);
-        }
-    }
-
     pub(crate) fn next_ticket(&mut self) -> u64 {
         self.next_ticket += 1;
         self.next_ticket
@@ -500,7 +487,7 @@ impl Workbench {
 
     /// Asks the engine to open the pane that request `ticket` waits for. A request the queue
     /// refuses releases it at once.
-    fn request_pane(
+    pub(crate) fn request_pane(
         &mut self,
         workspace_id: String,
         harness: Option<String>,

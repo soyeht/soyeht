@@ -53,7 +53,7 @@ pub enum Effect {
     },
     /// The pane the person asked to open has arrived: it takes the keyboard.
     FocusPane(String),
-    /// Store this arrangement for a workspace: a pane was split.
+    /// Store this arrangement for a workspace: a pane was split or a divider moved.
     StoreLayout {
         workspace_id: String,
         layout: WorkspacePaneLayoutEnvelope,
@@ -119,6 +119,11 @@ pub struct State {
     /// The files open in editor panes, the tabs and the project trees.
     pub editors: Editors,
     pub(crate) expected: Vec<Expected>,
+    /// The arrangement a divider is being dragged to, shown in place of the stored one.
+    pub(crate) layout_draft: Option<layout_draft::LayoutDraft>,
+    /// The layout of each workspace as the engine last sent it: what comes back when the engine
+    /// refuses the one that was drawn at once.
+    pub(crate) confirmed_layouts: HashMap<String, Value>,
     /// The agents to start in workspaces the engine has not made yet, by the ticket of the
     /// request that makes the workspace.
     pub(crate) starts: HashMap<u64, NewAgent>,
@@ -159,6 +164,8 @@ impl Default for State {
             readiness: None,
             editors: Editors::default(),
             expected: Vec::new(),
+            layout_draft: None,
+            confirmed_layouts: HashMap::new(),
             starts: HashMap::new(),
             failed_start: None,
             closed: HashSet::new(),
@@ -347,6 +354,10 @@ impl State {
                 self.fail_request(ticket);
                 Vec::new()
             }
+            Event::LayoutRejected { workspace_id } => {
+                self.restore_confirmed_layout(&workspace_id);
+                Vec::new()
+            }
             Event::Usage(readings) => {
                 self.usage = readings;
                 Vec::new()
@@ -391,6 +402,7 @@ impl State {
     fn adopt(&mut self, snapshot: Snapshot) -> Vec<Effect> {
         for workspace in &snapshot.workspaces {
             self.check_layout(workspace);
+            self.confirm_layout(workspace);
         }
         self.workspaces = snapshot.workspaces;
         self.panes = snapshot.panes;
@@ -521,6 +533,7 @@ impl State {
             .map(|w| w.workspace_id.clone())
             .collect();
         self.workspaces.retain(|w| w.workspace_id != workspace_id);
+        self.confirmed_layouts.remove(workspace_id);
         self.skills.remove(workspace_id);
         self.editors.workspace_closed(workspace_id);
         if self.selected_workspace.as_deref() == Some(workspace_id) {
@@ -541,6 +554,7 @@ impl State {
 
     fn upsert_workspace(&mut self, workspace: Workspace) -> Vec<Effect> {
         self.check_layout(&workspace);
+        self.confirm_layout(&workspace);
         match self
             .workspaces
             .iter_mut()
@@ -656,6 +670,8 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
 }
 
 mod editor;
+mod layout_draft;
+pub(crate) use layout_draft::same_panes;
 mod workspaces;
 pub use workspaces::{
     FolderOpening, FolderPathProblem, RecentFolder, Started, name_of, submission,

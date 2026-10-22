@@ -22,6 +22,7 @@ mod fonts;
 #[cfg(feature = "dev-tools")]
 mod gallery;
 mod graphics;
+mod layout_edit;
 mod logging;
 mod loop_form;
 mod neo;

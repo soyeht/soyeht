@@ -11,8 +11,10 @@
 //! goes) are the cases of `contracts/vectors/pane-layout.json`, which both clients pass.
 
 mod arrange;
+mod resize;
 
 pub use arrange::Sizing;
+pub use resize::{Refused, equalize, resize};
 use serde_json::Value;
 use soyeht_protocol::{
     Pane, PaneMode, WorkspacePaneLayoutAxis as Axis, WorkspacePaneLayoutBranch as Branch,

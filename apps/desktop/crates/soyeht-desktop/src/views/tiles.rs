@@ -5,7 +5,7 @@ use super::ui::empty_state;
 use crate::{
     assets::Icon,
     neo,
-    theme::{Palette, pane_layout},
+    theme::{Palette, desktop, pane_layout},
     workbench::Workbench,
 };
 use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, point, px};
@@ -26,11 +26,12 @@ fn needed_width(node: &Node) -> f32 {
 
 /// What an arrangement's weights are measured with: every kind of pane needs the width the pane
 /// floor gives it (the Mac measures one floor per kind; the desktop has one, set by the composer
-/// a pane always shows), and the room between two panes is the gap.
+/// a pane always shows), every kind needs the height the shared floor gives it, and the room
+/// between two panes is the gap.
 pub(crate) fn sizing() -> Sizing {
     let floor = f64::from(super::composer::minimum_pane_width());
     Sizing {
-        floor: (floor, floor),
+        floor: (floor, f64::from(desktop::MINIMUM_PANE_HEIGHT)),
         kinds: Vec::new(),
         horizontal_gap: f64::from(pane_layout::PANE_GAP),
         vertical_gap: f64::from(pane_layout::PANE_GAP),
@@ -95,7 +96,7 @@ impl Workbench {
             ),
             0,
         );
-        let tiles = self.tile(&tree, focused.as_deref(), palette, cx);
+        let tiles = self.tile(&tree, focused.as_deref(), &[], palette, cx);
         self.reveal_pending(&tree);
         // A pane keeps a width its composer and header fit in, as the Mac's layout floors do:
         // when the panes need more room than the window has, the stage scrolls sideways. The
@@ -140,6 +141,7 @@ impl Workbench {
         &mut self,
         node: &Node,
         focused: Option<&str>,
+        path: &[usize],
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -155,29 +157,39 @@ impl Workbench {
                 }
             }
             Node::V1(split) => {
-                let branches: Vec<AnyElement> = split
-                    .children
-                    .iter()
-                    .map(|branch| {
-                        let child = self.tile(&branch.node, focused, palette, cx);
-                        let mut share = div()
-                            .flex()
-                            .flex_1()
-                            .min_w(px(needed_width(&branch.node)))
-                            .min_h_0();
-                        share.style().flex_grow = Some(branch.weight as f32);
-                        share.child(child).into_any_element()
-                    })
-                    .collect();
+                // Each child has the room its floor needs and takes a share of what is left by
+                // weight, as the Mac lays a split out, so that dragging a divider by a distance
+                // moves it by that distance (`soyeht_client::layout::resize`).
+                let sizing = sizing();
+                let mut items: Vec<AnyElement> = Vec::new();
+                for (index, branch) in split.children.iter().enumerate() {
+                    if index > 0 {
+                        items.push(self.divider(path, index - 1, &split.axis, cx));
+                    }
+                    let child_path = [path, &[index]].concat();
+                    let child = self.tile(&branch.node, focused, &child_path, palette, cx);
+                    let (floor_width, floor_height) = sizing.minimum(&branch.node);
+                    let mut share = div()
+                        .flex()
+                        .min_w(px(needed_width(&branch.node)))
+                        .min_h_0()
+                        .flex_grow(branch.weight as f32);
+                    share = match split.axis {
+                        WorkspacePaneLayoutAxis::Horizontal => {
+                            share.flex_basis(px(floor_width as f32)).flex_shrink_0()
+                        }
+                        WorkspacePaneLayoutAxis::Vertical => {
+                            share.flex_basis(px(floor_height as f32)).flex_shrink_1()
+                        }
+                    };
+                    items.push(share.child(child).into_any_element());
+                }
                 let layout = div().flex_1().min_w_0().min_h_0().flex();
                 let layout = match split.axis {
                     WorkspacePaneLayoutAxis::Horizontal => layout.flex_row(),
                     WorkspacePaneLayoutAxis::Vertical => layout.flex_col(),
                 };
-                layout
-                    .gap(px(pane_layout::PANE_GAP))
-                    .children(branches)
-                    .into_any_element()
+                layout.children(items).into_any_element()
             }
         }
     }

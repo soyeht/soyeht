@@ -480,6 +480,7 @@ pub mod desktop {
     pub const POPUP_GAP: f32 = 4.0;
     pub const FADE_WIDTH: f32 = 28.0;
     pub const PANE_FLOOR_LABEL_CHARACTERS: f32 = 8.0;
+    pub const MINIMUM_PANE_HEIGHT: f32 = 120.0;
     pub const WELL_DEPTH: f32 = 3.0;
     pub const HAIRLINE: f32 = 1.0;
     pub const LINE_HEIGHT_UI: f32 = 1.21;
