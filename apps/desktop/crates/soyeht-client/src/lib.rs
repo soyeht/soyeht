@@ -41,6 +41,7 @@ pub mod tasks;
 pub mod terminal_state;
 #[cfg(test)]
 mod testing;
+pub mod text_input;
 pub mod timestamp;
 pub mod transcript_rows;
 pub mod transport;

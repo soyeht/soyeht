@@ -3,12 +3,15 @@
 //! one a command's output sits in. The Mac draws the same blocks (`MarkdownViews.swift`);
 //! both read them from `contracts/vectors/markdown.json`'s rules.
 
-use super::ui::{code_well, column, row, rule};
+use super::{
+    copy_button::copyable,
+    selectable::Selectable,
+    ui::{code_well, column, row, rule},
+};
 use crate::theme::{Palette, fonts, pane_interior};
 use gpui::{
-    AnyElement, App, Div, ElementId, FontStyle, FontWeight, HighlightStyle, InteractiveText,
-    IntoElement, ParentElement, SharedString, StrikethroughStyle, Styled, StyledText,
-    UnderlineStyle, div, px, rgb,
+    AnyElement, Div, FontStyle, FontWeight, HighlightStyle, IntoElement, ParentElement,
+    SharedString, StrikethroughStyle, Styled, UnderlineStyle, div, px, rgb,
 };
 use soyeht_client::markdown::{Block, Run};
 use std::ops::Range;
@@ -16,19 +19,26 @@ use std::ops::Range;
 /// What a block needs to draw: the palette, the text color of the surrounding block, and a name
 /// for the links' click targets.
 struct Draw<'a> {
-    palette: &'a Palette,
+    palette: &'static Palette,
     ink: u32,
     owner: &'a str,
     paragraphs: usize,
+    codes: usize,
 }
 
 /// The blocks of one message, in `ink`. `owner` names the message, for its links.
-pub(super) fn reply(blocks: &[Block], owner: &str, palette: &Palette, ink: u32) -> AnyElement {
+pub(super) fn reply(
+    blocks: &[Block],
+    owner: &str,
+    palette: &'static Palette,
+    ink: u32,
+) -> AnyElement {
     let mut draw = Draw {
         palette,
         ink,
         owner,
         paragraphs: 0,
+        codes: 0,
     };
     stack(blocks, &mut draw).into_any_element()
 }
@@ -51,9 +61,19 @@ fn block(block: &Block, draw: &mut Draw) -> AnyElement {
     match block {
         Block::Paragraph(runs) => text(runs, false, draw),
         Block::Heading { runs, .. } => text(runs, true, draw),
-        Block::Code { text, .. } => code_well(text.clone(), palette)
-            .text_color(rgb(draw.ink))
-            .into_any_element(),
+        Block::Code { text, .. } => {
+            let key = format!("{}-code-{}", draw.owner, draw.codes);
+            draw.codes += 1;
+            let selectable = Selectable::plain(key.clone(), text.clone(), palette);
+            copyable(
+                code_well(selectable, palette).text_color(rgb(draw.ink)),
+                &key,
+                text.clone(),
+                pane_interior::CARD_PADDING,
+                palette,
+            )
+            .into_any_element()
+        }
         Block::Quote(blocks) => {
             let outer = std::mem::replace(&mut draw.ink, palette.secondary);
             let content = stack(blocks, draw);
@@ -169,25 +189,15 @@ fn text(runs: &[Run], bold: bool, draw: &mut Draw) -> AnyElement {
             links.push((range, link.clone()));
         }
     }
-    let styled = StyledText::new(SharedString::from(content))
-        .with_highlights(highlights)
-        .with_font_family_overrides(mono);
-    let element = if links.is_empty() {
-        styled.into_any_element()
-    } else {
-        let id = ElementId::from(SharedString::from(format!(
-            "markdown-{}-{}",
-            draw.owner, draw.paragraphs
-        )));
-        draw.paragraphs += 1;
-        let (ranges, addresses): (Vec<_>, Vec<_>) = links.into_iter().unzip();
-        InteractiveText::new(id, styled)
-            .on_click(ranges, move |index, _, cx: &mut App| {
-                if let Some(address) = addresses.get(index) {
-                    cx.open_url(address);
-                }
-            })
-            .into_any_element()
+    let key = format!("{}-text-{}", draw.owner, draw.paragraphs);
+    draw.paragraphs += 1;
+    let element = Selectable {
+        key: key.into(),
+        content: content.into(),
+        highlights,
+        mono,
+        links,
+        palette,
     };
     div()
         .w_full()

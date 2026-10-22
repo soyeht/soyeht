@@ -274,6 +274,14 @@ impl Workbench {
             self.editor_action(&pane_id, EditorAction::Copy, cx);
             return;
         }
+        if self
+            .state
+            .focused_pane()
+            .is_some_and(|pane| pane.mode == PaneMode::Agent)
+            && self.copy_transcript(cx)
+        {
+            return;
+        }
         let terminal = self
             .state
             .focused_pane()

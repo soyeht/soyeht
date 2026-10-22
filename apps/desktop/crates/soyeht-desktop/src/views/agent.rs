@@ -5,6 +5,8 @@
 use super::{
     attachments::sent_chips,
     cards::Windowing,
+    copy_button::copyable,
+    selectable::Selectable,
     ui::{Typeface, code_well, column, disclosure_chevron, icon, id, row},
 };
 use crate::{
@@ -169,13 +171,21 @@ pub(super) fn transcript_row(
     message: &TranscriptMessage,
     open: bool,
     markdown: &mut markdown::Cache,
-    palette: &Palette,
+    palette: &'static Palette,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
     match message.kind {
         TranscriptKind::Tool => message.tool.as_ref().map(|tool| tool_row(tool, palette)),
         TranscriptKind::Thought => {
-            let body = open.then(|| markdown_body(message, markdown, palette, palette.secondary));
+            let body = open.then(|| {
+                markdown_body(
+                    &owner_of(pane_id, message),
+                    message,
+                    markdown,
+                    palette,
+                    palette.secondary,
+                )
+            });
             Some(thought_row(pane_id, message, body, palette, cx))
         }
         TranscriptKind::Plan => message.plan.as_ref().map(|plan| plan_card(plan, palette)),
@@ -190,44 +200,71 @@ pub(super) fn transcript_row(
         TranscriptKind::Terminal => message
             .terminal
             .as_ref()
-            .map(|output| terminal_block(output, palette)),
+            .map(|output| terminal_block(&owner_of(pane_id, message), output, palette)),
         // A subagent's row is drawn from its group, with the activity it owns under it.
         TranscriptKind::Usage | TranscriptKind::Subagent => None,
         TranscriptKind::Message | TranscriptKind::System => {
-            Some(text_row(message, markdown, palette))
+            Some(text_row(pane_id, message, markdown, palette))
         }
     }
+}
+
+/// What names a message among all that the window shows: a conversation's message ids are its own.
+fn owner_of(pane_id: &str, message: &TranscriptMessage) -> String {
+    format!("{pane_id}-{}", message.local_id)
 }
 
 /// The agent's words with their Markdown drawn, in `ink`; a reply that is still arriving has its
 /// open spans closed.
 fn markdown_body(
+    owner: &str,
     message: &TranscriptMessage,
     markdown: &mut markdown::Cache,
-    palette: &Palette,
+    palette: &'static Palette,
     ink: u32,
 ) -> AnyElement {
     let blocks = markdown.blocks(&message.local_id, &message.text, !message.complete);
-    super::markdown::reply(&blocks, &message.local_id, palette, ink)
+    super::markdown::reply(&blocks, owner, palette, ink)
 }
 
 /// A message: a card for the person or a peer agent, plain text for what they typed, and the
 /// agent's own words with their Markdown drawn.
 fn text_row(
+    pane_id: &str,
     message: &TranscriptMessage,
     markdown: &mut markdown::Cache,
-    palette: &Palette,
+    palette: &'static Palette,
 ) -> AnyElement {
+    let owner = owner_of(pane_id, message);
+    let copyable = |card: Div| {
+        copyable(
+            card,
+            &format!("message-{owner}"),
+            message.text.clone(),
+            pane_interior::TIGHT_SPACING,
+            palette,
+        )
+    };
     if message.role == TranscriptRole::Assistant && message.agent_message.is_none() {
-        return div()
+        let reply = div()
             .w_full()
             .text_size(px(pane_interior::BODY_POINT_SIZE))
-            .child(markdown_body(message, markdown, palette, palette.ink))
-            .into_any_element();
+            .child(markdown_body(
+                pane_id,
+                message,
+                markdown,
+                palette,
+                palette.ink,
+            ));
+        return copyable(reply).into_any_element();
     }
     let body = div()
         .text_size(px(pane_interior::BODY_POINT_SIZE))
-        .child(SharedString::from(message.text.clone()));
+        .child(Selectable::plain(
+            format!("message-{owner}"),
+            message.text.clone(),
+            palette,
+        ));
     if message.role == TranscriptRole::User || message.agent_message.is_some() {
         let sender = message
             .agent_message
@@ -240,7 +277,7 @@ fn text_row(
                 }
             })
             .unwrap_or_else(|| "You".to_owned());
-        return column()
+        let card = column()
             .gap(px(pane_interior::COMPACT_SPACING))
             .px(px(pane_interior::CARD_PADDING))
             .py(px(pane_interior::CARD_VERTICAL_PADDING))
@@ -264,8 +301,8 @@ fn text_row(
                     .iter()
                     .filter(|attachments| !attachments.is_empty())
                     .map(|attachments| sent_chips(attachments, palette)),
-            )
-            .into_any_element();
+            );
+        return copyable(card).into_any_element();
     }
     body.text_color(rgb(palette.secondary)).into_any_element()
 }
@@ -371,10 +408,20 @@ fn thought_row(
 }
 
 /// A command's output: the text in a mono well, as the Mac shows it.
-fn terminal_block(output: &TerminalOutput, palette: &Palette) -> AnyElement {
-    code_well(terminal_text(output), palette)
-        .w_full()
-        .into_any_element()
+fn terminal_block(owner: &str, output: &TerminalOutput, palette: &'static Palette) -> AnyElement {
+    let text = terminal_text(output);
+    copyable(
+        code_well(
+            Selectable::plain(format!("terminal-{owner}"), text.clone(), palette),
+            palette,
+        )
+        .w_full(),
+        &format!("terminal-{owner}"),
+        text,
+        pane_interior::CARD_PADDING,
+        palette,
+    )
+    .into_any_element()
 }
 
 fn capitalized(text: &str) -> String {

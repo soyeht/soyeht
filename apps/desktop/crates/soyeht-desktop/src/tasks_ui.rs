@@ -170,6 +170,7 @@ impl Workbench {
                     // Return adds a line in the text areas and creates nothing by itself.
                     ComposerEvent::Submit => field.update(cx, |field, cx| field.insert("\n", cx)),
                     ComposerEvent::Dismiss => this.close_new_task(cx),
+                    ComposerEvent::Attach => {}
                 },
             )
             .detach();

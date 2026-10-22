@@ -49,6 +49,7 @@ impl Workbench {
         cx.subscribe(&field, |this, _, event: &ComposerEvent, cx| match event {
             ComposerEvent::Submit => this.commit_rename(cx),
             ComposerEvent::Dismiss => this.cancel_rename(cx),
+            ComposerEvent::Attach => {}
         })
         .detach();
         // The first click of a double click asked to focus a pane on the next frame; on a slow

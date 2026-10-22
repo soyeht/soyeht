@@ -51,6 +51,8 @@ impl Workbench {
                 |this, field, event: &ComposerEvent, cx| match event {
                     ComposerEvent::Submit => field.update(cx, |field, cx| field.insert("\n", cx)),
                     ComposerEvent::Dismiss => this.close_menu(cx),
+                    // A prompt takes text only.
+                    ComposerEvent::Attach => {}
                 },
             )
             .detach();

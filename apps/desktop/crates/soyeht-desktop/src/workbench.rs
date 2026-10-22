@@ -3,7 +3,7 @@
 //! Rendering lives in `views`.
 
 use crate::{
-    composer_field::{ComposerEvent, ComposerField, new_field},
+    composer_field::{ComposerEvent, ComposerField, edit_of, new_field},
     destination::Destination,
     open_menu::{Menu, OpenMenu},
     pane_ui::PaneUis,
@@ -22,6 +22,7 @@ use soyeht_client::{
     keys::{self, Modifiers},
     markdown,
     screen::TerminalScreen,
+    text_input::keys::Edit,
     transcript_rows::Rows,
 };
 use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
@@ -353,6 +354,11 @@ impl Workbench {
             move |this, _, event: &ComposerEvent, cx| match event {
                 ComposerEvent::Submit => this.submit_prompt(&owner, cx),
                 ComposerEvent::Dismiss => this.close_menu(cx),
+                ComposerEvent::Attach => {
+                    if let Some(item) = cx.read_from_clipboard() {
+                        this.paste_into_composer(&owner, &item, cx);
+                    }
+                }
             },
         )
         .detach();
@@ -653,14 +659,7 @@ impl Workbench {
             && pane.mode == PaneMode::Agent
         {
             let pane_id = pane.pane_id.clone();
-            // Copied files and pictures become attachments; anything else is text.
-            if self.attach_pasted(&pane_id, &item, cx) {
-                return;
-            }
-            if let Some(text) = item.text() {
-                let field = self.composer_field(&pane_id, cx);
-                field.update(cx, |field, cx| field.insert(&text, cx));
-            }
+            self.paste_into_composer(&pane_id, &item, cx);
             return;
         }
         let Some(pane_id) = self.focused_terminal() else {
@@ -691,6 +690,18 @@ impl Workbench {
         // An editor takes its keys, the platform key among them: on the Mac that is its shortcut key.
         if let Some(pane_id) = self.focused_editor() {
             if self.editor_key(&pane_id, event, cx) {
+                cx.stop_propagation();
+            }
+            return;
+        }
+        // A copy with an agent pane in front takes what is selected in its transcript, when the
+        // composer had no selection of its own; in a terminal the key is the program's.
+        if self
+            .state
+            .focused_pane()
+            .is_some_and(|pane| pane.mode == PaneMode::Agent)
+        {
+            if edit_of(keystroke) == Some(Edit::Copy) && self.copy_transcript(cx) {
                 cx.stop_propagation();
             }
             return;

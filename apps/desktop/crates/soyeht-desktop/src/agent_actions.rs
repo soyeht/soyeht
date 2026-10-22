@@ -4,9 +4,10 @@
 
 use crate::{
     composer_field::{ComposerEvent, ComposerField, new_field},
+    views::selectable::selected_text,
     workbench::Workbench,
 };
-use gpui::{Context, Entity};
+use gpui::{ClipboardItem, Context, Entity};
 use soyeht_client::{
     Command, Connection,
     agent::TAIL,
@@ -16,6 +17,15 @@ use soyeht_client::{
 use std::time::Instant;
 
 impl Workbench {
+    /// Puts the text selected in a transcript on the clipboard. False when nothing is selected.
+    pub(crate) fn copy_transcript(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(text) = selected_text(cx) else {
+            return false;
+        };
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+        true
+    }
+
     /// Tells the engine about every composer that holds text, as often as the Mac does, so that a
     /// loop never sends over what the person is typing.
     pub(crate) fn beat_drafts(&mut self, cx: &mut Context<Self>) {
@@ -151,6 +161,7 @@ impl Workbench {
                             this.answer_elicitation(&owner, &request_id, true, cx)
                         }
                         ComposerEvent::Dismiss => this.close_menu(cx),
+                        ComposerEvent::Attach => {}
                     },
                 )
                 .detach();

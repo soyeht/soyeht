@@ -368,14 +368,14 @@ pub fn row() -> Div {
 }
 
 /// Text in a mono well: command output and code, as the Mac shows them.
-pub fn code_well(text: impl Into<SharedString>, palette: &Palette) -> Div {
+pub fn code_well(content: impl IntoElement, palette: &Palette) -> Div {
     div()
         .p(px(pane_interior::ROW_SPACING))
         .rounded(px(pane_interior::WELL_RADIUS))
         .bg(rgb(palette.well))
         .mono()
         .text_size(px(pane_interior::MONO_POINT_SIZE))
-        .child(text.into())
+        .child(content)
 }
 
 /// A column.

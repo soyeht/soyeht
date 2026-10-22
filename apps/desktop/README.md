@@ -52,6 +52,20 @@ agent works.
   context ring and send or stop. Permission requests are answered in a card that shows the exact
   command, tool arguments and file changes. The header names the agent, the current plan step and
   the latest tool calls (the whole line is in its tooltip), and counts the running turn.
+- The composer, and every text field of the window, edits like a text field of the system
+  (`soyeht_client::text_input`, with unit tests; the field only draws it): Ctrl+A, C, X and V
+  (Command on the Mac; Ctrl+Shift+V pastes too), selection with Shift and the arrows, Home and
+  End, Ctrl+Left and Right by words, Ctrl+Backspace and Delete by words, Up and Down through
+  lines as they are drawn (wrapped ones too), a click for the caret, a drag, a double click (a
+  word) and a triple click (a line) for a selection, and Ctrl+Z with Ctrl+Shift+Z or Ctrl+Y for
+  undo and redo (a run of typing, of Backspace or of Delete is one step). Return sends and
+  Shift+Return adds a line. On the Mac Control+A and Control+E go to the ends of the line.
+- The transcript's text is selected with the pointer, one block at a time (a paragraph, a code
+  block, a command's output, a message): a drag, a double click or a triple click, and Ctrl+C
+  (Ctrl+Shift+C, Command+C on the Mac) copies the selection when the composer has none. A message,
+  a code block and a command's output also show a Copy button while the pointer is over them: it
+  copies the message's Markdown source, the code or the output whole. A selection across blocks
+  is not made.
 - A pane opened from "+" or a split takes the keyboard.
 - Preferences, from the rail's gear, laid out as the Mac's sheet: the panels down the left, the open
   one beside them. Appearance (a card with a swatch for each of the nine palettes); Harnesses (a

@@ -55,6 +55,23 @@ impl Workbench {
         self.finish_staging(pane_id, work, cx);
     }
 
+    /// Pastes into an agent's composer: copied files and pictures become attachments; anything
+    /// else is text.
+    pub(crate) fn paste_into_composer(
+        &mut self,
+        pane_id: &str,
+        item: &ClipboardItem,
+        cx: &mut Context<Self>,
+    ) {
+        if self.attach_pasted(pane_id, item, cx) {
+            return;
+        }
+        if let Some(text) = item.text() {
+            let field = self.composer_field(pane_id, cx);
+            field.update(cx, |field, cx| field.insert(&text, cx));
+        }
+    }
+
     /// A paste that carries files or a picture. False leaves it to the text field.
     pub(crate) fn attach_pasted(
         &mut self,
