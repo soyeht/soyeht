@@ -2173,5 +2173,124 @@
         "placement": "modal"
       }
     ]
+  },
+  "markdownPreview": {
+    "description": "What the editor's Markdown preview shows of the page the editor holds (a Markdown file is previewed beside its lines): the page is refused past the viewport limit in lines and the message size in bytes (the lines joined by a newline), else previewed as the blocks of the shared Markdown rules. It is partial when it does not hold the whole file, and a partial preview labels the lines it shows (1-based, the end line inclusive). A line is either listed in `lines`, or `generated` names how many lines of how many bytes each.",
+    "cases": [
+      {
+        "name": "a whole file that fits is not partial",
+        "lines": [
+          "# Title",
+          "Some text."
+        ],
+        "fromLine": 0,
+        "totalLines": 2,
+        "refusal": null,
+        "isPartial": false,
+        "toLine": 2,
+        "label": "LINES 1–2 OF 2"
+      },
+      {
+        "name": "a page in the middle of a long file is partial and says which lines",
+        "lines": [
+          "# Heading",
+          "[outside](https://example.invalid)",
+          "<script>alert(1)</script>"
+        ],
+        "fromLine": 40,
+        "totalLines": 100000,
+        "refusal": null,
+        "isPartial": true,
+        "toLine": 43,
+        "label": "LINES 41–43 OF 100000"
+      },
+      {
+        "name": "the top of a longer file is partial",
+        "lines": [
+          "# Heading",
+          "text",
+          "more"
+        ],
+        "fromLine": 0,
+        "totalLines": 100,
+        "refusal": null,
+        "isPartial": true,
+        "toLine": 3,
+        "label": "LINES 1–3 OF 100"
+      },
+      {
+        "name": "a page that reaches the end of a file that began earlier is partial",
+        "lines": [
+          "a",
+          "b",
+          "c"
+        ],
+        "fromLine": 97,
+        "totalLines": 100,
+        "refusal": null,
+        "isPartial": true,
+        "toLine": 100,
+        "label": "LINES 98–100 OF 100"
+      },
+      {
+        "name": "a line number past the range of a count saturates instead of wrapping",
+        "lines": [
+          "a",
+          "b"
+        ],
+        "fromLine": 4294967295,
+        "totalLines": 4294967295,
+        "refusal": null,
+        "isPartial": true,
+        "toLine": 4294967295,
+        "label": "LINES 4294967296–4294967295 OF 4294967295"
+      },
+      {
+        "name": "a page of the viewport limit in lines is previewed",
+        "generated": {
+          "lines": 2000,
+          "bytesPerLine": 1
+        },
+        "fromLine": 0,
+        "totalLines": 2000,
+        "refusal": null,
+        "isPartial": false,
+        "toLine": 2000,
+        "label": "LINES 1–2000 OF 2000"
+      },
+      {
+        "name": "a page of more lines than the viewport limit is refused",
+        "generated": {
+          "lines": 2001,
+          "bytesPerLine": 1
+        },
+        "fromLine": 0,
+        "totalLines": 2001,
+        "refusal": "tooManyLines"
+      },
+      {
+        "name": "a page of the protocol's message size is previewed",
+        "generated": {
+          "lines": 1,
+          "bytesPerLine": 1048576
+        },
+        "fromLine": 0,
+        "totalLines": 1,
+        "refusal": null,
+        "isPartial": false,
+        "toLine": 1,
+        "label": "LINES 1–1 OF 1"
+      },
+      {
+        "name": "a page of one byte more than a message is refused",
+        "generated": {
+          "lines": 1,
+          "bytesPerLine": 1048577
+        },
+        "fromLine": 0,
+        "totalLines": 1,
+        "refusal": "tooManyBytes"
+      }
+    ]
   }
 }

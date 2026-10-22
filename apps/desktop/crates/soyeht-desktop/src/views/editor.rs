@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
     editor_view,
-    theme::{Palette, desktop, editor, glyph, radius, space, type_scale},
+    theme::{Palette, desktop, editor, glyph, pane_interior, radius, space, type_scale},
 };
 use gpui::MouseButton;
 use soyeht_client::editor::{EditorFile, PaneLoad, page::CRLF, refusal::Refusal};
@@ -153,6 +153,7 @@ impl Workbench {
         let panel =
             (!hidden).then(|| self.project_panel(cx, palette, Some(&pane.pane_id), &workspace));
         let pane_id = pane.pane_id.clone();
+        let refused = self.state.editors.refusal(&workspace).is_some();
         let text = if let Some(refusal) = self.state.editors.refusal(&workspace) {
             refusal_state(refusal, palette).into_any_element()
         } else if loaded {
@@ -171,6 +172,27 @@ impl Workbench {
                     .child("Loading editor viewport")
                     .into_any_element(),
             }
+        };
+        // A Markdown file has its preview beside the lines, set off by a line; a file the engine
+        // refused as text has none, as on the Mac.
+        let preview = (loaded && !refused)
+            .then(|| self.editor_preview(&pane_id, palette))
+            .flatten();
+        let text = match preview {
+            Some(preview) => row()
+                .items_stretch()
+                .flex_1()
+                .min_h_0()
+                .child(text)
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(pane_interior::SEPARATOR_WIDTH))
+                        .bg(rgb(palette.well)),
+                )
+                .child(preview)
+                .into_any_element(),
+            None => text,
         };
         face_row(palette)
             .children(panel)

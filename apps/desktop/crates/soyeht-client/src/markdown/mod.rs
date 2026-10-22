@@ -16,10 +16,12 @@
 //! word or a code span shows its style as it is typed instead of showing raw markers.
 
 mod file_refs;
+mod preview;
 mod streaming;
 mod web_links;
 
 pub use file_refs::link_references;
+pub use preview::{Preview, Refusal};
 pub use web_links::{bare_addresses, link_blocks};
 
 use crate::file_links::Reference;
@@ -435,6 +437,11 @@ struct Entry {
 const CACHE_LIMIT: usize = 1024;
 
 impl Cache {
+    /// Drops the parse of the message `owner`, which is gone.
+    pub fn forget(&mut self, owner: &str) {
+        self.entries.remove(owner);
+    }
+
     /// The blocks of the message `owner` with this text, parsed only when they changed.
     pub fn blocks(&mut self, owner: &str, text: &str, streaming: bool) -> Arc<[Block]> {
         if let Some(entry) = self.entries.get(owner)
@@ -476,6 +483,18 @@ mod tests {
             !Arc::ptr_eq(&grown, &finished),
             "streaming changes the parse"
         );
+    }
+
+    #[test]
+    fn a_forgotten_owner_is_parsed_again_and_the_rest_are_kept() {
+        let mut cache = Cache::default();
+        let gone = cache.blocks("gone", "a **b**", false);
+        let kept = cache.blocks("kept", "c", false);
+        cache.forget("gone");
+        cache.forget("never there");
+        assert_eq!(cache.entries.len(), 1);
+        assert!(!Arc::ptr_eq(&gone, &cache.blocks("gone", "a **b**", false)));
+        assert!(Arc::ptr_eq(&kept, &cache.blocks("kept", "c", false)));
     }
 
     #[test]

@@ -30,6 +30,11 @@ public struct MarkdownViewportPreview {
   public var isPartial: Bool {
     fromLine > 0 || toLine < totalLineCount
   }
+
+  /// The lines the preview shows, one-based: `LINES 41–43 OF 100000`.
+  public var rangeLabel: String {
+    "LINES \(UInt64(fromLine) + 1)–\(toLine) OF \(totalLineCount)"
+  }
 }
 
 extension UInt32 {

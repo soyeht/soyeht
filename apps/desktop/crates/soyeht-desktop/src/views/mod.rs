@@ -11,6 +11,7 @@ mod composer;
 mod copy_button;
 mod editor;
 mod editor_find;
+mod editor_preview;
 mod editor_tabs;
 mod editor_tree;
 mod harness_menu;

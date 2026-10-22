@@ -354,7 +354,11 @@
     "viewportVerticalInset": 20,
     "statusHeight": 24,
     "findFieldHeight": 24,
-    "projectPanelWidth": 212
+    "projectPanelWidth": 212,
+    "previewMinWidth": 260,
+    "previewWidth": 360,
+    "previewMaxWidth": 460,
+    "previewHeaderHeight": 26
   },
   "desktop": {
     "windowWidth": 1280,

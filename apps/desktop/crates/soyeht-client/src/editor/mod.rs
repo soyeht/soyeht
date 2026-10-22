@@ -644,6 +644,8 @@ mod load_tests;
 #[cfg(test)]
 mod open_at_tests;
 #[cfg(test)]
+mod preview_tests;
+#[cfg(test)]
 mod refusal_tests;
 #[cfg(test)]
 mod tests;

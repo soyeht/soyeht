@@ -430,6 +430,10 @@ pub mod editor {
     pub const STATUS_HEIGHT: f32 = 24.0;
     pub const FIND_FIELD_HEIGHT: f32 = 24.0;
     pub const PROJECT_PANEL_WIDTH: f32 = 212.0;
+    pub const PREVIEW_MIN_WIDTH: f32 = 260.0;
+    pub const PREVIEW_WIDTH: f32 = 360.0;
+    pub const PREVIEW_MAX_WIDTH: f32 = 460.0;
+    pub const PREVIEW_HEADER_HEIGHT: f32 = 26.0;
 }
 pub mod desktop {
     pub const WINDOW_WIDTH: f32 = 1280.0;

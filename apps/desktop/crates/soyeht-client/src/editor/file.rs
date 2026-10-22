@@ -15,10 +15,13 @@ use super::{
     selection::{Motion, Selection, clamped, target},
     viewport::{PAGE_LINES, Window, landing_start},
 };
-use crate::{Command, Effect};
+use crate::{
+    Command, Effect,
+    markdown::{Preview, Refusal},
+};
 use soyeht_protocol::{
-    FileAuthor, FileDocument, FileFindQuery, FileFindResult, FileReadResult, FileUndoResult,
-    FileWriteResult, TextEdit, TextPosition, TextRange,
+    EditorLanguage, FileAuthor, FileDocument, FileFindQuery, FileFindResult, FileReadResult,
+    FileUndoResult, FileWriteResult, TextEdit, TextPosition, TextRange,
 };
 use std::collections::VecDeque;
 
@@ -157,6 +160,20 @@ impl EditorFile {
         self.page.as_ref().map_or(super::page::LF, |page| {
             page.ending(self.selection.range().start.line)
         })
+    }
+
+    /// What the Markdown preview of a Markdown file shows: the page it holds now, with what was
+    /// typed since. `None` for any other language, or while no page has been read.
+    pub fn markdown_preview(&self) -> Option<Result<Preview, Refusal>> {
+        if self.doc.language != EditorLanguage::Markdown {
+            return None;
+        }
+        let page = self.page.as_ref()?;
+        Some(Preview::of_lines(
+            page.lines.iter().map(|line| line.text.as_str()),
+            page.from_line,
+            self.lines,
+        ))
     }
 
     pub fn selected_text(&self) -> Option<String> {

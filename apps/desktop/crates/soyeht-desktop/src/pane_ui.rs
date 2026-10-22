@@ -4,7 +4,9 @@
 //! pane that closes takes its interface state with it in one step, and a new kind of state has
 //! no list to remember.
 
-use crate::{composer_field::ComposerField, editor_ui::EditorUi, loop_form::LoopForm};
+use crate::{
+    composer_field::ComposerField, editor_ui::EditorUi, loop_form::LoopForm, views::Replies,
+};
 use gpui::{Entity, ScrollHandle};
 use soyeht_client::{State, attachments::Staged, slash, transcript_rows::Rows};
 use std::{
@@ -101,10 +103,16 @@ impl PaneUis {
         self.0.iter()
     }
 
-    /// Drops the state of panes that are gone, and of messages and requests that are.
-    pub fn forget_closed(&mut self, state: &State) {
-        self.0
-            .retain(|pane_id, _| state.panes().iter().any(|pane| &pane.pane_id == pane_id));
+    /// Drops the state of panes that are gone, with the parse of their Markdown preview, and of
+    /// messages and requests that are.
+    pub fn forget_closed(&mut self, state: &State, markdown: &mut Replies) {
+        self.0.retain(|pane_id, _| {
+            let open = state.panes().iter().any(|pane| &pane.pane_id == pane_id);
+            if !open {
+                markdown.forget_preview(pane_id);
+            }
+            open
+        });
         for (pane_id, ui) in &mut self.0 {
             ui.forget_gone(state, pane_id);
         }
@@ -183,12 +191,18 @@ mod tests {
         let mut uis = PaneUis::default();
         *uis.of("kept") = used();
         *uis.of("closed") = used();
-        uis.forget_closed(&state_with(&["kept"]));
+        let mut markdown = Replies::default();
+        let preview = markdown.preview_blocks("closed", "# one");
+        uis.forget_closed(&state_with(&["kept"]), &mut markdown);
+        assert!(!std::sync::Arc::ptr_eq(
+            &preview,
+            &markdown.preview_blocks("closed", "# one")
+        ));
         assert!(uis.get("closed").is_none());
         let kept = uis.get("kept").unwrap();
         assert_eq!(kept.extra, 50);
         assert!(kept.open_subagents.contains("subagent"));
-        uis.forget_closed(&state_with(&[]));
+        uis.forget_closed(&state_with(&[]), &mut Replies::default());
         assert!(uis.is_empty());
     }
 
@@ -196,7 +210,7 @@ mod tests {
     fn a_thought_of_a_message_that_is_gone_is_forgotten() {
         let mut uis = PaneUis::default();
         *uis.of("kept") = used();
-        uis.forget_closed(&state_with(&["kept"]));
+        uis.forget_closed(&state_with(&["kept"]), &mut Replies::default());
         assert!(uis.get("kept").unwrap().open_thoughts.is_empty());
     }
 }

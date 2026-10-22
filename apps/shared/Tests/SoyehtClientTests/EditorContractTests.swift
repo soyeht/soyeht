@@ -258,3 +258,37 @@ private func position(_ value: JsonValue) -> TextPosition {
     #expect(width == item["width"].double, "\(name(item))")
   }
 }
+
+@Test func theMarkdownPreviewIsBoundedAndLabelledAsTheVectorSays() throws {
+  let cases = try ContractVector.load("editor")["markdownPreview"]
+  for item in ContractVector.cases(cases, "cases") {
+    let lines: [String]
+    if let listed = item["lines"].array {
+      lines = listed.compactMap(\.string)
+    } else {
+      let generated = item["generated"]
+      lines = Array(
+        repeating: String(repeating: "x", count: generated["bytesPerLine"].int ?? 0),
+        count: generated["lines"].int ?? 0)
+    }
+    func line(_ key: String) -> UInt32 { UInt32(item[key].int ?? 0) }
+    switch item["refusal"].string {
+    case "tooManyLines":
+      #expect(throws: MarkdownPreviewError.tooManyLines, "\(name(item))") {
+        try MarkdownViewportPreview(
+          lines: lines, fromLine: line("fromLine"), totalLineCount: line("totalLines"))
+      }
+    case "tooManyBytes":
+      #expect(throws: MarkdownPreviewError.tooManyBytes, "\(name(item))") {
+        try MarkdownViewportPreview(
+          lines: lines, fromLine: line("fromLine"), totalLineCount: line("totalLines"))
+      }
+    default:
+      let preview = try MarkdownViewportPreview(
+        lines: lines, fromLine: line("fromLine"), totalLineCount: line("totalLines"))
+      #expect(preview.isPartial == item["isPartial"].bool, "\(name(item))")
+      #expect(Int(preview.toLine) == item["toLine"].int, "\(name(item))")
+      #expect(preview.rangeLabel == item["label"].string, "\(name(item))")
+    }
+  }
+}

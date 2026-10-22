@@ -16,11 +16,12 @@ struct EditorMarkdownPreview: View {
           .tracking(0.8).foregroundStyle(MacTheme.secondary)
         Spacer(minLength: 0)
         if let preview, preview.isPartial {
-          Text(rangeLabel(preview))
+          Text(preview.rangeLabel)
             .font(MacTheme.mono(MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
         }
       }
-      .padding(.horizontal, MacTheme.Space.x10).frame(height: 26)
+      .padding(.horizontal, MacTheme.Space.x10)
+      .frame(height: DesignTokens.Editor.previewHeaderHeight)
       .background(MacTheme.canvas)
 
       if let preview {
@@ -37,13 +38,11 @@ struct EditorMarkdownPreview: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
-    .frame(minWidth: 260, idealWidth: 360, maxWidth: 460, maxHeight: .infinity)
+    .frame(
+      minWidth: DesignTokens.Editor.previewMinWidth, idealWidth: DesignTokens.Editor.previewWidth,
+      maxWidth: DesignTokens.Editor.previewMaxWidth, maxHeight: .infinity
+    )
     .background(MacTheme.face)
     .accessibilityIdentifier("editor-markdown-preview")
-  }
-
-  private func rangeLabel(_ preview: MarkdownViewportPreview) -> String {
-    let first = UInt64(preview.fromLine) + 1
-    return "LINES \(first)–\(preview.toLine) OF \(preview.totalLineCount)"
   }
 }

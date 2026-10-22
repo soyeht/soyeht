@@ -401,6 +401,30 @@ INLINE_LITERALS = [
     ),
     (MAC + "UsageViews.swift", "MacTheme.chrome({}, weight: .bold)", "usageRing", "percentageSize"),
     (MAC + "UsageViews.swift", ".frame(height: {})", "usageRing", "percentageHeight"),
+    (
+        MAC + "EditorMarkdownPreview.swift",
+        ".padding(.horizontal, MacTheme.Space.x10).frame(height: {})",
+        "editor",
+        "previewHeaderHeight",
+    ),
+    (
+        MAC + "EditorMarkdownPreview.swift",
+        ".frame(minWidth: {}, idealWidth: 360, maxWidth: 460, maxHeight: .infinity)",
+        "editor",
+        "previewMinWidth",
+    ),
+    (
+        MAC + "EditorMarkdownPreview.swift",
+        ".frame(minWidth: 260, idealWidth: {}, maxWidth: 460, maxHeight: .infinity)",
+        "editor",
+        "previewWidth",
+    ),
+    (
+        MAC + "EditorMarkdownPreview.swift",
+        ".frame(minWidth: 260, idealWidth: 360, maxWidth: {}, maxHeight: .infinity)",
+        "editor",
+        "previewMaxWidth",
+    ),
 ]
 
 

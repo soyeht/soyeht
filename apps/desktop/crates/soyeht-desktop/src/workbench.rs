@@ -257,7 +257,7 @@ impl Workbench {
 
     /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
     fn forget_closed_panes(&mut self) {
-        self.panes.forget_closed(&self.state);
+        self.panes.forget_closed(&self.state, &mut self.markdown);
         let open = |id: &String| {
             self.state
                 .workspaces()

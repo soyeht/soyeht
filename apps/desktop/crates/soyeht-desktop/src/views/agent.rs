@@ -6,7 +6,7 @@ use super::{
     attachments::sent_chips,
     cards::Windowing,
     copy_button::copyable,
-    markdown::Replies,
+    markdown::{Opens, Replies},
     selectable::Selectable,
     ui::{Typeface, code_well, column, disclosure_chevron, icon, id, row},
 };
@@ -226,7 +226,13 @@ fn markdown_body(
     ink: u32,
 ) -> AnyElement {
     let blocks = markdown.blocks(&message.local_id, &message.text, !message.complete);
-    super::markdown::reply(&blocks, owner, palette, ink, markdown.files.as_ref())
+    super::markdown::reply(
+        &blocks,
+        owner,
+        palette,
+        ink,
+        Opens::Links(markdown.files.as_ref()),
+    )
 }
 
 /// A message: a card for the person or a peer agent, plain text for what they typed, and the

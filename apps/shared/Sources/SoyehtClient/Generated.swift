@@ -306,6 +306,10 @@ public enum DesignTokens {
     public static let statusHeight: CGFloat = 24
     public static let findFieldHeight: CGFloat = 24
     public static let projectPanelWidth: CGFloat = 212
+    public static let previewMinWidth: CGFloat = 260
+    public static let previewWidth: CGFloat = 360
+    public static let previewMaxWidth: CGFloat = 460
+    public static let previewHeaderHeight: CGFloat = 26
   }
 
   public enum Fonts {
