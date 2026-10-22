@@ -29,6 +29,7 @@ mod readiness;
 mod resize_handles;
 pub(crate) mod selectable;
 mod settings;
+mod slash;
 mod switch_popover;
 mod tasks;
 mod terminal_menu;

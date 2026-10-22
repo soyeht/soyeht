@@ -34,9 +34,9 @@ impl State {
         &self.preferences
     }
 
-    /// The skills every harness loads, once the engine has listed them.
+    /// The user's skills, once the engine has listed them.
     pub fn skills(&self) -> Option<&SkillsListResult> {
-        self.skills.as_ref()
+        self.skills.get("")
     }
 
     /// The readiness checklist: the engine's answer, once there is one, and whether there is a
@@ -93,7 +93,9 @@ impl State {
                 self.set_notice(&event.pane_id, event.reason);
                 Vec::new()
             }
-            EventName::SkillsChanged if self.skills.is_some() => vec![Effect::LoadSkills],
+            EventName::SkillsChanged | EventName::PaneCommandsChanged => {
+                self.slash_notification(name, params)?
+            }
             EventName::SettingsChanged => {
                 let event = serde_json::from_value::<SettingsChangedEvent>(params)?;
                 self.preferences.apply(&event.key, &event.value);
@@ -245,10 +247,13 @@ mod tests {
         let changed = || event(json!({"scope": "user"}));
         assert_eq!(notify(&mut state, EventName::SkillsChanged, changed()), []);
         let listing = serde_json::from_value(json!({"items": [], "userDirectory": "/skills"}));
-        state.apply(Event::Skills(listing.unwrap()));
+        state.apply(Event::Skills {
+            workspace_id: None,
+            listing: listing.unwrap(),
+        });
         assert_eq!(
             notify(&mut state, EventName::SkillsChanged, changed()),
-            [Effect::LoadSkills]
+            [Effect::LoadSkills(None)]
         );
     }
 }

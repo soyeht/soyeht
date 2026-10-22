@@ -52,7 +52,9 @@ pub(crate) fn request(command: &Command) -> Option<Request> {
         }),
         Command::LoadCatalogue { harness } => catalogue_request(harness, None),
         Command::LoadReadiness => Request::EngineReadiness(EngineReadinessParams {}),
-        Command::LoadSkills => Request::SkillsList(SkillsListParams { workspace_id: None }),
+        Command::LoadSkills { workspace_id } => Request::SkillsList(SkillsListParams {
+            workspace_id: workspace_id.clone(),
+        }),
         Command::CreateSkill {
             name,
             description,

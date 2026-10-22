@@ -13,9 +13,10 @@ use serde_json::Value;
 use soyeht_protocol::{
     AgentPaneRole, ConfigValue, EngineReadinessResult, HarnessInfo, HarnessListResult,
     LoopSetParams, LoopSetResult, LoopStopWhen, PaneAuthCancelParams, PaneAuthStartParams,
-    PaneCancelParams, PaneCloseParams, PaneConfigSetParams, PaneCreateParams, PaneCreateResult,
-    PaneDraftParams, PaneElicitationAnswerParams, PaneFocusParams, PaneHarnessSwitchParams,
-    PaneInputParams, PaneMode, PanePermissionAnswerParams, PanePromptParams, PaneQueueRemoveParams,
+    PaneCancelParams, PaneCloseParams, PaneCommandsListParams, PaneCommandsListResult,
+    PaneConfigSetParams, PaneCreateParams, PaneCreateResult, PaneDraftParams,
+    PaneElicitationAnswerParams, PaneFocusParams, PaneHarnessSwitchParams, PaneInputParams,
+    PaneMode, PanePermissionAnswerParams, PanePromptParams, PaneQueueRemoveParams,
     PaneQueueResumeParams, PaneRenameParams, PaneResizeParams, PaneRoleSetParams,
     PaneStreamSubscribeParams, PaneTranscriptParams, PaneTranscriptResult, PromptOrigin,
     ReplayFrom, Request, SkillsListResult, TailSelector, TaskCreateParams, TaskCreateResult,
@@ -121,8 +122,15 @@ pub enum Command {
     LoadPreferences {
         harnesses: Vec<String>,
     },
-    /// Fetch the skills every harness loads.
-    LoadSkills,
+    /// Fetch the skills every harness loads: the user's with `None`, or the user's and those of
+    /// the workspace.
+    LoadSkills {
+        workspace_id: Option<String>,
+    },
+    /// Fetch the commands the pane's harness advertised, for the composer's "/" list.
+    LoadCommands {
+        pane_id: String,
+    },
     /// Ask the engine which of the programs the app needs this machine has.
     LoadReadiness,
     /// Make a skill of the user's: its folder with a `SKILL.md`.
@@ -332,6 +340,9 @@ pub fn request(command: &Command) -> Option<Request> {
         Command::LoadOlder { pane_id, before } => transcript_page(pane_id, Some(before)),
         // The queue comes in pages: the engine fetches them one after the other.
         Command::LoadQueue { .. } => return None,
+        Command::LoadCommands { pane_id } => Request::PaneCommandsList(PaneCommandsListParams {
+            pane_id: pane_id.clone(),
+        }),
         Command::LoadUsage => Request::UsageList(UsageListParams {}),
         Command::SetConfig {
             pane_id,
@@ -608,7 +619,8 @@ impl Command {
                 | Self::LoadHarnesses { .. }
                 | Self::LoadCatalogue { .. }
                 | Self::LoadPreferences { .. }
-                | Self::LoadSkills
+                | Self::LoadSkills { .. }
+                | Self::LoadCommands { .. }
                 | Self::LoadReadiness
         ) || matches!(self, Self::Editor(editor) if editor.is_background())
     }
@@ -659,9 +671,14 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
         Command::LoadReadiness => Some(Event::Readiness(serde_json::from_value::<
             EngineReadinessResult,
         >(result)?)),
-        Command::LoadSkills => Some(Event::Skills(serde_json::from_value::<SkillsListResult>(
-            result,
-        )?)),
+        Command::LoadSkills { workspace_id } => Some(Event::Skills {
+            workspace_id: workspace_id.clone(),
+            listing: serde_json::from_value::<SkillsListResult>(result)?,
+        }),
+        Command::LoadCommands { pane_id } => Some(Event::PaneCommands {
+            pane_id: pane_id.clone(),
+            items: serde_json::from_value::<PaneCommandsListResult>(result)?.items,
+        }),
         Command::CreateWorkspace { ticket, .. } => Some(Event::WorkspaceOpened {
             ticket: *ticket,
             workspace: serde_json::from_value::<WorkspaceCreateResult>(result)?.workspace,

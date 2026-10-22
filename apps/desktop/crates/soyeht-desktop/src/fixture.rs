@@ -140,10 +140,19 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
         }
         events.push(Event::Preferences(preferences));
     }
+    if let Value::Object(commands) = section("commands") {
+        for (pane_id, items) in commands {
+            events.push(Event::PaneCommands {
+                pane_id,
+                items: serde_json::from_value(items).map_err(describe("commands"))?,
+            });
+        }
+    }
     if !section("skills").is_null() {
-        events.push(Event::Skills(
-            serde_json::from_value(section("skills")).map_err(describe("skills"))?,
-        ));
+        events.push(Event::Skills {
+            workspace_id: None,
+            listing: serde_json::from_value(section("skills")).map_err(describe("skills"))?,
+        });
     }
     for notification in list("notifications") {
         let name = serde_json::from_value::<EventName>(notification["name"].clone())
@@ -250,6 +259,17 @@ pub fn staged(fixture: &Value) -> Result<Vec<(String, Staged)>, String> {
         .collect()
 }
 
+/// What the fixture says is written in each composer and not yet sent.
+pub fn drafts(fixture: &Value) -> Vec<(String, String)> {
+    let Some(Value::Object(panes)) = fixture.get("drafts") else {
+        return Vec::new();
+    };
+    panes
+        .iter()
+        .filter_map(|(pane_id, text)| Some((pane_id.clone(), text.as_str()?.to_owned())))
+        .collect()
+}
+
 fn describe(section: &str) -> impl Fn(serde_json::Error) -> String + '_ {
     move |error| format!("the fixture's {section} are not the wire's shapes: {error}")
 }
@@ -321,6 +341,7 @@ pub fn run(
 ) -> Result<(), String> {
     let events = events(fixture)?;
     let staged = staged(fixture)?;
+    let drafts = drafts(fixture);
     let tasks = open.and_then(tasks_start);
     let panel = open.and_then(panel);
     let destination = open.and_then(place);
@@ -350,6 +371,7 @@ pub fn run(
             panel,
             size,
             staged,
+            drafts,
             tasks,
             destination,
         }

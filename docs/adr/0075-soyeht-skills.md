@@ -101,7 +101,10 @@ because Claude Code can advertise hundreds of skills.
 ### The "/" list
 
 The shared `SlashCatalog` (`apps/shared`) builds the list for Mac, iPhone and
-iPad.
+iPad. The desktop client builds it with `soyeht_client::slash`. Both pass
+`contracts/vectors/slash-completion.json`: what is listed and in which order,
+how typing filters, what choosing writes, how many rows show and the prompt
+that is sent.
 
 **What it lists.** Usable Soyeht skills of the pane's workspace (the user's
 plus the workspace's) come first. The pane's harness commands follow. A

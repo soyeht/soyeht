@@ -19,7 +19,7 @@ use soyeht_client::{
     editor::{keys::Chord, selection::Motion},
     text_input::{
         TextInput,
-        keys::{Edit, edit},
+        keys::{Completion, Edit, completion, edit},
     },
 };
 use std::ops::Range;
@@ -49,9 +49,13 @@ pub struct ComposerField {
     goal_x: Option<Pixels>,
     /// The pointer button is down and extends the selection.
     dragging: bool,
+    /// A list of completions is open over the line: it takes the arrows, Return and Tab.
+    completing: bool,
 }
 
 impl EventEmitter<ComposerEvent> for ComposerField {}
+/// What an open list of completions is asked, by the keys it takes from the line.
+impl EventEmitter<Completion> for ComposerField {}
 
 impl Focusable for ComposerField {
     fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
@@ -70,6 +74,7 @@ impl ComposerField {
             layout: None,
             goal_x: None,
             dragging: false,
+            completing: false,
         }
     }
 
@@ -91,6 +96,19 @@ impl ComposerField {
         cx.notify();
     }
 
+    /// Whether a list of completions is open over the line, which then takes its keys.
+    pub fn complete_with_list(&mut self, open: bool) {
+        self.completing = open;
+    }
+
+    /// Puts `text` in place of everything written, the caret after it.
+    pub fn replace(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.draft.select_all();
+        self.draft.insert(text);
+        self.goal_x = None;
+        cx.notify();
+    }
+
     pub fn clear(&mut self, cx: &mut Context<Self>) {
         self.draft.clear();
         self.goal_x = None;
@@ -100,6 +118,13 @@ impl ComposerField {
     fn key_down(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         // An input method owns the keys while it composes.
         if self.draft.is_composing() {
+            return;
+        }
+        if self.completing
+            && let Some(asked) = completion_of(&event.keystroke)
+        {
+            cx.emit(asked);
+            cx.stop_propagation();
             return;
         }
         let Some(edit) = edit_of(&event.keystroke) else {
@@ -469,8 +494,17 @@ fn carries_files(item: &ClipboardItem) -> bool {
 
 /// The edit a key press asks of a text field, if it asks one.
 pub(crate) fn edit_of(keystroke: &Keystroke) -> Option<Edit> {
+    edit(&chord_of(keystroke), cfg!(target_os = "macos"))
+}
+
+/// What a key press asks of an open list of completions, if it asks anything.
+fn completion_of(keystroke: &Keystroke) -> Option<Completion> {
+    completion(&chord_of(keystroke))
+}
+
+fn chord_of(keystroke: &Keystroke) -> Chord<'_> {
     let modifiers = &keystroke.modifiers;
-    let chord = Chord {
+    Chord {
         key: &keystroke.key,
         // What a key types arrives through the input handler, not here.
         text: None,
@@ -478,8 +512,7 @@ pub(crate) fn edit_of(keystroke: &Keystroke) -> Option<Edit> {
         alt: modifiers.alt,
         shift: modifiers.shift,
         platform: modifiers.platform,
-    };
-    edit(&chord, cfg!(target_os = "macos"))
+    }
 }
 
 /// A new field entity.

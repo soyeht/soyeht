@@ -22,7 +22,7 @@ use soyeht_client::{
     keys::{self, Modifiers},
     markdown,
     screen::TerminalScreen,
-    text_input::keys::Edit,
+    text_input::keys::{Completion, Edit},
     transcript_rows::Rows,
 };
 use soyeht_protocol::{PaneMode, WorkspacePaneLayoutAxis};
@@ -195,8 +195,11 @@ impl Workbench {
             Effect::LoadUsage => {
                 self.send(Command::LoadUsage);
             }
-            Effect::LoadSkills => {
-                self.send(Command::LoadSkills);
+            Effect::LoadCommands(pane_id) => {
+                self.send(Command::LoadCommands { pane_id });
+            }
+            Effect::LoadSkills(workspace_id) => {
+                self.send(Command::LoadSkills { workspace_id });
             }
             Effect::LoadHarnesses => {
                 self.send(Command::LoadHarnesses { rescan: false });
@@ -353,7 +356,7 @@ impl Workbench {
             &field,
             move |this, _, event: &ComposerEvent, cx| match event {
                 ComposerEvent::Submit => this.submit_prompt(&owner, cx),
-                ComposerEvent::Dismiss => this.close_menu(cx),
+                ComposerEvent::Dismiss => this.dismiss_composer(&owner, cx),
                 ComposerEvent::Attach => {
                     if let Some(item) = cx.read_from_clipboard() {
                         this.paste_into_composer(&owner, &item, cx);
@@ -361,6 +364,11 @@ impl Workbench {
                 }
             },
         )
+        .detach();
+        let owner = pane_id.to_owned();
+        cx.subscribe(&field, move |this, _, event: &Completion, cx| {
+            this.complete_slash(&owner, *event, cx)
+        })
         .detach();
         self.panes.of(pane_id).field = Some(field.clone());
         field
@@ -576,6 +584,7 @@ impl Workbench {
         let Some(text) = field.read(cx).draft().to_send() else {
             return;
         };
+        let text = self.state.slash_catalog(pane_id).prompt(&text);
         if self.state.connection != Connection::Connected {
             self.state.problem = Some(Error::Disconnected.to_string());
             cx.notify();

@@ -6,7 +6,7 @@
 
 use crate::{composer_field::ComposerField, editor_ui::EditorUi, loop_form::LoopForm};
 use gpui::{Entity, ScrollHandle};
-use soyeht_client::{State, attachments::Staged, transcript_rows::Rows};
+use soyeht_client::{State, attachments::Staged, slash, transcript_rows::Rows};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -32,6 +32,8 @@ pub(crate) struct PaneUi {
     pub extra: usize,
     /// The files attached to the pane's next message, with the latest refusal.
     pub staged: Option<Staged>,
+    /// The composer's "/" list: which row is chosen and which query it was closed for.
+    pub slash: slash::List,
     /// The loop panel the pane is editing.
     pub loop_form: Option<LoopForm>,
     /// When the composer's draft was last announced to the engine.
@@ -165,6 +167,7 @@ mod tests {
             attachment_scroll: ScrollHandle::new(),
             extra: 50,
             staged: Some(Staged::default()),
+            slash: slash::List::default(),
             loop_form: None,
             draft_beat: Some(Instant::now()),
             open_thoughts: HashSet::from(["thought".to_owned()]),

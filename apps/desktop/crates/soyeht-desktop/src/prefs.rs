@@ -116,7 +116,7 @@ impl Workbench {
             self.send(Command::LoadCatalogue { harness });
         }
         self.send(Command::LoadUsage);
-        self.send(Command::LoadSkills);
+        self.send(Command::LoadSkills { workspace_id: None });
         self.send(Command::LoadReadiness);
         cx.notify();
     }

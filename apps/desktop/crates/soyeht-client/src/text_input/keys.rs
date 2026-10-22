@@ -66,6 +66,28 @@ pub fn edit(chord: &Chord, emacs: bool) -> Option<Edit> {
     })
 }
 
+/// What a key asks of an open list of completions (the composer's "/" list), which takes these
+/// keys while it is open: Up and Down move the choice, Return and Tab put it in the text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Completion {
+    Step(isize),
+    Accept,
+}
+
+/// The completion a key press asks for, or `None` for a key the list leaves to the field.
+/// Shift+Return still adds a line and Shift+Tab is not Tab.
+pub fn completion(chord: &Chord) -> Option<Completion> {
+    if chord.control || chord.alt || chord.shift || chord.platform {
+        return None;
+    }
+    match chord.key {
+        "up" => Some(Completion::Step(-1)),
+        "down" => Some(Completion::Step(1)),
+        "enter" | "tab" => Some(Completion::Accept),
+        _ => None,
+    }
+}
+
 fn motion(motion: Motion) -> Edit {
     Edit::Move {
         motion,
@@ -130,6 +152,32 @@ mod tests {
         // The editor's own shortcuts are not a text input's.
         assert_eq!(edit(&control("s"), false), None);
         assert_eq!(edit(&control("f"), false), None);
+    }
+
+    #[test]
+    fn an_open_list_takes_the_arrows_return_and_tab_without_a_modifier() {
+        assert_eq!(completion(&press("up")), Some(Completion::Step(-1)));
+        assert_eq!(completion(&press("down")), Some(Completion::Step(1)));
+        assert_eq!(completion(&press("enter")), Some(Completion::Accept));
+        assert_eq!(completion(&press("tab")), Some(Completion::Accept));
+        for modified in [
+            Chord {
+                shift: true,
+                ..press("enter")
+            },
+            Chord {
+                shift: true,
+                ..press("tab")
+            },
+            Chord {
+                alt: true,
+                ..press("down")
+            },
+            control("up"),
+        ] {
+            assert_eq!(completion(&modified), None);
+        }
+        assert_eq!(completion(&press("left")), None);
     }
 
     #[test]

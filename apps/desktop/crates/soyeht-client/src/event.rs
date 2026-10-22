@@ -4,8 +4,8 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    EngineReadinessResult, EventName, HarnessInfo, LoopConfig, PromptItem, SkillsListResult, Task,
-    TranscriptMessage, UsageReading, Workspace,
+    AgentCommand, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, PromptItem,
+    SkillsListResult, Task, TranscriptMessage, UsageReading, Workspace,
 };
 
 /// What the connection tells the application, in the order it happened.
@@ -63,8 +63,16 @@ pub enum Event {
     },
     /// The models of a harness could not be read.
     CatalogueFailed { harness: String, reason: String },
-    /// The skills every harness loads.
-    Skills(SkillsListResult),
+    /// The skills every harness loads: the user's alone, or with those of a workspace.
+    Skills {
+        workspace_id: Option<String>,
+        listing: SkillsListResult,
+    },
+    /// The commands an agent pane's harness advertised.
+    PaneCommands {
+        pane_id: String,
+        items: Vec<AgentCommand>,
+    },
     /// What the engine says this machine has of what the app needs.
     Readiness(EngineReadinessResult),
     /// The settings Preferences shows.

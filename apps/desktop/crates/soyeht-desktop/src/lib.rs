@@ -29,6 +29,7 @@ mod pane_ui;
 mod pointer;
 mod prefs;
 mod rename;
+mod slash_ui;
 mod switch_flow;
 mod tasks_ui;
 mod terminal_input;

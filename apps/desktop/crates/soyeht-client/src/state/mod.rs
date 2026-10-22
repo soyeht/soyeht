@@ -8,7 +8,7 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    AttentionItem, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, Pane,
+    AgentCommand, AttentionItem, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, Pane,
     PaneClosedEvent, PaneCreatedEvent, PaneMode, PaneStateChangedEvent, PaneUpdatedEvent,
     SkillsListResult, Task, TaskShowResult, UsageReading, Workspace, WorkspaceClosedEvent,
     WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent, WorkspacePaneLayoutAxis,
@@ -38,8 +38,11 @@ pub enum Effect {
     LoadUsage,
     /// Fetch the agent harnesses the engine can start.
     LoadHarnesses,
-    /// Fetch the skills again: they changed on the engine.
-    LoadSkills,
+    /// Fetch the skills again: they changed on the engine, or a pane that lists them arrived.
+    /// `None` is the user's alone.
+    LoadSkills(Option<String>),
+    /// Fetch the commands an agent pane's harness advertised.
+    LoadCommands(String),
     /// Ask what this machine has of what the app needs.
     LoadReadiness,
     /// Fetch one task again, with its detail.
@@ -105,7 +108,10 @@ pub struct State {
     /// Why the models of a harness could not be read, until they are.
     pub(crate) catalogue_failures: HashMap<String, String>,
     pub(crate) preferences: Preferences,
-    pub(crate) skills: Option<SkillsListResult>,
+    /// The skills listed so far, by workspace; the empty key holds the user's alone.
+    pub(crate) skills: HashMap<String, SkillsListResult>,
+    /// The commands each agent pane's harness advertised.
+    pub(crate) commands: HashMap<String, Vec<AgentCommand>>,
     pub(crate) readiness: Option<EngineReadinessResult>,
     /// The files open in editor panes, the tabs and the project trees.
     pub editors: Editors,
@@ -139,7 +145,8 @@ impl Default for State {
             catalogues: HashMap::new(),
             catalogue_failures: HashMap::new(),
             preferences: Preferences::default(),
-            skills: None,
+            skills: HashMap::new(),
+            commands: HashMap::new(),
             readiness: None,
             editors: Editors::default(),
             expected: Vec::new(),
@@ -346,8 +353,15 @@ impl State {
                 self.catalogue_failures.insert(harness, reason);
                 Vec::new()
             }
-            Event::Skills(skills) => {
-                self.skills = Some(skills);
+            Event::Skills {
+                workspace_id,
+                listing,
+            } => {
+                self.skills_listed(workspace_id, listing);
+                Vec::new()
+            }
+            Event::PaneCommands { pane_id, items } => {
+                self.commands_listed(pane_id, items);
                 Vec::new()
             }
             Event::Readiness(readiness) => {
@@ -384,6 +398,7 @@ impl State {
             effects.push(Effect::SubscribeTerminal(pane.pane_id.clone()));
         }
         effects.extend(self.adopt_agents(&snapshot.requests));
+        effects.extend(self.adopt_slash_sources());
         self.adopt_loops(&snapshot.loops);
         self.adopt_tasks(&snapshot.tasks, &snapshot.attention);
         effects.extend(self.editors.adopt(snapshot.files, &self.panes));
@@ -494,6 +509,7 @@ impl State {
             .map(|w| w.workspace_id.clone())
             .collect();
         self.workspaces.retain(|w| w.workspace_id != workspace_id);
+        self.skills.remove(workspace_id);
         self.editors.workspace_closed(workspace_id);
         if self.selected_workspace.as_deref() == Some(workspace_id) {
             self.selected_workspace = workspaces::selection_after_closing(&order, workspace_id);
@@ -543,6 +559,7 @@ impl State {
             self.agents
                 .insert(pane.pane_id.clone(), AgentView::default());
             effects.push(Effect::LoadTranscript(pane.pane_id.clone()));
+            effects.extend(self.slash_sources_for(&pane));
         }
         let new_terminal = is_terminal(&pane) && !self.screens.contains_key(&pane.pane_id);
         if new_terminal {
@@ -578,6 +595,7 @@ impl State {
         self.panes.retain(|pane| pane.pane_id != pane_id);
         self.screens.remove(pane_id);
         self.agents.remove(pane_id);
+        self.commands.remove(pane_id);
         self.editors.pane_closed(pane_id);
         // The last tab closing leaves the empty editor place, which has no file to explain.
         if let Some(workspace_id) = closing.filter(|workspace_id| {

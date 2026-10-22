@@ -52,6 +52,8 @@ pub(crate) struct Setup {
     pub size: Option<(f32, f32)>,
     /// Files already attached in the composers, for a replay that draws them.
     pub staged: Vec<(String, soyeht_client::attachments::Staged)>,
+    /// Text already written in the composers, for a replay that draws a list over it.
+    pub drafts: Vec<(String, String)>,
     /// The tasks surface the window opens on, instead of the panes.
     pub tasks: Option<TasksStart>,
     /// The place of the rail the window opens on, when it is not the first.
@@ -83,6 +85,7 @@ pub fn run(notice: Notice) {
             panel: None,
             size: None,
             staged: Vec::new(),
+            drafts: Vec::new(),
             tasks: None,
             destination: None,
         }
@@ -137,6 +140,10 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
                 workbench.prefs.section = setup.panel;
                 for (pane_id, staged) in setup.staged {
                     workbench.panes.of(&pane_id).staged = Some(staged);
+                }
+                for (pane_id, text) in setup.drafts {
+                    let field = workbench.composer_field(&pane_id, cx);
+                    field.update(cx, |field, cx| field.insert(&text, cx));
                 }
                 if let Some(place) = setup.destination {
                     workbench.destination = place;

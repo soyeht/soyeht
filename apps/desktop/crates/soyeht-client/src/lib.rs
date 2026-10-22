@@ -34,6 +34,7 @@ mod reconnect;
 mod rpc;
 pub mod screen;
 mod session;
+pub mod slash;
 mod snapshot;
 pub mod state;
 pub mod streams;

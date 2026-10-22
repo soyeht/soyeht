@@ -1,0 +1,289 @@
+{
+  "description": "The composer's \"/\" list, which the Mac (SlashCatalog) and the desktop client (soyeht_client::slash) pass in full: what is offered and in which order, how typing filters it, what choosing an entry leaves in the composer, how many rows show, and the prompt that is sent for composer text. A skill is listed once and ahead of the commands; a broken skill is not listed; a workspace skill hides a user skill of the same name; the harness copy of a skill (the same name, or the name behind a leading \"$\") is not listed. The caret goes to the end of the text that choosing an entry leaves.",
+  "visibleRows": 6,
+  "catalogs": {
+    "mixed": {
+      "skills": [
+        {
+          "name": "review",
+          "scope": "user",
+          "path": "/skills/user/review",
+          "description": "Does things."
+        },
+        {
+          "name": "review",
+          "scope": "workspace",
+          "workspaceId": "w",
+          "path": "/skills/workspace/review",
+          "description": "Workspace review."
+        },
+        {
+          "name": "broken",
+          "scope": "user",
+          "path": "/skills/user/broken",
+          "problem": "The frontmatter has no description."
+        },
+        {
+          "name": "notes",
+          "scope": "user",
+          "path": "/skills/user/notes",
+          "description": "Does things."
+        }
+      ],
+      "commands": [
+        { "name": "compact", "description": "Built in." },
+        { "name": "review", "description": "Built in." },
+        { "name": "$notes", "description": "Built in." },
+        { "name": "$other", "description": "Built in.", "inputHint": "<topic>" }
+      ]
+    },
+    "workspaceFirst": {
+      "skills": [
+        {
+          "name": "ship",
+          "scope": "workspace",
+          "workspaceId": "w",
+          "path": "/skills/workspace/ship",
+          "description": "Workspace ship."
+        },
+        {
+          "name": "ship",
+          "scope": "user",
+          "path": "/skills/user/ship",
+          "description": "User ship."
+        }
+      ],
+      "commands": []
+    },
+    "filter": {
+      "skills": [
+        {
+          "name": "pr-summary",
+          "scope": "user",
+          "path": "/skills/user/pr-summary",
+          "description": "Summarizes a pull request."
+        },
+        {
+          "name": "deploy",
+          "scope": "user",
+          "path": "/skills/user/deploy",
+          "description": "Does things."
+        }
+      ],
+      "commands": [
+        { "name": "$review-branch", "description": "Review the branch." },
+        { "name": "plan", "description": "Built in." }
+      ]
+    },
+    "ranking": {
+      "skills": [
+        {
+          "name": "a-notes",
+          "scope": "user",
+          "path": "/skills/user/a-notes",
+          "description": "Keeps a log."
+        },
+        {
+          "name": "notes-b",
+          "scope": "user",
+          "path": "/skills/user/notes-b",
+          "description": "Keeps a log."
+        },
+        {
+          "name": "x",
+          "scope": "user",
+          "path": "/skills/user/x",
+          "description": "Take notes quickly."
+        },
+        {
+          "name": "notes-a",
+          "scope": "user",
+          "path": "/skills/user/notes-a",
+          "description": "Keeps a log."
+        }
+      ],
+      "commands": []
+    },
+    "many": {
+      "skills": [
+        { "name": "one", "scope": "user", "path": "/s/one", "description": "First." },
+        { "name": "two", "scope": "user", "path": "/s/two", "description": "Second." },
+        { "name": "three", "scope": "user", "path": "/s/three", "description": "Third." }
+      ],
+      "commands": [
+        { "name": "four", "description": "Fourth." },
+        { "name": "five", "description": "Fifth." },
+        { "name": "six", "description": "Sixth." },
+        { "name": "seven", "description": "Seventh." },
+        { "name": "eight", "description": "Eighth." }
+      ]
+    },
+    "prompt": {
+      "skills": [
+        {
+          "name": "notes",
+          "scope": "user",
+          "path": "/skills/user/notes",
+          "description": "Does things."
+        },
+        {
+          "name": "deploy",
+          "scope": "workspace",
+          "workspaceId": "w",
+          "path": "/skills/workspace/deploy",
+          "description": "Does things."
+        },
+        {
+          "name": "tidy",
+          "scope": "user",
+          "path": "/skills/user/tidy/",
+          "description": "Does things."
+        }
+      ],
+      "commands": []
+    },
+    "promptBareName": {
+      "skills": [
+        {
+          "name": "notes",
+          "scope": "user",
+          "path": "/skills/user/notes",
+          "description": "Does things."
+        }
+      ],
+      "commands": [{ "name": "notes", "description": "Built in." }]
+    },
+    "promptDollarName": {
+      "skills": [
+        {
+          "name": "notes",
+          "scope": "user",
+          "path": "/skills/user/notes",
+          "description": "Does things."
+        }
+      ],
+      "commands": [{ "name": "$notes", "description": "Built in." }]
+    }
+  },
+  "suggestions": [
+    {
+      "name": "skills first, once, the workspace copy kept, the harness copies hidden",
+      "catalog": "mixed",
+      "expected": [
+        { "name": "review", "detail": "Workspace review.", "source": "workspace" },
+        { "name": "notes", "detail": "Does things.", "source": "user" },
+        { "name": "compact", "detail": "Built in.", "source": "command" },
+        { "name": "$other", "detail": "Built in.", "hint": "<topic>", "source": "command" }
+      ]
+    },
+    {
+      "name": "a workspace skill hides the user skill that comes after it",
+      "catalog": "workspaceFirst",
+      "expected": [{ "name": "ship", "detail": "Workspace ship.", "source": "workspace" }]
+    }
+  ],
+  "queries": [
+    { "text": "/re", "query": "re" },
+    { "text": "/", "query": "" },
+    { "text": "/review now", "query": null },
+    { "text": "/review\nnow", "query": null },
+    { "text": "review", "query": null },
+    { "text": "", "query": null },
+    { "text": " /re", "query": null },
+    { "text": "/$no", "query": "$no" }
+  ],
+  "matches": [
+    {
+      "name": "an empty query lists everything",
+      "catalog": "filter",
+      "query": "",
+      "names": ["pr-summary", "deploy", "$review-branch", "plan"]
+    },
+    {
+      "name": "name prefix before description word, case ignored, the $ of a harness skill not part of its name",
+      "catalog": "filter",
+      "query": "RE",
+      "names": ["$review-branch", "pr-summary"]
+    },
+    {
+      "name": "a word of the description",
+      "catalog": "filter",
+      "query": "pull",
+      "names": ["pr-summary"]
+    },
+    {
+      "name": "a name that contains the query",
+      "catalog": "filter",
+      "query": "summ",
+      "names": ["pr-summary"]
+    },
+    { "name": "nothing matches", "catalog": "filter", "query": "zzz", "names": [] },
+    {
+      "name": "the query is matched against the name without its leading $",
+      "catalog": "filter",
+      "query": "$rev",
+      "names": []
+    },
+    {
+      "name": "prefix, then contains, then description, each in the order listed",
+      "catalog": "ranking",
+      "query": "notes",
+      "names": ["notes-b", "notes-a", "a-notes", "x"]
+    }
+  ],
+  "accepts": [
+    { "name": "deploy", "source": "workspace", "text": "/deploy " },
+    { "name": "$notes", "source": "command", "text": "/$notes " },
+    { "name": "compact", "source": "user", "text": "/compact " }
+  ],
+  "shown": [
+    {
+      "name": "no more rows than fit, the first ones",
+      "catalog": "many",
+      "text": "/",
+      "names": ["one", "two", "three", "four", "five", "six"]
+    },
+    {
+      "name": "a query narrows the list: the name that starts with it first",
+      "catalog": "many",
+      "text": "/e",
+      "names": ["eight", "one", "three", "five", "seven"]
+    },
+    { "name": "a message is not a list", "catalog": "many", "text": "hello", "names": [] }
+  ],
+  "prompts": [
+    { "catalog": "promptBareName", "text": "/notes tomorrow", "prompt": "/notes tomorrow" },
+    { "catalog": "promptDollarName", "text": "/notes tomorrow", "prompt": "$notes tomorrow" },
+    { "catalog": "promptDollarName", "text": "/notes", "prompt": "$notes" },
+    {
+      "name": "the arguments are kept as typed after the one space that follows the name",
+      "catalog": "promptDollarName",
+      "text": "/notes  two  example\nand a line",
+      "prompt": "$notes  two  example\nand a line"
+    },
+    {
+      "name": "a space after the slash is skipped before the name",
+      "catalog": "promptDollarName",
+      "text": "/ notes x",
+      "prompt": "$notes x"
+    },
+    {
+      "catalog": "prompt",
+      "text": "/deploy to staging",
+      "prompt": "Use the Soyeht skill \"deploy\": read /skills/workspace/deploy/SKILL.md and follow it.\n\nto staging"
+    },
+    {
+      "catalog": "prompt",
+      "text": "/deploy",
+      "prompt": "Use the Soyeht skill \"deploy\": read /skills/workspace/deploy/SKILL.md and follow it."
+    },
+    {
+      "catalog": "prompt",
+      "text": "/tidy",
+      "prompt": "Use the Soyeht skill \"tidy\": read /skills/user/tidy/SKILL.md and follow it."
+    },
+    { "catalog": "prompt", "text": "/unknown text", "prompt": "/unknown text" },
+    { "catalog": "prompt", "text": "plain text", "prompt": "plain text" },
+    { "catalog": "prompt", "text": "/", "prompt": "/" }
+  ]
+}

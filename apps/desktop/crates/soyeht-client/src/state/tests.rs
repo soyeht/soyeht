@@ -61,6 +61,8 @@ fn a_snapshot_lists_workspaces_and_panes_and_subscribes_every_terminal() {
             Effect::LoadHarnesses,
             Effect::LoadReadiness,
             Effect::LoadTranscript("a1".into()),
+            Effect::LoadCommands("a1".into()),
+            Effect::LoadSkills(Some("w1".into())),
         ]
     );
     assert!(state.screen("t1").is_some() && state.screen("a1").is_none());

@@ -2411,6 +2411,30 @@
   "harness.preferredId": "registry.claude-acp",
   "harness.defaultMode.registry.claude-acp": "acceptEdits"
  },
+ "commands": {
+  "rows-a": [
+   {
+    "name": "compact",
+    "description": "Clear the history but keep a summary"
+   },
+   {
+    "name": "review",
+    "description": "Review a pull request"
+   },
+   {
+    "name": "init",
+    "description": "Write an AGENTS.md for this folder",
+    "inputHint": "[focus]"
+   },
+   {
+    "name": "release-notes",
+    "description": "Harness copy of a Soyeht skill"
+   }
+  ]
+ },
+ "drafts": {
+  "rows-a": "/re"
+ },
  "skills": {
   "items": [
    {

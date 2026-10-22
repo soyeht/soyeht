@@ -86,7 +86,7 @@ fn heading(glyph: Icon, color: u32, text: impl Into<SharedString>) -> Div {
         .text_size(px(pane_interior::HEADING_POINT_SIZE))
 }
 
-fn caption(color: u32, text: impl Into<SharedString>) -> Div {
+pub(super) fn caption(color: u32, text: impl Into<SharedString>) -> Div {
     div()
         .text_size(px(pane_interior::CAPTION_POINT_SIZE))
         .text_color(rgb(color))

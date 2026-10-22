@@ -55,6 +55,9 @@ impl Workbench {
         );
         field.update(cx, |field, _| field.style(palette, &placeholder));
         let focus_id = pane_id.clone();
+        let rows = self.slash_rows(&pane_id, cx);
+        field.update(cx, |field, _| field.complete_with_list(!rows.is_empty()));
+        let slash_list = self.slash_list(&rows, palette, &pane_id, cx);
         let attachments = self.attachment_row(&pane_id, palette, cx);
 
         let controls_row = match &controls {
@@ -62,6 +65,7 @@ impl Workbench {
             None => row().into_any_element(),
         };
         column()
+            .relative()
             .flex_none()
             .mx(px(pane_interior::CARD_PADDING))
             .mb(px(pane_interior::CARD_VERTICAL_PADDING))
@@ -78,6 +82,7 @@ impl Workbench {
             .children(attachments)
             .child(field)
             .child(controls_row)
+            .children(slash_list)
             .into_any_element()
     }
 

@@ -122,6 +122,11 @@ spans of time) and `vectors/agent-account.json` (the account section of a signed
 switch account and sign out). The Mac passes them in `SharedVectorsTests.swift`, the desktop client
 in the tests of `harness_picker`, `usage` and `account` (`apps/desktop/crates/soyeht-client`).
 
+`vectors/slash-completion.json` fixes the composer's "/" list: which skills and harness commands
+are offered and in which order, how typing filters them, what choosing one leaves in the composer,
+how many rows show and the prompt sent for composer text. `SlashCompletionVectorTests.swift` and
+`soyeht_client::slash` pass it.
+
 `vectors/pane-layout.json` fixes the rules the clients apply to a workspace's pane tree: how
 a stored layout is read and which panes it keeps (`PaneLayoutState`, `layout::stored_tree`),
 merging and collapsing splits, splitting a pane, the width a tree needs, where each pane

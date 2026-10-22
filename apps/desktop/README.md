@@ -60,6 +60,13 @@ agent works.
   word) and a triple click (a line) for a selection, and Ctrl+Z with Ctrl+Shift+Z or Ctrl+Y for
   undo and redo (a run of typing, of Backspace or of Delete is one step). Return sends and
   Shift+Return adds a line. On the Mac Control+A and Control+E go to the ends of the line.
+- Typing `/` at the start of the composer opens the Mac's list of the Soyeht skills (the pane's
+  workspace's and the user's) and the commands the pane's harness advertised (`pane.commands.list`,
+  refreshed on `pane.commands_changed`; skills on `skills.changed`), filtered as you type. Up and
+  Down move the choice, Return or Tab writes `/name ` in the line, Escape closes the list, and a
+  click chooses. Sending `/skill arguments` for a skill the harness does not know points the agent
+  at the skill's `SKILL.md`. The rules are `soyeht_client::slash` with
+  `contracts/vectors/slash-completion.json`, which the Mac passes too.
 - The transcript's text is selected with the pointer, one block at a time (a paragraph, a code
   block, a command's output, a message): a drag, a double click or a triple click, and Ctrl+C
   (Ctrl+Shift+C, Command+C on the Mac) copies the selection when the composer has none. A message,
@@ -245,7 +252,7 @@ carry them.
 `examples/design_audit_features.json` is the second recorded state, with the workspaces that show
 the cards, the attachments, the loop panel and the tasks.
 Besides the state of the engine the fixtures carry `catalogues` (what `model.list` answers for each
-harness), `settings`, `skills` and `notifications` (events replayed after the state).
+harness), `settings`, `skills`, `commands` (what `pane.commands.list` answers for each pane), `drafts` (text already in a composer) and `notifications` (events replayed after the state).
 The same file feeds the Mac's own views, rendered offscreen, so that both clients draw the same
 conversation. The `.pen` frames "Interior da pane" (approved) and `DCzvR`, `OtYMZ` are the
 references for the interior, the composer and the header.
