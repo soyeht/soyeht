@@ -10,7 +10,7 @@ use gpui::{
 };
 use soyeht_client::{
     editor::keys::{Action, action},
-    writing::rules::format_shortcut,
+    writing::{rules::format_shortcut, screenplay::LineStyle},
 };
 use soyeht_protocol::WritingFormatKind;
 use std::{
@@ -30,9 +30,25 @@ pub enum ProseEvent {
     Format(WritingFormatKind),
     /// The key that saves was pressed.
     Save,
+    /// Return (or Tab, when `tab`) was pressed in the page of a screenplay: it moves on to the
+    /// next element.
+    Advance { tab: bool },
 }
 
 impl EventEmitter<ProseEvent> for ComposerField {}
+
+/// Return or Tab on its own in the page of a screenplay.
+fn advance_key(keystroke: &Keystroke) -> Option<ProseEvent> {
+    let modifiers = &keystroke.modifiers;
+    if modifiers.alt || modifiers.shift || modifiers.control || modifiers.platform {
+        return None;
+    }
+    match keystroke.key.as_str() {
+        "enter" => Some(ProseEvent::Advance { tab: false }),
+        "tab" => Some(ProseEvent::Advance { tab: true }),
+        _ => None,
+    }
+}
 
 /// The parts of a field that holds prose (a writing pane's text) rather than a message: Return
 /// adds a line, the text is drawn in the looks its Markdown gives, and the pane around it
@@ -46,6 +62,8 @@ pub(super) struct Prose {
     reveal: bool,
     /// The looks of the text last drawn, with what they were made for.
     drawn: Option<(u64, Looks)>,
+    /// The text is the page of a screenplay: the style of each of its lines.
+    page: Option<Vec<LineStyle>>,
 }
 
 /// Where the pane around a field of prose scrolls to, to show the caret.
@@ -90,9 +108,46 @@ impl ComposerField {
                 scroll,
                 reveal: false,
                 drawn: None,
+                page: None,
             }),
             ..Self::new(palette, cx)
         }
+    }
+
+    /// A field for the page of a screenplay: prose with no Markdown looks, whose lines are drawn
+    /// as `set_page` says.
+    pub fn screenplay(
+        palette: &'static Palette,
+        scroll: ScrollHandle,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut field = Self::prose(palette, |_, _| Vec::new(), scroll, cx);
+        if let Some(prose) = &mut field.prose {
+            prose.page = Some(Vec::new());
+        }
+        field
+    }
+
+    /// The style of each line of the page, for the next frame.
+    pub fn set_page(&mut self, styles: Vec<LineStyle>) {
+        if let Some(prose) = &mut self.prose {
+            prose.page = Some(styles);
+        }
+    }
+
+    /// The style of each line when the text is a screenplay's page.
+    pub(super) fn page_styles(&self) -> Option<&[LineStyle]> {
+        self.prose.as_ref()?.page.as_deref()
+    }
+
+    /// Puts `text` in place of the bytes `range`, the caret after it.
+    pub fn replace_range(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        self.draft.place(range.start, false);
+        self.draft.place(range.end, true);
+        self.draft.insert(text);
+        self.goal_x = None;
+        self.edited(true, cx);
+        cx.notify();
     }
 
     /// Puts the text the engine has in place of what the field holds, without an edit of the
@@ -142,12 +197,17 @@ impl ComposerField {
             modifiers.control
         };
         let plain = !modifiers.alt && !modifiers.shift;
-        let asked = if plain {
+        let save = || {
+            (plain && action(&chord_of(keystroke)) == Some(Action::Save))
+                .then_some(ProseEvent::Save)
+        };
+        let asked = if self.page_styles().is_some() {
+            // The formats are Markdown's: the page of a screenplay has none.
+            advance_key(keystroke).or_else(save)
+        } else if plain {
             format_shortcut(&keystroke.key, command)
                 .map(ProseEvent::Format)
-                .or_else(|| {
-                    (action(&chord_of(keystroke)) == Some(Action::Save)).then_some(ProseEvent::Save)
-                })
+                .or_else(save)
         } else {
             None
         };
@@ -217,5 +277,27 @@ impl ComposerField {
             at: layout.position_for_index(self.draft.caret())?,
             line: layout.line_height(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pressed(keys: &str) -> Option<ProseEvent> {
+        advance_key(&Keystroke::parse(keys).unwrap())
+    }
+
+    #[test]
+    fn return_and_tab_on_their_own_move_a_screenplay_on() {
+        assert_eq!(pressed("enter"), Some(ProseEvent::Advance { tab: false }));
+        assert_eq!(pressed("tab"), Some(ProseEvent::Advance { tab: true }));
+    }
+
+    #[test]
+    fn a_modified_key_or_another_key_does_not() {
+        for keys in ["shift-enter", "shift-tab", "ctrl-enter", "alt-tab", "a"] {
+            assert_eq!(pressed(keys), None, "{keys}");
+        }
     }
 }

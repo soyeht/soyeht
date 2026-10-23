@@ -5,12 +5,15 @@
 use super::{Effect, State};
 use crate::{
     editor::EditorEvent,
-    writing::{Command, WritingEvent, document, rules},
+    writing::{
+        Command, WritingEvent, document, rules,
+        screenplay::{self, Advance},
+    },
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    FileDocument, FileOpenResult, PaneMode, WritingChangedEvent, WritingDocument,
-    WritingFormatKind, WritingSection,
+    FileDocument, FileOpenResult, PaneMode, ScreenplayElementKind, WritingChangedEvent,
+    WritingDocument, WritingFormatKind, WritingSection,
 };
 
 impl State {
@@ -33,6 +36,19 @@ impl State {
                 effects
             }
             WritingEvent::Formatted(file) => self.editors.file_changed(file),
+            WritingEvent::Structure(structure) => {
+                // The lines are the elements the engine named only if the text it read is the
+                // text now: the revision it settled at, and nothing typed since.
+                let settled = self
+                    .editors
+                    .file(&structure.document.file.file_id)
+                    .filter(|file| {
+                        !file.has_unsent() && file.doc.revision == structure.document.file.revision
+                    })
+                    .and_then(|file| file.whole_text());
+                self.writings.structured(*structure, settled.as_deref());
+                Vec::new()
+            }
             other => {
                 self.writings.apply(other);
                 Vec::new()
@@ -116,10 +132,32 @@ impl State {
         text: &str,
         selection: (usize, usize),
     ) -> Result<Vec<Effect>, &'static str> {
-        match self.editors.file_of_pane_mut(pane_id) {
-            Some(file) => file.retype(text, selection),
-            None => Ok(Vec::new()),
-        }
+        let Some(file) = self.editors.file_of_pane_mut(pane_id) else {
+            return Ok(Vec::new());
+        };
+        let effects = file.retype(text, selection)?;
+        // The lines of a screenplay keep the element they had while the engine is not asked.
+        self.writings.follow(pane_id, text);
+        Ok(effects)
+    }
+
+    /// What Return (or Tab) does in the text of a screenplay pane, which the field holds as
+    /// `text`, with the caret at byte `cursor`: the edit, and the element that starts on the
+    /// line the caret is on after it.
+    pub fn screenplay_advance(
+        &self,
+        pane_id: &str,
+        text: &str,
+        cursor: usize,
+        tab: bool,
+    ) -> Option<(Advance, ScreenplayElementKind)> {
+        let line = text.get(..cursor)?.matches('\n').count();
+        let kind = self
+            .writings
+            .kind_at(pane_id, line)
+            .unwrap_or(ScreenplayElementKind::Action);
+        let edit = screenplay::advance_edit(text, cursor, &kind, tab)?;
+        Some((edit, screenplay::next_kind(&kind, tab)))
     }
 
     /// Formats the selected text of a writing pane, which the field holds as `text`.

@@ -504,6 +504,12 @@
     "writingToolbarHeight": 32,
     "writingToolbarButtonWidth": 28,
     "writingListWidth": 760,
-    "writingRowIconBox": 34
+    "writingRowIconBox": 34,
+    "screenplayTextSize": 16,
+    "screenplayLineHeight": 27,
+    "screenplayPageWidth": 734,
+    "screenplayPageInsetShare": 0.1008,
+    "screenplayDialogueShare": 0.2048,
+    "screenplayParagraphSpacing": 8
   }
 }

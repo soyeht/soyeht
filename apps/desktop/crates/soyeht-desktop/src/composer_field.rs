@@ -4,8 +4,10 @@
 //! the clipboard to it. With `ComposerField::prose` it is the text of a writing pane instead
 //! (`prose`).
 
+mod page;
 mod prose;
 
+use page::Laid;
 use prose::Prose;
 pub use prose::{Looks, ProseEvent};
 
@@ -51,7 +53,7 @@ pub struct ComposerField {
     bounds: Option<Bounds<Pixels>>,
     /// The text as it was last laid out, to turn a pointer position into an offset and back.
     /// Only a layout that has been painted is kept: asking an unpainted one panics.
-    layout: Option<TextLayout>,
+    layout: Option<Laid>,
     /// The horizontal position the caret keeps while it moves up and down wrapped lines.
     goal_x: Option<Pixels>,
     /// The pointer button is down and extends the selection.
@@ -300,7 +302,7 @@ impl ComposerField {
     /// is followed, and prose scrolls to the caret that moved.
     fn painted(
         entity: &Entity<Self>,
-        (bounds, layout, focused): (Bounds<Pixels>, Option<TextLayout>, bool),
+        (bounds, layout, focused): (Bounds<Pixels>, Option<Laid>, bool),
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -337,13 +339,22 @@ impl Render for ComposerField {
         let entity = cx.entity();
         let focus = self.focus.clone();
         let looks = self.looks();
-        let (text, layout) = line(
-            &self.draft,
-            &self.placeholder,
-            focused && self.prose.is_none(),
-            self.palette,
-            &looks,
-        );
+        let (text, layout) = match self.page_styles() {
+            Some(styles) if !self.draft.text().is_empty() => {
+                let (page, laid) = page::page(&self.draft, styles, self.palette);
+                (page, Some(laid))
+            }
+            _ => {
+                let (line, layout) = line(
+                    &self.draft,
+                    &self.placeholder,
+                    focused && self.prose.is_none(),
+                    self.palette,
+                    &looks,
+                );
+                (line, layout.map(Laid::Whole))
+            }
+        };
         div()
             .relative()
             .track_focus(&self.focus)
@@ -412,26 +423,10 @@ fn line(
     let mut shown = text.to_owned();
     let mut highlights: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
     if let Some(marked) = draft.marked_bytes() {
-        highlights.push((
-            marked,
-            HighlightStyle {
-                underline: Some(gpui::UnderlineStyle {
-                    thickness: px(pane_interior::SEPARATOR_WIDTH),
-                    color: Some(rgb(palette.ink).into()),
-                    wavy: false,
-                }),
-                ..HighlightStyle::default()
-            },
-        ));
+        highlights.push((marked, composing_style(palette)));
     }
     if highlights.is_empty() && draft.has_selection() {
-        highlights.push((
-            draft.selection(),
-            HighlightStyle {
-                background_color: Some(rgb(palette.selection).into()),
-                ..HighlightStyle::default()
-            },
-        ));
+        highlights.push((draft.selection(), selected_style(palette)));
     } else if block_caret && highlights.is_empty() {
         match text[caret..].chars().next() {
             Some(next) => highlights.push((caret..caret + next.len_utf8(), block)),
@@ -453,6 +448,26 @@ fn line(
         div().text_color(rgb(palette.ink)).child(styled),
         Some(layout),
     )
+}
+
+/// How the text being composed by an input method is drawn: underlined.
+fn composing_style(palette: &Palette) -> HighlightStyle {
+    HighlightStyle {
+        underline: Some(gpui::UnderlineStyle {
+            thickness: px(pane_interior::SEPARATOR_WIDTH),
+            color: Some(rgb(palette.ink).into()),
+            wavy: false,
+        }),
+        ..HighlightStyle::default()
+    }
+}
+
+/// How the selected text is drawn: on the selection color.
+fn selected_style(palette: &Palette) -> HighlightStyle {
+    HighlightStyle {
+        background_color: Some(rgb(palette.selection).into()),
+        ..HighlightStyle::default()
+    }
 }
 
 impl EntityInputHandler for ComposerField {

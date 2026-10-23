@@ -67,7 +67,7 @@ impl Action {
     fn title(self) -> &'static str {
         match self {
             Self::Loop => "Loop and lead controls",
-            Self::Companion => "Open an agent beside this text",
+            Self::Companion => "Open an agent beside this document",
             Self::Tasks => "Open workspace tasks",
             Self::SplitColumns => "Split pane into columns",
             Self::SplitRows => "Split pane into rows",
@@ -113,10 +113,17 @@ impl Workbench {
                 self.pane_header(pane, palette, cx),
                 self.agent_body(pane, palette, cx),
             ),
-            PaneMode::Writing if pane.writing_kind == Some(WritingKind::Text) => (
-                self.writing_header(palette, pane, cx),
-                self.writing_body(cx, pane),
-            ),
+            PaneMode::Writing
+                if matches!(
+                    pane.writing_kind,
+                    Some(WritingKind::Text | WritingKind::Screenplay)
+                ) =>
+            {
+                (
+                    self.writing_header(palette, pane, cx),
+                    self.writing_body(cx, pane),
+                )
+            }
             _ => (
                 self.pane_header(pane, palette, cx),
                 notice_body(palette, mode_notice(pane)),
@@ -310,7 +317,7 @@ impl Workbench {
                                 Action::SplitRows => {
                                     this.split_pane(&pane_id, WorkspacePaneLayoutAxis::Vertical, cx)
                                 }
-                                Action::Close if this.is_text(&pane_id) => {
+                                Action::Close if this.is_document(&pane_id) => {
                                     this.request_close_writing(&pane_id, cx)
                                 }
                                 Action::Close => this.close_pane(&pane_id),
@@ -459,9 +466,6 @@ fn mode_notice(pane: &Pane) -> &'static str {
         (PaneMode::Web, _) => "Web panes are not available in the desktop client yet.",
         (PaneMode::Writing, Some(WritingKind::Presentation)) => {
             "Presentations are not available in the desktop client yet."
-        }
-        (PaneMode::Writing, Some(WritingKind::Screenplay)) => {
-            "Screenplays are not available in the desktop client yet."
         }
         (PaneMode::Writing, _) => "This document is not available in the desktop client yet.",
         (PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor, _) => "",

@@ -62,10 +62,10 @@ impl Workbench {
         if place == crate::destination::Destination::Tasks {
             return self.tasks_surface(&workspace_id, palette, cx);
         }
-        if place == crate::destination::Destination::Texts {
-            return self.texts_surface(cx, palette, &workspace_id);
+        if let Some(section) = place.section() {
+            return self.place_surface(cx, palette, &workspace_id, &section);
         }
-        self.texts.on_stage = false;
+        self.places.leave(None);
         if !place.is_pane_grid() {
             return empty(
                 palette,

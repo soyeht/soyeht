@@ -580,6 +580,12 @@ pub mod desktop {
     pub const WRITING_TOOLBAR_BUTTON_WIDTH: f32 = 28.0;
     pub const WRITING_LIST_WIDTH: f32 = 760.0;
     pub const WRITING_ROW_ICON_BOX: f32 = 34.0;
+    pub const SCREENPLAY_TEXT_SIZE: f32 = 16.0;
+    pub const SCREENPLAY_LINE_HEIGHT: f32 = 27.0;
+    pub const SCREENPLAY_PAGE_WIDTH: f32 = 734.0;
+    pub const SCREENPLAY_PAGE_INSET_SHARE: f32 = 0.1008;
+    pub const SCREENPLAY_DIALOGUE_SHARE: f32 = 0.2048;
+    pub const SCREENPLAY_PARAGRAPH_SPACING: f32 = 8.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

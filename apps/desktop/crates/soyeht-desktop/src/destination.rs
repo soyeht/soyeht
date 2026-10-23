@@ -2,7 +2,7 @@
 //! workspace's panes for the ones it has, and says plainly which ones it does not have yet.
 
 use crate::assets::Icon;
-use soyeht_protocol::PaneMode;
+use soyeht_protocol::{PaneMode, WritingSection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Destination {
@@ -61,6 +61,24 @@ impl Destination {
         }
     }
 
+    /// The section of documents this place lists, for the places that do.
+    pub fn section(self) -> Option<WritingSection> {
+        match self {
+            Self::Texts => Some(WritingSection::Texts),
+            Self::Screenplays => Some(WritingSection::Screenplays),
+            _ => None,
+        }
+    }
+
+    /// The place that lists the documents of a section.
+    pub fn of_section(section: &WritingSection) -> Self {
+        match section {
+            WritingSection::Texts => Self::Texts,
+            WritingSection::Presentations => Self::Presentations,
+            WritingSection::Screenplays => Self::Screenplays,
+        }
+    }
+
     /// The panes this place shows: `None` for all of them, else only that mode.
     pub fn shows(self, mode: &PaneMode) -> bool {
         match self {
@@ -76,7 +94,7 @@ impl Destination {
 
     /// Whether this place draws panes at all. The three writing places list the documents of
     /// the workspace, as the Mac's sections do, and open each in a pane that the agents' place
-    /// shows. Texts has its list; the others say they are not here yet.
+    /// shows. Texts and Screenplays have their list; Presentations says it is not here yet.
     pub fn is_pane_grid(self) -> bool {
         !matches!(
             self,
@@ -102,6 +120,18 @@ mod tests {
         assert!(Destination::Terminal.shows(&PaneMode::Terminal));
         assert!(!Destination::Terminal.shows(&PaneMode::Agent));
         assert!(!Destination::Tasks.is_pane_grid());
+        assert_eq!(Destination::Texts.section(), Some(WritingSection::Texts));
+        assert_eq!(Destination::Presentations.section(), None);
+        for section in [
+            WritingSection::Texts,
+            WritingSection::Presentations,
+            WritingSection::Screenplays,
+        ] {
+            assert_eq!(
+                Destination::of_section(&section).label(),
+                soyeht_client::writing::rules::title(&section)
+            );
+        }
         for place in [
             Destination::Texts,
             Destination::Presentations,

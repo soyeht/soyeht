@@ -23,6 +23,7 @@ pub(crate) mod menus;
 mod pane;
 mod pane_drag;
 mod permission;
+mod places;
 mod preferences;
 mod prefs_harnesses;
 mod prefs_skills;
@@ -38,7 +39,6 @@ mod start;
 mod switch_popover;
 mod tasks;
 mod terminal_menu;
-mod texts;
 mod tiles;
 
 pub(crate) use tiles::sizing;

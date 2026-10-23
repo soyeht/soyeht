@@ -1,0 +1,100 @@
+{
+  "description": "How a screenplay is written, for the Mac and the desktop client: which element Tab and Return move on to, the line an element is set as, the edit Tab and Return make, and how a line sits on the page (its alignment, whether it is set in from both sides, bold or in the secondary ink) and which of its characters are markers that stay in the text but are not shown. The engine tells which element a line is; the client decides the rest. Locations and lengths are UTF-16 units, as the Mac counts them. Both clients pass every case.",
+  "advance": [
+    { "kind": "scene_heading", "tab": false, "next": "action" },
+    { "kind": "scene_heading", "tab": true, "next": "action" },
+    { "kind": "action", "tab": false, "next": "action" },
+    { "kind": "action", "tab": true, "next": "character" },
+    { "kind": "character", "tab": false, "next": "dialogue" },
+    { "kind": "character", "tab": true, "next": "dialogue" },
+    { "kind": "parenthetical", "tab": false, "next": "dialogue" },
+    { "kind": "parenthetical", "tab": true, "next": "dialogue" },
+    { "kind": "dialogue", "tab": false, "next": "character" },
+    { "kind": "dialogue", "tab": true, "next": "parenthetical" },
+    { "kind": "transition", "tab": false, "next": "scene_heading" },
+    { "kind": "transition", "tab": true, "next": "scene_heading" },
+    { "kind": "shot", "tab": false, "next": "scene_heading" },
+    { "kind": "shot", "tab": true, "next": "scene_heading" }
+  ],
+  "formatting": [
+    { "name": "an empty scene heading starts an interior", "kind": "scene_heading", "source": "", "line": ".INT. " },
+    { "name": "a scene heading is forced and upper case", "kind": "scene_heading", "source": "Kitchen - day", "line": ".KITCHEN - DAY" },
+    { "name": "a forced heading is not forced twice", "kind": "scene_heading", "source": ".int. room - night", "line": ".INT. ROOM - NIGHT" },
+    { "name": "an empty character is the marker", "kind": "character", "source": "", "line": "@" },
+    { "name": "a character is forced and upper case", "kind": "character", "source": "ana", "line": "@ANA" },
+    { "name": "a character takes the accents upper case", "kind": "character", "source": "josé", "line": "@JOSÉ" },
+    { "name": "a forced character is not forced twice", "kind": "character", "source": "@ana", "line": "@ANA" },
+    { "name": "a parenthetical is in parentheses", "kind": "parenthetical", "source": "quietly", "line": "(quietly)" },
+    { "name": "a parenthetical keeps its parentheses once", "kind": "parenthetical", "source": "(quietly)", "line": "(quietly)" },
+    { "name": "a transition is forced and upper case", "kind": "transition", "source": "cut to:", "line": ">CUT TO:" },
+    { "name": "a shot ends with a colon", "kind": "shot", "source": "close up", "line": "CLOSE UP:" },
+    { "name": "a shot does not take a second colon", "kind": "shot", "source": "close up:", "line": "CLOSE UP:" },
+    { "name": "action is trimmed", "kind": "action", "source": "  She walks in ", "line": "She walks in" },
+    { "name": "action loses a marker that forced another element", "kind": "action", "source": "@She walks in", "line": "She walks in" },
+    { "name": "dialogue is trimmed", "kind": "dialogue", "source": " Hello there ", "line": "Hello there" }
+  ],
+  "advanceEdit": [
+    {
+      "name": "return after a scene heading starts action below it",
+      "source": "INT. COFFEE SHOP - DAY", "cursor": 4, "kind": "scene_heading", "tab": false,
+      "range": { "location": 0, "length": 22 }, "replacement": "INT. COFFEE SHOP - DAY\n\n"
+    },
+    {
+      "name": "tab on an empty line seeds the next element in place",
+      "source": "INT. COFFEE SHOP - DAY\n\n", "cursor": 24, "kind": "action", "tab": true,
+      "range": { "location": 24, "length": 0 }, "replacement": "@"
+    },
+    {
+      "name": "tab on an empty line of an element that has no other next seeds nothing",
+      "source": "", "cursor": 0, "kind": "scene_heading", "tab": true,
+      "range": { "location": 0, "length": 0 }, "replacement": ""
+    },
+    {
+      "name": "return after a character starts dialogue",
+      "source": "@ANA", "cursor": 4, "kind": "character", "tab": false,
+      "range": { "location": 0, "length": 4 }, "replacement": "@ANA\n\n"
+    },
+    {
+      "name": "return after dialogue starts the next character",
+      "source": "@ANA\nHello.", "cursor": 11, "kind": "dialogue", "tab": false,
+      "range": { "location": 5, "length": 6 }, "replacement": "Hello.\n\n@"
+    },
+    {
+      "name": "tab after dialogue starts a parenthetical",
+      "source": "@ANA\nHello.", "cursor": 11, "kind": "dialogue", "tab": true,
+      "range": { "location": 5, "length": 6 }, "replacement": "Hello.\n\n()"
+    },
+    {
+      "name": "return after a transition starts a scene heading",
+      "source": ">CUT TO:", "cursor": 8, "kind": "transition", "tab": false,
+      "range": { "location": 0, "length": 8 }, "replacement": ">CUT TO:\n\n.INT. "
+    },
+    {
+      "name": "the line is counted in UTF-16 units after an emoji",
+      "source": "😀 hi\nANA", "cursor": 9, "kind": "character", "tab": false,
+      "range": { "location": 6, "length": 3 }, "replacement": "ANA\n\n"
+    },
+    {
+      "name": "the line the caret is on is the one that advances",
+      "source": "Walk.\nTalk.\nEnd.", "cursor": 8, "kind": "action", "tab": true,
+      "range": { "location": 6, "length": 5 }, "replacement": "Talk.\n\n@"
+    }
+  ],
+  "lineStyle": [
+    { "name": "a forced scene heading is bold and hides its marker", "kind": "scene_heading", "line": ".INT. ROOM - DAY", "alignment": "natural", "inset": false, "bold": true, "secondary": false, "hidden": [[0, 1]] },
+    { "name": "a scene heading that is not forced hides nothing", "kind": "scene_heading", "line": "INT. SHOP", "alignment": "natural", "inset": false, "bold": true, "secondary": false, "hidden": [] },
+    { "name": "a shot is bold", "kind": "shot", "line": "CLOSE UP:", "alignment": "natural", "inset": false, "bold": true, "secondary": false, "hidden": [] },
+    { "name": "action is plain", "kind": "action", "line": "She walks in.", "alignment": "natural", "inset": false, "bold": false, "secondary": false, "hidden": [] },
+    { "name": "an action marker and the example after it are hidden", "kind": "action", "line": "[action]  She walks in.", "alignment": "natural", "inset": false, "bold": false, "secondary": false, "hidden": [[0, 10]] },
+    { "name": "the action marker is read in any case", "kind": "action", "line": "[Action] Walks.", "alignment": "natural", "inset": false, "bold": false, "secondary": false, "hidden": [[0, 9]] },
+    { "name": "a forced character with a colon hides both", "kind": "character", "line": "@ANA:", "alignment": "center", "inset": false, "bold": true, "secondary": false, "hidden": [[0, 1], [4, 1]] },
+    { "name": "a character is centered and bold", "kind": "character", "line": "ANA", "alignment": "center", "inset": false, "bold": true, "secondary": false, "hidden": [] },
+    { "name": "a parenthetical is centered in the secondary ink", "kind": "parenthetical", "line": "(softly)", "alignment": "center", "inset": false, "bold": false, "secondary": true, "hidden": [] },
+    { "name": "dialogue is set in from both sides", "kind": "dialogue", "line": "Hello.", "alignment": "natural", "inset": true, "bold": false, "secondary": false, "hidden": [] },
+    { "name": "a forced transition aligns right in the secondary ink", "kind": "transition", "line": ">CUT TO:", "alignment": "right", "inset": false, "bold": false, "secondary": true, "hidden": [[0, 1]] },
+    { "name": "a transition aligns right without its marker too", "kind": "transition", "line": "CUT TO:", "alignment": "right", "inset": false, "bold": false, "secondary": true, "hidden": [] },
+    { "name": "the opening transition aligns left", "kind": "transition", "line": ">FADE IN:", "alignment": "left", "inset": false, "bold": false, "secondary": true, "hidden": [[0, 1]] },
+    { "name": "the opening transition aligns left without its marker too", "kind": "transition", "line": "FADE IN:", "alignment": "left", "inset": false, "bold": false, "secondary": true, "hidden": [] },
+    { "name": "a transition closed with an angle hides both ends", "kind": "transition", "line": ">CUT TO:>", "alignment": "right", "inset": false, "bold": false, "secondary": true, "hidden": [[0, 1], [8, 1]] }
+  ]
+}

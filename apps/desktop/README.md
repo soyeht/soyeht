@@ -178,8 +178,25 @@ agent works.
   the serif reading face, the font, width and focus options, a toolbar that follows the selection
   and the link and image formats, the hybrid view that hides the Markdown marks of the lines the
   caret is not on, the list's sizes and dates, a text longer than one page of
-  `editorViewportLines` lines or with a lone carriage return (only a notice is shown, not the text), and presentations and
-  screenplays, which say they are not available.
+  `editorViewportLines` lines or with a lone carriage return (only a notice is shown, not the
+  text), and presentations, which say they are not available.
+- The Screenplays place is the same list, form and search for the screenplays of the workspace
+  ("Screenplay" in the "+" menu makes one), and a screenplay opens in a pane that is the text
+  pane with a page: Courier Prime at the Mac's size and margins, each line set by its element
+  (scene headings and shots bold, characters centered and bold, parentheticals centered, dialogue
+  set in from both sides, action plain, transitions on the right, the opening one on the left),
+  the marks that force an element (`.`, `@`, `>`, a closing `:`) kept in the text and not
+  shown. The engine says which element a line is (`writing.structure`, which also gives the
+  scenes the header counts); the lines keep their element as the person types and take the
+  engine's answer when it is for the text on screen. Return ends the line and starts the next
+  element below it, Tab does the same with the other element (action to character, dialogue to
+  parenthetical), and Tab on an empty line only seeds the element there; Shift+Return adds a
+  line. Editing, autosave, closing and the companion agent are the text pane's. Which element
+  follows, the edit Return and Tab make and how a line sits on the page are
+  `contracts/vectors/screenplay.json`, which the Mac passes too (ADR 0105). Left out: the scene
+  rail, the idea board and the variants of a line, SmartType and the element menu, the focus
+  mode, scaling the page to the pane, centered lines that wrap drawn centered, and a screenplay
+  longer than one page of `editorViewportLines` lines.
 - Web panes and dictation are listed with a notice.
 - Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
   General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone

@@ -1,7 +1,8 @@
-//! Writing: the text panes and the Texts place. A text pane holds its document in a field; what
-//! is typed reaches the engine as the one edit that turns the page into the field's text
-//! (`soyeht_client::writing`), and the engine saves the draft shortly after the last edit. This
-//! carries what the person does to the replica and what the replica says back to the field.
+//! Writing: the text and screenplay panes and the places that list them. A pane holds its
+//! document in a field; what is typed reaches the engine as the one edit that turns the page into
+//! the field's text (`soyeht_client::writing`), and the engine saves the draft shortly after the
+//! last edit. This carries what the person does to the replica and what the replica says back to
+//! the field.
 
 use crate::{
     composer_field::{ComposerEvent, ComposerField, ProseEvent, new_field},
@@ -17,15 +18,21 @@ use soyeht_protocol::{
     PaneMode, WorkspacePaneLayoutAxis, WritingFormatKind, WritingKind, WritingSection,
 };
 
-/// The section the desktop client serves.
-pub(crate) const TEXTS: WritingSection = WritingSection::Texts;
-
 impl Workbench {
-    /// Whether the pane is a text, which the desktop client edits.
-    pub(crate) fn is_text(&self, pane_id: &str) -> bool {
-        self.state.pane(pane_id).is_some_and(|pane| {
-            pane.mode == PaneMode::Writing && pane.writing_kind == Some(WritingKind::Text)
-        })
+    /// The kind of the document a writing pane shows.
+    pub(crate) fn writing_kind(&self, pane_id: &str) -> Option<WritingKind> {
+        self.state
+            .pane(pane_id)
+            .filter(|pane| pane.mode == PaneMode::Writing)
+            .and_then(|pane| pane.writing_kind.clone())
+    }
+
+    /// Whether the pane is a text or a screenplay, the documents the desktop client edits.
+    pub(crate) fn is_document(&self, pane_id: &str) -> bool {
+        matches!(
+            self.writing_kind(pane_id),
+            Some(WritingKind::Text | WritingKind::Screenplay)
+        )
     }
 
     /// The field that holds the text of a pane, made when first needed.
@@ -35,30 +42,34 @@ impl Workbench {
         pane_id: &str,
     ) -> Entity<ComposerField> {
         let owner = pane_id.to_owned();
-        let ui = self.panes.of(pane_id);
-        if let Some(made) = ui.writing.field.clone() {
+        if let Some(made) = self.panes.of(pane_id).writing.field.clone() {
             return made;
         }
+        let ui = self.panes.of(pane_id);
         let (palette, scroll) = (self.theme.palette(), ui.writing.scroll.clone());
-        let field =
-            cx.new(|cx| ComposerField::prose(palette, writing_style::highlights, scroll, cx));
+        let field = if self.writing_kind(pane_id) == Some(WritingKind::Screenplay) {
+            cx.new(|cx| ComposerField::screenplay(palette, scroll, cx))
+        } else {
+            cx.new(|cx| ComposerField::prose(palette, writing_style::highlights, scroll, cx))
+        };
         cx.subscribe(&field, move |this, _, event: &ProseEvent, cx| match event {
             ProseEvent::Edited => this.writing_edited(&owner, cx),
             ProseEvent::Format(kind) => this.format_selection(&owner, kind.clone(), cx),
             ProseEvent::Save => this.save_writing(&owner, cx),
+            ProseEvent::Advance { tab } => this.screenplay_advance(&owner, *tab, cx),
         })
         .detach();
         self.panes.of(pane_id).writing.field = Some(field.clone());
         field
     }
 
-    /// Where the keys of a text pane go: its field.
+    /// Where the keys of a text or screenplay pane go: its field.
     pub(crate) fn writing_focus(
         &mut self,
         pane_id: &str,
         cx: &mut Context<Self>,
     ) -> Option<FocusHandle> {
-        self.is_text(pane_id)
+        self.is_document(pane_id)
             .then(|| self.writing_field(cx, pane_id).focus_handle(cx))
     }
 
@@ -103,7 +114,34 @@ impl Workbench {
         let field = self.writing_field(cx, pane_id);
         if field.read(cx).draft().text() != text {
             field.update(cx, |field, cx| field.load(&text, cx));
+            // The lines of a screenplay move with what the engine changed.
+            self.state.writings.follow(pane_id, &text);
         }
+    }
+
+    /// Return or Tab in the page of a screenplay: the line stays and the next element starts
+    /// below it, as the Mac does (`soyeht_client::writing::screenplay`).
+    fn screenplay_advance(&mut self, pane_id: &str, tab: bool, cx: &mut Context<Self>) {
+        let Some((text, (_, caret))) = self.field_text(pane_id, cx) else {
+            return;
+        };
+        let Some((edit, next)) = self.state.screenplay_advance(pane_id, &text, caret, tab) else {
+            return;
+        };
+        let field = self.writing_field(cx, pane_id);
+        field.update(cx, |field, cx| {
+            field.replace_range(edit.range.clone(), &edit.replacement, cx);
+        });
+        // The line the caret is on now starts as `next`, which the engine is asked again about
+        // once the edit has reached it.
+        self.writing_edited(pane_id, cx);
+        if let Some((text, (_, caret))) = self.field_text(pane_id, cx) {
+            let line = text
+                .get(..caret)
+                .map_or(0, |before| before.matches('\n').count());
+            self.state.writings.assume(pane_id, line, next);
+        }
+        cx.notify();
     }
 
     /// Formats the selected text.
@@ -133,7 +171,7 @@ impl Workbench {
         cx.notify();
     }
 
-    /// The close button of a text: the pane closes at once, or asks first when the document has
+    /// The close button of a text or a screenplay: the pane closes at once, or asks first when the document has
     /// edits not saved.
     pub(crate) fn request_close_writing(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         let Some(file) = self.state.editors.file_of_pane(pane_id) else {
@@ -177,8 +215,9 @@ impl Workbench {
             return;
         }
         let Some(harness) = self.state.default_harness() else {
-            self.state.problem =
-                Some("No agent is ready to open beside this text. Check Preferences.".to_owned());
+            self.state.problem = Some(
+                "No agent is ready to open beside this document. Check Preferences.".to_owned(),
+            );
             cx.notify();
             return;
         };
@@ -191,82 +230,114 @@ impl Workbench {
         }
     }
 
-    // The Texts place.
+    // The places that list the documents of a section.
 
     /// The place is on the stage: the first time in a row of frames its list is read again and
     /// what was left in its search and its form is cleared, as the Mac's section view starts over.
-    pub(crate) fn texts_stage(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
-        if std::mem::replace(&mut self.texts.on_stage, true) {
+    pub(crate) fn place_stage(
+        &mut self,
+        section: &WritingSection,
+        workspace_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.places.leave(Some(section));
+        let place = self.places.of_mut(section);
+        if std::mem::replace(&mut place.on_stage, true) {
             return;
         }
-        self.texts.form = None;
-        self.texts.search = None;
-        let effects = self.state.writing_list(workspace_id, &TEXTS, false);
+        place.form = None;
+        place.search = None;
+        let new = std::mem::take(&mut place.new_on_entry);
+        let effects = self.state.writing_list(workspace_id, section, false);
         self.run_effects(effects);
-        if std::mem::take(&mut self.texts.new_on_entry) {
-            self.texts_new(cx);
+        if new {
+            self.place_new(section, cx);
         }
         cx.notify();
     }
 
-    /// The "Text" entry of the new-pane menu: the Texts place, with the form that makes a text.
-    pub(crate) fn open_new_text(&mut self, cx: &mut Context<Self>) {
+    /// The "Text" or "Screenplay" entry of the new-pane menu: the section's place, with the form
+    /// that makes a document.
+    pub(crate) fn open_new_document(&mut self, section: &WritingSection, cx: &mut Context<Self>) {
         self.menus.close();
         if self.require_connection(cx) {
-            self.texts.on_stage = false;
-            self.texts.new_on_entry = true;
-            self.select_destination(Destination::Texts, cx);
+            let place = self.places.of_mut(section);
+            place.on_stage = false;
+            place.new_on_entry = true;
+            self.select_destination(Destination::of_section(section), cx);
         }
     }
 
+    pub(crate) fn open_new_text(&mut self, cx: &mut Context<Self>) {
+        self.open_new_document(&WritingSection::Texts, cx);
+    }
+
+    pub(crate) fn open_new_screenplay(&mut self, cx: &mut Context<Self>) {
+        self.open_new_document(&WritingSection::Screenplays, cx);
+    }
+
     /// The line that narrows the list, made when first needed.
-    pub(crate) fn texts_search(&mut self, cx: &mut Context<Self>) -> Entity<ComposerField> {
-        if let Some(search) = &self.texts.search {
+    pub(crate) fn place_search(
+        &mut self,
+        section: &WritingSection,
+        cx: &mut Context<Self>,
+    ) -> Entity<ComposerField> {
+        if let Some(search) = &self.places.of(section).search {
             return search.clone();
         }
         let search = new_field(self.theme.palette(), cx);
         cx.subscribe(&search, |_, _, _: &ComposerEvent, cx| cx.notify())
             .detach();
-        self.texts.search = Some(search.clone());
+        self.places.of_mut(section).search = Some(search.clone());
         search
     }
 
-    pub(crate) fn texts_more(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
-        let effects = self.state.writing_list(workspace_id, &TEXTS, true);
-        self.run_effects(effects);
-        cx.notify();
-    }
-
-    pub(crate) fn texts_retry(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
-        let effects = self.state.writing_list(workspace_id, &TEXTS, false);
+    /// Reads a page of the list again: the next one when `more`, else the first.
+    pub(crate) fn place_page(
+        &mut self,
+        (section, workspace_id): (&WritingSection, &str),
+        more: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let effects = self.state.writing_list(workspace_id, section, more);
         self.run_effects(effects);
         cx.notify();
     }
 
     /// Opens the document of the list that was chosen.
-    pub(crate) fn texts_open(&mut self, workspace_id: &str, path: &str, cx: &mut Context<Self>) {
+    pub(crate) fn place_open(
+        &mut self,
+        section: &WritingSection,
+        workspace_id: &str,
+        path: &str,
+        cx: &mut Context<Self>,
+    ) {
         if self.require_connection(cx) {
-            let opening = self.state.writing_open(workspace_id, &TEXTS, path);
+            let opening = self.state.writing_open(workspace_id, section, path);
             self.run_effects(opening);
         }
     }
 
     /// Opens the new-document form, with the title ready for the keyboard.
-    pub(crate) fn texts_new(&mut self, cx: &mut Context<Self>) {
-        if self.texts.form.is_some() {
+    pub(crate) fn place_new(&mut self, section: &WritingSection, cx: &mut Context<Self>) {
+        if self.places.of(section).form.is_some() {
             return;
         }
         let title = new_field(self.theme.palette(), cx);
         let folder = new_field(self.theme.palette(), cx);
         for field in [&title, &folder] {
-            cx.subscribe(field, |this, _, event: &ComposerEvent, cx| match event {
-                ComposerEvent::Submit => this.texts_create(cx),
-                ComposerEvent::Dismiss => this.texts_close_form(cx),
-                ComposerEvent::Attach => {}
-            })
+            let section = section.clone();
+            cx.subscribe(
+                field,
+                move |this, _, event: &ComposerEvent, cx| match event {
+                    ComposerEvent::Submit => this.place_create(&section, cx),
+                    ComposerEvent::Dismiss => this.place_close_form(&section, cx),
+                    ComposerEvent::Attach => {}
+                },
+            )
             .detach();
         }
-        self.texts.form = Some(NewDocument {
+        self.places.of_mut(section).form = Some(NewDocument {
             title,
             folder,
             focus: true,
@@ -274,26 +345,27 @@ impl Workbench {
         cx.notify();
     }
 
-    pub(crate) fn texts_close_form(&mut self, cx: &mut Context<Self>) {
-        self.texts.form = None;
+    pub(crate) fn place_close_form(&mut self, section: &WritingSection, cx: &mut Context<Self>) {
+        self.places.of_mut(section).form = None;
         cx.notify();
     }
 
     /// Gives the keyboard to the title of the form, once, after it opened.
-    pub(crate) fn focus_texts_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(form) = &mut self.texts.form
-            && std::mem::take(&mut form.focus)
-        {
-            window.focus(&form.title.focus_handle(cx), cx);
+    pub(crate) fn focus_place_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(form) = self.places.form_to_focus() {
+            form.focus = false;
+            let title = form.title.focus_handle(cx);
+            window.focus(&title, cx);
         }
     }
 
     /// Makes the document the form describes. The form stays until the document opens, so that
     /// a title the engine refuses (one that exists already) can be changed.
-    pub(crate) fn texts_create(&mut self, cx: &mut Context<Self>) {
-        let (Some(workspace_id), Some(form)) =
-            (self.state.selected_workspace_id(), &self.texts.form)
-        else {
+    pub(crate) fn place_create(&mut self, section: &WritingSection, cx: &mut Context<Self>) {
+        let (Some(workspace_id), Some(form)) = (
+            self.state.selected_workspace_id(),
+            &self.places.of(section).form,
+        ) else {
             return;
         };
         let draft = DocumentDraft {
@@ -303,7 +375,7 @@ impl Workbench {
         if !self.require_connection(cx) {
             return;
         }
-        let effects = self.state.writing_create(&workspace_id, &TEXTS, &draft);
+        let effects = self.state.writing_create(&workspace_id, section, &draft);
         self.run_effects(effects);
         cx.notify();
     }

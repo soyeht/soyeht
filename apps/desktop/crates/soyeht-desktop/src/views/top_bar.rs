@@ -445,6 +445,11 @@ impl Workbench {
             cx,
             Workbench::open_new_text,
         ));
+        rows.push(menus::on_pick(
+            menus::item(palette, "screenplay", "Screenplay", false),
+            cx,
+            Workbench::open_new_screenplay,
+        ));
         rows.extend(self.harness_rows(Picker::default(), palette, &pick, cx));
         rows
     }

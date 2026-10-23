@@ -1,7 +1,8 @@
-//! A text pane, as the Mac draws it: a header with the file's name and its words, the text in a
-//! column of reading width, and over a selected part of it the toolbar of its formats. The card
-//! is the only raised surface; the text is flat. The text is a field (`composer_field`), and
-//! what is typed reaches the engine as `writing_flow` says.
+//! A text or screenplay pane, as the Mac draws it: a header with the file's name and its words
+//! (its scenes, for a screenplay), the text in a column of reading width, or the page of a
+//! screenplay, and over a selected part of a text the toolbar of its formats. The card is the
+//! only raised surface; the text is flat. The text is a field (`composer_field`), and what is
+//! typed reaches the engine as `writing_flow` says.
 
 use super::{
     cards::{Role, button},
@@ -14,7 +15,7 @@ use super::{
 use crate::{
     neo,
     open_menu::Menu,
-    theme::{Palette, desktop, elevation, pane_layout, radius, space, type_scale},
+    theme::{Palette, desktop, elevation, fonts, pane_layout, radius, space, type_scale},
 };
 use gpui::{Anchor, relative};
 use soyeht_client::{
@@ -22,7 +23,7 @@ use soyeht_client::{
     editor::{EditorFile, PaneLoad},
     writing::rules::{self, Closing, Counted, SelectionAction},
 };
-use soyeht_protocol::Pane;
+use soyeht_protocol::{Pane, WritingKind};
 
 /// The icon of a button of the selection toolbar.
 fn glyph(action: SelectionAction) -> Icon {
@@ -37,10 +38,10 @@ fn glyph(action: SelectionAction) -> Icon {
     }
 }
 
-/// The bar a document's place or pane starts with: the mark of writing and the title.
-pub(super) fn titled_bar(palette: &Palette, title: impl IntoElement) -> Div {
+/// The bar a document's place or pane starts with: the mark of its section and the title.
+pub(super) fn titled_bar(palette: &Palette, mark: Icon, title: impl IntoElement) -> Div {
     header_bar(pane_layout::HEADER_HEIGHT)
-        .child(icon(Icon::Feather, desktop::INLINE_GLYPH, palette.ink))
+        .child(icon(mark, desktop::INLINE_GLYPH, palette.ink))
         .child(title)
 }
 
@@ -61,12 +62,19 @@ impl Workbench {
     ) -> Div {
         let file = self.state.editors.file_of_pane(&pane.pane_id);
         let name = rules::file_name(file.map(|file| file.doc.path.as_str()), &pane.name);
-        let words = self
-            .state
-            .writings
-            .of_pane(&pane.pane_id)
-            .and_then(|document| document.words())
-            .map(|words| rules::count_label(u64::from(words), Counted::Word));
+        let mark = match pane.writing_kind {
+            Some(WritingKind::Screenplay) => Icon::Clapperboard,
+            _ => Icon::Feather,
+        };
+        let document = self.state.writings.of_pane(&pane.pane_id);
+        let count = match pane.writing_kind {
+            Some(WritingKind::Screenplay) => document
+                .and_then(|document| document.scenes())
+                .map(|scenes| rules::count_label(u64::from(scenes), Counted::Scene)),
+            _ => document
+                .and_then(|document| document.words())
+                .map(|words| rules::count_label(u64::from(words), Counted::Word)),
+        };
         let buttons: Vec<AnyElement> = [Action::Companion, Action::Close]
             .into_iter()
             .map(|action| self.header_button(pane, action, palette, cx))
@@ -77,13 +85,13 @@ impl Workbench {
             .id(id("writing-title", &pane.pane_id))
             .truncate()
             .child(SharedString::from(name));
-        titled_bar(palette, title)
-            .children(words.map(|words| {
+        titled_bar(palette, mark, title)
+            .children(count.map(|count| {
                 div()
                     .flex_none()
                     .text_size(px(type_scale::SMALL))
                     .text_color(rgb(palette.secondary))
-                    .child(format!("\u{b7} {words}"))
+                    .child(format!("\u{b7} {count}"))
             }))
             .child(spacer())
             .child(self.file_state_word(&pane.pane_id, palette))
@@ -103,8 +111,8 @@ impl Workbench {
             };
         }
         let (lines, conflicted) = (file.lines.max(1), file.doc.conflicted);
-        // A text is edited whole: the lines the page does not hold yet are read, and the words
-        // of a text that settled are counted.
+        // A document is edited whole: the lines the page does not hold yet are read, and the
+        // words of a text that settled are counted.
         let reading = self.state.editors.show(&pane_id, 0, lines);
         let counting = self.state.writing_tick();
         self.run_effects(reading);
@@ -132,7 +140,8 @@ impl Workbench {
             .into_any_element()
     }
 
-    /// The text in its column, scrolled to the caret, with the toolbar over a selection.
+    /// The text in its column (the page, for a screenplay), scrolled to the caret, with the
+    /// toolbar over a selection of a text.
     fn writing_text(
         &mut self,
         cx: &mut Context<Self>,
@@ -142,23 +151,48 @@ impl Workbench {
         self.sync_writing_field(pane_id, cx);
         let field = self.writing_field(cx, pane_id);
         field.update(cx, |field, _| field.style(palette, "Start writing"));
+        let screenplay = self.writing_kind(pane_id) == Some(WritingKind::Screenplay);
+        if screenplay {
+            let styles = self
+                .state
+                .writings
+                .line_styles(pane_id, field.read(cx).draft().text());
+            field.update(cx, |field, _| field.set_page(styles));
+        }
         // The toolbar belongs to the pane that has the keyboard: a selection left in another
         // pane waits there without it.
         let focused = self
             .state
             .focused_pane()
             .is_some_and(|pane| pane.pane_id == pane_id);
-        let selected = focused && field.read(cx).draft().has_selection();
+        let selected = focused && !screenplay && field.read(cx).draft().has_selection();
         let scroll = self.panes.of(pane_id).writing.scroll.clone();
         let toolbar = selected.then(|| self.writing_toolbar(palette, pane_id, cx));
-        let column = div()
-            .w_full()
-            .max_w(px(desktop::WRITING_COLUMN_WIDTH))
-            .p(px(space::X18))
-            .text_size(px(desktop::WRITING_TEXT_SIZE))
-            .line_height(relative(desktop::WRITING_LINE_HEIGHT))
-            .text_color(rgb(palette.ink))
-            .child(field);
+        let column = if screenplay {
+            // The page of a screenplay is set in Courier Prime at the Mac's size, and its margins
+            // are the Mac's share of the page, so that a narrow pane keeps the same proportions.
+            div()
+                .w_full()
+                .max_w(px(desktop::SCREENPLAY_PAGE_WIDTH))
+                .py(px(space::X18))
+                .child(
+                    div()
+                        .mx(relative(desktop::SCREENPLAY_PAGE_INSET_SHARE))
+                        .font_family(fonts::SCREENPLAY)
+                        .text_size(px(desktop::SCREENPLAY_TEXT_SIZE))
+                        .line_height(px(desktop::SCREENPLAY_LINE_HEIGHT))
+                        .child(field),
+                )
+        } else {
+            div()
+                .w_full()
+                .max_w(px(desktop::WRITING_COLUMN_WIDTH))
+                .p(px(space::X18))
+                .text_size(px(desktop::WRITING_TEXT_SIZE))
+                .line_height(relative(desktop::WRITING_LINE_HEIGHT))
+                .child(field)
+        }
+        .text_color(rgb(palette.ink));
         let page = div()
             .id(id("writing-text", pane_id))
             .flex_1()

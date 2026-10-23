@@ -1,7 +1,7 @@
-//! The Texts place, as the Mac's section view draws it: the section's name and what it holds, a
-//! button that makes a document, a line that narrows the list, and the list. A document opens in
-//! a pane, which the agents' place shows. The rules (names, search, the form) are
-//! `soyeht_client::writing::rules`, whose cases the Mac passes too.
+//! The place of a section of documents (Texts, Screenplays), as the Mac's section view draws it:
+//! the section's name and what it holds, a button that makes a document, a line that narrows the
+//! list, and the list. A document opens in a pane, which the agents' place shows. The rules
+//! (names, search, the form) are `soyeht_client::writing::rules`, whose cases the Mac passes too.
 
 use super::{
     cards::{Role, button},
@@ -12,32 +12,33 @@ use super::{
 };
 use crate::{
     composer_field::ComposerField,
+    destination::Destination,
     theme::{Palette, desktop, radius, space, type_scale},
-    writing_flow::TEXTS,
 };
 use gpui::Entity;
 use soyeht_client::{
     Connection,
     writing::{SectionList, rules},
 };
-use soyeht_protocol::WritingSectionEntry;
+use soyeht_protocol::{WritingSection, WritingSectionEntry};
 
 impl Workbench {
-    /// The Texts place of the selected workspace.
-    pub(super) fn texts_surface(
+    /// The place of a section, for the selected workspace.
+    pub(super) fn place_surface(
         &mut self,
         cx: &mut Context<Self>,
         palette: &'static Palette,
         workspace: &str,
+        section: &WritingSection,
     ) -> AnyElement {
-        self.texts_stage(workspace, cx);
-        let search = self.texts_search(cx);
+        self.place_stage(section, workspace, cx);
+        let search = self.place_search(section, cx);
         search.update(cx, |field, _| field.style(palette, "Search this section"));
         let query = search.read(cx).draft().text().to_owned();
         let list = self
             .state
             .writings
-            .section(workspace, &TEXTS)
+            .section(workspace, section)
             .cloned()
             .unwrap_or_default();
         let connected = self.state.connection == Connection::Connected;
@@ -49,29 +50,32 @@ impl Workbench {
             .gap(px(space::X14))
             .px(px(space::X18))
             .py(px(space::X14))
-            .child(self.texts_title(cx, connected, palette))
-            .children(self.texts_form(palette, cx))
+            .child(self.place_title(cx, connected, palette, section))
+            .children(self.place_form(palette, section, cx))
             .child(search_line(search, palette))
-            .child(self.texts_list(workspace, &list, &query, palette, cx));
+            .child(self.place_list(workspace, section, &list, &query, palette, cx));
         pane_card_shell(palette)
             .child(titled_bar(
                 palette,
-                title_face(palette).child(rules::title(&TEXTS)),
+                Destination::of_section(section).icon(),
+                title_face(palette).child(rules::title(section)),
             ))
             .child(column().flex_1().min_h_0().items_center().child(page))
             .into_any_element()
     }
 
     /// The section's name and what it holds, and the button that makes a document.
-    fn texts_title(
+    fn place_title(
         &mut self,
         cx: &mut Context<Self>,
         connected: bool,
         palette: &'static Palette,
+        section: &WritingSection,
     ) -> Div {
+        let owner = section.clone();
         let make = pressable(
             row()
-                .id("texts-new")
+                .id(id("place-new", rules::name(section)))
                 .cursor_pointer()
                 .px(px(space::X12))
                 .py(px(space::X6))
@@ -83,7 +87,7 @@ impl Workbench {
                 .font_weight(FontWeight::BOLD),
             connected,
             cx,
-            |this, cx| this.texts_new(cx),
+            move |this, cx| this.place_new(&owner, cx),
         )
         .child(icon(Icon::Plus, desktop::INLINE_GLYPH, palette.face))
         .child("New document");
@@ -97,43 +101,49 @@ impl Workbench {
                     .child(
                         chrome_text(FontWeight::BOLD, type_scale::TITLE)
                             .text_color(rgb(palette.ink))
-                            .child(rules::title(&TEXTS)),
+                            .child(rules::title(section)),
                     )
-                    .child(caption(palette).child(rules::subtitle(&TEXTS))),
+                    .child(caption(palette).child(rules::subtitle(section))),
             )
             .child(make)
     }
 
     /// The form that makes a document, while it is open.
-    fn texts_form(&mut self, palette: &'static Palette, cx: &mut Context<Self>) -> Option<Div> {
-        let form = self.texts.form.as_ref()?;
+    fn place_form(
+        &mut self,
+        palette: &'static Palette,
+        section: &WritingSection,
+        cx: &mut Context<Self>,
+    ) -> Option<Div> {
+        let form = self.places.of(section).form.as_ref()?;
         let (title, folder) = (form.title.clone(), form.folder.clone());
         title.update(cx, |field, _| field.style(palette, "Title"));
         folder.update(cx, |field, _| field.style(palette, "Subfolder (optional)"));
         let creating = self
             .state
             .writings
-            .section(&self.state.selected_workspace_id()?, &TEXTS)
+            .section(&self.state.selected_workspace_id()?, section)
             .is_some_and(|list| list.creating);
         let ready = !title.read(cx).draft().is_blank()
             && !creating
             && self.state.connection == Connection::Connected;
+        let (closing, creating_in) = (section.clone(), section.clone());
         let cancel = pressable(
             button(
-                id("texts-form", "cancel"),
+                id("place-form", "cancel"),
                 Role::Secondary,
                 "Cancel",
                 palette,
             ),
             true,
             cx,
-            |this, cx| this.texts_close_form(cx),
+            move |this, cx| this.place_close_form(&closing, cx),
         );
         let create = pressable(
-            button(id("texts-form", "create"), Role::Primary, "Create", palette),
+            button(id("place-form", "create"), Role::Primary, "Create", palette),
             ready,
             cx,
-            |this, cx| this.texts_create(cx),
+            move |this, cx| this.place_create(&creating_in, cx),
         );
         Some(
             column()
@@ -145,11 +155,11 @@ impl Workbench {
                 .child(
                     chrome_text(FontWeight::BOLD, type_scale::SUBHEADING)
                         .text_color(rgb(palette.ink))
-                        .child(rules::new_document_title(&TEXTS)),
+                        .child(rules::new_document_title(section)),
                 )
                 .child(field_line(title, palette))
                 .child(field_line(folder, palette))
-                .child(caption(palette).child(rules::new_document_note(&TEXTS)))
+                .child(caption(palette).child(rules::new_document_note(section)))
                 .child(
                     row()
                         .gap(px(space::X8))
@@ -161,26 +171,27 @@ impl Workbench {
     }
 
     /// The documents of the section that the search keeps, or what stands in their place.
-    fn texts_list(
+    fn place_list(
         &mut self,
         workspace: &str,
+        section: &WritingSection,
         list: &SectionList,
         query: &str,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if list.failed {
-            return self.texts_failed(palette, workspace, cx);
+            return self.place_failed(palette, workspace, section, cx);
         }
         if list.loading && list.entries.is_empty() {
             return empty_state(palette, None, "Loading", None).into_any_element();
         }
         let kept = rules::search(&list.entries, query);
         if kept.is_empty() {
-            let (heading, detail) = rules::empty_section(&TEXTS, !query.trim().is_empty());
+            let (heading, detail) = rules::empty_section(section, !query.trim().is_empty());
             return empty_state(
                 palette,
-                Some(Icon::Feather),
+                Some(Destination::of_section(section).icon()),
                 heading,
                 detail.map(Into::into),
             )
@@ -188,27 +199,27 @@ impl Workbench {
         }
         let mut rows: Vec<AnyElement> = kept
             .into_iter()
-            .map(|entry| self.texts_row(workspace, entry, palette, cx))
+            .map(|entry| self.place_row(workspace, section, entry, palette, cx))
             .collect();
         if list.next.is_some() {
-            let workspace = workspace.to_owned();
+            let (workspace, section) = (workspace.to_owned(), section.clone());
             rows.push(
                 pressable(
                     button(
-                        id("texts-more", &workspace),
+                        id("place-more", &workspace),
                         Role::Secondary,
                         "Load more",
                         palette,
                     ),
                     true,
                     cx,
-                    move |this, cx| this.texts_more(&workspace, cx),
+                    move |this, cx| this.place_page((&section, &workspace), true, cx),
                 )
                 .into_any_element(),
             );
         }
         div()
-            .id("texts-list")
+            .id("place-list")
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
@@ -217,14 +228,17 @@ impl Workbench {
     }
 
     /// A document of the list: its mark, its title and where it is kept. A click opens it.
-    fn texts_row(
+    fn place_row(
         &mut self,
         workspace: &str,
+        section: &WritingSection,
         entry: &WritingSectionEntry,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let (workspace, path) = (workspace.to_owned(), entry.path.clone());
+        let (workspace, path, section) =
+            (workspace.to_owned(), entry.path.clone(), section.clone());
+        let mark_icon = Destination::of_section(&section).icon();
         let mark = row()
             .size(px(desktop::WRITING_ROW_ICON_BOX))
             .flex_none()
@@ -232,7 +246,7 @@ impl Workbench {
             .rounded(px(radius::COMPACT))
             .bg(rgb(palette.well))
             .child(icon(
-                Icon::Feather,
+                mark_icon,
                 desktop::HEADER_ACTION_GLYPH,
                 palette.accent,
             ));
@@ -250,7 +264,7 @@ impl Workbench {
             .child(mono_note(palette).child(SharedString::from(entry.path.clone())));
         pressable(
             row()
-                .id(id("texts-row", &entry.path))
+                .id(id("place-row", &entry.path))
                 .gap(px(space::X12))
                 .p(px(space::X10))
                 .rounded(px(radius::CONTROL))
@@ -258,7 +272,7 @@ impl Workbench {
                 .hover(|style| style.bg(rgb(palette.hover))),
             true,
             cx,
-            move |this, cx| this.texts_open(&workspace, &path, cx),
+            move |this, cx| this.place_open(&section, &workspace, &path, cx),
         )
         .child(mark)
         .child(words)
@@ -271,29 +285,33 @@ impl Workbench {
     }
 
     /// The list could not be read: what stands in its place, and a button that asks again.
-    fn texts_failed(
+    fn place_failed(
         &mut self,
         palette: &'static Palette,
         workspace: &str,
+        section: &WritingSection,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let workspace = workspace.to_owned();
+        let (workspace, owner) = (workspace.to_owned(), section.clone());
         empty_state(
             palette,
             Some(Icon::Alert),
-            "The texts could not be listed",
+            format!(
+                "The {} could not be listed",
+                rules::title(section).to_lowercase()
+            ),
             Some("The engine did not answer. Try again.".into()),
         )
         .child(pressable(
             button(
-                id("texts-again", &workspace),
+                id("place-again", &workspace),
                 Role::Secondary,
                 "Try again",
                 palette,
             ),
             true,
             cx,
-            move |this, cx| this.texts_retry(&workspace, cx),
+            move |this, cx| this.place_page((&owner, &workspace), false, cx),
         ))
         .into_any_element()
     }

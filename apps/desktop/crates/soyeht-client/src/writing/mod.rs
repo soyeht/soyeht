@@ -10,12 +10,14 @@ pub mod commands;
 pub mod document;
 pub mod looks;
 pub mod rules;
+pub mod screenplay;
 
 pub use commands::{Command, Failure, Opened, WritingEvent};
 
 use crate::{Effect, editor::Editors};
 use soyeht_protocol::{
-    WritingDocument, WritingSection, WritingSectionEntry, WritingSectionListResult,
+    ScreenplayElementKind, WritingDocument, WritingSection, WritingSectionEntry,
+    WritingSectionListResult, WritingStructureResult,
 };
 use std::collections::HashMap;
 
@@ -27,6 +29,10 @@ pub struct Document {
     counted: Option<(u32, String)>,
     /// The revision whose count is on its way, or was asked for and failed: it is asked once.
     asked: Option<String>,
+    /// The scenes of a screenplay, as the engine last counted them.
+    scenes: Option<u32>,
+    /// The element each line of a screenplay is.
+    kinds: screenplay::LineKinds,
 }
 
 impl Document {
@@ -35,12 +41,19 @@ impl Document {
             doc,
             counted: None,
             asked: None,
+            scenes: None,
+            kinds: screenplay::LineKinds::default(),
         }
     }
 
     /// The words the engine last counted in the document.
     pub fn words(&self) -> Option<u32> {
         self.counted.as_ref().map(|(words, _)| *words)
+    }
+
+    /// The scenes the engine last counted in the screenplay.
+    pub fn scenes(&self) -> Option<u32> {
+        self.scenes
     }
 }
 
@@ -208,8 +221,8 @@ impl Writings {
         }
     }
 
-    /// What the engine told the writing panes, apart from the opening of a document, which the
-    /// state carries out (it owns the panes).
+    /// What the engine told the writing panes, apart from the opening of a document and a
+    /// structure, which the state carries out (it owns the panes and the files).
     pub(crate) fn apply(&mut self, event: WritingEvent) {
         match event {
             WritingEvent::Listed {
@@ -218,18 +231,59 @@ impl Writings {
                 cursor,
                 result,
             } => self.listed(&workspace_id, &section, cursor.as_deref(), result),
-            WritingEvent::Structure(structure) => {
-                if let Some(document) = self.documents.get_mut(&structure.document.file.file_id) {
-                    document.counted = Some((
-                        structure.word_count,
-                        structure.document.file.revision.clone(),
-                    ));
-                    document.doc = structure.document;
-                }
-            }
             WritingEvent::Failed(failure) => self.failed(&failure),
-            WritingEvent::Opened(_) | WritingEvent::Formatted(_) => {}
+            // These the state carries out: it owns the panes and the files.
+            WritingEvent::Opened(_) | WritingEvent::Structure(_) | WritingEvent::Formatted(_) => {}
         }
+    }
+
+    /// The words and scenes of a document, and when `text` is given (the text the structure is
+    /// of) the element each of its lines is.
+    pub(crate) fn structured(&mut self, structure: WritingStructureResult, text: Option<&str>) {
+        let Some(document) = self.documents.get_mut(&structure.document.file.file_id) else {
+            return;
+        };
+        document.counted = Some((
+            structure.word_count,
+            structure.document.file.revision.clone(),
+        ));
+        document.scenes = Some(u32::try_from(structure.scenes.len()).unwrap_or(u32::MAX));
+        if let Some(text) = text {
+            document.kinds = screenplay::LineKinds::of(text, &structure.elements);
+        }
+        document.doc = structure.document;
+    }
+
+    /// The text of a screenplay pane changed: the lines keep the element they had.
+    pub fn follow(&mut self, pane_id: &str, text: &str) {
+        if let Some(document) = self.of_pane_mut(pane_id) {
+            document.kinds.follow(text);
+        }
+    }
+
+    /// The line of a screenplay pane has just been made the element `kind`.
+    pub fn assume(&mut self, pane_id: &str, line: usize, kind: ScreenplayElementKind) {
+        if let Some(document) = self.of_pane_mut(pane_id) {
+            document.kinds.assume(line, kind);
+        }
+    }
+
+    /// The element of a line of a screenplay pane, when it is known.
+    pub fn kind_at(&self, pane_id: &str, line: usize) -> Option<ScreenplayElementKind> {
+        self.of_pane(pane_id)?.kinds.kind_at(line).cloned()
+    }
+
+    /// How each line of `text` sits on the page of a screenplay pane.
+    pub fn line_styles(&self, pane_id: &str, text: &str) -> Vec<screenplay::LineStyle> {
+        self.of_pane(pane_id)
+            .map(|document| document.kinds.styles(text))
+            .unwrap_or_default()
+    }
+
+    fn of_pane_mut(&mut self, pane_id: &str) -> Option<&mut Document> {
+        self.documents
+            .values_mut()
+            .find(|document| document.doc.file.pane_id == pane_id)
     }
 
     fn failed(&mut self, failure: &Failure) {
