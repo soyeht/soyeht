@@ -119,7 +119,8 @@ pub fn zone_rect(zone: Zone, pane: Rect) -> Rect {
 /// `tree` with pane `pane_id` dropped on `zone` of pane `target`. A pane dropped on itself
 /// changes nothing. An edge puts the pane beside or above or below the target, in a split of
 /// their own that takes the target's place; the two panes of a writing companion only change
-/// sides and stay a pair. The center swaps the two panes where they stand.
+/// sides and stay a pair. The center swaps the two panes where they stand; a pair that loses one
+/// of its panes to the swap is no longer a pair, the same as for every other drop.
 pub fn move_pane(tree: &Node, pane_id: &str, target: &str, zone: Zone) -> Result<Node, Refused> {
     if pane_id == target {
         return Ok(tree.clone());
@@ -129,7 +130,7 @@ pub fn move_pane(tree: &Node, pane_id: &str, target: &str, zone: Zone) -> Result
         return Err(Refused::NoSuchPane);
     };
     let Some(axis) = zone.axis() else {
-        return Ok(swapped(tree, pane_id, target));
+        return Ok(normalize(swapped(tree, pane_id, target)));
     };
     let before = zone.goes_before_target();
     if let Some(reordered) = reorder_pair(tree, pane_id, target, &axis, before) {

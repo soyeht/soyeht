@@ -85,7 +85,8 @@ public enum PaneLayoutTreeMutation {
     return result.tree.normalized()
   }
 
-  /// Moves a pane to an edge of another pane, or swaps the two leaves for a center drop.
+  /// Moves a pane to an edge of another pane, or swaps the two leaves for a center drop. A writing
+  /// companion that loses one of its panes to the swap is no longer a pair, as for any other drop.
   public static func moving(
     _ tree: PaneLayoutTree, paneId: String, relativeTo targetPaneId: String,
     zone: PaneLayoutDropZone
@@ -98,7 +99,7 @@ public enum PaneLayoutTreeMutation {
       throw PaneLayoutMutationError.missingPane(targetPaneId)
     }
     if zone == .center {
-      return try swapping(tree, paneId, targetPaneId)
+      return try swapping(tree, paneId, targetPaneId).normalized()
     }
     if let reorderedPair = tree.reorderingCompanionMembers(
       paneId: paneId, relativeTo: targetPaneId, zone: zone)
