@@ -71,6 +71,8 @@ ADR when you change a boundary.
   Python outputs. A file whose first line starts with `// Generated from
   contracts/` (or `# Generated from contracts/`) is an output: never edit it by
   hand. Commit the outputs with their source; the gate runs `--check`.
+- A design token added after the Mac was generated is proved by `contracts/test_design_tokens.py`:
+  list it in `ADDED_AFTER_GENERATION`, and keep desktop-only tokens in the `desktop` section.
 - Once a generated form exists, use it. Do not hand-type a method or event name,
   a limit, a frame kind or an error code. Examples: `RequestMethod`, `EventName`,
   `FrameKind` and `ProtocolLimits` in Swift; `method::*`, `event::*`, `limits::*` and
@@ -210,8 +212,16 @@ inherit the main actor.
 ## Commands
 
 - Python: always `uv run python ...`, never a bare `python3`.
+- Before every push an agent runs `uv run python scripts/agent_precheck.py` (`--quick` leaves out
+  the minutes-long quality scan). It needs no build and no vocabulary and reports every failure
+  at once: the cheap `always` checks of `check_all.sh --list`, the commit messages (and, with
+  `--pr-text FILE`, the PR title and body you are about to give `gh pr create`) for AI
+  attribution, `swift format lint --strict` (100 columns, `.swift-format`) on the changed Swift
+  files, `contracts/generate.py --check` with the contracts tests, then `check_quality.py`.
+  Do not skip the forbidden-terms step: with no vocabulary it still scans messages.
 - Fast check, also run by the pre-push hook
-  (`git config core.hooksPath .githooks`): `uv run python scripts/check_quality.py`.
+  (`git config core.hooksPath .githooks`, which also scans the commit messages):
+  `uv run python scripts/check_quality.py`.
   Its duplication scan has a deadline of 300 s that grows with the host load (up to 1800 s),
   so a busy machine does not fail it; a real hang still does. `SOYEHT_SCAN_TIMEOUT` (seconds)
   sets the deadline.

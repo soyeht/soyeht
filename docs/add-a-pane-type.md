@@ -163,8 +163,11 @@ uv run python scripts/check_quality.py
 (cd engine && cargo test --locked --workspace --features soyeht-engine/contract-checks)
 (cd apps/desktop && cargo test --locked --workspace)
 swift test --package-path apps/shared        # macOS
-SOYEHT_SKIP_FORBIDDEN_TERMS=1 bash scripts/check_all.sh --tier fast
+uv run python scripts/agent_precheck.py      # before every push; no vocabulary needed
 ```
+
+The merge gate (`bash scripts/check_all.sh --tier fast`) is run by a maintainer, who has the
+restricted vocabulary.
 
 A change to the engine core, the protocol or `soyeht-store` needs a second reviewer
 (`CONTRIBUTING.md`, "Review and merge"). The pull request template lists the rest.

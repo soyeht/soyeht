@@ -50,6 +50,11 @@ script runs from, any other worktree and any other directory are refused, and a 
 cannot be prepared (a killed git left `index.lock`) is recreated. DIR is for this script alone:
 never point another worktree's build at the same directories.
 
+A `--force` rerun of a recorded commit keeps the run it replaces: that run's log, timings and
+record move to `<health-dir>/history/<sha>.<started_at>.*`, and the new record names it in
+`previous` (its result, failed step and log), so a flaky failure stays evidence. Nothing prunes
+`history/`, and an archive is never overwritten (a repeated stem gets a `-N` suffix).
+
 Only one run at a time (a lock in the health directory). A problem of the machine, not of
 main (no restricted vocabulary, a gate that cannot start) writes no record and exits 2.
 The coordinator session runs this after each merge or every few merges; the editor
@@ -86,6 +91,7 @@ INFRASTRUCTURE_EXITS = {INFRASTRUCTURE_EXIT, 64, 70, 71, UNSUPPORTED_STEP_EXIT}
 # A step that only means something after another step of the same run.
 PREREQUISITES = {"e2e:tcc-check": "e2e:tcc-snapshot"}
 WORKTREE_PREFIX = "soyeht-post-merge-"
+HISTORY_DIRECTORY = "history"
 # Where a run keeps its worktree. Unset, the system temporary directory; a test names its own so
 # that two gates running the tests at once never remove each other's worktrees.
 SCRATCH_ROOT_ENV = "SOYEHT_POST_MERGE_TMP"
@@ -409,6 +415,41 @@ def supports_only(root: Path, sha: str) -> bool:
 def write_json(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def archive_previous_run(health: Path, sha: str) -> dict | None:
+    """Keep the run a `--force` rerun replaces, and say what it was.
+
+    The first, failing, run is the only evidence of a flake. Its log and timings move to
+    `<health>/history/<sha>.<started_at>.*`, and its record is copied there (the record stays
+    in place until the new one replaces it, so a rerun that cannot start loses nothing).
+    Returns a summary for the `previous` field of the new record, or None when nothing was run."""
+    names = {"log": f"{sha}.log", "json": f"{sha}.json", "timings.json": f"{sha}.timings.json"}
+    sources = [health / name for name in names.values() if (health / name).exists()]
+    if not sources:
+        return None
+    previous = read_record(health / names["json"])
+    started = previous.get("started_at") or time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(max(path.stat().st_mtime for path in sources)))
+    history = health / HISTORY_DIRECTORY
+    history.mkdir(parents=True, exist_ok=True)
+    # A rerun that died before it wrote its record leaves this `started_at` in place: the next
+    # archive must not replace the evidence of the first one.
+    base_stem = f"{sha}.{started.replace(':', '')}"
+    stem, attempt = base_stem, 1
+    while any((history / f"{stem}.{suffix}").exists() for suffix in names):
+        stem, attempt = f"{base_stem}-{attempt}", attempt + 1
+    for suffix, name in names.items():
+        source = health / name
+        if not source.exists():
+            continue
+        if suffix == "json":
+            shutil.copyfile(source, history / f"{stem}.{suffix}")
+        else:
+            source.replace(history / f"{stem}.{suffix}")
+    summary = {key: previous[key] for key in ("result", "exit_code", "failed_step", "culprit")
+               if key in previous}
+    return {**summary, "started_at": started, "log": str(history / f"{stem}.log")}
 
 
 def search_range(root: Path, health: Path, sha: str, since: str | None) -> list[str]:
@@ -748,7 +789,8 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
             git(root, "worktree", "add", "--detach", str(worktree), sha)
         meter = install_editor_meter(editor_meter, worktree)
         started = time.time()
-        log.write_bytes(b"")  # a run for a commit that is recorded already (--force) starts afresh
+        previous = archive_previous_run(health, sha)
+        log.write_bytes(b"")  # the earlier run, if any, is in the history now
         code = run_gate(worktree, parent_of(root, sha), None, log, timings, command, remote)
         if code in INFRASTRUCTURE_EXITS:
             raise InfrastructureError(f"the gate could not run (exit {code}); see {log}")
@@ -763,6 +805,8 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
             "editor_meter": meter,
             "steps": [],
         }
+        if previous:
+            record["previous"] = previous
         if remote:
             record["remote"] = remote.host
         local = local_load()  # a run that passed on a loaded host is worth knowing about too

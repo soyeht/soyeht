@@ -1,4 +1,11 @@
 #!/bin/sh
+# Cheap checks only; `uv run python scripts/agent_precheck.py` runs the rest before a push.
 set -eu
 repo_root=$(git rev-parse --show-toplevel)
+# Commit messages must carry no AI attribution (and no restricted term when the vocabulary is set).
+if base=$(git merge-base origin/main HEAD 2>/dev/null); then
+    uv run python "$repo_root/scripts/forbidden_terms.py" --messages-only --base "$base"
+else
+    echo "pre-push: no origin/main to compare with; commit messages were not scanned (git fetch origin main)" >&2
+fi
 exec uv run python "$repo_root/scripts/check_quality.py"

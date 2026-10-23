@@ -288,6 +288,55 @@ class SyntheticRepositoryTests(SyntheticRepositoryCase):
         self.assertEqual([c["subject"] for c in record["candidates"]], ["old gate", "breaks", "three"])
 
 
+class ForcedRerunTests(SyntheticRepositoryCase):
+    """A `--force` rerun keeps the evidence of the run it replaces."""
+
+    def test_the_replaced_run_moves_to_the_history_and_the_new_record_names_it(self):
+        head = self.add("breaks", {"broken": "x"})
+        self.assertEqual(self.run_main(head), 1)
+        first = self.record(head)
+        first_log = Path(first["log"]).read_text()
+        self.assertIn("FAILED step unit", first_log)
+        (self.root / "broken").unlink()  # the same commit now behaves differently, as a flake does
+        with mock.patch.dict(os.environ, {"FAKE_FLAKY": "1"}):
+            self.assertEqual(self.run_main(head, "--force"), 1)
+        stem = self.health / "history" / f"{head}.{first['started_at'].replace(':', '')}"
+        self.assertEqual(Path(f"{stem}.log").read_text(), first_log)
+        self.assertEqual(json.loads(Path(f"{stem}.json").read_text()), first)
+        self.assertTrue(Path(f"{stem}.timings.json").exists())
+        previous = self.record(head)["previous"]
+        self.assertEqual(previous["result"], "fail")
+        self.assertEqual(previous["failed_step"], "unit")
+        self.assertEqual(previous["started_at"], first["started_at"])
+        self.assertEqual(previous["log"], f"{stem}.log")
+
+    def test_a_second_archive_of_the_same_record_keeps_the_first(self):
+        head = self.add("breaks", {"broken": "x"})
+        self.assertEqual(self.run_main(head), 1)
+        first_log = Path(self.record(head)["log"]).read_text()
+        # Reruns that die before they write a record: the record keeps its `started_at`.
+        with mock.patch.dict(os.environ, {"FAKE_INFRA": "1"}):
+            self.assertEqual(self.run_main(head, "--force"), 2)
+            self.assertEqual(self.run_main(head, "--force"), 2)
+        logs = sorted((self.health / "history").glob("*.log"))
+        self.assertEqual(len(logs), 2)
+        self.assertIn(first_log, [path.read_text() for path in logs])
+        self.assertEqual(len({path.stem for path in logs}), 2)
+
+    def test_a_first_run_has_no_previous_and_no_history(self):
+        self.assertEqual(self.run_main(self.shas[0]), 0)
+        self.assertNotIn("previous", self.record(self.shas[0]))
+        self.assertFalse((self.health / "history").exists())
+
+    def test_a_rerun_that_cannot_start_leaves_the_record_in_place(self):
+        self.assertEqual(self.run_main(self.shas[0]), 0)
+        before = self.record(self.shas[0])
+        with mock.patch.dict(os.environ, {"FAKE_INFRA": "1"}):
+            self.assertEqual(self.run_main(self.shas[0], "--force"), 2)
+        self.assertEqual(self.record(self.shas[0]), before)
+        self.assertEqual(len(list((self.health / "history").glob("*.log"))), 1)
+
+
 class EditorMeasurementTests(SyntheticRepositoryCase):
     """The VM1 report is copied into the worktree; a missing or stale one is not a red main."""
 

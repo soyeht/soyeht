@@ -25,8 +25,13 @@ def git(*args):
     return subprocess.check_output(["git", *args], cwd=ROOT)
 
 
+def parse_optional_terms(text):
+    """The vocabulary when one is supplied, else nothing: the message patterns still apply."""
+    return {line.strip().lower() for line in text.splitlines() if line.strip()}
+
+
 def parse_terms(text):
-    terms = {line.strip().lower() for line in text.splitlines() if line.strip()}
+    terms = parse_optional_terms(text)
     if not terms:
         raise ValueError("FORBIDDEN_TERMS is missing or empty")
     return terms
@@ -86,9 +91,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", help="Full base commit OID for a pull request")
     parser.add_argument("--event-file", type=Path)
+    parser.add_argument("--text-file", type=Path, action="append", default=[], metavar="PATH",
+                        help="a pull request title and body (or any text) to scan before "
+                             "`gh pr create`; `-` reads standard input. May be repeated.")
+    parser.add_argument("--messages-only", action="store_true",
+                        help="scan only the commit messages of --base..HEAD and the text files, "
+                             "not the tree: cheap enough for a hook, and it needs no vocabulary "
+                             "(the terms are used when FORBIDDEN_TERMS is set)")
     args = parser.parse_args()
-    skip = skipping(os.environ)
-    forbidden = set() if skip else parse_terms(os.environ.get("FORBIDDEN_TERMS", ""))
+    if args.messages_only:
+        if not args.base and not args.text_file:
+            parser.error("--messages-only needs --base or --text-file")
+        skip, forbidden = False, parse_optional_terms(os.environ.get("FORBIDDEN_TERMS", ""))
+    else:
+        skip = skipping(os.environ)
+        forbidden = set() if skip else parse_terms(os.environ.get("FORBIDDEN_TERMS", ""))
     if skip:
         print(SKIP_BANNER.format(reason=f"{SKIP_ENV}=1 and no FORBIDDEN_TERMS"), file=sys.stderr)
     failed = False
@@ -102,7 +119,8 @@ def main():
             failed |= scan(f"commit {rev}", message, forbidden)
             failed |= scan_message(f"commit {rev}", message.decode(errors="replace"))
             # With no vocabulary there is nothing to look for in the files of the history.
-            for entry in git("ls-tree", "-rz", rev).split(b"\0") if forbidden else ():
+            scan_files = forbidden and not args.messages_only
+            for entry in git("ls-tree", "-rz", rev).split(b"\0") if scan_files else ():
                 if not entry:
                     continue
                 metadata, path = entry.split(b"\t", 1)
@@ -113,7 +131,9 @@ def main():
                 failed |= scan(f"{rev}:{path.decode(errors='replace')}",
                                git("cat-file", "blob", oid.decode()), forbidden)
     # Local runs include untracked, non-ignored work, before authorship.
-    for name in git("ls-files", "-z", "--cached", "--others", "--exclude-standard").split(b"\0") if forbidden else ():
+    tree = () if args.messages_only else git(
+        "ls-files", "-z", "--cached", "--others", "--exclude-standard").split(b"\0")
+    for name in tree if forbidden else ():
         if not name:
             continue
         path = ROOT / name.decode()
@@ -124,6 +144,11 @@ def main():
         else:
             continue
         failed |= scan(str(path.relative_to(ROOT)), raw, forbidden)
+    for text_file in args.text_file:
+        raw = sys.stdin.buffer.read() if str(text_file) == "-" else text_file.read_bytes()
+        label = "stdin" if str(text_file) == "-" else str(text_file)
+        failed |= scan(label, raw, forbidden)
+        failed |= scan_message(label, raw.decode(errors="replace"))
     if args.event_file:
         event = json.loads(args.event_file.read_text())
         pr = event.get("pull_request", {})
@@ -132,7 +157,12 @@ def main():
         failed |= scan_message("PR body", pr.get("body") or "")
     if failed:
         return 1
-    print("forbidden-terms: clean (vocabulary scan SKIPPED)" if skip else "forbidden-terms: clean")
+    if skip:
+        print("forbidden-terms: clean (vocabulary scan SKIPPED)")
+    elif args.messages_only and not forbidden:
+        print("forbidden-terms: messages clean (no vocabulary, attribution patterns only)")
+    else:
+        print("forbidden-terms: clean")
     return 0
 
 

@@ -181,7 +181,16 @@ number of tests.
    uv run python scripts/check_quality.py
    ```
 
-4. Run the merge gate's fast tier. It runs format, lint, build and unit tests for the areas
+4. Run the precheck. It needs no build or vocabulary and reports every failure at once: the
+   cheap repository checks, AI attribution in the commit messages, Swift format on the files you
+   changed, and the contracts checks. Before opening the pull request, save its title and body
+   to a file and pass it too:
+
+   ```sh
+   uv run python scripts/agent_precheck.py --pr-text pr.md
+   ```
+
+   Then run the merge gate's fast tier. It runs format, lint, build and unit tests for the areas
    your change touches, plus every cheap repository check:
 
    ```sh
