@@ -11,6 +11,13 @@ export const clientPolicy = {
   "terminal": {
     "inputChunkBytes": 16384
   },
+  "caps": {
+    "waitingMessages": 1000,
+    "fileLinks": 128,
+    "webLinks": 128,
+    "modelPages": 32,
+    "tickerHistory": 3
+  },
   "pageSize": {
     "queue": 64,
     "harnesses": 64,

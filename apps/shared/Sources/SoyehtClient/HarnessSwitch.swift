@@ -22,7 +22,8 @@ public enum HarnessSwitchModel {
   public static func canSwitch(
     connected: Bool, agent: AgentSession?, switchState: AgentHarnessSwitchView?
   ) -> Bool {
-    connected && agent?.operation == nil && !isSwitching(switchState)
+    guard connected, let agent, agent.operation == nil else { return false }
+    return !isSwitching(switchState)
   }
 
   public static func isSwitching(_ switchState: AgentHarnessSwitchView?) -> Bool {

@@ -13,14 +13,11 @@
 //! that is not there, or whose real place is outside the workspace, is not a link.
 
 use soyeht_platform::fs::canonicalize;
-use soyeht_protocol::limits::EDITOR_PATH_BYTES;
+use soyeht_protocol::{client_policy::CAPS_FILE_LINKS, limits::EDITOR_PATH_BYTES};
 use std::{
     ops::Range,
     path::{Component, Path},
 };
-
-/// The most references found in one text.
-const MAX_REFERENCES: usize = 128;
 
 /// Where a reference points, counted from 0 as the engine counts.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -65,7 +62,7 @@ pub fn find(text: &str) -> Vec<Found> {
 pub fn find_chars(characters: &[char]) -> Vec<Found> {
     let mut found = Vec::new();
     let mut from = 0;
-    while found.len() < MAX_REFERENCES {
+    while found.len() < CAPS_FILE_LINKS {
         let Some(matched) = next_match(characters, from) else {
             break;
         };

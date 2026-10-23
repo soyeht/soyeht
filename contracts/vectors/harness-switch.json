@@ -1,0 +1,61 @@
+{
+  "description": "When an agent pane may switch to another harness, shared by the Mac (HarnessSwitchModel.canSwitch) and the desktop client (soyeht_client::switch::can_switch). `agent` is `none` (the pane has no agent session), `idle` or `configuring` (a configuration change is in flight); `switch` is the phase of the pane's last switch, if any.",
+  "canSwitch": [
+    {
+      "name": "an idle agent pane of a connected client can switch",
+      "connected": true,
+      "agent": "idle",
+      "switch": null,
+      "canSwitch": true
+    },
+    {
+      "name": "a switch that restarted the pane does not block another",
+      "connected": true,
+      "agent": "idle",
+      "switch": "restarted",
+      "canSwitch": true
+    },
+    {
+      "name": "a switch that failed does not block another",
+      "connected": true,
+      "agent": "idle",
+      "switch": "failed",
+      "canSwitch": true
+    },
+    {
+      "name": "a pane cannot switch while the client is disconnected",
+      "connected": false,
+      "agent": "idle",
+      "switch": null,
+      "canSwitch": false
+    },
+    {
+      "name": "a pane cannot switch while a configuration change is in flight",
+      "connected": true,
+      "agent": "configuring",
+      "switch": null,
+      "canSwitch": false
+    },
+    {
+      "name": "a pane cannot switch while a switch is running",
+      "connected": true,
+      "agent": "idle",
+      "switch": "switching",
+      "canSwitch": false
+    },
+    {
+      "name": "a pane with no agent session cannot switch",
+      "connected": true,
+      "agent": "none",
+      "switch": null,
+      "canSwitch": false
+    },
+    {
+      "name": "a disconnected pane that is configuring cannot switch",
+      "connected": false,
+      "agent": "configuring",
+      "switch": "failed",
+      "canSwitch": false
+    }
+  ]
+}

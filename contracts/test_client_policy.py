@@ -65,6 +65,16 @@ class ClientPolicyTests(unittest.TestCase):
         self.assertIn("pub fn is_turn_running(&self) -> bool", outputs[RUST_OUTPUT])
         self.assertIn("public var isTurnRunning: Bool", outputs[SWIFT_OUTPUT])
 
+    def test_a_cap_is_a_positive_whole_number_and_is_a_usize_in_rust(self):
+        for value in (0, -1, 1.5, "128"):
+            changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            changed["caps"]["webLinks"] = value
+            with self.assertRaises(ValueError):
+                validate(changed, SCHEMA)
+        outputs = render_client_policy(SCHEMA, HEADER)
+        self.assertIn("pub const CAPS_WEB_LINKS: usize = 128;", outputs[RUST_OUTPUT])
+        self.assertIn("static let capsModelPages = 32", outputs[SWIFT_OUTPUT])
+
     def test_the_inline_image_types_are_distinct_media_types(self):
         for types in ([], ["image/png", "image/png"], ["png"]):
             changed = copy.deepcopy(SCHEMA["x-clientPolicy"])

@@ -2,6 +2,7 @@
 //! (`contracts/vectors/harness-picker.json`).
 
 use super::*;
+use crate::testing::strings;
 use serde_json::{Value, json};
 
 fn vectors() -> Value {
@@ -22,15 +23,6 @@ fn catalogue(vectors: &Value, keys: &Value) -> Vec<HarnessInfo> {
 
 fn ids(items: &[&HarnessInfo]) -> Vec<String> {
     items.iter().map(|harness| harness.id.clone()).collect()
-}
-
-fn strings(value: &Value) -> Vec<String> {
-    value
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item.as_str().unwrap().to_owned())
-        .collect()
 }
 
 #[test]

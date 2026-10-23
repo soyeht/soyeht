@@ -146,17 +146,13 @@ pub fn should_post(enabled: bool, window_active: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{cases, pane, vector};
+    use crate::testing::{cases, pane, strings, vector};
     use serde_json::{Value, json};
     use soyeht_protocol::{ElicitationRequest, PermissionRequest};
     use std::collections::HashMap;
 
     fn text(value: &Value) -> String {
         value.as_str().unwrap().to_owned()
-    }
-
-    fn strings(value: &Value) -> Vec<String> {
-        value.as_array().unwrap().iter().map(text).collect()
     }
 
     fn request(identity: &str, workspace_id: &str) -> Request {

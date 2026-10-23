@@ -7,9 +7,6 @@ use soyeht_protocol::{
     client_policy,
 };
 
-/// More than this many waiting messages are not read, as on the Mac client.
-const QUEUE_LIMIT: usize = 1_000;
-
 /// Every message waiting for an agent pane, and whether its queue is paused.
 pub(crate) fn queue(rpc: &Rpc, pane_id: &str) -> Result<Event> {
     let (mut items, mut cursor) = (Vec::new(), None);
@@ -22,7 +19,7 @@ pub(crate) fn queue(rpc: &Rpc, pane_id: &str) -> Result<Event> {
             }))?)?;
         items.extend(page.items);
         cursor = page.next_cursor;
-        if cursor.is_none() || items.len() >= QUEUE_LIMIT {
+        if cursor.is_none() || items.len() >= client_policy::CAPS_WAITING_MESSAGES {
             return Ok(Event::Queue {
                 pane_id: pane_id.to_owned(),
                 items,

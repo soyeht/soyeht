@@ -18,6 +18,19 @@ struct AgentMarkdownText: View {
   }
 }
 
+/// Where Markdown is drawn, which decides what a click on a link does. A file's content is not
+/// trusted to open anything (ADR 0053 and 0087): in the editor's preview an address keeps the look
+/// of a link and opens nothing, and a file reference is plain text. The desktop client has the
+/// same rule, and `markdownPreview.surfaces` of `contracts/vectors/editor.json` holds both.
+enum MarkdownSurface: Equatable, Sendable {
+  case reply, preview
+
+  /// Whether a click on a written address opens it.
+  var opensAddresses: Bool { self == .reply }
+  /// Whether a file reference is a link that opens its file.
+  var opensFiles: Bool { self == .reply }
+}
+
 /// What a block is drawn with. A block redraws when it, or this, changes. Without a
 /// `workspaceId` the text is inert (see `MarkdownBlocksView`).
 struct MarkdownLook: Equatable, Sendable {
@@ -25,15 +38,19 @@ struct MarkdownLook: Equatable, Sendable {
   let style: AgentConversationStyle
   let ink: Color
 
+  /// A reply opens its links in the pane's workspace; text with no workspace is a preview.
+  var surface: MarkdownSurface { workspaceId == nil ? .preview : .reply }
+
   /// A line of runs in this look: its links open only with a workspace.
   func attributed(_ runs: [MarkdownRun], bold: Bool = false) -> AttributedString {
-    MarkdownAttributedString.make(runs, style: style, bold: bold, opensLinks: workspaceId != nil)
+    MarkdownAttributedString.make(
+      runs, style: style, bold: bold, opensLinks: surface.opensAddresses)
   }
 
   /// Text in this look: file references and web addresses open through the environment's
   /// actions when there is a workspace, and nothing opens without one.
   @ViewBuilder func drawn(_ text: AttributedString) -> some View {
-    if let workspaceId {
+    if surface.opensFiles, let workspaceId {
       FilePathText(text, workspaceId: workspaceId)
     } else {
       Text(text)

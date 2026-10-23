@@ -70,17 +70,8 @@ pub fn recorded(pane: &str, history: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::{text, vector};
+    use crate::testing::{strings, text, vector};
     use serde_json::Value;
-
-    fn list(value: &Value) -> Vec<String> {
-        value
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|item| text(item).to_owned())
-            .collect()
-    }
 
     fn name(value: &Value) -> Option<String> {
         value.as_str().map(str::to_owned)
@@ -100,8 +91,8 @@ mod tests {
             let selected = name(&case["selected"]);
             let shown = active(
                 selected.as_deref(),
-                &list(&case["tabs"]),
-                &list(&case["history"]),
+                &strings(&case["tabs"]),
+                &strings(&case["history"]),
             );
             assert_eq!(shown, name(&case["tab"]), "{}", case["name"]);
         }
@@ -112,8 +103,8 @@ mod tests {
         for case in each("successor") {
             let next = successor(
                 text(&case["closing"]),
-                &list(&case["tabs"]),
-                &list(&case["history"]),
+                &strings(&case["tabs"]),
+                &strings(&case["history"]),
             );
             assert_eq!(next, name(&case["tab"]), "{}", case["name"]);
         }
@@ -125,7 +116,7 @@ mod tests {
             let current = name(&case["current"]);
             let next = cycled(
                 current.as_deref(),
-                &list(&case["tabs"]),
+                &strings(&case["tabs"]),
                 case["forward"].as_bool().unwrap(),
             );
             assert_eq!(next, name(&case["tab"]), "{}", case["name"]);
@@ -135,8 +126,8 @@ mod tests {
     #[test]
     fn the_history_puts_the_newest_first_and_stays_bounded() {
         for case in each("recorded") {
-            let after = recorded(text(&case["pane"]), &list(&case["history"]));
-            assert_eq!(after, list(&case["historyAfter"]), "{}", case["name"]);
+            let after = recorded(text(&case["pane"]), &strings(&case["history"]));
+            assert_eq!(after, strings(&case["historyAfter"]), "{}", case["name"]);
         }
         let cap = &tabs()["historyCap"];
         let many: Vec<String> = (0..cap["historyCount"].as_u64().unwrap())

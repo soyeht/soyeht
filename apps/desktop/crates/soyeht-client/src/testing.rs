@@ -52,6 +52,16 @@ pub fn cases(file: &str, key: &str) -> Vec<Value> {
     vector(file)[key].as_array().unwrap().clone()
 }
 
+/// The strings of a JSON array of strings.
+pub fn strings(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| text(item).to_owned())
+        .collect()
+}
+
 /// The text of a JSON string.
 pub fn text(value: &Value) -> &str {
     value.as_str().unwrap()

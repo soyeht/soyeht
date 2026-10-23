@@ -7,12 +7,9 @@
 //! not linked. Code is never linked: a code span or block is shown as it was written.
 
 use super::{Block, Run, Style};
+use soyeht_protocol::{client_policy::CAPS_WEB_LINKS, limits::WEB_FIELD_BYTES};
 use std::ops::Range;
 
-/// The most addresses linked in one run of text.
-const MAX_LINKS: usize = 128;
-/// The longest address linked.
-const MAX_ADDRESS_BYTES: usize = 4 * 1024;
 /// What a sentence puts after an address and the address does not own.
 const TRAILING: [char; 9] = ['.', ',', ';', ':', '!', '?', ')', ']', '}'];
 
@@ -21,7 +18,7 @@ pub fn bare_addresses(text: &str) -> Vec<Range<usize>> {
     let lower = text.to_ascii_lowercase();
     let mut found = Vec::new();
     let mut from = 0;
-    while found.len() < MAX_LINKS {
+    while found.len() < CAPS_WEB_LINKS {
         let Some(start) = next_scheme(&lower, from) else {
             break;
         };
@@ -148,7 +145,7 @@ fn is_boundary(c: char) -> bool {
 
 /// An address with a host and no name or password, short enough to open.
 fn usable(address: &str) -> bool {
-    if address.len() > MAX_ADDRESS_BYTES {
+    if address.len() > WEB_FIELD_BYTES {
         return false;
     }
     let Some((_, rest)) = address.split_once("://") else {
@@ -179,14 +176,14 @@ mod tests {
 
     #[test]
     fn a_long_address_is_not_linked() {
-        let long = format!("https://a.test/{}", "x".repeat(MAX_ADDRESS_BYTES));
+        let long = format!("https://a.test/{}", "x".repeat(WEB_FIELD_BYTES));
         assert!(addresses(&long).is_empty());
     }
 
     #[test]
     fn no_more_than_the_limit_are_linked() {
-        let text = "https://a.test ".repeat(MAX_LINKS + 5);
-        assert_eq!(bare_addresses(&text).len(), MAX_LINKS);
+        let text = "https://a.test ".repeat(CAPS_WEB_LINKS + 5);
+        assert_eq!(bare_addresses(&text).len(), CAPS_WEB_LINKS);
     }
 
     #[test]

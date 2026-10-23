@@ -29,6 +29,9 @@ ROLES = {
 ROLE_FIELDS = {"category", "legacyId"}
 # The names of these groups' entries are already complete: no group prefix.
 UNPREFIXED_GROUPS = ("timeouts", "texts")
+# The group of caps, the counts the clients stop at: messages read for a queue, links found in
+# one text, pages of a model catalogue, tool calls the header ticker lists after the current one.
+CAPS = "caps"
 # The group of page sizes: each is a request `limit`, which the wire types as an unsigned 32-bit.
 PAGE_SIZES = "pageSize"
 # A page size that is the protocol's own maximum for the request, not a number of the clients.
@@ -54,6 +57,7 @@ DOT_ROLES = ("success", "accent", "warning", "muted", "secondary")
 SCALAR_GROUPS = (
     "timeouts",
     "terminal",
+    CAPS,
     PAGE_SIZES,
     "texts",
     "usageBand",
@@ -105,6 +109,9 @@ def validate(policy, schema):
         for key, value in policy[group].items():
             if isinstance(value, bool) or not isinstance(value, int | float | str):
                 raise ValueError(f"x-clientPolicy.{group}.{key} must be a number or a string")
+    for key, value in policy[CAPS].items():
+        if type(value) is not int or value <= 0:
+            raise ValueError(f"x-clientPolicy.{CAPS}.{key} must be a positive whole number")
     for key, value in policy["texts"].items():
         if not isinstance(value, str) or not value:
             raise ValueError(f"x-clientPolicy.texts.{key} must be a non-empty string")
@@ -165,7 +172,7 @@ def rust_constant(name, value):
         return f"pub const {snake(name).upper()}: f64 = {value!r};"
     kind = (
         "usize"
-        if name.endswith("Bytes")
+        if name.endswith("Bytes") or name.startswith(CAPS)
         else "u32"
         if name.startswith((PAGE_SIZES, "editor"))
         else "u64"

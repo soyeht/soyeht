@@ -2,10 +2,7 @@
 //! offers (effort, permission mode). The switch popover and Preferences choose from it.
 
 use crate::{Error, Result, preference_requests, rpc::Rpc};
-use soyeht_protocol::{ConfigOption, ModelInfo, ModelListSource};
-
-/// The most pages of models read for one harness; a catalogue that keeps going is cut off.
-const PAGES: usize = 32;
+use soyeht_protocol::{ConfigOption, ModelInfo, ModelListSource, client_policy};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Catalogue {
@@ -26,7 +23,7 @@ impl Catalogue {
 pub(crate) fn load(rpc: &Rpc, harness: &str) -> Result<Catalogue> {
     let mut cursor = None;
     let mut all: Option<Catalogue> = None;
-    for _ in 0..PAGES {
+    for _ in 0..client_policy::CAPS_MODEL_PAGES {
         let (page, next) = preference_requests::catalogue_page(rpc.call(
             &preference_requests::catalogue_request(harness, cursor.take()),
         )?)?;

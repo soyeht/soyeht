@@ -21,74 +21,32 @@ private func tool(_ id: String, _ title: String, _ status: ToolStatus) -> Transc
   PaneInteriorFixture.tool(id, title: title, status: status)
 }
 
-private func plan(_ entries: [(String, PlanStatus)]) -> TranscriptMessage {
-  TranscriptMessage(
-    localId: "plan", generation: 1, seq: "0", role: .assistant, kind: .plan, text: "",
-    complete: true,
-    plan: entries.map { PlanEntry(content: $0.0, priority: .medium, status: $0.1) })
+/// The entries the vector says, newest first, for the messages and title of each case.
+@Test func theTickerSaysWhatTheVectorSays() throws {
+  for item in ContractVector.cases(try ContractVector.load("agent-transcript"), "ticker") {
+    var view = AgentPaneView()
+    for message in item["messages"].array ?? [] {
+      view.merge(try message.decoded(TranscriptMessage.self))
+    }
+    let snapshot = AgentACPTickerSource().snapshot(
+      for: AgentTickerContext(
+        pane: pane(state: .idle, title: item["title"].string, activePromptId: nil), view: view,
+        turnStartedAt: nil, now: start))
+    #expect(
+      snapshot.items.map(\.text) == (item["items"].array ?? []).compactMap(\.string),
+      "\(item["name"].string ?? "")")
+  }
 }
 
-@Test func acpTickerLeadsWithThePlanStepAndTheRunningToolThenEarlierTools() {
+@Test func theTickerCountsTheTurnsElapsedTimeWhileItRuns() {
   var view = AgentPaneView()
-  view.messages = [
-    plan([
-      ("Read the schema", .completed), ("Run the contract tests", .in_progress),
-      ("Report", .pending),
-    ]),
-    tool("1", "schema/v2/meta.json", .completed),
-    tool("2", "cargo fmt", .failed),
-    tool("3", "cargo test -p acp", .in_progress),
-  ]
+  view.messages = [tool("1", "cargo test -p acp", .in_progress)]
   let snapshot = AgentACPTickerSource().snapshot(
     for: AgentTickerContext(
-      pane: pane(state: .working, title: "ACP v2 client"), view: view, turnStartedAt: start,
+      pane: pane(state: .working), view: view, turnStartedAt: start,
       now: start.addingTimeInterval(134)))
-
-  #expect(
-    snapshot.items.map(\.text) == [
-      "Step 2/3: Run the contract tests · Running cargo test -p acp",
-      "Failed: cargo fmt",
-      "Done: schema/v2/meta.json",
-      "ACP v2 client",
-    ])
+  #expect(snapshot.items.map(\.text) == ["Running cargo test -p acp"])
   #expect(snapshot.elapsed == "2m 14s")
-}
-
-private func prompt(_ seq: String) -> TranscriptMessage {
-  TranscriptMessage(
-    localId: "prompt-\(seq)", generation: 1, seq: seq, role: .user, kind: .message, text: "go",
-    complete: true)
-}
-
-private func ticker(_ messages: [TranscriptMessage]) -> [String] {
-  var view = AgentPaneView()
-  view.messages = messages
-  return AgentACPTickerSource().snapshot(
-    for: AgentTickerContext(
-      pane: pane(state: .idle, activePromptId: nil), view: view, turnStartedAt: nil, now: start)
-  ).items.map(\.text)
-}
-
-@Test func aFailedToolCallLeavesTheTickerWhenTheNextTurnStarts() {
-  let failed = [prompt("1"), tool("2", "Write qa-out.txt", .failed)]
-  #expect(ticker(failed) == ["Failed: Write qa-out.txt"])
-  #expect(ticker(failed + [prompt("3")]).isEmpty)
-  #expect(
-    ticker(failed + [prompt("3"), tool("4", "Read notes", .completed)]) == ["Done: Read notes"])
-}
-
-@Test func aFailedToolCallLeavesTheTickerOnceALaterCallOfTheTurnSucceeds() {
-  let messages = [
-    prompt("1"), tool("2", "Write qa-out.txt", .failed), tool("3", "Write qa-out.txt", .completed),
-  ]
-  #expect(ticker(messages) == ["Done: Write qa-out.txt"])
-}
-
-@Test func anEarlierTurnsPlanDoesNotLeadTheTicker() {
-  let messages = [
-    prompt("1"), plan([("Old step", .in_progress)]), prompt("3"),
-  ]
-  #expect(ticker(messages).isEmpty)
 }
 
 @Test func acpTickerShowsNoElapsedTimeOnceTheTurnEnds() {
@@ -107,16 +65,6 @@ private func ticker(_ messages: [TranscriptMessage]) -> [String] {
       pane: pane(state: .idle, activePromptId: nil), view: AgentPaneView(), turnStartedAt: nil,
       now: start))
   #expect(snapshot == AgentTickerSnapshot(items: [], elapsed: nil))
-}
-
-@Test func toolHistoryIsCapped() {
-  var view = AgentPaneView()
-  view.messages = (1...8).map { tool("\($0)", "step \($0)", .completed) }
-  let items = AgentACPTickerSource().snapshot(
-    for: AgentTickerContext(pane: pane(state: .idle), view: view, turnStartedAt: nil, now: start)
-  ).items
-  #expect(items.count == 1 + AgentACPTickerSource.toolHistory)
-  #expect(items.first?.text == "Done: step 8")
 }
 
 /// A summarizer plugs in through the protocol; the header only reads snapshots.

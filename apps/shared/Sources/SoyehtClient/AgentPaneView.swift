@@ -77,22 +77,27 @@ public struct AgentPaneView: Sendable {
     stamp(message.localId)
   }
 
-  /// A page of history: sorted once, not once per message.
+  /// A page of history: sorted once, not once per message. A page can be older than what the view
+  /// holds (it was read before the last updates), so it never undoes a message that is further
+  /// along; a live update, which carries the whole message, always replaces.
   mutating func merge(_ page: [TranscriptMessage]) {
     guard !page.isEmpty else { return }
     var index = Dictionary(
       messages.enumerated().map { ($1.localId, $0) }, uniquingKeysWith: { _, latest in latest })
+    var changed: [String] = []
     for message in page {
       if let known = index[message.localId] {
+        guard message.supersedes(messages[known]) else { continue }
         messages[known] = message
       } else {
         index[message.localId] = messages.count
         messages.append(message)
       }
+      changed.append(message.localId)
     }
     messages.sort { Self.order($0) < Self.order($1) }
     for known in messages where revisions[known.localId] == nil { stamp(known.localId) }
-    for message in page { stamp(message.localId) }
+    for localId in changed { stamp(localId) }
   }
 
   mutating func mergeTranscriptPage(_ page: PaneTranscriptResult, replacing: Bool) {
@@ -102,5 +107,34 @@ public struct AgentPaneView: Sendable {
     }
     merge(page.items)
     nextTranscriptCursor = page.nextCursor
+  }
+}
+
+extension TranscriptMessage {
+  /// Whether this message is at least as far along as `known`, the one held with the same id: a
+  /// finished message beats an unfinished one, a tool call further on beats one behind, and a
+  /// longer text (in bytes) beats a shorter. A command's output has no text, so the one with more
+  /// bytes beats the one with fewer.
+  func supersedes(_ known: TranscriptMessage) -> Bool {
+    if complete != known.complete { return complete }
+    if complete { return true }
+    if let tool, let heldTool = known.tool {
+      return tool.status.progress >= heldTool.status.progress
+    }
+    if let terminal, let heldTerminal = known.terminal {
+      return terminal.bytes.utf8.count >= heldTerminal.bytes.utf8.count
+    }
+    return text.utf8.count >= known.text.utf8.count
+  }
+}
+
+extension ToolStatus {
+  /// How far a tool call has got: waiting, running, or finished (completed or failed).
+  fileprivate var progress: Int {
+    switch self {
+    case .pending: 0
+    case .in_progress: 1
+    case .completed, .failed: 2
+    }
   }
 }

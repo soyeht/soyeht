@@ -510,7 +510,7 @@ extension EngineClient {
       items.append(contentsOf: result.items)
       paused = result.paused ?? false
       cursor = result.nextCursor
-    } while cursor != nil && items.count < 1_000
+    } while cursor != nil && items.count < ClientPolicy.capsWaitingMessages
     agentPanes[paneId, default: AgentPaneView()].queue = items
     agentPanes[paneId, default: AgentPaneView()].queuePaused = paused
   }
@@ -613,7 +613,9 @@ extension EngineClient {
       var models: [ModelInfo] = []
       var options: [ConfigOption] = []
       var source = ModelListSource.not_probed
+      var pages = 0
       repeat {
+        pages += 1
         let page = try await self.request(
           .modelList,
           .encoded(
@@ -627,7 +629,7 @@ extension EngineClient {
         options = page.options
         source = page.source
         cursor = page.nextCursor
-      } while cursor != nil
+      } while cursor != nil && pages < ClientPolicy.capsModelPages
       if AgentCatalogResponseOrder.accepts(
         request: generation, latest: self.modelRefreshGenerations[harness, default: 0]
       ) {

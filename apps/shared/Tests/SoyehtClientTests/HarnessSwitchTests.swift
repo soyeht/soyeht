@@ -60,21 +60,36 @@ import Testing
   #expect(HarnessSwitchModel.readableName(ofHarnessId: "custom.gone") == "Gone")
 }
 
-@Test func switchIsBlockedWhileDisconnectedConfiguringOrAlreadySwitching() {
-  let idle = agentSession(operation: nil)
+@Test func switchIsAllowedWhereTheVectorSaysItIs() throws {
   let configuring = agentSession(
     operation: ConfigOperation(
       operationId: "op", configId: "model", value: .v0("fast"), startedAt: "now"))
-  let switching = AgentHarnessSwitchView(
-    fromHarness: "claude", toHarness: "codex", phase: .switching)
-  let failed = AgentHarnessSwitchView(
-    fromHarness: "claude", toHarness: "codex", phase: .failed, reason: "boom")
-
-  #expect(HarnessSwitchModel.canSwitch(connected: true, agent: idle, switchState: nil))
-  #expect(HarnessSwitchModel.canSwitch(connected: true, agent: idle, switchState: failed))
-  #expect(!HarnessSwitchModel.canSwitch(connected: false, agent: idle, switchState: nil))
-  #expect(!HarnessSwitchModel.canSwitch(connected: true, agent: configuring, switchState: nil))
-  #expect(!HarnessSwitchModel.canSwitch(connected: true, agent: idle, switchState: switching))
+  for item in ContractVector.cases(try ContractVector.load("harness-switch"), "canSwitch") {
+    let agent: AgentSession? =
+      switch item["agent"].string {
+      case "none": nil
+      case "idle": agentSession(operation: nil)
+      case "configuring": configuring
+      default: nil
+      }
+    #expect(["none", "idle", "configuring"].contains(item["agent"].string ?? ""))
+    let phase: AgentHarnessSwitchView.Phase? =
+      switch item["switch"].string {
+      case "switching": .switching
+      case "restarted": .restarted
+      case "failed": .failed
+      default: nil
+      }
+    #expect(item["switch"] == .null || phase != nil, "an unknown switch phase")
+    let state = phase.map {
+      AgentHarnessSwitchView(fromHarness: "first", toHarness: "second", phase: $0)
+    }
+    #expect(
+      HarnessSwitchModel.canSwitch(
+        connected: item["connected"].bool == true, agent: agent, switchState: state)
+        == item["canSwitch"].bool,
+      "\(item["name"].string ?? "")")
+  }
 }
 
 @MainActor @Test func switchRunReportsTheNewHarnessOrTheEngineReason() async {

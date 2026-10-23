@@ -48,12 +48,11 @@ public enum FilePathLinks {
     pattern:
       #"(?<![A-Za-z0-9_./-])((?:\./)?(?:(?:[A-Za-z0-9_@+.-]+/)+[A-Za-z0-9_@+.-]+|[A-Za-z0-9_@+.-]+\.[A-Za-z0-9_@+.-]+)):([1-9][0-9]*)(?::([1-9][0-9]*))?(?![A-Za-z0-9_:])"#
   )
-  private static let maximumLinks = 128
 
   public static func segments(in text: String) -> [FilePathTextSegment] {
     guard let matcher else { return [.plain(text)] }
     let range = NSRange(text.startIndex..<text.endIndex, in: text)
-    let matches = matcher.matches(in: text, range: range).prefix(maximumLinks)
+    let matches = matcher.matches(in: text, range: range).prefix(ClientPolicy.capsFileLinks)
     guard !matches.isEmpty else { return [.plain(text)] }
     var result: [FilePathTextSegment] = []
     var cursor = text.startIndex

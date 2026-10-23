@@ -1,0 +1,948 @@
+{
+  "description": "The agent transcript replica and the pane header's ticker, shared by the Mac (AgentPaneView, AgentACPTickerSource) and the desktop client (soyeht_client::agent::AgentView). Messages are transcript messages as the wire sends them. `merge` folds the steps in order (`update`: a message the engine pushed, which carries the whole message and replaces the known one; `page`: a fetched page, which may be older than what is held and never undoes a message that is further along) and lists what is held, in order. `ticker` lists the entries newest first for the transcript and the session title; the desktop joins them with its separator. How many earlier tool calls follow the current one is `capsTickerHistory` of x-clientPolicy.",
+  "merge": [
+    {
+      "name": "a known message is replaced where it stands and the rest keep their sequence order",
+      "steps": [
+        {"update": {"localId": "b", "generation": 1, "seq": "2", "role": "assistant", "kind": "message", "text": "second", "complete": true}},
+        {"update": {"localId": "a", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "first", "complete": true}},
+        {"update": {"localId": "b", "generation": 1, "seq": "2", "role": "assistant", "kind": "message", "text": "second, grown", "complete": true}}
+      ],
+      "messages": [{"localId": "a", "text": "first", "complete": true}, {"localId": "b", "text": "second, grown", "complete": true}]
+    },
+    {
+      "name": "messages with one sequence are ordered by local id",
+      "steps": [
+        {"update": {"localId": "z", "generation": 1, "seq": "5", "role": "assistant", "kind": "message", "text": "z", "complete": true}},
+        {"update": {"localId": "m", "generation": 1, "seq": "5", "role": "assistant", "kind": "message", "text": "m", "complete": true}}
+      ],
+      "messages": [{"localId": "m", "text": "m", "complete": true}, {"localId": "z", "text": "z", "complete": true}]
+    },
+    {
+      "name": "an update carries the whole message, so it replaces the known one as it stands",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hello, world", "complete": true}},
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "pending", "complete": false}}
+      ],
+      "messages": [{"localId": "m", "text": "pending", "complete": false}]
+    },
+    {
+      "name": "an update replaces a tool call whatever its step",
+      "steps": [
+        {
+          "update": {
+            "localId": "c",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "tool",
+            "text": "",
+            "complete": true,
+            "tool": {"toolCallId": "c", "title": "ls", "status": "completed", "locations": []}
+          }
+        },
+        {
+          "update": {
+            "localId": "c",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "tool",
+            "text": "",
+            "complete": false,
+            "tool": {"toolCallId": "c", "title": "ls", "status": "pending", "locations": []}
+          }
+        }
+      ],
+      "messages": [{"localId": "c", "text": "", "complete": false, "status": "pending"}]
+    },
+    {
+      "name": "a page with a longer unfinished text replaces a shorter one",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hel", "complete": false}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hello", "complete": false}]}
+      ],
+      "messages": [{"localId": "m", "text": "Hello", "complete": false}]
+    },
+    {
+      "name": "a page with a shorter unfinished text never undoes a longer one",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hello", "complete": false}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hel", "complete": false}]}
+      ],
+      "messages": [{"localId": "m", "text": "Hello", "complete": false}]
+    },
+    {
+      "name": "a page with an equally long unfinished text replaces the known one",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "ab", "complete": false}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "cd", "complete": false}]}
+      ],
+      "messages": [{"localId": "m", "text": "cd", "complete": false}]
+    },
+    {
+      "name": "text is measured in bytes, not characters",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "ab", "complete": false}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "é", "complete": false}]}
+      ],
+      "messages": [{"localId": "m", "text": "é", "complete": false}]
+    },
+    {
+      "name": "a finished message of a page beats an unfinished one however short",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hello, wor", "complete": false}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hello", "complete": true}]}
+      ],
+      "messages": [{"localId": "m", "text": "Hello", "complete": true}]
+    },
+    {
+      "name": "an unfinished message of a page never undoes a finished one",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hello", "complete": true}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "Hello, world, and more", "complete": false}]}
+      ],
+      "messages": [{"localId": "m", "text": "Hello", "complete": true}]
+    },
+    {
+      "name": "a finished message of a page replaces a finished one",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "first", "complete": true}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "second", "complete": true}]}
+      ],
+      "messages": [{"localId": "m", "text": "second", "complete": true}]
+    },
+    {
+      "name": "a tool call of a page further along replaces one behind",
+      "steps": [
+        {
+          "update": {
+            "localId": "c",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "tool",
+            "text": "",
+            "complete": false,
+            "tool": {"toolCallId": "c", "title": "ls", "status": "pending", "locations": []}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "c",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "tool",
+              "text": "",
+              "complete": true,
+              "tool": {"toolCallId": "c", "title": "ls", "status": "completed", "locations": []}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "c", "text": "", "complete": true, "status": "completed"}]
+    },
+    {
+      "name": "a tool call of a page behind never undoes one further along",
+      "steps": [
+        {
+          "update": {
+            "localId": "c",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "tool",
+            "text": "",
+            "complete": false,
+            "tool": {"toolCallId": "c", "title": "ls", "status": "in_progress", "locations": []}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "c",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "tool",
+              "text": "",
+              "complete": false,
+              "tool": {"toolCallId": "c", "title": "ls", "status": "pending", "locations": []}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "c", "text": "", "complete": false, "status": "in_progress"}]
+    },
+    {
+      "name": "a tool call of a page at the same step replaces the known one",
+      "steps": [
+        {
+          "update": {
+            "localId": "c",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "tool",
+            "text": "",
+            "complete": false,
+            "tool": {"toolCallId": "c", "title": "ls", "status": "in_progress", "locations": []}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "c",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "tool",
+              "text": "",
+              "complete": false,
+              "tool": {"toolCallId": "c", "title": "ls -a", "status": "in_progress", "locations": []}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "c", "text": "", "complete": false, "status": "in_progress"}]
+    },
+    {
+      "name": "a finished tool call is not undone by a page that has it still running",
+      "steps": [
+        {
+          "update": {
+            "localId": "c",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "tool",
+            "text": "",
+            "complete": true,
+            "tool": {"toolCallId": "c", "title": "ls", "status": "completed", "locations": []}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "c",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "tool",
+              "text": "",
+              "complete": false,
+              "tool": {"toolCallId": "c", "title": "ls", "status": "in_progress", "locations": []}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "c", "text": "", "complete": true, "status": "completed"}]
+    },
+    {
+      "name": "a page with more output of a running command replaces less",
+      "steps": [
+        {
+          "update": {
+            "localId": "term",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "terminal",
+            "text": "",
+            "complete": false,
+            "terminal": {"terminalId": "term", "bytes": "aGk=", "offset": "0", "truncated": false}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "term",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "terminal",
+              "text": "",
+              "complete": false,
+              "terminal": {"terminalId": "term", "bytes": "aGkKb2s=", "offset": "0", "truncated": false}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "term", "text": "", "complete": false, "terminalBytes": "aGkKb2s="}]
+    },
+    {
+      "name": "a page with less output of a running command never undoes more",
+      "steps": [
+        {
+          "update": {
+            "localId": "term",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "terminal",
+            "text": "",
+            "complete": false,
+            "terminal": {"terminalId": "term", "bytes": "aGkKb2s=", "offset": "0", "truncated": false}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "term",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "terminal",
+              "text": "",
+              "complete": false,
+              "terminal": {"terminalId": "term", "bytes": "aGk=", "offset": "0", "truncated": false}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "term", "text": "", "complete": false, "terminalBytes": "aGkKb2s="}]
+    },
+    {
+      "name": "the output of a running command is kept as the longer page read it",
+      "steps": [
+        {
+          "update": {
+            "localId": "term",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "terminal",
+            "text": "",
+            "complete": false,
+            "terminal": {"terminalId": "term", "bytes": "aGk=", "offset": "0", "truncated": false}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "term",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "terminal",
+              "text": "",
+              "complete": false,
+              "terminal": {"terminalId": "term", "bytes": "aGkKb2s=", "offset": "0", "truncated": false}
+            }
+          ]
+        },
+        {
+          "page": [
+            {
+              "localId": "term",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "terminal",
+              "text": "",
+              "complete": false,
+              "terminal": {"terminalId": "term", "bytes": "aGk=", "offset": "0", "truncated": false}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "term", "text": "", "complete": false, "terminalBytes": "aGkKb2s="}]
+    },
+    {
+      "name": "a finished command beats a running one whatever the page holds of its output",
+      "steps": [
+        {
+          "update": {
+            "localId": "term",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "terminal",
+            "text": "",
+            "complete": false,
+            "terminal": {"terminalId": "term", "bytes": "aGkKb2s=", "offset": "0", "truncated": false}
+          }
+        },
+        {
+          "page": [
+            {
+              "localId": "term",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "terminal",
+              "text": "",
+              "complete": true,
+              "terminal": {"terminalId": "term", "bytes": "aGk=", "offset": "0", "truncated": false}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "term", "text": "", "complete": true, "terminalBytes": "aGk="}]
+    },
+    {
+      "name": "a tool call on one side only is compared by text: a page with a tool call has none",
+      "steps": [
+        {"update": {"localId": "c", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "abcd", "complete": false}},
+        {
+          "page": [
+            {
+              "localId": "c",
+              "generation": 1,
+              "seq": "1",
+              "role": "assistant",
+              "kind": "tool",
+              "text": "",
+              "complete": false,
+              "tool": {"toolCallId": "c", "title": "ls", "status": "in_progress", "locations": []}
+            }
+          ]
+        }
+      ],
+      "messages": [{"localId": "c", "text": "abcd", "complete": false}]
+    },
+    {
+      "name": "a tool call on one side only is compared by text: a page with text has some",
+      "steps": [
+        {
+          "update": {
+            "localId": "c",
+            "generation": 1,
+            "seq": "1",
+            "role": "assistant",
+            "kind": "tool",
+            "text": "",
+            "complete": false,
+            "tool": {"toolCallId": "c", "title": "ls", "status": "in_progress", "locations": []}
+          }
+        },
+        {"page": [{"localId": "c", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "x", "complete": false}]}
+      ],
+      "messages": [{"localId": "c", "text": "x", "complete": false}]
+    },
+    {
+      "name": "a message that comes back with another sequence goes where the sequence puts it",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "first", "complete": true}},
+        {"update": {"localId": "a", "generation": 1, "seq": "2", "role": "assistant", "kind": "message", "text": "second", "complete": true}},
+        {"update": {"localId": "m", "generation": 1, "seq": "3", "role": "assistant", "kind": "message", "text": "first, moved", "complete": true}}
+      ],
+      "messages": [{"localId": "a", "text": "second", "complete": true}, {"localId": "m", "text": "first, moved", "complete": true}]
+    },
+    {
+      "name": "a page with another sequence for a known message moves it as well",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "first", "complete": false}},
+        {"update": {"localId": "a", "generation": 1, "seq": "2", "role": "assistant", "kind": "message", "text": "second", "complete": true}},
+        {"page": [{"localId": "m", "generation": 1, "seq": "3", "role": "assistant", "kind": "message", "text": "first, moved", "complete": true}]}
+      ],
+      "messages": [{"localId": "a", "text": "second", "complete": true}, {"localId": "m", "text": "first, moved", "complete": true}]
+    },
+    {
+      "name": "a page fetched earlier never undoes a newer update and adds the older messages",
+      "steps": [
+        {"update": {"localId": "m", "generation": 1, "seq": "2", "role": "assistant", "kind": "message", "text": "Hello, wor", "complete": false}},
+        {"update": {"localId": "m", "generation": 1, "seq": "2", "role": "assistant", "kind": "message", "text": "Hello, world", "complete": true}},
+        {
+          "page": [
+            {"localId": "m", "generation": 1, "seq": "2", "role": "assistant", "kind": "message", "text": "Hello", "complete": false},
+            {"localId": "a", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "first", "complete": true}
+          ]
+        }
+      ],
+      "messages": [{"localId": "a", "text": "first", "complete": true}, {"localId": "m", "text": "Hello, world", "complete": true}]
+    },
+    {
+      "name": "a page keeps the messages that arrived while it was on its way",
+      "steps": [
+        {"update": {"localId": "live", "generation": 1, "seq": "9", "role": "assistant", "kind": "message", "text": "newer", "complete": true}},
+        {
+          "page": [
+            {"localId": "old", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "older", "complete": true},
+            {"localId": "mid", "generation": 1, "seq": "5", "role": "assistant", "kind": "message", "text": "middle", "complete": true}
+          ]
+        }
+      ],
+      "messages": [{"localId": "old", "text": "older", "complete": true}, {"localId": "mid", "text": "middle", "complete": true}, {"localId": "live", "text": "newer", "complete": true}]
+    }
+  ],
+  "ticker": [
+    {"name": "an empty transcript says nothing", "messages": [], "items": []},
+    {"name": "the title alone is the ticker", "messages": [], "title": "The title", "items": ["The title"]},
+    {"name": "a blank title is left out", "messages": [], "title": "  \t", "items": []},
+    {"name": "a title is trimmed", "messages": [], "title": "  The title \n", "items": ["The title"]},
+    {
+      "name": "a running tool call",
+      "messages": [
+        {
+          "localId": "t1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": false,
+          "tool": {"toolCallId": "t1", "title": "cargo test", "status": "in_progress", "locations": []}
+        }
+      ],
+      "items": ["Running cargo test"]
+    },
+    {
+      "name": "a tool call that waits",
+      "messages": [
+        {
+          "localId": "t1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": false,
+          "tool": {"toolCallId": "t1", "title": "cargo test", "status": "pending", "locations": []}
+        }
+      ],
+      "items": ["Waiting: cargo test"]
+    },
+    {
+      "name": "a finished tool call",
+      "messages": [
+        {
+          "localId": "t1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t1", "title": "cargo test", "status": "completed", "locations": []}
+        }
+      ],
+      "items": ["Done: cargo test"]
+    },
+    {
+      "name": "a failed tool call",
+      "messages": [
+        {
+          "localId": "t1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t1", "title": "cargo test", "status": "failed", "locations": []}
+        }
+      ],
+      "items": ["Failed: cargo test"]
+    },
+    {
+      "name": "messages that are not tool calls or plans say nothing",
+      "messages": [
+        {"localId": "a", "generation": 1, "seq": "1", "role": "assistant", "kind": "message", "text": "thinking", "complete": true},
+        {"localId": "b", "generation": 1, "seq": "2", "role": "assistant", "kind": "thought", "text": "hm", "complete": true}
+      ],
+      "items": []
+    },
+    {
+      "name": "the plan step in progress leads with the latest tool call, then earlier calls, then the title",
+      "messages": [
+        {
+          "localId": "plan1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "plan",
+          "text": "",
+          "complete": true,
+          "plan": [
+            {"content": "Read the schema", "priority": "medium", "status": "completed"},
+            {"content": "Run the contract tests", "priority": "medium", "status": "in_progress"},
+            {"content": "Report", "priority": "medium", "status": "pending"}
+          ]
+        },
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "schema/v2/meta.json", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t3", "title": "cargo fmt", "status": "failed", "locations": []}
+        },
+        {
+          "localId": "t4",
+          "generation": 1,
+          "seq": "4",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": false,
+          "tool": {"toolCallId": "t4", "title": "cargo test -p acp", "status": "in_progress", "locations": []}
+        }
+      ],
+      "title": "ACP v2 client",
+      "items": ["Step 2/3: Run the contract tests · Running cargo test -p acp", "Failed: cargo fmt", "Done: schema/v2/meta.json", "ACP v2 client"]
+    },
+    {
+      "name": "the first pending step stands in when none is in progress",
+      "messages": [
+        {
+          "localId": "plan1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "plan",
+          "text": "",
+          "complete": true,
+          "plan": [
+            {"content": "Read", "priority": "medium", "status": "completed"},
+            {"content": "Write", "priority": "medium", "status": "pending"},
+            {"content": "Report", "priority": "medium", "status": "pending"}
+          ]
+        }
+      ],
+      "items": ["Step 2/3: Write"]
+    },
+    {
+      "name": "a plan with nothing left to do names no step",
+      "messages": [
+        {
+          "localId": "plan1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "plan",
+          "text": "",
+          "complete": true,
+          "plan": [{"content": "Read", "priority": "medium", "status": "completed"}, {"content": "Write", "priority": "medium", "status": "completed"}]
+        },
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "ls", "status": "completed", "locations": []}
+        }
+      ],
+      "items": ["Done: ls"]
+    },
+    {
+      "name": "an empty plan names no step",
+      "messages": [
+        {"localId": "plan1", "generation": 1, "seq": "1", "role": "assistant", "kind": "plan", "text": "", "complete": true, "plan": []},
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "ls", "status": "completed", "locations": []}
+        }
+      ],
+      "items": ["Done: ls"]
+    },
+    {
+      "name": "the latest plan of the turn is the one read",
+      "messages": [
+        {
+          "localId": "plan1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "plan",
+          "text": "",
+          "complete": true,
+          "plan": [{"content": "Old", "priority": "medium", "status": "in_progress"}]
+        },
+        {
+          "localId": "plan2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "plan",
+          "text": "",
+          "complete": true,
+          "plan": [{"content": "New", "priority": "medium", "status": "in_progress"}]
+        }
+      ],
+      "items": ["Step 1/1: New"]
+    },
+    {
+      "name": "three earlier tool calls follow the current one and no more",
+      "messages": [
+        {
+          "localId": "t1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t1", "title": "step 1", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "step 2", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t3", "title": "step 3", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t4",
+          "generation": 1,
+          "seq": "4",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t4", "title": "step 4", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t5",
+          "generation": 1,
+          "seq": "5",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t5", "title": "step 5", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t6",
+          "generation": 1,
+          "seq": "6",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t6", "title": "step 6", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t7",
+          "generation": 1,
+          "seq": "7",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t7", "title": "step 7", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t8",
+          "generation": 1,
+          "seq": "8",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t8", "title": "step 8", "status": "completed", "locations": []}
+        }
+      ],
+      "items": ["Done: step 8", "Done: step 7", "Done: step 6", "Done: step 5"]
+    },
+    {
+      "name": "a failed tool call leaves the ticker once a later call of the turn succeeds",
+      "messages": [
+        {"localId": "u1", "generation": 1, "seq": "1", "role": "user", "kind": "message", "text": "go", "complete": true},
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "Write out", "status": "failed", "locations": []}
+        },
+        {
+          "localId": "t3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t3", "title": "Write out", "status": "completed", "locations": []}
+        }
+      ],
+      "items": ["Done: Write out"]
+    },
+    {
+      "name": "a failed tool call stays while nothing after it has succeeded",
+      "messages": [
+        {"localId": "u1", "generation": 1, "seq": "1", "role": "user", "kind": "message", "text": "go", "complete": true},
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "Read a", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t3", "title": "Write out", "status": "failed", "locations": []}
+        }
+      ],
+      "items": ["Failed: Write out", "Done: Read a"]
+    },
+    {
+      "name": "only a failure before a success is dropped",
+      "messages": [
+        {
+          "localId": "t1",
+          "generation": 1,
+          "seq": "1",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t1", "title": "a", "status": "failed", "locations": []}
+        },
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "b", "status": "completed", "locations": []}
+        },
+        {
+          "localId": "t3",
+          "generation": 1,
+          "seq": "3",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t3", "title": "c", "status": "failed", "locations": []}
+        }
+      ],
+      "items": ["Failed: c", "Done: b"]
+    },
+    {
+      "name": "a failed tool call leaves the ticker when the next turn starts",
+      "messages": [
+        {"localId": "u1", "generation": 1, "seq": "1", "role": "user", "kind": "message", "text": "go", "complete": true},
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "Write out", "status": "failed", "locations": []}
+        },
+        {"localId": "u3", "generation": 1, "seq": "3", "role": "user", "kind": "message", "text": "go", "complete": true}
+      ],
+      "items": []
+    },
+    {
+      "name": "a new turn starts the ticker clean and the old turn's calls stay out",
+      "messages": [
+        {"localId": "u1", "generation": 1, "seq": "1", "role": "user", "kind": "message", "text": "go", "complete": true},
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "Write out", "status": "failed", "locations": []}
+        },
+        {"localId": "u3", "generation": 1, "seq": "3", "role": "user", "kind": "message", "text": "go", "complete": true},
+        {
+          "localId": "t4",
+          "generation": 1,
+          "seq": "4",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t4", "title": "Read notes", "status": "completed", "locations": []}
+        }
+      ],
+      "items": ["Done: Read notes"]
+    },
+    {
+      "name": "an earlier turn's plan does not lead the ticker",
+      "messages": [
+        {"localId": "u1", "generation": 1, "seq": "1", "role": "user", "kind": "message", "text": "go", "complete": true},
+        {
+          "localId": "plan2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "plan",
+          "text": "",
+          "complete": true,
+          "plan": [{"content": "Old step", "priority": "medium", "status": "in_progress"}]
+        },
+        {"localId": "u3", "generation": 1, "seq": "3", "role": "user", "kind": "message", "text": "go", "complete": true}
+      ],
+      "items": []
+    },
+    {
+      "name": "the title follows a new turn that has done nothing yet",
+      "messages": [
+        {"localId": "u1", "generation": 1, "seq": "1", "role": "user", "kind": "message", "text": "go", "complete": true},
+        {
+          "localId": "t2",
+          "generation": 1,
+          "seq": "2",
+          "role": "assistant",
+          "kind": "tool",
+          "text": "",
+          "complete": true,
+          "tool": {"toolCallId": "t2", "title": "Write out", "status": "failed", "locations": []}
+        },
+        {"localId": "u3", "generation": 1, "seq": "3", "role": "user", "kind": "message", "text": "go", "complete": true}
+      ],
+      "title": "The title",
+      "items": ["The title"]
+    }
+  ]
+}

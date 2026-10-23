@@ -90,8 +90,9 @@ ADR when you change a boundary.
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
   the same file. Change the vectors first.
 - The rules the Mac, iOS and desktop clients share are `x-clientPolicy` in `protocol.json`:
-  request, greeting and reconnect timings, the terminal input chunk, the usage and context
-  band thresholds and ring opacities, the weekly-window rule, provider names and which
+  request, greeting and reconnect timings, the terminal input chunk, the `caps` (waiting messages
+  read, links found in one text, pages of a model catalogue, tool calls the ticker lists), the
+  usage and context band thresholds and ring opacities, the weekly-window rule, provider names and which
   configuration selector is the model, effort or permission one. Use `ClientPolicy` and
   `ConfigOption.isModel`/`isEffort`/`isPermissionMode` in Swift and
   `soyeht_protocol::client_policy` in Rust. Behaviour the two languages implement separately

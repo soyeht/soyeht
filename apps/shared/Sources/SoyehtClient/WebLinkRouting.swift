@@ -9,7 +9,6 @@ public enum WebLinkDestination: Equatable, Sendable {
 }
 
 public enum WebLinkRouting {
-  private static let maximumLinks = 128
   static let matcher = try? NSRegularExpression(
     pattern: #"(?i)https?://[^\s<>\"']+"#)
 
@@ -26,7 +25,8 @@ public enum WebLinkRouting {
   )] {
     guard let matcher else { return [] }
     let whole = NSRange(text.startIndex..<text.endIndex, in: text)
-    return matcher.matches(in: text, range: whole).prefix(maximumLinks).compactMap { match in
+    return matcher.matches(in: text, range: whole).prefix(ClientPolicy.capsWebLinks).compactMap {
+      match in
       guard var range = Range(match.range, in: text) else { return nil }
       while range.lowerBound < range.upperBound,
         let last = text[range].last, ".,;:!?)]}".contains(last)

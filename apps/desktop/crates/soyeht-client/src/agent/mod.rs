@@ -9,14 +9,12 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{
     AgentMessageUpdateKind, ConfigOption, ConfigValue, Pane, PaneState, PaneUpdateEvent,
     PermissionRequest, PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind,
-    TranscriptMessage, TranscriptRole,
+    TranscriptMessage, TranscriptRole, client_policy::CAPS_TICKER_HISTORY,
 };
 use std::time::{Duration, Instant};
 
 /// The messages of a transcript the view draws; earlier ones stay in the replica.
 pub const TAIL: usize = 200;
-/// The tool calls the header ticker lists after the current activity.
-const TICKER_HISTORY: usize = 3;
 /// What stands between two entries of the header ticker.
 pub const TICKER_SEPARATOR: &str = "   \u{2022}   ";
 
@@ -71,19 +69,38 @@ pub struct AgentView {
 }
 
 impl AgentView {
-    /// Folds a message in: a new one is inserted at its place, a known one is replaced unless
-    /// what is held is further along (a reply fetched earlier must not undo a newer update).
+    /// Folds an update in: a new message is inserted at its place and a known one is replaced,
+    /// as the update carries the whole message.
     pub fn merge(&mut self, message: TranscriptMessage) -> Result<()> {
+        self.fold(message, |_, _| true)
+    }
+
+    /// Folds a fetched page in. Nothing already known is dropped, and a known message that is
+    /// further along stays: the page may have been read before the updates that arrived while it
+    /// was on its way.
+    pub fn merge_page(&mut self, page: Vec<TranscriptMessage>) -> Result<()> {
+        page.into_iter()
+            .try_for_each(|message| self.fold(message, supersedes))
+    }
+
+    /// Puts `message` at its place, replacing the known one with its `localId` when `replaces` says
+    /// so.
+    fn fold(
+        &mut self,
+        message: TranscriptMessage,
+        replaces: fn(&TranscriptMessage, &TranscriptMessage) -> bool,
+    ) -> Result<()> {
         let order = sequence(&message)?;
-        if let Some(known) = self
+        if let Some(index) = self
             .messages
-            .iter_mut()
-            .find(|known| known.local_id == message.local_id)
+            .iter()
+            .position(|known| known.local_id == message.local_id)
         {
-            if supersedes(&message, known) {
-                *known = message;
+            if !replaces(&message, &self.messages[index]) {
+                return Ok(());
             }
-            return Ok(());
+            // The replacement goes where its sequence puts it, as on the Mac.
+            self.messages.remove(index);
         }
         let at = self.messages.partition_point(|held| {
             sequence(held)
@@ -91,12 +108,6 @@ impl AgentView {
         });
         self.messages.insert(at, message);
         Ok(())
-    }
-
-    /// Folds a fetched page in. Nothing already known is dropped: updates that arrived while the
-    /// page was on its way stay.
-    pub fn merge_page(&mut self, page: Vec<TranscriptMessage>) -> Result<()> {
-        page.into_iter().try_for_each(|message| self.merge(message))
     }
 
     /// The messages to draw: the last `limit`, and how many earlier ones are left out.
@@ -143,7 +154,7 @@ impl AgentView {
             tools
                 .iter()
                 .skip(usize::from(current))
-                .take(TICKER_HISTORY)
+                .take(CAPS_TICKER_HISTORY)
                 .map(|tool| describe(tool)),
         );
         let title = title.map(str::trim).filter(|title| !title.is_empty());
@@ -174,7 +185,7 @@ impl AgentView {
                 recovered |= tool.status == ToolStatus::Completed;
                 keep
             })
-            .take(1 + TICKER_HISTORY)
+            .take(1 + CAPS_TICKER_HISTORY)
     }
 
     /// The share of the context window the last usage report says is in use.
@@ -220,7 +231,8 @@ fn progress(status: &ToolStatus) -> u8 {
 }
 
 /// Whether `incoming` is at least as far along as `known`: a finished message beats an unfinished
-/// one, a longer text beats a shorter one, a tool call further on beats one behind.
+/// one, a longer text beats a shorter one, a tool call further on beats one behind, and a command
+/// output with more bytes beats one with fewer (its text is empty; the output is in `terminal`).
 fn supersedes(incoming: &TranscriptMessage, known: &TranscriptMessage) -> bool {
     if incoming.complete != known.complete {
         return incoming.complete;
@@ -228,8 +240,14 @@ fn supersedes(incoming: &TranscriptMessage, known: &TranscriptMessage) -> bool {
     if incoming.complete {
         return true;
     }
-    match (&incoming.tool, &known.tool) {
-        (Some(new), Some(old)) => progress(&new.status) >= progress(&old.status),
+    match (
+        &incoming.tool,
+        &known.tool,
+        &incoming.terminal,
+        &known.terminal,
+    ) {
+        (Some(new), Some(old), _, _) => progress(&new.status) >= progress(&old.status),
+        (_, _, Some(new), Some(old)) => new.bytes.len() >= old.bytes.len(),
         _ => incoming.text.len() >= known.text.len(),
     }
 }
@@ -512,3 +530,5 @@ pub fn status_word(state: &PaneState, needs_authentication: bool, has_session: b
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod vector_tests;

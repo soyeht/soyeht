@@ -11,57 +11,6 @@ fn message(id: &str, seq: &str, text: &str) -> TranscriptMessage {
     serde_json::from_value(message_json(id, seq, "message", text)).unwrap()
 }
 
-fn tool(seq: &str, title: &str, status: &str) -> TranscriptMessage {
-    let mut value = message_json(seq, seq, "tool", "");
-    value["tool"] = json!({"toolCallId": seq, "title": title, "status": status,
-                           "locations": []});
-    serde_json::from_value(value).unwrap()
-}
-
-#[test]
-fn merging_replaces_by_local_id_and_orders_by_sequence() {
-    let mut view = AgentView::default();
-    view.merge(message("b", "2", "second")).unwrap();
-    view.merge(message("a", "1", "first")).unwrap();
-    view.merge(message("b", "2", "second, grown")).unwrap();
-    let texts: Vec<_> = view.messages.iter().map(|m| m.text.as_str()).collect();
-    assert_eq!(texts, ["first", "second, grown"]);
-}
-
-fn partial(id: &str, seq: &str, text: &str, complete: bool) -> TranscriptMessage {
-    let mut value = message(id, seq, text);
-    value.complete = complete;
-    value
-}
-
-#[test]
-fn a_page_fetched_earlier_never_undoes_a_newer_update() {
-    let mut view = AgentView::default();
-    view.merge(partial("m", "2", "Hello, wor", false)).unwrap();
-    view.merge(partial("m", "2", "Hello, world", true)).unwrap();
-    // The page was read before the last chunks: it is behind what is held.
-    view.merge_page(vec![
-        partial("m", "2", "Hello", false),
-        message("a", "1", "first"),
-    ])
-    .unwrap();
-    let held: Vec<_> = view
-        .messages
-        .iter()
-        .map(|m| (m.text.as_str(), m.complete))
-        .collect();
-    assert_eq!(held, [("first", true), ("Hello, world", true)]);
-}
-
-#[test]
-fn a_page_adds_messages_without_dropping_the_known_ones() {
-    let mut view = AgentView::default();
-    view.merge(message("live", "9", "newer")).unwrap();
-    view.merge_page(vec![message("old", "1", "older")]).unwrap();
-    assert_eq!(view.messages.len(), 2);
-    assert_eq!(view.messages[0].local_id, "old");
-}
-
 #[test]
 fn a_sequence_that_is_not_a_decimal_is_refused() {
     let mut view = AgentView::default();
@@ -123,58 +72,6 @@ fn a_commands_output_is_its_bytes_read_as_text() {
     assert_eq!(terminal_text(&output("aGkKb2s=")), "hi\nok");
     assert_eq!(terminal_text(&output("/w==")), "\u{fffd}");
     assert_eq!(terminal_text(&output("not base64!")), "");
-}
-
-#[test]
-fn the_ticker_lists_the_current_step_then_earlier_tool_calls_then_the_title() {
-    let mut view = AgentView::default();
-    assert_eq!(view.ticker(None), None);
-    assert_eq!(view.ticker(Some("  ")), None);
-    for (seq, title, status) in [
-        ("1", "read a", "completed"),
-        ("2", "edit b", "completed"),
-        ("3", "test c", "in_progress"),
-    ] {
-        view.merge(tool(seq, title, status)).unwrap();
-    }
-    let mut plan = message_json("p", "4", "plan", "");
-    plan["plan"] = json!([
-        {"content": "write", "priority": "high", "status": "completed"},
-        {"content": "check", "priority": "high", "status": "in_progress"}
-    ]);
-    view.merge(serde_json::from_value(plan).unwrap()).unwrap();
-    let line = view.ticker(Some("The title")).unwrap();
-    assert_eq!(
-        line,
-        [
-            "Step 2/2: check \u{b7} Running test c",
-            "Done: edit b",
-            "Done: read a",
-            "The title"
-        ]
-        .join(TICKER_SEPARATOR)
-    );
-}
-
-#[test]
-fn a_failed_tool_call_leaves_the_ticker_when_the_next_turn_starts_or_a_retry_succeeds() {
-    let prompt = |seq: &str| {
-        let mut value = message_json(seq, seq, "message", "go");
-        value["role"] = json!("user");
-        serde_json::from_value::<TranscriptMessage>(value).unwrap()
-    };
-    let mut view = AgentView::default();
-    for message in [prompt("1"), tool("2", "Write out", "failed")] {
-        view.merge(message).unwrap();
-    }
-    assert_eq!(view.ticker(None).as_deref(), Some("Failed: Write out"));
-    view.merge(tool("3", "Write out", "completed")).unwrap();
-    assert_eq!(view.ticker(None).as_deref(), Some("Done: Write out"));
-    let mut next = AgentView::default();
-    for message in [prompt("1"), tool("2", "Write out", "failed"), prompt("3")] {
-        next.merge(message).unwrap();
-    }
-    assert_eq!(next.ticker(None), None);
 }
 
 #[test]

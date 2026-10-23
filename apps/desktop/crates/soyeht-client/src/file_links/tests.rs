@@ -70,7 +70,7 @@ fn a_very_long_run_is_no_path() {
 #[test]
 fn only_so_many_references_are_found() {
     let text = "a.rs:1 ".repeat(300);
-    assert_eq!(find(&text).len(), MAX_REFERENCES);
+    assert_eq!(find(&text).len(), CAPS_FILE_LINKS);
 }
 
 #[test]

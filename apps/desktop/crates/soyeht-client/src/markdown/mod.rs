@@ -18,10 +18,12 @@
 mod file_refs;
 mod preview;
 mod streaming;
+mod surface;
 mod web_links;
 
 pub use file_refs::link_references;
 pub use preview::{Preview, Refusal};
+pub use surface::Surface;
 pub use web_links::{bare_addresses, link_blocks};
 
 use crate::file_links::Reference;

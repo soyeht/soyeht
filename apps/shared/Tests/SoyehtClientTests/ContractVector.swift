@@ -1,5 +1,6 @@
 import Foundation
 import SoyehtProtocol
+import Testing
 
 @testable import SoyehtClient
 
@@ -13,8 +14,16 @@ enum ContractVector {
     return try JSONDecoder().decode(JsonValue.self, from: data)
   }
 
-  static func cases(_ vector: JsonValue, _ key: String) -> [JsonValue] {
-    vector[key].array ?? []
+  /// The cases under `key`. A missing or empty section fails the test, so a misspelled key
+  /// cannot make a vector pass without checking anything.
+  static func cases(
+    _ vector: JsonValue, _ key: String, sourceLocation: SourceLocation = #_sourceLocation
+  ) -> [JsonValue] {
+    guard let cases = vector[key].array, !cases.isEmpty else {
+      Issue.record("The vector has no cases under \"\(key)\"", sourceLocation: sourceLocation)
+      return []
+    }
+    return cases
   }
 }
 

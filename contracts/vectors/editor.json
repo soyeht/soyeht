@@ -2175,7 +2175,7 @@
     ]
   },
   "markdownPreview": {
-    "description": "What the editor's Markdown preview shows of the page the editor holds (a Markdown file is previewed beside its lines): the page is refused past the viewport limit in lines and the message size in bytes (the lines joined by a newline), else previewed as the blocks of the shared Markdown rules. It is partial when it does not hold the whole file, and a partial preview labels the lines it shows (1-based, the end line inclusive). A line is either listed in `lines`, or `generated` names how many lines of how many bytes each.",
+    "description": "What the editor's Markdown preview shows of the page the editor holds (a Markdown file is previewed beside its lines): the page is refused past the viewport limit in lines and the message size in bytes (the lines joined by a newline), else previewed as the blocks of the shared Markdown rules. It is partial when it does not hold the whole file, and a partial preview labels the lines it shows (1-based, the end line inclusive). A line is either listed in `lines`, or `generated` names how many lines of how many bytes each. `surfaces` say what a click on a link does where Markdown is drawn: in an agent reply a written address opens in the browser and a file reference of the pane's workspace opens in the editor; in the preview a file's content is not trusted to open anything, so an address keeps the look of a link and opens nothing and a file reference is plain text (ADR 0053 and 0087).",
     "cases": [
       {
         "name": "a whole file that fits is not partial",
@@ -2290,6 +2290,20 @@
         "fromLine": 0,
         "totalLines": 1,
         "refusal": "tooManyBytes"
+      }
+    ],
+    "surfaces": [
+      {
+        "name": "an agent reply",
+        "surface": "reply",
+        "opensAddresses": true,
+        "opensFiles": true
+      },
+      {
+        "name": "the editor's Markdown preview",
+        "surface": "preview",
+        "opensAddresses": false,
+        "opensFiles": false
       }
     ]
   }

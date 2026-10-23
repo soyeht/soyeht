@@ -51,9 +51,6 @@ public protocol AgentTickerSource: Sendable {
 /// The ticker from ACP data the engine already has: the session title, the plan step in
 /// progress, the latest tool calls with their status and the running turn's elapsed time.
 public struct AgentACPTickerSource: AgentTickerSource {
-  /// Earlier tool calls listed after the current activity.
-  public static let toolHistory = 3
-
   public init() {}
 
   public func snapshot(for context: AgentTickerContext) -> AgentTickerSnapshot {
@@ -63,7 +60,7 @@ public struct AgentACPTickerSource: AgentTickerSource {
     if let now = current(messages: messages, latestTool: tools.first) {
       items.append(now)
     }
-    let history = tools.dropFirst(items.isEmpty ? 0 : 1).prefix(Self.toolHistory)
+    let history = tools.dropFirst(items.isEmpty ? 0 : 1).prefix(ClientPolicy.capsTickerHistory)
     items += history.map { tool in
       AgentTickerItem(id: "tool-\(tool.toolCallId)", text: Self.describe(tool))
     }

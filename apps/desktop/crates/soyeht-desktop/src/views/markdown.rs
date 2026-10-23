@@ -16,7 +16,7 @@ use gpui::{
     AnyElement, Div, FontStyle, FontWeight, HighlightStyle, IntoElement, ParentElement,
     SharedString, StrikethroughStyle, Styled, UnderlineStyle, div, px, rgb,
 };
-use soyeht_client::markdown::{self, Block, Run, Style};
+use soyeht_client::markdown::{self, Block, Run, Style, Surface};
 use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 
 /// The Markdown of the replies on screen, parsed once per change, and the files that the pane
@@ -71,6 +71,16 @@ pub(super) enum Opens<'a> {
     /// text: a file's content is not trusted to open anything (the editor's preview, as the
     /// Mac's, ADR 0053 and 0087).
     Nothing,
+}
+
+impl Opens<'_> {
+    /// Where the drawn text is, which decides what a click may open.
+    fn surface(self) -> Surface {
+        match self {
+            Self::Links(_) => Surface::Reply,
+            Self::Nothing => Surface::Preview,
+        }
+    }
 }
 
 /// The blocks of one message, in `ink`. `owner` names the message, for its links.
@@ -203,21 +213,25 @@ fn table(header: &[Vec<Run>], rows: &[Vec<Vec<Run>>], draw: &mut Draw) -> AnyEle
 /// address; a file reference opens its file when it is in the workspace; with `Opens::Nothing`
 /// a link is only drawn and a reference is plain text.
 fn link_of(style: &Style, opens: Opens) -> (bool, Option<Link>) {
-    let file = match opens {
-        Opens::Links(files) => style
-            .file
-            .as_ref()
-            .and_then(|reference| files?.resolve(reference)),
+    let surface = opens.surface();
+    let files = match opens {
+        Opens::Links(files) => files,
         Opens::Nothing => None,
     };
+    let file = style
+        .file
+        .as_ref()
+        .filter(|_| surface.opens_files())
+        .and_then(|reference| files?.resolve(reference));
     let linked = style.link.is_some() || file.is_some();
-    let target = match opens {
-        Opens::Links(_) => style
+    let target = if surface.opens_addresses() {
+        style
             .link
             .clone()
             .map(Link::Web)
-            .or_else(|| file.map(Link::File)),
-        Opens::Nothing => None,
+            .or_else(|| file.map(Link::File))
+    } else {
+        None
     };
     (linked, target)
 }

@@ -44,41 +44,43 @@ pub fn can_switch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::agent_session;
+    use crate::testing::{agent_session, cases, text};
     use serde_json::json;
 
-    fn agent(operation: bool) -> AgentSession {
-        agent_session(if operation {
-            json!({"operation": {
-                "operationId": "o", "configId": "model", "value": "m",
-                "startedAt": "2026-10-01T00:00:00Z",
-            }})
-        } else {
-            json!({})
-        })
-    }
-    fn view(phase: Phase) -> HarnessSwitchView {
-        HarnessSwitchView {
-            from: "a".into(),
-            to: "b".into(),
-            phase,
-            reason: None,
-        }
-    }
-
+    /// The cases of `contracts/vectors/harness-switch.json`, which the Mac client passes too.
     #[test]
-    fn a_switch_is_blocked_while_disconnected_configuring_or_already_switching() {
-        let idle = agent(false);
-        assert!(can_switch(true, Some(&idle), None));
-        assert!(can_switch(true, Some(&idle), Some(&view(Phase::Restarted))));
-        assert!(can_switch(true, Some(&idle), Some(&view(Phase::Failed))));
-        assert!(!can_switch(false, Some(&idle), None));
-        assert!(!can_switch(true, Some(&agent(true)), None));
-        assert!(!can_switch(
-            true,
-            Some(&idle),
-            Some(&view(Phase::Switching))
-        ));
-        assert!(!can_switch(true, None, None));
+    fn a_switch_follows_the_shared_vector() {
+        for case in cases("harness-switch", "canSwitch") {
+            let agent = match text(&case["agent"]) {
+                "none" => None,
+                "idle" => Some(agent_session(json!({}))),
+                "configuring" => Some(agent_session(json!({"operation": {
+                    "operationId": "o", "configId": "model", "value": "m",
+                    "startedAt": "2026-10-01T00:00:00Z",
+                }}))),
+                other => panic!("unknown agent {other}"),
+            };
+            let view = case["switch"].as_str().map(|phase| HarnessSwitchView {
+                from: "a".into(),
+                to: "b".into(),
+                phase: match phase {
+                    "switching" => Phase::Switching,
+                    "restarted" => Phase::Restarted,
+                    "failed" => Phase::Failed,
+                    other => panic!("unknown switch {other}"),
+                },
+                reason: None,
+            });
+            assert_eq!(
+                can_switch(
+                    case["connected"].as_bool().unwrap(),
+                    agent.as_ref(),
+                    view.as_ref()
+                ),
+                case["canSwitch"].as_bool().unwrap(),
+                "{}",
+                text(&case["name"])
+            );
+        }
     }
 }

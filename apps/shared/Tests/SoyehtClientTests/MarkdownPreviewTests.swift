@@ -56,3 +56,24 @@ import Testing
       fromLine: 0, totalLineCount: 1)
   }
 }
+
+/// The cases of `markdownPreview.surfaces` in `contracts/vectors/editor.json`, which the desktop
+/// client passes as well: a file's content is not trusted to open anything.
+@Test func aLinkOpensOnlyWhereTheVectorSaysItDoes() throws {
+  let vector = try ContractVector.load("editor")["markdownPreview"]
+  let style = AgentConversationStyle.pane(
+    SoyehtThemeColorSet(palette: TerminalColorTheme.neoMilk.palette))
+  let runs = [MarkdownRun("docs", link: "https://example.com")]
+  for item in ContractVector.cases(vector, "surfaces") {
+    let name = item["name"].string ?? ""
+    let surface: MarkdownSurface = item["surface"].string == "reply" ? .reply : .preview
+    #expect(surface.opensAddresses == item["opensAddresses"].bool, "\(name)")
+    #expect(surface.opensFiles == item["opensFiles"].bool, "\(name)")
+    let look = MarkdownLook(
+      workspaceId: surface == .reply ? "workspace" : nil, style: style, ink: style.ink)
+    #expect(look.surface == surface, "\(name)")
+    #expect(
+      look.attributed(runs).runs.allSatisfy { $0.link != nil } == surface.opensAddresses,
+      "\(name)")
+  }
+}

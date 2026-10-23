@@ -25,7 +25,9 @@ device, because the system browser they choose between is the device's own.
 
 `x-clientPolicy` holds what the clients agree on without sending it over the wire: the request,
 greeting, reconnect (first wait and ceiling) and draft-beat timings, the page size of each list
-request (`maximum` takes the request's own limit), the terminal input chunk, the usage and context
+request (`maximum` takes the request's own limit), the caps the clients stop at (`caps`: the
+waiting messages read for a queue, the links found in one text, the pages of a model catalogue and
+the tool calls the header ticker lists), the terminal input chunk, the usage and context
 band thresholds, the ring opacities, the weekly-window keyword, the provider names, the texts two
 clients both store (the harness switch wording and the reason a card moved on the task board), the
 image types an agent takes inline, what each pane state means (whether a turn runs in it and the
@@ -39,7 +41,7 @@ and status word of every pane state, `vectors/reconnect.json` the waits between 
 lines a text takes, and `vectors/editor.json` when the visible lines need another page of a file,
 which editor tab shows and which takes over, what a keystroke changes and sends, and how the
 project tree answers the keys, and `vectors/workspaces.json` how a folder is named, resolved and reused as a
-workspace, which folders are offered again, what a rename sends and which workspace is selected when one closes, and `vectors/agent-attention.json` which requests an agent waits on, which are new, the text of the system notification, when one is raised and whether a click still has a target; the Mac, iOS and desktop clients all pass them (the notification: the Mac and the desktop). The editor's
+workspace, which folders are offered again, what a rename sends and which workspace is selected when one closes, and `vectors/agent-attention.json` which requests an agent waits on, which are new, the text of the system notification, when one is raised and whether a click still has a target; the Mac, iOS and desktop clients all pass them (the notification: the Mac and the desktop). `vectors/agent-transcript.json` holds what an agent pane's replica keeps when updates and fetched pages are folded in and what the header's ticker says, `vectors/harness-switch.json` when a pane may switch harness, and the `surfaces` of `vectors/editor.json` `markdownPreview` what a click on a link opens in a reply and in the preview (a file's content is not trusted to open anything); the Mac and the desktop pass them. The editor's
 constants (`editor`: the read-ahead, the tab width, the bounded tab history, the save wait, the
 indent), the pairs it closes (`editorPairs`) and the palette role of each syntax highlight
 (`highlightRoles`) are generated with the rest, and the editor's metrics (`editor` in
