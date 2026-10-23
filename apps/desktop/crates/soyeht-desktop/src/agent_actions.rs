@@ -9,7 +9,7 @@ use crate::{
 };
 use gpui::{ClipboardItem, Context, Entity};
 use soyeht_client::{
-    Command, Connection,
+    Command, Connection, Error,
     agent::TAIL,
     cards::{Earlier, elicitation},
     loops,
@@ -203,5 +203,84 @@ impl Workbench {
             fields,
         });
         cx.notify();
+    }
+
+    /// Sends the composer's text to the agent. The text leaves the composer only once the
+    /// engine's queue has taken it: a message that could not be sent stays to be sent again.
+    pub(crate) fn submit_prompt(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        let Some(field) = self.panes.get(pane_id).and_then(|ui| ui.field.clone()) else {
+            return;
+        };
+        let Some(text) = field.read(cx).draft().to_send() else {
+            return;
+        };
+        let text = self.state.slash_catalog(pane_id).prompt(&text);
+        if self.state.connection != Connection::Connected {
+            self.state.problem = Some(Error::Disconnected.to_string());
+            cx.notify();
+            return;
+        }
+        let attachments = self
+            .staged(pane_id)
+            .map(|staged| staged.items().to_vec())
+            .unwrap_or_default();
+        if self.send(Command::Prompt {
+            pane_id: pane_id.to_owned(),
+            text,
+            attachments,
+        }) {
+            field.update(cx, |field, cx| field.clear(cx));
+            if let Some(staged) = self
+                .panes
+                .get_mut(pane_id)
+                .and_then(|ui| ui.staged.as_mut())
+            {
+                staged.take();
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_thought(
+        &mut self,
+        pane_id: &str,
+        message_id: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let open = &mut self.panes.of(pane_id).open_thoughts;
+        if !open.remove(message_id) {
+            open.insert(message_id.to_owned());
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_turn(&mut self, pane_id: &str) {
+        self.send(Command::Cancel {
+            pane_id: pane_id.to_owned(),
+        });
+    }
+
+    pub(crate) fn set_config(
+        &mut self,
+        pane_id: &str,
+        config_id: &str,
+        value: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.send(Command::SetConfig {
+            pane_id: pane_id.to_owned(),
+            config_id: config_id.to_owned(),
+            value: value.to_owned(),
+        });
+        self.menus.close();
+        cx.notify();
+    }
+
+    pub(crate) fn answer_permission(&mut self, pane_id: &str, request_id: &str, option_id: &str) {
+        self.send(Command::AnswerPermission {
+            pane_id: pane_id.to_owned(),
+            request_id: request_id.to_owned(),
+            option_id: option_id.to_owned(),
+        });
     }
 }

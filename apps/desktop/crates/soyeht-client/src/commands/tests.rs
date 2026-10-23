@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::Value;
+use std::sync::mpsc;
 
 fn input(pane: &str, text: &str) -> Command {
     Command::Input {

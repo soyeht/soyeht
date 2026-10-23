@@ -54,7 +54,7 @@ impl Workbench {
         let Some(drag) = event.dragged_item().downcast_ref::<PaneDrag>() else {
             return;
         };
-        let redock = &mut self.gestures.redock;
+        let redock = &mut self.stage.gestures.redock;
         redock.source = Some(drag.pane_id.clone());
         let pointer = (
             f64::from(f32::from(event.event.position.x)),
@@ -85,7 +85,8 @@ impl Workbench {
 
     /// The zone of the pane `pane_id` that a drop would land on, to light up.
     pub(crate) fn drop_zone_over(&self, pane_id: &str) -> Option<&Over> {
-        self.gestures
+        self.stage
+            .gestures
             .redock
             .over
             .as_ref()
@@ -96,7 +97,7 @@ impl Workbench {
     /// the new arrangement is stored.
     pub(crate) fn pane_dropped(&mut self, target: &str, drag: &PaneDrag, cx: &mut Context<Self>) {
         let zone = self.drop_zone_over(target).map(|over| over.zone);
-        self.gestures.redock = Redock::default();
+        self.stage.gestures.redock = Redock::default();
         if let Some(zone) = zone {
             if let Ok(effects) = self.state.move_pane(&drag.pane_id, target, zone) {
                 self.run_effects(effects);
@@ -109,8 +110,8 @@ impl Workbench {
 
     /// The pointer was let go anywhere a pane cannot be dropped: the drag is over.
     pub(crate) fn pane_drag_ended(&mut self, cx: &mut Context<Self>) {
-        if self.gestures.redock.source.take().is_some() {
-            self.gestures.redock = Redock::default();
+        if self.stage.gestures.redock.source.take().is_some() {
+            self.stage.gestures.redock = Redock::default();
             cx.notify();
         }
     }
@@ -122,9 +123,9 @@ impl Workbench {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if event.keystroke.key == "escape" && self.gestures.redock.source.is_some() {
+        if event.keystroke.key == "escape" && self.stage.gestures.redock.source.is_some() {
             cx.stop_active_drag(window);
-            self.gestures.redock = Redock::default();
+            self.stage.gestures.redock = Redock::default();
             cx.notify();
             cx.stop_propagation();
         }

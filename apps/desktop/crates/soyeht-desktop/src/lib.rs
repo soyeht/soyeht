@@ -35,6 +35,7 @@ mod prefs;
 mod redock;
 mod rename;
 mod slash_ui;
+mod stage;
 mod start_flow;
 mod switch_flow;
 mod tasks_ui;

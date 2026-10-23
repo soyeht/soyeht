@@ -73,7 +73,7 @@ impl Workbench {
         let file = self.state.editors.file_of_pane(&pane.pane_id);
         let label = file.map_or_else(|| "Editor".to_owned(), |file| path_label(&file.doc.path));
         let status = self.file_state_word(&pane.pane_id, palette);
-        let shown = !self.project_panel_hidden.contains(&pane.workspace_id);
+        let shown = !self.panels.hidden.contains(&pane.workspace_id);
         let tip = format!(
             "{} Project Panel ({})",
             if shown { "Hide" } else { "Show" },
@@ -158,7 +158,7 @@ impl Workbench {
             .map(|file| file.dropped_keys)
             .filter(|dropped| *dropped > 0)
             .map(|dropped| format!("{dropped} keys could not be applied"));
-        let hidden = self.project_panel_hidden.contains(&workspace);
+        let hidden = self.panels.hidden.contains(&workspace);
         let tabs = self.editor_tabs(cx, palette, pane);
         let finding = self.find_bar(pane, cx, palette);
         let panel =

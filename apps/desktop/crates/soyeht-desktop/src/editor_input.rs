@@ -267,7 +267,7 @@ impl Workbench {
         if let Some(workspace) = self.workspace_of(pane_id) {
             self.state.editor_cycle(&workspace, forward);
             self.announce_focus();
-            self.reveal = self.state.focused_pane().map(|pane| pane.pane_id.clone());
+            self.stage.reveal = self.state.focused_pane().map(|pane| pane.pane_id.clone());
         }
     }
 
@@ -414,9 +414,9 @@ impl Workbench {
 
     pub(crate) fn toggle_project_panel(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         if let Some(workspace) = self.workspace_of(pane_id)
-            && !self.project_panel_hidden.remove(&workspace)
+            && !self.panels.hidden.remove(&workspace)
         {
-            self.project_panel_hidden.insert(workspace);
+            self.panels.hidden.insert(workspace);
         }
         cx.notify();
     }

@@ -56,7 +56,7 @@ impl Workbench {
     /// The pointer went down on a divider: remember the arrangement the drag starts from.
     pub(crate) fn divider_pressed(&mut self, key: DividerKey, axis: Axis, start: Point<Pixels>) {
         self.state.cancel_layout_draft();
-        self.gestures.gesture = self.arrangement().map(|(_, base)| Gesture {
+        self.stage.gestures.gesture = self.arrangement().map(|(_, base)| Gesture {
             key,
             axis,
             start,
@@ -71,7 +71,8 @@ impl Workbench {
         pointer: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        let (Some(workspace_id), Some(gesture)) = (self.workspace_id(), &self.gestures.gesture)
+        let (Some(workspace_id), Some(gesture)) =
+            (self.workspace_id(), &self.stage.gestures.gesture)
         else {
             return;
         };
@@ -101,7 +102,7 @@ impl Workbench {
 
     /// The pointer let go: store the arrangement the drag made.
     pub(crate) fn divider_released(&mut self, cx: &mut Context<Self>) {
-        if self.gestures.gesture.take().is_some() {
+        if self.stage.gestures.gesture.take().is_some() {
             let effects = self.state.commit_layout_draft();
             self.run_effects(effects);
             cx.notify();
@@ -110,7 +111,7 @@ impl Workbench {
 
     /// A double click: the panes of the split share the room equally.
     pub(crate) fn divider_equalized(&mut self, key: &DividerKey, cx: &mut Context<Self>) {
-        self.gestures.gesture = None;
+        self.stage.gestures.gesture = None;
         self.state.cancel_layout_draft();
         let Some((workspace_id, tree)) = self.arrangement() else {
             return;
@@ -127,7 +128,7 @@ impl Workbench {
     }
 
     fn drop_gesture(&mut self, message: &str) {
-        self.gestures.gesture = None;
+        self.stage.gestures.gesture = None;
         self.state.cancel_layout_draft();
         self.state.problem = Some(message.to_owned());
     }
@@ -147,7 +148,7 @@ impl Workbench {
 
     /// The room the panes are drawn in (width, height): the stage without the halo around it.
     fn stage_size(&self) -> (f64, f64) {
-        let size = self.stage_scroll.bounds().size;
+        let size = self.stage.scroll.bounds().size;
         let inner = |extent: Pixels| f64::from((f32::from(extent) - 2.0 * neo::PANE_HALO).max(0.0));
         (inner(size.width), inner(size.height))
     }

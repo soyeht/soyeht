@@ -16,6 +16,23 @@ const WIDTH_MARGIN: f32 = desktop::WINDOW_WIDTH_MARGIN;
 /// points, and the window is centered on the whole display).
 const HEIGHT_MARGIN: f32 = desktop::WINDOW_HEIGHT_MARGIN;
 
+/// The size of the window as the last frame saw it. Before the first frame nothing is measured,
+/// and a popover that fits inside the window gets all the room it asks for.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct WindowSize {
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+}
+
+impl Default for WindowSize {
+    fn default() -> Self {
+        Self {
+            width: f32::MAX,
+            height: f32::MAX,
+        }
+    }
+}
+
 /// `DESIGN`, reduced so that it fits `display` with a margin, but not below `MINIMUM`. With no
 /// display to measure the design size is used as it is.
 pub fn opening_size(display: Option<(f32, f32)>) -> (f32, f32) {

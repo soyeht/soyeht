@@ -300,7 +300,7 @@ impl Workbench {
             (
                 self.switch_popover(pane, palette, cx),
                 desktop::SWITCH_POPOVER_MAXIMUM_HEIGHT
-                    .min(self.window_height - 2.0 * desktop::PREFERENCES_INSET),
+                    .min(self.window.height - 2.0 * desktop::PREFERENCES_INSET),
             )
         });
         ControlChip {

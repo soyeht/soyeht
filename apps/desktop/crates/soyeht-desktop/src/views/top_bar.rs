@@ -92,19 +92,19 @@ impl Workbench {
         if ids.is_empty() {
             // With no tab the strip shrinks to nothing while its padding stays, which reads as
             // content hidden past the right end and drew a stray chevron on the empty state.
-            self.hidden_tabs = 0;
+            self.stage.hidden_tabs = 0;
             return TabStrip {
                 element: div().into_any_element(),
                 hidden: Vec::new(),
             };
         }
         let active = ids.iter().position(|(id, _)| Some(id) == selected.as_ref());
-        let viewport = self.tab_scroll.bounds();
+        let viewport = self.stage.tab_scroll.bounds();
         // The active tab is brought into view by the smallest move that shows all of it, once the
         // strip has been laid out and its tab has a place.
-        if self.revealed_tab != selected
+        if self.stage.revealed_tab != selected
             && viewport.size.width > px(0.0)
-            && let Some(tab) = active.and_then(|index| self.tab_scroll.bounds_for_item(index))
+            && let Some(tab) = active.and_then(|index| self.stage.tab_scroll.bounds_for_item(index))
         {
             let clearance = px(shadow_clearance());
             let shift = if tab.left() < viewport.left() + clearance {
@@ -114,25 +114,29 @@ impl Workbench {
             } else {
                 px(0.0)
             };
-            let offset = self.tab_scroll.offset();
-            self.tab_scroll
+            let offset = self.stage.tab_scroll.offset();
+            self.stage
+                .tab_scroll
                 .set_offset(point(offset.x + shift, offset.y));
-            self.revealed_tab.clone_from(&selected);
+            self.stage.revealed_tab.clone_from(&selected);
         }
         let hidden: Vec<usize> = (0..ids.len())
             .filter(|&index| {
-                self.tab_scroll.bounds_for_item(index).is_some_and(|tab| {
-                    viewport.size.width > px(0.0)
-                        && (tab.left() < viewport.left() || tab.right() > viewport.right())
-                })
+                self.stage
+                    .tab_scroll
+                    .bounds_for_item(index)
+                    .is_some_and(|tab| {
+                        viewport.size.width > px(0.0)
+                            && (tab.left() < viewport.left() || tab.right() > viewport.right())
+                    })
             })
             .collect();
-        if hidden.len() != self.hidden_tabs {
+        if hidden.len() != self.stage.hidden_tabs {
             // The "+N" button changes the strip's room: lay it out again with the new count.
-            self.hidden_tabs = hidden.len();
+            self.stage.hidden_tabs = hidden.len();
             cx.notify();
         }
-        let (left, right) = hidden_ends(&self.tab_scroll);
+        let (left, right) = hidden_ends(&self.stage.tab_scroll);
         let first_hidden = hidden.first().copied();
         let last_hidden = hidden.last().copied();
         let tabs: Vec<AnyElement> = ids
@@ -155,7 +159,7 @@ impl Workbench {
                 .own_press()
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     if let Some(index) = target {
-                        this.tab_scroll.scroll_to_item(index);
+                        this.stage.tab_scroll.scroll_to_item(index);
                         cx.notify();
                     }
                 }))
@@ -170,7 +174,7 @@ impl Workbench {
             .gap(px(space::X10))
             .p(px(clearance))
             .overflow_x_scroll()
-            .track_scroll(&self.tab_scroll)
+            .track_scroll(&self.stage.tab_scroll)
             .children(tabs);
         strip.style().flex_shrink = Some(1.0);
         let element = div()
@@ -180,7 +184,7 @@ impl Workbench {
             .min_w_0()
             .h(px(layout::WORKSPACE_TAB_HEIGHT + 2.0 * clearance))
             .child(strip)
-            .children(edge_fades(&self.tab_scroll, palette))
+            .children(edge_fades(&self.stage.tab_scroll, palette))
             .children(left.then(|| chevron("tabs-scroll-left", Icon::ChevronLeft, first_hidden)))
             .children(right.then(|| chevron("tabs-scroll-right", Icon::ChevronRight, last_hidden)))
             .into_any_element();

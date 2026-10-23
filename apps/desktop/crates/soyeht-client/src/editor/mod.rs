@@ -677,4 +677,6 @@ mod preview_tests;
 #[cfg(test)]
 mod refusal_tests;
 #[cfg(test)]
+mod tab_tests;
+#[cfg(test)]
 mod tests;

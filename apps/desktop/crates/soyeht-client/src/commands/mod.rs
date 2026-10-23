@@ -1,8 +1,13 @@
 //! What the user can ask of the engine, and the typed protocol requests that carry it out.
 
-use crate::tasks::TaskUpdate;
+mod agents;
+mod coalesce;
+mod outcome;
+mod panes;
+mod tasks;
+mod workspaces;
+
 use crate::{
-    Error, Result,
     attachments::{Draft, Upload},
     editor::EditorCommand,
     event::Event,
@@ -12,22 +17,13 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use soyeht_protocol::{
-    AgentPaneRole, ConfigValue, EngineReadinessResult, HarnessInfo, HarnessListResult,
-    LoopSetParams, LoopSetResult, LoopStopWhen, PaneAuthCancelParams, PaneAuthStartParams,
-    PaneCancelParams, PaneCloseParams, PaneCommandsListParams, PaneCommandsListResult,
-    PaneConfigSetParams, PaneCreateParams, PaneCreateResult, PaneDraftParams,
-    PaneElicitationAnswerParams, PaneFocusParams, PaneHarnessSwitchParams, PaneInputParams,
-    PaneMode, PanePermissionAnswerParams, PanePromptParams, PaneQueueRemoveParams,
-    PaneQueueResumeParams, PaneRenameParams, PaneResizeParams, PaneRoleSetParams,
-    PaneStreamSubscribeParams, PaneTranscriptParams, PaneTranscriptResult, PromptOrigin,
-    ReplayFrom, Request, SkillsListResult, TailSelector, TaskCreateParams, TaskCreateResult,
-    TaskDispatchParams, TaskDispatchResult, TaskExecutor, TaskMoveParams, TaskMoveResult,
-    TaskPriority, TaskShowParams, TaskShowResult, TaskState, UsageListParams, UsageListResult,
-    UsageProvider, WorkspaceCloseParams, WorkspaceCreateParams, WorkspaceCreateResult,
-    WorkspaceLayoutSetParams, WorkspacePaneLayoutEnvelope, WorkspaceRenameParams, client_policy,
+    AgentPaneRole, LoopStopWhen, PaneInputParams, Request, TaskExecutor, TaskPriority, TaskState,
+    UsageProvider, WorkspacePaneLayoutEnvelope, client_policy,
 };
-use std::sync::mpsc;
 use uuid::Uuid;
+
+pub use coalesce::coalesce;
+pub use outcome::outcome;
 
 /// Raw input goes out in pieces of the contract's size, as on the Mac client.
 pub const INPUT_CHUNK_BYTES: usize = client_policy::TERMINAL_INPUT_CHUNK_BYTES;
@@ -287,251 +283,11 @@ pub fn input_request(pane_id: &str, bytes: &[u8]) -> Request {
 
 /// The single request a command needs. Input is sent in pieces by the caller.
 pub fn request(command: &Command) -> Option<Request> {
-    if let Some(request) = preference_requests::request(command) {
-        return Some(request);
-    }
-    Some(match command {
-        Command::Input { .. } => return None,
-        Command::Resize {
-            pane_id,
-            rows,
-            cols,
-        } => Request::PaneResize(PaneResizeParams {
-            pane_id: pane_id.clone(),
-            cols: u32::from(*cols),
-            rows: u32::from(*rows),
-            idempotency_key: key(),
-        }),
-        Command::Subscribe { pane_id } => Request::PaneStreamSubscribe(PaneStreamSubscribeParams {
-            pane_id: pane_id.clone(),
-            from: ReplayFrom::V0(TailSelector::Tail),
-        }),
-        Command::Focus { pane_id } => Request::PaneFocus(PaneFocusParams {
-            pane_id: pane_id.clone(),
-            idempotency_key: key(),
-        }),
-        Command::CreateTerminal {
-            workspace_id, cwd, ..
-        } => create(workspace_id, PaneMode::Terminal, None, cwd.as_ref()),
-        Command::CreateAgent {
-            workspace_id,
-            harness,
-            cwd,
-            ..
-        } => create(workspace_id, PaneMode::Agent, Some(harness), cwd.as_ref()),
-        Command::ClosePane { pane_id } => Request::PaneClose(PaneCloseParams {
-            pane_id: pane_id.clone(),
-            idempotency_key: key(),
-        }),
-        Command::Prompt {
-            pane_id,
-            text,
-            attachments,
-        } => Request::PanePrompt(PanePromptParams {
-            pane_id: pane_id.clone(),
-            text: text.clone(),
-            origin: Some(PromptOrigin::Human),
-            attachments: (!attachments.is_empty())
-                .then(|| attachments.iter().map(|draft| draft.wire().0).collect()),
-            idempotency_key: key(),
-        }),
-        Command::Cancel { pane_id } => Request::PaneCancel(PaneCancelParams {
-            pane_id: pane_id.clone(),
-            idempotency_key: key(),
-        }),
-        Command::LoadTranscript { pane_id } => transcript_page(pane_id, None),
-        Command::LoadOlder { pane_id, before } => transcript_page(pane_id, Some(before)),
-        // The queue comes in pages: the engine fetches them one after the other.
-        Command::LoadQueue { .. } => return None,
-        Command::LoadCommands { pane_id } => Request::PaneCommandsList(PaneCommandsListParams {
-            pane_id: pane_id.clone(),
-        }),
-        Command::LoadUsage => Request::UsageList(UsageListParams {}),
-        Command::SetConfig {
-            pane_id,
-            config_id,
-            value,
-        } => Request::PaneConfigSet(PaneConfigSetParams {
-            pane_id: pane_id.clone(),
-            config_id: config_id.clone(),
-            value: ConfigValue::V0(value.clone()),
-            idempotency_key: key(),
-        }),
-        Command::SwitchHarness {
-            pane_id,
-            harness,
-            model,
-            effort,
-        } => Request::PaneHarnessSwitch(PaneHarnessSwitchParams {
-            pane_id: pane_id.clone(),
-            harness: harness.clone(),
-            model: model.clone(),
-            effort: effort.clone(),
-            idempotency_key: key(),
-        }),
-        Command::AnswerPermission {
-            pane_id,
-            request_id,
-            option_id,
-        } => Request::PanePermissionAnswer(PanePermissionAnswerParams {
-            pane_id: pane_id.clone(),
-            request_id: request_id.clone(),
-            option_id: option_id.clone(),
-            idempotency_key: key(),
-        }),
-        Command::LoadTasks { .. } => return None,
-        Command::SetLayout {
-            workspace_id,
-            layout,
-        } => Request::WorkspaceLayoutSet(WorkspaceLayoutSetParams {
-            workspace_id: workspace_id.clone(),
-            layout: layout.clone(),
-            idempotency_key: key(),
-        }),
-        Command::CloseWorkspace { workspace_id } => Request::WorkspaceClose(WorkspaceCloseParams {
-            workspace_id: workspace_id.clone(),
-            idempotency_key: key(),
-        }),
-        other => return follow_up_request(other),
-    })
-}
-
-/// The requests of what the person does after a pane or a task exists: reading and moving
-/// tasks, loops, roles, drafts, the queue, questions and sign-ins.
-fn follow_up_request(command: &Command) -> Option<Request> {
-    Some(match command {
-        Command::LoadTask {
-            workspace_id,
-            task_id,
-        } => Request::TaskShow(TaskShowParams {
-            workspace_id: workspace_id.clone(),
-            task_id: task_id.clone(),
-        }),
-        Command::CreateTask { task, .. } => Request::TaskCreate(TaskCreateParams {
-            workspace_id: task.workspace_id.clone(),
-            title: task.title.clone(),
-            description: Some(task.description.clone()),
-            how_to_verify: task.how_to_verify.clone(),
-            must_not_change: task.must_not_change.clone(),
-            executor: task.executor.clone(),
-            priority: Some(task.priority.clone()),
-            create_worktree: Some(task.create_worktree),
-            permission_mode: None,
-            dependencies: Some(task.dependencies.clone()),
-            dispatch: Some(task.dispatch),
-            idempotency_key: key(),
-        }),
-        Command::MoveTask {
-            workspace_id,
-            task_id,
-            state,
-            reason,
-        } => Request::TaskMove(TaskMoveParams {
-            workspace_id: workspace_id.clone(),
-            task_id: task_id.clone(),
-            state: state.clone(),
-            reason: reason.clone(),
-            idempotency_key: key(),
-        }),
-        Command::DispatchTask {
-            workspace_id,
-            task_id,
-            preset,
-            ..
-        } => Request::TaskDispatch(TaskDispatchParams {
-            workspace_id: workspace_id.clone(),
-            task_id: task_id.clone(),
-            preset: preset.clone(),
-            idempotency_key: key(),
-        }),
-        Command::SetLoop {
-            pane_id,
-            prompt,
-            interval,
-            max_rounds,
-            stop_when,
-            enabled,
-        } => Request::LoopSet(LoopSetParams {
-            pane_id: pane_id.clone(),
-            prompt: prompt.clone(),
-            interval: *interval,
-            max_rounds: *max_rounds,
-            stop_when: stop_when.clone(),
-            enabled: *enabled,
-            idempotency_key: key(),
-        }),
-        Command::SetRole { pane_id, role } => Request::PaneRoleSet(PaneRoleSetParams {
-            pane_id: pane_id.clone(),
-            role: role.clone(),
-            idempotency_key: key(),
-        }),
-        Command::SetDraft { pane_id, active } => Request::PaneDraft(PaneDraftParams {
-            pane_id: pane_id.clone(),
-            active: *active,
-            idempotency_key: key(),
-        }),
-        Command::RemoveQueued { pane_id, prompt_id } => {
-            Request::PaneQueueRemove(PaneQueueRemoveParams {
-                pane_id: pane_id.clone(),
-                prompt_id: prompt_id.clone(),
-                idempotency_key: key(),
-            })
-        }
-        Command::ResumeQueue { pane_id } => Request::PaneQueueResume(PaneQueueResumeParams {
-            pane_id: pane_id.clone(),
-            idempotency_key: key(),
-        }),
-        Command::AnswerElicitation {
-            pane_id,
-            request_id,
-            fields,
-            cancel,
-        } => Request::PaneElicitationAnswer(PaneElicitationAnswerParams {
-            pane_id: pane_id.clone(),
-            request_id: request_id.clone(),
-            fields: fields.clone(),
-            cancel: cancel.then_some(true),
-            idempotency_key: key(),
-        }),
-        Command::StartSignIn { pane_id, method_id } => {
-            Request::PaneAuthStart(PaneAuthStartParams {
-                pane_id: pane_id.clone(),
-                auth_method_id: method_id.clone(),
-                idempotency_key: key(),
-            })
-        }
-        Command::CancelSignIn { pane_id } => Request::PaneAuthCancel(PaneAuthCancelParams {
-            pane_id: pane_id.clone(),
-            idempotency_key: key(),
-        }),
-        _ => return naming_request(command),
-    })
-}
-
-/// The requests that make a workspace of a folder and that name workspaces and panes.
-fn naming_request(command: &Command) -> Option<Request> {
-    Some(match command {
-        Command::CreateWorkspace { name, path, .. } => {
-            Request::WorkspaceCreate(WorkspaceCreateParams {
-                name: name.clone(),
-                path: path.clone(),
-                idempotency_key: key(),
-            })
-        }
-        Command::RenameWorkspace { workspace_id, name } => {
-            Request::WorkspaceRename(WorkspaceRenameParams {
-                workspace_id: workspace_id.clone(),
-                name: name.clone(),
-                idempotency_key: key(),
-            })
-        }
-        Command::RenamePane { pane_id, name } => Request::PaneRename(PaneRenameParams {
-            pane_id: pane_id.clone(),
-            name: name.clone(),
-            idempotency_key: key(),
-        }),
-        _ => return None,
-    })
+    preference_requests::request(command)
+        .or_else(|| panes::request(command))
+        .or_else(|| workspaces::request(command))
+        .or_else(|| tasks::request(command))
+        .or_else(|| agents::request(command))
 }
 
 /// The bytes a command sends as binary frames before its request.
@@ -543,40 +299,6 @@ pub fn uploads(command: &Command) -> Vec<Upload> {
             .collect(),
         _ => Vec::new(),
     }
-}
-
-fn transcript_page(pane_id: &str, before: Option<&String>) -> Request {
-    Request::PaneTranscript(PaneTranscriptParams {
-        pane_id: pane_id.to_owned(),
-        before: before.cloned(),
-        limit: Some(client_policy::PAGE_SIZE_TRANSCRIPT),
-    })
-}
-
-fn create(
-    workspace_id: &str,
-    mode: PaneMode,
-    harness: Option<&String>,
-    cwd: Option<&String>,
-) -> Request {
-    Request::PaneCreate(PaneCreateParams {
-        workspace_id: workspace_id.to_owned(),
-        mode,
-        cwd: cwd.cloned(),
-        name: None,
-        cols: None,
-        rows: None,
-        idempotency_key: key(),
-        harness: harness.cloned(),
-        model: None,
-        effort: None,
-        permission_mode: None,
-        url: None,
-        incognito: None,
-        path: None,
-        writing_kind: None,
-        writing_section: None,
-    })
 }
 
 impl Command {
@@ -635,154 +357,6 @@ impl Command {
                 | Self::LoadReadiness
         ) || matches!(self, Self::Editor(editor) if editor.is_background())
             || matches!(self, Self::Writing(writing) if writing.is_background())
-    }
-}
-
-/// What the engine's answer to `command` tells the application, for the commands that fetch
-/// something.
-pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
-    Ok(match command {
-        Command::LoadTranscript { pane_id } | Command::LoadOlder { pane_id, .. } => {
-            let page = serde_json::from_value::<PaneTranscriptResult>(result)?;
-            Some(Event::Transcript {
-                pane_id: pane_id.clone(),
-                items: page.items,
-                next_cursor: page.next_cursor,
-            })
-        }
-        Command::LoadTask { .. } => Some(Event::Task(TaskUpdate::Detail(Box::new(
-            serde_json::from_value::<TaskShowResult>(result)?,
-        )))),
-        Command::CreateTask { ticket, .. } => {
-            let created = serde_json::from_value::<TaskCreateResult>(result)?;
-            Some(Event::TaskPane {
-                task: created.task,
-                ticket: *ticket,
-                pane_id: created.pane_id,
-            })
-        }
-        Command::MoveTask { .. } => Some(Event::Task(TaskUpdate::Moved(
-            serde_json::from_value::<TaskMoveResult>(result)?.task,
-        ))),
-        Command::DispatchTask { ticket, .. } => {
-            let dispatched = serde_json::from_value::<TaskDispatchResult>(result)?;
-            Some(Event::TaskPane {
-                task: dispatched.task,
-                ticket: *ticket,
-                pane_id: Some(dispatched.pane_id),
-            })
-        }
-        Command::SetLoop { pane_id, .. } => Some(Event::LoopSet {
-            pane_id: pane_id.clone(),
-            config: serde_json::from_value::<LoopSetResult>(result)?.config,
-        }),
-        Command::LoadUsage => Some(Event::Usage(
-            serde_json::from_value::<UsageListResult>(result)?.providers,
-        )),
-        Command::LoadHarnesses { .. } => Some(Event::Harnesses(harnesses(result)?)),
-        Command::LoadReadiness => Some(Event::Readiness(serde_json::from_value::<
-            EngineReadinessResult,
-        >(result)?)),
-        Command::LoadSkills { workspace_id } => Some(Event::Skills {
-            workspace_id: workspace_id.clone(),
-            listing: serde_json::from_value::<SkillsListResult>(result)?,
-        }),
-        Command::LoadCommands { pane_id } => Some(Event::PaneCommands {
-            pane_id: pane_id.clone(),
-            items: serde_json::from_value::<PaneCommandsListResult>(result)?.items,
-        }),
-        Command::CreateWorkspace { ticket, .. } => Some(Event::WorkspaceOpened {
-            ticket: *ticket,
-            workspace: serde_json::from_value::<WorkspaceCreateResult>(result)?.workspace,
-        }),
-        Command::CreateTerminal { ticket, .. } | Command::CreateAgent { ticket, .. } => {
-            Some(Event::Opened {
-                ticket: *ticket,
-                pane_id: serde_json::from_value::<PaneCreateResult>(result)?.pane_id,
-            })
-        }
-        _ => None,
-    })
-}
-
-fn harnesses(result: Value) -> Result<Vec<HarnessInfo>> {
-    serde_json::from_value::<HarnessListResult>(result)
-        .map(|list| list.items)
-        .map_err(Error::from)
-}
-
-/// Merges queued commands that a single request can carry: keystrokes for the same pane go out
-/// in one round trip, and of several resizes of one pane only the last matters. A command of
-/// another kind stays in order: it is returned in `carry`.
-pub fn coalesce(
-    first: Command,
-    queue: &mpsc::Receiver<Command>,
-    carry: &mut Option<Command>,
-) -> Command {
-    match first {
-        Command::Input { pane_id, bytes } => merge_input(pane_id, bytes, queue, carry),
-        Command::Resize {
-            pane_id,
-            rows,
-            cols,
-        } => merge_resize(pane_id, (rows, cols), queue, carry),
-        other => other,
-    }
-}
-
-fn merge_input(
-    pane_id: String,
-    mut bytes: Vec<u8>,
-    queue: &mpsc::Receiver<Command>,
-    carry: &mut Option<Command>,
-) -> Command {
-    while bytes.len() < INPUT_CHUNK_BYTES {
-        match queue.try_recv() {
-            Ok(Command::Input {
-                pane_id: next_pane,
-                bytes: more,
-            }) if next_pane == pane_id => {
-                bytes.extend_from_slice(&more);
-            }
-            Ok(other) => {
-                *carry = Some(other);
-                break;
-            }
-            // Nothing is waiting, or the queue closed: send what was gathered, and the next
-            // read of the queue ends the worker.
-            Err(_) => break,
-        }
-    }
-    Command::Input { pane_id, bytes }
-}
-
-fn merge_resize(
-    pane_id: String,
-    mut size: (u16, u16),
-    queue: &mpsc::Receiver<Command>,
-    carry: &mut Option<Command>,
-) -> Command {
-    loop {
-        match queue.try_recv() {
-            Ok(Command::Resize {
-                pane_id: next_pane,
-                rows,
-                cols,
-            }) if next_pane == pane_id => {
-                size = (rows, cols);
-            }
-            Ok(other) => {
-                *carry = Some(other);
-                break;
-            }
-            // Nothing is waiting, or the queue closed: see `merge_input`.
-            Err(_) => break,
-        }
-    }
-    Command::Resize {
-        pane_id,
-        rows: size.0,
-        cols: size.1,
     }
 }
 

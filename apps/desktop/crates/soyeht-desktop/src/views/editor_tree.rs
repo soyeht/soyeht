@@ -40,7 +40,8 @@ impl Workbench {
         let scroll = match pane_id {
             Some(pane) => self.panes.of(pane).editor.tree_scroll.clone(),
             None => self
-                .empty_tree_scroll
+                .panels
+                .tree_scroll
                 .entry(workspace_id.to_owned())
                 .or_default()
                 .clone(),
@@ -53,7 +54,7 @@ impl Workbench {
         let view = if height > 0.0 {
             height
         } else {
-            self.window_height
+            self.window.height
         };
         let first = ((top / row_height) as usize).saturating_sub(OVERSCAN);
         let last = (((top + view) / row_height).ceil() as usize + OVERSCAN).min(rows.len());

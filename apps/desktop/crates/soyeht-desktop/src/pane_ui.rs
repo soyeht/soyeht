@@ -5,11 +5,17 @@
 //! no list to remember.
 
 use crate::{
-    composer_field::ComposerField, editor_ui::EditorUi, loop_form::LoopForm, views::Replies,
-    workbench::Workbench, writing_ui::WritingUi,
+    composer_field::{ComposerEvent, ComposerField, new_field},
+    editor_ui::EditorUi,
+    loop_form::LoopForm,
+    views::Replies,
+    workbench::Workbench,
+    writing_ui::WritingUi,
 };
-use gpui::{Entity, ScrollHandle};
-use soyeht_client::{State, attachments::Staged, slash, transcript_rows::Rows};
+use gpui::{Context, Entity, ScrollHandle};
+use soyeht_client::{
+    State, attachments::Staged, slash, text_input::keys::Completion, transcript_rows::Rows,
+};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -127,6 +133,15 @@ impl PaneUis {
     }
 }
 
+/// What each workspace's editor place keeps of its project panel.
+#[derive(Default)]
+pub(crate) struct ProjectPanels {
+    /// The workspaces whose editors have their project panel folded away.
+    pub(crate) hidden: HashSet<String>,
+    /// The scroll of the project panel of each workspace's editor place that has no file open.
+    pub(crate) tree_scroll: HashMap<String, ScrollHandle>,
+}
+
 impl Workbench {
     /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
     pub(crate) fn forget_closed_panes(&mut self) {
@@ -138,19 +153,89 @@ impl Workbench {
                 .any(|workspace| &workspace.workspace_id == id)
         };
         let (hidden, scrolls): (HashSet<String>, HashMap<String, ScrollHandle>) = (
-            self.project_panel_hidden
+            self.panels
+                .hidden
                 .iter()
                 .filter(|id| open(id))
                 .cloned()
                 .collect(),
-            self.empty_tree_scroll
+            self.panels
+                .tree_scroll
                 .iter()
                 .filter(|(id, _)| open(id))
                 .map(|(id, handle)| (id.clone(), handle.clone()))
                 .collect(),
         );
-        self.project_panel_hidden = hidden;
-        self.empty_tree_scroll = scrolls;
+        self.panels.hidden = hidden;
+        self.panels.tree_scroll = scrolls;
+    }
+
+    /// The message line of an agent's composer, made when first needed.
+    pub(crate) fn composer_field(
+        &mut self,
+        pane_id: &str,
+        cx: &mut Context<Self>,
+    ) -> Entity<ComposerField> {
+        if let Some(field) = self.panes.get(pane_id).and_then(|ui| ui.field.as_ref()) {
+            return field.clone();
+        }
+        let field = new_field(self.theme.palette(), cx);
+        let owner = pane_id.to_owned();
+        cx.subscribe(
+            &field,
+            move |this, _, event: &ComposerEvent, cx| match event {
+                ComposerEvent::Submit => this.submit_prompt(&owner, cx),
+                ComposerEvent::Dismiss => this.dismiss_composer(&owner, cx),
+                ComposerEvent::Attach => {
+                    if let Some(item) = cx.read_from_clipboard() {
+                        this.paste_into_composer(&owner, &item, cx);
+                    }
+                }
+            },
+        )
+        .detach();
+        let owner = pane_id.to_owned();
+        cx.subscribe(&field, move |this, _, event: &Completion, cx| {
+            this.complete_slash(&owner, *event, cx)
+        })
+        .detach();
+        self.panes.of(pane_id).field = Some(field.clone());
+        field
+    }
+
+    /// The sideways scroll of an agent composer's chip strip, made when first needed.
+    pub(crate) fn chip_scroll(&mut self, pane_id: &str) -> ScrollHandle {
+        self.panes.of(pane_id).chip_scroll.clone()
+    }
+
+    /// The sideways scroll of an agent composer's attachment chips, made when first needed.
+    pub(crate) fn attachment_scroll(&mut self, pane_id: &str) -> ScrollHandle {
+        self.panes.of(pane_id).attachment_scroll.clone()
+    }
+
+    /// The scroll state of an agent's transcript, following the newest message while it grows;
+    /// true when this frame scrolls it to the newest.
+    pub(crate) fn transcript_scroll(
+        &mut self,
+        pane_id: &str,
+        messages: usize,
+    ) -> (ScrollHandle, bool) {
+        let (handle, seen) = self
+            .panes
+            .of(pane_id)
+            .transcript
+            .get_or_insert_with(|| (ScrollHandle::new(), 0));
+        let follows = *seen != messages;
+        if follows {
+            *seen = messages;
+            handle.scroll_to_bottom();
+        }
+        (handle.clone(), follows)
+    }
+
+    /// What the rows of an agent's transcript measured, made when first needed.
+    pub(crate) fn transcript_rows(&mut self, pane_id: &str) -> Rc<RefCell<Rows>> {
+        self.panes.of(pane_id).rows.clone()
     }
 }
 

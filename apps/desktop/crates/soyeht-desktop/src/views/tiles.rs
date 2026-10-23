@@ -91,11 +91,11 @@ impl Workbench {
             return empty(palette, Some(place.icon()), message);
         };
         let focused = self.state.focused_pane().map(|pane| pane.pane_id.clone());
-        self.layout_signature = transcript_rows::fingerprint(
+        self.stage.layout_signature = transcript_rows::fingerprint(
             &(
                 &tree,
-                self.window_width.to_bits(),
-                self.window_height.to_bits(),
+                self.window.width.to_bits(),
+                self.window.height.to_bits(),
                 self.rail_open,
             ),
             0,
@@ -118,7 +118,7 @@ impl Workbench {
             .min_w(px(needed_width(&tree) + 2.0 * halo))
             .p(px(halo))
             .child(tiles);
-        super::ui::sideways_scroller("tiles", &self.stage_scroll, stage, palette)
+        super::ui::sideways_scroller("tiles", &self.stage.scroll, stage, palette)
             .min_h_0()
             .m(px(-halo))
             .into_any_element()
@@ -126,18 +126,18 @@ impl Workbench {
 
     /// Scrolls the stage to the pane that was asked to be shown, once the stage has a size.
     fn reveal_pending(&mut self, tree: &Node) {
-        let viewport = f32::from(self.stage_scroll.bounds().size.width);
+        let viewport = f32::from(self.stage.scroll.bounds().size.width);
         if viewport <= 0.0 {
             return;
         }
-        let Some(pane_id) = self.reveal.take() else {
+        let Some(pane_id) = self.stage.reveal.take() else {
             return;
         };
         let floor = super::composer::minimum_pane_width();
         if let Some((start, width)) = pane_span(tree, &pane_id, floor, pane_layout::PANE_GAP) {
-            let scrolled = -f32::from(self.stage_scroll.offset().x);
+            let scrolled = -f32::from(self.stage.scroll.offset().x);
             let target = reveal_offset(start + neo::PANE_HALO, width, scrolled, viewport);
-            self.stage_scroll.set_offset(point(px(-target), px(0.0)));
+            self.stage.scroll.set_offset(point(px(-target), px(0.0)));
         }
     }
 
