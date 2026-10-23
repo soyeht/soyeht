@@ -56,7 +56,9 @@ struct AgentHarnessPicker: View {
         TextField("Search agents", text: $query)
           .textFieldStyle(.plain)
           .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
-          .padding(.horizontal, MacTheme.Space.x10).frame(height: 32)
+          .padding(.horizontal, MacTheme.Space.x10).frame(
+            height: DesignTokens.Layout.searchFieldHeight
+          )
           .paneWell(radius: MacTheme.Radius.compact)
         Button {
           client.refreshHarnesses(rescan: true)
@@ -132,13 +134,13 @@ struct AgentHarnessPicker: View {
           }
           .padding(.trailing, MacTheme.Space.x4)
         }
-        .frame(height: 260)
+        .frame(height: DesignTokens.Layout.harnessListHeight)
       }
       Divider().overlay(MacTheme.border)
       selectedConfiguration
     }
     .padding(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
-    .frame(width: 420, height: 510, alignment: .top)
+    .frame(width: DesignTokens.Layout.harnessPickerWidth, height: 510, alignment: .top)
     .foregroundStyle(MacTheme.ink)
     .background(MacTheme.face)
     .onAppear {
@@ -193,7 +195,9 @@ struct AgentHarnessPicker: View {
         }
         .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
         .foregroundStyle(MacTheme.muted)
-        .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
+        .padding(.horizontal, MacTheme.Space.x10).frame(
+          height: DesignTokens.Layout.modelFieldHeight
+        )
         .paneWell(radius: MacTheme.Radius.compact)
         .accessibilityIdentifier("model-picker-loading")
       } else {
@@ -226,7 +230,9 @@ struct AgentHarnessPicker: View {
               .font(.system(size: MacTheme.TypeScale.micro)).foregroundStyle(MacTheme.muted)
           }
           .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
-          .padding(.horizontal, MacTheme.Space.x10).frame(height: 30)
+          .padding(.horizontal, MacTheme.Space.x10).frame(
+            height: DesignTokens.Layout.modelFieldHeight
+          )
           .paneWell(radius: MacTheme.Radius.compact)
         }
         .menuStyle(.borderlessButton)

@@ -12,7 +12,7 @@ use self::chips::well_card;
 use crate::{
     neo,
     tasks_ui::TaskView,
-    theme::{Palette, desktop, elevation, pane_layout, radius, space, type_scale},
+    theme::{Palette, desktop, elevation, layout, pane_layout, radius, space, type_scale},
     views::{
         prelude::*,
         ui::{empty_state, mono_label, option_pill},
@@ -343,7 +343,7 @@ impl Workbench {
             })
             .collect();
         Some(
-            popover(palette, desktop::ATTENTION_POPOVER_WIDTH)
+            popover(palette, layout::ATTENTION_POPOVER_WIDTH)
                 .id("attention-popover")
                 .top(px(space::X18 * 2.0))
                 .right(px(space::X18))
@@ -400,7 +400,7 @@ impl Workbench {
             })
             .collect();
         Some(
-            popover(palette, desktop::ATTENTION_POPOVER_WIDTH)
+            popover(palette, layout::ATTENTION_POPOVER_WIDTH)
                 .id("dispatch-popover")
                 .top(px(space::X18 * 3.0))
                 .right(px(space::X18 * 4.0))

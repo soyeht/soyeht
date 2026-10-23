@@ -124,7 +124,7 @@ impl Workbench {
             ),
             _ => (
                 self.pane_header(pane, palette, cx),
-                notice_body(palette, mode_notice(pane)),
+                notice_body(palette, &mode_notice(pane)),
             ),
         };
         let header = self.draggable_header(header, pane, palette);
@@ -466,11 +466,11 @@ pub(super) fn notice_body(palette: &Palette, message: &str) -> AnyElement {
         .into_any_element()
 }
 
-fn mode_notice(pane: &Pane) -> &'static str {
+fn mode_notice(pane: &Pane) -> String {
     match (&pane.mode, &pane.writing_kind) {
-        (PaneMode::Web, _) => "Web panes are not available in the desktop client yet.",
-        (PaneMode::Writing, _) => "This document is not available in the desktop client yet.",
-        (PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor, _) => "",
+        (PaneMode::Web, _) => super::ui::not_available("Web panes"),
+        (PaneMode::Writing, _) => super::ui::not_available("This document"),
+        (PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor, _) => String::new(),
     }
 }
 

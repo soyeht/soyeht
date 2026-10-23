@@ -42,7 +42,7 @@ struct AgentHarnessSwitchPicker: View {
       .padding(.bottom, MacTheme.Space.x14)
       AgentAccountSection(client: client, pane: pane, isPresented: $isPresented)
     }
-    .frame(width: 448)
+    .frame(width: DesignTokens.Layout.switchPopoverWidth)
     .background(MacTheme.face)
     .onAppear {
       client.refreshHarnesses(rescan: false)

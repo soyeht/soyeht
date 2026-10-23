@@ -2,6 +2,28 @@
   "description": "Pane layout rules shared by the Mac (PaneLayoutTree, PaneLayoutTreeMutation, PaneLayoutState, PaneLayoutMinimumSize, PaneLayoutGeometry) and the desktop client (soyeht_client::layout). Trees are the protocol layout nodes. Both pass every case. Where a pane goes that the tree does not list (`arrange`) is shared too: by role, primary panes left to right and auxiliary panes stacked on the right. Dragging a divider (`resize`: the split's path, the divider after child `dividerIndex`, the distance in points, positive to the right or down, and the viewport) changes only the two weights beside it, keeps their sum, and stops at the floors of what is beside it; a window with no room beyond the floors changes nothing; `equalize` gives the children equal shares of what they can have above their floors; a null `expected` is a refusal. Dragging a pane by its header onto another is fixed by `dropZone` (a point on a pane's rectangle and the zone it lands on: the edge within `edgeFraction` of it, the nearest edge on a corner, else the center, none outside), `dropZoneRect` (the part of the pane a zone covers) and `move` (the pane to move, the target pane and the zone; the tree it becomes, and null when a pane is not in the tree). Each case gives the floors to weigh with (the file's floor for a kind it does not list), a stored layout and the live panes in workspace order.",
   "gap": 18,
   "floor": {"width": 300, "height": 180},
+  "kindFloors": {
+    "description": "The measured floor of every kind of pane (PaneLayoutFloorFormula.surfaceFloors on the Mac, the surface without the card halo), for the font metrics the accepted floor report used: [width, height] per kind. The Mac derives each floor from the metrics of its fonts and passes all of them. The desktop has no font-metric formula: it measures one floor from the composer an agent pane always shows (views::composer::minimum_pane_width), so only the agent kind is held, as a bound that floor must stay inside and that the Mac's agent width must be inside too.",
+    "fonts": {
+      "terminal": {"characterWidth": 8, "lineHeight": 18, "pointSize": 13},
+      "editor": {"characterWidth": 6.9, "lineHeight": 19, "pointSize": 11.5},
+      "chrome": {"characterWidth": 7.2, "lineHeight": 17, "pointSize": 12},
+      "agent": {"characterWidth": 9, "lineHeight": 21, "pointSize": 15},
+      "prose": {"characterWidth": 11.037, "lineHeight": 32, "pointSize": 20},
+      "screenplay": {"characterWidth": 9.59375, "lineHeight": 27, "pointSize": 16}
+    },
+    "surfaces": {
+      "terminal": [340, 301],
+      "editor": [545, 395],
+      "agent": [340, 355],
+      "web": [340, 361],
+      "text": [317, 332],
+      "presentation": [340, 300],
+      "screenplay": [344, 486],
+      "unknownWriting": [344, 486]
+    },
+    "desktopAgentWidth": {"minimum": 300, "maximum": 400}
+  },
   "companionStrip": 36,
   "edgeFraction": 0.25,
   "normalize": [

@@ -230,3 +230,33 @@ private func dropRect(_ value: JsonValue) throws -> PaneLayoutRect {
     #expect(moved == (try optionalTree(item["expected"])), "\(name)")
   }
 }
+
+private func fontMetric(_ value: JsonValue) throws -> PaneLayoutFontMetric {
+  PaneLayoutFontMetric(
+    characterWidth: try #require(value["characterWidth"].double),
+    lineHeight: try #require(value["lineHeight"].double),
+    pointSize: try #require(value["pointSize"].double))
+}
+
+@Test func everyKindOfPaneHasTheFloorTheVectorSays() throws {
+  let held = try vector()["kindFloors"]
+  let fonts = held["fonts"]
+  let metrics = PaneLayoutFontMetrics(
+    terminal: try fontMetric(fonts["terminal"]), editor: try fontMetric(fonts["editor"]),
+    chrome: try fontMetric(fonts["chrome"]), agent: try fontMetric(fonts["agent"]),
+    prose: try fontMetric(fonts["prose"]), screenplay: try fontMetric(fonts["screenplay"]))
+  let floors = PaneLayoutFloorFormula.surfaceFloors(fonts: metrics)
+  guard case .object(let surfaces) = held["surfaces"] else {
+    Issue.record("kindFloors.surfaces is not an object")
+    return
+  }
+  #expect(Set(surfaces.keys) == Set(PaneLayoutKind.allCases.map(\.rawValue)))
+  for (name, size) in surfaces {
+    let kind = try #require(PaneLayoutKind(rawValue: name))
+    #expect(
+      floors[kind]
+        == PaneLayoutSize(
+          width: try #require(size.array?[0].double), height: try #require(size.array?[1].double)),
+      "\(name)")
+  }
+}

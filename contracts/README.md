@@ -135,7 +135,9 @@ merging and collapsing splits, splitting a pane, the width a tree needs, where e
 sits at that width, and where a pane goes that the tree does not list (`PaneLayoutArrangement`,
 `layout::arrange`): primary panes (editor, web, writing) left to right, auxiliary panes
 (terminal, agent) stacked on the right, and in the automatic mode every branch weighed by the
-smallest size its panes need. It also fixes dragging a divider and double-clicking one
+smallest size its panes need. `kindFloors` holds the measured floor of every kind of pane for the
+font metrics of the accepted floor report (the Mac passes all of them) and the range the desktop's single,
+composer-based agent floor must stay in. It also fixes dragging a divider and double-clicking one
 (`PaneLayoutTreeMutation.resizing` and `.equalizing`, `layout::resize` and `layout::equalize`):
 only the two weights beside the divider change, by the distance dragged, and a floor stops
 the move. Moving a pane by its header (`PaneLayoutDropGeometry` and

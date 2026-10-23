@@ -13,7 +13,7 @@ use super::{
 use crate::{
     composer_field::ComposerField,
     destination::Destination,
-    theme::{Palette, desktop, radius, space, type_scale},
+    theme::{Palette, desktop, layout, radius, space, type_scale},
 };
 use gpui::Entity;
 use soyeht_client::{
@@ -321,7 +321,7 @@ impl Workbench {
 fn field_line(field: Entity<ComposerField>, palette: &Palette) -> Div {
     well_row(palette)
         .bg(rgb(palette.face))
-        .h(px(desktop::SEARCH_FIELD_HEIGHT))
+        .h(px(layout::SEARCH_FIELD_HEIGHT))
         .child(div().flex_1().min_w_0().overflow_hidden().child(field))
 }
 
@@ -330,7 +330,7 @@ fn search_line(field: Entity<ComposerField>, palette: &Palette) -> Div {
     well_row(palette)
         .flex_none()
         .gap(px(space::X8))
-        .h(px(desktop::SEARCH_FIELD_HEIGHT))
+        .h(px(layout::SEARCH_FIELD_HEIGHT))
         .child(icon(Icon::Search, desktop::INLINE_GLYPH, palette.secondary))
         .child(div().flex_1().min_w_0().overflow_hidden().child(field))
 }

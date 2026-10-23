@@ -91,3 +91,23 @@ struct TaskToolbarLabel: View {
     }
   }
 }
+
+extension View {
+  /// A column of the task board: at least as wide and tall as the tokens say, then what the
+  /// board gives it.
+  func taskColumnFrame() -> some View {
+    frame(
+      minWidth: DesignTokens.Layout.taskColumnWidth, maxWidth: .infinity,
+      minHeight: DesignTokens.Layout.taskColumnMinHeight, alignment: .top)
+  }
+
+  func taskSheetFrame() -> some View {
+    frame(
+      width: DesignTokens.Layout.taskSheetWidth, height: DesignTokens.Layout.taskSheetHeight,
+      alignment: .topLeading)
+  }
+
+  func attentionPopoverFrame() -> some View {
+    frame(width: DesignTokens.Layout.attentionPopoverWidth)
+  }
+}

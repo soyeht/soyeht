@@ -9,7 +9,7 @@ use super::{
 use crate::{
     composer_field::ComposerField,
     neo,
-    theme::{Palette, desktop, elevation, pane_interior, radius, space, type_scale},
+    theme::{Palette, elevation, layout, pane_interior, radius, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
@@ -203,7 +203,7 @@ fn well_field(
     field.update(cx, |field, _| field.style(palette, hint));
     div()
         .w_full()
-        .min_h(px(desktop::SEARCH_FIELD_HEIGHT))
+        .min_h(px(layout::SEARCH_FIELD_HEIGHT))
         .flex()
         .items_center()
         .px(px(space::X10))

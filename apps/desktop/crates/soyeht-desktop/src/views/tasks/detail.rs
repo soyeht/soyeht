@@ -3,7 +3,7 @@
 use super::chips::{capsule, owner_chip, priority_chip, role_color, state_chip, well_card};
 use crate::{
     neo,
-    theme::{Palette, desktop, elevation, radius, space, type_scale},
+    theme::{Palette, desktop, elevation, layout, radius, space, type_scale},
     views::prelude::*,
 };
 use soyeht_client::tasks;
@@ -76,8 +76,8 @@ impl Workbench {
                 .top(px(space::X8))
                 .right(px(space::X12))
                 .bottom(px(space::X12))
-                .w(px(desktop::TASK_SHEET_WIDTH))
-                .max_h(px(desktop::TASK_SHEET_HEIGHT))
+                .w(px(layout::TASK_SHEET_WIDTH))
+                .max_h(px(layout::TASK_SHEET_HEIGHT))
                 .flex()
                 .flex_col()
                 .gap(px(space::X12))

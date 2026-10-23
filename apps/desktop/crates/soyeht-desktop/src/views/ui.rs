@@ -17,6 +17,12 @@ use gpui::{
     linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rgb, svg,
 };
 
+/// What the desktop client says of anything it does not serve yet, in the rail, in a pane and
+/// beside a composer button: one sentence, so the three never word it differently.
+pub fn not_available(what: &str) -> String {
+    format!("{what} is not available in the desktop client yet.")
+}
+
 /// The two faces besides the interface's own, each with the line height its font has. GPUI's
 /// default line is 1.618 times the size, loose beside the Mac, where SwiftUI sets a line as
 /// tall as its font says (`desktop.lineHeight*`); the window sets the interface face's height
@@ -506,4 +512,17 @@ pub fn edge_fades(handle: &ScrollHandle, palette: &Palette) -> Vec<AnyElement> {
         fades.push(fade(clear, solid).right_0().into_any_element());
     }
     fades
+}
+
+#[cfg(test)]
+mod tests {
+    use super::not_available;
+
+    #[test]
+    fn one_sentence_says_what_the_desktop_client_does_not_serve() {
+        assert_eq!(
+            not_available("iPhone"),
+            "iPhone is not available in the desktop client yet."
+        );
+    }
 }

@@ -25,7 +25,7 @@ struct PaneAutomationPanel: View {
       footer
     }
     .padding(EdgeInsets(top: 14, leading: 16, bottom: 16, trailing: 16))
-    .frame(width: 400).foregroundStyle(MacTheme.ink)
+    .frame(width: DesignTokens.Layout.loopPanelWidth).foregroundStyle(MacTheme.ink)
     .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
     .onAppear(perform: load)
   }

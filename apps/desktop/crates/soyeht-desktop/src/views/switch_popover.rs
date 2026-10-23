@@ -11,7 +11,7 @@ use super::{
 use crate::workbench::Workbench;
 use crate::{
     assets::Icon,
-    theme::{Palette, desktop, pane_interior, radius, space, type_scale},
+    theme::{Palette, desktop, layout, pane_interior, radius, space, type_scale},
 };
 use gpui::{
     AnyElement, ClickEvent, Context, Div, FontWeight, SharedString, div, prelude::*, px, rgb,
@@ -81,7 +81,7 @@ impl Workbench {
             .map(|actions| account_section(&pane_id, &actions, palette, cx));
 
         column()
-            .w(px(desktop::SWITCH_POPOVER_CONTENT_WIDTH))
+            .w(px(layout::HARNESS_PICKER_WIDTH))
             .gap(px(space::X12))
             .child(header(palette))
             .child(
@@ -91,7 +91,7 @@ impl Workbench {
                     .child(
                         row()
                             .id("rescan-harnesses")
-                            .size(px(desktop::SEARCH_FIELD_HEIGHT))
+                            .size(px(layout::SEARCH_FIELD_HEIGHT))
                             .flex_none()
                             .justify_center()
                             .rounded(px(radius::COMPACT))
@@ -114,7 +114,7 @@ impl Workbench {
             .child(
                 div()
                     .id("switch-harnesses")
-                    .max_h(px(desktop::HARNESS_LIST_HEIGHT))
+                    .max_h(px(layout::HARNESS_LIST_HEIGHT))
                     .flex_none()
                     .overflow_y_scroll()
                     .child(menus::list(rows)),
@@ -234,7 +234,7 @@ fn search_field(
     well_row(palette)
         .flex_1()
         .min_w_0()
-        .h(px(desktop::SEARCH_FIELD_HEIGHT))
+        .h(px(layout::SEARCH_FIELD_HEIGHT))
         .child(div().flex_1().min_w_0().overflow_hidden().child(search))
 }
 
@@ -279,7 +279,7 @@ fn model_field(
     let enabled = state != ModelState::Loading;
     well_row(palette)
         .id("switch-model")
-        .h(px(desktop::MODEL_FIELD_HEIGHT))
+        .h(px(layout::MODEL_FIELD_HEIGHT))
         .gap(px(space::X8))
         .text_color(rgb(if enabled { palette.ink } else { palette.muted }))
         .when(enabled, |field| field.cursor_pointer())

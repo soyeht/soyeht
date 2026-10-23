@@ -226,6 +226,17 @@ public enum DesignTokens {
     public static let workspaceOverflowPopoverWidth: CGFloat = 340
     public static let workspaceOverflowPopoverMaximumHeight: CGFloat = 420
     public static let readinessWidth: CGFloat = 480
+    public static let loopPanelWidth: CGFloat = 400
+    public static let taskColumnWidth: CGFloat = 250
+    public static let taskColumnMinHeight: CGFloat = 500
+    public static let taskSheetWidth: CGFloat = 460
+    public static let taskSheetHeight: CGFloat = 826
+    public static let attentionPopoverWidth: CGFloat = 340
+    public static let switchPopoverWidth: CGFloat = 448
+    public static let harnessPickerWidth: CGFloat = 420
+    public static let harnessListHeight: CGFloat = 260
+    public static let searchFieldHeight: CGFloat = 32
+    public static let modelFieldHeight: CGFloat = 30
   }
 
   public enum Glyph {

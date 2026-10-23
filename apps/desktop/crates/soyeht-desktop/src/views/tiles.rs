@@ -25,9 +25,10 @@ fn needed_width(node: &Node) -> f32 {
 }
 
 /// What an arrangement's weights are measured with: every kind of pane needs the width the pane
-/// floor gives it (the Mac measures one floor per kind; the desktop has one, set by the composer
-/// a pane always shows), every kind needs the height the shared floor gives it, and the room
-/// between two panes is the gap.
+/// floor gives it (the Mac measures one floor per kind, `kindFloors` of `pane-layout.json`; the
+/// desktop has one, set by the composer an agent pane shows, and holds only that one to the
+/// vector), every kind needs the height the shared floor gives it, and the room between two
+/// panes is the gap.
 pub(crate) fn sizing() -> Sizing {
     let floor = f64::from(super::composer::minimum_pane_width());
     Sizing {
@@ -70,10 +71,7 @@ impl Workbench {
             return empty(
                 palette,
                 Some(place.icon()),
-                &format!(
-                    "{} is not available in the desktop client yet.",
-                    place.label()
-                ),
+                &super::ui::not_available(place.label()),
             );
         }
         let Some(tree) = self

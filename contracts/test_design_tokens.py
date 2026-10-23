@@ -425,6 +425,70 @@ INLINE_LITERALS = [
         "editor",
         "previewMaxWidth",
     ),
+    (
+        MAC + "PaneAutomationControls.swift",
+        ".frame(width: {}).foregroundStyle(MacTheme.ink) .neoRaised(radius: MacTheme.Radius.card",
+        "layout",
+        "loopPanelWidth",
+    ),
+    (
+        MAC + "WorkspaceWindow.swift",
+        ".frame(width: {}) .background(MacTheme.face) .onAppear {{ client.refreshHarnesses(rescan: false)",
+        "layout",
+        "switchPopoverWidth",
+    ),
+    (
+        MAC + "AgentHarnessPicker.swift",
+        ".frame(width: {}, height: 510, alignment: .top)",
+        "layout",
+        "harnessPickerWidth",
+    ),
+    (MAC + "AgentHarnessPicker.swift", "}} .frame(height: {}) }} Divider()", "layout", "harnessListHeight"),
+    (
+        MAC + "AgentHarnessPicker.swift",
+        'TextField("Search agents", text: $query) .textFieldStyle(.plain) '
+        ".font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold)) "
+        ".padding(.horizontal, MacTheme.Space.x10).frame(height: {})",
+        "layout",
+        "searchFieldHeight",
+    ),
+    (
+        MAC + "AgentHarnessPicker.swift",
+        'Text("Loading models…") }} .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold)) '
+        ".foregroundStyle(MacTheme.muted) .padding(.horizontal, MacTheme.Space.x10).frame(height: {})",
+        "layout",
+        "modelFieldHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(minWidth: {}, maxWidth: .infinity, minHeight: 500, alignment: .top)",
+        "layout",
+        "taskColumnWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(minWidth: 250, maxWidth: .infinity, minHeight: {}, alignment: .top)",
+        "layout",
+        "taskColumnMinHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".padding(20).frame(width: {}).background(MacTheme.face).foregroundStyle(MacTheme.ink)",
+        "layout",
+        "attentionPopoverWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(width: {}, height: 826, alignment: .topLeading)",
+        "layout",
+        "taskSheetWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(width: 460, height: {}, alignment: .topLeading)",
+        "layout",
+        "taskSheetHeight",
+    ),
 ]
 
 

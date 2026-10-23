@@ -240,7 +240,7 @@ private struct TaskColumn: View {
       }
       Spacer(minLength: 40)
     }
-    .frame(minWidth: 250, maxWidth: .infinity, minHeight: 500, alignment: .top)
+    .taskColumnFrame()
     .dropDestination(for: String.self) { ids, _ in move(ids.first) }
   }
 
@@ -516,7 +516,7 @@ private struct AttentionPopover: View {
           }.padding(12).neoWell(radius: MacTheme.Radius.compact)
         }
       }
-    }.padding(20).frame(width: 340).background(MacTheme.face).foregroundStyle(MacTheme.ink)
+    }.padding(20).attentionPopoverFrame().background(MacTheme.face).foregroundStyle(MacTheme.ink)
   }
 }
 
@@ -541,7 +541,7 @@ private struct TaskDetailSheet: View {
       }
     }
     .padding(EdgeInsets(top: 18, leading: 20, bottom: 18, trailing: 20))
-    .frame(width: 460, height: 826, alignment: .topLeading)
+    .taskSheetFrame()
     .foregroundStyle(MacTheme.ink).neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
   }
 

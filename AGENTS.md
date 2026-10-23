@@ -21,8 +21,8 @@ Each layer depends only on the layers listed above it.
    (the local endpoint, owner-only files, process launch and termination, the user's
    identity, the structured log line). It has no Soyeht dependencies, and these system
    calls live there (ADR 0086). A crate above it may keep a `cfg` module for a concern
-   specific to its own job (`soyeht-ptyd`'s child and pty, the engine's log rotation),
-   under the rule below: the same public shape on every system.
+   specific to its own job (`soyeht-ptyd`'s child and pty, the engine's log rotation, the
+   desktop's `os_notify`), under the rule below: the same public shape on every system.
    `engine/soyeht-process`, the bounded runner for every external command the engine
    starts, depends on nothing but `soyeht-platform` (ADR 0079).
 3. Engine building blocks, each depending only on `soyeht-protocol` and
@@ -48,13 +48,20 @@ Each layer depends only on the layers listed above it.
    dictation engines that need third-party dependencies, and the catalogue of
    engines (ADR 0083).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
-   They render and forward input. They do not own state rules or wire handling.
+   They render and forward input. They do not own state rules or wire handling. The Mac
+   creates and injects every observable environment object once, in `SoyehtMacApp.swift`
+   (`check_mac_environment.py`).
 7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
    its own cargo workspace and depends on `engine/soyeht-protocol` and, for the local endpoint
    (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`. Its
    `soyeht-client` crate holds the connection and state, `soyeht-desktop` the
    views, and its `theme` module holds the palettes and tokens generated from
    `contracts/design-tokens.json`, the same source the Swift side is generated from.
+   Three seams belong to the window, each the same on every system: the log also goes to a
+   rotating file (`soyeht_platform::log::to_file`, ADR 0101); a window that finds no engine
+   starts `soyeht-ptyd` and `soyeht-engine` detached (`soyeht-client`'s `autostart` through
+   `soyeht_platform::process::detached`, ADR 0102); and `os_notify` raises the system
+   notification when an agent needs the person (ADR 0103).
 
 `scripts/check_layers.py` reads every `Cargo.toml` of `engine/` and `apps/desktop/` and
 fails when a crate depends on a Soyeht crate outside its layer, or when a new crate is not
@@ -71,8 +78,13 @@ ADR when you change a boundary.
   Python outputs. A file whose first line starts with `// Generated from
   contracts/` (or `# Generated from contracts/`) is an output: never edit it by
   hand. Commit the outputs with their source; the gate runs `--check`.
-- A design token added after the Mac was generated is proved by `contracts/test_design_tokens.py`:
-  list it in `ADDED_AFTER_GENERATION`, and keep desktop-only tokens in the `desktop` section.
+- The `desktop` section of `design-tokens.json` is Rust-only and last in the file: window
+  frame, popup gaps, glyph sizes and the sizes of views the Mac does not have. A size both
+  clients draw (a sheet, a popover, a field, a column) is a token of a shared section
+  (`layout`, `composer`, ...) that the Mac reads as `DesignTokens`; the same number as a Mac
+  literal and a `desktop` token is the copy this rule stops. `contracts/test_design_tokens.py`
+  proves a token that replaces a Mac literal against the pre-generation Mac source
+  (`INLINE_LITERALS`), and a token with no such source is listed in `ADDED_AFTER_GENERATION`.
 - Once a generated form exists, use it. Do not hand-type a method or event name,
   a limit, a frame kind or an error code. Examples: `RequestMethod`, `EventName`,
   `FrameKind` and `ProtocolLimits` in Swift; `method::*`, `event::*`, `limits::*` and
@@ -98,7 +110,8 @@ ADR when you change a boundary.
   configuration selector is the model, effort or permission one. Use `ClientPolicy` and
   `ConfigOption.isModel`/`isEffort`/`isPermissionMode` in Swift and
   `soyeht_protocol::client_policy` in Rust. Behaviour the two languages implement separately
-  (the usage presentation, the pane layout) is held together by the cases of
+  (the usage presentation, the pane layout and each kind of pane's floor, of which the desktop
+  holds only the agent's) is held together by the cases of
   `contracts/vectors/` that both pass. Theme names, their order and display names are the
   `palettes` of `design-tokens.json`; `TerminalColorTheme` and `ThemeName` are generated.
 - One rule, one place. Before you add a helper, a constant or a policy, search
@@ -116,9 +129,10 @@ ADR when you change a boundary.
   `scripts/` and `contracts/`.
 - A new file may not exceed 800 lines. A file already above 800 lines may not
   grow past its recorded cap. Split it instead.
-- Loose Swift padding, corner-radius, font-size and font-name literals, and Rust
-  `4096`/`512` literals, may not grow per file. Use a token, a policy or the
-  generated limits.
+- Loose Swift padding, corner-radius, system font-size and font-name literals, and the
+  numbers `4096` and `512` anywhere in a Rust line of the engine or `apps/desktop` (code, test
+  or comment; `limits.rs` and generated files are exempt), may not grow per file. Use a
+  token, a policy or the generated limits.
 - Engine and `apps/desktop` production code has no `unwrap`/`expect`/`panic!`
   calls. The limit is 0, and no baseline edit or written reason can raise it.
   Test code is exempt:
@@ -208,6 +222,8 @@ inherit the main actor.
   Inside a pane, use no shadows, no raised or inset modifiers, and palette roles
   only. `check_pane_interior.py` enforces this.
 - Use only the approved fonts (`check_mac_text_fonts.py`).
+- A Mac `Text` literal that interpolates an identifier (a port, a pid, a line number) does so
+  explicitly (`check_mac_identifier_text.py`).
 
 ## Commands
 
@@ -244,6 +260,9 @@ inherit the main actor.
   `check_all.sh --list --tier fast` shows the steps without running them. Moving a step from
   `both` to `full` lowers the count the verification ratchet watches and needs a
   `Verification change:` line in the PR body.
+- Two guards keep a green step honest: a step that names one Rust test passes only when exactly
+  that test ran (`require_one_rust_test.py`), and the e2e steps fail when the run made macOS ask
+  for a privacy permission on behalf of the engine's executables (`tcc_guard.py`).
 - A contributor without the vocabulary sets `SOYEHT_SKIP_FORBIDDEN_TERMS=1`: `forbidden_terms.py` then
   skips the vocabulary scan with a loud banner, still rejects AI attribution in commit messages, and
   `check_all.sh` repeats the reminder at the end. Supplied `FORBIDDEN_TERMS` always win, and

@@ -166,7 +166,7 @@ impl Workbench {
             .child(self.round_button(
                 "mic",
                 Icon::Mic,
-                "Dictation is not available in the desktop client yet.",
+                super::ui::not_available("Dictation"),
                 notice_for("mic"),
                 palette,
                 cx,
@@ -202,7 +202,7 @@ impl Workbench {
         &mut self,
         name: &'static str,
         glyph: Icon,
-        message: &'static str,
+        message: String,
         menu: Menu,
         palette: &'static Palette,
         cx: &mut Context<Self>,
@@ -614,7 +614,23 @@ mod tests {
         let fixed = 2.0 * composer::CONTROL_HEIGHT + composer::SEND_WIDTH;
         let card = 4.0 * pane_interior::CARD_PADDING + 2.0 * pane_layout::PANE_CARD_INSET;
         assert!(floor > fixed + card, "{floor}");
-        // A bounded floor: wider than a phone sliver, narrower than half a small window.
-        assert!((300.0..400.0).contains(&floor), "{floor}");
+    }
+
+    /// The agent's floor, which this client measures from the composer an agent pane always
+    /// shows, stays in the range `pane-layout.json` holds, and so does the Mac's measured one
+    /// (`kindFloors`): the two clients may differ, but not by more than that range.
+    #[test]
+    fn the_floor_stays_in_the_range_the_vector_holds_for_the_agent() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../../contracts/vectors/pane-layout.json");
+        let held: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let held = &held["kindFloors"];
+        let bound = |key: &str| held["desktopAgentWidth"][key].as_f64().unwrap() as f32;
+        let (minimum, maximum) = (bound("minimum"), bound("maximum"));
+        let floor = minimum_pane_width();
+        assert!((minimum..maximum).contains(&floor), "{floor}");
+        let mac = held["surfaces"]["agent"][0].as_f64().unwrap() as f32;
+        assert!((minimum..maximum).contains(&mac), "{mac}");
     }
 }

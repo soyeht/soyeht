@@ -6,7 +6,7 @@ use super::chips::{
     task_title,
 };
 use crate::{
-    theme::{Palette, desktop, pane_interior, space, type_scale},
+    theme::{Palette, desktop, layout, pane_interior, space, type_scale},
     views::prelude::*,
 };
 use gpui::{AppContext, Render, Window};
@@ -87,8 +87,8 @@ impl Workbench {
         column()
             .id(id("task-column", tasks::state_title(&state)))
             .flex_none()
-            .w(px(desktop::TASK_COLUMN_WIDTH))
-            .min_h(px(desktop::TASK_COLUMN_MIN_HEIGHT))
+            .w(px(layout::TASK_COLUMN_WIDTH))
+            .min_h(px(layout::TASK_COLUMN_MIN_HEIGHT))
             .gap(px(space::X10))
             .child(header)
             .children(cards)

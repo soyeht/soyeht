@@ -355,6 +355,17 @@ pub mod layout {
     pub const WORKSPACE_OVERFLOW_POPOVER_WIDTH: f32 = 340.0;
     pub const WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT: f32 = 420.0;
     pub const READINESS_WIDTH: f32 = 480.0;
+    pub const LOOP_PANEL_WIDTH: f32 = 400.0;
+    pub const TASK_COLUMN_WIDTH: f32 = 250.0;
+    pub const TASK_COLUMN_MIN_HEIGHT: f32 = 500.0;
+    pub const TASK_SHEET_WIDTH: f32 = 460.0;
+    pub const TASK_SHEET_HEIGHT: f32 = 826.0;
+    pub const ATTENTION_POPOVER_WIDTH: f32 = 340.0;
+    pub const SWITCH_POPOVER_WIDTH: f32 = 448.0;
+    pub const HARNESS_PICKER_WIDTH: f32 = 420.0;
+    pub const HARNESS_LIST_HEIGHT: f32 = 260.0;
+    pub const SEARCH_FIELD_HEIGHT: f32 = 32.0;
+    pub const MODEL_FIELD_HEIGHT: f32 = 30.0;
 }
 pub mod glyph {
     pub const RAIL: f32 = 18.0;
@@ -504,18 +515,13 @@ pub mod desktop {
     pub const DROP_BORDER: f32 = 2.0;
     pub const DROP_ZONE_OPACITY: f32 = 0.24;
     pub const DRAG_GHOST_OPACITY: f32 = 0.92;
-    pub const LOOP_PANEL_WIDTH: f32 = 400.0;
     pub const LOOP_PANEL_CONTENT_WIDTH: f32 = 372.0;
     pub const LOOP_PANEL_TITLE_SIZE: f32 = 14.0;
     pub const LOOP_TOGGLE_WIDTH: f32 = 40.0;
     pub const LOOP_TOGGLE_HEIGHT: f32 = 22.0;
     pub const LOOP_TOGGLE_KNOB: f32 = 18.0;
     pub const LOOP_PROMPT_HEIGHT: f32 = 88.0;
-    pub const TASK_COLUMN_WIDTH: f32 = 250.0;
-    pub const TASK_COLUMN_MIN_HEIGHT: f32 = 500.0;
     pub const TASK_DOT: f32 = 6.0;
-    pub const TASK_SHEET_WIDTH: f32 = 460.0;
-    pub const TASK_SHEET_HEIGHT: f32 = 826.0;
     pub const NEW_TASK_SHEET_WIDTH: f32 = 560.0;
     pub const TASK_LIST_MINIMUM_WIDTH: f32 = 960.0;
     pub const TASK_LIST_KEY_WIDTH: f32 = 70.0;
@@ -531,14 +537,8 @@ pub mod desktop {
     pub const TASK_FIELD_TEXT_SIZE: f32 = 14.0;
     pub const TASK_TOOLBAR_HEIGHT: f32 = 34.0;
     pub const TASK_CARD_GLYPH: f32 = 10.0;
-    pub const ATTENTION_POPOVER_WIDTH: f32 = 340.0;
-    pub const SWITCH_POPOVER_WIDTH: f32 = 448.0;
-    pub const SWITCH_POPOVER_CONTENT_WIDTH: f32 = 420.0;
     pub const SWITCH_POPOVER_MAXIMUM_HEIGHT: f32 = 780.0;
     pub const SWITCH_POPOVER_PADDING: f32 = 14.0;
-    pub const HARNESS_LIST_HEIGHT: f32 = 260.0;
-    pub const SEARCH_FIELD_HEIGHT: f32 = 32.0;
-    pub const MODEL_FIELD_HEIGHT: f32 = 30.0;
     pub const EFFORT_SEGMENT_INSET: f32 = 3.0;
     pub const PREFERENCES_WIDTH: f32 = 1080.0;
     pub const PREFERENCES_HEIGHT: f32 = 700.0;
