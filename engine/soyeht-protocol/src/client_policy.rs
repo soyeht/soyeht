@@ -14,6 +14,7 @@ pub const PAGE_SIZE_HARNESSES: u32 = 64;
 pub const PAGE_SIZE_MODELS: u32 = 64;
 pub const PAGE_SIZE_TRANSCRIPT: u32 = 100;
 pub const PAGE_SIZE_TASKS: u32 = 100;
+pub const PAGE_SIZE_WRITING_SECTION: u32 = 100;
 pub const HARNESS_SWITCH_TITLE: &str = "Switch agent";
 pub const HARNESS_SWITCH_HANDOVER: &str = "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.";
 pub const TASK_MOVE_REASON: &str = "Moved on the workspace board";

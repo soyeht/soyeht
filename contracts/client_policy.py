@@ -40,6 +40,7 @@ PAGE_REQUESTS = {
     "models": "ModelListParams",
     "transcript": "PaneTranscriptParams",
     "tasks": "TaskListParams",
+    "writingSection": "WritingSectionListParams",
 }
 INLINE_IMAGE_TYPES = "inlineImageTypes"
 EDITOR_PAIRS = "editorPairs"

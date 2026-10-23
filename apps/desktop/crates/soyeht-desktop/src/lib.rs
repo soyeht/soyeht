@@ -44,6 +44,9 @@ pub mod theme;
 mod views;
 mod window_size;
 mod workbench;
+mod writing_flow;
+mod writing_style;
+mod writing_ui;
 
 pub use app::run;
 #[cfg(feature = "dev-tools")]

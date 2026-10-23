@@ -6,6 +6,7 @@
 //! the meantime waits and is done when the queue is empty.
 
 mod held;
+mod retype;
 
 use super::at_least;
 use super::{
@@ -21,7 +22,7 @@ use crate::{
 };
 use soyeht_protocol::{
     EditorLanguage, FileAuthor, FileDocument, FileFindQuery, FileFindResult, FileReadResult,
-    FileUndoResult, FileWriteResult, TextEdit, TextPosition, TextRange,
+    FileUndoResult, FileWriteResult, TextEdit, TextPosition, TextRange, WritingFormatKind,
 };
 use std::collections::VecDeque;
 
@@ -32,8 +33,15 @@ pub use held::Action;
 enum Deferred {
     Reload,
     Save,
-    Replay { redo: bool },
+    Replay {
+        redo: bool,
+    },
     Close,
+    /// A format of the selected text of a writing pane (`writing::Command::Format`).
+    Format {
+        range: TextRange,
+        kind: WritingFormatKind,
+    },
 }
 
 /// The search the replica last asked for, and what it found.
@@ -386,6 +394,10 @@ impl EditorFile {
         }
         self.doc.dirty = true;
         self.reveal = true;
+        // A format waits for the edits before it, not for the ones that come after: its range was
+        // chosen on the text as it stood.
+        self.deferred
+            .retain(|step| !matches!(step, Deferred::Format { .. }));
         if !plan.edits.is_empty() {
             self.queue.push_back(plan.edits.clone());
         }
@@ -434,7 +446,9 @@ impl EditorFile {
         self.pending = None;
         self.replaying = false;
         self.abandon();
-        self.deferred.retain(|step| *step != Deferred::Reload);
+        // A format carries the range of text the discarded edits had changed: it is not made.
+        self.deferred
+            .retain(|step| !matches!(step, Deferred::Reload | Deferred::Format { .. }));
         let mut effects = self.settled();
         effects.extend(self.reload());
         effects
@@ -485,6 +499,7 @@ impl EditorFile {
                 Deferred::Save => self.save(),
                 Deferred::Replay { redo } => self.replay(redo),
                 Deferred::Close => vec![self.close_effect()],
+                Deferred::Format { range, kind } => self.format(range, kind),
             });
         }
         effects

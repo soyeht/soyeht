@@ -16,7 +16,8 @@ export const clientPolicy = {
     "harnesses": 64,
     "models": 64,
     "transcript": 100,
-    "tasks": 100
+    "tasks": 100,
+    "writingSection": 100
   },
   "usageBand": {
     "warningFrom": 0.5,

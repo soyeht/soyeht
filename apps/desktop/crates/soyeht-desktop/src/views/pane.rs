@@ -24,7 +24,7 @@ use soyeht_client::{
     terminal_state::{self, Severity},
 };
 use soyeht_protocol::{
-    Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis, client_policy::StateDot,
+    Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis, WritingKind, client_policy::StateDot,
 };
 use std::time::Instant;
 
@@ -32,6 +32,8 @@ use std::time::Instant;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Action {
     Loop,
+    /// Open an agent beside a document.
+    Companion,
     Tasks,
     SplitColumns,
     SplitRows,
@@ -42,6 +44,7 @@ impl Action {
     fn icon(self) -> Icon {
         match self {
             Self::Loop => Icon::Timer,
+            Self::Companion => Icon::Cpu,
             Self::Tasks => Icon::List,
             Self::SplitColumns => Icon::Columns,
             Self::SplitRows => Icon::Rows,
@@ -52,6 +55,7 @@ impl Action {
     fn name(self) -> &'static str {
         match self {
             Self::Loop => "loop",
+            Self::Companion => "companion",
             Self::Tasks => "tasks",
             Self::SplitColumns => "split-columns",
             Self::SplitRows => "split-rows",
@@ -63,6 +67,7 @@ impl Action {
     fn title(self) -> &'static str {
         match self {
             Self::Loop => "Loop and lead controls",
+            Self::Companion => "Open an agent beside this text",
             Self::Tasks => "Open workspace tasks",
             Self::SplitColumns => "Split pane into columns",
             Self::SplitRows => "Split pane into rows",
@@ -108,9 +113,13 @@ impl Workbench {
                 self.pane_header(pane, palette, cx),
                 self.agent_body(pane, palette, cx),
             ),
+            PaneMode::Writing if pane.writing_kind == Some(WritingKind::Text) => (
+                self.writing_header(palette, pane, cx),
+                self.writing_body(cx, pane),
+            ),
             _ => (
                 self.pane_header(pane, palette, cx),
-                notice_body(palette, mode_notice(&pane.mode)),
+                notice_body(palette, mode_notice(pane)),
             ),
         };
         let header = self.draggable_header(header, pane, palette);
@@ -263,7 +272,9 @@ impl Workbench {
                 ui.loop_form = None;
             }
         }
-        let connected = self.state.connection == soyeht_client::Connection::Connected;
+        // A companion is asked for once: the button waits for the agent to open.
+        let pending = action == Action::Companion && self.state.companion_pending(&pane.pane_id);
+        let connected = self.state.connection == soyeht_client::Connection::Connected && !pending;
         let enabled = menu.is_some() || connected;
         let body = open.then(|| self.loop_panel(pane, palette, cx));
         div()
@@ -299,7 +310,11 @@ impl Workbench {
                                 Action::SplitRows => {
                                     this.split_pane(&pane_id, WorkspacePaneLayoutAxis::Vertical, cx)
                                 }
+                                Action::Close if this.is_text(&pane_id) => {
+                                    this.request_close_writing(&pane_id, cx)
+                                }
                                 Action::Close => this.close_pane(&pane_id),
+                                Action::Companion => this.open_companion(&pane_id, cx),
                                 Action::Tasks => this.open_tasks(cx),
                                 Action::Loop => {}
                             }
@@ -427,7 +442,7 @@ fn notice_label(notice: terminal_state::Notice, palette: &Palette) -> Div {
     super::agent::labelled(glyph, color, notice.text)
 }
 
-fn notice_body(palette: &Palette, message: &str) -> AnyElement {
+pub(super) fn notice_body(palette: &Palette, message: &str) -> AnyElement {
     div()
         .flex_1()
         .flex()
@@ -439,11 +454,17 @@ fn notice_body(palette: &Palette, message: &str) -> AnyElement {
         .into_any_element()
 }
 
-fn mode_notice(mode: &PaneMode) -> &'static str {
-    match mode {
-        PaneMode::Web => "Web panes are not available in the desktop client yet.",
-        PaneMode::Writing => "Writing panes are not available in the desktop client yet.",
-        PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor => "",
+fn mode_notice(pane: &Pane) -> &'static str {
+    match (&pane.mode, &pane.writing_kind) {
+        (PaneMode::Web, _) => "Web panes are not available in the desktop client yet.",
+        (PaneMode::Writing, Some(WritingKind::Presentation)) => {
+            "Presentations are not available in the desktop client yet."
+        }
+        (PaneMode::Writing, Some(WritingKind::Screenplay)) => {
+            "Screenplays are not available in the desktop client yet."
+        }
+        (PaneMode::Writing, _) => "This document is not available in the desktop client yet.",
+        (PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor, _) => "",
     }
 }
 

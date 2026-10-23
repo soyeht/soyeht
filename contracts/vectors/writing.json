@@ -1,0 +1,170 @@
+{
+  "description": "What the Mac and the desktop client both say and decide for a writing document, outside the wire: how the three sections are named, how counts read, what an empty section and the new-document form say, what the new-document form submits, which entries a search keeps, how a pane names its file, when closing asks first, and what the selection toolbar of a text offers and which keys apply a format. The engine owns the rest (the file name made from a title, the word count, the autosave of a draft after limits.editorAutosaveMs, and the conflict of a draft with the disk): a client shows what the engine sent. Both clients pass every case. sectionFilter.entries are the listed documents; each case keeps the entries whose title or path contains the trimmed query, ignoring case, and keeps all of them for a blank query.",
+  "sections": [
+    {
+      "section": "texts",
+      "kind": "text",
+      "title": "Texts",
+      "singular": "text",
+      "subtitle": "Essays, notes, and long-form Markdown",
+      "folder": "texts"
+    },
+    {
+      "section": "presentations",
+      "kind": "presentation",
+      "title": "Presentations",
+      "singular": "presentation",
+      "subtitle": "Slide documents with speaker notes",
+      "folder": "presentations"
+    },
+    {
+      "section": "screenplays",
+      "kind": "screenplay",
+      "title": "Screenplays",
+      "singular": "screenplay",
+      "subtitle": "Fountain scripts and scene plans",
+      "folder": "screenplays"
+    }
+  ],
+  "sectionCopy": [
+    {
+      "name": "an empty section says where documents are kept",
+      "section": "texts",
+      "searching": false,
+      "emptyHeading": "No documents yet",
+      "emptyDetail": "Create one here and it stays in the texts folder."
+    },
+    {
+      "name": "a search that finds nothing says so",
+      "section": "texts",
+      "searching": true,
+      "emptyHeading": "No matching documents",
+      "emptyDetail": null
+    },
+    {
+      "name": "the form names the kind of document",
+      "section": "screenplays",
+      "searching": false,
+      "emptyHeading": "No documents yet",
+      "emptyDetail": "Create one here and it stays in the screenplays folder."
+    }
+  ],
+  "newDocumentForm": [
+    {
+      "section": "texts",
+      "title": "New text",
+      "note": "The document is created inside the texts folder."
+    },
+    {
+      "section": "presentations",
+      "title": "New presentation",
+      "note": "The document is created inside the presentations folder."
+    },
+    {
+      "section": "screenplays",
+      "title": "New screenplay",
+      "note": "The document is created inside the screenplays folder."
+    }
+  ],
+  "counts": [
+    { "count": 0, "kind": "word", "label": "0 words" },
+    { "count": 1, "kind": "word", "label": "1 word" },
+    { "count": 2, "kind": "word", "label": "2 words" },
+    { "count": 1, "kind": "scene", "label": "1 scene" },
+    { "count": 12, "kind": "scene", "label": "12 scenes" },
+    { "count": 1, "kind": "slide", "label": "1 slide" },
+    { "count": 30, "kind": "slide", "label": "30 slides" }
+  ],
+  "documentDrafts": [
+    {
+      "name": "a blank title submits nothing",
+      "title": "",
+      "folder": "",
+      "creating": false,
+      "submission": null
+    },
+    {
+      "name": "a title of example and line breaks is blank",
+      "title": "  \n ",
+      "folder": "drafts",
+      "creating": false,
+      "submission": null
+    },
+    {
+      "name": "the title is trimmed and an empty folder is none",
+      "title": "  qa essay ",
+      "folder": "",
+      "creating": false,
+      "submission": { "title": "qa essay", "relativeFolder": null }
+    },
+    {
+      "name": "a folder of example is none",
+      "title": "essay",
+      "folder": "   ",
+      "creating": false,
+      "submission": { "title": "essay", "relativeFolder": null }
+    },
+    {
+      "name": "the folder is trimmed",
+      "title": "essay",
+      "folder": " drafts/2026 ",
+      "creating": false,
+      "submission": { "title": "essay", "relativeFolder": "drafts/2026" }
+    },
+    {
+      "name": "a second Return while the engine answers submits nothing",
+      "title": "essay",
+      "folder": "",
+      "creating": true,
+      "submission": null
+    }
+  ],
+  "sectionFilter": {
+    "entries": [
+      { "path": "texts/trip-notes.md", "title": "Trip notes" },
+      { "path": "texts/drafts/essay.md", "title": "On Rivers" },
+      { "path": "texts/chapter-one.md", "title": "Chapter One" }
+    ],
+    "cases": [
+      { "name": "a blank query keeps every entry", "query": "", "paths": ["texts/trip-notes.md", "texts/drafts/essay.md", "texts/chapter-one.md"] },
+      { "name": "example are a blank query", "query": "   ", "paths": ["texts/trip-notes.md", "texts/drafts/essay.md", "texts/chapter-one.md"] },
+      { "name": "the title matches ignoring case", "query": "ON RIVERS", "paths": ["texts/drafts/essay.md"] },
+      { "name": "the path matches", "query": "drafts/", "paths": ["texts/drafts/essay.md"] },
+      { "name": "the query is trimmed", "query": "  chapter ", "paths": ["texts/chapter-one.md"] },
+      { "name": "nothing matches", "query": "zebra", "paths": [] }
+    ]
+  },
+  "formatShortcuts": [
+    { "name": "Command B is bold", "key": "b", "command": true, "format": "bold" },
+    { "name": "the key is read in either case", "key": "B", "command": true, "format": "bold" },
+    { "name": "Command I is italic", "key": "i", "command": true, "format": "italic" },
+    { "name": "Command K is not a format here", "key": "k", "command": true, "format": null },
+    { "name": "without the command key nothing is a shortcut", "key": "b", "command": false, "format": null }
+  ],
+  "fileNames": [
+    { "name": "the last part of the path", "path": "texts/drafts/essay.md", "fallback": "Essay", "fileName": "essay.md" },
+    { "name": "a path with no folder", "path": "essay.md", "fallback": "Essay", "fileName": "essay.md" },
+    { "name": "no path yet names the pane", "path": null, "fallback": "Essay", "fileName": "Essay" }
+  ],
+  "closing": [
+    { "name": "a saved document closes at once", "fileName": "essay.md", "dirty": false, "confirm": null },
+    {
+      "name": "a document with edits not saved asks first",
+      "fileName": "essay.md",
+      "dirty": true,
+      "confirm": { "title": "Close essay.md?", "message": "Unsaved changes will be lost." }
+    }
+  ],
+  "selectionToolbar": {
+    "text": [
+      { "action": "bold", "formats": ["bold"], "asksDestination": false },
+      { "action": "italic", "formats": ["italic"], "asksDestination": false },
+      { "action": "heading", "formats": ["heading_1", "heading_2", "heading_3"], "asksDestination": false },
+      { "action": "list", "formats": ["bullet_list", "numbered_list"], "asksDestination": false },
+      { "action": "quote", "formats": ["quote"], "asksDestination": false },
+      { "action": "link", "formats": ["link"], "asksDestination": true },
+      { "action": "image", "formats": ["image"], "asksDestination": true }
+    ],
+    "withoutSelection": []
+  }
+}

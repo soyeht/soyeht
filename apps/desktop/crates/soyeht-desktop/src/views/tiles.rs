@@ -62,6 +62,10 @@ impl Workbench {
         if place == crate::destination::Destination::Tasks {
             return self.tasks_surface(&workspace_id, palette, cx);
         }
+        if place == crate::destination::Destination::Texts {
+            return self.texts_surface(cx, palette, &workspace_id);
+        }
+        self.texts.on_stage = false;
         if !place.is_pane_grid() {
             return empty(
                 palette,

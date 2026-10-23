@@ -25,4 +25,22 @@ extension WritingSection {
     case .screenplays: "movieclapper"
     }
   }
+
+  /// The line under the section's title.
+  public var subtitle: String {
+    switch self {
+    case .texts: "Essays, notes, and long-form Markdown"
+    case .presentations: "Slide documents with speaker notes"
+    case .screenplays: "Fountain scripts and scene plans"
+    }
+  }
+
+  /// The folder of the workspace that holds the section's documents.
+  public var folderLabel: String {
+    switch self {
+    case .texts: "texts"
+    case .presentations: "presentations"
+    case .screenplays: "screenplays"
+    }
+  }
 }

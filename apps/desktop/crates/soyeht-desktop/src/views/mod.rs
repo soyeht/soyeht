@@ -38,6 +38,7 @@ mod start;
 mod switch_popover;
 mod tasks;
 mod terminal_menu;
+mod texts;
 mod tiles;
 
 pub(crate) use tiles::sizing;
@@ -46,6 +47,7 @@ mod ui;
 mod usage_ring;
 mod welcome;
 mod window_controls;
+mod writing;
 
 use crate::{
     assets::Icon,

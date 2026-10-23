@@ -71,7 +71,8 @@ extension EngineClient {
   }
 
   public func listWritingSection(
-    workspaceId: String, section: WritingSection, cursor: String? = nil, limit: UInt32 = 100
+    workspaceId: String, section: WritingSection, cursor: String? = nil,
+    limit: UInt32 = ClientPolicy.pageSizeWritingSection
   ) async throws -> WritingSectionListResult {
     try await request(
       .writingSectionList,

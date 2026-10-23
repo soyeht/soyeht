@@ -1,6 +1,6 @@
 use crate::{
     catalogue::Catalogue, editor::EditorEvent, preferences::Preferences, snapshot::Snapshot,
-    streams::StreamOutput, tasks::TaskUpdate,
+    streams::StreamOutput, tasks::TaskUpdate, writing::WritingEvent,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -81,4 +81,6 @@ pub enum Event {
     Preferences(Preferences),
     /// What the engine told an editor pane.
     Editor(EditorEvent),
+    /// What the engine told the writing panes and the lists of their sections.
+    Writing(WritingEvent),
 }

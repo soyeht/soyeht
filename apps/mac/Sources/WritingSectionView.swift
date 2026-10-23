@@ -97,10 +97,11 @@ struct WritingSectionView: View {
       Image(systemName: section.icon)
         .font(.system(size: 38, weight: .light))
         .foregroundStyle(MacTheme.secondary)
-      Text(query.isEmpty ? "No documents yet" : "No matching documents")
+      let copy = WritingDisplayText.emptySection(section, searching: !query.isEmpty)
+      Text(copy.heading)
         .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
-      if query.isEmpty {
-        Text("Create one here and it stays in the \(section.folderLabel) folder.")
+      if let detail = copy.detail {
+        Text(detail)
           .font(MacTheme.chrome(MacTheme.TypeScale.caption))
           .foregroundStyle(MacTheme.secondary)
       }
@@ -109,12 +110,7 @@ struct WritingSectionView: View {
   }
 
   private var filteredEntries: [WritingSectionEntry] {
-    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !needle.isEmpty else { return entries }
-    return entries.filter {
-      $0.title.localizedCaseInsensitiveContains(needle)
-        || $0.path.localizedCaseInsensitiveContains(needle)
-    }
+    WritingSectionSearch.filter(entries, query: query)
   }
 
   private var refreshKey: String { "\(workspaceId):\(section.rawValue)" }
@@ -211,7 +207,7 @@ private struct WritingDocumentCreateSheet: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x16) {
-      Text("New \(section.singularTitle)")
+      Text(WritingDisplayText.newDocumentTitle(section))
         .font(MacTheme.chrome(MacTheme.TypeScale.title, weight: .bold))
       TextField("Title", text: $draft.title)
         .textFieldStyle(.plain).font(MacTheme.chrome(MacTheme.TypeScale.control))
@@ -221,7 +217,7 @@ private struct WritingDocumentCreateSheet: View {
         .textFieldStyle(.plain).font(MacTheme.mono(MacTheme.TypeScale.control))
         .padding(MacTheme.Space.x10).neoWell(radius: MacTheme.Radius.control)
         .onSubmit(create)
-      Text("The document is created inside the \(section.folderLabel) folder.")
+      Text(WritingDisplayText.newDocumentNote(section))
         .font(MacTheme.chrome(MacTheme.TypeScale.caption)).foregroundStyle(MacTheme.secondary)
       HStack {
         Button("Cancel") { dismiss() }.buttonStyle(.paneSecondary)
@@ -250,23 +246,6 @@ private struct WritingDocumentCreateSheet: View {
         creating = false
         client.problem = error.localizedDescription
       }
-    }
-  }
-}
-
-extension WritingSection {
-  fileprivate var subtitle: String {
-    switch self {
-    case .texts: "Essays, notes, and long-form Markdown"
-    case .presentations: "Slide documents with speaker notes"
-    case .screenplays: "Fountain scripts and scene plans"
-    }
-  }
-  fileprivate var folderLabel: String {
-    switch self {
-    case .texts: "texts"
-    case .presentations: "presentations"
-    case .screenplays: "screenplays"
     }
   }
 }

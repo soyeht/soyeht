@@ -33,11 +33,11 @@ impl State {
         Editors::handles(name)
     }
 
-    /// Asks again for the first page of an editor pane that could not get one.
+    /// Asks again for the first page of an editor or writing pane that could not get one.
     pub fn editor_retry(&mut self, pane_id: &str) -> Vec<Effect> {
         match self
             .pane(pane_id)
-            .filter(|pane| pane.mode == PaneMode::Editor)
+            .filter(|pane| matches!(pane.mode, PaneMode::Editor | PaneMode::Writing))
             .cloned()
         {
             Some(pane) => self.editors.retry(&pane),
@@ -97,13 +97,17 @@ impl State {
     }
 
     /// Closes a pane, as the close button of its header asks. An editor pane is a tab, which
-    /// closes after its edits have reached the engine; any other pane closes at once.
+    /// closes after its edits have reached the engine, and so does a writing pane; any other pane
+    /// closes at once.
     pub fn close_pane_effects(&mut self, pane_id: &str) -> Vec<Effect> {
         if self
             .pane(pane_id)
             .is_some_and(|pane| pane.mode == PaneMode::Editor)
         {
             return self.editor_close_tab(pane_id);
+        }
+        if self.is_writing(pane_id) {
+            return self.writing_close(pane_id);
         }
         vec![Effect::Send(Command::ClosePane {
             pane_id: pane_id.to_owned(),

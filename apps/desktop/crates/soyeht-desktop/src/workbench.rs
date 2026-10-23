@@ -15,6 +15,7 @@ use crate::{
     tasks_ui::TasksUi,
     theme::ThemeName,
     views::Replies,
+    writing_ui::TextsUi,
 };
 use gpui::{
     Context, Entity, FocusHandle, Focusable, KeyDownEvent, ScrollHandle, ScrollWheelEvent, Task,
@@ -92,6 +93,8 @@ pub struct Workbench {
     pub(crate) empty_tree_scroll: HashMap<String, ScrollHandle>,
     /// The system notifications for requests agents wait on.
     pub(crate) alerts: Alerts,
+    /// The Texts place: its search, its new-document form.
+    pub(crate) texts: TextsUi,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
     _clock: Task<()>,
@@ -162,6 +165,7 @@ impl Workbench {
             project_panel_hidden: HashSet::new(),
             empty_tree_scroll: HashMap::new(),
             alerts: Alerts::new(),
+            texts: TextsUi::default(),
             _events: events,
             _clock: clock,
         }
@@ -321,6 +325,9 @@ impl Workbench {
     }
 
     pub(crate) fn input_focus(&mut self, pane_id: &str, cx: &mut Context<Self>) -> FocusHandle {
+        if let Some(text) = self.writing_focus(pane_id, cx) {
+            return text;
+        }
         let is_agent = self
             .state
             .pane(pane_id)
@@ -402,6 +409,7 @@ impl Workbench {
     /// Called at the start of a frame: honours a request to move keyboard focus.
     pub(crate) fn apply_focus_request(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus_start(window, cx);
+        self.focus_texts_form(window, cx);
         if let Some(pane_id) = self.focus_request.take() {
             self.focus_input(&pane_id, window, cx);
         }

@@ -573,6 +573,13 @@ pub mod desktop {
     pub const EDITOR_THUMB_WIDTH: f32 = 5.0;
     pub const EDITOR_THUMB_MINIMUM: f32 = 24.0;
     pub const EDITOR_MARGIN_CELLS: f32 = 2.0;
+    pub const WRITING_TEXT_SIZE: f32 = 17.0;
+    pub const WRITING_LINE_HEIGHT: f32 = 1.65;
+    pub const WRITING_COLUMN_WIDTH: f32 = 680.0;
+    pub const WRITING_TOOLBAR_HEIGHT: f32 = 32.0;
+    pub const WRITING_TOOLBAR_BUTTON_WIDTH: f32 = 28.0;
+    pub const WRITING_LIST_WIDTH: f32 = 760.0;
+    pub const WRITING_ROW_ICON_BOX: f32 = 34.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

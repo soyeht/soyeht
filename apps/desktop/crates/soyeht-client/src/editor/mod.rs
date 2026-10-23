@@ -88,6 +88,35 @@ impl Editors {
         self.files.get(file_id)
     }
 
+    /// A file the engine told of with its pane (a writing document made by another client):
+    /// its first page is read.
+    pub fn adopt_file(&mut self, doc: FileDocument) -> Vec<Effect> {
+        if self.files.contains_key(&doc.file_id) {
+            return Vec::new();
+        }
+        let mut file = EditorFile::new(doc);
+        let effects = file.show(0, 0);
+        self.files.insert(file.doc.file_id.clone(), file);
+        effects
+    }
+
+    /// The engine changed a file the person did not edit here (a format): its page is read again.
+    pub fn file_changed(&mut self, doc: FileDocument) -> Vec<Effect> {
+        self.files
+            .get_mut(&doc.file_id)
+            .map(|file| file.changed_elsewhere(doc))
+            .unwrap_or_default()
+    }
+
+    /// The engine says a file is at `revision`: when this replica is behind, its page is read
+    /// again.
+    pub fn changed_to(&mut self, file_id: &str, revision: &str) -> Vec<Effect> {
+        match self.files.get_mut(file_id) {
+            Some(file) if !at_least(&file.doc.revision, revision) => file.reload(),
+            _ => Vec::new(),
+        }
+    }
+
     /// The tabs of a workspace in the engine's order. An editor pane the engine has not listed
     /// yet follows at the end.
     pub fn tab_list(&self, workspace_id: &str, panes: &[Pane]) -> Vec<EditorTab> {

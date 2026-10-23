@@ -51,6 +51,7 @@ pub mod timestamp;
 pub mod transcript_rows;
 pub mod transport;
 pub mod usage;
+pub mod writing;
 
 pub use commands::Command;
 pub use engine::{CLIENT_NAME, Engine};

@@ -68,19 +68,33 @@ private func sizing(_ all: JsonValue, floors listed: JsonValue = .null) throws
   }
 }
 
+/// The pane a case adds to the tree, and the axis it goes along.
+private func addition(_ item: JsonValue) throws -> (leaf: PaneLayoutLeaf, axis: PaneLayoutAxis) {
+  let newPane = item["newPane"]
+  let leaf = PaneLayoutLeaf(
+    paneId: newPane["paneId"].string ?? "",
+    kind: PaneLayoutKind(
+      mode: try JsonValue.string(newPane["mode"].string ?? "").decoded(PaneMode.self)))
+  return (leaf, try #require(item["axis"].string.flatMap(PaneLayoutAxis.init(rawValue:))))
+}
+
 @Test func splittingPlacesTheNewPaneAsTheVectorSays() throws {
   for item in ContractVector.cases(try vector(), "split") {
-    let name = item["name"].string ?? ""
-    let newPane = item["newPane"]
-    let leaf = PaneLayoutLeaf(
-      paneId: newPane["paneId"].string ?? "",
-      kind: PaneLayoutKind(
-        mode: try JsonValue.string(newPane["mode"].string ?? "").decoded(PaneMode.self)))
-    let axis = try #require(item["axis"].string.flatMap(PaneLayoutAxis.init(rawValue:)))
+    let (leaf, axis) = try addition(item)
     let placed = try? PaneLayoutTreeMutation.splitting(
       try tree(item["tree"]), anchorPaneId: item["anchor"].string ?? "", newLeaf: leaf,
       axis: axis)
-    #expect(placed == (try optionalTree(item["expected"])), "\(name)")
+    #expect(placed == (try optionalTree(item["expected"])), "\(item["name"].string ?? "")")
+  }
+}
+
+@Test func anAgentBesideAWritingPaneIsItsCompanionAsTheVectorSays() throws {
+  for item in ContractVector.cases(try vector(), "companionSplit") {
+    let (leaf, axis) = try addition(item)
+    let paired = try? PaneLayoutTreeMutation.splittingWritingCompanion(
+      try tree(item["tree"]), writingPaneId: item["writing"].string ?? "", agentLeaf: leaf,
+      axis: axis)
+    #expect(paired == (try optionalTree(item["expected"])), "\(item["name"].string ?? "")")
   }
 }
 

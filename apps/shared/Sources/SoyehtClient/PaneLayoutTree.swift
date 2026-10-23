@@ -122,6 +122,13 @@ public indirect enum PaneLayoutTree: Equatable, Sendable {
   case leaf(PaneLayoutLeaf)
   case split(PaneLayoutSplit)
 
+  /// The companion pair that the writing pane belongs to, when it belongs to one.
+  public func companion(ofWritingPane paneId: String) -> PaneLayoutCompanion? {
+    guard case .split(let split) = self else { return nil }
+    if let companion = split.companion, companion.writingPaneId == paneId { return companion }
+    return split.children.lazy.compactMap { $0.tree.companion(ofWritingPane: paneId) }.first
+  }
+
   public var leavesInCanonicalOrder: [PaneLayoutLeaf] {
     switch self {
     case .leaf(let leaf):

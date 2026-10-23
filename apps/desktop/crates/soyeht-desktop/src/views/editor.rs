@@ -31,6 +31,24 @@ fn language_name(file: &EditorFile) -> &'static str {
     }
 }
 
+/// What a header says of the file: whether it is saved, and the color of the word. A pane that
+/// holds a file but no page, whose read failed, says what its body says.
+pub(super) fn file_status(
+    file: Option<&EditorFile>,
+    failed: bool,
+    palette: &Palette,
+) -> (&'static str, u32) {
+    match file {
+        _ if failed => ("\u{b7} failed", palette.danger()),
+        None => ("\u{b7} loading", palette.muted),
+        Some(file) if file.doc.conflicted => ("\u{b7} conflict", palette.danger()),
+        // The caret is on its way to a page the engine has not sent: keys wait for it.
+        Some(file) if file.is_landing() => ("\u{b7} moving", palette.muted),
+        Some(file) if file.doc.dirty => ("\u{b7} unsaved", palette.warning()),
+        Some(_) => ("\u{b7} saved", palette.muted),
+    }
+}
+
 /// `Ctrl+Shift+E`, or `⇧⌘E` on the Mac: the key of the project panel.
 fn panel_shortcut() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -54,20 +72,7 @@ impl Workbench {
     ) -> Div {
         let file = self.state.editors.file_of_pane(&pane.pane_id);
         let label = file.map_or_else(|| "Editor".to_owned(), |file| path_label(&file.doc.path));
-        let failed = matches!(
-            self.state.editors.pane_load(&pane.pane_id),
-            PaneLoad::Failed(_)
-        );
-        let (status, color) = match file {
-            // A pane that holds a file but no page, whose read failed, shows what its body shows.
-            _ if failed => ("\u{b7} failed", palette.danger()),
-            None => ("\u{b7} loading", palette.muted),
-            Some(file) if file.doc.conflicted => ("\u{b7} conflict", palette.danger()),
-            // The caret is on its way to a page the engine has not sent: keys wait for it.
-            Some(file) if file.is_landing() => ("\u{b7} moving", palette.muted),
-            Some(file) if file.doc.dirty => ("\u{b7} unsaved", palette.warning()),
-            Some(_) => ("\u{b7} saved", palette.muted),
-        };
+        let status = self.file_state_word(&pane.pane_id, palette);
         let shown = !self.project_panel_hidden.contains(&pane.workspace_id);
         let tip = format!(
             "{} Project Panel ({})",
@@ -105,14 +110,20 @@ impl Workbench {
                     .child(SharedString::from(label)),
             )
             .child(spacer())
-            .child(
-                div()
-                    .flex_none()
-                    .text_size(px(type_scale::SMALL))
-                    .text_color(rgb(color))
-                    .child(status),
-            )
+            .child(status)
             .child(close)
+    }
+
+    /// What a header says of the file of a pane: whether it is saved, in the word's color.
+    pub(super) fn file_state_word(&self, pane_id: &str, palette: &Palette) -> Div {
+        let failed = matches!(self.state.editors.pane_load(pane_id), PaneLoad::Failed(_));
+        let file = self.state.editors.file_of_pane(pane_id);
+        let (word, color) = file_status(file, failed, palette);
+        div()
+            .flex_none()
+            .text_size(px(type_scale::SMALL))
+            .text_color(rgb(color))
+            .child(word)
     }
 
     /// The body of an editor pane.
@@ -212,7 +223,7 @@ impl Workbench {
 
     /// What a pane shows when its file could not be read: the engine's reason, and a button that
     /// asks again.
-    fn load_failed(
+    pub(super) fn load_failed(
         reason: String,
         pane_id: &str,
         palette: &Palette,
@@ -238,7 +249,7 @@ impl Workbench {
     }
 
     /// Asks again for the first page of a pane that could not get one.
-    fn retry_editor_load(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+    pub(super) fn retry_editor_load(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         let effects = self.state.editor_retry(pane_id);
         self.run_effects(effects);
         cx.notify();
@@ -353,7 +364,15 @@ fn face_row(palette: &Palette) -> Div {
 }
 
 /// The line under the tabs when the file changed on disk while it had edits of its own.
-fn conflict_banner(palette: &Palette) -> AnyElement {
+pub(super) fn conflict_banner(palette: &Palette) -> AnyElement {
+    strip(palette)
+        .child(icon(Icon::Alert, glyph::CHEVRON, palette.danger()))
+        .child("The file changed on disk while this draft was open.")
+        .into_any_element()
+}
+
+/// A line of words on a well, under the header of a pane, with room around it.
+pub(super) fn strip(palette: &Palette) -> Div {
     well_row(palette)
         .flex()
         .flex_row()
@@ -364,9 +383,6 @@ fn conflict_banner(palette: &Palette) -> AnyElement {
         .mb(px(space::X6))
         .py(px(space::X8))
         .text_color(rgb(palette.ink))
-        .child(icon(Icon::Alert, glyph::CHEVRON, palette.danger()))
-        .child("The file changed on disk while this draft was open.")
-        .into_any_element()
 }
 
 /// The strip under the lines: the language, the encoding, the line ending and the caret.

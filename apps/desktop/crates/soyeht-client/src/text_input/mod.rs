@@ -147,6 +147,19 @@ impl TextInput {
         self.desired = None;
     }
 
+    /// Puts `text` in place of everything written as something that happened elsewhere: the
+    /// selection stays where the new text has room for it, and the steps undo and redo walk are
+    /// dropped, since they describe a text that is gone.
+    pub fn load(&mut self, text: &str) {
+        let (anchor, head) = (self.anchor, self.head);
+        self.text = normalized(text).into_owned();
+        self.anchor = self.boundary(anchor);
+        self.head = self.boundary(head);
+        self.marked = None;
+        self.desired = None;
+        self.history = History::default();
+    }
+
     /// Inserts pasted or programmatic text over the selection, as a step of its own.
     pub fn insert(&mut self, text: &str) {
         let range = self.selection();

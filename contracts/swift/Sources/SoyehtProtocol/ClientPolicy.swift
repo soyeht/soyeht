@@ -20,6 +20,7 @@ public enum ClientPolicy {
     public static let pageSizeModels: UInt32 = 64
     public static let pageSizeTranscript: UInt32 = 100
     public static let pageSizeTasks: UInt32 = 100
+    public static let pageSizeWritingSection: UInt32 = 100
     public static let harnessSwitchTitle = "Switch agent"
     public static let harnessSwitchHandover = "This starts a new agent session. Recent messages and pending prompts are handed over as historical data."
     public static let taskMoveReason = "Moved on the workspace board"

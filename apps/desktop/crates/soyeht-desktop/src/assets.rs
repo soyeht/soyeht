@@ -91,6 +91,10 @@ icons! {
     Eye => "eye",
     EyeOff => "eye-off",
     Search => "search",
+    Bold => "bold",
+    Italic => "italic",
+    Heading => "heading",
+    Quote => "text-quote",
 }
 
 macro_rules! logo {

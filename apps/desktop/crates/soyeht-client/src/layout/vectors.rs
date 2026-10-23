@@ -51,25 +51,41 @@ fn normalizing_merges_and_collapses_as_the_mac_does() {
     }
 }
 
+/// The pane a case adds to the tree.
+fn fresh(case: &Value) -> Pane {
+    let new = &case["newPane"];
+    serde_json::from_value(pane_json(
+        new["paneId"].as_str().unwrap(),
+        "w",
+        new["mode"].as_str().unwrap(),
+    ))
+    .unwrap()
+}
+
+/// The tree a case says the change makes, when it makes one.
+fn expected(case: &Value) -> Option<Node> {
+    (!case["expected"].is_null()).then(|| tree(&case["expected"]))
+}
+
+fn axis_of(case: &Value) -> Axis {
+    serde_json::from_value(case["axis"].clone()).unwrap()
+}
+
 #[test]
 fn splitting_places_the_new_pane_as_the_mac_does() {
     for case in cases("pane-layout", "split") {
-        let new = &case["newPane"];
-        let fresh: Pane = serde_json::from_value(pane_json(
-            new["paneId"].as_str().unwrap(),
-            "w",
-            new["mode"].as_str().unwrap(),
-        ))
-        .unwrap();
-        let axis: Axis = serde_json::from_value(case["axis"].clone()).unwrap();
-        let placed = split_pane(
-            &tree(&case["tree"]),
-            case["anchor"].as_str().unwrap(),
-            &fresh,
-            axis,
-        );
-        let expected = (!case["expected"].is_null()).then(|| tree(&case["expected"]));
-        assert_eq!(placed, expected, "{}", name(&case));
+        let anchor = case["anchor"].as_str().unwrap();
+        let placed = split_pane(&tree(&case["tree"]), anchor, &fresh(&case), axis_of(&case));
+        assert_eq!(placed, expected(&case), "{}", name(&case));
+    }
+}
+
+#[test]
+fn an_agent_beside_a_writing_pane_is_its_companion_as_the_mac_pairs_them() {
+    for case in cases("pane-layout", "companionSplit") {
+        let writing = case["writing"].as_str().unwrap();
+        let paired = split_companion(&tree(&case["tree"]), writing, &fresh(&case), axis_of(&case));
+        assert_eq!(paired, expected(&case), "{}", name(&case));
     }
 }
 

@@ -158,7 +158,29 @@ agent works.
   when it was last. The "+" menu also lists the recent folders (the roots of the workspaces, then
   the folders panes run in). The naming, path, reuse, recent-folder, rename and close rules are
   `contracts/vectors/workspaces.json`, which the Mac and iOS clients pass too.
-- Web and writing panes and dictation are listed with a notice.
+- The Texts place lists the documents of the selected workspace, a page at a time, as the Mac's
+  section view does: the section's name and what it holds, "New document" (also "Text" in the "+"
+  menu) with a form for a title and an optional subfolder, a line that narrows the list by title
+  or path, and a row for each document, which opens in a text pane. A text pane has the file's
+  name, its words (the engine's count), whether it is saved, the text in a column of reading
+  width (headings and bold, italic, quote, code and link runs drawn in their look, the Markdown
+  marks left in the text), a caret and selection, typing, copy, cut, paste and undo through the
+  same editing model as the agent composer (`soyeht_client::text_input`), and over a selected
+  part the toolbar of formats (bold, italic, headings, lists, quote; Ctrl+B and Ctrl+I, Command on
+  the Mac) which the engine applies. What is typed is sent to the engine as the one edit that
+  turns the page into the field's text, to the revision the edit before it made; the engine
+  saves the draft shortly after the last edit (Ctrl+S waits for it), and a change of the file
+  on disk, by an agent or by another client, reaches the open text. Closing a text with edits not
+  saved asks first. The button beside the close mark opens an agent beside the text, and the two
+  are a writing companion pair as on the Mac. The names, counts, search, new-document form,
+  close question and toolbar are `contracts/vectors/writing.json`, and the pairing is the
+  `companionSplit` cases of `contracts/vectors/pane-layout.json`; the Mac passes both. Left out:
+  the serif reading face, the font, width and focus options, a toolbar that follows the selection
+  and the link and image formats, the hybrid view that hides the Markdown marks of the lines the
+  caret is not on, the list's sizes and dates, a text longer than one page of
+  `editorViewportLines` lines or with a lone carriage return (only a notice is shown, not the text), and presentations and
+  screenplays, which say they are not available.
+- Web panes and dictation are listed with a notice.
 - Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
   General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone
   and Tasks and loops (placeholders on the Mac too), Shortcuts (Vim mode: the editor has none), Links (there is no web pane) and Dictation. Of the Harnesses panel, adding, editing and

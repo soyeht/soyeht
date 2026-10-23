@@ -440,6 +440,11 @@ impl Workbench {
             cx,
             Workbench::open_editor_place,
         ));
+        rows.push(menus::on_pick(
+            menus::item(palette, "text", "Text", false),
+            cx,
+            Workbench::open_new_text,
+        ));
         rows.extend(self.harness_rows(Picker::default(), palette, &pick, cx));
         rows
     }

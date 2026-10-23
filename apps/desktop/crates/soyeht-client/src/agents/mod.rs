@@ -212,7 +212,10 @@ impl State {
         else {
             return effects;
         };
-        if let Some(placed) = layout::split_pane(&tree, &anchor, &pane, axis) {
+        // An agent split off a document is its companion, as on the Mac.
+        let placed = layout::split_companion(&tree, &anchor, &pane, axis.clone())
+            .or_else(|| layout::split_pane(&tree, &anchor, &pane, axis));
+        if let Some(placed) = placed {
             effects.push(self.store_layout(&expected.workspace_id, placed));
         }
         effects

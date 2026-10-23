@@ -68,14 +68,20 @@ impl Destination {
             Self::Terminal => *mode == PaneMode::Terminal,
             Self::Editor => *mode == PaneMode::Editor,
             Self::Web => *mode == PaneMode::Web,
-            Self::Tasks | Self::Phone => false,
-            Self::Texts | Self::Presentations | Self::Screenplays => *mode == PaneMode::Writing,
+            Self::Tasks | Self::Phone | Self::Texts | Self::Presentations | Self::Screenplays => {
+                false
+            }
         }
     }
 
-    /// Whether this place draws panes at all.
+    /// Whether this place draws panes at all. The three writing places list the documents of
+    /// the workspace, as the Mac's sections do, and open each in a pane that the agents' place
+    /// shows. Texts has its list; the others say they are not here yet.
     pub fn is_pane_grid(self) -> bool {
-        !matches!(self, Self::Tasks | Self::Phone)
+        !matches!(
+            self,
+            Self::Tasks | Self::Phone | Self::Texts | Self::Presentations | Self::Screenplays
+        )
     }
 }
 
@@ -96,5 +102,12 @@ mod tests {
         assert!(Destination::Terminal.shows(&PaneMode::Terminal));
         assert!(!Destination::Terminal.shows(&PaneMode::Agent));
         assert!(!Destination::Tasks.is_pane_grid());
+        for place in [
+            Destination::Texts,
+            Destination::Presentations,
+            Destination::Screenplays,
+        ] {
+            assert!(!place.is_pane_grid() && !place.shows(&PaneMode::Writing));
+        }
     }
 }

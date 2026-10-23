@@ -90,6 +90,16 @@ impl Editors {
     /// the file the engine lists for the pane, else the engine's tab list to find it in.
     /// `refresh` asks for the list even when this client holds one that names the pane.
     pub(super) fn fetch(&mut self, pane: &Pane, refresh: bool) -> Vec<Effect> {
+        // A document's file is not in the editor's tabs: the engine told of it with the pane.
+        if pane.mode == PaneMode::Writing {
+            return match self.file_of_pane_mut(&pane.pane_id) {
+                Some(file) if file.page.is_none() => {
+                    let effects = file.read_first_page();
+                    self.stamped(effects)
+                }
+                _ => Vec::new(),
+            };
+        }
         if pane.mode != PaneMode::Editor {
             return Vec::new();
         }

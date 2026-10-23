@@ -25,6 +25,34 @@ public enum WritingDisplayText {
     return "\(count) \(count == 1 ? names.singular : names.plural)"
   }
 
+  /// The name a writing pane's header shows: the last part of the document's path, else the
+  /// pane's own name while the pane has no document yet.
+  public static func fileName(path: String?, fallback: String) -> String {
+    guard let path else { return fallback }
+    return URL(fileURLWithPath: path).lastPathComponent
+  }
+
+  /// What a section's list says when it shows no document: the heading, and under it the line
+  /// that tells where documents are kept (not for a search that found nothing).
+  public static func emptySection(
+    _ section: WritingSection, searching: Bool
+  ) -> (heading: String, detail: String?) {
+    guard !searching else { return ("No matching documents", nil) }
+    return (
+      "No documents yet", "Create one here and it stays in the \(section.folderLabel) folder."
+    )
+  }
+
+  /// The title of the form that makes a document of the section.
+  public static func newDocumentTitle(_ section: WritingSection) -> String {
+    "New \(section.singularTitle)"
+  }
+
+  /// The line under the new-document form's fields.
+  public static func newDocumentNote(_ section: WritingSection) -> String {
+    "The document is created inside the \(section.folderLabel) folder."
+  }
+
   public static func fontName(_ font: WritingFont) -> String {
     switch font {
     case .reading_serif: "Newsreader"

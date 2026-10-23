@@ -349,6 +349,62 @@ pub fn split_pane(tree: &Node, anchor: &str, new: &Pane, axis: Axis) -> Option<N
     .map(normalize)
 }
 
+/// The pair a writing pane and the agent beside it make: `writing` replaced by a split of it and
+/// `agent`, which carries the companion annotation and so is never merged into its parent. `None`
+/// when `writing` is not a writing pane of the tree, `agent` is not an agent pane, or `agent` is
+/// in the tree already, or `writing` has a companion already.
+pub fn split_companion(tree: &Node, writing: &str, agent: &Pane, axis: Axis) -> Option<Node> {
+    if kind_of(agent) != Kind::Agent
+        || contains(tree, &agent.pane_id)
+        || companion_of(tree, writing).is_some()
+    {
+        return None;
+    }
+    let anchor = find_leaf(tree, writing).filter(|anchor| is_writing(&anchor.kind))?;
+    let pair = Node::V1(Split {
+        axis,
+        children: vec![branch(Node::V0(anchor)), branch(leaf(agent))],
+        companion: Some(Companion {
+            writing_pane_id: writing.to_owned(),
+            agent_pane_id: agent.pane_id.clone(),
+        }),
+    });
+    replace_leaf(tree, writing, &|_| pair.clone()).map(normalize)
+}
+
+/// The pair a writing pane belongs to, when it belongs to one.
+pub fn companion_of<'a>(node: &'a Node, writing: &str) -> Option<&'a Companion> {
+    let Node::V1(split) = node else {
+        return None;
+    };
+    split
+        .companion
+        .as_ref()
+        .filter(|companion| companion.writing_pane_id == writing)
+        .or_else(|| {
+            split
+                .children
+                .iter()
+                .find_map(|child| companion_of(&child.node, writing))
+        })
+}
+
+/// Whether a layout kind is one of a document: the kinds a companion agent can sit beside.
+fn is_writing(kind: &Kind) -> bool {
+    matches!(kind, Kind::Text | Kind::Presentation | Kind::Screenplay)
+}
+
+/// The leaf of a pane, when it is in the tree.
+fn find_leaf(node: &Node, pane_id: &str) -> Option<Leaf> {
+    match node {
+        Node::V0(leaf) => (leaf.pane_id == pane_id).then(|| leaf.clone()),
+        Node::V1(parent) => parent
+            .children
+            .iter()
+            .find_map(|child| find_leaf(&child.node, pane_id)),
+    }
+}
+
 /// The envelope to store: an arrangement the person chose, so it is `custom`.
 pub fn envelope(tree: Node) -> Envelope {
     Envelope {

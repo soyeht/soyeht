@@ -430,3 +430,17 @@ fn a_word_and_a_line_are_found_in_text_that_is_not_an_input() {
     assert_eq!(floor_boundary("\u{e9}", 1), 0);
     assert_eq!(floor_boundary("ab", 9), 2);
 }
+
+#[test]
+fn text_loaded_from_elsewhere_keeps_the_selection_it_has_room_for_and_drops_the_history() {
+    let mut input = typed("hello world");
+    input.place(8, false);
+    input.load("hi\u{e9}");
+    // The caret was past the end of the new text; a byte inside a character rounds down.
+    assert_eq!(input.text(), "hi\u{e9}");
+    assert_eq!(input.caret(), 4);
+    assert!(!input.undo());
+    input.load("longer text here");
+    assert_eq!(input.caret(), 4);
+    assert!(!input.has_selection() && !input.is_composing());
+}

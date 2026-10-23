@@ -1,7 +1,13 @@
 //! The message line of an agent composer: a GPUI view that holds the draft (a `TextInput`, which
 //! owns every editing rule), takes text from the platform's text input (dead keys, input
 //! methods, emoji, composition) through an input handler, and forwards the keys, the pointer and
-//! the clipboard to it.
+//! the clipboard to it. With `ComposerField::prose` it is the text of a writing pane instead
+//! (`prose`).
+
+mod prose;
+
+use prose::Prose;
+pub use prose::{Looks, ProseEvent};
 
 use crate::{
     pointer::follow,
@@ -13,7 +19,8 @@ use gpui::{
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, HighlightStyle,
     InteractiveElement, IntoElement, KeyDownEvent, Keystroke, MouseButton, MouseDownEvent,
     MouseMoveEvent, ParentElement, Pixels, Render, SharedString, Styled, StyledText, TextLayout,
-    UTF16Selection, Window, canvas, div, point, prelude::FluentBuilder, px, rgb, size,
+    UTF16Selection, Window, canvas, combine_highlights, div, fill, point, prelude::FluentBuilder,
+    px, rgb, size,
 };
 use soyeht_client::{
     editor::{keys::Chord, selection::Motion},
@@ -51,6 +58,7 @@ pub struct ComposerField {
     dragging: bool,
     /// A list of completions is open over the line: it takes the arrows, Return and Tab.
     completing: bool,
+    prose: Option<Prose>,
 }
 
 impl EventEmitter<ComposerEvent> for ComposerField {}
@@ -75,6 +83,7 @@ impl ComposerField {
             goal_x: None,
             dragging: false,
             completing: false,
+            prose: None,
         }
     }
 
@@ -120,6 +129,9 @@ impl ComposerField {
         if self.draft.is_composing() {
             return;
         }
+        if self.prose.is_some() && self.prose_key(&event.keystroke, cx) {
+            return;
+        }
         if self.completing
             && let Some(asked) = completion_of(&event.keystroke)
         {
@@ -130,8 +142,11 @@ impl ComposerField {
         let Some(edit) = edit_of(&event.keystroke) else {
             return;
         };
-        // With nothing selected here, a copy is for what is selected in the transcript.
-        if edit == Edit::Copy && !self.draft.has_selection() {
+        // With nothing selected here, a copy is for what is selected in the transcript. Prose
+        // leaves Escape to whatever is open around it.
+        if (edit == Edit::Copy && !self.draft.has_selection())
+            || (edit == Edit::Dismiss && self.prose.is_some())
+        {
             return;
         }
         if !matches!(
@@ -144,6 +159,7 @@ impl ComposerField {
             self.goal_x = None;
         }
         match edit {
+            Edit::Submit if self.prose.is_some() => self.draft.insert("\n"),
             Edit::Submit => cx.emit(ComposerEvent::Submit),
             Edit::Dismiss => cx.emit(ComposerEvent::Dismiss),
             Edit::Newline => self.draft.insert("\n"),
@@ -163,6 +179,7 @@ impl ComposerField {
             }
         }
         cx.stop_propagation();
+        self.edited(true, cx);
         cx.notify();
     }
 
@@ -247,6 +264,7 @@ impl ComposerField {
             2 => self.draft.select_word(at),
             _ => self.draft.select_line(at),
         }
+        self.edited(false, cx);
         cx.notify();
     }
 
@@ -261,6 +279,7 @@ impl ComposerField {
         }
         let at = self.offset_at(event.position);
         self.draft.place(at, true);
+        self.edited(false, cx);
         cx.notify();
     }
 
@@ -276,12 +295,55 @@ impl ComposerField {
     }
 }
 
+impl ComposerField {
+    /// The field was painted: the layout is kept for the pointer and the input method, a drag
+    /// is followed, and prose scrolls to the caret that moved.
+    fn painted(
+        entity: &Entity<Self>,
+        (bounds, layout, focused): (Bounds<Pixels>, Option<TextLayout>, bool),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let (dragging, reveal, caret) = entity.update(cx, |field, _| {
+            field.layout = layout;
+            (
+                field.dragging,
+                field.take_reveal(),
+                field.thin_caret(bounds, focused),
+            )
+        });
+        if dragging {
+            Self::follow_drag(entity, window);
+        }
+        if let Some(reveal) = reveal {
+            reveal.apply(window);
+        }
+        if let Some((caret, color)) = caret {
+            window.paint_quad(fill(caret, rgb(color)));
+        }
+    }
+
+    /// Text arrived from the platform's input: the caret has no column to keep any more.
+    fn typed(&mut self, cx: &mut Context<Self>) {
+        self.goal_x = None;
+        self.edited(true, cx);
+        cx.notify();
+    }
+}
+
 impl Render for ComposerField {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focused = self.focus.is_focused(window);
         let entity = cx.entity();
         let focus = self.focus.clone();
-        let (text, layout) = line(&self.draft, &self.placeholder, focused, self.palette);
+        let looks = self.looks();
+        let (text, layout) = line(
+            &self.draft,
+            &self.placeholder,
+            focused && self.prose.is_none(),
+            self.palette,
+            &looks,
+        );
         div()
             .relative()
             .track_focus(&self.focus)
@@ -304,13 +366,7 @@ impl Render for ComposerField {
                             ElementInputHandler::new(bounds, entity.clone()),
                             cx,
                         );
-                        let dragging = entity.update(cx, |field, _| {
-                            field.layout = layout;
-                            field.dragging
-                        });
-                        if dragging {
-                            ComposerField::follow_drag(&entity, window);
-                        }
+                        ComposerField::painted(&entity, (bounds, layout, focused), window, cx);
                     },
                 )
                 .absolute()
@@ -327,8 +383,9 @@ impl Render for ComposerField {
 fn line(
     draft: &TextInput,
     placeholder: &SharedString,
-    focused: bool,
+    block_caret: bool,
     palette: &Palette,
+    looks: &[(Range<usize>, HighlightStyle)],
 ) -> (Div, Option<TextLayout>) {
     let block = HighlightStyle {
         background_color: Some(rgb(palette.ink).into()),
@@ -341,7 +398,7 @@ fn line(
             .flex()
             .flex_row()
             .gap(px(space::X2))
-            .when(focused, |row| {
+            .when(block_caret, |row| {
                 row.child(StyledText::new(" ").with_highlights([(0..1, block)]))
             })
             .child(
@@ -375,7 +432,7 @@ fn line(
                 ..HighlightStyle::default()
             },
         ));
-    } else if focused && highlights.is_empty() {
+    } else if block_caret && highlights.is_empty() {
         match text[caret..].chars().next() {
             Some(next) => highlights.push((caret..caret + next.len_utf8(), block)),
             None => {
@@ -384,6 +441,12 @@ fn line(
             }
         }
     }
+    // The looks of prose go under the selection and the caret.
+    let highlights: Vec<_> = if looks.is_empty() {
+        highlights
+    } else {
+        combine_highlights(looks.iter().cloned(), highlights).collect()
+    };
     let styled = StyledText::new(shown).with_highlights(highlights);
     let layout = styled.layout().clone();
     (
@@ -432,8 +495,7 @@ impl EntityInputHandler for ComposerField {
         cx: &mut Context<Self>,
     ) {
         self.draft.replace_in_range(range, text);
-        self.goal_x = None;
-        cx.notify();
+        self.typed(cx);
     }
 
     fn replace_and_mark_text_in_range(
@@ -445,8 +507,7 @@ impl EntityInputHandler for ComposerField {
         cx: &mut Context<Self>,
     ) {
         self.draft.replace_and_mark(range, text, selected);
-        self.goal_x = None;
-        cx.notify();
+        self.typed(cx);
     }
 
     fn bounds_for_range(

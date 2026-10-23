@@ -497,6 +497,13 @@
     "editorThumbInset": 2,
     "editorThumbWidth": 5,
     "editorThumbMinimum": 24,
-    "editorMarginCells": 2
+    "editorMarginCells": 2,
+    "writingTextSize": 17,
+    "writingLineHeight": 1.65,
+    "writingColumnWidth": 680,
+    "writingToolbarHeight": 32,
+    "writingToolbarButtonWidth": 28,
+    "writingListWidth": 760,
+    "writingRowIconBox": 34
   }
 }

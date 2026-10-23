@@ -7,6 +7,7 @@ use crate::{
     editor::EditorCommand,
     event::Event,
     preference_requests,
+    writing::Command as WritingCommand,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
@@ -252,6 +253,8 @@ pub enum Command {
     },
     /// What the person does in an editor pane.
     Editor(EditorCommand),
+    /// What a writing pane and the lists of the sections ask of the engine.
+    Writing(WritingCommand),
 }
 
 /// What the new-task form asks the engine to create.
@@ -595,6 +598,7 @@ impl Command {
         match self {
             Self::Editor(editor) => crate::editor::commands::refused(editor, error)
                 .or_else(|| crate::editor::commands::failure(editor, &error.to_string())),
+            Self::Writing(writing) => writing.failure(),
             // The arrangement on screen goes back to the stored one, and the person is told.
             Self::SetLayout { workspace_id, .. } => Some(Event::LayoutRejected {
                 workspace_id: workspace_id.clone(),
@@ -608,6 +612,7 @@ impl Command {
     /// failure event (a layout the engine refused says so in its message).
     pub fn failure_is_shown_in_place(&self, error: &crate::Error) -> bool {
         matches!(self, Self::SetLayout { .. })
+            || matches!(self, Self::Writing(writing) if writing.failure_is_shown_in_place())
             || matches!(self, Self::Editor(editor) if crate::editor::commands::refused(editor, error).is_some())
     }
 
@@ -629,6 +634,7 @@ impl Command {
                 | Self::LoadCommands { .. }
                 | Self::LoadReadiness
         ) || matches!(self, Self::Editor(editor) if editor.is_background())
+            || matches!(self, Self::Writing(writing) if writing.is_background())
     }
 }
 

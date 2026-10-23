@@ -26,6 +26,12 @@ pub enum Menu {
     StartAgent,
     /// The settings entry at the bottom of the rail: Preferences.
     Settings,
+    /// A button of the toolbar over the selected part of a text that opens a menu of formats:
+    /// the pane and the button.
+    Format {
+        pane_id: String,
+        action: &'static str,
+    },
     /// A header button the desktop client does not serve yet: the pane and the button.
     Notice {
         pane_id: String,

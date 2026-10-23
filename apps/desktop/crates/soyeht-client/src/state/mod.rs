@@ -5,7 +5,7 @@
 use crate::{
     Command, agent::AgentView, catalogue::Catalogue, editor::Editors, event::Event,
     new_agent::NewAgent, preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot,
-    streams::StreamOutput,
+    streams::StreamOutput, writing::Writings,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -118,6 +118,8 @@ pub struct State {
     pub(crate) readiness: Option<EngineReadinessResult>,
     /// The files open in editor panes, the tabs and the project trees.
     pub editors: Editors,
+    /// The documents open in writing panes and the lists of the sections.
+    pub writings: Writings,
     pub(crate) expected: Vec<Expected>,
     /// The arrangement a divider is being dragged to, shown in place of the stored one.
     pub(crate) layout_draft: Option<layout_draft::LayoutDraft>,
@@ -163,6 +165,7 @@ impl Default for State {
             commands: HashMap::new(),
             readiness: None,
             editors: Editors::default(),
+            writings: Writings::default(),
             expected: Vec::new(),
             layout_draft: None,
             confirmed_layouts: HashMap::new(),
@@ -396,6 +399,7 @@ impl State {
                 Vec::new()
             }
             Event::Editor(event) => self.editor_event(event),
+            Event::Writing(event) => self.writing_event(event),
         }
     }
 
@@ -426,6 +430,7 @@ impl State {
         self.adopt_loops(&snapshot.loops);
         self.adopt_tasks(&snapshot.tasks, &snapshot.attention);
         effects.extend(self.editors.adopt(snapshot.files, &self.panes));
+        self.writings.adopt(snapshot.writing);
         let focus = snapshot.focus;
         let keep =
             |id: &Option<String>, exists: &dyn Fn(&str) -> bool| id.clone().filter(|id| exists(id));
@@ -508,8 +513,12 @@ impl State {
                 Vec::new()
             }
             EventName::PaneCreated => {
-                self.upsert_pane(serde_json::from_value::<PaneCreatedEvent>(params)?.pane)
+                let created = serde_json::from_value::<PaneCreatedEvent>(params)?;
+                let mut effects = self.upsert_pane(created.pane);
+                effects.extend(self.document_created(created.file, created.writing_document));
+                effects
             }
+            EventName::WritingChanged => self.writing_changed(params)?,
             EventName::PaneRenamed | EventName::PaneUpdated => {
                 self.upsert_pane(serde_json::from_value::<PaneUpdatedEvent>(params)?.pane)
             }
@@ -623,6 +632,7 @@ impl State {
         self.agents.remove(pane_id);
         self.commands.remove(pane_id);
         self.editors.pane_closed(pane_id);
+        self.writings.forget_pane(pane_id);
         // The last tab closing leaves the empty editor place, which has no file to explain.
         if let Some(workspace_id) = closing.filter(|workspace_id| {
             !self
@@ -671,6 +681,7 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
 
 mod editor;
 mod layout_draft;
+mod writing;
 pub(crate) use layout_draft::same_panes;
 mod workspaces;
 pub use workspaces::{

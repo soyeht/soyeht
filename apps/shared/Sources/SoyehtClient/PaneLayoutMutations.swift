@@ -64,7 +64,8 @@ public enum PaneLayoutTreeMutation {
   ) throws -> PaneLayoutTree {
     guard agentLeaf.kind == .agent,
       let writing = tree.leaf(withId: writingPaneId),
-      [.text, .screenplay, .presentation].contains(writing.kind)
+      [.text, .screenplay, .presentation].contains(writing.kind),
+      tree.companion(ofWritingPane: writingPaneId) == nil
     else { throw PaneLayoutMutationError.invalidCompanion }
     guard tree.leaf(withId: agentLeaf.paneId) == nil else {
       throw PaneLayoutMutationError.duplicatePane(agentLeaf.paneId)

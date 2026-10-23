@@ -74,6 +74,8 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
         tasks: list("tasks"),
         attention: list("attention"),
         files: serde_json::from_value(Value::Array(list("files"))).map_err(describe("files"))?,
+        writing: serde_json::from_value(Value::Array(list("writing")))
+            .map_err(describe("writing"))?,
         cursor: 1,
     };
     let mut events = vec![Event::Connected(snapshot)];

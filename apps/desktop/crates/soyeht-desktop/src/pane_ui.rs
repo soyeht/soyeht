@@ -6,7 +6,7 @@
 
 use crate::{
     composer_field::ComposerField, editor_ui::EditorUi, loop_form::LoopForm, views::Replies,
-    workbench::Workbench,
+    workbench::Workbench, writing_ui::WritingUi,
 };
 use gpui::{Entity, ScrollHandle};
 use soyeht_client::{State, attachments::Staged, slash, transcript_rows::Rows};
@@ -51,6 +51,8 @@ pub(crate) struct PaneUi {
     pub editor: EditorUi,
     /// What a terminal pane keeps: where its screen is, a drag, the address under the pointer.
     pub terminal: crate::terminal_input::TerminalUi,
+    /// What a text pane keeps: the field that holds the text, its scroll, a question to answer.
+    pub writing: WritingUi,
 }
 
 impl PaneUi {
@@ -211,6 +213,7 @@ mod tests {
             form_fields: HashMap::new(),
             editor: EditorUi::default(),
             terminal: Default::default(),
+            writing: WritingUi::default(),
         }
     }
 

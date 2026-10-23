@@ -23,8 +23,7 @@ import SwiftUI
   var loadKey: String { writing?.loadIdentity ?? "missing" }
 
   var documentFileName: String {
-    guard let path = writing?.document.file.path else { return pane.name }
-    return URL(fileURLWithPath: path).lastPathComponent
+    WritingDisplayText.fileName(path: writing?.document.file.path, fallback: pane.name)
   }
 
   /// Loads the document's first viewport. A pane that only needs the text once passes
