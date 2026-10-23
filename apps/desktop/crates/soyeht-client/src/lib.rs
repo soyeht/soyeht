@@ -11,6 +11,7 @@ mod account_events;
 pub mod agent;
 mod agents;
 pub mod attachments;
+pub mod attention;
 pub mod autostart;
 pub mod cards;
 pub mod catalogue;

@@ -34,9 +34,24 @@ public struct AgentAttentionSummary: Equatable, Sendable {
     !(workingPaneIdsByWorkspace[workspaceId]?.isEmpty ?? true)
   }
 
+  /// Whether a notification's target still exists: the request is pending in that pane and
+  /// workspace.
+  public func contains(workspaceId: String, paneId: String, identity: String) -> Bool {
+    requests.contains {
+      $0.workspaceId == workspaceId && $0.paneId == paneId && $0.identity == identity
+    }
+  }
 }
 
 public enum AgentAttentionPolicy {
+  public static let notificationTitle = "Agent needs your input"
+  static let unknownWorkspaceName = "Workspace"
+
+  /// The second line of the notification: the pane that asks and the workspace it is in.
+  public static func notificationBody(paneName: String, workspaceName: String?) -> String {
+    "\(paneName) \u{b7} \(workspaceName ?? unknownWorkspaceName)"
+  }
+
   public static func waitingLabel(count: Int) -> String {
     "\(count) \(count == 1 ? "request" : "requests") waiting"
   }
@@ -99,6 +114,8 @@ public struct AgentAttentionNotificationCursor: Sendable {
 @MainActor @Observable
 public final class AgentAttentionNotificationSettings {
   public static let enabledKey = "soyeht.agentAttention.notifications.enabled"
+  /// On until the person turns it off (`enabledByDefault` of the shared vector).
+  public static let enabledByDefault = true
 
   public private(set) var enabled: Bool
   @ObservationIgnored private let preferences: any ClientPreferenceStore
@@ -109,7 +126,7 @@ public final class AgentAttentionNotificationSettings {
 
   public init(preferences: any ClientPreferenceStore) {
     self.preferences = preferences
-    enabled = preferences.bool(forKey: Self.enabledKey)
+    enabled = preferences.storedBool(forKey: Self.enabledKey) ?? Self.enabledByDefault
   }
 
   public func setEnabled(_ enabled: Bool) {

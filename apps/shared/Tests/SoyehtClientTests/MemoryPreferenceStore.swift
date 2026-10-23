@@ -6,6 +6,7 @@ final class MemoryPreferenceStore: ClientPreferenceStore {
   var integers: [String: Int] = [:]
 
   func bool(forKey key: String) -> Bool { values[key] ?? false }
+  func storedBool(forKey key: String) -> Bool? { values[key] }
   func set(_ value: Bool, forKey key: String) { values[key] = value }
   func integer(forKey key: String) -> Int? { integers[key] }
   func set(_ value: Int, forKey key: String) { integers[key] = value }

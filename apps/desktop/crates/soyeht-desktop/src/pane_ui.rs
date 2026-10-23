@@ -6,6 +6,7 @@
 
 use crate::{
     composer_field::ComposerField, editor_ui::EditorUi, loop_form::LoopForm, views::Replies,
+    workbench::Workbench,
 };
 use gpui::{Entity, ScrollHandle};
 use soyeht_client::{State, attachments::Staged, slash, transcript_rows::Rows};
@@ -121,6 +122,33 @@ impl PaneUis {
     #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+}
+
+impl Workbench {
+    /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
+    pub(crate) fn forget_closed_panes(&mut self) {
+        self.panes.forget_closed(&self.state, &mut self.markdown);
+        let open = |id: &String| {
+            self.state
+                .workspaces()
+                .iter()
+                .any(|workspace| &workspace.workspace_id == id)
+        };
+        let (hidden, scrolls): (HashSet<String>, HashMap<String, ScrollHandle>) = (
+            self.project_panel_hidden
+                .iter()
+                .filter(|id| open(id))
+                .cloned()
+                .collect(),
+            self.empty_tree_scroll
+                .iter()
+                .filter(|(id, _)| open(id))
+                .map(|(id, handle)| (id.clone(), handle.clone()))
+                .collect(),
+        );
+        self.project_panel_hidden = hidden;
+        self.empty_tree_scroll = scrolls;
     }
 }
 

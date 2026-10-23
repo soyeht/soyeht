@@ -26,7 +26,8 @@ struct GeneralPreferencesPanel: View {
       .tint(MacTheme.accent)
       .accessibilityIdentifier("agent-attention-notifications")
       Text(
-        "Off by default. Tabs and the app bar still show requests; Dock badges depend on macOS notification settings."
+        "On by default. Tabs and the app bar still show requests; "
+          + "Dock badges depend on macOS notification settings."
       )
       .font(MacTheme.chrome(MacTheme.TypeScale.caption))
       .foregroundStyle(MacTheme.secondary)

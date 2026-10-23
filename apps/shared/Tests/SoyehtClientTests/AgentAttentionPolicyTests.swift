@@ -93,19 +93,132 @@ private func agentPane(
   #expect(cursor.newRequests(in: next, connected: true).isEmpty)
 }
 
-@Test @MainActor func attentionNotificationsRequireOptInAndInactiveApp() {
+@Test @MainActor func attentionNotificationsAreOnUntilTurnedOffAndNeedAnInactiveApp() throws {
   let preferences = MemoryPreferenceStore()
   let settings = AgentAttentionNotificationSettings(preferences: preferences)
-  #expect(!settings.enabled)
-  #expect(!settings.shouldPost(appIsActive: false))
-
-  settings.setEnabled(true)
-  #expect(preferences.values[AgentAttentionNotificationSettings.enabledKey] == true)
-  #expect(!settings.shouldPost(appIsActive: true))
+  #expect(settings.enabled)
   #expect(settings.shouldPost(appIsActive: false))
+  #expect(!settings.shouldPost(appIsActive: true))
+  #expect(
+    AgentAttentionNotificationSettings.enabledByDefault
+      == (try ContractVector.load("agent-attention"))["enabledByDefault"].bool)
 
-  let restored = AgentAttentionNotificationSettings(preferences: preferences)
-  #expect(restored.enabled)
   settings.setEnabled(false)
+  #expect(preferences.values[AgentAttentionNotificationSettings.enabledKey] == false)
   #expect(!settings.shouldPost(appIsActive: false))
+  let restored = AgentAttentionNotificationSettings(preferences: preferences)
+  #expect(!restored.enabled)
+  settings.setEnabled(true)
+  #expect(settings.shouldPost(appIsActive: false))
+}
+
+// MARK: - contracts/vectors/agent-attention.json
+
+private func vectorSummary(_ panes: [JsonValue]) -> AgentAttentionSummary {
+  var models: [Pane] = []
+  var views: [String: AgentPaneView] = [:]
+  for entry in panes {
+    let id = entry["paneId"].string ?? ""
+    let isAgent = entry["mode"].string == "agent"
+    models.append(
+      Pane(
+        paneId: id, workspaceId: entry["workspaceId"].string ?? "",
+        name: entry["name"].string ?? "", cwd: "/tmp", mode: isAgent ? .agent : .terminal,
+        state: .idle, source: .protocol, confidence: 1, phrase: "", generation: 1, cols: 80,
+        rows: 24, record: false))
+    var view = AgentPaneView()
+    if let requestId = entry["permission"]["requestId"].string {
+      let permission = entry["permission"]
+      view.permission = PermissionRequest(
+        requestId: requestId, paneId: id,
+        generation: UInt32(permission["generation"].int ?? 0), promptId: "prompt", title: "",
+        detail: "", options: [], expiresAt: "later")
+    }
+    if let requestId = entry["elicitation"]["requestId"].string {
+      let question = entry["elicitation"]
+      view.elicitation = ElicitationRequest(
+        requestId: requestId, paneId: id, generation: UInt32(question["generation"].int ?? 0),
+        promptId: "prompt", title: "", schema: .object([:]), expiresAt: "later")
+    }
+    views[id] = view
+  }
+  return AgentAttentionPolicy.summarize(panes: models, agentPanes: views)
+}
+
+/// The request an identity (`paneId:generation:requestId`) names.
+private func request(_ identity: String, workspaceId: String = "w") -> AgentAttentionRequest {
+  let parts = identity.split(separator: ":").map(String.init)
+  return AgentAttentionRequest(
+    requestId: parts[2], paneId: parts[0], workspaceId: workspaceId, paneName: parts[0],
+    harness: nil, generation: UInt32(parts[1]) ?? 0)
+}
+
+@Test func attentionRequestsAreTheOnesInTheSharedVector() throws {
+  let vector = try ContractVector.load("agent-attention")
+  for item in ContractVector.cases(vector, "requests") {
+    let summary = vectorSummary(item["panes"].array ?? [])
+    let name = item["name"].string ?? ""
+    #expect(
+      summary.requests.map(\.identity) == (item["identities"].array ?? []).compactMap(\.string),
+      "\(name)")
+    #expect(summary.totalWaitingCount == item["total"].int, "\(name)")
+    guard case .object(let byWorkspace) = item["byWorkspace"] else { continue }
+    for (workspace, count) in byWorkspace {
+      #expect(summary.waitingCount(in: workspace) == count.int, "\(name) \(workspace)")
+    }
+  }
+}
+
+@Test func attentionCursorAnnouncesWhatTheSharedVectorSays() throws {
+  let vector = try ContractVector.load("agent-attention")
+  for item in ContractVector.cases(vector, "cursor") {
+    var cursor = AgentAttentionNotificationCursor()
+    for (index, step) in (item["steps"].array ?? []).enumerated() {
+      let summary = AgentAttentionSummary(
+        requests: (step["identities"].array ?? []).compactMap(\.string).map { request($0) },
+        workingPaneIdsByWorkspace: [:])
+      let new = cursor.newRequests(
+        in: summary, connected: step["connected"].bool ?? false)
+      #expect(
+        new.map(\.identity) == (step["new"].array ?? []).compactMap(\.string),
+        "\(item["name"].string ?? "") step \(index)")
+    }
+  }
+}
+
+@Test func attentionNotificationTextIsTheOneInTheSharedVector() throws {
+  let notification = try ContractVector.load("agent-attention")["notification"]
+  #expect(AgentAttentionPolicy.notificationTitle == notification["title"].string)
+  for item in notification["bodies"].array ?? [] {
+    #expect(
+      AgentAttentionPolicy.notificationBody(
+        paneName: item["paneName"].string ?? "", workspaceName: item["workspaceName"].string)
+        == item["body"].string)
+  }
+}
+
+@Test @MainActor func attentionDeliveryIsTheOneInTheSharedVector() throws {
+  let vector = try ContractVector.load("agent-attention")
+  for item in ContractVector.cases(vector, "delivery") {
+    let settings = AgentAttentionNotificationSettings(preferences: MemoryPreferenceStore())
+    settings.setEnabled(item["enabled"].bool ?? false)
+    #expect(
+      settings.shouldPost(appIsActive: item["appActive"].bool ?? false) == item["post"].bool)
+  }
+}
+
+@Test func attentionRouteOpensOnlyWhileTheRequestIsPending() throws {
+  let vector = try ContractVector.load("agent-attention")
+  for item in ContractVector.cases(vector, "route") {
+    let pending = item["pending"]
+    let summary = AgentAttentionSummary(
+      requests: (item["requests"].array ?? []).map {
+        request($0["identity"].string ?? "", workspaceId: $0["workspaceId"].string ?? "")
+      }, workingPaneIdsByWorkspace: [:])
+    #expect(
+      summary.contains(
+        workspaceId: pending["workspaceId"].string ?? "", paneId: pending["paneId"].string ?? "",
+        identity: pending["identity"].string ?? "") == item["openable"].bool,
+      "\(item["name"].string ?? "")")
+  }
 }

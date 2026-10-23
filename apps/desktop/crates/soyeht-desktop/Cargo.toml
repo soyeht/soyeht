@@ -33,6 +33,10 @@ serde_json.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 
+# Notifications exist on Linux and Windows. Elsewhere `os_notify` reports `Unsupported`.
+[target.'cfg(any(target_os = "linux", windows))'.dependencies]
+notify-rust.workspace = true
+
 [lints]
 workspace = true
 

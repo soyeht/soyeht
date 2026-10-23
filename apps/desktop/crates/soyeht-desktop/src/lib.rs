@@ -5,6 +5,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod agent_actions;
+mod alerts;
 mod app;
 mod assets;
 mod attach;
@@ -27,6 +28,7 @@ mod logging;
 mod loop_form;
 mod neo;
 mod open_menu;
+mod os_notify;
 mod pane_ui;
 mod pointer;
 mod prefs;

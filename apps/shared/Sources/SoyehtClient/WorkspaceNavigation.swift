@@ -52,6 +52,8 @@ extension WritingSection {
 
 public protocol ClientPreferenceStore: AnyObject {
   func bool(forKey key: String) -> Bool
+  /// The stored value, or nil when the person never chose.
+  func storedBool(forKey key: String) -> Bool?
   func set(_ value: Bool, forKey key: String)
   func integer(forKey key: String) -> Int?
   func set(_ value: Int, forKey key: String)
@@ -66,6 +68,10 @@ public final class UserDefaultsClientPreferenceStore: ClientPreferenceStore {
 
   public func bool(forKey key: String) -> Bool {
     defaults.bool(forKey: key)
+  }
+
+  public func storedBool(forKey key: String) -> Bool? {
+    defaults.object(forKey: key) == nil ? nil : defaults.bool(forKey: key)
   }
 
   public func set(_ value: Bool, forKey key: String) {

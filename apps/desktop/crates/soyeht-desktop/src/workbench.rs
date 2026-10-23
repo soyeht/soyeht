@@ -3,6 +3,7 @@
 //! Rendering lives in `views`.
 
 use crate::{
+    alerts::Alerts,
     composer_field::{ComposerEvent, ComposerField, edit_of, new_field},
     destination::Destination,
     open_menu::{Menu, OpenMenu},
@@ -89,6 +90,8 @@ pub struct Workbench {
     pub(crate) project_panel_hidden: HashSet<String>,
     /// The scroll of the project panel of each workspace's editor place that has no file open.
     pub(crate) empty_tree_scroll: HashMap<String, ScrollHandle>,
+    /// The system notifications for requests agents wait on.
+    pub(crate) alerts: Alerts,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
     _clock: Task<()>,
@@ -158,6 +161,7 @@ impl Workbench {
             rename: None,
             project_panel_hidden: HashSet::new(),
             empty_tree_scroll: HashMap::new(),
+            alerts: Alerts::new(),
             _events: events,
             _clock: clock,
         }
@@ -177,6 +181,7 @@ impl Workbench {
             self.run_effects(effects);
         }
         self.forget_closed_panes();
+        self.raise_alerts(cx);
         self.restore_failed_start(cx);
         if self.switch.is_some() {
             self.choose_first_harness(cx);
@@ -257,31 +262,6 @@ impl Workbench {
                 }
             }
         }
-    }
-
-    /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
-    fn forget_closed_panes(&mut self) {
-        self.panes.forget_closed(&self.state, &mut self.markdown);
-        let open = |id: &String| {
-            self.state
-                .workspaces()
-                .iter()
-                .any(|workspace| &workspace.workspace_id == id)
-        };
-        let (hidden, scrolls): (HashSet<String>, HashMap<String, ScrollHandle>) = (
-            self.project_panel_hidden
-                .iter()
-                .filter(|id| open(id))
-                .cloned()
-                .collect(),
-            self.empty_tree_scroll
-                .iter()
-                .filter(|(id, _)| open(id))
-                .map(|(id, handle)| (id.clone(), handle.clone()))
-                .collect(),
-        );
-        self.project_panel_hidden = hidden;
-        self.empty_tree_scroll = scrolls;
     }
 
     /// Called while painting a terminal: fits its screen to the room it has and tells the

@@ -22,19 +22,22 @@ impl State {
         self.agents.get(pane_id)
     }
 
+    /// The requests agents wait on: permissions and questions. Nothing waits while the engine is
+    /// out of reach.
+    pub fn attention(&self) -> Vec<crate::attention::Request> {
+        if self.connection != Connection::Connected {
+            return Vec::new();
+        }
+        crate::attention::requests(&self.panes, |pane_id| self.agents.get(pane_id))
+    }
+
     /// How many requests agents wait on, in `workspace` or in all of them, as the badges of the rail
-    /// and the tabs count them. Nothing waits while the engine is out of reach.
+    /// and the tabs count them.
     pub fn waiting_requests(&self, workspace: Option<&str>) -> usize {
         if self.connection != Connection::Connected {
             return 0;
         }
-        self.agent_panes(workspace)
-            .filter(|pane| {
-                self.agents
-                    .get(&pane.pane_id)
-                    .is_some_and(|view| view.permission.is_some())
-            })
-            .count()
+        crate::attention::count(&self.panes, |pane_id| self.agents.get(pane_id), workspace)
     }
 
     /// Whether an agent of `workspace`, or of any, is working: the dot beside the badges.

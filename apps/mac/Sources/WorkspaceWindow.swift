@@ -395,17 +395,8 @@ struct WorkspaceWindow: View {
     guard let route = attentionNotifications.pendingRoute else { return }
     guard client.connected else { return }
     guard
-      client.panes.contains(where: {
-        $0.paneId == route.paneId && $0.workspaceId == route.workspaceId && $0.mode == .agent
-      })
-    else {
-      attentionNotifications.clearPendingRoute()
-      return
-    }
-    guard
-      client.agentAttention.requests.contains(where: {
-        $0.identity == route.requestIdentity
-      })
+      client.agentAttention.contains(
+        workspaceId: route.workspaceId, paneId: route.paneId, identity: route.requestIdentity)
     else {
       attentionNotifications.clearPendingRoute()
       return

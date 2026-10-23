@@ -1,0 +1,105 @@
+{
+  "description": "When an agent needs the person and the window is not in front, the client raises a system notification (the Mac's AgentAttentionPolicy, the desktop's soyeht_client::attention). A request is a pending permission or question of an agent pane; its identity is paneId:generation:requestId. `requests` lists what the panes ask, sorted by identity and counted per workspace; `cursor` says which requests are new (the first connected view is existing state and a request seen once is never announced again, reconnects included); `notification` is the text; `delivery` is whether one is raised for a setting and a window state; `route` is whether the notification's target still exists when it is clicked. Panes that are not agents ask for nothing.",
+  "requests": [
+    {
+      "name": "a permission and a question are two requests, a terminal asks for nothing",
+      "panes": [
+        { "paneId": "one", "workspaceId": "left", "name": "Reviewer", "mode": "agent", "permission": { "requestId": "p1", "generation": 1 }, "elicitation": { "requestId": "q1", "generation": 1 } },
+        { "paneId": "two", "workspaceId": "right", "name": "Builder", "mode": "agent" },
+        { "paneId": "shell", "workspaceId": "right", "name": "shell", "mode": "terminal", "permission": { "requestId": "p9", "generation": 1 } }
+      ],
+      "identities": ["one:1:p1", "one:1:q1"],
+      "total": 2,
+      "byWorkspace": { "left": 2, "right": 0 }
+    },
+    {
+      "name": "requests of several panes are sorted by identity",
+      "panes": [
+        { "paneId": "b", "workspaceId": "w", "name": "B", "mode": "agent", "permission": { "requestId": "r", "generation": 2 } },
+        { "paneId": "a", "workspaceId": "w", "name": "A", "mode": "agent", "permission": { "requestId": "r", "generation": 1 } },
+        { "paneId": "c", "workspaceId": "x", "name": "C", "mode": "agent", "elicitation": { "requestId": "r", "generation": 1 } }
+      ],
+      "identities": ["a:1:r", "b:2:r", "c:1:r"],
+      "total": 3,
+      "byWorkspace": { "w": 2, "x": 1 }
+    },
+    {
+      "name": "nothing is waiting",
+      "panes": [
+        { "paneId": "a", "workspaceId": "w", "name": "A", "mode": "agent" }
+      ],
+      "identities": [],
+      "total": 0,
+      "byWorkspace": { "w": 0 }
+    }
+  ],
+  "cursor": [
+    {
+      "name": "the first connected view is existing state, a new request is announced once",
+      "steps": [
+        { "connected": false, "identities": ["a:1:p"], "new": [] },
+        { "connected": true, "identities": ["a:1:p"], "new": [] },
+        { "connected": true, "identities": ["a:1:p"], "new": [] },
+        { "connected": true, "identities": ["a:1:p", "a:1:q"], "new": ["a:1:q"] },
+        { "connected": true, "identities": ["a:1:p", "a:1:q"], "new": [] }
+      ]
+    },
+    {
+      "name": "a reconnect does not announce what was seen before it",
+      "steps": [
+        { "connected": true, "identities": ["a:1:p"], "new": [] },
+        { "connected": false, "identities": [], "new": [] },
+        { "connected": true, "identities": ["a:1:p"], "new": [] },
+        { "connected": true, "identities": [], "new": [] },
+        { "connected": true, "identities": ["a:1:p"], "new": [] }
+      ]
+    },
+    {
+      "name": "a request that arrives with the first view of a later connection is announced",
+      "steps": [
+        { "connected": true, "identities": [], "new": [] },
+        { "connected": true, "identities": ["a:1:p", "b:1:p"], "new": ["a:1:p", "b:1:p"] }
+      ]
+    }
+  ],
+  "notification": {
+    "title": "Agent needs your input",
+    "bodies": [
+      { "paneName": "Reviewer", "workspaceName": "soyeht", "body": "Reviewer · soyeht" },
+      { "paneName": "Reviewer", "workspaceName": null, "body": "Reviewer · Workspace" }
+    ]
+  },
+  "enabledByDefault": true,
+  "delivery": [
+    { "enabled": false, "appActive": false, "post": false },
+    { "enabled": false, "appActive": true, "post": false },
+    { "enabled": true, "appActive": true, "post": false },
+    { "enabled": true, "appActive": false, "post": true }
+  ],
+  "route": [
+    {
+      "name": "the request is still pending",
+      "pending": { "workspaceId": "w", "paneId": "a", "identity": "a:1:p" },
+      "requests": [{ "workspaceId": "w", "paneId": "a", "identity": "a:1:p" }],
+      "openable": true
+    },
+    {
+      "name": "the request was answered",
+      "pending": { "workspaceId": "w", "paneId": "a", "identity": "a:1:p" },
+      "requests": [{ "workspaceId": "w", "paneId": "a", "identity": "a:1:q" }],
+      "openable": false
+    },
+    {
+      "name": "the pane moved to another workspace",
+      "pending": { "workspaceId": "w", "paneId": "a", "identity": "a:1:p" },
+      "requests": [{ "workspaceId": "x", "paneId": "a", "identity": "a:1:p" }],
+      "openable": false
+    },
+    {
+      "name": "nothing is pending",
+      "pending": { "workspaceId": "w", "paneId": "a", "identity": "a:1:p" },
+      "requests": [],
+      "openable": false
+    }
+  ]
+}

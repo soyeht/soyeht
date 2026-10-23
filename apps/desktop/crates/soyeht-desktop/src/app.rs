@@ -163,6 +163,7 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
             });
             let focus = workbench.read(cx).focus.clone();
             window.focus(&focus, cx);
+            workbench.update(cx, |workbench, cx| workbench.listen_for_alerts(window, cx));
             if let Some(note) = graphics::software_note(window.gpu_specs().as_ref()) {
                 logging::announce(notice, &note);
                 // The window shows it too, in a line a connection does not clear.

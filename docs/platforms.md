@@ -84,6 +84,18 @@ two windows from starting two engines. `SOYEHT_ENGINE_SOCKET` turns this off. A 
 or a failed start is a line under the top bar that names the program, and a `desktop.engine_start_failed`
 log line with the kind of the failure.
 
+## Notifications from the desktop window
+
+When an agent starts waiting for a permission or an answer and no window of the desktop client has
+keyboard focus, the client raises a system notification: the title "Agent needs your input" and the
+line "<pane> · <workspace>" (ADR 0103; the rule is `contracts/vectors/agent-attention.json`, shared
+with the Mac). Linux needs a notification service on the session bus (GNOME, KDE and the common
+desktops run one); Windows shows a toast. A click selects the pane and asks the window system to bring the
+window forward, which GNOME under Wayland refuses (the pane is then selected for when the window is
+in front); the click is a `desktop.notification_clicked` log line. `SOYEHT_NOTIFICATIONS=off` turns them off for a run;
+a failure is a `desktop.notification_failed` log line with its kind. The Windows toast carries the
+PowerShell application identity until a packaged build registers its own.
+
 ## Tests
 
 Tests that need a POSIX shell, `ps`, `perl`, permission modes, or a shell script as

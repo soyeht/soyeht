@@ -193,21 +193,23 @@ final class AgentAttentionNotifications {
   init() {
     delegate.onOpen = { [weak self] route in self?.pendingRoute = route }
     center.delegate = delegate
+    // On by default, so the first run asks macOS for permission; the answer is the system's.
+    if settings.enabled { Task { _ = await requestAuthorization() } }
   }
 
   func clearPendingRoute() { pendingRoute = nil }
 
-  func setEnabled(_ requested: Bool) async {
-    if requested {
-      do {
-        settings.setEnabled(try await center.requestAuthorization(options: [.alert, .badge]))
-      } catch {
-        settings.setEnabled(false)
-        Self.logger.error("Notification authorization failed")
-      }
-    } else {
-      settings.setEnabled(false)
+  private func requestAuthorization() async -> Bool {
+    do {
+      return try await center.requestAuthorization(options: [.alert, .badge])
+    } catch {
+      Self.logger.error("Notification authorization failed")
+      return false
     }
+  }
+
+  func setEnabled(_ requested: Bool) async {
+    settings.setEnabled(requested ? await requestAuthorization() : false)
   }
 
   func observe(_ summary: AgentAttentionSummary, workspaces: [Workspace], connected: Bool) {
@@ -218,12 +220,11 @@ final class AgentAttentionNotifications {
     let newRequests = cursor.newRequests(in: summary, connected: connected)
     guard settings.shouldPost(appIsActive: NSApp.isActive) else { return }
     for request in newRequests {
-      let workspaceName =
-        workspaces.first { $0.workspaceId == request.workspaceId }?.name
-        ?? "Workspace"
       let content = UNMutableNotificationContent()
-      content.title = "Agent needs your input"
-      content.body = "\(request.paneName) · \(workspaceName)"
+      content.title = AgentAttentionPolicy.notificationTitle
+      content.body = AgentAttentionPolicy.notificationBody(
+        paneName: request.paneName,
+        workspaceName: workspaces.first { $0.workspaceId == request.workspaceId }?.name)
       content.userInfo = [
         "workspaceId": request.workspaceId,
         "paneId": request.paneId,
