@@ -13,6 +13,7 @@ pub use prose::{Looks, ProseEvent};
 
 use crate::{
     pointer::follow,
+    shortcuts,
     theme::{Palette, pane_interior, space},
     views::selectable::clear_selection,
 };
@@ -570,7 +571,7 @@ fn carries_files(item: &ClipboardItem) -> bool {
 
 /// The edit a key press asks of a text field, if it asks one.
 pub(crate) fn edit_of(keystroke: &Keystroke) -> Option<Edit> {
-    edit(&chord_of(keystroke), cfg!(target_os = "macos"))
+    edit(&chord_of(keystroke), shortcuts::ON_MAC)
 }
 
 /// What a key press asks of an open list of completions, if it asks anything.

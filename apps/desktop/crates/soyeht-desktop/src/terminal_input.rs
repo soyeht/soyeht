@@ -3,7 +3,9 @@
 //! this turns the window's events into those calls.
 
 use crate::{
+    file_open::Files,
     open_menu::Menu,
+    shortcuts,
     terminal_view::CellSize,
     workbench::{CopySelection, Workbench},
 };
@@ -15,7 +17,7 @@ use gpui::{
 };
 use soyeht_client::{
     editor::keys::Action as EditorAction,
-    file_links, keys,
+    keys,
     screen::{
         TerminalScreen,
         links::Link,
@@ -23,18 +25,6 @@ use soyeht_client::{
     },
 };
 use soyeht_protocol::PaneMode;
-
-/// The shortcut that copies the selection, as the menu says it.
-#[cfg(target_os = "macos")]
-pub(crate) const COPY_SHORTCUT: &str = "\u{2318}C";
-#[cfg(not(target_os = "macos"))]
-pub(crate) const COPY_SHORTCUT: &str = "Ctrl+Shift+C";
-
-/// The shortcut that pastes, as the menu says it.
-#[cfg(target_os = "macos")]
-pub(crate) const PASTE_SHORTCUT: &str = "\u{2318}V";
-#[cfg(not(target_os = "macos"))]
-pub(crate) const PASTE_SHORTCUT: &str = "Ctrl+Shift+V";
 
 /// How often a drag held past an edge scrolls.
 const DRAG_SCROLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -70,11 +60,7 @@ pub(crate) struct TerminalUi {
 /// Whether a click with these keys held opens the address under it: Control on Linux and
 /// Windows, Command on the Mac (as in its terminals).
 fn opens_links(modifiers: &Modifiers) -> bool {
-    if cfg!(target_os = "macos") {
-        modifiers.platform
-    } else {
-        modifiers.control
-    }
+    shortcuts::command_held(modifiers)
 }
 
 impl Workbench {
@@ -126,9 +112,9 @@ impl Workbench {
             return;
         };
         if opens_links(&event.modifiers)
-            && let Some(link) = self.link_under_cell(pane_id, &at)
+            && let Some(link) = self.link_at_cell(pane_id, &at)
+            && self.open_link(pane_id, &link, cx)
         {
-            self.open_link(pane_id, &link, cx);
             return;
         }
         let Some(screen) = self.state.screen_mut(pane_id) else {
@@ -233,7 +219,7 @@ impl Workbench {
             return;
         }
         let hover = if opens_links(modifiers) {
-            self.link_under(pane_id, at)
+            self.link_under((pane_id, at), cx)
         } else {
             None
         };
@@ -244,36 +230,56 @@ impl Workbench {
         }
     }
 
-    fn link_under(&mut self, pane_id: &str, at: Point<Pixels>) -> Option<Link> {
-        let at = self.terminal_cell(pane_id, at)?;
-        self.link_under_cell(pane_id, &at)
-    }
-
-    /// The link at a cell: a web address, or a file reference whose file is in the pane's
-    /// workspace. Text that only looks like a reference is not a link.
-    fn link_under_cell(&mut self, pane_id: &str, at: &Located) -> Option<Link> {
-        let link = self.state.screen_mut(pane_id)?.link_at(at.row, at.column)?;
+    /// The address under the pointer, or the reference whose file the window knows to be in the
+    /// pane's workspace: the link to underline. A reference it has not asked about yet is not
+    /// one until the disk answers, off the UI thread, and the window is drawn again.
+    fn link_under(
+        &mut self,
+        (pane_id, at): (&str, Point<Pixels>),
+        cx: &mut Context<Self>,
+    ) -> Option<Link> {
+        let link = self.link_at_point(pane_id, at)?;
         match &link.file {
             Some(reference) => {
-                let (_, root) = self.pane_root(pane_id)?;
-                self.resolve_shown(&root, reference).map(|_| link)
+                let files = self.terminal_files(pane_id, cx)?;
+                files.resolve(reference).map(|_| link)
             }
             None => Some(link),
         }
     }
 
-    /// Opens a link: an address in the system browser, a file in the editor at its line.
-    fn open_link(&mut self, pane_id: &str, link: &Link, cx: &mut Context<Self>) {
-        let opening = link.file.as_ref().and_then(|reference| {
-            let (workspace_id, root) = self.pane_root(pane_id)?;
-            Some((workspace_id, file_links::resolve(&root, reference)?))
-        });
-        match opening {
-            Some((workspace_id, opening)) => self.open_reference(&workspace_id, opening, cx),
-            None if link.file.is_none() => cx.open_url(&link.url),
-            // The file went away between the hover and the click.
-            None => {}
+    /// The address or the file reference under the pointer, whether or not the file is there.
+    fn link_at_point(&mut self, pane_id: &str, at: Point<Pixels>) -> Option<Link> {
+        let cell = self.terminal_cell(pane_id, at)?;
+        self.link_at_cell(pane_id, &cell)
+    }
+
+    /// The files of the workspace a terminal belongs to.
+    fn terminal_files(&self, pane_id: &str, cx: &mut Context<Self>) -> Option<Files> {
+        self.files_of(pane_id, self.markdown.probes.clone(), cx)
+    }
+
+    /// The address or the file reference at a cell, whether or not the file is there.
+    fn link_at_cell(&mut self, pane_id: &str, at: &Located) -> Option<Link> {
+        self.state.screen_mut(pane_id)?.link_at(at.row, at.column)
+    }
+
+    /// Opens a link: an address in the system browser, a file in the editor at its line once the
+    /// disk says it is in the workspace. False when the link is a file the window knows is not
+    /// there, so that the click is an ordinary one.
+    fn open_link(&mut self, pane_id: &str, link: &Link, cx: &mut Context<Self>) -> bool {
+        let Some(reference) = &link.file else {
+            cx.open_url(&link.url);
+            return true;
+        };
+        let Some(files) = self.terminal_files(pane_id, cx) else {
+            return false;
+        };
+        if files.known_missing(reference) {
+            return false;
         }
+        files.open(reference);
+        true
     }
 
     /// The secondary button: the menu of what can be done here.
@@ -283,11 +289,33 @@ impl Workbench {
         at: Point<Pixels>,
         cx: &mut Context<Self>,
     ) {
-        let link = self.link_under(pane_id, at);
+        let link = self.link_at_point(pane_id, at);
         let ui = &mut self.panes.of(pane_id).terminal;
         ui.menu_at = at;
-        ui.menu_link = link;
-        self.toggle_menu(Menu::Terminal(pane_id.to_owned()), cx);
+        ui.menu_link = None;
+        let menu = Menu::Terminal(pane_id.to_owned());
+        let reference = link.as_ref().and_then(|link| link.file.clone());
+        // A web address is a link at once; a reference is one once the disk says its file is there.
+        if reference.is_none() {
+            self.panes.of(pane_id).terminal.menu_link = link.clone();
+        }
+        self.toggle_menu(menu.clone(), cx);
+        let (Some(link), Some(reference)) = (link, reference) else {
+            return;
+        };
+        let Some(files) = self.terminal_files(pane_id, cx) else {
+            return;
+        };
+        let pane_id = pane_id.to_owned();
+        files.check(&reference, move |this, probed, cx| {
+            // The menu was closed, or opened again somewhere else, while the disk answered.
+            let open = this.menus.is_open(&menu);
+            let ui = &mut this.panes.of(&pane_id).terminal;
+            if probed.opening.is_some() && open && ui.menu_at == at {
+                ui.menu_link = Some(link);
+                cx.notify();
+            }
+        });
     }
 
     /// Copy: the selection of a terminal, or what an editor has selected.

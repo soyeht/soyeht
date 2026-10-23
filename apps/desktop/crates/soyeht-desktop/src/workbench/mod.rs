@@ -19,8 +19,7 @@ use crate::{
     writing_ui::Places,
 };
 use gpui::{Context, FocusHandle, Task, actions};
-use soyeht_client::{Command, Engine, Event, State, screen::TerminalScreen};
-use std::time::Duration;
+use soyeht_client::{Command, Engine, Event, State, loops, screen::TerminalScreen};
 
 mod effects;
 mod focus;
@@ -99,7 +98,7 @@ impl Workbench {
         });
         let clock = cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
+                cx.background_executor().timer(loops::CLOCK_BEAT).await;
                 let repaint = this.update(cx, |this, cx| {
                     this.beat_drafts(cx);
                     if this.state.has_running_turn() {

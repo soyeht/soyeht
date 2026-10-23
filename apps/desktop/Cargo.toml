@@ -29,6 +29,8 @@ pulldown-cmark = { version = "0.13", default-features = false }
 # Grapheme clusters and the cells a character takes: what a caret moves over and what a line takes.
 unicode-segmentation = "1"
 unicode-width = "0.2"
+# Calendar arithmetic for the engine's ISO 8601 timestamps. GPUI already brings it into the lockfile.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 # System notifications: the D-Bus Notify call on Linux (over `zbus`, which GPUI already uses) and a
 # toast on Windows. The `z` feature is the pure-Rust D-Bus client; the others pull in a C library.
 notify-rust = { version = "4.18", default-features = false, features = ["z"] }

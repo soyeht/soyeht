@@ -34,6 +34,7 @@ mod pointer;
 mod prefs;
 mod redock;
 mod rename;
+mod shortcuts;
 mod slash_ui;
 mod stage;
 mod start_flow;

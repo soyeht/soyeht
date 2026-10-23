@@ -37,6 +37,11 @@ pub const STOP_CHOICES: [LoopStopWhen; 3] = [
 pub const DRAFT_BEAT: std::time::Duration =
     std::time::Duration::from_millis(soyeht_protocol::client_policy::DRAFT_BEAT_MS);
 
+/// How often the window's clock ticks: the draft announcements are checked and a turn that is
+/// running is drawn again (its elapsed time counts seconds). The Mac's timelines tick each second
+/// too, and none of them is a rule of the contract.
+pub const CLOCK_BEAT: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// Whether the draft of a pane is due to be announced again: it has text, and it was never
 /// announced or the last announcement is old.
 pub fn draft_beat_due(

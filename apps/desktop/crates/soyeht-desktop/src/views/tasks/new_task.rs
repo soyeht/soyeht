@@ -3,7 +3,7 @@
 
 use crate::composer_field::ComposerField;
 use crate::{
-    neo,
+    neo, shortcuts,
     tasks_ui::NewChoice,
     theme::{Palette, desktop, elevation, pane_interior, radius, space, type_scale},
     views::{
@@ -24,10 +24,6 @@ const WHO_WILL_RUN: &str = "WHO WILL RUN";
 const USE_DEFAULT: &str = "Use workspace default";
 const CREATE_IN_LIST: &str = "Create in list";
 const CREATE_AND_DISPATCH: &str = "Create and dispatch";
-#[cfg(target_os = "macos")]
-const SHORTCUTS: &str = "\u{2318}\u{21a9} create \u{b7} \u{21e7}\u{2318}\u{21a9} create & dispatch";
-#[cfg(not(target_os = "macos"))]
-const SHORTCUTS: &str = "Ctrl+Enter create \u{b7} Ctrl+Shift+Enter create & dispatch";
 
 fn label(palette: &Palette, text: &str) -> gpui::Div {
     chrome_text(FontWeight::BOLD, type_scale::SMALL)
@@ -76,7 +72,11 @@ impl Workbench {
             &missing,
             form.workspace_default,
             form.harness.as_deref().unwrap_or_default(),
-            SHORTCUTS,
+            &format!(
+                "{} create \u{b7} {} create & dispatch",
+                shortcuts::CREATE_TASK.label(),
+                shortcuts::CREATE_AND_DISPATCH_TASK.label()
+            ),
         );
         let submitting = form.submitting;
         let (priority, worktree, choice) =

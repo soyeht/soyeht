@@ -151,7 +151,7 @@ pub fn command(
     palette: &Palette,
     key: &str,
     label: impl Into<SharedString>,
-    shortcut: &'static str,
+    shortcut: impl Into<SharedString>,
     enabled: bool,
 ) -> Stateful<Div> {
     row_frame(palette, key, false, enabled)
@@ -162,7 +162,7 @@ pub fn command(
                 .flex_none()
                 .text_color(rgb(palette.muted))
                 .text_size(px(type_scale::SMALL))
-                .child(shortcut),
+                .child(shortcut.into()),
         )
 }
 

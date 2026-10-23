@@ -3,7 +3,7 @@
 use crate::{
     assets::Assets,
     folder::OpenFolder,
-    fonts, graphics, logging,
+    fonts, graphics, logging, shortcuts,
     theme::{ThemeName, desktop},
     window_size::{self, opening_size},
     workbench::{CopySelection, NewTerminal, Paste, Quit, Workbench},
@@ -22,13 +22,6 @@ const TRAFFIC_LIGHTS: (f32, f32) = (desktop::TRAFFIC_LIGHT_INSET, desktop::TRAFF
 /// managers group windows by. Without it a compositor shows the window as nameless and cannot
 /// match a rule or an icon to it.
 const APP_ID: &str = "soyeht";
-
-/// The platform key: Command on macOS, Control+Shift elsewhere, so that shortcuts never
-/// collide with the keys a terminal program needs.
-#[cfg(target_os = "macos")]
-const MODIFIER: &str = "cmd";
-#[cfg(not(target_os = "macos"))]
-const MODIFIER: &str = "ctrl-shift";
 
 /// The tasks surface a replay opens on.
 pub(crate) struct TasksStart {
@@ -99,11 +92,19 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
         let setup = setup();
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.bind_keys([
-            KeyBinding::new(&format!("{MODIFIER}-q"), Quit, None),
-            KeyBinding::new(&format!("{MODIFIER}-o"), OpenFolder, Some("Workbench")),
-            KeyBinding::new(&format!("{MODIFIER}-t"), NewTerminal, Some("Workbench")),
-            KeyBinding::new(&format!("{MODIFIER}-v"), Paste, Some("Workbench")),
-            KeyBinding::new(&format!("{MODIFIER}-c"), CopySelection, Some("Workbench")),
+            KeyBinding::new(&shortcuts::QUIT.binding(), Quit, None),
+            KeyBinding::new(
+                &shortcuts::OPEN_FOLDER.binding(),
+                OpenFolder,
+                Some("Workbench"),
+            ),
+            KeyBinding::new(
+                &shortcuts::NEW_TERMINAL.binding(),
+                NewTerminal,
+                Some("Workbench"),
+            ),
+            KeyBinding::new(&shortcuts::PASTE.binding(), Paste, Some("Workbench")),
+            KeyBinding::new(&shortcuts::COPY.binding(), CopySelection, Some("Workbench")),
         ]);
         cx.set_menus([
             Menu::new("Soyeht").items([MenuItem::action("Quit Soyeht", Quit)]),

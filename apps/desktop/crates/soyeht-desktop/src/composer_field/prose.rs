@@ -3,7 +3,10 @@
 //! pane's, the caret is a line, and the pane around the field scrolls to it.
 
 use super::{ComposerField, chord_of};
-use crate::theme::{Palette, desktop};
+use crate::{
+    shortcuts,
+    theme::{Palette, desktop},
+};
 use gpui::{
     Bounds, Context, EventEmitter, HighlightStyle, Keystroke, Pixels, ScrollHandle, Window, point,
     px, size,
@@ -199,11 +202,7 @@ impl ComposerField {
     /// True when the key was one of them.
     pub(super) fn prose_key(&mut self, keystroke: &Keystroke, cx: &mut Context<Self>) -> bool {
         let modifiers = &keystroke.modifiers;
-        let command = if cfg!(target_os = "macos") {
-            modifiers.platform
-        } else {
-            modifiers.control
-        };
+        let command = shortcuts::command_held(modifiers);
         let plain = !modifiers.alt && !modifiers.shift;
         let save = || {
             (plain && action(&chord_of(keystroke)) == Some(Action::Save))

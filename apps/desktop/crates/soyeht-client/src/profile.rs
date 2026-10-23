@@ -6,7 +6,10 @@
 
 use crate::Result;
 use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_ENGINE_SOCKET};
-use std::path::PathBuf;
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+};
 
 /// Overrides the profile location, for example to reach a disposable engine.
 pub const SOCKET_ENV: &str = "SOYEHT_ENGINE_SOCKET";
@@ -14,16 +17,23 @@ pub const SOCKET_ENV: &str = "SOYEHT_ENGINE_SOCKET";
 /// The engine socket: the environment override, else the profile directory under the user's
 /// home, which is where the engine itself keeps its socket on every platform.
 pub fn engine_socket() -> Result<PathBuf> {
-    resolve(
-        std::env::var_os(SOCKET_ENV).map(PathBuf::from),
-        std::env::home_dir(),
-    )
+    resolve(std::env::var_os(SOCKET_ENV), std::env::home_dir())
 }
 
-/// The directory of the profile that holds the logs. The engine's launch agent writes
-/// `engine.log` there too.
-const LOG_DIRECTORY: &str = "logs";
-/// The client's own log file inside [`LOG_DIRECTORY`].
+/// The socket the environment names, when it names one: an empty value names nothing. A window
+/// that finds one leaves the engine alone.
+pub(crate) fn socket_override(value: Option<OsString>) -> Option<PathBuf> {
+    value.filter(|path| !path.is_empty()).map(PathBuf::from)
+}
+
+/// The folder of a profile's data directory that holds the logs. The engine's launch agent writes
+/// `engine.log` there, and the window starts the engine with its output going there too.
+pub(crate) fn logs_directory(data_directory: &Path) -> PathBuf {
+    data_directory.join(LOGS_DIRECTORY)
+}
+
+const LOGS_DIRECTORY: &str = "logs";
+/// The client's own log file inside [`logs_directory`].
 const LOG_FILE: &str = "desktop.log";
 
 /// The file the client's log lines are also written to, so that a program started from a menu or
@@ -34,11 +44,11 @@ pub fn log_file() -> Result<PathBuf> {
 }
 
 fn log_file_in(home: Option<PathBuf>) -> Result<PathBuf> {
-    Ok(dev_data_directory(home)?.join(LOG_DIRECTORY).join(LOG_FILE))
+    Ok(logs_directory(&dev_data_directory(home)?).join(LOG_FILE))
 }
 
-fn resolve(override_path: Option<PathBuf>, home: Option<PathBuf>) -> Result<PathBuf> {
-    if let Some(path) = override_path.filter(|path| !path.as_os_str().is_empty()) {
+fn resolve(override_value: Option<OsString>, home: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = socket_override(override_value) {
         return Ok(path);
     }
     Ok(dev_data_directory(home)?.join(DEV_ENGINE_SOCKET))
@@ -66,7 +76,7 @@ mod tests {
             .join(DEV_ENGINE_SOCKET);
         assert_eq!(resolve(None, Some("/home/a".into())).unwrap(), expected);
         assert_eq!(
-            resolve(Some(PathBuf::new()), Some("/home/a".into())).unwrap(),
+            resolve(Some(OsString::new()), Some("/home/a".into())).unwrap(),
             expected
         );
     }

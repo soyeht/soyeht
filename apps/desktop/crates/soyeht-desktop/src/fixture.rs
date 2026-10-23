@@ -38,7 +38,10 @@ fn resolve_clock(value: &mut Value) {
         Value::String(text) => {
             let offset = |sign: &str| {
                 let seconds = text.strip_prefix(sign)?;
-                timestamp::parsed::<i64>(seconds)
+                let Ok(seconds) = seconds.parse::<i64>() else {
+                    return None;
+                };
+                Some(seconds)
             };
             if let Some(ago) = offset("now-") {
                 *text = timestamp::format(timestamp::now() as i64 - ago);

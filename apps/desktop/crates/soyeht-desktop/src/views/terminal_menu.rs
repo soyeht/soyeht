@@ -2,12 +2,7 @@
 //! the pointer.
 
 use super::menus;
-use crate::{
-    open_menu::Menu,
-    terminal_input::{COPY_SHORTCUT, PASTE_SHORTCUT},
-    theme::Palette,
-    workbench::Workbench,
-};
+use crate::{open_menu::Menu, shortcuts, theme::Palette, workbench::Workbench};
 use gpui::{AnyElement, Context, IntoElement};
 
 /// What a row of the menu does to the pane the menu is on.
@@ -30,13 +25,13 @@ impl Workbench {
         let mut rows = vec![
             row(
                 (palette, pane_id),
-                ("copy", "Copy", COPY_SHORTCUT),
+                ("copy", "Copy", shortcuts::COPY.label()),
                 (selected, Self::copy_terminal),
                 cx,
             ),
             row(
                 (palette, pane_id),
-                ("paste", "Paste", PASTE_SHORTCUT),
+                ("paste", "Paste", shortcuts::PASTE.label()),
                 (connected, Self::paste_terminal),
                 cx,
             ),
@@ -44,7 +39,7 @@ impl Workbench {
         if has_link {
             rows.push(row(
                 (palette, pane_id),
-                ("open-link", "Open Link", ""),
+                ("open-link", "Open Link", String::new()),
                 (true, Self::open_menu_link),
                 cx,
             ));
@@ -57,7 +52,7 @@ impl Workbench {
 /// A row that cannot be used is drawn dimmed and does nothing.
 fn row(
     (palette, pane_id): (&Palette, &str),
-    (key, label, shortcut): (&str, &'static str, &'static str),
+    (key, label, shortcut): (&str, &'static str, String),
     (enabled, act): (bool, Act),
     cx: &mut Context<Workbench>,
 ) -> AnyElement {

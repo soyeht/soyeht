@@ -9,7 +9,7 @@
 //! The window leaves an engine alone when `SOYEHT_ENGINE_SOCKET` names one. The decisions are
 //! here, behind [`Host`], so they are tested without starting a process.
 
-use crate::profile::SOCKET_ENV;
+use crate::profile::{SOCKET_ENV, logs_directory, socket_override};
 use soyeht_platform::{fs, log, process::detached::spawn_detached};
 use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_PTYD_SOCKET};
 use std::{
@@ -30,7 +30,6 @@ const SUPERVISOR_PROGRAM: &str = "soyeht-ptyd";
 /// Serialises the windows that start an engine. It lives in the data directory, next to the
 /// engine's own `engine.lock`.
 const LOCK_NAME: &str = "desktop-start.lock";
-const LOGS_DIRECTORY: &str = "logs";
 /// How often a start looks at whether the engine answers, and how many looks it takes before it
 /// gives up: 30 seconds, which a release engine on a busy host does not use.
 const POLL: Duration = Duration::from_millis(100);
@@ -63,11 +62,11 @@ impl Autostart {
     }
 
     fn from_parts(
-        socket_override: Option<OsString>,
+        socket_override_value: Option<OsString>,
         home: Option<PathBuf>,
         executable: io::Result<PathBuf>,
     ) -> Self {
-        if socket_override.is_some_and(|path| !path.is_empty()) {
+        if socket_override(socket_override_value).is_some() {
             return Self::Off;
         }
         let Ok(directory) = dev_data_directory(home) else {
@@ -307,7 +306,7 @@ impl Host for Local<'_> {
     }
 
     fn prepare_logs(&self) -> io::Result<()> {
-        let logs = self.plan.directory.join(LOGS_DIRECTORY);
+        let logs = logs_directory(&self.plan.directory);
         if logs.is_dir() {
             Ok(())
         } else {
@@ -316,7 +315,7 @@ impl Host for Local<'_> {
     }
 
     fn start(&self, program: &Path, log_name: &str) -> io::Result<Box<dyn Started>> {
-        let logs = self.plan.directory.join(LOGS_DIRECTORY);
+        let logs = logs_directory(&self.plan.directory);
         let arguments = [OsStr::new("--data-dir"), self.plan.directory.as_os_str()];
         let mut child = spawn_detached(program, &arguments, &logs.join(log_name))?;
         // A thread waits for the child, so one that ends while the window lives is reaped, not

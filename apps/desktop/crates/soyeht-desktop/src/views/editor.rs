@@ -10,7 +10,7 @@ use super::{
     ui::{acting, empty_state, header_bar, icon_button, mono_label, owned, pane_card_shell},
 };
 use crate::{
-    editor_view,
+    editor_view, shortcuts,
     theme::{Palette, desktop, editor, glyph, pane_interior, radius, space, type_scale},
 };
 use gpui::MouseButton;
@@ -49,15 +49,6 @@ pub(super) fn file_status(
     }
 }
 
-/// `Ctrl+Shift+E`, or `⇧⌘E` on the Mac: the key of the project panel.
-fn panel_shortcut() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "\u{21e7}\u{2318}E"
-    } else {
-        "Ctrl+Shift+E"
-    }
-}
-
 /// The path as the header writes it: its folders and file, with a chevron between.
 pub(super) fn path_label(path: &str) -> String {
     path.split('/').collect::<Vec<_>>().join(" \u{203a} ")
@@ -77,7 +68,7 @@ impl Workbench {
         let tip = format!(
             "{} Project Panel ({})",
             if shown { "Hide" } else { "Show" },
-            panel_shortcut()
+            shortcuts::PROJECT_PANEL.label()
         );
         let close = self.header_button(pane, Action::Close, palette, cx);
         header_bar(editor::HEADER_HEIGHT)

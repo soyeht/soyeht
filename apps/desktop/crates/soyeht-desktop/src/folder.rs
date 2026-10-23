@@ -9,13 +9,6 @@ use std::path::{Path, PathBuf};
 
 actions!(soyeht, [OpenFolder]);
 
-/// The keys of the "Open Folder" command, as the empty window shows them.
-pub(crate) const SHORTCUT: &str = if cfg!(target_os = "macos") {
-    "\u{2318}O"
-} else {
-    "Ctrl+Shift+O"
-};
-
 /// What the picker answered: the folders chosen, none when it was cancelled, or why it could not
 /// open.
 type Picked = Result<Option<Vec<PathBuf>>, String>;

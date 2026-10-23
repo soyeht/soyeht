@@ -16,6 +16,7 @@ use crate::{
     neo,
     open_menu::Menu,
     rename::RenameTarget,
+    shortcuts,
     theme::{Palette, desktop, elevation, glyph, layout, pane_interior, radius, space, type_scale},
     workbench::Workbench,
 };
@@ -38,7 +39,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> Div {
         let gap = space::X10;
-        let on_mac = cfg!(target_os = "macos");
+        let on_mac = shortcuts::ON_MAC;
         let leading = if on_mac {
             layout::TOP_BAR_LEADING_INSET
         } else {

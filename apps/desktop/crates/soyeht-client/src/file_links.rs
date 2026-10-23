@@ -11,6 +11,10 @@
 //!
 //! Whether the file exists in the workspace is [`resolve`]'s question: a reference to a file
 //! that is not there, or whose real place is outside the workspace, is not a link.
+//! The Mac does no existence check (`FilePathLinks` never asks the disk), so [`resolve`] is a rule
+//! only this client has: it is not in the vector, and its cases are in `file_links/tests.rs`. It
+//! does blocking IO, so the window calls it through `Files::check` in `soyeht-desktop`, which
+//! runs it off the UI thread, and never directly.
 
 use soyeht_platform::fs::canonicalize;
 use soyeht_protocol::{client_policy::CAPS_FILE_LINKS, limits::EDITOR_PATH_BYTES};

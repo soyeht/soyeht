@@ -5,12 +5,15 @@
 //! not drawn as a link, and opens the ones that are.
 
 use crate::{destination::Destination, workbench::Workbench};
-use gpui::{Context, WeakEntity};
-use soyeht_client::file_links::{self, Opening, Reference};
+use gpui::{AsyncApp, Context, WeakEntity};
+use soyeht_client::{
+    bounded_map::BoundedMap,
+    file_links::{self, Opening, Reference},
+};
 use soyeht_protocol::TextPosition;
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::HashSet,
     path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, Instant},
@@ -20,67 +23,85 @@ use std::{
 const FOUND_FOR: Duration = Duration::from_secs(30);
 /// How long the answer for a file that is not there is kept: an agent may be writing it.
 const MISSING_FOR: Duration = Duration::from_secs(2);
-/// The most answers kept; past it the oldest goes.
-const KEPT: usize = 1024;
+
+/// A file in a workspace: the folder and the path from it.
+type Key = (PathBuf, String);
 
 /// What the window learned about references, so that drawing a reply does not ask the disk for
-/// the same file on every frame.
+/// the same file on every frame. The answer is the file's path from the workspace's folder, or
+/// `None` for a file that is not in the workspace.
 #[derive(Default)]
 pub(crate) struct Probes {
-    answers: HashMap<(PathBuf, String), (Instant, Option<Opening>)>,
+    answers: BoundedMap<Key, (Instant, Option<String>)>,
+    /// The files being asked for now, so that a frame does not ask twice.
+    asking: HashSet<Key>,
+}
+
+/// What the window knows about a reference.
+struct Known {
+    opening: Option<Opening>,
+    /// Whether the answer is recent enough to be used without asking again.
+    fresh: bool,
 }
 
 impl Probes {
-    /// Where `reference` points in the workspace at `root`, as of `now`; `ask` asks the disk and
-    /// is called only when the last answer is old.
-    pub(crate) fn resolve(
-        &mut self,
-        (root, reference): (&Path, &Reference),
-        now: Instant,
-        ask: impl FnOnce() -> Option<Opening>,
-    ) -> Option<Opening> {
-        let key = (root.to_path_buf(), reference.path.clone());
-        let fresh = self.answers.get(&key).filter(|(at, found)| {
-            let keeps = if found.is_some() {
+    /// What is known of `reference` in the workspace at `root`, as of `now`. A file never asked
+    /// about is not there as far as the window knows.
+    fn known(&self, (root, reference): (&Path, &Reference), now: Instant) -> Known {
+        let answer = self
+            .answers
+            .get(&(root.to_path_buf(), reference.path.clone()));
+        let fresh = answer.is_some_and(|(at, path)| {
+            let keeps = if path.is_some() {
                 FOUND_FOR
             } else {
                 MISSING_FOR
             };
             now.saturating_duration_since(*at) < keeps
         });
-        let found = match fresh {
-            Some((_, found)) => found.clone(),
-            None => {
-                if self.answers.len() >= KEPT && !self.answers.contains_key(&key) {
-                    // The oldest answer makes room: what is on screen now is the newest.
-                    let oldest = self
-                        .answers
-                        .iter()
-                        .min_by_key(|(_, (at, _))| *at)
-                        .map(|(key, _)| key.clone());
-                    if let Some(oldest) = oldest {
-                        self.answers.remove(&oldest);
-                    }
-                }
-                let found = ask();
-                self.answers.insert(key, (now, found.clone()));
-                found
-            }
-        };
         // The cache is by file; the place in it is this reference's.
-        found.map(|opening| Opening {
-            line: reference.line,
-            column: reference.column,
-            ..opening
-        })
+        let opening = answer
+            .and_then(|(_, path)| path.as_ref())
+            .map(|path| Opening {
+                path: path.clone(),
+                line: reference.line,
+                column: reference.column,
+            });
+        Known { opening, fresh }
+    }
+
+    /// Whether the caller should ask the disk about `key`: no one is doing it already.
+    fn begin(&mut self, key: &Key) -> bool {
+        self.asking.insert(key.clone())
+    }
+
+    /// Keeps what the disk said about `key` when the ask began at `asked`, and reports whether it
+    /// differs from what was shown. An answer to an ask that began before the one kept is dropped:
+    /// two asks can be in flight, and the older read must never win.
+    fn record(&mut self, key: Key, asked: Instant, path: Option<String>) -> bool {
+        self.asking.remove(&key);
+        let kept = self.answers.get(&key);
+        if kept.is_some_and(|(at, _)| *at > asked) {
+            return false;
+        }
+        let changed = kept.and_then(|(_, path)| path.as_ref()) != path.as_ref();
+        self.answers.insert(key, (asked, path));
+        changed
     }
 }
 
+/// What the disk said about a reference, once it has said it.
+pub(crate) struct Probed {
+    pub opening: Option<Opening>,
+}
+
 /// What a reply needs to draw the references in it and open them: the window, the workspace the
-/// pane belongs to and its folder.
+/// pane belongs to and its folder. This is the one way to resolve a reference, and the disk is
+/// asked off the UI thread (`soyeht_client::file_links::resolve` does blocking IO).
 #[derive(Clone)]
 pub(crate) struct Files {
     workbench: WeakEntity<Workbench>,
+    app: AsyncApp,
     workspace_id: String,
     root: PathBuf,
     probes: Rc<RefCell<Probes>>,
@@ -95,19 +116,81 @@ pub(crate) struct OpenFile {
 }
 
 impl Files {
-    /// Where `reference` points, when the file is in the workspace.
+    /// Where `reference` points, when the file is in the workspace, from what the window learned
+    /// a moment ago: for drawing and hovering, which happen on every frame. An answer that is
+    /// missing or old is asked for in the background and the window is drawn again if it
+    /// changed, so a reference becomes a link a moment after it appears.
     pub fn resolve(&self, reference: &Reference) -> Option<OpenFile> {
-        let opening =
-            self.probes
-                .borrow_mut()
-                .resolve((&self.root, reference), Instant::now(), || {
-                    file_links::resolve(&self.root, reference)
-                })?;
+        let known = self.known(reference);
+        if !known.fresh && self.probes.borrow_mut().begin(&self.key(reference)) {
+            self.check(reference, |_, _, _| {});
+        }
         Some(OpenFile {
             workbench: self.workbench.clone(),
             workspace_id: self.workspace_id.clone(),
-            opening,
+            opening: known.opening?,
         })
+    }
+
+    /// Whether the window knows that the file is not in the workspace.
+    pub fn known_missing(&self, reference: &Reference) -> bool {
+        let known = self.known(reference);
+        known.fresh && known.opening.is_none()
+    }
+
+    /// Asks the disk, off the UI thread, whether the file `reference` names is in the workspace,
+    /// keeps the answer, draws the window again when it changed, and hands it to `then`.
+    pub fn check(
+        &self,
+        reference: &Reference,
+        then: impl FnOnce(&mut Workbench, Probed, &mut Context<Workbench>) + 'static,
+    ) {
+        let (workbench, probes) = (self.workbench.clone(), self.probes.clone());
+        let (root, reference) = (self.root.clone(), reference.clone());
+        let asked_at = Instant::now();
+        self.app
+            .spawn(async move |cx| {
+                let (asked_root, asked) = (root.clone(), reference.clone());
+                let found = cx
+                    .background_executor()
+                    .spawn(async move { file_links::resolve(&asked_root, &asked) })
+                    .await;
+                let answered = workbench.update(cx, |this, cx| {
+                    let changed = probes.borrow_mut().record(
+                        (root, reference.path),
+                        asked_at,
+                        found.as_ref().map(|found| found.path.clone()),
+                    );
+                    if changed {
+                        cx.notify();
+                    }
+                    then(this, Probed { opening: found }, cx);
+                });
+                // The window closed while the disk was answering: nothing is left to tell.
+                if answered.is_err() {
+                    soyeht_platform::log::event("desktop.file_open_window_closed", &[]);
+                }
+            })
+            .detach();
+    }
+
+    /// Opens the file `reference` names, if the disk says it is in the workspace.
+    pub fn open(&self, reference: &Reference) {
+        let workspace_id = self.workspace_id.clone();
+        self.check(reference, move |this, probed, cx| {
+            if let Some(opening) = probed.opening {
+                this.open_reference(&workspace_id, opening, cx);
+            }
+        });
+    }
+
+    fn known(&self, reference: &Reference) -> Known {
+        let probes = self.probes.borrow();
+        probes.known((&self.root, reference), Instant::now())
+    }
+
+    fn key(&self, reference: &Reference) -> Key {
+        (self.root.clone(), reference.path.clone())
     }
 }
 
@@ -139,17 +222,6 @@ impl Workbench {
         ))
     }
 
-    /// Where `reference` points in the workspace at `root`, from what the window learned a moment
-    /// ago: for drawing and hovering, which happen on every frame. A click asks the disk itself.
-    pub(crate) fn resolve_shown(&self, root: &Path, reference: &Reference) -> Option<Opening> {
-        self.markdown
-            .probes
-            .borrow_mut()
-            .resolve((root, reference), Instant::now(), || {
-                file_links::resolve(root, reference)
-            })
-    }
-
     /// The references of the pane's text, which resolve in its workspace.
     pub(crate) fn files_of(
         &self,
@@ -160,6 +232,7 @@ impl Workbench {
         let (workspace_id, root) = self.pane_root(pane_id)?;
         Some(Files {
             workbench: cx.entity().downgrade(),
+            app: cx.to_async(),
             workspace_id,
             root,
             probes,
@@ -197,86 +270,84 @@ mod tests {
         }
     }
 
-    fn opening() -> Option<Opening> {
-        Some(Opening {
-            path: "a/b.rs".to_owned(),
-            line: 0,
-            column: None,
-        })
+    fn key() -> Key {
+        (PathBuf::from("/w"), "a/b.rs".to_owned())
+    }
+
+    fn known(probes: &Probes, line: u32, now: Instant) -> Known {
+        probes.known((Path::new("/w"), &reference(line)), now)
     }
 
     #[test]
-    fn a_file_is_asked_for_once_while_the_answer_is_fresh_and_keeps_each_references_place() {
+    fn a_file_never_asked_about_is_unknown_and_not_there() {
+        let known = known(&Probes::default(), 1, Instant::now());
+        assert!(!known.fresh);
+        assert!(known.opening.is_none());
+    }
+
+    #[test]
+    fn an_answer_is_kept_by_file_and_gives_each_reference_its_own_place() {
         let mut probes = Probes::default();
-        let (root, start) = (Path::new("/w"), Instant::now());
-        let first = probes.resolve((root, &reference(4)), start, opening);
-        assert_eq!(first.unwrap().line, 4);
-        let second = probes.resolve((root, &reference(9)), start, || panic!("asked again"));
-        assert_eq!(second.unwrap().line, 9);
+        let start = Instant::now();
+        probes.record(key(), start, Some("a/b.rs".to_owned()));
+        let (first, second) = (known(&probes, 4, start), known(&probes, 9, start));
+        assert!(first.fresh && second.fresh);
+        assert_eq!(first.opening.unwrap().line, 4);
+        assert_eq!(second.opening.unwrap().line, 9);
     }
 
     #[test]
     fn a_missing_file_is_asked_for_again_sooner_than_one_that_is_there() {
         let mut probes = Probes::default();
-        let (root, start) = (Path::new("/w"), Instant::now());
-        assert!(
-            probes
-                .resolve((root, &reference(1)), start, || None)
-                .is_none()
-        );
-        let soon = start + MISSING_FOR / 2;
-        assert!(
-            probes
-                .resolve((root, &reference(1)), soon, || panic!("asked"))
-                .is_none()
-        );
+        let start = Instant::now();
+        probes.record(key(), start, None);
+        assert!(known(&probes, 1, start + MISSING_FOR / 2).fresh);
         let later = start + MISSING_FOR + Duration::from_millis(1);
-        assert!(
-            probes
-                .resolve((root, &reference(1)), later, opening)
-                .is_some()
-        );
+        assert!(!known(&probes, 1, later).fresh);
+        probes.record(key(), later, Some("a/b.rs".to_owned()));
         let much_later = later + FOUND_FOR / 2;
-        assert!(
-            probes
-                .resolve((root, &reference(1)), much_later, || panic!("asked"))
-                .is_some()
-        );
+        let kept = known(&probes, 1, much_later);
+        assert!(kept.fresh && kept.opening.is_some());
+        assert!(!known(&probes, 1, later + FOUND_FOR).fresh);
     }
-}
-
-#[cfg(test)]
-mod cache_tests {
-    use super::*;
 
     #[test]
-    fn a_full_cache_drops_its_oldest_answer_and_keeps_the_rest() {
+    fn a_file_is_asked_about_once_at_a_time_and_a_change_is_reported_once() {
         let mut probes = Probes::default();
-        let root = Path::new("/w");
-        let start = Instant::now();
-        let at = |index: usize| start + Duration::from_millis(index as u64);
-        let reference = |index: usize| Reference {
-            path: format!("f{index}.rs"),
-            line: 0,
-            column: None,
-        };
-        for index in 0..KEPT {
-            probes.resolve((root, &reference(index)), at(index), || None);
+        let now = Instant::now();
+        assert!(probes.begin(&key()));
+        assert!(!probes.begin(&key()), "already being asked");
+        // Unknown counts as not there, so a first answer of "not there" changes nothing.
+        assert!(!probes.record(key(), now, None));
+        assert!(probes.begin(&key()), "the answer ended the asking");
+        assert!(probes.record(key(), now, Some("a/b.rs".to_owned())));
+        assert!(!probes.record(key(), now, Some("a/b.rs".to_owned())));
+        assert!(probes.record(key(), now, None));
+    }
+
+    #[test]
+    fn an_answer_to_an_older_ask_never_replaces_the_one_of_a_newer_ask() {
+        let mut probes = Probes::default();
+        let (older, newer) = (Instant::now(), Instant::now() + Duration::from_millis(5));
+        // The newer ask finishes first and says the file is there; the older one then arrives.
+        assert!(probes.record(key(), newer, Some("a/b.rs".to_owned())));
+        assert!(!probes.record(key(), older, None));
+        let kept = probes.known((Path::new("/w"), &reference(1)), newer);
+        assert!(kept.opening.is_some(), "the older read won");
+        // An ask that began later replaces it, and so does one that began at the same moment.
+        assert!(probes.record(key(), newer, None));
+        assert!(known(&probes, 1, newer).opening.is_none());
+    }
+
+    #[test]
+    fn answers_are_kept_in_the_shared_bounded_map() {
+        let mut probes = Probes::default();
+        let now = Instant::now();
+        let file = |index: usize| (PathBuf::from("/w"), format!("f{index}.rs"));
+        for index in 0..=soyeht_client::bounded_map::CACHE_ENTRIES {
+            probes.record(file(index), now, None);
         }
-        assert_eq!(probes.answers.len(), KEPT);
-        probes.resolve((root, &reference(KEPT)), at(KEPT), || None);
-        assert_eq!(probes.answers.len(), KEPT);
-        let key = |index: usize| (root.to_path_buf(), reference(index).path);
-        assert!(!probes.answers.contains_key(&key(0)));
-        assert!(probes.answers.contains_key(&key(1)));
-        assert!(probes.answers.contains_key(&key(KEPT)));
-        // A refresh of an answer that is kept does not push another out.
-        probes.resolve(
-            (root, &reference(1)),
-            at(KEPT + MISSING_FOR.as_millis() as usize + 1),
-            || None,
-        );
-        assert_eq!(probes.answers.len(), KEPT);
-        assert!(probes.answers.contains_key(&key(2)));
+        assert!(probes.answers.get(&file(0)).is_none());
+        assert!(probes.answers.get(&file(1)).is_some());
     }
 }

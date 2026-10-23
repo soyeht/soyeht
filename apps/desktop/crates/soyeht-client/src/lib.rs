@@ -13,6 +13,7 @@ mod agents;
 pub mod attachments;
 pub mod attention;
 pub mod autostart;
+pub mod bounded_map;
 pub mod cards;
 pub mod catalogue;
 pub mod commands;

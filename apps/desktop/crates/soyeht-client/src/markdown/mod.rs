@@ -26,9 +26,10 @@ pub use preview::{Preview, Refusal};
 pub use surface::Surface;
 pub use web_links::{bare_addresses, link_blocks};
 
+use crate::bounded_map::BoundedMap;
 use crate::file_links::Reference;
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 /// How a run of text is drawn.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -426,7 +427,7 @@ fn allowed(address: &str) -> Option<String> {
 /// nothing about a reply does not parse it again.
 #[derive(Default)]
 pub struct Cache {
-    entries: HashMap<String, Entry>,
+    entries: BoundedMap<String, Entry>,
 }
 
 struct Entry {
@@ -434,9 +435,6 @@ struct Entry {
     streaming: bool,
     blocks: Arc<[Block]>,
 }
-
-/// More replies than a transcript shows at once; past it, the cache starts over.
-const CACHE_LIMIT: usize = 1024;
 
 impl Cache {
     /// Drops the parse of the message `owner`, which is gone.
@@ -451,9 +449,6 @@ impl Cache {
             && entry.text == text
         {
             return Arc::clone(&entry.blocks);
-        }
-        if self.entries.len() >= CACHE_LIMIT {
-            self.entries.clear();
         }
         let blocks: Arc<[Block]> = link_references(link_blocks(parse(text, streaming))).into();
         self.entries.insert(
@@ -471,6 +466,7 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bounded_map::CACHE_ENTRIES;
 
     #[test]
     fn a_reply_that_did_not_change_is_not_parsed_again() {
@@ -494,18 +490,22 @@ mod tests {
         let kept = cache.blocks("kept", "c", false);
         cache.forget("gone");
         cache.forget("never there");
-        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.entries.kept(), 1);
         assert!(!Arc::ptr_eq(&gone, &cache.blocks("gone", "a **b**", false)));
         assert!(Arc::ptr_eq(&kept, &cache.blocks("kept", "c", false)));
     }
 
     #[test]
-    fn a_cache_that_grew_too_large_starts_over() {
+    fn a_cache_that_grew_too_large_drops_only_the_oldest_parse() {
         let mut cache = Cache::default();
-        for index in 0..=CACHE_LIMIT {
+        let oldest = cache.blocks("0", "text", false);
+        for index in 1..=CACHE_ENTRIES {
             cache.blocks(&index.to_string(), "text", false);
         }
-        assert!(cache.entries.len() <= CACHE_LIMIT);
+        assert_eq!(cache.entries.kept(), CACHE_ENTRIES);
+        assert!(!Arc::ptr_eq(&oldest, &cache.blocks("0", "text", false)));
+        let kept = cache.blocks("1000", "text", false);
+        assert!(Arc::ptr_eq(&kept, &cache.blocks("1000", "text", false)));
     }
 
     #[test]

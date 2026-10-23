@@ -3,8 +3,7 @@
 
 use super::{prelude::*, ui::empty_state};
 use crate::{
-    folder::SHORTCUT,
-    neo,
+    neo, shortcuts,
     theme::{Palette, desktop, elevation, layout, radius, space, type_scale},
 };
 
@@ -34,7 +33,7 @@ impl Workbench {
         .child(
             chrome_text(FontWeight::MEDIUM, type_scale::SMALL)
                 .text_color(rgb(palette.muted))
-                .child(SHORTCUT),
+                .child(shortcuts::OPEN_FOLDER.label()),
         )
         .when(!self.state.readiness().complete, |stage| {
             stage.child(
