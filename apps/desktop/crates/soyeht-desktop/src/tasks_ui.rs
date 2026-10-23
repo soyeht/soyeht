@@ -7,7 +7,7 @@ use crate::{
     destination::Destination,
     workbench::Workbench,
 };
-use gpui::{Context, Entity};
+use gpui::{Context, Entity, Window, actions};
 use soyeht_client::{
     Command,
     commands::NewTask,
@@ -15,6 +15,8 @@ use soyeht_client::{
 };
 use soyeht_protocol::{TaskExecutor, TaskPriority, TaskState, client_policy};
 use std::collections::BTreeSet;
+
+actions!(soyeht, [CreateTask, CreateAndDispatchTask]);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum TaskView {
@@ -219,6 +221,34 @@ impl Workbench {
             read(&form.description, cx),
             read(&form.must_not_change, cx),
         ])
+    }
+
+    /// The keys of the form's two buttons (`shortcuts::CREATE_TASK`): with no form open the key
+    /// is not the form's.
+    pub(crate) fn create_task_key(
+        &mut self,
+        _: &CreateTask,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.new_task_key(false, cx);
+    }
+
+    pub(crate) fn create_and_dispatch_task_key(
+        &mut self,
+        _: &CreateAndDispatchTask,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.new_task_key(true, cx);
+    }
+
+    fn new_task_key(&mut self, dispatch: bool, cx: &mut Context<Self>) {
+        if self.tasks_ui.form.is_some() {
+            self.submit_new_task(dispatch, cx);
+        } else {
+            cx.propagate();
+        }
     }
 
     /// Creates the task, and dispatches it when asked, once the required fields are filled.

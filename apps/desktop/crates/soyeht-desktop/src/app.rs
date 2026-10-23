@@ -4,6 +4,7 @@ use crate::{
     assets::Assets,
     folder::OpenFolder,
     fonts, graphics, logging, shortcuts,
+    tasks_ui::{CreateAndDispatchTask, CreateTask},
     theme::{ThemeName, desktop},
     window_size::{self, opening_size},
     workbench::{CopySelection, NewTerminal, Paste, Quit, Workbench},
@@ -105,6 +106,16 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
             ),
             KeyBinding::new(&shortcuts::PASTE.binding(), Paste, Some("Workbench")),
             KeyBinding::new(&shortcuts::COPY.binding(), CopySelection, Some("Workbench")),
+            KeyBinding::new(
+                &shortcuts::CREATE_TASK.binding(),
+                CreateTask,
+                Some("Workbench"),
+            ),
+            KeyBinding::new(
+                &shortcuts::CREATE_AND_DISPATCH_TASK.binding(),
+                CreateAndDispatchTask,
+                Some("Workbench"),
+            ),
         ]);
         cx.set_menus([
             Menu::new("Soyeht").items([MenuItem::action("Quit Soyeht", Quit)]),

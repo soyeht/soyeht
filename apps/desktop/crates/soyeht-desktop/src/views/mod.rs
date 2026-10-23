@@ -82,6 +82,8 @@ impl Render for Workbench {
             .on_action(cx.listener(Self::open_folder_action))
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::copy_selection))
+            .on_action(cx.listener(Self::create_task_key))
+            .on_action(cx.listener(Self::create_and_dispatch_task_key))
             .relative()
             .size_full()
             .flex()
