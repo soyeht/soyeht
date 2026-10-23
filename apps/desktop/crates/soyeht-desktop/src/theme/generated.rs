@@ -586,6 +586,21 @@ pub mod desktop {
     pub const SCREENPLAY_PAGE_INSET_SHARE: f32 = 0.1008;
     pub const SCREENPLAY_DIALOGUE_SHARE: f32 = 0.2048;
     pub const SCREENPLAY_PARAGRAPH_SPACING: f32 = 8.0;
+    pub const PRESENTATION_RAIL_WIDTH: f32 = 236.0;
+    pub const PRESENTATION_NUMBER_STRIP_HEIGHT: f32 = 32.0;
+    pub const PRESENTATION_FOOTER_HEIGHT: f32 = 28.0;
+    pub const PRESENTATION_INSET: f32 = 10.0;
+    pub const PRESENTATION_RAIL_DIVIDER: f32 = 1.0;
+    pub const PRESENTATION_MINIMUM_STAGE_WIDTH: f32 = 320.0;
+    pub const PRESENTATION_MINIMUM_STAGE_HEIGHT: f32 = 180.0;
+    pub const PRESENTATION_MAXIMUM_STAGE_WIDTH: f32 = 1024.0;
+    pub const PRESENTATION_MAXIMUM_STAGE_HEIGHT: f32 = 576.0;
+    pub const PRESENTATION_LINE_HEIGHT: f32 = 23.0;
+    pub const PRESENTATION_SOURCE_INSET_X: f32 = 48.0;
+    pub const PRESENTATION_SOURCE_INSET_Y: f32 = 36.0;
+    pub const PRESENTATION_NUMBER_DISC: f32 = 22.0;
+    pub const PRESENTATION_THUMBNAIL_HEIGHT: f32 = 100.0;
+    pub const PRESENTATION_SELECTED_BORDER: f32 = 2.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

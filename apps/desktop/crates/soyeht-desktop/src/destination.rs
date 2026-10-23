@@ -65,6 +65,7 @@ impl Destination {
     pub fn section(self) -> Option<WritingSection> {
         match self {
             Self::Texts => Some(WritingSection::Texts),
+            Self::Presentations => Some(WritingSection::Presentations),
             Self::Screenplays => Some(WritingSection::Screenplays),
             _ => None,
         }
@@ -94,7 +95,7 @@ impl Destination {
 
     /// Whether this place draws panes at all. The three writing places list the documents of
     /// the workspace, as the Mac's sections do, and open each in a pane that the agents' place
-    /// shows. Texts and Screenplays have their list; Presentations says it is not here yet.
+    /// shows.
     pub fn is_pane_grid(self) -> bool {
         !matches!(
             self,
@@ -121,7 +122,10 @@ mod tests {
         assert!(!Destination::Terminal.shows(&PaneMode::Agent));
         assert!(!Destination::Tasks.is_pane_grid());
         assert_eq!(Destination::Texts.section(), Some(WritingSection::Texts));
-        assert_eq!(Destination::Presentations.section(), None);
+        assert_eq!(
+            Destination::Presentations.section(),
+            Some(WritingSection::Presentations)
+        );
         for section in [
             WritingSection::Texts,
             WritingSection::Presentations,

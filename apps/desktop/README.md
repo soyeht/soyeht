@@ -177,9 +177,9 @@ agent works.
   `companionSplit` cases of `contracts/vectors/pane-layout.json`; the Mac passes both. Left out:
   the serif reading face, the font, width and focus options, a toolbar that follows the selection
   and the link and image formats, the hybrid view that hides the Markdown marks of the lines the
-  caret is not on, the list's sizes and dates, a text longer than one page of
+  caret is not on, the list's sizes and dates, and a text longer than one page of
   `editorViewportLines` lines or with a lone carriage return (only a notice is shown, not the
-  text), and presentations, which say they are not available.
+  text).
 - The Screenplays place is the same list, form and search for the screenplays of the workspace
   ("Screenplay" in the "+" menu makes one), and a screenplay opens in a pane that is the text
   pane with a page: Courier Prime at the Mac's size and margins, each line set by its element
@@ -197,6 +197,22 @@ agent works.
   rail, the idea board and the variants of a line, SmartType and the element menu, the focus
   mode, scaling the page to the pane, centered lines that wrap drawn centered, and a screenplay
   longer than one page of `editorViewportLines` lines.
+- The Presentations place is the same list, form and search for the presentations of the workspace
+  ("Presentation" in the "+" menu makes one), and a presentation opens in a pane that is the text
+  pane with the Mac's body: a rail of the slides the engine split the Markdown into (a numbered
+  thumbnail with the slide's title and notes, or a strip of numbers while the pane is narrow), the
+  source in a 16:9 stage in JetBrains Mono (the heading lines in the accent and bold, the `---` that
+  starts a slide muted, the image lines on a well), and under it what the parts of the source
+  mean. The header counts the slides, the slide the caret is on is marked in the rail, and a click
+  on a slide puts the caret on its first line. The Present button of the header puts a slide show
+  over the pane: the slide's title large and centered on a 16:9 stage over the palette's letterbox;
+  the right arrow, Page Down, Space and a click go to the next slide, the left arrow and Page Up to
+  the one before, Escape closes it. Editing, autosave, closing and the companion agent are the text
+  pane's. The slide words, which slide a line belongs to, the layout and the show are
+  `contracts/vectors/presentation.json`, which the Mac passes too (ADR 0106). Left out: the images
+  (the rail and the show do not draw them), the speaker notes in the show, a show in a window of its
+  own and full screen, the options menu (font, width), and a presentation longer than one page of
+  `editorViewportLines` lines.
 - Web panes and dictation are listed with a notice.
 - Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
   General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone

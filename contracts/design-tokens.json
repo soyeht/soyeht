@@ -510,6 +510,21 @@
     "screenplayPageWidth": 734,
     "screenplayPageInsetShare": 0.1008,
     "screenplayDialogueShare": 0.2048,
-    "screenplayParagraphSpacing": 8
+    "screenplayParagraphSpacing": 8,
+    "presentationRailWidth": 236,
+    "presentationNumberStripHeight": 32,
+    "presentationFooterHeight": 28,
+    "presentationInset": 10,
+    "presentationRailDivider": 1,
+    "presentationMinimumStageWidth": 320,
+    "presentationMinimumStageHeight": 180,
+    "presentationMaximumStageWidth": 1024,
+    "presentationMaximumStageHeight": 576,
+    "presentationLineHeight": 23,
+    "presentationSourceInsetX": 48,
+    "presentationSourceInsetY": 36,
+    "presentationNumberDisc": 22,
+    "presentationThumbnailHeight": 100,
+    "presentationSelectedBorder": 2
   }
 }

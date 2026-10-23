@@ -24,7 +24,7 @@ use soyeht_client::{
     terminal_state::{self, Severity},
 };
 use soyeht_protocol::{
-    Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis, WritingKind, client_policy::StateDot,
+    Pane, PaneMode, PaneState, WorkspacePaneLayoutAxis, client_policy::StateDot,
 };
 use std::time::Instant;
 
@@ -32,6 +32,8 @@ use std::time::Instant;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Action {
     Loop,
+    /// Start the slide show of a presentation.
+    Present,
     /// Open an agent beside a document.
     Companion,
     Tasks,
@@ -44,6 +46,7 @@ impl Action {
     fn icon(self) -> Icon {
         match self {
             Self::Loop => Icon::Timer,
+            Self::Present => Icon::Play,
             Self::Companion => Icon::Cpu,
             Self::Tasks => Icon::List,
             Self::SplitColumns => Icon::Columns,
@@ -55,6 +58,7 @@ impl Action {
     fn name(self) -> &'static str {
         match self {
             Self::Loop => "loop",
+            Self::Present => "present",
             Self::Companion => "companion",
             Self::Tasks => "tasks",
             Self::SplitColumns => "split-columns",
@@ -67,6 +71,7 @@ impl Action {
     fn title(self) -> &'static str {
         match self {
             Self::Loop => "Loop and lead controls",
+            Self::Present => "Present",
             Self::Companion => "Open an agent beside this document",
             Self::Tasks => "Open workspace tasks",
             Self::SplitColumns => "Split pane into columns",
@@ -113,17 +118,10 @@ impl Workbench {
                 self.pane_header(pane, palette, cx),
                 self.agent_body(pane, palette, cx),
             ),
-            PaneMode::Writing
-                if matches!(
-                    pane.writing_kind,
-                    Some(WritingKind::Text | WritingKind::Screenplay)
-                ) =>
-            {
-                (
-                    self.writing_header(palette, pane, cx),
-                    self.writing_body(cx, pane),
-                )
-            }
+            PaneMode::Writing if pane.writing_kind.is_some() => (
+                self.writing_header(palette, pane, cx),
+                self.writing_body(cx, pane),
+            ),
             _ => (
                 self.pane_header(pane, palette, cx),
                 notice_body(palette, mode_notice(pane)),
@@ -282,7 +280,13 @@ impl Workbench {
         // A companion is asked for once: the button waits for the agent to open.
         let pending = action == Action::Companion && self.state.companion_pending(&pane.pane_id);
         let connected = self.state.connection == soyeht_client::Connection::Connected && !pending;
-        let enabled = menu.is_some() || connected;
+        // The slide show is the window's own: it needs slides, not the engine.
+        let usable = if action == Action::Present {
+            !self.slides_of(&pane.pane_id).is_empty()
+        } else {
+            connected
+        };
+        let enabled = menu.is_some() || usable;
         let body = open.then(|| self.loop_panel(pane, palette, cx));
         div()
             .relative()
@@ -307,7 +311,7 @@ impl Workbench {
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         if let Some(menu) = menu.clone() {
                             this.toggle_menu(menu, cx);
-                        } else if connected {
+                        } else if enabled {
                             match action {
                                 Action::SplitColumns => this.split_pane(
                                     &pane_id,
@@ -321,6 +325,7 @@ impl Workbench {
                                     this.request_close_writing(&pane_id, cx)
                                 }
                                 Action::Close => this.close_pane(&pane_id),
+                                Action::Present => this.present(&pane_id, cx),
                                 Action::Companion => this.open_companion(&pane_id, cx),
                                 Action::Tasks => this.open_tasks(cx),
                                 Action::Loop => {}
@@ -464,9 +469,6 @@ pub(super) fn notice_body(palette: &Palette, message: &str) -> AnyElement {
 fn mode_notice(pane: &Pane) -> &'static str {
     match (&pane.mode, &pane.writing_kind) {
         (PaneMode::Web, _) => "Web panes are not available in the desktop client yet.",
-        (PaneMode::Writing, Some(WritingKind::Presentation)) => {
-            "Presentations are not available in the desktop client yet."
-        }
         (PaneMode::Writing, _) => "This document is not available in the desktop client yet.",
         (PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor, _) => "",
     }

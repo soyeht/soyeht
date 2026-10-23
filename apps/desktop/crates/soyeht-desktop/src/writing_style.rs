@@ -1,7 +1,9 @@
 //! How the parts of a text that have a look are drawn: a heading and a bold run in bold, an
 //! italic run slanted, a quote in the secondary ink, code on a well, a link in the accent. Every
 //! color is a role of the palette; which parts of the source have a look is
-//! `soyeht_client::writing::looks`.
+//! `soyeht_client::writing::looks`. The source of a presentation has its own: a heading line in
+//! the accent and bold, a `---` that starts a new slide muted, an image on a well in the success
+//! color, as the Mac sets it.
 
 use crate::{
     composer_field::Looks,
@@ -49,6 +51,42 @@ pub(crate) fn highlights(text: &str, palette: &Palette) -> Looks {
         .collect()
 }
 
+/// The lines of a presentation's source that have a look: a heading (it appears on the slide), the
+/// `---` that starts a slide, and an image.
+pub(crate) fn presentation_highlights(text: &str, palette: &Palette) -> Looks {
+    let mut marks = Looks::new();
+    let mut start = 0;
+    for line in text.split('\n') {
+        let range = start..start + line.len();
+        let trimmed = line.trim();
+        let style = if line.starts_with('#') {
+            Some(HighlightStyle {
+                color: Some(rgb(palette.accent).into()),
+                font_weight: Some(FontWeight::BOLD),
+                ..HighlightStyle::default()
+            })
+        } else if trimmed == "---" {
+            Some(HighlightStyle {
+                color: Some(rgb(palette.muted).into()),
+                ..HighlightStyle::default()
+            })
+        } else if trimmed.starts_with("![") {
+            Some(HighlightStyle {
+                color: Some(rgb(palette.success()).into()),
+                background_color: Some(rgb(palette.well).into()),
+                ..HighlightStyle::default()
+            })
+        } else {
+            None
+        };
+        if let Some(style) = style.filter(|_| !range.is_empty()) {
+            marks.push((range, style));
+        }
+        start += line.len() + 1;
+    }
+    marks
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,5 +117,25 @@ mod tests {
     #[test]
     fn plain_text_has_no_marks() {
         assert!(highlights("plain words", ThemeName::NeoMilk.palette()).is_empty());
+    }
+
+    #[test]
+    fn a_presentation_marks_its_headings_dividers_and_images() {
+        let palette = ThemeName::NeoMilk.palette();
+        let text = "# One\nnotes\n---\n  ![a](a.png)\n";
+        let marks = presentation_highlights(text, palette);
+        let at = |needle: &str| {
+            let at = text.find(needle).unwrap();
+            marks.iter().find(|(range, _)| range.contains(&at))
+        };
+        let heading = at("# One").unwrap();
+        assert_eq!(heading.0, 0..5);
+        assert_eq!(heading.1.color, Some(rgb(palette.accent).into()));
+        assert_eq!(heading.1.font_weight, Some(FontWeight::BOLD));
+        assert!(at("notes").is_none());
+        assert_eq!(at("---").unwrap().1.color, Some(rgb(palette.muted).into()));
+        let image = at("![a]").unwrap();
+        assert_eq!(image.1.color, Some(rgb(palette.success()).into()));
+        assert_eq!(image.1.background_color, Some(rgb(palette.well).into()));
     }
 }

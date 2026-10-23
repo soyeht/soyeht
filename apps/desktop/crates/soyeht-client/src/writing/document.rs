@@ -35,6 +35,18 @@ pub fn position_of(text: &str, from_line: u32, at: usize) -> TextPosition {
     )
 }
 
+/// The byte where line `line` of `text` starts, which is the end of the text for a line past it.
+pub fn line_start(text: &str, line: u32) -> usize {
+    let mut start = 0;
+    for _ in 0..line {
+        match text[start..].find('\n') {
+            Some(found) => start += found + 1,
+            None => return text.len(),
+        }
+    }
+    start
+}
+
 /// The range of the document that `anchor` and `head` (bytes of `text`) select, its start first.
 pub fn range_of(text: &str, from_line: u32, anchor: usize, head: usize) -> TextRange {
     let (start, end) = if anchor <= head {
@@ -113,6 +125,14 @@ mod tests {
             .find('\n')
             .map_or(text.len(), |found| start + found);
         start + byte_at(&text[start..end], at.column)
+    }
+
+    #[test]
+    fn a_line_starts_after_the_break_before_it() {
+        assert_eq!(line_start("one\ntwo\n\nfour", 0), 0);
+        assert_eq!(line_start("one\ntwo\n\nfour", 1), 4);
+        assert_eq!(line_start("one\ntwo\n\nfour", 3), 9);
+        assert_eq!(line_start("one\ntwo", 5), 7);
     }
 
     fn at(line: u32, column: u32) -> TextPosition {

@@ -1,0 +1,124 @@
+{
+  "description": "What the Mac and the desktop client both say and decide for a presentation, a Markdown document the engine splits into slides (writing.structure gives each slide's lines, heading, notes and images). slideTitles and slideNotes are the words of a slide in the rail; slideAtLine is which slide a line of the source belongs to (a slide's last line counts, as the endLine the engine sends is the line after it); hint is the line under the source. showCommands maps a key or a click to what a slide show does, showStates walks its position (a step is an apply of a command or a reconcile to a new slide count, and says whether the show must close and where it stands), showStage fits the 16:9 stage into a viewport and slideMetrics sizes a presented slide's title, spacing and padding from the stage. layout lays the pane out from the size of its body (under the header, footer included): thumbnails beside the stage when the width reaches the rail plus the smallest stage and the margins, else a strip of numbers over it; the stage is the largest 16:9 rectangle that fits the room left, between the smallest and the largest stage, centered in it; rects are x, y, width and height from the body's top left. layout.metrics are the Mac's constants (PaneLayoutContentMetrics) the desktop client holds as tokens. Both clients pass every case.",
+  "slideTitles": [
+    { "heading": "", "title": "Untitled slide" },
+    { "heading": "Roadmap", "title": "Roadmap" }
+  ],
+  "slideNotes": [
+    { "notes": "", "line": "No speaker notes" },
+    { "notes": "Open with the demo", "line": "Open with the demo" }
+  ],
+  "hint": {
+    "line": "Title → appears on slide · regular text → your notes · --- → new slide",
+    "format": "Markdown"
+  },
+  "slideAtLine": [
+    { "name": "the first line of a slide", "slides": [[0, 2], [4, 7]], "line": 0, "index": 0 },
+    { "name": "the line a slide ends before still belongs to it", "slides": [[0, 2], [4, 7]], "line": 2, "index": 0 },
+    { "name": "a line between two slides belongs to none", "slides": [[0, 2], [4, 7]], "line": 3, "index": null },
+    { "name": "the first line of the next slide", "slides": [[0, 2], [4, 7]], "line": 4, "index": 1 },
+    { "name": "past the last slide", "slides": [[0, 2], [4, 7]], "line": 8, "index": null },
+    { "name": "the first slide wins when two meet", "slides": [[0, 3], [3, 5]], "line": 3, "index": 0 },
+    { "name": "no slides", "slides": [], "line": 0, "index": null }
+  ],
+  "showCommands": [
+    { "input": "rightArrow", "modified": false, "command": "advance" },
+    { "input": "pageDown", "modified": false, "command": "advance" },
+    { "input": "space", "modified": false, "command": "advance" },
+    { "input": "click", "modified": false, "command": "advance" },
+    { "input": "leftArrow", "modified": false, "command": "previous" },
+    { "input": "pageUp", "modified": false, "command": "previous" },
+    { "input": "escape", "modified": false, "command": "exit" },
+    { "input": "other", "modified": false, "command": null },
+    { "input": "rightArrow", "modified": true, "command": null },
+    { "input": "escape", "modified": true, "command": null },
+    { "input": "other", "modified": true, "command": null }
+  ],
+  "showStates": [
+    {
+      "name": "a position past the last slide starts on it",
+      "index": 9,
+      "count": 3,
+      "steps": [{ "index": 2, "exit": false }]
+    },
+    {
+      "name": "the position stays between the first and the last slide",
+      "index": 2,
+      "count": 3,
+      "steps": [
+        { "apply": "advance", "index": 2, "exit": false },
+        { "apply": "previous", "index": 1, "exit": false },
+        { "apply": "previous", "index": 0, "exit": false },
+        { "apply": "previous", "index": 0, "exit": false }
+      ]
+    },
+    {
+      "name": "fewer slides move the position and none close the show",
+      "index": 2,
+      "count": 3,
+      "steps": [
+        { "reconcile": 1, "index": 0, "exit": false },
+        { "reconcile": 0, "index": 0, "exit": true },
+        { "apply": "exit", "index": 0, "exit": true }
+      ]
+    }
+  ],
+  "showStage": [
+    { "viewport": [1920, 900], "stage": { "x": 160, "y": 0, "width": 1600, "height": 900 } },
+    { "viewport": [900, 1200], "stage": { "x": 0, "y": 346.875, "width": 900, "height": 506.25 } },
+    { "viewport": [0, 900], "stage": { "x": 0, "y": 0, "width": 0, "height": 0 } }
+  ],
+  "slideMetrics": [
+    { "stage": [1296, 720], "titleSize": 72, "spacing": 40, "padding": 54 },
+    { "stage": [320, 240], "titleSize": 32, "spacing": 18, "padding": 28 },
+    { "stage": [864, 486], "titleSize": 48, "spacing": 27, "padding": 36 }
+  ],
+  "layout": {
+    "metrics": {
+      "railWidth": 236,
+      "numberStripHeight": 32,
+      "footerHeight": 28,
+      "inset": 10,
+      "railDivider": 1,
+      "minimumStage": [320, 180],
+      "maximumStage": [1024, 576]
+    },
+    "cases": [
+      {
+        "name": "the smallest body has numbers and the smallest stage",
+        "body": [340, 260],
+        "navigation": "numbers",
+        "stage": { "x": 10, "y": 42, "width": 320, "height": 180 },
+        "footer": { "x": 0, "y": 232, "width": 340, "height": 28 }
+      },
+      {
+        "name": "a body smaller than the smallest is laid out as the smallest",
+        "body": [200, 100],
+        "navigation": "numbers",
+        "stage": { "x": 10, "y": 42, "width": 320, "height": 180 },
+        "footer": { "x": 0, "y": 232, "width": 340, "height": 28 }
+      },
+      {
+        "name": "one point short of the thumbnails the numbers stay",
+        "body": [576, 600],
+        "navigation": "numbers",
+        "stage": { "x": 10, "y": 145.625, "width": 556, "height": 312.75 },
+        "footer": { "x": 0, "y": 572, "width": 576, "height": 28 }
+      },
+      {
+        "name": "the thumbnails come at the boundary",
+        "body": [577, 600],
+        "navigation": "thumbnails",
+        "stage": { "x": 247, "y": 196, "width": 320, "height": 180 },
+        "footer": { "x": 0, "y": 572, "width": 577, "height": 28 }
+      },
+      {
+        "name": "a wide body gives the largest stage",
+        "body": [1400, 800],
+        "navigation": "thumbnails",
+        "stage": { "x": 306.5, "y": 98, "width": 1024, "height": 576 },
+        "footer": { "x": 0, "y": 772, "width": 1400, "height": 28 }
+      }
+    ]
+  }
+}

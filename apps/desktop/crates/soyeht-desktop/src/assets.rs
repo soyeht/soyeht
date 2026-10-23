@@ -95,6 +95,8 @@ icons! {
     Italic => "italic",
     Heading => "heading",
     Quote => "text-quote",
+    Play => "play",
+    Info => "info",
 }
 
 macro_rules! logo {

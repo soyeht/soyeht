@@ -65,6 +65,18 @@ public enum WritingDisplayText {
     heading.isEmpty ? "Untitled slide" : heading
   }
 
+  /// What a slide shows under its title in the rail: its notes, or that it has none.
+  public static func slideNotes(_ notes: String) -> String {
+    notes.isEmpty ? "No speaker notes" : notes
+  }
+
+  /// What the source of a presentation means, in the line under it.
+  public static let presentationHint =
+    "Title → appears on slide · regular text → your notes · --- → new slide"
+
+  /// What the source of a presentation is written in, at the end of that line.
+  public static let presentationFormat = "Markdown"
+
   public static func sceneTitle(_ heading: String) -> String {
     heading.isEmpty ? "Untitled scene" : heading
   }

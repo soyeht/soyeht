@@ -29,6 +29,7 @@ mod prefs_harnesses;
 mod prefs_skills;
 mod prefs_usage;
 mod prelude;
+mod presentation;
 mod rail;
 mod readiness;
 mod resize_handles;

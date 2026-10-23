@@ -176,8 +176,8 @@ struct WritingPresentationPane: View {
     }
     .accessibilityIdentifier("writing-presentation-stage-\(pane.paneId)")
     .onChange(of: activeLine) { _, line in
-      if let slide = slides.first(where: { line >= $0.startLine && line <= $0.endLine }) {
-        selectedSlide = slide.index
+      if let index = WritingSlideSelection.index(containing: line, in: slides) {
+        selectedSlide = index
       }
     }
   }
@@ -185,9 +185,9 @@ struct WritingPresentationPane: View {
   private var footer: some View {
     HStack(spacing: MacTheme.Space.x8) {
       Image(systemName: "info.circle")
-      Text("Title → appears on slide · regular text → your notes · --- → new slide")
+      Text(WritingDisplayText.presentationHint)
       Spacer()
-      Text("Markdown")
+      Text(WritingDisplayText.presentationFormat)
     }
     .font(MacTheme.chrome(MacTheme.TypeScale.micro))
     .foregroundStyle(MacTheme.muted)
@@ -240,7 +240,7 @@ private struct WritingSlideThumbnail: View {
           WritingAssetImage(client: client, fileId: fileId, asset: asset)
             .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 44)
         } else {
-          Text(slide.notes.isEmpty ? "No speaker notes" : slide.notes)
+          Text(WritingDisplayText.slideNotes(slide.notes))
             .font(MacTheme.chrome(MacTheme.TypeScale.micro))
             .foregroundStyle(MacTheme.muted).lineLimit(2)
         }

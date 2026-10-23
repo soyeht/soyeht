@@ -446,6 +446,11 @@ impl Workbench {
             Workbench::open_new_text,
         ));
         rows.push(menus::on_pick(
+            menus::item(palette, "presentation", "Presentation", false),
+            cx,
+            Workbench::open_new_presentation,
+        ));
+        rows.push(menus::on_pick(
             menus::item(palette, "screenplay", "Screenplay", false),
             cx,
             Workbench::open_new_screenplay,

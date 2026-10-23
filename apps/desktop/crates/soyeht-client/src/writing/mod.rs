@@ -9,6 +9,7 @@
 pub mod commands;
 pub mod document;
 pub mod looks;
+pub mod presentation;
 pub mod rules;
 pub mod screenplay;
 
@@ -17,7 +18,7 @@ pub use commands::{Command, Failure, Opened, WritingEvent};
 use crate::{Effect, editor::Editors};
 use soyeht_protocol::{
     ScreenplayElementKind, WritingDocument, WritingSection, WritingSectionEntry,
-    WritingSectionListResult, WritingStructureResult,
+    WritingSectionListResult, WritingSlide, WritingStructureResult,
 };
 use std::collections::HashMap;
 
@@ -33,6 +34,8 @@ pub struct Document {
     scenes: Option<u32>,
     /// The element each line of a screenplay is.
     kinds: screenplay::LineKinds,
+    /// The slides of a presentation, as the engine last split them.
+    slides: Vec<WritingSlide>,
 }
 
 impl Document {
@@ -43,6 +46,7 @@ impl Document {
             asked: None,
             scenes: None,
             kinds: screenplay::LineKinds::default(),
+            slides: Vec::new(),
         }
     }
 
@@ -54,6 +58,11 @@ impl Document {
     /// The scenes the engine last counted in the screenplay.
     pub fn scenes(&self) -> Option<u32> {
         self.scenes
+    }
+
+    /// The slides the engine last split the presentation into, once it has counted.
+    pub fn slides(&self) -> Option<&[WritingSlide]> {
+        self.counted.as_ref().map(|_| self.slides.as_slice())
     }
 }
 
@@ -98,6 +107,9 @@ impl Writings {
                 document.counted = old
                     .counted
                     .filter(|(_, revision)| *revision == document.doc.file.revision);
+                if document.counted.is_some() {
+                    document.slides = old.slides;
+                }
             }
             self.documents
                 .insert(document.doc.file.file_id.clone(), document);
@@ -248,6 +260,7 @@ impl Writings {
             structure.document.file.revision.clone(),
         ));
         document.scenes = Some(u32::try_from(structure.scenes.len()).unwrap_or(u32::MAX));
+        document.slides = structure.slides;
         if let Some(text) = text {
             document.kinds = screenplay::LineKinds::of(text, &structure.elements);
         }

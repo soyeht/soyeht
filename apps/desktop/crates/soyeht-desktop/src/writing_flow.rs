@@ -1,4 +1,4 @@
-//! Writing: the text and screenplay panes and the places that list them. A pane holds its
+//! Writing: the text, presentation and screenplay panes and the places that list them. A pane holds its
 //! document in a field; what is typed reaches the engine as the one edit that turns the page into
 //! the field's text (`soyeht_client::writing`), and the engine saves the draft shortly after the
 //! last edit. This carries what the person does to the replica and what the replica says back to
@@ -13,7 +13,11 @@ use crate::{
 };
 use gpui::{AppContext, Context, Entity, FocusHandle, Focusable, Window};
 use soyeht_client::Effect;
-use soyeht_client::writing::rules::{self, Closing, DocumentDraft};
+use soyeht_client::writing::{
+    document::line_start,
+    presentation::{self, Show, ShowInput},
+    rules::{self, Closing, DocumentDraft},
+};
 use soyeht_protocol::{
     PaneMode, WorkspacePaneLayoutAxis, WritingFormatKind, WritingKind, WritingSection,
 };
@@ -27,12 +31,10 @@ impl Workbench {
             .and_then(|pane| pane.writing_kind.clone())
     }
 
-    /// Whether the pane is a text or a screenplay, the documents the desktop client edits.
+    /// Whether the pane is a text, a presentation or a screenplay: the documents the desktop
+    /// client edits.
     pub(crate) fn is_document(&self, pane_id: &str) -> bool {
-        matches!(
-            self.writing_kind(pane_id),
-            Some(WritingKind::Text | WritingKind::Screenplay)
-        )
+        self.writing_kind(pane_id).is_some()
     }
 
     /// The field that holds the text of a pane, made when first needed.
@@ -47,13 +49,20 @@ impl Workbench {
         }
         let ui = self.panes.of(pane_id);
         let (palette, scroll) = (self.theme.palette(), ui.writing.scroll.clone());
-        let field = if self.writing_kind(pane_id) == Some(WritingKind::Screenplay) {
-            cx.new(|cx| ComposerField::screenplay(palette, scroll, cx))
-        } else {
-            cx.new(|cx| ComposerField::prose(palette, writing_style::highlights, scroll, cx))
+        let kind = self.writing_kind(pane_id);
+        let field = match kind {
+            Some(WritingKind::Screenplay) => {
+                cx.new(|cx| ComposerField::screenplay(palette, scroll, cx))
+            }
+            Some(WritingKind::Presentation) => cx.new(|cx| {
+                ComposerField::prose(palette, writing_style::presentation_highlights, scroll, cx)
+            }),
+            _ => cx.new(|cx| ComposerField::prose(palette, writing_style::highlights, scroll, cx)),
         };
         cx.subscribe(&field, move |this, _, event: &ProseEvent, cx| match event {
             ProseEvent::Edited => this.writing_edited(&owner, cx),
+            // The source of a slide is Markdown but has no toolbar or format keys, as on the Mac.
+            ProseEvent::Format(_) if kind == Some(WritingKind::Presentation) => {}
             ProseEvent::Format(kind) => this.format_selection(&owner, kind.clone(), cx),
             ProseEvent::Save => this.save_writing(&owner, cx),
             ProseEvent::Advance { tab } => this.screenplay_advance(&owner, *tab, cx),
@@ -63,14 +72,29 @@ impl Workbench {
         field
     }
 
-    /// Where the keys of a text or screenplay pane go: its field.
+    /// Where the keys of a writing pane go: its field, or the slide show while one is on.
     pub(crate) fn writing_focus(
         &mut self,
         pane_id: &str,
         cx: &mut Context<Self>,
     ) -> Option<FocusHandle> {
-        self.is_document(pane_id)
-            .then(|| self.writing_field(cx, pane_id).focus_handle(cx))
+        if !self.is_document(pane_id) {
+            return None;
+        }
+        if self.panes.of(pane_id).writing.show.is_some() {
+            return Some(self.show_focus(pane_id, cx));
+        }
+        Some(self.writing_field(cx, pane_id).focus_handle(cx))
+    }
+
+    /// The handle that takes the keys of a pane's slide show.
+    pub(crate) fn show_focus(&mut self, pane_id: &str, cx: &mut Context<Self>) -> FocusHandle {
+        self.panes
+            .of(pane_id)
+            .writing
+            .show_focus
+            .get_or_insert_with(|| cx.focus_handle())
+            .clone()
     }
 
     /// What the field holds and has selected.
@@ -98,6 +122,72 @@ impl Workbench {
             }
         }
         cx.notify();
+    }
+
+    /// The slides of a presentation pane, as the engine last split them.
+    pub(crate) fn slides_of(&self, pane_id: &str) -> Vec<soyeht_protocol::WritingSlide> {
+        self.state
+            .writings
+            .of_pane(pane_id)
+            .and_then(|document| document.slides())
+            .map(<[_]>::to_vec)
+            .unwrap_or_default()
+    }
+
+    /// A slide of the rail was chosen: the caret goes to its first line.
+    pub(crate) fn select_slide(&mut self, pane_id: &str, index: u32, cx: &mut Context<Self>) {
+        let Some(slide) = self
+            .slides_of(pane_id)
+            .into_iter()
+            .find(|slide| slide.index == index)
+        else {
+            return;
+        };
+        self.panes.of(pane_id).writing.slide = index;
+        let field = self.writing_field(cx, pane_id);
+        let at = line_start(field.read(cx).draft().text(), slide.start_line);
+        field.update(cx, |field, cx| field.place_caret(at, cx));
+        self.focus_request = Some(pane_id.to_owned());
+        cx.notify();
+    }
+
+    /// Starts the slide show over the pane, at the slide the caret is on.
+    pub(crate) fn present(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        let count = self.slides_of(pane_id).len();
+        if count == 0 {
+            return;
+        }
+        let ui = &mut self.panes.of(pane_id).writing;
+        ui.show = Some(Show::new(ui.slide as usize, count));
+        self.focus_request = Some(pane_id.to_owned());
+        cx.notify();
+    }
+
+    /// Closes the slide show and gives the keys back to the source.
+    pub(crate) fn end_show(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        self.panes.of(pane_id).writing.show = None;
+        self.focus_request = Some(pane_id.to_owned());
+        cx.notify();
+    }
+
+    /// A key or a click in the slide show.
+    pub(crate) fn show_input(
+        &mut self,
+        pane_id: &str,
+        (input, command_held): (ShowInput, bool),
+        cx: &mut Context<Self>,
+    ) {
+        let Some(command) = presentation::show_command(input, command_held) else {
+            return;
+        };
+        let Some(show) = self.panes.of(pane_id).writing.show.as_mut() else {
+            return;
+        };
+        if show.apply(command) {
+            self.end_show(pane_id, cx);
+        } else {
+            cx.notify();
+        }
     }
 
     /// Makes the field hold the text of the page, when it holds another: the engine changed it
@@ -256,7 +346,7 @@ impl Workbench {
         cx.notify();
     }
 
-    /// The "Text" or "Screenplay" entry of the new-pane menu: the section's place, with the form
+    /// The "Text", "Presentation" or "Screenplay" entry of the new-pane menu: the section's place, with the form
     /// that makes a document.
     pub(crate) fn open_new_document(&mut self, section: &WritingSection, cx: &mut Context<Self>) {
         self.menus.close();
@@ -270,6 +360,10 @@ impl Workbench {
 
     pub(crate) fn open_new_text(&mut self, cx: &mut Context<Self>) {
         self.open_new_document(&WritingSection::Texts, cx);
+    }
+
+    pub(crate) fn open_new_presentation(&mut self, cx: &mut Context<Self>) {
+        self.open_new_document(&WritingSection::Presentations, cx);
     }
 
     pub(crate) fn open_new_screenplay(&mut self, cx: &mut Context<Self>) {

@@ -1,8 +1,9 @@
-//! A text or screenplay pane, as the Mac draws it: a header with the file's name and its words
-//! (its scenes, for a screenplay), the text in a column of reading width, or the page of a
-//! screenplay, and over a selected part of a text the toolbar of its formats. The card is the
-//! only raised surface; the text is flat. The text is a field (`composer_field`), and what is
-//! typed reaches the engine as `writing_flow` says.
+//! A text, presentation or screenplay pane, as the Mac draws it: a header with the file's name and
+//! its words (its scenes for a screenplay, its slides for a presentation), the text in a column of
+//! reading width, or the page of a screenplay, or the slides of a presentation, and over a
+//! selected part of a text the toolbar of its formats. The card is the only raised surface; the
+//! text is flat. The text is a field (`composer_field`), and what is typed reaches the engine as
+//! `writing_flow` says.
 
 use super::{
     cards::{Role, button},
@@ -64,6 +65,7 @@ impl Workbench {
         let name = rules::file_name(file.map(|file| file.doc.path.as_str()), &pane.name);
         let mark = match pane.writing_kind {
             Some(WritingKind::Screenplay) => Icon::Clapperboard,
+            Some(WritingKind::Presentation) => Icon::Copy,
             _ => Icon::Feather,
         };
         let document = self.state.writings.of_pane(&pane.pane_id);
@@ -71,12 +73,18 @@ impl Workbench {
             Some(WritingKind::Screenplay) => document
                 .and_then(|document| document.scenes())
                 .map(|scenes| rules::count_label(u64::from(scenes), Counted::Scene)),
+            Some(WritingKind::Presentation) => document
+                .and_then(|document| document.slides())
+                .map(|slides| rules::count_label(slides.len() as u64, Counted::Slide)),
             _ => document
                 .and_then(|document| document.words())
                 .map(|words| rules::count_label(u64::from(words), Counted::Word)),
         };
-        let buttons: Vec<AnyElement> = [Action::Companion, Action::Close]
+        let present =
+            (pane.writing_kind == Some(WritingKind::Presentation)).then_some(Action::Present);
+        let buttons: Vec<AnyElement> = present
             .into_iter()
+            .chain([Action::Companion, Action::Close])
             .map(|action| self.header_button(pane, action, palette, cx))
             .collect();
         let title = title_face(palette)
@@ -123,6 +131,9 @@ impl Workbench {
             .file_of_pane(&pane_id)
             .and_then(EditorFile::why_not_editable);
         let content = match unfit {
+            None if self.writing_kind(&pane_id) == Some(WritingKind::Presentation) => {
+                self.presentation_content((palette, &pane_id), cx)
+            }
             None => self.writing_text(cx, &pane_id, palette),
             Some(reason) => notice_body(palette, reason),
         };

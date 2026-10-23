@@ -341,3 +341,49 @@ private let screenplayMetric = PaneLayoutFontMetric(
     }
   }
 }
+
+@Test func aPresentationPaneIsLaidOutAsTheVectorSays() throws {
+  let vector = try ContractVector.load("presentation")["layout"]
+  let metrics = vector["metrics"]
+  #expect(PaneLayoutContentMetrics.presentationThumbnailRailWidth == metrics["railWidth"].double)
+  #expect(
+    PaneLayoutContentMetrics.presentationNumericRailHeight == metrics["numberStripHeight"].double)
+  #expect(PaneLayoutContentMetrics.presentationFooterHeight == metrics["footerHeight"].double)
+  #expect(PaneLayoutContentMetrics.paneCardInset == metrics["inset"].double)
+  #expect(PaneLayoutContentMetrics.writingRailDividerWidth == metrics["railDivider"].double)
+  let sizes = { (key: String) in try #require(metrics[key].array).compactMap(\.double) }
+  #expect(
+    [
+      PaneLayoutContentMetrics.presentationStage.width,
+      PaneLayoutContentMetrics.presentationStage.height,
+    ] == (try sizes("minimumStage")))
+  #expect(
+    [
+      PaneLayoutContentMetrics.presentationMaximumStage.width,
+      PaneLayoutContentMetrics.presentationMaximumStage.height,
+    ] == (try sizes("maximumStage")))
+  let header = PaneLayoutContentMetrics.writingHeaderHeight
+  for item in vector["cases"].array ?? [] {
+    let body = try #require(item["body"].array).compactMap(\.double)
+    let plan = try writingPolicy.layout(
+      WritingLayoutRequest(
+        kind: .presentation,
+        viewport: PaneLayoutSize(width: body[0], height: body[1] + header), font: proseMetric))
+    guard case .presentation(let presentation) = plan.surface else {
+      Issue.record("Expected a presentation plan")
+      return
+    }
+    let name = item["name"].string ?? ""
+    let navigation = presentation.navigation == .thumbnails ? "thumbnails" : "numbers"
+    #expect(navigation == item["navigation"].string, "\(name)")
+    let stage = presentation.stageRect
+    let want = item["stage"]
+    #expect(abs(stage.origin.x - (want["x"].double ?? 0)) < 0.001, "\(name)")
+    #expect(abs(stage.origin.y - header - (want["y"].double ?? 0)) < 0.001, "\(name)")
+    #expect(abs(stage.size.width - (want["width"].double ?? 0)) < 0.001, "\(name)")
+    #expect(abs(stage.size.height - (want["height"].double ?? 0)) < 0.001, "\(name)")
+    let footer = presentation.footerRect
+    #expect(abs(footer.origin.y - header - (item["footer"]["y"].double ?? 0)) < 0.001, "\(name)")
+    #expect(footer.size.height == item["footer"]["height"].double, "\(name)")
+  }
+}

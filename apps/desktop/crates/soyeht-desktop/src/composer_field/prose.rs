@@ -150,6 +150,14 @@ impl ComposerField {
         cx.notify();
     }
 
+    /// Puts the caret at byte `at`, and scrolls the pane to it.
+    pub fn place_caret(&mut self, at: usize, cx: &mut Context<Self>) {
+        self.draft.place(at, false);
+        self.goal_x = None;
+        self.edited(true, cx);
+        cx.notify();
+    }
+
     /// Puts the text the engine has in place of what the field holds, without an edit of the
     /// person's.
     pub fn load(&mut self, text: &str, cx: &mut Context<Self>) {
