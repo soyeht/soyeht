@@ -25,6 +25,7 @@ pub mod file_links;
 pub mod harness_picker;
 pub mod keys;
 pub mod layout;
+pub mod local_preferences;
 pub mod loops;
 pub mod markdown;
 pub mod new_agent;

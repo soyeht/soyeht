@@ -205,6 +205,9 @@ def rust_themes(document):
         f"Self::{v} => {json.dumps(p['displayName'], ensure_ascii=False)},"
         for v, p in zip(variants, palettes.values())
     )
+    id_arms = "\n".join(
+        f"Self::{v} => {json.dumps(theme_case(name))}," for v, name in zip(variants, palettes)
+    )
     return (
         "/// The reviewed themes, in the order of `palettes` in the token file. The first one is the\n"
         "/// seeded default.\n"
@@ -214,7 +217,12 @@ def rust_themes(document):
         f"pub const ALL: &[Self] = &[{listed}];\n"
         "pub const DEFAULT: Self = Self::ALL[0];\n\n"
         f"pub fn palette(self) -> &'static Palette {{\nmatch self {{\n{palette_arms}\n}}\n}}\n\n"
-        f"pub fn display_name(self) -> &'static str {{\nmatch self {{\n{name_arms}\n}}\n}}\n"
+        f"pub fn display_name(self) -> &'static str {{\nmatch self {{\n{name_arms}\n}}\n}}\n\n"
+        "/// The name a client persists the choice under: the Mac's `TerminalColorTheme` raw value.\n"
+        f"pub fn id(self) -> &'static str {{\nmatch self {{\n{id_arms}\n}}\n}}\n\n"
+        "/// The theme persisted as `id`; `None` for a name this build does not know.\n"
+        "pub fn from_id(id: &str) -> Option<Self> {\n"
+        "Self::ALL.iter().copied().find(|theme| theme.id() == id)\n}\n"
         "}"
     )
 

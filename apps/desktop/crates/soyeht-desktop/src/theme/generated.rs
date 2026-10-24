@@ -57,6 +57,26 @@ impl ThemeName {
             Self::NeoDeepHarbor => "Neo · Deep Harbor",
         }
     }
+
+    /// The name a client persists the choice under: the Mac's `TerminalColorTheme` raw value.
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::NeoMilk => "neoMilk",
+            Self::NeoPaleMist => "neoPaleMist",
+            Self::NeoMistyBlue => "neoMistyBlue",
+            Self::NeoSunlitChartreuse => "neoSunlitChartreuse",
+            Self::NeoSunriseGold => "neoSunriseGold",
+            Self::NeoDeepVine => "neoDeepVine",
+            Self::NeoDeepForest => "neoDeepForest",
+            Self::NeoMidnightTeal => "neoMidnightTeal",
+            Self::NeoDeepHarbor => "neoDeepHarbor",
+        }
+    }
+
+    /// The theme persisted as `id`; `None` for a name this build does not know.
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|theme| theme.id() == id)
+    }
 }
 pub(super) static MILK: Palette = Palette {
     screen: 0xE8EDF4,

@@ -76,8 +76,7 @@ fn theme_card(
         }))
         .cursor_pointer()
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-            this.theme = theme;
-            cx.notify();
+            this.select_theme(theme, cx);
         }))
         .child(swatch(own))
         .child(

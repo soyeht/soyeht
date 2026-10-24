@@ -14,7 +14,12 @@ use gpui::{
     WindowDecorations, WindowOptions, point, px, size,
 };
 use gpui_platform::application;
-use soyeht_client::{Engine, Event, autostart::Autostart, profile};
+use soyeht_client::{
+    Engine, Event,
+    autostart::Autostart,
+    local_preferences::{self, LocalPreferences},
+    profile,
+};
 
 /// Where the macOS window buttons sit; the top bar leaves room for them.
 const TRAFFIC_LIGHTS: (f32, f32) = (desktop::TRAFFIC_LIGHT_INSET, desktop::TRAFFIC_LIGHT_INSET);
@@ -38,6 +43,8 @@ pub(crate) struct Setup {
     pub engine: Engine,
     pub inbox: async_channel::Receiver<Event>,
     pub theme: ThemeName,
+    /// Where the person's own choices (the theme) are kept; `None` keeps none, for a replay.
+    pub preferences: Option<std::path::PathBuf>,
     /// A menu that is open from the first frame.
     pub menu: Option<crate::open_menu::Menu>,
     /// The Preferences panel that shows when Preferences are that menu.
@@ -70,11 +77,14 @@ pub fn run(notice: Notice) {
         }
     };
     launch(notice, move || {
-        let (engine, inbox) = Engine::start_with(socket, Autostart::resolve());
+        let (engine, inbox) = Engine::start_with(socket.clone(), Autostart::resolve());
+        // Read before the window opens, so the first frame is already in the chosen theme.
+        let preferences = local_preferences::directory(&socket);
         Setup {
             engine,
             inbox,
-            theme: ThemeName::DEFAULT,
+            theme: crate::prefs::saved_theme(&LocalPreferences::load(&preferences)),
+            preferences: Some(preferences),
             menu: None,
             panel: None,
             size: None,
@@ -149,6 +159,7 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
             let workbench = cx.new(|cx| {
                 let mut workbench = Workbench::new(setup.engine, setup.inbox, cx);
                 workbench.theme = setup.theme;
+                workbench.preferences = setup.preferences;
                 workbench.prefs.section = setup.panel;
                 for (pane_id, staged) in setup.staged {
                     workbench.panes.of(&pane_id).staged = Some(staged);

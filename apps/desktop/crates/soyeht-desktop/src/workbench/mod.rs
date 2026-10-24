@@ -36,6 +36,8 @@ pub struct Workbench {
     engine: Engine,
     pub(crate) state: State,
     pub(crate) theme: ThemeName,
+    /// Where the choices this device keeps for itself are written; `None` writes nowhere.
+    pub(crate) preferences: Option<std::path::PathBuf>,
     /// Keyboard focus of the window; terminals take their keys from it.
     pub(crate) focus: FocusHandle,
     pub(crate) destination: Destination,
@@ -114,6 +116,7 @@ impl Workbench {
             engine,
             state: State::default().with_sizing(crate::views::sizing()),
             theme: ThemeName::DEFAULT,
+            preferences: None,
             focus: cx.focus_handle(),
             destination: Destination::default(),
             rail_open: true,

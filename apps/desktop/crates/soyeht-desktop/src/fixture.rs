@@ -372,6 +372,7 @@ pub fn run(
             engine,
             inbox,
             theme,
+            preferences: None,
             menu,
             panel,
             size,

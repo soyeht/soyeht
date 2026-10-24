@@ -1,15 +1,16 @@
 //! Preferences: which panel is open and the small choices inside them. The panels show what the
 //! engine holds (harnesses, settings, usage, skills) and what the person chose here (the theme).
 
-use crate::theme::{desktop, space};
+use crate::theme::{ThemeName, desktop, space};
 use crate::{
     composer_field::{ComposerEvent, ComposerField, new_field},
     open_menu::Menu,
     workbench::Workbench,
 };
 use gpui::{Context, Entity};
-use soyeht_client::Command;
+use soyeht_client::{Command, local_preferences::LocalPreferences};
 use soyeht_protocol::UsageProvider;
+use std::path::Path;
 
 /// A panel of Preferences, in the order of the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +88,22 @@ pub fn rows_wrap(page: f32) -> bool {
     page < desktop::HARNESS_ROW_WIDE_MINIMUM
 }
 
+/// The theme `saved` holds; the default when none was chosen or this build no longer has it.
+pub(crate) fn saved_theme(saved: &LocalPreferences) -> ThemeName {
+    saved
+        .theme
+        .as_deref()
+        .and_then(ThemeName::from_id)
+        .unwrap_or(ThemeName::DEFAULT)
+}
+
+/// Writes `theme` as the choice of the next launch, keeping the other choices in the file.
+fn remember_theme(directory: &Path, theme: ThemeName) -> std::io::Result<()> {
+    let mut saved = LocalPreferences::load(directory);
+    saved.theme = Some(theme.id().to_owned());
+    saved.save(directory)
+}
+
 impl Prefs {
     pub fn section(&self) -> Section {
         self.section.unwrap_or(Section::Harnesses)
@@ -126,6 +143,19 @@ impl Workbench {
         self.prefs.status_open = None;
         self.prefs.mode_menu = None;
         self.prefs.skill_to_delete = None;
+        cx.notify();
+    }
+
+    /// Applies `theme` at once and keeps it for the next launch, as the Mac does.
+    pub(crate) fn select_theme(&mut self, theme: ThemeName, cx: &mut Context<Self>) {
+        if self.theme != theme {
+            self.theme = theme;
+            if let Some(directory) = self.preferences.as_deref()
+                && let Err(error) = remember_theme(directory, theme)
+            {
+                soyeht_platform::log::failure("desktop.theme_not_saved", &error);
+            }
+        }
         cx.notify();
     }
 
@@ -263,6 +293,48 @@ impl Workbench {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("soyeht-theme-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        path
+    }
+
+    #[test]
+    fn the_chosen_theme_is_the_one_the_next_launch_opens_in() {
+        let directory = scratch("chosen");
+        assert_eq!(
+            saved_theme(&LocalPreferences::load(&directory)),
+            ThemeName::DEFAULT,
+            "a first launch opens in the default"
+        );
+        for theme in ThemeName::ALL.iter().copied() {
+            remember_theme(&directory, theme).unwrap();
+            assert_eq!(saved_theme(&LocalPreferences::load(&directory)), theme);
+        }
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_theme_this_build_does_not_know_falls_back_to_the_default() {
+        let removed = LocalPreferences {
+            theme: Some("neoRemovedYesterday".into()),
+        };
+        assert_eq!(saved_theme(&removed), ThemeName::DEFAULT);
+        let empty = LocalPreferences {
+            theme: Some(String::new()),
+        };
+        assert_eq!(saved_theme(&empty), ThemeName::DEFAULT);
+    }
+
+    #[test]
+    fn the_names_are_the_ones_the_mac_persists() {
+        assert_eq!(ThemeName::NeoDeepForest.id(), "neoDeepForest");
+        for theme in ThemeName::ALL.iter().copied() {
+            assert_eq!(ThemeName::from_id(theme.id()), Some(theme));
+        }
+        assert_eq!(ThemeName::from_id("Neo · Milk"), None);
+    }
 
     #[test]
     fn the_harnesses_open_first() {
