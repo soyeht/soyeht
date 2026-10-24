@@ -271,7 +271,9 @@ inherit the main actor.
 - Full gate, after the merge: `scripts/main_watch.py` (one pass; the coordinator runs it
   continuously) fetches `origin/main` and, when it moved, calls `scripts/post_merge.py` once
   on the newest commit. That runs `check_all.sh --tier full` in a clean worktree and writes
-  `.cache/main-health/<sha>.json` (result, duration, per-step times) and `latest.json`. When it
+  `.cache/main-health/<sha>.json` (result, duration, per-step times) and `latest.json`. It reads
+  the `Verification change:` line from the squash commit message, as the pre-merge gate reads it
+  from the PR body, so the merge must keep that line in the commit body. When it
   is red it reruns the failing step once (a pass is recorded as flaky and blames no commit),
   then finds the culprit commit by running only the failing step on the commits since the last
   green main. `main_watch.py --apply` then reverts a single confirmed culprit: a branch

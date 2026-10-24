@@ -19,16 +19,18 @@ REAL_REMOTE_LOAD = post_merge.remote_load  # LoadRuleTests replaces the module's
 # A stand-in for check_all.sh. The step named by FAKE_STEP (default `unit`) fails once the
 # file `broken` exists; `tcc` also fails without its prerequisite `snap` in `--only`.
 # FAKE_FLAKY=1 makes every `--only` run pass; FAKE_INFRA=1 makes the gate unable to start;
-# FAKE_TRACE=FILE records each run's directory and arguments. `--list` names a step per area:
+# FAKE_TRACE=FILE records each run's directory and arguments; FAKE_EVENTS=DIR keeps the
+# `--event-file` of each run as DIR/<HEAD sha>.json. `--list` names a step per area:
 # `eng` (engine) runs on the remote host, `unit`, `sw` and `tcc` run here.
 FAKE_GATE = """#!/bin/bash
 # supports --only
-only=""; base=""; list=0
-while (($#)); do case "$1" in --only) only="$2"; shift 2;; --base) base="$2"; shift 2;; --list) list=1; shift;; *) shift;; esac; done
+only=""; base=""; list=0; event=""
+while (($#)); do case "$1" in --only) only="$2"; shift 2;; --base) base="$2"; shift 2;; --event-file) event="$2"; shift 2;; --list) list=1; shift;; *) shift;; esac; done
 if ((list)); then printf 'always both unit\nengine both eng\nswift both sw\nswift full tcc\ne2e full snap\n'; exit 0; fi
 timings="${SOYEHT_GATE_TIMINGS:?}"
 step="${FAKE_STEP:-unit}"
 [[ -z "${FAKE_TRACE:-}" ]] || echo "$PWD only=$only base=$base" >> "$FAKE_TRACE"
+[[ -z "${FAKE_EVENTS:-}" || -z "$event" ]] || cp "$event" "$FAKE_EVENTS/$(git rev-parse HEAD).json"
 [[ -z "${FAKE_INFRA:-}" ]] || exit 71
 status=0
 if [[ -n "$only" ]]; then

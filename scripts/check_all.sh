@@ -230,6 +230,7 @@ step always both gate-list:unit uv run python -m unittest discover -s scripts -p
 step always both gate-plan:unit uv run python -m unittest discover -s scripts -p 'test_gate_plan.py'
 step always both gate-timings:unit uv run python -m unittest discover -s scripts -p 'test_gate_timings.py'
 step always both post-merge:unit uv run python -m unittest discover -s scripts -p 'test_post_merge.py'
+step always both post-merge-waiver:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_waiver.py'
 step always both main-watch:unit uv run python -m unittest discover -s scripts -p 'test_main_watch.py'
 step always both require-one-rust-test:unit uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
 # Without --base, the ratchets compare with the merge-base of origin/main and

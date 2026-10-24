@@ -57,6 +57,11 @@ record move to `<health-dir>/history/<sha>.<started_at>.*`, and the new record n
 
 Only one run at a time (a lock in the health directory). A problem of the machine, not of
 main (no restricted vocabulary, a gate that cannot start) writes no record and exits 2.
+Every gate run gets `--event-file` with the checked commit's message as a pull request (subject
+as title, the rest as body), because a squash merge keeps the pull request's text there: the
+`Verification change:` waiver of `hardening_gate.py` and the forbidden-terms scan read it as
+they read the pull request before the merge. The culprit search checks each commit with its own.
+
 The coordinator session runs this after each merge or every few merges; the editor
 measurement on the VM is collected separately, when the editor hash changes.
 """
@@ -293,6 +298,15 @@ def run_process(arguments: list[str], cwd: Path, env: dict, output) -> int:
         raise
 
 
+def commit_event(worktree: Path) -> dict:
+    """The pull request event of the commit checked out in `worktree`. A squash merge makes the
+    pull request's title the subject and its body the rest of the message, so the checks that
+    read the event (the `Verification change:` waiver of `hardening_gate.py`, the forbidden
+    terms) see the same text after the merge as before it."""
+    subject, _, body = git(worktree, "log", "-1", "--format=%B", "HEAD").partition("\n")
+    return {"pull_request": {"title": subject, "body": body.strip()}}
+
+
 def run_local_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
                    timings: Path, command: list[str]) -> int:
     arguments = [*command, "--tier", "full"]
@@ -301,10 +315,16 @@ def run_local_gate(worktree: Path, base: str | None, only: str | None, log: Path
     if base:
         arguments += ["--base", base]
     environment = {**os.environ, "SOYEHT_GATE_TIMINGS": str(timings)}
-    if log is None:
-        return run_process(arguments, worktree, environment, subprocess.DEVNULL)
-    with log.open("ab") as handle:
-        return run_process(arguments, worktree, environment, handle)
+    # Outside the worktree: the checks scan its untracked files. The event goes to every step
+    # (check_all.sh passes its arguments on), as in a pull request run.
+    with tempfile.TemporaryDirectory(dir=scratch_root()) as directory:
+        event = Path(directory) / "event.json"
+        write_json(event, commit_event(worktree))
+        arguments += ["--event-file", str(event)]
+        if log is None:
+            return run_process(arguments, worktree, environment, subprocess.DEVNULL)
+        with log.open("ab") as handle:
+            return run_process(arguments, worktree, environment, handle)
 
 
 def gate_step_areas(worktree: Path, command: list[str]) -> dict[str, str] | None:
