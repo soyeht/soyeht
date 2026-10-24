@@ -32,6 +32,13 @@ pub fn pane(id: &str, workspace: &str, mode: &str) -> Pane {
     serde_json::from_value(pane_json(id, workspace, mode)).unwrap()
 }
 
+/// A terminal screen of `rows` by `cols` that `output` has been written to.
+pub fn screen(rows: u16, cols: u16, output: &str) -> crate::screen::TerminalScreen {
+    let mut screen = crate::screen::TerminalScreen::new(rows, cols);
+    screen.feed(output.as_bytes());
+    screen
+}
+
 /// The listing of the folder `path`, as `project.tree.list` answers: each entry is a name and
 /// whether it is a folder.
 pub fn listing(path: &str, entries: &[(&str, bool)]) -> soyeht_protocol::ProjectTreeListResult {

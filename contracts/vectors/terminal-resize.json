@@ -1,0 +1,267 @@
+{
+  "description": "What a terminal screen shows after its size changed. The lines above the one the cursor is on keep their text and are cut again at the new width, and join again when it grows; the lines of the history come back when there are more rows and go up into it when there are fewer; the line the cursor is on is left as it is, cut where it no longer fits and with the cursor moved in to the last column, because a shell draws that line again when it learns the size and counts on the terminal not having moved it. The Mac (SwiftTerm's Terminal) and the desktop client (TerminalScreen) pass every case: each feeds output to a screen of rows by cols, resizes it through resizes in order, then the first rows of screen (blanks at the end of a row trimmed) are the rows of the view and cursor is [row, column] in it. The desktop client also keeps what a narrower screen cut from the cursor's line until something is written to the screen, and puts it back when the screen widens, which SwiftTerm does not, so no case here narrows and then widens the screen. A case without a cursor does not say where it goes: SwiftTerm and the desktop client place it differently when the cursor is above lines that were cut again.",
+  "reflow": [
+    {
+      "name": "narrowing cuts the line the cursor is on and moves the cursor into what is left",
+      "rows": 6,
+      "cols": 80,
+      "output": "output\r\nmacstudio@ubuntu-vm-1:~/work/proj$ ",
+      "resizes": [
+        [
+          6,
+          20
+        ]
+      ],
+      "screen": [
+        "output",
+        "macstudio@ubuntu-vm-"
+      ],
+      "cursor": [
+        1,
+        19
+      ]
+    },
+    {
+      "name": "a wrapped line the cursor is on is left as it is when the screen widens, for the shell to draw again",
+      "rows": 6,
+      "cols": 20,
+      "output": "output\r\nmacstudio@ubuntu-vm-1:~/work/proj$ ",
+      "resizes": [
+        [
+          6,
+          80
+        ]
+      ],
+      "screen": [
+        "output",
+        "macstudio@ubuntu-vm-",
+        "1:~/work/proj$"
+      ],
+      "cursor": [
+        2,
+        15
+      ]
+    },
+    {
+      "name": "the lines above the cursor's are cut again at the new width",
+      "rows": 8,
+      "cols": 40,
+      "output": "first line of text\r\nsecond\r\nprompt$ ",
+      "resizes": [
+        [
+          8,
+          10
+        ]
+      ],
+      "screen": [
+        "first line",
+        " of text",
+        "second",
+        "prompt$"
+      ],
+      "cursor": [
+        3,
+        8
+      ]
+    },
+    {
+      "name": "and join again when the screen widens",
+      "rows": 8,
+      "cols": 10,
+      "output": "first line of text\r\nsecond\r\nprompt$ ",
+      "resizes": [
+        [
+          8,
+          40
+        ]
+      ],
+      "screen": [
+        "first line of text",
+        "second",
+        "prompt$"
+      ],
+      "cursor": [
+        2,
+        8
+      ]
+    },
+    {
+      "name": "fewer rows push the top into the history and keep the cursor row",
+      "rows": 8,
+      "cols": 20,
+      "output": "line 0\r\nline 1\r\nline 2\r\nline 3\r\nline 4\r\nprompt$ ",
+      "resizes": [
+        [
+          3,
+          20
+        ]
+      ],
+      "screen": [
+        "line 3",
+        "line 4",
+        "prompt$"
+      ],
+      "cursor": [
+        2,
+        8
+      ]
+    },
+    {
+      "name": "more rows bring the history back",
+      "rows": 8,
+      "cols": 20,
+      "output": "line 0\r\nline 1\r\nline 2\r\nline 3\r\nline 4\r\nprompt$ ",
+      "resizes": [
+        [
+          3,
+          20
+        ],
+        [
+          8,
+          20
+        ]
+      ],
+      "screen": [
+        "line 0",
+        "line 1",
+        "line 2",
+        "line 3",
+        "line 4",
+        "prompt$"
+      ],
+      "cursor": [
+        5,
+        8
+      ]
+    },
+    {
+      "name": "a wide character is never split between rows",
+      "rows": 6,
+      "cols": 10,
+      "output": "ab你好cd\r\n$ ",
+      "resizes": [
+        [
+          6,
+          4
+        ]
+      ],
+      "screen": [
+        "ab你",
+        "好cd",
+        "$"
+      ],
+      "cursor": [
+        2,
+        2
+      ]
+    },
+    {
+      "name": "and the rows it was cut into join again",
+      "rows": 6,
+      "cols": 10,
+      "output": "ab你好cd\r\n$ ",
+      "resizes": [
+        [
+          6,
+          4
+        ],
+        [
+          6,
+          10
+        ]
+      ],
+      "screen": [
+        "ab你好cd",
+        "$"
+      ],
+      "cursor": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "colors and weights stay on their text",
+      "rows": 6,
+      "cols": 12,
+      "output": "\u001b[1;31mred\u001b[0m plain\r\n$ ",
+      "resizes": [
+        [
+          6,
+          4
+        ]
+      ],
+      "screen": [
+        "red",
+        "plai",
+        "n",
+        "$"
+      ],
+      "cursor": [
+        3,
+        2
+      ],
+      "styles": [
+        {
+          "row": 0,
+          "column": 0,
+          "fg": 1,
+          "bold": true
+        },
+        {
+          "row": 0,
+          "column": 2,
+          "fg": 1,
+          "bold": true
+        },
+        {
+          "row": 1,
+          "column": 0,
+          "fg": null,
+          "bold": false
+        }
+      ]
+    },
+    {
+      "name": "lines below the cursor are cut again too, and the cursor stays where it was",
+      "rows": 9,
+      "cols": 16,
+      "output": "top\r\nmiddle line here\r\nbottom line here\u001b[1;1H",
+      "resizes": [
+        [
+          9,
+          6
+        ]
+      ],
+      "screen": [
+        "top",
+        "middle",
+        " line",
+        "here",
+        "bottom",
+        " line",
+        "here"
+      ]
+    },
+    {
+      "name": "two rows and two columns, the smallest the screen is rebuilt at",
+      "rows": 6,
+      "cols": 10,
+      "output": "abcde\r\n$ ",
+      "resizes": [
+        [
+          3,
+          2
+        ]
+      ],
+      "screen": [
+        "cd",
+        "e",
+        "$"
+      ],
+      "cursor": [
+        2,
+        1
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 """Renders the `x-clientPolicy` section of protocol.json into the clients' shared rules.
 
-The timeouts and the reconnect wait, the page sizes, the terminal input chunk, the usage and
+The timeouts and the reconnect wait, the page sizes, the terminal input chunk, the terminal
+history length (desktop only for now: the Mac and iOS terminals keep SwiftTerm's default), the usage and
 context bands, the provider names, the texts two clients both store, the inline image types, what
 a pane state means (whether a turn runs, the color of its dot) and the rule that tells a model,
 effort or permission selector apart are defined once there. The Rust
@@ -172,7 +173,7 @@ def rust_constant(name, value):
         return f"pub const {snake(name).upper()}: f64 = {value!r};"
     kind = (
         "usize"
-        if name.endswith("Bytes") or name.startswith(CAPS)
+        if name.endswith(("Bytes", "ScrollbackLines")) or name.startswith(CAPS)
         else "u32"
         if name.startswith((PAGE_SIZES, "editor"))
         else "u64"

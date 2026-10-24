@@ -15,6 +15,7 @@ public enum ClientPolicy {
     public static let agentPartialFlushMs = 16
     public static let agentPartialFlushSeconds: Double = 0.016
     public static let terminalInputChunkBytes = 16384
+    public static let terminalScrollbackLines = 10000
     public static let capsWaitingMessages = 1000
     public static let capsFileLinks = 128
     public static let capsWebLinks = 128

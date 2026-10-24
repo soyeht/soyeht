@@ -2,7 +2,12 @@
 
 use super::Workbench;
 use crate::destination::Destination;
-use soyeht_client::{Command, Effect};
+use gpui::Context;
+use soyeht_client::{
+    Command, Effect,
+    screen::settle::{Fit, SETTLE},
+};
+use std::time::Instant;
 
 impl Workbench {
     /// Carries out one thing the replica asks for.
@@ -78,15 +83,45 @@ impl Workbench {
         }
     }
 
-    /// Called while painting a terminal: fits its screen to the room it has and tells the
-    /// engine when the size really changed.
-    pub fn fit_terminal(&mut self, pane_id: &str, rows: u16, cols: u16) {
-        if let Some((rows, cols)) = self.state.fit_terminal(pane_id, rows, cols) {
-            self.send(Command::Resize {
-                pane_id: pane_id.to_owned(),
-                rows,
-                cols,
-            });
+    /// Called while painting a terminal: fits its screen to the room it has, once the size has
+    /// held for a moment (see `settle`), and tells the engine when the size really changed.
+    pub fn fit_terminal(
+        &mut self,
+        pane_id: &str,
+        (rows, cols): (u16, u16),
+        cx: &mut Context<Self>,
+    ) {
+        let Some(current) = self
+            .state
+            .screen(pane_id)
+            .map(soyeht_client::screen::TerminalScreen::size)
+        else {
+            return;
+        };
+        let settle = &mut self.panes.of(pane_id).terminal.settle;
+        match settle.offer((rows, cols), current, Instant::now()) {
+            Fit::Nothing => {}
+            Fit::Wait { ask_again } => {
+                if ask_again {
+                    // Nothing is drawn again when the drag stops: a frame is asked for.
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor().timer(SETTLE).await;
+                        if this.update(cx, |_, cx| cx.notify()).is_err() {
+                            // The window closed meanwhile; there is nothing to draw.
+                        }
+                    })
+                    .detach();
+                }
+            }
+            Fit::Now => {
+                if let Some((rows, cols)) = self.state.fit_terminal(pane_id, rows, cols) {
+                    self.send(Command::Resize {
+                        pane_id: pane_id.to_owned(),
+                        rows,
+                        cols,
+                    });
+                }
+            }
         }
     }
 }

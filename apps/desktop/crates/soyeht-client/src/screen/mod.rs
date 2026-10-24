@@ -4,12 +4,18 @@
 mod lines;
 pub mod links;
 mod pointer;
+mod reflow;
 pub mod selection;
+pub mod settle;
 
 use lines::Lines;
+use soyeht_protocol::client_policy;
 
 /// Lines of history kept per terminal on the client.
-const SCROLLBACK_LINES: usize = 10_000;
+const SCROLLBACK_LINES: usize = client_policy::TERMINAL_SCROLLBACK_LINES;
+
+/// The bytes that move the cursor to the next line: line feed, vertical tab and form feed.
+const LINE_FEEDS: [u8; 3] = [b'\n', 0x0b, 0x0c];
 
 /// A cell color before a theme gives it a value. `DefaultFg` and `DefaultBg` stay distinct so
 /// reverse video can swap them without the view guessing.
@@ -51,6 +57,8 @@ pub struct TerminalScreen {
     selection: Option<selection::Selection>,
     /// The lines above the live screen, which places on the screen are counted from.
     history: usize,
+    /// What a narrower screen cut from the cursor's line, until something is written to it.
+    cut: Option<reflow::Cut>,
 }
 
 impl TerminalScreen {
@@ -60,10 +68,17 @@ impl TerminalScreen {
             scroll_remainder: 0.0,
             selection: None,
             history: 0,
+            cut: None,
         }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
+        self.cut = None;
+        // A line feed ends the selection, the rule of SwiftTerm (the Mac client's terminal): the
+        // lines move, and what was chosen is no longer where it was drawn.
+        if bytes.iter().any(|byte| LINE_FEEDS.contains(byte)) {
+            self.selection = None;
+        }
         let guard = self.selection_guard();
         self.parser.process(bytes);
         self.history = Lines::new(&mut self.parser).history();
@@ -76,16 +91,51 @@ impl TerminalScreen {
         self.parser = vt100::Parser::new(rows, cols, SCROLLBACK_LINES);
         self.selection = None;
         self.history = 0;
+        self.cut = None;
     }
 
+    /// Fits the screen to a new size. The normal screen keeps its text and cuts the rows again
+    /// at the new width (see `reflow`), also while a program is on the alternate screen, which
+    /// draws itself again when it learns the size.
     pub fn resize(&mut self, rows: u16, cols: u16) {
         let (rows, cols) = (rows.max(1), cols.max(1));
-        if (rows, cols) != self.size() {
-            self.parser.screen_mut().set_size(rows, cols);
-            // The cells the selection names are not the same ones any more.
-            self.selection = None;
-            self.history = Lines::new(&mut self.parser).history();
+        if (rows, cols) == self.size() {
+            return;
         }
+        if rows < reflow::MIN_ROWS || cols < reflow::MIN_COLUMNS {
+            self.parser.screen_mut().set_size(rows, cols);
+            self.cut = None;
+        } else {
+            self.refit(rows, cols);
+        }
+        // The cells the selection names are not the same ones any more.
+        self.selection = None;
+        self.history = Lines::new(&mut self.parser).history();
+    }
+
+    /// Replaces the screen by the same one at the new size. The parser stays, so that output
+    /// that is cut in the middle of a sequence goes on across the resize, and the pen and the
+    /// place of a scrolled view stay too.
+    fn refit(&mut self, rows: u16, cols: u16) {
+        let alternate = self.parser.screen().alternate_screen();
+        let mut old = vt100::Parser::new(1, 1, 0);
+        std::mem::swap(old.screen_mut(), self.parser.screen_mut());
+        if alternate {
+            // The normal screen is what is kept; the program draws its own again.
+            old.process(b"\x1b[?1049l");
+        }
+        let pen = old.screen().attributes_formatted();
+        let view = old.screen().scrollback();
+        let (mut next, cut) = reflow::rebuilt(&mut old, (rows, cols), self.cut.take());
+        if alternate {
+            next.process(b"\x1b[?1049h");
+        } else {
+            next.screen_mut().set_scrollback(view);
+        }
+        next.process(&pen);
+        std::mem::swap(self.parser.screen_mut(), next.screen_mut());
+        self.cut = cut;
+        self.scroll_remainder = 0.0;
     }
 
     /// `(rows, columns)`.
@@ -154,9 +204,17 @@ impl TerminalScreen {
             .map_or_else(|| " ".to_owned(), |cell| cell.contents().to_owned())
     }
 
+    #[cfg(test)]
     pub fn row_runs(&self, row: u16) -> Vec<Run> {
+        self.row_runs_within(row, u16::MAX)
+    }
+
+    /// The runs of a row as far as `limit` columns: what a view narrower than the screen shows
+    /// while the screen waits for the size to settle.
+    pub fn row_runs_within(&self, row: u16, limit: u16) -> Vec<Run> {
         let screen = self.parser.screen();
         let (_, cols) = screen.size();
+        let cols = cols.min(limit);
         let mut runs: Vec<Run> = Vec::new();
         // A wide character is a run of its own, so a painter that places every character in a
         // one-column slot cannot shift what follows it.
@@ -176,6 +234,9 @@ impl TerminalScreen {
                 std::mem::swap(&mut fg, &mut bg);
             }
             let width = if cell.is_wide() { 2 } else { 1 };
+            if column + width > cols {
+                break;
+            }
             let text = if cell.has_contents() {
                 cell.contents()
             } else {
@@ -233,12 +294,7 @@ fn color(value: vt100::Color, default: CellColor) -> CellColor {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn screen(rows: u16, cols: u16, input: &str) -> TerminalScreen {
-        let mut screen = TerminalScreen::new(rows, cols);
-        screen.feed(input.as_bytes());
-        screen
-    }
+    use crate::testing::screen;
 
     #[test]
     fn slow_scrolling_accumulates_fractions_until_a_line_moves() {

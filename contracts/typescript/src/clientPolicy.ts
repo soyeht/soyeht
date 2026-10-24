@@ -9,7 +9,8 @@ export const clientPolicy = {
     "agentPartialFlushMs": 16
   },
   "terminal": {
-    "inputChunkBytes": 16384
+    "inputChunkBytes": 16384,
+    "scrollbackLines": 10000
   },
   "caps": {
     "waitingMessages": 1000,

@@ -22,6 +22,7 @@ use soyeht_client::{
         TerminalScreen,
         links::Link,
         selection::{Located, Span, locate},
+        settle::Settle,
     },
 };
 use soyeht_protocol::PaneMode;
@@ -55,6 +56,8 @@ pub(crate) struct TerminalUi {
     /// Where the context menu was opened, and the address that was under the pointer there.
     pub menu_at: Point<Pixels>,
     pub menu_link: Option<Link>,
+    /// The sizes the view has asked for, which the screen is fitted to once one holds.
+    pub settle: Settle,
 }
 
 /// Whether a click with these keys held opens the address under it: Control on Linux and

@@ -2,7 +2,7 @@
 //!
 //! The parser can only show one window of lines at a time (the view and how far it is scrolled
 //! back). A selection and a link are in lines counted from the oldest one kept, so that they stay
-//! where they are while the view scrolls and while new output pushes lines into the history.
+//! where they are while the view scrolls.
 
 /// The most rows a line that wraps is followed over, so that output with no line break cannot
 /// make a double-click read the whole history.

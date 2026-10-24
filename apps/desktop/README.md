@@ -33,13 +33,24 @@ agent works.
 - Panes are tiled as the workspace's split tree says (`workspace.layout`), and the split buttons
   of a pane header split it to the right or below and store the new arrangement.
 - Terminal panes show live output (the engine streams raw terminal bytes, parsed
-  with `vt100`), accept typing, paste, resize with the window, and scroll back.
+  with `vt100`), accept typing, paste, resize with the window, and scroll back. A resize
+  reflows the text as the Mac's terminal does: the lines above the cursor's wrap again at the
+  new width and join again when it grows, the history comes back with more rows, and the
+  cursor's own line is cut and left to the shell (`soyeht_client::screen`, passing
+  `contracts/vectors/terminal-resize.json`). The normal screen is reflowed under a program on the
+  alternate one. While a divider or the window is dragged the screen keeps its size and the view
+  shows what fits; the screen is fitted, and the shell told, once the size has held for a moment
+  (`screen::settle`). What a narrower screen cut from the cursor's line is put back if the
+  screen is made wide again before anything is written to it. Known differences from SwiftTerm:
+  rows that ended early for a wide character are not joined again (the parser does not mark them
+  as wrapped), a screen of one row or one column is only cut, and the autowrap, insert, charset
+  and saved-cursor modes of the normal screen are reset by a resize.
 - Text in a terminal is selected with the mouse: a drag selects cells (a drag held past the top
   or bottom keeps scrolling, faster the further the pointer is), a double-click a word (a path or
   an address is one word), a triple-click a line, and Shift+click grows the selection. A selection
-  stays on its text while the view scrolls and new output arrives, and goes when output rewrites
-  that text, when the screen is resized or switches to the alternate screen, and when the person
-  types. Copy is Ctrl+Shift+C on Linux and Windows
+  stays on its text while the view scrolls, and goes, as on the Mac, when the person types, when
+  the output has a line feed, when the screen is resized, and also when output rewrites that text
+  or switches to the alternate screen. Copy is Ctrl+Shift+C on Linux and Windows
   (Command+C on the Mac) and the context menu's Copy; Ctrl+C stays the interrupt. The context menu
   (secondary button) also has Paste and, over an address, Open Link. Ctrl+click (Command+click on
   the Mac) opens an `http` or `https` address, even one that wraps over rows, in the system browser;

@@ -2,7 +2,8 @@
 //! line, as in every terminal (and in SwiftTerm, which the Mac client uses).
 //!
 //! Places are lines counted from the oldest one kept, so a selection stays on its text while the
-//! view scrolls and while output pushes lines into the history.
+//! view scrolls. It ends, as in SwiftTerm, when a key is pressed, when the screen is resized and
+//! when output has a line feed, and also when output changes the text under it.
 
 use super::lines::{Lines, Logical};
 

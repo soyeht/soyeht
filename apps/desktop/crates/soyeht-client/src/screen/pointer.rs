@@ -33,15 +33,16 @@ impl TerminalScreen {
         self.selection = Some(Selection::begin(&mut lines, at, Unit::of_clicks(clicks)));
     }
 
-    /// The pointer moved, with the button down, to a cell of the view. Without a selection to
-    /// grow it begins one.
+    /// The pointer moved, with the button down, to a cell of the view. It grows the selection the
+    /// press began, if output has not ended it.
     pub fn extend_selection(&mut self, row: u16, column: u16) {
         let at = Point {
             line: self.line_at(row),
             column,
         };
+        // A selection that output ended while the pointer was down is not begun again where the
+        // pointer is: the drag that made it is over.
         let Some(selection) = self.selection.as_mut() else {
-            self.begin_selection(row, column, 1);
             return;
         };
         let mut lines = Lines::new(&mut self.parser);
@@ -134,12 +135,7 @@ fn fingerprint(selection: &Selection, lines: &mut Lines, live_from: usize) -> St
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn screen(rows: u16, cols: u16, output: &str) -> TerminalScreen {
-        let mut screen = TerminalScreen::new(rows, cols);
-        screen.feed(output.as_bytes());
-        screen
-    }
+    use crate::testing::screen;
 
     fn select(screen: &mut TerminalScreen, from: (u16, u16), to: (u16, u16)) -> Option<String> {
         screen.begin_selection(from.0, from.1, 1);
@@ -265,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn the_selection_follows_its_text_into_the_history() {
+    fn the_selection_stays_on_its_text_while_the_view_scrolls() {
         let mut output = String::from("keep this\r\n");
         output.push_str(
             &(0..10)
@@ -275,14 +271,12 @@ mod tests {
         let mut screen = screen(4, 20, &output);
         screen.scroll(100);
         assert_eq!(select(&mut screen, (0, 0), (0, 3)).as_deref(), Some("keep"));
-        // More output scrolls the live screen; the selected lines stay where they are.
-        screen.feed(b"more\r\nmore\r\nmore\r\n");
-        assert_eq!(screen.selected_text().as_deref(), Some("keep"));
-        // The view scrolling does not move it either.
+        // The view scrolling does not move it.
         screen.scroll(-100);
         assert_eq!(screen.selection_columns(0), None);
         screen.scroll(100);
         assert_eq!(screen.selection_columns(0), Some((0, 4)));
+        assert_eq!(screen.selected_text().as_deref(), Some("keep"));
     }
 
     #[test]
@@ -330,12 +324,41 @@ mod tests {
     }
 
     #[test]
-    fn output_that_scrolls_the_selected_screen_text_keeps_it_on_its_text() {
+    fn a_line_feed_in_the_output_clears_the_selection_wherever_it_is() {
+        // The three bytes SwiftTerm, the Mac client's terminal, calls a line feed; a carriage
+        // return, a cursor move and plain text are not one.
+        for (output, kept) in [
+            ("\n", false),
+            ("\r\n", false),
+            ("\x0b", false),
+            ("\x0c", false),
+            ("text\r\nmore", false),
+            ("\r", true),
+            ("\x1b[3;1Hmore", true),
+            ("more", true),
+        ] {
+            for scrolled_back in [0, 100] {
+                let mut screen = screen(3, 20, "one\r\ntwo\r\nthree\r\nfour\r\nfive");
+                screen.scroll(scrolled_back);
+                assert!(select(&mut screen, (0, 0), (0, 2)).is_some());
+                screen.feed(output.as_bytes());
+                assert_eq!(
+                    screen.has_selection(),
+                    kept,
+                    "{output:?}, scrolled back {scrolled_back}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_line_feed_that_scrolls_the_selected_text_into_the_history_clears_it() {
         let mut screen = screen(3, 20, "one\r\ntwo\r\nthree");
         assert_eq!(select(&mut screen, (0, 0), (0, 2)).as_deref(), Some("one"));
-        // A new line scrolls "one" into the history; it is still "one" that is selected.
+        // The new line pushes "one" up: the selection does not stay on the cells it was drawn on.
         screen.feed(b"\r\nfour");
-        assert_eq!(screen.selected_text().as_deref(), Some("one"));
+        assert!(!screen.has_selection());
+        assert_eq!(screen.selection_columns(0), None);
     }
 
     #[test]
@@ -379,5 +402,22 @@ mod tests {
         assert!(select(&mut screen, (0, 0), (0, 4)).is_some());
         screen.feed(b"x");
         assert_eq!(screen.selected_text().as_deref(), Some("row 0"));
+    }
+
+    #[test]
+    fn a_drag_that_output_ended_is_not_begun_again_where_the_pointer_is() {
+        let mut screen = screen(4, 20, "one\r\ntwo");
+        screen.begin_selection(0, 0, 1);
+        screen.extend_selection(0, 2);
+        assert!(screen.has_selection());
+        screen.feed(b"\r\nmore");
+        assert!(!screen.has_selection());
+        screen.extend_selection(1, 1);
+        screen.extend_selection(1, 2);
+        assert!(!screen.has_selection());
+        // The next press begins one as usual.
+        screen.begin_selection(1, 0, 1);
+        screen.extend_selection(1, 2);
+        assert_eq!(screen.selected_text().as_deref(), Some("two"));
     }
 }

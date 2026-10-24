@@ -71,6 +71,12 @@ struct Frame {
     dragging: bool,
 }
 
+/// The columns of a row that are inside a view `columns` wide.
+fn within(span: Option<(u16, u16)>, columns: u16) -> Option<(u16, u16)> {
+    span.filter(|(from, _)| *from < columns)
+        .map(|(from, to)| (from, to.min(columns)))
+}
+
 /// A canvas that gathers what a frame draws from the app, then draws it. `gather` runs while the
 /// frame is laid out and may change the app; `draw` only paints.
 pub fn frame_canvas<F: 'static>(
@@ -100,25 +106,30 @@ pub fn surface(
         move |bounds, cx| {
             let cell = CellSize::measure(cx);
             let (rows, cols) = cell.grid(bounds);
-            workbench.update(cx, |workbench, _| {
-                workbench.fit_terminal(&pane_id, rows, cols);
+            workbench.update(cx, |workbench, cx| {
+                workbench.fit_terminal(&pane_id, (rows, cols), cx);
                 workbench.record_terminal_geometry(&pane_id, bounds, cell);
             });
             let workbench = workbench.read(cx);
             let screen = workbench.screen(&pane_id)?;
-            let (shown_rows, _) = screen.size();
+            // While the screen waits for the size to settle it can be larger than the view: the
+            // view shows what fits.
+            let shown_rows = screen.size().0.min(rows);
             let hovered = workbench.hovered_link(&pane_id);
             Some(Frame {
                 cell,
-                rows: (0..shown_rows).map(|row| screen.row_runs(row)).collect(),
+                rows: (0..shown_rows)
+                    .map(|row| screen.row_runs_within(row, cols))
+                    .collect(),
                 cursor: screen
                     .cursor()
+                    .filter(|cursor| cursor.row < rows && cursor.column < cols)
                     .map(|cursor| (cursor, screen.text_at(cursor.row, cursor.column))),
                 selected: (0..shown_rows)
-                    .map(|row| screen.selection_columns(row))
+                    .map(|row| within(screen.selection_columns(row), cols))
                     .collect(),
                 link: (0..shown_rows)
-                    .map(|row| hovered.and_then(|span| screen.columns_of(span, row)))
+                    .map(|row| within(hovered.and_then(|span| screen.columns_of(span, row)), cols))
                     .collect(),
                 dragging: workbench.terminal_dragging(&pane_id),
             })
