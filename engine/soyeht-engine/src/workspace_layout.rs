@@ -164,8 +164,19 @@ pub fn validate(
     if let Some(tree) = &envelope.tree {
         validate_node(tree, &panes, &mut seen, &mut paired)?;
     }
-    let expected: BTreeSet<_> = panes.keys().cloned().collect();
-    if seen != expected {
+    // The editor panes of a workspace are the tabs of one editor area, and every client draws
+    // that area in the slot of one pane (ADR 0072), so a stored tree lists one of them or all
+    // of them, never none while any is open.
+    let is_editor = |pane_id: &String| {
+        panes
+            .get(pane_id)
+            .is_some_and(|p| p.mode == PaneMode::Editor)
+    };
+    let lists_an_editor = seen.iter().any(is_editor);
+    let missing_pane = panes
+        .keys()
+        .any(|pane_id| !seen.contains(pane_id) && !(is_editor(pane_id) && lists_an_editor));
+    if missing_pane {
         return Err("Workspace pane layout must contain every open workspace pane".into());
     }
     Ok(())
@@ -485,6 +496,61 @@ mod tests {
         assert_eq!(
             validate("workspace", &nested_member, [writing, agent, terminal]).unwrap_err(),
             "A writing companion must annotate exactly its two direct leaf children"
+        );
+    }
+
+    fn editor_layout(editors: &[&str]) -> WorkspacePaneLayoutEnvelope {
+        let mut children = vec![
+            json!({"weight":1,"node":{"paneId":"terminal","kind":"terminal"}}),
+            json!({"weight":1,"node":{"paneId":"agent","kind":"agent"}}),
+        ];
+        children.extend(
+            editors
+                .iter()
+                .map(|id| json!({"weight":1,"node":{"paneId":id,"kind":"editor"}})),
+        );
+        serde_json::from_value(json!({
+            "version":2,"mode":"custom",
+            "tree":{"axis":"horizontal","children":children}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn editor_tabs_share_one_slot_of_the_layout() {
+        let panes = |editors: &[&str]| {
+            let mut panes = vec![pane("terminal"), pane_as("agent", PaneMode::Agent, None)];
+            panes.extend(editors.iter().map(|id| pane_as(id, PaneMode::Editor, None)));
+            panes
+        };
+        for tabs in [&["e1", "e2"][..], &["e1", "e2", "e3"][..]] {
+            // One tab in the slot stands for all of them, whichever tab it is.
+            for shown in tabs {
+                assert_eq!(
+                    validate("workspace", &editor_layout(&[shown]), panes(tabs)),
+                    Ok(())
+                );
+            }
+            // A layout saved with a split per file stays valid.
+            assert_eq!(
+                validate("workspace", &editor_layout(tabs), panes(tabs)),
+                Ok(())
+            );
+        }
+        // Editors that are open still need a slot.
+        assert_eq!(
+            validate("workspace", &editor_layout(&[]), panes(&["e1", "e2"])).unwrap_err(),
+            "Workspace pane layout must contain every open workspace pane"
+        );
+        // And the rest of the panes still all need a leaf.
+        assert_eq!(
+            validate(
+                "workspace",
+                &editor_layout(&["e1"]),
+                [panes(&["e1", "e2"]), vec![pane("other")]].concat()
+            )
+            .unwrap_err(),
+            "Workspace pane layout must contain every open workspace pane"
         );
     }
 

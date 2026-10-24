@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     Event,
     snapshot::Snapshot,
-    testing::{pane, pane_json, workspace, workspace_json},
+    testing::{pane, pane_json, stored_layout as stored, workspace, workspace_json},
 };
 use serde_json::json;
 
@@ -147,13 +147,6 @@ fn opened_nothing(effects: &[Effect]) -> bool {
     !effects
         .iter()
         .any(|e| matches!(e, Effect::FocusPane(_) | Effect::StoreLayout { .. }))
-}
-
-fn stored(effects: &[Effect]) -> Option<WorkspacePaneLayoutNode> {
-    effects.iter().find_map(|effect| match effect {
-        Effect::StoreLayout { layout, .. } => layout.tree.clone(),
-        _ => None,
-    })
 }
 
 #[test]

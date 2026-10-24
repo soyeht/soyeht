@@ -2,20 +2,39 @@
 //! edits.
 
 use super::tests::*;
-use crate::{Command, Effect, Event, State, testing::pane};
+use crate::{
+    Command, Effect, Event, State, layout,
+    testing::{pane, pane_json, stored_layout},
+};
 use serde_json::json;
-use soyeht_protocol::Pane;
+use soyeht_protocol::{EventName, Pane, WorkspacePaneLayoutAxis};
+
+/// A state with the editor panes `e1` to `e{tabs}`, which show the files `a`, `b`, ..., and
+/// `more` panes.
+fn editors_beside(tabs: usize, more: Vec<Pane>) -> State {
+    let mut state = State::default();
+    let mut panes: Vec<Pane> = (1..=tabs)
+        .map(|n| pane(&format!("e{n}"), "w", "editor"))
+        .collect();
+    panes.extend(more);
+    let files = (1..=tabs)
+        .map(|n| {
+            doc(
+                &char::from(b'a' + n as u8 - 1).to_string(),
+                &format!("e{n}"),
+                1,
+                1,
+                false,
+            )
+        })
+        .collect();
+    state.apply(Event::Connected(snapshot(panes, files)));
+    state
+}
 
 /// A state with the editor panes `e1` and `e2`, which show the files `a` and `b`, and `more` panes.
 fn two_editors(more: Vec<Pane>) -> State {
-    let mut state = State::default();
-    let mut panes = vec![pane("e1", "w", "editor"), pane("e2", "w", "editor")];
-    panes.extend(more);
-    state.apply(Event::Connected(snapshot(
-        panes,
-        vec![doc("a", "e1", 1, 1, false), doc("b", "e2", 1, 1, false)],
-    )));
-    state
+    editors_beside(2, more)
 }
 
 #[test]
@@ -122,4 +141,77 @@ fn opening_a_file_adds_its_pane_focuses_it_and_shows_its_page() {
     assert!(state.panes().iter().any(|pane| pane.pane_id == "e9"));
     let file = state.editors.file_of_pane("e9").unwrap();
     assert_eq!(file.page.as_ref().unwrap().text(1), "world");
+}
+
+/// What the engine asks of a stored layout (`workspace.layout.set`): the editor panes share one
+/// slot, so at least one of them stands for all, and every other open pane is a leaf once.
+fn engine_accepts(tree: &soyeht_protocol::WorkspacePaneLayoutNode, panes: &[Pane]) -> bool {
+    let listed = layout::pane_ids(tree);
+    let count = |id: &str| listed.iter().filter(|listed| **listed == id).count();
+    let is_editor = |pane: &Pane| pane.mode == soyeht_protocol::PaneMode::Editor;
+    panes
+        .iter()
+        .filter(|pane| !is_editor(pane))
+        .all(|pane| count(&pane.pane_id) == 1)
+        && panes
+            .iter()
+            .any(|pane| is_editor(pane) && count(&pane.pane_id) == 1)
+}
+
+#[test]
+fn a_split_beside_several_editor_tabs_stores_one_slot_for_the_editor_and_every_other_pane() {
+    for tabs in [2, 3] {
+        for active in 1..=tabs {
+            let mut state = editors_beside(
+                tabs,
+                vec![pane("t1", "w", "terminal"), pane("ag", "w", "agent")],
+            );
+            state.focus_pane(&format!("e{active}"));
+            state.expect_split(1, "t1", WorkspacePaneLayoutAxis::Vertical);
+            state.apply(Event::Notification {
+                name: EventName::PaneCreated,
+                params: json!({"eventId": "9", "at": "now", "pane": pane_json("n", "w", "terminal")}),
+            });
+            let effects = state.apply(Event::Opened {
+                ticket: 1,
+                pane_id: "n".into(),
+            });
+            let stored = stored_layout(&effects).expect("the split stores the layout");
+            // The active tab holds the editor's slot; the others are not in the tree.
+            let listed = layout::pane_ids(&stored);
+            let editors: Vec<_> = listed.iter().filter(|id| id.starts_with('e')).collect();
+            assert_eq!(editors, [&format!("e{active}").as_str()], "{tabs} tabs");
+            assert_eq!(listed.iter().filter(|id| **id == "n").count(), 1);
+            assert!(
+                engine_accepts(&stored, state.panes()),
+                "{tabs} tabs: {listed:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_stored_slot_of_an_editor_that_is_not_the_active_tab_shows_the_active_tab() {
+    let mut state = editors_beside(
+        3,
+        vec![pane("t1", "w", "terminal"), pane("ag", "w", "agent")],
+    );
+    // The arrangement was stored while `e1` was the tab on show.
+    let stored = json!({"version": 2, "mode": "custom", "tree": {
+    "axis": "horizontal", "children": [
+        {"weight": 2.0, "node": {"paneId": "e1", "kind": "editor"}},
+        {"weight": 1.0, "node": {"axis": "vertical", "children": [
+            {"weight": 1.0, "node": {"paneId": "t1", "kind": "terminal"}},
+            {"weight": 1.0, "node": {"paneId": "ag", "kind": "agent"}}
+        ]}}
+    ]}});
+    let mut workspace = crate::testing::workspace_json("w");
+    workspace["layout"] = stored;
+    state.apply(Event::Notification {
+        name: EventName::WorkspaceLayoutUpdated,
+        params: json!({"eventId": "9", "at": "now", "workspace": workspace}),
+    });
+    state.focus_pane("e3");
+    let tree = state.layout("w", |_| true).unwrap();
+    assert_eq!(layout::pane_ids(&tree), ["e3", "t1", "ag"]);
 }

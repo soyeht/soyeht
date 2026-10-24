@@ -1,7 +1,8 @@
 //! Fixtures shared by the unit tests of this crate.
 
+use crate::Effect;
 use serde_json::{Value, json};
-use soyeht_protocol::{AgentSession, Pane, Workspace};
+use soyeht_protocol::{AgentSession, Pane, Workspace, WorkspacePaneLayoutNode};
 
 pub fn workspace_json(id: &str) -> Value {
     json!({"workspaceId": id, "name": id, "path": "/work", "layout": {}})
@@ -12,6 +13,14 @@ pub fn pane_json(id: &str, workspace: &str, mode: &str) -> Value {
         "paneId": id, "workspaceId": workspace, "name": id, "cwd": "/work", "mode": mode,
         "state": "idle", "source": "none", "confidence": 0.0, "phrase": "", "generation": 1,
         "cols": 80, "rows": 24, "record": false
+    })
+}
+
+/// The tree of the layout that `effects` store.
+pub fn stored_layout(effects: &[Effect]) -> Option<WorkspacePaneLayoutNode> {
+    effects.iter().find_map(|effect| match effect {
+        Effect::StoreLayout { layout, .. } => layout.tree.clone(),
+        _ => None,
     })
 }
 

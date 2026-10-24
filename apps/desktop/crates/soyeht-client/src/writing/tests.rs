@@ -9,7 +9,7 @@ use super::{
 use crate::{
     Command, Effect, Event, Snapshot, State,
     editor::{EditorCommand, EditorEvent},
-    testing::{event, pane_json, workspace},
+    testing::{event, pane_json, stored_layout, workspace},
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
@@ -419,13 +419,7 @@ fn an_agent_opened_beside_a_document_is_its_companion() {
         ticket: 1,
         pane_id: "g".into(),
     });
-    let stored = effects
-        .iter()
-        .find_map(|effect| match effect {
-            Effect::StoreLayout { layout, .. } => layout.tree.clone(),
-            _ => None,
-        })
-        .expect("the layout is stored");
+    let stored = stored_layout(&effects).expect("the layout is stored");
     let soyeht_protocol::WorkspacePaneLayoutNode::V1(pair) = stored else {
         panic!("not a split");
     };
