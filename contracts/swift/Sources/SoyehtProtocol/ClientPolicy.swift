@@ -98,6 +98,15 @@ extension ClientPolicy {
         default: nil
         }
     }
+
+    /// Whether `typed` is a character that closes a pair (a closing bracket or a quote), so
+    /// typing it over the same character already there steps over it.
+    public static func editorClosesPair(_ typed: String) -> Bool {
+        switch typed {
+        case ")", "]", "}", "\"", "'": true
+        default: false
+        }
+    }
 }
 
 /// The palette role a syntax highlight is colored from; each client resolves the role.

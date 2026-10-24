@@ -12,7 +12,9 @@ use super::{
 };
 use soyeht_protocol::{
     TextEdit, TextPosition, TextRange,
-    client_policy::{EDITOR_INDENT_OPENERS, EDITOR_INDENT_UNIT, editor_closing},
+    client_policy::{
+        EDITOR_INDENT_OPENERS, EDITOR_INDENT_UNIT, editor_closes_pair, editor_closing,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -161,9 +163,9 @@ pub fn insertion(page: &Page, ranges: &[TextRange], inserted: &str) -> Option<Pl
             let selected = page.between(&range.start, &range.end);
             let at = &range.start;
             let next = character_at(page, at);
-            let (text, units) = if let (true, Some(closing), Some(next)) =
-                (selected.is_empty(), closing, next.as_deref())
-                && next == closing
+            let (text, units) = if selected.is_empty()
+                && editor_closes_pair(inserted)
+                && next.as_deref() == Some(inserted)
             {
                 (String::new(), 1)
             } else if let Some(closing) = closing {

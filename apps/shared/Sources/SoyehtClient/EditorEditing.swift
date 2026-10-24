@@ -39,8 +39,8 @@ public enum EditorEditing {
     var changes: [(EditorLocalReplacement, Int)] = []
     for range in ordered {
       let selected = source.substring(with: range)
-      if range.length == 0, let closing = closingCharacter(inserted),
-        character(at: range.location, in: source) == closing
+      if range.length == 0, ClientPolicy.editorClosesPair(inserted),
+        character(at: range.location, in: source) == inserted
       {
         changes.append((EditorLocalReplacement(range: range, text: ""), 1))
       } else if let closing = closingCharacter(inserted) {

@@ -843,6 +843,276 @@
       "edits": []
     },
     {
+      "name": "a closing parenthesis typed before the same one steps over it",
+      "kind": "insert",
+      "text": "()",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          1,
+          0
+        ]
+      ],
+      "inserted": ")",
+      "result": "()",
+      "selections": [
+        [
+          2,
+          0
+        ]
+      ],
+      "edits": []
+    },
+    {
+      "name": "a closing square bracket typed before the same one steps over it",
+      "kind": "insert",
+      "text": "[]",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          1,
+          0
+        ]
+      ],
+      "inserted": "]",
+      "result": "[]",
+      "selections": [
+        [
+          2,
+          0
+        ]
+      ],
+      "edits": []
+    },
+    {
+      "name": "a closing brace typed before the same one steps over it",
+      "kind": "insert",
+      "text": "{}",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          1,
+          0
+        ]
+      ],
+      "inserted": "}",
+      "result": "{}",
+      "selections": [
+        [
+          2,
+          0
+        ]
+      ],
+      "edits": []
+    },
+    {
+      "name": "a closing parenthesis with nothing to step over is inserted",
+      "kind": "insert",
+      "text": "call",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          4,
+          0
+        ]
+      ],
+      "inserted": ")",
+      "result": "call)",
+      "selections": [
+        [
+          5,
+          0
+        ]
+      ],
+      "edits": [
+        {
+          "start": [
+            0,
+            4
+          ],
+          "end": [
+            0,
+            4
+          ],
+          "text": ")"
+        }
+      ]
+    },
+    {
+      "name": "a closing brace before another character is inserted",
+      "kind": "insert",
+      "text": "a(",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          1,
+          0
+        ]
+      ],
+      "inserted": "}",
+      "result": "a}(",
+      "selections": [
+        [
+          2,
+          0
+        ]
+      ],
+      "edits": [
+        {
+          "start": [
+            0,
+            1
+          ],
+          "end": [
+            0,
+            1
+          ],
+          "text": "}"
+        }
+      ]
+    },
+    {
+      "name": "a closing parenthesis before a different closer is inserted",
+      "kind": "insert",
+      "text": "[]",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          1,
+          0
+        ]
+      ],
+      "inserted": ")",
+      "result": "[)]",
+      "selections": [
+        [
+          2,
+          0
+        ]
+      ],
+      "edits": [
+        {
+          "start": [
+            0,
+            1
+          ],
+          "end": [
+            0,
+            1
+          ],
+          "text": ")"
+        }
+      ]
+    },
+    {
+      "name": "an opening parenthesis before a closing one still opens a pair",
+      "kind": "insert",
+      "text": "()",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          1,
+          0
+        ]
+      ],
+      "inserted": "(",
+      "result": "(())",
+      "selections": [
+        [
+          2,
+          0
+        ]
+      ],
+      "edits": [
+        {
+          "start": [
+            0,
+            1
+          ],
+          "end": [
+            0,
+            1
+          ],
+          "text": "()"
+        }
+      ]
+    },
+    {
+      "name": "a single quote typed before the same quote steps over it",
+      "kind": "insert",
+      "text": "''",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          1,
+          0
+        ]
+      ],
+      "inserted": "'",
+      "result": "''",
+      "selections": [
+        [
+          2,
+          0
+        ]
+      ],
+      "edits": []
+    },
+    {
+      "name": "a closing parenthesis steps over only the one at the caret in nested pairs",
+      "kind": "insert",
+      "text": "f(g(x))",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          5,
+          0
+        ]
+      ],
+      "inserted": ")",
+      "result": "f(g(x))",
+      "selections": [
+        [
+          6,
+          0
+        ]
+      ],
+      "edits": []
+    },
+    {
+      "name": "a closing brace before a different closer is inserted",
+      "kind": "insert",
+      "text": "{(a)}",
+      "viewportStartLine": 0,
+      "ranges": [
+        [
+          3,
+          0
+        ]
+      ],
+      "inserted": "}",
+      "result": "{(a})}",
+      "selections": [
+        [
+          4,
+          0
+        ]
+      ],
+      "edits": [
+        {
+          "start": [
+            0,
+            3
+          ],
+          "end": [
+            0,
+            3
+          ],
+          "text": "}"
+        }
+      ]
+    },
+    {
       "name": "return keeps the indentation and adds a level after an opening bracket",
       "kind": "insert",
       "text": "    if ready {",

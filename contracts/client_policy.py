@@ -240,6 +240,7 @@ def render_rust(policy, header):
 def render_editor_rust(policy):
     pairs = policy[EDITOR_PAIRS]
     arms = ",\n".join(f"        {json.dumps(k)} => Some({json.dumps(v)})" for k, v in pairs.items())
+    closers = " | ".join(json.dumps(v) for v in dict.fromkeys(pairs.values()))
     roles = ", ".join(pascal(role) for role in SYNTAX_ROLES)
     kinds = "\n".join(
         f"            Self::{pascal(kind)} => HighlightRole::{pascal(role)},"
@@ -254,6 +255,12 @@ def render_editor_rust(policy):
         arms + ",",
         "        _ => None,",
         "    }",
+        "}",
+        "",
+        "/// Whether `typed` is a character that closes a pair (a closing bracket or a quote), so",
+        "/// typing it over the same character already there steps over it.",
+        "pub fn editor_closes_pair(typed: &str) -> bool {",
+        f"    matches!(typed, {closers})",
         "}",
         "",
         "/// The palette role a syntax highlight is colored from; each client resolves the role.",
@@ -355,6 +362,7 @@ def render_editor_swift(policy):
     pairs = "\n".join(
         f"        case {json.dumps(k)}: {json.dumps(v)}" for k, v in policy[EDITOR_PAIRS].items()
     )
+    closers = ", ".join(json.dumps(v) for v in dict.fromkeys(policy[EDITOR_PAIRS].values()))
     roles = ", ".join(SYNTAX_ROLES)
     kinds = "\n".join(
         f"        case .{kind}: .{role}" for kind, role in policy[HIGHLIGHT_ROLES].items()
@@ -367,6 +375,14 @@ def render_editor_swift(policy):
         "        switch opening {\n"
         f"{pairs}\n"
         "        default: nil\n"
+        "        }\n"
+        "    }\n\n"
+        "    /// Whether `typed` is a character that closes a pair (a closing bracket or a quote), so\n"
+        "    /// typing it over the same character already there steps over it.\n"
+        "    public static func editorClosesPair(_ typed: String) -> Bool {\n"
+        "        switch typed {\n"
+        f"        case {closers}: true\n"
+        "        default: false\n"
         "        }\n"
         "    }\n"
         "}\n\n"

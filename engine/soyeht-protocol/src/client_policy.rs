@@ -112,6 +112,12 @@ pub fn editor_closing(opening: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether `typed` is a character that closes a pair (a closing bracket or a quote), so
+/// typing it over the same character already there steps over it.
+pub fn editor_closes_pair(typed: &str) -> bool {
+    matches!(typed, ")" | "]" | "}" | "\"" | "'")
+}
+
 /// The palette role a syntax highlight is colored from; each client resolves the role.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HighlightRole {
