@@ -311,7 +311,7 @@ impl State {
     /// so the caller can tell the engine.
     pub fn fit_terminal(&mut self, pane_id: &str, rows: u16, cols: u16) -> Option<(u16, u16)> {
         let screen = self.screens.get_mut(pane_id)?;
-        let wanted = (rows.max(1), cols.max(1));
+        let wanted = TerminalScreen::fitted(rows, cols);
         if screen.size() == wanted {
             return None;
         }

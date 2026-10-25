@@ -5,7 +5,10 @@ use crate::destination::Destination;
 use gpui::Context;
 use soyeht_client::{
     Command, Effect,
-    screen::settle::{Fit, SETTLE},
+    screen::{
+        TerminalScreen,
+        settle::{Fit, SETTLE},
+    },
 };
 use std::time::Instant;
 
@@ -94,13 +97,12 @@ impl Workbench {
         (rows, cols): (u16, u16),
         cx: &mut Context<Self>,
     ) {
-        let Some(current) = self
-            .state
-            .screen(pane_id)
-            .map(soyeht_client::screen::TerminalScreen::size)
-        else {
+        let Some(current) = self.state.screen(pane_id).map(TerminalScreen::size) else {
             return;
         };
+        // A view smaller than the least screen the parser holds asks for that screen, so it is
+        // not offered again at every frame.
+        let (rows, cols) = TerminalScreen::fitted(rows, cols);
         let settle = &mut self.panes.of(pane_id).terminal.settle;
         match settle.offer((rows, cols), current, Instant::now()) {
             Fit::Nothing => {}

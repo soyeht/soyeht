@@ -3,6 +3,8 @@
 
 mod lines;
 pub mod links;
+#[cfg(test)]
+mod minimum;
 mod pointer;
 mod reflow;
 pub mod selection;
@@ -13,6 +15,14 @@ use soyeht_protocol::client_policy;
 
 /// Lines of history kept per terminal on the client.
 const SCROLLBACK_LINES: usize = client_policy::TERMINAL_SCROLLBACK_LINES;
+
+/// The smallest screen the parser holds safely. vt100 0.16 panics when it wraps a line, or draws a
+/// wide character, on a screen of one row or one column (it subtracts from the row it left, and
+/// from the width of the character). A pane the engine holds smaller than this, such as one of
+/// eight stacked in a column, gets a screen of this size: the view draws the rows and columns
+/// that fit, and the engine is told this size too, so that the shell and the screen agree.
+pub const MIN_ROWS: u16 = 2;
+pub const MIN_COLUMNS: u16 = 2;
 
 /// The bytes that move the cursor to the next line: line feed, vertical tab and form feed.
 const LINE_FEEDS: [u8; 3] = [b'\n', 0x0b, 0x0c];
@@ -62,9 +72,15 @@ pub struct TerminalScreen {
 }
 
 impl TerminalScreen {
+    /// The size a screen takes for a view of `rows` by `cols`: never below the parser's minimum.
+    pub fn fitted(rows: u16, cols: u16) -> (u16, u16) {
+        (rows.max(MIN_ROWS), cols.max(MIN_COLUMNS))
+    }
+
     pub fn new(rows: u16, cols: u16) -> Self {
+        let (rows, cols) = Self::fitted(rows, cols);
         Self {
-            parser: vt100::Parser::new(rows.max(1), cols.max(1), SCROLLBACK_LINES),
+            parser: vt100::Parser::new(rows, cols, SCROLLBACK_LINES),
             scroll_remainder: 0.0,
             selection: None,
             history: 0,
@@ -98,16 +114,13 @@ impl TerminalScreen {
     /// at the new width (see `reflow`), also while a program is on the alternate screen, which
     /// draws itself again when it learns the size.
     pub fn resize(&mut self, rows: u16, cols: u16) {
-        let (rows, cols) = (rows.max(1), cols.max(1));
+        let (rows, cols) = Self::fitted(rows, cols);
         if (rows, cols) == self.size() {
             return;
         }
-        if rows < reflow::MIN_ROWS || cols < reflow::MIN_COLUMNS {
-            self.parser.screen_mut().set_size(rows, cols);
-            self.cut = None;
-        } else {
-            self.refit(rows, cols);
-        }
+        // Always by `refit`: the parser's own `set_size` can cut a wide character in two, which
+        // makes its next write panic.
+        self.refit(rows, cols);
         // The cells the selection names are not the same ones any more.
         self.selection = None;
         self.history = Lines::new(&mut self.parser).history();

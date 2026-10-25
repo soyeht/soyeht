@@ -13,11 +13,6 @@
 use super::{Lines, SCROLLBACK_LINES};
 use vt100::{Cell, Color};
 
-/// The parser cannot hold a screen smaller than this while it has text wrapped or wide on it
-/// (it panics), so a screen made smaller is only cut, as before the reflow.
-pub(super) const MIN_ROWS: u16 = 2;
-pub(super) const MIN_COLUMNS: u16 = 2;
-
 /// The attributes that make a cell look the way it does, besides its text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Style {
@@ -606,11 +601,11 @@ mod tests {
     }
 
     #[test]
-    fn the_smallest_sizes_are_cut_and_never_panic() {
+    fn the_smallest_sizes_are_raised_to_the_least_screen_and_never_panic() {
         for (rows, cols) in [(1, 1), (1, 10), (4, 1), (2, 2)] {
             let mut screen = screen(4, 10, "abcdefghij klm\r\nab\u{4f60}\u{597d}cd\r\n$ ");
             screen.resize(rows, cols);
-            assert_eq!(screen.size(), (rows, cols));
+            assert_eq!(screen.size(), TerminalScreen::fitted(rows, cols));
             screen.resize(4, 10);
             screen.resize(rows, cols);
         }

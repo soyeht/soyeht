@@ -95,7 +95,11 @@ impl Workbench {
 
     fn terminal_cell(&self, pane_id: &str, at: Point<Pixels>) -> Option<Located> {
         let (bounds, cell) = self.panes.get(pane_id)?.terminal.geometry?;
-        let grid = self.state.screen(pane_id)?.size();
+        // The screen can have more rows or columns than the view shows (see
+        // `TerminalScreen::fitted`), and the pointer only reaches what the view draws.
+        let (screen_rows, screen_columns) = self.state.screen(pane_id)?.size();
+        let (view_rows, view_columns) = cell.grid(bounds);
+        let grid = (screen_rows.min(view_rows), screen_columns.min(view_columns));
         let pair = |x: Pixels, y: Pixels| (f32::from(x), f32::from(y));
         Some(locate(
             pair(at.x, at.y),

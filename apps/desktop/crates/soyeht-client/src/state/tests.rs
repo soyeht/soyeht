@@ -1,4 +1,5 @@
 use super::*;
+use crate::screen::TerminalScreen;
 use crate::testing::{pane, pane_json, workspace, workspace_json};
 use serde_json::json;
 use soyeht_protocol::ClientFocus;
@@ -273,6 +274,17 @@ fn fitting_a_terminal_reports_only_real_size_changes() {
     assert_eq!(state.fit_terminal("t1", 30, 100), Some((30, 100)));
     assert_eq!(state.screen("t1").unwrap().size(), (30, 100));
     assert_eq!(state.fit_terminal("missing", 30, 100), None);
+}
+
+#[test]
+fn a_view_of_one_row_fits_the_least_screen_once() {
+    let (mut state, _) = connected(snapshot(&["w"], &[("t1", "w", "terminal")]));
+    let least = TerminalScreen::fitted(1, 1);
+    assert_eq!(state.fit_terminal("t1", 1, 1), Some(least));
+    assert_eq!(state.screen("t1").unwrap().size(), least);
+    // The view still asks for 1 by 1 at every frame: the engine is not told again.
+    assert_eq!(state.fit_terminal("t1", 1, 1), None);
+    assert_eq!(state.fit_terminal("t1", 0, 0), None);
 }
 
 #[test]
