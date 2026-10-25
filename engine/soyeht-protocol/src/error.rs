@@ -1,5 +1,9 @@
 use std::{fmt, io};
 
+/// The message of the `ptyd_unavailable` error a request gets while the engine has no link to
+/// the supervisor of the terminals, and what a client says while that lasts.
+pub const SUPERVISOR_DISCONNECTED: &str = "Supervisor disconnected";
+
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),

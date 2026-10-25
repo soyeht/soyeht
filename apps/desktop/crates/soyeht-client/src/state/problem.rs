@@ -31,6 +31,7 @@ pub mod kind {
     pub const PERMISSION_UNREADABLE: &str = "permission_unreadable";
     pub const QUESTION_UNREADABLE: &str = "question_unreadable";
     pub const REQUEST_FAILED: &str = "request_failed";
+    pub const SUPERVISOR_LOST: &str = "supervisor_lost";
     pub const TASKS_UNREADABLE: &str = "tasks_unreadable";
     pub const TRANSCRIPT_UNREADABLE: &str = "transcript_unreadable";
     pub const WRITING_EDIT_REFUSED: &str = "writing_edit_refused";
@@ -65,6 +66,12 @@ impl State {
     /// [`log::Failure::failure_kind`], logged after `kind`.
     pub fn report_failure(&mut self, kind: &str, cause: &str, text: impl Into<String>) {
         self.report(&format!("{kind}.{cause}"), text);
+    }
+
+    /// A request the engine refused or could not answer: told, and nothing more to do.
+    pub(super) fn request_failed(&mut self, cause: &str, message: String) -> Vec<super::Effect> {
+        self.report_failure(kind::REQUEST_FAILED, cause, message);
+        Vec::new()
     }
 
     /// The line to show: one at a time, as the Mac shows one failure at a time. A failure comes

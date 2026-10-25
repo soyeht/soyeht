@@ -357,7 +357,7 @@ impl Core {
         let result = call_supervisor(
             self.ptyd
                 .as_mut()
-                .ok_or_else(|| errors::ptyd_unavailable("Supervisor disconnected"))?
+                .ok_or_else(|| errors::ptyd_unavailable(soyeht_protocol::SUPERVISOR_DISCONNECTED))?
                 .as_mut(),
             request,
         );
@@ -374,7 +374,9 @@ impl Core {
                 ) {
                     log::failure("engine.ptyd_lost_unrecorded", &error);
                 }
-                Err(errors::ptyd_unavailable("Supervisor disconnected"))
+                Err(errors::ptyd_unavailable(
+                    soyeht_protocol::SUPERVISOR_DISCONNECTED,
+                ))
             }
             Err(error) => Err(error),
         }

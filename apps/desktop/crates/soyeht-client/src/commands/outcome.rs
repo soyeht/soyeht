@@ -4,9 +4,10 @@ use super::Command;
 use crate::{Error, Result, event::Event, tasks::TaskUpdate};
 use serde_json::Value;
 use soyeht_protocol::{
-    EngineReadinessResult, HarnessInfo, HarnessListResult, LoopSetResult, PaneCommandsListResult,
-    PaneCreateResult, PaneTranscriptResult, SkillsListResult, TaskCreateResult, TaskDispatchResult,
-    TaskMoveResult, TaskShowResult, UsageListResult, WorkspaceCreateResult,
+    EngineReadinessResult, EngineStatusResult, HarnessInfo, HarnessListResult, LoopSetResult,
+    PaneCommandsListResult, PaneCreateResult, PaneTranscriptResult, SkillsListResult,
+    TaskCreateResult, TaskDispatchResult, TaskMoveResult, TaskShowResult, UsageListResult,
+    WorkspaceCreateResult,
 };
 
 /// What the engine's answer to `command` tells the application, for the commands that fetch
@@ -54,6 +55,11 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
         Command::LoadReadiness => Some(Event::Readiness(serde_json::from_value::<
             EngineReadinessResult,
         >(result)?)),
+        Command::LoadSupervisor => Some(Event::Supervisor {
+            connected: serde_json::from_value::<EngineStatusResult>(result)?
+                .ptyd
+                .connected,
+        }),
         Command::LoadSkills { workspace_id } => Some(Event::Skills {
             workspace_id: workspace_id.clone(),
             listing: serde_json::from_value::<SkillsListResult>(result)?,

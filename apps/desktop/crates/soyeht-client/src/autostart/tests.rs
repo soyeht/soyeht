@@ -28,6 +28,8 @@ struct Fake {
     pauses: Cell<u32>,
     locked: Cell<bool>,
     started: RefCell<Vec<String>>,
+    /// The supervisor each started program was told to restart.
+    restart: RefCell<Vec<Option<PathBuf>>>,
 }
 
 impl Fake {
@@ -46,6 +48,7 @@ impl Fake {
             pauses: Cell::new(0),
             locked: Cell::new(false),
             started: RefCell::new(Vec::new()),
+            restart: RefCell::new(Vec::new()),
         }
     }
 
@@ -101,7 +104,12 @@ impl Host for Fake {
         Ok(())
     }
 
-    fn start(&self, program: &Path, _log_name: &str) -> io::Result<Box<dyn Started>> {
+    fn start(
+        &self,
+        program: &Path,
+        _log_name: &str,
+        restart_supervisor: Option<&Path>,
+    ) -> io::Result<Box<dyn Started>> {
         if self.spawn_fails {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
@@ -109,6 +117,9 @@ impl Host for Fake {
         self.started
             .borrow_mut()
             .push(name.trim_end_matches(EXE_SUFFIX).to_owned());
+        self.restart
+            .borrow_mut()
+            .push(restart_supervisor.map(Path::to_owned));
         Ok(Box::new(Child(self.exits)))
     }
 
@@ -151,6 +162,28 @@ fn the_supervisor_then_the_engine_are_started_and_waited_for() {
     };
     assert_eq!(ensure(&plan(), &host), Ok(()));
     assert_eq!(host.started(), ["soyeht-ptyd", "soyeht-engine"]);
+}
+
+/// What each program started was told to restart, when the engine starts after `host` is set up.
+fn restart_told(supervisor_up: bool, missing: Vec<&'static str>) -> Vec<Option<PathBuf>> {
+    let host = Fake {
+        supervisor_up: Cell::new(supervisor_up),
+        missing,
+        engine_after: Some(3),
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Ok(()));
+    host.restart.borrow().clone()
+}
+
+#[test]
+fn the_engine_is_told_how_to_start_the_supervisor_again_and_the_supervisor_is_not() {
+    let supervisor = Some(PathBuf::from("/app").join(format!("soyeht-ptyd{EXE_SUFFIX}")));
+    assert_eq!(restart_told(false, vec![]), [None, supervisor.clone()]);
+    // A supervisor that answers is still the one the engine may start again later.
+    assert_eq!(restart_told(true, vec![]), [supervisor]);
+    // Without the program next to the window there is nothing to tell the engine.
+    assert_eq!(restart_told(true, vec!["soyeht-ptyd"]), [None]);
 }
 
 #[test]

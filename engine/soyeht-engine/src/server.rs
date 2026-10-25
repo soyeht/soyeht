@@ -90,6 +90,9 @@ pub struct Config {
     pub listen: Vec<SocketAddr>,
     /// Also listen on every tailnet address on this port, following them as they come and go.
     pub tailnet_port: Option<u16>,
+    /// The supervisor's program, when this engine starts the supervisor again after losing it
+    /// (ADR 0108). `None` when something else keeps the supervisor alive.
+    pub supervisor_program: Option<PathBuf>,
     /// What the engine does on a test's behalf; [`NoHooks`](crate::hooks::NoHooks) in a product.
     pub hooks: Arc<dyn Hooks>,
 }
@@ -111,10 +114,11 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         return Err(Error::ListenerAddressNotPermitted);
     }
     let _lock = singleton(&config.directory)?;
-    let core = crate::push::share(
-        Core::open_with(&config.directory, config.hooks)?,
-        &config.directory,
-    );
+    let mut core = Core::open_with(&config.directory, config.hooks)?;
+    if let Some(program) = config.supervisor_program {
+        core.restart_supervisor_with(program);
+    }
+    let core = crate::push::share(core, &config.directory);
     let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
     tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
     let socket = config.directory.join(DEV_ENGINE_SOCKET);

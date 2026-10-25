@@ -9,19 +9,21 @@
 //! The window leaves an engine alone when `SOYEHT_ENGINE_SOCKET` names one. The decisions are
 //! here, behind [`Host`], so they are tested without starting a process.
 
-use crate::profile::{SOCKET_ENV, logs_directory, socket_override};
-use soyeht_platform::{fs, log, process::detached::spawn_detached};
-use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_PTYD_SOCKET};
+use crate::profile::{SOCKET_ENV, socket_override};
+use soyeht_platform::{
+    fs, log,
+    process::detached::{Service, create_logs_directory, spawn_service},
+};
+use soyeht_protocol::{
+    data_directory::{RESTART_SUPERVISOR_FLAG, dev_data_directory},
+    profile::DEV_PTYD_SOCKET,
+};
 use std::{
     any::Any,
     env::consts::EXE_SUFFIX,
     ffi::{OsStr, OsString},
     fmt, io,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
     time::Duration,
 };
 
@@ -169,7 +171,14 @@ pub(crate) trait Host {
     fn lock(&self) -> io::Result<Option<Box<dyn Any>>>;
     /// Makes the folder the programs' logs go to.
     fn prepare_logs(&self) -> io::Result<()>;
-    fn start(&self, program: &Path, log_name: &str) -> io::Result<Box<dyn Started>>;
+    /// Starts `program`. `restart_supervisor` is the supervisor's program, which the engine is
+    /// told to start again when it loses the supervisor (the window is not there to do it).
+    fn start(
+        &self,
+        program: &Path,
+        log_name: &str,
+        restart_supervisor: Option<&Path>,
+    ) -> io::Result<Box<dyn Started>>;
     /// Waits one poll. False when the application has stopped and the start should end.
     fn pause(&self) -> bool;
 }
@@ -215,7 +224,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     host.prepare_logs()
         .map_err(|error| StartError::Directory(error.kind()))?;
     if let Some(supervisor) = supervisor {
-        let mut started = launch(host, &supervisor, SUPERVISOR_PROGRAM, "ptyd.log")?;
+        let mut started = launch(host, &supervisor, SUPERVISOR_PROGRAM, "ptyd.log", None)?;
         wait_until(
             host,
             SUPERVISOR_PROGRAM,
@@ -223,7 +232,16 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
             &mut || started.exited(),
         )?;
     }
-    let mut started = launch(host, &engine, ENGINE_PROGRAM, "engine.log")?;
+    // The engine keeps the supervisor it was given up, when the supervisor can be found.
+    let restart = program_file(programs, SUPERVISOR_PROGRAM);
+    let restart = host.program_exists(&restart).then_some(restart);
+    let mut started = launch(
+        host,
+        &engine,
+        ENGINE_PROGRAM,
+        "engine.log",
+        restart.as_deref(),
+    )?;
     wait_until(
         host,
         ENGINE_PROGRAM,
@@ -232,12 +250,16 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     )
 }
 
+fn program_file(programs: &Path, name: &str) -> PathBuf {
+    programs.join(format!("{name}{EXE_SUFFIX}"))
+}
+
 fn program_path(
     host: &impl Host,
     programs: &Path,
     name: &'static str,
 ) -> Result<PathBuf, StartError> {
-    let path = programs.join(format!("{name}{EXE_SUFFIX}"));
+    let path = program_file(programs, name);
     if host.program_exists(&path) {
         Ok(path)
     } else {
@@ -250,8 +272,9 @@ fn launch(
     path: &Path,
     name: &'static str,
     log_name: &str,
+    restart_supervisor: Option<&Path>,
 ) -> Result<Box<dyn Started>, StartError> {
-    host.start(path, log_name)
+    host.start(path, log_name, restart_supervisor)
         .map_err(|error| StartError::Spawn(name, error.kind()))
 }
 
@@ -306,29 +329,21 @@ impl Host for Local<'_> {
     }
 
     fn prepare_logs(&self) -> io::Result<()> {
-        let logs = logs_directory(&self.plan.directory);
-        if logs.is_dir() {
-            Ok(())
-        } else {
-            fs::create_private_dir(&logs)
-        }
+        create_logs_directory(&self.plan.directory).map(drop)
     }
 
-    fn start(&self, program: &Path, log_name: &str) -> io::Result<Box<dyn Started>> {
-        let logs = logs_directory(&self.plan.directory);
-        let arguments = [OsStr::new("--data-dir"), self.plan.directory.as_os_str()];
-        let mut child = spawn_detached(program, &arguments, &logs.join(log_name))?;
-        // A thread waits for the child, so one that ends while the window lives is reaped, not
-        // left as a zombie. It ends with the child or with the window.
-        let ended = Arc::new(AtomicBool::new(false));
-        let flag = Arc::clone(&ended);
-        std::thread::spawn(move || {
-            if let Err(error) = child.wait() {
-                log::failure("desktop.engine_wait_failed", &error);
-            }
-            flag.store(true, Ordering::Relaxed);
-        });
-        Ok(Box::new(Reaped(ended)))
+    fn start(
+        &self,
+        program: &Path,
+        log_name: &str,
+        restart_supervisor: Option<&Path>,
+    ) -> io::Result<Box<dyn Started>> {
+        let mut extra = Vec::new();
+        if let Some(supervisor) = restart_supervisor {
+            extra.extend([OsStr::new(RESTART_SUPERVISOR_FLAG), supervisor.as_os_str()]);
+        }
+        let service = spawn_service(program, &self.plan.directory, log_name, &extra)?;
+        Ok(Box::new(service))
     }
 
     fn pause(&self) -> bool {
@@ -337,12 +352,9 @@ impl Host for Local<'_> {
     }
 }
 
-/// A child that a thread waits for: set when it has ended.
-struct Reaped(Arc<AtomicBool>);
-
-impl Started for Reaped {
+impl Started for Service {
     fn exited(&mut self) -> bool {
-        self.0.load(Ordering::Relaxed)
+        self.has_ended()
     }
 }
 

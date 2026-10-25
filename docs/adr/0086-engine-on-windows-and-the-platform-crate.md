@@ -65,7 +65,7 @@ completes, and then it retries. An earlier draft refused new connections at a
 fixed limit of 64, which let any local user hold every slot for 2 seconds and
 lock the real client out; that is what this replaces. A supervisor that exits
 removes its endpoint file as the engine does; a killed one leaves a file that the
-next start replaces.
+next start replaces, and that a client tells from a live one by its lock (ADR 0108).
 
 **Terminals and processes.**
 

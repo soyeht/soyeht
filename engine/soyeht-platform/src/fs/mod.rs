@@ -110,6 +110,14 @@ pub fn lock_singleton(directory: &Path, name: &str) -> Result<File, LockError> {
     }
 }
 
+/// Takes the exclusive lock `lock_singleton` takes, on a file that is already open; `false` when
+/// another holder has it. The lock lasts as long as `file` stays open and leaves the contents of
+/// the file readable.
+#[cfg(any(windows, test))]
+pub(crate) fn try_lock(file: &File) -> io::Result<bool> {
+    system::try_lock(file)
+}
+
 /// Points the directory link `path` at `target`, replacing a link that points elsewhere and
 /// creating missing parents. A relative `target` is read from the folder holding `path`, as a
 /// symbolic link reads it.

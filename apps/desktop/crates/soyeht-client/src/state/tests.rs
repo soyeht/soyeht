@@ -67,6 +67,7 @@ fn a_snapshot_lists_workspaces_and_panes_and_subscribes_every_terminal() {
             Effect::LoadUsage,
             Effect::LoadHarnesses,
             Effect::LoadReadiness,
+            Effect::LoadSupervisor,
             Effect::LoadTranscript("a1".into()),
             Effect::LoadCommands("a1".into()),
             Effect::LoadSkills(Some("w1".into())),
@@ -318,6 +319,30 @@ fn events_other_than_terminal_output_change_the_view() {
     let (state, _) = connected(across_workspaces());
     assert!(state.changes_view(&problem_event("boom")));
     assert!(state.changes_view(&Event::Disconnected("lost".into())));
+}
+
+#[test]
+fn a_lost_supervisor_is_said_until_the_engine_has_it_back() {
+    use soyeht_protocol::EventName::{PtydLost, PtydReconnected};
+    let mut state = State::default();
+    state.apply(notification(PtydLost, serde_json::json!({})));
+    assert_eq!(state.problem.as_deref(), Some("Supervisor disconnected"));
+    state.apply(notification(PtydReconnected, serde_json::json!({})));
+    assert_eq!(state.problem, None);
+    // What the person was told about something else stays.
+    state.apply(problem_event("boom"));
+    state.apply(notification(PtydReconnected, serde_json::json!({})));
+    assert_eq!(state.problem.as_deref(), Some("boom"));
+}
+
+#[test]
+fn a_window_that_connects_while_the_supervisor_is_down_says_so() {
+    let mut state = State::default();
+    state.apply(Event::Connected(Snapshot::default()));
+    state.apply(Event::Supervisor { connected: false });
+    assert_eq!(state.problem.as_deref(), Some("Supervisor disconnected"));
+    state.apply(Event::Supervisor { connected: true });
+    assert_eq!(state.problem, None);
 }
 
 #[test]

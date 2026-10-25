@@ -46,6 +46,9 @@ pub enum Effect {
     LoadCommands(String),
     /// Ask what this machine has of what the app needs.
     LoadReadiness,
+    /// Ask whether the engine has its link to the supervisor of the terminals: a window that
+    /// connects while the supervisor is down was not there to hear `ptyd.lost`.
+    LoadSupervisor,
     /// Fetch one task again, with its detail.
     LoadTask {
         workspace_id: String,
@@ -339,10 +342,7 @@ impl State {
                 self.terminal_output(output);
                 Vec::new()
             }
-            Event::Problem { cause, message } => {
-                self.report_failure(problem::kind::REQUEST_FAILED, &cause, message);
-                Vec::new()
-            }
+            Event::Problem { cause, message } => self.request_failed(&cause, message),
             Event::Transcript {
                 pane_id,
                 items,
@@ -424,6 +424,7 @@ impl State {
                 self.commands_listed(pane_id, items);
                 Vec::new()
             }
+            Event::Supervisor { connected } => self.supervisor_link(connected),
             Event::Readiness(readiness) => {
                 self.readiness = Some(readiness);
                 Vec::new()
@@ -567,9 +568,27 @@ impl State {
                 self.change_pane_state(serde_json::from_value(params)?);
                 Vec::new()
             }
+            // The engine lost the supervisor that holds the terminals and is getting it back
+            // (ADR 0108): the terminals look alive and take no input until it does.
+            EventName::PtydLost => self.supervisor_link(false),
+            EventName::PtydReconnected => self.supervisor_link(true),
             _ if Self::handles_editor_event(&name) => self.editor_notification(&name, params)?,
             _ => self.agent_notification(name, params)?,
         })
+    }
+
+    /// Says the engine has lost its supervisor, or takes that back once it has it again: only
+    /// the line it set itself, never one about something else. The words are the engine's own.
+    fn supervisor_link(&mut self, connected: bool) -> Vec<Effect> {
+        if !connected {
+            self.report(
+                problem::kind::SUPERVISOR_LOST,
+                soyeht_protocol::SUPERVISOR_DISCONNECTED,
+            );
+        } else if self.problem.as_deref() == Some(soyeht_protocol::SUPERVISOR_DISCONNECTED) {
+            self.problem = None;
+        }
+        Vec::new()
     }
 
     fn close_workspace(&mut self, workspace_id: &str) {

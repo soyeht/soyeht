@@ -39,6 +39,9 @@ impl Workbench {
             Effect::LoadReadiness => {
                 self.send(Command::LoadReadiness);
             }
+            Effect::LoadSupervisor => {
+                self.send(Command::LoadSupervisor);
+            }
             Effect::LoadTask {
                 workspace_id,
                 task_id,

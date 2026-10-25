@@ -31,3 +31,26 @@ pub mod shutdown;
 pub mod testing;
 pub mod user;
 pub mod worktrunk;
+
+/// Tests that start a child and tests that wait for a lock to be released when its file closes
+/// exclude each other. On Unix a lock lives as long as its open file description, and a child
+/// forked by another test thread holds a copy of it until the child execs, so the lock of a
+/// dropped listener would still read as held. Spawning tests share the read side.
+#[cfg(test)]
+static CHILD_FORKS: std::sync::RwLock<()> = std::sync::RwLock::new(());
+
+/// Held by a test that starts a child process, for as long as the child may be forked.
+#[cfg(test)]
+pub(crate) fn spawning() -> std::sync::RwLockReadGuard<'static, ()> {
+    CHILD_FORKS
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Held by a test that drops a lock and then expects it to be free: no child is mid-fork.
+#[cfg(test)]
+pub(crate) fn releasing() -> std::sync::RwLockWriteGuard<'static, ()> {
+    CHILD_FORKS
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}

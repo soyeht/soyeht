@@ -9,7 +9,7 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    EngineReadinessParams, HarnessListParams, ModelListParams, ModelListResult,
+    EngineReadinessParams, EngineStatusParams, HarnessListParams, ModelListParams, ModelListResult,
     PaneAuthLogoutParams, Request, SettingsGetParams, SettingsSetParams, SkillsCreateParams,
     SkillsDeleteParams, SkillsListParams, UsageRefreshParams, client_policy, setting,
 };
@@ -52,6 +52,7 @@ pub(crate) fn request(command: &Command) -> Option<Request> {
         }),
         Command::LoadCatalogue { harness } => catalogue_request(harness, None),
         Command::LoadReadiness => Request::EngineReadiness(EngineReadinessParams {}),
+        Command::LoadSupervisor => Request::EngineStatus(EngineStatusParams {}),
         Command::LoadSkills { workspace_id } => Request::SkillsList(SkillsListParams {
             workspace_id: workspace_id.clone(),
         }),

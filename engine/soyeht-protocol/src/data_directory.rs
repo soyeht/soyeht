@@ -7,6 +7,11 @@
 use crate::{Error, Result, profile::DEV_DATA_DIRECTORY_FROM_HOME};
 use std::path::PathBuf;
 
+/// The option with which a program that starts the engine gives it the supervisor's program, so
+/// the engine starts the supervisor again when it loses it (ADR 0108). A program that keeps the
+/// supervisor alive another way, such as a launch agent, does not pass it.
+pub const RESTART_SUPERVISOR_FLAG: &str = "--restart-supervisor";
+
 /// The default data directory of the Dev profile for a user whose home is `home`.
 pub fn dev_data_directory(home: Option<PathBuf>) -> Result<PathBuf> {
     home.map(|home| home.join(DEV_DATA_DIRECTORY_FROM_HOME))

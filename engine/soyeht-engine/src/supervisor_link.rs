@@ -10,9 +10,13 @@ use crate::{
     errors::{Error, Result},
     streak::Streak,
 };
-use soyeht_platform::log::{self, Failure as _};
-use soyeht_protocol::PaneState;
+use soyeht_platform::{
+    log::{self, Failure as _, Line},
+    process::detached::spawn_service,
+};
+use soyeht_protocol::{PaneState, profile::DEV_PTYD_SOCKET};
 use soyeht_ptyd::wire_kind;
+use std::{io, path::PathBuf};
 
 /// Delay after the first failed attempt is twice this; the delay doubles up to the cap.
 const RETRY_BASE_MS: i64 = 100;
@@ -21,6 +25,18 @@ const RETRY_CAP_MS: i64 = 2_000;
 /// that is lost sooner counts as another failed attempt, so a supervisor that accepts the
 /// hello and then drops is not reconnected without delay.
 const STABLE_MS: i64 = 10_000;
+
+/// How long after starting the supervisor the engine leaves it alone before it may start it
+/// again: the time a supervisor takes to listen on a busy host.
+const START_GRACE_MS: i64 = 15_000;
+/// How long after a probe that found a supervisor (answering, or there and refusing) the engine
+/// leaves it alone before it probes again, so a hung supervisor does not cost a probe on every
+/// retry.
+const PROBE_GRACE_MS: i64 = 5_000;
+/// The background job that starts the supervisor, so there is one at a time.
+const START_JOB: &str = "supervisor.start";
+/// The log the supervisor's output is appended to, the file its launch agent also writes.
+const SUPERVISOR_LOG: &str = "ptyd.log";
 
 /// Why a pane that could not be restarted says it stopped; it names no path or command.
 const NOT_RESTARTED: &str = "The pane's working folder or command is missing";
@@ -39,6 +55,14 @@ pub(crate) struct Retry {
     due_ms: i64,
     /// When the current link was established, until it has been up for [`STABLE_MS`].
     connected_ms: Option<i64>,
+    /// The supervisor's program, when this engine is to start the supervisor again after it is
+    /// lost. Whoever started the engine says so: a launch agent that keeps the supervisor alive
+    /// does not, and then the engine only reconnects.
+    program: Option<PathBuf>,
+    /// The earliest time the program may be started or the supervisor probed again.
+    start_due_ms: i64,
+    /// The consecutive starts that failed, so a program that is missing is logged once.
+    start_streak: Streak,
 }
 
 impl Default for Retry {
@@ -47,11 +71,95 @@ impl Default for Retry {
             streak: Streak::retrying(RETRY_BASE_MS, RETRY_CAP_MS),
             due_ms: 0,
             connected_ms: None,
+            program: None,
+            start_due_ms: 0,
+            start_streak: Streak::once(),
         }
     }
 }
 
+/// What the start of the supervisor found.
+enum Start {
+    /// The supervisor answers, so nothing was started.
+    Answers,
+    /// Nothing listens: the program was started.
+    Started,
+    /// Not started, for a reason the supervisor's own state explains.
+    Left,
+}
+
+/// Whether a failed connection says that no supervisor listens, as opposed to one that is there
+/// and refuses or does not answer.
+fn supervisor_absent(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+    )
+}
+
 impl Core {
+    /// Tells the engine to start the supervisor again from `program` when it cannot reach it.
+    pub fn restart_supervisor_with(&mut self, program: PathBuf) {
+        self.supervisor_retry.program = Some(program);
+    }
+
+    /// Starts the supervisor when the engine was told how and none listens. The check and the
+    /// start run off the lock; one start at a time, and none within [`START_GRACE_MS`] of the
+    /// last, so a supervisor that is still coming up is not started twice.
+    fn start_supervisor(&mut self, now: i64) {
+        let Some(program) = self.supervisor_retry.program.clone() else {
+            return;
+        };
+        if now < self.supervisor_retry.start_due_ms {
+            return;
+        }
+        let directory = self.directory.clone();
+        let started = self.spawn_background(
+            START_JOB.into(),
+            move || {
+                let reached = soyeht_platform::local::connect(&directory.join(DEV_PTYD_SOCKET));
+                if reached.is_ok() {
+                    return Ok(Start::Answers);
+                }
+                if reached.is_err_and(|error| !supervisor_absent(&error)) {
+                    return Ok(Start::Left);
+                }
+                spawn_service(&program, &directory, SUPERVISOR_LOG, &[])?;
+                Ok(Start::Started)
+            },
+            move |core, result| {
+                let due = match result {
+                    Ok(Start::Started) => {
+                        core.supervisor_retry.start_streak.succeed();
+                        Line::new("engine.supervisor_started").emit();
+                        START_GRACE_MS
+                    }
+                    Ok(Start::Answers | Start::Left) => PROBE_GRACE_MS,
+                    Err(error) => {
+                        core.start_failed(&error);
+                        START_GRACE_MS
+                    }
+                };
+                core.supervisor_retry.start_due_ms = core.now_ms().saturating_add(due);
+                Ok(())
+            },
+        );
+        if let Err(error) = started {
+            self.start_failed(&error);
+        }
+    }
+
+    /// Logs a failed start of the supervisor the first time and whenever its kind changes.
+    fn start_failed(&mut self, error: &Error) {
+        if self
+            .supervisor_retry
+            .start_streak
+            .fail(&error.failure_kind())
+        {
+            log::failure("engine.supervisor_start_failed", error);
+        }
+    }
+
     /// Connects to the supervisor when there is no link and the retry delay has passed. A
     /// tick that falls inside the delay does not touch the supervisor. A failed attempt is
     /// logged by the retry streak and reported as [`Link::Down`], not as an error, so the
@@ -86,6 +194,7 @@ impl Core {
                 }
                 self.supervisor_retry.due_ms =
                     now.saturating_add(self.supervisor_retry.streak.next_delay_ms());
+                self.start_supervisor(now);
                 Link::Down
             }
         }
@@ -265,6 +374,116 @@ mod tests {
         assert_eq!(core.supervisor_retry.streak.attempts(), 1);
         assert!(core.supervisor_retry.due_ms > 1_000_000);
         assert!(core.supervisor_retry.connected_ms.is_none());
+    }
+
+    /// A program that records each start of it: one line in `started` of the folder it is in.
+    #[cfg(unix)]
+    fn recording_program(directory: &std::path::Path) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt as _;
+        let program = directory.join("fake-ptyd");
+        std::fs::write(
+            &program,
+            format!(
+                "#!/bin/sh\necho started >> '{}'\n",
+                directory.join("started").display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        program
+    }
+
+    #[cfg(unix)]
+    fn starts(directory: &std::path::Path) -> usize {
+        std::fs::read_to_string(directory.join("started")).map_or(0, |text| text.lines().count())
+    }
+
+    #[cfg(unix)]
+    fn wait_for_starts(directory: &std::path::Path, count: usize) {
+        for _ in 0..200 {
+            if starts(directory) >= count {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("{} starts, wanted {count}", starts(directory));
+    }
+
+    /// A core whose clock the test moves and whose background work runs on the spot.
+    #[cfg(unix)]
+    fn core_with_clock(directory: &std::path::Path) -> (Core, Arc<Manual>) {
+        let mut core = Core::open(directory).unwrap();
+        let clock = Arc::new(Manual(AtomicI64::new(1_000_000)));
+        core.clock = clock.clone();
+        core.background = crate::offload::Background::inline();
+        (core, clock)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_supervisor_that_is_gone_is_started_again_once_for_each_grace_period() {
+        let directory = short_directory();
+        let (mut core, clock) = core_with_clock(&directory);
+        core.restart_supervisor_with(recording_program(&directory));
+        assert_eq!(core.ensure_supervisor(), Link::Down);
+        wait_for_starts(&directory, 1);
+        // Ticks inside the grace period, and the retry delays that pass inside it, start nothing.
+        for _ in 0..20 {
+            clock.0.fetch_add(500, Ordering::SeqCst);
+            assert_eq!(core.ensure_supervisor(), Link::Down);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert_eq!(starts(&directory), 1);
+        // Past it, a supervisor that is still gone is started again.
+        clock.0.fetch_add(START_GRACE_MS, Ordering::SeqCst);
+        assert_eq!(core.ensure_supervisor(), Link::Down);
+        wait_for_starts(&directory, 2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_program_that_cannot_be_started_is_one_streak_not_a_failure_for_each_try() {
+        let directory = short_directory();
+        let (mut core, clock) = core_with_clock(&directory);
+        core.restart_supervisor_with(directory.join("no-such-program"));
+        for tries in 1..=3 {
+            assert_eq!(core.ensure_supervisor(), Link::Down);
+            assert_eq!(core.supervisor_retry.start_streak.attempts(), tries);
+            clock.0.fetch_add(START_GRACE_MS, Ordering::SeqCst);
+        }
+        // Once it can be started the streak ends.
+        core.restart_supervisor_with(recording_program(&directory));
+        assert_eq!(core.ensure_supervisor(), Link::Down);
+        wait_for_starts(&directory, 1);
+        assert_eq!(core.supervisor_retry.start_streak.attempts(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn without_a_program_to_start_the_engine_only_reconnects() {
+        let directory = short_directory();
+        let (mut core, clock) = core_with_clock(&directory);
+        for _ in 0..5 {
+            clock.0.fetch_add(START_GRACE_MS, Ordering::SeqCst);
+            assert_eq!(core.ensure_supervisor(), Link::Down);
+        }
+        assert_eq!(starts(&directory), 0);
+        assert!(core.supervisor_retry.program.is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_supervisor_that_answers_is_not_started_again() {
+        let directory = short_directory();
+        // It accepts and hangs up, so the link cannot be made but something listens.
+        let supervisor = HangUp::start(&directory, false);
+        let (mut core, _clock) = core_with_clock(&directory);
+        core.restart_supervisor_with(recording_program(&directory));
+        let opened = supervisor.accepted();
+        assert_eq!(core.ensure_supervisor(), Link::Down);
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(supervisor.accepted() > opened);
+        assert_eq!(starts(&directory), 0);
     }
 
     fn remote(kind: &str) -> Error {

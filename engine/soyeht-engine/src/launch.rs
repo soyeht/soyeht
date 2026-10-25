@@ -10,7 +10,10 @@ use crate::{
     server::{self, Config},
 };
 use soyeht_platform::log::rotating::{KEEP_ROTATED, MAX_BYTES};
-use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_TCP_PORT};
+use soyeht_protocol::{
+    data_directory::{RESTART_SUPERVISOR_FLAG, dev_data_directory},
+    profile::DEV_TCP_PORT,
+};
 use std::{net::SocketAddr, path::Path, path::PathBuf, sync::Arc};
 
 /// Runs the engine until it stops. `hooks` receives the data directory the arguments chose.
@@ -27,6 +30,7 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
     crate::engine_build::prefetch_engine_build();
     let mut directory = dev_data_directory(std::env::home_dir())?;
     let mut listen = vec![];
+    let mut supervisor_program = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -39,6 +43,15 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
                     .parse::<SocketAddr>()
                     .map_err(Error::Address)?,
             ),
+            RESTART_SUPERVISOR_FLAG => {
+                let program =
+                    PathBuf::from(args.next().ok_or(Error::MissingSupervisorProgramArgument)?);
+                // A relative path would be read from wherever this engine happens to run.
+                if !program.is_absolute() {
+                    return Err(Error::InvalidArguments);
+                }
+                supervisor_program = Some(program);
+            }
             _ => return Err(Error::InvalidArguments),
         }
     }
@@ -48,6 +61,7 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
             directory,
             listen,
             tailnet_port: None,
+            supervisor_program,
             hooks,
         })
         .await;
@@ -59,6 +73,7 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
         directory,
         listen: vec![SocketAddr::from(([127, 0, 0, 1], DEV_TCP_PORT))],
         tailnet_port: Some(DEV_TCP_PORT),
+        supervisor_program,
         hooks,
     })
     .await

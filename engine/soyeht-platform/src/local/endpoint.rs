@@ -6,6 +6,14 @@
 //! that read the owner-only file can compute; the client checks it and answers with the HMAC for
 //! the other direction. A process that merely listens on the port (a leftover of a dead engine,
 //! or a squatter) cannot answer, so the client stops after sending its nonce.
+//!
+//! A live listener holds the lock of its endpoint file (an exclusive lock on one byte far past
+//! the end, so the file stays readable), and the system drops the lock when the process ends,
+//! however it ends: a crash, a kill or a reboot leave the file but not the lock. A client that
+//! can take the lock knows nothing listens and says so at once. Asking the network is not
+//! enough: Windows reports a refused loopback connection only after about two seconds, as long
+//! as a client can afford to wait, so an engine that is absent looks the same as one that is
+//! slow.
 
 #![cfg_attr(not(windows), allow(dead_code))]
 
@@ -14,7 +22,8 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use std::{
     collections::VecDeque,
-    fs, io,
+    fs::{self, File},
+    io,
     io::{Read, Write},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
     path::{Path, PathBuf},
@@ -191,25 +200,34 @@ fn clear_stale(path: &Path) -> Result<(), BindError> {
     })
 }
 
-/// Writes the endpoint file for a listener on `port`, owner-only, replacing a stale one.
-pub(super) fn publish(path: &Path, port: u16, token: &Token) -> Result<(), BindError> {
+/// The lock of a published endpoint file, kept for as long as its listener lives.
+#[must_use = "the endpoint reads as stale once this is dropped"]
+pub(super) struct Alive(#[allow(dead_code)] File);
+
+/// Writes the endpoint file for a listener on `port`, owner-only, replacing a stale one. The
+/// lock is taken before the file appears under its name, so a client that can read the file
+/// and take its lock is looking at a listener that is gone.
+pub(super) fn publish(path: &Path, port: u16, token: &Token) -> Result<Alive, BindError> {
     clear_stale(path)?;
     let mut temporary = path.as_os_str().to_owned();
     temporary.push(".new");
     let temporary = PathBuf::from(temporary);
     fs::write(&temporary, format!("{MAGIC} {port} {}\n", hex(token)))?;
     crate::fs::set_private_file(&temporary)?;
+    let held = File::open(&temporary)?;
+    if !crate::fs::try_lock(&held)? {
+        return Err(io::Error::new(io::ErrorKind::AddrInUse, "the endpoint is in use").into());
+    }
     fs::rename(&temporary, path)?;
-    Ok(())
+    Ok(Alive(held))
 }
 
 fn invalid() -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, "not a local endpoint file")
 }
 
-/// The port and secret the endpoint file at `path` names.
-pub(super) fn read(path: &Path) -> io::Result<(SocketAddrV4, Token)> {
-    let text = fs::read_to_string(path)?;
+/// The port and secret in the text of an endpoint file.
+fn parse(text: &str) -> io::Result<(SocketAddrV4, Token)> {
     let mut fields = text.split_whitespace();
     let (Some(MAGIC), Some(port), Some(token), None) =
         (fields.next(), fields.next(), fields.next(), fields.next())
@@ -219,6 +237,12 @@ pub(super) fn read(path: &Path) -> io::Result<(SocketAddrV4, Token)> {
     let port = port.parse().map_err(|_| invalid())?;
     let token = unhex(token).ok_or_else(invalid)?;
     Ok((SocketAddrV4::new(Ipv4Addr::LOCALHOST, port), token))
+}
+
+/// The port and secret the endpoint file at `path` names. Tests read the file this way.
+#[cfg(test)]
+pub(super) fn read(path: &Path) -> io::Result<(SocketAddrV4, Token)> {
+    parse(&fs::read_to_string(path)?)
 }
 
 /// Gives the next read and write on `stream` what is left of `deadline`.
@@ -256,8 +280,23 @@ pub(super) fn serve(stream: &TcpStream, token: &Token) -> io::Result<()> {
 
 /// Connects to the endpoint at `path`. The client sends only a nonce until the listener has
 /// proved that it knows the secret, and refuses a listener that cannot.
+///
+/// An endpoint file whose listener is gone is refused at once (`ConnectionRefused`), without
+/// asking the network: see the top of this file. A listener that is there but does not answer
+/// in time is `TimedOut`.
 pub(super) fn connect(path: &Path) -> io::Result<TcpStream> {
-    let (address, token) = read(path)?;
+    let mut file = File::open(path)?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)?;
+    let (address, token) = parse(&text)?;
+    // A lock that cannot be asked about proves nothing, so the connection decides.
+    if crate::fs::try_lock(&file).unwrap_or(false) {
+        return Err(io::Error::new(
+            io::ErrorKind::ConnectionRefused,
+            "nothing listens at the endpoint",
+        ));
+    }
+    drop(file);
     let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
     let mut stream = TcpStream::connect_timeout(&SocketAddr::V4(address), HANDSHAKE_TIMEOUT)?;
     stream.set_nodelay(true)?;

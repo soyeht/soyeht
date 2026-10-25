@@ -275,6 +275,7 @@ impl State {
             Effect::LoadUsage,
             Effect::LoadHarnesses,
             Effect::LoadReadiness,
+            Effect::LoadSupervisor,
         ];
         for id in ids {
             let view = self.agents.entry(id.clone()).or_default();

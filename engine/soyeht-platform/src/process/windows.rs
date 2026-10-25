@@ -22,7 +22,10 @@ use windows_sys::Win32::{
         WAIT_TIMEOUT,
     },
     System::{
-        Console::{COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole},
+        Console::{
+            COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON, ResizePseudoConsole,
+            SetConsoleCtrlHandler,
+        },
         JobObjects::{
             CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
             JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
@@ -514,6 +517,17 @@ fn environment(command: &Command, inherit: bool) -> Vec<u16> {
     block
 }
 
+/// Makes this process, and so every process it starts after, handle Ctrl+C in the normal way.
+///
+/// A process started in a process group of its own, as a launcher does, ignores Ctrl+C, and a
+/// child inherits that: a shell in a terminal would then end nothing on Ctrl+C. Unix has the
+/// same trap with the signals a background job ignores, and a terminal's child resets them.
+pub(crate) fn restore_ctrl_c() -> io::Result<()> {
+    // SAFETY: a null handler with FALSE clears the flag that ignores Ctrl+C; nothing is passed
+    // or kept.
+    check(unsafe { SetConsoleCtrlHandler(None, 0) })
+}
+
 /// Starts the command inside the job, on the console or with the given standard handles, and
 /// returns the process handle and id.
 pub fn create_process(launch: &Launch<'_>) -> io::Result<(OwnedHandle, u32)> {
@@ -546,6 +560,10 @@ pub fn create_process(launch: &Launch<'_>) -> io::Result<(OwnedHandle, u32)> {
     let mut startup: STARTUPINFOEXW = unsafe_zeroed();
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     if launch.console.is_some() {
+        // A terminal's child reads Ctrl+C as the terminal's key, whatever this process was told.
+        if let Err(error) = restore_ctrl_c() {
+            crate::log::failure("process.ctrl_c_not_restored", &error);
+        }
         // Without this flag a child whose parent has redirected standard handles writes to
         // them instead of to the pseudo console. Null handles hand it the console's own.
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;

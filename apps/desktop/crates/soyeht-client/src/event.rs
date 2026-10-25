@@ -78,6 +78,8 @@ pub enum Event {
     },
     /// What the engine says this machine has of what the app needs.
     Readiness(EngineReadinessResult),
+    /// Whether the engine has its link to the supervisor of the terminals.
+    Supervisor { connected: bool },
     /// The settings Preferences shows.
     Preferences(Preferences),
     /// What the engine told an editor pane.

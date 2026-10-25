@@ -32,9 +32,10 @@ file the Mac launch agents already use, and the engine bounds its own file as it
 
 **Detached, in `soyeht-platform`.** `process::detached::spawn_detached` is the one place that
 knows how to start a program that outlives its parent, with the same public shape on every
-system. On Unix the child leads a session of its own. On Windows it has a hidden console, leads
-its own process group and leaves the parent's job when the job allows it (a launcher that ends its
-job otherwise ends everything in it). Closing the window leaves the engine and every terminal
+system. On Unix the child leads a session of its own. On Windows it has a hidden console (and, since
+ADR 0108, no process group of its own, which would make every terminal ignore Ctrl+C) and leaves
+the parent's job when the job allows it (a launcher that ends its job otherwise ends everything in
+it). Closing the window leaves the engine and every terminal
 running, and the next window connects to them.
 
 **One engine.** The engine and the supervisor each keep a lock in the data directory, so a second
@@ -47,7 +48,8 @@ starts nothing, whether or not the endpoint answers.
 
 **Once per absence.** A start is tried when the connection fails because nothing listens, and not
 again until a connection has been made, so an engine that stops later is started again but a
-failure is not repeated at every retry.
+failure is not repeated at every retry. What "nothing listens" means on Windows, and who starts
+the supervisor again when it alone is lost, are in ADR 0108.
 
 ## Limits
 

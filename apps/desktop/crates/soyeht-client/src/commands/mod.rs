@@ -130,6 +130,8 @@ pub enum Command {
     },
     /// Ask the engine which of the programs the app needs this machine has.
     LoadReadiness,
+    /// Ask the engine whether it has its link to the supervisor of the terminals.
+    LoadSupervisor,
     /// Make a skill of the user's: its folder with a `SKILL.md`.
     CreateSkill {
         name: String,
@@ -355,6 +357,7 @@ impl Command {
                 | Self::LoadSkills { .. }
                 | Self::LoadCommands { .. }
                 | Self::LoadReadiness
+                | Self::LoadSupervisor
         ) || matches!(self, Self::Editor(editor) if editor.is_background())
             || matches!(self, Self::Writing(writing) if writing.is_background())
     }

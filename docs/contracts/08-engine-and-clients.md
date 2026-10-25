@@ -161,6 +161,14 @@ its file; the file of one that was killed is replaced by the next start, and is 
 meanwhile because no client trusts a listener that cannot prove the secret. The file is
 replaced by a new secret and port every time the engine starts.
 
+A live listener holds an exclusive lock on one byte of its endpoint file, far past the end,
+so the file stays readable; the system drops the lock when the process ends, however it
+ends. A client that reads the file and can take that lock knows that nothing listens and
+fails at once with `ConnectionRefused`, as a Unix socket whose listener is gone does. It
+does not ask the network: Windows reports a refused loopback connection only after about
+2 s, which a client cannot tell from an engine that is slow (`TimedOut`), and a window must
+tell them apart to know when to start an engine (ADR 0108).
+
 ## 3. State snapshot and events without loss (R05)
 - **State change and event originate in the same database transaction.** Every
   event has an increasing `eventId`, unique per `dbId`.

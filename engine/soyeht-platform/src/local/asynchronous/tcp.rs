@@ -25,6 +25,8 @@ pub struct Listener {
     token: Token,
     handshakes: JoinSet<io::Result<Stream>>,
     pending: Admission<AbortHandle>,
+    /// Marks the endpoint file as live while this listener is.
+    _alive: endpoint::Alive,
 }
 
 impl Listener {
@@ -39,12 +41,13 @@ impl Listener {
         std_listener.set_nonblocking(true)?;
         let port = std_listener.local_addr()?.port();
         let token = endpoint::random()?;
-        endpoint::publish(path, port, &token)?;
+        let alive = endpoint::publish(path, port, &token)?;
         Ok(Self {
             tcp: TcpListener::from_std(std_listener)?,
             token,
             handshakes: JoinSet::new(),
             pending: Admission::new(capacity),
+            _alive: alive,
         })
     }
 

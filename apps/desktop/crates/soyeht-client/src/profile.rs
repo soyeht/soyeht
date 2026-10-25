@@ -29,10 +29,9 @@ pub(crate) fn socket_override(value: Option<OsString>) -> Option<PathBuf> {
 /// The folder of a profile's data directory that holds the logs. The engine's launch agent writes
 /// `engine.log` there, and the window starts the engine with its output going there too.
 pub(crate) fn logs_directory(data_directory: &Path) -> PathBuf {
-    data_directory.join(LOGS_DIRECTORY)
+    soyeht_platform::process::detached::logs_directory(data_directory)
 }
 
-const LOGS_DIRECTORY: &str = "logs";
 /// The client's own log file inside [`logs_directory`].
 const LOG_FILE: &str = "desktop.log";
 

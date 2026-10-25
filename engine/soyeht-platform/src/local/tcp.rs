@@ -27,6 +27,8 @@ pub struct Listener {
     ready: Receiver<io::Result<Stream>>,
     address: SocketAddr,
     stop: Arc<AtomicBool>,
+    /// Marks the endpoint file as live while this listener is.
+    _alive: endpoint::Alive,
 }
 
 /// A loopback socket on a free port that no other process can bind, whatever it asks for.
@@ -52,7 +54,7 @@ impl Listener {
         let tcp = bind_loopback()?;
         let address = tcp.local_addr()?;
         let token = endpoint::random()?;
-        endpoint::publish(path, address.port(), &token)?;
+        let alive = endpoint::publish(path, address.port(), &token)?;
         let (sender, ready) = channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
@@ -63,6 +65,7 @@ impl Listener {
             ready,
             address,
             stop,
+            _alive: alive,
         })
     }
 
@@ -214,7 +217,7 @@ mod tests {
         let squatter = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = squatter.local_addr().unwrap().port();
         // The file names a secret the squatter does not have.
-        endpoint::publish(&path, port, &[7; TOKEN_BYTES]).unwrap();
+        let _alive = endpoint::publish(&path, port, &[7; TOKEN_BYTES]).unwrap();
         let rogue = thread::spawn(move || {
             let (mut peer, _) = squatter.accept().unwrap();
             let mut nonce = [0; NONCE_BYTES];
@@ -230,6 +233,67 @@ mod tests {
         let error = connect(&path).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert!(rogue.join().unwrap().is_empty());
+    }
+
+    /// A loopback port that takes connections and never answers, as an engine that is busy
+    /// would, and an endpoint file naming it.
+    fn silent_endpoint(name: &str) -> (std::path::PathBuf, TcpListener) {
+        let path = directory().join(name);
+        let silent = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = silent.local_addr().unwrap().port();
+        drop(endpoint::publish(&path, port, &[7; TOKEN_BYTES]).unwrap());
+        (path, silent)
+    }
+
+    #[test]
+    fn an_endpoint_whose_listener_is_gone_is_refused_at_once() {
+        let _forks = crate::releasing();
+        // Something still accepts connections at the port, so only the dead listener's lock can
+        // tell that the file is stale, and no connection is tried (on Windows a refused one
+        // takes two seconds to be reported, which is a timeout to a client).
+        let (path, _silent) = silent_endpoint("gone.sock");
+        let started = Instant::now();
+        let error = connect(&path).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::ConnectionRefused);
+        assert!(started.elapsed() < Duration::from_millis(500));
+    }
+
+    #[test]
+    fn a_listener_that_is_there_but_does_not_answer_is_slow_not_absent() {
+        let path = directory().join("slow.sock");
+        let silent = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let _alive =
+            endpoint::publish(&path, silent.local_addr().unwrap().port(), &[7; 32]).unwrap();
+        let error = connect(&path).unwrap_err();
+        assert!(
+            matches!(
+                error.kind(),
+                io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn a_listener_that_stops_leaves_a_file_that_reads_as_stale() {
+        let _forks = crate::releasing();
+        let path = directory().join("stopped.sock");
+        let listener = Listener::bind(&path).unwrap();
+        ping_through(&path, &listener);
+        drop(listener);
+        assert_eq!(
+            connect(&path).unwrap_err().kind(),
+            io::ErrorKind::ConnectionRefused
+        );
+        // The next listener takes the path over and is reachable again.
+        let listener = Listener::bind(&path).unwrap();
+        ping_through(&path, &listener);
+    }
+
+    #[test]
+    fn a_missing_endpoint_file_is_not_found() {
+        let error = connect(&directory().join("never-there.sock")).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 
     #[test]

@@ -10,7 +10,7 @@ pub use generated::*;
 pub mod attachment;
 pub mod data_directory;
 mod error;
-pub use error::{Error, Result};
+pub use error::{Error, Result, SUPERVISOR_DISCONNECTED};
 pub mod frame;
 pub mod handshake;
 pub mod ndjson;
