@@ -41,6 +41,14 @@ impl Sizing {
             .map_or(self.floor, |(_, floor)| *floor)
     }
 
+    /// The room between two panes along `axis`.
+    pub fn gap(&self, axis: &Axis) -> f64 {
+        match axis {
+            Axis::Horizontal => self.horizontal_gap,
+            Axis::Vertical => self.vertical_gap,
+        }
+    }
+
     /// The smallest width and height `node` can be drawn at.
     pub fn minimum(&self, node: &Node) -> (f64, f64) {
         match node {

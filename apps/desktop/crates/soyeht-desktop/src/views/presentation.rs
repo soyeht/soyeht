@@ -7,16 +7,15 @@
 
 use super::{
     prelude::*,
-    ui::{chrome_text, mono_label, pressable},
+    ui::{bounds_probe, chrome_text, mono_label, pressable},
 };
 use crate::{
     composer_field::ComposerField,
-    theme::{Palette, desktop, fonts, pane_interior, radius, space, type_scale},
+    theme::{Palette, desktop, fonts, pane_interior, pane_layout, radius, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
-    App, Bounds, Entity, FocusHandle, KeyDownEvent, Keystroke, MouseButton, Pixels, ScrollHandle,
-    canvas,
+    Bounds, Entity, FocusHandle, KeyDownEvent, Keystroke, MouseButton, Pixels, ScrollHandle,
 };
 use soyeht_client::writing::document::position_of;
 use soyeht_client::writing::presentation::{
@@ -28,13 +27,13 @@ use soyeht_protocol::WritingSlide;
 fn metrics() -> Metrics {
     Metrics {
         rail_width: desktop::PRESENTATION_RAIL_WIDTH,
-        number_strip_height: desktop::PRESENTATION_NUMBER_STRIP_HEIGHT,
-        footer_height: desktop::PRESENTATION_FOOTER_HEIGHT,
+        number_strip_height: pane_layout::PRESENTATION_NUMERIC_RAIL_HEIGHT,
+        footer_height: pane_layout::PRESENTATION_FOOTER_HEIGHT,
         inset: desktop::PRESENTATION_INSET,
         rail_divider: desktop::PRESENTATION_RAIL_DIVIDER,
         minimum_stage: (
-            desktop::PRESENTATION_MINIMUM_STAGE_WIDTH,
-            desktop::PRESENTATION_MINIMUM_STAGE_HEIGHT,
+            pane_layout::PRESENTATION_STAGE_WIDTH,
+            pane_layout::PRESENTATION_STAGE_HEIGHT,
         ),
         maximum_stage: (
             desktop::PRESENTATION_MAXIMUM_STAGE_WIDTH,
@@ -129,16 +128,11 @@ impl Workbench {
         };
         let owner = pane_id.to_owned();
         let workbench = cx.entity();
-        let measure = canvas(
-            move |bounds, _, cx: &mut App| {
-                workbench.update(cx, |workbench, cx| {
-                    workbench.record_body(&owner, bounds, cx)
-                });
-            },
-            |_, (), _, _| {},
-        )
-        .absolute()
-        .size_full();
+        let measure = bounds_probe(move |bounds, cx| {
+            workbench.update(cx, |workbench, cx| {
+                workbench.record_body(&owner, bounds, cx)
+            });
+        });
         let mut stack = div()
             .id(id("presentation", pane_id))
             .relative()
@@ -190,7 +184,7 @@ impl Look<'_> {
             let strip = row().h_full().gap(px(space::X6)).px(px(space::X10));
             return placed(layout.rail)
                 .id(id("slide-numbers", self.pane_id))
-                .overflow_x_scroll()
+                .pane_scroll_x()
                 .child(strip.children(numbers))
                 .into_any_element();
         }
@@ -212,7 +206,7 @@ impl Look<'_> {
             .id(id("slide-rail", self.pane_id))
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .pane_scroll_y()
             .track_scroll(scroll)
             .gap(px(space::X10))
             .p(px(space::X4))
@@ -315,7 +309,7 @@ impl Look<'_> {
         let text = div()
             .id(id("presentation-source", self.pane_id))
             .size_full()
-            .overflow_y_scroll()
+            .pane_scroll_y()
             .track_scroll(scroll)
             .px(px(desktop::PRESENTATION_SOURCE_INSET_X))
             .py(px(desktop::PRESENTATION_SOURCE_INSET_Y))

@@ -11,10 +11,11 @@ use crate::{
     workbench::Workbench,
 };
 use gpui::{
-    AnyElement, AnyView, App, AppContext, Context, Div, ElementId, FontWeight, Hsla,
-    InteractiveElement, IntoElement, MouseButton, ParentElement, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, Svg, TextRun, Window, div, font,
-    linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative, rgb, svg,
+    AnyElement, AnyView, App, AppContext, Bounds, Context, Div, ElementId, FontWeight, Hsla,
+    InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement, Styled, Svg, TextRun, Window,
+    canvas, div, font, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative,
+    rgb, svg,
 };
 
 /// What the desktop client says of anything it does not serve yet, in the rail, in a pane and
@@ -483,6 +484,11 @@ pub fn sideways_scroller_of(
             .track_scroll(handle),
     );
     scroller.style().restrict_scroll_to_axis = Some(true);
+    fade_frame(scroller, handle, palette)
+}
+
+/// `scroller` in a frame that fills the room it is given and draws its end fades over it.
+pub fn fade_frame(scroller: gpui::Stateful<Div>, handle: &ScrollHandle, palette: &Palette) -> Div {
     div()
         .relative()
         .flex()
@@ -490,6 +496,59 @@ pub fn sideways_scroller_of(
         .min_w_0()
         .child(scroller)
         .children(edge_fades(handle, palette))
+}
+
+/// What a scroller inside a pane does with the wheel. The stage scrolls too when the window is
+/// smaller than the panes need, and in GPUI every scroller under the pointer applies a turn of
+/// the wheel unless one in front of it stops it. A pane's own scroller therefore stops the turns
+/// it uses: a turn down over a transcript, the lines of an editor or a terminal moves that and
+/// nothing else, and the stage takes the turns over what does not scroll, and the sideways ones
+/// over a scroller that only moves down.
+pub trait PaneScroll: StatefulInteractiveElement + Styled + Sized {
+    /// Scrolls down, and keeps the turns down for itself.
+    fn pane_scroll_y(self) -> Self {
+        self.overflow_y_scroll().on_scroll_wheel(keep_wheel)
+    }
+
+    /// Scrolls sideways, and keeps every turn for itself (a vertical wheel moves it sideways).
+    fn pane_scroll_x(self) -> Self {
+        self.overflow_x_scroll().on_scroll_wheel(keep_every_wheel)
+    }
+}
+
+impl<T: StatefulInteractiveElement + Styled> PaneScroll for T {}
+
+/// Whether a turn of the wheel is down or up rather than sideways: the one a scroller that only
+/// moves down uses.
+pub fn turns_down(delta_x: f32, delta_y: f32) -> bool {
+    delta_y.abs() >= delta_x.abs()
+}
+
+/// Whether `event` is a turn down or up (see [`turns_down`]).
+pub fn is_turn_down(event: &ScrollWheelEvent) -> bool {
+    let delta = event.delta.pixel_delta(px(1.0));
+    turns_down(f32::from(delta.x), f32::from(delta.y))
+}
+
+/// The handler of a pane's scroller that moves only down: the turns down are its own and go no
+/// further; a sideways one goes on to the stage.
+pub fn keep_wheel(event: &ScrollWheelEvent, _: &mut Window, cx: &mut App) {
+    if is_turn_down(event) {
+        cx.stop_propagation();
+    }
+}
+
+/// The handler of a pane's scroller that moves both ways: every turn is its own.
+pub fn keep_every_wheel(_: &ScrollWheelEvent, _: &mut Window, cx: &mut App) {
+    cx.stop_propagation();
+}
+
+/// A canvas that takes no room of its own and tells `report` where its parent was laid out. Put
+/// it inside a `relative` parent.
+pub fn bounds_probe(report: impl Fn(Bounds<Pixels>, &mut App) + 'static) -> impl IntoElement {
+    canvas(move |bounds, _, cx| report(bounds, cx), |_, (), _, _| {})
+        .absolute()
+        .size_full()
 }
 
 /// Whether a sideways scroller hides more at its left end and at its right end. A scroller that
@@ -500,38 +559,70 @@ pub fn hidden_ends(handle: &ScrollHandle) -> (bool, bool) {
     (offset < -FADE_THRESHOLD, hidden_right > FADE_THRESHOLD)
 }
 
-/// A fade of the canvas color over each end of a sideways scroller that hides more, so that a
-/// clipped control reads as scrollable. Place the result inside the `relative` parent of the
-/// scroller, after it. The handle is the scroller's own `track_scroll` handle.
+/// Whether a scroller hides more above and below. A scroller that has not been laid out yet hides
+/// nothing.
+pub fn hidden_above_below(handle: &ScrollHandle) -> (bool, bool) {
+    let offset = f32::from(handle.offset().y);
+    let hidden_below = f32::from(handle.max_offset().y) + offset;
+    (offset < -FADE_THRESHOLD, hidden_below > FADE_THRESHOLD)
+}
+
+/// A fade of the canvas color over each end of a scroller that hides more, so that a clipped
+/// control, or a pane cut off by the window, reads as scrollable: at the left and right ends of a
+/// sideways scroller, and above and below one that moves down too. Place the result inside the
+/// `relative` parent of the scroller, after it. The handle is the scroller's own `track_scroll`
+/// handle.
 pub fn edge_fades(handle: &ScrollHandle, palette: &Palette) -> Vec<AnyElement> {
     let (left, right) = hidden_ends(handle);
+    let (above, below) = hidden_above_below(handle);
     let solid: Hsla = rgb(palette.canvas).into();
     let clear = Hsla { a: 0.0, ..solid };
-    let fade = |from: Hsla, to: Hsla| {
-        div()
-            .absolute()
-            .top_0()
-            .bottom_0()
-            .w(px(desktop::FADE_WIDTH))
-            .bg(linear_gradient(
-                90.0,
-                linear_color_stop(from, 0.0),
-                linear_color_stop(to, 1.0),
-            ))
+    let fade = |angle: f32, from: Hsla, to: Hsla| {
+        div().absolute().bg(linear_gradient(
+            angle,
+            linear_color_stop(from, 0.0),
+            linear_color_stop(to, 1.0),
+        ))
     };
+    let across = |fade: Div| fade.top_0().bottom_0().w(px(desktop::FADE_WIDTH));
+    let down = |fade: Div| fade.left_0().right_0().h(px(desktop::FADE_WIDTH));
     let mut fades = Vec::new();
     if left {
-        fades.push(fade(solid, clear).left_0().into_any_element());
+        fades.push(across(fade(90.0, solid, clear)).left_0().into_any_element());
     }
     if right {
-        fades.push(fade(clear, solid).right_0().into_any_element());
+        fades.push(
+            across(fade(90.0, clear, solid))
+                .right_0()
+                .into_any_element(),
+        );
+    }
+    if above {
+        fades.push(down(fade(180.0, solid, clear)).top_0().into_any_element());
+    }
+    if below {
+        fades.push(
+            down(fade(180.0, clear, solid))
+                .bottom_0()
+                .into_any_element(),
+        );
     }
     fades
 }
 
 #[cfg(test)]
 mod tests {
-    use super::not_available;
+    use super::{not_available, turns_down};
+
+    #[test]
+    fn a_scroller_that_moves_down_keeps_the_turns_down_and_lets_the_sideways_ones_go_on() {
+        assert!(turns_down(0.0, 12.0));
+        assert!(turns_down(0.0, -12.0));
+        assert!(turns_down(3.0, -12.0));
+        assert!(turns_down(0.0, 0.0));
+        assert!(!turns_down(12.0, 0.0));
+        assert!(!turns_down(-12.0, 3.0));
+    }
 
     #[test]
     fn one_sentence_says_what_the_desktop_client_does_not_serve() {
@@ -548,5 +639,59 @@ mod tests {
             not_available(crate::destination::Destination::Web.label()),
             "Web is not available in the desktop client yet."
         );
+    }
+
+    /// Every scroller inside a pane keeps the wheel for itself (`PaneScroll`), or the stage
+    /// scrolls with it. Only the files that are not panes may scroll down on their own.
+    #[test]
+    fn a_scroller_in_a_pane_goes_through_pane_scroll() {
+        // `permission.rs` scrolls both ways and keeps every turn with `keep_every_wheel`.
+        // `tiles.rs` is the stage itself and `top_bar.rs` the workspace tabs.
+        const OUTSIDE_PANES: [&str; 9] = [
+            "views/ui.rs",
+            "views/permission.rs",
+            "views/tiles.rs",
+            "views/top_bar.rs",
+            "views/preferences.rs",
+            "views/places.rs",
+            "views/rail.rs",
+            "views/menus.rs",
+            "views/switch_popover.rs",
+        ];
+        fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    sources(&path, found);
+                } else if path.extension().is_some_and(|extension| extension == "rs") {
+                    found.push(path);
+                }
+            }
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        sources(&root.join("views"), &mut files);
+        for file in files {
+            let name = file
+                .strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let text = std::fs::read_to_string(&file).unwrap();
+            let own = [
+                ".overflow_y_scroll()",
+                ".overflow_x_scroll()",
+                ".overflow_scroll()",
+            ]
+            .iter()
+            .map(|call| text.matches(call).count())
+            .sum::<usize>();
+            let allowed =
+                OUTSIDE_PANES.contains(&name.as_str()) || name.starts_with("views/tasks/");
+            assert!(
+                own == 0 || allowed,
+                "{name} scrolls down without PaneScroll"
+            );
+        }
     }
 }

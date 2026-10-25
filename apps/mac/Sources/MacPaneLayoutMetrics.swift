@@ -123,6 +123,13 @@ import SoyehtProtocol
         - paneHeader.metrics.horizontalPadding)
   }
 
+  /// Whether an editor whose text area (beside its project panel) is `textAreaWidth` wide has the
+  /// room for the Markdown preview next to its lines.
+  static func editorShowsPreview(textAreaWidth: CGFloat) -> Bool {
+    PaneLayoutFloorFormula.editorShowsPreview(
+      textAreaWidth: Double(textAreaWidth), fonts: fontMetrics)
+  }
+
   private static let fontMetrics = PaneLayoutFontMetrics(
     terminal: metric(
       MacTerminalFont.active(),

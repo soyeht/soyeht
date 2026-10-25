@@ -32,6 +32,8 @@ ADDED_AFTER_GENERATION = {
     ("glyph", "taskToolbarIcon"),
     ("glyph", "taskToolbarChevron"),
     ("layout", "readinessWidth"),
+    # The preview rule: the width of the line between the lines and the preview.
+    ("paneLayout", "editorPreviewDividerWidth"),
 }
 
 
@@ -313,13 +315,57 @@ NUMERIC_SOURCES = [
         SHARED + "PaneLayoutFloors.swift",
         "enum PaneLayoutContentMetrics",
         "paneLayout",
-        identity("paneCardInset", "paneStackSpacing")
+        identity(
+            "paneCardInset",
+            "paneStackSpacing",
+            "terminalStateVerticalInset",
+            "editorReviewHeight",
+            "agentTaskHeight",
+            "agentBodyTopInset",
+            "agentControlsFixtureHeight",
+            "agentDividerHeight",
+            "agentTranscriptFixtureHeight",
+            "agentComposerFixtureHeight",
+            "webNavigationHeight",
+            "webStatusHeight",
+            "writingHeaderHeight",
+            "textLineHeight",
+            "textPageInset",
+            "textCompactLines",
+            "screenplayPageHorizontalInset",
+            "presentationNumericRailHeight",
+            "presentationFooterHeight",
+            "newPaneBodyVerticalInset",
+            "newPaneSectionSpacing",
+            "newPaneHeadingHeight",
+            "newPaneFormHeight",
+            "newPaneMetadataHeight",
+            "newPaneCompactFooterHeight",
+        )
         | {
             "genericPaneHeaderHeight": "headerHeight",
             "genericPaneHeaderStateDotWidth": "headerStateDot",
             "genericPaneHeaderActionWidth": "headerActionWidth",
             "terminalFontPointSize": "terminalFontSize",
         },
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "enum PaneLayoutFloorFormula",
+        "paneLayout",
+        {
+            "agentComposerCharacters": "composerCharacters",
+            "newPaneComposerCharacters": "composerCharacters",
+            "newPaneControlChromeWidth": "composerControlChromeWidth",
+        }
+        | identity(
+            "terminalColumns",
+            "terminalRows",
+            "editorColumns",
+            "compactTextCharacters",
+            "screenplayColumns",
+            "minimumScreenplayPointSize",
+        ),
     ),
     (
         SHARED + "PaneLayoutFloors.swift",
@@ -489,7 +535,76 @@ INLINE_LITERALS = [
         "layout",
         "taskSheetHeight",
     ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "agentComposerCharacters * fonts.agent.characterWidth + {}),",
+        "paneLayout",
+        "composerControlChromeWidth",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "agentTaskHeight + {}",
+        "paneLayout",
+        "agentBodyBottomInset",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "+ ({} * PaneLayoutContentMetrics.editorLineHeight",
+        "paneLayout",
+        "editorMinimumRows",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "screenplayPageRatio = {}.0 / 8.5",
+        "paneLayout",
+        "screenplayPageHeightInches",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "screenplayPageRatio = 11.0 / {}",
+        "paneLayout",
+        "screenplayPageWidthInches",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "webViewportFixture = PaneLayoutSize(width: {}, height: 240)",
+        "paneLayout",
+        "webViewportWidth",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "webViewportFixture = PaneLayoutSize(width: 320, height: {})",
+        "paneLayout",
+        "webViewportHeight",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "presentationStage = PaneLayoutSize(width: {}, height: 180)",
+        "paneLayout",
+        "presentationStageWidth",
+    ),
+    (
+        SHARED + "PaneLayoutFloors.swift",
+        "presentationStage = PaneLayoutSize(width: 320, height: {})",
+        "paneLayout",
+        "presentationStageHeight",
+    ),
 ]
+
+
+class ReferenceFontMetricsTests(unittest.TestCase):
+    """The desktop takes the font metrics of the floor report as tokens; the vector holds the same."""
+
+    def test_the_reference_metrics_are_those_the_vector_measures_the_floors_with(self):
+        held = json.loads((ROOT / "contracts/vectors/pane-layout.json").read_bytes())
+        fonts = held["kindFloors"]["fonts"]
+        desktop = tokens()[DESKTOP_SECTION]
+        for kind, metric in fonts.items():
+            for field, value in metric.items():
+                key = f"reference{kind.capitalize()}{field[:1].upper()}{field[1:]}"
+                self.assertEqual(desktop[key], value, key)
+        referenced = {key for key in desktop if key.startswith("reference")}
+        self.assertEqual(len(referenced), 3 * len(fonts))
 
 
 if __name__ == "__main__":

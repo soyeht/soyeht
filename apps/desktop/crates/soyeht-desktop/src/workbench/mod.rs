@@ -122,7 +122,7 @@ impl Workbench {
         });
         Self {
             engine,
-            state: State::default().with_sizing(crate::views::sizing()),
+            state: State::default().with_sizing(crate::views::sizing),
             theme: ThemeName::DEFAULT,
             preferences: None,
             notice_id: None,

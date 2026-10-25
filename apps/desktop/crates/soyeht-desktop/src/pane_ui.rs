@@ -139,8 +139,6 @@ impl PaneUis {
 /// What each workspace's editor place keeps of its project panel.
 #[derive(Default)]
 pub(crate) struct ProjectPanels {
-    /// The workspaces whose editors have their project panel folded away.
-    pub(crate) hidden: HashSet<String>,
     /// The scroll of the project panel of each workspace's editor place that has no file open.
     pub(crate) tree_scroll: HashMap<String, ScrollHandle>,
 }
@@ -149,27 +147,20 @@ impl Workbench {
     /// Drops what is kept per pane for panes that are gone, and per message for messages that are.
     pub(crate) fn forget_closed_panes(&mut self) {
         self.panes.forget_closed(&self.state, &mut self.markdown);
+        self.state.forget_closed_panels();
         let open = |id: &String| {
             self.state
                 .workspaces()
                 .iter()
                 .any(|workspace| &workspace.workspace_id == id)
         };
-        let (hidden, scrolls): (HashSet<String>, HashMap<String, ScrollHandle>) = (
-            self.panels
-                .hidden
-                .iter()
-                .filter(|id| open(id))
-                .cloned()
-                .collect(),
-            self.panels
-                .tree_scroll
-                .iter()
-                .filter(|(id, _)| open(id))
-                .map(|(id, handle)| (id.clone(), handle.clone()))
-                .collect(),
-        );
-        self.panels.hidden = hidden;
+        let scrolls: HashMap<String, ScrollHandle> = self
+            .panels
+            .tree_scroll
+            .iter()
+            .filter(|(id, _)| open(id))
+            .map(|(id, handle)| (id.clone(), handle.clone()))
+            .collect();
         self.panels.tree_scroll = scrolls;
     }
 

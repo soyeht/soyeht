@@ -30,6 +30,7 @@ mod neo;
 mod notices;
 mod open_menu;
 mod os_notify;
+mod pane_floors;
 mod pane_ui;
 mod pointer;
 mod prefs;

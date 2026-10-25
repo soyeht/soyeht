@@ -414,71 +414,56 @@ pub fn envelope(tree: Node) -> Envelope {
     }
 }
 
-/// The width a tree needs so that no pane is narrower than `floor`: panes side by side add up
-/// with the `gap` between them, and panes stacked share the widest.
-pub fn minimum_width(node: &Node, floor: f32, gap: f32) -> f32 {
-    match node {
-        Node::V0(_) => floor,
-        Node::V1(split) => {
-            let widths = split
-                .children
-                .iter()
-                .map(|branch| minimum_width(&branch.node, floor, gap));
-            match split.axis {
-                Axis::Horizontal => {
-                    let count = split.children.len().saturating_sub(1) as f32;
-                    widths.sum::<f32>() + count * gap
-                }
-                Axis::Vertical => widths.fold(0.0, f32::max),
-            }
-        }
-    }
-}
-
-/// Where pane `pane_id` sits across the width `minimum_width` asks for: its left edge and its
-/// width. When a tree needs more room than the window has, every pane is drawn at exactly this
-/// size, so it says how far to scroll to bring the pane into view. A pane stacked in a column
-/// is as wide as the column, as on the Mac.
-pub fn pane_span(node: &Node, pane_id: &str, floor: f32, gap: f32) -> Option<(f32, f32)> {
-    span_in(
-        node,
-        pane_id,
-        floor,
-        gap,
-        0.0,
-        minimum_width(node, floor, gap),
-    )
+/// Where pane `pane_id` sits along `axis` when every pane is drawn at its floor: its start and
+/// its extent. When a tree needs more room than the window has, the panes are drawn at exactly
+/// these sizes, so this says how far to scroll to bring the pane into view. A pane stacked in a
+/// column is as wide as the column, as on the Mac.
+pub fn pane_span(node: &Node, pane_id: &str, sizing: &Sizing, axis: &Axis) -> Option<(f64, f64)> {
+    let (width, height) = sizing.minimum(node);
+    let extent = if *axis == Axis::Horizontal {
+        width
+    } else {
+        height
+    };
+    span_in(node, pane_id, sizing, axis, 0.0, extent)
 }
 
 fn span_in(
     node: &Node,
     pane_id: &str,
-    floor: f32,
-    gap: f32,
-    left: f32,
-    width: f32,
-) -> Option<(f32, f32)> {
+    sizing: &Sizing,
+    axis: &Axis,
+    start: f64,
+    extent: f64,
+) -> Option<(f64, f64)> {
     match node {
-        Node::V0(leaf) => (leaf.pane_id == pane_id).then_some((left, width)),
-        Node::V1(split) => {
-            let mut offset = left;
-            split.children.iter().find_map(|branch| match split.axis {
-                Axis::Horizontal => {
-                    let own = minimum_width(&branch.node, floor, gap);
-                    let found = span_in(&branch.node, pane_id, floor, gap, offset, own);
-                    offset += own + gap;
-                    found
-                }
-                Axis::Vertical => span_in(&branch.node, pane_id, floor, gap, left, width),
+        Node::V0(leaf) => (leaf.pane_id == pane_id).then_some((start, extent)),
+        Node::V1(split) if split.axis == *axis => {
+            let gap = sizing.gap(axis);
+            let mut offset = start;
+            split.children.iter().find_map(|branch| {
+                let (width, height) = sizing.minimum(&branch.node);
+                let own = if *axis == Axis::Horizontal {
+                    width
+                } else {
+                    height
+                };
+                let found = span_in(&branch.node, pane_id, sizing, axis, offset, own);
+                offset += own + gap;
+                found
             })
         }
+        Node::V1(split) => split
+            .children
+            .iter()
+            .find_map(|branch| span_in(&branch.node, pane_id, sizing, axis, start, extent)),
     }
 }
 
 /// The scroll offset that brings the span `start..start + width` into a viewport of
 /// `viewport` points that now shows `scrolled..scrolled + viewport`: unchanged when it is
 /// already inside, else the least move that shows it (its left edge first when it is wider).
-pub fn reveal_offset(start: f32, width: f32, scrolled: f32, viewport: f32) -> f32 {
+pub fn reveal_offset(start: f64, width: f64, scrolled: f64, viewport: f64) -> f64 {
     if start < scrolled || width > viewport {
         start
     } else if start + width > scrolled + viewport {
@@ -515,6 +500,16 @@ mod tests {
 
     fn refs(panes: &[Pane]) -> Vec<&Pane> {
         panes.iter().collect()
+    }
+
+    /// The floors of the vector: every pane 300 wide and 180 high, 18 apart.
+    fn floors() -> Sizing {
+        Sizing {
+            floor: (300.0, 180.0),
+            horizontal_gap: 18.0,
+            vertical_gap: 18.0,
+            ..Sizing::default()
+        }
     }
 
     fn resolve(layout: &Value, panes: &[&Pane]) -> Option<Node> {
@@ -646,19 +641,25 @@ mod tests {
     #[test]
     fn a_layout_needs_the_floor_of_every_pane_that_sits_beside_another() {
         let tree = beside_a_stack();
-        assert_eq!(minimum_width(&tree, 300.0, 18.0), 618.0);
+        assert_eq!(floors().minimum(&tree).0, 618.0);
         let one = panes(&["a"]);
         let single = resolve(&json!({}), &refs(&one)).unwrap();
-        assert_eq!(minimum_width(&single, 300.0, 18.0), 300.0);
+        assert_eq!(floors().minimum(&single).0, 300.0);
     }
 
     #[test]
     fn a_pane_sits_after_the_panes_beside_it_and_under_none_stacked_above_it() {
         let tree = beside_a_stack();
-        assert_eq!(pane_span(&tree, "a", 300.0, 18.0), Some((0.0, 300.0)));
-        assert_eq!(pane_span(&tree, "b", 300.0, 18.0), Some((318.0, 300.0)));
-        assert_eq!(pane_span(&tree, "c", 300.0, 18.0), Some((318.0, 300.0)));
-        assert_eq!(pane_span(&tree, "gone", 300.0, 18.0), None);
+        let across = |id| pane_span(&tree, id, &floors(), &Axis::Horizontal);
+        assert_eq!(across("a"), Some((0.0, 300.0)));
+        assert_eq!(across("b"), Some((318.0, 300.0)));
+        assert_eq!(across("c"), Some((318.0, 300.0)));
+        assert_eq!(across("gone"), None);
+        // Down the column the second pane follows the first across the gap.
+        let down = |id| pane_span(&tree, id, &floors(), &Axis::Vertical);
+        assert_eq!(down("b"), Some((0.0, 180.0)));
+        assert_eq!(down("c"), Some((198.0, 180.0)));
+        assert_eq!(down("a"), Some((0.0, 378.0)));
     }
 
     #[test]

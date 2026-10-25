@@ -87,8 +87,11 @@ pub struct State {
     /// A standing note about this client rather than about a request (it draws on a software
     /// renderer): a connection, which clears `problem`, leaves it. The person dismisses it.
     pub notice: Option<String>,
-    /// What the weights of an arrangement are measured with; the window sets it.
-    pub(crate) sizing: crate::layout::Sizing,
+    /// What the weights of an arrangement, and the stage, are measured with, by whether the
+    /// project panel of an editor is shown; the window sets it.
+    sizing: fn(bool) -> crate::layout::Sizing,
+    /// The workspaces whose editors have their project panel folded away.
+    hidden_panels: HashSet<String>,
     pub(crate) workspaces: Vec<Workspace>,
     pub(crate) panes: Vec<Pane>,
     selected_workspace: Option<String>,
@@ -144,7 +147,8 @@ impl Default for State {
             connection: Connection::Connecting,
             problem: None,
             notice: None,
-            sizing: crate::layout::Sizing::default(),
+            sizing: |_| crate::layout::Sizing::default(),
+            hidden_panels: HashSet::new(),
             workspaces: Vec::new(),
             panes: Vec::new(),
             selected_workspace: None,
@@ -178,10 +182,39 @@ impl Default for State {
 }
 
 impl State {
-    /// The state measuring its arrangements with `sizing`.
-    pub fn with_sizing(mut self, sizing: crate::layout::Sizing) -> Self {
+    /// The state measuring its arrangements with `sizing`, which says what a workspace needs
+    /// with its editors' project panel shown (`true`) or folded away.
+    pub fn with_sizing(mut self, sizing: fn(bool) -> crate::layout::Sizing) -> Self {
         self.sizing = sizing;
         self
+    }
+
+    /// What the arrangement of a workspace is measured with: the one place that says so, for the
+    /// weights of its arrangement and for the stage that draws it.
+    pub fn sizing_of(&self, workspace_id: &str) -> crate::layout::Sizing {
+        (self.sizing)(!self.hidden_panels.contains(workspace_id))
+    }
+
+    /// Whether the editors of a workspace have their project panel folded away.
+    pub fn project_panel_hidden(&self, workspace_id: &str) -> bool {
+        self.hidden_panels.contains(workspace_id)
+    }
+
+    /// Folds the project panel of a workspace's editors away, or shows it again.
+    pub fn toggle_project_panel(&mut self, workspace_id: &str) {
+        if !self.hidden_panels.remove(workspace_id) {
+            self.hidden_panels.insert(workspace_id.to_owned());
+        }
+    }
+
+    /// Forgets the panels of workspaces that are gone.
+    pub fn forget_closed_panels(&mut self) {
+        let open: HashSet<&str> = self
+            .workspaces
+            .iter()
+            .map(|workspace| workspace.workspace_id.as_str())
+            .collect();
+        self.hidden_panels.retain(|id| open.contains(id.as_str()));
     }
 
     pub fn workspaces(&self) -> &[Workspace] {

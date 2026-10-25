@@ -223,6 +223,7 @@ fn well(
         .rounded(px(pane_interior::WELL_RADIUS))
         .bg(rgb(palette.well))
         .overflow_scroll()
+        .on_scroll_wheel(super::ui::keep_every_wheel)
         .mono()
         .text_size(px(pane_interior::MONO_SMALL_POINT_SIZE))
         .child(content)

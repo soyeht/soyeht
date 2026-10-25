@@ -138,8 +138,11 @@ sits at that width, and where a pane goes that the tree does not list (`PaneLayo
 `layout::arrange`): primary panes (editor, web, writing) left to right, auxiliary panes
 (terminal, agent) stacked on the right, and in the automatic mode every branch weighed by the
 smallest size its panes need. `kindFloors` holds the measured floor of every kind of pane for the
-font metrics of the accepted floor report (the Mac passes all of them) and the range the desktop's single,
-composer-based agent floor must stay in. It also fixes dragging a divider and double-clicking one
+font metrics of the accepted floor report (`PaneLayoutFloorFormula` and `pane_floors` pass all of
+them: the constants of the formula are the `paneLayout` tokens, the desktop's font metrics the
+`reference*` tokens of the `desktop` section), the compact floor of the editor with its project
+panel hidden, when an editor has the room to show the Markdown preview beside its lines
+(`editorPreview`), and the range the desktop's composer-based agent width must stay in. It also fixes dragging a divider and double-clicking one
 (`PaneLayoutTreeMutation.resizing` and `.equalizing`, `layout::resize` and `layout::equalize`):
 only the two weights beside the divider change, by the distance dragged, and a floor stops
 the move. Moving a pane by its header (`PaneLayoutDropGeometry` and
@@ -148,4 +151,6 @@ fixed as well: the zone of a pane a drop lands on (the quarter along each edge, 
 on a corner, else the center), the part of the pane a zone lights up, and the tree a drop makes
 (the pane is taken out and put beside, above or below the target; the center swaps the two panes;
 the two panes of a writing companion only change sides). Each case gives the floors to weigh
-with; the Mac measures one per kind, the desktop passes one for all.
+with; both clients pass one per kind and never draw a pane below its floor. A window too small
+for the floors scrolls on the desktop; the Mac first presents the panes in a row, a column or
+tabs (`PaneLayoutFit`), which the desktop does not do yet.

@@ -30,6 +30,9 @@ pub(crate) struct EditorUi {
     pub cell: (f32, f32),
     /// The width of the gutter as it was last drawn.
     pub gutter: f32,
+    /// The width of the editor beside its project panel, as it was last laid out: the room the
+    /// lines share with the Markdown preview.
+    pub area_width: f32,
     /// The cells of the longest line in view, to keep the sideways scroll inside the text.
     pub longest: usize,
     /// A drag that selects text is under way.

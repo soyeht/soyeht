@@ -616,11 +616,11 @@ mod tests {
         assert!(floor > fixed + card, "{floor}");
     }
 
-    /// The agent's floor, which this client measures from the composer an agent pane always
-    /// shows, stays in the range `pane-layout.json` holds, and so does the Mac's measured one
-    /// (`kindFloors`): the two clients may differ, but not by more than that range.
+    /// The composer this client draws sets the agent's floor when it is wider than the width the
+    /// Mac gives the agent (`kindFloors` of `pane-layout.json`), and stays inside the range the
+    /// vector holds for it, so the two clients' agent panes differ by no more than that range.
     #[test]
-    fn the_floor_stays_in_the_range_the_vector_holds_for_the_agent() {
+    fn the_composer_floor_stays_in_the_range_the_vector_holds_for_the_agent() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../../contracts/vectors/pane-layout.json");
         let held: serde_json::Value =

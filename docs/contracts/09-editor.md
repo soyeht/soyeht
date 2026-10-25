@@ -72,7 +72,9 @@ watches the disk, keeps history); the app renders and edits.
 16. Local history for every file, even without git: every write becomes a
     version in the engine, with who wrote it (you or which agent); "restore
     this version".
-17. Markdown preview beside the file.
+17. Markdown preview beside the file, shown only when the text area holds the lines at their
+    floor, the divider and the narrowest preview (574 pt with the reference fonts; both
+    clients pass the `editorPreview` cases of `contracts/vectors/pane-layout.json`).
 
 **Git and diff**
 18. Gutter bars: added, changed and deleted lines relative to git.

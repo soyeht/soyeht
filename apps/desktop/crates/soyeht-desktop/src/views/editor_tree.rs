@@ -112,7 +112,7 @@ impl Workbench {
             .id(id("editor-files", owner))
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .pane_scroll_y()
             .track_scroll(&scroll)
             .on_mouse_down(
                 MouseButton::Left,

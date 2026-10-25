@@ -3,7 +3,7 @@
   "gap": 18,
   "floor": {"width": 300, "height": 180},
   "kindFloors": {
-    "description": "The measured floor of every kind of pane (PaneLayoutFloorFormula.surfaceFloors on the Mac, the surface without the card halo), for the font metrics the accepted floor report used: [width, height] per kind. The Mac derives each floor from the metrics of its fonts and passes all of them. The desktop has no font-metric formula: it measures one floor from the composer an agent pane always shows (views::composer::minimum_pane_width), so only the agent kind is held, as a bound that floor must stay inside and that the Mac's agent width must be inside too.",
+    "description": "The measured floor of every kind of pane, for the font metrics the accepted floor report used (PaneLayoutFloorFormula on the Mac, pane_floors on the desktop; both pass every case). `surfaces` holds [width, height] of the pane without the card halo, with the editor's project panel open; `compactSurfaces` holds the kinds that fold optional chrome away when the person hides it (the editor without its project panel). The Mac measures its fonts, the desktop takes the same metrics as the `reference*` tokens of design-tokens.json (the test of the token file keeps them equal to `fonts`). The agent's width is the one place the desktop may be wider than the Mac: it never draws a floor below the composer an agent pane always shows (views::composer::minimum_pane_width), and `desktopAgentWidth` bounds that composer width. `editorPreview` fixes when an editor shows the Markdown preview: the width of its text area (the editor without the project panel) and whether the preview shows.",
     "fonts": {
       "terminal": {"characterWidth": 8, "lineHeight": 18, "pointSize": 13},
       "editor": {"characterWidth": 6.9, "lineHeight": 19, "pointSize": 11.5},
@@ -22,7 +22,17 @@
       "screenplay": [344, 486],
       "unknownWriting": [344, 486]
     },
-    "desktopAgentWidth": {"minimum": 300, "maximum": 400}
+    "compactSurfaces": {
+      "editor": [333, 395]
+    },
+    "desktopAgentWidth": {"minimum": 300, "maximum": 400},
+    "editorPreview": [
+      {"name": "no room at all", "textAreaWidth": 0, "shows": false},
+      {"name": "the compact editor floor, which holds the lines and no preview", "textAreaWidth": 333, "shows": false},
+      {"name": "one point short of the lines, the divider and the narrowest preview", "textAreaWidth": 573, "shows": false},
+      {"name": "exactly the lines, the divider and the narrowest preview", "textAreaWidth": 574, "shows": true},
+      {"name": "a wide editor", "textAreaWidth": 1200, "shows": true}
+    ]
   },
   "companionStrip": 36,
   "edgeFraction": 0.25,

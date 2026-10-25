@@ -4,16 +4,20 @@
 
 use super::{
     cards::{Role, button},
+    editor_preview::beside_lines,
     pane::Action,
     prelude::*,
     switch_popover::well_row,
-    ui::{acting, empty_state, header_bar, icon_button, mono_label, owned, pane_card_shell},
+    ui::{
+        acting, bounds_probe, empty_state, header_bar, icon_button, mono_label, owned,
+        pane_card_shell,
+    },
 };
 use crate::{
-    editor_view, shortcuts,
-    theme::{Palette, desktop, editor, glyph, pane_interior, radius, space, type_scale},
+    editor_view, pane_floors, shortcuts,
+    theme::{Palette, desktop, editor, glyph, radius, space, type_scale},
 };
-use gpui::MouseButton;
+use gpui::{Entity, MouseButton};
 use soyeht_client::editor::{EditorFile, PaneLoad, page::CRLF, refusal::Refusal};
 use soyeht_protocol::{EditorLanguage, Pane};
 
@@ -54,6 +58,16 @@ pub(super) fn path_label(path: &str) -> String {
     path.split('/').collect::<Vec<_>>().join(" \u{203a} ")
 }
 
+/// Reports how wide the room beside the project panel is, which decides whether the Markdown
+/// preview fits (`pane_floors::preview_fits`). It takes no room of its own.
+fn area_probe(workbench: Entity<Workbench>, pane_id: String) -> impl IntoElement {
+    bounds_probe(move |bounds, cx| {
+        workbench.update(cx, |workbench, cx| {
+            workbench.editor_area_measured(&pane_id, bounds.size.width, cx);
+        });
+    })
+}
+
 impl Workbench {
     pub(super) fn editor_header(
         &mut self,
@@ -64,7 +78,7 @@ impl Workbench {
         let file = self.state.editors.file_of_pane(&pane.pane_id);
         let label = file.map_or_else(|| "Editor".to_owned(), |file| path_label(&file.doc.path));
         let status = self.file_state_word(&pane.pane_id, palette);
-        let shown = !self.panels.hidden.contains(&pane.workspace_id);
+        let shown = !self.state.project_panel_hidden(&pane.workspace_id);
         let tip = format!(
             "{} Project Panel ({})",
             if shown { "Hide" } else { "Show" },
@@ -149,7 +163,7 @@ impl Workbench {
             .map(|file| file.dropped_keys)
             .filter(|dropped| *dropped > 0)
             .map(|dropped| format!("{dropped} keys could not be applied"));
-        let hidden = self.panels.hidden.contains(&workspace);
+        let hidden = self.state.project_panel_hidden(&workspace);
         let tabs = self.editor_tabs(cx, palette, pane);
         let finding = self.find_bar(pane, cx, palette);
         let panel =
@@ -175,34 +189,25 @@ impl Workbench {
                     .into_any_element(),
             }
         };
-        // A Markdown file has its preview beside the lines, set off by a line; a file the engine
-        // refused as text has none, as on the Mac.
-        let preview = (loaded && !refused)
+        // A Markdown file has its preview beside the lines, set off by a line, when the room
+        // holds both; a file the engine refused as text has none, as on the Mac.
+        let fits = pane_floors::preview_fits(self.panes.of(&pane_id).editor.area_width);
+        let preview = (loaded && !refused && fits)
             .then(|| self.editor_preview(&pane_id, palette))
             .flatten();
         let text = match preview {
-            Some(preview) => row()
-                .items_stretch()
-                .flex_1()
-                .min_h_0()
-                .child(text)
-                .child(
-                    div()
-                        .flex_none()
-                        .w(px(pane_interior::SEPARATOR_WIDTH))
-                        .bg(rgb(palette.well)),
-                )
-                .child(preview)
-                .into_any_element(),
+            Some(preview) => beside_lines(text, preview, palette),
             None => text,
         };
         face_row(palette)
             .children(panel)
             .child(
                 column()
+                    .relative()
                     .flex_1()
                     .min_w_0()
                     .min_h_0()
+                    .child(area_probe(cx.entity(), pane_id.clone()))
                     .child(tabs)
                     .children(conflicted.then(|| conflict_banner(palette)))
                     .children(finding)
@@ -254,9 +259,13 @@ impl Workbench {
         pane_id: &str,
         focused: bool,
     ) -> AnyElement {
+        // The lines never get narrower than their floor: beside the Markdown preview it is the
+        // preview that gives way.
+        let floor = pane_floors::editor_code_floor(&pane_floors::FontMetrics::reference()) as f32;
         div()
             .id(id("editor-text", pane_id))
             .flex_1()
+            .min_w(px(floor))
             .min_h_0()
             .cursor_text()
             .on_mouse_down(

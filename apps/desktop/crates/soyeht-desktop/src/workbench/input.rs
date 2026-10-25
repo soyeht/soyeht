@@ -108,6 +108,11 @@ impl Workbench {
     ) {
         let line = crate::terminal_view::CellSize::measure(cx).height;
         let lines = event.delta.pixel_delta(line).y / line;
+        // A turn down is the terminal's; the stage does not scroll with it. A sideways one goes
+        // on to the stage.
+        if crate::views::is_turn_down(event) {
+            cx.stop_propagation();
+        }
         if let Some(screen) = self.state.screen_mut(pane_id)
             && screen.scroll_by(lines)
         {

@@ -90,7 +90,7 @@ impl Workbench {
             key.divider,
             f64::from(f32::from(delta)),
             self.stage_size(),
-            &crate::views::sizing(),
+            &self.state.sizing_of(&workspace_id),
         );
         if let Ok(tree) = resized {
             self.state.draft_layout(&workspace_id, tree);
@@ -117,7 +117,8 @@ impl Workbench {
         let Some((workspace_id, tree)) = self.arrangement() else {
             return;
         };
-        let equal = layout::equalize(&tree, &key.path, self.stage_size(), &crate::views::sizing());
+        let sizing = self.state.sizing_of(&workspace_id);
+        let equal = layout::equalize(&tree, &key.path, self.stage_size(), &sizing);
         if let Ok(equal) = equal {
             self.state.draft_layout(&workspace_id, equal);
             let effects = self.state.commit_layout_draft();

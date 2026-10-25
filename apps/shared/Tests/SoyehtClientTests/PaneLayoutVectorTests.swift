@@ -238,25 +238,56 @@ private func fontMetric(_ value: JsonValue) throws -> PaneLayoutFontMetric {
     pointSize: try #require(value["pointSize"].double))
 }
 
-@Test func everyKindOfPaneHasTheFloorTheVectorSays() throws {
-  let held = try vector()["kindFloors"]
+private func floorFonts(_ held: JsonValue) throws -> PaneLayoutFontMetrics {
   let fonts = held["fonts"]
-  let metrics = PaneLayoutFontMetrics(
+  return PaneLayoutFontMetrics(
     terminal: try fontMetric(fonts["terminal"]), editor: try fontMetric(fonts["editor"]),
     chrome: try fontMetric(fonts["chrome"]), agent: try fontMetric(fonts["agent"]),
     prose: try fontMetric(fonts["prose"]), screenplay: try fontMetric(fonts["screenplay"]))
-  let floors = PaneLayoutFloorFormula.surfaceFloors(fonts: metrics)
-  guard case .object(let surfaces) = held["surfaces"] else {
-    Issue.record("kindFloors.surfaces is not an object")
+}
+
+/// The floors hold exactly the kinds `held` names, at the sizes it gives.
+private func expectFloors(
+  _ floors: [PaneLayoutKind: PaneLayoutSize], _ held: JsonValue
+) throws {
+  guard case .object(let sizes) = held else {
+    Issue.record("the floors of the vector are not an object")
     return
   }
-  #expect(Set(surfaces.keys) == Set(PaneLayoutKind.allCases.map(\.rawValue)))
-  for (name, size) in surfaces {
+  #expect(Set(sizes.keys) == Set(floors.keys.map(\.rawValue)))
+  for (name, size) in sizes {
     let kind = try #require(PaneLayoutKind(rawValue: name))
     #expect(
       floors[kind]
         == PaneLayoutSize(
           width: try #require(size.array?[0].double), height: try #require(size.array?[1].double)),
+      "\(name)")
+  }
+}
+
+@Test func everyKindOfPaneHasTheFloorTheVectorSays() throws {
+  let held = try vector()["kindFloors"]
+  let floors = PaneLayoutFloorFormula.surfaceFloors(fonts: try floorFonts(held))
+  #expect(Set(floors.keys) == Set(PaneLayoutKind.allCases))
+  try expectFloors(floors, held["surfaces"])
+}
+
+@Test func aKindThatFoldsChromeAwayHasTheCompactFloorTheVectorSays() throws {
+  let held = try vector()["kindFloors"]
+  try expectFloors(
+    PaneLayoutFloorFormula.compactFootprintFloors(fonts: try floorFonts(held), halo: 0),
+    held["compactSurfaces"])
+}
+
+@Test func theEditorShowsThePreviewWhenItsTextAreaHoldsTheLinesAndThePreview() throws {
+  let held = try vector()["kindFloors"]
+  let metrics = try floorFonts(held)
+  for item in try #require(held["editorPreview"].array) {
+    let name = try #require(item["name"].string)
+    let width = try #require(item["textAreaWidth"].double)
+    #expect(
+      PaneLayoutFloorFormula.editorShowsPreview(textAreaWidth: width, fonts: metrics)
+        == (try #require(item["shows"].bool)),
       "\(name)")
   }
 }

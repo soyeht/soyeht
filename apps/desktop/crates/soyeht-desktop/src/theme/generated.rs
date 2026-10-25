@@ -361,6 +361,46 @@ pub mod pane_layout {
     pub const TERMINAL_FONT_SIZE_MINIMUM: f32 = 8.0;
     pub const TERMINAL_FONT_SIZE_MAXIMUM: f32 = 32.0;
     pub const TERMINAL_FONT_SIZE_STEP: f32 = 1.0;
+    pub const TERMINAL_COLUMNS: f32 = 40.0;
+    pub const TERMINAL_ROWS: f32 = 12.0;
+    pub const TERMINAL_STATE_VERTICAL_INSET: f32 = 7.0;
+    pub const EDITOR_COLUMNS: f32 = 36.0;
+    pub const EDITOR_MINIMUM_ROWS: f32 = 12.0;
+    pub const EDITOR_REVIEW_HEIGHT: f32 = 42.0;
+    pub const EDITOR_PREVIEW_DIVIDER_WIDTH: f32 = 1.0;
+    pub const COMPOSER_CHARACTERS: f32 = 24.0;
+    pub const COMPOSER_CONTROL_CHROME_WIDTH: f32 = 124.0;
+    pub const AGENT_BODY_TOP_INSET: f32 = 4.0;
+    pub const AGENT_BODY_BOTTOM_INSET: f32 = 12.0;
+    pub const AGENT_TASK_HEIGHT: f32 = 34.0;
+    pub const AGENT_CONTROLS_FIXTURE_HEIGHT: f32 = 33.0;
+    pub const AGENT_DIVIDER_HEIGHT: f32 = 1.0;
+    pub const AGENT_TRANSCRIPT_FIXTURE_HEIGHT: f32 = 150.0;
+    pub const AGENT_COMPOSER_FIXTURE_HEIGHT: f32 = 67.0;
+    pub const WEB_NAVIGATION_HEIGHT: f32 = 27.0;
+    pub const WEB_VIEWPORT_WIDTH: f32 = 320.0;
+    pub const WEB_VIEWPORT_HEIGHT: f32 = 240.0;
+    pub const WEB_STATUS_HEIGHT: f32 = 24.0;
+    pub const WRITING_HEADER_HEIGHT: f32 = 40.0;
+    pub const COMPACT_TEXT_CHARACTERS: f32 = 24.0;
+    pub const TEXT_LINE_HEIGHT: f32 = 32.0;
+    pub const TEXT_PAGE_INSET: f32 = 16.0;
+    pub const TEXT_COMPACT_LINES: f32 = 6.0;
+    pub const SCREENPLAY_COLUMNS: f32 = 61.0;
+    pub const SCREENPLAY_PAGE_HORIZONTAL_INSET: f32 = 74.0;
+    pub const MINIMUM_SCREENPLAY_POINT_SIZE: f32 = 7.5;
+    pub const SCREENPLAY_PAGE_WIDTH_INCHES: f32 = 8.5;
+    pub const SCREENPLAY_PAGE_HEIGHT_INCHES: f32 = 11.0;
+    pub const PRESENTATION_STAGE_WIDTH: f32 = 320.0;
+    pub const PRESENTATION_STAGE_HEIGHT: f32 = 180.0;
+    pub const PRESENTATION_NUMERIC_RAIL_HEIGHT: f32 = 32.0;
+    pub const PRESENTATION_FOOTER_HEIGHT: f32 = 28.0;
+    pub const NEW_PANE_BODY_VERTICAL_INSET: f32 = 12.0;
+    pub const NEW_PANE_SECTION_SPACING: f32 = 18.0;
+    pub const NEW_PANE_HEADING_HEIGHT: f32 = 24.0;
+    pub const NEW_PANE_FORM_HEIGHT: f32 = 150.0;
+    pub const NEW_PANE_METADATA_HEIGHT: f32 = 32.0;
+    pub const NEW_PANE_COMPACT_FOOTER_HEIGHT: f32 = 64.0;
 }
 pub mod layout {
     pub const RAIL_WIDTH: f32 = 56.0;
@@ -511,7 +551,6 @@ pub mod desktop {
     pub const POPUP_GAP: f32 = 4.0;
     pub const FADE_WIDTH: f32 = 28.0;
     pub const PANE_FLOOR_LABEL_CHARACTERS: f32 = 8.0;
-    pub const MINIMUM_PANE_HEIGHT: f32 = 120.0;
     pub const WELL_DEPTH: f32 = 3.0;
     pub const HAIRLINE: f32 = 1.0;
     pub const LINE_HEIGHT_UI: f32 = 1.21;
@@ -607,12 +646,8 @@ pub mod desktop {
     pub const SCREENPLAY_DIALOGUE_SHARE: f32 = 0.2048;
     pub const SCREENPLAY_PARAGRAPH_SPACING: f32 = 8.0;
     pub const PRESENTATION_RAIL_WIDTH: f32 = 236.0;
-    pub const PRESENTATION_NUMBER_STRIP_HEIGHT: f32 = 32.0;
-    pub const PRESENTATION_FOOTER_HEIGHT: f32 = 28.0;
     pub const PRESENTATION_INSET: f32 = 10.0;
     pub const PRESENTATION_RAIL_DIVIDER: f32 = 1.0;
-    pub const PRESENTATION_MINIMUM_STAGE_WIDTH: f32 = 320.0;
-    pub const PRESENTATION_MINIMUM_STAGE_HEIGHT: f32 = 180.0;
     pub const PRESENTATION_MAXIMUM_STAGE_WIDTH: f32 = 1024.0;
     pub const PRESENTATION_MAXIMUM_STAGE_HEIGHT: f32 = 576.0;
     pub const PRESENTATION_LINE_HEIGHT: f32 = 23.0;
@@ -621,6 +656,24 @@ pub mod desktop {
     pub const PRESENTATION_NUMBER_DISC: f32 = 22.0;
     pub const PRESENTATION_THUMBNAIL_HEIGHT: f32 = 100.0;
     pub const PRESENTATION_SELECTED_BORDER: f32 = 2.0;
+    pub const REFERENCE_TERMINAL_CHARACTER_WIDTH: f32 = 8.0;
+    pub const REFERENCE_TERMINAL_LINE_HEIGHT: f32 = 18.0;
+    pub const REFERENCE_TERMINAL_POINT_SIZE: f32 = 13.0;
+    pub const REFERENCE_EDITOR_CHARACTER_WIDTH: f32 = 6.9;
+    pub const REFERENCE_EDITOR_LINE_HEIGHT: f32 = 19.0;
+    pub const REFERENCE_EDITOR_POINT_SIZE: f32 = 11.5;
+    pub const REFERENCE_CHROME_CHARACTER_WIDTH: f32 = 7.2;
+    pub const REFERENCE_CHROME_LINE_HEIGHT: f32 = 17.0;
+    pub const REFERENCE_CHROME_POINT_SIZE: f32 = 12.0;
+    pub const REFERENCE_AGENT_CHARACTER_WIDTH: f32 = 9.0;
+    pub const REFERENCE_AGENT_LINE_HEIGHT: f32 = 21.0;
+    pub const REFERENCE_AGENT_POINT_SIZE: f32 = 15.0;
+    pub const REFERENCE_PROSE_CHARACTER_WIDTH: f32 = 11.037;
+    pub const REFERENCE_PROSE_LINE_HEIGHT: f32 = 32.0;
+    pub const REFERENCE_PROSE_POINT_SIZE: f32 = 20.0;
+    pub const REFERENCE_SCREENPLAY_CHARACTER_WIDTH: f32 = 9.59375;
+    pub const REFERENCE_SCREENPLAY_LINE_HEIGHT: f32 = 27.0;
+    pub const REFERENCE_SCREENPLAY_POINT_SIZE: f32 = 16.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

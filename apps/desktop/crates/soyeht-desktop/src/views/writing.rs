@@ -201,7 +201,7 @@ impl Workbench {
             .id(id("writing-text", pane_id))
             .flex_1()
             .min_h_0()
-            .overflow_y_scroll()
+            .pane_scroll_y()
             .track_scroll(&scroll)
             .child(
                 div()

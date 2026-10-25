@@ -8,7 +8,7 @@ use super::{
     copy_button::copyable,
     markdown::{Opens, Replies},
     selectable::Selectable,
-    ui::{Typeface, code_well, column, disclosure_chevron, icon, id, row},
+    ui::{PaneScroll, Typeface, code_well, column, disclosure_chevron, icon, id, row},
 };
 use crate::{
     assets::Icon,
@@ -107,7 +107,7 @@ impl Workbench {
                     .id(id("transcript", &pane.pane_id))
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .pane_scroll_y()
                     .track_scroll(&scroll)
                     .px(px(pane_interior::CARD_PADDING))
                     .py(px(pane_interior::CARD_VERTICAL_PADDING))

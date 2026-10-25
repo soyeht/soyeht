@@ -93,7 +93,7 @@ impl State {
                 self.editors.shows(pane, selected, &self.panes)
             })
             .collect();
-        let resolved = layout::resolve(&workspace.layout, &panes, &self.sizing)?;
+        let resolved = layout::resolve(&workspace.layout, &panes, &self.sizing_of(workspace_id))?;
         // A dragged arrangement shows while it still has the panes that are on show.
         match &self.layout_draft {
             Some(draft)

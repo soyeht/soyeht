@@ -327,6 +327,7 @@ private struct EditorCodeViewport: View {
   let definition: (TextPosition) -> Void
   let findReferences: (TextPosition) -> Void
   @State private var find: EditorFindController?
+  @State private var previewFits = false
   @Environment(EditorInputPreferences.self) private var inputPreferences
 
   var body: some View {
@@ -347,10 +348,19 @@ private struct EditorCodeViewport: View {
           onToggleSoftWrap: { inputPreferences.setSoftWrap(!inputPreferences.softWrap) }
         )
         .background(MacTheme.face)
-        if view.file.language == .markdown, let viewport = view.viewport {
+        if view.file.language == .markdown, let viewport = view.viewport,
+          previewFits
+        {
           Rectangle().fill(MacTheme.well).frame(width: 1)
           EditorMarkdownPreview(viewport: viewport)
         }
+      }
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: { width in
+        // The view is drawn again only when the preview appears or goes, not at every width.
+        let fits = MacPaneLayoutMetrics.editorShowsPreview(textAreaWidth: width)
+        if fits != previewFits { previewFits = fits }
       }
     }
     .task(id: view.file.fileId) {

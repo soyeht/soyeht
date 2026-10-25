@@ -4,7 +4,10 @@ Status: accepted · 2026-09-13
 
 ## Context
 
-The editor must show a Markdown preview beside the file. The file protocol
+The editor must show a Markdown preview beside the file, when the text area holds the
+lines at their floor, the divider and the narrowest preview (`editorShowsPreview`, 574 pt
+with the reference fonts); narrower, the lines keep the room and the preview is hidden. The
+file protocol
 deliberately exposes bounded viewports instead of whole-file payloads. Repository
 content is untrusted presentation input and must not gain an external side effect.
 

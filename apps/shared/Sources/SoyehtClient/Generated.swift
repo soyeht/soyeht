@@ -211,6 +211,46 @@ public enum DesignTokens {
     public static let terminalFontSizeMinimum: CGFloat = 8
     public static let terminalFontSizeMaximum: CGFloat = 32
     public static let terminalFontSizeStep: CGFloat = 1
+    public static let terminalColumns: CGFloat = 40
+    public static let terminalRows: CGFloat = 12
+    public static let terminalStateVerticalInset: CGFloat = 7
+    public static let editorColumns: CGFloat = 36
+    public static let editorMinimumRows: CGFloat = 12
+    public static let editorReviewHeight: CGFloat = 42
+    public static let editorPreviewDividerWidth: CGFloat = 1
+    public static let composerCharacters: CGFloat = 24
+    public static let composerControlChromeWidth: CGFloat = 124
+    public static let agentBodyTopInset: CGFloat = 4
+    public static let agentBodyBottomInset: CGFloat = 12
+    public static let agentTaskHeight: CGFloat = 34
+    public static let agentControlsFixtureHeight: CGFloat = 33
+    public static let agentDividerHeight: CGFloat = 1
+    public static let agentTranscriptFixtureHeight: CGFloat = 150
+    public static let agentComposerFixtureHeight: CGFloat = 67
+    public static let webNavigationHeight: CGFloat = 27
+    public static let webViewportWidth: CGFloat = 320
+    public static let webViewportHeight: CGFloat = 240
+    public static let webStatusHeight: CGFloat = 24
+    public static let writingHeaderHeight: CGFloat = 40
+    public static let compactTextCharacters: CGFloat = 24
+    public static let textLineHeight: CGFloat = 32
+    public static let textPageInset: CGFloat = 16
+    public static let textCompactLines: CGFloat = 6
+    public static let screenplayColumns: CGFloat = 61
+    public static let screenplayPageHorizontalInset: CGFloat = 74
+    public static let minimumScreenplayPointSize: CGFloat = 7.5
+    public static let screenplayPageWidthInches: CGFloat = 8.5
+    public static let screenplayPageHeightInches: CGFloat = 11
+    public static let presentationStageWidth: CGFloat = 320
+    public static let presentationStageHeight: CGFloat = 180
+    public static let presentationNumericRailHeight: CGFloat = 32
+    public static let presentationFooterHeight: CGFloat = 28
+    public static let newPaneBodyVerticalInset: CGFloat = 12
+    public static let newPaneSectionSpacing: CGFloat = 18
+    public static let newPaneHeadingHeight: CGFloat = 24
+    public static let newPaneFormHeight: CGFloat = 150
+    public static let newPaneMetadataHeight: CGFloat = 32
+    public static let newPaneCompactFooterHeight: CGFloat = 64
   }
 
   public enum Layout {

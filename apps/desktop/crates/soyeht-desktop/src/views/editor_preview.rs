@@ -34,7 +34,7 @@ impl Workbench {
                     .id(id("editor-preview-scroll", pane_id))
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scroll()
+                    .pane_scroll_y()
                     .p(px(space::X14))
                     .text_size(px(pane_interior::BODY_POINT_SIZE))
                     .child(markdown::reply(
@@ -61,8 +61,10 @@ impl Workbench {
         Some(
             column()
                 .id(id("editor-preview", pane_id))
-                .flex_none()
-                .w(px(editor::PREVIEW_WIDTH))
+                // It starts at its ideal width and gives way to the lines down to its narrowest.
+                .flex_shrink(1.0)
+                .flex_grow(0.0)
+                .flex_basis(px(editor::PREVIEW_WIDTH))
                 .min_w(px(editor::PREVIEW_MIN_WIDTH))
                 .max_w(px(editor::PREVIEW_MAX_WIDTH))
                 .child(band(partial, palette))
@@ -70,6 +72,29 @@ impl Workbench {
                 .into_any_element(),
         )
     }
+}
+
+/// The `lines` of the editor with the `preview` beside them, set off by a line. The lines keep
+/// their floor (`editor_text` gives them `pane_floors::editor_code_floor` as their narrowest) and
+/// the preview gives way to them, down to its narrowest.
+pub(super) fn beside_lines(
+    lines: AnyElement,
+    preview: AnyElement,
+    palette: &Palette,
+) -> AnyElement {
+    row()
+        .items_stretch()
+        .flex_1()
+        .min_h_0()
+        .child(lines)
+        .child(
+            div()
+                .flex_none()
+                .w(px(pane_interior::SEPARATOR_WIDTH))
+                .bg(rgb(palette.well)),
+        )
+        .child(preview)
+        .into_any_element()
 }
 
 /// The band over the preview: its name, and the lines it shows when the page is part of the file.

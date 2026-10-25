@@ -31,14 +31,6 @@ fn live(case: &Value) -> Vec<Pane> {
         .collect()
 }
 
-fn gap() -> f32 {
-    vector("pane-layout")["gap"].as_f64().unwrap() as f32
-}
-
-fn floor() -> f32 {
-    vector("pane-layout")["floor"]["width"].as_f64().unwrap() as f32
-}
-
 #[test]
 fn normalizing_merges_and_collapses_as_the_mac_does() {
     for case in cases("pane-layout", "normalize") {
@@ -108,8 +100,8 @@ fn a_stored_arrangement_is_read_as_the_mac_reads_it() {
 fn the_width_a_tree_needs_is_the_mac_minimum() {
     for case in cases("pane-layout", "minimumWidth") {
         assert_eq!(
-            minimum_width(&tree(&case["tree"]), floor(), gap()),
-            case["minimumWidth"].as_f64().unwrap() as f32,
+            sizing_of(&case).minimum(&tree(&case["tree"])).0,
+            case["minimumWidth"].as_f64().unwrap(),
             "{}",
             name(&case)
         );
@@ -121,18 +113,16 @@ fn panes_sit_where_the_mac_places_them_at_the_minimum_width() {
     for case in cases("pane-layout", "paneSpans") {
         let node = tree(&case["tree"]);
         for (id, span) in case["spans"].as_object().unwrap() {
-            let expected = (
-                span[0].as_f64().unwrap() as f32,
-                span[1].as_f64().unwrap() as f32,
-            );
+            let expected = (span[0].as_f64().unwrap(), span[1].as_f64().unwrap());
             assert_eq!(
-                pane_span(&node, id, floor(), gap()),
+                pane_span(&node, id, &sizing_of(&case), &Axis::Horizontal),
                 Some(expected),
                 "{}: {id}",
                 name(&case)
             );
         }
-        assert_eq!(pane_span(&node, "gone", floor(), gap()), None);
+        let none = pane_span(&node, "gone", &sizing_of(&case), &Axis::Horizontal);
+        assert_eq!(none, None);
     }
 }
 

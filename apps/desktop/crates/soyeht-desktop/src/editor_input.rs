@@ -412,11 +412,27 @@ impl Workbench {
 
     // Tabs and the project panel.
 
-    pub(crate) fn toggle_project_panel(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        if let Some(workspace) = self.workspace_of(pane_id)
-            && !self.panels.hidden.remove(&workspace)
+    /// Called while an editor is laid out: how wide the room beside its project panel is. The
+    /// preview comes and goes with it, so a change that moves it draws the pane again.
+    pub(crate) fn editor_area_measured(
+        &mut self,
+        pane_id: &str,
+        width: Pixels,
+        cx: &mut Context<Self>,
+    ) {
+        let ui = &mut self.panes.of(pane_id).editor;
+        let before = ui.area_width;
+        ui.area_width = f32::from(width);
+        if crate::pane_floors::preview_fits(before)
+            != crate::pane_floors::preview_fits(ui.area_width)
         {
-            self.panels.hidden.insert(workspace);
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn toggle_project_panel(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        if let Some(workspace) = self.workspace_of(pane_id) {
+            self.state.toggle_project_panel(&workspace);
         }
         cx.notify();
     }
@@ -667,6 +683,8 @@ impl Workbench {
         ui.top -= dy;
         ui.left -= dx;
         ui.clamp(lines, ui.longest);
+        // The turn is the text's; the stage does not scroll with it.
+        cx.stop_propagation();
         cx.notify();
     }
 }

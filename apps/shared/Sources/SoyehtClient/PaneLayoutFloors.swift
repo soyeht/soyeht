@@ -41,7 +41,7 @@ public enum PaneLayoutContentMetrics {
   public static let paneStackSpacing = Double(DesignTokens.PaneLayout.paneStackSpacing)
 
   /// Common writing chrome measured from the accepted P5/P2 writing-pane design.
-  public static let writingHeaderHeight = 40.0
+  public static let writingHeaderHeight = Double(DesignTokens.PaneLayout.writingHeaderHeight)
   public static let writingHeaderHorizontalInset = 18.0
   public static let writingHeaderFontPointSize = 14.0
   public static let writingHeaderActionGap = 14.0
@@ -78,7 +78,8 @@ public enum PaneLayoutContentMetrics {
   public static let genericPaneHeaderElapsedCharacters = 10.0
   public static let genericPaneHeaderActionWidth = Double(DesignTokens.PaneLayout.headerActionWidth)
   public static let terminalFontPointSize = Double(DesignTokens.PaneLayout.terminalFontSize)
-  public static let terminalStateVerticalInset = 7.0
+  public static let terminalStateVerticalInset = Double(
+    DesignTokens.PaneLayout.terminalStateVerticalInset)
 
   public static let editorFontPointSize = Double(DesignTokens.Editor.fontPointSize)
   public static let editorLineHeight = Double(DesignTokens.Editor.lineHeight)
@@ -87,7 +88,7 @@ public enum PaneLayoutContentMetrics {
   public static let editorHeaderHeight = Double(DesignTokens.Editor.headerHeight)
   public static let editorTabHeight = Double(DesignTokens.Editor.tabHeight)
   public static let editorViewportVerticalInset = Double(DesignTokens.Editor.viewportVerticalInset)
-  public static let editorReviewHeight = 42.0
+  public static let editorReviewHeight = Double(DesignTokens.PaneLayout.editorReviewHeight)
   public static let editorStatusHeight = Double(DesignTokens.Editor.statusHeight)
   public static let editorFindFieldHeight = Double(DesignTokens.Editor.findFieldHeight)
   /// Lines the replace field up under the find field, past the disclosure.
@@ -96,29 +97,38 @@ public enum PaneLayoutContentMetrics {
   /// layout folds it away and lays the editor out at its compact floor.
   public static let editorProjectPanelWidth = Double(DesignTokens.Editor.projectPanelWidth)
 
-  public static let agentTaskHeight = 34.0
-  public static let agentBodyTopInset = 4.0
-  public static let agentControlsFixtureHeight = 33.0
-  public static let agentDividerHeight = 1.0
-  public static let agentTranscriptFixtureHeight = 150.0
-  public static let agentComposerFixtureHeight = 67.0
+  public static let agentTaskHeight = Double(DesignTokens.PaneLayout.agentTaskHeight)
+  public static let agentBodyTopInset = Double(DesignTokens.PaneLayout.agentBodyTopInset)
+  public static let agentControlsFixtureHeight = Double(
+    DesignTokens.PaneLayout.agentControlsFixtureHeight)
+  public static let agentDividerHeight = Double(DesignTokens.PaneLayout.agentDividerHeight)
+  public static let agentTranscriptFixtureHeight = Double(
+    DesignTokens.PaneLayout.agentTranscriptFixtureHeight)
+  public static let agentComposerFixtureHeight = Double(
+    DesignTokens.PaneLayout.agentComposerFixtureHeight)
 
-  public static let webNavigationHeight = 27.0
-  public static let webViewportFixture = PaneLayoutSize(width: 320, height: 240)
-  public static let webStatusHeight = 24.0
+  public static let webNavigationHeight = Double(DesignTokens.PaneLayout.webNavigationHeight)
+  public static let webViewportFixture = PaneLayoutSize(
+    width: Double(DesignTokens.PaneLayout.webViewportWidth),
+    height: Double(DesignTokens.PaneLayout.webViewportHeight))
+  public static let webStatusHeight = Double(DesignTokens.PaneLayout.webStatusHeight)
 
   public static let textFontPointSize = 20.0
-  public static let textLineHeight = 32.0
+  public static let textLineHeight = Double(DesignTokens.PaneLayout.textLineHeight)
   public static let textReviewHeight = editorReviewHeight
-  public static let textPageInset = 16.0
+  public static let textPageInset = Double(DesignTokens.PaneLayout.textPageInset)
   public static let textReadingCharacters = 66.0
-  public static let textCompactLines = 6.0
+  public static let textCompactLines = Double(DesignTokens.PaneLayout.textCompactLines)
 
   public static let screenplayFontPointSize = 16.0
   public static let screenplayLineHeight = 27.0
-  public static let screenplayPageHorizontalInset = 74.0
-  public static let screenplayPageRatio = 11.0 / 8.5
-  public static let screenplayMinimumScale = 7.5 / screenplayFontPointSize
+  public static let screenplayPageHorizontalInset = Double(
+    DesignTokens.PaneLayout.screenplayPageHorizontalInset)
+  public static let screenplayPageRatio =
+    Double(DesignTokens.PaneLayout.screenplayPageHeightInches)
+    / Double(DesignTokens.PaneLayout.screenplayPageWidthInches)
+  public static let screenplayMinimumScale =
+    Double(DesignTokens.PaneLayout.minimumScreenplayPointSize) / screenplayFontPointSize
   public static let screenplaySceneRailWidth = 330.0
   public static let screenplaySceneDrawerHeight = 420.0
   public static let screenplayInlineElementMenuWidth = 148.0
@@ -129,19 +139,25 @@ public enum PaneLayoutContentMetrics {
   public static let screenplayInlineAnchorClearance = 3.0
   public static let screenplaySmartTypeFontPointSize = 11.0
 
-  public static let presentationNumericRailHeight = 32.0
-  public static let presentationStage = PaneLayoutSize(width: 320, height: 180)
+  public static let presentationNumericRailHeight = Double(
+    DesignTokens.PaneLayout.presentationNumericRailHeight)
+  public static let presentationStage = PaneLayoutSize(
+    width: Double(DesignTokens.PaneLayout.presentationStageWidth),
+    height: Double(DesignTokens.PaneLayout.presentationStageHeight))
   public static let presentationMaximumStage = PaneLayoutSize(width: 1024, height: 576)
   public static let presentationThumbnailRailWidth = 236.0
-  public static let presentationFooterHeight = 28.0
+  public static let presentationFooterHeight = Double(
+    DesignTokens.PaneLayout.presentationFooterHeight)
 
   public static let newPaneHeaderHeight = genericPaneHeaderHeight
-  public static let newPaneBodyVerticalInset = 12.0
-  public static let newPaneSectionSpacing = 18.0
-  public static let newPaneHeadingHeight = 24.0
-  public static let newPaneFormHeight = 150.0
-  public static let newPaneMetadataHeight = 32.0
-  public static let newPaneCompactFooterHeight = 64.0
+  public static let newPaneBodyVerticalInset = Double(
+    DesignTokens.PaneLayout.newPaneBodyVerticalInset)
+  public static let newPaneSectionSpacing = Double(DesignTokens.PaneLayout.newPaneSectionSpacing)
+  public static let newPaneHeadingHeight = Double(DesignTokens.PaneLayout.newPaneHeadingHeight)
+  public static let newPaneFormHeight = Double(DesignTokens.PaneLayout.newPaneFormHeight)
+  public static let newPaneMetadataHeight = Double(DesignTokens.PaneLayout.newPaneMetadataHeight)
+  public static let newPaneCompactFooterHeight = Double(
+    DesignTokens.PaneLayout.newPaneCompactFooterHeight)
   /// The room the prompt leaves for the shortcut hint at its trailing edge.
   public static let newPanePromptTrailingInset = 54.0
   public static let newPaneAddGlyphSize = 16.0
@@ -150,15 +166,19 @@ public enum PaneLayoutContentMetrics {
 
 /// Content rulers accepted in `docs/reports/pane-layout-floor-measurements.md`.
 public enum PaneLayoutFloorFormula {
-  public static let terminalColumns = 40.0
-  public static let terminalRows = 12.0
-  public static let editorColumns = 36.0
-  public static let agentComposerCharacters = 24.0
-  public static let compactTextCharacters = 24.0
-  public static let newPaneComposerCharacters = 24.0
-  public static let newPaneControlChromeWidth = 124.0
-  public static let screenplayColumns = 61.0
-  public static let minimumScreenplayPointSize = 7.5
+  public static let terminalColumns = Double(DesignTokens.PaneLayout.terminalColumns)
+  public static let terminalRows = Double(DesignTokens.PaneLayout.terminalRows)
+  public static let editorColumns = Double(DesignTokens.PaneLayout.editorColumns)
+  public static let agentComposerCharacters = Double(
+    DesignTokens.PaneLayout.composerCharacters)
+  public static let compactTextCharacters = Double(DesignTokens.PaneLayout.compactTextCharacters)
+  public static let newPaneComposerCharacters = Double(
+    DesignTokens.PaneLayout.composerCharacters)
+  public static let newPaneControlChromeWidth = Double(
+    DesignTokens.PaneLayout.composerControlChromeWidth)
+  public static let screenplayColumns = Double(DesignTokens.PaneLayout.screenplayColumns)
+  public static let minimumScreenplayPointSize = Double(
+    DesignTokens.PaneLayout.minimumScreenplayPointSize)
   public static let paneCardInset = PaneLayoutContentMetrics.paneCardInset
 
   public static func surfaceFloors(
@@ -173,10 +193,13 @@ public enum PaneLayoutFloorFormula {
           + terminalRows * fonts.terminal.lineHeight))
     let editor = editorSurfaceFloor(fonts: fonts, projectPanel: true)
     let agent = PaneLayoutSize(
-      width: ceil(agentComposerCharacters * fonts.agent.characterWidth + 124),
+      width: ceil(
+        agentComposerCharacters * fonts.agent.characterWidth
+          + Double(DesignTokens.PaneLayout.composerControlChromeWidth)),
       height: 2 * paneCardInset + PaneLayoutContentMetrics.genericPaneHeaderHeight
         + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.agentBodyTopInset
-        + PaneLayoutContentMetrics.agentTaskHeight + 12
+        + PaneLayoutContentMetrics.agentTaskHeight
+        + Double(DesignTokens.PaneLayout.agentBodyBottomInset)
         + PaneLayoutContentMetrics.agentControlsFixtureHeight
         + PaneLayoutContentMetrics.agentDividerHeight
         + PaneLayoutContentMetrics.agentTranscriptFixtureHeight
@@ -197,7 +220,8 @@ public enum PaneLayoutFloorFormula {
         + PaneLayoutContentMetrics.textReviewHeight
         + 2 * PaneLayoutContentMetrics.paneStackSpacing
         + 2 * PaneLayoutContentMetrics.textPageInset
-        + 6 * PaneLayoutContentMetrics.textLineHeight + paneCardInset)
+        + PaneLayoutContentMetrics.textCompactLines * PaneLayoutContentMetrics.textLineHeight
+        + paneCardInset)
     let screenplayPageWidth =
       screenplayColumns * fonts.screenplay.characterWidth
       + 2 * PaneLayoutContentMetrics.screenplayPageHorizontalInset
@@ -247,17 +271,36 @@ public enum PaneLayoutFloorFormula {
     surfaceWidth >= editorSurfaceFloor(fonts: fonts, projectPanel: true).width
   }
 
+  /// The editor shows the Markdown preview beside its lines only when the text area (the editor
+  /// without its project panel) holds the lines at their floor, the divider and the preview at
+  /// its narrowest. Narrower, the lines keep the room.
+  public static func editorShowsPreview(
+    textAreaWidth: Double, fonts: PaneLayoutFontMetrics
+  ) -> Bool {
+    textAreaWidth
+      >= ceil(
+        editorCodeFloorWidth(fonts: fonts)
+          + Double(DesignTokens.PaneLayout.editorPreviewDividerWidth)
+          + Double(DesignTokens.Editor.previewMinWidth))
+  }
+
+  /// The width the editor's lines need: their columns, the gutter and the text inset on both sides.
+  private static func editorCodeFloorWidth(fonts: PaneLayoutFontMetrics) -> Double {
+    editorColumns * fonts.editor.characterWidth + PaneLayoutContentMetrics.editorGutterWidth
+      + 2 * PaneLayoutContentMetrics.editorTextInset
+  }
+
   private static func editorSurfaceFloor(
     fonts: PaneLayoutFontMetrics, projectPanel: Bool
   ) -> PaneLayoutSize {
     PaneLayoutSize(
       width: ceil(
-        editorColumns * fonts.editor.characterWidth + PaneLayoutContentMetrics.editorGutterWidth
-          + 2 * PaneLayoutContentMetrics.editorTextInset + 2 * paneCardInset
+        editorCodeFloorWidth(fonts: fonts) + 2 * paneCardInset
           + (projectPanel ? PaneLayoutContentMetrics.editorProjectPanelWidth : 0)),
       height: 2 * paneCardInset + PaneLayoutContentMetrics.editorHeaderHeight
         + PaneLayoutContentMetrics.paneStackSpacing + PaneLayoutContentMetrics.editorTabHeight
-        + (12 * PaneLayoutContentMetrics.editorLineHeight
+        + (Double(DesignTokens.PaneLayout.editorMinimumRows)
+          * PaneLayoutContentMetrics.editorLineHeight
           + PaneLayoutContentMetrics.editorViewportVerticalInset)
         + PaneLayoutContentMetrics.editorReviewHeight
         + PaneLayoutContentMetrics.editorStatusHeight)

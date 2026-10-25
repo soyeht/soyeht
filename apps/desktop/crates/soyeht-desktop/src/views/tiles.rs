@@ -2,42 +2,49 @@
 //! children that share the room by weight, a leaf is a pane card.
 
 use super::ui::empty_state;
-use crate::{
-    assets::Icon,
-    neo,
-    theme::{Palette, desktop, pane_layout},
-    workbench::Workbench,
+use crate::{assets::Icon, neo, pane_floors, theme::Palette, workbench::Workbench};
+use gpui::{
+    AnyElement, Context, InteractiveElement, IntoElement, ParentElement,
+    StatefulInteractiveElement, Styled, div, point, px,
 };
-use gpui::{AnyElement, Context, IntoElement, ParentElement, Styled, div, point, px};
 use soyeht_client::{
-    layout::{Sizing, minimum_width, pane_span, reveal_offset},
+    layout::{Sizing, pane_span, reveal_offset},
     transcript_rows,
 };
-use soyeht_protocol::{Pane, WorkspacePaneLayoutAxis, WorkspacePaneLayoutNode as Node};
+use soyeht_protocol::{
+    Pane, WorkspacePaneLayoutAxis, WorkspacePaneLayoutKind as Kind, WorkspacePaneLayoutNode as Node,
+};
 
-/// The width the arrangement needs so that no pane is narrower than the floor.
-fn needed_width(node: &Node) -> f32 {
-    minimum_width(
-        node,
-        super::composer::minimum_pane_width(),
-        pane_layout::PANE_GAP,
-    )
+/// The room a split gives a child: at least the child's floor on both axes, and along the
+/// split the floor is also where its share starts, so that a divider dragged by a distance moves
+/// by that distance (`soyeht_client::layout::resize`).
+fn share(floor: (f64, f64), weight: f64, axis: &WorkspacePaneLayoutAxis) -> gpui::Div {
+    let (width, height) = (px(floor.0 as f32), px(floor.1 as f32));
+    let share = div()
+        .flex()
+        .min_w(width)
+        .min_h(height)
+        .flex_grow(weight as f32)
+        .flex_shrink_0();
+    match axis {
+        WorkspacePaneLayoutAxis::Horizontal => share.flex_basis(width),
+        WorkspacePaneLayoutAxis::Vertical => share.flex_basis(height),
+    }
 }
 
-/// What an arrangement's weights are measured with: every kind of pane needs the width the pane
-/// floor gives it (the Mac measures one floor per kind, `kindFloors` of `pane-layout.json`; the
-/// desktop has one, set by the composer an agent pane shows, and holds only that one to the
-/// vector), every kind needs the height the shared floor gives it, and the room between two
-/// panes is the gap.
-pub(crate) fn sizing() -> Sizing {
-    let floor = f64::from(super::composer::minimum_pane_width());
-    Sizing {
-        floor: (floor, f64::from(desktop::MINIMUM_PANE_HEIGHT)),
-        kinds: Vec::new(),
-        horizontal_gap: f64::from(pane_layout::PANE_GAP),
-        vertical_gap: f64::from(pane_layout::PANE_GAP),
-        companion_strip: 0.0,
+/// What an arrangement is measured with: the floor of each kind of pane (`pane_floors`), the
+/// agent's wide enough for the composer it always shows. An editor needs less room with its
+/// project panel hidden. The state holds it (`State::sizing_of`), so the weights of an
+/// arrangement and the stage that draws it are measured alike.
+pub(crate) fn sizing(project_panel: bool) -> Sizing {
+    let mut sizing = pane_floors::sizing(project_panel);
+    let composer = f64::from(super::composer::minimum_pane_width());
+    for (kind, floor) in &mut sizing.kinds {
+        if *kind == Kind::Agent {
+            floor.0 = floor.0.max(composer);
+        }
     }
+    sizing
 }
 
 impl Workbench {
@@ -98,50 +105,84 @@ impl Workbench {
             ),
             0,
         );
-        let tiles = self.tile(&tree, focused.as_deref(), &[], palette, cx);
-        self.reveal_pending(&tree);
-        // A pane keeps a width its composer and header fit in, as the Mac's layout floors do:
-        // when the panes need more room than the window has, the stage scrolls sideways. The
-        // wheel moves it only sideways, so a transcript or a terminal under the pointer keeps
-        // its own vertical scrolling.
+        let sizing = self.state.sizing_of(&workspace_id);
+        let tiles = self.tile(&tree, &sizing, focused.as_deref(), &[], palette, cx);
+        self.reveal_pending(&tree, &sizing);
+        // A pane keeps the size its content fits in, whatever its kind (`pane_floors`, the
+        // Mac's layout floors): when the panes need more room than the window has, the stage
+        // scrolls, sideways and down, and never shrinks one below its floor. A transcript or a
+        // terminal under the pointer keeps its own vertical scrolling.
         //
         // A scroller clips what it holds to its bounds, and a pane's shadow reaches `PANE_HALO`
         // past its card. The scroller therefore reaches that far beyond the margins the panes
         // keep and gives the room back as padding inside, so the outermost panes draw their
         // whole halo on every side (the Mac leaves the same room around its pane grid).
         let halo = neo::PANE_HALO;
+        let (needed_width, needed_height) = sizing.minimum(&tree);
         let stage = div()
             .flex()
             .flex_1()
-            .min_w(px(needed_width(&tree) + 2.0 * halo))
+            .min_w(px(needed_width as f32 + 2.0 * halo))
+            .min_h(px(needed_height as f32 + 2.0 * halo))
             .p(px(halo))
             .child(tiles);
-        super::ui::sideways_scroller("tiles", &self.stage.scroll, stage, palette)
+        // The scroller moves both ways, for panes that cannot give up their size; the wheel
+        // goes down only where nothing under the pointer scrolls that way first.
+        let scroller = div()
+            .id("tiles")
+            .flex()
+            .size_full()
+            .overflow_scroll()
+            .track_scroll(&self.stage.scroll)
+            .child(stage);
+        super::ui::fade_frame(scroller, &self.stage.scroll, palette)
             .min_h_0()
             .m(px(-halo))
             .into_any_element()
     }
 
     /// Scrolls the stage to the pane that was asked to be shown, once the stage has a size.
-    fn reveal_pending(&mut self, tree: &Node) {
-        let viewport = f32::from(self.stage.scroll.bounds().size.width);
-        if viewport <= 0.0 {
+    fn reveal_pending(&mut self, tree: &Node, sizing: &Sizing) {
+        let bounds = self.stage.scroll.bounds().size;
+        let (width, height) = (
+            f64::from(f32::from(bounds.width)),
+            f64::from(f32::from(bounds.height)),
+        );
+        if width <= 0.0 || height <= 0.0 {
             return;
         }
         let Some(pane_id) = self.stage.reveal.take() else {
             return;
         };
-        let floor = super::composer::minimum_pane_width();
-        if let Some((start, width)) = pane_span(tree, &pane_id, floor, pane_layout::PANE_GAP) {
-            let scrolled = -f32::from(self.stage.scroll.offset().x);
-            let target = reveal_offset(start + neo::PANE_HALO, width, scrolled, viewport);
-            self.stage.scroll.set_offset(point(px(-target), px(0.0)));
-        }
+        let halo = f64::from(neo::PANE_HALO);
+        let offset = self.stage.scroll.offset();
+        let target = |axis: WorkspacePaneLayoutAxis, scrolled: f32, viewport: f64| {
+            pane_span(tree, &pane_id, sizing, &axis).map_or(
+                f64::from(-scrolled),
+                |(start, extent)| {
+                    reveal_offset(start + halo, extent, f64::from(-scrolled), viewport)
+                },
+            )
+        };
+        let x = target(
+            WorkspacePaneLayoutAxis::Horizontal,
+            f32::from(offset.x),
+            width,
+        );
+        let y = target(
+            WorkspacePaneLayoutAxis::Vertical,
+            f32::from(offset.y),
+            height,
+        );
+        self.stage
+            .scroll
+            .set_offset(point(px(-(x as f32)), px(-(y as f32))));
     }
 
     fn tile(
         &mut self,
         node: &Node,
+        sizing: &Sizing,
         focused: Option<&str>,
         path: &[usize],
         palette: &'static Palette,
@@ -160,31 +201,20 @@ impl Workbench {
             }
             Node::V1(split) => {
                 // Each child has the room its floor needs and takes a share of what is left by
-                // weight, as the Mac lays a split out, so that dragging a divider by a distance
-                // moves it by that distance (`soyeht_client::layout::resize`).
-                let sizing = sizing();
+                // weight, as the Mac lays a split out.
                 let mut items: Vec<AnyElement> = Vec::new();
                 for (index, branch) in split.children.iter().enumerate() {
                     if index > 0 {
                         items.push(self.divider(path, index - 1, &split.axis, cx));
                     }
                     let child_path = [path, &[index]].concat();
-                    let child = self.tile(&branch.node, focused, &child_path, palette, cx);
-                    let (floor_width, floor_height) = sizing.minimum(&branch.node);
-                    let mut share = div()
-                        .flex()
-                        .min_w(px(needed_width(&branch.node)))
-                        .min_h_0()
-                        .flex_grow(branch.weight as f32);
-                    share = match split.axis {
-                        WorkspacePaneLayoutAxis::Horizontal => {
-                            share.flex_basis(px(floor_width as f32)).flex_shrink_0()
-                        }
-                        WorkspacePaneLayoutAxis::Vertical => {
-                            share.flex_basis(px(floor_height as f32)).flex_shrink_1()
-                        }
-                    };
-                    items.push(share.child(child).into_any_element());
+                    let child = self.tile(&branch.node, sizing, focused, &child_path, palette, cx);
+                    let floor = sizing.minimum(&branch.node);
+                    items.push(
+                        share(floor, branch.weight, &split.axis)
+                            .child(child)
+                            .into_any_element(),
+                    );
                 }
                 let layout = div().flex_1().min_w_0().min_h_0().flex();
                 let layout = match split.axis {

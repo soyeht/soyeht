@@ -41,8 +41,9 @@ mod switch_popover;
 mod tasks;
 mod terminal_menu;
 mod tiles;
-
 pub(crate) use tiles::sizing;
+pub(crate) use ui::is_turn_down;
+
 mod top_bar;
 mod ui;
 mod usage_ring;
