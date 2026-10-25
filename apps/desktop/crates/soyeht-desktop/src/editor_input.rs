@@ -3,6 +3,7 @@
 //! what to send the engine; this only carries it out.
 
 use crate::{
+    composer_field::chord_with_text,
     editor_ui::EditorUi,
     editor_view::{Frame, columns_in, rows},
     terminal_view::CellSize,
@@ -17,7 +18,7 @@ use soyeht_client::{
     Effect,
     editor::{
         gutter,
-        keys::{Action, Chord, action},
+        keys::{Action, Chord, action, types_text},
         selection::Motion,
         text::{cells_before, column_at_cell, line_cells},
         tree::Key as TreeKey,
@@ -135,8 +136,15 @@ impl Workbench {
             content: EditorUi::content_height(lines),
             first_cell,
             offset: (left, top - first_line as f32 * line),
+            // Text typed while the find bar has the keys goes to the bar, not under the caret.
+            preedit: self
+                .preedit_of(pane_id)
+                .filter(|_| !self.finding(pane_id))
+                .map(str::to_owned),
         };
-        self.panes.of(pane_id).editor.longest = longest;
+        let ui = &mut self.panes.of(pane_id).editor;
+        ui.longest = longest;
+        ui.caret = frame.caret_area(bounds);
         Some(frame)
     }
 
@@ -151,20 +159,17 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> bool {
         let keystroke = &event.keystroke;
-        let chord = Chord {
-            key: &keystroke.key,
-            text: keystroke.key_char.as_deref(),
-            control: keystroke.modifiers.control,
-            alt: keystroke.modifiers.alt,
-            shift: keystroke.modifiers.shift,
-            platform: keystroke.modifiers.platform,
-        };
+        let chord = chord_with_text(keystroke);
         let tree_has_it = self
             .panes
             .get(pane_id)
             .is_some_and(|ui| ui.editor.tree_focused);
         if tree_has_it && self.editor_tree_key(pane_id, &chord, cx) {
             return true;
+        }
+        // What the key types comes through the platform's text input (`type_in_editor`).
+        if types_text(&chord, event.prefer_character_input) {
+            return false;
         }
         let Some(act) = action(&chord) else {
             return false;
@@ -175,6 +180,16 @@ impl Workbench {
         }
         self.editor_action(pane_id, act, cx);
         true
+    }
+
+    /// Text the platform's text input delivers: the find bar's when it has the keys, else the file's.
+    pub(crate) fn type_in_editor(&mut self, pane_id: &str, text: &str, cx: &mut Context<Self>) {
+        let act = Action::Type(text.to_owned());
+        if self.finding(pane_id) {
+            self.find_key(pane_id, act, false, cx);
+        } else {
+            self.editor_action(pane_id, act, cx);
+        }
     }
 
     pub(crate) fn editor_action(&mut self, pane_id: &str, act: Action, cx: &mut Context<Self>) {

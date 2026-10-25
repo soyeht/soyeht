@@ -19,25 +19,83 @@ use crate::{
     theme::{Palette, desktop, elevation, layout, radius, space},
 };
 use gpui::{
-    AnyElement, Context, Decorations, Div, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, Styled, Window, WindowControlArea, WindowControls, px,
+    AnyElement, Context, Decorations, Div, InteractiveElement, IntoElement, ParentElement, Styled,
+    Window, WindowControlArea, WindowControls, px,
 };
-// Windows acts on the hit-test; elsewhere the click does the work.
+// Windows acts on the hit-test; elsewhere the click and the press do the work.
 #[cfg(not(target_os = "windows"))]
-use gpui::{ClickEvent, StatefulInteractiveElement};
+use gpui::{
+    ClickEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    StatefulInteractiveElement,
+};
 use std::ffi::OsStr;
 
 /// Makes `area` the part of the bar that moves the window; a double click maximizes.
-pub fn drag_area(area: Div) -> AnyElement {
-    area.window_control_area(WindowControlArea::Drag)
-        .on_mouse_down(MouseButton::Left, |event, window, _| {
-            if event.click_count == 2 {
-                window.zoom_window();
-            } else {
+///
+/// The area is as tall as the bar: the bar centers its children, which gives an empty one no
+/// height, and an area with no height is never under the pointer. It is a sibling of the tabs
+/// and the buttons and never their parent: the window system takes the first area that holds the
+/// pointer, so a drag area around a button would turn the button into the bar.
+///
+/// On Windows the area is the caption: the system moves the window with it, snaps it to an edge,
+/// and maximizes it on a double click. Elsewhere a press followed by the pointer moving starts the
+/// move, and a double click maximizes: the move starts on the first motion, not on the press,
+/// because on X11 the window manager takes the pointer for the whole move and a second press
+/// would never arrive.
+#[cfg_attr(target_os = "windows", allow(unused_variables))]
+pub fn drag_area(area: Div, cx: &mut Context<Workbench>) -> AnyElement {
+    let area = caption(area);
+    #[cfg(not(target_os = "windows"))]
+    let area = area
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, event: &MouseDownEvent, window, _| {
+                if event.click_count == 2 {
+                    this.caption_pressed = None;
+                    window.zoom_window();
+                } else {
+                    this.caption_pressed = Some(event.position);
+                }
+            }),
+        )
+        .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, window, _| {
+            let Some(pressed_at) = this.caption_pressed else {
+                return;
+            };
+            // A release that was missed (the pointer let go elsewhere) ends the press too.
+            if event.pressed_button != Some(MouseButton::Left) {
+                this.caption_pressed = None;
+            } else if dragged_apart(pressed_at, event.position) {
+                this.caption_pressed = None;
                 window.start_window_move();
             }
-        })
-        .into_any_element()
+        }))
+        .on_mouse_up(
+            MouseButton::Left,
+            cx.listener(|this, _: &MouseUpEvent, _, _| this.caption_pressed = None),
+        )
+        .on_mouse_up_out(
+            MouseButton::Left,
+            cx.listener(|this, _: &MouseUpEvent, _, _| this.caption_pressed = None),
+        );
+    area.into_any_element()
+}
+
+/// How far the pointer moves with the button down before the press is a drag and not a click
+/// that shook.
+#[cfg(not(target_os = "windows"))]
+const DRAG_THRESHOLD: f32 = 3.0;
+
+/// Whether the pointer has moved far enough from where the press began to move the window.
+#[cfg(not(target_os = "windows"))]
+fn dragged_apart(from: gpui::Point<gpui::Pixels>, to: gpui::Point<gpui::Pixels>) -> bool {
+    let (dx, dy) = (f32::from(to.x - from.x), f32::from(to.y - from.y));
+    dx.hypot(dy) >= DRAG_THRESHOLD
+}
+
+/// `area` as the caption: as tall as the bar, and the window system's drag area.
+fn caption(area: Div) -> Div {
+    area.h_full().window_control_area(WindowControlArea::Drag)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +277,24 @@ fn button(control: Control, palette: &'static Palette, cx: &mut Context<Workbenc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_caption_is_as_tall_as_the_bar_and_not_as_tall_as_its_content() {
+        // The bar centers its children: an empty child sized by its content has no height, and a
+        // pointer is never over it.
+        let mut area = caption(gpui::div());
+        assert_eq!(area.style().size.height, Some(gpui::relative(1.0).into()));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn a_press_that_shakes_is_a_click_and_one_that_travels_is_a_drag() {
+        let at = |x: f32, y: f32| gpui::point(px(x), px(y));
+        assert!(!dragged_apart(at(10.0, 10.0), at(11.0, 11.0)));
+        assert!(!dragged_apart(at(10.0, 10.0), at(10.0, 12.5)));
+        assert!(dragged_apart(at(10.0, 10.0), at(13.0, 10.0)));
+        assert!(dragged_apart(at(10.0, 10.0), at(8.0, 13.0)));
+    }
 
     const OFFERED: WindowControls = WindowControls {
         fullscreen: true,

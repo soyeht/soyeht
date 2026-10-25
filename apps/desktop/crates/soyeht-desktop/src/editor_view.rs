@@ -3,7 +3,7 @@
 //! shaped and drawn, so a file of any length costs a window's worth of text.
 
 use crate::{
-    terminal_view::{CellSize, Layout, frame_canvas, paint_runs},
+    terminal_view::{CellSize, Layout, frame_canvas, paint_preedit, paint_runs},
     theme::{Palette, desktop, editor, fonts::MONO as MONO_FAMILY, type_scale},
     workbench::Workbench,
 };
@@ -43,6 +43,30 @@ pub struct Frame {
     /// The first cell shown on each row, and how far the first row is scrolled up.
     pub first_cell: usize,
     pub offset: (f32, f32),
+    /// The text an input method is composing, drawn under the caret until it is committed.
+    pub preedit: Option<String>,
+}
+
+impl Frame {
+    /// Where the first cell of the first row is, with the lines' scroll taken off.
+    fn origin(&self, bounds: Bounds<Pixels>) -> gpui::Point<Pixels> {
+        point(
+            bounds.left() + px(self.gutter) + px(editor::TEXT_INSET),
+            bounds.top() + px(editor::VIEWPORT_VERTICAL_INSET / 2.0) - px(self.offset.1),
+        )
+    }
+
+    /// The caret's bar, when the caret is in view.
+    pub fn caret_area(&self, bounds: Bounds<Pixels>) -> Option<Bounds<Pixels>> {
+        let (row, at) = self.caret?;
+        let origin = self.origin(bounds);
+        let x = origin.x - px(self.offset.0) + self.cell.width * at as f32;
+        let y = origin.y + self.cell.height * row as f32;
+        Some(Bounds::new(
+            point(x, y),
+            size(px(desktop::EDITOR_CARET_WIDTH), self.cell.height),
+        ))
+    }
 }
 
 /// The color of the syntax role.
@@ -157,10 +181,7 @@ fn draw(
         point(bounds.left() + gutter, bounds.top()),
         size(bounds.size.width - gutter, bounds.size.height),
     );
-    let origin = point(
-        text_area.left() + px(editor::TEXT_INSET),
-        bounds.top() + px(editor::VIEWPORT_VERTICAL_INSET / 2.0) - px(frame.offset.1),
-    );
+    let origin = frame.origin(bounds);
     window.with_content_mask(Some(ContentMask { bounds: text_area }), |window| {
         // The x of the first cell shown: the text is scrolled sideways by whole cells and a bit.
         let first = origin.x - px(frame.offset.0) + cell.width * frame.first_cell as f32;
@@ -172,12 +193,16 @@ fn draw(
             }
             draw_line(&row.shown, first, y, cell, palette, (window, cx));
         }
-        if focused && let Some((row, at)) = frame.caret {
-            let x = origin.x - px(frame.offset.0) + cell.width * at as f32;
-            let y = origin.y + cell.height * row as f32;
-            let width = px(desktop::EDITOR_CARET_WIDTH);
-            let caret = Bounds::new(point(x, y), size(width, cell.height));
-            window.paint_quad(fill(caret, color(palette.accent)));
+        if focused && let Some(caret) = frame.caret_area(bounds) {
+            match &frame.preedit {
+                Some(text) => paint_preedit(
+                    text,
+                    (caret.origin, cell),
+                    (editor::FONT_POINT_SIZE, palette.ink, palette.face),
+                    (window, cx),
+                ),
+                None => window.paint_quad(fill(caret, color(palette.accent))),
+            }
         }
     });
     paint_gutter(frame, bounds, origin.y, palette, window, cx);

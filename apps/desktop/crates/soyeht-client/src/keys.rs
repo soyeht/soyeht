@@ -19,8 +19,9 @@ impl Modifiers {
     }
 }
 
-/// `key_char` is the text the key produces with the current layout, if any.
-/// `application_cursor` is the terminal's DECCKM mode.
+/// `key_char` is the text the key produces with the current layout, if any. Plain text reaches
+/// a terminal as text, not through here (`editor::keys::types_text`); a key with text and Alt
+/// held sends it after Escape. `application_cursor` is the terminal's DECCKM mode.
 pub fn encode(
     key: &str,
     key_char: Option<&str>,
@@ -39,10 +40,9 @@ pub fn encode(
         bytes.push(byte);
         return Some(bytes);
     }
-    let text = key_char.filter(|text| !text.is_empty()).or_else(|| {
-        let mut characters = key.chars();
-        (characters.next().is_some() && characters.next().is_none()).then_some(key)
-    })?;
+    // A key types what the layout says it types and nothing else: a dead key being composed has
+    // no text yet (its key is the letter under it on a US keyboard, which is not what was typed).
+    let text = key_char.filter(|text| !text.is_empty())?;
     let mut bytes = Vec::with_capacity(text.len() + 1);
     if modifiers.alt {
         bytes.push(0x1b);
@@ -189,6 +189,14 @@ mod tests {
             press("e", Some("\u{e9}"), NONE),
             Some("\u{e9}".as_bytes().to_vec())
         );
+    }
+
+    #[test]
+    fn a_key_without_text_is_not_its_own_character() {
+        // A dead key under composition has no text yet, whatever letter its key is called.
+        assert_eq!(press("'", None, NONE), None);
+        assert_eq!(press("a", None, NONE), None);
+        assert_eq!(press("a", Some(""), NONE), None);
     }
 
     #[test]

@@ -64,7 +64,10 @@ impl Workbench {
             .pr(px(space::X12))
             .child(self.rail_toggle(palette, cx))
             .child(strip.element)
-            .child(window_controls::drag_area(spacer().min_w(px(MINIMUM_DRAG))))
+            .child(window_controls::drag_area(
+                spacer().min_w(px(MINIMUM_DRAG)),
+                cx,
+            ))
             .children((!hidden.is_empty()).then(|| self.overflow(&hidden, palette, cx)))
             .child(self.new_pane_button(connected, palette, cx))
             .children(reconnecting.then(|| reconnecting_note(palette)))

@@ -182,6 +182,13 @@ impl TerminalScreen {
         Some(Cursor { row, column })
     }
 
+    /// Where the cursor is, also while the program hides it or the view shows history: the place
+    /// an input method's composition and candidate window belong at.
+    pub fn cursor_cell(&self) -> Cursor {
+        let (row, column) = self.parser.screen().cursor_position();
+        Cursor { row, column }
+    }
+
     /// Arrow keys send `ESC O` instead of `ESC [` while a program asks for it.
     pub fn application_cursor(&self) -> bool {
         self.parser.screen().application_cursor()

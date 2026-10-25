@@ -14,6 +14,7 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) {
         self.state.focus_pane(pane_id);
+        self.preedit = None;
         self.announce_focus();
         self.menus.close();
         self.stage.reveal = Some(pane_id.to_owned());

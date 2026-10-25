@@ -33,6 +33,8 @@ pub(crate) struct EditorUi {
     /// The width of the editor beside its project panel, as it was last laid out: the room the
     /// lines share with the Markdown preview.
     pub area_width: f32,
+    /// Where the caret was last drawn, for the input method's candidate window.
+    pub caret: Option<Bounds<Pixels>>,
     /// The cells of the longest line in view, to keep the sideways scroll inside the text.
     pub longest: usize,
     /// A drag that selects text is under way.

@@ -6,8 +6,8 @@ use crate::{
 };
 use gpui::{
     App, BorderStyle, Bounds, DispatchPhase, Entity, Hsla, IntoElement, MouseMoveEvent,
-    MouseUpEvent, Pixels, Styled, TextAlign, TextRun, UnderlineStyle, Window, canvas, fill, font,
-    outline, point, px, rgb, size,
+    MouseUpEvent, Pixels, ShapedLine, Styled, TextAlign, TextRun, UnderlineStyle, Window, canvas,
+    fill, font, outline, point, px, rgb, size,
 };
 use soyeht_client::screen::{CellColor, Cursor, Run};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -69,6 +69,8 @@ struct Frame {
     link: Vec<Option<(u16, u16)>>,
     /// A drag that selects is under way, so the pointer is followed wherever it goes.
     dragging: bool,
+    /// The text an input method is composing, drawn at the cursor until it is committed.
+    preedit: Option<(String, Cursor)>,
 }
 
 /// The columns of a row that are inside a view `columns` wide.
@@ -132,6 +134,11 @@ pub fn surface(
                     .map(|row| within(hovered.and_then(|span| screen.columns_of(span, row)), cols))
                     .collect(),
                 dragging: workbench.terminal_dragging(&pane_id),
+                preedit: workbench
+                    .preedit_of(&pane_id)
+                    .filter(|_| focused)
+                    .map(|text| (text.to_owned(), screen.cursor_cell()))
+                    .filter(|(_, at)| at.row < rows && at.column < cols),
             })
         },
         move |frame, bounds, window, cx| {
@@ -234,6 +241,21 @@ fn paint(
             window.paint_quad(outline(area, rgb(palette.accent), BorderStyle::Solid));
         }
     }
+    // The composition goes over the cursor, and where the cursor would be when it is hidden.
+    if let Some((text, at)) = &frame.preedit {
+        let origin = point(
+            origin.x + cell.width * f32::from(at.column),
+            origin.y + cell.height * f32::from(at.row),
+        );
+        let ink = palette.terminal(CellColor::DefaultFg);
+        let background = palette.terminal(CellColor::DefaultBg);
+        paint_preedit(
+            text,
+            (origin, cell),
+            (TERMINAL_FONT_SIZE, ink, background),
+            (window, cx),
+        );
+    }
 }
 
 #[derive(Default)]
@@ -242,6 +264,31 @@ struct TextStyle {
     bold: bool,
     italic: bool,
     underline: bool,
+}
+
+impl TextStyle {
+    /// A run of `len` bytes of the mono face in this style.
+    fn run(&self, len: usize) -> TextRun {
+        let mut face = font(MONO_FAMILY);
+        if self.bold {
+            face = face.bold();
+        }
+        if self.italic {
+            face = face.italic();
+        }
+        TextRun {
+            len,
+            font: face,
+            color: self.color,
+            background_color: None,
+            underline: self.underline.then_some(UnderlineStyle {
+                thickness: px(desktop::HAIRLINE),
+                color: Some(self.color),
+                wavy: false,
+            }),
+            strikethrough: None,
+        }
+    }
 }
 
 fn run_style(run: &Run, palette: &Palette) -> TextStyle {
@@ -265,28 +312,9 @@ fn draw_text(
     window: &mut Window,
     cx: &mut App,
 ) {
-    let mut face = font(MONO_FAMILY);
-    if style.bold {
-        face = face.bold();
-    }
-    if style.italic {
-        face = face.italic();
-    }
-    let run = TextRun {
-        len: text.len(),
-        font: face,
-        color: style.color,
-        background_color: None,
-        underline: style.underline.then_some(UnderlineStyle {
-            thickness: px(desktop::HAIRLINE),
-            color: Some(style.color),
-            wavy: false,
-        }),
-        strikethrough: None,
-    };
     paint_runs(
         text,
-        &[run],
+        &[style.run(text.len())],
         TERMINAL_FONT_SIZE,
         at,
         Layout::Grid(cell),
@@ -319,16 +347,57 @@ pub fn paint_runs(
         Layout::Grid(cell) => (Some(cell.width), cell.height),
         Layout::Natural(height) => (None, height),
     };
-    let shaped =
-        window
-            .text_system()
-            .shape_line(text.to_owned().into(), px(font_size), runs, force);
-    // A run that fails to paint leaves its cells blank until the next frame draws them.
+    let shaped = shape(text, (font_size, runs, force), window);
+    paint_line(&shaped, (at, height), window, cx);
+}
+
+/// `text` shaped in `runs` of the mono face, each character `force` wide when that is given.
+fn shape(
+    text: &str,
+    (font_size, runs, force): (f32, &[TextRun], Option<Pixels>),
+    window: &mut Window,
+) -> ShapedLine {
+    let text = text.to_owned().into();
+    window
+        .text_system()
+        .shape_line(text, px(font_size), runs, force)
+}
+
+/// Paints a shaped line from `at` on a line `height` tall. A run that fails to paint leaves its
+/// cells blank until the next frame draws them.
+fn paint_line(
+    shaped: &ShapedLine,
+    (at, height): (gpui::Point<Pixels>, Pixels),
+    window: &mut Window,
+    cx: &mut App,
+) {
     report_paint(
         shaped
             .paint(at, height, TextAlign::Left, None, window, cx)
             .is_err(),
     );
+}
+
+/// The text an input method is composing, painted underlined from `at` over what is there: in
+/// `(font_size, ink, background)`, each character as wide as its glyphs.
+pub fn paint_preedit(
+    text: &str,
+    (at, cell): (gpui::Point<Pixels>, CellSize),
+    (font_size, ink, background): (f32, u32, u32),
+    (window, cx): (&mut Window, &mut App),
+) {
+    let run = TextStyle {
+        color: rgb(ink).into(),
+        underline: true,
+        ..TextStyle::default()
+    }
+    .run(text.len());
+    let shaped = shape(text, (font_size, &[run], None), window);
+    window.paint_quad(fill(
+        Bounds::new(at, size(shaped.width, cell.height)),
+        rgb(background),
+    ));
+    paint_line(&shaped, (at, cell.height), window, cx);
 }
 
 /// Records whether a run of text painted. A failure that lasts is logged once, not on every

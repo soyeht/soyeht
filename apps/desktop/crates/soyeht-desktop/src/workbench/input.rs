@@ -1,10 +1,14 @@
 //! Keys, the clipboard and the wheel, for the pane in front.
 
 use super::{Paste, Workbench};
-use crate::{composer_field::edit_of, destination::Destination};
-use gpui::{Context, KeyDownEvent, ScrollWheelEvent, Window};
+use crate::{
+    composer_field::{chord_with_text, edit_of},
+    destination::Destination,
+};
+use gpui::{App, Context, KeyDownEvent, ScrollWheelEvent, Window};
 use soyeht_client::{
     Command, Connection,
+    editor::keys::types_text,
     keys::{self, Modifiers},
     screen::TerminalScreen,
     text_input::keys::Edit,
@@ -29,7 +33,7 @@ impl Workbench {
             self.paste_into_composer(&pane_id, &item, cx);
             return;
         }
-        let Some(pane_id) = self.focused_terminal(window, cx) else {
+        let Some(KeyTarget::Terminal(pane_id)) = self.keys_target(window, cx) else {
             return;
         };
         self.paste_terminal(&pane_id, cx);
@@ -54,9 +58,12 @@ impl Workbench {
             cx.stop_propagation();
             return;
         }
+        // The pane in front takes the keys only while the stage shows it and no field holds the
+        // keyboard (`keys_target`, the rule the typed text follows too).
+        let target = self.keys_target(window, cx);
         // An editor takes its keys, the platform key among them: on the Mac that is its shortcut key.
-        if let Some(pane_id) = self.focused_editor() {
-            if self.editor_key(&pane_id, event, cx) {
+        if let Some(KeyTarget::Editor(pane_id)) = &target {
+            if self.editor_key(pane_id, event, cx) {
                 cx.stop_propagation();
             }
             return;
@@ -77,9 +84,14 @@ impl Workbench {
         if keystroke.modifiers.platform {
             return;
         }
-        let Some(pane_id) = self.focused_terminal(window, cx) else {
+        let Some(KeyTarget::Terminal(pane_id)) = target else {
             return;
         };
+        // What a key types (a dead key, a letter, AltGr) comes through the platform's text input
+        // (`text_input`), which composes it. The other keys are the program's.
+        if types_text(&chord_with_text(keystroke), event.prefer_character_input) {
+            return;
+        }
         let application_cursor = self
             .state
             .screen(&pane_id)
@@ -120,22 +132,26 @@ impl Workbench {
         }
     }
 
-    /// The terminal that takes the keys and the paste. It takes them only while the stage shows
-    /// it: a sheet or a place in front of it, or a form that has not yet taken the keyboard, keep
-    /// them, as does a field that holds the keyboard (the title of a new task, a search line).
-    /// Keys typed there never reach the terminal behind.
-    fn focused_terminal(&self, window: &Window, cx: &Context<Self>) -> Option<String> {
+    /// The pane that takes the keys, the paste and the typed text: the editor or the terminal in
+    /// front. It takes them only while the stage shows it: a sheet or a place in front of it, or
+    /// a form that has not yet taken the keyboard, keep them, as does a field that holds the
+    /// keyboard (the title of a new task, a search line). What is typed there never reaches the
+    /// pane behind.
+    pub(crate) fn keys_target(&self, window: &Window, cx: &App) -> Option<KeyTarget> {
         let start_shown = self.start.as_ref().is_some_and(|start| start.shown);
-        if !stage_shows_panes(self.destination, start_shown)
-            || self.field_request.is_some()
-            || !pane_takes_keys(window.focused(cx), self.focus.clone())
-        {
-            return None;
-        }
+        let free = panes_take_keys(
+            (self.destination, start_shown),
+            self.field_request.is_some(),
+            pane_takes_keys(window.focused(cx), self.focus.clone()),
+        );
         let pane = self.state.focused_pane()?;
-        self.state
-            .screen(&pane.pane_id)
-            .map(|_| pane.pane_id.clone())
+        match pane.mode {
+            PaneMode::Editor if free => Some(KeyTarget::Editor(pane.pane_id.clone())),
+            PaneMode::Terminal if free && self.state.screen(&pane.pane_id).is_some() => {
+                Some(KeyTarget::Terminal(pane.pane_id.clone()))
+            }
+            _ => None,
+        }
     }
 
     /// Typing returns the view to the live bottom, as in every terminal.
@@ -171,6 +187,23 @@ fn pane_takes_keys<H: PartialEq>(focused: Option<H>, window: H) -> bool {
     focused.is_none_or(|focused| focused == window)
 }
 
+/// The pane that takes the keys (`keys_target`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum KeyTarget {
+    Terminal(String),
+    Editor(String),
+}
+
+/// Whether the panes take the keys now: the stage shows them (`destination`, whether the start
+/// form is shown), no form field has been asked for the keyboard and none holds it.
+fn panes_take_keys(
+    (destination, start_shown): (Destination, bool),
+    field_requested: bool,
+    keyboard_with_window: bool,
+) -> bool {
+    stage_shows_panes(destination, start_shown) && !field_requested && keyboard_with_window
+}
+
 /// Whether the stage draws the panes: no place of documents or tasks and no start form is in
 /// front of them.
 fn stage_shows_panes(destination: Destination, start_shown: bool) -> bool {
@@ -194,6 +227,20 @@ mod tests {
         ] {
             assert!(!stage_shows_panes(place, false), "{place:?}");
         }
+    }
+
+    #[test]
+    fn no_pane_takes_the_keys_behind_a_place_a_form_or_a_field() {
+        // The Tasks place with nothing focused: what is typed is no pane's.
+        assert!(!panes_take_keys((Destination::Tasks, false), false, true));
+        // The frame before a form's field takes the keyboard.
+        assert!(!panes_take_keys((Destination::Agents, false), true, true));
+        // The start form in front of the panes.
+        assert!(!panes_take_keys((Destination::Agents, true), false, true));
+        // A field that holds the keyboard.
+        assert!(!panes_take_keys((Destination::Agents, false), false, false));
+        assert!(panes_take_keys((Destination::Editor, false), false, true));
+        assert!(panes_take_keys((Destination::Terminal, false), false, true));
     }
 
     #[test]

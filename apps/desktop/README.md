@@ -45,6 +45,13 @@ agent works.
   rows that ended early for a wide character are not joined again (the parser does not mark them
   as wrapped), a screen of one row or one column is only cut, and the autowrap, insert, charset
   and saved-cursor modes of the normal screen are reset by a resize.
+- What a key types in a terminal (a letter, a dead key and its letter, AltGr, text an input
+  method commits) reaches the program as text, through GPUI's input handler
+  (`workbench::text_input`, the way the composer takes it), so `~` then `a` is `ã` on a
+  Portuguese, French, Spanish or German layout. Keys that act (Ctrl+C, Enter, the arrows, function
+  keys, Alt+letter) go as key events (`soyeht_client::keys`); the rule that tells them apart is
+  `soyeht_client::editor::keys::types_text`. The text an input method is composing is drawn at
+  the cursor until it commits.
 - Text in a terminal is selected with the mouse: a drag selects cells (a drag held past the top
   or bottom keeps scrolling, faster the further the pointer is), a double-click a word (a path or
   an address is one word), a triple-click a line, and Shift+click grows the selection. A selection
@@ -159,8 +166,10 @@ agent works.
   cursor, soft wrap, Vim mode, the command palette and file name search, go to definition and
   references, diagnostics, the git gutter and diff, blame, the agent's review and cursor, file
   history and the conflict comparison (a conflict is shown on a banner), Markdown preview, tab
-  drag and drop, creating, renaming and deleting entries of the project panel, and input method
-  composition (typed text is the key's own text).
+  drag and drop, and creating, renaming and deleting entries of the project panel. What a key
+  types reaches the editor, as in a terminal, through GPUI's input handler (`workbench::text_input`),
+  so dead keys, AltGr and input methods work; the text being composed is drawn under the caret and
+  the input method's candidate window sits at the caret.
 - A window with no workspace asks "What do you want to make?" and offers "Start with an agent"
   (also the first entry of the "+" menu): one card with the first message, the folder (the
   selected workspace's, or one chosen from the picker or the recent folders) and the agent, chosen

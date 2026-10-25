@@ -125,6 +125,19 @@ mod tests {
     }
 
     #[test]
+    fn altgr_letters_are_left_to_the_platform_in_a_field() {
+        // Windows reports AltGr as Control and Alt: Polish "\u{17c}" is AltGr+z, which must not undo.
+        for key in ["a", "c", "x", "v", "y", "z"] {
+            let altgr = Chord {
+                control: true,
+                alt: true,
+                ..press(key)
+            };
+            assert_eq!(edit(&altgr, false), None, "{key}");
+        }
+    }
+
+    #[test]
     fn control_shortcuts_edit_the_text_and_plain_letters_are_left_to_the_platform() {
         for (key, wanted) in [
             ("a", Edit::SelectAll),

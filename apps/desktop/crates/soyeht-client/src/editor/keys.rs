@@ -3,6 +3,10 @@
 //!
 //! The key of shortcuts is Control on Linux and Windows and Command on the Mac. A word is moved
 //! by Control or Alt, a line by Command, as each system's editors do.
+//!
+//! What a key types is not an `Action`: the platform's text input delivers it, so that a dead key
+//! (`~` then `a` is `ã`), AltGr and an input method compose as they do in every other program
+//! (`types_text`).
 
 use super::selection::Motion;
 
@@ -55,20 +59,29 @@ pub enum Action {
     PreviousTab,
 }
 
-/// The text a key types, when it is text: not a control character.
-fn typed(text: Option<&str>) -> Option<String> {
-    text.filter(|text| !text.is_empty() && text.chars().all(|c| !c.is_control() || c == '\t'))
-        .map(str::to_owned)
+/// Whether the key press types text, which the platform's text input delivers instead of the key
+/// event: the key carries text (no control character) and is not a shortcut. A press with Control
+/// or Alt held is a shortcut, unless `prefers_text`, the platform's word that the text depends on
+/// those modifiers: AltGr arrives as Control and Alt together on Windows, and a dead key is text
+/// in the making. Enter, Tab, Backspace, the arrows and every shortcut stay key events.
+pub fn types_text(chord: &Chord, prefers_text: bool) -> bool {
+    chord
+        .text
+        .is_some_and(|text| !text.is_empty() && text.chars().all(|c| !c.is_control()))
+        && !chord.platform
+        && (prefers_text || !(chord.control || chord.alt))
 }
 
+/// What a key press asks of an editor, other than typing text (`types_text`).
 pub fn action(chord: &Chord) -> Option<Action> {
     let command = chord.control || chord.platform;
     let word = chord.control || chord.alt;
     let extend = chord.shift;
     let step = |motion| Some(Action::Move { motion, extend });
-    // AltGr arrives as Control and Alt together, and types.
+    // Control and Alt together are AltGr on Windows, and what it types comes through the
+    // platform's text input (`types_text`): never a shortcut, in a field or an editor.
     if chord.control && chord.alt && !chord.platform {
-        return typed(chord.text).map(Action::Type);
+        return None;
     }
     match chord.key {
         "left" if chord.platform => step(Motion::LineStart),
@@ -104,7 +117,7 @@ pub fn action(chord: &Chord) -> Option<Action> {
         "f3" if chord.shift => Some(Action::FindPrevious),
         "f3" => Some(Action::FindNext),
         key if command => shortcut(key, chord.shift),
-        _ => typed(chord.text).map(Action::Type),
+        _ => None,
     }
 }
 
@@ -149,15 +162,9 @@ mod tests {
     }
 
     #[test]
-    fn plain_keys_type_and_named_keys_edit() {
-        assert_eq!(
-            action(&press("a", Some("a"))),
-            Some(Action::Type("a".into()))
-        );
-        assert_eq!(
-            action(&press("space", Some(" "))),
-            Some(Action::Type(" ".into()))
-        );
+    fn named_keys_edit_and_keys_with_text_are_left_to_the_platform() {
+        assert_eq!(action(&press("a", Some("a"))), None);
+        assert_eq!(action(&press("space", Some(" "))), None);
         assert_eq!(
             action(&press("enter", Some("\n"))),
             Some(Action::Type("\n".into()))
@@ -298,17 +305,90 @@ mod tests {
     }
 
     #[test]
+    fn a_key_with_text_and_no_shortcut_modifier_types() {
+        assert!(types_text(&press("a", Some("a")), false));
+        assert!(types_text(&press("space", Some(" ")), false));
+        // Shift only changes the letter.
+        let shifted = Chord {
+            shift: true,
+            ..press("a", Some("A"))
+        };
+        assert!(types_text(&shifted, false));
+        // A dead key and the letter it composes with carry the text the layout gives.
+        assert!(types_text(&press("~", Some("~")), true));
+        assert!(types_text(&press("a", Some("\u{e3}")), false));
+        assert!(types_text(&press("c", Some("\u{e7}")), false));
+    }
+
+    #[test]
+    fn keys_without_text_and_control_characters_do_not_type() {
+        assert!(!types_text(&press("enter", None), false));
+        assert!(!types_text(&press("backspace", None), false));
+        assert!(!types_text(&press("left", None), false));
+        assert!(!types_text(&press("f1", None), false));
+        assert!(!types_text(&press("a", Some("")), false));
+        assert!(!types_text(&press("a", Some("\u{1}")), false));
+        assert!(!types_text(&press("tab", Some("\t")), false));
+    }
+
+    #[test]
+    fn shortcuts_do_not_type_even_when_the_key_has_text() {
+        let control = Chord {
+            control: true,
+            ..press("c", Some("c"))
+        };
+        assert!(!types_text(&control, false));
+        // Alt+b is the key `b` with Alt held, not a `b`.
+        let alt = Chord {
+            alt: true,
+            ..press("b", Some("b"))
+        };
+        assert!(!types_text(&alt, false));
+        let command = Chord {
+            platform: true,
+            ..press("c", Some("c"))
+        };
+        assert!(!types_text(&command, false));
+        assert!(!types_text(&command, true));
+    }
+
+    #[test]
+    fn control_and_alt_together_are_never_a_shortcut() {
+        // AltGr+z, AltGr+a and the rest of a Polish layout's letters are text, not undo and select
+        // all: a field that stops the key would never type them.
+        for key in ["a", "c", "x", "v", "y", "z", "s", "f", "left", "backspace"] {
+            let altgr = Chord {
+                control: true,
+                alt: true,
+                ..press(key, Some("\u{17c}"))
+            };
+            assert_eq!(action(&altgr), None, "{key}");
+            let without_text = Chord {
+                control: true,
+                alt: true,
+                ..press(key, None)
+            };
+            assert_eq!(action(&without_text), None, "{key}");
+        }
+    }
+
+    #[test]
     fn altgr_types_what_the_layout_gives() {
+        // On Windows AltGr arrives as Control and Alt together, and the platform says the text
+        // depends on them.
         let altgr = Chord {
             control: true,
             alt: true,
-            ..press("q", Some("@"))
+            ..press("q", Some("/"))
         };
-        assert_eq!(action(&altgr), Some(Action::Type("@".into())));
-        let alt_only = Chord {
+        assert!(types_text(&altgr, true));
+        assert!(!types_text(&altgr, false));
+        // Control and Alt with no text are the shortcut.
+        let chord = Chord {
+            control: true,
             alt: true,
-            ..press("e", Some("\u{e9}"))
+            ..press("q", None)
         };
-        assert_eq!(action(&alt_only), Some(Action::Type("\u{e9}".into())));
+        assert!(!types_text(&chord, true));
     }
 }

@@ -29,6 +29,8 @@ mod focus;
 mod input;
 mod lifecycle;
 mod menus;
+mod text_input;
+pub(crate) use text_input::input_surface;
 
 actions!(soyeht, [Quit, NewTerminal, Paste, CopySelection]);
 
@@ -66,6 +68,13 @@ pub struct Workbench {
     pub(crate) start: Option<StartUi>,
     /// How the panes lie on the stage: scrolls, the pane to reveal and the drags.
     pub(crate) stage: Stage,
+    /// Where the left button went down on the empty part of the top bar, while the window has not started
+    /// moving yet (the move starts with the first motion; a second press maximizes).
+    #[cfg(not(target_os = "windows"))]
+    pub(crate) caption_pressed: Option<gpui::Point<gpui::Pixels>>,
+    /// The text an input method is composing in the pane that has the keys, drawn at its caret
+    /// until the method commits it.
+    pub(crate) preedit: Option<text_input::Preedit>,
     /// The pane whose input takes keyboard focus on the next frame.
     pub(crate) focus_request: Option<String>,
     /// The first field of a form that just opened, which takes the keyboard on the next frame
@@ -139,6 +148,9 @@ impl Workbench {
             markdown: Replies::default(),
             start: None,
             stage: Stage::new(),
+            #[cfg(not(target_os = "windows"))]
+            caption_pressed: None,
+            preedit: None,
             focus_request: None,
             field_request: None,
             rename: None,

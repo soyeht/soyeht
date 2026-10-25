@@ -647,6 +647,15 @@ fn completion_of(keystroke: &Keystroke) -> Option<Completion> {
     completion(&chord_of(keystroke))
 }
 
+/// The chord of a key press with the text the key types, for the panes that take their keys as
+/// events and their text from the platform (`editor::keys::types_text`).
+pub(crate) fn chord_with_text(keystroke: &Keystroke) -> Chord<'_> {
+    Chord {
+        text: keystroke.key_char.as_deref(),
+        ..chord_of(keystroke)
+    }
+}
+
 fn chord_of(keystroke: &Keystroke) -> Chord<'_> {
     let modifiers = &keystroke.modifiers;
     Chord {

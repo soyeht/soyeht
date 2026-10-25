@@ -66,6 +66,7 @@ use soyeht_client::{Connection, state::problem::Banner};
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_focus_request(window, cx);
+        self.settle_preedit(window, cx);
         self.settle_rename(window, cx);
         self.window.height = f32::from(window.viewport_size().height);
         self.window.width = f32::from(window.viewport_size().width);
@@ -118,6 +119,7 @@ impl Render for Workbench {
                     .then(|| self.preferences_overlay(palette, window.viewport_size(), cx)),
             )
             .children(resize_handles::handles(window))
+            .child(crate::workbench::input_surface(&self.focus, cx))
     }
 }
 
