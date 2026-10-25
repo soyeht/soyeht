@@ -8,7 +8,7 @@ use super::{
     lines::{Glyph, Lines, Logical},
     selection::{Point, Span},
 };
-use crate::file_links::{self, Reference};
+use crate::file_links::{self, Dialect, Reference};
 
 /// The schemes of the addresses that open, with what follows them.
 const SCHEMES: [&str; 2] = ["https://", "http://"];
@@ -58,7 +58,7 @@ pub(crate) fn link_at(lines: &mut Lines, at: Point) -> Option<Link> {
         // Past the address, the next one starts after it.
         start += length.max(1);
     }
-    let found = file_links::find_at(&characters, index)?;
+    let found = file_links::find_at(Dialect::HOST, &characters, index)?;
     let mut link = link_of(glyphs, found.range.start, found.range.len());
     link.file = Some(found.reference);
     Some(link)

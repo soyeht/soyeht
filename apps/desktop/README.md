@@ -57,9 +57,17 @@ agent works.
   no other scheme opens. A relative `path:line` or `path:line:column` (`src/main.rs:12`) is a link
   too when the file is in the pane's workspace: the same key opens it in the editor with the caret
   at that line, and the same holds for such text in an agent's reply (a code span included), where
-  a plain click opens it. A path that is absolute, outside the workspace (a symbolic link out of it
-  too) or not there is not a link. What a reference is: `soyeht_client::file_links`, the Mac's
-  `FilePathLinks`, both passing `contracts/vectors/file-paths.json`. The selection and the address
+  a plain click opens it. On Windows the text is read in the windows dialect: `\` separates like `/`
+  (`src\main.rs:2`, `.\src\main.rs:3:2`), a drive (`C:\x\y.rs:3`, `C:/x/y.rs:3:1`) or a UNC
+  share (`\\server\share\x.rs:1`) starts an absolute path, a path in quotes may hold example
+  (`"C:\my dir\a.rs:4"`), and the MSVC `file(line,column)` counts as a location; cargo's and
+  rustc's `--> src\main.rs:3:5` is found like any other path. On Linux a backslash is a legal
+  character of a file name that no tool prints in a path, so it is not part of one there. Names
+  are kept as written and the file system decides their case, so `SRC\Main.rs` opens `src\main.rs`
+  on Windows, and the editor opens the file under its real name. A path that is outside the
+  workspace (an absolute one of another folder, or a symbolic link out of it too) or not there is
+  not a link. What a reference is: `soyeht_client::file_links`, the Mac's `FilePathLinks`, both
+  passing `contracts/vectors/file-paths.json` for the dialects they read. The selection and the address
   rules are `soyeht_client::screen`'s, with unit tests; the painter only draws them.
 - Agent panes show the transcript (the person's messages, replies drawn as Markdown, thoughts, tool rows, plans,
   command output in a mono well, hand-overs), take a

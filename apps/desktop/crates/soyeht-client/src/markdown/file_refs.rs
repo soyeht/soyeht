@@ -5,7 +5,7 @@
 //! text is drawn as a link, is the window's to say.
 
 use super::{Block, Run, Style, web_links};
-use crate::file_links;
+use crate::file_links::{self, Dialect};
 
 /// The blocks with the file references in their runs marked (`Style::file`).
 pub fn link_references(blocks: Vec<Block>) -> Vec<Block> {
@@ -20,7 +20,7 @@ fn mark_runs(runs: Vec<Run>) -> Vec<Run> {
             continue;
         }
         let mut rest = 0;
-        for found in file_links::find(&run.text) {
+        for found in file_links::find(Dialect::HOST, &run.text) {
             web_links::push(&mut marked, &run, rest..found.range.start, None);
             let reference = found.reference;
             let mark = |style: &mut Style| style.file = Some(reference.clone());

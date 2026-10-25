@@ -50,15 +50,20 @@ import Testing
   #expect(segments.count == 5)
 }
 
-/// The cases of `contracts/vectors/file-paths.json`, which the desktop client passes as well.
+/// The cases of `contracts/vectors/file-paths.json`, which the desktop client passes as well:
+/// each case is read by the dialects it names, or by both.
 @Test func filePathLinksPassTheSharedVectorCases() throws {
   let cases = ContractVector.cases(try ContractVector.load("file-paths"), "cases")
   #expect(cases.count > 10)
+  var read: Set<FilePathDialect> = []
   for item in cases {
     let text = try #require(item["text"].string)
-    let found: [(String, FilePathReference)] = FilePathLinks.segments(in: text).compactMap {
-      guard case .reference(let label, let reference) = $0 else { return nil }
-      return (label, reference)
+    let named = try (item["dialects"].array ?? []).map { value -> FilePathDialect in
+      switch try #require(value.string) {
+      case "posix": .posix
+      case "windows": .windows
+      default: throw VectorError.unknownDialect
+      }
     }
     let expected: [(String, FilePathReference)] = try (item["references"].array ?? []).map {
       let line = try #require($0["line"].int)
@@ -69,7 +74,19 @@ import Testing
           column: $0["column"].int.map { UInt32($0) })
       )
     }
-    #expect(found.map(\.0) == expected.map(\.0), "\(item["name"].string ?? "")")
-    #expect(found.map(\.1) == expected.map(\.1), "\(item["name"].string ?? "")")
+    for dialect in named.isEmpty ? FilePathDialect.allCases : named {
+      read.insert(dialect)
+      let found: [(String, FilePathReference)] = FilePathLinks.segments(in: text, dialect: dialect)
+        .compactMap {
+          guard case .reference(let label, let reference) = $0 else { return nil }
+          return (label, reference)
+        }
+      let name = "\(item["name"].string ?? "") (\(dialect))"
+      #expect(found.map(\.0) == expected.map(\.0), "\(name)")
+      #expect(found.map(\.1) == expected.map(\.1), "\(name)")
+    }
   }
+  #expect(read == Set(FilePathDialect.allCases))
 }
+
+private enum VectorError: Error { case unknownDialect }

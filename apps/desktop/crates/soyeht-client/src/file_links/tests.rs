@@ -37,7 +37,7 @@ fn reference(path: &str, line: u32, column: Option<u32>) -> Reference {
 #[test]
 fn a_reference_is_found_with_the_bytes_it_takes() {
     let text = "né ü src/b.rs:3 and src/a.rs:4:2.";
-    let found = find(text);
+    let found = find(Dialect::Posix, text);
     assert_eq!(found.len(), 2);
     assert_eq!(&text[found[0].range.clone()], "src/b.rs:3");
     assert_eq!(&text[found[1].range.clone()], "src/a.rs:4:2");
@@ -47,30 +47,30 @@ fn a_reference_is_found_with_the_bytes_it_takes() {
 #[test]
 fn a_reference_is_found_by_the_character_it_covers() {
     let characters: Vec<char> = "see a/b.rs:12 now".chars().collect();
-    let found = find_at(&characters, 6).unwrap();
+    let found = find_at(Dialect::Posix, &characters, 6).unwrap();
     assert_eq!(found.range, 4..13);
     assert_eq!(found.reference, reference("a/b.rs", 11, None));
-    assert_eq!(find_at(&characters, 2), None);
-    assert_eq!(find_at(&characters, 14), None);
+    assert_eq!(find_at(Dialect::Posix, &characters, 2), None);
+    assert_eq!(find_at(Dialect::Posix, &characters, 14), None);
 }
 
 #[test]
 fn a_label_that_only_looks_like_a_reference_takes_its_characters_with_it() {
     // `../x.rs:1` is refused as a whole; `x.rs:1` inside it is not looked for again.
-    assert!(find("../x.rs:1").is_empty());
-    assert!(find("a/../b.rs:1").is_empty());
+    assert!(find(Dialect::Posix, "../x.rs:1").is_empty());
+    assert!(find(Dialect::Posix, "a/../b.rs:1").is_empty());
 }
 
 #[test]
 fn a_very_long_run_is_no_path() {
     let text = format!("{}.rs:1", "a".repeat(5000));
-    assert!(find(&text).is_empty());
+    assert!(find(Dialect::Posix, &text).is_empty());
 }
 
 #[test]
 fn only_so_many_references_are_found() {
     let text = "a.rs:1 ".repeat(300);
-    assert_eq!(find(&text).len(), CAPS_FILE_LINKS);
+    assert_eq!(find(Dialect::Posix, &text).len(), CAPS_FILE_LINKS);
 }
 
 #[test]
@@ -128,4 +128,49 @@ fn a_folder_that_is_a_link_out_of_the_workspace_hides_the_files_in_it() {
         None
     );
     assert!(resolve(&folder.0, &reference("real.txt", 0, None)).is_some());
+}
+
+#[test]
+fn a_windows_text_is_read_as_the_windows_dialect() {
+    let text = "--> src\\main.rs:3:5";
+    let found = find(Dialect::Windows, text);
+    assert_eq!(&text[found[0].range.clone()], "src\\main.rs:3:5");
+    assert_eq!(found[0].reference, reference("src/main.rs", 2, Some(4)));
+    // The same text on a posix system links only what follows the backslash.
+    let found = find(Dialect::Posix, text);
+    assert_eq!(&text[found[0].range.clone()], "main.rs:3:5");
+}
+
+#[cfg(windows)]
+#[test]
+fn an_absolute_path_inside_the_workspace_resolves_and_one_outside_does_not() {
+    let folder = Folder::new("absolute");
+    folder.file("src/main.rs");
+    let outside = Folder::new("absolute-outside");
+    outside.file("other.rs");
+    let inside = folder.0.join("src").join("main.rs");
+    let opening = resolve(&folder.0, &reference(&slashes(&inside), 1, None)).unwrap();
+    assert_eq!(opening.path, "src/main.rs");
+    let elsewhere = outside.0.join("other.rs");
+    assert_eq!(
+        resolve(&folder.0, &reference(&slashes(&elsewhere), 1, None)),
+        None
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn the_file_system_decides_the_case_of_a_name_and_the_link_opens_the_real_one() {
+    let folder = Folder::new("case");
+    folder.file("Src/Main.rs");
+    let opening = resolve(&folder.0, &reference("src/MAIN.RS", 0, None)).unwrap();
+    assert_eq!(opening.path, "Src/Main.rs");
+    let found = find(Dialect::Windows, "SRC\\main.rs:1");
+    let opening = resolve(&folder.0, &found[0].reference).unwrap();
+    assert_eq!(opening.path, "Src/Main.rs");
+}
+
+#[cfg(windows)]
+fn slashes(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }

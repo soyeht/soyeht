@@ -1,5 +1,5 @@
 {
-  "description": "Where a file path with a line is a reference in the text of a reply or of terminal output, the rule of the Mac's FilePathLinks and of the desktop client's file_links. A reference is a relative path, at least one directory or a dot in the name, then :line and optionally :column, both counted from 1 in the text; the expected line and column count from 0. A path that is absolute or has an empty, dot or dot-dot component is not one. The label is the text the reference takes, with its dot-slash. Both clients pass every case.",
+  "description": "Where a file path with a line is a reference in the text of a reply or of terminal output, the rule of the Mac's FilePathLinks and of the desktop client's file_links. A reference is a path, at least one directory or a dot in the name, then :line and optionally :column, both counted from 1 in the text; the expected line and column count from 0. A path that is relative to the workspace and has an empty, dot or dot-dot component is not one, and neither is a path rooted with a separator and no drive. The label is the text the reference takes, with its dot-slash. A case with no dialects is read the same by both dialects; a case with dialects is read by those only. The posix dialect is the one of a Mac, iOS or Linux workspace: the path is made of letters, digits and _ @ + . - /, so a backslash is not part of it (it is a legal character of a file name on those systems that no tool prints in a path), and an absolute path is not a reference. The windows dialect is the one of a Windows workspace: a backslash separates like a slash, the expected path has a slash between components, a drive (C:\\ or C:/) or a UNC share (\\\\server\\share\\) starts an absolute path that the expected path keeps as written (C:/x/y.rs, //server/share/y.rs), the MSVC location file(line) and file(line,column) is a location as well, and a path in quotes may hold example and any character but control characters and \" ' < > | * ? : (the quotes belong to the label, the location is inside them, and a quoted path of plain characters is found without its quotes). Case is never folded by this rule: the path is kept as written and the file system decides. Both clients pass every case of their dialects.",
   "cases": [
     {
       "name": "an agent, a terminal and a CI location",
@@ -210,6 +210,378 @@
           "column": null
         }
       ]
+    },
+    {
+      "name": "a backslash separates like a slash",
+      "dialects": [
+        "windows"
+      ],
+      "text": "src\\main.rs:2 and src/win\\lib.rs:7:3",
+      "references": [
+        {
+          "label": "src\\main.rs:2",
+          "path": "src/main.rs",
+          "line": 1,
+          "column": null
+        },
+        {
+          "label": "src/win\\lib.rs:7:3",
+          "path": "src/win/lib.rs",
+          "line": 6,
+          "column": 2
+        }
+      ]
+    },
+    {
+      "name": "a dot-backslash is dropped",
+      "dialects": [
+        "windows"
+      ],
+      "text": ".\\src\\main.rs:3:2 .\\a.rs:3",
+      "references": [
+        {
+          "label": ".\\src\\main.rs:3:2",
+          "path": "src/main.rs",
+          "line": 2,
+          "column": 1
+        },
+        {
+          "label": ".\\a.rs:3",
+          "path": "a.rs",
+          "line": 2,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a parent, a dot or an empty component is not a reference",
+      "dialects": [
+        "windows"
+      ],
+      "text": "..\\x.rs:1 .\\.\\a.rs:3 src\\\\a.rs:3 a\\..\\b.rs:1",
+      "references": []
+    },
+    {
+      "name": "a drive makes an absolute path",
+      "dialects": [
+        "windows"
+      ],
+      "text": "C:\\x\\y.rs:3 c:/x/y.rs:4:1 C:\\main.rs:9",
+      "references": [
+        {
+          "label": "C:\\x\\y.rs:3",
+          "path": "C:/x/y.rs",
+          "line": 2,
+          "column": null
+        },
+        {
+          "label": "c:/x/y.rs:4:1",
+          "path": "c:/x/y.rs",
+          "line": 3,
+          "column": 0
+        },
+        {
+          "label": "C:\\main.rs:9",
+          "path": "C:/main.rs",
+          "line": 8,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a drive path with no dot and no directory is not a reference",
+      "dialects": [
+        "windows"
+      ],
+      "text": "C:\\identifier:2",
+      "references": []
+    },
+    {
+      "name": "a drive letter at the end of a word is not a drive",
+      "dialects": [
+        "windows"
+      ],
+      "text": "abC:\\x\\y.rs:3",
+      "references": []
+    },
+    {
+      "name": "a UNC share makes an absolute path",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\\\\server\\share\\x.rs:1 \\\\srv.example\\data\\dir\\y.rs:7:2",
+      "references": [
+        {
+          "label": "\\\\server\\share\\x.rs:1",
+          "path": "//server/share/x.rs",
+          "line": 0,
+          "column": null
+        },
+        {
+          "label": "\\\\srv.example\\data\\dir\\y.rs:7:2",
+          "path": "//srv.example/data/dir/y.rs",
+          "line": 6,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "name": "a share with no file is not a reference",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\\\\server\\share:1 \\\\server\\x.rs:1",
+      "references": []
+    },
+    {
+      "name": "a path with a root and no drive is not a reference",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\\x\\y.rs:3 /x/y.rs:3",
+      "references": []
+    },
+    {
+      "name": "a cargo location with backslashes",
+      "dialects": [
+        "windows"
+      ],
+      "text": "error[E0425]: cannot find value `x`\n --> src\\main.rs:3:5\n  |\n --> C:\\work\\src\\main.rs:8:9",
+      "references": [
+        {
+          "label": "src\\main.rs:3:5",
+          "path": "src/main.rs",
+          "line": 2,
+          "column": 4
+        },
+        {
+          "label": "C:\\work\\src\\main.rs:8:9",
+          "path": "C:/work/src/main.rs",
+          "line": 7,
+          "column": 8
+        }
+      ]
+    },
+    {
+      "name": "a cargo location",
+      "text": "warning: unused variable\n  --> src/main.rs:3:5",
+      "references": [
+        {
+          "label": "src/main.rs:3:5",
+          "path": "src/main.rs",
+          "line": 2,
+          "column": 4
+        }
+      ]
+    },
+    {
+      "name": "a PowerShell location",
+      "dialects": [
+        "windows"
+      ],
+      "text": "At C:\\w\\run.ps1:3 char:1",
+      "references": [
+        {
+          "label": "C:\\w\\run.ps1:3",
+          "path": "C:/w/run.ps1",
+          "line": 2,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "an MSVC location",
+      "dialects": [
+        "windows"
+      ],
+      "text": "src\\main.cpp(12,5): error C2065: 'x': undeclared identifier\nC:\\p\\a.cs(7): warning CS0168",
+      "references": [
+        {
+          "label": "src\\main.cpp(12,5)",
+          "path": "src/main.cpp",
+          "line": 11,
+          "column": 4
+        },
+        {
+          "label": "C:\\p\\a.cs(7)",
+          "path": "C:/p/a.cs",
+          "line": 6,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "an MSVC location that is not one",
+      "dialects": [
+        "windows"
+      ],
+      "text": "main.cpp(0,1) a.cpp(3,) a.cpp(3 ,4) a.cpp(3,4 a.cpp(3,4,5)",
+      "references": []
+    },
+    {
+      "name": "a quoted path holds example",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\"C:\\Users\\me\\my project\\src\\main.rs:4\"",
+      "references": [
+        {
+          "label": "\"C:\\Users\\me\\my project\\src\\main.rs:4\"",
+          "path": "C:/Users/me/my project/src/main.rs",
+          "line": 3,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a relative path in single quotes with a column",
+      "dialects": [
+        "windows"
+      ],
+      "text": "'my dir\\src\\a.rs:3:2'",
+      "references": [
+        {
+          "label": "'my dir\\src\\a.rs:3:2'",
+          "path": "my dir/src/a.rs",
+          "line": 2,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "name": "a quoted UNC share",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\"\\\\srv\\my share\\x.rs:2\"",
+      "references": [
+        {
+          "label": "\"\\\\srv\\my share\\x.rs:2\"",
+          "path": "//srv/my share/x.rs",
+          "line": 1,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a quoted name of another script",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\"ação\\a.rs:3\"",
+      "references": [
+        {
+          "label": "\"ação\\a.rs:3\"",
+          "path": "ação/a.rs",
+          "line": 2,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a quoted path of plain characters is found without its quotes",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\"src\\main.rs:2\"",
+      "references": [
+        {
+          "label": "src\\main.rs:2",
+          "path": "src/main.rs",
+          "line": 1,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a quote that is never closed is only a quote",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\"C:\\my dir\\a.rs:4",
+      "references": [
+        {
+          "label": "dir\\a.rs:4",
+          "path": "dir/a.rs",
+          "line": 3,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a quoted name with no directory and no dot is not a reference",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\"my file:3\"",
+      "references": []
+    },
+    {
+      "name": "a quoted path with a character no name has is read from its last word",
+      "dialects": [
+        "windows"
+      ],
+      "text": "\"a|b c\\d.rs:3\"",
+      "references": [
+        {
+          "label": "c\\d.rs:3",
+          "path": "c/d.rs",
+          "line": 2,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "the case of a name is kept",
+      "dialects": [
+        "windows"
+      ],
+      "text": "SRC\\Main.RS:3",
+      "references": [
+        {
+          "label": "SRC\\Main.RS:3",
+          "path": "SRC/Main.RS",
+          "line": 2,
+          "column": null
+        }
+      ]
+    },
+    {
+      "name": "a backslash is not a path character on posix",
+      "dialects": [
+        "posix"
+      ],
+      "text": "src\\main.rs:2 .\\lib\\a.rs:3:2",
+      "references": [
+        {
+          "label": "main.rs:2",
+          "path": "main.rs",
+          "line": 1,
+          "column": null
+        },
+        {
+          "label": "a.rs:3:2",
+          "path": "a.rs",
+          "line": 2,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "name": "a drive is not a root on posix",
+      "dialects": [
+        "posix"
+      ],
+      "text": "C:/x/y.rs:3:1",
+      "references": []
+    },
+    {
+      "name": "an MSVC location is not one on posix",
+      "dialects": [
+        "posix"
+      ],
+      "text": "src/main.cpp(12,5): error C2065",
+      "references": []
     }
   ]
 }
