@@ -14807,8 +14807,8 @@
         ],
         "hints": {
           "macos": "brew install worktrunk",
-          "debian": "brew install worktrunk",
-          "fedora": "brew install worktrunk",
+          "debian": "curl -fsSL https://github.com/max-sixty/worktrunk/releases/latest/download/worktrunk-installer.sh | sh",
+          "fedora": "curl -fsSL https://github.com/max-sixty/worktrunk/releases/latest/download/worktrunk-installer.sh | sh",
           "windows": "winget install max-sixty.worktrunk"
         }
       },

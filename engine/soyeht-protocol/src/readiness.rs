@@ -93,8 +93,14 @@ pub const TOOLS: &[Tool] = &[
         systems: EVERYWHERE,
         hints: Hints(&[
             (ReadinessSystem::Macos, "brew install worktrunk"),
-            (ReadinessSystem::Debian, "brew install worktrunk"),
-            (ReadinessSystem::Fedora, "brew install worktrunk"),
+            (
+                ReadinessSystem::Debian,
+                "curl -fsSL https://github.com/max-sixty/worktrunk/releases/latest/download/worktrunk-installer.sh | sh",
+            ),
+            (
+                ReadinessSystem::Fedora,
+                "curl -fsSL https://github.com/max-sixty/worktrunk/releases/latest/download/worktrunk-installer.sh | sh",
+            ),
             (
                 ReadinessSystem::Windows,
                 "winget install max-sixty.worktrunk",

@@ -34,6 +34,7 @@ pub mod screen;
 pub mod server;
 pub mod settings;
 pub mod skills;
+mod slow_holds;
 pub mod streak;
 pub mod streams;
 mod supervisor_link;

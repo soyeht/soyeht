@@ -230,8 +230,14 @@ mod tests {
         });
         let wt = items.iter().find(|item| item.id == "wt").unwrap();
         assert!(!wt.found);
-        assert_eq!(wt.hint.as_deref(), Some("brew install worktrunk"));
-        assert_eq!(wt.note.as_deref(), Some("Needs Homebrew: https://brew.sh"));
+        assert!(
+            wt.hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("worktrunk-installer.sh")),
+            "{:?}",
+            wt.hint
+        );
+        assert!(wt.note.is_none(), "the release installer needs no Homebrew");
         let git = items.iter().find(|item| item.id == "git").unwrap();
         assert!(git.found && git.required && git.hint.is_none());
         let claude = items
@@ -252,6 +258,21 @@ mod tests {
             .find(|item| item.id == "registry.codex-acp")
             .unwrap();
         assert!(codex.found && codex.hint.is_none());
+    }
+
+    #[test]
+    fn a_linux_family_is_never_told_to_install_with_homebrew() {
+        for system in [ReadinessSystem::Debian, ReadinessSystem::Fedora] {
+            let items = items(&system, |_| Some(false), |id| Some((id.into(), false)));
+            for item in items {
+                let hint = item.hint.as_deref().unwrap_or_default();
+                assert!(
+                    !hint.starts_with("brew ") && item.note.is_none(),
+                    "{system:?}: {} is told {hint:?}",
+                    item.id
+                );
+            }
+        }
     }
 
     #[test]

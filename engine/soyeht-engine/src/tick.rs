@@ -32,6 +32,7 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
             output.and(streams)
         })
         .await;
+        crate::slow_holds::emit_due();
         prune = (prune + 1) % PRUNE_EVERY_TICKS;
         match result {
             Ok(()) => {

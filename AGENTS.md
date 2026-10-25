@@ -149,6 +149,9 @@ ADR when you change a boundary.
   its message text, which can carry paths. A failure that can repeat keeps an engine
   `Streak` (`streak.rs`): it carries the retry backoff and says when to log, which is the
   first failure and each change of kind; the caller logs the recovery when it wants to.
+  A repeating condition that is not a failure follows the same idea: a slow Core lock hold
+  logs the first, a hold twice as long, and a summary each minute with the count and the
+  worst (`slow_holds.rs`).
   `scripts/check_logging.py` rejects `eprintln!` in `engine` and `apps/desktop` `src`
   outside `soyeht-platform/src/log.rs` and a binary's `main.rs` (ADR 0088).
 - Dead code: `scripts/check_dead_pub.py` fails on a `pub fn` of an engine or `apps/desktop` crate

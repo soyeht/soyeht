@@ -145,7 +145,11 @@ worker ever waits for the lock. The guard marks its thread with
 `soyeht_process::forbid`, and `soyeht_process::run` refuses to start a
 command on a marked thread (`Error::UnderLock`). The guard also logs any hold
 of 100 ms or more as `engine.core_lock_slow`, with a short static purpose
-such as `tick`, `dispatch` or `offload_apply`.
+such as `tick`, `dispatch` or `offload_apply`. A hold that repeats is one condition: per
+purpose the guard logs the first slow hold, a hold at least twice as long as the longest one
+logged since, and once a minute `engine.core_lock_slow_summary` with the `count` of the holds
+left out and their `worstMs` (`slow_holds.rs`, the rule of `Streak`, AGENTS.md "Logging"). The
+line is written after the lock is released.
 
 **One failing subsystem cannot stop the tick.** `poll_output` runs each
 subsystem (editor, project tree, local servers, web commands, harness

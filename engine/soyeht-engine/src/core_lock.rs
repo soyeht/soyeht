@@ -4,7 +4,9 @@
 //! every request, so it must only ever be held briefly. A guard marks its
 //! thread: a bounded command started under it is refused
 //! (`soyeht_process::forbid`), and a hold longer than [`SLOW_HOLD`] is logged
-//! with the holder's name so a regression is visible in the engine log.
+//! with the holder's name so a regression is visible in the engine log. Holds
+//! that repeat are logged by the rule of `slow_holds`: the first, a much longer
+//! one, and a summary each minute.
 
 use crate::{
     core::Core,
@@ -25,6 +27,11 @@ const HOLDER: &str = "Core";
 pub struct CoreGuard<'a> {
     core: MutexGuard<'a, Core>,
     _forbidden: soyeht_process::Forbidden,
+    /// Last, so the lock is already released when a slow hold is logged.
+    _hold: Hold,
+}
+
+struct Hold {
     purpose: &'static str,
     acquired: Instant,
 }
@@ -36,8 +43,10 @@ pub fn lock<'a>(shared: &'a Shared, purpose: &'static str) -> Result<CoreGuard<'
     Ok(CoreGuard {
         core,
         _forbidden: soyeht_process::forbid(HOLDER),
-        purpose,
-        acquired: Instant::now(),
+        _hold: Hold {
+            purpose,
+            acquired: Instant::now(),
+        },
     })
 }
 
@@ -70,14 +79,14 @@ impl DerefMut for CoreGuard<'_> {
     }
 }
 
-impl Drop for CoreGuard<'_> {
+impl Drop for Hold {
     fn drop(&mut self) {
         let held = self.acquired.elapsed();
         if held >= SLOW_HOLD {
-            soyeht_platform::log::Line::new("engine.core_lock_slow")
-                .field("purpose", self.purpose)
-                .field("heldMs", held.as_millis())
-                .emit();
+            crate::slow_holds::note(
+                self.purpose,
+                u64::try_from(held.as_millis()).unwrap_or(u64::MAX),
+            );
         }
     }
 }
