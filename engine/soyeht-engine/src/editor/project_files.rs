@@ -8,20 +8,19 @@ use std::{
 };
 use uuid::Uuid;
 
-/// Prefix of the file an atomic save writes next to its target before the
-/// rename. It exists only mid-save and belongs to the engine, not the project.
-const SAVE_TEMPORARY_PREFIX: &str = ".soyeht-save-";
-
 /// A fresh name for an atomic save's temporary file.
 pub(super) fn save_temporary_name() -> String {
-    format!("{SAVE_TEMPORARY_PREFIX}{}", Uuid::new_v4())
+    format!(
+        "{}{}",
+        crate::immutable_file::SAVE_TEMPORARY_PREFIX,
+        Uuid::new_v4()
+    )
 }
 
-/// True for the engine's own atomic-save temporary files, which no search,
+/// True for the engine's own temporary files (an atomic save's and a publish's), which no search,
 /// listing or file event may ever show.
 pub(super) fn is_save_temporary(name: &OsStr) -> bool {
-    name.to_str()
-        .is_some_and(|name| name.starts_with(SAVE_TEMPORARY_PREFIX))
+    crate::immutable_file::is_engine_temporary(name)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

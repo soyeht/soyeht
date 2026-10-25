@@ -22,6 +22,9 @@ mod project_tree;
 mod project_watch;
 #[cfg(test)]
 mod project_watch_tests;
+mod save_failure;
+#[cfg(test)]
+mod save_failure_tests;
 #[cfg(test)]
 mod save_temporary_tests;
 mod schedule;
@@ -53,6 +56,7 @@ pub fn handles(method: &str) -> bool {
         FILE_OPEN
             | FILE_READ
             | FILE_WRITE
+            | FILE_SAVE
             | FILE_WATCH
             | FILE_HISTORY
             | FILE_REVERT
@@ -85,6 +89,7 @@ impl Core {
             FILE_OPEN => self.file_open(connection, params),
             FILE_READ => self.file_read(params),
             FILE_WRITE => self.file_write(connection, params),
+            FILE_SAVE => self.file_save(params),
             FILE_WATCH => self.file_watch(connection, params),
             FILE_HISTORY => self.file_history(params),
             FILE_REVERT => self.file_revert(connection, params),

@@ -281,3 +281,26 @@ async fn a_rename_waits_for_the_job_that_saves_a_closed_tab() {
         "alpha beta gamma\n"
     );
 }
+
+#[tokio::test]
+async fn saving_again_while_an_autosave_is_in_flight_still_creates_the_deleted_file() {
+    let mut rig = Rig::saving().await.0;
+    // The file goes away while the autosave waits for the disk, and the person saves again.
+    fs::remove_file(rig.path()).unwrap();
+    rig.fixture
+        .call("file.save", json!({"fileId":rig.file_id.clone()}));
+    rig.writes.release();
+    let file_id = rig.file_id.clone();
+    tick_until(&mut rig, "the autosave in flight is applied", |rig| {
+        rig.fixture.core.editor.save_failure(&file_id).is_some()
+    });
+    assert!(!rig.path().exists(), "the job in flight never recreates");
+
+    // The request to save again was made before that job failed: it still holds for the next.
+    rig.tick_at(100_000);
+    let path = rig.path();
+    tick_until(&mut rig, "the next save creates the file", |rig| {
+        rig.fixture.core.editor.save_failure(&file_id).is_none() && path.exists()
+    });
+    assert_eq!(fs::read_to_string(rig.path()).unwrap(), "alpha beta\n");
+}

@@ -2297,6 +2297,8 @@ export type EditorLanguage = "plain_text" | "rust" | "swift" | "typescript" | "p
 
 export type EditorContentSource = "buffer" | "disk" | "draft" | "history";
 
+export type EditorSaveFailure = "missing" | "denied" | "full" | "other";
+
 export type FileSearchScope = "content" | "path";
 
 export type HighlightKind = "keyword" | "string" | "comment" | "number" | "type" | "function" | "property" | "operator" | "punctuation" | "constant" | "variable";
@@ -2386,6 +2388,7 @@ export interface FileReadResult {
   "fromLine": number;
   "toLine": number;
   "lines": Array<EditorLine>;
+  "saveFailure"?: EditorSaveFailure;
 }
 
 export interface FileWriteParams {
@@ -2399,6 +2402,14 @@ export interface FileWriteParams {
 export interface FileWriteResult {
   "file": FileDocument;
   "changedLines": Array<number>;
+}
+
+export interface FileSaveParams {
+  "fileId": Id;
+}
+
+export interface FileSaveResult {
+  "file": FileDocument;
 }
 
 export interface FileWatchParams {
@@ -2800,6 +2811,11 @@ export interface FileSavedEvent {
   "actor"?: Actor;
   "file": FileDocument;
   "by": FileAuthor;
+}
+
+export interface FileSaveFailedEvent {
+  "fileId": Id;
+  "reason": EditorSaveFailure;
 }
 
 export interface FileConflictEvent {
@@ -3561,6 +3577,7 @@ export interface Methods {
   "file.open": { params: FileOpenParams; result: FileOpenResult };
   "file.read": { params: FileReadParams; result: FileReadResult };
   "file.write": { params: FileWriteParams; result: FileWriteResult };
+  "file.save": { params: FileSaveParams; result: FileSaveResult };
   "file.watch": { params: FileWatchParams; result: FileWatchResult };
   "file.history": { params: FileHistoryParams; result: FileHistoryResult };
   "file.revert": { params: FileRevertParams; result: FileRevertResult };
@@ -3687,6 +3704,7 @@ export interface Events {
   "file.changed_on_disk": FileChangedOnDiskEvent;
   "file.saved": FileSavedEvent;
   "file.conflict": FileConflictEvent;
+  "file.save_failed": FileSaveFailedEvent;
   "lsp.diagnostics": LspDiagnosticsEvent;
   "editor.agent_cursor": EditorAgentCursorEvent;
   "editor.review_requested": EditorReviewRequestedEvent;
@@ -3768,6 +3786,7 @@ export const eventRegistry = {
   "file.changed_on_disk": { paramsType: "FileChangedOnDiskEvent", durable: true },
   "file.saved": { paramsType: "FileSavedEvent", durable: true },
   "file.conflict": { paramsType: "FileConflictEvent", durable: true },
+  "file.save_failed": { paramsType: "FileSaveFailedEvent", durable: false },
   "lsp.diagnostics": { paramsType: "LspDiagnosticsEvent", durable: true },
   "editor.agent_cursor": { paramsType: "EditorAgentCursorEvent", durable: true },
   "editor.review_requested": { paramsType: "EditorReviewRequestedEvent", durable: true },

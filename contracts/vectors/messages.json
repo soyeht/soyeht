@@ -7757,6 +7757,11 @@
     "value": "buffer"
   },
   {
+    "name": "EditorSaveFailure",
+    "type": "EditorSaveFailure",
+    "value": "missing"
+  },
+  {
     "name": "FileSearchScope",
     "type": "FileSearchScope",
     "value": "content"
@@ -7971,7 +7976,8 @@
       "source": "buffer",
       "fromLine": 0,
       "toLine": 0,
-      "lines": []
+      "lines": [],
+      "saveFailure": "missing"
     }
   },
   {
@@ -8856,6 +8862,77 @@
     }
   },
   {
+    "name": "FileSaveParams",
+    "type": "FileSaveParams",
+    "value": {
+      "fileId": "x"
+    }
+  },
+  {
+    "name": "request:file.save",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-5",
+      "method": "file.save",
+      "params": {
+        "fileId": "x"
+      }
+    }
+  },
+  {
+    "name": "response:file.save",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "editor-5",
+      "result": {
+        "file": {
+          "fileId": "x",
+          "paneId": "x",
+          "workspaceId": "x",
+          "path": "x",
+          "language": "plain_text",
+          "revision": "1",
+          "diskRevision": "1",
+          "lineCount": 0,
+          "byteCount": "1",
+          "dirty": true,
+          "conflicted": false,
+          "watching": false
+        }
+      }
+    }
+  },
+  {
+    "name": "FileSaveResult",
+    "type": "FileSaveResult",
+    "value": {
+      "file": {
+        "fileId": "x",
+        "paneId": "x",
+        "workspaceId": "x",
+        "path": "x",
+        "language": "plain_text",
+        "revision": "1",
+        "diskRevision": "1",
+        "lineCount": 0,
+        "byteCount": "1",
+        "dirty": true,
+        "conflicted": false,
+        "watching": false
+      }
+    }
+  },
+  {
+    "name": "FileSaveFailedEvent",
+    "type": "FileSaveFailedEvent",
+    "value": {
+      "fileId": "x",
+      "reason": "denied"
+    }
+  },
+  {
     "name": "request:file.history",
     "type": "RequestEnvelope",
     "value": {
@@ -9522,6 +9599,18 @@
         "baseRevision": "1",
         "draftRevision": "1",
         "diskRevision": "1"
+      }
+    }
+  },
+  {
+    "name": "event:file.save_failed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "file.save_failed",
+      "params": {
+        "fileId": "x",
+        "reason": "full"
       }
     }
   },

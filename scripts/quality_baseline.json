@@ -13,8 +13,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 369,
-      "duplicated_lines": 3214
+      "clones": 368,
+      "duplicated_lines": 3208
     },
     "ios": {
       "clones": 4,
@@ -230,7 +230,7 @@
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 900,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
-    "engine/soyeht-store/src/editor.rs": 840,
+    "engine/soyeht-store/src/editor.rs": 839,
     "engine/soyeht-store/tests/agents.rs": 1066,
     "engine/soyeht-store/tests/tasks.rs": 958
   },

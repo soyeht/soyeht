@@ -37,16 +37,32 @@ struct EditorPaneView: View {
 
   private var currentDiff: FileDiffResult? { view?.readyDiff }
 
+  private func saveAgain(_ fileId: String) {
+    Task { @MainActor in
+      do {
+        try await client.saveEditorFile(fileId)
+      } catch { client.problem = error.localizedDescription }
+    }
+  }
+
   var body: some View {
     VStack(spacing: PaneLayoutContentMetrics.paneStackSpacing) {
       EditorPaneHeader(
         file: view?.file, branch: branch, projectPanelShown: showsProjectPanel,
         toggleProjectPanel: toggleProjectPanel, showHistory: { showHistory = true },
         showConflict: { showConflict = true }, showDiff: { showDiff = true },
-        diffReady: currentDiff != nil, diffProblem: view?.diffProblem, headerDrag: headerDrag)
+        diffReady: currentDiff != nil, diffProblem: view?.diffProblem,
+        saveFailed: view?.saveStatus.failure != nil, headerDrag: headerDrag)
       if let view {
         if view.file.conflicted {
-          EditorConflictBanner(showConflict: { showConflict = true })
+          EditorBanner(
+            text: "The file changed on disk while this draft was open.",
+            actionTitle: "Compare versions", action: { showConflict = true })
+        }
+        if let text = view.saveStatus.text {
+          EditorBanner(
+            text: text, actionTitle: ClientPolicy.editorSaveAgain,
+            action: { saveAgain(view.file.fileId) })
         }
         EditorPaneBody(
           client: client, view: view, showsProjectPanel: showsProjectPanel,
@@ -170,6 +186,7 @@ private struct EditorPaneHeader: View {
   let showDiff: () -> Void
   let diffReady: Bool
   let diffProblem: String?
+  let saveFailed: Bool
   let headerDrag: PaneHeaderDragConfiguration?
 
   var body: some View {
@@ -234,33 +251,38 @@ private struct EditorPaneHeader: View {
   private var statusLabel: String {
     guard let file else { return "· loading" }
     if file.conflicted { return "· conflict" }
+    if saveFailed { return "· not saved" }
     return file.dirty ? "· unsaved" : "· saved"
   }
 
   private var statusColor: Color {
-    if file?.conflicted == true { return MacTheme.danger }
+    if file?.conflicted == true || saveFailed { return MacTheme.danger }
     if file?.dirty == true { return MacTheme.warning }
     return MacTheme.muted
   }
 }
 
-private struct EditorConflictBanner: View {
-  let showConflict: () -> Void
+/// A line under the header with a reason and a button: a conflict to compare, or a save that
+/// failed and can be tried again. Closing the tab is the tab bar's.
+private struct EditorBanner: View {
+  let text: String
+  let actionTitle: String
+  let action: () -> Void
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x8) {
       Image(systemName: "exclamationmark.triangle.fill")
         .font(.system(size: MacTheme.TypeScale.control, weight: .semibold)).foregroundStyle(
           MacTheme.danger)
-      Text("The file changed on disk while this draft was open.")
+      Text(text)
         .font(MacTheme.ui(MacTheme.TypeScale.caption, weight: .semibold))
-        .foregroundStyle(MacTheme.ink)
+        .foregroundStyle(MacTheme.ink).lineLimit(2)
       Spacer(minLength: 0)
-      Button("Compare versions", action: showConflict)
+      Button(actionTitle, action: action)
         .font(MacTheme.ui(MacTheme.TypeScale.small, weight: .bold))
         .buttonStyle(.paneSecondary)
     }
-    .padding(.horizontal, MacTheme.Space.x10).frame(height: 34)
+    .padding(.horizontal, MacTheme.Space.x10).frame(minHeight: 34)
     .paneWell(radius: MacTheme.Radius.compact)
   }
 }

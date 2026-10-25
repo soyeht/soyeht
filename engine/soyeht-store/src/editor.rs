@@ -276,10 +276,9 @@ pub(crate) fn snapshot_files(transaction: &rusqlite::Transaction<'_>) -> Result<
 
 pub fn document(file: &EditorFile) -> Result<FileDocument> {
     let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
-    let pane_id = file.pane_id.clone().ok_or(Error::InvalidEditorFile)?;
     Ok(FileDocument {
         file_id: file.file_id.clone(),
-        pane_id,
+        pane_id: file.pane_id.clone().ok_or(Error::InvalidEditorFile)?,
         workspace_id: file.workspace_id.clone(),
         path: file.relative_path.clone(),
         language: file.language.clone(),

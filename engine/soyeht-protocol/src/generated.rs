@@ -4150,6 +4150,17 @@ pub enum EditorContentSource {
     History,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EditorSaveFailure {
+    #[serde(rename = "missing")]
+    Missing,
+    #[serde(rename = "denied")]
+    Denied,
+    #[serde(rename = "full")]
+    Full,
+    #[serde(rename = "other")]
+    Other,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum FileSearchScope {
     #[serde(rename = "content")]
     Content,
@@ -4351,6 +4362,8 @@ pub struct FileReadResult {
     pub to_line: u32,
     #[serde(rename = "lines")]
     pub lines: Vec<EditorLine>,
+    #[serde(rename = "saveFailure", skip_serializing_if = "Option::is_none")]
+    pub save_failure: Option<EditorSaveFailure>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileWriteParams {
@@ -4371,6 +4384,16 @@ pub struct FileWriteResult {
     pub file: FileDocument,
     #[serde(rename = "changedLines")]
     pub changed_lines: Vec<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSaveParams {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSaveResult {
+    #[serde(rename = "file")]
+    pub file: FileDocument,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileWatchParams {
@@ -4998,6 +5021,13 @@ pub struct FileSavedEvent {
     pub file: FileDocument,
     #[serde(rename = "by")]
     pub by: FileAuthor,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FileSaveFailedEvent {
+    #[serde(rename = "fileId")]
+    pub file_id: Id,
+    #[serde(rename = "reason")]
+    pub reason: EditorSaveFailure,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FileConflictEvent {
@@ -6409,6 +6439,8 @@ pub enum Request {
     FileRead(FileReadParams),
     #[serde(rename = "file.write")]
     FileWrite(FileWriteParams),
+    #[serde(rename = "file.save")]
+    FileSave(FileSaveParams),
     #[serde(rename = "file.watch")]
     FileWatch(FileWatchParams),
     #[serde(rename = "file.history")]
@@ -6896,6 +6928,7 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("file.open", "FileOpenParams", "FileOpenResult", true),
     ("file.read", "FileReadParams", "FileReadResult", false),
     ("file.write", "FileWriteParams", "FileWriteResult", true),
+    ("file.save", "FileSaveParams", "FileSaveResult", false),
     ("file.watch", "FileWatchParams", "FileWatchResult", true),
     (
         "file.history",
@@ -7334,6 +7367,8 @@ pub enum EventName {
     FileSaved,
     #[serde(rename = "file.conflict")]
     FileConflict,
+    #[serde(rename = "file.save_failed")]
+    FileSaveFailed,
     #[serde(rename = "lsp.diagnostics")]
     LspDiagnostics,
     #[serde(rename = "editor.agent_cursor")]
@@ -7423,6 +7458,7 @@ impl EventName {
             Self::FileChangedOnDisk => "file.changed_on_disk",
             Self::FileSaved => "file.saved",
             Self::FileConflict => "file.conflict",
+            Self::FileSaveFailed => "file.save_failed",
             Self::LspDiagnostics => "lsp.diagnostics",
             Self::EditorAgentCursor => "editor.agent_cursor",
             Self::EditorReviewRequested => "editor.review_requested",
@@ -7758,6 +7794,11 @@ pub const EVENTS: &[EventDescriptor] = &[
         name: EventName::FileConflict,
         params_type: "FileConflictEvent",
         durable: true,
+    },
+    EventDescriptor {
+        name: EventName::FileSaveFailed,
+        params_type: "FileSaveFailedEvent",
+        durable: false,
     },
     EventDescriptor {
         name: EventName::LspDiagnostics,
@@ -8490,6 +8531,9 @@ pub struct FileConflictDraft {
 impl EventParams for FileConflictDraft {
     const NAME: EventName = EventName::FileConflict;
 }
+impl EventParams for FileSaveFailedEvent {
+    const NAME: EventName = EventName::FileSaveFailed;
+}
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct LspDiagnosticsDraft {
     #[serde(rename = "fileId")]
@@ -8680,6 +8724,7 @@ pub mod method {
     pub const FILE_OPEN: &str = "file.open";
     pub const FILE_READ: &str = "file.read";
     pub const FILE_WRITE: &str = "file.write";
+    pub const FILE_SAVE: &str = "file.save";
     pub const FILE_WATCH: &str = "file.watch";
     pub const FILE_HISTORY: &str = "file.history";
     pub const FILE_REVERT: &str = "file.revert";
@@ -8805,6 +8850,7 @@ pub mod event {
     pub const FILE_CHANGED_ON_DISK: &str = "file.changed_on_disk";
     pub const FILE_SAVED: &str = "file.saved";
     pub const FILE_CONFLICT: &str = "file.conflict";
+    pub const FILE_SAVE_FAILED: &str = "file.save_failed";
     pub const LSP_DIAGNOSTICS: &str = "lsp.diagnostics";
     pub const EDITOR_AGENT_CURSOR: &str = "editor.agent_cursor";
     pub const EDITOR_REVIEW_REQUESTED: &str = "editor.review_requested";

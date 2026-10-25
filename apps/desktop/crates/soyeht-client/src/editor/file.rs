@@ -13,6 +13,7 @@ use super::{
     commands::{EditorCommand, PageRequest},
     editing::Plan,
     page::{Page, position},
+    save_status::SaveStatus,
     selection::{Motion, Selection, clamped, target},
     viewport::{PAGE_LINES, Window, landing_start},
 };
@@ -64,6 +65,8 @@ pub struct EditorFile {
     pub lines: u32,
     pub changed_lines: Vec<u32>,
     pub saved_by: Option<FileAuthor>,
+    /// Why the engine could not save the file, when it could not.
+    pub save_status: SaveStatus,
     pub search: Search,
     queue: VecDeque<Vec<TextEdit>>,
     in_flight: bool,
@@ -106,6 +109,7 @@ impl EditorFile {
             selection: Selection::caret(position(0, 0)),
             changed_lines: Vec::new(),
             saved_by: None,
+            save_status: SaveStatus::default(),
             search: Search::default(),
             queue: VecDeque::new(),
             in_flight: false,
@@ -253,6 +257,7 @@ impl EditorFile {
             return self.reload();
         }
         self.doc = result.file.clone();
+        self.save_status.read(result);
         self.lines = self.doc.line_count;
         let mut page = Page::from_read(result);
         page.asked = asked;

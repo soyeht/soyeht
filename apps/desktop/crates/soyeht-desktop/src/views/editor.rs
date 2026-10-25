@@ -19,7 +19,7 @@ use crate::{
 };
 use gpui::{Entity, MouseButton};
 use soyeht_client::editor::{EditorFile, PaneLoad, page::CRLF, refusal::Refusal};
-use soyeht_protocol::{EditorLanguage, Pane};
+use soyeht_protocol::{EditorLanguage, Pane, client_policy::EDITOR_SAVE_AGAIN};
 
 /// The language as the status bar names it.
 fn language_name(file: &EditorFile) -> &'static str {
@@ -48,6 +48,10 @@ pub(super) fn file_status(
         Some(file) if file.doc.conflicted => ("\u{b7} conflict", palette.danger()),
         // The caret is on its way to a page the engine has not sent: keys wait for it.
         Some(file) if file.is_landing() => ("\u{b7} moving", palette.muted),
+        // The engine could not save it: the pane says why under the tabs.
+        Some(file) if file.save_status.failure().is_some() => {
+            ("\u{b7} not saved", palette.danger())
+        }
         Some(file) if file.doc.dirty => ("\u{b7} unsaved", palette.warning()),
         Some(_) => ("\u{b7} saved", palette.muted),
     }
@@ -145,6 +149,7 @@ impl Workbench {
         self.reveal_active_file(pane);
         let file = self.state.editors.file_of_pane(&pane.pane_id);
         let conflicted = file.is_some_and(|file| file.doc.conflicted);
+        let save_failure = file.and_then(|file| file.save_status.text());
         let loaded = file.is_some_and(|file| file.page.is_some());
         let status = file.map(|file| {
             let head = &file.selection.head;
@@ -210,6 +215,9 @@ impl Workbench {
                     .child(area_probe(cx.entity(), pane_id.clone()))
                     .child(tabs)
                     .children(conflicted.then(|| conflict_banner(palette)))
+                    .children(
+                        save_failure.map(|text| save_failure_banner(text, &pane_id, palette, cx)),
+                    )
                     .children(finding)
                     .child(text)
                     .child(status_bar(status, notice, palette)),
@@ -371,6 +379,30 @@ pub(super) fn conflict_banner(palette: &Palette) -> AnyElement {
         .into_any_element()
 }
 
+/// The line under the tabs when the engine could not save the file: why, and a button that
+/// saves it again. Closing the tab is the header's.
+pub(super) fn save_failure_banner(
+    text: &'static str,
+    pane_id: &str,
+    palette: &Palette,
+    cx: &mut Context<Workbench>,
+) -> AnyElement {
+    strip(palette)
+        .child(icon(Icon::Alert, glyph::CHEVRON, palette.danger()))
+        .child(div().flex_1().min_w_0().child(text))
+        .child(
+            button(
+                id("editor-save-again", pane_id),
+                Role::Secondary,
+                EDITOR_SAVE_AGAIN,
+                palette,
+            )
+            .own_press()
+            .on_click(acting(cx, pane_id, Workbench::save_pane_file)),
+        )
+        .into_any_element()
+}
+
 /// A line of words on a well, under the header of a pane, with room around it.
 pub(super) fn strip(palette: &Palette) -> Div {
     well_row(palette)
@@ -406,4 +438,38 @@ fn status_bar(
         .child(place)
         .children(notice.map(|notice| div().text_color(rgb(palette.warning())).child(notice)))
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::ThemeName;
+    use soyeht_protocol::{EditorSaveFailure, FileDocument};
+
+    fn file(dirty: bool) -> EditorFile {
+        let doc: FileDocument = serde_json::from_value(serde_json::json!({
+            "fileId": "f", "paneId": "p", "workspaceId": "w", "path": "a.rs",
+            "language": "rust", "revision": "1", "diskRevision": "1", "lineCount": 1,
+            "byteCount": "1", "dirty": dirty, "conflicted": false, "watching": true
+        }))
+        .unwrap();
+        EditorFile::new(doc)
+    }
+
+    #[test]
+    fn a_file_the_engine_could_not_save_says_so_in_the_header_not_just_unsaved() {
+        let palette = ThemeName::DEFAULT.palette();
+        let mut file = file(true);
+        assert_eq!(
+            file_status(Some(&file), false, palette),
+            ("\u{b7} unsaved", palette.warning())
+        );
+        file.save_status.told(EditorSaveFailure::Missing);
+        assert_eq!(
+            file_status(Some(&file), false, palette),
+            ("\u{b7} not saved", palette.danger())
+        );
+        file.save_status.saved();
+        assert_eq!(file_status(Some(&file), false, palette).0, "\u{b7} unsaved");
+    }
 }

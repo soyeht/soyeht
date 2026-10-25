@@ -51,6 +51,16 @@ impl<I: Interference> FileSystemPort for InterferedFiles<I> {
         SystemFiles.create_empty_text(root, relative)
     }
 
+    fn create_text_if_absent(
+        &self,
+        root: &Path,
+        relative: &Path,
+        text: &str,
+    ) -> io::Result<PathBuf> {
+        self.0.before_write(&root.join(relative))?;
+        SystemFiles.create_text_if_absent(root, relative, text)
+    }
+
     fn create_binary_if_absent_or_matching(
         &self,
         root: &Path,

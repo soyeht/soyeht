@@ -530,8 +530,7 @@ public final class EngineClient {
       let workspace = try params["workspace"].decoded(Workspace.self)
       upsertWorkspace(workspace)
       synchronizePaneLayout(workspace)
-    case .workspaceClosed:
-      applyWorkspaceClosed(params)
+    case .workspaceClosed: applyWorkspaceClosed(params)
     case .streamReplayStart:
       if let replay = try terminalStreams.start(params.decoded(StreamReplayStartEvent.self)),
         replay.reset
@@ -558,8 +557,9 @@ public final class EngineClient {
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
     case .usageChanged: try applyUsageEvent(params)
     case .skillsChanged, .paneCommandsChanged: try applySlashEvent(eventName, params)
-    case .fileChangedOnDisk, .fileSaved, .fileConflict, .lspDiagnostics, .editorAgentCursor,
-      .editorReviewRequested, .editorTabsUpdated, .projectEntryRenamed, .projectTreeChanged:
+    case .fileChangedOnDisk, .fileSaved, .fileSaveFailed, .fileConflict, .lspDiagnostics,
+      .editorAgentCursor, .editorReviewRequested, .editorTabsUpdated, .projectEntryRenamed,
+      .projectTreeChanged:
       try applyEditorEvent(eventName, params)
     case .serversLocalChanged, .webNavigated, .webConsoleCounts, .webAgentDriving:
       try applyWebEvent(eventName, params)

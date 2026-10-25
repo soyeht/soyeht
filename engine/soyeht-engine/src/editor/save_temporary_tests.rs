@@ -23,6 +23,15 @@ fn plant_save_in_flight(fixture: &EditorFixture) -> String {
     name
 }
 
+/// The relative paths the project enumeration finds in the fixture's project.
+fn project_paths(fixture: &EditorFixture) -> Vec<String> {
+    enumerate_project_files(&fixture.project())
+        .unwrap()
+        .into_iter()
+        .map(|file| file.relative)
+        .collect()
+}
+
 fn names(listing: &Value) -> Vec<&str> {
     listing["entries"]
         .as_array()
@@ -35,6 +44,8 @@ fn names(listing: &Value) -> Vec<&str> {
 #[test]
 fn the_writers_temporary_names_are_recognized_and_ordinary_names_are_not() {
     assert!(is_save_temporary(OsStr::new(&save_temporary_name())));
+    // The temporary of a publish (a file created again by save again) is the engine's too.
+    assert!(is_save_temporary(OsStr::new(".soyeht-publish-3f2a")));
     for ordinary in ["note.txt", ".soyeht-saved", ".gitignore", "soyeht-save-x"] {
         assert!(!is_save_temporary(OsStr::new(ordinary)), "{ordinary}");
     }
@@ -44,12 +55,21 @@ fn the_writers_temporary_names_are_recognized_and_ordinary_names_are_not() {
 async fn a_save_in_flight_is_not_a_project_file() {
     let fixture = EditorFixture::new(&[("note.txt", "one\n")]).await;
     plant_save_in_flight(&fixture);
-    let paths = enumerate_project_files(&fixture.project())
-        .unwrap()
-        .into_iter()
-        .map(|file| file.relative)
-        .collect::<Vec<_>>();
-    assert_eq!(paths, vec!["note.txt"]);
+    assert_eq!(project_paths(&fixture), vec!["note.txt"]);
+}
+
+#[tokio::test]
+async fn a_publish_in_flight_or_left_by_a_crash_is_not_a_project_file_or_a_tree_entry() {
+    let mut fixture = EditorFixture::new(&[("note.txt", "one\n")]).await;
+    let leftover = format!(".soyeht-publish-{}", Uuid::new_v4());
+    fs::write(fixture.project().join(&leftover), "the whole draft\n").unwrap();
+    assert_eq!(project_paths(&fixture), vec!["note.txt"]);
+    let workspace_id = fixture.workspace_id.clone();
+    let listing = fixture.call(
+        "project.tree.list",
+        json!({"workspaceId":workspace_id,"path":""}),
+    );
+    assert_eq!(names(&listing), vec!["note.txt"]);
 }
 
 #[tokio::test]

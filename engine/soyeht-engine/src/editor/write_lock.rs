@@ -77,7 +77,11 @@ mod tests {
             }
             assert_eq!(wins.load(Ordering::SeqCst), 1, "round {round}");
         }
-        assert!(HELD.lock().unwrap().is_empty(), "locks are not leaked");
+        // Only this test's own path: other tests write files in the same process.
+        assert!(
+            !HELD.lock().unwrap().contains_key(&path),
+            "the lock is not leaked"
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 }

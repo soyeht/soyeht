@@ -65,7 +65,11 @@ watches the disk, keeps history); the app renders and edits.
 
 **File and disk**
 14. Autosave (500 ms debounce); unsaved text survives engine and app restarts
-    (draft stored in the database).
+    (draft stored in the database). A save that cannot reach the disk is told to the
+    clients with its reason (`file.save_failed`, `saveFailure` of the file: the file is
+    gone, permission denied, the disk is full, or another cause); the pane shows it with a
+    button that saves again (`file.save`, which also creates a file that is gone). The engine
+    keeps the draft and retries with a growing wait (ADR 0107).
 15. Reload when the file changes on disk (engine watcher): the view follows
     and marks the changed lines; if you changed the file too, show a conflict
     with both versions, never overwrite silently.
@@ -99,11 +103,11 @@ collaboration, extensions.
 
 ## 5. Changes to other contracts
 - 08 (engine and clients): methods `file.open|read|write|watch|history|
-  revert|undo|redo|search|find|replace|symbols|definition|references|diagnostics|diff|format`,
+  revert|undo|redo|save|search|find|replace|symbols|definition|references|diagnostics|diff|format`,
   `project.tree.list|watch`, `project.entry.create|rename|delete`,
   `editor.tabs.list|move`, `editor.review.accept|reject|comment`, `lsp.status`;
-  events `file.changed_on_disk`, `file.saved {by}`, `file.conflict`,
-  `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`,
+  events `file.changed_on_disk`, `file.saved {by}`, `file.save_failed {fileId, reason}`,
+  `file.conflict`, `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`,
   `editor.tabs_updated`, `project.entry_renamed`, `project.tree_changed`.
   `file.open` and `pane.create` with `mode: "editor"` (`soyeht pane create --editor`) take a
   `path` relative to the workspace or an absolute path inside it; a path outside is refused.

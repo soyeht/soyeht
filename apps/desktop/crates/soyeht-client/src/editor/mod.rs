@@ -14,6 +14,7 @@ pub mod keys;
 mod load;
 pub mod page;
 pub mod refusal;
+pub mod save_status;
 pub mod selection;
 pub mod tabs;
 pub mod text;
@@ -32,9 +33,9 @@ use crate::Effect;
 use selection::{Motion, Selection};
 use serde_json::Value;
 use soyeht_protocol::{
-    EditorTab, EventName, FileChangedOnDiskEvent, FileConflictEvent, FileDocument, FileSavedEvent,
-    Pane, PaneMode, ProjectEntryRenamedEvent, ProjectTreeChangedEvent, TextPosition,
-    limits::EDITOR_EDIT_BYTES,
+    EditorTab, EventName, FileChangedOnDiskEvent, FileConflictEvent, FileDocument,
+    FileSaveFailedEvent, FileSavedEvent, Pane, PaneMode, ProjectEntryRenamedEvent,
+    ProjectTreeChangedEvent, TextPosition, limits::EDITOR_EDIT_BYTES,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -492,6 +493,7 @@ impl Editors {
             EventName::FileChangedOnDisk
                 | EventName::FileSaved
                 | EventName::FileConflict
+                | EventName::FileSaveFailed
                 | EventName::EditorTabsUpdated
                 | EventName::ProjectTreeChanged
                 | EventName::ProjectEntryRenamed
@@ -522,6 +524,7 @@ impl Editors {
                 match self.files.get_mut(&event.file.file_id) {
                     Some(file) => {
                         file.saved_by = Some(event.by);
+                        file.save_status.saved();
                         file.changed_lines.clear();
                         file.changed_elsewhere(event.file)
                     }
@@ -534,6 +537,13 @@ impl Editors {
                     file.doc.revision = event.draft_revision;
                     file.doc.disk_revision = event.disk_revision;
                     file.doc.conflicted = true;
+                }
+                Vec::new()
+            }
+            EventName::FileSaveFailed => {
+                let event: FileSaveFailedEvent = serde_json::from_value(params)?;
+                if let Some(file) = self.files.get_mut(&event.file_id) {
+                    file.save_status.told(event.reason);
                 }
                 Vec::new()
             }
@@ -676,6 +686,8 @@ mod open_at_tests;
 mod preview_tests;
 #[cfg(test)]
 mod refusal_tests;
+#[cfg(test)]
+mod save_status_tests;
 #[cfg(test)]
 mod tab_tests;
 #[cfg(test)]

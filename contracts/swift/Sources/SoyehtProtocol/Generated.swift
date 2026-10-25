@@ -4582,6 +4582,13 @@ public enum EditorContentSource: String, Codable, Sendable, CaseIterable {
     case `history` = "history"
 }
 
+public enum EditorSaveFailure: String, Codable, Sendable, CaseIterable {
+    case `missing` = "missing"
+    case `denied` = "denied"
+    case `full` = "full"
+    case `other` = "other"
+}
+
 public enum FileSearchScope: String, Codable, Sendable, CaseIterable {
     case `content` = "content"
     case `path` = "path"
@@ -4768,12 +4775,14 @@ public struct FileReadResult: Codable, Sendable {
     public var `fromLine`: UInt32
     public var `toLine`: UInt32
     public var `lines`: [EditorLine]
-    public init(`file`: FileDocument, `source`: EditorContentSource, `fromLine`: UInt32, `toLine`: UInt32, `lines`: [EditorLine]) {
+    public var `saveFailure`: EditorSaveFailure?
+    public init(`file`: FileDocument, `source`: EditorContentSource, `fromLine`: UInt32, `toLine`: UInt32, `lines`: [EditorLine], `saveFailure`: EditorSaveFailure? = nil) {
         self.`file` = `file`
         self.`source` = `source`
         self.`fromLine` = `fromLine`
         self.`toLine` = `toLine`
         self.`lines` = `lines`
+        self.`saveFailure` = `saveFailure`
     }
 }
 
@@ -4798,6 +4807,20 @@ public struct FileWriteResult: Codable, Sendable {
     public init(`file`: FileDocument, `changedLines`: [UInt32]) {
         self.`file` = `file`
         self.`changedLines` = `changedLines`
+    }
+}
+
+public struct FileSaveParams: Codable, Sendable {
+    public var `fileId`: Id
+    public init(`fileId`: Id) {
+        self.`fileId` = `fileId`
+    }
+}
+
+public struct FileSaveResult: Codable, Sendable {
+    public var `file`: FileDocument
+    public init(`file`: FileDocument) {
+        self.`file` = `file`
     }
 }
 
@@ -5542,6 +5565,15 @@ public struct FileSavedEvent: Codable, Sendable {
         self.`actor` = `actor`
         self.`file` = `file`
         self.`by` = `by`
+    }
+}
+
+public struct FileSaveFailedEvent: Codable, Sendable {
+    public var `fileId`: Id
+    public var `reason`: EditorSaveFailure
+    public init(`fileId`: Id, `reason`: EditorSaveFailure) {
+        self.`fileId` = `fileId`
+        self.`reason` = `reason`
     }
 }
 
@@ -6960,6 +6992,7 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case fileOpen = "file.open"
     case fileRead = "file.read"
     case fileWrite = "file.write"
+    case fileSave = "file.save"
     case fileWatch = "file.watch"
     case fileHistory = "file.history"
     case fileRevert = "file.revert"
@@ -7086,6 +7119,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case fileChangedOnDisk = "file.changed_on_disk"
     case fileSaved = "file.saved"
     case fileConflict = "file.conflict"
+    case fileSaveFailed = "file.save_failed"
     case lspDiagnostics = "lsp.diagnostics"
     case editorAgentCursor = "editor.agent_cursor"
     case editorReviewRequested = "editor.review_requested"
@@ -7172,6 +7206,7 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .fileChangedOnDisk: EventDescriptor(paramsType: "FileChangedOnDiskEvent", durable: true),
     .fileSaved: EventDescriptor(paramsType: "FileSavedEvent", durable: true),
     .fileConflict: EventDescriptor(paramsType: "FileConflictEvent", durable: true),
+    .fileSaveFailed: EventDescriptor(paramsType: "FileSaveFailedEvent", durable: false),
     .lspDiagnostics: EventDescriptor(paramsType: "LspDiagnosticsEvent", durable: true),
     .editorAgentCursor: EventDescriptor(paramsType: "EditorAgentCursorEvent", durable: true),
     .editorReviewRequested: EventDescriptor(paramsType: "EditorReviewRequestedEvent", durable: true),

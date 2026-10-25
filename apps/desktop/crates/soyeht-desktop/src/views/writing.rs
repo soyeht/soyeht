@@ -6,7 +6,7 @@
 //! `writing_flow` says.
 
 use super::{
-    editor::conflict_banner,
+    editor::{conflict_banner, save_failure_banner},
     menus,
     pane::{Action, notice_body},
     prelude::*,
@@ -118,6 +118,7 @@ impl Workbench {
             };
         }
         let (lines, conflicted) = (file.lines.max(1), file.doc.conflicted);
+        let save_failure = file.save_status.text();
         // A document is edited whole: the lines the page does not hold yet are read, and the
         // words of a text that settled are counted.
         let reading = self.state.editors.show(&pane_id, 0, lines);
@@ -140,6 +141,7 @@ impl Workbench {
             .flex_1()
             .min_h_0()
             .children(conflicted.then(|| conflict_banner(palette)))
+            .children(save_failure.map(|text| save_failure_banner(text, &pane_id, palette, cx)))
             .child(content)
             .into_any_element()
     }

@@ -50,6 +50,17 @@ pub(super) fn written(file: &str, pane_id: &str, revision: u64, lines: u32) -> E
     })
 }
 
+/// The engine saying that it saved the file, at `revision`.
+pub(super) fn saved(file: &str, pane_id: &str, revision: u64, lines: u32) -> Event {
+    event(
+        EventName::FileSaved,
+        json!({
+            "file": doc(file, pane_id, revision, lines, false),
+            "by": {"actor": {"role": "human_local", "client": "desktop"}, "name": "you"}
+        }),
+    )
+}
+
 pub(super) fn snapshot(panes: Vec<Pane>, files: Vec<Value>) -> Snapshot {
     Snapshot {
         workspaces: vec![workspace("w")],
@@ -316,14 +327,7 @@ fn undo_goes_to_the_engine_and_the_caret_goes_where_the_edit_was() {
 #[test]
 fn the_engine_saving_the_file_reads_the_page_again_for_its_highlights() {
     let mut state = open(&["let"], 1);
-    let saved = event(
-        EventName::FileSaved,
-        json!({
-            "file": doc("main", "e1", 1, 1, false),
-            "by": {"actor": {"role": "human_local", "client": "desktop"}, "name": "you"}
-        }),
-    );
-    let effects = state.apply(saved);
+    let effects = state.apply(saved("main", "e1", 1, 1));
     assert!(
         sent(&effects)
             .iter()
@@ -338,14 +342,7 @@ fn a_saved_event_of_an_older_revision_does_not_move_the_file_back() {
     let mut state = open(&["let"], 1);
     state.editors.insert("e1", "x");
     state.apply(written("main", "e1", 3, 1));
-    let saved = event(
-        EventName::FileSaved,
-        json!({
-            "file": doc("main", "e1", 2, 1, false),
-            "by": {"actor": {"role": "human_local", "client": "desktop"}, "name": "you"}
-        }),
-    );
-    state.apply(saved);
+    state.apply(saved("main", "e1", 2, 1));
     assert_eq!(state.editors.file_of_pane("e1").unwrap().doc.revision, "3");
 }
 
@@ -470,14 +467,7 @@ fn a_file_that_got_shorter_than_the_page_is_read_from_its_end_and_a_second_failu
         EventName::FileChangedOnDisk,
         json!({"fileId": "main", "diskRevision": "2", "changedLines": []}),
     ));
-    let saved = event(
-        EventName::FileSaved,
-        json!({
-            "file": doc("main", "e1", 2, 100, false),
-            "by": {"actor": {"role": "human_local", "client": "desktop"}, "name": "you"}
-        }),
-    );
-    state.apply(saved);
+    state.apply(saved("main", "e1", 2, 100));
     let failed = |state: &mut State, from_line: u32| {
         state.apply(Event::Editor(super::EditorEvent::Failed(
             super::Failure::Read {

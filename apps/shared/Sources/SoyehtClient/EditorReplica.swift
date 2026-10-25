@@ -7,6 +7,8 @@ public struct EditorFileView: Sendable {
   public var changedLines: [UInt32]
   public var lastSavedBy: FileAuthor?
   public var conflict: FileConflictEvent?
+  /// Why the engine could not save the file, when it could not.
+  public var saveStatus = EditorSaveStatus()
   public var diagnostics: [FileDiagnostic]
   public var diagnosticRevision: String?
   public var agentCursors: [String: EditorAgentCursorEvent]
@@ -97,8 +99,12 @@ extension EngineClient {
         $0.lastSavedBy = event.by
         $0.changedLines = []
         $0.conflict = nil
+        $0.saveStatus.saved()
       }
       scheduleEditorReload(event.file.fileId)
+    case .fileSaveFailed:
+      let event = try params.decoded(FileSaveFailedEvent.self)
+      updateEditor(event.fileId) { $0.saveStatus.told(event.reason) }
     case .fileConflict:
       let event = try params.decoded(FileConflictEvent.self)
       updateEditor(event.fileId) {
@@ -255,14 +261,20 @@ extension EngineClient {
     .decoded(FileReadResult.self)
   }
 
+  /// Asks the engine to save the file now, then reads it until it is no longer dirty or the
+  /// engine says why it cannot be saved (`saveFailure`, which the pane shows). A save that
+  /// takes longer than the wait is neither: the engine goes on, and `file.saved` or
+  /// `file.save_failed` tells how it ended.
   public func saveEditorFile(_ fileId: String) async throws {
     if let task = editorWriteTasks[fileId] { await task.value }
+    _ = try await request(.fileSave, .encoded(FileSaveParams(fileId: fileId)))
     for _ in 0..<ClientPolicy.editorSaveAttempts {
       try await refreshEditorFile(fileId)
-      guard editorFiles[fileId]?.file.dirty == true else { return }
+      guard let view = editorFiles[fileId], view.file.dirty, view.saveStatus.failure == nil else {
+        return
+      }
       try await Task.sleep(for: .milliseconds(ClientPolicy.editorSaveRetryMs))
     }
-    throw ClientFailure.editorCommand("The file did not finish saving before the deadline.")
   }
 
   public func reloadEditorFile(_ fileId: String) async throws {
@@ -569,6 +581,7 @@ extension EngineClient {
       } else if $0.viewport?.fromLine != result.fromLine {
         $0.viewportRequestedLines = nil
       }
+      $0.saveStatus.read(result)
       $0.viewport = result
     }
   }

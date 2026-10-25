@@ -58,7 +58,12 @@ export const clientPolicy = {
     "taskMoveReason": "Moved on the workspace board",
     "editorNoFile": "The engine has no file for this editor tab.",
     "editorFileNotText": "Binary file, can't be shown.",
-    "editorFileTooLarge": "This file is too large to open in the editor."
+    "editorFileTooLarge": "This file is too large to open in the editor.",
+    "editorSaveMissing": "Couldn't save: this file was deleted from the disk. Save again to create it.",
+    "editorSaveDenied": "Couldn't save: permission denied. Fix the permissions, then save again.",
+    "editorSaveFull": "Couldn't save: the disk is full. Free some space, then save again.",
+    "editorSaveOther": "Couldn't save this file. The engine keeps trying; save again to retry now.",
+    "editorSaveAgain": "Save again"
   },
   "inlineImageTypes": [
     "image/png",

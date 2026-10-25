@@ -12,6 +12,7 @@
 //! file wait for its job first, and a file closed while its job runs is finished from its
 //! stored row.
 
+use super::save_failure;
 use super::{
     Effect, Failure,
     persistence::{next_revision, stored_version},
@@ -19,9 +20,13 @@ use super::{
 };
 use crate::{core::Core, errors, errors::Result, model, offload::Done};
 use soyeht_platform::log::Line;
-use soyeht_protocol::FileAuthor;
+use soyeht_protocol::{EditorSaveFailure, FileAuthor, FileSaveFailedEvent, event};
 use soyeht_store::editor::EditorFile;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 
 /// How long a request that moves or deletes a file waits for the job working on it.
 pub(super) const SETTLE_WAIT: Duration = Duration::from_millis(1500);
@@ -74,6 +79,9 @@ pub(super) struct DiskJob {
     known: String,
     /// The text to write once the disk still holds `known`; a watch has none.
     draft: Option<String>,
+    /// The person asked to save: a file gone from the disk is created again, empty, and
+    /// then written.
+    recreate: bool,
 }
 
 impl DiskJob {
@@ -84,6 +92,7 @@ impl DiskJob {
         workspace_root: PathBuf,
         file: &EditorFile,
         effect: Effect,
+        recreate: bool,
     ) -> Option<(Self, Snapshot)> {
         let draft = match effect {
             Effect::Save if file.conflict_text.is_none() => Some(file.draft_text.clone()?),
@@ -97,6 +106,7 @@ impl DiskJob {
             relative_path: file.relative_path.clone(),
             known: known.clone(),
             draft,
+            recreate,
         };
         let snapshot = Snapshot {
             revision: file.revision,
@@ -107,14 +117,27 @@ impl DiskJob {
     }
 
     pub(super) fn run(self) -> Result<DiskResult> {
-        let path = resolve_in(&*self.files, &self.workspace_root, &self.relative_path)?;
-        let disk = read_disk_from(&*self.files, &path.canonical)?;
+        let found =
+            resolve_in(&*self.files, &self.workspace_root, &self.relative_path).and_then(|path| {
+                read_disk_from(&*self.files, &path.canonical).map(|disk| (path, disk))
+            });
+        let (path, disk) = match found {
+            Ok(found) => found,
+            // The person asked to save a file that is gone: it is created again with the draft.
+            Err(error)
+                if self.recreate && self.draft.is_some() && save_failure::is_missing(&error) =>
+            {
+                return self.recreated();
+            }
+            Err(error) => return Err(error),
+        };
         if disk != self.known {
             return Ok(DiskResult::Changed(disk));
         }
         let Some(draft) = self.draft else {
             return Ok(DiskResult::Unchanged);
         };
+        save_failure::refuse_read_only(&path.canonical).map_err(errors::io)?;
         let written = self
             .files
             .write_text_if_unchanged(&path.canonical, &self.known, &draft)
@@ -124,6 +147,29 @@ impl DiskJob {
         } else {
             // The file changed between the read and the write: report what it holds now.
             read_disk_from(&*self.files, &path.canonical).map(DiskResult::Changed)
+        }
+    }
+
+    /// The file is gone and the person asked to save it: it is created again holding the draft,
+    /// in one step, so a write that fails or a crash leaves no file, never an empty one that
+    /// the next save would take for a change made by someone else.
+    fn recreated(self) -> Result<DiskResult> {
+        let Some(draft) = self.draft.clone() else {
+            return Ok(DiskResult::Unchanged);
+        };
+        let relative = Path::new(&self.relative_path);
+        match self
+            .files
+            .create_text_if_absent(&self.workspace_root, relative, &draft)
+        {
+            Ok(_) => Ok(DiskResult::Written(draft)),
+            // Another program made the file meanwhile: it is judged like any other save.
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Self {
+                recreate: false,
+                ..self
+            }
+            .run(),
+            Err(error) => Err(errors::io(error)),
         }
     }
 }
@@ -202,17 +248,19 @@ impl Core {
     }
 
     fn prepare_disk_job(
-        &self,
+        &mut self,
         file_id: &str,
         effect: Effect,
     ) -> Result<Option<(DiskJob, Snapshot)>> {
-        self.disk_job_for(self.editor.stored(file_id)?, effect)
+        let recreate = effect == Effect::Save && self.editor.take_recreate(file_id);
+        self.disk_job_for(self.editor.stored(file_id)?, effect, recreate)
     }
 
     fn disk_job_for(
         &self,
         file: &EditorFile,
         effect: Effect,
+        recreate: bool,
     ) -> Result<Option<(DiskJob, Snapshot)>> {
         let workspace = model::workspace(&self.store, &file.workspace_id)?;
         Ok(DiskJob::new(
@@ -220,6 +268,7 @@ impl Core {
             PathBuf::from(workspace.path.as_str()),
             file,
             effect,
+            recreate,
         ))
     }
 
@@ -335,11 +384,32 @@ impl Core {
             Err(error) => {
                 // Only the class of the failure: an error's text can carry paths.
                 let kind = soyeht_platform::log::Failure::failure_kind(&error);
-                let failure = self.editor.effect_failed(file_id, effect, &kind, now)?;
+                let reason = save_failure::classify(&error);
+                let failure =
+                    self.editor
+                        .effect_failed(file_id, effect, &kind, reason.clone(), now)?;
+                if effect == Effect::Save {
+                    self.announce_save_failure(file_id, reason);
+                }
                 failure
                     .report
                     .then(|| failure_line(effect, file_id, kind, failure))
             }
+        }
+    }
+
+    /// Tells the clients why the file's save failed. The state is also on the file's document
+    /// (`file.read`), so a client that connects later learns it.
+    fn announce_save_failure(&self, file_id: &str, reason: EditorSaveFailure) {
+        let params = FileSaveFailedEvent {
+            file_id: file_id.to_owned(),
+            reason,
+        };
+        let sent = serde_json::to_value(params)
+            .map_err(|_| errors::internal("File save failure serialization failed"))
+            .and_then(|params| self.transient_event(event::FILE_SAVE_FAILED, params));
+        if let Err(error) = sent {
+            soyeht_platform::log::failure("engine.editor_save_failure_not_sent", &error);
         }
     }
 
@@ -378,7 +448,7 @@ impl Core {
         if self.hooks.pause_editor_autosave() {
             return Ok(());
         }
-        let Some((job, snapshot)) = self.disk_job_for(&file, Effect::Save)? else {
+        let Some((job, snapshot)) = self.disk_job_for(&file, Effect::Save, false)? else {
             return Ok(());
         };
         // Not the key of the job that just ended: that one is released after this apply.

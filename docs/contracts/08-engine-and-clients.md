@@ -264,7 +264,8 @@ and `loop.set {paneId, prompt, interval, maxRounds, stopWhen, enabled}`.
 Task IDs are always `{workspaceId, taskId}` together.
 
 **Files and editor**: `file.open`, `file.read`, `file.write`, `file.watch`,
-`file.history`, `file.revert`, `file.undo`, `file.redo`, `file.search`, `file.find`,
+`file.history`, `file.revert`, `file.undo`, `file.redo`, `file.save`, `file.search`,
+`file.find`,
 `file.replace`, `file.symbols`,
 `file.definition`, `file.references`, `file.diagnostics`, `file.diff`, and
 `file.format`; `project.tree.list|watch`, `project.entry.create|rename|delete`;
@@ -272,6 +273,9 @@ Task IDs are always `{workspaceId, taskId}` together.
 read through bounded line viewports. Positions are zero-based line and UTF-16
 column pairs. Mutations name a base revision when they change existing text;
 the complete shapes and limits are generated from `contracts/protocol.json`.
+`file.save` is not a mutation of the contract: it asks the engine to save now and answers with the
+document as it is (accepted, not the outcome); the outcome is `file.saved`, or `saveFailure` on the
+next `file.read` and the `file.save_failed` event.
 
 **Experiment (contract 05 §4)**: `experiment.record.set {paneId, on}`,
 `experiment.export {from, to}` → `{path, bytes}`, `experiment.metrics`,
@@ -336,7 +340,8 @@ sends against them (ADR 0090).
   `task.phrase_changed {phrase}`, `task.updated {version}`,
   `task.attention {workspaceId, n}`
 - `attention.changed {workspaceId, count, items}`
-- `file.changed_on_disk`, `file.saved {by}`, `file.conflict`
+- `file.changed_on_disk`, `file.saved {by}`, `file.save_failed {fileId, reason}`
+  (non-durable), `file.conflict`
 - `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`
 - `usage.changed {provider, state, primary?, secondary?, source, fetchedAt}`
 - `pane.commands_changed {paneId}` (read the list with `pane.commands.list`),

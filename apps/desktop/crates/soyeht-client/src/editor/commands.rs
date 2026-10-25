@@ -7,8 +7,9 @@ use serde_json::Value;
 use soyeht_protocol::{
     EditorTabsListParams, EditorTabsListResult, FileAuthor, FileFindDirection, FileFindParams,
     FileFindQuery, FileFindResult, FileOpenParams, FileOpenResult, FileReadParams, FileReadResult,
-    FileUndoParams, FileUndoResult, FileWriteParams, FileWriteResult, ProjectTreeListParams,
-    ProjectTreeListResult, ProjectTreeWatchParams, Request, TextEdit, TextPosition,
+    FileSaveParams, FileUndoParams, FileUndoResult, FileWriteParams, FileWriteResult,
+    ProjectTreeListParams, ProjectTreeListResult, ProjectTreeWatchParams, Request, TextEdit,
+    TextPosition,
     client_policy::{EDITOR_SAVE_ATTEMPTS, EDITOR_SAVE_RETRY_MS},
 };
 use std::time::Duration;
@@ -356,24 +357,26 @@ pub(crate) fn failure(command: &EditorCommand, reason: &str) -> Option<Event> {
     Some(Event::Editor(EditorEvent::Failed(failure)))
 }
 
-/// Reads `page` until the file is no longer dirty: the engine saves a draft shortly after the
-/// last edit, so the page read at that moment is the saved one.
+/// Asks the engine to save the file now, then reads `page` until the file is no longer dirty
+/// or the engine says why it cannot be saved (`saveFailure` of the document). The page read
+/// at that moment is the answer: saved, or still unsaved with the reason. A save that takes
+/// longer than the wait is neither: the engine goes on, and `file.saved` or
+/// `file.save_failed` tells how it ended.
 fn save(rpc: &Rpc, page: &PageRequest) -> Result<Event> {
-    for attempt in 0..EDITOR_SAVE_ATTEMPTS {
+    rpc.call(&Request::FileSave(FileSaveParams {
+        file_id: page.file_id.clone(),
+    }))?;
+    let mut attempt = 0;
+    loop {
         let result = rpc.call(&Request::FileRead(read(page)))?;
         let read: FileReadResult = serde_json::from_value(result)?;
-        if !read.file.dirty || attempt + 1 == EDITOR_SAVE_ATTEMPTS {
-            let saved = !read.file.dirty;
-            let event = Event::Editor(EditorEvent::Page(Box::new(read)));
-            return if saved {
-                Ok(event)
-            } else {
-                Err(Error::Invalid("the file did not finish saving in time"))
-            };
+        attempt += 1;
+        let settled = !read.file.dirty || read.save_failure.is_some();
+        if settled || attempt == EDITOR_SAVE_ATTEMPTS {
+            return Ok(Event::Editor(EditorEvent::Page(Box::new(read))));
         }
         std::thread::sleep(Duration::from_millis(u64::from(EDITOR_SAVE_RETRY_MS)));
     }
-    Err(Error::Invalid("the file did not finish saving in time"))
 }
 
 #[cfg(test)]

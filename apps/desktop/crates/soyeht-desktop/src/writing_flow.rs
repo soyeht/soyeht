@@ -65,7 +65,7 @@ impl Workbench {
             // The source of a slide is Markdown but has no toolbar or format keys, as on the Mac.
             ProseEvent::Format(_) if kind == Some(WritingKind::Presentation) => {}
             ProseEvent::Format(kind) => this.format_selection(&owner, kind.clone(), cx),
-            ProseEvent::Save => this.save_writing(&owner, cx),
+            ProseEvent::Save => this.save_pane_file(&owner, cx),
             ProseEvent::Advance { tab } => this.screenplay_advance(&owner, *tab, cx),
         })
         .detach();
@@ -255,8 +255,9 @@ impl Workbench {
         cx.notify();
     }
 
-    /// Waits for the engine to save the document: the draft is saved shortly after the last edit.
-    fn save_writing(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+    /// Asks the engine to save the file of a text, a screenplay or an editor tab, and waits for it:
+    /// the draft is saved shortly after the last edit, and a file that cannot be saved says why.
+    pub(crate) fn save_pane_file(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         let effects = self.state.editors.save(pane_id);
         self.run_effects(effects);
         cx.notify();

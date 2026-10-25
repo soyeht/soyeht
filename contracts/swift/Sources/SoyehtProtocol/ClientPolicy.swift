@@ -33,6 +33,11 @@ public enum ClientPolicy {
     public static let editorNoFile = "The engine has no file for this editor tab."
     public static let editorFileNotText = "Binary file, can't be shown."
     public static let editorFileTooLarge = "This file is too large to open in the editor."
+    public static let editorSaveMissing = "Couldn't save: this file was deleted from the disk. Save again to create it."
+    public static let editorSaveDenied = "Couldn't save: permission denied. Fix the permissions, then save again."
+    public static let editorSaveFull = "Couldn't save: the disk is full. Free some space, then save again."
+    public static let editorSaveOther = "Couldn't save this file. The engine keeps trying; save again to retry now."
+    public static let editorSaveAgain = "Save again"
     public static let usageBandWarningFrom: Double = 0.5
     public static let usageBandDangerAbove: Double = 0.8
     public static let contextBandWarningAbove: Double = 0.75

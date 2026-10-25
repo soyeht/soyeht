@@ -27,6 +27,15 @@ pub const TASK_MOVE_REASON: &str = "Moved on the workspace board";
 pub const EDITOR_NO_FILE: &str = "The engine has no file for this editor tab.";
 pub const EDITOR_FILE_NOT_TEXT: &str = "Binary file, can't be shown.";
 pub const EDITOR_FILE_TOO_LARGE: &str = "This file is too large to open in the editor.";
+pub const EDITOR_SAVE_MISSING: &str =
+    "Couldn't save: this file was deleted from the disk. Save again to create it.";
+pub const EDITOR_SAVE_DENIED: &str =
+    "Couldn't save: permission denied. Fix the permissions, then save again.";
+pub const EDITOR_SAVE_FULL: &str =
+    "Couldn't save: the disk is full. Free some space, then save again.";
+pub const EDITOR_SAVE_OTHER: &str =
+    "Couldn't save this file. The engine keeps trying; save again to retry now.";
+pub const EDITOR_SAVE_AGAIN: &str = "Save again";
 pub const USAGE_BAND_WARNING_FROM: f64 = 0.5;
 pub const USAGE_BAND_DANGER_ABOVE: f64 = 0.8;
 pub const CONTEXT_BAND_WARNING_ABOVE: f64 = 0.75;

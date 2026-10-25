@@ -1,4 +1,6 @@
-use super::creation::{create_contained_directories, validate_relative_creation_path};
+use super::creation::{
+    canonical_inside, create_contained_directories, validate_relative_creation_path,
+};
 use super::schedule::{WATCH_INTERVAL_MS, save_backoff, watch_backoff};
 use super::{
     project_files::{ProjectFile, save_temporary_name},
@@ -28,6 +30,10 @@ pub trait FileSystemPort: Send + Sync {
     fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool>;
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool>;
     fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf>;
+    /// Creates a file that is gone with its whole text at once (see `creation`).
+    fn create_text_if_absent(&self, root: &Path, rel: &Path, text: &str) -> io::Result<PathBuf> {
+        super::creation::create_text_if_absent(root, rel, text)
+    }
     fn create_binary_if_absent_or_matching(
         &self,
         root: &Path,
@@ -132,13 +138,7 @@ impl FileSystemPort for SystemFiles {
                         "document target cannot be a symbolic link",
                     ));
                 }
-                let canonical = soyeht_platform::fs::canonicalize(&target)?;
-                if !canonical.starts_with(&root) {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "document target leaves the workspace",
-                    ));
-                }
+                canonical_inside(&root, &target)?;
                 Ok(true)
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
@@ -172,14 +172,7 @@ impl FileSystemPort for SystemFiles {
             Err(error) => return Err(error),
         }
         soyeht_platform::fs::sync_directory(&parent)?;
-        let canonical = soyeht_platform::fs::canonicalize(&target)?;
-        if !canonical.starts_with(&root) {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "document target leaves the workspace",
-            ));
-        }
-        Ok(canonical)
+        canonical_inside(&root, &target)
     }
 
     fn create_binary_if_absent_or_matching(
@@ -194,22 +187,7 @@ impl FileSystemPort for SystemFiles {
                 "writing image is outside the byte budget",
             ));
         }
-        let root = soyeht_platform::fs::canonicalize(root)?;
-        validate_relative_creation_path(relative)?;
-        let parent = create_contained_directories(&root, relative)?;
-        let filename = relative.file_name().ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "image filename is missing")
-        })?;
-        let target = parent.join(filename);
-        crate::immutable_file::publish(&target, bytes)?;
-        let canonical = soyeht_platform::fs::canonicalize(&target)?;
-        if !canonical.starts_with(&root) {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "writing image leaves the workspace",
-            ));
-        }
-        Ok(canonical)
+        super::creation::create_bytes_if_absent(root, relative, bytes)
     }
 }
 
@@ -221,6 +199,7 @@ pub(super) struct OpenDocument {
     pub(super) watch_due_ms: i64,
     pub(super) save_backoff: Streak,
     pub(super) watch_backoff: Streak,
+    pub(super) save_state: super::schedule::SaveState,
 }
 
 pub struct Service {
@@ -271,6 +250,7 @@ impl Service {
                 watch_due_ms: 0,
                 save_backoff: save_backoff(),
                 watch_backoff: watch_backoff(),
+                save_state: Default::default(),
             },
         );
     }
@@ -421,6 +401,7 @@ impl Service {
                 watch_due_ms: 0,
                 save_backoff: save_backoff(),
                 watch_backoff: watch_backoff(),
+                save_state: Default::default(),
             },
         );
     }

@@ -8170,6 +8170,15 @@
         "history"
       ]
     },
+    "EditorSaveFailure": {
+      "type": "string",
+      "enum": [
+        "missing",
+        "denied",
+        "full",
+        "other"
+      ]
+    },
     "FileSearchScope": {
       "type": "string",
       "enum": [
@@ -8523,6 +8532,9 @@
           "items": {
             "$ref": "#/$defs/EditorLine"
           }
+        },
+        "saveFailure": {
+          "$ref": "#/$defs/EditorSaveFailure"
         }
       },
       "required": [
@@ -8583,6 +8595,30 @@
       "required": [
         "file",
         "changedLines"
+      ],
+      "additionalProperties": true
+    },
+    "FileSaveParams": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "fileId"
+      ],
+      "additionalProperties": true
+    },
+    "FileSaveResult": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/$defs/FileDocument"
+        }
+      },
+      "required": [
+        "file"
       ],
       "additionalProperties": true
     },
@@ -10073,6 +10109,22 @@
         "at",
         "file",
         "by"
+      ],
+      "additionalProperties": true
+    },
+    "FileSaveFailedEvent": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "$ref": "#/$defs/Id"
+        },
+        "reason": {
+          "$ref": "#/$defs/EditorSaveFailure"
+        }
+      },
+      "required": [
+        "fileId",
+        "reason"
       ],
       "additionalProperties": true
     },
@@ -13405,6 +13457,15 @@
       },
       "mutation": true
     },
+    "file.save": {
+      "params": {
+        "$ref": "#/$defs/FileSaveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/FileSaveResult"
+      },
+      "mutation": false
+    },
     "file.watch": {
       "params": {
         "$ref": "#/$defs/FileWatchParams"
@@ -14326,6 +14387,12 @@
       },
       "durable": true
     },
+    "file.save_failed": {
+      "params": {
+        "$ref": "#/$defs/FileSaveFailedEvent"
+      },
+      "durable": false
+    },
     "lsp.diagnostics": {
       "params": {
         "$ref": "#/$defs/LspDiagnosticsEvent"
@@ -14674,7 +14741,12 @@
       "taskMoveReason": "Moved on the workspace board",
       "editorNoFile": "The engine has no file for this editor tab.",
       "editorFileNotText": "Binary file, can't be shown.",
-      "editorFileTooLarge": "This file is too large to open in the editor."
+      "editorFileTooLarge": "This file is too large to open in the editor.",
+      "editorSaveMissing": "Couldn't save: this file was deleted from the disk. Save again to create it.",
+      "editorSaveDenied": "Couldn't save: permission denied. Fix the permissions, then save again.",
+      "editorSaveFull": "Couldn't save: the disk is full. Free some space, then save again.",
+      "editorSaveOther": "Couldn't save this file. The engine keeps trying; save again to retry now.",
+      "editorSaveAgain": "Save again"
     },
     "inlineImageTypes": [
       "image/png",

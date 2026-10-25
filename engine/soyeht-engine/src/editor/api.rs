@@ -11,8 +11,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    EditorContentSource, FileOpenParams, FileOpenResult, FileReadParams, FileReadResult, Pane,
-    PaneMode, PaneState, StateSource, method,
+    EditorContentSource, FileOpenParams, FileOpenResult, FileReadParams, FileReadResult,
+    FileSaveParams, FileSaveResult, Pane, PaneMode, PaneState, StateSource, method,
 };
 use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use std::path::Path;
@@ -221,12 +221,28 @@ impl Core {
         let to_line = request.from_line.saturating_add(lines.len() as u32);
         serde_json::to_value(FileReadResult {
             file: document(self.editor.stored(&request.file_id)?).map_err(errors::storage)?,
+            save_failure: self.editor.save_failure(&request.file_id),
             source,
             from_line: request.from_line,
             to_line,
             lines,
         })
         .map_err(|_| errors::internal("File read result serialization failed"))
+    }
+
+    /// Saves the file now, instead of after the autosave delay or the backoff of a failing
+    /// save, and creates it again if it is gone from the disk. The answer is the file as it
+    /// is now; the save itself happens on the next tick, and its outcome is `file.saved` or
+    /// the `saveFailure` of the file.
+    pub fn file_save(&mut self, params: &Value) -> Result<Value> {
+        let request: FileSaveParams = serde_json::from_value(params.clone())
+            .map_err(|_| errors::invalid("Invalid file save parameters"))?;
+        self.editor.stored(&request.file_id)?;
+        self.editor.save_requested(&request.file_id, self.now_ms());
+        serde_json::to_value(FileSaveResult {
+            file: document(self.editor.stored(&request.file_id)?).map_err(errors::storage)?,
+        })
+        .map_err(|_| errors::internal("File save result serialization failed"))
     }
 
     fn read_source(
@@ -286,7 +302,10 @@ impl Core {
             .stored
             .pane
             .clone();
-        initial_open_result(file, &pane, line, column).map(|(result, _)| result)
+        let (mut result, _) = initial_open_result(file, &pane, line, column)?;
+        // The file is already open and may be failing to save: the page says so as a read does.
+        result.viewport.save_failure = self.editor.save_failure(&file.file_id);
+        Ok(result)
     }
 }
 
@@ -383,6 +402,8 @@ pub(crate) fn initial_open_result(
         from_line: from as u32,
         to_line: from.saturating_add(lines.len()) as u32,
         lines,
+        // A file opened now has not failed to save; `open_result` says it for one already open.
+        save_failure: None,
     };
     Ok((
         FileOpenResult {
