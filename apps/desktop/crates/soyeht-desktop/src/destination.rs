@@ -86,20 +86,24 @@ impl Destination {
             Self::Agents => true,
             Self::Terminal => *mode == PaneMode::Terminal,
             Self::Editor => *mode == PaneMode::Editor,
-            Self::Web => *mode == PaneMode::Web,
-            Self::Tasks | Self::Phone | Self::Texts | Self::Presentations | Self::Screenplays => {
-                false
-            }
+            // The places that draw no panes (`is_pane_grid`) show none.
+            _ => false,
         }
     }
 
     /// Whether this place draws panes at all. The three writing places list the documents of
     /// the workspace, as the Mac's sections do, and open each in a pane that the agents' place
-    /// shows.
+    /// shows. The web place is not one: the desktop client has no web view, so a web pane
+    /// the workspace holds shows its notice in the agents' place and the place itself says so.
     pub fn is_pane_grid(self) -> bool {
         !matches!(
             self,
-            Self::Tasks | Self::Phone | Self::Texts | Self::Presentations | Self::Screenplays
+            Self::Tasks
+                | Self::Web
+                | Self::Phone
+                | Self::Texts
+                | Self::Presentations
+                | Self::Screenplays
         )
     }
 }
@@ -113,6 +117,26 @@ mod tests {
         assert_eq!(Destination::ALL.len(), 9);
         assert_eq!(Destination::ALL[0], Destination::default());
         assert_eq!(Destination::ALL[4], Destination::Terminal);
+    }
+
+    /// What each place draws: the panes of its kind, a list, or the one sentence that says the
+    /// desktop client does not serve it. A place the client cannot serve has no button: the "+"
+    /// menu has no row for its kind either (`views::top_bar`).
+    #[test]
+    fn a_place_the_desktop_cannot_draw_says_so_and_offers_nothing() {
+        let unserved: Vec<Destination> = Destination::ALL
+            .into_iter()
+            .filter(|place| {
+                !place.is_pane_grid() && place.section().is_none() && *place != Destination::Tasks
+            })
+            .collect();
+        assert_eq!(unserved, [Destination::Web, Destination::Phone]);
+        for place in &unserved {
+            assert!(!place.shows(&PaneMode::Web) && !place.shows(&PaneMode::Agent));
+        }
+        // The places that do draw panes still show their own kind.
+        assert!(Destination::Editor.shows(&PaneMode::Editor));
+        assert!(Destination::Terminal.is_pane_grid() && Destination::Agents.is_pane_grid());
     }
 
     #[test]

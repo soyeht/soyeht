@@ -395,6 +395,23 @@ impl Workbench {
     }
 }
 
+type PaneOpener = fn(&mut Workbench, &mut Context<Workbench>);
+
+/// The kinds the "+" button opens besides an agent, each with the row's id, its words and what
+/// opens it. A kind the desktop client cannot draw (web, diff) has no row: its place says so
+/// instead (`views::ui::not_available`), so the menu never leads to a pane that is only a notice.
+const OPEN_PANE_ENTRIES: [(&str, &str, PaneOpener); 5] = [
+    ("terminal", "Terminal", |this, cx| this.open_pane(None, cx)),
+    ("editor", "Editor", Workbench::open_editor_place),
+    ("text", "Text", Workbench::open_new_text),
+    (
+        "presentation",
+        "Presentation",
+        Workbench::open_new_presentation,
+    ),
+    ("screenplay", "Screenplay", Workbench::open_new_screenplay),
+];
+
 impl Workbench {
     /// The list of the "+" button while it is `open`: a folder to open as a workspace and, once there is a workspace,
     /// the panes it can open.
@@ -435,31 +452,13 @@ impl Workbench {
         }
         let pick: Pick = Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
         rows.push(menus::heading(palette, "Open a pane").into_any_element());
-        rows.push(menus::on_pick(
-            menus::item(palette, "terminal", "Terminal", false),
-            cx,
-            |this, cx| this.open_pane(None, cx),
-        ));
-        rows.push(menus::on_pick(
-            menus::item(palette, "editor", "Editor", false),
-            cx,
-            Workbench::open_editor_place,
-        ));
-        rows.push(menus::on_pick(
-            menus::item(palette, "text", "Text", false),
-            cx,
-            Workbench::open_new_text,
-        ));
-        rows.push(menus::on_pick(
-            menus::item(palette, "presentation", "Presentation", false),
-            cx,
-            Workbench::open_new_presentation,
-        ));
-        rows.push(menus::on_pick(
-            menus::item(palette, "screenplay", "Screenplay", false),
-            cx,
-            Workbench::open_new_screenplay,
-        ));
+        for (id, label, open) in OPEN_PANE_ENTRIES {
+            rows.push(menus::on_pick(
+                menus::item(palette, id, label, false),
+                cx,
+                open,
+            ));
+        }
         rows.extend(self.harness_rows(Picker::default(), palette, &pick, cx));
         rows
     }
@@ -546,4 +545,20 @@ fn reconnecting_note(palette: &Palette) -> AnyElement {
                 .child("Reconnecting"),
         )
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OPEN_PANE_ENTRIES;
+
+    #[test]
+    fn the_plus_menu_offers_only_the_kinds_the_desktop_client_draws() {
+        let ids: Vec<&str> = OPEN_PANE_ENTRIES.iter().map(|(id, _, _)| *id).collect();
+        assert_eq!(
+            ids,
+            ["terminal", "editor", "text", "presentation", "screenplay"]
+        );
+        // The web and diff panes have no view here: no row leads to a notice.
+        assert!(ids.iter().all(|id| !matches!(*id, "web" | "diff")));
+    }
 }

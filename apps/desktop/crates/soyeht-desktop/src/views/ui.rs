@@ -525,4 +525,13 @@ mod tests {
             "iPhone is not available in the desktop client yet."
         );
     }
+
+    #[test]
+    fn the_web_place_says_the_same_sentence_as_the_iphone_place() {
+        // The place draws `not_available(label)` for every place that draws no panes.
+        assert_eq!(
+            not_available(crate::destination::Destination::Web.label()),
+            "Web is not available in the desktop client yet."
+        );
+    }
 }
