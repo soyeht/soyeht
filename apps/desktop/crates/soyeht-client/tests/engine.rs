@@ -604,8 +604,11 @@ fn a_file_is_opened_edited_to_the_revision_the_engine_gave_and_saved() {
     );
     dispatch(&engine, state.apply(next(&inbox)));
 
-    // Saving waits until the engine has saved: the page is read until the file is not dirty.
+    // Saving asks the engine to save, then reads the page until the file is not dirty.
     dispatch(&engine, state.editors.save("e1"));
+    let save = remote.expect("file.save");
+    assert_eq!(save["params"]["fileId"], "f1");
+    remote.reply(&save, json!({"file": document(2, true)}));
     let first = remote.expect("file.read");
     remote.reply(&first, read_of(2, true, "hi!"));
     let second = remote.expect("file.read");
