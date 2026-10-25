@@ -1,0 +1,22 @@
+{
+  "description": "When closing a pane asks first, and the words it asks in, shared by the Mac and iOS clients (PaneClosePolicy) and the desktop client (soyeht_client::pane_close). A pane that runs a process (a terminal, an agent or a web page) always asks, whether or not anything is running in it. A document and an editor tab ask by rules of their own (writing.json `closing`, and the editor's conflict with the disk), so with nothing to lose they close at once. Closing a workspace is not here: the Mac does not ask for it. Both clients pass every case.",
+  "panes": [
+    {
+      "name": "a terminal asks, idle or not",
+      "mode": "terminal",
+      "confirm": { "title": "Close pane?", "message": "The process in this pane will be terminated.", "confirmTitle": "Close" }
+    },
+    {
+      "name": "an agent asks, mid-turn or not",
+      "mode": "agent",
+      "confirm": { "title": "Close pane?", "message": "The process in this pane will be terminated.", "confirmTitle": "Close" }
+    },
+    {
+      "name": "a web page asks",
+      "mode": "web",
+      "confirm": { "title": "Close pane?", "message": "The process in this pane will be terminated.", "confirmTitle": "Close" }
+    },
+    { "name": "a document with nothing unsaved closes at once", "mode": "writing", "confirm": null },
+    { "name": "an editor tab with no conflict closes at once", "mode": "editor", "confirm": null }
+  ]
+}

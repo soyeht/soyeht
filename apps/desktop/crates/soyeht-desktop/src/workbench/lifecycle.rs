@@ -3,7 +3,10 @@
 use super::{NewTerminal, Workbench};
 use crate::destination::Destination;
 use gpui::{Context, Window};
-use soyeht_client::{Command, Event};
+use soyeht_client::{
+    Command, Event,
+    pane_close::{self, Closing},
+};
 
 impl Workbench {
     pub(crate) fn select_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
@@ -29,6 +32,43 @@ impl Workbench {
     pub(crate) fn close_pane(&mut self, pane_id: &str) {
         let effects = self.state.close_pane_effects(pane_id);
         self.run_effects(effects);
+    }
+
+    /// The close button of a pane: a text or a screenplay asks when it has edits not saved, a
+    /// pane that runs a process (a terminal, an agent) always asks, as the Mac does, and the
+    /// rest close at once.
+    pub(crate) fn request_close_pane(&mut self, pane_id: &str, cx: &mut Context<Self>) {
+        if self.is_document(pane_id) {
+            self.request_close_writing(pane_id, cx);
+            return;
+        }
+        let Some(mode) = self.state.pane(pane_id).map(|pane| pane.mode.clone()) else {
+            return;
+        };
+        self.ask_before_closing(pane_id, pane_close::confirmation(&mode), cx);
+    }
+
+    /// Closes the pane at once, or shows the question that has to be answered first.
+    pub(crate) fn ask_before_closing(
+        &mut self,
+        pane_id: &str,
+        closing: Closing,
+        cx: &mut Context<Self>,
+    ) {
+        match closing {
+            Closing::Immediately => self.close_pane(pane_id),
+            asked => self.panes.of(pane_id).closing = Some(asked),
+        }
+        cx.notify();
+    }
+
+    /// The answer to the question closing asked.
+    pub(crate) fn answer_close(&mut self, pane_id: &str, close: bool, cx: &mut Context<Self>) {
+        self.panes.of(pane_id).closing = None;
+        if close {
+            self.close_pane(pane_id);
+        }
+        cx.notify();
     }
 
     /// The "Editor" entry of the new-pane menu: the editor place of the selected workspace, as

@@ -27,6 +27,28 @@ private func workspace(_ name: String) -> Workspace {
   #expect(CloseConfirmation.runningPane.message == "The process in this pane will be terminated.")
 }
 
+/// The cases of `contracts/vectors/pane-close.json`, which the desktop client passes as well.
+@Test func aPaneAsksAsTheVectorSays() throws {
+  let vector = try ContractVector.load("pane-close")
+  for item in ContractVector.cases(vector, "panes") {
+    let name = item["name"].string ?? ""
+    let modeName = try #require(item["mode"].string)
+    let mode = try #require(PaneMode(rawValue: modeName), "\(name)")
+    let asked = PaneClosePolicy.confirmation(for: pane("p", mode: mode), file: nil)
+    let confirm = item["confirm"]
+    if case .null = confirm {
+      #expect(asked == nil, "\(name)")
+    } else {
+      let title = try #require(confirm["title"].string)
+      let message = try #require(confirm["message"].string)
+      let confirmTitle = try #require(confirm["confirmTitle"].string)
+      #expect(
+        asked == CloseConfirmation(title: title, message: message, confirmTitle: confirmTitle),
+        "\(name)")
+    }
+  }
+}
+
 @Test func aDocumentAsksOnlyWhileItHoldsUnsavedChanges() {
   let writing = pane("p", mode: .writing)
   #expect(

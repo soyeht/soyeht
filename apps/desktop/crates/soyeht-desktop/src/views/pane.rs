@@ -1,8 +1,13 @@
 //! A pane: the raised card, its header, and the body of its kind. The card is the only raised
 //! surface; the header and everything under it are flat.
 
-use super::ui::{
-    OwnPress, Typeface, column, header_bar, hint, icon, id, pane_card_shell, row, rule,
+use super::{
+    cards::{Role, button},
+    editor::strip,
+    ui::{
+        OwnPress, Typeface, column, header_bar, hint, icon, id, pane_card_shell, pressable, row,
+        rule,
+    },
 };
 use crate::{
     assets::Icon,
@@ -21,6 +26,7 @@ use gpui::{
 };
 use soyeht_client::{
     agent::{elapsed_text, status_word},
+    pane_close::Closing,
     terminal_state::{self, Severity},
 };
 use soyeht_protocol::{
@@ -128,6 +134,11 @@ impl Workbench {
             ),
         };
         let header = self.draggable_header(header, pane, palette);
+        let question = self
+            .panes
+            .get(&pane.pane_id)
+            .and_then(|ui| ui.closing.clone())
+            .map(|closing| self.close_question(&pane.pane_id, &closing, palette, cx));
         let card = pane_card_shell(palette)
             .id(id("pane", &pane.pane_id))
             .on_mouse_down(
@@ -136,8 +147,45 @@ impl Workbench {
             )
             .child(header)
             .child(rule(palette.well, desktop::HAIRLINE))
+            .children(question)
             .child(body);
         self.drop_target(card, &pane.pane_id, palette, cx)
+            .into_any_element()
+    }
+
+    /// The question closing a pane asks, in a line under its header: the Mac's alert, with the
+    /// same words, and Cancel and Close for answers.
+    fn close_question(
+        &mut self,
+        pane_id: &str,
+        closing: &Closing,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Closing::Confirm { title, message } = closing else {
+            return div().into_any_element();
+        };
+        let mut answers = Vec::new();
+        for (close, role, text) in [
+            (false, Role::Secondary, "Cancel"),
+            (true, Role::Destructive, "Close"),
+        ] {
+            let owner = pane_id.to_owned();
+            answers.push(pressable(
+                button(id(text, pane_id), role, text, palette),
+                true,
+                cx,
+                move |this, cx| this.answer_close(&owner, close, cx),
+            ));
+        }
+        strip(palette)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(SharedString::from(format!("{title} {message}"))),
+            )
+            .children(answers)
             .into_any_element()
     }
 
@@ -321,10 +369,7 @@ impl Workbench {
                                 Action::SplitRows => {
                                     this.split_pane(&pane_id, WorkspacePaneLayoutAxis::Vertical, cx)
                                 }
-                                Action::Close if this.is_document(&pane_id) => {
-                                    this.request_close_writing(&pane_id, cx)
-                                }
-                                Action::Close => this.close_pane(&pane_id),
+                                Action::Close => this.request_close_pane(&pane_id, cx),
                                 Action::Present => this.present(&pane_id, cx),
                                 Action::Companion => this.open_companion(&pane_id, cx),
                                 Action::Tasks => this.open_tasks(cx),

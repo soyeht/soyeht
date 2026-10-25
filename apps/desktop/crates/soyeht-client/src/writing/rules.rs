@@ -4,6 +4,7 @@
 //! selection toolbar of a text offers. The cases are `contracts/vectors/writing.json`, which the
 //! Mac passes too (`WritingVectorTests`).
 
+pub use crate::pane_close::Closing;
 use soyeht_protocol::{WritingFormatKind, WritingKind, WritingSection, WritingSectionEntry};
 
 /// The name of a section on the wire, which is also how it is told apart in a list.
@@ -152,13 +153,6 @@ pub fn file_name(path: Option<&str>, fallback: &str) -> String {
         || fallback.to_owned(),
         |path| path.rsplit('/').next().unwrap_or(path).to_owned(),
     )
-}
-
-/// What closing a pane asks first.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Closing {
-    Immediately,
-    Confirm { title: String, message: String },
 }
 
 /// Whether closing a pane with this file asks first: a document with edits not saved does.

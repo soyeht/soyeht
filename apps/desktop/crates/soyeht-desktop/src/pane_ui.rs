@@ -14,7 +14,8 @@ use crate::{
 };
 use gpui::{Context, Entity, ScrollHandle};
 use soyeht_client::{
-    State, attachments::Staged, slash, text_input::keys::Completion, transcript_rows::Rows,
+    State, attachments::Staged, pane_close::Closing, slash, text_input::keys::Completion,
+    transcript_rows::Rows,
 };
 use std::{
     cell::RefCell,
@@ -57,8 +58,10 @@ pub(crate) struct PaneUi {
     pub editor: EditorUi,
     /// What a terminal pane keeps: where its screen is, a drag, the address under the pointer.
     pub terminal: crate::terminal_input::TerminalUi,
-    /// What a text pane keeps: the field that holds the text, its scroll, a question to answer.
+    /// What a text pane keeps: the field that holds the text and its scroll.
     pub writing: WritingUi,
+    /// Closing the pane waits for the person's answer to this question.
+    pub closing: Option<Closing>,
 }
 
 impl PaneUi {
@@ -299,6 +302,7 @@ mod tests {
             editor: EditorUi::default(),
             terminal: Default::default(),
             writing: WritingUi::default(),
+            closing: Some(Closing::Immediately),
         }
     }
 

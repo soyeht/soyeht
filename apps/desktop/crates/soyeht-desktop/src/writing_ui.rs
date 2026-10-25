@@ -1,11 +1,10 @@
 //! What the window keeps for the writing places: for each text, presentation or screenplay pane
-//! the field that holds its text, how far the pane is scrolled and the question that closing it
-//! may ask; for each place that lists documents (Texts, Presentations, Screenplays) the search
+//! the field that holds its text and how far the pane is scrolled; for each place that lists documents (Texts, Presentations, Screenplays) the search
 //! line, the new-document form and whether it is on the stage.
 
 use crate::composer_field::ComposerField;
 use gpui::{Entity, FocusHandle, ScrollHandle};
-use soyeht_client::writing::{presentation::Show, rules::Closing};
+use soyeht_client::writing::presentation::Show;
 use soyeht_protocol::WritingSection;
 
 /// A writing pane's own state; it hangs off the pane's `PaneUi`, so it goes when the pane closes.
@@ -15,8 +14,6 @@ pub(crate) struct WritingUi {
     pub field: Option<Entity<ComposerField>>,
     /// The scroll of the text, which follows the caret.
     pub scroll: ScrollHandle,
-    /// Closing the pane waits for the person's answer: the document has edits not saved.
-    pub closing: Option<Closing>,
     /// A presentation: the slide the caret is on.
     pub slide: u32,
     /// A presentation: the size of the pane's body (under the header) as last drawn, which its

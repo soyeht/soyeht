@@ -17,7 +17,7 @@ use soyeht_client::state::problem::kind;
 use soyeht_client::writing::{
     document::line_start,
     presentation::{self, Show, ShowInput},
-    rules::{self, Closing, DocumentDraft},
+    rules::{self, DocumentDraft},
 };
 use soyeht_protocol::{
     PaneMode, WorkspacePaneLayoutAxis, WritingFormatKind, WritingKind, WritingSection,
@@ -262,33 +262,16 @@ impl Workbench {
         cx.notify();
     }
 
-    /// The close button of a text or a screenplay: the pane closes at once, or asks first when the document has
-    /// edits not saved.
+    /// The close button of a text or a screenplay: the pane closes at once, or asks first when
+    /// the document has edits not saved.
     pub(crate) fn request_close_writing(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         let Some(file) = self.state.editors.file_of_pane(pane_id) else {
             self.close_pane(pane_id);
             return;
         };
         let name = rules::file_name(Some(&file.doc.path), pane_id);
-        match rules::closing(&name, file.doc.dirty || file.has_unsent()) {
-            Closing::Immediately => self.close_pane(pane_id),
-            asked => self.panes.of(pane_id).writing.closing = Some(asked),
-        }
-        cx.notify();
-    }
-
-    /// The answer to the question closing asked.
-    pub(crate) fn answer_close_writing(
-        &mut self,
-        pane_id: &str,
-        close: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.panes.of(pane_id).writing.closing = None;
-        if close {
-            self.close_pane(pane_id);
-        }
-        cx.notify();
+        let closing = rules::closing(&name, file.doc.dirty || file.has_unsent());
+        self.ask_before_closing(pane_id, closing, cx);
     }
 
     /// Opens an agent beside a document, as a split of a document on the Mac does: the two are

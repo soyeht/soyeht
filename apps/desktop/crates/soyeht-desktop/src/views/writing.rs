@@ -6,8 +6,7 @@
 //! `writing_flow` says.
 
 use super::{
-    cards::{Role, button},
-    editor::{conflict_banner, strip},
+    editor::conflict_banner,
     menus,
     pane::{Action, notice_body},
     prelude::*,
@@ -22,7 +21,7 @@ use gpui::{Anchor, relative};
 use soyeht_client::{
     Connection,
     editor::{EditorFile, PaneLoad},
-    writing::rules::{self, Closing, Counted, SelectionAction},
+    writing::rules::{self, Counted, SelectionAction},
 };
 use soyeht_protocol::{Pane, WritingKind};
 
@@ -137,16 +136,10 @@ impl Workbench {
             None => self.writing_text(cx, &pane_id, palette),
             Some(reason) => notice_body(palette, reason),
         };
-        let question = self
-            .panes
-            .get(&pane_id)
-            .and_then(|ui| ui.writing.closing.clone())
-            .map(|closing| self.close_question(&pane_id, &closing, palette, cx));
         column()
             .flex_1()
             .min_h_0()
             .children(conflicted.then(|| conflict_banner(palette)))
-            .children(question)
             .child(content)
             .into_any_element()
     }
@@ -237,41 +230,6 @@ impl Workbench {
             .flex_col()
             .child(page)
             .children(floating)
-            .into_any_element()
-    }
-
-    /// The question closing a text with edits not saved asks, in a line under the header.
-    fn close_question(
-        &mut self,
-        pane_id: &str,
-        closing: &Closing,
-        palette: &'static Palette,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let Closing::Confirm { title, message } = closing else {
-            return div().into_any_element();
-        };
-        let mut answers = Vec::new();
-        for (close, role, text) in [
-            (false, Role::Secondary, "Keep"),
-            (true, Role::Destructive, "Close"),
-        ] {
-            let owner = pane_id.to_owned();
-            answers.push(pressable(
-                button(id(text, pane_id), role, text, palette),
-                true,
-                cx,
-                move |this, cx| this.answer_close_writing(&owner, close, cx),
-            ));
-        }
-        strip(palette)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(SharedString::from(format!("{title} {message}"))),
-            )
-            .children(answers)
             .into_any_element()
     }
 
