@@ -7,7 +7,7 @@ use super::{
     ui::{OwnPress, Typeface, chrome_text, column, id, row},
 };
 use crate::{
-    composer_field::ComposerField,
+    composer_field::{ComposerField, focus_on_press},
     neo,
     theme::{Palette, elevation, layout, pane_interior, radius, space, type_scale},
     workbench::Workbench,
@@ -201,16 +201,19 @@ fn well_field(
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
     field.update(cx, |field, _| field.style(palette, hint));
-    div()
-        .w_full()
-        .min_h(px(layout::SEARCH_FIELD_HEIGHT))
-        .flex()
-        .items_center()
-        .px(px(space::X10))
-        .py(px(space::X6))
-        .rounded(px(radius::COMPACT))
-        .bg(rgb(palette.well))
-        .text_size(px(type_scale::CONTROL))
-        .child(div().flex_1().min_w_0().child(field))
-        .into_any_element()
+    focus_on_press(
+        div()
+            .w_full()
+            .min_h(px(layout::SEARCH_FIELD_HEIGHT))
+            .flex()
+            .items_center()
+            .px(px(space::X10))
+            .py(px(space::X6))
+            .rounded(px(radius::COMPACT))
+            .bg(rgb(palette.well))
+            .text_size(px(type_scale::CONTROL)),
+        &field,
+    )
+    .child(div().flex_1().min_w_0().child(field))
+    .into_any_element()
 }

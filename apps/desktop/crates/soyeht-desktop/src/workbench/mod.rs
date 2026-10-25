@@ -68,6 +68,9 @@ pub struct Workbench {
     pub(crate) stage: Stage,
     /// The pane whose input takes keyboard focus on the next frame.
     pub(crate) focus_request: Option<String>,
+    /// The first field of a form that just opened, which takes the keyboard on the next frame
+    /// before any pane does.
+    pub(crate) field_request: Option<FocusHandle>,
     /// The name of a workspace or pane being edited in place.
     pub(crate) rename: Option<Rename>,
     /// What each workspace's editor place keeps of its project panel.
@@ -137,6 +140,7 @@ impl Workbench {
             start: None,
             stage: Stage::new(),
             focus_request: None,
+            field_request: None,
             rename: None,
             panels: ProjectPanels::default(),
             alerts: Alerts::new(),

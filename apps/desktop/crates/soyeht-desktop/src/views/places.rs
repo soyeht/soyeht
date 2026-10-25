@@ -11,7 +11,7 @@ use super::{
     writing::{title_face, titled_bar},
 };
 use crate::{
-    composer_field::ComposerField,
+    composer_field::{ComposerField, focus_on_press},
     destination::Destination,
     theme::{Palette, desktop, layout, radius, space, type_scale},
 };
@@ -319,18 +319,24 @@ impl Workbench {
 
 /// The well that holds a line of the form.
 fn field_line(field: Entity<ComposerField>, palette: &Palette) -> Div {
-    well_row(palette)
-        .bg(rgb(palette.face))
-        .h(px(layout::SEARCH_FIELD_HEIGHT))
-        .child(div().flex_1().min_w_0().overflow_hidden().child(field))
+    focus_on_press(
+        well_row(palette)
+            .bg(rgb(palette.face))
+            .h(px(layout::SEARCH_FIELD_HEIGHT)),
+        &field,
+    )
+    .child(div().flex_1().min_w_0().overflow_hidden().child(field))
 }
 
 /// The search line: a glyph and the field, in a well.
 fn search_line(field: Entity<ComposerField>, palette: &Palette) -> Div {
-    well_row(palette)
-        .flex_none()
-        .gap(px(space::X8))
-        .h(px(layout::SEARCH_FIELD_HEIGHT))
-        .child(icon(Icon::Search, desktop::INLINE_GLYPH, palette.secondary))
-        .child(div().flex_1().min_w_0().overflow_hidden().child(field))
+    focus_on_press(
+        well_row(palette)
+            .flex_none()
+            .gap(px(space::X8))
+            .h(px(layout::SEARCH_FIELD_HEIGHT)),
+        &field,
+    )
+    .child(icon(Icon::Search, desktop::INLINE_GLYPH, palette.secondary))
+    .child(div().flex_1().min_w_0().overflow_hidden().child(field))
 }

@@ -9,7 +9,7 @@ use crate::{
     views::{
         menus,
         prelude::*,
-        ui::{caption, option_pill, switch},
+        ui::{caption, field_well, option_pill, switch},
     },
 };
 use gpui::Entity;
@@ -42,11 +42,9 @@ fn editor(
         .gap(px(space::X8))
         .child(label(palette, title))
         .child(
-            neo::well(palette, radius::CONTROL, desktop::WELL_DEPTH)
-                .h(px(height))
+            field_well(palette, field, height)
                 .px(px(space::X10))
                 .py(px(space::X8))
-                .overflow_hidden()
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(type_scale::CAPTION))
                 .child(field.clone()),
@@ -426,8 +424,7 @@ fn fields_section(
                 .gap(px(space::X8))
                 .child(label(palette, "TITLE \u{b7} REQUIRED"))
                 .child(
-                    neo::well(palette, radius::CONTROL, desktop::WELL_DEPTH)
-                        .h(px(desktop::TASK_FIELD_HEIGHT))
+                    field_well(palette, &fields.0, desktop::TASK_FIELD_HEIGHT)
                         .px(px(space::X14))
                         .flex()
                         .items_center()

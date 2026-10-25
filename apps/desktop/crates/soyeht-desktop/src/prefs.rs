@@ -3,7 +3,7 @@
 
 use crate::theme::{ThemeName, desktop, space};
 use crate::{
-    composer_field::{ComposerEvent, ComposerField, new_field},
+    composer_field::{ComposerEvent, ComposerField, new_form_field},
     open_menu::Menu,
     workbench::Workbench,
 };
@@ -226,7 +226,7 @@ impl Workbench {
     pub(crate) fn begin_skill(&mut self, cx: &mut Context<Self>) {
         let palette = self.theme.palette();
         let field = |cx: &mut Context<Self>| {
-            let field = new_field(palette, cx);
+            let field = new_form_field(palette, cx);
             cx.subscribe(&field, |this, _, event: &ComposerEvent, cx| {
                 if *event == ComposerEvent::Dismiss {
                     this.close_menu(cx);
@@ -235,11 +235,13 @@ impl Workbench {
             .detach();
             field
         };
-        self.prefs.skill_form = Some(SkillForm {
+        let form = SkillForm {
             name: field(cx),
             description: field(cx),
             instructions: field(cx),
-        });
+        };
+        self.focus_field_when_drawn(&form.name, cx);
+        self.prefs.skill_form = Some(form);
         cx.notify();
     }
 

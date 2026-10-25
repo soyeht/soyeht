@@ -65,16 +65,11 @@ impl Places {
         }
     }
 
-    /// The form that has the keyboard to take, if a place has one.
-    pub(crate) fn form_to_focus(&mut self) -> Option<&mut NewDocument> {
-        [
-            &mut self.texts,
-            &mut self.presentations,
-            &mut self.screenplays,
-        ]
-        .into_iter()
-        .filter_map(|place| place.form.as_mut())
-        .find(|form| form.focus)
+    /// The new-document form of the place on the stage is open.
+    pub(crate) fn form_open_in(&self, destination: crate::destination::Destination) -> bool {
+        destination
+            .section()
+            .is_some_and(|section| self.of(&section).form.is_some())
     }
 }
 
@@ -95,6 +90,4 @@ pub(crate) struct PlaceUi {
 pub(crate) struct NewDocument {
     pub title: Entity<ComposerField>,
     pub folder: Entity<ComposerField>,
-    /// The title takes the keyboard on the next frame.
-    pub focus: bool,
 }

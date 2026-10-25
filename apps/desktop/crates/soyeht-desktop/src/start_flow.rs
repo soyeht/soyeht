@@ -7,7 +7,7 @@
 
 use crate::composer_field::{ComposerEvent, ComposerField, new_field};
 use crate::{destination::Destination, folder::FOLDER_NAME_NOT_TEXT, workbench::Workbench};
-use gpui::{Context, Entity, Focusable, Window};
+use gpui::{Context, Entity};
 use soyeht_client::state::problem::kind;
 use soyeht_client::{Command, new_agent::NewAgent};
 
@@ -16,8 +16,6 @@ pub(crate) struct StartUi {
     pub form: NewAgent,
     /// The message line.
     pub field: Entity<ComposerField>,
-    /// The message line has not yet taken the keyboard.
-    pub focus: bool,
     /// The form is on the stage; it is kept, with its text, while the person looks elsewhere.
     pub shown: bool,
 }
@@ -34,7 +32,8 @@ impl Workbench {
         self.send(Command::LoadHarnesses { rescan: true });
         if let Some(start) = &mut self.start {
             start.shown = true;
-            start.focus = true;
+            let field = start.field.clone();
+            self.focus_field_when_drawn(&field, cx);
             self.destination = Destination::Agents;
             cx.notify();
             return;
@@ -70,10 +69,10 @@ impl Workbench {
             ComposerEvent::Attach => {}
         })
         .detach();
+        self.focus_field_when_drawn(&field, cx);
         self.start = Some(StartUi {
             form,
             field,
-            focus: true,
             shown: true,
         });
         self.destination = Destination::Agents;
@@ -102,18 +101,10 @@ impl Workbench {
         }
     }
 
-    /// Gives the keyboard to the form's message line, once, after the form opened.
-    pub(crate) fn focus_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(start) = &mut self.start
-            && std::mem::take(&mut start.focus)
-        {
-            window.focus(&start.field.focus_handle(cx), cx);
-        }
-    }
-
     pub(crate) fn close_start(&mut self, cx: &mut Context<Self>) {
         self.menus.close();
         if self.start.take().is_some() {
+            self.field_request = None;
             cx.notify();
         }
     }

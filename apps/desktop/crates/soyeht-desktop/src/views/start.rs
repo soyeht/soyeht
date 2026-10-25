@@ -10,11 +10,12 @@ use super::{
 };
 use crate::assets::{self, Icon};
 use crate::{
+    composer_field::focus_on_press,
     open_menu::Menu,
     theme::{Palette, composer, desktop, type_scale},
     workbench::Workbench,
 };
-use gpui::{AnyElement, Context, FontWeight, MouseButton, SharedString, div, px, rgb};
+use gpui::{AnyElement, Context, FontWeight, SharedString, div, px, rgb};
 use gpui::{InteractiveElement, IntoElement, ParentElement, Styled};
 use soyeht_client::{Connection, new_agent::NewAgent, state::name_of};
 use std::rc::Rc;
@@ -36,29 +37,25 @@ impl Workbench {
         let blocker = form.blocker(self.state.harnesses());
         let can_start = self.state.connection == Connection::Connected && blocker.is_none();
         let (folder, agent) = self.start_chips(&form, palette, cx);
-        let focus = field.clone();
-        let card = card_frame(palette)
-            .w_full()
-            .max_w(px(desktop::START_FORM_WIDTH))
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |_, _, window, cx| {
-                    window.focus(&gpui::Focusable::focus_handle(&focus, cx), cx);
-                }),
-            )
-            .child(
-                div()
-                    .min_h(px(desktop::START_PROMPT_MIN_HEIGHT))
-                    .child(field),
-            )
-            .child(
-                row()
-                    .gap(px(composer::CONTROL_SPACING))
-                    .child(folder)
-                    .child(agent)
-                    .child(div().flex_1())
-                    .child(start_button(can_start, palette, cx)),
-            );
+        let card = focus_on_press(
+            card_frame(palette)
+                .w_full()
+                .max_w(px(desktop::START_FORM_WIDTH)),
+            &field,
+        )
+        .child(
+            div()
+                .min_h(px(desktop::START_PROMPT_MIN_HEIGHT))
+                .child(field),
+        )
+        .child(
+            row()
+                .gap(px(composer::CONTROL_SPACING))
+                .child(folder)
+                .child(agent)
+                .child(div().flex_1())
+                .child(start_button(can_start, palette, cx)),
+        );
         let note = blocker.map_or("Enter starts. Shift+Enter adds a line.", |blocker| {
             blocker.explanation()
         });

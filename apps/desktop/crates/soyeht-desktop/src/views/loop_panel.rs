@@ -6,7 +6,7 @@
 use super::{
     menus,
     prelude::*,
-    ui::{mono_note, option_pill, switch},
+    ui::{field_well, mono_note, option_pill, switch},
 };
 use crate::{
     loop_form::Choice,
@@ -43,10 +43,8 @@ impl Workbench {
             .child(self.loop_header(&pane_id, &form, &role, palette, cx))
             .child(heading(palette, loops::PROMPT_HEADING))
             .child(
-                neo::well(palette, radius::CONTROL, desktop::WELL_DEPTH)
-                    .h(px(desktop::LOOP_PROMPT_HEIGHT))
+                field_well(palette, &prompt, desktop::LOOP_PROMPT_HEIGHT)
                     .p(px(space::X10))
-                    .overflow_hidden()
                     .font_weight(FontWeight::MEDIUM)
                     .text_size(px(type_scale::CAPTION))
                     .child(prompt),

@@ -3,7 +3,7 @@
 //! `soyeht_client::tasks`.
 
 use crate::{
-    composer_field::{ComposerEvent, ComposerField, new_field},
+    composer_field::{ComposerEvent, ComposerField, new_form_field},
     destination::Destination,
     workbench::Workbench,
 };
@@ -165,7 +165,7 @@ impl Workbench {
     pub(crate) fn open_new_task(&mut self, cx: &mut Context<Self>) {
         let palette = self.theme.palette();
         let field = |cx: &mut Context<Self>| {
-            let field = new_field(palette, cx);
+            let field = new_form_field(palette, cx);
             cx.subscribe(
                 &field,
                 |this, field, event: &ComposerEvent, cx| match event {
@@ -190,12 +190,14 @@ impl Workbench {
             choice: None,
             submitting: false,
         };
+        self.focus_field_when_drawn(&form.title, cx);
         self.tasks_ui.form = Some(form);
         cx.notify();
     }
 
     pub(crate) fn close_new_task(&mut self, cx: &mut Context<Self>) {
         self.tasks_ui.form = None;
+        self.field_request = None;
         cx.notify();
     }
 

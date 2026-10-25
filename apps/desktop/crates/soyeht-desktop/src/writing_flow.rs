@@ -5,13 +5,13 @@
 //! the field.
 
 use crate::{
-    composer_field::{ComposerEvent, ComposerField, ProseEvent, new_field},
+    composer_field::{ComposerEvent, ComposerField, ProseEvent, new_field, new_form_field},
     destination::Destination,
     workbench::Workbench,
     writing_style,
     writing_ui::NewDocument,
 };
-use gpui::{AppContext, Context, Entity, FocusHandle, Focusable, Window};
+use gpui::{AppContext, Context, Entity, FocusHandle, Focusable};
 use soyeht_client::Effect;
 use soyeht_client::state::problem::kind;
 use soyeht_client::writing::{
@@ -402,8 +402,8 @@ impl Workbench {
         if self.places.of(section).form.is_some() {
             return;
         }
-        let title = new_field(self.theme.palette(), cx);
-        let folder = new_field(self.theme.palette(), cx);
+        let title = new_form_field(self.theme.palette(), cx);
+        let folder = new_form_field(self.theme.palette(), cx);
         for field in [&title, &folder] {
             let section = section.clone();
             cx.subscribe(
@@ -416,26 +416,15 @@ impl Workbench {
             )
             .detach();
         }
-        self.places.of_mut(section).form = Some(NewDocument {
-            title,
-            folder,
-            focus: true,
-        });
+        self.focus_field_when_drawn(&title, cx);
+        self.places.of_mut(section).form = Some(NewDocument { title, folder });
         cx.notify();
     }
 
     pub(crate) fn place_close_form(&mut self, section: &WritingSection, cx: &mut Context<Self>) {
         self.places.of_mut(section).form = None;
+        self.field_request = None;
         cx.notify();
-    }
-
-    /// Gives the keyboard to the title of the form, once, after it opened.
-    pub(crate) fn focus_place_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(form) = self.places.form_to_focus() {
-            form.focus = false;
-            let title = form.title.focus_handle(cx);
-            window.focus(&title, cx);
-        }
     }
 
     /// Makes the document the form describes. The form stays until the document opens, so that

@@ -74,6 +74,42 @@ impl Focusable for ComposerField {
     }
 }
 
+/// Which way Tab moves between the fields of a form.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TabDirection {
+    Next,
+    Previous,
+}
+
+/// Tab and Shift+Tab on their own; with another modifier the key is not the form's.
+fn tab_direction(keystroke: &Keystroke) -> Option<TabDirection> {
+    let modifiers = &keystroke.modifiers;
+    if keystroke.key != "tab" || modifiers.control || modifiers.alt || modifiers.platform {
+        return None;
+    }
+    Some(if modifiers.shift {
+        TabDirection::Previous
+    } else {
+        TabDirection::Next
+    })
+}
+
+/// Whether a press at `position` landed on the field, which has handled it, rather than on the
+/// well around it. A field with no text and no hint is as high as no line, and a field that was
+/// never painted has no place: neither is hit.
+fn on_field(bounds: Option<Bounds<Pixels>>, position: gpui::Point<Pixels>) -> bool {
+    bounds.is_some_and(|bounds| bounds.contains(&position))
+}
+
+/// Makes `well` take a press anywhere in it for `field`: the padding and the room under a short
+/// text give the field the keyboard too. The one rule for every well that holds a field.
+pub fn focus_on_press(well: Div, field: &Entity<ComposerField>) -> Div {
+    let field = field.clone();
+    well.on_mouse_down(MouseButton::Left, move |event, window, cx| {
+        field.update(cx, |field, cx| field.press_beside(event, window, cx));
+    })
+}
+
 impl ComposerField {
     pub fn new(palette: &'static Palette, cx: &mut Context<Self>) -> Self {
         Self {
@@ -127,7 +163,7 @@ impl ComposerField {
         cx.notify();
     }
 
-    fn key_down(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         // An input method owns the keys while it composes.
         if self.draft.is_composing() {
             return;
@@ -139,6 +175,16 @@ impl ComposerField {
             && let Some(asked) = completion_of(&event.keystroke)
         {
             cx.emit(asked);
+            cx.stop_propagation();
+            return;
+        }
+        if self.focus.tab_stop
+            && let Some(direction) = tab_direction(&event.keystroke)
+        {
+            match direction {
+                TabDirection::Next => window.focus_next(cx),
+                TabDirection::Previous => window.focus_prev(cx),
+            }
             cx.stop_propagation();
             return;
         }
@@ -267,6 +313,26 @@ impl ComposerField {
             2 => self.draft.select_word(at),
             _ => self.draft.select_line(at),
         }
+        self.edited(false, cx);
+        cx.notify();
+    }
+
+    /// A press in the well that holds the field but not on the field itself: its padding, or the
+    /// room under a short text. The field takes the keyboard with the caret after its text, as it
+    /// does when the text itself is pressed.
+    fn press_beside(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if on_field(self.bounds, event.position) {
+            return;
+        }
+        window.focus(&self.focus, cx);
+        clear_selection(cx);
+        self.goal_x = None;
+        self.draft.place(self.draft.text().len(), false);
         self.edited(false, cx);
         cx.notify();
     }
@@ -406,6 +472,12 @@ fn line(
     };
     let text = draft.text();
     if text.is_empty() {
+        // With no hint the line still has the height of one.
+        let hint = if placeholder.is_empty() {
+            SharedString::from(" ")
+        } else {
+            placeholder.clone()
+        };
         let empty = div()
             .flex()
             .flex_row()
@@ -413,11 +485,7 @@ fn line(
             .when(block_caret, |row| {
                 row.child(StyledText::new(" ").with_highlights([(0..1, block)]))
             })
-            .child(
-                div()
-                    .text_color(rgb(palette.secondary))
-                    .child(placeholder.clone()),
-            );
+            .child(div().text_color(rgb(palette.secondary)).child(hint));
         return (empty, None);
     }
     let caret = draft.caret();
@@ -592,7 +660,60 @@ fn chord_of(keystroke: &Keystroke) -> Chord<'_> {
     }
 }
 
+/// A new field entity for a form: Tab and Shift+Tab move the keyboard between the fields of a
+/// form, in the order they are drawn.
+pub fn new_form_field(palette: &'static Palette, cx: &mut gpui::App) -> Entity<ComposerField> {
+    cx.new(|cx| {
+        let mut field = ComposerField::new(palette, cx);
+        field.focus = field.focus.clone().tab_stop(true);
+        field
+    })
+}
+
 /// A new field entity.
 pub fn new_field(palette: &'static Palette, cx: &mut gpui::App) -> Entity<ComposerField> {
     cx.new(|cx| ComposerField::new(palette, cx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn direction(keys: &str) -> Option<TabDirection> {
+        tab_direction(&Keystroke::parse(keys).unwrap())
+    }
+
+    #[test]
+    fn tab_moves_forward_and_shift_tab_back() {
+        assert_eq!(direction("tab"), Some(TabDirection::Next));
+        assert_eq!(direction("shift-tab"), Some(TabDirection::Previous));
+    }
+
+    #[test]
+    fn tab_with_another_modifier_or_another_key_is_not_the_forms() {
+        for keys in ["ctrl-tab", "alt-tab", "cmd-tab", "enter", "a"] {
+            assert_eq!(direction(keys), None, "{keys}");
+        }
+    }
+
+    #[test]
+    fn a_press_on_the_field_is_the_fields_own() {
+        let bounds = Bounds::new(point(px(10.0), px(10.0)), size(px(100.0), px(20.0)));
+        assert!(on_field(Some(bounds), point(px(50.0), px(15.0))));
+    }
+
+    #[test]
+    fn a_press_beside_the_field_in_its_well_is_not() {
+        let line = Bounds::new(point(px(10.0), px(10.0)), size(px(100.0), px(20.0)));
+        // The room under a short text and the padding left of it.
+        assert!(!on_field(Some(line), point(px(50.0), px(60.0))));
+        assert!(!on_field(Some(line), point(px(2.0), px(15.0))));
+    }
+
+    #[test]
+    fn an_empty_field_with_no_height_or_never_painted_is_not_hit() {
+        let flat = Bounds::new(point(px(10.0), px(10.0)), size(px(100.0), px(0.0)));
+        assert!(!on_field(Some(flat), point(px(50.0), px(10.0))));
+        assert!(!on_field(None, point(px(50.0), px(10.0))));
+    }
 }

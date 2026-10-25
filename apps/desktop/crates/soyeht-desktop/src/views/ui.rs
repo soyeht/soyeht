@@ -23,6 +23,21 @@ pub fn not_available(what: &str) -> String {
     format!("{what} is not available in the desktop client yet.")
 }
 
+/// The well of a text field: a press anywhere in it gives the field the keyboard, whatever the
+/// text inside is tall.
+pub fn field_well(
+    palette: &Palette,
+    field: &gpui::Entity<crate::composer_field::ComposerField>,
+    height: f32,
+) -> Div {
+    crate::composer_field::focus_on_press(
+        neo::well(palette, radius::CONTROL, desktop::WELL_DEPTH)
+            .h(px(height))
+            .overflow_hidden(),
+        field,
+    )
+}
+
 /// The two faces besides the interface's own, each with the line height its font has. GPUI's
 /// default line is 1.618 times the size, loose beside the Mac, where SwiftUI sets a line as
 /// tall as its font says (`desktop.lineHeight*`); the window sets the interface face's height

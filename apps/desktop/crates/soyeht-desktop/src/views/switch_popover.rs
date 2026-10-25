@@ -11,6 +11,7 @@ use super::{
 use crate::workbench::Workbench;
 use crate::{
     assets::Icon,
+    composer_field::{ComposerField, focus_on_press},
     theme::{Palette, desktop, layout, pane_interior, radius, space, type_scale},
 };
 use gpui::{
@@ -227,15 +228,15 @@ fn caption(palette: &Palette, text: &str) -> Div {
 }
 
 /// The well that holds the search line.
-fn search_field(
-    search: gpui::Entity<crate::composer_field::ComposerField>,
-    palette: &Palette,
-) -> Div {
-    well_row(palette)
-        .flex_1()
-        .min_w_0()
-        .h(px(layout::SEARCH_FIELD_HEIGHT))
-        .child(div().flex_1().min_w_0().overflow_hidden().child(search))
+fn search_field(search: gpui::Entity<ComposerField>, palette: &Palette) -> Div {
+    focus_on_press(
+        well_row(palette)
+            .flex_1()
+            .min_w_0()
+            .h(px(layout::SEARCH_FIELD_HEIGHT)),
+        &search,
+    )
+    .child(div().flex_1().min_w_0().overflow_hidden().child(search))
 }
 
 /// A line set into the well, as the Mac's search and model fields are.
