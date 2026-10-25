@@ -30,6 +30,13 @@ that bound lived in the engine crate, which the desktop may not depend on.
   does something on Windows only. The missing engine
   already shows in the window (the stage hint). The software-renderer note shows in a standing
   notice line (`State::notice`) that a connection does not clear, unlike the problem line.
+  The window shows one line at a time (a failure first, as the Mac shows one failure at a time),
+  and dismissing the software-renderer note is kept for good in the device's own choices file
+  (`client-preferences.json`, beside the engine socket).
+- Every failure the window tells the person goes through `State::report`, which also logs
+  `desktop.problem` with a bounded `kind` (what could not be done, plus the cause's own kind
+  when it has one, such as `request_failed.not_found`). The text shown to the person is never
+  logged: it can carry a path or an engine's own words.
 - The `desktop.log_file` line also carries the build id (`0.1.0+<commit>`).
 
 ## Consequences

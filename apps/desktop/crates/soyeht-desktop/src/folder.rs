@@ -4,8 +4,12 @@
 
 use crate::workbench::Workbench;
 use gpui::{Context, PathPromptOptions, Window, actions};
+use soyeht_client::state::problem::kind;
 use soyeht_client::{Command, Connection, state::FolderOpening};
 use std::path::{Path, PathBuf};
+
+/// What the person is told when a folder's path is not text the engine can be given.
+pub(crate) const FOLDER_NAME_NOT_TEXT: &str = "That folder's name is not text Soyeht can use.";
 
 actions!(soyeht, [OpenFolder]);
 
@@ -36,7 +40,7 @@ impl Workbench {
     pub(crate) fn require_connection(&mut self, cx: &mut Context<Self>) -> bool {
         let connected = self.state.connection == Connection::Connected;
         if !connected {
-            self.state.problem = Some(soyeht_client::Error::Disconnected.to_string());
+            self.state.report_disconnected();
             cx.notify();
         }
         connected
@@ -82,7 +86,10 @@ impl Workbench {
             }
             Ok(None) => {}
             Err(reason) => {
-                self.state.problem = Some(format!("Couldn't open the folder picker. {reason}"));
+                self.state.report(
+                    kind::FOLDER_PICKER_FAILED,
+                    format!("Couldn't open the folder picker. {reason}"),
+                );
                 cx.notify();
             }
         }
@@ -92,7 +99,8 @@ impl Workbench {
     /// a new workspace, which gets a terminal once the engine has made it.
     pub(crate) fn open_folder_path(&mut self, folder: &Path, cx: &mut Context<Self>) {
         let Some(path) = folder.to_str() else {
-            self.state.problem = Some("That folder's name is not text Soyeht can use.".to_owned());
+            self.state
+                .report(kind::FOLDER_NAME_NOT_TEXT, FOLDER_NAME_NOT_TEXT);
             cx.notify();
             return;
         };
@@ -110,7 +118,8 @@ impl Workbench {
                 cx.notify();
             }
             Err(problem) => {
-                self.state.problem = Some(problem.explanation().to_owned());
+                self.state
+                    .report(kind::FOLDER_PATH_INVALID, problem.explanation());
                 cx.notify();
             }
         }

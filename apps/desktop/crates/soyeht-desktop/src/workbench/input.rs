@@ -4,7 +4,7 @@ use super::{Paste, Workbench};
 use crate::composer_field::edit_of;
 use gpui::{Context, KeyDownEvent, ScrollWheelEvent, Window};
 use soyeht_client::{
-    Command, Connection, Error,
+    Command, Connection,
     keys::{self, Modifiers},
     screen::TerminalScreen,
     text_input::keys::Edit,
@@ -126,7 +126,7 @@ impl Workbench {
     pub(crate) fn send_input(&mut self, pane_id: &str, bytes: Vec<u8>, cx: &mut Context<Self>) {
         if self.state.connection != Connection::Connected {
             // Keystrokes cannot reach a dead connection; say so instead of dropping them.
-            self.state.problem = Some(Error::Disconnected.to_string());
+            self.state.report_disconnected();
             cx.notify();
             return;
         }

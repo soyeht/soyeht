@@ -278,7 +278,7 @@ fn an_engine_that_ends_after_a_connection_is_started_again() {
     let (engine, inbox) = Engine::start_with(path.clone(), start);
     // The first start fails, as there are no programs, and is not tried again at the retry.
     wait_for(&inbox, |event| matches!(event, Event::Starting));
-    wait_for(&inbox, |event| matches!(event, Event::Problem(_)));
+    wait_for(&inbox, |event| matches!(event, Event::Problem { .. }));
 
     let (listener, remote) = bring_up(&path);
     wait_for(&inbox, |event| matches!(event, Event::Connected(_)));
@@ -304,7 +304,10 @@ fn a_refused_request_becomes_a_problem_not_a_crash() {
     let focus = remote.expect("pane.focus");
     remote.send(&not_found(&focus, "Pane not found"));
     match next(&inbox) {
-        Event::Problem(message) => assert_eq!(message, "Pane not found"),
+        Event::Problem { cause, message } => {
+            assert_eq!(message, "Pane not found");
+            assert_eq!(cause, "not_found", "the log gets the protocol kind");
+        }
         other => panic!("expected a problem, got {other:?}"),
     }
 
@@ -374,7 +377,7 @@ fn opening_a_pane_is_answered_with_its_ticket_and_a_failure_releases_it() {
     let refused = remote.expect("pane.create");
     remote.send(&not_found(&refused, "No such workspace"));
     assert!(matches!(next(&inbox), Event::OpenFailed { ticket: 6 }));
-    assert!(matches!(next(&inbox), Event::Problem(_)));
+    assert!(matches!(next(&inbox), Event::Problem { .. }));
 
     finish(&engine, remote, &path);
 }

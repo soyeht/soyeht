@@ -21,8 +21,9 @@ pub enum Event {
     Notification { name: EventName, params: Value },
     /// Output of a subscribed terminal.
     Terminal(StreamOutput),
-    /// A request the user asked for failed.
-    Problem(String),
+    /// A request the user asked for failed. `cause` is the failure's kind for the log
+    /// (`soyeht_platform::log::Failure`); `message` is for the person alone.
+    Problem { cause: String, message: String },
     /// An agent pane's transcript, as the engine holds it.
     Transcript {
         pane_id: String,

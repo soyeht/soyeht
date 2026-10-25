@@ -82,7 +82,8 @@ pub(crate) struct Expected {
 
 pub struct State {
     pub connection: Connection,
-    pub problem: Option<String>,
+    /// The failure line; set only through [`State::report`], so each one is also logged.
+    pub(crate) problem: Option<String>,
     /// A standing note about this client rather than about a request (it draws on a software
     /// renderer): a connection, which clears `problem`, leaves it. The person dismisses it.
     pub notice: Option<String>,
@@ -305,8 +306,8 @@ impl State {
                 self.terminal_output(output);
                 Vec::new()
             }
-            Event::Problem(message) => {
-                self.problem = Some(message);
+            Event::Problem { cause, message } => {
+                self.report_failure(problem::kind::REQUEST_FAILED, &cause, message);
                 Vec::new()
             }
             Event::Transcript {
@@ -317,7 +318,7 @@ impl State {
                 if let Some(view) = self.agents.get_mut(&pane_id) {
                     view.cards.older = next_cursor;
                     if let Err(error) = view.merge_page(items) {
-                        self.problem = Some(error.to_string());
+                        self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
                     }
                 }
                 Vec::new()
@@ -482,10 +483,13 @@ impl State {
         match self.apply_notification(name, params) {
             Ok(effects) => effects,
             Err(error) => {
-                self.problem = Some(format!(
-                    "The engine sent an unreadable {} event ({error}). Reloading its state.",
-                    name.as_str()
-                ));
+                self.report(
+                    problem::kind::EVENT_UNREADABLE,
+                    format!(
+                        "The engine sent an unreadable {} event ({error}). Reloading its state.",
+                        name.as_str()
+                    ),
+                );
                 vec![Effect::Resync]
             }
         }
@@ -681,6 +685,7 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
 
 mod editor;
 mod layout_draft;
+pub mod problem;
 mod writing;
 pub(crate) use layout_draft::same_panes;
 mod workspaces;

@@ -14,8 +14,10 @@ use crate::{
     session::{EventSink, Session},
     transport, writing,
 };
+use soyeht_platform::log::Failure;
 use soyeht_protocol::PaneInputResult;
 use std::{
+    fmt::Display,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex, PoisonError,
@@ -217,7 +219,7 @@ fn start_engine(
         Err(autostart::StartError::Stopped) => Started::Gone,
         Err(error) => {
             soyeht_platform::log::failure("desktop.engine_start_failed", &error);
-            let told = report(events, &error.to_string())
+            let told = report(events, &error)
                 && events
                     .send_blocking(Event::Disconnected(error.to_string()))
                     .is_ok();
@@ -302,8 +304,7 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
                 // A file the engine refused as text is told in its pane, not as a problem.
                 released
                     && told
-                    && (command.failure_is_shown_in_place(&error)
-                        || report(events, &error.to_string()))
+                    && (command.failure_is_shown_in_place(&error) || report(events, &error))
             }
         };
         if !delivered {
@@ -313,9 +314,12 @@ fn work(queue: &mpsc::Receiver<Command>, events: &EventSink, shared: &Shared) {
 }
 
 /// Tells the user. False when the application is gone and nobody can be told.
-fn report(events: &EventSink, message: &str) -> bool {
+fn report<E: Failure + Display>(events: &EventSink, error: &E) -> bool {
     events
-        .send_blocking(Event::Problem(message.to_owned()))
+        .send_blocking(Event::Problem {
+            cause: error.failure_kind(),
+            message: error.to_string(),
+        })
         .is_ok()
 }
 
@@ -399,10 +403,11 @@ mod tests {
         let (engine, inbox) = Engine::start_with(socket, Autostart::On(plan));
         assert!(matches!(next(&inbox), Event::Disconnected(_)));
         assert!(matches!(next(&inbox), Event::Starting));
-        let Event::Problem(message) = next(&inbox) else {
+        let Event::Problem { cause, message } = next(&inbox) else {
             panic!("expected the problem");
         };
         assert!(message.contains("soyeht-engine"), "{message}");
+        assert_eq!(cause, "missing_program");
         assert!(matches!(next(&inbox), Event::Disconnected(_)));
         // The retry that follows does not start again: it only reports the engine missing.
         assert!(matches!(next(&inbox), Event::Disconnected(_)));

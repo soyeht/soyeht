@@ -319,10 +319,12 @@ mod tests {
     fn a_theme_this_build_does_not_know_falls_back_to_the_default() {
         let removed = LocalPreferences {
             theme: Some("neoRemovedYesterday".into()),
+            ..LocalPreferences::default()
         };
         assert_eq!(saved_theme(&removed), ThemeName::DEFAULT);
         let empty = LocalPreferences {
             theme: Some(String::new()),
+            ..LocalPreferences::default()
         };
         assert_eq!(saved_theme(&empty), ThemeName::DEFAULT);
     }

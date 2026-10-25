@@ -9,7 +9,7 @@ use crate::{
 };
 use gpui::{ClipboardItem, Context, Entity};
 use soyeht_client::{
-    Command, Connection, Error,
+    Command, Connection,
     agent::TAIL,
     cards::{Earlier, elicitation},
     loops,
@@ -216,7 +216,7 @@ impl Workbench {
         };
         let text = self.state.slash_catalog(pane_id).prompt(&text);
         if self.state.connection != Connection::Connected {
-            self.state.problem = Some(Error::Disconnected.to_string());
+            self.state.report_disconnected();
             cx.notify();
             return;
         }

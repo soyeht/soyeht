@@ -33,9 +33,12 @@ impl State {
                 }
             }
             Err(error) => {
-                self.problem = Some(format!(
-                    "An agent's question could not be read ({error}); answer it from another client."
-                ));
+                self.report(
+                    crate::state::problem::kind::QUESTION_UNREADABLE,
+                    format!(
+                        "An agent's question could not be read ({error}); answer it from another client."
+                    ),
+                );
             }
         }
     }

@@ -13,6 +13,7 @@ use crate::{
 };
 use gpui::{AppContext, Context, Entity, FocusHandle, Focusable, Window};
 use soyeht_client::Effect;
+use soyeht_client::state::problem::kind;
 use soyeht_client::writing::{
     document::line_start,
     presentation::{self, Show, ShowInput},
@@ -117,7 +118,7 @@ impl Workbench {
             Ok(effects) => self.run_effects(effects),
             Err(reason) => {
                 // What the engine would refuse is not kept: the field shows the document again.
-                self.state.problem = Some(reason.to_owned());
+                self.state.report(kind::WRITING_EDIT_REFUSED, reason);
                 self.sync_writing_field(pane_id, cx);
             }
         }
@@ -305,8 +306,9 @@ impl Workbench {
             return;
         }
         let Some(harness) = self.state.default_harness() else {
-            self.state.problem = Some(
-                "No agent is ready to open beside this document. Check Preferences.".to_owned(),
+            self.state.report(
+                kind::COMPANION_UNAVAILABLE,
+                "No agent is ready to open beside this document. Check Preferences.",
             );
             cx.notify();
             return;

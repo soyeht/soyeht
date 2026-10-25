@@ -5,6 +5,7 @@
 use crate::{destination::Destination, neo, workbench::Workbench};
 use gpui::{Context, Pixels, Point};
 use soyeht_client::layout;
+use soyeht_client::state::problem::kind;
 use soyeht_protocol::{WorkspacePaneLayoutAxis as Axis, WorkspacePaneLayoutNode as Node};
 
 const NOT_RESIZED: &str = "Couldn't resize the panes. The layout was not changed.";
@@ -95,7 +96,7 @@ impl Workbench {
             self.state.draft_layout(&workspace_id, tree);
         } else {
             // The person is told; the drag is over and the stored arrangement shows again.
-            self.drop_gesture(NOT_RESIZED);
+            self.drop_gesture(kind::LAYOUT_NOT_RESIZED, NOT_RESIZED);
         }
         cx.notify();
     }
@@ -122,15 +123,15 @@ impl Workbench {
             let effects = self.state.commit_layout_draft();
             self.run_effects(effects);
         } else {
-            self.drop_gesture(NOT_EQUALIZED);
+            self.drop_gesture(kind::LAYOUT_NOT_EQUALIZED, NOT_EQUALIZED);
         }
         cx.notify();
     }
 
-    fn drop_gesture(&mut self, message: &str) {
+    fn drop_gesture(&mut self, kind: &str, message: &str) {
         self.stage.gestures.gesture = None;
         self.state.cancel_layout_draft();
-        self.state.problem = Some(message.to_owned());
+        self.state.report(kind, message);
     }
 
     /// The selected workspace and the arrangement of all its panes on screen.

@@ -19,7 +19,10 @@ use crate::{
     writing_ui::Places,
 };
 use gpui::{Context, FocusHandle, Task, actions};
-use soyeht_client::{Command, Engine, Event, State, loops, screen::TerminalScreen};
+use soyeht_client::{
+    Command, Engine, Event, State, loops, screen::TerminalScreen, state::problem::kind,
+};
+use soyeht_platform::log::Failure;
 
 mod effects;
 mod focus;
@@ -38,6 +41,8 @@ pub struct Workbench {
     pub(crate) theme: ThemeName,
     /// Where the choices this device keeps for itself are written; `None` writes nowhere.
     pub(crate) preferences: Option<std::path::PathBuf>,
+    /// Which standing note `state.notice` holds, so that dismissing it is remembered.
+    pub(crate) notice_id: Option<&'static str>,
     /// Keyboard focus of the window; terminals take their keys from it.
     pub(crate) focus: FocusHandle,
     pub(crate) destination: Destination,
@@ -117,6 +122,7 @@ impl Workbench {
             state: State::default().with_sizing(crate::views::sizing()),
             theme: ThemeName::DEFAULT,
             preferences: None,
+            notice_id: None,
             focus: cx.focus_handle(),
             destination: Destination::default(),
             rail_open: true,
@@ -170,7 +176,11 @@ impl Workbench {
         match self.engine.send(command) {
             Ok(()) => true,
             Err(error) => {
-                self.state.problem = Some(error.to_string());
+                self.state.report_failure(
+                    kind::REQUEST_FAILED,
+                    &error.failure_kind(),
+                    error.to_string(),
+                );
                 false
             }
         }

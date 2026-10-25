@@ -150,7 +150,10 @@ impl State {
                     self.loops.insert(pane.to_owned(), config);
                 }
                 _ => {
-                    self.problem = Some("A pane's loop could not be read.".to_owned());
+                    self.report(
+                        crate::state::problem::kind::LOOP_UNREADABLE,
+                        "A pane's loop could not be read.",
+                    );
                 }
             }
         }

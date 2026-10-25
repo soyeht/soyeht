@@ -3,7 +3,7 @@
 use crate::{
     assets::Assets,
     folder::OpenFolder,
-    fonts, graphics, logging, shortcuts,
+    fonts, graphics, logging, notices, shortcuts,
     tasks_ui::{CreateAndDispatchTask, CreateTask},
     theme::{ThemeName, desktop},
     window_size::{self, opening_size},
@@ -190,7 +190,9 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
             if let Some(note) = graphics::software_note(window.gpu_specs().as_ref()) {
                 logging::announce(notice, &note);
                 // The window shows it too, in a line a connection does not clear.
-                workbench.update(cx, |workbench, _| workbench.state.notice = Some(note));
+                workbench.update(cx, |workbench, _| {
+                    workbench.show_notice(notices::SOFTWARE_RENDERER, note)
+                });
             }
             workbench
         });

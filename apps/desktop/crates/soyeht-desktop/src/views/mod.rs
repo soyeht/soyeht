@@ -60,7 +60,7 @@ use gpui::{
     ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
     prelude::FluentBuilder, px, relative, rgb,
 };
-use soyeht_client::Connection;
+use soyeht_client::{Connection, state::problem::Banner};
 
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -96,7 +96,7 @@ impl Render for Workbench {
             // The Mac's top inset: the bar floats this far under the window's edge.
             .pt(px(space::X8))
             .child(self.top_bar(palette, window, cx))
-            .children(self.banners(palette, cx))
+            .children(self.banner(palette, cx))
             .child(
                 div()
                     .flex_1()
@@ -121,27 +121,34 @@ impl Render for Workbench {
 }
 
 impl Workbench {
-    /// The warning lines under the top bar, each until the person dismisses it: a request that
-    /// failed, then the client's standing note (a software renderer), which a connection does
-    /// not clear.
-    fn banners(
+    /// The warning line under the top bar, until the person dismisses it. One line at a time, as
+    /// the Mac shows one failure at a time: a request that failed, then, once that is dismissed,
+    /// the client's standing note (a software renderer), which a connection does not clear.
+    fn banner(
         &mut self,
         palette: &'static crate::theme::Palette,
         cx: &mut Context<Self>,
-    ) -> Vec<AnyElement> {
-        type Dismiss = fn(&mut soyeht_client::state::State);
-        let lines: [(&'static str, Option<String>, Dismiss); 2] = [
-            ("problem", self.state.problem.clone(), |state| {
-                state.problem = None;
-            }),
-            ("notice", self.state.notice.clone(), |state| {
-                state.notice = None;
-            }),
-        ];
-        lines
-            .into_iter()
-            .filter_map(|(id, text, dismiss)| Some(banner_line(id, text?, palette, cx, dismiss)))
-            .collect()
+    ) -> Option<AnyElement> {
+        Some(match self.state.banner()? {
+            Banner::Problem(text) => {
+                let text = text.to_owned();
+                banner_line("problem", text, "Dismiss", palette, cx, |this, cx| {
+                    this.state.dismiss_problem();
+                    cx.notify();
+                })
+            }
+            Banner::Notice(text) => {
+                let text = text.to_owned();
+                banner_line(
+                    "notice",
+                    text,
+                    "Dismiss for good",
+                    palette,
+                    cx,
+                    |this, cx| this.dismiss_notice(cx),
+                )
+            }
+        })
     }
 
     /// The panes of the selected workspace, tiled as its layout says. The outermost panes keep
@@ -167,13 +174,15 @@ impl Workbench {
     }
 }
 
-/// One warning line under the top bar; a click dismisses it through `dismiss`.
+/// One warning line under the top bar; a click dismisses it through `dismiss`, and `tip` says
+/// what the dismissal does.
 fn banner_line(
     id: &'static str,
     text: String,
+    tip: &'static str,
     palette: &'static crate::theme::Palette,
     cx: &mut Context<Workbench>,
-    dismiss: fn(&mut soyeht_client::state::State),
+    dismiss: fn(&mut Workbench, &mut Context<Workbench>),
 ) -> AnyElement {
     ui::row()
         .id(id)
@@ -183,10 +192,8 @@ fn banner_line(
         .text_size(px(type_scale::CONTROL))
         .text_color(rgb(palette.warning()))
         .cursor_pointer()
-        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-            dismiss(&mut this.state);
-            cx.notify();
-        }))
+        .tooltip(ui::hint(tip, palette))
+        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| dismiss(this, cx)))
         .child(
             div()
                 .flex_1()

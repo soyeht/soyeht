@@ -3,6 +3,13 @@ use crate::testing::{pane, pane_json, workspace, workspace_json};
 use serde_json::json;
 use soyeht_protocol::ClientFocus;
 
+fn problem_event(message: &str) -> Event {
+    Event::Problem {
+        cause: "internal_error".to_owned(),
+        message: message.to_owned(),
+    }
+}
+
 fn snapshot(workspaces: &[&str], panes: &[(&str, &str, &str)]) -> Snapshot {
     Snapshot {
         workspaces: workspaces.iter().map(|id| workspace(id)).collect(),
@@ -309,14 +316,14 @@ fn a_workspace_that_was_not_shown_has_its_screens_when_it_is_selected() {
 #[test]
 fn events_other_than_terminal_output_change_the_view() {
     let (state, _) = connected(across_workspaces());
-    assert!(state.changes_view(&Event::Problem("boom".into())));
+    assert!(state.changes_view(&problem_event("boom")));
     assert!(state.changes_view(&Event::Disconnected("lost".into())));
 }
 
 #[test]
 fn problems_are_kept_until_the_next_connection() {
     let mut state = State::default();
-    state.apply(Event::Problem("boom".into()));
+    state.apply(problem_event("boom"));
     assert_eq!(state.problem.as_deref(), Some("boom"));
     state.apply(Event::Connected(Snapshot::default()));
     assert_eq!(state.problem, None);

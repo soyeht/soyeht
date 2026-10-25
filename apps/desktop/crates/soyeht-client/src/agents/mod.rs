@@ -251,10 +251,13 @@ impl State {
             && serde_json::from_value::<WorkspacePaneLayoutEnvelope>(workspace.layout.clone())
                 .is_err()
         {
-            self.problem = Some(format!(
-                "The layout of {} could not be read, so its panes are tiled automatically.",
-                workspace.name
-            ));
+            self.report(
+                crate::state::problem::kind::LAYOUT_UNREADABLE,
+                format!(
+                    "The layout of {} could not be read, so its panes are tiled automatically.",
+                    workspace.name
+                ),
+            );
         }
     }
 
@@ -310,9 +313,12 @@ impl State {
             {
                 Some(Ok(request)) => request,
                 Some(Err(error)) => {
-                    self.problem = Some(format!(
-                        "An agent's request for permission could not be read ({error}); answer it from another client."
-                    ));
+                    self.report(
+                        crate::state::problem::kind::PERMISSION_UNREADABLE,
+                        format!(
+                            "An agent's request for permission could not be read ({error}); answer it from another client."
+                        ),
+                    );
                     continue;
                 }
                 None => continue,
@@ -337,7 +343,10 @@ impl State {
                     && let Some(view) = self.agents.get_mut(&pane_id)
                     && let Err(error) = view.merge(message)
                 {
-                    self.problem = Some(error.to_string());
+                    self.report(
+                        crate::state::problem::kind::TRANSCRIPT_UNREADABLE,
+                        error.to_string(),
+                    );
                 }
                 Vec::new()
             }

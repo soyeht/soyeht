@@ -138,7 +138,7 @@ impl State {
         match self.editors.paste(pane_id, text) {
             Ok(effects) => effects,
             Err(reason) => {
-                self.problem = Some(reason.to_owned());
+                self.report(super::problem::kind::EDITOR_PASTE_REFUSED, reason);
                 Vec::new()
             }
         }

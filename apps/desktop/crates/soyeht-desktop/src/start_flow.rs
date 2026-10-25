@@ -6,8 +6,9 @@
 //! and `State::start_agent`; this holds the form's state and carries the person's choices there.
 
 use crate::composer_field::{ComposerEvent, ComposerField, new_field};
-use crate::{destination::Destination, workbench::Workbench};
+use crate::{destination::Destination, folder::FOLDER_NAME_NOT_TEXT, workbench::Workbench};
 use gpui::{Context, Entity, Focusable, Window};
+use soyeht_client::state::problem::kind;
 use soyeht_client::{Command, new_agent::NewAgent};
 
 /// The form while it is open.
@@ -87,8 +88,10 @@ impl Workbench {
         if self.start.is_none() {
             self.show_start(form, cx);
         }
-        self.state.problem =
-            Some("The agent could not start. Your message is back in the form.".to_owned());
+        self.state.report(
+            kind::AGENT_NOT_STARTED,
+            "The agent could not start. Your message is back in the form.",
+        );
         cx.notify();
     }
 
@@ -122,8 +125,8 @@ impl Workbench {
             |this, folder, cx| match folder.to_str() {
                 Some(path) => this.set_start_folder(path, cx),
                 None => {
-                    this.state.problem =
-                        Some("That folder's name is not text Soyeht can use.".to_owned());
+                    this.state
+                        .report(kind::FOLDER_NAME_NOT_TEXT, FOLDER_NAME_NOT_TEXT);
                     cx.notify();
                 }
             },
@@ -179,7 +182,7 @@ impl Workbench {
                 self.run_effects(started.effects);
                 self.restore_failed_start(cx);
             }
-            Err(reason) => self.state.problem = Some(reason.to_owned()),
+            Err(reason) => self.state.report(kind::NEW_AGENT_REFUSED, reason),
         }
         cx.notify();
     }

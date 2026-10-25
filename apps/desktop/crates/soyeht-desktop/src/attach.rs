@@ -7,6 +7,7 @@ use gpui::{AppContext, ClipboardEntry, ClipboardItem, Context, PathPromptOptions
 use soyeht_client::attachments::{
     Draft, IMAGE_FALLBACK_NAME, PasteOffer, Rejection, Staged, stage_image, stage_path,
 };
+use soyeht_client::state::problem::kind;
 use std::path::PathBuf;
 
 type Staging = Vec<Result<Draft, Rejection>>;
@@ -31,11 +32,17 @@ impl Workbench {
             this.update(cx, |this, cx| match outcome {
                 Ok(Ok(Some(paths))) => this.attach_paths(&pane_id, paths, cx),
                 Ok(Ok(None)) => {}
-                Ok(Err(error)) => {
-                    this.report(format!("The file picker could not open: {error}"), cx)
-                }
+                Ok(Err(error)) => this.report(
+                    kind::ATTACH_PICKER_FAILED,
+                    format!("The file picker could not open: {error}"),
+                    cx,
+                ),
                 // The picker was dropped before it answered: the person is told so.
-                Err(_) => this.report("The file picker closed without answering.".to_owned(), cx),
+                Err(_) => this.report(
+                    kind::ATTACH_PICKER_CLOSED,
+                    "The file picker closed without answering.".to_owned(),
+                    cx,
+                ),
             })
         })
         .detach();
@@ -145,8 +152,8 @@ impl Workbench {
     }
 
     /// Says something went wrong with a request the person made, in the banner under the top bar.
-    pub(crate) fn report(&mut self, message: String, cx: &mut Context<Self>) {
-        self.state.problem = Some(message);
+    pub(crate) fn report(&mut self, kind: &str, message: String, cx: &mut Context<Self>) {
+        self.state.report(kind, message);
         cx.notify();
     }
 }

@@ -235,8 +235,8 @@ install holds after its updates) crashes with a segmentation fault inside LLVM, 
 `llvmpipe_update_fs`, while compiling the first shader the window draws, so the window never
 appears. `sudo dnf upgrade mesa-vulkan-drivers` (Mesa 26.2.4) fixes it. `vulkaninfo --summary`
 shows the driver in use. The client prints one line to stderr when it draws on a software
-renderer, naming it and its Mesa version (and shows it in a line under the top bar until it is
-dismissed), and when no driver can open the window it prints the
+renderer, naming it and its Mesa version (and shows it in a line under the top bar until the
+person dismisses it, which is remembered), and when no driver can open the window it prints the
 packages above. A client started from a menu has no terminal, so the same lines (and every other
 log line) are also written to `desktop.log`; see "The desktop client's log" below.
 

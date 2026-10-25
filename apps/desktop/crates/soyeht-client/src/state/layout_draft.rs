@@ -91,7 +91,7 @@ impl State {
         ) {
             workspace.layout = confirmed.clone();
         }
-        self.problem = Some(NOT_SAVED.to_owned());
+        self.report(super::problem::kind::LAYOUT_NOT_SAVED, NOT_SAVED);
     }
 }
 

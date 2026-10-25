@@ -27,6 +27,7 @@ mod layout_edit;
 mod logging;
 mod loop_form;
 mod neo;
+mod notices;
 mod open_menu;
 mod os_notify;
 mod pane_ui;

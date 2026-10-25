@@ -17,6 +17,9 @@ pub struct LocalPreferences {
     /// The theme the person picked, by the name the Mac persists (`neoDeepForest`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
+    /// The standing notes the person dismissed for good, by id (`softwareRenderer`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dismissed_notices: Vec<String>,
 }
 
 /// The directory the file lives in: the one `socket` is in, so a disposable engine
@@ -26,6 +29,20 @@ pub fn directory(socket: &Path) -> PathBuf {
 }
 
 impl LocalPreferences {
+    /// Whether the person dismissed the note `id` for good.
+    pub fn is_dismissed(&self, id: &str) -> bool {
+        self.dismissed_notices
+            .iter()
+            .any(|dismissed| dismissed == id)
+    }
+
+    /// Keeps the note `id` dismissed.
+    pub fn dismiss(&mut self, id: &str) {
+        if !self.is_dismissed(id) {
+            self.dismissed_notices.push(id.to_owned());
+        }
+    }
+
     /// What `directory` holds. A missing file is a first run; a file that cannot be read or
     /// parsed counts as empty and is logged, so a damaged file never stops the window opening.
     pub fn load(directory: &Path) -> Self {
@@ -70,13 +87,44 @@ mod tests {
         let directory = scratch("roundtrip").join("nested");
         let chosen = LocalPreferences {
             theme: Some("neoDeepForest".into()),
+            ..LocalPreferences::default()
         };
         chosen.save(&directory).unwrap();
         assert_eq!(LocalPreferences::load(&directory), chosen);
-        let replaced = LocalPreferences { theme: None };
+        let replaced = LocalPreferences::default();
         replaced.save(&directory).unwrap();
         assert_eq!(LocalPreferences::load(&directory), replaced);
         let _ = fs::remove_dir_all(directory.parent().unwrap());
+    }
+
+    #[test]
+    fn a_dismissed_note_stays_dismissed_and_keeps_the_theme() {
+        let directory = scratch("dismissed");
+        let mut saved = LocalPreferences {
+            theme: Some("neoDeepForest".into()),
+            ..LocalPreferences::default()
+        };
+        assert!(!saved.is_dismissed("softwareRenderer"));
+        saved.dismiss("softwareRenderer");
+        saved.dismiss("softwareRenderer");
+        saved.save(&directory).unwrap();
+        let loaded = LocalPreferences::load(&directory);
+        assert!(loaded.is_dismissed("softwareRenderer"));
+        assert!(!loaded.is_dismissed("other"));
+        assert_eq!(loaded.dismissed_notices.len(), 1);
+        assert_eq!(loaded.theme.as_deref(), Some("neoDeepForest"));
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_file_from_before_notes_could_be_dismissed_still_loads() {
+        let directory = scratch("older");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join(FILE), r#"{"theme":"neoMilk"}"#).unwrap();
+        let loaded = LocalPreferences::load(&directory);
+        assert_eq!(loaded.theme.as_deref(), Some("neoMilk"));
+        assert!(loaded.dismissed_notices.is_empty());
+        let _ = fs::remove_dir_all(&directory);
     }
 
     #[test]

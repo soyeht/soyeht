@@ -42,6 +42,26 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// A failure logs as its class, never as its message: an I/O error's text can carry a path and
+/// an engine's own words can carry anything. An engine refusal logs its protocol error kind.
+impl soyeht_platform::log::Failure for Error {
+    fn failure_kind(&self) -> String {
+        match self {
+            Self::Protocol(_) => "protocol".to_owned(),
+            Self::Io(error) => format!("io:{:?}", error.kind()),
+            Self::Json(_) => "json".to_owned(),
+            Self::Remote(error) => match serde_json::to_value(&error.data.kind) {
+                Ok(serde_json::Value::String(kind)) => kind,
+                _ => "remote".to_owned(),
+            },
+            Self::Timeout(_) => "timeout".to_owned(),
+            Self::Disconnected => "disconnected".to_owned(),
+            Self::Invalid(_) => "invalid".to_owned(),
+            Self::Busy => "busy".to_owned(),
+        }
+    }
+}
+
 impl From<soyeht_protocol::Error> for Error {
     fn from(error: soyeht_protocol::Error) -> Self {
         Self::Protocol(error)

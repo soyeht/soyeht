@@ -5,6 +5,7 @@
 use crate::workbench::Workbench;
 use gpui::{Bounds, Context, DragMoveEvent, KeyDownEvent, Pixels, SharedString, Window};
 use soyeht_client::layout::{Rect, Zone, zone_at};
+use soyeht_client::state::problem::kind;
 
 const NOT_MOVED: &str = "Couldn't move the pane. The layout was not changed.";
 
@@ -102,7 +103,7 @@ impl Workbench {
             if let Ok(effects) = self.state.move_pane(&drag.pane_id, target, zone) {
                 self.run_effects(effects);
             } else {
-                self.state.problem = Some(NOT_MOVED.to_owned());
+                self.state.report(kind::LAYOUT_NOT_MOVED, NOT_MOVED);
             }
         }
         cx.notify();

@@ -48,7 +48,10 @@ impl State {
     pub(crate) fn adopt_tasks(&mut self, tasks: &[Value], attention: &[Value]) {
         match decode_all::<Task>(tasks) {
             Ok(items) => self.tasks = items,
-            Err(error) => self.problem = Some(format!("The tasks could not be read ({error}).")),
+            Err(error) => self.report(
+                crate::state::problem::kind::TASKS_UNREADABLE,
+                format!("The tasks could not be read ({error})."),
+            ),
         }
         let known: Vec<String> = self.tasks.iter().map(|task| task.task_id.clone()).collect();
         self.task_details.retain(|id, _| known.contains(id));
@@ -67,7 +70,10 @@ impl State {
                 }
             }
             Err(error) => {
-                self.problem = Some(format!("What needs you could not be read ({error})."));
+                self.report(
+                    crate::state::problem::kind::ATTENTION_UNREADABLE,
+                    format!("What needs you could not be read ({error})."),
+                );
             }
         }
     }
