@@ -5,6 +5,7 @@
 //! stopped, the scratch directory removed and the session transcript deleted.
 
 use super::process::harden;
+use soyeht_platform::fs::{LockError, lock_singleton};
 use soyeht_ptyd::{
     child::{Child, Reach},
     io::Output,
@@ -43,12 +44,35 @@ const INHERITED: [&str; 10] = [
     "XDG_CONFIG_HOME",
 ];
 
+/// Takes turns on the scratch directory. A session removes and recreates it, which would pull it
+/// from under a child another session started in it: that session may be a refresh of another
+/// engine on the machine (the installed app, another profile), so the turn is a lock on a
+/// directory beside the scratch directory, not a lock in this process. The turn is waited for
+/// within the session's own time. A path that names no directory, or a lock that cannot be made,
+/// leaves the session unrun.
+fn take_turn(request: &TerminalRequest) -> Option<File> {
+    let name = request.workdir.file_name()?.to_string_lossy().into_owned();
+    let directory = request.workdir.with_file_name(format!("{name}-lock"));
+    let deadline = Instant::now() + request.timeout;
+    loop {
+        match lock_singleton(&directory, "session") {
+            Ok(lock) => return Some(lock),
+            Err(LockError::Held) if Instant::now() < deadline => thread::sleep(POLL),
+            // The session reports an unavailable source; the lock's own error says nothing more.
+            Err(LockError::Held | LockError::Io(..)) => return None,
+        }
+    }
+}
+
 pub(super) fn run(
     program: &Path,
     path_env: &str,
     request: &TerminalRequest,
     driver: &mut dyn TerminalDriver,
 ) -> TerminalRun {
+    let Some(_turn) = take_turn(request) else {
+        return TerminalRun::Incomplete;
+    };
     if prepare(request).is_err() {
         cleanup(request);
         return TerminalRun::Incomplete;
@@ -272,34 +296,46 @@ mod tests {
         }
     }
 
+    /// The script session in `workdir`, run with the scripted driver.
+    fn run_script(workdir: &Path, transcript: Option<PathBuf>, timeout: u64) -> TerminalRun {
+        let request = TerminalRequest {
+            program: shell_name().into(),
+            args: vec![shell_flag().into(), SCRIPT.into()],
+            env: Vec::new(),
+            workdir: workdir.to_path_buf(),
+            files: vec![("marker.json".into(), b"{}".to_vec())],
+            transcript,
+            timeout: Duration::from_secs(timeout),
+        };
+        run(
+            &PathBuf::from(shell_path()),
+            path_env(),
+            &request,
+            &mut Script { sent: false },
+        )
+    }
+
+    fn panel_shown(outcome: &TerminalRun) -> bool {
+        matches!(outcome, TerminalRun::Finished(screen) if screen.contains("PANEL 42%"))
+    }
+
+    fn scratch_directory() -> PathBuf {
+        let scratch = std::env::temp_dir().join(format!("sn-terminal-{}", Uuid::new_v4()));
+        fs::create_dir_all(&scratch).unwrap();
+        scratch
+    }
+
     #[test]
     fn a_session_is_driven_and_leaves_nothing_behind() {
-        let scratch = std::env::temp_dir().join(format!("sn-terminal-{}", Uuid::new_v4()));
+        let scratch = scratch_directory();
         let workdir = scratch.join("work");
         let transcript_dir = scratch.join("projects/key");
         fs::create_dir_all(&transcript_dir).unwrap();
         let transcript = transcript_dir.join("session.jsonl");
         fs::write(&transcript, b"{}").unwrap();
-        let request = TerminalRequest {
-            program: shell_name().into(),
-            args: vec![shell_flag().into(), SCRIPT.into()],
-            env: Vec::new(),
-            workdir: workdir.clone(),
-            files: vec![("marker.json".into(), b"{}".to_vec())],
-            transcript: Some(transcript.clone()),
-            timeout: Duration::from_secs(10),
-        };
         let started = Instant::now();
-        let outcome = run(
-            &PathBuf::from(shell_path()),
-            path_env(),
-            &request,
-            &mut Script { sent: false },
-        );
-        assert!(
-            matches!(&outcome, TerminalRun::Finished(screen) if screen.contains("PANEL 42%")),
-            "{outcome:?}"
-        );
+        let outcome = run_script(&workdir, Some(transcript.clone()), 10);
+        assert!(panel_shown(&outcome), "{outcome:?}");
         assert!(
             started.elapsed() < Duration::from_secs(8),
             "the session was not stopped"
@@ -307,6 +343,35 @@ mod tests {
         assert!(!workdir.exists());
         assert!(!transcript.exists());
         assert!(!transcript_dir.exists());
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn sessions_sharing_a_scratch_directory_take_turns() {
+        let scratch = scratch_directory();
+        let workdir = scratch.join("work");
+        let outcomes: Vec<TerminalRun> = thread::scope(|scope| {
+            let runs: Vec<_> = (0..4)
+                .map(|_| scope.spawn(|| run_script(&workdir, None, 30)))
+                .collect();
+            runs.into_iter().map(|run| run.join().unwrap()).collect()
+        });
+        assert!(outcomes.iter().all(panel_shown), "{outcomes:?}");
+        assert!(!workdir.exists());
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn a_lock_left_by_a_session_that_ended_blocks_nobody() {
+        let scratch = scratch_directory();
+        // What a crashed engine leaves: the lock directory and its file, held by no process.
+        let leftover = scratch.join("work-lock");
+        fs::create_dir_all(&leftover).unwrap();
+        fs::write(leftover.join("session"), b"").unwrap();
+        let started = Instant::now();
+        let outcome = run_script(&scratch.join("work"), None, 10);
+        assert!(panel_shown(&outcome), "{outcome:?}");
+        assert!(started.elapsed() < Duration::from_secs(8));
         fs::remove_dir_all(scratch).unwrap();
     }
 }

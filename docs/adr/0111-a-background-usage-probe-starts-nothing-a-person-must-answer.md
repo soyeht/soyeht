@@ -53,6 +53,24 @@ The keychain item is asked for at most once per refresh (the context of a read
 memoizes it), so the stored-login check never adds a second consent prompt to
 the one the OAuth source already caused.
 
+Sessions take turns on their scratch directory. The directory has a fixed name
+(Claude Code records the path once among its projects, and a name per run would
+add an entry every time), and a session removes and recreates it, which would
+pull it from under another session's running child. The other session can be a
+refresh of another engine on the machine: the installed app, a development
+build, a second profile. So the turn is an operating-system file lock (`flock`
+on Unix, `LockFileEx` on Windows) on a file inside a directory beside the
+scratch directory, named after it with `-lock`. The session waits for the turn
+within its own 24 s. The lock directory and its file stay after a run on
+purpose: the lock is not their existence but the hold on the open file, which
+the system drops when the holder exits or crashes, so a crashed engine never
+blocks the others and the next session reuses the same file. A session that
+cannot get the turn is unrun and reads as a failed source.
+
+A session that fails (a screen it does not know, a program that never answers)
+is not started again by the background for the longest usage backoff, like a
+signed-out answer; a click tries at once.
+
 A signed-out answer backs off. The Claude session source is not asked again by
 a background read for 30 minutes (the longest backoff). The engine's usage service keeps a streak per
 provider: while a provider stays signed out, the background schedule reads it

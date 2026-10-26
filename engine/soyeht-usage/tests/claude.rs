@@ -361,6 +361,30 @@ fn a_screen_with_new_wording_gets_no_key_and_the_read_fails_without_a_browser() 
 }
 
 #[test]
+fn a_screen_that_stays_unknown_is_not_tried_again_by_the_background_for_the_longest_backoff() {
+    let mut host =
+        FakeHost::new(Platform::Windows).file(".claude/.credentials.json", &login(NOW * 1000 - 1));
+    host.screens = Some(vec![
+        "Teach auto mode about your environment?\n\n ❯ 1. Yes\n   2. No\n".to_owned(),
+    ]);
+    let host = Arc::new(host);
+    let planner = Planner::new(host.clone());
+    let at = |now: u64, trigger: Trigger| {
+        planner.refresh(&UsageProvider::Claude, trigger, now, "t");
+        host.terminal_runs()
+    };
+    assert_eq!(at(NOW, Trigger::Automatic), 1);
+    // Every five minutes the schedule asks again; the session is not started.
+    for later in [300, 600, 1799] {
+        assert_eq!(at(NOW + later, Trigger::Automatic), 1, "{later} s");
+    }
+    assert_eq!(at(NOW + 1800, Trigger::Automatic), 2);
+    // A click always tries.
+    assert_eq!(at(NOW + 1801, Trigger::Manual), 3);
+    assert!(no_key_sent(&host));
+}
+
+#[test]
 fn the_keychain_is_asked_once_per_refresh_whatever_sources_need_it() {
     // An expired login in the keychain: the endpoint source reads it, and the session source
     // looks for a stored login in the same item.

@@ -18,9 +18,11 @@ pub(crate) const PROGRAM: &str = "claude";
 /// CodexBar reuses a background CLI reading for 15 minutes instead of starting Claude again
 /// (`ClaudeCLIUsageSpawnThrottle`).
 const AUTOMATIC_REUSE_SEC: u64 = 15 * 60;
-/// A signed-out account stays signed out until the person acts; the stored login is still read
-/// by the other sources on every refresh, so signing in is noticed without the session.
-const SIGNED_OUT_COOLDOWN_SEC: u64 = soyeht_protocol::limits::USAGE_MAX_BACKOFF_SEC as u64;
+/// How long automatic refreshes leave the session alone after it answered "sign in needed" or
+/// failed (a screen it does not know stays unknown): the longest usage backoff. A signed-out
+/// account stays signed out until the person acts, and the stored login is still read by the
+/// other sources on every refresh, so signing in is noticed without the session.
+const HELD_BACK_SEC: u64 = soyeht_protocol::limits::USAGE_MAX_BACKOFF_SEC as u64;
 const TIMEOUT: Duration = Duration::from_secs(24);
 /// Claude Code needs a moment to draw its prompt before it accepts a command.
 const READY_AFTER: Duration = Duration::from_secs(2);
@@ -42,7 +44,7 @@ impl Source for CliSource {
 
     fn automatic_cooldown_sec(&self, failure: &Failure) -> Option<u64> {
         match failure {
-            Failure::LoginNeeded => Some(SIGNED_OUT_COOLDOWN_SEC),
+            Failure::LoginNeeded | Failure::Failed => Some(HELD_BACK_SEC),
             other => default_cooldown_sec(other),
         }
     }
