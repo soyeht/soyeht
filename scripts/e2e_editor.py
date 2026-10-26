@@ -62,14 +62,18 @@ class EditorServices(AgentServices):
         current.update(values)
         self.usage_mode.write_text(json.dumps(current))
         if "first" in values:
-            if values["first"] == "ok":
-                self.claude_login.write_text(json.dumps({"claudeAiOauth": {
-                    "accessToken": "e2e-access-token",
-                    "expiresAt": 4102444800000,
-                    "scopes": ["user:inference", "user:profile"],
-                }}))
-            else:
-                self.claude_login.unlink(missing_ok=True)
+            # Without a stored login the usage source answers "sign in needed" and starts nothing
+            # (ADR 0111): "signed_out". "unavailable" is a signed-in machine whose endpoint cannot
+            # read (an expired login), so the session source looks for the program, which the
+            # fixture does not have: "tool not found".
+            expires = 4102444800000 if values["first"] == "ok" else 1
+            self.claude_login.write_text(json.dumps({"claudeAiOauth": {
+                "accessToken": "e2e-access-token",
+                "expiresAt": expires,
+                "scopes": ["user:inference", "user:profile"],
+            }}))
+            if values["first"] == "signed_out":
+                self.claude_login.unlink()
 
     def _write_reader(self, path, source):
         path.write_text(source)
@@ -260,11 +264,12 @@ def acceptance_usage(services, client, results):
     # A failed refresh keeps the last good reading as last known and names why it failed.
     for provider, modes, reason in (
         ("claude", {"first": "unavailable"}, "tool_not_found"),
+        ("claude", {"first": "signed_out"}, "login_needed"),
         ("cursor", {"third": "login_needed"}, "login_needed"),
         ("cursor", {"third": "no_access"}, "no_access"),
     ):
         services.set_usage_modes(**modes)
-        kept = refresh_provider(client, provider, f"usage-{reason}")
+        kept = refresh_provider(client, provider, f"usage-{provider}-{reason}")
         require(kept["state"] == "stale" and kept.get("unavailableReason") == reason
                 and kept.get("primary"), f"{provider} did not keep its reading after {reason}")
         client = services.restart_engine()
