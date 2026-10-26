@@ -9,7 +9,11 @@
 //! (CodexBar keeps the previous snapshot). The first failure after a current reading is not
 //! shown at all, as CodexBar's consecutive-failure gate hides it.
 
-use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
+use crate::streak::Streak;
+use soyeht_protocol::{
+    UsageProvider, UsageSource, UsageState, UsageUnavailableReason,
+    limits::{USAGE_AUTO_REFRESH_INTERVAL_SEC, USAGE_MAX_BACKOFF_SEC},
+};
 use soyeht_usage::{
     ManualRefresh, Planner, Reading, RefreshOutcome, RefreshPolicy, Trigger, host::Host,
 };
@@ -20,6 +24,7 @@ pub struct Service {
     policy: RefreshPolicy,
     readings: Vec<Reading>,
     failure_streaks: Vec<(UsageProvider, u32)>,
+    signed_out: Vec<(UsageProvider, Streak)>,
     in_flight: Vec<UsageProvider>,
     schedules: bool,
 }
@@ -36,6 +41,8 @@ pub struct PreparedRefresh {
 #[derive(Debug)]
 pub struct RefreshBatch {
     now_sec: u64,
+    /// A click read it: a click is neither counted in the signed-out streak nor held back.
+    manual: bool,
     outcomes: Vec<RefreshOutcome>,
 }
 
@@ -46,6 +53,9 @@ pub struct Committed {
     pub shown: Reading,
     pub fresh: bool,
     pub changed: bool,
+    /// This answer is to be logged as a signed-out provider: the first one of a streak, and
+    /// then each time the count of reads reaches a power of two.
+    pub log_signed_out: bool,
 }
 
 pub enum ManualRefusal {
@@ -80,6 +90,7 @@ impl PreparedRefresh {
         });
         RefreshBatch {
             now_sec: self.now_sec,
+            manual: self.trigger == Trigger::Manual,
             outcomes,
         }
     }
@@ -93,6 +104,7 @@ impl Service {
             policy: RefreshPolicy::default(),
             readings: stored.iter().map(Reading::restored_from_store).collect(),
             failure_streaks: Vec::new(),
+            signed_out: Vec::new(),
             in_flight: Vec::new(),
             schedules,
         }
@@ -211,6 +223,7 @@ impl Service {
             self.in_flight.retain(|item| item != &provider);
             self.policy
                 .record(&provider, batch.now_sec, outcome.transient.as_ref());
+            let log_signed_out = self.track_signed_out(&provider, &outcome.reading, batch.manual);
             let previous = self.reading(&provider).cloned();
             let fresh = outcome.reading.state == UsageState::Ok;
             let shown = if fresh {
@@ -226,9 +239,49 @@ impl Service {
                 shown,
                 fresh,
                 changed,
+                log_signed_out,
             });
         }
         committed
+    }
+
+    /// A signed-out provider is read again at doubling intervals, from the background schedule's
+    /// five minutes up to the longest backoff; any other answer ends the streak. A click is not
+    /// held back, and a click that finds it still signed out leaves the streak as it is.
+    /// Returns whether this answer is to be logged.
+    fn track_signed_out(
+        &mut self,
+        provider: &UsageProvider,
+        reading: &Reading,
+        manual: bool,
+    ) -> bool {
+        let position = match self.signed_out.iter().position(|(p, _)| p == provider) {
+            Some(position) => position,
+            None => {
+                self.signed_out.push((
+                    provider.clone(),
+                    Streak::retrying(
+                        (USAGE_AUTO_REFRESH_INTERVAL_SEC as i64) * 1_000,
+                        (USAGE_MAX_BACKOFF_SEC as i64) * 1_000,
+                    ),
+                ));
+                self.signed_out.len() - 1
+            }
+        };
+        let streak = &mut self.signed_out[position].1;
+        let signed_out = reading.state == UsageState::LoginNeeded;
+        if signed_out && manual {
+            return false;
+        }
+        let log = signed_out && streak.fail("login_needed");
+        if signed_out {
+            let hold = u64::try_from(streak.next_delay_ms() / 1_000).unwrap_or(0);
+            self.policy.hold(provider, hold);
+        } else {
+            streak.succeed();
+            self.policy.hold(provider, 0);
+        }
+        log
     }
 
     fn set_streak(&mut self, provider: &UsageProvider, value: u32) {

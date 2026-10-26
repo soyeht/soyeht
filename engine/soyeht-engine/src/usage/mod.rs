@@ -135,6 +135,7 @@ impl Core {
     ) -> Result<Value> {
         let now_sec = nonnegative_time(self.clock.now_unix());
         let committed = self.usage.commit(batch);
+        log_signed_out(&committed);
         let readings: Vec<UsageReading> = committed
             .iter()
             .map(|item| wire_reading(&item.shown.for_display(now_sec)))
@@ -170,6 +171,7 @@ impl Core {
     pub(crate) fn usage_automatic_commit(&mut self, batch: RefreshBatch) -> Result<()> {
         let now_sec = nonnegative_time(self.clock.now_unix());
         let committed = self.usage.commit(batch);
+        log_signed_out(&committed);
         let changed: Vec<UsageReading> = committed
             .iter()
             .filter(|item| item.changed || item.fresh)
@@ -258,6 +260,18 @@ fn change_events(readings: &[UsageReading]) -> Result<Vec<(String, Value)>> {
         .map(|reading| Ok((event::USAGE_CHANGED.into(), serde_json::to_value(reading)?)))
         .collect::<serde_json::Result<Vec<_>>>()
         .map_err(|_| errors::internal("Usage event serialization failed"))
+}
+
+/// A provider that stays signed out is logged when it starts and then at doubling counts, not on
+/// every refresh (the service keeps the streak).
+fn log_signed_out(committed: &[Committed]) {
+    for item in committed.iter().filter(|item| item.log_signed_out) {
+        let provider = serde_json::to_value(&item.shown.provider).unwrap_or_default();
+        log::event(
+            "engine.usage_signed_out",
+            &[("provider", provider.as_str().unwrap_or_default())],
+        );
+    }
 }
 
 /// Fresh successes to store, with the time they were read.

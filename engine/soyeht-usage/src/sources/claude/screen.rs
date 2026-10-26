@@ -26,6 +26,21 @@ pub(crate) fn normalized(text: &str) -> String {
 
 /// What a signed-out Claude Code prints instead of the panel.
 const SIGNED_OUT: [&str; 4] = ["/login", "claudelogin", "notauthenticated", "invalidapikey"];
+/// The prompts that wait for a person: the first-run setup and the choice of a login method.
+const WAITS_FOR_A_PERSON: [&str; 4] = [
+    "choosethetextstyle",
+    "selectloginmethod",
+    "claudeaccountwithsubscription",
+    "browserdidn'topen",
+];
+
+/// The screen asks the person to set the program up or to sign in. A background probe stops
+/// here without pressing a key: the next key would choose a login method and open the browser.
+pub(crate) fn waits_for_a_person(normalized_screen: &str) -> bool {
+    WAITS_FOR_A_PERSON
+        .iter()
+        .any(|marker| normalized_screen.contains(marker))
+}
 
 /// The panel has a session line with a percentage, or the screen shows an error or a signed-out
 /// session, so the driver can stop.
@@ -40,9 +55,10 @@ pub(crate) fn usage_ready(normalized_screen: &str) -> bool {
 }
 
 fn signed_out(normalized_screen: &str) -> bool {
-    SIGNED_OUT
-        .iter()
-        .any(|marker| normalized_screen.contains(marker))
+    waits_for_a_person(normalized_screen)
+        || SIGNED_OUT
+            .iter()
+            .any(|marker| normalized_screen.contains(marker))
 }
 
 pub(crate) fn parse(text: &str, now_sec: u64) -> ScreenOutcome {

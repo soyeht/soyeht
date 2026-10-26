@@ -10,12 +10,15 @@ mod jwt;
 
 use crate::{
     Window,
-    host::{CookieJar, CookieRead, FileRead, Host, HttpResult, Platform},
+    host::{CookieJar, CookieRead, FileRead, Host, HttpResult, Platform, SecretRead},
 };
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
 use serde_json::Value;
 use soyeht_protocol::{UsageProvider, UsageSource};
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, PoisonError},
+};
 
 /// What the caller of a refresh is: CodexBar lets a user's own click bypass the cooldowns that
 /// protect background refreshes.
@@ -25,9 +28,32 @@ pub enum Trigger {
     Manual,
 }
 
-#[derive(Debug, Clone, Copy)]
+/// What one refresh of one provider shares between its sources.
+#[derive(Clone)]
 pub(crate) struct ReadContext {
     pub now_sec: u64,
+    keychain: Arc<Mutex<Vec<(String, SecretRead)>>>,
+}
+
+impl ReadContext {
+    pub(crate) fn new(now_sec: u64) -> Self {
+        Self {
+            now_sec,
+            keychain: Arc::default(),
+        }
+    }
+
+    /// A keychain item, asked for at most once per refresh: every ask can show the person a
+    /// consent prompt, and two sources of one refresh may need the same item.
+    pub(crate) fn keychain_password(&self, host: &dyn Host, service: &str) -> SecretRead {
+        let mut asked = self.keychain.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((_, read)) = asked.iter().find(|(name, _)| name == service) {
+            return read.clone();
+        }
+        let read = host.keychain_password(service, None);
+        asked.push((service.to_owned(), read.clone()));
+        read
+    }
 }
 
 /// A normalized reading before the planner stamps provider and source on it.

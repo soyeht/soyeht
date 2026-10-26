@@ -89,6 +89,13 @@ Rules every source keeps:
 - The macOS consent prompts for Claude Code's keychain item and for a
   browser's cookie key are expected; a declined prompt shows "no access" and
   is not asked again by the background for 6 hours.
+- A background read never starts anything a person must answer (ADR 0111):
+  no browser, no prompt, no stdin. The hidden CLI session starts only when
+  Claude Code holds a stored login (an expired one counts), presses a key only on
+  a screen it knows (an unknown screen is waited out, never answered), and a signed-out answer is not
+  retried by the background for 30 min. A provider that stays signed out is
+  read after 10 min, 20 min, then every 30 min, until it signs in; a click
+  always reads at once.
 - The hidden CLI session runs in a scratch directory under the temporary
   directory with tools and MCP servers off, ends within 24 s, and leaves no
   scratch directory or session transcript behind. Claude Code records the

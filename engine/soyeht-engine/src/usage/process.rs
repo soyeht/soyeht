@@ -1,6 +1,8 @@
 //! Bounded child processes for the usage host: `curl` for HTTPS, `security` for the macOS
 //! keychain and newline-delimited JSON-RPC for the Codex app server.
 //!
+//! Every program the host starts, here and in `terminal.rs`, begins from [`harden`]: a probe is
+//! background work, so it must never open a browser, show a prompt or wait for a person.
 //! `curl` and `security` run through `soyeht_process`, with a deadline and a bounded output;
 //! the JSON-RPC child is interactive and keeps its own deadline. Credentials reach `curl` on standard
 //! input as configuration, never on its command line, and no response body or error text is
@@ -29,6 +31,25 @@ const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(60);
 const KEYCHAIN_ITEM_NOT_FOUND: i32 = 44;
 const STATUS_MARKER: &[u8] = b"\nSOYEHT_STATUS:";
 
+/// A program that opens nothing and exits at once. Windows has no stock program like it and its
+/// openers do not read `BROWSER`, so nothing is set there.
+#[cfg(unix)]
+pub(super) const NO_BROWSER: &str = "/usr/bin/true";
+
+/// The one rule for every command the usage host starts: `BROWSER`, which Unix opener scripts
+/// and many command line tools read, names a program that does nothing. Standard input needs no
+/// rule here: the bounded runner gives none, and the JSON-RPC child and the pseudo terminal get
+/// a pipe that only the source's own conversation writes to. The sources add the real guards:
+/// Claude Code is not started without a stored login, and its driver presses no key on a screen
+/// it does not know.
+#[cfg(unix)]
+pub(super) fn harden(command: &mut Command) {
+    command.env("BROWSER", NO_BROWSER);
+}
+
+#[cfg(windows)]
+pub(super) fn harden(_command: &mut Command) {}
+
 /// Runs `program` with `input` on standard input through the bounded runner: a deadline, the
 /// usage output budget and no child left behind.
 ///
@@ -42,6 +63,7 @@ fn run_bounded(
     timeout: Duration,
 ) -> soyeht_process::Result<soyeht_process::Output> {
     let mut command = Command::new(program);
+    harden(&mut command);
     command.args(args);
     let limits = soyeht_process::Limits::new(timeout, limits::JSON_BYTES);
     match input {
@@ -184,9 +206,11 @@ enum Line {
 /// One JSON-RPC exchange with a child that speaks one JSON document per line.
 pub(super) fn json_rpc(program: &Path, path_env: &str, request: &RpcRequest) -> RpcRun {
     let mut command = Command::new(program);
+    harden(&mut command);
     command
         .args(&request.args)
         .env("PATH", path_env)
+        // The conversation itself: the only input this child gets.
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -325,5 +349,17 @@ mod tests {
             HttpResult::TransportFailed
         );
         assert_eq!(retry_after("99999"), Some(1_800));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn every_probe_command_names_a_browser_that_does_nothing() {
+        let mut command = Command::new("sh");
+        harden(&mut command);
+        command.args(["-c", "echo \"[$BROWSER]\""]);
+        let limits = soyeht_process::Limits::new(Duration::from_secs(10), limits::JSON_BYTES);
+        let output = soyeht_process::run(command, limits).unwrap();
+        let text = String::from_utf8_lossy(&output.stdout);
+        assert!(text.contains(&format!("[{NO_BROWSER}]")), "{text}");
     }
 }

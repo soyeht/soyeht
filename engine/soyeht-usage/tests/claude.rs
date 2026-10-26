@@ -30,11 +30,28 @@ fn usage_body() -> &'static [u8] {
     include_bytes!("fixtures/claude-oauth-usage.json")
 }
 
-fn panel() -> Vec<String> {
+/// A real prompt of Claude Code, and the same screen with the command typed.
+const REPL: &str = include_str!("fixtures/claude-cli-repl.txt");
+
+fn typed() -> String {
+    REPL.replace("Try \"create a util logging.py that...\"", "/usage")
+}
+
+/// The screens of a session that reaches the panel: the prompt, the typed command, the panel.
+fn screens_ending_in(last: &str) -> Vec<String> {
     vec![
-        "> ".into(),
-        include_str!("fixtures/claude-cli-usage.txt").into(),
+        REPL.into(),
+        REPL.into(),
+        REPL.into(),
+        REPL.into(),
+        REPL.into(),
+        typed(),
+        last.into(),
     ]
+}
+
+fn panel() -> Vec<String> {
+    screens_ending_in(include_str!("fixtures/claude-cli-usage.txt"))
 }
 
 fn refresh(host: &Arc<FakeHost>, trigger: Trigger, now: u64) -> RefreshOutcome {
@@ -153,7 +170,7 @@ fn rejected_oauth_falls_back_to_a_hidden_cli_session_that_leaves_nothing_behind(
             .join(".claude/projects/-tmp-scratch-soyeht-usage-claude")
             .join(format!("{session}.jsonl"))
     );
-    assert_eq!(sent.first().unwrap(), b"/usage\r");
+    assert_eq!(sent.first().unwrap(), b"/usage");
 }
 
 #[test]
@@ -193,9 +210,191 @@ fn web_session_is_the_last_macos_fallback() {
     assert_eq!(cookie_header, "sessionKey=sk-ant-sid01-recorded-cookie");
 }
 
+/// What a signed-out Claude Code shows: a menu whose next key opens the sign-in page.
+const LOGIN_MENU: &str = "Welcome to Claude Code\n\n Select login method:\n\n ❯ 1. Claude account with subscription · Pro, Max, Team, or Enterprise\n   2. Anthropic Console account · API usage billing\n";
+
+/// No terminal run of the host received a key.
+fn no_key_sent(host: &FakeHost) -> bool {
+    host.calls().iter().all(|call| match call {
+        Call::Terminal { sent, .. } => sent.is_empty(),
+        _ => true,
+    })
+}
+
+#[test]
+fn without_a_stored_login_no_session_starts_and_the_ring_says_sign_in() {
+    for platform in [Platform::Linux, Platform::Windows, Platform::MacOs] {
+        let mut host = FakeHost::new(platform);
+        host.screens = Some(vec![LOGIN_MENU.into()]);
+        let host = Arc::new(host);
+        let outcome = refresh(&host, Trigger::Automatic, NOW);
+        assert_eq!(
+            outcome.reading.state,
+            UsageState::LoginNeeded,
+            "{platform:?}"
+        );
+        assert_eq!(outcome.reading.source, UsageSource::ClaudeCliUsage);
+        assert_eq!(host.terminal_runs(), 0, "{platform:?} started Claude Code");
+        assert!(
+            host.calls()
+                .iter()
+                .all(|call| !matches!(call, Call::Terminal { .. } | Call::Http { .. })),
+            "{platform:?}: {:?}",
+            host.calls()
+        );
+    }
+}
+
+#[test]
+fn a_login_file_without_a_token_is_not_a_login() {
+    for file in [
+        &b"{}"[..],
+        br#"{"claudeAiOauth":{"accessToken":" "}}"#,
+        b"not json",
+    ] {
+        let mut host = FakeHost::new(Platform::Windows).file(".claude/.credentials.json", file);
+        host.screens = Some(vec![LOGIN_MENU.into()]);
+        let host = Arc::new(host);
+        let outcome = refresh(&host, Trigger::Automatic, NOW);
+        assert_eq!(outcome.reading.state, UsageState::LoginNeeded);
+        assert_eq!(host.terminal_runs(), 0);
+    }
+}
+
+#[test]
+fn macos_without_a_keychain_login_or_with_it_declined_starts_no_session() {
+    for (keychain, state) in [
+        (SecretRead::Missing, UsageState::LoginNeeded),
+        (SecretRead::Denied, UsageState::NoAccess),
+    ] {
+        let mut host = FakeHost::new(Platform::MacOs);
+        host.keychain = keychain;
+        host.screens = Some(vec![LOGIN_MENU.into()]);
+        let host = Arc::new(host);
+        let outcome = refresh(&host, Trigger::Automatic, NOW);
+        assert_eq!(outcome.reading.state, state);
+        assert_eq!(host.terminal_runs(), 0);
+    }
+}
+
+#[test]
+fn an_expired_login_still_starts_the_session_because_claude_code_refreshes_it() {
+    // The endpoint is unreachable too, so the chain goes on to the session.
+    let host = Arc::new(FakeHost {
+        screens: Some(panel()),
+        ..FakeHost::new(Platform::Linux).file(".claude/.credentials.json", &login(NOW * 1000 - 1))
+    });
+    let outcome = refresh(&host, Trigger::Automatic, NOW);
+    assert_eq!(outcome.reading.source, UsageSource::ClaudeCliUsage);
+    assert_eq!(host.terminal_runs(), 1);
+}
+
+#[test]
+fn a_session_that_meets_the_login_menu_presses_no_key_and_is_not_started_again_soon() {
+    let mut host = FakeHost::new(Platform::Windows)
+        .file(".claude/.credentials.json", &login(NOW * 1000 - 1))
+        .respond(USAGE, 401, b"{}");
+    host.screens = Some(vec![LOGIN_MENU.into()]);
+    let host = Arc::new(host);
+    let planner = Planner::new(host.clone());
+    let first = planner.refresh(&UsageProvider::Claude, Trigger::Automatic, NOW, "a");
+    assert_eq!(first.reading.state, UsageState::LoginNeeded);
+    assert_eq!(first.reading.source, UsageSource::ClaudeCliUsage);
+    let sent: Vec<Vec<Vec<u8>>> = host
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            Call::Terminal { sent, .. } => Some(sent),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sent, vec![Vec::<Vec<u8>>::new()], "a key reached the menu");
+    // Inside the cooldown the session is not started, from the cooldown's own answer.
+    for later in [60, 29 * 60] {
+        let again = planner.refresh(&UsageProvider::Claude, Trigger::Automatic, NOW + later, "b");
+        assert_eq!(again.reading.state, UsageState::LoginNeeded);
+    }
+    assert_eq!(host.terminal_runs(), 1, "the session came back too soon");
+    planner.refresh(
+        &UsageProvider::Claude,
+        Trigger::Automatic,
+        NOW + 30 * 60,
+        "c",
+    );
+    assert_eq!(host.terminal_runs(), 2);
+    // A click always tries again.
+    planner.refresh(
+        &UsageProvider::Claude,
+        Trigger::Manual,
+        NOW + 30 * 60 + 1,
+        "d",
+    );
+    assert_eq!(host.terminal_runs(), 3);
+}
+
+#[test]
+fn a_screen_with_new_wording_gets_no_key_and_the_read_fails_without_a_browser() {
+    for screens in [
+        vec![
+            "Sign in to continue\n\n ❯ 1. Use your Claude subscription\n   2. Use an API key\n"
+                .to_owned(),
+        ],
+        vec![
+            String::new(),
+            String::new(),
+            "Sign in to continue\n ❯ 1. Use your Claude subscription\n".to_owned(),
+        ],
+    ] {
+        let mut host = FakeHost::new(Platform::Windows)
+            .file(".claude/.credentials.json", &login(NOW * 1000 - 1));
+        host.screens = Some(screens);
+        let host = Arc::new(host);
+        let outcome = refresh(&host, Trigger::Manual, NOW);
+        assert_eq!(outcome.reading.state, UsageState::Unavailable);
+        assert_eq!(
+            outcome.reading.unavailable_reason,
+            Some(UsageUnavailableReason::SourceFailed)
+        );
+        assert!(no_key_sent(&host));
+        assert_eq!(host.terminal_runs(), 1);
+    }
+}
+
+#[test]
+fn the_keychain_is_asked_once_per_refresh_whatever_sources_need_it() {
+    // An expired login in the keychain: the endpoint source reads it, and the session source
+    // looks for a stored login in the same item.
+    let mut host = FakeHost::new(Platform::MacOs);
+    host.keychain = SecretRead::Found(Secret::new(
+        String::from_utf8(login(NOW * 1000 - 1)).unwrap(),
+    ));
+    host.screens = Some(panel());
+    let host = Arc::new(host);
+    let outcome = refresh(&host, Trigger::Manual, NOW);
+    assert_eq!(outcome.reading.source, UsageSource::ClaudeCliUsage);
+    assert_eq!(host.terminal_runs(), 1);
+    let asked = host
+        .calls()
+        .iter()
+        .filter(|call| matches!(call, Call::Keychain(_)))
+        .count();
+    assert_eq!(asked, 1, "one refresh must show at most one consent prompt");
+}
+
+#[test]
+fn first_run_setup_screens_wait_for_a_person_and_get_no_key() {
+    let mut host = FakeHost::new(Platform::Linux).file(".claude/.credentials.json", &valid_login());
+    host.screens = Some(vec!["Let's get started.\n\nChoose the text style that looks best with your terminal\n ❯ 1. Dark mode\n".into()]);
+    let host = Arc::new(host);
+    let reading = refresh(&host, Trigger::Manual, NOW).reading;
+    assert_eq!(reading.state, UsageState::LoginNeeded);
+    assert!(no_key_sent(&host));
+}
+
 #[test]
 fn linux_reads_the_file_login_and_the_cli_but_no_keychain_or_browser() {
-    let host = Arc::new(FakeHost::new(Platform::Linux));
+    let host =
+        Arc::new(FakeHost::new(Platform::Linux).file(".claude/.credentials.json", &valid_login()));
     let outcome = refresh(&host, Trigger::Automatic, NOW);
     assert_eq!(outcome.reading.state, UsageState::Unavailable);
     assert_eq!(
@@ -206,7 +405,7 @@ fn linux_reads_the_file_login_and_the_cli_but_no_keychain_or_browser() {
     assert!(
         host.calls()
             .iter()
-            .all(|call| matches!(call, Call::Terminal { .. })),
+            .all(|call| matches!(call, Call::Terminal { .. } | Call::Http { .. })),
         "Linux touched a keychain or browser: {:?}",
         host.calls()
     );
@@ -252,7 +451,7 @@ fn every_source_failing_reports_the_last_attempt_and_no_values() {
     let mut host = FakeHost::new(Platform::MacOs)
         .file(".claude/.credentials.json", &valid_login())
         .respond(USAGE, 401, b"{}");
-    host.screens = Some(vec!["Invalid API key · Please run /login".into()]);
+    host.screens = Some(screens_ending_in("Invalid API key · Please run /login"));
     let host = Arc::new(host);
     let outcome = refresh(&host, Trigger::Manual, NOW);
     assert_eq!(outcome.reading.state, UsageState::LoginNeeded);

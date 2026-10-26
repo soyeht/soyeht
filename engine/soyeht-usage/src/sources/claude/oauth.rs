@@ -25,7 +25,7 @@ impl Source for OAuthSource {
     }
 
     fn read(&self, host: &dyn Host, context: ReadContext) -> Attempt {
-        let token = credential(host, context.now_sec)?;
+        let token = credential(host, &context)?;
         let request = HttpRequest::get(USAGE_URL, TIMEOUT)
             .bearer(&token)
             .header("Accept", "application/json")
@@ -39,7 +39,8 @@ impl Source for OAuthSource {
 
 /// The access token: Claude Code's credentials file first, then, on macOS, its keychain item.
 /// An expired or under-scoped login is "sign in needed": Soyeht never refreshes it.
-fn credential(host: &dyn Host, now_sec: u64) -> Result<Secret, Failure> {
+fn credential(host: &dyn Host, context: &ReadContext) -> Result<Secret, Failure> {
+    let now_sec = context.now_sec;
     let from_file = credentials_path(host)
         .ok_or(Failure::NotConfigured)
         .and_then(|path| read_json_file(host, &path))
@@ -47,7 +48,7 @@ fn credential(host: &dyn Host, now_sec: u64) -> Result<Secret, Failure> {
     match from_file {
         Ok(token) => Ok(token),
         Err(file_failure) if host.platform() == Platform::MacOs => {
-            match host.keychain_password(KEYCHAIN_SERVICE, None) {
+            match context.keychain_password(host, KEYCHAIN_SERVICE) {
                 SecretRead::Found(secret) => json(secret.expose().as_bytes())
                     .and_then(|document| usable_token(&document, now_sec)),
                 SecretRead::Denied => Err(Failure::NoAccess),
@@ -56,6 +57,48 @@ fn credential(host: &dyn Host, now_sec: u64) -> Result<Secret, Failure> {
         }
         Err(failure) => Err(failure),
     }
+}
+
+/// Whether Claude Code keeps a login on this machine: a stored access or refresh token, in its
+/// credentials file or, on macOS, its keychain item. The login is only looked for, never used.
+///
+/// A source that starts the Claude Code program asks this first. Without a login the program
+/// would offer its sign-in menu, and a background probe must never choose from it (that opens
+/// the browser). Expired is still a login: Claude Code refreshes it itself.
+pub(super) fn stored_login(host: &dyn Host, context: &ReadContext) -> Result<(), Failure> {
+    let file = credentials_path(host)
+        .ok_or(Failure::NotConfigured)
+        .and_then(|path| read_json_file(host, &path));
+    // A file the engine cannot read is still a file Claude Code may read.
+    if file
+        .as_ref()
+        .map_or_else(|failure| *failure == Failure::NoAccess, holds_login)
+    {
+        return Ok(());
+    }
+    if host.platform() != Platform::MacOs {
+        return Err(Failure::LoginNeeded);
+    }
+    match context.keychain_password(host, KEYCHAIN_SERVICE) {
+        SecretRead::Found(secret)
+            if json(secret.expose().as_bytes()).is_ok_and(|document| holds_login(&document)) =>
+        {
+            Ok(())
+        }
+        SecretRead::Denied => Err(Failure::NoAccess),
+        SecretRead::Found(_) | SecretRead::Missing | SecretRead::Unsupported => {
+            Err(Failure::LoginNeeded)
+        }
+    }
+}
+
+fn holds_login(document: &Value) -> bool {
+    let token = |key: &str| {
+        document["claudeAiOauth"][key]
+            .as_str()
+            .is_some_and(|value| !value.trim().is_empty())
+    };
+    token("accessToken") || token("refreshToken")
 }
 
 /// `$CLAUDE_SECURESTORAGE_CONFIG_DIR`, else the configuration root, plus `.credentials.json`.

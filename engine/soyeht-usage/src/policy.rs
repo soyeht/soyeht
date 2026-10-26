@@ -26,6 +26,9 @@ struct Schedule {
     last_attempt_sec: Option<u64>,
     last_manual_sec: Option<u64>,
     network_failures: u32,
+    /// A wait the owner of the schedule asks for on top of the interval (a signed-out account
+    /// is asked again later and later). Zero means none.
+    hold_sec: u64,
 }
 
 #[derive(Debug, Default)]
@@ -65,7 +68,7 @@ impl RefreshPolicy {
             return true;
         };
         let wait = match schedule.network_failures {
-            0 => AUTO_INTERVAL,
+            0 => AUTO_INTERVAL.max(schedule.hold_sec),
             failures => {
                 let step = usize::try_from(failures - 1).unwrap_or(usize::MAX);
                 NETWORK_RETRY_SEC[step.min(NETWORK_RETRY_SEC.len() - 1)]
@@ -94,6 +97,12 @@ impl RefreshPolicy {
         };
     }
 
+    /// Makes the background schedule wait at least `seconds` after each attempt at `provider`,
+    /// until it is called again; `0` clears it.
+    pub fn hold(&mut self, provider: &UsageProvider, seconds: u64) {
+        self.schedule_mut(provider).hold_sec = seconds;
+    }
+
     fn find(&self, provider: &UsageProvider) -> Option<&Schedule> {
         self.schedules
             .iter()
@@ -113,6 +122,7 @@ impl RefreshPolicy {
                     last_attempt_sec: None,
                     last_manual_sec: None,
                     network_failures: 0,
+                    hold_sec: 0,
                 });
                 self.schedules.len() - 1
             }

@@ -104,7 +104,7 @@ impl Planner {
         fetched_at: &str,
     ) -> RefreshOutcome {
         let chain = self.chain(provider).unwrap_or_default();
-        let context = ReadContext { now_sec };
+        let context = ReadContext::new(now_sec);
         let mut last: Option<(UsageSource, Failure)> = None;
         for source in chain {
             let id = source.id();
@@ -113,7 +113,7 @@ impl Planner {
                     return available(provider, id, reading, read_at_sec);
                 }
                 Some(Held::CoolingDown(failure)) => Err(failure),
-                None => source.read(self.host.as_ref(), context),
+                None => source.read(self.host.as_ref(), context.clone()),
             };
             match attempt {
                 Ok(reading) => {

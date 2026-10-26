@@ -4,6 +4,7 @@
 //! rendered with a VT100 emulator for the source's driver, and afterwards the process group is
 //! stopped, the scratch directory removed and the session transcript deleted.
 
+use super::process::harden;
 use soyeht_ptyd::{
     child::{Child, Reach},
     io::Output,
@@ -142,6 +143,7 @@ fn spawn(program: &Path, path_env: &str, request: &TerminalRequest) -> io::Resul
         .env_clear()
         .env("PATH", path_env)
         .env("TERM", "xterm-256color");
+    harden(&mut command);
     for name in INHERITED {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
