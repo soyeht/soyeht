@@ -156,6 +156,7 @@ fn role_lists_are_closed_and_the_lead_cannot_complete() {
         "web_wait",
         "web_evaluate",
         "web_screenshot",
+        "web_read",
         "web_console",
         "web_network",
         "web_resize",
@@ -321,6 +322,7 @@ fn assert_web_tools(service: &mut Service<FakeEngine>) {
             json!({"paneId":"web","js":"document.title"}),
         ),
         ("web_screenshot", json!({"paneId":"web","fullPage":false})),
+        ("web_read", json!({"paneId":"web","screens":6})),
         ("web_console", json!({"paneId":"web","since":"0"})),
         ("web_network", json!({"paneId":"web","since":"0"})),
         ("web_resize", json!({"paneId":"web","preset":"responsive"})),
@@ -349,7 +351,7 @@ impl EnginePort for ImageEngine {
     }
 
     fn request_with_attachment(&mut self, method: &str, _params: Value) -> Result<EngineResponse> {
-        assert_eq!(method, "web.screenshot");
+        assert!(matches!(method, "web.screenshot" | "web.read"));
         let reference = AttachmentRef {
             attachment_id: "00112233-4455-4677-8899-aabbccddeeff".into(),
             mime_type: "image/png".into(),
@@ -376,4 +378,25 @@ fn screenshot_tool_returns_mcp_image_content_and_structured_reference() {
     assert_eq!(result["content"][1]["mimeType"], "image/png");
     assert_eq!(result["content"][1]["data"], "cG5n");
     assert_eq!(result["structuredContent"]["image"]["bytes"], "3");
+}
+
+#[test]
+fn read_tool_bounds_its_screens_and_returns_the_image_with_the_page_text() {
+    let mut service = Service::new(ImageEngine, context(false));
+    let result = service
+        .call("web_read", json!({"paneId":"web","screens":3}))
+        .unwrap();
+    assert_eq!(result["content"][1]["type"], "image");
+    assert_eq!(result["structuredContent"]["image"]["bytes"], "3");
+    let over = soyeht_protocol::limits::WEB_READ_SCREENS + 1;
+    assert!(
+        service
+            .call("web_read", json!({"paneId":"web","screens":over}))
+            .is_err()
+    );
+    assert!(
+        service
+            .call("web_read", json!({"paneId":"web","screens":0}))
+            .is_err()
+    );
 }

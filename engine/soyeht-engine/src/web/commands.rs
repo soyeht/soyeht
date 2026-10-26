@@ -3,9 +3,9 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::{
     WebClickParams, WebCommandKind, WebCommandParams, WebConsoleParams, WebEvaluateParams,
-    WebHoverParams, WebNetworkParams, WebPressParams, WebResizeParams, WebScreenshotParams,
-    WebScrollParams, WebSelectParams, WebSnapshotParams, WebTypeParams, WebViewportPreset,
-    WebWaitParams, method,
+    WebHoverParams, WebNetworkParams, WebPressParams, WebReadParams, WebResizeParams,
+    WebScreenshotParams, WebScrollParams, WebSelectParams, WebSnapshotParams, WebTypeParams,
+    WebViewportPreset, WebWaitParams, method,
 };
 use soyeht_web::{DEFAULT_ZOOM_PERCENT, viewport};
 use uuid::Uuid;
@@ -25,6 +25,7 @@ pub(crate) fn handles(method: &str) -> bool {
             | method::WEB_WAIT
             | method::WEB_EVALUATE
             | method::WEB_SCREENSHOT
+            | method::WEB_READ
             | method::WEB_CONSOLE
             | method::WEB_NETWORK
             | method::WEB_RESIZE
@@ -79,6 +80,7 @@ fn canonical_params(method: &str, params: &Value) -> Result<Value> {
         method::WEB_WAIT => canonical::<WebWaitParams>(params),
         method::WEB_EVALUATE => canonical::<WebEvaluateParams>(params),
         method::WEB_SCREENSHOT => canonical::<WebScreenshotParams>(params),
+        method::WEB_READ => canonical::<WebReadParams>(params),
         method::WEB_CONSOLE => canonical::<WebConsoleParams>(params),
         method::WEB_NETWORK => canonical::<WebNetworkParams>(params),
         method::WEB_RESIZE => canonical::<WebResizeParams>(params),
@@ -116,6 +118,7 @@ fn command_kind(method: &str) -> Result<WebCommandKind> {
         method::WEB_WAIT => Ok(WebCommandKind::Wait),
         method::WEB_EVALUATE => Ok(WebCommandKind::Evaluate),
         method::WEB_SCREENSHOT => Ok(WebCommandKind::Screenshot),
+        method::WEB_READ => Ok(WebCommandKind::Read),
         method::WEB_CONSOLE => Ok(WebCommandKind::Console),
         method::WEB_NETWORK => Ok(WebCommandKind::Network),
         method::WEB_RESIZE => Ok(WebCommandKind::Resize),

@@ -9,8 +9,9 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     AttachmentRef, ErrorKind, RpcError, WebActionResult, WebAgentDrivingEvent, WebCloseResult,
     WebCommandKind, WebCommandParams, WebCommandResult, WebConsoleResult, WebEvaluateResult,
-    WebNavigateResult, WebNetworkResult, WebResizeResult, WebScreenshotResult, WebSnapshotResult,
-    WebWaitResult, attachment::attachment_frames, error_code, event, frame::Frame, method::*,
+    WebNavigateResult, WebNetworkResult, WebReadResult, WebResizeResult, WebScreenshotResult,
+    WebSnapshotResult, WebWaitResult, attachment::attachment_frames, error_code, event,
+    frame::Frame, method::*,
 };
 use soyeht_web::{command_response_budget, validate_command};
 use uuid::Uuid;
@@ -388,6 +389,7 @@ fn public_result(waiter: &WebWaiter, result: &WebCommandResult) -> Result<Value>
         WEB_WAIT => typed_public_result::<WebWaitResult>(waiter, result),
         WEB_EVALUATE => typed_public_result::<WebEvaluateResult>(waiter, result),
         WEB_SCREENSHOT => typed_public_result::<WebScreenshotResult>(waiter, result),
+        WEB_READ => typed_public_result::<WebReadResult>(waiter, result),
         WEB_CONSOLE => typed_public_result::<WebConsoleResult>(waiter, result),
         WEB_NETWORK => typed_public_result::<WebNetworkResult>(waiter, result),
         WEB_RESIZE => typed_public_result::<WebResizeResult>(waiter, result),
@@ -428,7 +430,7 @@ fn web_attachment_reference(
     result: &WebCommandResult,
 ) -> Result<Option<AttachmentRef>> {
     let field = match waiter.method.as_str() {
-        WEB_SCREENSHOT => Some("image"),
+        WEB_SCREENSHOT | WEB_READ => Some("image"),
         WEB_SNAPSHOT => Some("screenshot"),
         _ => None,
     };
@@ -436,7 +438,7 @@ fn web_attachment_reference(
         return Ok(None);
     };
     let Some(value) = result.value.as_ref().and_then(|value| value.get(field)) else {
-        return if waiter.method == WEB_SCREENSHOT {
+        return if matches!(waiter.method.as_str(), WEB_SCREENSHOT | WEB_READ) {
             Err(errors::invalid("Web screenshot result omitted its image"))
         } else {
             Ok(None)

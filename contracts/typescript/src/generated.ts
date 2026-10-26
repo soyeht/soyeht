@@ -2869,7 +2869,7 @@ export type WebConsoleLevel = "debug" | "info" | "warning" | "error";
 
 export type WebSessionState = "anonymous" | "permission_required" | "granted" | "incognito";
 
-export type WebCommandKind = "navigate" | "snapshot" | "click" | "type" | "press" | "hover" | "select" | "scroll" | "wait" | "evaluate" | "screenshot" | "console" | "network" | "resize" | "close";
+export type WebCommandKind = "navigate" | "snapshot" | "click" | "type" | "press" | "hover" | "select" | "scroll" | "wait" | "evaluate" | "screenshot" | "read" | "console" | "network" | "resize" | "close";
 
 export interface WebViewport {
   "width": number;
@@ -3080,6 +3080,30 @@ export interface WebScreenshotParams {
 
 export interface WebScreenshotResult {
   "paneId": Id;
+  "image": AttachmentRef;
+  "endOfPage"?: boolean;
+}
+
+export interface WebReadParams {
+  "paneId": Id;
+  "screens"?: number;
+}
+
+export interface WebReadLink {
+  "text": string;
+  "href": string;
+}
+
+export interface WebReadResult {
+  "paneId": Id;
+  "navigationGeneration": Decimal;
+  "title": string;
+  "url": string;
+  "screens": number;
+  "text": string;
+  "links": Array<WebReadLink>;
+  "endOfPage": boolean;
+  "truncated": boolean;
   "image": AttachmentRef;
 }
 
@@ -3616,6 +3640,7 @@ export interface Methods {
   "web.wait": { params: WebWaitParams; result: WebWaitResult };
   "web.evaluate": { params: WebEvaluateParams; result: WebEvaluateResult };
   "web.screenshot": { params: WebScreenshotParams; result: WebScreenshotResult };
+  "web.read": { params: WebReadParams; result: WebReadResult };
   "web.console": { params: WebConsoleParams; result: WebConsoleResult };
   "web.network": { params: WebNetworkParams; result: WebNetworkResult };
   "web.resize": { params: WebResizeParams; result: WebResizeResult };

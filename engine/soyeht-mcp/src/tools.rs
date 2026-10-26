@@ -31,7 +31,7 @@ struct Tool {
     schema: fn() -> Value,
 }
 
-const TOOLS: [Tool; 35] = [
+const TOOLS: [Tool; 36] = [
     Tool {
         name: "list_agents",
         method: method::AGENT_LIST,
@@ -246,8 +246,15 @@ const TOOLS: [Tool; 35] = [
         name: "web_screenshot",
         method: method::WEB_SCREENSHOT,
         audience: Audience::Both,
-        description: "Capture a bounded screenshot from a visible web pane.",
+        description: "Capture a bounded screenshot from a visible web pane. With fullPage it covers at most the read limit of screens and endOfPage says whether the page ended.",
         schema: web_screenshot_schema,
+    },
+    Tool {
+        name: "web_read",
+        method: method::WEB_READ,
+        audience: Audience::Both,
+        description: "Read a web pane like a person: scroll down natively for a bounded number of screens, then return one stitched image plus the visible text and links.",
+        schema: web_read_schema,
     },
     Tool {
         name: "web_console",
@@ -432,6 +439,7 @@ fn mutating(method: &str) -> bool {
             | method::WEB_SNAPSHOT
             | method::WEB_WAIT
             | method::WEB_SCREENSHOT
+            | method::WEB_READ
             | method::WEB_CONSOLE
             | method::WEB_NETWORK
     )

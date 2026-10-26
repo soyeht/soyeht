@@ -5700,6 +5700,7 @@ public enum WebCommandKind: String, Codable, Sendable, CaseIterable {
     case `wait` = "wait"
     case `evaluate` = "evaluate"
     case `screenshot` = "screenshot"
+    case `read` = "read"
     case `console` = "console"
     case `network` = "network"
     case `resize` = "resize"
@@ -6094,8 +6095,53 @@ public struct WebScreenshotParams: Codable, Sendable {
 public struct WebScreenshotResult: Codable, Sendable {
     public var `paneId`: Id
     public var `image`: AttachmentRef
-    public init(`paneId`: Id, `image`: AttachmentRef) {
+    public var `endOfPage`: Bool?
+    public init(`paneId`: Id, `image`: AttachmentRef, `endOfPage`: Bool? = nil) {
         self.`paneId` = `paneId`
+        self.`image` = `image`
+        self.`endOfPage` = `endOfPage`
+    }
+}
+
+public struct WebReadParams: Codable, Sendable {
+    public var `paneId`: Id
+    public var `screens`: UInt32?
+    public init(`paneId`: Id, `screens`: UInt32? = nil) {
+        self.`paneId` = `paneId`
+        self.`screens` = `screens`
+    }
+}
+
+public struct WebReadLink: Codable, Sendable {
+    public var `text`: String
+    public var `href`: String
+    public init(`text`: String, `href`: String) {
+        self.`text` = `text`
+        self.`href` = `href`
+    }
+}
+
+public struct WebReadResult: Codable, Sendable {
+    public var `paneId`: Id
+    public var `navigationGeneration`: Decimal
+    public var `title`: String
+    public var `url`: String
+    public var `screens`: UInt32
+    public var `text`: String
+    public var `links`: [WebReadLink]
+    public var `endOfPage`: Bool
+    public var `truncated`: Bool
+    public var `image`: AttachmentRef
+    public init(`paneId`: Id, `navigationGeneration`: Decimal, `title`: String, `url`: String, `screens`: UInt32, `text`: String, `links`: [WebReadLink], `endOfPage`: Bool, `truncated`: Bool, `image`: AttachmentRef) {
+        self.`paneId` = `paneId`
+        self.`navigationGeneration` = `navigationGeneration`
+        self.`title` = `title`
+        self.`url` = `url`
+        self.`screens` = `screens`
+        self.`text` = `text`
+        self.`links` = `links`
+        self.`endOfPage` = `endOfPage`
+        self.`truncated` = `truncated`
         self.`image` = `image`
     }
 }
@@ -7031,6 +7077,7 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case webWait = "web.wait"
     case webEvaluate = "web.evaluate"
     case webScreenshot = "web.screenshot"
+    case webRead = "web.read"
     case webConsole = "web.console"
     case webNetwork = "web.network"
     case webResize = "web.resize"

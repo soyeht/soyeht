@@ -73,6 +73,7 @@ pub const fn command_response_budget(command: &WebCommandKind) -> usize {
         WebCommandKind::Snapshot => limits::WEB_SNAPSHOT_BYTES,
         WebCommandKind::Evaluate => limits::WEB_EVALUATE_BYTES,
         WebCommandKind::Screenshot => limits::WEB_SCREENSHOT_BYTES,
+        WebCommandKind::Read => limits::WEB_READ_BYTES,
         _ => limits::JSON_BYTES,
     }
 }

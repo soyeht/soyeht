@@ -43,7 +43,7 @@ func responseAttachmentReference(
   method: RequestMethod, result: JsonValue
 ) throws -> AttachmentRef? {
   switch method {
-  case .writingAssetRead, .webScreenshot:
+  case .writingAssetRead, .webScreenshot, .webRead:
     return try result["image"].decoded(AttachmentRef.self)
   case .webSnapshot where result["screenshot"] != .null:
     return try result["screenshot"].decoded(AttachmentRef.self)

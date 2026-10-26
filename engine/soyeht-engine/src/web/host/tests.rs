@@ -320,6 +320,33 @@ async fn reads_are_fresh_and_mutations_are_typed_bounded_and_idempotent() {
 
 #[tokio::test]
 async fn screenshot_bytes_commit_exactly_and_precede_the_json_response() {
+    let response = image_precedes_response(
+        "web.screenshot",
+        |reference| json!({"image":reference,"endOfPage":false}),
+    )
+    .await;
+    assert_eq!(response["result"]["image"]["name"], "screenshot.png");
+    assert_eq!(response["result"]["endOfPage"], false);
+}
+
+#[tokio::test]
+async fn read_returns_its_text_and_links_after_the_committed_image() {
+    let response = image_precedes_response("web.read", |reference| {
+        json!({"navigationGeneration":"3","title":"Feed","url":"https://example.test/",
+            "screens":2,"text":"First post\nSecond post",
+            "links":[{"text":"First","href":"https://example.test/1"}],
+            "endOfPage":false,"truncated":false,"image":reference})
+    })
+    .await;
+    assert_eq!(response["result"]["text"], "First post\nSecond post");
+    assert_eq!(
+        response["result"]["links"][0]["href"],
+        "https://example.test/1"
+    );
+    assert_eq!(response["result"]["screens"], 2);
+}
+
+async fn image_precedes_response(method: &str, value: impl Fn(Value) -> Value) -> Value {
     let root = temp_root();
     let mut core = Core::open(&root).unwrap();
     let (host, mut host_receiver) = connect(&mut core, json!(["web_host"])).await;
@@ -349,10 +376,7 @@ async fn screenshot_bytes_commit_exactly_and_precede_the_json_response() {
         .unwrap()
         .to_owned();
     let Outcome::Queued = core
-        .dispatch(
-            &caller,
-            request(4, "web.screenshot", json!({"paneId":pane})),
-        )
+        .dispatch(&caller, request(4, method, json!({"paneId":pane})))
         .unwrap()
     else {
         panic!("screenshot should wait for the host")
@@ -375,7 +399,7 @@ async fn screenshot_bytes_commit_exactly_and_precede_the_json_response() {
     core.web_host_response(
         &host,
         json!({"jsonrpc":"2.0","id":command["id"],"result":{
-            "paneId":pane,"value":{"image":reference}
+            "paneId":pane,"value":value(reference.clone())
         }}),
     )
     .unwrap();
@@ -394,4 +418,5 @@ async fn screenshot_bytes_commit_exactly_and_precede_the_json_response() {
     assert_eq!(response["result"]["image"], reference);
 
     crate::test_paths::remove_after(core, root);
+    response
 }

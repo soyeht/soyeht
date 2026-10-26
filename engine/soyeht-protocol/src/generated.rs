@@ -5175,6 +5175,8 @@ pub enum WebCommandKind {
     Evaluate,
     #[serde(rename = "screenshot")]
     Screenshot,
+    #[serde(rename = "read")]
+    Read,
     #[serde(rename = "console")]
     Console,
     #[serde(rename = "network")]
@@ -5515,6 +5517,45 @@ pub struct WebScreenshotParams {
 pub struct WebScreenshotResult {
     #[serde(rename = "paneId")]
     pub pane_id: Id,
+    #[serde(rename = "image")]
+    pub image: AttachmentRef,
+    #[serde(rename = "endOfPage", skip_serializing_if = "Option::is_none")]
+    pub end_of_page: Option<bool>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebReadParams {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "screens", skip_serializing_if = "Option::is_none")]
+    pub screens: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebReadLink {
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "href")]
+    pub href: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct WebReadResult {
+    #[serde(rename = "paneId")]
+    pub pane_id: Id,
+    #[serde(rename = "navigationGeneration")]
+    pub navigation_generation: Decimal,
+    #[serde(rename = "title")]
+    pub title: String,
+    #[serde(rename = "url")]
+    pub url: String,
+    #[serde(rename = "screens")]
+    pub screens: u32,
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "links")]
+    pub links: Vec<WebReadLink>,
+    #[serde(rename = "endOfPage")]
+    pub end_of_page: bool,
+    #[serde(rename = "truncated")]
+    pub truncated: bool,
     #[serde(rename = "image")]
     pub image: AttachmentRef,
 }
@@ -6517,6 +6558,8 @@ pub enum Request {
     WebEvaluate(WebEvaluateParams),
     #[serde(rename = "web.screenshot")]
     WebScreenshot(WebScreenshotParams),
+    #[serde(rename = "web.read")]
+    WebRead(WebReadParams),
     #[serde(rename = "web.console")]
     WebConsole(WebConsoleParams),
     #[serde(rename = "web.network")]
@@ -7072,6 +7115,7 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "WebScreenshotResult",
         false,
     ),
+    ("web.read", "WebReadParams", "WebReadResult", false),
     ("web.console", "WebConsoleParams", "WebConsoleResult", false),
     ("web.network", "WebNetworkParams", "WebNetworkResult", false),
     ("web.resize", "WebResizeParams", "WebResizeResult", true),
@@ -7230,6 +7274,7 @@ pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("web.wait", "paneId"),
     ("web.evaluate", "paneId"),
     ("web.screenshot", "paneId"),
+    ("web.read", "paneId"),
     ("web.console", "paneId"),
     ("web.network", "paneId"),
     ("web.resize", "paneId"),
@@ -8763,6 +8808,7 @@ pub mod method {
     pub const WEB_WAIT: &str = "web.wait";
     pub const WEB_EVALUATE: &str = "web.evaluate";
     pub const WEB_SCREENSHOT: &str = "web.screenshot";
+    pub const WEB_READ: &str = "web.read";
     pub const WEB_CONSOLE: &str = "web.console";
     pub const WEB_NETWORK: &str = "web.network";
     pub const WEB_RESIZE: &str = "web.resize";

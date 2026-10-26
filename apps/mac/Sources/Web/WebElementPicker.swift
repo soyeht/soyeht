@@ -22,7 +22,6 @@ private struct PickedMetadata: Decodable {
   let accessibility: WebAccessibility
   let viewportRect: WebRect
   let pageRect: WebRect
-  let component: WebComponentSource?
 }
 
 @MainActor @Observable final class WebElementPicker {
@@ -73,7 +72,7 @@ private struct PickedMetadata: Decodable {
       guard let self else { return }
       do {
         _ = try await webView.callAsyncJavaScript(
-          Self.installScript, arguments: [:], in: nil, contentWorld: .page)
+          Self.installScript, arguments: [:], in: nil, contentWorld: WebPageWorld.isolated)
         try await poll()
       } catch {
         deactivate(clear: true)
@@ -92,7 +91,7 @@ private struct PickedMetadata: Decodable {
   private func removeFromPage() async {
     do {
       let result = try await webView.callAsyncJavaScript(
-        Self.removeScript, arguments: [:], in: nil, contentWorld: .page)
+        Self.removeScript, arguments: [:], in: nil, contentWorld: WebPageWorld.isolated)
       _ = result as? Bool
     } catch {
       // Best effort, silent by design: a page that navigated or closed has no picker left.
@@ -120,18 +119,36 @@ private struct PickedMetadata: Decodable {
     }
     let image = try await WebScreenshotCapture.capture(
       webView: webView, viewportRect: raw.viewportRect)
+    let component = await componentSource(selector: raw.selector)
     let element = WebPickedElement(
       selector: raw.selector, path: raw.path, outerHtml: raw.outerHtml,
       styles: raw.styles, accessibility: raw.accessibility,
       viewportRect: raw.viewportRect, pageRect: raw.pageRect,
-      image: image.reference, component: raw.component)
+      image: image.reference, component: component)
     elements.append(element)
     images.append(image)
   }
 
+  /// Frameworks keep their component records on the page's own DOM objects, which an isolated
+  /// world cannot see. So the one read that needs the page world runs only for a development
+  /// host (the person's own page), once per picked element, and changes nothing (ADR 0109).
+  private func componentSource(selector: String) async -> WebComponentSource? {
+    guard WebObservationPolicy.observes(webView.url) else { return nil }
+    // A failed or empty probe is the normal case (no framework, or a navigation in between): the
+    // pick then simply carries no component.
+    do {
+      let raw = try await webView.callAsyncJavaScript(
+        Self.componentScript, arguments: ["selector": selector], in: nil, contentWorld: .page)
+      guard let json = raw as? String else { return nil }
+      return try JSONDecoder().decode(WebComponentSource.self, from: Data(json.utf8))
+    } catch {
+      return nil
+    }
+  }
+
   private func decoded<T: Decodable>(_ script: String) async throws -> T {
     let raw = try await webView.callAsyncJavaScript(
-      script, arguments: [:], in: nil, contentWorld: .page)
+      script, arguments: [:], in: nil, contentWorld: WebPageWorld.isolated)
     guard let json = raw as? String, let data = json.data(using: .utf8) else {
       throw ClientFailure.webHost(.internal_error, "The selected element is invalid.")
     }
@@ -140,6 +157,42 @@ private struct PickedMetadata: Decodable {
 }
 
 extension WebElementPicker {
+  fileprivate static let componentScript = #"""
+    let element = null;
+    try { element = document.querySelector(selector); } catch (_) { return null; }
+    if (!element) return null;
+    const cut = (value, bytes) => String(value).slice(0, Math.floor(bytes / 4));
+    const component = () => {
+      const keys = Object.getOwnPropertyNames(element);
+      const fiberKey = keys.find(key => key.startsWith("__reactFiber$"));
+      if (fiberKey) {
+        for (let fiber = element[fiberKey]; fiber; fiber = fiber.return) {
+          const type = fiber.elementType || fiber.type;
+          const name = type?.displayName || type?.name;
+          const source = fiber._debugSource;
+          if (name) return {framework:"React",component:cut(String(name),\#(ProtocolLimits.webPartBytes)),
+            ...(source?.fileName ? {sourceFile:cut(String(source.fileName),\#(ProtocolLimits.webFieldBytes))} : {}),
+            ...(source?.lineNumber > 0 ? {line:Math.min(4294967295,source.lineNumber)} : {})};
+        }
+      }
+      const vue = element.__vueParentComponent;
+      const inspector = element.getAttribute("data-v-inspector");
+      if (vue || inspector) {
+        const file = vue?.type?.__file || inspector?.replace(/:\d+:\d+$/, "");
+        const line = inspector?.match(/:(\d+):\d+$/)?.[1];
+        return {framework:"Vue",component:cut(String(vue?.type?.name || file?.split("/").pop() || "component"),\#(ProtocolLimits.webPartBytes)),
+          ...(file ? {sourceFile:cut(String(file),\#(ProtocolLimits.webFieldBytes))} : {}),
+          ...(line ? {line:Number(line)} : {})};
+      }
+      const svelte = element.__svelte_meta;
+      if (svelte) return {framework:"Svelte",component:cut(String(svelte.component || "component"),\#(ProtocolLimits.webPartBytes)),
+        ...(svelte.loc?.file ? {sourceFile:cut(String(svelte.loc.file),\#(ProtocolLimits.webFieldBytes))} : {}),
+        ...(svelte.loc?.line > 0 ? {line:Number(svelte.loc.line)} : {})};
+      return null;
+    };
+    return JSON.stringify(component());
+    """#
+
   fileprivate static let drainScript = #"""
     return JSON.stringify(globalThis.__soyehtPicker?.drain() || []);
     """#
@@ -219,34 +272,6 @@ extension WebElementPicker {
         element.getAttribute("aria-invalid") ? `invalid=${element.getAttribute("aria-invalid")}` : ""
       ].filter(Boolean).join(" "), \#(ProtocolLimits.webLabelBytes))
     });
-    const component = element => {
-      const keys = Object.getOwnPropertyNames(element);
-      const fiberKey = keys.find(key => key.startsWith("__reactFiber$"));
-      if (fiberKey) {
-        for (let fiber = element[fiberKey]; fiber; fiber = fiber.return) {
-          const type = fiber.elementType || fiber.type;
-          const name = type?.displayName || type?.name;
-          const source = fiber._debugSource;
-          if (name) return {framework:"React",component:bytes(String(name),\#(ProtocolLimits.webPartBytes)),
-            ...(source?.fileName ? {sourceFile:bytes(String(source.fileName),\#(ProtocolLimits.webFieldBytes))} : {}),
-            ...(source?.lineNumber > 0 ? {line:Math.min(4294967295,source.lineNumber)} : {})};
-        }
-      }
-      const vue = element.__vueParentComponent;
-      const inspector = element.getAttribute("data-v-inspector");
-      if (vue || inspector) {
-        const file = vue?.type?.__file || inspector?.replace(/:\d+:\d+$/, "");
-        const line = inspector?.match(/:(\d+):\d+$/)?.[1];
-        return {framework:"Vue",component:bytes(String(vue?.type?.name || file?.split("/").pop() || "component"),\#(ProtocolLimits.webPartBytes)),
-          ...(file ? {sourceFile:bytes(String(file),\#(ProtocolLimits.webFieldBytes))} : {}),
-          ...(line ? {line:Number(line)} : {})};
-      }
-      const svelte = element.__svelte_meta;
-      if (svelte) return {framework:"Svelte",component:bytes(String(svelte.component || "component"),\#(ProtocolLimits.webPartBytes)),
-        ...(svelte.loc?.file ? {sourceFile:bytes(String(svelte.loc.file),\#(ProtocolLimits.webFieldBytes))} : {}),
-        ...(svelte.loc?.line > 0 ? {line:Number(svelte.loc.line)} : {})};
-      return null;
-    };
     const capture = element => {
       const style = getComputedStyle(element);
       const rect = element.getBoundingClientRect();
@@ -261,8 +286,7 @@ extension WebElementPicker {
           display:bytes(style.display,\#(ProtocolLimits.webTokenBytes)),position:bytes(style.position,\#(ProtocolLimits.webTokenBytes))},
         accessibility: accessibility(element),
         viewportRect:{x:bounded(rect.x),y:bounded(rect.y),width:size(rect.width),height:size(rect.height)},
-        pageRect:{x:bounded(rect.x + scrollX),y:bounded(rect.y + scrollY),width:size(rect.width),height:size(rect.height)},
-        ...(component(element) ? {component:component(element)} : {})
+        pageRect:{x:bounded(rect.x + scrollX),y:bounded(rect.y + scrollY),width:size(rect.width),height:size(rect.height)}
       };
     };
     const restore = () => {

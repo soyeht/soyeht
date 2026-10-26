@@ -69,10 +69,52 @@ text, submit?}`; `web_press {paneId, key}`; `web_hover`; `web_select {ref,
 value}`; `web_scroll {ref? | dx, dy}`; `web_wait {text? | selector? |
 networkIdle? , timeoutMs}`; `web_evaluate {paneId, js}` (behind a permission
 request; never granted by an agent permission mode); `web_screenshot {paneId, fullPage?}`;
+`web_read {paneId, screens?}` (§5a);
 `web_console {paneId, since?}` (level, text, source and time; never request
 or response bodies); `web_network {paneId, since?}` (method, URL, status,
 duration and size; never headers or bodies); `web_resize {paneId, preset |
 width, height}`; `web_close {paneId}`.
+
+### 5a. Reading a page (ADR 0109)
+`web_read` reads a pane the way a person does. Its result is `{navigationGeneration, title, url,
+screens, text, links, endOfPage, truncated}` plus one image. A host must:
+- read from the top of the page, one screen at a time, up to `screens` (default 4, at most 12),
+  scrolling the way the platform's own scrolling does and not by dispatching input events into
+  the page; when the document does not scroll but the page's main scroller is an element inside
+  it, scroll that element;
+- return one image of the screens joined in page order, bounded by the screenshot limit, in which
+  a bar that stays fixed on screen appears once and no row of the page is missing at a joint;
+- return the visible text of the screens in reading order, each piece once, and the visible
+  `http(s)` links with their text, each once;
+- run no script of the app in the page's own JavaScript world, and leave no global, handler,
+  node, attribute or patched function in it;
+- leave the page where the person had it: it puts the scroll position back before it answers,
+  also when the read fails, and does not when a person took over;
+- stop with `HUMAN_TOOK_OVER` as soon as a person's input reaches the pane, and with an error if
+  the pane is resized during the read.
+
+`screens` says how many screens the image holds. `endOfPage` is false when the read stopped before
+the page ended (the screen limit, the time budget, or a scroll that did not move); `truncated` is
+true when a limit cut the text (64 KiB), the links (100), or what the host reads of a very large
+document, or when the answer had to be trimmed to fit its byte budget. `web_screenshot` with
+`fullPage` uses the same reading and adds `endOfPage` to its result: it covers at most 12 screens.
+
+How the Mac does it (native page-down, snapshots of the view, an isolated content world) is in
+ADR 0109; Linux and Windows implement the same contract with their own web view.
+
+The app's own scripts run in a separate JavaScript world. The page's own world holds only
+`web_evaluate`, the console and network capture, and the component probe of Pick element, and the
+capture and the probe are used only on a development host (`localhost`, `*.localhost`, `*.local`,
+loopback and private network addresses). When the pane leaves a development host the capture is
+removed and its readings and counts are cleared: on any other site `web_console` and `web_network`
+return nothing. `web_wait` with `networkIdle` is weaker than the page's own request counting
+would be: it holds when the document is complete and no resource has finished loading for
+500 ms; a request still in flight is not seen.
+
+The pane's user agent carries the tokens of the Safari installed on the Mac
+(`Version/<its version> Safari/605.1.15`, read at run time; the major version that ships with the
+system when it cannot be read), because sites treat a WebKit view without them as an embedded
+browser. It is the same engine and claims no other browser (ADR 0109).
 
 Refs expire at every navigation; a stale ref returns `STALE_REFERENCE` and
 the agent must snapshot again. Every agent action is performed in the
@@ -117,7 +159,7 @@ record and routes agent calls to that client.
 
 ## 8. Limits (also added to the table in contract 08)
 10 web panes per workspace; snapshot ≤ 200 KiB (truncated with a marker);
-screenshot ≤ 2 MiB; `web_evaluate` result ≤ 64 KiB; console ring 500,
+screenshot ≤ 2 MiB; `web_read` ≤ 12 screens, text ≤ 64 KiB, links ≤ 100; `web_evaluate` result ≤ 64 KiB; console ring 500,
 network ring 300; `web_wait` timeout ≤ 60 s; local-server list ≤ 50 entries.
 
 ## 9. Out of v1

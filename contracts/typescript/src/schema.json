@@ -10335,6 +10335,7 @@
         "wait",
         "evaluate",
         "screenshot",
+        "read",
         "console",
         "network",
         "resize",
@@ -11132,10 +11133,105 @@
         },
         "image": {
           "$ref": "#/$defs/AttachmentRef"
+        },
+        "endOfPage": {
+          "type": "boolean"
         }
       },
       "required": [
         "paneId",
+        "image"
+      ],
+      "additionalProperties": true
+    },
+    "WebReadParams": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "screens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        }
+      },
+      "required": [
+        "paneId"
+      ],
+      "additionalProperties": true
+    },
+    "WebReadLink": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "href": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "text",
+        "href"
+      ],
+      "additionalProperties": true
+    },
+    "WebReadResult": {
+      "type": "object",
+      "properties": {
+        "paneId": {
+          "$ref": "#/$defs/Id"
+        },
+        "navigationGeneration": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "screens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebReadLink"
+          }
+        },
+        "endOfPage": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "image": {
+          "$ref": "#/$defs/AttachmentRef"
+        }
+      },
+      "required": [
+        "paneId",
+        "navigationGeneration",
+        "title",
+        "url",
+        "screens",
+        "text",
+        "links",
+        "endOfPage",
+        "truncated",
         "image"
       ],
       "additionalProperties": true
@@ -13808,6 +13904,15 @@
       },
       "mutation": false
     },
+    "web.read": {
+      "params": {
+        "$ref": "#/$defs/WebReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/WebReadResult"
+      },
+      "mutation": false
+    },
     "web.console": {
       "params": {
         "$ref": "#/$defs/WebConsoleParams"
@@ -14567,6 +14672,11 @@
     "webTokenBytes": 256,
     "webExtentMax": 16384,
     "webPickCropWidth": 640,
+    "webReadScreens": 12,
+    "webReadScreensDefault": 4,
+    "webReadTextBytes": 65536,
+    "webReadLinks": 100,
+    "webReadBytes": 524288,
     "promptAttachments": 20,
     "promptAttachmentBytes": 10485760,
     "promptAttachmentTotalBytes": 20971520,

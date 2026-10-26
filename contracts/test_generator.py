@@ -305,7 +305,7 @@ class SchemaTests(unittest.TestCase):
             "servers.local.list",
             "web.open", "web.navigate", "web.snapshot", "web.click", "web.type",
             "web.press", "web.hover", "web.select", "web.scroll", "web.wait",
-            "web.evaluate", "web.screenshot", "web.console", "web.network",
+            "web.evaluate", "web.screenshot", "web.read", "web.console", "web.network",
             "web.resize", "web.close", "web.command", "web.host.navigated",
             "web.host.console_counts",
         }
@@ -339,6 +339,17 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(limits["webWaitTimeoutMs"], 60_000)
         self.assertEqual(limits["localServerEntries"], 50)
         self.assertEqual(limits["webPickedElements"], 20)
+        self.assertEqual(limits["webReadScreens"], 12)
+        self.assertLessEqual(limits["webReadScreensDefault"], limits["webReadScreens"])
+        self.assertEqual(limits["webReadTextBytes"], 64 * 1024)
+        self.assertEqual(
+            self.schema["$defs"]["WebReadParams"]["properties"]["screens"]["maximum"],
+            limits["webReadScreens"],
+        )
+        self.assertEqual(
+            self.schema["$defs"]["WebReadResult"]["properties"]["text"]["maxLength"],
+            limits["webReadTextBytes"],
+        )
 
         for name in ("WebConsoleEntry", "WebNetworkEntry"):
             properties = set(self.schema["$defs"][name]["properties"])

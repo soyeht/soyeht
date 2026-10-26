@@ -106,6 +106,8 @@ import WebKit
   @ObservationIgnored
   private var inputMonitor: Any?
   let elementPicker: WebElementPicker
+  @ObservationIgnored
+  private let reader: WebPageReader
   private var control = WebControlHandoff()
 
   init(
@@ -121,13 +123,14 @@ import WebKit
     self.onNavigated = onNavigated
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = incognito ? .nonPersistent() : .default()
+    configuration.applicationNameForUserAgent = SafariIdentity.applicationName
     let observation = WebPageObservation(onCountsChanged: onConsoleCounts)
-    observation.install(in: configuration)
     let view = WKWebView(frame: .zero, configuration: configuration)
     webView = view
     structuredActions = WebStructuredActions(webView: view)
     pageObservation = observation
     elementPicker = WebElementPicker(webView: view)
+    reader = WebPageReader(webView: view)
     super.init()
     inputMonitor = NSEvent.addLocalMonitorForEvents(
       matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel]
@@ -183,7 +186,12 @@ import WebKit
   }
 
   func humanScreenshot(fullPage: Bool) async throws -> Data {
-    try await WebScreenshotCapture.capture(webView: webView, fullPage: fullPage).bytes
+    guard fullPage else { return try await WebScreenshotCapture.capture(webView: webView).bytes }
+    return try await WebScreenshotCapture.captureFullPage(
+      reader: reader,
+      deadline: WebPageReader.deadline(forTimeoutMs: UInt32(ProtocolLimits.webWaitTimeoutMs)),
+      between: {}
+    ).attachment.bytes
   }
 
   func loadIfNeeded(_ rawURL: String?) {
@@ -238,14 +246,24 @@ import WebKit
     case .snapshot:
       var value = try await structuredActions.snapshot(generation: navigationGeneration)
       guard boolean(command.args, "screenshot") == true else { return output(value) }
-      let attachment = try await WebScreenshotCapture.capture(webView: webView, fullPage: false)
+      let attachment = try await WebScreenshotCapture.capture(webView: webView)
       value = setting(value, "screenshot", to: try encoded(attachment.reference))
       return output(value, attachments: [attachment])
     case .screenshot:
-      let attachment = try await WebScreenshotCapture.capture(
-        webView: webView, fullPage: boolean(command.args, "fullPage") == true)
+      guard boolean(command.args, "fullPage") == true else {
+        let attachment = try await WebScreenshotCapture.capture(webView: webView)
+        return output(
+          .object(["image": try encoded(attachment.reference)]), attachments: [attachment])
+      }
+      let full = try await WebScreenshotCapture.captureFullPage(
+        reader: reader, deadline: WebPageReader.deadline(forTimeoutMs: command.timeoutMs),
+        between: { try self.requirePersonAbsent() })
       return output(
-        .object(["image": try encoded(attachment.reference)]), attachments: [attachment])
+        .object([
+          "image": try encoded(full.attachment.reference), "endOfPage": .bool(full.endOfPage),
+        ]), attachments: [full.attachment])
+    case .read:
+      return try await read(command)
     case .click, .type, .press, .hover, .select, .scroll:
       try await structuredActions.perform(
         command.command, args: command.args, generation: navigationGeneration)
@@ -264,6 +282,30 @@ import WebKit
     default:
       throw ClientFailure.webHost(.internal_error, "The web command is not implemented.")
     }
+  }
+
+  /// A person's input in the pane ends an agent command at its next step.
+  private func requirePersonAbsent() throws {
+    if control.humanHasControl {
+      throw ClientFailure.webHost(
+        .human_took_over, "A person has control of this web pane. Wait for hand-back.")
+    }
+  }
+
+  private func read(_ command: WebCommandParams) async throws -> WebHostOutput {
+    let screens =
+      unsigned(command.args, "screens").map(Int.init) ?? ProtocolLimits.webReadScreensDefault
+    let capture = try await reader.read(
+      screens: screens, collectsContent: true,
+      deadline: WebPageReader.deadline(forTimeoutMs: command.timeoutMs),
+      between: { try self.requirePersonAbsent() })
+    let attachment = try WebScreenshotCapture.attachment(for: capture.image)
+    let value = try WebReadAssembly.value(
+      text: capture.text, links: capture.links, screens: capture.screens,
+      endOfPage: capture.endOfPage, truncated: capture.truncated,
+      generation: navigationGeneration, title: webView.title ?? "",
+      url: webView.url?.absoluteString ?? "", image: attachment.reference)
+    return output(value, attachments: [attachment])
   }
 
   private func output(
@@ -321,6 +363,9 @@ import WebKit
   ) async -> WKNavigationActionPolicy {
     guard let url = navigationAction.request.url, allowedURL(url.absoluteString) != nil else {
       return .cancel
+    }
+    if navigationAction.targetFrame?.isMainFrame == true {
+      pageObservation.navigationWillStart(to: url)
     }
     return .allow
   }

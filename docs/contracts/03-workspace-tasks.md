@@ -179,7 +179,7 @@ A pane may modify only its own task, except for the lead.
 Contract 11 adds the workspace-scoped browser tools `web_open`,
 `web_navigate`, `web_snapshot`, `web_click`, `web_type`, `web_press`,
 `web_hover`, `web_select`, `web_scroll`, `web_wait`, `web_evaluate`,
-`web_screenshot`, `web_console`, `web_network`, `web_resize`, and `web_close`.
+`web_screenshot`, `web_read`, `web_console`, `web_network`, `web_resize`, and `web_close`.
 Both worker and lead panes receive them. The engine rejects a web pane from a
 different workspace even when the caller supplies its identifier directly.
 

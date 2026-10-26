@@ -351,6 +351,19 @@ pub(super) fn web_screenshot_schema() -> Value {
     )
 }
 
+pub(super) fn web_read_schema() -> Value {
+    object(
+        fields(&[
+            ("paneId", id()),
+            (
+                "screens",
+                integer(1, soyeht_protocol::limits::WEB_READ_SCREENS as i64),
+            ),
+        ]),
+        &["paneId"],
+    )
+}
+
 pub(super) fn web_since_schema() -> Value {
     object(
         fields(&[("paneId", id()), ("since", decimal())]),

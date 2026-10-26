@@ -10062,6 +10062,49 @@
     }
   },
   {
+    "name": "request:web.read",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "web-13b",
+      "method": "web.read",
+      "params": {
+        "paneId": "web-pane-1",
+        "screens": 6
+      }
+    }
+  },
+  {
+    "name": "response:web.read",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "web-13b",
+      "result": {
+        "paneId": "web-pane-1",
+        "navigationGeneration": "2",
+        "title": "Site",
+        "url": "https://example.test/",
+        "screens": 2,
+        "text": "First post\nSecond post",
+        "links": [
+          {
+            "text": "First post",
+            "href": "https://example.test/posts/1"
+          }
+        ],
+        "endOfPage": false,
+        "truncated": false,
+        "image": {
+          "attachmentId": "image-1",
+          "mimeType": "image/png",
+          "name": "page.png",
+          "bytes": "4"
+        }
+      }
+    }
+  },
+  {
     "name": "request:web.console",
     "type": "RequestEnvelope",
     "value": {
@@ -10821,6 +10864,48 @@
     "value": {
       "paneId": "web-pane-1",
       "fullPage": false
+    }
+  },
+  {
+    "name": "WebReadParams",
+    "type": "WebReadParams",
+    "value": {
+      "paneId": "web-pane-1",
+      "screens": 6
+    }
+  },
+  {
+    "name": "WebReadLink",
+    "type": "WebReadLink",
+    "value": {
+      "text": "First post",
+      "href": "https://example.test/posts/1"
+    }
+  },
+  {
+    "name": "WebReadResult",
+    "type": "WebReadResult",
+    "value": {
+      "paneId": "web-pane-1",
+      "navigationGeneration": "2",
+      "title": "Site",
+      "url": "https://example.test/",
+      "screens": 2,
+      "text": "First post\nSecond post",
+      "links": [
+        {
+          "text": "First post",
+          "href": "https://example.test/posts/1"
+        }
+      ],
+      "endOfPage": false,
+      "truncated": false,
+      "image": {
+        "attachmentId": "image-1",
+        "mimeType": "image/png",
+        "name": "page.png",
+        "bytes": "4"
+      }
     }
   },
   {

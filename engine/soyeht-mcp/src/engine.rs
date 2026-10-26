@@ -153,7 +153,7 @@ impl Client {
 
 fn response_attachment(method: &str, value: &Value) -> Result<Option<AttachmentRef>> {
     let field = match method {
-        method::WEB_SCREENSHOT => Some("image"),
+        method::WEB_SCREENSHOT | method::WEB_READ => Some("image"),
         method::WEB_SNAPSHOT => Some("screenshot"),
         _ => None,
     };
@@ -161,7 +161,7 @@ fn response_attachment(method: &str, value: &Value) -> Result<Option<AttachmentR
         .and_then(|field| value.get(field))
         .map(|value| serde_json::from_value(value.clone()).map_err(Error::from))
         .transpose()?;
-    if method == method::WEB_SCREENSHOT && reference.is_none() {
+    if matches!(method, method::WEB_SCREENSHOT | method::WEB_READ) && reference.is_none() {
         return Err(Error::ResponseMissingAttachment);
     }
     if let Some(reference) = &reference
