@@ -9,16 +9,22 @@ In a clean worktree of the commit (default: `origin/main` after a fetch) it runs
 `<health-dir>/<sha>.json`, the log `<sha>.log`, `latest.json` and, when green,
 `last_green.json`. A `needs-measurement` run (every step passed except the editor measurement,
 which VM1 collects separately) counts as green here: it is where the culprit search starts. A
-`flaky` or `fail` run never does. The default directory is `.cache/main-health` of the main checkout.
+`flaky` or `fail` run never does. The directory is `--health-dir`, else `$SOYEHT_MAIN_HEALTH_DIR`, else
+`.cache/main-health` of the main checkout (`gate_base.main_health_dir`, which the fast plan reads too).
 
 When the gate is red it first reruns the failing step once on the same commit: if that
-passes the failure is recorded as flaky and no commit is blamed. A timing-sensitive step (a
+passes the failure is recorded as flaky and no commit is blamed, but the run goes on: the steps the
+failed run never reached are run too (the gate stops at its first failure), so `flaky` says that the
+rest passed. One of them that fails is judged in its turn (rerun, then culprit search). Every flake is
+added to the ledger `<health-dir>/flakes.json` (step, sha, load, date; `gate_flakes.py`), from which
+`main_watch.py` reports a step with 2 or more flakes in the last 10 runs as `chronic`. A timing-sensitive step (a
 latency limit: the `timing` area and `editor-performance:rust`) records the load average of the
 host it ran on, and when that is over `LOAD_PER_CPU_LIMIT` per processor the one rerun is made
-on the quiet remote host when `--remote` is given, else after waiting (all the waiting of a run
-shares `LOAD_WAIT_BUDGET_SECONDS`) for the load to drop; the culprit search waits the same way before
-each probe, on the host the rerun used. A host still busy after the budget makes a failed rerun
-inconclusive (recorded `flaky`) and a probe that fails on it is skipped, so it blames nobody. Otherwise it finds the
+after waiting (all the waiting of a run shares `LOAD_WAIT_BUDGET_SECONDS`) for the load to drop;
+the culprit search waits the same way before each probe, on the host the rerun used. With `--remote`
+that host is the quiet Linux one: the timing steps are in `REMOTE_AREAS`, so they run there from
+the first run. A host still busy after the budget makes a failed rerun inconclusive (recorded
+`flaky`) and a probe that fails on it is skipped, so it blames nobody. Otherwise it finds the
 culprit among the first-parent commits since the last green main, running only the failing
 step (`check_all.sh --only STEP_ID`, with the steps it depends on) on a binary search of
 them. It never pushes, reverts or edits main: it reports the culprit commit, the failing
@@ -26,9 +32,9 @@ step and the log, and exits 1. A commit that cannot run the step, or cannot be c
 out, is skipped; if that leaves several candidates, all of them are reported.
 
 With `--remote HOST --remote-root PATH` the steps of the areas that run on Linux (`REMOTE_AREAS`:
-engine, desktop, e2e) run on HOST over ssh, through `scripts/remote_gate.sh` of the checkout at
+engine, desktop, e2e, timing) run on HOST over ssh, through `scripts/remote_gate.sh` of the checkout at
 PATH (docs/dev-local.md), and the other steps (the Swift packages, the Mac and iOS apps, the
-editor measurement, the dictation tests, the timing tests, the `always` checks) run here. The
+editor measurement, the dictation tests, the `always` checks) run here. The
 Rust half of the editor check is the engine step `editor-performance:rust`, so it runs on the
 host too. The remote steps run first; a failure there stops the run, as a local failure does.
 
@@ -87,7 +93,10 @@ from pathlib import Path
 from typing import Callable
 
 import check_editor_performance
+import gate_flakes
 from gate_base import main_checkout, main_health_dir
+from gate_worktree import (EDITOR_REPORT, WORKTREE_PREFIX, InfrastructureError, clean_worktree, git,
+                           prepare_persistent_worktree, remove_stale_worktrees, scratch_root)
 
 GOOD, BAD, SKIP = "good", "bad", "skip"
 FAILED_STEP = re.compile(r"^check_all: FAILED step (\S+)", re.MULTILINE)
@@ -97,17 +106,12 @@ INFRASTRUCTURE_EXIT = 2
 INFRASTRUCTURE_EXITS = {INFRASTRUCTURE_EXIT, 64, 70, 71, UNSUPPORTED_STEP_EXIT}
 # A step that only means something after another step of the same run.
 PREREQUISITES = {"e2e:tcc-check": "e2e:tcc-snapshot"}
-WORKTREE_PREFIX = "soyeht-post-merge-"
 HISTORY_DIRECTORY = "history"
-# Where a run keeps its worktree. Unset, the system temporary directory; a test names its own so
-# that two gates running the tests at once never remove each other's worktrees.
-SCRATCH_ROOT_ENV = "SOYEHT_POST_MERGE_TMP"
 BUSY_EXIT = 75
 # The editor measurement (ADR 0092): the VM1 report is copied into the worktree, and a check that
 # fails only because it is missing or stale is not a red main.
 EDITOR_METER_ENV = "SOYEHT_EDITOR_METER"
 EDITOR_STEP = "editor-performance:check"
-EDITOR_REPORT = check_editor_performance.VM_REPORT.relative_to(check_editor_performance.ROOT)
 NEEDS_MEASUREMENT = "needs-measurement"
 # Results from which the culprit search may start: no step failed. `needs-measurement` is only
 # set when every step passed except the editor measurement, which is collected apart on VM1.
@@ -116,16 +120,8 @@ NEEDS_MEASUREMENT_EXIT = 4
 # What check_editor_performance.py prints for an absent report and for one of other editor files.
 MISSING_REPORT = "editor-performance: missing "
 STALE_REPORT = "editor paths changed; measure this editor version again on VM1"
-# A persistent worktree (--worktree) keeps its cargo targets between runs. The Swift `.build`
-# directories are cleaned: SwiftPM's incremental build misses cross-module changes across checkouts.
+# A persistent worktree (--worktree), see gate_worktree.py, keeps its cargo targets between runs.
 WORKTREE_ENV = "SOYEHT_POST_MERGE_WORKTREE"
-# Xcode's derived data and the old reports of `.cache` go too, for the same reason; the package
-# checkouts and the VM1 report stay.
-KEPT_BETWEEN_RUNS = ("engine/target", "apps/desktop/target", ".cache/apple-packages",
-                     str(EDITOR_REPORT))
-# Written in the git directory of a worktree this script created: only such a worktree is ever
-# checked out forcibly and cleaned.
-OWNED_MARKER = "soyeht-post-merge-owned"
 # The Rust half of the editor check: an `engine` step (so it runs on the remote host) with a latency
 # limit, therefore timing-sensitive.
 EDITOR_RUST_STEP = "editor-performance:rust"
@@ -142,8 +138,11 @@ LOAD_LIMIT_ENV = "SOYEHT_LOAD_PER_CPU_LIMIT"
 LOAD_WAIT_BUDGET_SECONDS = 1800
 LOAD_POLL_SECONDS = 30
 LOAD_PROBE_TIMEOUT_SECONDS = 30  # the ssh that reads a host's load
-# The areas whose steps run on the remote Linux host; every other step runs on this machine.
-REMOTE_AREAS = ("engine", "desktop", "e2e")
+# The areas whose steps run on the remote Linux host; every other step runs on this machine. The
+# `timing` area is one of them: a latency limit is only meaningful on a quiet machine, the host
+# is the one that is, and its tests are the engine's own (the same crate the host builds warm for
+# `engine:test`). On the Mac they ran at three to four times the load limit and flaked.
+REMOTE_AREAS = ("engine", "desktop", "e2e", TIMING_AREA)
 # Set to a command (split on example) to replace `ssh -o BatchMode=yes`; the tests use it.
 SSH_ENV = "SOYEHT_REMOTE_SSH"
 REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
@@ -247,10 +246,6 @@ def is_timing_sensitive(step: str, areas: dict[str, str] | None) -> bool:
     return step in TIMING_STEPS or (areas or {}).get(step) == TIMING_AREA
 
 
-class InfrastructureError(RuntimeError):
-    """The machine or the gate could not run; nothing is recorded about main."""
-
-
 @dataclass
 class Search:
     culprit: str | None
@@ -281,13 +276,6 @@ def find_culprit(commits: list[str], probe: Callable[[str], str]) -> Search:
     if high - low == 1:
         return Search(commits[high], [commits[high]], probes)
     return Search(None, commits[low + 1 : high + 1], probes)
-
-
-def git(root: Path, *arguments: str, check: bool = True) -> str:
-    result = subprocess.run(["git", *arguments], cwd=root, capture_output=True, text=True)
-    if check and result.returncode:
-        raise RuntimeError(f"git {' '.join(arguments)}: {result.stderr.strip()}")
-    return result.stdout.strip()
 
 
 def run_process(arguments: list[str], cwd: Path, env: dict, output) -> int:
@@ -353,16 +341,14 @@ def remote_steps_timings(remote: Remote) -> list[dict]:
 
 
 def run_split_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
-                   timings: Path, command: list[str], remote: Remote, all_remote: bool = False) -> int:
-    """The remote areas run on the host, then the rest here; the first failure ends the run.
-    `all_remote` sends every wanted step to the host (the rerun of a timing step on a busy Mac)."""
+                   timings: Path, command: list[str], remote: Remote) -> int:
+    """The remote areas run on the host, then the rest here; the first failure ends the run."""
     areas = gate_step_areas(worktree, command)
     if areas is None:
         return REMOTE_UNSUPPORTED_EXIT
     wanted = only.split(",") if only else list(areas)
-    sent = REMOTE_AREAS if not all_remote else tuple(set(areas.values()))
-    remote_ids = [i for i in areas if i in wanted and areas[i] in sent]
-    local_ids = [i for i in areas if i in wanted and areas[i] not in sent]
+    remote_ids = [i for i in areas if i in wanted and areas[i] in REMOTE_AREAS]
+    local_ids = [i for i in areas if i in wanted and areas[i] not in REMOTE_AREAS]
     local_ids += [i for i in wanted if i not in areas]  # the local gate reports an unknown step
     sha = git(worktree, "rev-parse", "HEAD")
     timings.unlink(missing_ok=True)
@@ -397,11 +383,10 @@ def run_process_logged(arguments: list[str], cwd: Path, log: Path | None) -> int
 
 
 def run_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
-             timings: Path, command: list[str], remote: Remote | None = None,
-             all_remote: bool = False) -> int:
+             timings: Path, command: list[str], remote: Remote | None = None) -> int:
     if remote is None:
         return run_local_gate(worktree, base, only, log, timings, command)
-    return run_split_gate(worktree, base, only, log, timings, command, remote, all_remote)
+    return run_split_gate(worktree, base, only, log, timings, command, remote)
 
 
 def step_with_prerequisites(step: str) -> str:
@@ -491,11 +476,10 @@ def search_range(root: Path, health: Path, sha: str, since: str | None) -> list[
 def locate_culprit(root: Path, worktree: Path, commits: list[str], step: str,
                    command: list[str], scratch: Path, remote: Remote | None = None,
                    persistent: bool = False, measure: Callable[[], Load | None] | None = None,
-                   budget: WaitBudget | None = None, all_remote: bool = False) -> Search:
+                   budget: WaitBudget | None = None) -> Search:
     """`measure` (a timing step) reads the load of the host the probes run on: a probe waits for it
     to be quiet, and one that fails on a host that is (or turned) busy is skipped, so a busy host
-    never blames a commit; one that passes is good wherever it ran. `all_remote` runs the probes on
-    the remote host."""
+    never blames a commit; one that passes is good wherever it ran."""
     selection = step_with_prerequisites(step)
     # The probes of the editor check run older commits with the report of the newest one: a commit
     # whose editor files differ fails as stale, which says nothing about its latency.
@@ -519,7 +503,7 @@ def locate_culprit(root: Path, worktree: Path, commits: list[str], step: str,
             load = wait_until_quiet(measure, budget or WaitBudget())
             waited_busy = load is not None and load.busy()
         code = run_gate(worktree, parent_of(root, commit), selection, probe_log, scratch / "probe.json",
-                        command, remote, all_remote)
+                        command, remote)
         print(f"post_merge: {commit[:12]} step {selection}: exit {code}", flush=True)
         if code in INFRASTRUCTURE_EXITS or (code and probe_log and lacks_measurement(probe_log)):
             return SKIP
@@ -560,180 +544,132 @@ class Rerun:
     code: int
     measure: Callable[[], Load | None]  # the load of the host the step runs on
     note: str = ""
-    all_remote: bool = False  # the step ran on the remote host although it is a Mac-side one
     busy_after: Load | None = None  # the host was busy when a failed rerun ended: inconclusive
+    load: Load | None = None  # the load of that host before the rerun, for a timing step
 
 
 def rerun_on_quiet_host(worktree: Path, base: str | None, step: str, scratch: Path, command: list[str],
                         remote: Remote | None, areas: dict[str, str] | None, record: dict,
                         budget: WaitBudget) -> Rerun:
-    """The one rerun of the failing step. A timing-sensitive step that failed on a busy host is
-    rerun on the quiet remote host when there is one, else after waiting for the load to drop (the
-    budget bounds all waiting). A rerun that fails while its host is busy is inconclusive."""
+    """The one rerun of the failing step, on the host it ran on. A timing-sensitive step that failed
+    on a busy host is rerun after the load drops (the budget bounds all waiting); a rerun that fails
+    while its host is busy is inconclusive. The timing steps run on the remote host when there is
+    one (`REMOTE_AREAS`), so it is the quiet Linux host that is measured there."""
     selection = step_with_prerequisites(step)
     timing = is_timing_sensitive(step, areas)
     on_remote = remote is not None and (areas or {}).get(step) in REMOTE_AREAS
 
-    def measure_remote() -> Load | None:
-        return remote_load(remote) if remote else None
+    def measure() -> Load | None:
+        return remote_load(remote) if on_remote else local_load()
 
-    measure = measure_remote if on_remote else local_load
-
-    def rerun(note: str = "", all_remote: bool = False, measure=measure) -> Rerun:
-        code = run_gate(worktree, base, selection, None, scratch / "rerun.json", command, remote, all_remote)
+    def rerun(note: str = "", load: Load | None = None) -> Rerun:
+        code = run_gate(worktree, base, selection, None, scratch / "rerun.json", command, remote)
         noisy = busy_after(measure) if timing and code and code not in INFRASTRUCTURE_EXITS else None
-        return Rerun(code, measure, note, all_remote, noisy)
+        return Rerun(code, measure, note, noisy, load)
 
     load = measure() if timing else None
-    if load is None:
-        return rerun()
-    record["load"] = load.as_record()
-    if not load.busy():
-        return rerun()
-    if remote is not None and not on_remote:
-        host = wait_until_quiet(measure_remote, budget)
-        if host is not None and not host.busy():
-            on_host = rerun(f"{load.describe()} is busy; rerun on {remote.host}", True, measure_remote)
-            if on_host.code not in INFRASTRUCTURE_EXITS:  # else the host cannot run it: wait here
-                return on_host
+    if load is not None:
+        record["load"] = load.as_record()
+    if load is None or not load.busy():
+        return rerun(load=load)
     quiet = wait_until_quiet(measure, budget)
     note = f"{load.describe()} is busy; rerun after waiting"
     if quiet is not None:
         record["load_before_rerun"] = quiet.as_record()
         note += f" ({quiet.describe()}{', still busy' if quiet.busy() else ''})"
-    return rerun(note)
+    return rerun(note, load)
+
+
+def finish_after_flake(root: Path, worktree: Path, scratch: Path, record: dict, command: list[str],
+                       remote: Remote | None, areas: dict[str, str] | None, load_note: str) -> bool:
+    """A flaky step stopped the first run before the steps after it: run them, so that `flaky` says
+    what else was verified. True when the record is settled (they passed, or could not run and the
+    note says they are unverified); False when one failed, which is now `failed_step`."""
+    log, base = Path(record["log"]), parent_of(root, record["sha"])
+    code = run_unrun_steps(worktree, base, record, log, scratch, command, remote, areas)
+    if code and code not in INFRASTRUCTURE_EXITS:
+        if record["failed_step"] == EDITOR_STEP and lacks_measurement(log):
+            code = settle_missing_measurement(worktree, base, record, log, scratch, command, remote)
+        if code:
+            return False
+    tail = ("the steps after it ran and passed" if not code else
+            f"the steps after it could not be run (exit {code}) and are unverified")
+    if record["result"] != NEEDS_MEASUREMENT:  # that run is green for the search; its note says why
+        flaked = ", ".join(flake["step"] for flake in record["flaky_steps"])
+        record["result"] = "flaky"
+        record["note"] = (f"step {flaked} passed when run again on the same commit; no commit is "
+                          f"blamed, and {tail}{load_note}")
+    return True
 
 
 def investigate(root: Path, worktree: Path, scratch: Path, health: Path, record: dict,
                 since: str | None, command: list[str], remote: Remote | None = None,
                 persistent: bool = False) -> None:
-    """Fill in the culprit of a red run: a flaky step blames nobody."""
-    sha, step = record["sha"], record["failed_step"]
-    if not step:
-        record["note"] = "the failing step is unknown, so the culprit was not searched"
-        return
+    """Fill in the culprit of a red run: a flaky step blames nobody, and the steps it hid still run
+    (one of them may fail in its turn, and is then judged the same way)."""
+    sha = record["sha"]
     areas = gate_step_areas(worktree, command)
     budget = WaitBudget()
-    again = rerun_on_quiet_host(worktree, parent_of(root, sha), step, scratch, command, remote, areas,
-                                record, budget)
-    if again.code in INFRASTRUCTURE_EXITS:  # a busy or unreachable host says nothing about a commit
-        raise InfrastructureError(f"the rerun of {step} could not run (exit {again.code})")
-    load_note = f" ({again.note})" if again.note else ""
-    if again.code == 0:
-        record["result"] = "flaky"
-        record["note"] = (f"step {step} passed when run again on the same commit; no commit is blamed, "
-                          "and the steps after it did not run" + load_note)
-        return
+    while True:
+        step = record.get("failed_step")
+        if not step:
+            record["note"] = "the failing step is unknown, so the culprit was not searched"
+            return
+        again = rerun_on_quiet_host(worktree, parent_of(root, sha), step, scratch, command, remote, areas,
+                                    record, budget)
+        if again.code in INFRASTRUCTURE_EXITS:  # a busy or unreachable host says nothing about a commit
+            raise InfrastructureError(f"the rerun of {step} could not run (exit {again.code})")
+        load_note = f" ({again.note})" if again.note else ""
+        if again.code == 0:
+            flaked = record.setdefault("flaky_steps", [])
+            flaked.append(gate_flakes.flaky_step(step, record, again.load and again.load.as_record()))
+            if finish_after_flake(root, worktree, scratch, record, command, remote, areas, load_note):
+                return
+            if record["failed_step"] in {flake["step"] for flake in flaked}:
+                # The same step fails in the batch and passes alone (or the run left no step times
+                # to tell it apart): judging it again would never end. Each pass adds a new step.
+                record["result"] = "flaky"
+                record["note"] = (f"step {record['failed_step']} fails in the full run and passes when run "
+                                  "alone; the steps after it cannot be told apart, so no commit is blamed")
+                return
+            continue
+        break
     if again.busy_after:
+        record.setdefault("flaky_steps", []).append(
+            gate_flakes.flaky_step(step, record, again.busy_after.as_record(), gate_flakes.INCONCLUSIVE))
         record["result"] = "flaky"
         record["load_after_rerun"] = again.busy_after.as_record()
         record["note"] = (f"step {step} failed again, but {again.busy_after.describe()} is busy: the result is "
                           f"inconclusive, no commit is blamed and the next pass measures it again{load_note}")
         return
+    blame(root, worktree, scratch, health, record, since, command, remote, persistent, again, budget,
+          is_timing_sensitive(step, areas))
+
+
+def blame(root: Path, worktree: Path, scratch: Path, health: Path, record: dict, since: str | None,
+          command: list[str], remote: Remote | None, persistent: bool, again: Rerun,
+          budget: WaitBudget, timing: bool) -> None:
+    """The failing step failed again: name the commit that broke it, or the candidates."""
+    sha, step = record["sha"], record["failed_step"]
     commits = search_range(root, health, sha, since)
-    timing = is_timing_sensitive(step, areas)
     if not commits:
         record["note"] = "no known green main to search from; pass --since"
     elif len(commits) == 1:
         record["culprit"] = commit_info(root, commits[0])
     else:
         result = locate_culprit(root, worktree, commits, step, command, scratch, remote, persistent,
-                                again.measure if timing else None, budget, again.all_remote)
+                                again.measure if timing else None, budget)
         if result.culprit:
             record["culprit"] = commit_info(root, result.culprit)
         else:
             record["candidates"] = [commit_info(root, c) for c in result.candidates]
             record["note"] = "some commits cannot run the failing step alone"
-    if again.note:
-        earlier = f"{record['note']}; " if record.get("note") else ""
-        record["note"] = f"{earlier}the rerun also failed ({again.note})"
-
-
-def scratch_root() -> Path:
-    return Path(os.environ.get(SCRATCH_ROOT_ENV) or tempfile.gettempdir())
-
-
-def remove_stale_worktrees(root: Path, keep: Path | None = None) -> None:
-    """Leftovers of a run that was killed; the lock says no other run is alive. The persistent
-    worktree (`keep`) is not one, wherever it is."""
-    git(root, "worktree", "prune", check=False)
-    for stale in scratch_root().glob(f"{WORKTREE_PREFIX}*"):
-        if keep and (stale.resolve() == keep or stale.resolve() in keep.parents):
-            continue
-        shutil.rmtree(stale, ignore_errors=True)
-    git(root, "worktree", "prune", check=False)
-
-
-def clean_worktree(worktree: Path) -> None:
-    """Drop everything the last run left except the build directories (`KEPT_BETWEEN_RUNS`)."""
-    keep = [argument for path in KEPT_BETWEEN_RUNS for argument in ("-e", path)]
-    git(worktree, "clean", "-fdxq", *keep)
-
-
-def own_checkout() -> Path:
-    """The checkout this script runs from."""
-    return Path(__file__).resolve().parents[1]
-
-
-def owned_git_dir(root: Path, worktree: Path) -> Path:
-    """The git directory of a worktree that this script created, or an InfrastructureError.
-
-    Read from the `.git` file, so that it works when git itself fails in the worktree."""
-    pointer = worktree / ".git"
-    try:
-        target = pointer.read_text().strip() if pointer.is_file() else ""
-    except OSError:
-        target = ""
-    if not target.startswith("gitdir:"):
-        raise InfrastructureError(f"{worktree} is not a linked worktree")
-    git_dir = Path(target.removeprefix("gitdir:").strip()).resolve()
-    common = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")).resolve()
-    if git_dir.parent != common / "worktrees":
-        raise InfrastructureError(f"{worktree} is not a linked worktree of this repository")
-    if not (git_dir / OWNED_MARKER).is_file():
-        raise InfrastructureError(
-            f"{worktree} was not created by post_merge.py; refusing to check out and clean it")
-    return git_dir
-
-
-def create_persistent_worktree(root: Path, worktree: Path, sha: str) -> None:
-    if worktree.exists() and any(worktree.iterdir()):
-        raise InfrastructureError(f"{worktree} exists and is not a worktree; refusing to use it")
-    worktree.parent.mkdir(parents=True, exist_ok=True)
-    git(root, "worktree", "add", "--detach", str(worktree), sha)
-    git_dir = Path(git(worktree, "rev-parse", "--path-format=absolute", "--git-dir"))
-    (git_dir / OWNED_MARKER).write_text("created by scripts/post_merge.py; checked out and cleaned there\n")
-
-
-def prepare_persistent_worktree(root: Path, worktree: Path, sha: str) -> None:
-    """Reuse `worktree` for `sha`, or create it.
-
-    Only a worktree this script created is reused (the marker): the force and the clean below
-    must never touch the main checkout, the checkout this script runs from, or anyone's work. A
-    worktree that fails to prepare (a killed git left its index locked, say) is recreated."""
-    resolved = worktree.resolve()
-    if root.resolve() in (resolved, *resolved.parents):
-        raise InfrastructureError(f"{worktree} is the main checkout or inside it")
-    own = own_checkout()
-    if resolved in (own, *own.parents):
-        raise InfrastructureError(f"{worktree} contains the checkout this script runs from")
-    try:
-        if (worktree / ".git").exists():
-            git_dir = owned_git_dir(root, worktree)
-            (git_dir / "index.lock").unlink(missing_ok=True)  # the run lock is held: no git is running
-            try:
-                git(worktree, "checkout", "--quiet", "--detach", "--force", sha)
-                clean_worktree(worktree)
-            except RuntimeError as error:
-                print(f"post_merge: recreating the worktree {worktree}: {error}", flush=True)
-                git(root, "worktree", "remove", "--force", str(worktree), check=False)
-                shutil.rmtree(worktree, ignore_errors=True)
-                git(root, "worktree", "prune")
-                create_persistent_worktree(root, worktree, sha)
-        else:
-            create_persistent_worktree(root, worktree, sha)
-    except (RuntimeError, OSError) as error:
-        raise InfrastructureError(f"cannot prepare the worktree {worktree}: {error}") from None
+    notes = [record.get("note"), f"the rerun also failed ({again.note})" if again.note else None]
+    if record.get("flaky_steps"):
+        flaked = ", ".join(flake["step"] for flake in record["flaky_steps"])
+        notes.append(f"{flaked} flaked earlier in this run and passed when run again")
+    if any(notes):
+        record["note"] = "; ".join(note for note in notes if note)
 
 
 def install_editor_meter(meter: Path | None, worktree: Path) -> str:
@@ -764,34 +700,41 @@ def lacks_measurement(log: Path) -> bool:
                or (line.startswith("editor-performance: ") and STALE_REPORT in line) for line in lines)
 
 
-def run_steps_after(worktree: Path, base: str | None, step: str, log: Path, timings: Path,
-                    command: list[str], remote: Remote | None) -> int:
-    """The gate stops at its first failure: run the steps listed after `step` as well."""
-    areas = gate_step_areas(worktree, command)
-    if areas is None:
+def run_unrun_steps(worktree: Path, base: str | None, record: dict, log: Path, scratch: Path,
+                    command: list[str], remote: Remote | None,
+                    areas: dict[str, str] | None = None) -> int:
+    """The gate stops at its first failure: run the steps it never reached, add their times to the
+    record, and set `failed_step` to the one that fails. UNSUPPORTED_STEP_EXIT when the run cannot
+    say which steps it left out (the gate cannot list its steps, or the run left no step times)."""
+    rest = gate_flakes.unrun_steps(areas or gate_step_areas(worktree, command), record["steps"])
+    if rest is None:
         return UNSUPPORTED_STEP_EXIT
-    ids = list(areas)
-    rest = ids[ids.index(step) + 1:] if step in ids else []
     if not rest:
         return 0
-    selection = ",".join(dict.fromkeys(i for r in rest for i in step_with_prerequisites(r).split(",")))
-    return run_gate(worktree, base, selection, log, timings, command, remote)
+    ran = {step["id"] for step in record["steps"]}
+    # A prerequisite that already ran is not taken again: its check would compare nothing.
+    selection = ",".join(dict.fromkeys(i for r in rest for i in step_with_prerequisites(r).split(",")
+                                       if i == r or i not in ran))
+    later = scratch / "after-failure.json"
+    later.unlink(missing_ok=True)
+    code = run_gate(worktree, base, selection, log, later, command, remote)
+    try:
+        record["steps"] += json.loads(later.read_text())["latest"]["steps"]
+    except (OSError, ValueError, KeyError):
+        pass  # a gate that ran no step has no timings; the exit code says so
+    if code and code not in INFRASTRUCTURE_EXITS:
+        record["failed_step"] = failing_step(log, later, last=True)
+    return code
 
 
 def settle_missing_measurement(worktree: Path, base: str | None, record: dict, log: Path,
                                scratch: Path, command: list[str], remote: Remote | None) -> int:
     """Run what the editor check hid. 0 when all passed: the run is `needs-measurement`."""
     editor_hash = check_editor_performance.editor_tree_hash(worktree)  # before any probe moves HEAD
-    later = scratch / "after-editor.json"
-    code = run_steps_after(worktree, base, EDITOR_STEP, log, later, command, remote)
+    code = run_unrun_steps(worktree, base, record, log, scratch, command, remote)
     if code in INFRASTRUCTURE_EXITS:
         raise InfrastructureError(f"the steps after {EDITOR_STEP} could not run (exit {code}); see {log}")
-    try:
-        record["steps"] += json.loads(later.read_text())["latest"]["steps"]
-    except (OSError, ValueError, KeyError):
-        pass  # a gate that ran no step has no timings; the exit code says so
     if code:
-        record["failed_step"] = failing_step(log, later, last=True)
         return code
     record.update(result=NEEDS_MEASUREMENT, editor_tree_hash=editor_hash, note=(
         f"no valid VM1 measurement of editor tree {editor_hash}: measure it on VM1 and pass the "
@@ -857,6 +800,7 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
         write_json(health / "latest.json", record)
         if record["result"] in GREEN_RESULTS:
             write_json(health / "last_green.json", {"sha": sha, "at": record["started_at"]})
+        gate_flakes.record_run(health, record)  # last: the ledger never holds back the green marker
         return record
     finally:
         if not worktree_dir and not keep:
@@ -890,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check-all", default="bash scripts/check_all.sh",
                         help="the gate command run in each worktree")
     parser.add_argument("--remote", metavar="HOST",
-                        help="run the engine, desktop and e2e steps on this host over ssh")
+                        help="run the engine, desktop, e2e and timing steps on this host over ssh")
     parser.add_argument("--remote-root", metavar="PATH",
                         help="the checkout on the host that has scripts/remote_gate.sh")
     parser.add_argument("--editor-meter", type=Path, metavar="REPORT",

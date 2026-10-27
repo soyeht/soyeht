@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
 
 
 BASE_BRANCH = "origin/main"
+# The directory the post-merge scripts write (`latest.json`, `watch.json`, `flakes.json`) and the
+# fast plan reads. The operator sets it once for all of them; unset, it is `.cache/main-health` of
+# the main checkout.
+MAIN_HEALTH_DIR_ENV = "SOYEHT_MAIN_HEALTH_DIR"
 
 
 class BaseError(ValueError):
@@ -46,4 +51,10 @@ def main_checkout(root: Path) -> Path:
 
 
 def main_health_dir(root: Path) -> Path:
+    """The one health directory: $SOYEHT_MAIN_HEALTH_DIR, else `.cache/main-health` of the main
+    checkout. `post_merge.py`, `main_watch.py` and `gate_plan.py` all resolve it here, so the
+    plan reads the directory the operator writes."""
+    configured = os.environ.get(MAIN_HEALTH_DIR_ENV)
+    if configured:
+        return Path(configured).expanduser().resolve()
     return main_checkout(root) / ".cache/main-health"

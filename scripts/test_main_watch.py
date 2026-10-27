@@ -8,6 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import gate_flakes
+import gate_worktree
 import main_watch
 import post_merge
 from test_post_merge import FAKE_EDITOR_GATE, FAKE_GATE, commit, git, isolate_environment
@@ -62,7 +64,7 @@ class WatchCase(unittest.TestCase):
         self.gh.write_text(FAKE_GH)
         self.gh.chmod(0o755)
         environment = mock.patch.dict(os.environ, {
-            "FORBIDDEN_TERMS": "placeholder", post_merge.SCRATCH_ROOT_ENV: str(self.scratch),
+            "FORBIDDEN_TERMS": "placeholder", gate_worktree.SCRATCH_ROOT_ENV: str(self.scratch),
             "FAKE_GH_DIR": str(self.gh_dir), "FAKE_ORIGIN": str(self.origin),
             "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
         })
@@ -207,6 +209,38 @@ class RevertTests(WatchCase):
             self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
         self.assertEqual(self.gh_calls(), [])
         self.assertEqual(self.status()["result"], "flaky")
+
+    def test_the_status_reports_a_step_with_two_flakes_in_ten_runs_as_chronic(self):
+        for number in (1, 2):  # two earlier runs of the ledger, each with the same flaky step
+            gate_flakes.record_run(self.health, {
+                "sha": f"{number:040x}", "started_at": f"2026-10-0{number}T00:00:00Z",
+                "flaky_steps": [gate_flakes.flaky_step("swift:test-shared", {}, None)]})
+        self.land("breaks", {"broken": "x"})
+        with self.scripted("flaky"):
+            self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
+        chronic = self.status()["chronic"]
+        self.assertEqual([(step["step"], step["flakes"]) for step in chronic], [("swift:test-shared", 2)])
+        self.assertEqual(self.gh_calls(), [], "a chronic step is reported, not reverted")
+
+    def test_the_summary_names_a_chronic_step_and_says_to_fix_it(self):
+        chronic = [{"step": "engine:timing-frame-dense", "flakes": 3, "runs": 10, "shas": []}]
+        text = main_watch.summary("flaky", "a" * 40, {"failed_step": "x"}, None, chronic)
+        self.assertIn("chronic flake: engine:timing-frame-dense flaked in 3 of the last 10 runs", text)
+        self.assertIn("fix it, do not skip it", text)
+
+    def test_flakes_of_two_real_runs_make_the_step_chronic(self):
+        self.land("breaks", {"broken": "x"})
+        with mock.patch.dict(os.environ, {"FAKE_FLAKY": "1"}):  # every rerun passes: a flake
+            self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
+            self.assertEqual(self.status()["chronic"], [], "one flake is not chronic")
+            self.land("two", {"b": "2"})
+            self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
+        chronic = self.status()["chronic"]
+        self.assertEqual([(step["step"], step["flakes"], step["runs"]) for step in chronic], [("unit", 2, 2)])
+
+    def test_a_status_without_flakes_has_an_empty_chronic_list(self):
+        self.assertEqual(self.watch("--apply"), 0)
+        self.assertEqual(self.status()["chronic"], [])
 
     def test_an_unknown_failing_step_is_not_reverted(self):
         self.land("breaks", {"broken": "x"})

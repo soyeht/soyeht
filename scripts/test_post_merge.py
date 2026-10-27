@@ -12,6 +12,9 @@ from pathlib import Path
 from unittest import mock
 
 import check_editor_performance
+import gate_base
+import gate_flakes
+import gate_worktree
 import post_merge
 
 REAL_REMOTE_LOAD = post_merge.remote_load  # LoadRuleTests replaces the module's
@@ -47,15 +50,25 @@ exit "$status"
 """
 
 
+# The parts the stand-ins with a list of steps share: reading `--only` and `--list`, and recording
+# a step in the timings file the way check_all.sh does, stopping at the first failure.
+FAKE_ONLY_ARGUMENTS = r"""only=""; list=0
+while (($#)); do case "$1" in --only) only="$2"; shift 2;; --list) list=1; shift;; *) shift;; esac; done
+"""
+FAKE_RECORD_STEP = r"""    steps+="${steps:+,}{\"id\":\"$id\",\"area\":\"always\",\"seconds\":1.0,\"status\":$status}"
+    printf '{"latest":{"steps":[%s]}}' "$steps" > "${SOYEHT_GATE_TIMINGS:?}"
+    if ((status)); then echo "check_all: FAILED step $id (area always, exit $status)" >&2; exit "$status"; fi
+done
+"""
+
 # A stand-in with an editor measurement step, run in order after `unit` and before `ts`. The step
 # reads `.cache/editor-performance-vm.json` like the real check: no file fails as a missing
 # report, `stale` in it (or a version other than the commit's `editor_version`) as editor files that changed, `slow` as a latency over the limit.
-# `broken` makes the step named by FAKE_BREAK (default `unit`) fail.
+# `broken` makes the step named by FAKE_BREAK (default `unit`) fail; the file FAKE_ONCE makes it fail
+# once (the failure removes the file), as a flake does.
 FAKE_EDITOR_GATE = """#!/bin/bash
 # supports --only
-only=""; list=0
-while (($#)); do case "$1" in --only) only="$2"; shift 2;; --list) list=1; shift;; *) shift;; esac; done
-if ((list)); then printf 'always both unit\neditor_perf full editor-performance:check\ntypescript both ts\n'; exit 0; fi
+""" + FAKE_ONLY_ARGUMENTS + """if ((list)); then printf 'always both unit\neditor_perf full editor-performance:check\ntypescript both ts\n'; exit 0; fi
 [[ -z "${FAKE_TRACE:-}" ]] || echo "$PWD only=$only" >> "$FAKE_TRACE"
 steps=""
 editor() {
@@ -77,12 +90,31 @@ for id in unit editor-performance:check ts; do
     [[ -z "$only" || ",$only," == *",$id,"* ]] || continue
     status=0
     if [[ "$id" == editor-performance:check ]]; then editor || status=$?
-    elif [[ -e broken && "$id" == "${FAKE_BREAK:-unit}" ]]; then status=1; fi
-    steps+="${steps:+,}{\\"id\\":\\"$id\\",\\"area\\":\\"always\\",\\"seconds\\":1.0,\\"status\\":$status}"
-    printf '{"latest":{"steps":[%s]}}' "$steps" > "${SOYEHT_GATE_TIMINGS:?}"
-    if ((status)); then echo "check_all: FAILED step $id (area always, exit $status)" >&2; exit "$status"; fi
-done
-"""
+    elif [[ -e broken && "$id" == "${FAKE_BREAK:-unit}" ]]; then status=1
+    elif [[ -n "${FAKE_ONCE:-}" && -e "$FAKE_ONCE" && "$id" == "${FAKE_BREAK:-unit}" ]]; then rm -f "$FAKE_ONCE"; status=1; fi
+""" + FAKE_RECORD_STEP
+
+
+# A stand-in with three steps, `a`, `b` and `c`, run in that order. `a` fails once while the file
+# FAKE_ONCE exists (the failure removes it); `c` fails while the commit has a file `broken` and once
+# while FAKE_ONCE_C exists, and in a selection of several steps when FAKE_FAIL_IN_BATCH is set; the
+# gate exits 71 (cannot run) for a selection that names the step FAKE_INFRA_ON, and writes no step
+# times for a selection when FAKE_NO_TIMINGS_FOR_SELECTIONS is set.
+FAKE_TAIL_GATE = """#!/bin/bash
+# supports --only
+""" + FAKE_ONLY_ARGUMENTS + """if ((list)); then printf 'always both a\nswift both b\nswift both c\n'; exit 0; fi
+[[ -z "${FAKE_TRACE:-}" ]] || echo "$PWD only=$only" >> "$FAKE_TRACE"
+[[ -z "${FAKE_INFRA_ON:-}" || ",$only," != *",$FAKE_INFRA_ON,"* ]] || exit 71
+[[ -z "${FAKE_NO_TIMINGS_FOR_SELECTIONS:-}" || -z "$only" ]] || export SOYEHT_GATE_TIMINGS=/dev/null
+steps=""
+for id in a b c; do
+    [[ -z "$only" || ",$only," == *",$id,"* ]] || continue
+    status=0
+    if [[ "$id" == a && -n "${FAKE_ONCE:-}" && -e "$FAKE_ONCE" ]]; then rm -f "$FAKE_ONCE"; status=1
+    elif [[ "$id" == c && -e broken ]]; then status=1
+    elif [[ "$id" == c && -n "${FAKE_ONCE_C:-}" && -e "$FAKE_ONCE_C" ]]; then rm -f "$FAKE_ONCE_C"; status=1
+    elif [[ "$id" == c && -n "${FAKE_FAIL_IN_BATCH:-}" && "$only" == *,* ]]; then status=1; fi
+""" + FAKE_RECORD_STEP
 
 
 def git(root: Path, *arguments: str) -> str:
@@ -145,7 +177,8 @@ class CulpritSearchTests(unittest.TestCase):
 def isolate_environment():
     """Inside a `mock.patch.dict(os.environ)`: forget the variables post_merge reads, which a
     watch wrapper may export (they would send the tests to a real worktree, meter or host)."""
-    for name in (post_merge.WORKTREE_ENV, post_merge.EDITOR_METER_ENV, post_merge.SSH_ENV):
+    for name in (post_merge.WORKTREE_ENV, post_merge.EDITOR_METER_ENV, post_merge.SSH_ENV,
+                 gate_base.MAIN_HEALTH_DIR_ENV):
         os.environ.pop(name, None)
 
 
@@ -163,7 +196,7 @@ class SyntheticRepositoryCase(unittest.TestCase):
         self.scratch.mkdir()
         environment = mock.patch.dict(
             os.environ,
-            {"FORBIDDEN_TERMS": "placeholder", post_merge.SCRATCH_ROOT_ENV: str(self.scratch)},
+            {"FORBIDDEN_TERMS": "placeholder", gate_worktree.SCRATCH_ROOT_ENV: str(self.scratch)},
         )
         environment.start()
         self.addCleanup(environment.stop)
@@ -398,6 +431,21 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         self.assertEqual(self.last_green(), head, "every step but the measurement passed: a good main")
         self.assertEqual(json.loads((self.health / "latest.json").read_text())["sha"], head)
 
+    def test_a_flaky_step_before_the_editor_check_still_leaves_the_measurement_to_vm1(self):
+        self.green_start()
+        head = self.add("two", {"b": "2"})
+        once = self.root.parent / "once"
+        once.write_text("")
+        with mock.patch.dict(os.environ, {"FAKE_ONCE": str(once)}):
+            self.assertEqual(self.run_main(head), post_merge.NEEDS_MEASUREMENT_EXIT)
+        record = self.record(head)
+        self.assertEqual(record["result"], "needs-measurement")
+        self.assertEqual([flake["step"] for flake in record["flaky_steps"]], ["unit"])
+        self.assertEqual([step["id"] for step in record["steps"]], ["unit", "editor-performance:check", "ts"])
+        self.assertNotIn("culprit", record)
+        ledger = json.loads((self.health / "flakes.json").read_text())
+        self.assertEqual([(flake["step"], flake["sha"]) for flake in ledger["flakes"]], [("unit", head)])
+
     def test_a_main_that_only_lacks_the_measurement_starts_the_culprit_search(self):
         first = self.add("two", {"b": "2"})
         self.assertEqual(self.run_main(first), post_merge.NEEDS_MEASUREMENT_EXIT)
@@ -600,7 +648,7 @@ class PersistentWorktreeTests(SyntheticRepositoryCase):
 
     def test_the_worktree_this_script_runs_from_is_refused(self):
         self.assertEqual(self.run_main(self.shas[0], "--worktree", str(self.warm)), 0)
-        with mock.patch.object(post_merge, "own_checkout", return_value=self.warm.resolve() / "inner"):
+        with mock.patch.object(gate_worktree, "own_checkout", return_value=self.warm.resolve() / "inner"):
             self.assertEqual(self.run_main(self.shas[0], "--worktree", str(self.warm), "--force"), 2)
 
     def test_a_relative_path_names_the_same_directory_for_every_check(self):
@@ -640,7 +688,7 @@ class PersistentWorktreeTests(SyntheticRepositoryCase):
         head = self.add("two", {"b": "2"})
         self.assertEqual(self.run_main(head, "--worktree", str(self.warm)), 0)
         self.assertEqual(git(self.warm, "rev-parse", "HEAD"), head)
-        self.assertTrue((self.gitdir() / post_merge.OWNED_MARKER).is_file())
+        self.assertTrue((self.gitdir() / gate_worktree.OWNED_MARKER).is_file())
 
     def test_the_stale_worktree_cleanup_never_removes_the_persistent_one(self):
         warm = self.scratch / f"{post_merge.WORKTREE_PREFIX}warm"
@@ -665,6 +713,190 @@ FAKE_SSH = """#!/bin/bash
 shift
 exec bash -c "$*"
 """
+
+
+class FlakyTailTests(SyntheticRepositoryCase):
+    """A flaky step stops the first run: the steps after it still run, and a flake is remembered."""
+
+    FILES = {"scripts/check_all.sh": FAKE_TAIL_GATE, "a": "1"}
+
+    def setUp(self):
+        super().setUp()
+        self.trace = self.root.parent / "trace.txt"
+        self.once = self.root.parent / "once"
+        environment = mock.patch.dict(os.environ, {
+            "FAKE_TRACE": str(self.trace), "FAKE_ONCE": str(self.once)})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.assertEqual(self.run_main(self.shas[0]), 0)
+        self.trace.unlink()
+
+    def selections(self):
+        return [line.rsplit("only=", 1)[1] for line in self.trace.read_text().splitlines()]
+
+    def flake_on_the_next_run(self, files=None):
+        head = self.add("two", files or {"b": "2"})
+        self.once.write_text("")
+        return head
+
+    def test_the_steps_after_a_flaky_step_run_and_the_record_says_they_passed(self):
+        head = self.flake_on_the_next_run()
+        self.assertEqual(self.run_main(head), 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertEqual(self.selections(), ["", "a", "b,c"], "the gate, the rerun, the steps it never reached")
+        self.assertEqual([step["id"] for step in record["steps"]], ["a", "b", "c"])
+        self.assertIn("steps after it ran and passed", record["note"])
+        self.assertEqual([flake["step"] for flake in record["flaky_steps"]], ["a"])
+        self.assertNotIn(head, (self.health / "last_green.json").read_text(), "a flaky run is not green")
+
+    def test_a_later_step_that_fails_is_judged_in_its_turn_and_names_the_culprit(self):
+        self.add("two", {"b": "2"})
+        culprit = self.add("breaks c", {"broken": "x"})
+        head = self.add("four", {"c": "3"})
+        self.once.write_text("")
+        self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
+        record = self.record(head)
+        self.assertEqual((record["result"], record["failed_step"]), ("fail", "c"))
+        self.assertEqual(record["culprit"]["sha"], culprit)
+        self.assertEqual([flake["step"] for flake in record["flaky_steps"]], ["a"])
+        self.assertIn("a flaked earlier in this run", record["note"])
+
+    def flaky_record(self, head, **environment):
+        """The record of a run whose `a` flakes, under `environment`."""
+        with mock.patch.dict(os.environ, environment):
+            self.assertEqual(self.run_main(head), 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertEqual([flake["step"] for flake in record["flaky_steps"]][:1], ["a"])
+        return record
+
+    def test_a_later_step_that_flakes_too_is_recorded_and_the_rest_still_runs(self):
+        head = self.flake_on_the_next_run()
+        once_c = self.root.parent / "once-c"
+        once_c.write_text("")  # `c` fails once as well, in the steps after the flaky `a`
+        record = self.flaky_record(head, FAKE_ONCE_C=str(once_c))
+        self.assertEqual([flake["step"] for flake in record["flaky_steps"]], ["a", "c"])
+        self.assertEqual(self.selections(), ["", "a", "b,c", "c"])
+        self.assertIn("step a, c passed when run again", record["note"])
+
+    def test_a_step_that_fails_in_the_batch_and_passes_alone_ends_the_run(self):
+        head = self.flake_on_the_next_run()
+        # No step times for a selection, so the tail records nothing and `c` is found from the log;
+        # it fails in `b,c` and passes alone, which would repeat for ever.
+        record = self.flaky_record(head, FAKE_FAIL_IN_BATCH="1", FAKE_NO_TIMINGS_FOR_SELECTIONS="1")
+        self.assertEqual([flake["step"] for flake in record["flaky_steps"]], ["a", "c"])
+        self.assertIn("fails in the full run and passes when run alone", record["note"])
+        self.assertLessEqual(len(self.selections()), 6)
+
+    def test_a_prerequisite_that_already_ran_is_not_taken_again(self):
+        head = self.flake_on_the_next_run()
+        with mock.patch.object(post_merge, "PREREQUISITES", {"c": "a"}):
+            self.assertEqual(self.run_main(head), 1)
+        self.assertEqual(self.selections(), ["", "a", "b,c"], "`a` ran: its snapshot is not retaken before `c`")
+        self.assertEqual(self.record(head)["result"], "flaky")
+
+    def test_steps_that_cannot_run_after_a_flake_are_reported_as_unverified(self):
+        head = self.flake_on_the_next_run()
+        with mock.patch.dict(os.environ, {"FAKE_INFRA_ON": "b"}):
+            self.assertEqual(self.run_main(head), 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "flaky")
+        self.assertIn("could not be run (exit 71) and are unverified", record["note"])
+        self.assertEqual([flake["step"] for flake in record["flaky_steps"]], ["a"])
+
+    def test_a_flake_is_written_to_the_ledger_with_its_sha_load_and_date(self):
+        head = self.flake_on_the_next_run()
+        self.assertEqual(self.run_main(head), 1)
+        ledger = json.loads((self.health / "flakes.json").read_text())
+        self.assertEqual([run["sha"] for run in ledger["runs"]], [self.shas[0], head])
+        (flake,) = ledger["flakes"]
+        self.assertEqual((flake["step"], flake["sha"], flake["date"]), ("a", head, self.record(head)["started_at"]))
+        self.assertEqual(flake["load"], self.record(head)["local_load"])
+        self.assertEqual(flake["kind"], "passed-on-rerun")
+
+
+class FlakeLedgerTests(unittest.TestCase):
+    """`flakes.json`: a step with two flakes in the last ten runs is chronic."""
+
+    def setUp(self):
+        self.health = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.health, ignore_errors=True)
+        self.count = 0
+
+    def run_with(self, *flaky, sha=None):
+        self.count += 1
+        record = {"sha": sha or f"{self.count:040x}", "started_at": f"2026-10-{self.count:02d}T00:00:00Z",
+                  "flaky_steps": [gate_flakes.flaky_step(step, {"local_load": {"average": 3.0}}, None) for step in flaky]}
+        gate_flakes.record_run(self.health, record)
+        return record["sha"]
+
+    def test_two_flakes_of_one_step_in_ten_runs_are_chronic(self):
+        self.run_with("swift:test-shared")
+        for _ in range(4):
+            self.run_with()
+        self.run_with("swift:test-shared", "engine:timing-frame-dense")
+        self.assertEqual(gate_flakes.chronic_steps(self.health), [
+            {"step": "swift:test-shared", "flakes": 2, "runs": 6,
+             "shas": [f"{1:040x}", f"{6:040x}"]}])
+
+    def test_a_flake_that_left_the_window_is_forgotten(self):
+        self.run_with("a")
+        self.run_with("a")
+        self.assertEqual([c["step"] for c in gate_flakes.chronic_steps(self.health)], ["a"])
+        for _ in range(gate_flakes.CHRONIC_WINDOW - 1):
+            self.run_with()  # the first flake is now eleven runs back
+        self.assertEqual(gate_flakes.chronic_steps(self.health), [])
+
+    def test_a_run_again_of_a_commit_replaces_its_entries(self):
+        sha = self.run_with("a")
+        self.run_with("a", sha=sha)
+        ledger = gate_flakes.read_ledger(self.health)
+        self.assertEqual((len(ledger["runs"]), len(ledger["flakes"])), (1, 1))
+        self.assertEqual(gate_flakes.chronic_steps(self.health), [])
+
+    def test_the_ledger_is_bounded(self):
+        for _ in range(gate_flakes.RUN_HISTORY + 5):
+            self.run_with("a")
+        ledger = gate_flakes.read_ledger(self.health)
+        self.assertEqual((len(ledger["runs"]), len(ledger["flakes"])), (gate_flakes.RUN_HISTORY,) * 2)
+
+    def test_a_missing_or_corrupt_ledger_is_empty(self):
+        self.assertEqual(gate_flakes.chronic_steps(self.health), [])
+        (self.health / gate_flakes.LEDGER_FILE).write_text("{not json")
+        self.assertEqual(gate_flakes.read_ledger(self.health), {"runs": [], "flakes": []})
+
+    def test_a_ledger_of_the_wrong_shape_is_empty_and_is_replaced(self):
+        for content in ("null", "[]", '{"runs":[1]}', '{"runs":{"a":1},"flakes":"x"}',
+                        '{"runs":[{"sha":1}],"flakes":[1,{"step":3,"sha":"a"},{"step":"s"}]}'):
+            with self.subTest(content=content):
+                (self.health / gate_flakes.LEDGER_FILE).write_text(content)
+                self.assertEqual(gate_flakes.read_ledger(self.health), {"runs": [], "flakes": []})
+                self.assertEqual(gate_flakes.chronic_steps(self.health), [])
+                self.run_with("a")
+                self.assertEqual(len(gate_flakes.read_ledger(self.health)["flakes"]), 1)
+
+    def test_the_ledger_is_replaced_atomically(self):
+        self.run_with("a")
+        with mock.patch.object(gate_flakes.os, "replace", side_effect=OSError("full")):
+            with self.assertRaises(OSError):
+                self.run_with("b")
+        self.assertEqual([flake["step"] for flake in gate_flakes.read_ledger(self.health)["flakes"]], ["a"],
+                         "a write that fails leaves the ledger as it was")
+
+    def test_a_flake_carries_the_load_of_its_own_rerun_not_an_earlier_flakes(self):
+        record = {"load": {"host": "linux-host", "average": 80.0, "cpus": 32},
+                  "local_load": {"host": "local", "average": 3.0, "cpus": 8}}
+        self.assertEqual(gate_flakes.flaky_step("swift:test-shared", record, None)["load"], record["local_load"])
+        timing = {"host": "linux-host", "average": 1.0, "cpus": 32}
+        self.assertEqual(gate_flakes.flaky_step("engine:timing-x", record, timing)["load"], timing)
+
+    def test_the_steps_a_failed_run_never_reached(self):
+        areas = {"a": "always", "b": "swift", "c": "swift"}
+        self.assertEqual(gate_flakes.unrun_steps(areas, [{"id": "a"}]), ["b", "c"])
+        self.assertEqual(gate_flakes.unrun_steps(areas, [{"id": "c"}, {"id": "a"}]), ["b"])
+        self.assertIsNone(gate_flakes.unrun_steps(areas, []), "a run with no step times cannot say")
+        self.assertIsNone(gate_flakes.unrun_steps(None, [{"id": "a"}]))
 
 
 class RemoteHostCase(SyntheticRepositoryCase):
@@ -917,20 +1149,21 @@ exec {self.fake_ssh} "$@"
 
 
 # A stand-in with the three kinds of step the load rules tell apart: `unit` (no latency limit), `tm`
-# (area `timing`, runs on this machine) and the Rust editor step (area `engine`, runs on the host).
-# A step named by FAKE_STEP fails while the file FAKE_NOISE exists (a loaded host) or `broken` does.
-# On the host (the checkout `remote-gate`) the noise is not heard: that host is quiet.
+# (area `timing`) and the Rust editor step (area `engine`); with a host, `tm` and the editor step run
+# there and `unit` here. A step named by FAKE_STEP fails while the file FAKE_NOISE exists (a loaded
+# Mac), FAKE_HOST_NOISE exists (a loaded host), or `broken` does; and once, when FAKE_ONCE exists
+# (it is removed by that failure). On the host (the checkout `remote-gate`) the Mac's noise is not heard.
 FAKE_LOAD_GATE = """#!/bin/bash
 # supports --only
-only=""; list=0
-while (($#)); do case "$1" in --only) only="$2"; shift 2;; --list) list=1; shift;; *) shift;; esac; done
-if ((list)); then printf 'always both unit\\ntiming full tm\\nengine full editor-performance:rust\\n'; exit 0; fi
+""" + FAKE_ONLY_ARGUMENTS + """if ((list)); then printf 'always both unit\\ntiming full tm\\nengine full editor-performance:rust\\n'; exit 0; fi
 step="${FAKE_STEP:-tm}"
 echo "$PWD only=$only" >> "${FAKE_TRACE:?}"
 [[ -z "$only" || ",$only," == *",$step,"* ]] || exit 0
 status=0
 [[ -e broken ]] && status=1
 [[ -n "${FAKE_NOISE:-}" && -e "$FAKE_NOISE" && "$PWD" != *remote-gate* ]] && status=1
+[[ -n "${FAKE_HOST_NOISE:-}" && -e "$FAKE_HOST_NOISE" && "$PWD" == *remote-gate* ]] && status=1
+[[ -n "${FAKE_ONCE:-}" && -e "$FAKE_ONCE" ]] && { rm -f "$FAKE_ONCE"; status=1; }
 printf '{"latest":{"steps":[{"id":"%s","area":"x","seconds":1.0,"status":%s}]}}' "$step" "$status" > "${SOYEHT_GATE_TIMINGS:?}"
 ((status)) && echo "check_all: FAILED step $step (area x, exit 1)" >&2
 exit "$status"
@@ -950,7 +1183,10 @@ class LoadRuleTests(RemoteHostCase):
     def setUp(self):
         super().setUp()
         self.noise = self.root.parent / "noise"
-        environment = mock.patch.dict(os.environ, {"FAKE_NOISE": str(self.noise)})
+        self.host_noise = self.root.parent / "host-noise"
+        self.once = self.root.parent / "once"
+        environment = mock.patch.dict(os.environ, {
+            "FAKE_NOISE": str(self.noise), "FAKE_HOST_NOISE": str(self.host_noise), "FAKE_ONCE": str(self.once)})
         environment.start()
         self.addCleanup(environment.stop)
         self.pauses = []
@@ -958,11 +1194,12 @@ class LoadRuleTests(RemoteHostCase):
         def pause(seconds):
             self.pauses.append(seconds)
             self.noise.unlink(missing_ok=True)  # the load drops while we wait
+            self.host_noise.unlink(missing_ok=True)
 
         for target, replacement in (
             ("pause", pause),
             ("local_load", lambda: BUSY if self.noise.exists() else QUIET),
-            ("remote_load", lambda remote: post_merge.Load(remote.host, 1.0, 32)),
+            ("remote_load", lambda remote: post_merge.Load(remote.host, 80.0 if self.host_noise.exists() else 1.0, 32)),
         ):
             patch = mock.patch.object(post_merge, target, replacement)
             patch.start()
@@ -970,16 +1207,23 @@ class LoadRuleTests(RemoteHostCase):
         self.assertEqual(self.run_main(self.shas[0]), 0)
         self.trace.unlink()
 
-    def fail_under_load(self, step, *extra):
+    def commits_with_a_culprit(self):
+        """Four commits after the start, the second makes the step fail: (that commit, the head)."""
+        self.add("two", {"b": "2"})
+        culprit = self.add("slows it down", {"broken": "x"})
+        self.add("four", {"c": "3"})
+        return culprit, self.add("five", {"d": "4"})
+
+    def fail_under_load(self, step, *extra, on_host=False):
         self.add("two", {"b": "2"})
         head = self.add("three", {"c": "3"})
-        self.noise.write_text("")
+        (self.host_noise if on_host else self.noise).write_text("")
         with mock.patch.dict(os.environ, {"FAKE_STEP": step}):
             return head, self.run_main(head, *extra)
 
-    def flaky_record_under_load(self, *extra):
+    def flaky_record_under_load(self, *extra, on_host=False):
         """The record of a timing step that failed on a busy host and passed on the rerun."""
-        head, code = self.fail_under_load("tm", *extra)
+        head, code = self.fail_under_load("tm", *extra, on_host=on_host)
         self.assertEqual(code, 1)
         record = self.record(head)
         self.assertEqual(record["result"], "flaky")
@@ -1000,14 +1244,19 @@ class LoadRuleTests(RemoteHostCase):
         self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS])
         self.assertNotIn("culprit", record)
 
-    def test_a_timing_step_that_failed_on_a_busy_host_is_rerun_on_the_remote_host(self):
-        remote = ("--remote", "linux-host", "--remote-root", str(self.host_checkout))
-        record = self.flaky_record_under_load(*remote)
-        self.assertIn("rerun on linux-host", record["note"])
-        self.assertEqual(self.pauses, [], "a quiet host needs no wait")
-        directory, arguments = self.runs()[-1]
-        self.assertIn("remote-gate/tree", directory)
-        self.assertEqual(arguments, "only=tm")
+    def test_a_timing_step_runs_on_the_host_and_is_rerun_there_after_its_load_drops(self):
+        record = self.flaky_record_under_load(*self.remote_options(), on_host=True)
+        self.assertEqual(record["load"], {"host": "linux-host", "average": 80.0, "cpus": 32})
+        self.assertEqual(record["flaky_steps"][0]["load"], record["load"], "the ledger keeps the host's load")
+        self.assertIn("busy; rerun after waiting", record["note"])
+        self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS])
+        first, rerun, *tail = self.runs()
+        self.assertTrue(all("remote-gate/tree" in directory and arguments.startswith("only=tm")
+                            for directory, arguments in (first, rerun)))
+        self.assertEqual(rerun[1], "only=tm")
+        # What the failed run never reached: the host's step there, the Mac's step here.
+        self.assertEqual([(("remote-gate" in directory), arguments.split()[0]) for directory, arguments in tail],
+                         [(True, "only=editor-performance:rust"), (False, "only=unit")])
 
     def test_a_step_without_a_latency_limit_is_rerun_at_once_whatever_the_load(self):
         head, code = self.fail_under_load("unit")
@@ -1030,10 +1279,7 @@ class LoadRuleTests(RemoteHostCase):
         self.assertEqual(self.pauses, [])
 
     def test_the_culprit_search_waits_for_a_quiet_host_before_each_probe_of_a_timing_step(self):
-        self.add("two", {"b": "2"})
-        culprit = self.add("slows it down", {"broken": "x"})
-        self.add("four", {"c": "3"})
-        head = self.add("five", {"d": "4"})
+        culprit, head = self.commits_with_a_culprit()
         with mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}), \
                 mock.patch.object(post_merge, "wait_until_quiet", return_value=QUIET) as waited:
             self.assertEqual(self.run_main(head, "--since", self.shas[0]), 1)
@@ -1043,15 +1289,15 @@ class LoadRuleTests(RemoteHostCase):
         self.assertGreaterEqual(probes, 2)
         self.assertEqual(waited.call_count, probes)
 
-    def test_the_rust_editor_step_runs_on_the_remote_host_with_the_other_engine_steps(self):
+    def test_the_timing_steps_run_on_the_remote_host_with_the_engine_steps(self):
         head = self.add("two", {"b": "2"})
         with mock.patch.dict(os.environ, {"FAKE_STEP": "editor-performance:rust"}):
             self.assertEqual(self.run_remote(head), 0)
         (remote_directory, remote_arguments), (local_directory, local_arguments) = self.runs()
         self.assertIn("remote-gate/tree", remote_directory)
-        self.assertEqual(remote_arguments.split()[0], "only=editor-performance:rust")
+        self.assertEqual(remote_arguments.split()[0], "only=tm,editor-performance:rust")
         self.assertNotIn("remote-gate", local_directory)
-        self.assertEqual(local_arguments.split()[0], "only=unit,tm")
+        self.assertEqual(local_arguments.split()[0], "only=unit")
 
     def test_a_remote_step_is_judged_by_the_load_of_the_host_it_ran_on(self):
         self.add("two", {"b": "2"})
@@ -1086,20 +1332,16 @@ class LoadRuleTests(RemoteHostCase):
     def remote_options(self):
         return ("--remote", "linux-host", "--remote-root", str(self.host_checkout))
 
-    def test_probes_of_a_step_rerun_on_the_host_run_on_the_host_too(self):
-        self.stay_busy()
-        self.add("two", {"b": "2"})
-        culprit = self.add("slows it down", {"broken": "x"})
-        self.add("four", {"c": "3"})
-        head = self.add("five", {"d": "4"})
-        self.noise.write_text("")  # the Mac is busy for good; the host is quiet
+    def test_the_probes_of_a_timing_step_run_on_the_host_too(self):
+        culprit, head = self.commits_with_a_culprit()
         with mock.patch.dict(os.environ, {"FAKE_STEP": "tm"}):
             self.assertEqual(self.run_main(head, "--since", self.shas[0], *self.remote_options()), 1)
         record = self.record(head)
-        self.assertEqual(record["culprit"]["sha"], culprit, "a busy Mac must not fail a good commit")
+        self.assertEqual(record["culprit"]["sha"], culprit)
+        self.assertEqual(record["load"]["host"], "linux-host", "the host's load judges the step")
         runs = self.runs()
-        # The first run (the engine step on the host, the rest here) and the rerun are not probes.
-        probes = runs[3:]
+        # The first run (it stops at the step on the host, so nothing runs here) and the rerun are not probes.
+        probes = runs[2:]
         self.assertGreaterEqual(len(probes), 2)
         self.assertTrue(all("remote-gate/tree" in directory and arguments == "only=tm"
                             for directory, arguments in probes), probes)
@@ -1156,40 +1398,20 @@ class LoadRuleTests(RemoteHostCase):
         self.assertNotIn("culprit", record)
         self.assertEqual([c["subject"] for c in record["candidates"]], ["slows it down", "four"])
 
-    def test_an_unreachable_host_is_not_waited_for_and_the_rerun_waits_here(self):
+    def test_a_host_that_cannot_say_its_load_is_rerun_at_once(self):
+        self.once.write_text("")  # the step fails once on the host, whatever its load
         with mock.patch.object(post_merge, "remote_load", lambda remote: None):
-            record = self.flaky_record_under_load(*self.remote_options())
-        self.assertIn("rerun after waiting", record["note"])
-        self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS], "the wait is the Mac's only")
+            record = self.flaky_record_under_load(*self.remote_options(), on_host=False)
+        self.assertEqual(self.pauses, [], "an unreadable load is not waited for")
+        self.assertNotIn("load", record)
 
-    def test_a_busy_host_uses_the_budget_and_leaves_a_busy_mac_inconclusive(self):
+    def test_a_rerun_that_fails_on_a_busy_remote_host_is_inconclusive(self):
         self.stay_busy()
-        with mock.patch.object(post_merge, "remote_load", lambda remote: post_merge.Load(remote.host, 90.0, 8)):
-            record = self.flaky_record_under_load(*self.remote_options())
+        record = self.flaky_record_under_load(*self.remote_options(), on_host=True)
         self.assertIn("inconclusive", record["note"])
+        self.assertEqual(record["load_after_rerun"], {"host": "linux-host", "average": 80.0, "cpus": 32})
+        self.assertNotIn("culprit", record)
         self.assertEqual(sum(self.pauses), post_merge.LOAD_WAIT_BUDGET_SECONDS)
-
-    def test_a_host_rerun_that_cannot_run_falls_back_to_waiting_on_the_mac(self):
-        self.add("two", {"b": "2"})
-        head = self.add("three", {"c": "3"})
-        seen = self.root.parent / "gate-calls"
-        busy_ssh = self.root.parent / "busy_ssh"
-        busy_ssh.write_text(f"""#!/bin/bash
-# The first gate call goes through; every later one finds the host's worktree busy (exit 75).
-if [[ "$*" == *"--sha"* ]]; then
-    [[ -e {seen} ]] && exit 75
-    touch {seen}
-fi
-exec {self.fake_ssh} "$@"
-""")
-        busy_ssh.chmod(0o755)
-        self.noise.write_text("")
-        with mock.patch.dict(os.environ, {post_merge.SSH_ENV: str(busy_ssh), "FAKE_STEP": "tm"}):
-            self.assertEqual(self.run_main(head, *self.remote_options()), 1)
-        record = self.record(head)
-        self.assertEqual(record["result"], "flaky")
-        self.assertIn("rerun after waiting", record["note"])
-        self.assertEqual(self.pauses, [post_merge.LOAD_POLL_SECONDS])
 
     def test_asking_a_silent_host_for_its_load_times_out(self):
         remote = post_merge.Remote("linux-host", str(self.host_checkout))

@@ -283,20 +283,23 @@ inherit the main actor.
 - Full gate, after the merge: `scripts/main_watch.py` (one pass; the coordinator runs it
   continuously) fetches `origin/main` and, when it moved, calls `scripts/post_merge.py` once
   on the newest commit. That runs `check_all.sh --tier full` in a clean worktree and writes
-  `.cache/main-health/<sha>.json` (result, duration, per-step times) and `latest.json`. It reads
+  `<sha>.json` (result, duration, per-step times) and `latest.json` in the health directory
+  (`$SOYEHT_MAIN_HEALTH_DIR`, else `.cache/main-health` of the main checkout; one place, `gate_base.main_health_dir`). It reads
   the `Verification change:` line from the squash commit message, as the pre-merge gate reads it
   from the PR body, so the merge must keep that line in the commit body. When it
-  is red it reruns the failing step once (a pass is recorded as flaky and blames no commit),
-  then finds the culprit commit by running only the failing step on the commits since the last
+  is red it reruns the failing step once (a pass is recorded as flaky and blames no commit, and
+  the steps the failed run never reached still run), then finds the culprit commit by running only the failing step on the commits since the last
   green main (`last_green.json`: a `pass`, or a `needs-measurement` run, where every step passed
   and only the editor measurement on the VM is missing). `main_watch.py --apply` then reverts a
   single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step and the
   log, merged with `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
   a flaky run, a revert, or a revert that does not apply, and it never forces a push or touches
-  another branch; `--dry-run` is the default. It writes `.cache/main-health/watch.json`. With
-  `--remote HOST --remote-root PATH` the engine, desktop and e2e steps run on a Linux host
+  another branch; `--dry-run` is the default. It writes `watch.json` in the health directory, with
+  the flaky steps that are `chronic` (2 or more flakes in the last 10 runs, from `flakes.json`): fix
+  them, never skip them. With
+  `--remote HOST --remote-root PATH` the engine, desktop, e2e and timing steps run on a Linux host
   through `scripts/remote_gate.sh` (`docs/dev-local.md`). The plan prints a warning while
-  `latest.json` says main is red. The editor measurement on the VM is collected separately,
+  `latest.json` says main is red, and a note while it says flaky. The editor measurement on the VM is collected separately,
   when the editor hash changes. Run `--tier full` yourself before a merge when you want
   certainty.
 - Red main is fixed by the automatic revert of a confirmed culprit. Its author re-lands a

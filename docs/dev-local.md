@@ -106,8 +106,8 @@ None of these options accepts another profile or service name.
 
 `scripts/main_watch.py` is one pass of the continuous post-merge gate. It fetches
 `origin/main`, runs `scripts/post_merge.py` once on the newest commit when main moved, and
-writes `.cache/main-health/watch.json` (the last processed commit, the result, the culprit
-and any revert). `--dry-run` is the default; `--apply` pushes and merges the revert of a
+writes `watch.json` in the health directory (the last processed commit, the result, the culprit,
+any revert and the `chronic` flaky steps). `--dry-run` is the default; `--apply` pushes and merges the revert of a
 confirmed culprit. Run it from a loop or a timer with `FORBIDDEN_TERMS` in the environment
 and `gh` authenticated; it holds a lock, so overlapping runs exit 75.
 
@@ -117,8 +117,8 @@ FORBIDDEN_TERMS=... uv run python scripts/main_watch.py --apply \
 ```
 
 `--remote HOST --remote-root PATH` (also accepted by `post_merge.py`) runs the steps of the
-areas engine, desktop and e2e on HOST and the other full-tier steps (the Swift packages, the
-Mac and iOS apps, the editor measurement, the dictation tests, the timing tests, the
+areas engine, desktop, e2e and timing on HOST and the other full-tier steps (the Swift packages, the
+Mac and iOS apps, the editor measurement, the dictation tests, the
 `always` checks and the `gate_scripts` unit tests) on the local machine, after the remote ones. The interface with the host is
 this and nothing else:
 
@@ -144,22 +144,23 @@ this and nothing else:
   settings come from `PATH/.cache/remote-gate/gate.env` (docs/platforms.md, "A Linux gate host").
 - `remote_gate.sh --print-timings` prints that timings file; `post_merge.py` merges it into
   the record of the run.
-- A timing-sensitive step (the `timing` area and `editor-performance:rust`, whose latency limits a
-  loaded machine trips: 243 ms against 150 ms at a load of 60 to 140, 92 ms when quiet) records the
-  load average of the host it ran on (`load` in the record; `local_load` is the Mac's, in every
-  record, and `remote_gate.sh --print-load` is the host's). The one rerun of such a step that failed
-  with a load over `LOAD_PER_CPU_LIMIT` (1.0 per processor, `SOYEHT_LOAD_PER_CPU_LIMIT`) goes to the
-  remote host when it is a Mac-side step and `--remote` is given (and the host is quiet and can run
-  it), else it waits for the load to drop. All the waiting of a run, the rerun and every probe of
-  the culprit search together, shares `LOAD_WAIT_BUDGET_SECONDS` (30 minutes), and the ssh that
-  reads the host's load times out after `LOAD_PROBE_TIMEOUT_SECONDS`. A pass is `flaky` as usual.
-  The culprit search probes on the host the rerun used, waiting for it to be quiet before each probe.
-  A host still busy when the budget is spent is inconclusive: a failed rerun is recorded `flaky` with
-  that note (no culprit, the next pass measures again), and a probe that fails on a busy host (or one
+- The timing steps (the `timing` area: latency limits that a loaded machine trips, 243 ms against
+  150 ms at a load of 60 to 140, 92 ms when quiet) run on the host with the other engine steps, so
+  the quiet machine is the one that measures them; they are the engine's own cargo tests, built warm
+  there for `engine:test`. Without `--remote` they run on this machine. A timing-sensitive step (the
+  `timing` area and `editor-performance:rust`) records the load average of the host it ran on (`load` in
+  the record; `local_load` is the Mac's, in every record, and `remote_gate.sh --print-load` is the host's).
+  The one rerun of such a step that failed with a load over `LOAD_PER_CPU_LIMIT` (1.0 per processor,
+  `SOYEHT_LOAD_PER_CPU_LIMIT`) waits for the load of that host to drop. All the waiting of a run, the
+  rerun and every probe of the culprit search together, shares `LOAD_WAIT_BUDGET_SECONDS` (30 minutes),
+  and the ssh that reads the host's load times out after `LOAD_PROBE_TIMEOUT_SECONDS`. A pass is `flaky`
+  as usual. The culprit search probes on the host the rerun used, waiting for it to be quiet before each
+  probe. A host still busy when the budget is spent is inconclusive: a failed rerun is recorded `flaky`
+  with that note (no culprit, the next pass measures again), and a probe that fails on a busy host (or one
   that turned busy) is skipped, so it gives candidates and reverts nothing. A probe that passes is
   good on any host, because load can only slow a step.
   The tradeoff: a regression that only the Mac shows in a `timing` step and that passes on Linux is
-  recorded `flaky`, not red, so it does not advance `last_green.json`; nothing is reverted for it.
+  not seen at all; the Linux host is the reference for a latency limit.
 - The restricted vocabulary is not sent: the remote steps do not scan for it, and a
   placeholder satisfies the gate's check that it is set.
 - One run at a time per clone (`post_merge.py` holds the lock). Set
@@ -168,6 +169,25 @@ this and nothing else:
   the engine needs. On a host with Nix (NixOS) the script enters `scripts/linux-gate.nix`
   itself and needs none of that; `--slot NAME` adds a second persistent worktree
   (docs/platforms.md, "A Linux gate host").
+
+### The health directory, flaky steps and the flake ledger
+
+Everything the post-merge scripts write lives in one health directory: `<sha>.json` and `<sha>.log`
+per run, `latest.json`, `last_green.json`, `watch.json`, `flakes.json`. It is `--health-dir`, else
+`$SOYEHT_MAIN_HEALTH_DIR`, else `.cache/main-health` of the main checkout. `main_health_dir` in
+`scripts/gate_base.py` is the only place that resolves it, and `gate_plan.py` uses it too, so the fast
+plan reads the directory the operator writes. Set `SOYEHT_MAIN_HEALTH_DIR` for the operator scripts
+and for any gate run that should print the warning. The plan prints `WARNING: main is RED ...` when
+`latest.json` says `fail`, and `NOTE: main is FLAKY ...` when it says `flaky`.
+
+A step that fails and passes when run again on the same commit is `flaky` and blames nobody. The gate
+stops at its first failure, so `post_merge.py` then runs the steps the failed run never reached and
+records that they passed (`the steps after it ran and passed`), or that they could not run and are
+unverified. A later step that fails is judged in its turn: rerun once, then the culprit search.
+Every flake (`flaky_steps` of the record) is added to `flakes.json` (`step`, `sha`, `load`, `date`,
+`kind`: `passed-on-rerun` or `inconclusive`, with the runs in order). `watch.json` lists as `chronic`
+every step with 2 or more flakes in the last 10 runs. A chronic step is fixed (a deterministic wait,
+a retry loop like the capture cadence test's), never skipped.
 
 ### The editor measurement and a warm worktree
 

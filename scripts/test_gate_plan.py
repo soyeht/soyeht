@@ -1,9 +1,14 @@
+import contextlib
+import io
 import json
+import os
 import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import gate_base
 import gate_plan
 from gate_plan import Package, make_plan
 
@@ -431,6 +436,39 @@ class MainHealthTests(unittest.TestCase):
         self.assertIn("main is RED", warning)
         self.assertIn("engine:test", warning)
         self.assertIn("b" * 12, warning)
+
+    def test_a_flaky_head_is_a_note(self):
+        note = gate_plan.main_health_warning(self.health(
+            {"sha": "c" * 40, "result": "flaky", "failed_step": "swift:test-shared"}))
+        self.assertIn("main is FLAKY at " + "c" * 12, note)
+        self.assertIn("swift:test-shared", note)
+        self.assertNotIn("RED", note)
+
+    def test_the_directory_is_the_environment_s_and_the_plan_reads_what_the_operator_writes(self):
+        written = Path(tempfile.mkdtemp())
+        (written / "latest.json").write_text(json.dumps(
+            {"sha": "d" * 40, "result": "fail", "failed_step": "engine:test"}))
+        with mock.patch.dict(os.environ, {gate_base.MAIN_HEALTH_DIR_ENV: str(written)}):
+            self.assertEqual(gate_base.main_health_dir(gate_plan.ROOT), written.resolve())
+            self.assertIn("main is RED", gate_plan.main_health_warning(gate_base.main_health_dir(gate_plan.ROOT)))
+
+    def test_the_default_directory_is_the_main_checkouts_cache(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop(gate_base.MAIN_HEALTH_DIR_ENV, None)
+            self.assertEqual(gate_base.main_health_dir(gate_plan.ROOT),
+                             gate_base.main_checkout(gate_plan.ROOT) / ".cache/main-health")
+
+    def test_the_fast_plan_prints_the_warning_of_the_environment_directory(self):
+        written = Path(tempfile.mkdtemp())
+        (written / "latest.json").write_text(json.dumps(
+            {"sha": "e" * 40, "result": "fail", "failed_step": "engine:test", "culprit": {"sha": "f" * 40}}))
+        files = written / "files"
+        files.write_text("README.md\n")
+        error = io.StringIO()
+        with mock.patch.dict(os.environ, {gate_base.MAIN_HEALTH_DIR_ENV: str(written)}), \
+                contextlib.redirect_stderr(error), contextlib.redirect_stdout(io.StringIO()):
+            gate_plan.main(["--tier", "fast", "--files-from", str(files)])
+        self.assertIn("WARNING: main is RED at " + "e" * 12, error.getvalue())
 
     def test_green_or_unrecorded_main_is_silent(self):
         self.assertIsNone(gate_plan.main_health_warning(self.health({"sha": "a", "result": "pass"})))

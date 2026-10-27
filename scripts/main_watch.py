@@ -30,7 +30,10 @@ merged, and the pass is not marked as done, so a later `--apply` still acts on i
 only ever creates, pushes and deletes its own revert branches; it never rewrites history or
 touches another branch.
 
-`<health-dir>/watch.json` holds the last processed commit, the result and the revert. Exit
+`<health-dir>/watch.json` holds the last processed commit, the result, the revert and `chronic`:
+the steps that flaked at least twice in the last ten runs (`flakes.json`, written by post_merge).
+A chronic step is fixed, never skipped. The health directory is `--health-dir`, else
+`$SOYEHT_MAIN_HEALTH_DIR`, else `.cache/main-health` of the main checkout (`gate_base`). Exit
 codes: 0 green or nothing new, 1 main was red (see the file), 2 the gate could not run,
 3 a revert was needed and failed, 4 the editor needs a VM1 measurement, 75 another run is in
 progress.
@@ -51,6 +54,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import gate_flakes
 import post_merge
 from gate_base import main_checkout, main_health_dir
 
@@ -249,7 +253,7 @@ def new_commits(root: Path, last: str | None, head: str) -> list[str]:
                           check=False).split()
 
 
-def summary(result: str, head: str, record: dict, revert: Revert | None) -> str:
+def summary(result: str, head: str, record: dict, revert: Revert | None, chronic: list[dict]) -> str:
     lines = [f"main_watch: {result} at {head[:12]}"]
     if record.get("failed_step"):
         lines.append(f"  failing step: {record['failed_step']}")
@@ -263,6 +267,9 @@ def summary(result: str, head: str, record: dict, revert: Revert | None) -> str:
         lines.append(f"  revert of {revert.culprit[:12]}: {revert.state}"
                      + (f" ({revert.reason})" if revert.reason else "")
                      + (f" {revert.pr}" if revert.pr else ""))
+    for step in chronic:
+        lines.append(f"  chronic flake: {step['step']} flaked in {step['flakes']} of the last {step['runs']} "
+                     "runs; fix it, do not skip it")
     return "\n".join(lines)
 
 
@@ -299,6 +306,7 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
         result, revert = decide(root, record, arguments.apply, gh, scratch)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+    chronic = gate_flakes.chronic_steps(health)
     history = (status.get("reverts", []) + ([asdict(revert)] if revert else []))[-HISTORY_LIMIT:]
     update = {
         **base, "result": result, "batch": len(commits), "failed_step": record.get("failed_step"),
@@ -306,13 +314,14 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
         "candidates": record.get("candidates", []), "note": record.get("note"),
         "revert": asdict(revert) if revert else None, "reverts": history,
         "editor_tree_hash": record.get("editor_tree_hash"),
+        "chronic": chronic,
     }
     # A dry run leaves the pass open for a later --apply; so does a missing measurement, which
     # runs again (cheaply, from the record) until a report for its hash is given.
     if arguments.apply and result != post_merge.NEEDS_MEASUREMENT:
         update["last_sha"] = head
     write_json(status_path, update)
-    print(summary(result, head, record, revert))
+    print(summary(result, head, record, revert, chronic))
     if revert and revert.state in ("failed", "open"):
         return REVERT_FAILED_EXIT
     if result == post_merge.NEEDS_MEASUREMENT:

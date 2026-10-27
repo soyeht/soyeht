@@ -357,16 +357,22 @@ def render_shell(plan: Plan) -> str:
 
 
 def main_health_warning(health: Path) -> str | None:
-    """A warning when the post-merge run says main is red."""
+    """A warning when the post-merge run says main is red, a note when its head is flaky."""
     try:
         latest = json.loads((health / "latest.json").read_text())
     except (OSError, ValueError):
         return None  # no post-merge run has been recorded here
+    head = str(latest.get("sha"))[:12]
+    if latest.get("result") == "flaky":
+        return (
+            f"NOTE: main is FLAKY at {head} (step {latest.get('failed_step')}): the step failed "
+            "but is not proven a regression, so the commit is not proven green; take care in its area"
+        )
     if latest.get("result") != "fail":
         return None
     culprit = (latest.get("culprit") or {}).get("sha", "unknown")
     return (
-        f"WARNING: main is RED at {str(latest.get('sha'))[:12]} (step {latest.get('failed_step')}, "
+        f"WARNING: main is RED at {head} (step {latest.get('failed_step')}, "
         f"culprit {culprit[:12]}); fix or revert it first and merge nothing into the affected area"
     )
 

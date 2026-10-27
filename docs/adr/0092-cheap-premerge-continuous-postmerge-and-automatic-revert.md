@@ -65,12 +65,14 @@ default; the coordinator runs it with `--apply`. Main is kept green by reverting
 culprit; its author re-lands a fixed change.
 
 **A remote host runs the Linux-capable steps.** `post_merge.py` and `main_watch.py` take
-`--remote HOST --remote-root PATH`. The steps of the areas `engine`, `desktop` and `e2e` then
+`--remote HOST --remote-root PATH`. The steps of the areas `engine`, `desktop`, `e2e` and `timing` then
 run on the host over ssh through `scripts/remote_gate.sh`, which fetches the commit, checks it
 out in a persistent worktree of the checkout at PATH and runs
 `check_all.sh --tier full --only STEPS` there. The remaining steps (the Swift packages, the
-Mac and iOS apps, the editor measurement, the dictation tests, the timing tests, the
-`always` checks and the `gate_scripts` unit tests) run on the local machine, after the remote ones. An unreachable host, a
+Mac and iOS apps, the editor measurement, the dictation tests, the `always` checks and the
+`gate_scripts` unit tests) run on the local machine, after the remote ones. (The timing steps
+first ran here; they moved to the host because a latency limit is only meaningful on a quiet
+machine, `docs/dev-local.md`.) An unreachable host, a
 missing checkout or script, or a commit that cannot be fetched is a problem of the machine:
 nothing is recorded and nothing is reverted. The interface is in `docs/dev-local.md`.
 
