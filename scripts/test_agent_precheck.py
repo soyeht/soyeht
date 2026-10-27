@@ -16,7 +16,7 @@ from agent_precheck import (
 
 BASE = "a" * 40
 STEPS = [
-    ("always", "post-merge:unit"),
+    ("gate_scripts", "post-merge:unit"),
     ("always", "forbidden-terms:unit"),
     ("always", "forbidden-terms:scan"),
     ("always", "layers:unit"),
@@ -53,8 +53,8 @@ def read(path: Path) -> str:
 class SelectionTests(unittest.TestCase):
     def test_every_always_step_of_the_gate_is_in_the_precheck_or_named_as_left_out(self):
         text = CHECK_ALL.read_text()
-        listed = [("always", step_id) for step_id in
-                  (line.split()[3] for line in text.splitlines() if line.startswith("step always "))]
+        listed = [(line.split()[1], line.split()[3]) for line in text.splitlines()
+                  if line.startswith(("step always ", "step gate_scripts "))]
         units = unit_tests(text)
         self.assertIn("forbidden-terms:unit", units)
         everything = ["scripts/" + path.name for path in (agent_precheck.ROOT / "scripts").glob("*.py")]
@@ -62,6 +62,7 @@ class SelectionTests(unittest.TestCase):
         chosen = set(cheap) | set(contracts)
         left_out = set(agent_precheck.OWN_STEPS) | {agent_precheck.QUALITY_STEP}
         self.assertTrue(quality)
+        self.assertIn("gate_scripts", {area for area, _ in listed})
         for _, step_id in listed:
             with self.subTest(step=step_id):
                 self.assertEqual(step_id in chosen, step_id not in left_out)

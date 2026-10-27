@@ -1,6 +1,6 @@
 # ADR 0092: A cheap gate before the merge, a continuous gate after it, and an automatic revert
 
-- Status: accepted
+- Status: accepted; the desktop and e2e steps of the fast tier are amended at the end
 - Date: 2026-10-16
 
 ## Context
@@ -19,7 +19,8 @@ lint, a build and the unit tests, in a few minutes on a warm cache:
 
 - engine: `fmt`, `clippy -D warnings`, `cargo build` of the workspace and
   `cargo test --lib --bins` of the changed crates and their reverse dependencies;
-- desktop: `fmt`, `clippy` (both feature sets) and `cargo test --lib --bins`;
+- desktop: `fmt`, `clippy` (both feature sets) and `cargo test --lib --bins` (amended below:
+  the whole `cargo test`);
 - Swift: `swift format lint` and `swift build` of `apps/shared`;
 - TypeScript: install, `check`, `test`.
 
@@ -37,7 +38,7 @@ the verification ratchet watches, so the pull request that makes the move carrie
 **A gate-script change still runs everything, except a test-only one.** A change to the
 scripts that run the gate upgrades the run to the full tier (ADR 0089), because a partial run
 cannot vouch for them. A change to `scripts/test_*.py` alone no longer does: it selects the
-`always` area, whose steps run those tests, and still asks for a review. Beside the script
+`always` and `gate_scripts` areas, whose steps run those tests, and still asks for a review. Beside the script
 it tests, the script decides.
 
 **The gate runs continuously after the merge, and a confirmed culprit is reverted.**
@@ -69,7 +70,7 @@ run on the host over ssh through `scripts/remote_gate.sh`, which fetches the com
 out in a persistent worktree of the checkout at PATH and runs
 `check_all.sh --tier full --only STEPS` there. The remaining steps (the Swift packages, the
 Mac and iOS apps, the editor measurement, the dictation tests, the timing tests, the
-`always` checks) run on the local machine, after the remote ones. An unreachable host, a
+`always` checks and the `gate_scripts` unit tests) run on the local machine, after the remote ones. An unreachable host, a
 missing checkout or script, or a commit that cannot be fetched is a problem of the machine:
 nothing is recorded and nothing is reverted. The interface is in `docs/dev-local.md`.
 
@@ -120,3 +121,33 @@ post-merge step finds; it is then reverted by the next pass, usually within one 
 run. Until then main is red, the plan prints the warning, and a pull request that touches the
 affected area should wait for the revert. A culprit whose revert conflicts with later work, or
 that is itself a revert, needs a person.
+
+## Amendment (2026-10-26): the desktop tests and e2e run before the merge
+
+Two regressions reached main because the fast tier could not see them. #622 changed the order
+of `file.save` and broke `apps/desktop/crates/soyeht-client/tests/engine.rs`, which only the
+full `desktop:test` ran; #635 changed the usage probe and broke `e2e:editor`, which only the
+full tier ran. Both were found by the run after the merge and fixed by a second pull request.
+
+The desktop's `tests/` directories drive the client against a scripted engine socket, start no
+sibling binary and take a few seconds (`desktop:test` has a median of 34 s, against 47 s for
+the stand-in measured on a loaded slot). They are not the heavy integration tests this ADR
+moved out. So:
+
+- `desktop:test` runs in both tiers and `desktop:test-fast` is gone;
+- the e2e suites run in the fast tier when the engine selection is the whole workspace or its
+  reverse closure holds a program they start (`E2E_PROGRAMS` in `gate_plan.py`): the area `e2e`
+  is derived from the engine selection, not from a path. About 23 s of suites plus the two
+  builds. `engine:build-product` and `engine:build-test-engine` are `e2e` steps placed after
+  every `cargo test` of the engine, because `cargo test` relinks `target/debug/soyeht-engine`
+  with the test hooks (ADR 0091). The engine integration tests (`engine:test`, 220 to 340 s)
+  stay in the full tier. The remote host runs the same steps in the same order
+  (`remote_gate.sh` calls `check_all.sh --only`, which runs in file order).
+
+The cost is paid by the unit tests of the gate scripts, which the `always` area ran on every
+pull request (about 190 s: `post-merge:unit` 100 s, `quality:unit` 35 s, `main-watch:unit` 29 s,
+and the waiver, list and timings tests). They are the area `gate_scripts`, selected by a change
+under `scripts/`, `contracts/*.py` or `.githooks/` and by the full tier. `gate-plan:unit` stays
+in `always`: it reads engine and desktop sources through `CROSS_READS`, so any change can break
+it. Moving them out of `always` lowers the ratchet's per-area count; the pull request carries
+the `Verification change:` line.

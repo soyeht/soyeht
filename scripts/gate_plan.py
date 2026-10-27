@@ -4,9 +4,12 @@
 `scripts/check_all.sh` is the only list of gate steps and tags each with an area. This
 script decides which areas a change needs, which engine crates `cargo test` covers, and
 whether the change needs a reviewer. The fast tier is cheap on purpose: format, lint, a build
-and the unit tests (`--lib --bins`) of the selected areas. Integration tests, the Swift
-tests, the Mac and iOS app builds, e2e, the editor measurement and the timing tests run only
-in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match wins:
+and the unit tests (`--lib --bins`) of the selected engine, Swift and TypeScript areas, the whole
+`cargo test` of the desktop (its `tests/` directories are scripted-engine tests of a few
+seconds), and the end-to-end suites when the change reaches the engine's programs. The Swift
+tests, the engine integration tests, the Mac and iOS app builds, the editor measurement and the
+timing tests run only in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match
+wins:
 
 - a change to the contracts, `engine/soyeht-protocol`, the gate tooling (`scripts/`,
   `.github/`, `.githooks/`), the lockfiles or the workspace manifests selects every
@@ -19,10 +22,19 @@ in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match wins:
 - documentation selects only `always`;
 - an unknown path selects every code area.
 
+Two areas are derived, not mapped from a path:
+
+- `e2e` is selected when the engine selection is the whole workspace, or its reverse closure
+  contains an engine program that the suites start (`E2E_PROGRAMS`). A change to a library
+  crate that none of those programs depends on does not select it.
+- `gate_scripts` (the unit tests of the gate scripts themselves) is selected when a path under
+  `scripts/`, `contracts/*.py` or `.githooks/` changes, and by the full tier. Other changes
+  cannot break those tests, so the fast tier does not pay for them.
+
 A change to the scripts that run the gate (`gate_runner`) upgrades the run to the full
 tier: a mistake there is not covered by a partial run. A change to the unit tests of those
-scripts alone (`scripts/test_*.py`) does not: it selects `always`, whose steps run those
-tests.
+scripts alone (`scripts/test_*.py`) does not: it selects `always` and `gate_scripts`, whose steps run
+those tests.
 """
 
 from __future__ import annotations
@@ -43,10 +55,17 @@ from gate_base import BaseError, main_health_dir, resolve_base
 ROOT = Path(__file__).resolve().parents[1]
 CODE_AREAS = ("engine", "desktop", "swift", "typescript")
 # Areas that only the full tier (the run after the merge) covers: the dictation tests, the
-# Mac and iOS app builds, the end-to-end suites, the editor measurement and the timing tests.
-# The Swift packages and the engine and desktop workspaces also have steps that are full-only.
-FULL_ONLY_AREAS = ("dictation", "mac_app", "ios_app", "e2e", "editor_perf", "timing")
-ALL_AREAS = ("always", *CODE_AREAS, *FULL_ONLY_AREAS)
+# Mac and iOS app builds, the editor measurement and the timing tests. The Swift packages and
+# the engine workspace also have steps that are full-only.
+FULL_ONLY_AREAS = ("dictation", "mac_app", "ios_app", "editor_perf", "timing")
+# Selected from the engine selection (see `make_plan`) and not from a path.
+E2E_AREA = "e2e"
+# The engine programs that the end-to-end suites start: a change that reaches one of them
+# (it is in the reverse closure of the selection) runs the suites.
+E2E_PROGRAMS = ("soyeht-engine", "soyeht-cli", "soyeht-ptyd", "soyeht-mcp")
+# Selected by a path under the gate scripts, and by the full tier.
+GATE_SCRIPTS_AREA = "gate_scripts"
+ALL_AREAS = ("always", GATE_SCRIPTS_AREA, *CODE_AREAS, E2E_AREA, *FULL_ONLY_AREAS)
 
 # Data files of the ratchets: the always-on checks read them, no code depends on them.
 GATE_DATA_PATTERNS = ("scripts/*baseline*.json", "scripts/*allowlist*.json")
@@ -103,7 +122,7 @@ def gate_data(path: str) -> bool:
 
 
 def gate_test(path: str) -> bool:
-    """A unit test of the gate scripts: the `always` steps run it, and nothing else reads it."""
+    """A unit test of the gate scripts: the `always` and `gate_scripts` steps run it, and nothing else reads it."""
     return posixpath.dirname(path) == "scripts" and re.fullmatch(r"test_\w+\.py", posixpath.basename(path)) is not None
 
 
@@ -117,6 +136,13 @@ def gate_runner(path: str) -> bool:
              or name.startswith(("gate_", "post_merge", "main_watch", "remote_gate",
                                  "e2e", "tcc_guard", "require_one_rust_test"))
              or name in {"check_mac.sh", "check_ios.sh", "check_swift.sh", "check_editor_performance.py"})
+    )
+
+
+def gate_script_source(path: str) -> bool:
+    """A path whose change can break the unit tests of the gate scripts."""
+    return path.startswith(("scripts/", ".githooks/")) or (
+        posixpath.dirname(path) == "contracts" and path.endswith(".py")
     )
 
 
@@ -207,6 +233,8 @@ def make_plan(
     crates: set[str] = set()
     everything = engine_packages is None
     for path in files:
+        if gate_script_source(path):
+            areas.add(GATE_SCRIPTS_AREA)
         for prefix, extra_areas, extra_crates in CROSS_READS:
             if path.startswith(prefix):
                 areas.update(extra_areas)
@@ -237,6 +265,8 @@ def make_plan(
     selection = None
     if "engine" in areas and not everything:
         selection = tuple(sorted(reverse_closure(crates, engine_packages or [])))
+    if "engine" in areas and (selection is None or set(selection) & set(E2E_PROGRAMS)):
+        areas.add(E2E_AREA)
     reasons = sorted({reason for path in files for reason in review_reasons(path)})
     upgrade = tuple(sorted(path for path in files if gate_runner(path)))
     return Plan(
@@ -307,7 +337,7 @@ def render_text(plan: Plan, tier: str) -> str:
         tests = "whole workspace" if plan.engine_crates is None else " ".join(plan.engine_crates)
         if "engine" in plan.areas:
             lines.append(f"  engine tests: {tests}")
-        lines.append(f"  after the merge only: {' '.join(FULL_ONLY_AREAS)}, integration and Swift tests")
+        lines.append(f"  after the merge only: {' '.join(FULL_ONLY_AREAS)}, engine integration and Swift tests")
     if plan.upgrade:
         lines.append(f"  full tier required: {', '.join(plan.upgrade)}")
     lines.append(f"  review:  {plan.review}")

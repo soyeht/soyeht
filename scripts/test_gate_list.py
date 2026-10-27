@@ -44,11 +44,58 @@ STEP = re.compile(r"^\s*step\s+(\S+)\s+(\S+)\s+(\S+)", re.MULTILINE)
 # A fast step that stands in for a full one is named `<full id>-changed`, `-fast` or `-build`.
 STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast|build)$")
 # The steps that only the full tier (after the merge) runs, whichever area they belong to.
+# (`desktop:test` and the e2e steps run before the merge too.)
 AFTER_MERGE = (
-    "engine:test", "desktop:test", "swift:test-shared", "swift:test-dictation", "swift:engine-binaries",
+    "engine:test", "swift:test-shared", "swift:test-dictation", "swift:engine-binaries",
     "mac-app:build", "ios-app:build", "swift:check-swift", "editor-performance:check",
     "editor-performance:rust",
 )
+
+
+# The steps that make up the end-to-end set, in the order they must run: the programs they start
+# are built after every `cargo test` of the engine (which relinks target/debug/soyeht-engine with
+# the test hooks), and the TCC guard brackets the suites.
+E2E_SET = (
+    "engine:build-product", "engine:build-test-engine", "e2e:tcc-snapshot", "e2e:core", "e2e:agents",
+    "e2e:tasks", "e2e:editor", "e2e:web", "e2e:writing", "e2e:tcc-check",
+)
+# The unit tests of the gate scripts that only a change to the scripts can break.
+GATE_SCRIPT_UNITS = (
+    "post-merge:unit", "post-merge-waiver:unit", "main-watch:unit", "quality:unit",
+    "gate-list:unit", "gate-timings:unit",
+)
+# One sample change per kind: files that `gate_plan.py` maps to areas.
+DESKTOP_ONLY = ["apps/desktop/crates/soyeht-client/src/lib.rs"]
+ENGINE_CORE = ["engine/soyeht-engine/src/core.rs"]
+EDITOR_CRATE = ["engine/soyeht-editor/src/lib.rs"]
+DOCS_ONLY = ["docs/adr/0089-fast-gate-before-merge-full-gate-after.md", "AGENTS.md"]
+SCRIPTS_ONLY = ["scripts/check_quality.py"]
+
+
+def listed_steps(tier: str, files: list[str]) -> list[str]:
+    """The ids `check_all.sh --list` prints for a change of `files`, in the order they run."""
+    changed = Path(tempfile.mkdtemp()) / "changed.txt"
+    changed.write_text("\n".join(files) + "\n")
+    result = subprocess.run(
+        ["bash", "scripts/check_all.sh", "--list", "--tier", tier],
+        cwd=ROOT, capture_output=True, text=True,
+        env={**os.environ, "SOYEHT_GATE_FILES_FROM": str(changed)},
+    )
+    assert result.returncode == 0, result.stderr
+    return [line.split()[-1] for line in result.stdout.splitlines()]
+
+
+def engine_cargo_tests() -> list[str]:
+    """Ids of the steps of check_all.sh that run `cargo test` in the engine workspace or the
+    engine's package, read from the script so that a new one is held to the order too."""
+    text = (ROOT / "scripts/check_all.sh").read_text()
+    found = []
+    for block in re.finditer(r"^step (\w+) \S+ (\S+) (.*(?:\\\n.*)*)", text, re.MULTILINE):
+        area, step_id, command = block.groups()
+        runs_tests = re.search(r"cargo test|engine_test_changed|capture_test|run_exact_rust_test", command)
+        if runs_tests and not command.lstrip().startswith("in_dir apps/desktop") and area in ("engine", "timing"):
+            found.append(step_id)
+    return found
 
 
 def gate_steps() -> list[tuple[str, str, str]]:
@@ -89,14 +136,57 @@ class StepListTests(unittest.TestCase):
                 if area in gate_plan.FULL_ONLY_AREAS:
                     self.assertEqual(tiers, "full")
 
-    def test_the_fast_tier_runs_unit_tests_only(self):
+    def test_the_fast_tier_runs_unit_tests_of_the_engine_and_the_whole_desktop_test_run(self):
         commands = (ROOT / "scripts/check_all.sh").read_text()
         engine = re.search(r"step engine fast engine:test-changed .*", commands)[0]
-        desktop = re.search(r"step desktop fast desktop:test-fast .*", commands)[0]
-        for line in (engine, desktop):
-            self.assertIn("--lib --bins", line)
+        self.assertIn("--lib --bins", engine)
+        # The desktop's `tests/` directories run before the merge: no stand-in without them.
+        desktop = re.search(r"step desktop both desktop:test .*", commands)[0]
+        self.assertIn("cargo test --locked --workspace --all-features", desktop)
+        self.assertNotIn("--lib", desktop)
+        self.assertNotIn("desktop:test-fast", commands)
         self.assertIn("swift build --package-path apps/shared", commands)
         self.assertNotRegex(commands, r"step \w+ (?:both|fast) \S+ .*swift test")
+
+    def test_the_end_to_end_set_runs_in_both_tiers(self):
+        steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
+        for step_id in E2E_SET:
+            with self.subTest(step=step_id):
+                self.assertEqual(steps[step_id], ("e2e", "both"))
+        # The real-agent suites need SOYEHT_REAL_ACP=1 and a real harness: after the merge only.
+        for step_id, (area, tiers) in steps.items():
+            if step_id.startswith("e2e:real-"):
+                self.assertEqual((area, tiers), ("e2e", "full"))
+
+    def test_the_end_to_end_programs_are_built_after_every_cargo_test_of_the_engine(self):
+        # `cargo test` links target/debug/soyeht-engine from the library with the test hooks on.
+        for tier in ("full", "fast"):
+            order = listed_steps(tier, ENGINE_CORE)
+            with self.subTest(tier=tier):
+                tests = engine_cargo_tests()
+                self.assertGreaterEqual(len(tests), 5, tests)
+                last_test = max(order.index(i) for i in tests if i in order)
+                self.assertGreater(order.index("engine:build-product"), last_test)
+                self.assertGreater(order.index("engine:build-test-engine"), last_test)
+                self.assertEqual([i for i in order if i in E2E_SET], list(E2E_SET))
+        fast = listed_steps("fast", ENGINE_CORE)
+        self.assertLess(fast.index("engine:test-changed"), fast.index("engine:build-product"))
+
+    def test_the_end_to_end_set_runs_on_the_remote_host_in_file_order(self):
+        # remote_gate.sh runs the remote steps of one `check_all.sh --only`, which keeps file order,
+        # so the builds follow the engine tests there only while both sit in a remote area.
+        steps = {step_id: area for area, _, step_id in gate_steps()}
+        for step_id in (*E2E_SET, "engine:test"):
+            with self.subTest(step=step_id):
+                self.assertIn(steps[step_id], post_merge.REMOTE_AREAS)
+
+    def test_the_gate_script_unit_tests_have_their_own_area(self):
+        steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
+        for step_id in GATE_SCRIPT_UNITS:
+            with self.subTest(step=step_id):
+                self.assertEqual(steps[step_id], ("gate_scripts", "both"))
+        # The plan's own tests read the engine and desktop sources (CROSS_READS): every change runs them.
+        self.assertEqual(steps["gate-plan:unit"], ("always", "both"))
 
     def test_post_merge_prerequisites_are_steps_of_the_same_area(self):
         steps = {step_id: area for area, _, step_id in gate_steps()}
@@ -110,17 +200,11 @@ class StepListTests(unittest.TestCase):
         self.assertEqual(used, set(gate_plan.ALL_AREAS))
 
     def test_the_script_lists_every_step_of_each_tier(self):
-        changed = Path(tempfile.mkdtemp()) / "changed.txt"
-        changed.write_text("engine/soyeht-web/src/lib.rs\napps/desktop/crates/soyeht-client/src/lib.rs\napps/shared/Sources/A.swift\n")
+        sample = ["engine/soyeht-web/src/lib.rs", "apps/desktop/crates/soyeht-client/src/lib.rs",
+                  "apps/shared/Sources/A.swift"]
         for tier in ("fast", "full"):
             with self.subTest(tier=tier):
-                result = subprocess.run(
-                    ["bash", "scripts/check_all.sh", "--list", "--tier", tier],
-                    cwd=ROOT, capture_output=True, text=True,
-                    env={**os.environ, "SOYEHT_GATE_FILES_FROM": str(changed)},
-                )
-                self.assertEqual(result.returncode, 0, result.stderr)
-                listed = [line.split()[-1] for line in result.stdout.splitlines()]
+                listed = listed_steps(tier, sample)
                 steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
                 self.assertEqual(len(listed), len(set(listed)))
                 for step_id in listed:
@@ -136,11 +220,54 @@ class StepListTests(unittest.TestCase):
                 else:
                     self.assertNotIn("engine:test", listed)
                     self.assertIn("engine:test-changed", listed)
-                    self.assertNotIn("desktop:test", listed)
-                    self.assertIn("desktop:test-fast", listed)
+                    self.assertIn("desktop:test", listed)
                     for step_id in AFTER_MERGE:
                         self.assertNotIn(step_id, listed)
                     self.assertIn("swift:test-shared-build", listed)
+
+
+class SelectionByChangeTests(unittest.TestCase):
+    """What `check_all.sh --tier fast` lists for each kind of change (gate_plan.py decides the areas)."""
+
+    def test_a_desktop_only_change_runs_the_whole_desktop_test_run_and_no_e2e(self):
+        listed = listed_steps("fast", DESKTOP_ONLY)
+        self.assertIn("desktop:test", listed)
+        self.assertNotIn("desktop:test-fast", listed)
+        for step_id in (*E2E_SET, *GATE_SCRIPT_UNITS, "engine:test-changed"):
+            self.assertNotIn(step_id, listed)
+
+    def test_an_engine_core_change_runs_the_e2e_set_after_the_unit_tests(self):
+        listed = listed_steps("fast", ENGINE_CORE)
+        self.assertEqual([i for i in listed if i in E2E_SET], list(E2E_SET))
+        self.assertIn("engine:test-changed", listed)
+        self.assertNotIn("engine:test", listed)
+        for step_id in GATE_SCRIPT_UNITS:
+            self.assertNotIn(step_id, listed)
+
+    def test_a_change_to_a_library_crate_the_engine_uses_runs_e2e_too(self):
+        # gate_plan.py selects e2e when the reverse closure of the changed crate holds the engine,
+        # the CLI, the supervisor or the MCP server; every engine library is under one of them.
+        listed = listed_steps("fast", EDITOR_CRATE)
+        self.assertEqual([i for i in listed if i in E2E_SET], list(E2E_SET))
+        self.assertNotIn("desktop:test", listed)
+
+    def test_a_docs_only_change_runs_neither_e2e_nor_the_gate_script_unit_tests(self):
+        listed = listed_steps("fast", DOCS_ONLY)
+        for step_id in (*E2E_SET, *GATE_SCRIPT_UNITS, "desktop:test", "engine:test-changed"):
+            self.assertNotIn(step_id, listed)
+        self.assertIn("gate-plan:unit", listed)
+        self.assertIn("doc-names:check", listed)
+
+    def test_a_scripts_change_runs_the_gate_script_unit_tests(self):
+        listed = listed_steps("fast", SCRIPTS_ONLY)
+        for step_id in GATE_SCRIPT_UNITS:
+            self.assertIn(step_id, listed)
+        self.assertIn("gate-plan:unit", listed)
+
+    def test_the_full_tier_lists_all_of_them(self):
+        listed = listed_steps("full", DOCS_ONLY)
+        for step_id in (*E2E_SET, *GATE_SCRIPT_UNITS, "desktop:test", "engine:test"):
+            self.assertIn(step_id, listed)
 
 
 class VocabularySkipTests(unittest.TestCase):

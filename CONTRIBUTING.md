@@ -190,8 +190,9 @@ number of tests.
    uv run python scripts/agent_precheck.py --pr-text pr.md
    ```
 
-   Then run the merge gate's fast tier. It runs format, lint, build and unit tests for the areas
-   your change touches, plus every cheap repository check:
+   Then run the merge gate's fast tier. It runs format, lint, build and tests for the areas
+   your change touches (the desktop's whole `cargo test`, and the end-to-end suites when the
+   change reaches the engine), plus every cheap repository check:
 
    ```sh
    SOYEHT_SKIP_FORBIDDEN_TERMS=1 bash scripts/check_all.sh --tier fast

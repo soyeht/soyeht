@@ -119,7 +119,7 @@ FORBIDDEN_TERMS=... uv run python scripts/main_watch.py --apply \
 `--remote HOST --remote-root PATH` (also accepted by `post_merge.py`) runs the steps of the
 areas engine, desktop and e2e on HOST and the other full-tier steps (the Swift packages, the
 Mac and iOS apps, the editor measurement, the dictation tests, the timing tests, the
-`always` checks) on the local machine, after the remote ones. The interface with the host is
+`always` checks and the `gate_scripts` unit tests) on the local machine, after the remote ones. The interface with the host is
 this and nothing else:
 
 - HOST is anything `ssh` accepts, with key authentication and no prompt (`ssh -o

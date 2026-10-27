@@ -37,11 +37,12 @@ inject a hook through `Core::open_with` and write no marker.
 **Who uses what.** The runtime integration tests start `soyeht-engine-test`. The editor
 acceptance (`scripts/e2e_editor.py`), which needs the usage fixtures, starts it too; the other
 acceptances start the shipped `soyeht-engine`. `scripts/check_all.sh` builds the test engine
-with `cargo build -p soyeht-engine --features test-hooks --bin soyeht-engine-test`, in the full
-tier only (the fast tier runs only the unit tests of libraries and binaries, ADR 0092, and
-starts no integration test or acceptance). The full tier's `cargo test` enables the feature and
-also links `target/debug/soyeht-engine` from the feature-enabled library, so the full tier rebuilds the product programs (`engine:build-product`) before the acceptances run, so
-they start the shipped build.
+with `cargo build -p soyeht-engine --features test-hooks --bin soyeht-engine-test`, as the `e2e`
+step `engine:build-test-engine`. The fast tier runs it, and the acceptances, when the change
+reaches the engine's programs (amendment of ADR 0092); it runs no engine integration test. The
+gate's `cargo test` enables the feature and also links `target/debug/soyeht-engine` from the
+feature-enabled library, so the gate rebuilds the product programs (`engine:build-product`) after
+every `cargo test` and before the acceptances run, so they start the shipped build.
 
 **A gate.** `scripts/check_no_test_backdoors.py` fails on `debug_assertions` in code, on a
 string literal that starts with `test-` or contains `SOYEHT_TEST_`, in the `src` of an

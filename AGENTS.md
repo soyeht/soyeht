@@ -249,20 +249,27 @@ inherit the main actor.
   vocabulary from outside the repository. `scripts/check_all.sh` is the only list of
   gate steps, and each step has an area and a tier. The fast tier is cheap (a few minutes on a
   warm cache): every `always` check plus, for the areas that `scripts/gate_plan.py` selects
-  from the changed paths (the plan is the top of the log), format, lint, a build and the unit
+  from the changed paths (the plan is the top of the log), format, lint, a build and the
   tests: `cargo test --lib --bins` of the engine crates changed and the crates that depend on
-  them and of the desktop, `swift format lint` and `swift build` of `apps/shared`, and
-  TypeScript. It leaves out the Rust integration tests (`tests/` directories), the Swift and
-  dictation tests, the Mac and iOS app builds, e2e, the editor measurement on the VM and the
-  ignored timing tests: they are `full` steps. A change to the gate scripts (`check_all.sh`,
+  them, the whole `cargo test` of the desktop (its `tests/` directories included),
+  `swift format lint` and `swift build` of `apps/shared`, and TypeScript. The e2e suites
+  (`e2e:*`, with the `engine:build-product` and `engine:build-test-engine` builds and the TCC
+  guard around them) run when the engine selection is the whole workspace or its reverse
+  closure holds `soyeht-engine`, `soyeht-cli`, `soyeht-ptyd` or `soyeht-mcp`, which every
+  engine crate does. The unit tests of the gate scripts (`post_merge*`, `main_watch*`,
+  `check_quality`, `gate_list`, `gate_timings`) are the `gate_scripts` area: a change under
+  `scripts/`, `contracts/*.py` or `.githooks/` selects it. The fast tier leaves out the engine
+  integration tests (`tests/` directories), the Swift and dictation tests, the Mac and iOS app
+  builds, the editor measurement on the VM and the ignored timing tests: they are `full`
+  steps. A change to the gate scripts (`check_all.sh`,
   `gate_*`, `post_merge*`, `main_watch*`, `remote_gate*`, `e2e*`, the app build scripts) runs
   the full tier instead, and the log says why; a change to their unit tests alone
   (`scripts/test_*.py`) does not. A file that another directory reads (an `include_str!`, a
   font) goes in `CROSS_READS` of `gate_plan.py`; a test fails when a read is missing. A CI
   workflow calls the script and never lists steps of its own (`test_gate_list.py`).
   `check_all.sh --list --tier fast` shows the steps without running them. Moving a step from
-  `both` to `full` lowers the count the verification ratchet watches and needs a
-  `Verification change:` line in the PR body.
+  `both` to `full`, or out of the `always` area, lowers the per-area count the verification
+  ratchet watches and needs a `Verification change:` line in the PR body.
 - Two guards keep a green step honest: a step that names one Rust test passes only when exactly
   that test ran (`require_one_rust_test.py`), and the e2e steps fail when the run made macOS ask
   for a privacy permission on behalf of the engine's executables (`tcc_guard.py`).

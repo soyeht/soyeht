@@ -5,17 +5,21 @@
 #   check_all.sh [--tier fast|full] [--only STEP_ID[,STEP_ID...]] [--list] [scanner arguments]
 #
 # Every step is one `step AREA TIERS ID command...` line (ADR 0089):
-#   AREA   always | engine | desktop | swift | dictation | mac_app | ios_app | typescript
-#          | e2e | editor_perf | timing
+#   AREA   always | gate_scripts | engine | desktop | swift | dictation | mac_app | ios_app
+#          | typescript | e2e | editor_perf | timing
 #   TIERS  both  runs in the fast and the full tier
 #          full  runs only in the full tier
 #          fast  runs only in the fast tier (a cheaper stand-in for a full step)
 # The full tier (the default) runs every `both` and `full` step, as it always did. The
 # fast tier, which runs before a merge, is cheap (a few minutes on a warm cache): the
-# `always` steps plus format, lint, a build and the unit tests of the `both` and `fast`
-# steps of the areas that scripts/gate_plan.py selects from the changed paths. Integration
-# tests, the Swift tests, the Mac and iOS app builds, e2e, the editor measurement and the
-# timing tests are `full` steps. The full tier runs on main after the merge
+# `always` steps plus format, lint, a build and the tests of the `both` and `fast` steps of
+# the areas that scripts/gate_plan.py selects from the changed paths. Those tests are the unit
+# tests of the engine and Swift, the whole `cargo test` of the desktop, and the e2e suites
+# when the change reaches the engine's programs. The engine integration tests, the Swift
+# tests, the Mac and iOS app builds, the editor measurement and the timing tests are `full`
+# steps. The unit tests of the gate scripts are the `gate_scripts` area: a change under
+# scripts/, contracts/*.py or .githooks/ selects it (and the full tier runs it). The full
+# tier runs on main after the merge
 # (scripts/post_merge.py, scripts/main_watch.py), on a remote Linux host for the areas
 # that run there (--remote, scripts/remote_gate.sh). A fast step that stands in for a
 # full one is named `<full id>-changed`, `<full id>-fast` or `<full id>-build`
@@ -44,7 +48,7 @@ while (($#)); do
     esac
 done
 case "$tier" in fast | full) ;; *) echo "check_all: --tier must be fast or full" >&2; exit 64 ;; esac
-known_areas=" always engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing "
+known_areas=" always gate_scripts engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing "
 set -- ${gate_args[@]+"${gate_args[@]}"}
 # A contributor without the vocabulary sets SOYEHT_SKIP_FORBIDDEN_TERMS=1: the scan prints
 # that it was skipped (scripts/forbidden_terms.py), the run is recorded as not merge-grade, and
@@ -79,7 +83,7 @@ fi
 # Per-step wall times: each step appends a line; the EXIT trap writes the JSON.
 timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
 step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
-GATE_AREAS="always engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing"
+GATE_AREAS="always gate_scripts engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing"
 GATE_ENGINE_TEST_ARGS="--workspace"
 matched=0
 
@@ -226,12 +230,12 @@ step always both forbidden-terms:scan uv run python scripts/forbidden_terms.py "
 unset FORBIDDEN_TERMS
 
 step always both hardening:unit uv run python -m unittest discover -s scripts -p 'test_hardening_gate.py'
-step always both gate-list:unit uv run python -m unittest discover -s scripts -p 'test_gate_list.py'
+step gate_scripts both gate-list:unit uv run python -m unittest discover -s scripts -p 'test_gate_list.py'
 step always both gate-plan:unit uv run python -m unittest discover -s scripts -p 'test_gate_plan.py'
-step always both gate-timings:unit uv run python -m unittest discover -s scripts -p 'test_gate_timings.py'
-step always both post-merge:unit uv run python -m unittest discover -s scripts -p 'test_post_merge.py'
-step always both post-merge-waiver:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_waiver.py'
-step always both main-watch:unit uv run python -m unittest discover -s scripts -p 'test_main_watch.py'
+step gate_scripts both gate-timings:unit uv run python -m unittest discover -s scripts -p 'test_gate_timings.py'
+step gate_scripts both post-merge:unit uv run python -m unittest discover -s scripts -p 'test_post_merge.py'
+step gate_scripts both post-merge-waiver:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_waiver.py'
+step gate_scripts both main-watch:unit uv run python -m unittest discover -s scripts -p 'test_main_watch.py'
 step always both require-one-rust-test:unit uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
 # Without --base, the ratchets compare with the merge-base of origin/main and
 # HEAD and stop the gate when it cannot be resolved.
@@ -239,7 +243,7 @@ step always both hardening:no-sql-outside-store uv run python scripts/hardening_
 step always both hardening:no-panic-in-production uv run python scripts/hardening_gate.py check-no-panic-in-production "$@"
 step always both hardening:verification-not-weakened uv run python scripts/hardening_gate.py check-verification-not-weakened "$@"
 step always both hardening:function-length uv run python scripts/hardening_gate.py check-function-length "$@"
-step always both quality:unit uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
+step gate_scripts both quality:unit uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
 step always both pane-interior:unit uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
 step always both swallowed-errors:unit uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
 step always both wire-names:unit uv run python -m unittest discover -s scripts -p 'test_check_wire_names.py'
@@ -280,13 +284,6 @@ step engine both engine:clippy-contract-checks in_dir engine cargo clippy --lock
 step engine both engine:build in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
 # Integration tests (the crates' tests/ directories, which start sibling binaries) run here only.
 step engine full engine:test in_dir engine cargo test --locked --workspace --features soyeht-engine/contract-checks
-# `cargo test` links target/debug/soyeht-engine from the library with the test-hooks feature
-# on (the engine lists itself as a development dependency). The acceptances below must run the
-# shipped build, so rebuild the product programs without it (the contract checks stay on, ADR 0090).
-step engine full engine:build-product in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
-# The engine with the test hooks (ADR 0091), which the editor acceptance starts. No product
-# build has it.
-step engine full engine:build-test-engine in_dir engine cargo build --locked -p soyeht-engine --features test-hooks,contract-checks --bin soyeht-engine-test
 # Unit tests (src/ of libraries and binaries) of the changed crates and their reverse dependencies.
 step engine fast engine:test-changed in_dir engine engine_test_changed --lib --bins
 # The shipping configuration has the checks off: the one test that says an unchecked build
@@ -304,23 +301,33 @@ step desktop both desktop:fmt in_dir apps/desktop cargo fmt --all --check
 step desktop both desktop:clippy in_dir apps/desktop cargo clippy --locked --workspace --all-targets -- -D warnings
 # The design-audit tools (`dev-tools`) are not in the shipping build: lint and test them too.
 step desktop both desktop:clippy-all-features in_dir apps/desktop cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-step desktop full desktop:test in_dir apps/desktop cargo test --locked --workspace --all-features
-step desktop fast desktop:test-fast in_dir apps/desktop cargo test --locked --workspace --all-features --lib --bins
+# The whole test run, `tests/` directories included: they drive the client against a scripted
+# engine in seconds and start no sibling binary.
+step desktop both desktop:test in_dir apps/desktop cargo test --locked --workspace --all-features
 
 step always both tcc-guard:unit uv run python -m unittest discover -s scripts -p 'test_tcc_guard.py'
-step e2e full e2e:tcc-snapshot uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
-step e2e full e2e:core uv run python scripts/e2e.py --report .cache/e2e.json
-step e2e full e2e:agents uv run python scripts/e2e_agents.py --report .cache/e2e-agents.json
-step e2e full e2e:tasks uv run python scripts/e2e_tasks.py --report .cache/e2e-tasks.json
-step e2e full e2e:editor uv run python scripts/e2e_editor.py --report .cache/e2e-editor.json
-step e2e full e2e:web uv run python scripts/e2e_web.py --report .cache/e2e-web.json
-step e2e full e2e:writing uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
+# The engine programs that the suites start must be the shipped build, and every `cargo test` of
+# the engine workspace (engine:test, engine:test-changed, engine:test-unchecked and the timing
+# steps, all above) links target/debug/soyeht-engine from the library with the test-hooks feature
+# on (the engine lists itself as a development dependency). So these two builds come after every
+# one of them and just before the suites: the product programs without the hooks (the contract
+# checks stay on, ADR 0090), then the engine with the test hooks (ADR 0091), which the editor
+# acceptance starts. No product build has it.
+step e2e both engine:build-product in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
+step e2e both engine:build-test-engine in_dir engine cargo build --locked -p soyeht-engine --features test-hooks,contract-checks --bin soyeht-engine-test
+step e2e both e2e:tcc-snapshot uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
+step e2e both e2e:core uv run python scripts/e2e.py --report .cache/e2e.json
+step e2e both e2e:agents uv run python scripts/e2e_agents.py --report .cache/e2e-agents.json
+step e2e both e2e:tasks uv run python scripts/e2e_tasks.py --report .cache/e2e-tasks.json
+step e2e both e2e:editor uv run python scripts/e2e_editor.py --report .cache/e2e-editor.json
+step e2e both e2e:web uv run python scripts/e2e_web.py --report .cache/e2e-web.json
+step e2e both e2e:writing uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
     step e2e full e2e:real-acp uv run python scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
     step e2e full e2e:real-agent-messaging uv run python scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
     step e2e full e2e:real-harnesses uv run python scripts/e2e_real_harnesses.py --report .cache/e2e-real-harnesses.json
 fi
-step e2e full e2e:tcc-check uv run python scripts/tcc_guard.py check .cache/tcc-guard.json
+step e2e both e2e:tcc-check uv run python scripts/tcc_guard.py check .cache/tcc-guard.json
 
 step swift full swift:check-swift bash scripts/check_swift.sh
 step always both mac-text-fonts:unit uv run python -m unittest discover -s scripts -p 'test_check_mac_text_fonts.py'

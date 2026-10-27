@@ -42,7 +42,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CHECK_ALL = ROOT / "scripts" / "check_all.sh"
 STEP_LINE = re.compile(r"^(\w+)\s+(both|full|fast)\s+(\S+)\s*$")
 # `step always both ID uv run python -m unittest discover -s scripts -p 'test_x.py'`
-UNIT_STEP = re.compile(r"^\s*step\s+always\s+\S+\s+(\S+)\s+.*-p\s+'(test_\w+\.py)'", re.MULTILINE)
+# The unit tests of the gate scripts are the `gate_scripts` area, listed when a script changed.
+CHEAP_AREAS = ("always", "gate_scripts")
+UNIT_STEP = re.compile(r"^\s*step\s+(?:always|gate_scripts)\s+\S+\s+(\S+)\s+.*-p\s+'(test_\w+\.py)'",
+                       re.MULTILINE)
 IMPORT = re.compile(r"^\s*(?:import|from)\s+(\w+)", re.MULTILINE)
 # The directories the gate's `swift:format-lint` step lints (Package.swift and the generated
 # Swift are not among them and fail `--strict`).
@@ -113,7 +116,7 @@ def listed_steps(base: str) -> list[tuple[str, str]]:
 
 
 def unit_tests(check_all_text: str) -> dict[str, str]:
-    """step id -> test file, for every `always` step that runs one test file of scripts/."""
+    """step id -> test file, for every `always`/`gate_scripts` step that runs one test file."""
     return {step_id: test for step_id, test in UNIT_STEP.findall(check_all_text)}
 
 
@@ -154,7 +157,7 @@ def select_steps(steps: list[tuple[str, str]], units: dict[str, str], changed: l
     """(cheap step ids, contracts step ids, whether quality:check is listed), in gate order."""
     cheap, contracts, quality = [], [], False
     for area, step_id in steps:
-        if area != "always" or step_id in OWN_STEPS:
+        if area not in CHEAP_AREAS or step_id in OWN_STEPS:
             continue
         if step_id == QUALITY_STEP:
             quality = True

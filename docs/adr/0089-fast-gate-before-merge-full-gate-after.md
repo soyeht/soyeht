@@ -26,7 +26,7 @@ always ran. `--tier fast` runs:
   from the full tests). For the engine that is format and `clippy -D warnings` over the
   workspace, a workspace build, and `cargo test --lib --bins` of the changed crates and the
   crates that depend on them. The desktop runs its full format, clippy (both feature sets)
-  and `cargo test --lib --bins`. Swift runs `swift format lint` and a `swift build` of
+  and `cargo test --lib --bins` (amended by ADR 0092: its whole `cargo test`). Swift runs `swift format lint` and a `swift build` of
   `apps/shared`. TypeScript runs `check` and `test`.
 
 The fast tier leaves out the integration tests, the Swift tests, the Mac and iOS app builds,
