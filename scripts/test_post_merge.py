@@ -362,6 +362,9 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
     def runs(self):
         return self.trace.read_text().splitlines() if self.trace.exists() else []
 
+    def last_green(self):
+        return json.loads((self.health / "last_green.json").read_text())["sha"]
+
     def green_start(self):
         self.assertEqual(self.run_main(self.shas[0], "--editor-meter", str(self.meter())), 0)
         self.trace.unlink()
@@ -392,8 +395,23 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         self.assertNotIn("candidates", record)
         self.assertEqual([step["id"] for step in record["steps"]], ["unit", "editor-performance:check", "ts"])
         self.assertEqual(len(self.runs()), 2, "the gate, then the steps the editor check hid; no search")
-        self.assertEqual(json.loads((self.health / "last_green.json").read_text())["sha"], self.shas[0])
+        self.assertEqual(self.last_green(), head, "every step but the measurement passed: a good main")
         self.assertEqual(json.loads((self.health / "latest.json").read_text())["sha"], head)
+
+    def test_a_main_that_only_lacks_the_measurement_starts_the_culprit_search(self):
+        first = self.add("two", {"b": "2"})
+        self.assertEqual(self.run_main(first), post_merge.NEEDS_MEASUREMENT_EXIT)
+        self.assertEqual(self.last_green(), first)
+        self.add("three", {"c": "3"})
+        culprit = self.add("breaks the last step", {"broken": "x"})
+        head = self.add("five", {"d": "4"})
+        with mock.patch.dict(os.environ, {"FAKE_BREAK": "ts"}):
+            self.assertEqual(self.run_main(head), 1)
+        record = self.record(head)
+        self.assertEqual(record["result"], "fail")
+        self.assertEqual(record["culprit"]["sha"], culprit)
+        self.assertNotIn("no known green main", record.get("note", ""))
+        self.assertEqual(self.last_green(), first, "a red main does not move it")
 
     def test_a_report_that_is_not_there_is_the_same_as_none(self):
         head = self.add("two", {"b": "2"})
@@ -425,6 +443,7 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         record = self.record(head)
         self.assertEqual((record["result"], record["failed_step"]), ("fail", "ts"))
         self.assertEqual(record["culprit"]["sha"], head)
+        self.assertEqual(self.last_green(), self.shas[0], "the missing measurement does not hide a failed step")
 
     def test_a_recorded_run_waits_for_a_report_of_its_hash(self):
         head = self.add("two", {"b": "2"})

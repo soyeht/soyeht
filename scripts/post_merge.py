@@ -7,7 +7,9 @@
 In a clean worktree of the commit (default: `origin/main` after a fetch) it runs
 `scripts/check_all.sh --tier full` against the commit's parent, then records
 `<health-dir>/<sha>.json`, the log `<sha>.log`, `latest.json` and, when green,
-`last_green.json`. The default directory is `.cache/main-health` of the main checkout.
+`last_green.json`. A `needs-measurement` run (every step passed except the editor measurement,
+which VM1 collects separately) counts as green here: it is where the culprit search starts. A
+`flaky` or `fail` run never does. The default directory is `.cache/main-health` of the main checkout.
 
 When the gate is red it first reruns the failing step once on the same commit: if that
 passes the failure is recorded as flaky and no commit is blamed. A timing-sensitive step (a
@@ -107,6 +109,9 @@ EDITOR_METER_ENV = "SOYEHT_EDITOR_METER"
 EDITOR_STEP = "editor-performance:check"
 EDITOR_REPORT = check_editor_performance.VM_REPORT.relative_to(check_editor_performance.ROOT)
 NEEDS_MEASUREMENT = "needs-measurement"
+# Results from which the culprit search may start: no step failed. `needs-measurement` is only
+# set when every step passed except the editor measurement, which is collected apart on VM1.
+GREEN_RESULTS = ("pass", NEEDS_MEASUREMENT)
 NEEDS_MEASUREMENT_EXIT = 4
 # What check_editor_performance.py prints for an absent report and for one of other editor files.
 MISSING_REPORT = "editor-performance: missing "
@@ -850,7 +855,7 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
                 record["note"] = f"the culprit search failed: {error}"
         write_json(health / f"{sha}.json", record)
         write_json(health / "latest.json", record)
-        if record["result"] == "pass":
+        if record["result"] in GREEN_RESULTS:
             write_json(health / "last_green.json", {"sha": sha, "at": record["started_at"]})
         return record
     finally:

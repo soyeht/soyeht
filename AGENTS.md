@@ -279,8 +279,9 @@ inherit the main actor.
   from the PR body, so the merge must keep that line in the commit body. When it
   is red it reruns the failing step once (a pass is recorded as flaky and blames no commit),
   then finds the culprit commit by running only the failing step on the commits since the last
-  green main. `main_watch.py --apply` then reverts a single confirmed culprit: a branch
-  `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step and the
+  green main (`last_green.json`: a `pass`, or a `needs-measurement` run, where every step passed
+  and only the editor measurement on the VM is missing). `main_watch.py --apply` then reverts a
+  single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step and the
   log, merged with `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
   a flaky run, a revert, or a revert that does not apply, and it never forces a push or touches
   another branch; `--dry-run` is the default. It writes `.cache/main-health/watch.json`. With
