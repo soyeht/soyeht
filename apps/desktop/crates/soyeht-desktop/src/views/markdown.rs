@@ -30,8 +30,20 @@ pub(crate) struct Replies {
 }
 
 impl Replies {
-    pub(super) fn blocks(&mut self, owner: &str, text: &str, streaming: bool) -> Arc<[Block]> {
-        self.cache.blocks(owner, text, streaming)
+    /// The first `pages` pages of the message `owner` (see `markdown::shown`).
+    pub(super) fn shown(
+        &mut self,
+        owner: &str,
+        text: &str,
+        streaming: bool,
+        pages: usize,
+    ) -> markdown::Shown {
+        let blocks = self.cache.blocks(owner, text, streaming);
+        if streaming {
+            markdown::shown_tail(&blocks, pages)
+        } else {
+            markdown::shown(&blocks, pages)
+        }
     }
 
     /// The blocks of the Markdown preview of the file an editor pane shows.
@@ -118,8 +130,8 @@ fn stack(blocks: &[Block], draw: &mut Draw) -> Div {
 fn block(block: &Block, draw: &mut Draw) -> AnyElement {
     let palette = draw.palette;
     match block {
-        Block::Paragraph(runs) => text(runs, false, draw),
-        Block::Heading { runs, .. } => text(runs, true, draw),
+        Block::Paragraph(runs) => text(runs, false, draw).w_full().into_any_element(),
+        Block::Heading { runs, .. } => text(runs, true, draw).w_full().into_any_element(),
         Block::Code { text, .. } => {
             let key = markdown::code_key(draw.owner, draw.codes);
             draw.codes += 1;
@@ -172,7 +184,7 @@ fn block(block: &Block, draw: &mut Draw) -> AnyElement {
                                     .text_color(rgb(palette.secondary))
                                     .child(SharedString::from(marker)),
                             )
-                            .child(stack(item, draw).flex_1())
+                            .child(item_content(item, draw))
                             .into_any_element()
                     })
                     .collect::<Vec<_>>(),
@@ -180,6 +192,19 @@ fn block(block: &Block, draw: &mut Draw) -> AnyElement {
             .into_any_element(),
         Block::Table { header, rows } => table(header, rows, draw),
         Block::Rule => rule(palette.well, pane_interior::SEPARATOR_WIDTH),
+    }
+}
+
+/// What stands beside the marker of a list item: the text itself when the item is one paragraph
+/// (the usual item, and every other element of the item would add a level to lay out), else the
+/// item's blocks stacked.
+fn item_content(item: &[Block], draw: &mut Draw) -> AnyElement {
+    match item {
+        [Block::Paragraph(runs)] => text(runs, false, draw)
+            .flex_1()
+            .min_w_0()
+            .into_any_element(),
+        _ => stack(item, draw).flex_1().into_any_element(),
     }
 }
 
@@ -193,7 +218,12 @@ fn table(header: &[Vec<Run>], rows: &[Vec<Vec<Run>>], draw: &mut Draw) -> AnyEle
             .children(
                 cells
                     .iter()
-                    .map(|cell| div().flex_1().min_w_0().child(text(cell, bold, draw)))
+                    .map(|cell| {
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .child(text(cell, bold, draw).w_full())
+                    })
                     .collect::<Vec<_>>(),
             )
             .into_any_element()
@@ -239,7 +269,7 @@ fn link_of(style: &Style, opens: Opens) -> (bool, Option<Link>) {
 /// Runs of text as one block of text: bold, italic, struck, code and linked looks as highlights
 /// of one string, so that it wraps as a whole. A link opens in the system browser, unless the
 /// text is inert.
-fn text(runs: &[Run], bold: bool, draw: &mut Draw) -> AnyElement {
+fn text(runs: &[Run], bold: bool, draw: &mut Draw) -> Div {
     let palette = draw.palette;
     let mut content = String::new();
     let mut highlights: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
@@ -287,11 +317,7 @@ fn text(runs: &[Run], bold: bool, draw: &mut Draw) -> AnyElement {
         links,
         palette,
     };
-    div()
-        .w_full()
-        .text_color(rgb(draw.ink))
-        .child(element)
-        .into_any_element()
+    div().text_color(rgb(draw.ink)).child(element)
 }
 
 #[cfg(test)]
@@ -336,6 +362,36 @@ mod tests {
             let (looks_linked, target) = link_of(&style, opens);
             assert!(!looks_linked && target.is_none());
         }
+    }
+
+    #[test]
+    fn a_reply_of_any_length_is_drawn_a_page_at_a_time() {
+        let mut replies = Replies::default();
+        let text: String = (0..5_000).map(|at| format!("- item {at}\n")).collect();
+        let first = replies.shown("m", &text, false, 1);
+        assert!(first.more);
+        assert_eq!(markdown::weight_of(&first.blocks), markdown::PAGE_WEIGHT);
+        let second = replies.shown("m", &text, false, 2);
+        assert_eq!(
+            markdown::weight_of(&second.blocks),
+            2 * markdown::PAGE_WEIGHT
+        );
+        let short = replies.shown("short", "one **line**", false, 1);
+        assert!(!short.more);
+    }
+
+    #[test]
+    fn a_reply_still_arriving_shows_its_end_and_a_finished_one_its_beginning() {
+        let mut replies = Replies::default();
+        let text: String = (0..300).map(|at| format!("- item {at}\n")).collect();
+        let arriving = replies.shown("m", &text, true, 1);
+        assert!(arriving.tail && arriving.more);
+        let Some(markdown::Block::List { items, .. }) = arriving.blocks.last() else {
+            panic!("a list expected");
+        };
+        assert_eq!(items.len(), markdown::PAGE_WEIGHT);
+        let done = replies.shown("m", &text, false, 1);
+        assert!(!done.tail && done.more);
     }
 
     #[test]

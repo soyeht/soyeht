@@ -46,6 +46,25 @@ fn the_badges_count_requests_waiting_and_agents_working_per_workspace() {
 }
 
 #[test]
+fn the_clock_ticks_only_for_a_turn_in_the_workspace_asked_about() {
+    let (mut state, _) = connected(&[("a", "agent"), ("t", "terminal")]);
+    assert!(!state.has_running_turn(None));
+    state
+        .panes
+        .iter_mut()
+        .find(|p| p.pane_id == "a")
+        .unwrap()
+        .state = PaneState::Working;
+    assert!(state.has_running_turn(None) && state.has_running_turn(Some("w")));
+    assert!(!state.has_running_turn(Some("other")));
+    assert!(state.shown_turn_running());
+    assert!(
+        !State::default().shown_turn_running(),
+        "no workspace, no pane on screen"
+    );
+}
+
+#[test]
 fn a_snapshot_loads_every_agent_transcript_the_usage_and_the_harnesses() {
     let (state, effects) = connected(&[("a", "agent"), ("t", "terminal")]);
     assert!(state.agent("a").is_some() && state.agent("t").is_none());

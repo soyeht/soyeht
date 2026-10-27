@@ -166,20 +166,18 @@ impl RenderOnce for Selectable {
                 },
             )
             .child(text)
-            .child(
+            // The overlay that follows the pointer past the edge of the text is only needed while
+            // a selection is dragged; every other block of text saves a level to lay out.
+            .children(dragging.then(|| {
                 canvas(
                     |bounds, _, _| bounds,
-                    move |_, _, window, _| {
-                        if dragging {
-                            follow_drag(&key, &layout, &content, window);
-                        }
-                    },
+                    move |_, _, window, _| follow_drag(&key, &layout, &content, window),
                 )
                 .absolute()
                 .top_0()
                 .left_0()
-                .size_full(),
-            )
+                .size_full()
+            }))
     }
 }
 

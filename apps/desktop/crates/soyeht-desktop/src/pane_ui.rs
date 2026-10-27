@@ -50,6 +50,8 @@ pub(crate) struct PaneUi {
     pub draft_beat: Option<Instant>,
     /// The thoughts the person has opened, by message.
     pub open_thoughts: HashSet<String>,
+    /// How many pages of a long reply the person asked for, by message (see `markdown::shown`).
+    pub reply_pages: HashMap<String, usize>,
     /// The subagent rows the person has opened, by subagent.
     pub open_subagents: HashSet<String>,
     /// The fields of the questions the agent asks, by request and field.
@@ -87,10 +89,11 @@ impl PaneUi {
                 .as_ref()
                 .is_some_and(|open| &open.request_id == request)
         });
+        let held = |message: &String| view.messages().iter().any(|m| &m.local_id == message);
         if !self.open_thoughts.is_empty() {
-            self.open_thoughts
-                .retain(|message| view.messages().iter().any(|m| &m.local_id == message));
+            self.open_thoughts.retain(held);
         }
+        self.reply_pages.retain(|message, _| held(message));
     }
 }
 
@@ -110,6 +113,13 @@ impl PaneUis {
     pub fn thought_is_open(&self, pane_id: &str, message_id: &str) -> bool {
         self.get(pane_id)
             .is_some_and(|ui| ui.open_thoughts.contains(message_id))
+    }
+
+    /// The pages of the reply `message_id` that are drawn: the first, until the person asks for more.
+    pub fn reply_pages(&self, pane_id: &str, message_id: &str) -> usize {
+        self.get(pane_id)
+            .and_then(|ui| ui.reply_pages.get(message_id).copied())
+            .unwrap_or(1)
     }
 
     pub fn subagent_is_open(&self, pane_id: &str, subagent_id: &str) -> bool {
@@ -299,6 +309,7 @@ mod tests {
             loop_form: None,
             draft_beat: Some(Instant::now()),
             open_thoughts: HashSet::from(["thought".to_owned()]),
+            reply_pages: HashMap::from([("reply".to_owned(), 2)]),
             open_subagents: HashSet::from(["subagent".to_owned()]),
             form_fields: HashMap::new(),
             editor: EditorUi::default(),
@@ -335,5 +346,6 @@ mod tests {
         *uis.of("kept") = used();
         uis.forget_closed(&state_with(&["kept"]), &mut Replies::default());
         assert!(uis.get("kept").unwrap().open_thoughts.is_empty());
+        assert_eq!(uis.reply_pages("kept", "reply"), 1);
     }
 }

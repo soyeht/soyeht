@@ -1,6 +1,10 @@
 //! The transcript's rows: its entries, the subagent rows under them and "Load earlier messages".
 
-use super::super::{agent::transcript_row, markdown::Replies, ui::disclosure_chevron};
+use super::super::{
+    agent::{MessageRow, row_weight, transcript_row},
+    markdown::Replies,
+    ui::disclosure_chevron,
+};
 use super::{Role, button, caption};
 use crate::{
     theme::{Palette, desktop, pane_interior, space},
@@ -11,8 +15,9 @@ use soyeht_client::{
     agent::AgentView,
     cards::{self, Entry, Group, Status, SubagentPresentation},
     timestamp,
-    transcript_rows::{self, Child, Rows, Viewport},
+    transcript_rows::{self, Child, Key, Rows, Viewport},
 };
+use soyeht_protocol::TranscriptMessage;
 use std::{cell::RefCell, time::Duration};
 
 /// What a frame knows about the rows of the transcript it is building.
@@ -46,17 +51,16 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let entries = cards::entries(view.tail(limit).0);
-        let keys: Vec<(String, u64)> = entries
+        let keys: Vec<Key> = entries
             .iter()
-            .map(|entry| {
-                (
-                    entry.id(),
-                    transcript_rows::entry_fingerprint(
-                        entry,
-                        view,
-                        self.open_state(windowing.pane_id, entry),
-                    ),
-                )
+            .map(|entry| Key {
+                key: entry.id(),
+                fingerprint: transcript_rows::entry_fingerprint(
+                    entry,
+                    view,
+                    self.open_state(windowing.pane_id, entry),
+                ),
+                weight: self.entry_weight(windowing.pane_id, entry, markdown),
             })
             .collect();
         let plan = windowing.rows.borrow_mut().plan(
@@ -67,7 +71,16 @@ impl Workbench {
         );
         let mut children = vec![Child::Other; windowing.leading];
         let mut rows: Vec<AnyElement> = Vec::with_capacity(entries.len() + 1);
-        for ((entry, (key, fingerprint)), spacer) in entries.iter().zip(keys).zip(plan) {
+        for (
+            (
+                entry,
+                Key {
+                    key, fingerprint, ..
+                },
+            ),
+            spacer,
+        ) in entries.iter().zip(keys).zip(plan)
+        {
             let row = match spacer {
                 Some(height) => Some(spacer_row(height)),
                 None => self.entry_row(windowing.pane_id, entry, markdown, palette, cx),
@@ -93,11 +106,12 @@ impl Workbench {
     }
 
     /// What an entry shows that its content does not hold: whether its thought or subagent is
-    /// open, which changes its height.
+    /// open and how many pages of its reply are drawn, which change its height.
     fn open_state(&self, pane_id: &str, entry: &Entry<'_>) -> u64 {
         match entry {
             Entry::Message(message) => {
                 u64::from(self.panes.thought_is_open(pane_id, &message.local_id))
+                    + 2 * self.panes.reply_pages(pane_id, &message.local_id) as u64
             }
             Entry::Subagent(group) => group.entries.iter().fold(
                 u64::from(self.panes.subagent_is_open(pane_id, group.subagent_id)),
@@ -107,6 +121,34 @@ impl Workbench {
                         .wrapping_add(self.open_state(pane_id, inner) + 1)
                 },
             ),
+        }
+    }
+
+    /// What building an entry costs (see `agent::row_weight`); a subagent row weighs its own line
+    /// and, when it is open, what is under it.
+    fn entry_weight(&self, pane_id: &str, entry: &Entry<'_>, markdown: &mut Replies) -> usize {
+        let Entry::Subagent(group) = entry else {
+            let Entry::Message(message) = entry else {
+                return 0;
+            };
+            return row_weight(self.message_row(pane_id, message), markdown);
+        };
+        let mut weight = 1;
+        if self.panes.subagent_is_open(pane_id, group.subagent_id) {
+            for inner in &group.entries {
+                weight += self.entry_weight(pane_id, inner, markdown);
+            }
+        }
+        weight
+    }
+
+    /// A message with whether its thought is open and how many pages of its reply are drawn.
+    fn message_row<'a>(&self, pane_id: &'a str, message: &'a TranscriptMessage) -> MessageRow<'a> {
+        MessageRow {
+            pane_id,
+            message,
+            open: self.panes.thought_is_open(pane_id, &message.local_id),
+            pages: self.panes.reply_pages(pane_id, &message.local_id),
         }
     }
 
@@ -120,8 +162,7 @@ impl Workbench {
     ) -> Option<AnyElement> {
         match entry {
             Entry::Message(message) => {
-                let open = self.panes.thought_is_open(pane_id, &message.local_id);
-                transcript_row(pane_id, message, open, markdown, palette, cx)
+                transcript_row(self.message_row(pane_id, message), markdown, palette, cx)
             }
             Entry::Subagent(group) => {
                 Some(self.subagent_row(pane_id, group, markdown, palette, cx))

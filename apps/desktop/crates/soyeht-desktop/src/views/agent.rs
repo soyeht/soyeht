@@ -4,7 +4,7 @@
 
 use super::{
     attachments::sent_chips,
-    cards::Windowing,
+    cards::{Role, Windowing, button, caption},
     copy_button::copyable,
     markdown::{Opens, Replies},
     selectable::Selectable,
@@ -21,12 +21,26 @@ use gpui::{
 };
 use soyeht_client::{
     agent::{owner_of, terminal_text},
+    markdown::{EARLIER_HIDDEN, SHOW_MORE, Shown, text_weight},
     transcript_rows::Viewport,
 };
 use soyeht_protocol::{
     PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind, TranscriptMessage,
     TranscriptRole,
 };
+
+/// What a message row is drawn from: the message, whether its thought is open, and how many pages
+/// of its reply are drawn.
+#[derive(Clone, Copy)]
+pub(super) struct MessageRow<'a> {
+    pub pane_id: &'a str,
+    pub message: &'a TranscriptMessage,
+    pub open: bool,
+    pub pages: usize,
+}
+
+/// How far from the end of the transcript, in pixels, still counts as at the newest message.
+const PINNED: f32 = 2.0;
 
 impl Workbench {
     pub(super) fn agent_body(
@@ -41,22 +55,18 @@ impl Workbench {
             .map_or(0, |view| view.messages().len());
         let (scroll, follows) = self.transcript_scroll(&pane.pane_id, count);
         let measured = self.transcript_rows(&pane.pane_id);
+        // A wheel can leave the offset past the ends until the next layout clamps it.
+        let from_bottom = {
+            let max = f32::from(scroll.max_offset().y);
+            (max + f32::from(scroll.offset().y)).clamp(0.0, max)
+        };
+        let pinned = follows || from_bottom < PINNED;
         let viewport = Viewport {
-            // The scroll to the newest message lands in this frame's layout, after the rows have
-            // been chosen: a frame that follows builds every row, as one does before the first
-            // layout.
-            height: if follows {
-                0.0
-            } else {
-                f32::from(scroll.bounds().size.height)
-            },
-            // A wheel can leave the offset past the ends until the next layout clamps it.
-            from_bottom: if follows {
-                0.0
-            } else {
-                let max = f32::from(scroll.max_offset().y);
-                (max + f32::from(scroll.offset().y)).clamp(0.0, max)
-            },
+            // The area was laid out before this frame (zero before the first layout). The scroll
+            // to the newest message lands in this frame's layout, after the rows have been
+            // chosen, so a frame that follows plans for the bottom of the transcript.
+            height: f32::from(scroll.bounds().size.height),
+            from_bottom: if follows { 0.0 } else { from_bottom },
         };
         let limit = self.transcript_limit(&pane.pane_id);
         // The transcript is read where it lives and only the elements are built: the last
@@ -91,6 +101,14 @@ impl Workbench {
             None => Vec::new(),
         };
         self.markdown = markdown;
+        // Rows that were never measured are measured a budget at a time, and the transcript
+        // stays at the newest message while they change the height above it.
+        if measured.borrow().measuring() && pinned {
+            scroll.scroll_to_bottom();
+        }
+        if measured.borrow().catching_up() {
+            cx.notify();
+        }
         let dropped = pane.pane_id.clone();
         column()
             .flex_1()
@@ -173,18 +191,21 @@ pub(super) fn notice_line(text: &str, palette: &Palette) -> AnyElement {
 }
 
 pub(super) fn transcript_row(
-    pane_id: &str,
-    message: &TranscriptMessage,
-    open: bool,
+    line: MessageRow,
     markdown: &mut Replies,
     palette: &'static Palette,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
+    let MessageRow {
+        pane_id,
+        message,
+        open,
+        ..
+    } = line;
     match message.kind {
         TranscriptKind::Tool => message.tool.as_ref().map(|tool| tool_row(tool, palette)),
         TranscriptKind::Thought => {
-            let body =
-                open.then(|| markdown_body(pane_id, message, markdown, palette, palette.secondary));
+            let body = open.then(|| markdown_body(line, markdown, palette, palette.secondary, cx));
             Some(thought_row(pane_id, message, body, palette, cx))
         }
         TranscriptKind::Plan => message.plan.as_ref().map(|plan| plan_card(plan, palette)),
@@ -203,40 +224,97 @@ pub(super) fn transcript_row(
         // A subagent's row is drawn from its group, with the activity it owns under it.
         TranscriptKind::Usage | TranscriptKind::Subagent => None,
         TranscriptKind::Message | TranscriptKind::System => {
-            Some(text_row(pane_id, message, markdown, palette))
+            Some(text_row(line, palette, markdown, cx))
         }
     }
 }
 
+/// What laying out `message` costs, in the weight of `markdown::weight_of`: the reply as far as
+/// its pages go, the text of anything else.
+pub(super) fn row_weight(line: MessageRow, markdown: &mut Replies) -> usize {
+    let message = line.message;
+    match message.kind {
+        TranscriptKind::Thought if line.open => shown_reply(line, markdown).weight(),
+        TranscriptKind::Message | TranscriptKind::System
+            if message.role == TranscriptRole::Assistant && message.agent_message.is_none() =>
+        {
+            shown_reply(line, markdown).weight()
+        }
+        TranscriptKind::Message | TranscriptKind::System => text_weight(message.text.len()),
+        TranscriptKind::Terminal => message
+            .terminal
+            .as_ref()
+            .map_or(1, |output| text_weight(output.bytes.len() / 4 * 3)),
+        TranscriptKind::Plan => message.plan.as_ref().map_or(1, |plan| 1 + plan.len()),
+        TranscriptKind::Usage | TranscriptKind::Subagent => 0,
+        TranscriptKind::Tool | TranscriptKind::Thought | TranscriptKind::Handover => 1,
+    }
+}
+
+/// The pages of a message's reply that are drawn, named by the message (`owner_of`).
+fn shown_reply(line: MessageRow, markdown: &mut Replies) -> Shown {
+    let owner = owner_of(line.pane_id, &line.message.local_id);
+    markdown.shown(
+        &owner,
+        &line.message.text,
+        !line.message.complete,
+        line.pages,
+    )
+}
+
 /// The agent's words with their Markdown drawn, in `ink`; a reply that is still arriving has its
 /// open spans closed. Its blocks are named by the message (`owner_of`), so a selection or a copy
-/// button of one reply is not another's.
+/// button of one reply is not another's. A long reply shows `pages` pages and a row that asks
+/// for the next one (`markdown::shown`).
 fn markdown_body(
-    pane_id: &str,
-    message: &TranscriptMessage,
+    line: MessageRow,
     markdown: &mut Replies,
     palette: &'static Palette,
     ink: u32,
+    cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let owner = owner_of(pane_id, &message.local_id);
-    let blocks = markdown.blocks(&owner, &message.text, !message.complete);
-    super::markdown::reply(
-        &blocks,
+    let owner = owner_of(line.pane_id, &line.message.local_id);
+    let shown = shown_reply(line, markdown);
+    let reply = super::markdown::reply(
+        &shown.blocks,
         &owner,
         palette,
         ink,
         Opens::Links(markdown.files.as_ref()),
-    )
+    );
+    if !shown.more {
+        return reply;
+    }
+    if shown.tail {
+        // The end of a reply that is arriving: no row to ask for more, the beginning comes with
+        // the whole reply.
+        return column()
+            .gap(px(pane_interior::COMPACT_SPACING))
+            .child(caption(palette.secondary, EARLIER_HIDDEN))
+            .child(reply)
+            .into_any_element();
+    }
+    let (pane_id, message_id) = (line.pane_id.to_owned(), line.message.local_id.clone());
+    let more = id("show-more", &message_id);
+    let ask = cx.listener(move |this, _: &ClickEvent, _, cx| {
+        this.show_more_of_reply((&pane_id, &message_id), cx)
+    });
+    column()
+        .gap(px(pane_interior::COMPACT_SPACING))
+        .child(reply)
+        .child(row().child(button(more, Role::Secondary, SHOW_MORE, palette).on_click(ask)))
+        .into_any_element()
 }
 
 /// A message: a card for the person or a peer agent, plain text for what they typed, and the
 /// agent's own words with their Markdown drawn.
 fn text_row(
-    pane_id: &str,
-    message: &TranscriptMessage,
-    markdown: &mut Replies,
+    line: MessageRow,
     palette: &'static Palette,
+    markdown: &mut Replies,
+    cx: &mut Context<Workbench>,
 ) -> AnyElement {
+    let (pane_id, message) = (line.pane_id, line.message);
     let owner = owner_of(pane_id, &message.local_id);
     let copyable = |card: Div| {
         copyable(
@@ -251,13 +329,7 @@ fn text_row(
         let reply = div()
             .w_full()
             .text_size(px(pane_interior::BODY_POINT_SIZE))
-            .child(markdown_body(
-                pane_id,
-                message,
-                markdown,
-                palette,
-                palette.ink,
-            ));
+            .child(markdown_body(line, markdown, palette, palette.ink, cx));
         return copyable(reply).into_any_element();
     }
     let body = div()

@@ -254,6 +254,17 @@ impl Workbench {
         cx.notify();
     }
 
+    /// "Show more" under a long reply: draws its next page.
+    pub(crate) fn show_more_of_reply(
+        &mut self,
+        (pane_id, message): (&str, &str),
+        cx: &mut Context<Self>,
+    ) {
+        let pages = &mut self.panes.of(pane_id).reply_pages;
+        *pages.entry(message.to_owned()).or_insert(1) += 1;
+        cx.notify();
+    }
+
     pub(crate) fn cancel_turn(&mut self, pane_id: &str) {
         self.send(Command::Cancel {
             pane_id: pane_id.to_owned(),

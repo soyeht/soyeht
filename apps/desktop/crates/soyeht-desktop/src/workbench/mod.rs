@@ -127,7 +127,8 @@ impl Workbench {
                 cx.background_executor().timer(loops::CLOCK_BEAT).await;
                 let repaint = this.update(cx, |this, cx| {
                     this.beat_drafts(cx);
-                    if this.state.has_running_turn() {
+                    // Only the clock of a pane on screen ticks: a repaint is the whole window.
+                    if this.state.shown_turn_running() {
                         cx.notify();
                     }
                 });

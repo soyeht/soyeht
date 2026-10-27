@@ -4,26 +4,28 @@ const ROW: f32 = 100.0;
 const GAP: f32 = 10.0;
 const WIDTH: f32 = 600.0;
 
-fn keys(count: usize) -> Vec<(String, u64)> {
+/// What a row of the tests weighs: a reply of a few paragraphs.
+const WEIGHT: usize = 3;
+
+fn keys(count: usize) -> Vec<Key> {
     (0..count)
-        .map(|at| (format!("row-{at}"), at as u64))
+        .map(|at| Key {
+            key: format!("row-{at}"),
+            fingerprint: at as u64,
+            weight: WEIGHT,
+        })
         .collect()
 }
 
 /// The frame a transcript of `keys` was built in: each row built at `built` high and each spacer
 /// at its own height, all `width` wide.
-fn laid_out_at(
-    rows: &mut Rows,
-    keys: &[(String, u64)],
-    plan: &[Option<f32>],
-    (width, built): (f32, f32),
-) {
+fn laid_out_at(rows: &mut Rows, keys: &[Key], plan: &[Option<f32>], (width, built): (f32, f32)) {
     rows.set_children(
         keys.iter()
             .zip(plan)
-            .map(|((key, fingerprint), spacer)| Child::Row {
-                key: key.clone(),
-                fingerprint: *fingerprint,
+            .map(|(row, spacer)| Child::Row {
+                key: row.key.clone(),
+                fingerprint: row.fingerprint,
                 built: spacer.is_none(),
             })
             .collect(),
@@ -35,7 +37,7 @@ fn laid_out_at(
     rows.absorb(&sizes);
 }
 
-fn laid_out(rows: &mut Rows, keys: &[(String, u64)], plan: &[Option<f32>]) {
+fn laid_out(rows: &mut Rows, keys: &[Key], plan: &[Option<f32>]) {
     laid_out_at(rows, keys, plan, (WIDTH, ROW));
 }
 
@@ -46,13 +48,29 @@ fn at_bottom() -> Viewport {
     }
 }
 
-/// A transcript that has been laid out once, whole, as the first frame of a pane does.
-fn measured(count: usize) -> (Rows, Vec<(String, u64)>) {
+/// The weight of the rows a plan builds.
+fn built_weight(plan: &[Option<f32>]) -> usize {
+    built(plan).len() * WEIGHT
+}
+
+/// Frames until a transcript is all measured, as a pane draws them: each one asks for another
+/// while it leaves rows as guesses. Returns the frames drawn.
+fn catch_up(rows: &mut Rows, keys: &[Key], layout: u64, size: (f32, f32)) -> usize {
+    for frame in 1..=100 {
+        let plan = rows.plan(keys, at_bottom(), GAP, layout);
+        laid_out_at(rows, keys, &plan, size);
+        if !rows.catching_up() {
+            return frame;
+        }
+    }
+    panic!("the transcript never finished measuring");
+}
+
+/// A transcript that has been laid out until every row was measured.
+fn measured(count: usize) -> (Rows, Vec<Key>) {
     let keys = keys(count);
     let mut rows = Rows::default();
-    let first = rows.plan(&keys, at_bottom(), GAP, 1);
-    assert!(first.iter().all(Option::is_none), "nothing is known yet");
-    laid_out(&mut rows, &keys, &first);
+    catch_up(&mut rows, &keys, 1, (WIDTH, ROW));
     (rows, keys)
 }
 
@@ -61,11 +79,51 @@ fn built(plan: &[Option<f32>]) -> Vec<usize> {
 }
 
 #[test]
-fn the_first_frame_builds_everything_so_that_it_can_be_measured() {
+fn the_first_frame_builds_a_budget_of_rows_and_asks_for_the_next_frame() {
     let keys = keys(200);
     let mut rows = Rows::default();
     let plan = rows.plan(&keys, at_bottom(), GAP, 1);
-    assert_eq!(built(&plan).len(), 200);
+    // The rows on screen and the nearest of the others, up to the budget; the rest are guesses.
+    assert!(
+        built_weight(&plan) <= FRAME_BUDGET + NEWEST * WEIGHT,
+        "{}",
+        built_weight(&plan)
+    );
+    assert!(built(&plan).contains(&199));
+    assert!(rows.catching_up() && rows.measuring());
+    assert_eq!(plan[0], Some(GUESS));
+}
+
+#[test]
+fn a_transcript_is_measured_a_budget_a_frame_and_then_costs_a_few_rows() {
+    let keys = keys(200);
+    let mut rows = Rows::default();
+    let frames = catch_up(&mut rows, &keys, 1, (WIDTH, ROW));
+    assert!(frames <= 200 * WEIGHT / (FRAME_BUDGET - 24) + 2, "{frames}");
+    let plan = rows.plan(&keys, at_bottom(), GAP, 1);
+    assert!(!rows.catching_up() && !rows.measuring());
+    assert!(built(&plan).len() < 20);
+    assert!(plan[..180].iter().all(|spacer| *spacer == Some(ROW)));
+}
+
+#[test]
+fn no_frame_builds_more_than_the_rows_on_screen_and_a_budget_whatever_the_weights() {
+    // 200 rows of 60 each, the weight of a page of a long reply and then some.
+    let mut keys = keys(200);
+    keys.iter_mut().for_each(|row| row.weight = 60);
+    let mut rows = Rows::default();
+    for _ in 0..30 {
+        let plan = rows.plan(&keys, at_bottom(), GAP, 1);
+        // The rows on screen and the newest eight are always built; the budget adds one row
+        // at most past its end.
+        let beyond: usize = built(&plan)
+            .iter()
+            .filter(|&&at| at < 200 - NEWEST)
+            .map(|&at| keys[at].weight)
+            .sum();
+        assert!(beyond <= FRAME_BUDGET + 60 + 8 * 60, "{beyond}");
+        laid_out(&mut rows, &keys, &plan);
+    }
 }
 
 #[test]
@@ -101,16 +159,17 @@ fn the_rows_built_follow_the_scroll_position() {
 }
 
 #[test]
-fn a_short_transcript_is_built_whole() {
-    let (mut rows, keys) = measured(SHORT);
+fn a_transcript_that_weighs_little_is_built_whole() {
+    let count = FRAME_BUDGET / WEIGHT;
+    let (mut rows, keys) = measured(count);
     let plan = rows.plan(&keys, at_bottom(), GAP, 1);
-    assert_eq!(built(&plan).len(), SHORT);
+    assert_eq!(built(&plan).len(), count);
 }
 
 #[test]
 fn a_row_whose_content_changed_is_built_again() {
     let (mut rows, mut keys) = measured(200);
-    keys[10].1 += 1;
+    keys[10].fingerprint += 1;
     let plan = rows.plan(&keys, at_bottom(), GAP, 1);
     assert!(built(&plan).contains(&10));
     assert_eq!(plan[11], Some(ROW));
@@ -119,39 +178,54 @@ fn a_row_whose_content_changed_is_built_again() {
 #[test]
 fn a_new_row_is_built_and_the_ones_before_it_stay_spaced() {
     let (mut rows, mut keys) = measured(200);
-    keys.push(("row-200".into(), 200));
+    keys.push(Key {
+        key: "row-200".into(),
+        fingerprint: 200,
+        weight: WEIGHT,
+    });
     let plan = rows.plan(&keys, at_bottom(), GAP, 1);
     assert!(built(&plan).contains(&200));
     assert_eq!(plan[0], Some(ROW));
 }
 
 #[test]
-fn a_width_that_changed_builds_everything_until_it_is_measured_again() {
+fn a_width_that_changed_is_measured_again_a_budget_a_frame() {
     let (mut rows, keys) = measured(200);
     // The next frame is laid out narrower: every height measured so far is for another width.
     let first = rows.plan(&keys, at_bottom(), GAP, 1);
     laid_out_at(&mut rows, &keys, &first, (WIDTH - 200.0, ROW * 2.0));
     let plan = rows.plan(&keys, at_bottom(), GAP, 1);
-    let rebuilt = built(&plan);
-    // The rows built in the last frame were measured at the new width and may be spaced again;
-    // the ones that were example keep the old width's heights, which no longer count.
-    assert!(rebuilt.len() >= 180, "{}", rebuilt.len());
-    assert!(rebuilt.contains(&0));
+    // The rows far away keep the heights they had for the old width as their guess.
+    assert!(built_weight(&plan) <= FRAME_BUDGET + 2 * NEWEST * WEIGHT);
+    assert!(rows.catching_up());
+    assert_eq!(plan[0], Some(ROW));
+    laid_out_at(&mut rows, &keys, &plan, (WIDTH - 200.0, ROW * 2.0));
+    catch_up(&mut rows, &keys, 1, (WIDTH - 200.0, ROW * 2.0));
+    let settled = rows.plan(&keys, at_bottom(), GAP, 1);
+    assert!(
+        settled[..180]
+            .iter()
+            .all(|spacer| *spacer == Some(ROW * 2.0))
+    );
 }
 
 #[test]
-fn a_changed_window_builds_everything_in_that_frame() {
+fn a_changed_window_is_measured_again_a_budget_a_frame_like_a_changed_width() {
     let (mut rows, keys) = measured(200);
     let plan = rows.plan(&keys, at_bottom(), GAP, 2);
-    assert_eq!(built(&plan).len(), 200);
-    // The signature is stable again in the next one.
+    assert!(built_weight(&plan) <= FRAME_BUDGET + 2 * NEWEST * WEIGHT);
+    assert!(rows.catching_up());
+    // The heights it had stand in for the rows that are not built.
+    assert_eq!(plan[0], Some(ROW));
     laid_out(&mut rows, &keys, &plan);
+    catch_up(&mut rows, &keys, 2, (WIDTH, ROW));
+    // The signature is stable again in the next one.
     let plan = rows.plan(&keys, at_bottom(), GAP, 2);
     assert!(built(&plan).len() < 20);
 }
 
 #[test]
-fn nothing_is_left_out_before_the_viewport_has_a_size() {
+fn before_the_viewport_has_a_size_it_is_taken_as_tall_as_a_screen() {
     let (mut rows, keys) = measured(200);
     let plan = rows.plan(
         &keys,
@@ -162,7 +236,8 @@ fn nothing_is_left_out_before_the_viewport_has_a_size() {
         GAP,
         1,
     );
-    assert_eq!(built(&plan).len(), 200);
+    let built = built(&plan);
+    assert!(built.len() < 30 && built.contains(&199), "{built:?}");
 }
 
 #[test]
@@ -207,7 +282,7 @@ fn entries_that_draw_no_row_take_no_room() {
     let keys = keys(200);
     let mut rows = Rows::default();
     let first = rows.plan(&keys, at_bottom(), GAP, 1);
-    let drawn: Vec<(String, u64)> = keys
+    let drawn: Vec<Key> = keys
         .iter()
         .cloned()
         .enumerate()
@@ -217,20 +292,20 @@ fn entries_that_draw_no_row_take_no_room() {
     rows.set_children(
         drawn
             .iter()
-            .map(|(key, fingerprint)| Child::Row {
-                key: key.clone(),
-                fingerprint: *fingerprint,
+            .map(|row| Child::Row {
+                key: row.key.clone(),
+                fingerprint: row.fingerprint,
                 built: true,
             })
             .collect(),
     );
     rows.absorb(&vec![(WIDTH, ROW); drawn.len()]);
-    for (at, (key, fingerprint)) in keys.iter().enumerate() {
+    for (at, row) in keys.iter().enumerate() {
         if at % 3 == 2 {
-            rows.mark_absent(key, *fingerprint);
+            rows.mark_absent(&row.key, row.fingerprint);
         }
     }
-    assert!(first.iter().all(Option::is_none));
+    assert!(first.iter().any(Option::is_some));
     let plan = rows.plan(&keys, at_bottom(), GAP, 1);
     let built_rows: Vec<usize> = (0..200)
         .filter(|at| plan[*at].is_none() && at % 3 != 2)
@@ -375,4 +450,33 @@ fn a_subagent_row_follows_its_run_and_what_runs_under_it() {
     assert_ne!(grown, added);
     view.merge(subagent_row("completed")).unwrap();
     assert_ne!(added, prints(&view)[0]);
+}
+
+/// Frames until a transcript stops asking for another, as a pane draws them.
+fn frames_to_settle(keys: &[Key]) -> Option<usize> {
+    let mut rows = Rows::default();
+    for frame in 1..=50 {
+        let plan = rows.plan(keys, at_bottom(), GAP, 1);
+        laid_out(&mut rows, keys, &plan);
+        if !rows.catching_up() {
+            return Some(frame);
+        }
+    }
+    None
+}
+
+#[test]
+fn heavy_newest_rows_do_not_starve_the_measuring_of_the_others() {
+    let mut keys = keys(100);
+    for row in keys.iter_mut().rev().take(NEWEST) {
+        row.weight = 60;
+    }
+    assert!(frames_to_settle(&keys).is_some());
+}
+
+#[test]
+fn one_row_heavier_than_the_budget_is_still_measured() {
+    let mut keys = keys(100);
+    keys[10].weight = FRAME_BUDGET + 100;
+    assert!(frames_to_settle(&keys).is_some());
 }

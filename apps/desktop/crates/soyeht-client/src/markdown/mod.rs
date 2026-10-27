@@ -15,12 +15,16 @@
 //! time it grows; [`streaming::close`] first closes what the reply has left open, so a bold
 //! word or a code span shows its style as it is typed instead of showing raw markers.
 
+mod budget;
 mod file_refs;
 mod preview;
 mod streaming;
 mod surface;
 mod web_links;
 
+pub use budget::{
+    EARLIER_HIDDEN, PAGE_WEIGHT, SHOW_MORE, Shown, shown, shown_tail, text_weight, weight_of,
+};
 pub use file_refs::link_references;
 pub use preview::{Preview, Refusal};
 pub use surface::Surface;

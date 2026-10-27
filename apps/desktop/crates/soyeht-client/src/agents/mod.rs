@@ -53,10 +53,19 @@ impl State {
                 .any(|pane| pane.state == PaneState::Working)
     }
 
-    /// Whether any agent is in the middle of a turn, so that the time in its header must tick.
-    pub fn has_running_turn(&self) -> bool {
-        self.agent_panes(None)
+    /// Whether an agent of `workspace` is in the middle of a turn, so that the time in its header
+    /// must tick. The panes of the other workspaces are not drawn, and every tick draws the whole
+    /// window again.
+    pub fn has_running_turn(&self, workspace: Option<&str>) -> bool {
+        self.agent_panes(workspace)
             .any(|pane| pane.state.is_turn_running())
+    }
+
+    /// Whether the clock in the header of a pane that is on screen must tick: an agent of the
+    /// selected workspace is in the middle of a turn. Without a workspace there is no pane.
+    pub fn shown_turn_running(&self) -> bool {
+        self.selected_workspace_id()
+            .is_some_and(|workspace| self.has_running_turn(Some(&workspace)))
     }
 
     fn agent_panes<'a>(&'a self, workspace: Option<&'a str>) -> impl Iterator<Item = &'a Pane> {
