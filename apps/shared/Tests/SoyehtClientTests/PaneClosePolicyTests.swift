@@ -79,6 +79,29 @@ private func workspace(_ name: String) -> Workspace {
   #expect(three?.message.contains("its 3 panes") == true)
 }
 
+/// The `workspaces` cases of `contracts/vectors/pane-close.json`.
+@Test func aWorkspaceAsksAsTheVectorSays() throws {
+  let vector = try ContractVector.load("pane-close")
+  for item in ContractVector.cases(vector, "workspaces") {
+    let name = item["name"].string ?? ""
+    let workspaceName = try #require(item["workspaceName"].string)
+    let paneCount = try #require(item["paneCount"].int)
+    let asked = PaneClosePolicy.confirmation(for: workspace(workspaceName), paneCount: paneCount)
+    let confirm = item["confirm"]
+    if case .null = confirm {
+      #expect(asked == nil, "\(name)")
+    } else {
+      #expect(
+        asked
+          == CloseConfirmation(
+            title: try #require(confirm["title"].string),
+            message: try #require(confirm["message"].string),
+            confirmTitle: try #require(confirm["confirmTitle"].string)),
+        "\(name)")
+    }
+  }
+}
+
 @MainActor @Test func theClientAsksAboutAPaneItHoldsAndAboutItsWorkspace() throws {
   let client = EngineClient(socket: "/tmp/pane-close-policy.sock")
   client.upsertWorkspace(workspace("repo"))
@@ -118,4 +141,39 @@ private func workspace(_ name: String) -> Workspace {
 
   #expect(closed)
   #expect(client.problem == nil)
+}
+
+private func textEdit() -> TextEdit {
+  TextEdit(
+    range: TextRange(
+      start: TextPosition(line: 0, column: 0), end: TextPosition(line: 0, column: 0)),
+    text: "x")
+}
+
+/// A closed connection cannot write, so a write that was attempted shows as `problem`: it says
+/// whether the edits were sent before the engine was asked to close the workspace.
+@MainActor private func problemWhenTheWorkspaceCloses(
+  editedFileIn editedWorkspace: String
+) async -> String? {
+  let client = EngineClient(socket: "/tmp/pane-close-flush-\(editedWorkspace).sock")
+  client.upsertWorkspace(workspace("repo"))
+  var edited = file(path: "/repo/texts/essay.md")
+  edited.workspaceId = editedWorkspace
+  client.editorFiles[edited.fileId] = EditorFileView(file: edited)
+  var problemAtClose: String?
+  client.requestStub = { method, _ in
+    if method == .workspaceClose { problemAtClose = client.problem }
+    return .object([:])
+  }
+  client.enqueueEditorEdits(fileId: edited.fileId, edits: [textEdit()])
+  _ = await client.closeWorkspaceReportingFailure("w")
+  return problemAtClose
+}
+
+@MainActor @Test func closingAWorkspaceSendsWhatWasTypedInItsDocumentsFirst() async {
+  #expect(await problemWhenTheWorkspaceCloses(editedFileIn: "w") != nil)
+}
+
+@MainActor @Test func closingAWorkspaceLeavesTheDocumentsOfOthersAlone() async {
+  #expect(await problemWhenTheWorkspaceCloses(editedFileIn: "other") == nil)
 }

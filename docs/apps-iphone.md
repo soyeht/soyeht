@@ -73,8 +73,10 @@ has a menu to open a pane in it, rename it or close it.
 - A pane closes from a swipe, the context menu of its row, or the button above the pane.
   Terminals, agents and web panes ask first (“The process in this pane will be
   terminated.”); a document asks only while it has unsaved changes. Closing a workspace
-  asks when it holds panes, since they close with it; its folder is not touched.
-  `PaneClosePolicy` holds these rules for both apps.
+  asks when it holds panes, since they close with it; its folder is not touched. The Mac
+  asks the same when the close button of a workspace tab is pressed; a close sent to the
+  engine by a script or an agent never waits on a dialog. What was typed in the workspace's
+  documents is sent before it closes. `PaneClosePolicy` holds these rules for both apps.
 
 ## Hardware keyboard
 

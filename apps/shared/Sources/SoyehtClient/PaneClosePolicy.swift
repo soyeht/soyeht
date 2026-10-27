@@ -44,7 +44,10 @@ public enum PaneClosePolicy {
   }
 
   /// The question to ask before closing a workspace, or `nil` when it holds no pane. Closing a
-  /// workspace closes every pane in it; its folder and files are not touched.
+  /// workspace closes every pane in it, so it asks whenever there is one, whether or not
+  /// anything runs there; its folder and files are not touched. This is the question for a
+  /// person's own close (the tab's button); the engine's `workspace.close` itself never asks,
+  /// so a close a script or an agent sends does not wait on a dialog.
   public static func confirmation(for workspace: Workspace, paneCount: Int) -> CloseConfirmation? {
     guard paneCount > 0 else { return nil }
     let panes = paneCount == 1 ? "its pane" : "its \(paneCount) panes"
@@ -76,10 +79,14 @@ extension EngineClient {
       for: workspace, paneCount: panes.filter { $0.workspaceId == workspaceId }.count)
   }
 
-  /// Closes a workspace and its panes. When the engine refuses, the workspace stays and the
-  /// person is told so. Returns whether it closed.
+  /// Closes a workspace and its panes, after what was typed in its documents has reached the
+  /// engine, as `closePaneSavingEdits` does for one pane. When the engine refuses, the
+  /// workspace stays and the person is told so. Returns whether it closed.
   @discardableResult
   public func closeWorkspaceReportingFailure(_ workspaceId: String) async -> Bool {
+    for editor in editorFiles.values where editor.file.workspaceId == workspaceId {
+      await flushEditorEdits(fileId: editor.file.fileId)
+    }
     do {
       try await closeWorkspace(workspaceId)
       return true

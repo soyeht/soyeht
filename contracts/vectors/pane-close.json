@@ -1,5 +1,5 @@
 {
-  "description": "When closing a pane asks first, and the words it asks in, shared by the Mac and iOS clients (PaneClosePolicy) and the desktop client (soyeht_client::pane_close). A pane that runs a process (a terminal, an agent or a web page) always asks, whether or not anything is running in it. A document and an editor tab ask by rules of their own (writing.json `closing`, and the editor's conflict with the disk), so with nothing to lose they close at once. Closing a workspace is not here: the Mac does not ask for it. Both clients pass every case.",
+  "description": "When closing a pane asks first, and the words it asks in, shared by the Mac and iOS clients (PaneClosePolicy) and the desktop client (soyeht_client::pane_close). A pane that runs a process (a terminal, an agent or a web page) always asks, whether or not anything is running in it. A document and an editor tab ask by rules of their own (writing.json `closing`, and the editor's conflict with the disk), so with nothing to lose they close at once. Closing a workspace asks whenever it holds at least one pane, because closing it closes every pane in it (`workspaces`); a workspace with no pane closes at once. Its folder and files are never touched. The Mac and iOS clients pass the `workspaces` cases; the desktop client passes `panes` and does not ask for a workspace yet.",
   "panes": [
     {
       "name": "a terminal asks, idle or not",
@@ -18,5 +18,20 @@
     },
     { "name": "a document with nothing unsaved closes at once", "mode": "writing", "confirm": null },
     { "name": "an editor tab with no conflict closes at once", "mode": "editor", "confirm": null }
+  ],
+  "workspaces": [
+    { "name": "a workspace with no pane closes at once", "workspaceName": "repo", "paneCount": 0, "confirm": null },
+    {
+      "name": "a workspace with one pane asks",
+      "workspaceName": "repo",
+      "paneCount": 1,
+      "confirm": { "title": "Close repo?", "message": "The processes in its pane will be terminated. The folder stays on the Mac.", "confirmTitle": "Close workspace" }
+    },
+    {
+      "name": "a workspace with several panes asks and counts them",
+      "workspaceName": "repo",
+      "paneCount": 3,
+      "confirm": { "title": "Close repo?", "message": "The processes in its 3 panes will be terminated. The folder stays on the Mac.", "confirmTitle": "Close workspace" }
+    }
   ]
 }

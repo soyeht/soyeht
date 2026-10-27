@@ -12,6 +12,7 @@ struct WorkspaceWindow: View {
   let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
   @State private var paneToClose: String?
+  @State private var workspaceToClose: String?
   @State private var newPaneDraft: NewPaneDraft?
   @State private var showPairing = false
   @State private var deviceToRevoke: String?
@@ -43,6 +44,19 @@ struct WorkspaceWindow: View {
       }
     } message: {
       Text(CloseConfirmation.runningPane.message)
+    }
+    .alert(
+      workspaceCloseQuestion?.title ?? "",
+      isPresented: Binding(
+        get: { workspaceCloseQuestion != nil }, set: { if !$0 { workspaceToClose = nil } })
+    ) {
+      Button("Cancel", role: .cancel) { workspaceToClose = nil }
+      Button(workspaceCloseQuestion?.confirmTitle ?? "Close", role: .destructive) {
+        if let id = workspaceToClose { closeWorkspace(id) }
+        workspaceToClose = nil
+      }
+    } message: {
+      Text(workspaceCloseQuestion?.message ?? "")
     }
     .alert(
       "Could not complete",
@@ -169,7 +183,7 @@ struct WorkspaceWindow: View {
     return VStack(spacing: CGFloat(policy.paneVerticalInset)) {
       WorkspaceTopBar(
         client: client, workspaceId: selectedTaskWorkspaceId,
-        onSelectWorkspace: selectWorkspace, onCloseWorkspace: closeWorkspace,
+        onSelectWorkspace: selectWorkspace, onCloseWorkspace: askToCloseWorkspace,
         onNewPane: presentNewPane,
         onTasks: showTasks, onToggleAppBar: { navigation.toggleAppBar() },
         leadingSpace: policy.topBarLeading(
@@ -268,6 +282,18 @@ struct WorkspaceWindow: View {
     taskWorkspaceId = workspaceId
     if let pane = client.panes.first(where: { $0.workspaceId == workspaceId }) {
       client.select(pane.paneId)
+    }
+  }
+  /// What the person is asked before the workspace they chose to close goes. A workspace with no
+  /// pane has nothing to lose and closes at once (`PaneClosePolicy`, shared with the iPhone).
+  private var workspaceCloseQuestion: CloseConfirmation? {
+    workspaceToClose.flatMap { client.closeConfirmation(forWorkspace: $0) }
+  }
+  private func askToCloseWorkspace(_ workspaceId: String) {
+    if client.closeConfirmation(forWorkspace: workspaceId) == nil {
+      closeWorkspace(workspaceId)
+    } else {
+      workspaceToClose = workspaceId
     }
   }
   private func closeWorkspace(_ workspaceId: String) {
