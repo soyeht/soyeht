@@ -63,6 +63,27 @@ pub(crate) fn replay_rows(root: &Path, pane_id: &str, build: EngineBuild) -> Vec
     .collect()
 }
 
+/// The state of an agent that is ready for work, with nothing queued or open.
+pub(crate) fn ready_agent_state() -> crate::agents::state::State {
+    use crate::agents::state::{Phase, State};
+    let mut state = State::new(
+        soyeht_protocol::HarnessLaunch {
+            id: "test".into(),
+            name: "Test".into(),
+            command: "/test".into(),
+            args: Vec::new(),
+            version: "1".into(),
+            environment: None,
+        },
+        "digest".into(),
+        None,
+    )
+    .unwrap();
+    state.phase = Phase::Ready;
+    state.requested_options.clear();
+    state
+}
+
 /// An idle pane with no optional field set: a test overrides what it exercises with
 /// `Pane { name: .., ..pane(..) }`.
 pub(crate) fn pane(id: &str, workspace_id: &str, mode: PaneMode, cwd: &str) -> Pane {

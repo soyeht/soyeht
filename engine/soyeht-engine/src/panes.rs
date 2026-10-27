@@ -253,9 +253,8 @@ impl Core {
             }
             // A disconnected supervisor leaves a durable creation intent for
             // reconciliation, never a second process on an RPC retry.
-            if self.spawn(&id).is_err() {
-                self.ptyd = None;
-            }
+            let spawned = self.spawn(&id);
+            self.settle_spawn(&id, spawned);
         }
         Ok(mutation.result)
     }
@@ -480,10 +479,9 @@ impl Core {
                 .find(|i| i.spawn.instance_key == key)
                 .map(|i| i.instance_id);
         }
-        if let Some(instance_id) = instance_id
-            && self.pty_request(Request::Close { instance_id }).is_err()
-        {
-            self.ptyd = None;
+        if let Some(instance_id) = instance_id {
+            let closed = self.pty_request(Request::Close { instance_id }).map(drop);
+            self.settle_supervisor_call("engine.pane_close_failed", closed);
         }
         Ok(())
     }

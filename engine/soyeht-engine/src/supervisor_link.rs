@@ -7,7 +7,7 @@
 
 use crate::{
     core::Core,
-    errors::{Error, Result},
+    errors::{self, Error, Result},
     streak::Streak,
 };
 use soyeht_platform::{
@@ -16,7 +16,7 @@ use soyeht_platform::{
 };
 use soyeht_protocol::{PaneState, profile::DEV_PTYD_SOCKET};
 use soyeht_ptyd::wire_kind;
-use std::{io, path::PathBuf};
+use std::{collections::BTreeMap, io, path::PathBuf};
 
 /// Delay after the first failed attempt is twice this; the delay doubles up to the cap.
 const RETRY_BASE_MS: i64 = 100;
@@ -63,6 +63,12 @@ pub(crate) struct Retry {
     start_due_ms: i64,
     /// The consecutive starts that failed, so a program that is missing is logged once.
     start_streak: Streak,
+    /// The consecutive failures of each action the engine takes on the supervisor without
+    /// being able to return the error (see [`Core::settle_supervisor_call`]), by event name.
+    call_failures: BTreeMap<&'static str, Streak>,
+    /// The panes whose process failed to start on a link that stays up, and when each is tried
+    /// again (see `spawn_retry`).
+    pub(crate) spawn_retries: crate::spawn_retry::SpawnRetries,
 }
 
 impl Default for Retry {
@@ -74,6 +80,8 @@ impl Default for Retry {
             program: None,
             start_due_ms: 0,
             start_streak: Streak::once(),
+            call_failures: BTreeMap::new(),
+            spawn_retries: Default::default(),
         }
     }
 }
@@ -185,6 +193,8 @@ impl Core {
         }
         match self.connect_supervisor() {
             Ok(()) => {
+                // The reconciliation that made the link starts every pane that has no process.
+                self.supervisor_retry.spawn_retries.clear();
                 self.supervisor_retry.connected_ms = Some(now);
                 Link::Up
             }
@@ -223,6 +233,29 @@ impl Core {
             )
     }
 
+    /// Settles an action on the supervisor whose caller has no error to return: a failed one
+    /// is logged under `event` with its kind (once per change of kind, then at growing
+    /// intervals), and the link is dropped only when the error says it is gone
+    /// ([`errors::supervisor_link_lost`]). A refusal, a failure the supervisor reported or a
+    /// storage error leaves a working link alone, so no pane is reconciled again.
+    pub(crate) fn settle_supervisor_call(&mut self, event: &'static str, result: Result<()>) {
+        let streak = self
+            .supervisor_retry
+            .call_failures
+            .entry(event)
+            .or_insert_with(|| Streak::retrying(RETRY_BASE_MS, RETRY_CAP_MS));
+        let Err(error) = result else {
+            streak.succeed();
+            return;
+        };
+        if streak.fail(&error.failure_kind()) {
+            log::failure(event, &error);
+        }
+        if errors::supervisor_link_lost(&error) && self.ptyd.is_some() {
+            self.lose_supervisor_link();
+        }
+    }
+
     /// Handles the failure of one pane's recovery. When the supervisor refused to spawn it
     /// (see [`Core::refused_by_supervisor`]), the pane is stopped and the other panes are
     /// recovered; any other failure still fails the whole reconciliation, which is retried.
@@ -231,21 +264,27 @@ impl Core {
             return Err(error);
         }
         log::failure("engine.pane_not_restarted", &error);
+        self.stop_pane(id, NOT_RESTARTED)
+    }
+
+    /// Stops a pane that has no process and will not get one, with `reason` as the phrase the
+    /// clients show beside its dead state.
+    pub(crate) fn stop_pane(&mut self, id: &str, reason: &str) -> Result<()> {
         if self.agents.contains_key(id) {
-            return self.fail_agent(id, NOT_RESTARTED);
+            return self.fail_agent(id, reason);
         }
         let mut stopped = self.panes[id].stored.clone();
         stopped.pane.pid = None;
         stopped.instance_id = None;
         stopped.supervisor_id = None;
         stopped.pane.state = PaneState::Dead;
-        stopped.pane.phrase = NOT_RESTARTED.into();
+        stopped.pane.phrase = reason.into();
         self.save_runtime(id, stopped)
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::{errors, ports::Clock, ports::testing::FakeSupervisor};
     use soyeht_platform::local::{Listener, connect};
@@ -312,7 +351,7 @@ mod tests {
 
     /// A clock the test moves.
     #[derive(Debug)]
-    struct Manual(AtomicI64);
+    pub(crate) struct Manual(pub(crate) AtomicI64);
 
     impl Clock for Manual {
         fn now_ms(&self) -> i64 {
@@ -320,7 +359,7 @@ mod tests {
         }
     }
 
-    fn short_directory() -> std::path::PathBuf {
+    pub(crate) fn short_directory() -> std::path::PathBuf {
         // A socket path has a short limit: keep the folder name short.
         let directory = std::env::temp_dir().join(format!(
             "sn-{}",
@@ -486,7 +525,7 @@ mod tests {
         assert_eq!(starts(&directory), 0);
     }
 
-    fn remote(kind: &str) -> Error {
+    pub(crate) fn remote(kind: &str) -> Error {
         Error::Supervisor(soyeht_ptyd::Error::Remote {
             kind: kind.into(),
             message: "x".into(),
@@ -514,5 +553,182 @@ mod tests {
             assert!(core.stop_unrestartable_pane("pane", remote(kind)).is_err());
         }
         assert!(!core.refused_by_supervisor(&errors::internal("x")));
+    }
+
+    /// A supervisor the test scripts: it answers from `responses`, then fails as a lost link
+    /// does, and counts what it was asked.
+    pub(crate) struct Scripted {
+        pub(crate) responses: std::collections::VecDeque<soyeht_ptyd::Result<Response>>,
+        pub(crate) calls: Arc<AtomicUsize>,
+    }
+
+    impl crate::ports::SupervisorPort for Scripted {
+        fn request(
+            &mut self,
+            _request: soyeht_ptyd::wire::Request,
+        ) -> soyeht_ptyd::Result<Response> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.responses
+                .pop_front()
+                .unwrap_or(Err(soyeht_ptyd::Error::InvalidResponse))
+        }
+
+        fn supervisor_id(&self) -> &str {
+            "scripted"
+        }
+
+        fn supervisor_generation(&self) -> u32 {
+            1
+        }
+    }
+
+    /// A core with a pane that has no process yet, linked to a supervisor that gives
+    /// `responses`; the second value counts the supervisor's requests.
+    pub(crate) fn core_with_unstarted_pane(
+        responses: Vec<soyeht_ptyd::Result<Response>>,
+    ) -> (Core, std::path::PathBuf, String, Arc<AtomicUsize>) {
+        let directory = short_directory();
+        let mut core = Core::open(&directory).unwrap();
+        let id = crate::test_panes::insert_terminal_pane(&mut core, &directory, "p", false);
+        let pane = core.panes.get_mut(&id).unwrap();
+        pane.stored.instance_id = None;
+        pane.stored.supervisor_id = None;
+        let calls = Arc::new(AtomicUsize::new(0));
+        core.ptyd = Some(Box::new(Scripted {
+            responses: responses.into(),
+            calls: Arc::clone(&calls),
+        }));
+        (core, directory, id, calls)
+    }
+
+    pub(crate) fn events_named(core: &mut Core, name: &str) -> usize {
+        core.store
+            .replay(0)
+            .unwrap()
+            .1
+            .iter()
+            .filter(|event| event.method == name)
+            .count()
+    }
+
+    #[test]
+    fn a_refused_spawn_keeps_the_link_stops_the_pane_and_reconciles_nothing() {
+        let (mut core, _directory, id, calls) =
+            core_with_unstarted_pane(vec![Err(soyeht_ptyd::Error::Remote {
+                kind: wire_kind::SPAWN_REFUSED.into(),
+                message: "the folder is missing".into(),
+            })]);
+        let spawned = core.spawn(&id);
+        assert!(spawned.is_err());
+        core.settle_spawn(&id, spawned);
+
+        assert!(core.ptyd.is_some());
+        assert_eq!(core.panes[&id].stored.pane.state, PaneState::Dead);
+        assert_eq!(core.supervisor_retry.spawn_retries.attempts(&id), 0);
+        // The tick finds the link up: it neither reconnects nor reconciles every pane.
+        assert_eq!(core.ensure_supervisor(), Link::Up);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            events_named(&mut core, soyeht_protocol::event::PTYD_LOST),
+            0
+        );
+        assert_eq!(
+            events_named(&mut core, soyeht_protocol::event::PTYD_RECONNECTED),
+            0
+        );
+    }
+
+    #[test]
+    fn a_failure_the_supervisor_reports_or_the_store_raises_keeps_the_link_and_is_one_streak() {
+        let (mut core, _directory, id, _calls) = core_with_unstarted_pane(Vec::new());
+        let event = "engine.pane_spawn_failed";
+        let storage = || errors::storage(soyeht_store::database::Error::TestFixture("full"));
+        for kind in [wire_kind::SPAWN_FAILED, wire_kind::OPERATION_FAILED] {
+            core.settle_spawn(&id, Err(remote(kind)));
+            assert!(core.ptyd.is_some(), "{kind}");
+        }
+        core.settle_spawn(&id, Err(storage()));
+        core.settle_supervisor_call("engine.pane_close_failed", Err(storage()));
+        assert!(core.ptyd.is_some());
+        // The attempts count the consecutive failures of one action; a success ends them.
+        assert_eq!(core.supervisor_retry.call_failures[event].attempts(), 3);
+        core.settle_spawn(&id, Ok(()));
+        assert_eq!(core.supervisor_retry.call_failures[event].attempts(), 0);
+        assert_eq!(
+            events_named(&mut core, soyeht_protocol::event::PTYD_LOST),
+            0
+        );
+        // A non-refusal leaves the pane to the tick's retry (see `spawn_retry`).
+        assert_ne!(core.panes[&id].stored.pane.state, PaneState::Dead);
+    }
+
+    /// A supervisor on the socket that welcomes the engine and answers its registry reads.
+    fn serve_registry(directory: &std::path::Path) {
+        use soyeht_protocol::frame::read_json;
+        use soyeht_ptyd::wire::Request;
+        let listener = Listener::bind(&directory.join(DEV_PTYD_SOCKET)).unwrap();
+        std::thread::spawn(move || {
+            while let Ok(mut stream) = listener.accept() {
+                while let Ok(Some(request)) = read_json::<Request>(&mut stream) {
+                    let response = match request {
+                        Request::Hello { .. } => Response::Welcome {
+                            version: VERSION,
+                            supervisor_id: "served".into(),
+                            supervisor_generation: 2,
+                        },
+                        Request::PendingInputs => Response::InputReceipts(Vec::new()),
+                        Request::List => Response::Instances(Vec::new()),
+                        _ => Response::Ok,
+                    };
+                    if write_json(&mut stream, &response).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn a_lost_link_is_dropped_once_and_then_made_again() {
+        let (mut core, directory, id, calls) = core_with_unstarted_pane(Vec::new());
+        let spawned = core.spawn(&id);
+        assert!(spawned.is_err());
+        core.settle_spawn(&id, spawned);
+
+        assert!(core.ptyd.is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        // `pty_request` recorded the loss; settling the same failure does not record it again.
+        assert_eq!(
+            events_named(&mut core, soyeht_protocol::event::PTYD_LOST),
+            1
+        );
+
+        // The registry the engine reconciles is empty: this test is about the link.
+        core.panes.remove(&id);
+        serve_registry(&directory);
+        assert_eq!(core.ensure_supervisor(), Link::Up);
+        assert!(core.ptyd.is_some());
+        assert_eq!(
+            events_named(&mut core, soyeht_protocol::event::PTYD_RECONNECTED),
+            1
+        );
+        assert_eq!(
+            events_named(&mut core, soyeht_protocol::event::PTYD_LOST),
+            1
+        );
+    }
+
+    #[test]
+    fn only_a_transport_failure_says_the_link_is_lost() {
+        assert!(errors::supervisor_link_lost(&Error::Supervisor(
+            soyeht_ptyd::Error::InvalidResponse
+        )));
+        assert!(!errors::supervisor_link_lost(&remote(
+            wire_kind::SPAWN_REFUSED
+        )));
+        assert!(!errors::supervisor_link_lost(&errors::storage(
+            soyeht_store::database::Error::TestFixture("full")
+        )));
+        assert!(!errors::supervisor_link_lost(&errors::internal("x")));
     }
 }

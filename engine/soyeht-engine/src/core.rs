@@ -1,5 +1,5 @@
 use crate::{
-    errors::{self, Error, Result},
+    errors::{self, Result},
     hooks::{Hooks, NoHooks},
     model::{self, Connected, RunningPane, StoredPane, Waiter},
     offload::SharedPort,
@@ -362,23 +362,26 @@ impl Core {
             request,
         );
         match result {
-            Err(error @ Error::Supervisor(soyeht_ptyd::Error::Remote { .. })) => Err(error),
-            Ok(response) => Ok(response),
-            Err(Error::Supervisor(_)) => {
-                self.ptyd = None;
-                // The caller still gets ptyd_unavailable; a lost event that cannot be
-                // recorded must at least reach the log.
-                if let Err(error) = self.system_event(
-                    event::PTYD_LOST,
-                    json!({"reason":"Supervisor connection closed"}),
-                ) {
-                    log::failure("engine.ptyd_lost_unrecorded", &error);
-                }
+            Err(error) if errors::supervisor_link_lost(&error) => {
+                self.lose_supervisor_link();
+                // The caller still gets ptyd_unavailable.
                 Err(errors::ptyd_unavailable(
                     soyeht_protocol::SUPERVISOR_DISCONNECTED,
                 ))
             }
-            Err(error) => Err(error),
+            result => result,
+        }
+    }
+
+    /// Drops the link to the supervisor and records `ptyd.lost`. A lost event that cannot be
+    /// recorded must at least reach the log.
+    pub(crate) fn lose_supervisor_link(&mut self) {
+        self.ptyd = None;
+        if let Err(error) = self.system_event(
+            event::PTYD_LOST,
+            json!({"reason":"Supervisor connection closed"}),
+        ) {
+            log::failure("engine.ptyd_lost_unrecorded", &error);
         }
     }
 
@@ -637,6 +640,7 @@ impl Core {
         if self.ensure_supervisor() == crate::supervisor_link::Link::Down {
             return Ok(());
         }
+        self.isolated("spawn_retries", Self::advance_spawn_retries);
         self.isolated("harness_switches", Self::advance_harness_switches);
         self.isolated("retired_agents", Self::cleanup_retired_agent_processes);
         self.isolated("experiment_captures", Self::reconcile_experiment_captures);

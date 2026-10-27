@@ -267,9 +267,8 @@ impl Core {
                     screen,
                 },
             );
-            if self.spawn(&child_id).is_err() {
-                self.ptyd = None;
-            }
+            let spawned = self.spawn(&child_id);
+            self.settle_spawn(&child_id, spawned);
         }
         Ok(mutation.result)
     }

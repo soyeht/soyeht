@@ -197,9 +197,8 @@ impl Core {
             },
         );
         self.agents.insert(id.clone(), Running::new(prepared.state));
-        if self.spawn(&id).is_err() {
-            self.ptyd = None;
-        }
+        let spawned = self.spawn(&id);
+        self.settle_spawn(&id, spawned);
         Ok(())
     }
 

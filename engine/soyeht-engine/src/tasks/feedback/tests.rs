@@ -1,9 +1,6 @@
 use super::*;
 use crate::{
-    agents::{
-        Running,
-        state::{Phase, State},
-    },
+    agents::Running,
     model::{RunningPane, StoredPane},
     panes::persist_new_pane,
     ports::testing::FixedClock,
@@ -14,8 +11,7 @@ use crate::{
     },
 };
 use soyeht_protocol::{
-    HarnessLaunch, Pane, PaneMode, PromptOrigin, TaskReviewBadge, TaskState, TaskWorktree,
-    Workspace,
+    Pane, PaneMode, PromptOrigin, TaskReviewBadge, TaskState, TaskWorktree, Workspace,
 };
 use std::{fs, path::PathBuf, sync::Arc};
 
@@ -238,21 +234,7 @@ impl Drop for FeedbackProfile {
 
 fn feedback_core(profile: &FeedbackProfile, revisions: Vec<RevisionSnapshot>) -> Core {
     let repository = profile.0.join("repository");
-    let mut state = State::new(
-        HarnessLaunch {
-            id: "test".into(),
-            name: "Test".into(),
-            command: "/test".into(),
-            args: Vec::new(),
-            version: "1".into(),
-            environment: None,
-        },
-        "digest".into(),
-        None,
-    )
-    .unwrap();
-    state.phase = Phase::Ready;
-    state.requested_options.clear();
+    let mut state = crate::test_panes::ready_agent_state();
     state
         .enqueue_identified(
             "loop:waiting".into(),

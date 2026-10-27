@@ -409,6 +409,17 @@ pub fn kind(error: &Error) -> ErrorKind {
     }
 }
 
+/// Whether `error` says the link to the supervisor is gone (a transport or protocol failure),
+/// as opposed to the supervisor answering with a refusal or a failure on a link that still
+/// works. A storage error or a failure of the engine's own is not the link's either. This is
+/// the one rule for dropping the link.
+pub fn supervisor_link_lost(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Supervisor(error) if !matches!(error, soyeht_ptyd::Error::Remote { .. })
+    )
+}
+
 pub fn missing_supervisor_instance(error: &Error) -> bool {
     matches!(
         error,

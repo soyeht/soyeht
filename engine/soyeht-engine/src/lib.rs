@@ -35,6 +35,7 @@ pub mod server;
 pub mod settings;
 pub mod skills;
 mod slow_holds;
+mod spawn_retry;
 pub mod streak;
 pub mod streams;
 mod supervisor_link;
