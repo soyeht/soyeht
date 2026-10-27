@@ -82,6 +82,7 @@ private func workspace(_ name: String) -> Workspace {
 /// The `workspaces` cases of `contracts/vectors/pane-close.json`.
 @Test func aWorkspaceAsksAsTheVectorSays() throws {
   let vector = try ContractVector.load("pane-close")
+  let place = try #require(vector["places"]["mac"].string)
   for item in ContractVector.cases(vector, "workspaces") {
     let name = item["name"].string ?? ""
     let workspaceName = try #require(item["workspaceName"].string)
@@ -95,7 +96,8 @@ private func workspace(_ name: String) -> Workspace {
         asked
           == CloseConfirmation(
             title: try #require(confirm["title"].string),
-            message: try #require(confirm["message"].string),
+            message: try #require(confirm["message"].string)
+              .replacingOccurrences(of: "{place}", with: place),
             confirmTitle: try #require(confirm["confirmTitle"].string)),
         "\(name)")
     }

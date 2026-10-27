@@ -158,7 +158,7 @@ impl Workbench {
     }
 
     /// The question closing a pane asks, in a line under its header: the Mac's alert, with the
-    /// same words, and Cancel and Close for answers.
+    /// same words, and Cancel and the close word for answers.
     fn close_question(
         &mut self,
         pane_id: &str,
@@ -166,31 +166,31 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let Closing::Confirm { title, message } = closing else {
-            return div().into_any_element();
+        let owner = pane_id.to_owned();
+        close_question_strip(pane_id, closing, palette, cx, move |this, close, cx| {
+            this.answer_close(&owner, close, cx);
+        })
+    }
+
+    /// The question closing a workspace asks, in a line under the top bar, while the person has
+    /// not answered it. A workspace the engine closed meanwhile takes its question with it.
+    pub(super) fn workspace_close_question(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let palette = self.theme.palette();
+        let workspace_id = self.closing_workspace.clone()?;
+        let Some(closing) = self.workspace_question(&workspace_id) else {
+            self.closing_workspace = None;
+            return None;
         };
-        let mut answers = Vec::new();
-        for (close, role, text) in [
-            (false, Role::Secondary, "Cancel"),
-            (true, Role::Destructive, "Close"),
-        ] {
-            let owner = pane_id.to_owned();
-            answers.push(pressable(
-                button(id(text, pane_id), role, text, palette),
-                true,
-                cx,
-                move |this, cx| this.answer_close(&owner, close, cx),
-            ));
-        }
-        strip(palette)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .child(SharedString::from(format!("{title} {message}"))),
-            )
-            .children(answers)
-            .into_any_element()
+        Some(close_question_strip(
+            &format!("workspace-close-{workspace_id}"),
+            &closing,
+            palette,
+            cx,
+            |this, close, cx| this.answer_workspace_close(close, cx),
+        ))
     }
 
     fn pane_header(
@@ -534,6 +534,47 @@ fn state_color(state: &PaneState, palette: &Palette) -> u32 {
         StateDot::Muted => palette.muted,
         StateDot::Secondary => palette.secondary,
     }
+}
+
+/// The line that asks `closing` and takes Cancel or the close word for an answer; `answer`
+/// gets whether to close. `key` tells its buttons from those of other questions on the screen.
+pub(super) fn close_question_strip(
+    key: &str,
+    closing: &Closing,
+    palette: &'static Palette,
+    cx: &mut Context<Workbench>,
+    answer: impl Fn(&mut Workbench, bool, &mut Context<Workbench>) + Clone + 'static,
+) -> AnyElement {
+    let Closing::Confirm {
+        title,
+        message,
+        confirm_title,
+    } = closing
+    else {
+        return div().into_any_element();
+    };
+    let mut answers = Vec::new();
+    for (close, role, text) in [
+        (false, Role::Secondary, "Cancel"),
+        (true, Role::Destructive, confirm_title.as_str()),
+    ] {
+        let answer = answer.clone();
+        answers.push(pressable(
+            button(id(text, key), role, text, palette),
+            true,
+            cx,
+            move |this, cx| answer(this, close, cx),
+        ));
+    }
+    strip(palette)
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .child(SharedString::from(format!("{title} {message}"))),
+        )
+        .children(answers)
+        .into_any_element()
 }
 
 #[cfg(test)]

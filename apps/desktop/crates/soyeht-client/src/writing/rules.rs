@@ -158,10 +158,10 @@ pub fn file_name(path: Option<&str>, fallback: &str) -> String {
 /// Whether closing a pane with this file asks first: a document with edits not saved does.
 pub fn closing(file_name: &str, dirty: bool) -> Closing {
     if dirty {
-        Closing::Confirm {
-            title: format!("Close {file_name}?"),
-            message: "Unsaved changes will be lost.".to_owned(),
-        }
+        Closing::asking(
+            format!("Close {file_name}?"),
+            "Unsaved changes will be lost.",
+        )
     } else {
         Closing::Immediately
     }
@@ -378,9 +378,8 @@ mod tests {
         for case in cases("writing", "closing") {
             let expected = case["confirm"]
                 .as_object()
-                .map_or(Closing::Immediately, |c| Closing::Confirm {
-                    title: text(&c["title"]).to_owned(),
-                    message: text(&c["message"]).to_owned(),
+                .map_or(Closing::Immediately, |c| {
+                    Closing::asking(text(&c["title"]), text(&c["message"]))
                 });
             assert_eq!(
                 closing(text(&case["fileName"]), case["dirty"].as_bool().unwrap()),

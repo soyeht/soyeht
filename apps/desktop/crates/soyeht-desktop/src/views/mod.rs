@@ -101,6 +101,7 @@ impl Render for Workbench {
             .pt(px(space::X8))
             .child(self.top_bar(palette, window, cx))
             .children(self.banner(palette, cx))
+            .children(self.workspace_close_question(cx))
             .child(
                 div()
                     .flex_1()

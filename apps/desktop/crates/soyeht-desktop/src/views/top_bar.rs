@@ -304,7 +304,7 @@ impl Workbench {
                     .own_press()
                     .tooltip(hint(format!("Close {name}"), palette))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.close_workspace(&close_id, cx);
+                        this.request_close_workspace(&close_id, cx);
                         cx.stop_propagation();
                     }))
                     .child(icon(Icon::Close, glyph::TAB_CLOSE, palette.muted)),

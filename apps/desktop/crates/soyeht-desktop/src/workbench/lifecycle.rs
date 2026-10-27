@@ -19,11 +19,41 @@ impl Workbench {
         cx.notify();
     }
 
-    pub(crate) fn close_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
+    /// The close button of a workspace tab: it asks first when the workspace holds a pane, since
+    /// they close with it, as the Mac and the iPhone do (`pane_close::workspace_confirmation`).
+    pub(crate) fn request_close_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
+        self.menus.close();
+        match self.workspace_question(workspace_id) {
+            Some(Closing::Confirm { .. }) => self.closing_workspace = Some(workspace_id.to_owned()),
+            _ => self.close_workspace(workspace_id, cx),
+        }
+        cx.notify();
+    }
+
+    /// The answer to the question closing a workspace asked.
+    pub(crate) fn answer_workspace_close(&mut self, close: bool, cx: &mut Context<Self>) {
+        if let Some(workspace_id) = self.closing_workspace.take()
+            && close
+        {
+            self.close_workspace(&workspace_id, cx);
+        }
+        cx.notify();
+    }
+
+    /// What closing the workspace asks now, from the panes it holds; `None` for a workspace the
+    /// engine no longer lists.
+    pub(crate) fn workspace_question(&self, workspace_id: &str) -> Option<Closing> {
+        let workspace = self.state.workspace(workspace_id)?;
+        Some(pane_close::workspace_confirmation(
+            &workspace.name,
+            self.state.panes_of(workspace_id).count(),
+        ))
+    }
+
+    fn close_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
         self.send(Command::CloseWorkspace {
             workspace_id: workspace_id.to_owned(),
         });
-        self.menus.close();
         cx.notify();
     }
 

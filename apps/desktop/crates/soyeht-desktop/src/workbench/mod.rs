@@ -82,6 +82,8 @@ pub struct Workbench {
     /// The first field of a form that just opened, which takes the keyboard on the next frame
     /// before any pane does.
     pub(crate) field_request: Option<FocusHandle>,
+    /// The workspace whose close waits for the person's answer to its question.
+    pub(crate) closing_workspace: Option<String>,
     /// The name of a workspace or pane being edited in place.
     pub(crate) rename: Option<Rename>,
     /// What each workspace's editor place keeps of its project panel.
@@ -158,6 +160,7 @@ impl Workbench {
             preedit: None,
             focus_request: None,
             field_request: None,
+            closing_workspace: None,
             rename: None,
             panels: ProjectPanels::default(),
             alerts: Alerts::new(),
