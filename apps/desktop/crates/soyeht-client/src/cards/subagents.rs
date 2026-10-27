@@ -32,6 +32,8 @@ pub struct Group<'a> {
     pub subagent_id: &'a str,
     /// The subagent's row; absent while only a later transcript page is loaded.
     pub run: Option<&'a SubagentRun>,
+    /// The `localId` of the message that holds `run`.
+    pub row: Option<&'a str>,
     pub entries: Vec<Entry<'a>>,
 }
 
@@ -60,7 +62,7 @@ pub fn entries(messages: &[TranscriptMessage]) -> Vec<Entry<'_>> {
         } else if let Some(run) = &message.subagent {
             result.push(Entry::Subagent(group(
                 &run.subagent_id,
-                Some(run),
+                Some((&message.local_id, run)),
                 &owned,
                 &mut Vec::new(),
             )));
@@ -75,7 +77,7 @@ pub fn entries(messages: &[TranscriptMessage]) -> Vec<Entry<'_>> {
 /// itself cannot nest for ever.
 fn group<'a>(
     id: &'a str,
-    run: Option<&'a SubagentRun>,
+    row: Option<(&'a str, &'a SubagentRun)>,
     owned: &HashMap<&'a str, Vec<&'a TranscriptMessage>>,
     open: &mut Vec<&'a str>,
 ) -> Group<'a> {
@@ -88,7 +90,7 @@ fn group<'a>(
             Some(nested) if open.contains(&nested.subagent_id.as_str()) => None,
             Some(nested) => Some(Entry::Subagent(group(
                 &nested.subagent_id,
-                Some(nested),
+                Some((&message.local_id, nested)),
                 owned,
                 open,
             ))),
@@ -98,7 +100,8 @@ fn group<'a>(
     open.pop();
     Group {
         subagent_id: id,
-        run,
+        run: row.map(|(_, run)| run),
+        row: row.map(|(local_id, _)| local_id),
         entries,
     }
 }

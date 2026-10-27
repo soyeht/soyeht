@@ -23,7 +23,7 @@ fn the_replica_holds_what_the_vector_says_after_each_series_of_updates() {
             }
         }
         let held: Vec<Value> = view
-            .messages
+            .messages()
             .iter()
             .map(|held| {
                 let mut entry = serde_json::json!({

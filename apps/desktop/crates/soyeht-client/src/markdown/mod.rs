@@ -423,6 +423,18 @@ fn allowed(address: &str) -> Option<String> {
         .then(|| address.to_owned())
 }
 
+/// What names the `index`th paragraph or heading of the reply `owner` (see `agent::owner_of`):
+/// the selection and the click targets of the text are kept by it.
+pub fn text_key(owner: &str, index: usize) -> String {
+    format!("{owner}-text-{index}")
+}
+
+/// What names the `index`th code block of the reply `owner`: its selection and its copy button
+/// are kept by it.
+pub fn code_key(owner: &str, index: usize) -> String {
+    format!("{owner}-code-{index}")
+}
+
 /// The parse of every reply a transcript shows, kept by message, so that a frame that changes
 /// nothing about a reply does not parse it again.
 #[derive(Default)]

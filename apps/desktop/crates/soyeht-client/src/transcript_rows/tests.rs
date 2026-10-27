@@ -240,3 +240,139 @@ fn entries_that_draw_no_row_take_no_room() {
     assert!(built_rows.len() <= 16, "{built_rows:?}");
     assert!(built_rows.contains(&196) && built_rows.contains(&195));
 }
+
+fn message(id: &str, seq: u32, extra: serde_json::Value) -> soyeht_protocol::TranscriptMessage {
+    let mut base = serde_json::json!({
+        "localId": id, "generation": 1, "seq": seq.to_string(), "role": "assistant",
+        "kind": "message", "text": "", "complete": false
+    });
+    base.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    serde_json::from_value(base).unwrap()
+}
+
+fn tool(id: &str, seq: u32, status: &str) -> soyeht_protocol::TranscriptMessage {
+    message(
+        id,
+        seq,
+        serde_json::json!({"kind": "tool", "tool": {
+            "toolCallId": id, "title": "Read", "status": status, "locations": []}}),
+    )
+}
+
+fn subagent_row(status: &str) -> soyeht_protocol::TranscriptMessage {
+    message(
+        "row",
+        5,
+        serde_json::json!({"kind": "subagent", "subagent": {
+            "subagentId": "s1", "name": "worker", "task": "t", "status": status}}),
+    )
+}
+
+fn inner(id: &str, seq: u32, text: &str) -> soyeht_protocol::TranscriptMessage {
+    message(
+        id,
+        seq,
+        serde_json::json!({"subagentId": "s1", "text": text}),
+    )
+}
+
+/// The fingerprints of every entry of `view`, in order.
+fn prints(view: &AgentView) -> Vec<u64> {
+    crate::cards::entries(view.messages())
+        .iter()
+        .map(|entry| entry_fingerprint(entry, view, 0))
+        .collect()
+}
+
+#[test]
+fn an_entry_whose_text_grew_has_a_new_fingerprint_and_the_others_keep_theirs() {
+    let mut view = AgentView::default();
+    view.merge(message("a", 1, serde_json::json!({"text": "Hel"})))
+        .unwrap();
+    view.merge(message("b", 2, serde_json::json!({"text": "other"})))
+        .unwrap();
+    let before = prints(&view);
+    assert_eq!(before, prints(&view), "the same transcript, the same print");
+    view.merge(message("a", 1, serde_json::json!({"text": "Hello"})))
+        .unwrap();
+    let after = prints(&view);
+    assert_ne!(before[0], after[0]);
+    assert_eq!(before[1], after[1]);
+}
+
+#[test]
+fn an_entry_that_finished_streaming_or_changed_in_length_less_visibly_has_a_new_fingerprint() {
+    let mut view = AgentView::default();
+    view.merge(message("a", 1, serde_json::json!({"text": "same"})))
+        .unwrap();
+    let streaming = prints(&view)[0];
+    view.merge(message(
+        "a",
+        1,
+        serde_json::json!({"text": "same", "complete": true}),
+    ))
+    .unwrap();
+    let complete = prints(&view)[0];
+    assert_ne!(streaming, complete);
+    // Another text of the same length is still another text.
+    view.merge(message(
+        "a",
+        1,
+        serde_json::json!({"text": "sane", "complete": true}),
+    ))
+    .unwrap();
+    assert_ne!(complete, prints(&view)[0]);
+}
+
+#[test]
+fn a_tool_call_whose_status_changed_has_a_new_fingerprint() {
+    let mut view = AgentView::default();
+    view.merge(tool("t", 1, "pending")).unwrap();
+    let pending = prints(&view)[0];
+    view.merge(tool("t", 1, "in_progress")).unwrap();
+    let running = prints(&view)[0];
+    view.merge(tool("t", 1, "completed")).unwrap();
+    let done = prints(&view)[0];
+    assert!(pending != running && running != done && pending != done);
+}
+
+#[test]
+fn an_entry_replaced_by_another_message_with_its_id_has_a_new_fingerprint() {
+    let mut view = AgentView::default();
+    view.merge(message("a", 1, serde_json::json!({"text": "one"})))
+        .unwrap();
+    let text = prints(&view)[0];
+    view.merge(tool("a", 1, "pending")).unwrap();
+    assert_ne!(text, prints(&view)[0]);
+}
+
+#[test]
+fn the_state_around_an_entry_changes_its_fingerprint() {
+    let mut view = AgentView::default();
+    view.merge(message("a", 1, serde_json::json!({"text": "t"})))
+        .unwrap();
+    let entries = crate::cards::entries(view.messages());
+    assert_ne!(
+        entry_fingerprint(&entries[0], &view, 0),
+        entry_fingerprint(&entries[0], &view, 1)
+    );
+}
+
+#[test]
+fn a_subagent_row_follows_its_run_and_what_runs_under_it() {
+    let mut view = AgentView::default();
+    view.merge(subagent_row("running")).unwrap();
+    view.merge(inner("i1", 6, "step")).unwrap();
+    let start = prints(&view);
+    assert_eq!(start.len(), 1, "the activity nests under the row");
+    view.merge(inner("i1", 6, "step, longer")).unwrap();
+    let grown = prints(&view)[0];
+    assert_ne!(start[0], grown);
+    view.merge(inner("i2", 7, "next")).unwrap();
+    let added = prints(&view)[0];
+    assert_ne!(grown, added);
+    view.merge(subagent_row("completed")).unwrap();
+    assert_ne!(added, prints(&view)[0]);
+}

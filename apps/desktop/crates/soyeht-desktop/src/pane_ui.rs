@@ -78,7 +78,7 @@ impl PaneUi {
         });
         if !self.open_thoughts.is_empty() {
             self.open_thoughts
-                .retain(|message| view.messages.iter().any(|m| &m.local_id == message));
+                .retain(|message| view.messages().iter().any(|m| &m.local_id == message));
         }
     }
 }

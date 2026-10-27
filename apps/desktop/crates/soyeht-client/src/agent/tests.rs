@@ -15,7 +15,7 @@ fn message(id: &str, seq: &str, text: &str) -> TranscriptMessage {
 fn a_sequence_that_is_not_a_decimal_is_refused() {
     let mut view = AgentView::default();
     assert!(view.merge(message("x", "not a number", "text")).is_err());
-    assert!(view.messages.is_empty());
+    assert!(view.messages().is_empty());
 }
 
 #[test]
@@ -196,4 +196,59 @@ fn every_state_word_is_its_wire_spelling_spaced() {
             case["word"].as_str().unwrap()
         );
     }
+}
+
+#[test]
+fn two_replies_of_one_pane_are_named_apart_and_so_are_their_blocks() {
+    let (first, second) = (owner_of("p1", "m1"), owner_of("p1", "m2"));
+    assert_ne!(first, second);
+    assert_ne!(owner_of("p1", "m1"), owner_of("p2", "m1"));
+    assert_ne!(
+        crate::markdown::text_key(&first, 0),
+        crate::markdown::text_key(&second, 0)
+    );
+    assert_ne!(
+        crate::markdown::code_key(&first, 0),
+        crate::markdown::code_key(&second, 0)
+    );
+    assert_ne!(
+        crate::markdown::text_key(&first, 0),
+        crate::markdown::code_key(&first, 0)
+    );
+    assert_ne!(
+        crate::markdown::text_key(&first, 0),
+        crate::markdown::text_key(&first, 1)
+    );
+}
+
+#[test]
+fn a_message_that_changes_gets_a_new_revision_and_one_that_does_not_keeps_it() {
+    let mut view = AgentView::default();
+    assert_eq!(view.revision_of("m"), 0);
+    view.merge(message("m", "1", "he")).unwrap();
+    view.merge(message("other", "2", "x")).unwrap();
+    let (first, other) = (view.revision_of("m"), view.revision_of("other"));
+    assert_ne!(first, 0);
+    assert_ne!(first, other);
+    // The same message again changes nothing.
+    view.merge(message("m", "1", "he")).unwrap();
+    assert_eq!(view.revision_of("m"), first);
+    view.merge(message("m", "1", "hello")).unwrap();
+    assert_ne!(view.revision_of("m"), first);
+    assert_eq!(view.revision_of("other"), other);
+}
+
+#[test]
+fn a_page_that_is_behind_the_known_message_changes_nothing() {
+    let mut view = AgentView::default();
+    view.merge(message("m", "1", "hello")).unwrap();
+    let known = view.revision_of("m");
+    let behind = serde_json::from_value(json!({
+        "localId": "m", "generation": 1, "seq": "1", "role": "assistant", "kind": "message",
+        "text": "he", "complete": false
+    }))
+    .unwrap();
+    view.merge_page(vec![behind]).unwrap();
+    assert_eq!(view.revision_of("m"), known);
+    assert_eq!(view.messages()[0].text, "hello");
 }

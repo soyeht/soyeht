@@ -8,6 +8,7 @@ use crate::{
 };
 use gpui::{Animation, AnimationExt, Transformation, percentage};
 use soyeht_client::{
+    agent::AgentView,
     cards::{self, Entry, Group, Status, SubagentPresentation},
     timestamp,
     transcript_rows::{self, Child, Rows, Viewport},
@@ -37,19 +38,24 @@ impl Workbench {
     /// (see `transcript_rows`).
     pub(in crate::views) fn transcript_entries(
         &self,
-        shown: &[soyeht_protocol::TranscriptMessage],
+        view: &AgentView,
+        limit: usize,
         markdown: &mut Replies,
         windowing: Windowing<'_>,
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
-        let entries = cards::entries(shown);
+        let entries = cards::entries(view.tail(limit).0);
         let keys: Vec<(String, u64)> = entries
             .iter()
             .map(|entry| {
                 (
                     entry.id(),
-                    transcript_rows::fingerprint(entry, self.open_state(windowing.pane_id, entry)),
+                    transcript_rows::entry_fingerprint(
+                        entry,
+                        view,
+                        self.open_state(windowing.pane_id, entry),
+                    ),
                 )
             })
             .collect();

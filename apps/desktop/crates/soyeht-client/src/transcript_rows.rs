@@ -10,6 +10,7 @@
 //! whenever its height cannot be trusted: it was never measured, its content or its open state
 //! changed, or the width it was measured at is no longer the width of the transcript.
 
+use crate::{agent::AgentView, cards::Entry};
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Write},
@@ -172,8 +173,32 @@ impl Rows {
     }
 }
 
-/// A number that changes whenever `value` (or `state`, what the row shows that `value` does not
-/// hold, such as whether a thought is open) changes in a way that can change the row's height.
+/// A number that changes whenever `entry` or `state` (what the row shows that the entry does not
+/// hold, such as whether a thought is open) changes. It reads the revisions the view keeps, not
+/// the content, so a frame pays a few lookups per entry however long the transcript is. A
+/// subagent's row stands for its own message and for every entry under it, in order.
+pub fn entry_fingerprint(entry: &Entry<'_>, view: &AgentView, state: u64) -> u64 {
+    fn feed(entry: &Entry<'_>, view: &AgentView, hasher: &mut DefaultHasher) {
+        match entry {
+            Entry::Message(message) => hasher.write_u64(view.revision_of(&message.local_id)),
+            Entry::Subagent(group) => {
+                hasher.write_u64(group.row.map_or(0, |row| view.revision_of(row)));
+                hasher.write_usize(group.entries.len());
+                for inner in &group.entries {
+                    feed(inner, view, hasher);
+                }
+            }
+        }
+    }
+    let mut hasher = DefaultHasher::new();
+    hasher.write_u64(state);
+    feed(entry, view, &mut hasher);
+    hasher.finish()
+}
+
+/// A number that changes whenever `value` (or `state`) changes, for a small value such as the
+/// layout of the window. A transcript entry uses [`entry_fingerprint`]: formatting a message
+/// costs as much as its text is long.
 pub fn fingerprint(value: &dyn Debug, state: u64) -> u64 {
     struct Feed(DefaultHasher);
     impl Write for Feed {

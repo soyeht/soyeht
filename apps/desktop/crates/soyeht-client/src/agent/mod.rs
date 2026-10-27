@@ -11,7 +11,10 @@ use soyeht_protocol::{
     PermissionRequest, PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind,
     TranscriptMessage, TranscriptRole, client_policy::CAPS_TICKER_HISTORY,
 };
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 /// The messages of a transcript the view draws; earlier ones stay in the replica.
 pub const TAIL: usize = 200;
@@ -55,7 +58,13 @@ pub fn elapsed_text(elapsed: Duration) -> String {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct AgentView {
-    pub messages: Vec<TranscriptMessage>,
+    /// Changed only by [`AgentView::merge`] and [`AgentView::merge_page`], which note each change
+    /// in `revisions`.
+    messages: Vec<TranscriptMessage>,
+    /// When each message last changed, as a number that never repeats within the view: the view
+    /// tells a frame which rows changed without the frame reading their content.
+    revisions: HashMap<String, u64>,
+    edits: u64,
     /// How long the running turn has been going.
     pub turn: TurnClock,
     /// The request the agent is waiting on, if any.
@@ -69,6 +78,16 @@ pub struct AgentView {
 }
 
 impl AgentView {
+    pub fn messages(&self) -> &[TranscriptMessage] {
+        &self.messages
+    }
+
+    /// A number that is different each time the message `local_id` changes (0 for one the view
+    /// does not hold). It costs one lookup, however long the message is.
+    pub fn revision_of(&self, local_id: &str) -> u64 {
+        self.revisions.get(local_id).copied().unwrap_or(0)
+    }
+
     /// Folds an update in: a new message is inserted at its place and a known one is replaced,
     /// as the update carries the whole message.
     pub fn merge(&mut self, message: TranscriptMessage) -> Result<()> {
@@ -96,7 +115,7 @@ impl AgentView {
             .iter()
             .position(|known| known.local_id == message.local_id)
         {
-            if !replaces(&message, &self.messages[index]) {
+            if !replaces(&message, &self.messages[index]) || self.messages[index] == message {
                 return Ok(());
             }
             // The replacement goes where its sequence puts it, as on the Mac.
@@ -106,6 +125,8 @@ impl AgentView {
             sequence(held)
                 .is_ok_and(|held_order| (held_order, &held.local_id) < (order, &message.local_id))
         });
+        self.edits += 1;
+        self.revisions.insert(message.local_id.clone(), self.edits);
         self.messages.insert(at, message);
         Ok(())
     }
@@ -203,6 +224,13 @@ impl AgentView {
         };
         (size > 0.0).then(|| (used / size).clamp(0.0, 1.0))
     }
+}
+
+/// What names a message among all that the window shows, and so what names its blocks'
+/// selections, copy buttons and click targets: the window shows several panes, and a message id
+/// is only the conversation's own.
+pub fn owner_of(pane_id: &str, local_id: &str) -> String {
+    format!("{pane_id}-{local_id}")
 }
 
 /// The text of a command's output, as the Mac shows it: the bytes the engine kept, read as UTF-8

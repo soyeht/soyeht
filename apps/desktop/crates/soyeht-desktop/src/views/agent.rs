@@ -19,7 +19,10 @@ use gpui::{
     AnyElement, ClickEvent, Context, Div, ExternalPaths, FontWeight, InteractiveElement,
     IntoElement, ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
 };
-use soyeht_client::{agent::terminal_text, transcript_rows::Viewport};
+use soyeht_client::{
+    agent::{owner_of, terminal_text},
+    transcript_rows::Viewport,
+};
 use soyeht_protocol::{
     PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind, TranscriptMessage,
     TranscriptRole,
@@ -35,7 +38,7 @@ impl Workbench {
         let count = self
             .state
             .agent(&pane.pane_id)
-            .map_or(0, |view| view.messages.len());
+            .map_or(0, |view| view.messages().len());
         let (scroll, follows) = self.transcript_scroll(&pane.pane_id, count);
         let measured = self.transcript_rows(&pane.pane_id);
         let viewport = Viewport {
@@ -73,7 +76,8 @@ impl Workbench {
         let leading = usize::from(load_earlier.is_some()) + usize::from(notice.is_some());
         let rows = match self.state.agent(&pane.pane_id) {
             Some(view) => self.transcript_entries(
-                view.tail(limit).0,
+                view,
+                limit,
                 &mut markdown,
                 Windowing {
                     pane_id: &pane.pane_id,
@@ -179,15 +183,8 @@ pub(super) fn transcript_row(
     match message.kind {
         TranscriptKind::Tool => message.tool.as_ref().map(|tool| tool_row(tool, palette)),
         TranscriptKind::Thought => {
-            let body = open.then(|| {
-                markdown_body(
-                    &owner_of(pane_id, message),
-                    message,
-                    markdown,
-                    palette,
-                    palette.secondary,
-                )
-            });
+            let body =
+                open.then(|| markdown_body(pane_id, message, markdown, palette, palette.secondary));
             Some(thought_row(pane_id, message, body, palette, cx))
         }
         TranscriptKind::Plan => message.plan.as_ref().map(|plan| plan_card(plan, palette)),
@@ -202,7 +199,7 @@ pub(super) fn transcript_row(
         TranscriptKind::Terminal => message
             .terminal
             .as_ref()
-            .map(|output| terminal_block(&owner_of(pane_id, message), output, palette)),
+            .map(|output| terminal_block(&owner_of(pane_id, &message.local_id), output, palette)),
         // A subagent's row is drawn from its group, with the activity it owns under it.
         TranscriptKind::Usage | TranscriptKind::Subagent => None,
         TranscriptKind::Message | TranscriptKind::System => {
@@ -211,24 +208,21 @@ pub(super) fn transcript_row(
     }
 }
 
-/// What names a message among all that the window shows: a conversation's message ids are its own.
-fn owner_of(pane_id: &str, message: &TranscriptMessage) -> String {
-    format!("{pane_id}-{}", message.local_id)
-}
-
 /// The agent's words with their Markdown drawn, in `ink`; a reply that is still arriving has its
-/// open spans closed.
+/// open spans closed. Its blocks are named by the message (`owner_of`), so a selection or a copy
+/// button of one reply is not another's.
 fn markdown_body(
-    owner: &str,
+    pane_id: &str,
     message: &TranscriptMessage,
     markdown: &mut Replies,
     palette: &'static Palette,
     ink: u32,
 ) -> AnyElement {
-    let blocks = markdown.blocks(&message.local_id, &message.text, !message.complete);
+    let owner = owner_of(pane_id, &message.local_id);
+    let blocks = markdown.blocks(&owner, &message.text, !message.complete);
     super::markdown::reply(
         &blocks,
-        owner,
+        &owner,
         palette,
         ink,
         Opens::Links(markdown.files.as_ref()),
@@ -243,7 +237,7 @@ fn text_row(
     markdown: &mut Replies,
     palette: &'static Palette,
 ) -> AnyElement {
-    let owner = owner_of(pane_id, message);
+    let owner = owner_of(pane_id, &message.local_id);
     let copyable = |card: Div| {
         copyable(
             card,

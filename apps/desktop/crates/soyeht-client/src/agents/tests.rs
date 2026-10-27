@@ -71,7 +71,7 @@ fn a_transcript_page_replaces_the_messages_and_updates_extend_them() {
     let texts: Vec<_> = state
         .agent("a")
         .unwrap()
-        .messages
+        .messages()
         .iter()
         .map(|m| m.text.clone())
         .collect();

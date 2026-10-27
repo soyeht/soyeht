@@ -121,7 +121,7 @@ fn block(block: &Block, draw: &mut Draw) -> AnyElement {
         Block::Paragraph(runs) => text(runs, false, draw),
         Block::Heading { runs, .. } => text(runs, true, draw),
         Block::Code { text, .. } => {
-            let key = format!("{}-code-{}", draw.owner, draw.codes);
+            let key = markdown::code_key(draw.owner, draw.codes);
             draw.codes += 1;
             let selectable = Selectable::plain(key.clone(), text.clone(), palette);
             copyable(
@@ -277,7 +277,7 @@ fn text(runs: &[Run], bold: bool, draw: &mut Draw) -> AnyElement {
             links.push((range, target));
         }
     }
-    let key = format!("{}-text-{}", draw.owner, draw.paragraphs);
+    let key = markdown::text_key(draw.owner, draw.paragraphs);
     draw.paragraphs += 1;
     let element = Selectable {
         key: key.into(),
