@@ -401,19 +401,27 @@ impl Workbench {
 type PaneOpener = fn(&mut Workbench, &mut Context<Workbench>);
 
 /// The kinds the "+" button opens besides an agent, each with the row's id, its words and what
-/// opens it. A kind the desktop client cannot draw (web, diff) has no row: its place says so
-/// instead (`views::ui::not_available`), so the menu never leads to a pane that is only a notice.
-const OPEN_PANE_ENTRIES: [(&str, &str, PaneOpener); 5] = [
-    ("terminal", "Terminal", |this, cx| this.open_pane(None, cx)),
-    ("editor", "Editor", Workbench::open_editor_place),
-    ("text", "Text", Workbench::open_new_text),
-    (
-        "presentation",
-        "Presentation",
-        Workbench::open_new_presentation,
-    ),
-    ("screenplay", "Screenplay", Workbench::open_new_screenplay),
-];
+/// opens it. A kind the desktop client cannot draw has no row: its place says so instead
+/// (`views::ui::not_available`), so the menu never leads to a pane that is only a notice. A web
+/// pane is drawn where the system has a web view (`soyeht_webview::supported`), and diff has no
+/// pane at all.
+fn open_pane_entries() -> Vec<(&'static str, &'static str, PaneOpener)> {
+    let mut entries: Vec<(&'static str, &'static str, PaneOpener)> = vec![
+        ("terminal", "Terminal", |this, cx| this.open_pane(None, cx)),
+        ("editor", "Editor", Workbench::open_editor_place),
+        ("text", "Text", Workbench::open_new_text),
+        (
+            "presentation",
+            "Presentation",
+            Workbench::open_new_presentation,
+        ),
+        ("screenplay", "Screenplay", Workbench::open_new_screenplay),
+    ];
+    if soyeht_webview::supported() {
+        entries.insert(2, ("web", "Web", Workbench::open_web));
+    }
+    entries
+}
 
 impl Workbench {
     /// The list of the "+" button while it is `open`: a folder to open as a workspace and, once there is a workspace,
@@ -455,7 +463,7 @@ impl Workbench {
         }
         let pick: Pick = Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
         rows.push(menus::heading(palette, "Open a pane").into_any_element());
-        for (id, label, open) in OPEN_PANE_ENTRIES {
+        for (id, label, open) in open_pane_entries() {
             rows.push(menus::on_pick(
                 menus::item(palette, id, label, false),
                 cx,
@@ -552,16 +560,31 @@ fn reconnecting_note(palette: &Palette) -> AnyElement {
 
 #[cfg(test)]
 mod tests {
-    use super::OPEN_PANE_ENTRIES;
+    use super::open_pane_entries;
 
     #[test]
     fn the_plus_menu_offers_only_the_kinds_the_desktop_client_draws() {
-        let ids: Vec<&str> = OPEN_PANE_ENTRIES.iter().map(|(id, _, _)| *id).collect();
-        assert_eq!(
-            ids,
-            ["terminal", "editor", "text", "presentation", "screenplay"]
-        );
-        // The web and diff panes have no view here: no row leads to a notice.
-        assert!(ids.iter().all(|id| !matches!(*id, "web" | "diff")));
+        let entries = open_pane_entries();
+        let ids: Vec<&str> = entries.iter().map(|(id, _, _)| *id).collect();
+        if soyeht_webview::supported() {
+            assert_eq!(
+                ids,
+                [
+                    "terminal",
+                    "editor",
+                    "web",
+                    "text",
+                    "presentation",
+                    "screenplay"
+                ]
+            );
+        } else {
+            assert_eq!(
+                ids,
+                ["terminal", "editor", "text", "presentation", "screenplay"]
+            );
+        }
+        // Diff has no pane here, and a web pane has a row only where it has a page to draw.
+        assert!(ids.iter().all(|id| *id != "diff"));
     }
 }

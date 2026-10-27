@@ -72,12 +72,12 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
             ticket: *ticket,
             workspace: serde_json::from_value::<WorkspaceCreateResult>(result)?.workspace,
         }),
-        Command::CreateTerminal { ticket, .. } | Command::CreateAgent { ticket, .. } => {
-            Some(Event::Opened {
-                ticket: *ticket,
-                pane_id: serde_json::from_value::<PaneCreateResult>(result)?.pane_id,
-            })
-        }
+        Command::CreateTerminal { ticket, .. }
+        | Command::CreateAgent { ticket, .. }
+        | Command::OpenWeb { ticket, .. } => Some(Event::Opened {
+            ticket: *ticket,
+            pane_id: serde_json::from_value::<PaneCreateResult>(result)?.pane_id,
+        }),
         _ => None,
     })
 }

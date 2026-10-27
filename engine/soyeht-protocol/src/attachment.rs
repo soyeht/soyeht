@@ -81,6 +81,14 @@ impl AttachmentAssembler {
         self.overflowed = false;
     }
 
+    /// Drops what has been collected and not committed (the frames of an answer nobody waits for),
+    /// so the next request finds the assembler empty. A transfer already committed is still
+    /// recognised as a duplicate.
+    pub fn discard(&mut self) {
+        self.finish_active();
+        self.reset();
+    }
+
     /// Hands the collected transfers to the request that names them. Every
     /// outcome, success or error, leaves the assembler empty for the next one.
     pub fn commit_all(&mut self, references: &[AttachmentRef]) -> Result<Vec<Vec<u8>>> {
@@ -195,6 +203,24 @@ mod tests {
             input.commit(&reference),
             Err(Error::DuplicateAttachment)
         ));
+    }
+
+    #[test]
+    fn a_discarded_transfer_leaves_the_next_request_an_empty_assembler() {
+        let (stale, fresh) = (
+            "10213243-5465-4768-99aa-bbccddeeff00",
+            "00112233-4455-4677-8899-aabbccddeeff",
+        );
+        let mut input = AttachmentAssembler::new(8).unwrap();
+        input
+            .push(attachment_header(stale).unwrap(), b"late")
+            .unwrap();
+        input.discard();
+        assert!(!input.is_pending());
+        input
+            .push(attachment_header(fresh).unwrap(), b"next")
+            .unwrap();
+        assert_eq!(input.commit(&reference(fresh, 4)).unwrap(), b"next");
     }
 
     #[test]

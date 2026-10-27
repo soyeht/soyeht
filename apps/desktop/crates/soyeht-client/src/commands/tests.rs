@@ -132,6 +132,49 @@ fn a_pane_is_created_in_the_folder_it_is_asked_for() {
 }
 
 #[test]
+fn a_web_pane_is_opened_sent_somewhere_and_reported_with_the_engines_methods() {
+    let body =
+        |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };
+    let open = Command::OpenWeb {
+        workspace_id: "w".into(),
+        url: Some("https://example.com/".into()),
+        incognito: false,
+        ticket: 4,
+    };
+    assert_eq!(open.ticket(), Some(4));
+    let open = body(open);
+    assert_eq!(open["method"], "pane.create");
+    assert_eq!(open["params"]["mode"], "web");
+    assert_eq!(open["params"]["url"], "https://example.com/");
+    assert!(open["params"].get("incognito").is_none());
+    let blank = body(Command::OpenWeb {
+        workspace_id: "w".into(),
+        url: None,
+        incognito: true,
+        ticket: 5,
+    });
+    assert!(blank["params"].get("url").is_none());
+    assert_eq!(blank["params"]["incognito"], true);
+
+    let go = body(Command::NavigateWeb {
+        pane_id: "p".into(),
+        url: None,
+        action: Some(soyeht_protocol::WebNavigationAction::Back),
+    });
+    assert_eq!(go["method"], "web.navigate");
+    assert_eq!(go["params"]["action"], "back");
+
+    let report = body(Command::ReportWebPage {
+        pane_id: "p".into(),
+        generation: 12,
+        url: "https://example.com/".into(),
+        title: "Example".into(),
+    });
+    assert_eq!(report["method"], "web.host.navigated");
+    assert_eq!(report["params"]["navigationGeneration"], "12");
+}
+
+#[test]
 fn a_workspace_is_made_from_a_folder_and_renamed_with_the_engines_methods() {
     let body =
         |command: Command| -> Value { serde_json::to_value(request(&command).unwrap()).unwrap() };

@@ -15,6 +15,7 @@ use crate::{
     tasks_ui::TasksUi,
     theme::ThemeName,
     views::Replies,
+    web_page::WebRegistry,
     window_size::WindowSize,
     writing_ui::Places,
 };
@@ -30,6 +31,7 @@ mod input;
 mod lifecycle;
 mod menus;
 mod text_input;
+mod web;
 pub(crate) use text_input::input_surface;
 
 actions!(soyeht, [Quit, NewTerminal, Paste, CopySelection]);
@@ -88,6 +90,9 @@ pub struct Workbench {
     pub(crate) alerts: Alerts,
     /// The places that list documents: each one's search and new-document form.
     pub(crate) places: Places,
+    /// The web view of the window, when it has one: the pages of the web panes.
+    pub(crate) web: Option<std::sync::Arc<WebRegistry>>,
+    _web_signals: Option<Task<()>>,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
     _clock: Task<()>,
@@ -157,6 +162,8 @@ impl Workbench {
             panels: ProjectPanels::default(),
             alerts: Alerts::new(),
             places: Places::default(),
+            web: None,
+            _web_signals: None,
             _events: events,
             _clock: clock,
         }
@@ -170,6 +177,7 @@ impl Workbench {
         // A frame costs the same however little changed in it, and on a machine without a GPU that
         // is long: output of terminals the window does not show asks for none.
         let mut repaint = false;
+        self.sync_web(&events);
         for event in events {
             repaint |= self.state.changes_view(&event);
             let effects = self.state.apply(event);

@@ -333,6 +333,9 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual(limits["webPanesPerWorkspace"], 10)
         self.assertEqual(limits["webSnapshotBytes"], 200 * 1024)
         self.assertEqual(limits["webScreenshotBytes"], 2 * 1024 * 1024)
+        self.assertEqual(limits["webAgentImageBytes"], 256 * 1024)
+        # The picture, as base64 and carried twice, and its text fit one harness message.
+        self.assertLess(limits["webAgentImageBytes"] * 4 // 3 * 2, limits["acpMessageBytes"])
         self.assertEqual(limits["webEvaluateBytes"], 64 * 1024)
         self.assertEqual(limits["webConsoleEntries"], 500)
         self.assertEqual(limits["webNetworkEntries"], 300)

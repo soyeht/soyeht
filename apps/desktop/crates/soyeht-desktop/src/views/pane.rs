@@ -124,6 +124,10 @@ impl Workbench {
                 self.pane_header(pane, palette, cx),
                 self.agent_body(pane, palette, cx),
             ),
+            PaneMode::Web => (
+                self.pane_header(pane, palette, cx),
+                self.web_body(&pane.pane_id, palette, cx),
+            ),
             PaneMode::Writing if pane.writing_kind.is_some() => (
                 self.writing_header(palette, pane, cx),
                 self.writing_body(cx, pane),
@@ -513,9 +517,10 @@ pub(super) fn notice_body(palette: &Palette, message: &str) -> AnyElement {
 
 fn mode_notice(pane: &Pane) -> String {
     match (&pane.mode, &pane.writing_kind) {
-        (PaneMode::Web, _) => super::ui::not_available("Web panes"),
         (PaneMode::Writing, _) => super::ui::not_available("This document"),
-        (PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor, _) => String::new(),
+        (PaneMode::Terminal | PaneMode::Agent | PaneMode::Editor | PaneMode::Web, _) => {
+            String::new()
+        }
     }
 }
 

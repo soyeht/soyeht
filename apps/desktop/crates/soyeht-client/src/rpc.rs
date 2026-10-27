@@ -2,11 +2,13 @@
 //! thread completes the matching request when the response frame arrives.
 
 use crate::attachments::Upload;
-use crate::{Error, Result, transport::Closer};
+use crate::{Error, Result, transport::Closer, web_host::Outcome};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, FileAuthor, Request, Role, attachment::attachment_frames, client_policy,
-    frame::write_json,
+    Actor, FileAuthor, Request, Role,
+    attachment::attachment_frames,
+    client_policy,
+    frame::{Frame, write_json},
 };
 use std::{
     collections::HashMap,
@@ -106,17 +108,9 @@ impl Rpc {
         let (method, message, id) = self.envelope(request)?;
         let (reply, answer) = mpsc::channel();
         self.lock_pending().insert(id, Pending { kind, reply });
-        let sent = {
-            let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
-            frames
-                .iter()
-                .try_for_each(|frame| frame.write_to(&mut *writer))
-                .and_then(|()| write_json(&mut *writer, &message))
-                .and_then(|()| Ok(writer.flush()?))
-        };
-        if let Err(error) = sent {
+        if let Err(error) = self.write(&frames, &message) {
             self.lock_pending().remove(&id);
-            return Err(error.into());
+            return Err(error);
         }
         match answer.recv_timeout(REQUEST_TIMEOUT) {
             Ok(result) => result,
@@ -128,6 +122,33 @@ impl Rpc {
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => Err(Error::Disconnected),
         }
+    }
+
+    /// Answers a request of the engine (`web.command`): the picture it names goes first, as binary
+    /// frames, with nothing between them and the answer; a refusal carries none.
+    pub fn respond(&self, id: &Value, outcome: Outcome) -> Result<()> {
+        let mut frames = Vec::new();
+        let message = match outcome.result {
+            Ok(result) => {
+                if let Some((reference, bytes)) = &outcome.attachment {
+                    frames.extend(attachment_frames(reference, bytes)?);
+                }
+                json!({"jsonrpc": "2.0", "id": id, "result": result})
+            }
+            Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
+        };
+        self.write(&frames, &message)
+    }
+
+    /// Writes the frames and then the message, with nothing between them.
+    fn write(&self, frames: &[Frame], message: &Value) -> Result<()> {
+        let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
+        frames
+            .iter()
+            .try_for_each(|frame| frame.write_to(&mut *writer))
+            .and_then(|()| write_json(&mut *writer, message))
+            .and_then(|()| Ok(writer.flush()?))?;
+        Ok(())
     }
 
     fn envelope(&self, request: &Request) -> Result<(String, Value, u64)> {

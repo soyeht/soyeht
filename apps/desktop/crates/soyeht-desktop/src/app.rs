@@ -6,6 +6,7 @@ use crate::{
     fonts, graphics, logging, notices, shortcuts,
     tasks_ui::{CreateAndDispatchTask, CreateTask},
     theme::{ThemeName, desktop},
+    web_page::{Signal, WebRegistry},
     window_size::{self, opening_size},
     workbench::{CopySelection, NewTerminal, Paste, Quit, Workbench},
 };
@@ -59,6 +60,9 @@ pub(crate) struct Setup {
     pub tasks: Option<TasksStart>,
     /// The place of the rail the window opens on, when it is not the first.
     pub destination: Option<crate::destination::Destination>,
+    /// The web view of the window and the signals its pages raise; none where the system has
+    /// no web view (a replay has none either).
+    pub web: Option<(std::sync::Arc<WebRegistry>, async_channel::Receiver<Signal>)>,
 }
 
 /// Where the application prints what it tells the person (the program's `main` owns the
@@ -77,9 +81,21 @@ pub fn run(notice: Notice) {
         }
     };
     launch(notice, move || {
-        let (engine, inbox) = Engine::start_with(socket.clone(), Autostart::resolve());
-        // Read before the window opens, so the first frame is already in the chosen theme.
         let preferences = local_preferences::directory(&socket);
+        // Where the web panes keep their cookies and storage: a login lasts across runs.
+        let web = soyeht_webview::supported().then(|| {
+            let (signals, raised) = async_channel::unbounded();
+            (
+                WebRegistry::new(preferences.join("browser"), signals),
+                raised,
+            )
+        });
+        // The window's web panes are the engine's web host: its agents read them.
+        let host = web.as_ref().map(|(registry, _)| {
+            std::sync::Arc::new(soyeht_client::web_host::Host::new(registry.clone()))
+        });
+        let (engine, inbox) = Engine::start_hosted(socket.clone(), Autostart::resolve(), host);
+        // Read before the window opens, so the first frame is already in the chosen theme.
         Setup {
             engine,
             inbox,
@@ -92,6 +108,7 @@ pub fn run(notice: Notice) {
             drafts: Vec::new(),
             tasks: None,
             destination: None,
+            web,
         }
     });
 }
@@ -170,6 +187,9 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
                 }
                 if let Some(place) = setup.destination {
                     workbench.destination = place;
+                }
+                if let Some((registry, signals)) = setup.web {
+                    workbench.attach_web(registry, signals, cx);
                 }
                 if let Some(start) = setup.tasks {
                     workbench.destination = crate::destination::Destination::Tasks;

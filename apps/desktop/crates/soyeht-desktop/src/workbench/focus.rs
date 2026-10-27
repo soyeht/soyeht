@@ -38,6 +38,14 @@ impl Workbench {
         if let Some(text) = self.writing_focus(pane_id, cx) {
             return text;
         }
+        if self
+            .state
+            .pane(pane_id)
+            .is_some_and(|pane| pane.mode == PaneMode::Web)
+            && let Some(handle) = self.web_focus(pane_id, cx)
+        {
+            return handle;
+        }
         let is_agent = self
             .state
             .pane(pane_id)

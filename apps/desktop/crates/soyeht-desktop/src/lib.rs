@@ -46,6 +46,8 @@ mod terminal_input;
 mod terminal_view;
 pub mod theme;
 mod views;
+mod web_page;
+mod web_surface;
 mod window_size;
 mod workbench;
 mod writing_flow;

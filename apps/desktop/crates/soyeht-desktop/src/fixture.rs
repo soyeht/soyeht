@@ -380,6 +380,7 @@ pub fn run(
             drafts,
             tasks,
             destination,
+            web: None,
         }
     });
     Ok(())

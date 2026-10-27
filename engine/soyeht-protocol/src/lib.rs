@@ -19,6 +19,7 @@ pub mod readiness;
 pub mod setting;
 pub mod snapshot;
 pub mod validate;
+pub mod web;
 
 /// The wire schema is embedded for tooling and compatibility diagnostics.
 pub const SCHEMA: &str = include_str!("../../../contracts/protocol.json");

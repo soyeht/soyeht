@@ -88,6 +88,9 @@ impl Workbench {
             if place == crate::destination::Destination::Editor {
                 return self.editor_empty(cx, palette, &workspace_id);
             }
+            if place == crate::destination::Destination::Web {
+                return self.web_empty(cx, palette);
+            }
             let message = if self.state.panes_of(&workspace_id).next().is_none() {
                 "This workspace has no panes yet. Use + to open one."
             } else {

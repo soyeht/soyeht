@@ -65,7 +65,7 @@ import WebKit
   }
 
   private static func boundedPNG(
-    _ image: NSImage, maxBytes: Int = ProtocolLimits.webScreenshotBytes
+    _ image: NSImage, maxBytes: Int = ProtocolLimits.webAgentImageBytes
   ) throws -> Data {
     try image.boundedPNG(
       maxBytes: maxBytes,

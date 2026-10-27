@@ -117,6 +117,62 @@ fn permission_requests_wait_until_they_are_answered() {
 }
 
 #[test]
+fn a_question_about_a_web_pane_waits_with_that_pane_until_it_is_answered() {
+    let (mut state, _) = connected(&[("w", "web"), ("a", "agent")]);
+    let asked = |pane: &str| {
+        notification(
+            EventName::PanePermissionRequested,
+            json!({"eventId": "9", "at": "now", "paneId": pane, "requestId": "r", "generation": 1,
+                   "promptId": "p", "title": "Use your sign-in", "detail": "example.com",
+                   "options": [], "expiresAt": "later", "kind": "web_session",
+                   "domain": "example.com"}),
+        )
+    };
+    state.apply(asked("w"));
+    assert_eq!(
+        state.web_permission("w").unwrap().domain.as_deref(),
+        Some("example.com")
+    );
+    assert!(state.web_permission("a").is_none());
+    state.apply(notification(
+        EventName::PanePermissionAnswered,
+        json!({"eventId": "10", "at": "now", "paneId": "w", "requestId": "other",
+               "result": "selected", "by": "mac"}),
+    ));
+    assert!(
+        state.web_permission("w").is_some(),
+        "another request's answer leaves it"
+    );
+    state.apply(notification(
+        EventName::PanePermissionAnswered,
+        json!({"eventId": "11", "at": "now", "paneId": "w", "requestId": "r",
+               "result": "selected", "by": "mac"}),
+    ));
+    assert!(state.web_permission("w").is_none());
+}
+
+#[test]
+fn a_question_about_a_web_pane_that_the_engine_still_waits_on_comes_back_with_a_connection() {
+    let mut state = State::default();
+    let request = json!({"requestId": "r", "paneId": "w", "generation": 1, "promptId": "p",
+        "title": "Use your sign-in", "detail": "example.com", "options": [],
+        "expiresAt": "later", "kind": "web_session", "domain": "example.com"});
+    let snapshot = |requests| Snapshot {
+        workspaces: vec![workspace("w")],
+        panes: vec![pane("w", "w", "web")],
+        requests,
+        ..Snapshot::default()
+    };
+    state.apply(Event::Connected(snapshot(vec![
+        json!({"kind": "permission", "request": request}),
+    ])));
+    assert_eq!(state.web_permission("w").unwrap().request_id, "r");
+    // Once the engine no longer lists it, a new connection has none.
+    state.apply(Event::Connected(snapshot(Vec::new())));
+    assert!(state.web_permission("w").is_none());
+}
+
+#[test]
 fn usage_readings_arrive_by_list_and_change_by_event() {
     let (mut state, _) = connected(&[]);
     let reading = |used: f64| {

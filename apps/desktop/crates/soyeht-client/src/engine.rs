@@ -12,10 +12,12 @@ use crate::{
     reconnect::Backoff,
     rpc::Rpc,
     session::{EventSink, Session},
-    transport, writing,
+    transport,
+    web_host::Host,
+    writing,
 };
 use soyeht_platform::log::Failure;
-use soyeht_protocol::PaneInputResult;
+use soyeht_protocol::{ErrorKind, PaneInputResult};
 use std::{
     fmt::Display,
     path::{Path, PathBuf},
@@ -48,6 +50,12 @@ const COMMAND_QUEUE: usize = 1024;
 struct Shared {
     rpc: Mutex<Option<Arc<Rpc>>>,
     stopped: AtomicBool,
+    /// The browser of this window, which answers the engine's `web.command`; none when the window
+    /// has no web view.
+    host: Option<Arc<Host>>,
+    /// The engine refused the web host role (another window holds it): the next connection does
+    /// not claim it.
+    host_refused: AtomicBool,
 }
 
 impl Shared {
@@ -81,10 +89,24 @@ impl Engine {
         socket: PathBuf,
         autostart: Autostart,
     ) -> (Self, async_channel::Receiver<Event>) {
+        Self::start_hosted(socket, autostart, None)
+    }
+
+    /// [`start_with`](Self::start_with), the window's browser being the engine's web host: the
+    /// engine's agents read the window's web panes through `host`. Only one window at a time is
+    /// the host; another that connects while one is gives the role up and runs without it.
+    pub fn start_hosted(
+        socket: PathBuf,
+        autostart: Autostart,
+        host: Option<Arc<Host>>,
+    ) -> (Self, async_channel::Receiver<Event>) {
         let (events, inbox) = async_channel::bounded(EVENT_QUEUE);
         let (commands, queue) = mpsc::sync_channel(COMMAND_QUEUE);
         let (fetches, fetch_queue) = mpsc::sync_channel(COMMAND_QUEUE);
-        let shared = Arc::new(Shared::default());
+        let shared = Arc::new(Shared {
+            host,
+            ..Shared::default()
+        });
         {
             let (shared, events) = (Arc::clone(&shared), events.clone());
             std::thread::spawn(move || supervise(&socket, &autostart, &events, &shared));
@@ -246,7 +268,13 @@ fn run_connection(socket: &Path, events: &EventSink, shared: &Shared) -> Error {
         Ok(link) => link,
         Err(error) => return error,
     };
-    let session = match Session::open(link, events.clone()) {
+    // The role is claimed unless the engine refused it to the last connection, and the claim is
+    // tried again once that connection is over: the window that held the role may have gone.
+    let host = shared
+        .host
+        .clone()
+        .filter(|_| !shared.host_refused.swap(false, Ordering::Relaxed));
+    let session = match Session::open(link, events.clone(), host) {
         Ok(session) => session,
         Err(error) => return error,
     };
@@ -263,6 +291,10 @@ fn run_connection(socket: &Path, events: &EventSink, shared: &Shared) -> Error {
         Err(error) => {
             session.rpc.close();
             let reader = session.wait();
+            if matches!(&error, Error::Remote(refusal) if refusal.data.kind == ErrorKind::WebHostUnavailable)
+            {
+                shared.host_refused.store(true, Ordering::Relaxed);
+            }
             // A handshake cut short by the connection ending is explained by how it ended.
             if matches!(error, Error::Disconnected) {
                 reader

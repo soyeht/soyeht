@@ -71,6 +71,7 @@ public enum ProtocolLimits {
     public static let webReadTextBytes = 65536
     public static let webReadLinks = 100
     public static let webReadBytes = 524288
+    public static let webAgentImageBytes = 262144
     public static let promptAttachments = 20
     public static let promptAttachmentBytes = 10485760
     public static let promptAttachmentTotalBytes = 20971520

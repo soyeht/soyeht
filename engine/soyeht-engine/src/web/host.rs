@@ -153,10 +153,16 @@ impl Core {
 
     pub(crate) fn web_host_response(&mut self, host: &str, response: Value) -> Result<()> {
         let id = valid_response_id(&response)?;
-        let waiter = self
-            .web_waiters
-            .get(id)
-            .ok_or_else(|| errors::invalid("Unknown web command response"))?;
+        // A host answers a command the engine has stopped waiting for (it timed out, or its caller
+        // went away) after it was dropped: that answer is late, not a violation of the protocol,
+        // and must not close the host's connection.
+        let Some(waiter) = self.web_waiters.get(id) else {
+            // Its image frames came first and are no one's: the next answer must not meet them.
+            if let Some(client) = self.clients.get_mut(host) {
+                client.attachments.discard();
+            }
+            return Ok(());
+        };
         if waiter.host != host {
             return Err(errors::unauthorized(
                 "Web command response belongs to another host",

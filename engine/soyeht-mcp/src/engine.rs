@@ -5,7 +5,7 @@ use soyeht_protocol::{
     AttachmentRef, Role, Welcome,
     attachment::AttachmentAssembler,
     frame::{Frame, read_json, write_json},
-    handshake, limits, method,
+    handshake, limits, method, web,
 };
 use std::{
     path::{Path, PathBuf},
@@ -103,6 +103,7 @@ impl Client {
             .checked_add(1)
             .ok_or(Error::RequestIdExhausted)?;
         let id = self.next_id;
+        self.socket.set_read_timeout(Some(reply_timeout(method)))?;
         write_json(
             &mut self.socket,
             &json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}),
@@ -198,9 +199,22 @@ impl EnginePort for Client {
     }
 }
 
+/// How long the engine may take to answer. A web command runs in the pane's host, which
+/// can take as long as the longest wait it accepts (a read of a long page, a navigation),
+/// so the answer is waited for that long and a little more.
+fn reply_timeout(method: &str) -> Duration {
+    if web::waits_for_host(method) {
+        Duration::from_millis(limits::WEB_WAIT_TIMEOUT_MS as u64) + REPLY_TIMEOUT
+    } else {
+        REPLY_TIMEOUT
+    }
+}
+
+const REPLY_TIMEOUT: Duration = Duration::from_secs(10);
+
 fn open(socket: &Path) -> Result<Stream> {
     let stream = connect(socket)?;
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    stream.set_read_timeout(Some(REPLY_TIMEOUT))?;
     stream.set_write_timeout(Some(Duration::from_secs(10)))?;
     Ok(stream)
 }
@@ -231,6 +245,14 @@ mod tests {
         } else {
             std::env::temp_dir()
         }
+    }
+
+    #[test]
+    fn a_web_command_is_waited_for_as_long_as_a_wait_it_accepts() {
+        assert!(reply_timeout(method::WEB_READ) > Duration::from_millis(60_000));
+        assert!(reply_timeout(method::WEB_NAVIGATE) > Duration::from_millis(60_000));
+        assert_eq!(reply_timeout(method::WEB_OPEN), Duration::from_secs(10));
+        assert_eq!(reply_timeout("task.next"), Duration::from_secs(10));
     }
 
     #[test]

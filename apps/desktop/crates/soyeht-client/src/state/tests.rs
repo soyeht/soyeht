@@ -237,7 +237,7 @@ fn workspace_events_add_rename_and_close() {
 #[test]
 fn unrelated_notifications_change_nothing() {
     let (mut state, _) = connected(snapshot(&["w"], &[("t1", "w", "terminal")]));
-    let effects = state.apply(notification(EventName::WebNavigated, json!({})));
+    let effects = state.apply(notification(EventName::ServersLocalChanged, json!({})));
     assert!(effects.is_empty() && state.problem.is_none());
     assert_eq!(state.panes().len(), 1);
 }
@@ -379,4 +379,26 @@ fn a_connection_clears_the_problem_but_not_the_clients_standing_notice() {
         state.notice.as_deref(),
         Some("Drawing on a software renderer.")
     );
+}
+
+#[test]
+fn a_web_pane_follows_its_page_and_other_panes_do_not() {
+    let (mut state, _) = connected(snapshot(
+        &["w"],
+        &[("t1", "w", "terminal"), ("web1", "w", "web")],
+    ));
+    let moved = |pane: &str| {
+        notification(
+            EventName::WebNavigated,
+            json!({"eventId": "9", "at": "now", "paneId": pane, "navigationGeneration": "4",
+                "url": "https://example.com/a", "title": "A"}),
+        )
+    };
+    assert!(state.apply(moved("web1")).is_empty());
+    let web = state.pane("web1").unwrap();
+    assert_eq!(web.url.as_deref(), Some("https://example.com/a"));
+    assert_eq!((web.title.as_deref(), web.generation), (Some("A"), 4));
+    state.apply(moved("t1"));
+    assert!(state.pane("t1").unwrap().url.is_none());
+    assert!(state.problem.is_none());
 }

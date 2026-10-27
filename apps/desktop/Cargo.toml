@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/soyeht-client", "crates/soyeht-desktop"]
+members = ["crates/soyeht-client", "crates/soyeht-desktop", "crates/soyeht-webview"]
 resolver = "3"
 
 [workspace.package]
@@ -34,6 +34,9 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 # System notifications: the D-Bus Notify call on Linux (over `zbus`, which GPUI already uses) and a
 # toast on Windows. The `z` feature is the pure-Rust D-Bus client; the others pull in a C library.
 notify-rust = { version = "4.18", default-features = false, features = ["z"] }
+# The system web view is loaded at run time (ADR 0110), so a build needs no WebKit development files.
+# GPUI already brings the crate into the lockfile.
+libloading = "0.8"
 
 # GPUI depends on forks that Zed applies through its own workspace patches. Cargo ignores
 # the patches of a dependency's workspace, so the same revisions are repeated here.

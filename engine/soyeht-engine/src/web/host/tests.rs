@@ -123,6 +123,9 @@ async fn one_local_host_routes_typed_bounded_results_and_disconnects_fail_waiter
         panic!("stored web navigation should reply immediately")
     };
     assert_eq!(stored, response["result"]);
+    // An answer to a command the engine no longer waits for is late, and is ignored.
+    let late = json!({"jsonrpc":"2.0","id":command_id,"error":{"code":-32603,"message":"late"}});
+    core.web_host_response(&host, late).unwrap();
 
     let raw = navigate_params(&pane, "timeout");
     core.queue_web_command(
@@ -346,7 +349,25 @@ async fn read_returns_its_text_and_links_after_the_committed_image() {
     assert_eq!(response["result"]["screens"], 2);
 }
 
+#[tokio::test]
+async fn an_image_answer_that_comes_late_does_not_break_the_next_answer() {
+    let response =
+        image_after_late_answer("web.screenshot", |image| json!({"image":image}), true).await;
+    assert_eq!(response["id"], 4);
+    assert_eq!(response["result"]["image"]["bytes"], "11");
+}
+
 async fn image_precedes_response(method: &str, value: impl Fn(Value) -> Value) -> Value {
+    image_after_late_answer(method, value, false).await
+}
+
+/// With `late`, the host first answers, with an image, a command the engine had stopped waiting
+/// for; the answer that follows must still be accepted.
+async fn image_after_late_answer(
+    method: &str,
+    value: impl Fn(Value) -> Value,
+    late: bool,
+) -> Value {
     let root = temp_root();
     let mut core = Core::open(&root).unwrap();
     let (host, mut host_receiver) = connect(&mut core, json!(["web_host"])).await;
@@ -375,6 +396,31 @@ async fn image_precedes_response(method: &str, value: impl Fn(Value) -> Value) -
         .as_str()
         .unwrap()
         .to_owned();
+    if late {
+        let Outcome::Queued = core
+            .dispatch(&caller, request(5, method, json!({"paneId":pane})))
+            .unwrap()
+        else {
+            panic!("the first command should wait for the host")
+        };
+        let first = next_json(&mut host_receiver).await;
+        core.fail_web_waiter(first["id"].as_str().unwrap(), "Web host command timed out")
+            .unwrap();
+        assert_eq!(next_json(&mut caller_receiver).await["id"], 5);
+        let stale = "ffeeddcc-bbaa-4977-8899-001122334455";
+        core.attachment_chunk(
+            &host,
+            soyeht_protocol::attachment::attachment_header(stale).unwrap(),
+            b"late",
+        )
+        .unwrap();
+        core.web_host_response(
+            &host,
+            json!({"jsonrpc":"2.0","id":first["id"],"result":{"paneId":pane,"value":{"image":{
+                "attachmentId":stale,"mimeType":"image/png","name":"screenshot.png","bytes":"4"}}}}),
+        )
+        .unwrap();
+    }
     let Outcome::Queued = core
         .dispatch(&caller, request(4, method, json!({"paneId":pane})))
         .unwrap()

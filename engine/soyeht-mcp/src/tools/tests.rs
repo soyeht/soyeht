@@ -339,7 +339,8 @@ fn service_call_succeeded(service: &mut Service<FakeEngine>, name: &str, argumen
     service.call(name, arguments).is_ok()
 }
 
-struct ImageEngine;
+/// A host that answers with a picture of this many bytes.
+struct ImageEngine(usize);
 
 impl EnginePort for ImageEngine {
     fn role(&self) -> &Role {
@@ -356,21 +357,40 @@ impl EnginePort for ImageEngine {
             attachment_id: "00112233-4455-4677-8899-aabbccddeeff".into(),
             mime_type: "image/png".into(),
             name: "screenshot.png".into(),
-            bytes: "3".into(),
+            bytes: self.0.to_string(),
         };
         Ok(EngineResponse {
             value: json!({"paneId":"web","image":reference}),
             attachment: Some(EngineAttachment {
                 reference,
-                bytes: b"png".to_vec(),
+                bytes: b"png".repeat(self.0 / 3 + 1)[..self.0].to_vec(),
             }),
         })
     }
 }
 
 #[test]
+fn a_picture_over_the_limit_is_left_out_and_the_agent_is_told() {
+    let mut service = Service::new(
+        ImageEngine(soyeht_protocol::limits::WEB_AGENT_IMAGE_BYTES + 1),
+        context(false),
+    );
+    let result = service
+        .call("web_read", json!({"paneId":"web","screens":3}))
+        .unwrap();
+    assert_eq!(result["content"].as_array().unwrap().len(), 2);
+    assert_eq!(result["content"][1]["type"], "text");
+    assert!(
+        result["content"][1]["text"]
+            .as_str()
+            .unwrap()
+            .contains("left out")
+    );
+}
+
+#[test]
 fn screenshot_tool_returns_mcp_image_content_and_structured_reference() {
-    let mut service = Service::new(ImageEngine, context(false));
+    let mut service = Service::new(ImageEngine(3), context(false));
     let result = service
         .call("web_screenshot", json!({"paneId":"web"}))
         .unwrap();
@@ -382,7 +402,7 @@ fn screenshot_tool_returns_mcp_image_content_and_structured_reference() {
 
 #[test]
 fn read_tool_bounds_its_screens_and_returns_the_image_with_the_page_text() {
-    let mut service = Service::new(ImageEngine, context(false));
+    let mut service = Service::new(ImageEngine(3), context(false));
     let result = service
         .call("web_read", json!({"paneId":"web","screens":3}))
         .unwrap();

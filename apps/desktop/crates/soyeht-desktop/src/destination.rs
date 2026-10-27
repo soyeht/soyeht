@@ -86,6 +86,7 @@ impl Destination {
             Self::Agents => true,
             Self::Terminal => *mode == PaneMode::Terminal,
             Self::Editor => *mode == PaneMode::Editor,
+            Self::Web => *mode == PaneMode::Web,
             // The places that draw no panes (`is_pane_grid`) show none.
             _ => false,
         }
@@ -93,18 +94,17 @@ impl Destination {
 
     /// Whether this place draws panes at all. The three writing places list the documents of
     /// the workspace, as the Mac's sections do, and open each in a pane that the agents' place
-    /// shows. The web place is not one: the desktop client has no web view, so a web pane
-    /// the workspace holds shows its notice in the agents' place and the place itself says so.
+    /// shows. The web place is one where the system has a web view to draw a page with
+    /// (Linux today); elsewhere a web pane the workspace holds shows its notice in the agents'
+    /// place and the place itself says so.
     pub fn is_pane_grid(self) -> bool {
-        !matches!(
-            self,
-            Self::Tasks
-                | Self::Web
-                | Self::Phone
-                | Self::Texts
-                | Self::Presentations
-                | Self::Screenplays
-        )
+        match self {
+            Self::Web => soyeht_webview::supported(),
+            Self::Tasks | Self::Phone | Self::Texts | Self::Presentations | Self::Screenplays => {
+                false
+            }
+            _ => true,
+        }
     }
 }
 
@@ -130,9 +130,15 @@ mod tests {
                 !place.is_pane_grid() && place.section().is_none() && *place != Destination::Tasks
             })
             .collect();
-        assert_eq!(unserved, [Destination::Web, Destination::Phone]);
+        // Web is drawn where the system has a web view of its own to draw a page with.
+        if soyeht_webview::supported() {
+            assert_eq!(unserved, [Destination::Phone]);
+            assert!(Destination::Web.is_pane_grid() && Destination::Web.shows(&PaneMode::Web));
+        } else {
+            assert_eq!(unserved, [Destination::Web, Destination::Phone]);
+        }
         for place in &unserved {
-            assert!(!place.shows(&PaneMode::Web) && !place.shows(&PaneMode::Agent));
+            assert!(!place.shows(&PaneMode::Agent));
         }
         // The places that do draw panes still show their own kind.
         assert!(Destination::Editor.shows(&PaneMode::Editor));

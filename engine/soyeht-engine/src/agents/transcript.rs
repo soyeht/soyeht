@@ -169,6 +169,25 @@ fn fit_attachments(message: &mut TranscriptMessage) -> Result<()> {
     }
     Ok(())
 }
+/// Keeps a tool row within its stored bound. A tool can return more than a row
+/// holds (a web read returns page images), so the raw output goes first, then
+/// the content; the title, status and input stay, and the call still completes.
+pub fn fit_tool(message: &mut TranscriptMessage) -> Result<()> {
+    let over = |message: &TranscriptMessage| -> Result<bool> {
+        Ok(errors::json_bytes(message)?.len() > limits::TRANSCRIPT_MESSAGE_BYTES)
+    };
+    if over(message)?
+        && let Some(tool) = message.tool.as_mut()
+    {
+        tool.raw_output = None;
+    }
+    if over(message)?
+        && let Some(tool) = message.tool.as_mut()
+    {
+        tool.content = None;
+    }
+    Ok(())
+}
 pub fn event(pane: &str, message: &TranscriptMessage, kind: &str) -> Value {
     let mut result = json!({"paneId":pane,"kind":kind,"generation":message.generation,"seq":message.seq,"localId":message.local_id});
     if let Some(subagent) = &message.subagent_id {
@@ -445,6 +464,32 @@ mod tests {
         assert_eq!(kept.len(), limits::PROMPT_ATTACHMENTS);
         assert!(kept[0].thumbnail.is_some() || kept.iter().all(|a| a.thumbnail.is_none()));
         assert!(kept.last().unwrap().thumbnail.is_none());
+    }
+
+    #[test]
+    fn a_tool_result_larger_than_a_row_is_dropped_and_the_call_still_completes() {
+        let mut row = item(TranscriptKind::Tool);
+        let big = json!([{"type":"image","data":"A".repeat(limits::TRANSCRIPT_MESSAGE_BYTES)}]);
+        row.tool = Some(
+            serde_json::from_value(json!({
+                "toolCallId":"t","title":"web_read","status":"completed","locations":[],
+                "content":big.clone(),"rawOutput":big
+            }))
+            .unwrap(),
+        );
+        fit_tool(&mut row).unwrap();
+        let tool = row.tool.as_ref().unwrap();
+        assert!(tool.raw_output.is_none() && tool.content.is_none());
+        assert!(errors::json_bytes(&row).unwrap().len() <= limits::TRANSCRIPT_MESSAGE_BYTES);
+        let mut small = item(TranscriptKind::Tool);
+        small.tool = Some(
+            serde_json::from_value(json!({
+                "toolCallId":"t","title":"ls","status":"completed","locations":[],"rawOutput":"ok"
+            }))
+            .unwrap(),
+        );
+        fit_tool(&mut small).unwrap();
+        assert!(small.tool.unwrap().raw_output.is_some());
     }
 
     fn item(kind: TranscriptKind) -> TranscriptMessage {

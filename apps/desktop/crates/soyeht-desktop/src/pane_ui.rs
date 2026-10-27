@@ -62,6 +62,17 @@ pub(crate) struct PaneUi {
     pub writing: WritingUi,
     /// Closing the pane waits for the person's answer to this question.
     pub closing: Option<Closing>,
+    /// What a web pane keeps: the page on screen and the address line.
+    pub web: WebUi,
+}
+
+/// What the window keeps of a web pane besides the page itself.
+#[derive(Default)]
+pub(crate) struct WebUi {
+    pub surface: Option<Entity<crate::web_surface::WebSurface>>,
+    pub address: Option<Entity<ComposerField>>,
+    /// The address the line was last set to, to tell the person's own edit from the page's.
+    pub shown: String,
 }
 
 impl PaneUi {
@@ -294,6 +305,7 @@ mod tests {
             terminal: Default::default(),
             writing: WritingUi::default(),
             closing: Some(Closing::Immediately),
+            web: WebUi::default(),
         }
     }
 

@@ -22,6 +22,11 @@ impl State {
         self.agents.get(pane_id)
     }
 
+    /// What an agent asks of the person about a web pane, until it is answered.
+    pub fn web_permission(&self, pane_id: &str) -> Option<&PermissionRequest> {
+        self.web_permissions.get(pane_id)
+    }
+
     /// The requests agents wait on: permissions and questions. Nothing waits while the engine is
     /// out of reach.
     pub fn attention(&self) -> Vec<crate::attention::Request> {
@@ -271,6 +276,8 @@ impl State {
             .map(|pane| pane.pane_id.clone())
             .collect();
         self.agents.retain(|id, _| ids.contains(id));
+        // What the engine still waits on is listed again below.
+        self.web_permissions.clear();
         let mut effects = vec![
             Effect::LoadUsage,
             Effect::LoadHarnesses,
@@ -326,6 +333,12 @@ impl State {
             };
             if let Some(view) = self.agents.get_mut(&request.pane_id) {
                 view.permission = Some(request);
+            } else if self
+                .pane(&request.pane_id)
+                .is_some_and(|pane| pane.mode == PaneMode::Web)
+            {
+                self.web_permissions
+                    .insert(request.pane_id.clone(), request);
             }
         }
         effects
@@ -392,38 +405,8 @@ impl State {
                 self.set_notice(&event.pane_id, event.reason);
                 Vec::new()
             }
-            EventName::PanePermissionRequested => {
-                let event = serde_json::from_value::<PanePermissionRequestedEvent>(params)?;
-                let request = PermissionRequest {
-                    request_id: event.request_id,
-                    pane_id: event.pane_id.clone(),
-                    generation: event.generation,
-                    prompt_id: event.prompt_id,
-                    title: event.title,
-                    detail: event.detail,
-                    presentation: event.presentation,
-                    options: event.options,
-                    expires_at: event.expires_at,
-                    kind: event.kind,
-                    domain: event.domain,
-                };
-                if let Some(view) = self.agents.get_mut(&event.pane_id) {
-                    view.permission = Some(request);
-                }
-                Vec::new()
-            }
-            EventName::PanePermissionAnswered => {
-                let event = serde_json::from_value::<PanePermissionAnsweredEvent>(params)?;
-                if let Some(view) = self.agents.get_mut(&event.pane_id)
-                    && view
-                        .permission
-                        .as_ref()
-                        .is_some_and(|request| request.request_id == event.request_id)
-                {
-                    view.permission = None;
-                }
-                Vec::new()
-            }
+            EventName::PanePermissionRequested => self.permission_requested(params)?,
+            EventName::PanePermissionAnswered => self.permission_answered(params)?,
             EventName::UsageChanged => {
                 self.record_usage(serde_json::from_value(params)?);
                 Vec::new()
@@ -442,6 +425,52 @@ impl State {
             | EventName::AttentionChanged => self.task_notification(name, params)?,
             _ => self.card_notification(name, params)?,
         })
+    }
+
+    fn permission_requested(&mut self, params: Value) -> serde_json::Result<Vec<Effect>> {
+        let event = serde_json::from_value::<PanePermissionRequestedEvent>(params)?;
+        let request = PermissionRequest {
+            request_id: event.request_id,
+            pane_id: event.pane_id.clone(),
+            generation: event.generation,
+            prompt_id: event.prompt_id,
+            title: event.title,
+            detail: event.detail,
+            presentation: event.presentation,
+            options: event.options,
+            expires_at: event.expires_at,
+            kind: event.kind,
+            domain: event.domain,
+        };
+        if let Some(view) = self.agents.get_mut(&event.pane_id) {
+            view.permission = Some(request);
+        } else if self
+            .pane(&event.pane_id)
+            .is_some_and(|pane| pane.mode == PaneMode::Web)
+        {
+            self.web_permissions.insert(event.pane_id, request);
+        }
+        Ok(Vec::new())
+    }
+
+    fn permission_answered(&mut self, params: Value) -> serde_json::Result<Vec<Effect>> {
+        let event = serde_json::from_value::<PanePermissionAnsweredEvent>(params)?;
+        if let Some(view) = self.agents.get_mut(&event.pane_id)
+            && view
+                .permission
+                .as_ref()
+                .is_some_and(|request| request.request_id == event.request_id)
+        {
+            view.permission = None;
+        }
+        if self
+            .web_permissions
+            .get(&event.pane_id)
+            .is_some_and(|request| request.request_id == event.request_id)
+        {
+            self.web_permissions.remove(&event.pane_id);
+        }
+        Ok(Vec::new())
     }
 
     pub(crate) fn reload_transcript(&self, params: &Value) -> Vec<Effect> {

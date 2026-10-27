@@ -5,6 +5,7 @@ mod coalesce;
 mod outcome;
 mod panes;
 mod tasks;
+mod web;
 mod workspaces;
 
 use crate::{
@@ -18,7 +19,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use soyeht_protocol::{
     AgentPaneRole, LoopStopWhen, PaneInputParams, Request, TaskExecutor, TaskPriority, TaskState,
-    UsageProvider, WorkspacePaneLayoutEnvelope, client_policy,
+    UsageProvider, WebNavigationAction, WorkspacePaneLayoutEnvelope, client_policy,
 };
 use uuid::Uuid;
 
@@ -54,6 +55,27 @@ pub enum Command {
     },
     ClosePane {
         pane_id: String,
+    },
+    /// A new web pane, on `url` when there is one.
+    OpenWeb {
+        workspace_id: String,
+        url: Option<String>,
+        incognito: bool,
+        ticket: u64,
+    },
+    /// Send a web pane to an address, or back, forward or again. The engine checks the address
+    /// and asks this client's web host to go there, as it does for an agent.
+    NavigateWeb {
+        pane_id: String,
+        url: Option<String>,
+        action: Option<WebNavigationAction>,
+    },
+    /// Tell the engine where the page of a web pane is, after it has loaded.
+    ReportWebPage {
+        pane_id: String,
+        generation: u64,
+        url: String,
+        title: String,
     },
     /// A new agent pane running `harness`, started with the harness's own defaults.
     CreateAgent {
@@ -287,6 +309,7 @@ pub fn input_request(pane_id: &str, bytes: &[u8]) -> Request {
 pub fn request(command: &Command) -> Option<Request> {
     preference_requests::request(command)
         .or_else(|| panes::request(command))
+        .or_else(|| web::request(command))
         .or_else(|| workspaces::request(command))
         .or_else(|| tasks::request(command))
         .or_else(|| agents::request(command))
@@ -309,6 +332,7 @@ impl Command {
         match self {
             Self::CreateTerminal { ticket, .. }
             | Self::CreateAgent { ticket, .. }
+            | Self::OpenWeb { ticket, .. }
             | Self::CreateWorkspace { ticket, .. }
             | Self::CreateTask { ticket, .. }
             | Self::DispatchTask { ticket, .. } => Some(*ticket),

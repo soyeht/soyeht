@@ -185,3 +185,80 @@ import Testing
   }
   #expect(size + WebReadAssembly.envelopeBytes <= ProtocolLimits.webReadBytes)
 }
+
+@Test func aPageImageAsBase64AndCarriedTwiceFitsOneHarnessMessage() {
+  // A harness drops its connection on a longer message, and may carry a tool result twice in it.
+  let carried = (ProtocolLimits.webAgentImageBytes + 2) / 3 * 4 * 2
+  #expect(carried < ProtocolLimits.acpMessageBytes)
+  #expect(ProtocolLimits.webAgentImageBytes < ProtocolLimits.webScreenshotBytes)
+}
+
+// The cases the desktop client passes too (`contracts/vectors/web-read.json`): what a read keeps of
+// each screen's text and links, how the screens are joined, and the scale of the joined picture.
+private func webReadVector() throws -> [String: Any] {
+  let url = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    .deletingLastPathComponent().deletingLastPathComponent()
+    .appendingPathComponent("contracts/vectors/web-read.json")
+  return try #require(
+    JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+}
+
+private func decoded<T: Decodable>(_ type: T.Type, _ object: Any) throws -> T {
+  try JSONDecoder().decode(type, from: JSONSerialization.data(withJSONObject: object))
+}
+
+@Test func theSharedVectorKeepsEachBlockAndLinkOnce() throws {
+  let cases = try #require(try webReadVector()["accumulate"] as? [[String: Any]])
+  #expect(!cases.isEmpty)
+  for item in cases {
+    let name = item["name"] as? String ?? ""
+    var accumulator = WebReadAccumulator()
+    for step in try #require(item["steps"] as? [[String: Any]]) {
+      accumulator.add(
+        blocks: try decoded([WebReadBlock].self, step["blocks"] ?? []),
+        links: try decoded([WebReadLink].self, step["links"] ?? []))
+    }
+    let expect = try #require(item["expect"] as? [String: Any])
+    #expect(accumulator.text == expect["text"] as? String, "\(name)")
+    #expect(accumulator.links.count == expect["links"] as? Int, "\(name)")
+    #expect(accumulator.truncated == expect["truncated"] as? Bool, "\(name)")
+  }
+}
+
+@Test func theSharedVectorJoinsScreensByTheRowsBelowWhatIsCovered() throws {
+  let cases = try #require(try webReadVector()["stitch"] as? [[String: Any]])
+  #expect(!cases.isEmpty)
+  for item in cases {
+    let name = item["name"] as? String ?? ""
+    let tiles = try #require(item["tiles"] as? [[String: Any]]).map { tile in
+      WebReadTile(
+        offset: (tile["offset"] as? Double) ?? 0, height: (tile["height"] as? Double) ?? 0,
+        topInset: (tile["topInset"] as? Double) ?? 0,
+        bottomInset: (tile["bottomInset"] as? Double) ?? 0)
+    }
+    let joined = WebReadStitch.strips(tiles)
+    #expect(joined.height == item["height"] as? Double, "\(name)")
+    let expected = try #require(item["strips"] as? [[String: Any]])
+    #expect(joined.strips.count == expected.count, "\(name)")
+    for (strip, want) in zip(joined.strips, expected) {
+      #expect(strip.tile == want["tile"] as? Int, "\(name)")
+      #expect(strip.sourceY == want["sourceY"] as? Double, "\(name)")
+      #expect(strip.destinationY == want["destinationY"] as? Double, "\(name)")
+      #expect(strip.height == want["height"] as? Double, "\(name)")
+    }
+  }
+}
+
+@Test func theSharedVectorScalesThePictureToTheBudget() throws {
+  let cases = try #require(try webReadVector()["outputScale"] as? [[String: Any]])
+  #expect(!cases.isEmpty)
+  for item in cases {
+    let scale = WebReadStitch.outputScale(
+      width: try #require(item["width"] as? Double),
+      height: try #require(item["height"] as? Double),
+      nativeScale: try #require(item["nativeScale"] as? Double),
+      pixelBudget: try #require(item["pixelBudget"] as? Double))
+    #expect(abs(scale - (item["scale"] as? Double ?? .nan)) < 1e-9)
+  }
+}

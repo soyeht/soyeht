@@ -25,12 +25,15 @@ required-features = ["dev-tools"]
 
 [dependencies]
 soyeht-client = { path = "../soyeht-client" }
+soyeht-webview = { path = "../soyeht-webview" }
 soyeht-protocol.workspace = true
 soyeht-platform.workspace = true
 async-channel.workspace = true
 base64.workspace = true
 serde_json.workspace = true
 gpui.workspace = true
+# The picture of a page, in the form the window paints (the same crate GPUI uses).
+image.workspace = true
 gpui_platform.workspace = true
 
 # Notifications exist on Linux and Windows. Elsewhere `os_notify` reports `Unsupported`.

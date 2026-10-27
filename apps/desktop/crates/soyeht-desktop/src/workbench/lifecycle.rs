@@ -113,26 +113,35 @@ impl Workbench {
         ticket: u64,
         cx: &mut Context<Self>,
     ) {
-        self.menus.close();
         // A pane starts in the folder of its workspace, as the Mac asks.
         let cwd = self
             .state
             .workspace(&workspace_id)
             .map(|workspace| workspace.path.clone());
-        let taken = self.send(match harness {
-            Some(harness) => Command::CreateAgent {
-                workspace_id,
-                harness,
-                cwd,
-                ticket,
+        self.send_open(
+            match harness {
+                Some(harness) => Command::CreateAgent {
+                    workspace_id,
+                    harness,
+                    cwd,
+                    ticket,
+                },
+                None => Command::CreateTerminal {
+                    workspace_id,
+                    cwd,
+                    ticket,
+                },
             },
-            None => Command::CreateTerminal {
-                workspace_id,
-                cwd,
-                ticket,
-            },
-        });
-        if !taken {
+            ticket,
+            cx,
+        );
+    }
+
+    /// Sends the command that opens the pane `ticket` waits for. A queue that refuses it releases
+    /// the ticket at once.
+    pub(crate) fn send_open(&mut self, command: Command, ticket: u64, cx: &mut Context<Self>) {
+        self.menus.close();
+        if !self.send(command) {
             self.state.apply(Event::OpenFailed { ticket });
         }
         cx.notify();

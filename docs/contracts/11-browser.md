@@ -82,7 +82,10 @@ screens, text, links, endOfPage, truncated}` plus one image. A host must:
   scrolling the way the platform's own scrolling does and not by dispatching input events into
   the page; when the document does not scroll but the page's main scroller is an element inside
   it, scroll that element;
-- return one image of the screens joined in page order, bounded by the screenshot limit, in which
+- return one image of the screens joined in page order, bounded by the screenshot limit and, because
+  the agent receives it as base64 inside one message of its protocol (1 MiB) with the text beside
+  it, and a harness may carry the result twice in it, by a quarter of that message (`webAgentImageBytes`,
+  256 KiB; scale the picture down first), in which
   a bar that stays fixed on screen appears once and no row of the page is missing at a joint;
 - return the visible text of the screens in reading order, each piece once, and the visible
   `http(s)` links with their text, each once;
@@ -159,7 +162,7 @@ record and routes agent calls to that client.
 
 ## 8. Limits (also added to the table in contract 08)
 10 web panes per workspace; snapshot ≤ 200 KiB (truncated with a marker);
-screenshot ≤ 2 MiB; `web_read` ≤ 12 screens, text ≤ 64 KiB, links ≤ 100; `web_evaluate` result ≤ 64 KiB; console ring 500,
+screenshot picture ≤ 256 KiB (`webAgentImageBytes`; `webScreenshotBytes`, 2 MiB, stays the largest the engine takes); `web_read` ≤ 12 screens, text ≤ 64 KiB, links ≤ 100; `web_evaluate` result ≤ 64 KiB; console ring 500,
 network ring 300; `web_wait` timeout ≤ 60 s; local-server list ≤ 50 entries.
 
 ## 9. Out of v1

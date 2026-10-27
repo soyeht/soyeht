@@ -70,6 +70,7 @@ export const limits = {
   "webReadTextBytes": 65536,
   "webReadLinks": 100,
   "webReadBytes": 524288,
+  "webAgentImageBytes": 262144,
   "promptAttachments": 20,
   "promptAttachmentBytes": 10485760,
   "promptAttachmentTotalBytes": 20971520,

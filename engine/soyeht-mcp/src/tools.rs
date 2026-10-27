@@ -1,7 +1,7 @@
 use crate::{Error, Result, engine::EnginePort};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::{Role, method};
+use soyeht_protocol::{Role, limits, method};
 use uuid::Uuid;
 
 mod schemas;
@@ -169,7 +169,7 @@ const TOOLS: [Tool; 36] = [
         name: "web_open",
         method: method::WEB_OPEN,
         audience: Audience::Both,
-        description: "Open or focus a web pane in the bound workspace.",
+        description: "Open or focus a web pane in the bound workspace and return its paneId. An address that a web pane already shows returns that pane, which is how to get the paneId of a page the person has open; every other web tool needs a paneId.",
         schema: web_open_schema,
     },
     Tool {
@@ -183,7 +183,7 @@ const TOOLS: [Tool; 36] = [
         name: "web_snapshot",
         method: method::WEB_SNAPSHOT,
         audience: Audience::Both,
-        description: "Read a bounded accessibility snapshot from a visible web pane.",
+        description: "Read a bounded snapshot of a visible web pane: its controls, headings, text and link addresses. Needs the paneId from web_open.",
         schema: web_snapshot_schema,
     },
     Tool {
@@ -253,7 +253,7 @@ const TOOLS: [Tool; 36] = [
         name: "web_read",
         method: method::WEB_READ,
         audience: Audience::Both,
-        description: "Read a web pane like a person: scroll down natively for a bounded number of screens, then return one stitched image plus the visible text and links.",
+        description: "Read a web pane like a person: scroll down natively for a bounded number of screens, then return one stitched image plus the visible text and links. Needs the paneId from web_open.",
         schema: web_read_schema,
     },
     Tool {
@@ -318,11 +318,21 @@ impl<P: EnginePort> Service<P> {
         let text = serde_json::to_string(&response.value)?;
         let mut content = vec![json!({"type":"text","text":text})];
         if let Some(attachment) = response.attachment {
-            content.push(json!({
-                "type":"image",
-                "data":STANDARD.encode(attachment.bytes),
-                "mimeType":attachment.reference.mime_type
-            }));
+            if attachment.bytes.len() <= limits::WEB_AGENT_IMAGE_BYTES {
+                content.push(json!({
+                    "type":"image",
+                    "data":STANDARD.encode(attachment.bytes),
+                    "mimeType":attachment.reference.mime_type
+                }));
+            } else {
+                // A harness drops its connection on a message longer than its protocol allows,
+                // and carries the image in it as base64 and may carry it twice: a picture over
+                // the limit (a host that does not keep to it) is left out, and the agent is told.
+                content.push(json!({
+                    "type":"text",
+                    "text":"The page picture is larger than a tool result can carry and was left out; the text and links hold the page."
+                }));
+            }
         }
         Ok(json!({
             "content":content,

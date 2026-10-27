@@ -242,6 +242,7 @@ fn update_tool(
     item.complete = matches!(tool["status"].as_str(), Some("completed" | "failed"));
     item.tool =
         Some(serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))?);
+    transcript::fit_tool(&mut item)?;
     state.open_messages.insert(
         transcript::open_key("tool", subagent, Some(id)),
         transcript::sequence(&item.seq)?,

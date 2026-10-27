@@ -241,10 +241,20 @@ agent works.
   (the rail and the show do not draw them), the speaker notes in the show, a show in a window of its
   own and full screen, the options menu (font, width), and a presentation longer than one page of
   `editorViewportLines` lines.
-- Web panes and dictation are listed with a notice.
+- Web panes (Linux, ADR 0110): the page is drawn off screen by the system's WebKitGTK (loaded at
+  run time; a machine without it says so in the pane) and painted by the window, so menus and
+  popovers stay above it on Wayland and X11. The person types, clicks and scrolls as in a
+  browser, with an address line and back, forward and reload; the profile (cookies, local storage)
+  is kept under the engine's data directory, so a sign-in lasts. The window is the engine's web
+  host: an agent's `web_snapshot`, `web_screenshot`, `web_read`, `web_navigate`, `web_scroll` and
+  `web_wait` reach the page (`soyeht_client::web_host`); a person's input in the pane stops an
+  agent until "Hand back to the agent". Left out: click, type, press, hover, select, evaluate,
+  console and network for agents, a `<select>` list, a context menu, pop-up windows and file
+  choosers, text composition shown inside the page, and Windows (WebView2, phase 2). Dictation is
+  listed with a notice.
 - Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
   General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone
-  and Tasks and loops (placeholders on the Mac too), Shortcuts (Vim mode: the editor has none), Links (there is no web pane) and Dictation. Of the Harnesses panel, adding, editing and
+  and Tasks and loops (placeholders on the Mac too), Shortcuts (Vim mode: the editor has none), Links (opening a link in a web pane) and Dictation. Of the Harnesses panel, adding, editing and
   removing a custom harness (the engine has `harness.custom.*`; the form is its own piece of work)
   and the raw terminal row (a static display on the Mac) are not done.
 

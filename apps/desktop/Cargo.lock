@@ -5006,11 +5006,13 @@ dependencies = [
  "embed-resource",
  "gpui",
  "gpui_platform",
+ "image",
  "notify-rust",
  "serde_json",
  "soyeht-client",
  "soyeht-platform",
  "soyeht-protocol",
+ "soyeht-webview",
 ]
 
 [[package]]
@@ -5032,6 +5034,14 @@ dependencies = [
  "serde",
  "serde_json",
  "uuid",
+]
+
+[[package]]
+name = "soyeht-webview"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "libloading",
 ]
 
 [[package]]

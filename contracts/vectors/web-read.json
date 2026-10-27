@@ -1,0 +1,74 @@
+{
+  "description": "What a web read keeps and how its screens are joined (ADR 0109, ADR 0110). The Mac and desktop clients both pass these cases: the text of every screen is kept once, and a later screen adds only the rows below what the earlier ones cover.",
+  "accumulate": [
+    {
+      "name": "a repeated pinned header and a block at the same position are kept once, a block at another position again",
+      "steps": [
+        {
+          "blocks": [
+            {"y": 0, "text": "Site header", "pinned": true},
+            {"y": 80, "text": "First post", "pinned": false}
+          ],
+          "links": []
+        },
+        {
+          "blocks": [
+            {"y": 400, "text": "Site header", "pinned": true},
+            {"y": 80, "text": "First post", "pinned": false},
+            {"y": 700, "text": "Second post", "pinned": false},
+            {"y": 900, "text": "First post", "pinned": false}
+          ],
+          "links": []
+        }
+      ],
+      "expect": {"text": "Site header\nFirst post\nSecond post\nFirst post", "links": 0, "truncated": false}
+    },
+    {
+      "name": "the same link seen twice is kept once, an empty address is dropped",
+      "steps": [
+        {
+          "blocks": [],
+          "links": [
+            {"text": "Home", "href": "https://example.test/"},
+            {"text": "Home", "href": "https://example.test/"},
+            {"text": "Nothing", "href": ""}
+          ]
+        }
+      ],
+      "expect": {"text": "", "links": 1, "truncated": false}
+    }
+  ],
+  "stitch": [
+    {
+      "name": "later screens add only the rows below what is covered",
+      "tiles": [{"offset": 0, "height": 600}, {"offset": 560, "height": 600}, {"offset": 1120, "height": 600}],
+      "height": 1720,
+      "strips": [
+        {"tile": 0, "sourceY": 0, "destinationY": 0, "height": 600},
+        {"tile": 1, "sourceY": 40, "destinationY": 600, "height": 560},
+        {"tile": 2, "sourceY": 40, "destinationY": 1160, "height": 560}
+      ]
+    },
+    {
+      "name": "the last screen of a short page adds only its new rows",
+      "tiles": [{"offset": 0, "height": 600}, {"offset": 200, "height": 600}],
+      "height": 800,
+      "strips": [
+        {"tile": 0, "sourceY": 0, "destinationY": 0, "height": 600},
+        {"tile": 1, "sourceY": 400, "destinationY": 600, "height": 200}
+      ]
+    },
+    {
+      "name": "a screen that adds nothing is left out",
+      "tiles": [{"offset": 0, "height": 600}, {"offset": 100, "height": 400}],
+      "height": 600,
+      "strips": [
+        {"tile": 0, "sourceY": 0, "destinationY": 0, "height": 600}
+      ]
+    }
+  ],
+  "outputScale": [
+    {"width": 1280, "height": 9600, "nativeScale": 2, "pixelBudget": 4000000, "scale": 0.570544330734548},
+    {"width": 400, "height": 600, "nativeScale": 2, "pixelBudget": 4000000, "scale": 2}
+  ]
+}

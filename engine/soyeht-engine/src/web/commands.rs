@@ -13,23 +13,7 @@ use uuid::Uuid;
 const DEFAULT_COMMAND_TIMEOUT_MS: u32 = 30_000;
 
 pub(crate) fn handles(method: &str) -> bool {
-    matches!(
-        method,
-        method::WEB_SNAPSHOT
-            | method::WEB_CLICK
-            | method::WEB_TYPE
-            | method::WEB_PRESS
-            | method::WEB_HOVER
-            | method::WEB_SELECT
-            | method::WEB_SCROLL
-            | method::WEB_WAIT
-            | method::WEB_EVALUATE
-            | method::WEB_SCREENSHOT
-            | method::WEB_READ
-            | method::WEB_CONSOLE
-            | method::WEB_NETWORK
-            | method::WEB_RESIZE
-    )
+    soyeht_protocol::web::is_host_command(method)
 }
 
 impl Core {

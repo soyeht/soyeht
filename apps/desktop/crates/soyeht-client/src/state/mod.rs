@@ -11,9 +11,9 @@ use serde_json::Value;
 use soyeht_protocol::{
     AgentCommand, AttentionItem, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, Pane,
     PaneClosedEvent, PaneCreatedEvent, PaneMode, PaneStateChangedEvent, PaneUpdatedEvent,
-    SkillsListResult, Task, TaskShowResult, UsageReading, Workspace, WorkspaceClosedEvent,
-    WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent, WorkspacePaneLayoutAxis,
-    WorkspacePaneLayoutEnvelope, WorkspaceRenamedEvent,
+    SkillsListResult, Task, TaskShowResult, UsageReading, WebNavigatedEvent, Workspace,
+    WorkspaceClosedEvent, WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent,
+    WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope, WorkspaceRenamedEvent,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -102,6 +102,9 @@ pub struct State {
     screens: HashMap<String, TerminalScreen>,
     gaps: HashSet<String>,
     pub(crate) agents: HashMap<String, AgentView>,
+    /// The question an agent put to the person about a web pane (may it use the signed-in
+    /// session of this site?), by pane: a web pane has no agent view to hold it.
+    pub(crate) web_permissions: HashMap<String, soyeht_protocol::PermissionRequest>,
     /// The loop of each pane that has one.
     pub(crate) loops: HashMap<String, LoopConfig>,
     /// The tasks of every workspace, in the order they arrived.
@@ -159,6 +162,7 @@ impl Default for State {
             screens: HashMap::new(),
             gaps: HashSet::new(),
             agents: HashMap::new(),
+            web_permissions: HashMap::new(),
             loops: HashMap::new(),
             tasks: Vec::new(),
             task_details: HashMap::new(),
@@ -568,6 +572,10 @@ impl State {
                 self.change_pane_state(serde_json::from_value(params)?);
                 Vec::new()
             }
+            EventName::WebNavigated => {
+                self.web_navigated(serde_json::from_value::<WebNavigatedEvent>(params)?);
+                Vec::new()
+            }
             // The engine lost the supervisor that holds the terminals and is getting it back
             // (ADR 0108): the terminals look alive and take no input until it does.
             EventName::PtydLost => self.supervisor_link(false),
@@ -605,6 +613,22 @@ impl State {
             self.selected_workspace = workspaces::selection_after_closing(&order, workspace_id);
             self.focused_pane = None;
             self.repair_selection();
+        }
+    }
+
+    /// A web pane's page is somewhere else: its address and title, and how many navigations it
+    /// has begun, are the pane's own record.
+    fn web_navigated(&mut self, event: WebNavigatedEvent) {
+        if let Some(pane) = self
+            .panes
+            .iter_mut()
+            .find(|pane| pane.pane_id == event.pane_id && pane.mode == PaneMode::Web)
+        {
+            pane.url = Some(event.url);
+            pane.title = Some(event.title);
+            if let Ok(generation) = event.navigation_generation.parse() {
+                pane.generation = generation;
+            }
         }
     }
 
@@ -686,6 +710,7 @@ impl State {
         self.panes.retain(|pane| pane.pane_id != pane_id);
         self.screens.remove(pane_id);
         self.agents.remove(pane_id);
+        self.web_permissions.remove(pane_id);
         self.commands.remove(pane_id);
         self.editors.pane_closed(pane_id);
         self.writings.forget_pane(pane_id);

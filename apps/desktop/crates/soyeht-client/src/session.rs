@@ -8,12 +8,13 @@ use crate::{
     snapshot::Snapshot,
     streams::TerminalStreams,
     transport::Link,
+    web_host::Host,
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    EventName, EventsSubscribeParams, PaneClosedEvent, Request, RpcError, StateSnapshotParams,
-    StateSnapshotResult, StreamInfo, Welcome, client_policy, frame::Frame, handshake,
-    snapshot::SnapshotAssembler,
+    ClientCapability, EventName, EventsSubscribeParams, PaneClosedEvent, Request, RpcError,
+    StateSnapshotParams, StateSnapshotResult, StreamInfo, WebCommandParams, Welcome, client_policy,
+    frame::Frame, handshake, method, snapshot::SnapshotAssembler,
 };
 use std::{
     io::Read,
@@ -36,11 +37,14 @@ pub struct Session {
     assembly: Arc<Mutex<SnapshotAssembler>>,
     cursor: Arc<AtomicU64>,
     reader: JoinHandle<Error>,
+    /// This connection answers `web.command`, and says so in `hello`.
+    hosting: bool,
 }
 
 impl Session {
-    /// Waits for the engine's greeting and starts routing its frames into `events`.
-    pub fn open(link: Link, events: EventSink) -> Result<Self> {
+    /// Waits for the engine's greeting and starts routing its frames into `events`. A `host`
+    /// answers the engine's `web.command` requests; `handshake` then claims the web host role.
+    pub fn open(link: Link, events: EventSink, host: Option<Arc<Host>>) -> Result<Self> {
         let Link {
             mut reader,
             writer,
@@ -58,6 +62,7 @@ impl Session {
         drop(greeted);
         greeting?;
 
+        let hosting = host.is_some();
         let rpc = Arc::new(Rpc::new(writer, close, 1));
         let assembly = Arc::new(Mutex::new(SnapshotAssembler::default()));
         let cursor = Arc::new(AtomicU64::new(0));
@@ -67,6 +72,7 @@ impl Session {
             cursor: Arc::clone(&cursor),
             events,
             streams: TerminalStreams::default(),
+            host,
         };
         let thread = std::thread::spawn(move || routing.run(reader));
         Ok(Self {
@@ -74,12 +80,17 @@ impl Session {
             assembly,
             cursor,
             reader: thread,
+            hosting,
         })
     }
 
     /// `hello`, then the full state. Afterwards [`Session::subscribe_events`] starts the feed.
     pub fn handshake(&self, client: &str) -> Result<Snapshot> {
-        let hello = Request::Hello(handshake::hello(client, env!("CARGO_PKG_VERSION"), None));
+        let mut hello = handshake::hello(client, env!("CARGO_PKG_VERSION"), None);
+        if self.hosting {
+            hello.capabilities = Some(vec![ClientCapability::WebHost]);
+        }
+        let hello = Request::Hello(hello);
         let welcome: Welcome = serde_json::from_value(self.rpc.call(&hello)?)?;
         handshake::expect_welcome(&welcome, false)?;
         self.rpc.identify(welcome.role.clone(), client);
@@ -121,6 +132,7 @@ struct Router {
     cursor: Arc<AtomicU64>,
     events: EventSink,
     streams: TerminalStreams,
+    host: Option<Arc<Host>>,
 }
 
 impl Router {
@@ -159,13 +171,13 @@ impl Router {
     }
 
     fn message(&mut self, message: Value) -> Result<()> {
-        if let Some(method) = message.get("method").and_then(Value::as_str) {
-            // An engine request would be a web host call; this client never claims that role.
-            if message.get("id").is_none() {
-                self.notification(
-                    method,
-                    message.get("params").cloned().unwrap_or(Value::Null),
-                )?;
+        if let Some(name) = message.get("method").and_then(Value::as_str) {
+            match message.get("id") {
+                None => {
+                    self.notification(name, message.get("params").cloned().unwrap_or(Value::Null))?
+                }
+                // The only request an engine makes of a client is a web host call.
+                Some(id) => self.web_command(name, id, &message),
             }
             return Ok(());
         }
@@ -179,6 +191,51 @@ impl Router {
                 None => Ok(()),
             },
         }
+    }
+
+    /// Runs the engine's `web.command` on a thread of its own: the page may take a while, and
+    /// the reader must go on taking what the engine sends. A connection that claimed no host
+    /// role is never asked.
+    fn web_command(&self, name: &str, id: &Value, message: &Value) {
+        let (Some(host), true) = (&self.host, name == method::WEB_COMMAND) else {
+            return;
+        };
+        let (host, rpc, id) = (Arc::clone(host), Arc::clone(&self.rpc), id.clone());
+        let params = message.get("params").cloned().unwrap_or(Value::Null);
+        std::thread::spawn(move || {
+            let started = std::time::Instant::now();
+            let mut command = String::new();
+            let outcome = match serde_json::from_value::<WebCommandParams>(params) {
+                Ok(params) => {
+                    command = serde_json::to_string(&params.command).unwrap_or_default();
+                    host.execute(&params)
+                }
+                Err(error) => {
+                    soyeht_platform::log::failure(
+                        "desktop.web_command_unreadable",
+                        &Error::from(error),
+                    );
+                    Host::refusal("The web command is invalid.")
+                }
+            };
+            // What the host did and how long it took: a command slower than the engine's own wait
+            // is otherwise a silence on both sides.
+            let result = match &outcome.result {
+                Ok(_) => "ok".to_owned(),
+                Err(refusal) => format!("{:?}", refusal.data.kind),
+            };
+            soyeht_platform::log::event(
+                "desktop.web_command",
+                &[
+                    ("command", command.trim_matches('"')),
+                    ("result", &result),
+                    ("ms", &started.elapsed().as_millis().to_string()),
+                ],
+            );
+            if let Err(error) = rpc.respond(&id, outcome) {
+                soyeht_platform::log::failure("desktop.web_host_response_failed", &error);
+            }
+        });
     }
 
     fn response(&mut self, id: u64, message: &Value) -> Result<()> {

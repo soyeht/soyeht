@@ -54,7 +54,9 @@ Each layer depends only on the layers listed above it.
 7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
    its own cargo workspace and depends on `engine/soyeht-protocol` and, for the local endpoint
    (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`. Its
-   `soyeht-client` crate holds the connection and state, `soyeht-desktop` the
+   `soyeht-client` crate holds the connection and state (and the web host the engine's agents
+   read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
+   run time, with no Soyeht dependency, ADR 0110), `soyeht-desktop` the
    views, and its `theme` module holds the palettes and tokens generated from
    `contracts/design-tokens.json`, the same source the Swift side is generated from.
    Three seams belong to the window, each the same on every system: the log also goes to a

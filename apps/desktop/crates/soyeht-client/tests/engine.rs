@@ -53,6 +53,11 @@ impl FakeEngine {
 
     /// hello, state.snapshot (one workspace, one terminal) and events.subscribe.
     fn handshake(&mut self) {
+        self.handshake_hello();
+    }
+
+    /// [`handshake`](Self::handshake), returning the client's `hello`.
+    fn handshake_hello(&mut self) -> Value {
         let hello = self.expect("hello");
         assert_eq!(hello["params"]["client"], CLIENT_NAME);
         self.reply(
@@ -83,6 +88,7 @@ impl FakeEngine {
         let subscribe = self.expect("events.subscribe");
         assert_eq!(subscribe["params"]["since"], "7");
         self.reply(&subscribe, json!({"subscriptionId": "sub", "through": "7"}));
+        hello
     }
 }
 
@@ -96,6 +102,138 @@ fn not_found(request: &Value, message: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": request["id"], "error": {
         "code": error_code(&ErrorKind::NotFound), "message": message,
         "data": {"kind": ErrorKind::NotFound}}})
+}
+
+/// A page of a pane that answers the snapshot script and takes pictures of a few pixels.
+#[derive(Default)]
+struct OnePage(soyeht_client::web_host::Handoff);
+
+impl soyeht_client::web_host::Page for OnePage {
+    fn incognito(&self) -> bool {
+        false
+    }
+    fn navigate(
+        &self,
+        _: &soyeht_client::web_host::Target,
+    ) -> Result<(), soyeht_client::web_host::HostError> {
+        Ok(())
+    }
+    fn info(&self) -> soyeht_client::web_host::PageInfo {
+        soyeht_client::web_host::PageInfo {
+            url: "https://example.com/".into(),
+            title: "Example".into(),
+            loading: false,
+        }
+    }
+    fn generation(&self) -> u64 {
+        3
+    }
+    fn run_script(&self, _: &str) -> Result<String, soyeht_client::web_host::HostError> {
+        Ok(r#"{"nodes":[],"truncated":false}"#.into())
+    }
+    fn picture(
+        &self,
+    ) -> Result<soyeht_client::web_host::Picture, soyeht_client::web_host::HostError> {
+        Ok(soyeht_client::web_host::Picture {
+            width: 8,
+            height: 8,
+            stride: 32,
+            bytes: vec![180; 256],
+        })
+    }
+    fn wheel(&self, _: f64, _: f64, _: f64) {}
+    fn handoff(&self) -> &soyeht_client::web_host::Handoff {
+        &self.0
+    }
+    fn has_cookies(&self, _: &str) -> Result<bool, soyeht_client::web_host::HostError> {
+        Ok(false)
+    }
+}
+
+struct OnePane;
+
+impl soyeht_client::web_host::Pages for OnePane {
+    fn page(&self, pane_id: &str) -> Option<std::sync::Arc<dyn soyeht_client::web_host::Page>> {
+        (pane_id == "web1").then(|| std::sync::Arc::new(OnePage::default()) as _)
+    }
+}
+
+fn web_command(id: &str, command: &str, args: Value) -> Value {
+    let mut args = args;
+    args["_soyehtAccess"] = json!({"session": "human", "evaluation": false});
+    json!({"jsonrpc": "2.0", "id": id, "method": "web.command", "params": {
+        "paneId": "web1", "command": command, "args": args, "timeoutMs": 1000,
+        "operationKey": "op1"}})
+}
+
+/// A window that hosts the one pane of `OnePane`, listening at a fresh socket.
+fn hosted(name: &str) -> (Listener, PathBuf, Engine, async_channel::Receiver<Event>) {
+    let (listener, path) = listen(name);
+    let host = soyeht_client::web_host::Host::new(std::sync::Arc::new(OnePane));
+    let (engine, inbox) = Engine::start_hosted(
+        path.clone(),
+        Autostart::Off,
+        Some(std::sync::Arc::new(host)),
+    );
+    (listener, path, engine, inbox)
+}
+
+#[test]
+fn the_window_claims_the_web_host_role_and_answers_the_engines_web_commands() {
+    let (listener, path, engine, inbox) = hosted("web-host");
+    let mut remote = FakeEngine::accept(&listener);
+    let hello = remote.handshake_hello();
+    assert_eq!(hello["params"]["capabilities"], json!(["web_host"]));
+    while !matches!(next(&inbox), Event::Connected(_)) {}
+
+    // A screenshot: the picture comes first, as binary frames, then the answer that names it.
+    remote.send(&web_command("r1", "screenshot", json!({})));
+    let mut picture = Vec::new();
+    let answer = loop {
+        match Frame::read_from(&mut remote.0).unwrap().expect("closed") {
+            Frame::Attachment { bytes, .. } => picture.extend(bytes),
+            Frame::Json(bytes) => break serde_json::from_slice::<Value>(&bytes).unwrap(),
+            other => panic!("unexpected {other:?}"),
+        }
+    };
+    assert_eq!(answer["id"], "r1");
+    assert_eq!(&picture[..4], b"\x89PNG");
+    assert_eq!(answer["result"]["paneId"], "web1");
+    assert_eq!(
+        answer["result"]["value"]["image"]["bytes"],
+        picture.len().to_string()
+    );
+
+    // A snapshot of a pane the window does not show is refused with a kind the engine accepts.
+    let mut elsewhere = web_command("r2", "snapshot", json!({}));
+    elsewhere["params"]["paneId"] = json!("web9");
+    remote.send(&elsewhere);
+    let refusal = remote.request();
+    assert_eq!(refusal["id"], "r2");
+    assert_eq!(refusal["error"]["data"]["kind"], "internal_error");
+    finish(&engine, remote, &path);
+}
+
+#[test]
+fn a_window_that_is_refused_the_web_host_role_connects_again_without_it() {
+    let (listener, path, engine, inbox) = hosted("web-host-refused");
+    let mut first = FakeEngine::accept(&listener);
+    let hello = first.expect("hello");
+    assert_eq!(hello["params"]["capabilities"], json!(["web_host"]));
+    first.send(&json!({"jsonrpc": "2.0", "id": hello["id"], "error": {
+        "code": error_code(&ErrorKind::WebHostUnavailable), "message": "taken",
+        "data": {"kind": ErrorKind::WebHostUnavailable}}}));
+    drop(first);
+    let mut second = FakeEngine::accept(&listener);
+    let hello = second.expect("hello");
+    assert!(
+        hello["params"]
+            .get("capabilities")
+            .is_none_or(Value::is_null),
+        "{hello}"
+    );
+    drop(inbox);
+    finish(&engine, second, &path);
 }
 
 fn socket_path(name: &str) -> PathBuf {
