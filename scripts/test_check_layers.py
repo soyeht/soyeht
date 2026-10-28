@@ -62,6 +62,13 @@ class LayerTests(unittest.TestCase):
         engine = manifest("soyeht-client", '[dependencies]\nsoyeht-store = { path = "../s" }\n')
         self.assertEqual(len(manifest_problems("c/Cargo.toml", engine)), 1)
 
+    def test_only_the_command_line_registers_the_service(self):
+        body = '[dependencies]\nsoyeht-service = { path = "../s" }\n'
+        self.assertEqual(manifest_problems("c/Cargo.toml", manifest("soyeht-cli", body)), [])
+        self.assertEqual(len(manifest_problems("e/Cargo.toml", manifest("soyeht-engine", body))), 1)
+        upward = '[dependencies]\nsoyeht-store = { path = "../s" }\n'
+        self.assertEqual(len(manifest_problems("s/Cargo.toml", manifest("soyeht-service", upward))), 1)
+
     def test_a_crate_in_no_layer_fails(self):
         found = manifest_problems("n/Cargo.toml", manifest("soyeht-new", ""))
         self.assertIn("is in no layer", found[0])

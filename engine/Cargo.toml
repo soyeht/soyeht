@@ -1,5 +1,5 @@
 [workspace]
-members = ["soyeht-protocol", "soyeht-ptyd", "soyeht-acp", "soyeht-store", "soyeht-engine", "soyeht-cli", "soyeht-mcp", "soyeht-usage", "soyeht-editor", "soyeht-lsp", "soyeht-vcs", "soyeht-process", "soyeht-web", "soyeht-writing", "soyeht-pane-state", "soyeht-skills", "soyeht-platform"]
+members = ["soyeht-protocol", "soyeht-ptyd", "soyeht-acp", "soyeht-store", "soyeht-engine", "soyeht-cli", "soyeht-mcp", "soyeht-usage", "soyeht-editor", "soyeht-lsp", "soyeht-vcs", "soyeht-process", "soyeht-web", "soyeht-writing", "soyeht-pane-state", "soyeht-skills", "soyeht-platform", "soyeht-service"]
 resolver = "3"
 
 [workspace.package]

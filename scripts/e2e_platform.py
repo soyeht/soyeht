@@ -8,8 +8,8 @@ files go. Nothing else in the e2e scripts asks which system it runs on.
 
 import hashlib
 import hmac
+import json
 import os
-import plistlib
 import shlex
 import shutil
 import signal
@@ -217,8 +217,8 @@ class LaunchdLauncher(Launcher):
     # launchd services start with a minimal environment, not the user's.
     base_path = "/usr/bin:/bin:/usr/sbin:/sbin"
 
-    def __init__(self, data, prefix, root):
-        self.data, self.prefix, self.root = data, prefix, root
+    def __init__(self, data, prefix, cli):
+        self.data, self.prefix, self.cli = data, prefix, cli
         self.domain = f"gui/{os.getuid()}"
         if subprocess.run(["launchctl", "print", self.domain], capture_output=True).returncode:
             self.domain = f"user/{os.getuid()}"
@@ -229,16 +229,19 @@ class LaunchdLauncher(Launcher):
         return f"{self.domain}/{self.prefix}.{component}"
 
     def define(self, component, argv, environment, log):
-        source = self.root / f"engine/soyeht-{component}/launchd/dev.plist"
-        values = plistlib.loads(source.read_bytes())
-        values["Label"] = f"{self.prefix}.{component}"
-        values["ProgramArguments"] = [str(argument) for argument in argv]
-        values["EnvironmentVariables"] = {
-            "HOME": str(Path.home()), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", **environment}
-        values["StandardOutPath"] = values["StandardErrorPath"] = str(log)
+        # The text of the agent is `soyeht service render`'s: no script keeps a copy of it.
+        name = f"{self.prefix}.{component}"
+        variables = {"HOME": str(Path.home()), "PATH": self.base_path, **environment}
+        command = [str(self.cli), "service", "render", "--system", "macos", "--name", name,
+                   "--description", f"Soyeht {component} (disposable)", "--log", str(log)]
+        for key, value in variables.items():
+            command += ["--env", f"{key}={value}"]
+        command += ["--", *(str(argument) for argument in argv)]
+        text = json.loads(subprocess.run(
+            command, check=True, capture_output=True, text=True).stdout)["text"]
         log.touch(mode=0o600)
         destination = self.data / f"{component}.plist"
-        destination.write_bytes(plistlib.dumps(values))
+        destination.write_text(text, encoding="utf-8")
         destination.chmod(0o600)
 
     def exists(self, component):
@@ -331,7 +334,8 @@ class ProcessLauncher(Launcher):
         self.end(component, kill=True)
 
 
-def make_launcher(data, prefix, root):
+def make_launcher(data, prefix, cli):
+    """The launcher for this system. `cli` is the built `soyeht` program, which renders agents."""
     if launcher_kind() == "launchd":
-        return LaunchdLauncher(data, prefix, root)
+        return LaunchdLauncher(data, prefix, cli)
     return ProcessLauncher(data)

@@ -10,6 +10,7 @@ from pathlib import Path
 from client_policy import render_client_policy
 from design_tokens import TOKENS_PATH, render_tokens
 from generated_header import header_text
+from legacy import LEGACY_SOURCE, render_legacy, validate_legacy
 from readiness import render_readiness
 from settings import render_settings
 
@@ -424,7 +425,7 @@ def validate_schema(schema):
 PROFILE_NAMES = ("dev", "prod")
 PROFILE_SYSTEMS = ("macos", "windows", "linux")
 PROFILE_APP_SYSTEMS = ("macos", "linux")
-PROFILE_FIELDS = {"dataDirectory", "tcpPort", "appIds", "launchdLabels"}
+PROFILE_FIELDS = {"dataDirectory", "tcpPort", "appIds", "launchdLabels", "systemdUnits", "windowsTasks"}
 # The owner's legacy app is not this repository (AGENTS.md, "Legacy app"). Every machine
 # identifier of a profile carries this marker, so no value can name the legacy app's.
 LEGACY_MARKER = "next"
@@ -482,6 +483,30 @@ def _validate_profile(name, profile):
         _next_marked(label, f"{name} launchd label")
     if len({label.removesuffix(f".{c}") for c, label in labels.items()}) != 1:
         raise ValueError(f"{name} launchd labels must share one namespace")
+    _validate_service_names(
+        profile["systemdUnits"], f"{name} systemdUnits", "systemd unit",
+        lambda component: rf"[a-z0-9]+(?:-[a-z0-9]+)*-{component}\.service",
+    )
+    _validate_service_names(
+        profile["windowsTasks"], f"{name} windowsTasks", "Windows task",
+        lambda component: rf"[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*\.{component.capitalize()}",
+    )
+
+
+def _validate_service_names(names, what, noun, pattern):
+    """The names the service seam registers: a systemd unit and a Windows task per component.
+
+    The characters are limited to what both `systemctl` and `schtasks` take without quoting, so
+    no program that reads a name needs to escape it.
+    """
+    _keys(names, PROFILE_COMPONENTS, what)
+    if len(set(names.values())) != len(PROFILE_COMPONENTS):
+        raise ValueError(f"{what} values must be unique")
+    for component, value in names.items():
+        _text(value, f"{what} {component}")
+        if not re.fullmatch(pattern(component), value):
+            raise ValueError(f"{what} {component} must be a {noun} name for that component")
+        _next_marked(value, f"{what} {component}")
 
 
 def validate_profiles(document):
@@ -502,7 +527,7 @@ def validate_profiles(document):
     profiles = _keys(document["profiles"], PROFILE_NAMES, "profiles")
     for name, profile in profiles.items():
         _validate_profile(name, profile)
-    for field in ("tcpPort", "appIds", "launchdLabels", "dataDirectory"):
+    for field in ("tcpPort", "appIds", "launchdLabels", "dataDirectory", "systemdUnits", "windowsTasks"):
         seen = [json.dumps(profile[field], sort_keys=True) for profile in profiles.values()]
         if len(set(seen)) != len(seen):
             raise ValueError(f"profiles must not share their {field}")
@@ -523,6 +548,10 @@ def profile_values(document):
             "engine_label": labels["engine"],
             "ptyd_label": labels["ptyd"],
             "label_prefix": labels["engine"].removesuffix(".engine"),
+            "engine_unit": profile["systemdUnits"]["engine"],
+            "ptyd_unit": profile["systemdUnits"]["ptyd"],
+            "engine_task": profile["windowsTasks"]["engine"],
+            "ptyd_task": profile["windowsTasks"]["ptyd"],
         }
     return {
         "profiles": profiles,
@@ -531,23 +560,6 @@ def profile_values(document):
         "environment": document["selection"]["environment"],
         "build_environment": document["selection"]["buildEnvironment"],
     }
-
-
-def launchd_plist(component, label):
-    return f'''<?xml version="1.0" encoding="UTF-8"?>
-<!-- {header_text(PROFILES_SOURCE)} -->
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>{label}</string>
-  <key>ProgramArguments</key><array><string>__BINARY__</string><string>--data-dir</string><string>__DATA__</string></array>
-  <key>KeepAlive</key><true/>
-  <key>RunAtLoad</key><true/>
-  <key>ThrottleInterval</key><integer>1</integer>
-  <key>ProcessType</key><string>Interactive</string>
-  <key>StandardOutPath</key><string>__DATA__/logs/{component}.log</string>
-  <key>StandardErrorPath</key><string>__DATA__/logs/{component}.log</string>
-</dict></plist>
-'''
 
 
 def _rust_profile(profile):
@@ -564,6 +576,10 @@ def _rust_profile(profile):
     linux_app_id: {json.dumps(apps["linux"])},
     engine_launchd_label: {json.dumps(profile["engine_label"])},
     ptyd_launchd_label: {json.dumps(profile["ptyd_label"])},
+    engine_systemd_unit: {json.dumps(profile["engine_unit"])},
+    ptyd_systemd_unit: {json.dumps(profile["ptyd_unit"])},
+    engine_windows_task: {json.dumps(profile["engine_task"])},
+    ptyd_windows_task: {json.dumps(profile["ptyd_task"])},
 }};
 '''
 
@@ -617,6 +633,10 @@ pub struct Profile {{
     pub linux_app_id: &'static str,
     pub engine_launchd_label: &'static str,
     pub ptyd_launchd_label: &'static str,
+    pub engine_systemd_unit: &'static str,
+    pub ptyd_systemd_unit: &'static str,
+    pub engine_windows_task: &'static str,
+    pub ptyd_windows_task: &'static str,
 }}
 
 {"".join(_rust_profile(profile) for profile in profiles)}
@@ -652,6 +672,8 @@ public struct ProfileValues: Sendable {{
             "appIds": profile["app_ids"],
             "launchdLabels": {"engine": profile["engine_label"], "ptyd": profile["ptyd_label"]},
             "launchdPrefix": profile["label_prefix"],
+            "systemdUnits": {"engine": profile["engine_unit"], "ptyd": profile["ptyd_unit"]},
+            "windowsTasks": {"engine": profile["engine_task"], "ptyd": profile["ptyd_task"]},
         }
         for profile in profiles
     }
@@ -662,13 +684,10 @@ BUILD_ENVIRONMENT = {value["build_environment"]!r}
 ENGINE_SOCKET = {value["engine_socket"]!r}
 PTYD_SOCKET = {value["ptyd_socket"]!r}
 '''
-    dev = value["profiles"]["dev"]
     return {
         "engine/soyeht-protocol/src/profile.rs": rustfmt(rust),
         "contracts/swift/Sources/SoyehtProtocol/Profile.swift": swift,
         "scripts/generated_profile.py": python,
-        "engine/soyeht-engine/launchd/dev.plist": launchd_plist("engine", dev["engine_label"]),
-        "engine/soyeht-ptyd/launchd/dev.plist": launchd_plist("ptyd", dev["ptyd_label"]),
     }
 
 
@@ -734,6 +753,9 @@ def main():
     profiles = json.loads(profile_data)
     validate_profiles(profiles)
     outputs.update(render_profiles(profiles))
+    legacy = json.loads((ROOT / LEGACY_SOURCE).read_bytes())
+    validate_legacy(legacy)
+    outputs.update(render_legacy(legacy))
     token_data = (ROOT / TOKENS_PATH).read_bytes()
     outputs.update(render_tokens(json.loads(token_data)))
     mismatches = []

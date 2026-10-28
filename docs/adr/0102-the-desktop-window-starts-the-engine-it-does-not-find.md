@@ -66,6 +66,10 @@ app does not start programs.
 
 ## How this fits the service seam
 
+(ADR 0114 built the seam; the window does not call it yet. Once it does, it keeps this start for
+a copy that is not registered and asks a registered service to start instead of starting
+programs of its own: `docs/contracts/13-service-seam.md`, section 4.)
+
 This step is the interim that the service seam replaces. When the seam exists, an install
 registers the engine and the supervisor with the system, the window asks the seam to start the
 service instead of starting the programs, and `spawn_detached` and the window's lock go away

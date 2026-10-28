@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "bundleIds": ["com.soyeht.mac", "com.soyeht.mac.dev"],
+  "applicationFolder": "/Applications",
+  "applications": ["Soyeht.app", "Soyeht Dev.app"],
+  "dataBase": "Application Support",
+  "dataFolders": ["Soyeht", "Soyeht Dev"]
+}

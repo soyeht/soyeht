@@ -13,6 +13,7 @@ mod error;
 pub use error::{Error, Result, SUPERVISOR_DISCONNECTED};
 pub mod frame;
 pub mod handshake;
+pub mod legacy;
 pub mod ndjson;
 pub mod profile;
 pub mod readiness;

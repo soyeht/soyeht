@@ -1,3 +1,4 @@
+import contextlib
 import subprocess
 import tempfile
 import unittest
@@ -5,9 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import install_dev
-from generated_profile import PROFILES
-
-DEV_ENGINE_LAUNCHD_LABEL = PROFILES["dev"]["launchdLabels"]["engine"]
 
 
 class InstallGuardTests(unittest.TestCase):
@@ -124,20 +122,10 @@ class InstallGuardTests(unittest.TestCase):
     def test_every_installed_value_of_the_profile_belongs_to_the_next_family(self):
         install_dev.refuse_legacy(install_dev.COMPONENTS)
 
-    def test_service_path_includes_system_and_user_tool_commands(self):
-        environment = install_dev.service_environment()
-        paths = environment["PATH"].split(":")
-        self.assertEqual(paths[:-2], list(install_dev.SYSTEM_PATHS))
-        self.assertEqual(
-            paths[-2:],
-            [str(Path.home() / ".local/bin"), str(Path.home() / ".cargo/bin")],
-        )
-
-    def test_unknown_service_or_domain_cannot_reach_launchctl(self):
+    def test_unknown_service_cannot_reach_the_service_manager(self):
         with patch.object(install_dev.subprocess, "run") as run:
-            for components, domain in ((["other"], "gui"), (["engine"], "system")):
-                with self.assertRaises(ValueError):
-                    install_dev.install_components(components, domain)
+            with self.assertRaises(ValueError):
+                install_dev.install_components(["other"])
             run.assert_not_called()
 
     def test_symlink_redirect_is_refused_before_external_work(self):
@@ -150,37 +138,67 @@ class InstallGuardTests(unittest.TestCase):
                     install_dev.install_components(["engine"])
                 run.assert_not_called()
 
-    def test_loaded_job_is_refused_before_copying_or_writing(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            data = Path(temporary).resolve() / "new-next-dev"
-            with patch.object(install_dev, "DATA", data), patch.object(install_dev.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
-                with self.assertRaises(SystemExit):
-                    install_dev.install_components(["engine"])
-                self.assertFalse(data.exists())
-                self.assertEqual(len(run.call_args_list), 2)
-                self.assertTrue(
-                    run.call_args_list[1].args[0][-1].endswith(
-                        "/" + DEV_ENGINE_LAUNCHD_LABEL
-                    )
-                )
-
-    def test_engine_install_requires_the_sibling_mcp_binary(self):
+    @staticmethod
+    @contextlib.contextmanager
+    def checkout(*built):
+        """A scratch checkout with the named programs built, and a Dev data folder beside it."""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
+            for name in built:
+                binary = root / "engine/target/debug" / name
+                binary.parent.mkdir(parents=True, exist_ok=True)
+                binary.write_bytes(name.encode())
             data = root / "new-next-dev"
-            binary = root / "engine/target/debug/soyeht-engine"
-            binary.parent.mkdir(parents=True)
-            binary.write_bytes(b"engine")
-            results = [
-                subprocess.CompletedProcess([], 0),
-                subprocess.CompletedProcess([], 1),
-            ]
-            with patch.object(install_dev, "ROOT", root), patch.object(
-                install_dev, "DATA", data
-            ), patch.object(install_dev.subprocess, "run", side_effect=results):
+            with patch.object(install_dev, "ROOT", root), patch.object(install_dev, "DATA", data):
+                yield root, data
+
+    def test_a_running_job_is_refused_before_copying_or_writing(self):
+        with self.checkout("soyeht", "soyeht-engine") as (_, data):
+            answer = [{"component": "engine", "running": True}]
+            with patch.object(install_dev, "service_command", return_value=answer) as service:
+                with self.assertRaisesRegex(SystemExit, "Stop the new Dev engine job"):
+                    install_dev.install_components(["engine"])
+            service.assert_called_once_with("status", "--component", "engine")
+            self.assertFalse(data.exists())
+
+    def test_the_service_manager_is_asked_through_the_shared_command(self):
+        with self.checkout("soyeht") as (root, data):
+            result = subprocess.CompletedProcess([], 0, stdout='{"services": []}')
+            with patch.object(install_dev.subprocess, "run", return_value=result) as run:
+                install_dev.service_command("install", "--component", "ptyd", "--programs", "x")
+            command = run.call_args.args[0]
+            self.assertEqual(command[0], str(root / "engine/target/debug/soyeht"))
+            self.assertEqual(
+                command[1:],
+                ["--profile", "dev", "--data-dir", str(data), "service",
+                 "install", "--component", "ptyd", "--programs", "x"],
+            )
+
+    def test_a_failing_service_command_stops_with_what_it_said(self):
+        failure = subprocess.CalledProcessError(1, ["soyeht"], stderr='{"error":"no bus"}')
+        with self.checkout("soyeht"):
+            with patch.object(install_dev.subprocess, "run", side_effect=failure):
+                with self.assertRaisesRegex(SystemExit, "service install failed: .*no bus"):
+                    install_dev.service_command("install", "--component", "ptyd")
+
+    def test_the_installer_writes_no_service_definition_itself(self):
+        source = Path(install_dev.__file__).read_text()
+        for word in ("plistlib", "launchctl", "LaunchAgents", "KeepAlive"):
+            self.assertNotIn(word, source)
+
+    def test_installing_requires_the_built_command_line_tool(self):
+        with self.checkout(), patch.object(install_dev.subprocess, "run") as run:
+            with self.assertRaisesRegex(SystemExit, "Build soyeht first"):
+                install_dev.install_components(["engine"])
+            run.assert_not_called()
+
+    def test_engine_install_requires_the_sibling_mcp_binary(self):
+        with self.checkout("soyeht", "soyeht-engine") as (_, data):
+            answer = [{"component": "engine", "running": False}]
+            with patch.object(install_dev, "service_command", return_value=answer):
                 with self.assertRaisesRegex(SystemExit, "Build soyeht-mcp first"):
                     install_dev.install_components(["engine"])
-                self.assertFalse(data.exists())
+            self.assertFalse(data.exists())
 
 
 if __name__ == "__main__":

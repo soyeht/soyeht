@@ -126,6 +126,11 @@ release has none of them. The desktop's `dev-tools` feature (the fixture replay 
 gallery) is off by default and only the examples that need it ask for it, so a packaging step
 builds with the default features and never passes `--features dev-tools` or `--all-features`.
 
+A package that starts the engine at login also ships `soyeht` (the command line), which
+registers the services: `soyeht service install --programs DIR` on the Mac, Linux and Windows, a
+launchd user agent, a systemd user unit or a Task Scheduler task per program (ADR 0114,
+`docs/contracts/13-service-seam.md`).
+
 The desktop binary, `soyeht-desktop`, is a window program in a Windows release: it opens no
 console. Its log lines (`soyeht_platform::log`) go to standard error, which a shell can redirect
 (`2> soyeht.log`; a debug build keeps the console), and always to `logs/desktop.log` (see "The

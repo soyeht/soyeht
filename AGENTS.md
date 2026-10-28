@@ -37,8 +37,11 @@ Each layer depends only on the layers listed above it.
      `soyeht-vcs` (whose only Soyeht dependencies are `soyeht-platform`, for
      canonical paths, and `soyeht-process`).
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
+   - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
+     agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
+     at login. Only the command line uses it; the engine does not register itself.
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
-   and WebSocket API. The `soyeht-cli` binary uses protocol, platform, ptyd and
+   and WebSocket API. The `soyeht-cli` binary uses protocol, platform, ptyd, service and
    store; the `soyeht-mcp` binary uses protocol, platform and skills. Neither
    depends on the engine crate.
 5. `apps/shared` (`SoyehtClient`): the shared Swift client. It holds the engine

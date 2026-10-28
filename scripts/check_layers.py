@@ -39,9 +39,18 @@ LAYERS: dict[str, set[str]] = {
     "soyeht-process": {"soyeht-platform"},
     **{block: set(FOUNDATION) for block in BLOCKS},
     "soyeht-vcs": {"soyeht-platform", "soyeht-process"},
+    # The service seam (ADR 0114): registers the engine and the supervisor with the system's
+    # service manager. Only the command line uses it; the engine does not register itself.
+    "soyeht-service": set(FOUNDATION),
     # Layer 4: the engine assembles the blocks; the two binaries pick what they need.
     "soyeht-engine": FOUNDATION | set(BLOCKS) | {"soyeht-vcs"},
-    "soyeht-cli": {"soyeht-protocol", "soyeht-platform", "soyeht-ptyd", "soyeht-store"},
+    "soyeht-cli": {
+        "soyeht-protocol",
+        "soyeht-platform",
+        "soyeht-ptyd",
+        "soyeht-service",
+        "soyeht-store",
+    },
     "soyeht-mcp": {"soyeht-protocol", "soyeht-platform", "soyeht-skills"},
     # Layer 7: the Rust desktop client, its own workspace.
     "soyeht-client": {"soyeht-protocol", "soyeht-platform"},

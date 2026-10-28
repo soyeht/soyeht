@@ -221,7 +221,8 @@ class Services:
         self.programs = stage_programs(binaries, staged) if MACOS else binaries
         self.ptyd_version = int(subprocess.check_output(
             [str(self.programs / executable("soyeht-ptyd")), "--protocol-version"], text=True))
-        self.launcher = make_launcher(self.data, f"{DEV_LAUNCHD_PREFIX}.e2e.{identity}", ROOT)
+        self.launcher = make_launcher(
+            self.data, f"{DEV_LAUNCHD_PREFIX}.e2e.{identity}", self.programs / executable("soyeht"))
         self.clients = []
         self.definitions = {}
         for component in ("ptyd", "engine"):

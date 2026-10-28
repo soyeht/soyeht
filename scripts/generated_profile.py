@@ -15,7 +15,15 @@ PROFILES = {
             "engine": "com.soyeht.next.dev.engine",
             "ptyd": "com.soyeht.next.dev.ptyd"
         },
-        "launchdPrefix": "com.soyeht.next.dev"
+        "launchdPrefix": "com.soyeht.next.dev",
+        "systemdUnits": {
+            "engine": "soyeht-next-dev-engine.service",
+            "ptyd": "soyeht-next-dev-ptyd.service"
+        },
+        "windowsTasks": {
+            "engine": "Soyeht.Next.Dev.Engine",
+            "ptyd": "Soyeht.Next.Dev.Ptyd"
+        }
     },
     "prod": {
         "dataDirectory": {
@@ -32,7 +40,15 @@ PROFILES = {
             "engine": "com.soyeht.next.engine",
             "ptyd": "com.soyeht.next.ptyd"
         },
-        "launchdPrefix": "com.soyeht.next"
+        "launchdPrefix": "com.soyeht.next",
+        "systemdUnits": {
+            "engine": "soyeht-next-engine.service",
+            "ptyd": "soyeht-next-ptyd.service"
+        },
+        "windowsTasks": {
+            "engine": "Soyeht.Next.Engine",
+            "ptyd": "Soyeht.Next.Ptyd"
+        }
     }
 }
 SELECTION_ENVIRONMENT = 'SOYEHT_PROFILE'

@@ -3,15 +3,13 @@
 mod args;
 mod commands;
 mod editor_commands;
+mod service_commands;
 mod task_commands;
 
 use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
-use soyeht_protocol::{
-    data_directory::{data_directory, selected_profile},
-    profile::SELECTION_ENV,
-};
+use soyeht_protocol::{data_directory::resolve, profile::SELECTION_ENV};
 use std::path::PathBuf;
 
 fn run() -> Result<Value> {
@@ -33,12 +31,17 @@ fn run() -> Result<Value> {
             _ => return Err(Error::InvalidArguments(USAGE.into())),
         }
     }
-    let profile = selected_profile(requested.as_deref())?;
-    let directory = match directory {
-        Some(directory) => directory,
-        None => data_directory(profile, soyeht_platform::dirs::data_base())?,
-    };
     let args: Vec<_> = args.collect();
+    let (profile, directory) = resolve(
+        requested.as_deref(),
+        directory,
+        soyeht_platform::dirs::data_base(),
+    )?;
+    // The service commands talk to the system's service manager, not to the engine, which may
+    // not be running yet.
+    if args.first().is_some_and(|arg| arg == "service") {
+        return service_commands::execute(profile, directory, &args[1..]);
+    }
     let hook = args.first().is_some_and(|arg| arg == "__experiment-hook");
     let connected = if hook {
         if bound {

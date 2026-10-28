@@ -65,6 +65,7 @@ pub enum Error {
     ListenerAddressNotPermitted,
     SocketPathNotSocket,
     MissingDataDirectoryArgument,
+    MissingProfileArgument,
     MissingListenAddressArgument,
     MissingSupervisorProgramArgument,
     InvalidArguments,
@@ -394,6 +395,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::ConnectionClosed => ErrorKind::InternalError,
         Error::ListenerAddressNotPermitted
         | Error::MissingDataDirectoryArgument
+        | Error::MissingProfileArgument
         | Error::MissingListenAddressArgument
         | Error::MissingSupervisorProgramArgument
         | Error::InvalidArguments
@@ -525,11 +527,12 @@ fn message(error: &Error) -> String {
         }
         Error::SocketPathNotSocket => "Engine socket path is not a socket".into(),
         Error::MissingDataDirectoryArgument => "--data-dir requires a path".into(),
+        Error::MissingProfileArgument => "--profile requires a profile name".into(),
         Error::MissingListenAddressArgument => "--listen requires an address".into(),
         Error::MissingSupervisorProgramArgument => {
             format!("{RESTART_SUPERVISOR_FLAG} requires the supervisor's program")
         }
-        Error::InvalidArguments => "Expected --data-dir or --listen".into(),
+        Error::InvalidArguments => "Expected --profile, --data-dir or --listen".into(),
         Error::InvalidBinaryWebSocketFrame => "Invalid binary WebSocket frame".into(),
         Error::RandomUnavailable => "Random source unavailable".into(),
         Error::InvalidPublicKey => "Invalid public key".into(),
@@ -700,7 +703,7 @@ mod tests {
         );
         assert_eq!(
             startup_failure(&Error::InvalidArguments),
-            "Expected --data-dir or --listen"
+            "Expected --profile, --data-dir or --listen"
         );
     }
 

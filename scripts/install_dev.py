@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Install the new Dev profile without replacing any running service."""
+"""Install the new Dev profile without replacing any running service.
+
+The signed programs are copied here; registering them with launchd is `soyeht service install`
+(ADR 0114), the one place that writes a service definition.
+"""
 import argparse
+import json
 import os
-import plistlib
 import re
 import shutil
 import socket
@@ -21,14 +25,7 @@ DEV_SOCKET_NAMES = {"engine": ENGINE_SOCKET, "ptyd": PTYD_SOCKET}
 DATA = Path.home() / "Library/Application Support" / PROFILE["dataDirectory"]["macos"]
 COMPONENTS = ("ptyd", "engine")
 ENGINE_SUPPORT = ("mcp",)
-SYSTEM_PATHS = (
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
-)
+SERVICE_COMMAND_SECONDS = 60
 BINARY_IDENTIFIERS = {
     **DEV_LAUNCHD_LABELS,
     "mcp": f"{DEV_LAUNCHD_PREFIX}.mcp",
@@ -39,18 +36,21 @@ IDENTITY_PATTERN = re.compile(
 )
 
 
-def service_environment():
-    home = Path.home()
-    command_paths = (
-        *SYSTEM_PATHS,
-        str(home / ".local/bin"),
-        str(home / ".cargo/bin"),
-    )
-    return {
-        "HOME": str(home),
-        "USER": os.environ.get("USER", ""),
-        "PATH": os.pathsep.join(command_paths),
-    }
+def cli_path():
+    return ROOT / "engine/target/debug/soyeht"
+
+
+def service_command(*arguments):
+    """Run `soyeht service ...` for the Dev profile and return the services it reports."""
+    try:
+        result = subprocess.run(
+            [str(cli_path()), "--profile", "dev", "--data-dir", str(DATA), "service", *arguments],
+            check=True, capture_output=True, text=True, timeout=SERVICE_COMMAND_SECONDS,
+        )
+    except subprocess.CalledProcessError as error:
+        detail = (error.stderr or error.stdout or "").strip() or f"exit status {error.returncode}"
+        raise SystemExit(f"soyeht service {arguments[0]} failed: {detail}") from error
+    return json.loads(result.stdout)["services"]
 
 
 def signing_identities(output):
@@ -120,19 +120,17 @@ def refuse_legacy(components):
         require_next(f"signing identifier of {component}", identifier)
 
 
-def install_components(components, domain="gui", signing_identity=None):
-    if not set(components).issubset(COMPONENTS) or domain not in ("gui", "user"):
+def install_components(components, signing_identity=None):
+    if not set(components).issubset(COMPONENTS):
         raise ValueError("Unsupported Dev service")
     refuse_legacy(components)
     if DATA.resolve() != DATA.absolute():
         raise SystemExit("Dev data path must not redirect through a symlink")
-    target = f"{domain}/{os.getuid()}"
-    subprocess.run(["launchctl", "print", target], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if not cli_path().is_file():
+        raise SystemExit("Build soyeht first")
     for component in components:
-        label = DEV_LAUNCHD_LABELS[component]
-        running = subprocess.run(["launchctl", "print", f"{target}/{label}"], capture_output=True)
-        if running.returncode == 0:
+        (service,) = service_command("status", "--component", component)
+        if service["running"]:
             raise SystemExit(f"Stop the new Dev {component} job before replacing its binary")
         if not (ROOT / f"engine/target/debug/soyeht-{component}").is_file():
             raise SystemExit(f"Build soyeht-{component} first")
@@ -156,10 +154,7 @@ def install_components(components, domain="gui", signing_identity=None):
             BINARY_IDENTIFIERS[component], identity,
         )
         temporary.replace(installed)
-    agents = Path.home() / "Library/LaunchAgents"
-    agents.mkdir(parents=True, exist_ok=True)
     for component in components:
-        label = DEV_LAUNCHD_LABELS[component]
         installed = DATA / f"bin/soyeht-{component}"
         temporary = installed.with_suffix(".new")
         copy_signed_binary(
@@ -167,27 +162,7 @@ def install_components(components, domain="gui", signing_identity=None):
             BINARY_IDENTIFIERS[component], identity,
         )
         temporary.replace(installed)
-        values = plistlib.loads(
-            (ROOT / f"engine/soyeht-{component}/launchd/dev.plist").read_bytes()
-        )
-        values["ProgramArguments"] = [str(installed), "--data-dir", str(DATA)]
-        values["EnvironmentVariables"] = service_environment()
-        log = DATA / f"logs/{component}.log"
-        if log.is_symlink():
-            raise SystemExit("Dev log must not be a symlink")
-        log.touch(mode=0o600, exist_ok=True)
-        log.chmod(0o600)
-        values["StandardOutPath"] = values["StandardErrorPath"] = str(log)
-        destination = agents / f"{label}.plist"
-        temporary_plist = destination.with_suffix(".new")
-        if destination.is_symlink() or temporary_plist.is_symlink():
-            raise SystemExit("Dev service definition must not be a symlink")
-        temporary_plist.write_bytes(plistlib.dumps(values))
-        temporary_plist.chmod(0o600)
-        temporary_plist.replace(destination)
-        subprocess.run(["launchctl", "bootstrap", target, str(destination)], check=True)
-        subprocess.run(["launchctl", "print", f"{target}/{label}"], check=True,
-                       stdout=subprocess.DEVNULL)
+        service_command("install", "--component", component, "--programs", str(DATA / "bin"))
         deadline = time.monotonic() + 15
         while True:
             try:
@@ -200,7 +175,7 @@ def install_components(components, domain="gui", signing_identity=None):
                     raise SystemExit(f"New Dev {component} did not open its socket; inspect its private log")
                 time.sleep(0.1)
         print(f"New Dev {component} installed")
-    cli = ROOT / "engine/target/debug/soyeht"
+    cli = cli_path()
     if cli.is_file():
         temporary = DATA / "bin/soyeht.new"
         copy_signed_binary(cli, temporary, BINARY_IDENTIFIERS["cli"], identity)
@@ -210,10 +185,9 @@ def install_components(components, domain="gui", signing_identity=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--component", choices=COMPONENTS, action="append")
-    parser.add_argument("--domain", choices=("gui", "user"), default="gui")
     parser.add_argument("--signing-identity")
     args = parser.parse_args()
-    install_components(args.component or COMPONENTS, args.domain, args.signing_identity)
+    install_components(args.component or COMPONENTS, args.signing_identity)
 
 
 if __name__ == "__main__":

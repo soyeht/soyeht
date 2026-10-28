@@ -31,6 +31,10 @@ pub struct Profile {
     pub linux_app_id: &'static str,
     pub engine_launchd_label: &'static str,
     pub ptyd_launchd_label: &'static str,
+    pub engine_systemd_unit: &'static str,
+    pub ptyd_systemd_unit: &'static str,
+    pub engine_windows_task: &'static str,
+    pub ptyd_windows_task: &'static str,
 }
 
 pub static DEV: Profile = Profile {
@@ -45,6 +49,10 @@ pub static DEV: Profile = Profile {
     linux_app_id: "com.soyeht.next.dev",
     engine_launchd_label: "com.soyeht.next.dev.engine",
     ptyd_launchd_label: "com.soyeht.next.dev.ptyd",
+    engine_systemd_unit: "soyeht-next-dev-engine.service",
+    ptyd_systemd_unit: "soyeht-next-dev-ptyd.service",
+    engine_windows_task: "Soyeht.Next.Dev.Engine",
+    ptyd_windows_task: "Soyeht.Next.Dev.Ptyd",
 };
 pub static PROD: Profile = Profile {
     name: "prod",
@@ -58,6 +66,10 @@ pub static PROD: Profile = Profile {
     linux_app_id: "com.soyeht.next",
     engine_launchd_label: "com.soyeht.next.engine",
     ptyd_launchd_label: "com.soyeht.next.ptyd",
+    engine_systemd_unit: "soyeht-next-engine.service",
+    ptyd_systemd_unit: "soyeht-next-ptyd.service",
+    engine_windows_task: "Soyeht.Next.Engine",
+    ptyd_windows_task: "Soyeht.Next.Ptyd",
 };
 
 pub static PROFILES: [&Profile; 2] = [&DEV, &PROD];

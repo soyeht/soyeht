@@ -99,9 +99,12 @@ To update only the engine and preserve shells, stop only
 active and the engine adopts the same processes.
 
 Tests may use `--data-dir PATH` to connect to a temporary installation.
-On a runner without a graphical domain, the installer accepts `--domain user`;
-inspection and stop commands use that same domain.
-None of these options accepts another profile or service name.
+The installer needs the built `soyeht` (the `cargo build --workspace` above makes it) and stops
+with the command's own message when it fails. It writes no service file itself: it copies the signed programs and runs
+`soyeht --profile dev service install` (ADR 0114, `docs/contracts/13-service-seam.md`). On a
+runner without a graphical domain the seam loads the agents into the user's background domain
+(`user/<uid>`) by itself; inspection and stop commands use whichever domain `service status`
+found. None of these options accepts another profile or service name.
 
 ## The full gate after the merge, and the remote Linux host
 

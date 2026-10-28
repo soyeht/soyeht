@@ -36,6 +36,31 @@ def serve_loopback(listener, secret, outcome):
             connection.sendall(b"hello")
 
 
+class LaunchdDefinition(unittest.TestCase):
+    def test_the_agent_is_rendered_by_the_service_command_and_not_by_this_script(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            data = Path(temporary)
+            cli = data / "soyeht"
+            answers = [
+                subprocess.CompletedProcess([], 0),  # the domain exists
+                subprocess.CompletedProcess([], 0),
+                subprocess.CompletedProcess([], 0, stdout=json.dumps({"text": "<plist/>"})),
+            ]
+            with mock.patch.object(platform.subprocess, "run", side_effect=answers) as run:
+                launcher = platform.LaunchdLauncher(data, "com.soyeht.next.test", cli)
+                launcher.define(
+                    "engine", [Path("/x/soyeht-engine"), "--listen", "127.0.0.1:0"],
+                    {"ZDOTDIR": "/z"}, data / "engine.log")
+            command = run.call_args_list[2].args[0]
+            self.assertEqual(command[:5], [str(cli), "service", "render", "--system", "macos"])
+            self.assertEqual(command[command.index("--name") + 1], "com.soyeht.next.test.engine")
+            self.assertIn("ZDOTDIR=/z", command)
+            self.assertEqual(command[command.index("--") + 1:],
+                             ["/x/soyeht-engine", "--listen", "127.0.0.1:0"])
+            self.assertEqual((data / "engine.plist").read_text(), "<plist/>")
+            self.assertEqual((data / "engine.plist").stat().st_mode & 0o777, 0o600)
+
+
 class LauncherKind(unittest.TestCase):
     def test_launchd_on_macos_with_launchctl_and_processes_elsewhere(self):
         self.assertEqual(platform.launcher_kind({}, "darwin", "/bin/launchctl"), "launchd")

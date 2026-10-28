@@ -1292,6 +1292,7 @@ dependencies = [
  "soyeht-platform",
  "soyeht-protocol",
  "soyeht-ptyd",
+ "soyeht-service",
  "soyeht-store",
  "uuid",
 ]
@@ -1440,6 +1441,15 @@ dependencies = [
  "soyeht-protocol",
  "uuid",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "soyeht-service"
+version = "0.1.0"
+dependencies = [
+ "soyeht-platform",
+ "soyeht-process",
+ "soyeht-protocol",
 ]
 
 [[package]]

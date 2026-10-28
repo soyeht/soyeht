@@ -15,6 +15,7 @@ pub enum Error {
     MissingArgument,
     MissingDataDirectory,
     MissingBinding,
+    Service(soyeht_service::Error),
     EngineUnavailable(Box<Error>),
 }
 
@@ -50,6 +51,7 @@ impl fmt::Display for Error {
             Self::MissingBinding => {
                 formatter.write_str("SOYEHT_MCP_BINDING is required with --bound")
             }
+            Self::Service(error) => write!(formatter, "service: {error}"),
             Self::EngineUnavailable(error) => {
                 write!(formatter, "cannot connect to the engine: {error}")
             }
@@ -78,6 +80,12 @@ impl From<io::Error> for Error {
 impl From<soyeht_protocol::Error> for Error {
     fn from(error: soyeht_protocol::Error) -> Self {
         Self::Protocol(error)
+    }
+}
+
+impl From<soyeht_service::Error> for Error {
+    fn from(error: soyeht_service::Error) -> Self {
+        Self::Service(error)
     }
 }
 

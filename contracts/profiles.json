@@ -23,6 +23,14 @@
       "launchdLabels": {
         "engine": "com.soyeht.next.dev.engine",
         "ptyd": "com.soyeht.next.dev.ptyd"
+      },
+      "systemdUnits": {
+        "engine": "soyeht-next-dev-engine.service",
+        "ptyd": "soyeht-next-dev-ptyd.service"
+      },
+      "windowsTasks": {
+        "engine": "Soyeht.Next.Dev.Engine",
+        "ptyd": "Soyeht.Next.Dev.Ptyd"
       }
     },
     "prod": {
@@ -39,6 +47,14 @@
       "launchdLabels": {
         "engine": "com.soyeht.next.engine",
         "ptyd": "com.soyeht.next.ptyd"
+      },
+      "systemdUnits": {
+        "engine": "soyeht-next-engine.service",
+        "ptyd": "soyeht-next-ptyd.service"
+      },
+      "windowsTasks": {
+        "engine": "Soyeht.Next.Engine",
+        "ptyd": "Soyeht.Next.Ptyd"
       }
     }
   }

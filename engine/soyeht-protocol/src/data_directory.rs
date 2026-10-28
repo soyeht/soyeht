@@ -46,6 +46,22 @@ pub fn data_directory(profile: &Profile, base: Option<PathBuf>) -> Result<PathBu
     Ok(directory)
 }
 
+/// The profile a program runs as and its data directory: `directory` when the command line gave
+/// one, else the profile's below `base`. A command line, a service definition and a test all
+/// choose this way, so no program repeats the rule.
+pub fn resolve(
+    requested: Option<&OsStr>,
+    directory: Option<PathBuf>,
+    base: Option<PathBuf>,
+) -> Result<(&'static Profile, PathBuf)> {
+    let profile = selected_profile(requested)?;
+    let directory = match directory {
+        Some(directory) => directory,
+        None => data_directory(profile, base)?,
+    };
+    Ok((profile, directory))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +138,28 @@ mod tests {
             dev.starts_with(&prod),
             "Dev keeps its data inside the production folder"
         );
+    }
+
+    #[test]
+    fn an_explicit_directory_replaces_the_profiles_but_not_the_profile() {
+        let base = Some(PathBuf::from("/data"));
+        let (profile, directory) = resolve(
+            Some("prod".as_ref()),
+            Some(PathBuf::from("/elsewhere")),
+            base.clone(),
+        )
+        .unwrap();
+        assert_eq!(
+            (profile.name, directory),
+            ("prod", PathBuf::from("/elsewhere"))
+        );
+        let (profile, directory) = resolve(Some("dev".as_ref()), None, base).unwrap();
+        assert_eq!(
+            directory,
+            PathBuf::from("/data").join(DEV.data_directory.native())
+        );
+        assert_eq!(profile.name, "dev");
+        assert!(resolve(Some("nope".as_ref()), Some(PathBuf::from("/d")), None).is_err());
     }
 
     #[test]

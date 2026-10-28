@@ -15,6 +15,7 @@ from generate import (
     variant,
 )
 from generated_header import PREFIX, header_text
+from legacy import render_legacy, validate_legacy
 
 ROOT = Path(__file__).resolve().parent
 
@@ -26,7 +27,13 @@ class GeneratedHeaderTests(unittest.TestCase):
         schema = json.loads((ROOT / "protocol.json").read_text())
         profiles = json.loads((ROOT / "profiles.json").read_text())
         tokens = json.loads((ROOT / "design-tokens.json").read_text())
-        return {**render(schema), **render_profiles(profiles), **render_tokens(tokens)}
+        legacy = json.loads((ROOT / "legacy.json").read_text())
+        return {
+            **render(schema),
+            **render_profiles(profiles),
+            **render_tokens(tokens),
+            **render_legacy(legacy),
+        }
 
     def test_header_names_the_source_and_carries_no_hash(self):
         generated = 0
@@ -489,6 +496,24 @@ class SchemaTests(unittest.TestCase):
         )
 
 
+class LegacyListTests(unittest.TestCase):
+    def test_the_list_is_validated_and_generated_for_both_guards(self):
+        document = json.loads((ROOT / "legacy.json").read_text())
+        validate_legacy(document)
+        outputs = render_legacy(document)
+        self.assertEqual(
+            set(outputs), {"engine/soyeht-protocol/src/legacy.rs", "scripts/generated_legacy.py"}
+        )
+        for broken in (
+            {**document, "applications": ["Soyeht"]},
+            {**document, "dataFolders": ["a/b"]},
+            {**document, "bundleIds": []},
+            {**document, "version": 2},
+        ):
+            with self.assertRaises(ValueError):
+                validate_legacy(broken)
+
+
 class ProfileTests(unittest.TestCase):
     def setUp(self):
         self.document = json.loads((ROOT / "profiles.json").read_text())
@@ -521,6 +546,28 @@ class ProfileTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_profiles(self.changed(*change))
 
+    def test_service_names_must_be_safe_distinct_and_for_their_component(self):
+        changes = (
+            ("profiles", "dev", "systemdUnits", {"engine": "soyeht-next-dev-engine.service"}),
+            ("profiles", "dev", "systemdUnits", {
+                "engine": "soyeht-next-dev-ptyd.service", "ptyd": "soyeht-next-dev-ptyd.service"}),
+            ("profiles", "dev", "systemdUnits", {
+                "engine": "soyeht-next-dev-engine", "ptyd": "soyeht-next-dev-ptyd.service"}),
+            ("profiles", "dev", "systemdUnits", {
+                "engine": "soyeht next-engine.service", "ptyd": "soyeht-next-dev-ptyd.service"}),
+            ("profiles", "dev", "windowsTasks", {
+                "engine": "Soyeht.Next.Dev.Ptyd", "ptyd": "Soyeht.Next.Dev.Ptyd"}),
+            ("profiles", "dev", "windowsTasks", {
+                "engine": "Soyeht Next Dev Engine", "ptyd": "Soyeht.Next.Dev.Ptyd"}),
+            ("profiles", "dev", "windowsTasks", {
+                "engine": "Soyeht.Next.Dev.Engine'; calc", "ptyd": "Soyeht.Next.Dev.Ptyd"}),
+            ("profiles", "prod", "windowsTasks", self.document["profiles"]["dev"]["windowsTasks"]),
+            ("profiles", "prod", "systemdUnits", self.document["profiles"]["dev"]["systemdUnits"]),
+        )
+        for change in changes:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_profiles(self.changed(*change))
+
     def test_profile_components_cannot_drift_or_share_endpoints(self):
         for path in (("sockets",), ("profiles", "dev", "launchdLabels")):
             document = copy.deepcopy(self.document)
@@ -540,6 +587,10 @@ class ProfileTests(unittest.TestCase):
             ("profiles", "dev", "appIds", "macos", "com.soyeht.mac.dev"),
             ("profiles", "prod", "launchdLabels", {
                 "engine": "com.soyeht.engine", "ptyd": "com.soyeht.ptyd"}),
+            ("profiles", "prod", "systemdUnits", {
+                "engine": "soyeht-engine.service", "ptyd": "soyeht-ptyd.service"}),
+            ("profiles", "prod", "windowsTasks", {
+                "engine": "Soyeht.Engine", "ptyd": "Soyeht.Ptyd"}),
         )
         for change in changes:
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, "next"):
@@ -558,6 +609,8 @@ class ProfileTests(unittest.TestCase):
             values.add("Library/Application Support/" + profile["dataDirectory"]["macos"])
             values.add(str(profile["tcpPort"]))
             values |= set(profile["launchdLabels"].values())
+            values |= set(profile["systemdUnits"].values())
+            values |= set(profile["windowsTasks"].values())
         paths = [
             *ROOT.parent.glob("engine/*/src/**/*.rs"),
             *ROOT.parent.glob("apps/*/Sources/**/*.swift"),
