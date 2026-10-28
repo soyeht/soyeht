@@ -10,12 +10,17 @@ use std::{
     path::Path,
 };
 
+mod atomic;
 #[cfg(any(windows, test))]
 mod sddl;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
 mod windows;
+
+pub use atomic::{
+    Staged, TEMPORARY_PREFIX, WriteMode, is_temporary_name, stage_replacement, write_atomic,
+};
 
 #[cfg(unix)]
 use unix as system;

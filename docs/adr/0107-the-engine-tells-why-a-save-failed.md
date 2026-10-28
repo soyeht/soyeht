@@ -47,7 +47,8 @@ gone from the disk, creates it again with the draft, in one step: the text is wr
 target and published with an exclusive link (`creation::create_text_if_absent`), so a failed write
 or a crash leaves no file, never an empty one that the next attempt would take for a change made
 by someone else. The temporary file is the engine's own (`.soyeht-publish-`): the project listing,
-search, tree and file events hide it with the save temporary (`.soyeht-save-`), by one rule
+search, tree and file events hide it with the save temporary (`soyeht_platform::fs::TEMPORARY_PREFIX`,
+ADR 0113), by one rule
 (`immutable_file::is_engine_temporary`). A crash can leave it, so every publish first removes the
 engine's temporary files of its own folder that nobody touched for an hour. That is the safest
 sweep: it costs one read of a folder that is being written anyway, needs no walk at start-up, and

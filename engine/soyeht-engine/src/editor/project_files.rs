@@ -6,16 +6,6 @@ use std::{
     fs, io,
     path::{Component, Path, PathBuf},
 };
-use uuid::Uuid;
-
-/// A fresh name for an atomic save's temporary file.
-pub(super) fn save_temporary_name() -> String {
-    format!(
-        "{}{}",
-        crate::immutable_file::SAVE_TEMPORARY_PREFIX,
-        Uuid::new_v4()
-    )
-}
 
 /// True for the engine's own temporary files (an atomic save's and a publish's), which no search,
 /// listing or file event may ever show.

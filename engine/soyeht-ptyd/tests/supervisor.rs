@@ -147,7 +147,9 @@ fn registry_write_failure_does_not_close_a_live_process_or_advance_authority() {
     let (daemon, mut client) = Daemon::start();
     let config = daemon.shell();
     let instance = spawn(&mut client, config.clone());
-    let blocked = daemon.directory.join("ptyd-registry.new");
+    // A directory in the registry's place: the rename of a save over it fails.
+    let blocked = daemon.directory.join("ptyd-registry.json");
+    fs::remove_file(&blocked).unwrap();
     fs::create_dir(&blocked).unwrap();
     assert!(matches!(
         client

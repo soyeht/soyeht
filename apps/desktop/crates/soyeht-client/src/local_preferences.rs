@@ -63,11 +63,13 @@ impl LocalPreferences {
     /// either the old file or the new one.
     pub fn save(&self, directory: &Path) -> io::Result<()> {
         fs::create_dir_all(directory)?;
-        let target = directory.join(FILE);
-        let temporary = directory.join(format!("{FILE}.tmp"));
-        fs::write(&temporary, serde_json::to_vec_pretty(self)?)?;
-        soyeht_platform::fs::set_private_file(&temporary)?;
-        fs::rename(&temporary, &target)
+        // An owner-only write needs an owner-only directory (Windows files take its access list).
+        soyeht_platform::fs::set_private_dir(directory)?;
+        soyeht_platform::fs::write_atomic(
+            &directory.join(FILE),
+            &serde_json::to_vec_pretty(self)?,
+            soyeht_platform::fs::WriteMode::OwnerOnly,
+        )
     }
 }
 

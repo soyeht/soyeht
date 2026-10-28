@@ -11,17 +11,17 @@ use std::{
 };
 use uuid::Uuid;
 
-/// Prefix of the file an atomic save writes next to its target before the rename.
-pub(crate) const SAVE_TEMPORARY_PREFIX: &str = ".soyeht-save-";
 /// Prefix of the file `publish` writes next to its target before it links it.
 const PUBLISH_TEMPORARY_PREFIX: &str = ".soyeht-publish-";
 
 /// True for the engine's own temporary files, which exist only mid-write and belong to the engine,
-/// not to the project: no listing, search or file event may show one. One rule for both prefixes.
+/// not to the project: no listing, search or file event may show one. One rule for both kinds: an
+/// atomic save's (`soyeht_platform::fs`) and a publish's.
 pub(crate) fn is_engine_temporary(name: &std::ffi::OsStr) -> bool {
-    name.to_str().is_some_and(|name| {
-        name.starts_with(SAVE_TEMPORARY_PREFIX) || name.starts_with(PUBLISH_TEMPORARY_PREFIX)
-    })
+    soyeht_platform::fs::is_temporary_name(name)
+        || name
+            .to_str()
+            .is_some_and(|name| name.starts_with(PUBLISH_TEMPORARY_PREFIX))
 }
 
 /// A temporary file of `publish` that nobody has touched for this long is the leftover of a
@@ -219,7 +219,8 @@ mod tests {
         let directory = scratch();
         let old = std::time::SystemTime::now() - Duration::from_secs(2 * 3600);
         let leftover = directory.join(format!("{PUBLISH_TEMPORARY_PREFIX}crashed"));
-        let save_leftover = directory.join(format!("{SAVE_TEMPORARY_PREFIX}crashed"));
+        let save_leftover =
+            directory.join(format!("{}crashed", soyeht_platform::fs::TEMPORARY_PREFIX));
         let fresh = directory.join(format!("{PUBLISH_TEMPORARY_PREFIX}in-use"));
         let mine = directory.join(".soyeht-publisher-notes");
         for path in [&leftover, &save_leftover, &fresh, &mine] {

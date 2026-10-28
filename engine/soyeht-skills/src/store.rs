@@ -171,9 +171,11 @@ fn read_manifest(path: &Path) -> std::result::Result<(String, String), Problem> 
 }
 
 fn write_atomically(path: &Path, text: &str) -> io::Result<()> {
-    let temporary = path.with_file_name(format!(".{MANIFEST}.soyeht-write"));
-    fs::write(&temporary, text)?;
-    fs::rename(&temporary, path)
+    soyeht_platform::fs::write_atomic(
+        path,
+        text.as_bytes(),
+        soyeht_platform::fs::WriteMode::KeepPermissions,
+    )
 }
 
 #[cfg(test)]
@@ -217,6 +219,34 @@ mod tests {
         assert_ne!(written.revision.as_deref(), Some(revision.as_str()));
         store.delete("notes").unwrap();
         assert!(matches!(store.read("notes"), Err(Error::NotFound)));
+        fs::remove_dir_all(store.root()).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_write_keeps_the_manifest_permissions_and_leaves_no_temporary_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let store = store();
+        store.create("notes", "Keeps notes.", "").unwrap();
+        let manifest = store.root().join("notes").join(MANIFEST);
+        fs::set_permissions(&manifest, fs::Permissions::from_mode(0o640)).unwrap();
+        let (entry, text) = store.read("notes").unwrap();
+        store
+            .write(
+                "notes",
+                &text.replace("Keeps", "Holds"),
+                &entry.revision.unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            fs::metadata(&manifest).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        let names: Vec<_> = fs::read_dir(store.root().join("notes"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, [std::ffi::OsString::from(MANIFEST)]);
         fs::remove_dir_all(store.root()).unwrap();
     }
 

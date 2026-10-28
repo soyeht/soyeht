@@ -2,15 +2,14 @@ use super::digest::executable_digest;
 use crate::errors::{self, Result};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use soyeht_platform::fs::{OpenOptionsPrivateExt, sync_directory};
+use soyeht_platform::fs::{OpenOptionsPrivateExt, WriteMode, stage_replacement};
 use soyeht_protocol::{HarnessEnvironmentVariable, HarnessLaunch, HarnessSource, limits};
 use std::{
     collections::BTreeSet,
     fs::{self, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     path::{Component, Path, PathBuf},
 };
-use uuid::Uuid;
 
 const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
@@ -293,29 +292,20 @@ fn write_custom_entries(
     entries: &[HarnessLaunch],
 ) -> Result<()> {
     let bytes = encoded_custom_entries(entries)?;
-    let temporary = directory.join(format!(".soyeht-harnesses-{}.tmp", Uuid::new_v4()));
-    let result = (|| {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .owner_only()
-            .open(&temporary)
-            .map_err(errors::io)?;
-        file.write_all(&bytes).map_err(errors::io)?;
-        file.sync_all().map_err(errors::io)?;
-        if !registry_unchanged(directory, expected)? {
-            return Err(errors::stale_version(
-                "Harness registry changed while it was being edited",
-            ));
-        }
-        fs::rename(&temporary, directory.join("harnesses.json")).map_err(errors::io)?;
-        sync_directory(directory).map_err(errors::io)
-    })();
-    if result.is_err() {
-        // Best-effort cleanup: the write error returned below is what the caller sees.
-        let _ = fs::remove_file(&temporary);
+    let staged = stage_replacement(
+        &directory.join("harnesses.json"),
+        &bytes,
+        WriteMode::OwnerOnly,
+    )
+    .map_err(errors::io)?;
+    if !registry_unchanged(directory, expected)? {
+        // Dropping the staged file removes it.
+        return Err(errors::stale_version(
+            "Harness registry changed while it was being edited",
+        ));
     }
-    result
+    staged.commit().map_err(errors::io)?;
+    Ok(())
 }
 
 pub(crate) fn create_custom(directory: &Path, launch: HarnessLaunch) -> Result<HarnessLaunch> {
@@ -653,6 +643,36 @@ pub(super) mod tests {
             resolve_executable("nested/agent", [first.0.clone(), second.0.clone()]),
             None
         );
+    }
+
+    #[test]
+    fn an_edit_that_lost_the_race_leaves_the_registry_and_no_temporary_file() {
+        let fixture = Fixture::new();
+        let launch = |name: &str| HarnessLaunch {
+            id: "custom-agent".into(),
+            name: name.into(),
+            command: fixture
+                .executable("custom-agent")
+                .to_string_lossy()
+                .into_owned(),
+            args: vec!["acp".into()],
+            version: "1".into(),
+            environment: None,
+        };
+        create_custom(&fixture.0, launch("First")).unwrap();
+        let seen = custom_bytes(&fixture.0).unwrap();
+        // Another writer lands between this edit's read and its commit.
+        update_custom(&fixture.0, launch("Second")).unwrap();
+        let entries = [launch("Third")];
+        assert!(write_custom_entries(&fixture.0, seen.as_deref(), &entries).is_err());
+        assert_eq!(custom_launches(&fixture.0).unwrap(), [launch("Second")]);
+        let leftovers = fs::read_dir(&fixture.0)
+            .unwrap()
+            .filter(|entry| {
+                soyeht_platform::fs::is_temporary_name(&entry.as_ref().unwrap().file_name())
+            })
+            .count();
+        assert_eq!(leftovers, 0);
     }
 
     #[test]

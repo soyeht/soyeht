@@ -26,7 +26,7 @@ use std::{
     io,
     io::{Read, Write},
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
-    path::{Path, PathBuf},
+    path::Path,
     time::{Duration, Instant},
 };
 
@@ -206,20 +206,19 @@ pub(super) struct Alive(#[allow(dead_code)] File);
 
 /// Writes the endpoint file for a listener on `port`, owner-only, replacing a stale one. The
 /// lock is taken before the file appears under its name, so a client that can read the file
-/// and take its lock is looking at a listener that is gone.
+/// and take its lock is looking at a listener that is gone. The file holds the secret, so it is
+/// owner-only from its first byte ([`crate::fs::WriteMode::OwnerOnly`]).
 pub(super) fn publish(path: &Path, port: u16, token: &Token) -> Result<Alive, BindError> {
     clear_stale(path)?;
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".new");
-    let temporary = PathBuf::from(temporary);
-    fs::write(&temporary, format!("{MAGIC} {port} {}\n", hex(token)))?;
-    crate::fs::set_private_file(&temporary)?;
-    let held = File::open(&temporary)?;
-    if !crate::fs::try_lock(&held)? {
+    let text = format!("{MAGIC} {port} {}\n", hex(token));
+    let staged =
+        crate::fs::stage_replacement(path, text.as_bytes(), crate::fs::WriteMode::OwnerOnly)?;
+    // The staged file has a name of its own, so this lock is never contended: two listeners are
+    // kept apart by the engine's `engine.lock` singleton, not here. The lock is taken to be held.
+    if !crate::fs::try_lock(staged.file())? {
         return Err(io::Error::new(io::ErrorKind::AddrInUse, "the endpoint is in use").into());
     }
-    fs::rename(&temporary, path)?;
-    Ok(Alive(held))
+    Ok(Alive(staged.commit()?))
 }
 
 fn invalid() -> io::Error {
@@ -317,6 +316,29 @@ pub(super) fn connect(path: &Path) -> io::Result<TcpStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_endpoint_file_is_owner_only_whatever_a_stale_one_was_and_leaves_nothing_beside_it() {
+        let directory = std::env::temp_dir().join(format!(
+            "soyeht-endpoint-file-{}-{}",
+            std::process::id(),
+            random::<4>().map_or(0, u32::from_le_bytes)
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("endpoint-file");
+        fs::write(&path, format!("{MAGIC} 1 {}\n", hex(&[0; TOKEN_BYTES]))).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let alive = publish(&path, 4242, &[7; TOKEN_BYTES]).unwrap();
+        assert!(crate::fs::file_is_owner_only(&File::open(&path).unwrap()).unwrap());
+        assert_eq!(read(&path).unwrap().0.port(), 4242);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        drop(alive);
+        fs::remove_dir_all(&directory).unwrap();
+    }
 
     #[test]
     fn a_token_survives_the_endpoint_file_and_a_wrong_one_does_not_verify() {

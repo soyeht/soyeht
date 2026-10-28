@@ -9,12 +9,12 @@
 use super::LaunchPath;
 use crate::streak::Streak;
 use soyeht_platform::{
-    fs::OpenOptionsPrivateExt,
+    fs::{OpenOptionsPrivateExt, WriteMode, write_atomic},
     log::{Failure, Line},
 };
 use std::{
-    fs::{self, OpenOptions},
-    io::{Read, Write},
+    fs::OpenOptions,
+    io::Read,
     path::{Path, PathBuf},
     sync::{Condvar, Mutex, MutexGuard, PoisonError},
     thread,
@@ -272,19 +272,14 @@ fn read(file: &Path) -> std::io::Result<String> {
 }
 
 fn remember(file: &Path, value: &str) -> std::io::Result<()> {
-    let temporary = file.with_extension("tmp");
-    let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true).owner_only();
-    options
-        .open_no_follow(&temporary)?
-        .write_all(value.as_bytes())?;
-    fs::rename(&temporary, file)
+    write_atomic(file, value.as_bytes(), WriteMode::OwnerOnly)
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::LaunchPathIssue;
     use super::*;
+    use std::fs;
     use std::{
         sync::atomic::{AtomicBool, AtomicUsize, Ordering},
         time::Duration,

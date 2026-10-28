@@ -3,7 +3,7 @@ use super::creation::{
 };
 use super::schedule::{WATCH_INTERVAL_MS, save_backoff, watch_backoff};
 use super::{
-    project_files::{ProjectFile, save_temporary_name},
+    project_files::ProjectFile,
     project_reader::{ProjectReader, disk_text, list_project_files},
     save_failure::ReadOnly,
     text_refusal::TextRefusal,
@@ -16,8 +16,7 @@ use soyeht_protocol::{EditorLanguage, EditorLine, FileAuthor, TextEdit, TextPosi
 use soyeht_store::editor::EditorFile;
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
-    io::{self, Write},
+    fs, io,
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
@@ -113,10 +112,6 @@ impl FileSystemPort for SystemFiles {
             if self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)? != expected {
                 return Ok(false);
             }
-            let parent = path.parent().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidInput, "file has no parent directory")
-            })?;
-            let temporary = parent.join(save_temporary_name());
             let permissions = fs::metadata(path)?.permissions();
             if read_only == ReadOnly::Refuse && permissions.readonly() {
                 return Err(io::Error::new(
@@ -124,22 +119,14 @@ impl FileSystemPort for SystemFiles {
                     "file is read-only",
                 ));
             }
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)?;
-            let result = (|| {
-                file.write_all(text.as_bytes())?;
-                file.sync_all()?;
-                fs::set_permissions(&temporary, permissions)?;
-                fs::rename(&temporary, path)?;
-                soyeht_platform::fs::sync_directory(parent)?;
-                Ok(())
-            })();
-            if result.is_err() {
-                let _ = fs::remove_file(temporary); // Best effort: the write error is returned.
-            }
-            result.map(|()| true)
+            // The file keeps its own permissions, and the temporary one is owner-only until it
+            // does, so a private file's text is never readable by more people than before.
+            soyeht_platform::fs::write_atomic(
+                path,
+                text.as_bytes(),
+                soyeht_platform::fs::WriteMode::KeepPermissions,
+            )
+            .map(|()| true)
         })
     }
 

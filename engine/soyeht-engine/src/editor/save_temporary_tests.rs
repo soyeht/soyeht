@@ -4,7 +4,7 @@
 //! autosave off the Core lock (ADR 0079) can walk over.
 
 use super::{
-    project_files::{enumerate_project_files, is_save_temporary, save_temporary_name},
+    project_files::{enumerate_project_files, is_save_temporary},
     project_paths::ProjectRoot,
     project_watch_tests::Followed,
     test_fixture::EditorFixture,
@@ -14,6 +14,15 @@ use notify::{EventKind, event::CreateKind};
 use serde_json::{Value, json};
 use std::{ffi::OsStr, fs};
 use uuid::Uuid;
+
+/// A name the atomic save of `soyeht_platform::fs` gives its temporary file.
+fn save_temporary_name() -> String {
+    format!(
+        "{}{}",
+        soyeht_platform::fs::TEMPORARY_PREFIX,
+        Uuid::new_v4()
+    )
+}
 
 /// What the autosave leaves beside `note.txt` while it writes: the new text
 /// under the real writer's temporary name.
@@ -46,7 +55,7 @@ fn the_writers_temporary_names_are_recognized_and_ordinary_names_are_not() {
     assert!(is_save_temporary(OsStr::new(&save_temporary_name())));
     // The temporary of a publish (a file created again by save again) is the engine's too.
     assert!(is_save_temporary(OsStr::new(".soyeht-publish-3f2a")));
-    for ordinary in ["note.txt", ".soyeht-saved", ".gitignore", "soyeht-save-x"] {
+    for ordinary in ["note.txt", ".soyeht-saved", ".gitignore", "soyeht-write-x"] {
         assert!(!is_save_temporary(OsStr::new(ordinary)), "{ordinary}");
     }
 }
