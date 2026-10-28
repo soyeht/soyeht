@@ -143,7 +143,7 @@ fn character_at(page: &Page, at: &TextPosition) -> Option<String> {
     (start < text.len()).then(|| text[start..cluster_end(text, start)].to_owned())
 }
 
-/// What a line starts with: its example and tabs.
+/// What a line starts with: its blanks and tabs.
 fn indentation(prefix: &str) -> &str {
     let end = prefix
         .find(|scalar| scalar != ' ' && scalar != '\t')

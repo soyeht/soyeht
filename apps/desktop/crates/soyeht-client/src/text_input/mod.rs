@@ -62,7 +62,7 @@ pub fn line_range(text: &str, at: usize) -> Range<usize> {
     start..end
 }
 
-/// The bytes of the word under `at`, as a double click selects it (the run of example or of
+/// The bytes of the word under `at`, as a double click selects it (the run of blanks or of
 /// punctuation when it is not on a word), within its line. `at` is on a character boundary.
 pub fn word_range(text: &str, at: usize) -> Range<usize> {
     let line = line_range(text, at);

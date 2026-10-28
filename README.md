@@ -36,4 +36,5 @@ Every feature starts in `docs/contracts/`; if it is not in a contract, it is not
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Apache-2.0. See `LICENSE` and `NOTICE`. The third-party provider logos are from Lobe Icons
+(MIT); their trademarks belong to their owners.

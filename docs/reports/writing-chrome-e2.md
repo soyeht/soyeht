@@ -75,7 +75,7 @@ The writing and pane policy suites assert:
 
 The full shared suite passed **234/234**, the focused pane-layout suite passed
 **67/67**, and the signed `scripts/check_mac.sh --sign` run (development team
-`ABCDE12345`) exited 0 with `BUILD SUCCEEDED`.
+`<TEAM_ID>`) exited 0 with `BUILD SUCCEEDED`.
 
 ## VM1 visual and interaction proof
 

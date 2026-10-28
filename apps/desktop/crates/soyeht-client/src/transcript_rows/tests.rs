@@ -127,7 +127,7 @@ fn no_frame_builds_more_than_the_rows_on_screen_and_a_budget_whatever_the_weight
 }
 
 #[test]
-fn a_long_transcript_builds_the_rows_near_the_viewport_and_example_the_rest() {
+fn a_long_transcript_builds_the_rows_near_the_viewport_and_reserves_room_for_the_rest() {
     let (mut rows, keys) = measured(200);
     let plan = rows.plan(&keys, at_bottom(), GAP, 1);
     let built = built(&plan);

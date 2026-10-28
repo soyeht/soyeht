@@ -247,9 +247,11 @@ inherit the main actor.
   `--pr-text FILE`, the PR title and body you are about to give `gh pr create`) for AI
   attribution, `swift format lint --strict` (100 columns, `.swift-format`) on the changed Swift
   files, `contracts/generate.py --check` with the contracts tests, then `check_quality.py`.
-  Do not skip the forbidden-terms step: with no vocabulary it still scans messages.
+  Do not skip the forbidden-terms step: with no vocabulary it still scans messages. With a
+  vocabulary (see "The vocabulary lookup" below) it runs the full scan too.
 - Fast check, also run by the pre-push hook
-  (`git config core.hooksPath .githooks`, which also scans the commit messages):
+  (`git config core.hooksPath .githooks`, which also scans the commits being pushed for AI
+  attribution and, with the vocabulary, for restricted terms in their messages and added lines):
   `uv run python scripts/check_quality.py`.
   Its duplication scan has a deadline of 300 s that grows with the host load (up to 1800 s),
   so a busy machine does not fail it; a real hang still does. `SOYEHT_SCAN_TIMEOUT` (seconds)
@@ -288,6 +290,18 @@ inherit the main actor.
   `check_all.sh` repeats the reminder at the end. Supplied `FORBIDDEN_TERMS` always win, and
   `post_merge.py` still refuses to run without them. A maintainer runs the real scan before the merge
   (`CONTRIBUTING.md`).
+- The vocabulary lookup is one function, `forbidden_terms.load_vocabulary`, used by the pre-push
+  hook, `forbidden_terms.py` and `agent_precheck.py`: `FORBIDDEN_TERMS` first, else the file named by
+  `git config soyeht.vocabularyFile`, else `~/.config/soyeht/forbidden-terms.txt`. The file is one
+  term per line and stays outside the repository. With `git config --bool soyeht.requireVocabulary
+  true` a missing or empty vocabulary fails the hook, the precheck and the scanner (fail closed,
+  even with `SOYEHT_SKIP_FORBIDDEN_TERMS=1`); otherwise the hook prints one line saying the term scan
+  was skipped, so a contributor without the list can still push. A maintainer or an agent that
+  pushes to the public repository sets `soyeht.requireVocabulary` once; a malformed value (not a
+  boolean) is an error, never "unset". `check_all.sh` asks `forbidden_terms.py --print-source`
+  (env, file or none; never the terms), so a list in the file makes a normal run, not a skipped
+  one. The pre-push scan reads text diffs only; the gate's full-tree scan covers binary and UTF-16
+  additions. The scanners report a file and a line, never the term.
 - Full gate, after the merge: `scripts/main_watch.py` (one pass; the coordinator runs it
   continuously) fetches `origin/main` and, when it moved, calls `scripts/post_merge.py` once
   on the newest commit. That runs `check_all.sh --tier full` in a clean worktree and writes
@@ -366,4 +380,11 @@ inherit the main actor.
   `scripts/legacy_guard.py` refuses them in installers, and `scripts/check_legacy_isolation.py`
   fails on a profile value without "next" and on any file that names a legacy one.
 - Never commit secrets or machine-specific values: tokens, keys, team IDs, VM
-  addresses or the restricted vocabulary. Pass them through the environment.
+  addresses or the restricted vocabulary. Pass them through the environment, or keep the
+  vocabulary in the file the lookup above reads. The Apple development team reaches the Mac and
+  iPhone builds only as `SOYEHT_DEVELOPMENT_TEAM` in the environment (`scripts/check_mac.sh --sign`,
+  `scripts/check_ios.sh --sign`); the Xcode projects hold no team. In examples, tests and reports
+  write a placeholder such as `<TEAM_ID>` or `ABCDE12345`.
+- The pre-push hook and the precheck are the last check before a commit leaves the machine. Do
+  not name or quote a restricted term in a commit, a PR, an issue or a review comment to explain
+  a failure: cite the file and line the scanner printed.

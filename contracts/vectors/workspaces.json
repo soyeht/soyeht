@@ -2,7 +2,7 @@
   "description": "How a folder becomes a workspace, shared by the Mac and iOS clients (WorkspaceFolderPolicy, WorkspaceNaming, WorkspaceTabStripPolicy) and the desktop client (soyeht_client::state, `workspaces`). A typed or chosen path is trimmed, must be absolute and loses its trailing separators; a workspace is named for the last component of its folder; a folder that already has a workspace opens that one; the recent folders are the roots of the workspaces, then the folders panes run in that are not roots; a rename needs a different name that is not blank; and closing the selected workspace selects the next one, or the previous one when the closed one was last. Both clients pass every case.",
   "names": [
     {"name": "the last component names the workspace", "path": "/Users/ana/soyeht", "workspaceName": "soyeht"},
-    {"name": "example stay", "path": "/Users/ana/my project", "workspaceName": "my project"},
+    {"name": "blanks stay", "path": "/Users/ana/my project", "workspaceName": "my project"},
     {"name": "a dot folder keeps its dot", "path": "/srv/.config", "workspaceName": ".config"},
     {"name": "a backslash path is split too", "path": "C:\\work\\app", "workspaceName": "app"},
     {"name": "the root is named for itself", "path": "/", "workspaceName": "/"}

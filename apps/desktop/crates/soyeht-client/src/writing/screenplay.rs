@@ -148,11 +148,11 @@ fn markers(kind: &Kind, line: &str) -> Vec<Range<usize>> {
         && line[..ACTION.len()].eq_ignore_ascii_case(ACTION)
         && *kind == Kind::Action
     {
-        let example = line[ACTION.len()..]
+        let blanks = line[ACTION.len()..]
             .bytes()
             .take_while(|byte| *byte == b' ')
             .count();
-        hidden.push(0..ACTION.len() + example);
+        hidden.push(0..ACTION.len() + blanks);
     }
     let forced = matches!(
         kind,

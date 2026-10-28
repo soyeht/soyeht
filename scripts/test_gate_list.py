@@ -273,11 +273,17 @@ class SelectionByChangeTests(unittest.TestCase):
 class VocabularySkipTests(unittest.TestCase):
     """Runs the script itself: a variable that is read but never set only fails when it runs."""
 
-    def run_script(self, *arguments: str, **environment: str):
-        timings = Path(tempfile.mkdtemp()) / "timings.json"
+    def run_script(self, *arguments: str, vocabulary_file: str = "", **environment: str):
+        scratch = Path(tempfile.mkdtemp())
+        timings = scratch / "timings.json"
+        # The vocabulary file is named here, so a developer's own list never reaches the test.
+        listed = scratch / "vocabulary.txt"
+        listed.write_text(vocabulary_file)
         env = {key: value for key, value in os.environ.items()
                if key not in ("FORBIDDEN_TERMS", "SOYEHT_SKIP_FORBIDDEN_TERMS")}
-        env.update(environment, SOYEHT_GATE_TIMINGS=str(timings))
+        env.update(environment, SOYEHT_GATE_TIMINGS=str(timings), GIT_CONFIG_COUNT="2",
+                   GIT_CONFIG_KEY_0="soyeht.vocabularyFile", GIT_CONFIG_VALUE_0=str(listed),
+                   GIT_CONFIG_KEY_1="soyeht.requireVocabulary", GIT_CONFIG_VALUE_1="false")
         result = subprocess.run(
             ["bash", "-u", "scripts/check_all.sh", *arguments],
             cwd=ROOT, capture_output=True, text=True, env=env,
@@ -302,12 +308,20 @@ class VocabularySkipTests(unittest.TestCase):
         self.assertIn("vocabulary scan SKIPPED, not merge-grade", result.stdout)
         self.assertIn("vocabulary-skipped", timings.read_text())
 
-    def test_supplied_terms_make_a_normal_run_even_with_the_flag(self):
-        result, timings = self.run_script(
-            "--only", "gate-timings:unit", FORBIDDEN_TERMS="dummy", SOYEHT_SKIP_FORBIDDEN_TERMS="1")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("SKIPPED", result.stdout + result.stderr)
-        self.assertNotIn("vocabulary-skipped", timings.read_text())
+    def test_supplied_terms_or_a_vocabulary_file_make_a_normal_run_even_with_the_flag(self):
+        for supplied in ({"FORBIDDEN_TERMS": "dummy"}, {"vocabulary_file": "sampleword\n"}):
+            with self.subTest(supplied=list(supplied)):
+                result, timings = self.run_script(
+                    "--only", "gate-timings:unit", SOYEHT_SKIP_FORBIDDEN_TERMS="1", **supplied)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("SKIPPED", result.stdout + result.stderr)
+                self.assertNotIn("vocabulary-skipped", timings.read_text())
+                self.assertNotIn("sampleword", result.stdout + result.stderr)
+
+    def test_the_remote_gate_exports_no_stand_in_list(self):
+        text = (ROOT / "scripts" / "remote_gate.sh").read_text()
+        self.assertNotIn("export FORBIDDEN_TERMS", text)
+        self.assertIn("export SOYEHT_SKIP_FORBIDDEN_TERMS=1", text)
 
 
 class GateListTests(unittest.TestCase):

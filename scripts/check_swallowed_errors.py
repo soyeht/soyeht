@@ -55,7 +55,7 @@ RAW_STRING = re.compile(r'b?r(#*)"')
 
 
 def blank_literals_and_comments(source: str) -> str:
-    """Replace comments and string/char literal contents with example, keeping lines."""
+    """Replace comments and string/char literal contents with blanks, keeping lines."""
     out: list[str] = []
     i, n = 0, len(source)
     while i < n:

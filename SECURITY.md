@@ -4,8 +4,11 @@
 
 Please do not open a public issue or pull request for a security problem.
 
-Send the report privately to: **TODO: security contact address (the owner will provide it
-before the first release).**
+Report it privately, by either channel:
+
+- **Preferred:** GitHub private vulnerability reporting. On the repository page, open the
+  **Security** tab and choose **Report a vulnerability**.
+- By email to **caio.salgado@hotmail.com**, if you cannot use GitHub.
 
 Include what you can of:
 
@@ -18,7 +21,15 @@ Include what you can of:
 Do not include real credentials, tokens or other people's data. If you are unsure whether
 something is a vulnerability, report it anyway.
 
-TODO (owner): the response and disclosure timeline. Nothing here is a bounty offer.
+## What to expect
+
+- We acknowledge your report within 3 business days.
+- We give you an assessment (whether we consider it a vulnerability, and how severe) within
+  10 business days of the report.
+- We keep you informed while we fix it, and agree a disclosure date with you. We credit you in
+  the fix unless you prefer not to be named.
+
+Nothing here is a bounty offer.
 
 ## What is in scope
 

@@ -75,7 +75,7 @@ impl Palette {
 }
 
 impl ThemeName {
-    /// The theme whose name, without example, ends with `wanted` (`milk`, `deepharbor`, ...):
+    /// The theme whose name, without blanks, ends with `wanted` (`milk`, `deepharbor`, ...):
     /// how the examples that compare themes are told which one to draw.
     pub fn named(wanted: &str) -> Option<Self> {
         Self::ALL.iter().copied().find(|theme| {

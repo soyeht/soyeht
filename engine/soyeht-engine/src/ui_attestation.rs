@@ -174,7 +174,7 @@ mod macos {
             assert_eq!(closed_team("ABCDE12345".into()), Some("ABCDE12345".into()));
             assert_eq!(closed_team("not set".into()), None);
             assert_eq!(closed_team("ABCDE12345-extra".into()), None);
-            assert_eq!(closed_team("ABCDE12345".into()), None);
+            assert_eq!(closed_team("aBCDE12345".into()), None);
         }
 
         #[test]

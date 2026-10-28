@@ -253,11 +253,12 @@ fn truncated(text: &str, limit: usize) -> String {
 /// has it, for the characters that end a cut line: the ASCII ones, Latin-1's and the general
 /// punctuation block's.
 fn is_punctuation(character: char) -> bool {
+    // `\u{00bb}` is written in full form so the vocabulary scan does not misread it.
     matches!(
         character,
         '!' | '"' | '#' | '%' | '&' | '\'' | '(' | ')' | '*' | ',' | '-' | '.' | '/' | ':' | ';'
             | '?' | '@' | '[' | '\\' | ']' | '_' | '{' | '}'
-            | '\u{a1}' | '\u{a7}' | '\u{ab}' | '\u{b6}' | '\u{b7}' | '\u{example}' | '\u{bf}'
+            | '\u{a1}' | '\u{a7}' | '\u{ab}' | '\u{b6}' | '\u{b7}' | '\u{00bb}' | '\u{bf}'
             | '\u{2010}'..='\u{2027}'
             | '\u{2030}'..='\u{205e}'
             | '\u{3001}'..='\u{3003}'

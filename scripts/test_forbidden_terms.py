@@ -2,13 +2,30 @@ import contextlib
 import io
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from forbidden_terms import SKIP_ENV, main, matches, parse_terms, scan, scan_message, skipping
+import forbidden_terms
+from forbidden_terms import (
+    DEFAULT_VOCABULARY_FILE, REQUIRE_KEY, SKIP_ENV, VOCABULARY_FILE_KEY, VocabularyMissing,
+    GitConfigError, added_lines, find_vocabulary, git_config, load_vocabulary, main, matches, scan, scan_added, scan_message, skipping,
+)
+
+ZERO = "0" * 40
+
+
+def setUpModule():
+    """No test reads the developer's own vocabulary file or git settings."""
+    home = tempfile.mkdtemp()
+    unittest.addModuleCleanup(shutil.rmtree, home, ignore_errors=True)
+    for patcher in (mock.patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}),
+                    mock.patch.object(forbidden_terms, "git_config", lambda *args: None)):
+        patcher.start()
+        unittest.addModuleCleanup(patcher.stop)
 
 
 class VocabularyTests(unittest.TestCase):
@@ -27,10 +44,10 @@ class VocabularyTests(unittest.TestCase):
         self.assertTrue(matches("allowed sampleword words", restricted))
 
     def test_policy_fails_closed(self):
-        for policy in ("", "\n\t "):
-            with self.subTest(policy=policy), self.assertRaises(ValueError):
-                parse_terms(policy)
-        self.assertEqual(parse_terms("SAMPLEWORD\n sample pair \n"), {"sampleword", "sample pair"})
+        with self.assertRaises(ValueError):
+            run_main("--base", "a" * 40, environ={SKIP_ENV: ""})
+        self.assertEqual(load_vocabulary({"FORBIDDEN_TERMS": "SAMPLEWORD\n sample pair \n"}),
+                         {"sampleword", "sample pair"})
 
     def test_utf16_and_diagnostics_do_not_expose_term(self):
         output = io.StringIO()
@@ -89,6 +106,249 @@ def run_main(*arguments, environ=None, stdin=None):
         else:
             code = main()
     return code, output.getvalue(), errors.getvalue()
+
+
+def run_script(home, requirement, *arguments):
+    """The script as a process, with a git setting for `soyeht.requireVocabulary` and no other."""
+    return subprocess.run(
+        [sys.executable, forbidden_terms.__file__, *arguments], input=b"", capture_output=True,
+        env={"PATH": os.environ.get("PATH", ""), "HOME": str(home), "GIT_CONFIG_GLOBAL": os.devnull,
+             "GIT_CONFIG_SYSTEM": os.devnull, "GIT_CONFIG_COUNT": "1",
+             "GIT_CONFIG_KEY_0": REQUIRE_KEY, "GIT_CONFIG_VALUE_0": requirement})
+
+
+def config_of(settings):
+    return lambda *args: settings.get(args[-1])
+
+
+class LookupTests(unittest.TestCase):
+    """FORBIDDEN_TERMS, else the file of soyeht.vocabularyFile, else the default file."""
+
+    def setUp(self):
+        self.home = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.home, ignore_errors=True)
+        self.environ = {"HOME": str(self.home)}
+
+    def put(self, name, text):
+        path = self.home / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return path
+
+    def test_the_environment_wins_over_every_file(self):
+        self.put(".config/soyeht/forbidden-terms.txt", "fromfile\n")
+        self.assertEqual(load_vocabulary({**self.environ, "FORBIDDEN_TERMS": "Fromenv"}, config_of({})),
+                         {"fromenv"})
+
+    def test_the_configured_file_wins_over_the_default_file(self):
+        self.put(".config/soyeht/forbidden-terms.txt", "default\n")
+        configured = self.put("other.txt", "Configured\nsecond term\n")
+        config = config_of({VOCABULARY_FILE_KEY: str(configured)})
+        self.assertEqual(load_vocabulary(self.environ, config), {"configured", "second term"})
+
+    def test_the_default_file_is_used_and_a_tilde_means_home(self):
+        self.assertEqual(DEFAULT_VOCABULARY_FILE, "~/.config/soyeht/forbidden-terms.txt")
+        self.put(".config/soyeht/forbidden-terms.txt", "viadefault\n")
+        self.assertEqual(load_vocabulary(self.environ, config_of({})), {"viadefault"})
+        self.put("custom.txt", "viatilde\n")
+        config = config_of({VOCABULARY_FILE_KEY: "~/custom.txt"})
+        self.assertEqual(load_vocabulary(self.environ, config), {"viatilde"})
+
+    def test_an_empty_environment_value_falls_back_to_the_file(self):
+        self.put(".config/soyeht/forbidden-terms.txt", "viafile\n")
+        self.assertEqual(load_vocabulary({**self.environ, "FORBIDDEN_TERMS": " \n"}, config_of({})),
+                         {"viafile"})
+
+    def test_no_vocabulary_is_empty_unless_it_is_required(self):
+        self.assertEqual(load_vocabulary(self.environ, config_of({})), set())
+        for value in (None, "false"):
+            self.assertEqual(load_vocabulary(self.environ, config_of({REQUIRE_KEY: value})), set())
+
+    def test_a_required_vocabulary_that_is_missing_or_empty_fails_closed(self):
+        config = config_of({REQUIRE_KEY: "true"})
+        with self.assertRaises(VocabularyMissing):
+            load_vocabulary(self.environ, config)
+        self.put(".config/soyeht/forbidden-terms.txt", "\n  \n")
+        with self.assertRaises(VocabularyMissing):
+            load_vocabulary(self.environ, config)
+        self.put(".config/soyeht/forbidden-terms.txt", "present\n")
+        self.assertEqual(load_vocabulary(self.environ, config), {"present"})
+        self.assertEqual(load_vocabulary({**self.environ, "FORBIDDEN_TERMS": "x"}, config), {"x"})
+
+    def test_the_failure_names_the_settings_and_never_a_term(self):
+        self.put("terms.txt", "")
+        config = config_of({REQUIRE_KEY: "true", VOCABULARY_FILE_KEY: str(self.home / "terms.txt")})
+        with self.assertRaises(VocabularyMissing) as raised:
+            load_vocabulary(self.environ, config)
+        self.assertIn(REQUIRE_KEY, str(raised.exception))
+
+    def test_the_source_says_where_the_terms_came_from_and_never_what_they_are(self):
+        self.assertEqual(find_vocabulary(self.environ, config_of({}))[0], "none")
+        self.put(".config/soyeht/forbidden-terms.txt", "viafile\n")
+        self.assertEqual(find_vocabulary(self.environ, config_of({}))[0], "file")
+        self.assertEqual(find_vocabulary({**self.environ, "FORBIDDEN_TERMS": "x"}, config_of({}))[0],
+                         "env")
+        code, output, errors = run_main("--print-source", environ={"FORBIDDEN_TERMS": "sampleword"})
+        self.assertEqual((code, output.strip(), errors), (0, "env", ""))
+
+    def test_requiring_it_beats_the_skip_flag_in_every_mode_and_exits_one(self):
+        with mock.patch.object(forbidden_terms, "git_config", config_of({REQUIRE_KEY: "true"})):
+            for arguments in ((), ("--messages-only", "--base", "a" * 40), ("--pre-push", "origin")):
+                with self.subTest(arguments=arguments), self.assertRaises(VocabularyMissing):
+                    run_main(*arguments, environ={SKIP_ENV: "1"}, stdin="")
+
+    def test_the_script_exits_one_and_names_the_setting(self):
+        result = run_script(self.home, "true", "--pre-push", "origin")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(REQUIRE_KEY, result.stderr.decode())
+
+
+class GitConfigTests(unittest.TestCase):
+    def run_config(self, code):
+        with mock.patch("forbidden_terms.subprocess.run",
+                        return_value=mock.Mock(returncode=code, stdout="true\n")):
+            return git_config("--bool", "--get", REQUIRE_KEY)
+
+    def test_exit_one_is_unset_and_any_other_failure_is_an_error(self):
+        self.assertEqual(self.run_config(0), "true")
+        self.assertIsNone(self.run_config(1))
+        for code in (2, 128):
+            with self.subTest(code=code), self.assertRaises(GitConfigError):
+                self.run_config(code)
+
+    def test_a_malformed_requirement_fails_the_script_instead_of_turning_the_check_off(self):
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        result = run_script(home, "ture", "--print-source")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("malformed", result.stderr.decode())
+
+
+DIFF = b"""diff --git a/one.txt b/one.txt
+--- a/one.txt
++++ b/one.txt
+@@ -3 +3,2 @@ context
+-old
++new line
+++ looks like a header
+@@ -10,0 +12 @@
++twelve
+diff --git a/gone.txt b/gone.txt
+deleted file mode 100644
+--- a/gone.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-removed
+diff --git a/two.txt b/two.txt
+--- /dev/null
++++ b/two.txt
+@@ -0,0 +1 @@
++first
+"""
+
+
+class PrePushTests(unittest.TestCase):
+    TIP, OLD = "1" * 40, "2" * 40
+
+    def git_with(self, messages, diffs, calls=None, missing=()):
+        def fake(*args):
+            if calls is not None:
+                calls.append(args)
+            command = [a for a in args if not a.startswith("-") and a != "core.quotepath=off"]
+            if command[0] == "cat-file":
+                if args[-1].split("^")[0] in missing:
+                    raise subprocess.CalledProcessError(128, args)
+                return b""
+            if command[0] == "rev-list":
+                return "\n".join(messages).encode()
+            if "-s" in args:
+                return messages_text[args[-1]].encode()
+            return diffs[args[-1]]
+        messages_text = {rev: f"message of {rev}" for rev in messages}
+        return mock.patch("forbidden_terms.git", side_effect=fake)
+
+    def push(self, updates, *, remote="origin", environ=None, **history):
+        text = "".join(f"{u}\n" for u in updates)
+        return run_main("--pre-push", remote, environ=environ, stdin=text, **history)
+
+    def test_added_lines_carry_the_line_numbers_of_the_new_file(self):
+        found = added_lines(DIFF)
+        self.assertEqual(found["one.txt"], [(3, "new line"), (4, "+ looks like a header"), (12, "twelve")])
+        self.assertEqual(found["two.txt"], [(1, "first")])
+        self.assertNotIn("gone.txt", found)
+        self.assertNotIn(None, found)
+
+    def test_a_term_in_an_added_line_is_reported_by_file_and_line_only(self):
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            self.assertTrue(scan_added("rev:f.txt", [(7, "fine"), (9, "has sampleword here")],
+                                       {"sampleword"}))
+            self.assertFalse(scan_added("rev:f.txt", [(1, "fine")], {"sampleword"}))
+        self.assertEqual(errors.getvalue(), "rev:f.txt:9\n")
+
+    def test_a_pushed_commit_with_a_term_in_the_diff_fails_without_printing_it(self):
+        diff = b"--- a/f\n+++ b/f\n@@ -0,0 +1,2 @@\n+fine\n+a sampleword line\n"
+        with self.git_with(["abcdef1234567890"], {"abcdef1234567890": diff}):
+            code, output, errors = self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"],
+                                             environ={"FORBIDDEN_TERMS": "sampleword"})
+        self.assertEqual(code, 1)
+        self.assertEqual(errors, "abcdef123456:f:2\n")
+        self.assertNotIn("sampleword", output + errors)
+
+    def test_a_term_in_a_pushed_message_fails_and_names_the_commit(self):
+        with mock.patch("forbidden_terms.git", side_effect=lambda *a: (
+                b"revision1" if a[0] == "rev-list" else
+                b"feat: sampleword\n" if "-s" in a else b"")):
+            code, _, errors = self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"],
+                                        environ={"FORBIDDEN_TERMS": "sampleword"})
+        self.assertEqual((code, errors), (1, "commit revision1:1\n"))
+
+    def test_clean_commits_pass(self):
+        diff = b"--- a/f\n+++ b/f\n@@ -0,0 +1 @@\n+fine\n"
+        with self.git_with(["abc"], {"abc": diff}):
+            code, output, _ = self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"],
+                                        environ={"FORBIDDEN_TERMS": "sampleword"})
+        self.assertEqual(code, 0)
+        self.assertIn("push clean", output)
+
+    def test_without_a_vocabulary_it_prints_one_notice_and_still_checks_attribution(self):
+        with mock.patch("forbidden_terms.git", side_effect=lambda *a: (
+                b"abc" if a[0] == "rev-list" else b"fix\n\nCo-authored-by: x\n")):
+            code, _, errors = self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"])
+        self.assertEqual(code, 1)
+        self.assertEqual(errors.count("no restricted vocabulary found"), 1)
+        self.assertIn("commit abc:3", errors)
+        with self.git_with(["abc"], {}):
+            code, output, errors = self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"])
+        self.assertEqual(code, 0)
+        self.assertEqual(len(errors.strip().splitlines()), 1)
+        self.assertIn("attribution patterns only", output)
+
+    def test_the_range_is_what_the_remote_lacks(self):
+        calls = []
+        with self.git_with([], {}, calls):
+            self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}",
+                       f"refs/heads/new {self.TIP} refs/heads/new {ZERO}",
+                       f"(delete) {ZERO} refs/heads/gone {self.OLD}"])
+        self.assertEqual([call for call in calls if call[0] == "rev-list"],
+                         [("rev-list", self.TIP, "--not", self.OLD),
+                          ("rev-list", self.TIP, "--not", "--remotes=origin")])
+
+    def test_a_force_push_over_a_commit_this_clone_lacks_falls_back_to_the_remote_refs(self):
+        calls = []
+        with self.git_with([], {}, calls, missing={self.OLD}):
+            code, _, _ = self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"])
+        self.assertEqual(code, 0)
+        self.assertEqual([call for call in calls if call[0] == "rev-list"],
+                         [("rev-list", self.TIP, "--not", "--remotes=origin")])
+
+    def test_a_commit_in_two_updates_is_scanned_once(self):
+        calls = []
+        with self.git_with(["abc"], {"abc": b""}, calls):
+            self.push([f"refs/heads/a {self.TIP} refs/heads/a {self.OLD}",
+                       f"refs/heads/b {self.TIP} refs/heads/b {self.OLD}"],
+                      environ={"FORBIDDEN_TERMS": "sampleword"})
+        self.assertEqual(sum(1 for call in calls if "-s" in call), 1)
 
 
 class TextFileTests(unittest.TestCase):

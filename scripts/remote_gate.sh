@@ -180,7 +180,10 @@ prepare() {
 run_gate() {
     cd "$tree"
     export SOYEHT_GATE_TIMINGS="$timings"
-    export FORBIDDEN_TERMS="${FORBIDDEN_TERMS:-the-remote-steps-do-not-scan}"
+    # The remote steps never scan for the restricted vocabulary, and no placeholder list is
+    # exported to stand in for one: a run without a real list says it was skipped (and the
+    # timings record it), which is what happened here.
+    [[ -n "${FORBIDDEN_TERMS:-}" ]] || export SOYEHT_SKIP_FORBIDDEN_TERMS=1
     export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-${SOYEHT_GATE_JOBS:-32}}"
     export RUST_TEST_THREADS="${RUST_TEST_THREADS:-${SOYEHT_GATE_TEST_THREADS:-16}}"
     local gate='exec nice -n "${SOYEHT_GATE_NICE:-15}" bash scripts/check_all.sh --tier full --only "$SOYEHT_GATE_STEPS" ${SOYEHT_GATE_BASE:+--base "$SOYEHT_GATE_BASE"}'

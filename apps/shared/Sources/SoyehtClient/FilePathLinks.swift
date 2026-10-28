@@ -38,7 +38,7 @@ public struct FilePathReference: Equatable, Sendable {
 /// How the paths of a workspace are written, which is the system the workspace is on. A Mac,
 /// iPhone or iPad workspace is `.posix`. `.windows` is what a client connected to a Windows
 /// engine reads (the desktop client reads it on Windows): `\` separates like `/`, a drive or a
-/// UNC share makes a path absolute, a path may be quoted to hold example, and the MSVC
+/// UNC share makes a path absolute, a path may be quoted to hold whitespace, and the MSVC
 /// `file(line,column)` is a location. Both are held together by `contracts/vectors/file-paths.json`.
 public enum FilePathDialect: Sendable, CaseIterable {
   case posix

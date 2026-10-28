@@ -96,7 +96,7 @@ def production_masks(text: str) -> tuple[str, str]:
     """The text with comments and literals blanked, and with only literals kept, restricted to
     production code: every `#[cfg(test)]` item is blanked in both.
 
-    A kept literal's characters are the original ones; a blanked one is example."""
+    A kept literal's characters are the original ones; a blanked one is whitespace."""
     code = mask(text)[0]
     kept = mask(text, keep_strings=True)[0]
     # A literal's characters become `x` in the proxy, so a `#[cfg(test)]` item holding one is

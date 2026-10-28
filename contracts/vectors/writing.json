@@ -84,7 +84,7 @@
       "submission": null
     },
     {
-      "name": "a title of example and line breaks is blank",
+      "name": "a title of blanks and line breaks is blank",
       "title": "  \n ",
       "folder": "drafts",
       "creating": false,
@@ -98,7 +98,7 @@
       "submission": { "title": "qa essay", "relativeFolder": null }
     },
     {
-      "name": "a folder of example is none",
+      "name": "a folder of blanks is none",
       "title": "essay",
       "folder": "   ",
       "creating": false,
@@ -127,7 +127,7 @@
     ],
     "cases": [
       { "name": "a blank query keeps every entry", "query": "", "paths": ["texts/trip-notes.md", "texts/drafts/essay.md", "texts/chapter-one.md"] },
-      { "name": "example are a blank query", "query": "   ", "paths": ["texts/trip-notes.md", "texts/drafts/essay.md", "texts/chapter-one.md"] },
+      { "name": "blanks are a blank query", "query": "   ", "paths": ["texts/trip-notes.md", "texts/drafts/essay.md", "texts/chapter-one.md"] },
       { "name": "the title matches ignoring case", "query": "ON RIVERS", "paths": ["texts/drafts/essay.md"] },
       { "name": "the path matches", "query": "drafts/", "paths": ["texts/drafts/essay.md"] },
       { "name": "the query is trimmed", "query": "  chapter ", "paths": ["texts/chapter-one.md"] },

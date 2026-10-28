@@ -85,7 +85,7 @@
     { "name": "a scene heading that is not forced hides nothing", "kind": "scene_heading", "line": "INT. SHOP", "alignment": "natural", "inset": false, "bold": true, "secondary": false, "hidden": [] },
     { "name": "a shot is bold", "kind": "shot", "line": "CLOSE UP:", "alignment": "natural", "inset": false, "bold": true, "secondary": false, "hidden": [] },
     { "name": "action is plain", "kind": "action", "line": "She walks in.", "alignment": "natural", "inset": false, "bold": false, "secondary": false, "hidden": [] },
-    { "name": "an action marker and the example after it are hidden", "kind": "action", "line": "[action]  She walks in.", "alignment": "natural", "inset": false, "bold": false, "secondary": false, "hidden": [[0, 10]] },
+    { "name": "an action marker and the blanks after it are hidden", "kind": "action", "line": "[action]  She walks in.", "alignment": "natural", "inset": false, "bold": false, "secondary": false, "hidden": [[0, 10]] },
     { "name": "the action marker is read in any case", "kind": "action", "line": "[Action] Walks.", "alignment": "natural", "inset": false, "bold": false, "secondary": false, "hidden": [[0, 9]] },
     { "name": "a forced character with a colon hides both", "kind": "character", "line": "@ANA:", "alignment": "center", "inset": false, "bold": true, "secondary": false, "hidden": [[0, 1], [4, 1]] },
     { "name": "a character is centered and bold", "kind": "character", "line": "ANA", "alignment": "center", "inset": false, "bold": true, "secondary": false, "hidden": [] },

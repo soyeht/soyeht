@@ -2,10 +2,13 @@
 # Cheap checks only; `uv run python scripts/agent_precheck.py` runs the rest before a push.
 set -eu
 repo_root=$(git rev-parse --show-toplevel)
-# Commit messages must carry no AI attribution (and no restricted term when the vocabulary is set).
-if base=$(git merge-base origin/main HEAD 2>/dev/null); then
-    uv run python "$repo_root/scripts/forbidden_terms.py" --messages-only --base "$base"
-else
-    echo "pre-push: no origin/main to compare with; commit messages were not scanned (git fetch origin main)" >&2
-fi
+# The commits being pushed (git gives one "ref sha ref sha" line per update on standard input):
+# no AI attribution in the messages, and no restricted term in the messages or the added lines.
+# The vocabulary comes from FORBIDDEN_TERMS, else the file of `git config soyeht.vocabularyFile`
+# (default ~/.config/soyeht/forbidden-terms.txt). Without one the term scan is skipped with a
+# notice, unless `git config --bool soyeht.requireVocabulary true`, which fails the push.
+# Only the file and the line of a hit are printed, never the term.
+# This scan reads text diffs only: a binary or UTF-16 addition is not seen here. The gate's
+# full-tree scan (check_all.sh, forbidden-terms:scan) covers those.
+uv run python "$repo_root/scripts/forbidden_terms.py" --pre-push "${1:-}"
 exec uv run python "$repo_root/scripts/check_quality.py"

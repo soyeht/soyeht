@@ -258,8 +258,8 @@
     {
       "name": "the arguments are kept as typed after the one space that follows the name",
       "catalog": "promptDollarName",
-      "text": "/notes  two  example\nand a line",
-      "prompt": "$notes  two  example\nand a line"
+      "text": "/notes  two  blanks\nand a line",
+      "prompt": "$notes  two  blanks\nand a line"
     },
     {
       "name": "a space after the slash is skipped before the name",

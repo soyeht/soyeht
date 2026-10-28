@@ -143,7 +143,7 @@ LOAD_PROBE_TIMEOUT_SECONDS = 30  # the ssh that reads a host's load
 # is the one that is, and its tests are the engine's own (the same crate the host builds warm for
 # `engine:test`). On the Mac they ran at three to four times the load limit and flaked.
 REMOTE_AREAS = ("engine", "desktop", "e2e", TIMING_AREA)
-# Set to a command (split on example) to replace `ssh -o BatchMode=yes`; the tests use it.
+# Set to a command (split on whitespace) to replace `ssh -o BatchMode=yes`; the tests use it.
 SSH_ENV = "SOYEHT_REMOTE_SSH"
 REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
 SSH_FAILED_EXIT = 255  # ssh itself could not connect or run the command

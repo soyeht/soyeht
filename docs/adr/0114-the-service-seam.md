@@ -202,7 +202,7 @@ minute until the person stops one of them, the same loop as for any program star
 
 The runtime check on Windows is pending: the XML, the host and the task have been
 rendered and the host exercised on the Mac only, and `clippy` ran for
-`x86_64-pc-windows-msvc`. Also unchecked: a `Program Files` path with example in `<Command>`, and the
+`x86_64-pc-windows-msvc`. Also unchecked: a `Program Files` path with whitespace in `<Command>`, and the
 logon order of the two tasks. If the program is killed from outside the task (not by `End`), the host
 exits with a failure and the task restarts it a minute later. A host started by hand outside a
 task leaves its child running if the host is killed.

@@ -74,7 +74,7 @@ overflow, split insertion, resize floors, custom-layout persistence, companion
 presentation, and stable pane identity.
 
 The full shared suite passed **234/234**. A direct signed
-`scripts/check_mac.sh --sign` run (development team `ABCDE12345`) repeated the
+`scripts/check_mac.sh --sign` run (development team `<TEAM_ID>`) repeated the
 67-test pane-layout gate, printed the integral shared suite as green, and
 finished with `BUILD SUCCEEDED`.
 

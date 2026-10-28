@@ -80,7 +80,7 @@ def swift_files(root: Path, relative: str) -> list[Path]:
 
 
 def blank_comments(source: str) -> str:
-    """Replace the comments of Swift source with example, keeping its line numbers.
+    """Replace the comments of Swift source with blanks, keeping its line numbers.
 
     String literals are skipped whole, so a `//` or a `/*` inside one is text, not a comment.
     Block comments nest, as they do in Swift.

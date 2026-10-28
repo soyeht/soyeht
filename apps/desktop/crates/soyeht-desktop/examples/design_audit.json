@@ -2644,7 +2644,7 @@
     },
     {
      "line": 11,
-     "text": "    // Four example, or a tab, indent a line.",
+     "text": "    // Four blanks, or a tab, indent a line.",
      "highlights": [
       {
        "startColumn": 4,

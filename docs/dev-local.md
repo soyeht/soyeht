@@ -128,7 +128,7 @@ this and nothing else:
 
 - HOST is anything `ssh` accepts, with key authentication and no prompt (`ssh -o
   BatchMode=yes HOST ...`). `SOYEHT_REMOTE_SSH` replaces the `ssh -o BatchMode=yes` command
-  (split on example).
+  (split on whitespace).
 - PATH is a clone of this repository on the host, with `origin` pointing at the same remote.
   It needs `scripts/remote_gate.sh`; keep the clone on a recent main (`git pull`), because
   the script that runs is the one in the clone, while the gate that runs is the commit's.

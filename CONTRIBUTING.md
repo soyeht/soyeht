@@ -57,7 +57,9 @@ gate does not run on Windows; the engine and desktop checks there are
 `scripts/check_engine_windows.ps1`. Tell us in an issue if a step does not work for you.
 
 The macOS apps are the only part that needs Xcode, and the only part that needs an Apple
-Development identity (to run them signed). Nothing else does.
+Development identity (to run them signed). Nothing else does. The Xcode projects hold no
+development team: pass yours in the environment, `SOYEHT_DEVELOPMENT_TEAM=<your team id> bash
+scripts/check_mac.sh --sign` (and `check_ios.sh --sign`), and never commit it.
 
 Tools for the quality check, installed once (it never downloads at run time):
 
@@ -217,11 +219,26 @@ number of tests.
 ### The vocabulary scan
 
 The merge gate also scans the repository, the commits and the pull request text for a list of
-restricted words that the maintainers keep outside the repository (`FORBIDDEN_TERMS`).
+restricted words that the maintainers keep outside the repository.
 You do not have, and do not need, that list. `SOYEHT_SKIP_FORBIDDEN_TERMS=1` makes
 `scripts/forbidden_terms.py` skip the vocabulary and print a loud banner saying so; it still
 rejects AI-attribution phrases in commit messages. A maintainer runs the full scan before
-merging. If `FORBIDDEN_TERMS` is set, the flag is ignored and the real scan runs.
+merging. If the vocabulary is available, the flag is ignored and the real scan runs.
+
+If you have the list, every scanner (the pre-push hook, `scripts/agent_precheck.py` and
+`scripts/forbidden_terms.py`) looks for it in the same order:
+
+1. the `FORBIDDEN_TERMS` environment variable (one term per line);
+2. the file named by `git config soyeht.vocabularyFile`;
+3. `~/.config/soyeht/forbidden-terms.txt`.
+
+Keep the file outside the repository. The pre-push hook (`git config core.hooksPath
+.githooks`) scans the commits you are about to push: their messages and the lines they add.
+Without a list it prints one line saying the term scan was skipped, and still rejects
+AI-attribution phrases in commit messages, so a push without the list works. To make a missing
+list an error instead, run `git config --bool soyeht.requireVocabulary true`; the hook, the
+precheck and the scanner then fail when no list is found. Maintainers who push to the public
+repository set it once. A hit is reported as a file and a line number, never as the word.
 
 ## Review and merge
 

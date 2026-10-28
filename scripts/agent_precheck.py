@@ -3,7 +3,9 @@
 
     uv run python scripts/agent_precheck.py [--quick] [--pr-text FILE]
 
-No build, no restricted vocabulary needed (when FORBIDDEN_TERMS is set, it is used). In order:
+No build, no restricted vocabulary needed. When there is one (FORBIDDEN_TERMS, else the file of
+`git config soyeht.vocabularyFile`, default ~/.config/soyeht/forbidden-terms.txt) it is used, and
+`git config --bool soyeht.requireVocabulary true` makes a missing one a failure. In order:
 
 1. `git fetch origin main`: the ratchets compare with the merge-base and fail without it.
 2. The cheap `always` checks of the gate. The list is read from `check_all.sh --list --tier
@@ -36,6 +38,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from forbidden_terms import VocabularyMissing, load_vocabulary
 from gate_base import BaseError, resolve_base
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,7 +188,13 @@ def timed(name: str, arguments: list[str], env: dict | None = None, rerun: str =
 def gate_step(step_id: str) -> Result:
     # check_all.sh asks for the vocabulary on any run; the steps chosen here never read it.
     env = {"SOYEHT_GATE_TIMINGS": str(TIMINGS)}
-    if not os.environ.get("FORBIDDEN_TERMS"):
+    # With a vocabulary from the file too, the run is a real one: only no list at all skips.
+    # A required-but-missing list is left for check_all.sh to refuse.
+    try:
+        listed = bool(load_vocabulary(os.environ))
+    except VocabularyMissing:
+        listed = True
+    if not listed:
         env["SOYEHT_SKIP_FORBIDDEN_TERMS"] = "1"
     return timed(step_id, ["bash", str(CHECK_ALL), "--only", step_id], env,
                  rerun=f"bash scripts/check_all.sh --only {step_id}")
@@ -196,7 +205,15 @@ def message_checks(base: str, pr_text: list[Path]) -> list[Result]:
     texts = [argument for path in pr_text for argument in ("--text-file", str(path))]
     results = [timed("forbidden-terms:messages",
                      [*scanner, "--messages-only", "--base", base, *texts])]
-    if os.environ.get("FORBIDDEN_TERMS", "").strip():
+    # The same lookup as the pre-push hook: FORBIDDEN_TERMS, else the vocabulary file, and a
+    # failure when `soyeht.requireVocabulary` is true and there is none. The scanner repeats the
+    # lookup itself; the terms are never printed or passed on here.
+    try:
+        found = bool(load_vocabulary(os.environ))
+    except VocabularyMissing as error:
+        return [*results, Result("forbidden-terms:vocabulary", False, 0.0, str(error),
+                                 "git config --get soyeht.requireVocabulary")]
+    if found:
         results.append(timed("forbidden-terms:scan", [*scanner, "--base", base, *texts]))
     return results
 

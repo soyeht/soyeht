@@ -65,7 +65,7 @@
       "title": "idle"
     },
     {
-      "name": "underscores become example",
+      "name": "underscores become blanks",
       "state": "waiting_for_you",
       "needsAuthentication": false,
       "hasSession": true,

@@ -188,7 +188,7 @@
     ]
   },
   {
-    "name": "hard break with example",
+    "name": "hard break with trailing blanks",
     "markdown": "first  \nsecond",
     "streaming": false,
     "blocks": [

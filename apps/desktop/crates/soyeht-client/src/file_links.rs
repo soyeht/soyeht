@@ -11,7 +11,7 @@
 //!
 //! The text of a Windows workspace is read by the windows [`Dialect`] (the module `windows`
 //! holds its rules): `\` separates like `/`, a drive (`C:\x.rs:3`) or a UNC share
-//! (`\\server\share\x.rs:3`) makes a path absolute, a path may be quoted to hold example, and
+//! (`\\server\share\x.rs:3`) makes a path absolute, a path may be quoted to hold whitespace, and
 //! the MSVC `file(line,column)` form is a location too. On a posix system a backslash is a legal
 //! character of a file name that no tool prints in a path, so it is not one of the path's
 //! characters there and the text after it is read as before. Case is never folded here: the path

@@ -1,5 +1,5 @@
 //! What the windows dialect adds to the posix pattern of [`super`]: `\` between components, a
-//! drive or a UNC share as the root of an absolute path, a quoted path that holds example, and
+//! drive or a UNC share as the root of an absolute path, a quoted path that holds whitespace, and
 //! the MSVC `file(line,column)` location. The Mac's `FilePathLinks` reads the windows dialect the
 //! same way, and the cases are in `contracts/vectors/file-paths.json`.
 

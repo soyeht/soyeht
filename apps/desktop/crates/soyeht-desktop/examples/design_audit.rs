@@ -1,7 +1,7 @@
 //! Opens the window on a recorded engine state, for comparing the desktop client with the
 //! design file and the Mac. Usage:
 //! `cargo run --features dev-tools --example design_audit -- <fixture.json> [theme] [--workspace id] [--open menu] [--size WxH]`
-//! where `theme` is the end of a theme name without example (`milk`, `deepharbor`, ...) and
+//! where `theme` is the end of a theme name without blanks (`milk`, `deepharbor`, ...) and
 //! `menu` is `new-pane`, `overflow`, `settings` or `settings:<panel>`, `harness:<pane>`,
 //! `loop:<pane>` or `config:<pane>:<option>`, the tasks surface: `tasks`, `tasks:list`,
 //! `task:<id>` or `new-task`, or a place of the rail: `editor`, `terminal`, `agents`.

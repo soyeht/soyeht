@@ -55,10 +55,16 @@ set -- ${gate_args[@]+"${gate_args[@]}"}
 # a maintainer runs the real scan before the merge. Supplied terms always mean a real scan.
 skipped_vocabulary=0
 if ((!list)); then
-    if [[ "${SOYEHT_SKIP_FORBIDDEN_TERMS:-}" != 1 || -n "${FORBIDDEN_TERMS:-}" ]]; then
-        : "${FORBIDDEN_TERMS:?Provide the restricted vocabulary through the environment (outside contributors: SOYEHT_SKIP_FORBIDDEN_TERMS=1, see CONTRIBUTING.md)}"
-    else
-        skipped_vocabulary=1
+    # `forbidden_terms.py --print-source` says env, file or none (never the terms) and fails when
+    # a required list is missing, so a list in the vocabulary file counts as the real thing.
+    vocabulary_source=$(uv run python scripts/forbidden_terms.py --print-source) || exit 1
+    if [[ "$vocabulary_source" == none ]]; then
+        if [[ "${SOYEHT_SKIP_FORBIDDEN_TERMS:-}" == 1 ]]; then
+            skipped_vocabulary=1
+        else
+            echo "check_all: provide the restricted vocabulary through the environment or its file (outside contributors: SOYEHT_SKIP_FORBIDDEN_TERMS=1, see CONTRIBUTING.md)" >&2
+            exit 1
+        fi
     fi
 fi
 

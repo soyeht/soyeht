@@ -59,7 +59,7 @@ Validation commands are run without output pipes:
 swift test --package-path apps/shared --filter PhoneWriting
 bash scripts/check_ios.sh
 bash scripts/check_mac.sh
-SOYEHT_DEVELOPMENT_TEAM=ABCDE12345 bash scripts/check_ios.sh --sign
+SOYEHT_DEVELOPMENT_TEAM=<TEAM_ID> bash scripts/check_ios.sh --sign
 ```
 
 Physical installation and pinch/edit/relaunch evidence are added to the PR when

@@ -10,7 +10,7 @@
 pub(super) enum Kind {
     /// Letters and the like typed at the caret.
     Word,
-    /// Example typed at the caret.
+    /// Blanks typed at the caret.
     Space,
     Back,
     Forward,

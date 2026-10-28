@@ -128,7 +128,7 @@ pub struct Part {
     pub spread: bool,
 }
 
-/// A slice of a line as it is drawn: tabs spelled as example, control characters left out.
+/// A slice of a line as it is drawn: tabs spelled as blanks, control characters left out.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Shown {
     pub parts: Vec<Part>,
@@ -264,7 +264,7 @@ pub fn word_after(text: &str, column: u32) -> u32 {
     column_at(text, forward_over(text, at, Class::Space))
 }
 
-/// The columns of the word under `column`, as a double click selects it; the run of example or
+/// The columns of the word under `column`, as a double click selects it; the run of blanks or
 /// of punctuation when it is not on a word.
 pub fn word_at(text: &str, column: u32) -> (u32, u32) {
     let at = byte_at(text, column);
@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn shown_cells_carry_their_highlights_and_spell_tabs_as_example() {
+    fn shown_cells_carry_their_highlights_and_spell_tabs_as_blanks() {
         let marks = [span(0, 2, HighlightKind::Keyword)];
         let shown = show("fn\tx", &marks, 0, 80);
         assert_eq!(shown.parts.len(), 1);

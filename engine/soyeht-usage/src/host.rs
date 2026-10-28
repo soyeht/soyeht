@@ -27,7 +27,7 @@ impl Secret {
         &self.0
     }
 
-    /// Printable ASCII without example or quotes, within the size bound: safe to place in a
+    /// Printable ASCII without whitespace or quotes, within the size bound: safe to place in a
     /// header without escaping.
     pub fn is_usable(&self) -> bool {
         let value = self.0.as_bytes();

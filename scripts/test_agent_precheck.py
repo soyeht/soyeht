@@ -10,6 +10,8 @@ from pathlib import Path
 from unittest import mock
 
 import agent_precheck
+from forbidden_terms import VocabularyMissing
+from test_forbidden_terms import setUpModule  # noqa: F401 - no test reads the developer's vocabulary
 from agent_precheck import (
     CHECK_ALL, Result, affected_by, format_roots, import_closure, main, report, select_steps, unit_tests,
 )
@@ -221,6 +223,31 @@ class GitTests(unittest.TestCase):
             self.assertIn("pr.md", timed.call_args.args[1])
             with mock.patch.dict(agent_precheck.os.environ, {"FORBIDDEN_TERMS": "term"}):
                 self.assertEqual(len(agent_precheck.message_checks(BASE, [])), 2)
+
+    def test_the_vocabulary_comes_from_the_shared_lookup_not_only_the_environment(self):
+        with mock.patch.object(agent_precheck, "timed", return_value=Result("x", True, 0)), \
+                mock.patch.object(agent_precheck, "load_vocabulary", return_value={"term"}) as lookup:
+            self.assertEqual(len(agent_precheck.message_checks(BASE, [])), 2)
+        lookup.assert_called_once_with(agent_precheck.os.environ)
+
+    def test_a_gate_step_is_skipped_for_the_vocabulary_only_when_there_is_no_list_at_all(self):
+        outcomes = ((dict(return_value={"term"}), False), (dict(return_value=set()), True),
+                    (dict(side_effect=VocabularyMissing("required")), False))
+        for lookup, skips in outcomes:
+            with self.subTest(lookup=lookup), mock.patch.object(
+                    agent_precheck, "timed", return_value=Result("x", True, 0)) as timed, \
+                    mock.patch.object(agent_precheck, "load_vocabulary", **lookup):
+                agent_precheck.gate_step("layers:check")
+            self.assertEqual("SOYEHT_SKIP_FORBIDDEN_TERMS" in timed.call_args.args[2], skips)
+
+    def test_a_required_vocabulary_that_is_missing_fails_the_precheck_without_a_term(self):
+        error = VocabularyMissing("no restricted vocabulary: `soyeht.requireVocabulary` is true")
+        with mock.patch.object(agent_precheck, "timed", return_value=Result("x", True, 0)), \
+                mock.patch.object(agent_precheck, "load_vocabulary", side_effect=error):
+            results = agent_precheck.message_checks(BASE, [])
+        self.assertEqual([result.ok for result in results], [True, False])
+        self.assertEqual(results[1].name, "forbidden-terms:vocabulary")
+        self.assertIn("requireVocabulary", results[1].output)
 
 
 if __name__ == "__main__":
