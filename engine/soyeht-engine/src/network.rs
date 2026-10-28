@@ -261,6 +261,18 @@ impl TailnetListeners {
     }
 }
 
+/// Shows the address a listener bound as the one a device pairs with, unless a loopback one would
+/// replace an address that already faces the network.
+pub(crate) async fn update_pair_address(shared: &Shared, address: SocketAddr) -> Result<()> {
+    core_lock::with(shared, "pair_address", move |state| {
+        if !address.ip().is_loopback() || state.pair_address.starts_with("127.") {
+            state.pair_address = address.to_string();
+        }
+        Ok(())
+    })
+    .await
+}
+
 /// Applies the first lookup before any client connects, so the first `engine.status` and
 /// pairing link are already right, and returns the task that keeps following the tailnet.
 pub(crate) async fn follow_tailnet(

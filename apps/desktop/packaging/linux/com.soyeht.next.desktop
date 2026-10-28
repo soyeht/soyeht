@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Soyeht
+GenericName=Agent workspace
+Comment=Terminals and coding agents in one workspace
+Exec=soyeht-desktop
+Icon=soyeht
+Terminal=false
+Categories=Development;
+Keywords=terminal;agent;editor;
+# The application id the window sets (`linux_app_id` of the production profile in
+# `contracts/profiles.json`): Wayland and X11 match the window to this entry, and so to its icon,
+# by it. The file is named after it too.
+StartupWMClass=com.soyeht.next

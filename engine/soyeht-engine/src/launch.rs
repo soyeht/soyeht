@@ -11,8 +11,8 @@ use crate::{
 };
 use soyeht_platform::log::rotating::{KEEP_ROTATED, MAX_BYTES};
 use soyeht_protocol::{
-    data_directory::{RESTART_SUPERVISOR_FLAG, dev_data_directory},
-    profile::DEV_TCP_PORT,
+    data_directory::{RESTART_SUPERVISOR_FLAG, data_directory, selected_profile},
+    profile::SELECTION_ENV,
 };
 use std::{net::SocketAddr, path::Path, path::PathBuf, sync::Arc};
 
@@ -28,7 +28,8 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
     };
     // Captures record the engine build; hashing the executable overlaps the rest of startup.
     crate::engine_build::prefetch_engine_build();
-    let mut directory = dev_data_directory(std::env::home_dir())?;
+    let profile = selected_profile(std::env::var_os(SELECTION_ENV).as_deref())?;
+    let mut directory = data_directory(profile, soyeht_platform::dirs::data_base())?;
     let mut listen = vec![];
     let mut supervisor_program = None;
     let mut args = std::env::args().skip(1);
@@ -59,6 +60,7 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
     if !listen.is_empty() {
         return server::run(Config {
             directory,
+            profile,
             listen,
             tailnet_port: None,
             supervisor_program,
@@ -71,8 +73,9 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
     // and retried, and a late address starts listening without a restart.
     server::run(Config {
         directory,
-        listen: vec![SocketAddr::from(([127, 0, 0, 1], DEV_TCP_PORT))],
-        tailnet_port: Some(DEV_TCP_PORT),
+        profile,
+        listen: vec![SocketAddr::from(([127, 0, 0, 1], profile.tcp_port))],
+        tailnet_port: Some(profile.tcp_port),
         supervisor_program,
         hooks,
     })

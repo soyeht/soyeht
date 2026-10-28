@@ -10,7 +10,7 @@ use soyeht_protocol::{
     StateSnapshotPartEvent, Welcome, event,
     frame::{read_json, write_json},
     handshake, method,
-    profile::DEV_ENGINE_SOCKET,
+    profile::ENGINE_SOCKET,
     snapshot::SnapshotAssembler,
 };
 use std::{
@@ -46,7 +46,7 @@ impl Client {
         binding: Option<&str>,
         client_name: &'static str,
     ) -> Result<Self> {
-        let socket = connect(&directory.join(DEV_ENGINE_SOCKET))?;
+        let socket = connect(&directory.join(ENGINE_SOCKET))?;
         socket.set_read_timeout(Some(Duration::from_secs(10)))?;
         socket.set_write_timeout(Some(Duration::from_secs(10)))?;
         let mut client = Self {

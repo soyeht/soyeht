@@ -421,67 +421,115 @@ def validate_schema(schema):
         raise ValueError("ModelListResult.source must use the closed ModelListSource enum")
 
 
-def validate_profiles(document):
-    if set(document) != {"version", "profiles"} or document["version"] != 1:
-        raise ValueError("Profiles document must have version 1 and profiles")
-    if set(document["profiles"]) != {"dev"}:
-        raise ValueError("Exactly one Dev profile is required")
-    profile = document["profiles"]["dev"]
-    required = {"dataDirectoryFromHome", "sockets", "tcpPort", "launchdLabels"}
-    if set(profile) != required:
-        raise ValueError("Dev profile fields do not match the generated contract")
-    data = profile["dataDirectoryFromHome"]
-    prefix = "Library/Application Support/"
-    if (
-        not isinstance(data, str)
-        or not data.isascii()
-        or not data.isprintable()
-        or "\\" in data
-        or not data.startswith(prefix)
-        or data.endswith("/")
-    ):
-        raise ValueError("Dev data directory must be relative to the macOS home directory")
-    if any(part in {"", ".", ".."} for part in data.split("/")):
-        raise ValueError("Dev data directory has an unsafe component")
+PROFILE_NAMES = ("dev", "prod")
+PROFILE_SYSTEMS = ("macos", "windows", "linux")
+PROFILE_APP_SYSTEMS = ("macos", "linux")
+PROFILE_FIELDS = {"dataDirectory", "tcpPort", "appIds", "launchdLabels"}
+# The owner's legacy app is not this repository (AGENTS.md, "Legacy app"). Every machine
+# identifier of a profile carries this marker, so no value can name the legacy app's.
+LEGACY_MARKER = "next"
+
+
+def _text(value, what):
+    if not isinstance(value, str) or not value or not value.isascii() or not value.isprintable():
+        raise ValueError(f"{what} must be printable ASCII text")
+    return value
+
+
+def _keys(value, expected, what):
+    if not isinstance(value, dict) or set(value) != set(expected):
+        raise ValueError(f"{what} must have exactly the keys {', '.join(expected)}")
+    return value
+
+
+def _next_marked(value, what):
+    if LEGACY_MARKER not in value.lower():
+        raise ValueError(f'{what} "{value}" must contain "{LEGACY_MARKER}"')
+
+
+def _validate_data_directory(directories, name):
+    _keys(directories, PROFILE_SYSTEMS, f"{name} dataDirectory")
+    for system, path in directories.items():
+        what = f"{name} data directory for {system}"
+        _text(path, what)
+        parts = path.split("/")
+        if "\\" in path or ":" in path or path.endswith("/") or path.startswith("/"):
+            raise ValueError(f"{what} must be relative and use / between components")
+        if any(part in {"", ".", ".."} for part in parts):
+            raise ValueError(f"{what} has an unsafe component")
+        _next_marked(parts[0], what)
+
+
+def _validate_profile(name, profile):
+    _keys(profile, PROFILE_FIELDS, f"{name} profile")
+    _validate_data_directory(profile["dataDirectory"], name)
     port = profile["tcpPort"]
     if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
-        raise ValueError("Dev TCP port must be between 1 and 65535")
-    for field, suffix in (("sockets", ".sock"), ("launchdLabels", None)):
-        values = profile[field]
-        if not isinstance(values, dict) or set(values) != set(PROFILE_COMPONENTS):
-            raise ValueError(f"Dev {field} must name every component")
-        if len(set(values.values())) != len(PROFILE_COMPONENTS):
-            raise ValueError(f"Dev {field} values must be unique")
-        for component, value in values.items():
-            if not isinstance(value, str) or not value or not value.isascii():
-                raise ValueError(f"Dev {field} contains an invalid value")
-            if suffix and not re.fullmatch(r"[A-Za-z0-9._-]+\.sock", value):
-                raise ValueError("Dev socket names must be .sock basenames")
-            if field == "launchdLabels" and not re.fullmatch(
-                rf"[a-z0-9]+(?:[.-][a-z0-9]+)*\.{component}", value
-            ):
-                raise ValueError("Dev launchd label must end with its component")
-    prefixes = {
-        value.removesuffix(f".{component}")
-        for component, value in profile["launchdLabels"].items()
-    }
-    if len(prefixes) != 1:
-        raise ValueError("Dev launchd labels must share one namespace")
+        raise ValueError(f"{name} TCP port must be between 1 and 65535")
+    _keys(profile["appIds"], PROFILE_APP_SYSTEMS, f"{name} appIds")
+    for system, app_id in profile["appIds"].items():
+        _text(app_id, f"{name} app id for {system}")
+        if not re.fullmatch(r"[a-z0-9]+(?:\.[a-z0-9]+)+", app_id):
+            raise ValueError(f"{name} app id for {system} must be a reverse-DNS name")
+        _next_marked(app_id, f"{name} app id for {system}")
+    labels = _keys(profile["launchdLabels"], PROFILE_COMPONENTS, f"{name} launchdLabels")
+    if len(set(labels.values())) != len(PROFILE_COMPONENTS):
+        raise ValueError(f"{name} launchdLabels values must be unique")
+    for component, label in labels.items():
+        _text(label, f"{name} launchd label")
+        if not re.fullmatch(rf"[a-z0-9]+(?:[.-][a-z0-9]+)*\.{component}", label):
+            raise ValueError(f"{name} launchd label must end with its component")
+        _next_marked(label, f"{name} launchd label")
+    if len({label.removesuffix(f".{c}") for c, label in labels.items()}) != 1:
+        raise ValueError(f"{name} launchd labels must share one namespace")
+
+
+def validate_profiles(document):
+    if set(document) != {"version", "selection", "sockets", "profiles"} or document["version"] != 2:
+        raise ValueError("Profiles document must have version 2, selection, sockets and profiles")
+    selection = _keys(document["selection"], ("environment", "buildEnvironment"), "selection")
+    for field, value in selection.items():
+        if not re.fullmatch(r"SOYEHT_[A-Z0-9_]+", _text(value, f"selection {field}")):
+            raise ValueError(f"selection {field} must be a SOYEHT_ environment variable")
+    if len(set(selection.values())) != 2:
+        raise ValueError("selection variables must differ")
+    sockets = _keys(document["sockets"], PROFILE_COMPONENTS, "sockets")
+    if len(set(sockets.values())) != len(PROFILE_COMPONENTS):
+        raise ValueError("socket names must be unique")
+    for socket_name in sockets.values():
+        if not re.fullmatch(r"[A-Za-z0-9._-]+\.sock", _text(socket_name, "socket name")):
+            raise ValueError("Socket names must be .sock basenames")
+    profiles = _keys(document["profiles"], PROFILE_NAMES, "profiles")
+    for name, profile in profiles.items():
+        _validate_profile(name, profile)
+    for field in ("tcpPort", "appIds", "launchdLabels", "dataDirectory"):
+        seen = [json.dumps(profile[field], sort_keys=True) for profile in profiles.values()]
+        if len(set(seen)) != len(seen):
+            raise ValueError(f"profiles must not share their {field}")
+    for system in PROFILE_SYSTEMS:
+        if len({profile["dataDirectory"][system] for profile in profiles.values()}) != len(profiles):
+            raise ValueError(f"profiles must not share a data directory on {system}")
 
 
 def profile_values(document):
-    profile = document["profiles"]["dev"]
-    data = profile["dataDirectoryFromHome"]
-    labels = profile["launchdLabels"]
+    profiles = {}
+    for name, profile in document["profiles"].items():
+        labels = profile["launchdLabels"]
+        profiles[name] = {
+            "name": name,
+            "data": profile["dataDirectory"],
+            "port": profile["tcpPort"],
+            "app_ids": profile["appIds"],
+            "engine_label": labels["engine"],
+            "ptyd_label": labels["ptyd"],
+            "label_prefix": labels["engine"].removesuffix(".engine"),
+        }
     return {
-        "data": data,
-        "application_support": data.removeprefix("Library/Application Support/"),
-        "engine_socket": profile["sockets"]["engine"],
-        "ptyd_socket": profile["sockets"]["ptyd"],
-        "port": profile["tcpPort"],
-        "engine_label": labels["engine"],
-        "ptyd_label": labels["ptyd"],
-        "label_prefix": labels["engine"].removesuffix(".engine"),
+        "profiles": profiles,
+        "engine_socket": document["sockets"]["engine"],
+        "ptyd_socket": document["sockets"]["ptyd"],
+        "environment": document["selection"]["environment"],
+        "build_environment": document["selection"]["buildEnvironment"],
     }
 
 
@@ -502,49 +550,125 @@ def launchd_plist(component, label):
 '''
 
 
+def _rust_profile(profile):
+    data, apps = profile["data"], profile["app_ids"]
+    return f'''pub static {profile["name"].upper()}: Profile = Profile {{
+    name: {json.dumps(profile["name"])},
+    data_directory: DataDirectory {{
+        macos: {json.dumps(data["macos"])},
+        windows: {json.dumps(data["windows"])},
+        linux: {json.dumps(data["linux"])},
+    }},
+    tcp_port: {profile["port"]},
+    macos_app_id: {json.dumps(apps["macos"])},
+    linux_app_id: {json.dumps(apps["linux"])},
+    engine_launchd_label: {json.dumps(profile["engine_label"])},
+    ptyd_launchd_label: {json.dumps(profile["ptyd_label"])},
+}};
+'''
+
+
+def _swift_profile(profile):
+    return f'''    public static let {profile["name"]} = ProfileValues(
+        name: {json.dumps(profile["name"])},
+        applicationSupportSubpath: {json.dumps(profile["data"]["macos"])},
+        tcpPort: {profile["port"]},
+        appBundleId: {json.dumps(profile["app_ids"]["macos"])},
+        engineLaunchdLabel: {json.dumps(profile["engine_label"])},
+        ptydLaunchdLabel: {json.dumps(profile["ptyd_label"])}
+    )
+'''
+
+
 def render_profiles(document):
     value = profile_values(document)
     header = header_text(PROFILES_SOURCE)
+    profiles = list(value["profiles"].values())
     rust = f'''// {header}
-pub const DEV_DATA_DIRECTORY_FROM_HOME: &str = {json.dumps(value["data"])};
-pub const DEV_ENGINE_SOCKET: &str = {json.dumps(value["engine_socket"])};
-pub const DEV_PTYD_SOCKET: &str = {json.dumps(value["ptyd_socket"])};
-pub const DEV_TCP_PORT: u16 = {value["port"]};
-pub const DEV_ENGINE_LAUNCHD_LABEL: &str = {json.dumps(value["engine_label"])};
-pub const DEV_PTYD_LAUNCHD_LABEL: &str = {json.dumps(value["ptyd_label"])};
+/// Where a profile keeps its data below the user's data base directory (`/` between
+/// components), for each system.
+#[derive(Debug, PartialEq, Eq)]
+pub struct DataDirectory {{
+    pub macos: &'static str,
+    pub windows: &'static str,
+    pub linux: &'static str,
+}}
+
+impl DataDirectory {{
+    /// The subpath for the system this program was built for.
+    pub const fn native(&self) -> &'static str {{
+        if cfg!(target_os = "macos") {{
+            self.macos
+        }} else if cfg!(windows) {{
+            self.windows
+        }} else {{
+            self.linux
+        }}
+    }}
+}}
+
+/// The values that tell two installed copies of Soyeht apart on one machine.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Profile {{
+    pub name: &'static str,
+    pub data_directory: DataDirectory,
+    pub tcp_port: u16,
+    pub macos_app_id: &'static str,
+    pub linux_app_id: &'static str,
+    pub engine_launchd_label: &'static str,
+    pub ptyd_launchd_label: &'static str,
+}}
+
+{"".join(_rust_profile(profile) for profile in profiles)}
+pub static PROFILES: [&Profile; {len(profiles)}] = [{", ".join("&" + p["name"].upper() for p in profiles)}];
+/// The environment variable that names the profile of a running program.
+pub const SELECTION_ENV: &str = {json.dumps(value["environment"])};
+/// The profile a build defaults to when `SELECTION_ENV` is unset: the value of this variable
+/// when the program was compiled.
+pub const BUILD_PROFILE: Option<&str> = option_env!({json.dumps(value["build_environment"])});
+pub const ENGINE_SOCKET: &str = {json.dumps(value["engine_socket"])};
+pub const PTYD_SOCKET: &str = {json.dumps(value["ptyd_socket"])};
 '''
     swift = f'''// {header}
-public enum DevProfileValues {{
-    public static let dataDirectoryFromHome = {json.dumps(value["data"])}
-    public static let applicationSupportSubpath = {json.dumps(value["application_support"])}
+public struct ProfileValues: Sendable {{
+    public let name: String
+    public let applicationSupportSubpath: String
+    public let tcpPort: UInt16
+    public let appBundleId: String
+    public let engineLaunchdLabel: String
+    public let ptydLaunchdLabel: String
+
+{"".join(_swift_profile(profile) for profile in profiles)}
+    public static let all = [{", ".join(p["name"] for p in profiles)}]
+    public static let selectionEnvironment = {json.dumps(value["environment"])}
     public static let engineSocketName = {json.dumps(value["engine_socket"])}
     public static let ptydSocketName = {json.dumps(value["ptyd_socket"])}
-    public static let tcpPort: UInt16 = {value["port"]}
-    public static let engineLaunchdLabel = {json.dumps(value["engine_label"])}
-    public static let ptydLaunchdLabel = {json.dumps(value["ptyd_label"])}
 }}
 '''
+    python_profiles = {
+        profile["name"]: {
+            "dataDirectory": profile["data"],
+            "tcpPort": profile["port"],
+            "appIds": profile["app_ids"],
+            "launchdLabels": {"engine": profile["engine_label"], "ptyd": profile["ptyd_label"]},
+            "launchdPrefix": profile["label_prefix"],
+        }
+        for profile in profiles
+    }
     python = f'''# {header}
-DEV_DATA_DIRECTORY_FROM_HOME = {value["data"]!r}
-DEV_ENGINE_SOCKET = {value["engine_socket"]!r}
-DEV_PTYD_SOCKET = {value["ptyd_socket"]!r}
-DEV_SOCKET_NAMES = {{"engine": DEV_ENGINE_SOCKET, "ptyd": DEV_PTYD_SOCKET}}
-DEV_TCP_PORT = {value["port"]}
-DEV_ENGINE_LAUNCHD_LABEL = {value["engine_label"]!r}
-DEV_PTYD_LAUNCHD_LABEL = {value["ptyd_label"]!r}
-DEV_LAUNCHD_LABELS = {{"engine": DEV_ENGINE_LAUNCHD_LABEL, "ptyd": DEV_PTYD_LAUNCHD_LABEL}}
-DEV_LAUNCHD_PREFIX = {value["label_prefix"]!r}
+PROFILES = {json.dumps(python_profiles, indent=4)}
+SELECTION_ENVIRONMENT = {value["environment"]!r}
+BUILD_ENVIRONMENT = {value["build_environment"]!r}
+ENGINE_SOCKET = {value["engine_socket"]!r}
+PTYD_SOCKET = {value["ptyd_socket"]!r}
 '''
+    dev = value["profiles"]["dev"]
     return {
-        "engine/soyeht-protocol/src/profile.rs": rust,
+        "engine/soyeht-protocol/src/profile.rs": rustfmt(rust),
         "contracts/swift/Sources/SoyehtProtocol/Profile.swift": swift,
         "scripts/generated_profile.py": python,
-        "engine/soyeht-engine/launchd/dev.plist": launchd_plist(
-            "engine", value["engine_label"]
-        ),
-        "engine/soyeht-ptyd/launchd/dev.plist": launchd_plist(
-            "ptyd", value["ptyd_label"]
-        ),
+        "engine/soyeht-engine/launchd/dev.plist": launchd_plist("engine", dev["engine_label"]),
+        "engine/soyeht-ptyd/launchd/dev.plist": launchd_plist("ptyd", dev["ptyd_label"]),
     }
 
 

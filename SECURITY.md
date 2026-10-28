@@ -34,7 +34,8 @@ parts are security-sensitive, and a problem in any of them is in scope:
 - **Pairing and device authentication.** The pairing code and consent flow, device tokens
   and the proof of possession over the connection challenge, revocation, and the roles
   (`human_local`, `human_device`, `agent`, `chief`) that decide who may call a method. The
-  engine also listens on the loopback and tailnet addresses (port 8291) for paired devices.
+  engine also listens on the loopback and tailnet addresses (port 8291 for the Dev profile, 8290 for the
+  production profile) for paired devices.
 - **Web permissions.** The web pane's session permission, which an agent permission mode must
   never answer, page evaluation, cookies and incognito sessions, and the host-routing rules
   (`docs/contracts/11-browser.md`).

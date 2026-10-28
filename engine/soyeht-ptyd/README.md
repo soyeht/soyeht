@@ -5,8 +5,9 @@ is disconnected. The registry lives in `ptyd-registry.json`; retained output
 stays in memory until ack, capped at 8 MiB per process. A discarded interval
 appears as a gap on the next read. The engine owns durable screen recording.
 
-The socket and registry belong to the new profile at
-`~/Library/Application Support/Soyeht.next/dev/`. `--data-dir` allows an
+The socket and registry belong to the profile's data directory: by default the Dev profile,
+`~/Library/Application Support/Soyeht.next/dev/` on macOS (`SOYEHT_PROFILE=prod` selects the
+production profile; native locations on Windows and Linux are in ADR 0112). `--data-dir` allows an
 isolated test directory. The socket path must fit the system limit; tests
 use unique directories under `/tmp/soyeht-next-test-*`.
 

@@ -320,48 +320,46 @@ fn an_engine_that_never_answers_times_out_and_a_stopped_application_ends_the_wai
     assert_eq!(ensure(&plan(), &stopped), Err(StartError::Stopped));
 }
 
+/// The data directory of the Dev profile below a fixed base, as the profile module finds it.
+fn data() -> crate::Result<PathBuf> {
+    soyeht_protocol::data_directory::data_directory(
+        &soyeht_protocol::profile::DEV,
+        Some("/data".into()),
+    )
+    .map_err(crate::Error::from)
+}
+
 #[test]
 fn an_environment_socket_turns_the_start_off() {
     let exe = || Ok(PathBuf::from("/app/soyeht-desktop"));
     assert_eq!(
-        Autostart::from_parts(Some("/run/x.sock".into()), Some("/home/a".into()), exe()),
+        Autostart::from_parts(Some("/run/x.sock".into()), data(), exe()),
         Autostart::Off
     );
     // An empty value is the same as none, as for the socket itself.
-    let on = Autostart::from_parts(Some(OsString::new()), Some("/home/a".into()), exe());
+    let on = Autostart::from_parts(Some(OsString::new()), data(), exe());
     assert!(matches!(on, Autostart::On(_)));
-    assert_eq!(
-        on,
-        Autostart::from_parts(None, Some("/home/a".into()), exe())
-    );
+    assert_eq!(on, Autostart::from_parts(None, data(), exe()));
 }
 
 #[test]
 fn the_plan_uses_the_profile_directory_and_the_folder_of_the_executable() {
-    let on = Autostart::from_parts(
-        None,
-        Some("/home/a".into()),
-        Ok(PathBuf::from("/app/soyeht-desktop")),
-    );
+    let on = Autostart::from_parts(None, data(), Ok(PathBuf::from("/app/soyeht-desktop")));
     let Autostart::On(plan) = &on else {
         panic!("expected a start");
     };
     assert_eq!(plan.programs, Some(PathBuf::from("/app")));
-    assert_eq!(
-        plan.directory,
-        dev_data_directory(Some("/home/a".into())).unwrap()
-    );
-    let unknown = Autostart::from_parts(
-        None,
-        Some("/home/a".into()),
-        Err(io::ErrorKind::NotFound.into()),
-    );
+    assert_eq!(plan.directory, data().unwrap());
+    let unknown = Autostart::from_parts(None, data(), Err(io::ErrorKind::NotFound.into()));
     assert!(matches!(
         unknown,
         Autostart::On(Plan { programs: None, .. })
     ));
+    let no_base =
+        soyeht_protocol::data_directory::data_directory(&soyeht_protocol::profile::DEV, None)
+            .map_err(crate::Error::from);
     assert_eq!(
-        Autostart::from_parts(None, None, Ok("/app/x".into())),
+        Autostart::from_parts(None, no_base, Ok("/app/x".into())),
         Autostart::Off
     );
 }

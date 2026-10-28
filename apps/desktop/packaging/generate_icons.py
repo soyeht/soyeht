@@ -9,7 +9,7 @@ image library:
 - `windows/soyeht.ico`: an icon file whose entries are the PNGs themselves (16 to 256 pixels),
   which `build.rs` of `soyeht-desktop` embeds in the executable on Windows.
 - `linux/icons/hicolor/<size>x<size>/apps/soyeht.png`: the freedesktop icon theme layout, with
-  the name the `soyeht.desktop` entry gives as its `Icon`.
+  the name the `com.soyeht.next.desktop` entry gives as its `Icon`.
 
 Run `uv run python apps/desktop/packaging/generate_icons.py` after the Mac set changes and commit
 the result. `--check` fails when the committed files differ from what the Mac set produces.

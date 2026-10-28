@@ -53,7 +53,7 @@ the supervisor again when it alone is lost, are in ADR 0108.
 
 ## Limits
 
-- The engine listens on a fixed loopback port (`DEV_TCP_PORT`), so a second engine for another
+- The engine listens on a fixed loopback port (the profile's `tcp_port`, ADR 0112), so a second engine for another
   data directory stops at once; the window then says that the engine stopped right after it started.
 - On Windows a launcher that runs the window in a job that kills its processes and does not allow
   breakaway (an automation agent's command, for example) ends the engine with the window. Starting

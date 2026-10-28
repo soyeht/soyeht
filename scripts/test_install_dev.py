@@ -5,7 +5,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 import install_dev
-from generated_profile import DEV_ENGINE_LAUNCHD_LABEL
+from generated_profile import PROFILES
+
+DEV_ENGINE_LAUNCHD_LABEL = PROFILES["dev"]["launchdLabels"]["engine"]
 
 
 class InstallGuardTests(unittest.TestCase):
@@ -99,6 +101,29 @@ class InstallGuardTests(unittest.TestCase):
                     )
             self.assertFalse(target.exists())
 
+    def test_legacy_app_values_are_refused_before_external_work(self):
+        legacy = (
+            Path("/Applications/Soyeht.app/Contents"),
+            Path.home() / "Library/Application Support/Soyeht",
+            Path.home() / "Library/Application Support/Soyeht Dev/next",
+            Path.home() / "Library/Application Support/Plain",
+            Path.home() / "Library/Application Support/SOYEHT/next",
+            Path("/APPLICATIONS/soyeht.app/next"),
+        )
+        for data in legacy:
+            with self.subTest(data=data), patch.object(install_dev, "DATA", data), patch.object(
+                install_dev.subprocess, "run"
+            ) as run:
+                with self.assertRaisesRegex(SystemExit, "Refusing data directory"):
+                    install_dev.install_components(["engine"])
+                run.assert_not_called()
+        with patch.object(install_dev, "DEV_LAUNCHD_LABELS", {"engine": "com.soyeht.mac.engine", "ptyd": "x"}):
+            with self.assertRaisesRegex(SystemExit, "Refusing service label"):
+                install_dev.install_components(["engine"])
+
+    def test_every_installed_value_of_the_profile_belongs_to_the_next_family(self):
+        install_dev.refuse_legacy(install_dev.COMPONENTS)
+
     def test_service_path_includes_system_and_user_tool_commands(self):
         environment = install_dev.service_environment()
         paths = environment["PATH"].split(":")
@@ -119,15 +144,15 @@ class InstallGuardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             (root / "actual").mkdir()
-            (root / "redirect").symlink_to(root / "actual")
-            with patch.object(install_dev, "DATA", root / "redirect"), patch.object(install_dev.subprocess, "run") as run:
+            (root / "next-redirect").symlink_to(root / "actual")
+            with patch.object(install_dev, "DATA", root / "next-redirect"), patch.object(install_dev.subprocess, "run") as run:
                 with self.assertRaises(SystemExit):
                     install_dev.install_components(["engine"])
                 run.assert_not_called()
 
     def test_loaded_job_is_refused_before_copying_or_writing(self):
         with tempfile.TemporaryDirectory() as temporary:
-            data = Path(temporary).resolve() / "new-dev"
+            data = Path(temporary).resolve() / "new-next-dev"
             with patch.object(install_dev, "DATA", data), patch.object(install_dev.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
                 with self.assertRaises(SystemExit):
                     install_dev.install_components(["engine"])
@@ -142,7 +167,7 @@ class InstallGuardTests(unittest.TestCase):
     def test_engine_install_requires_the_sibling_mcp_binary(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
-            data = root / "new-dev"
+            data = root / "new-next-dev"
             binary = root / "engine/target/debug/soyeht-engine"
             binary.parent.mkdir(parents=True)
             binary.write_bytes(b"engine")

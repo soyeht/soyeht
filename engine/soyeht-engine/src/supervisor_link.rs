@@ -14,7 +14,7 @@ use soyeht_platform::{
     log::{self, Failure as _, Line},
     process::detached::spawn_service,
 };
-use soyeht_protocol::{PaneState, profile::DEV_PTYD_SOCKET};
+use soyeht_protocol::{PaneState, profile::PTYD_SOCKET};
 use soyeht_ptyd::wire_kind;
 use std::{collections::BTreeMap, io, path::PathBuf};
 
@@ -125,7 +125,7 @@ impl Core {
         let started = self.spawn_background(
             START_JOB.into(),
             move || {
-                let reached = soyeht_platform::local::connect(&directory.join(DEV_PTYD_SOCKET));
+                let reached = soyeht_platform::local::connect(&directory.join(PTYD_SOCKET));
                 if reached.is_ok() {
                     return Ok(Start::Answers);
                 }
@@ -288,7 +288,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::{errors, ports::Clock, ports::testing::FakeSupervisor};
     use soyeht_platform::local::{Listener, connect};
-    use soyeht_protocol::{frame::write_json, profile::DEV_PTYD_SOCKET};
+    use soyeht_protocol::{frame::write_json, profile::PTYD_SOCKET};
     use soyeht_ptyd::wire::{Response, VERSION};
     use std::sync::{
         Arc,
@@ -305,7 +305,7 @@ pub(crate) mod tests {
 
     impl HangUp {
         fn start(directory: &std::path::Path, welcome: bool) -> Self {
-            let socket = directory.join(DEV_PTYD_SOCKET);
+            let socket = directory.join(PTYD_SOCKET);
             let listener = Listener::bind(&socket).unwrap();
             let accepted = Arc::new(AtomicUsize::new(0));
             let stop = Arc::new(AtomicBool::new(false));
@@ -666,7 +666,7 @@ pub(crate) mod tests {
     fn serve_registry(directory: &std::path::Path) {
         use soyeht_protocol::frame::read_json;
         use soyeht_ptyd::wire::Request;
-        let listener = Listener::bind(&directory.join(DEV_PTYD_SOCKET)).unwrap();
+        let listener = Listener::bind(&directory.join(PTYD_SOCKET)).unwrap();
         std::thread::spawn(move || {
             while let Ok(mut stream) = listener.accept() {
                 while let Ok(Some(request)) = read_json::<Request>(&mut stream) {

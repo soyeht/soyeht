@@ -1,11 +1,15 @@
-//! Where the engine of the Dev profile listens, and where the client keeps its log.
+//! Where the engine of the client's profile listens, and where the client keeps its log.
 //!
-//! The directory layout comes from `contracts/profiles.json` through the generated
-//! `soyeht_protocol::profile` constants. A client never invents its own location: the engine
-//! keeps its socket there on macOS, Linux and Windows alike, so the default needs no setup.
+//! The profile and its directory layout come from `contracts/profiles.json` through the
+//! generated `soyeht_protocol::profile` constants. A client never invents its own location:
+//! the engine keeps its socket in the profile's data directory in the user's native location
+//! (`soyeht_platform::dirs`) on macOS, Linux and Windows alike, so the default needs no setup.
 
 use crate::Result;
-use soyeht_protocol::{data_directory::dev_data_directory, profile::DEV_ENGINE_SOCKET};
+use soyeht_protocol::{
+    data_directory::{data_directory, selected_profile},
+    profile::{ENGINE_SOCKET, Profile, SELECTION_ENV},
+};
 use std::{
     ffi::OsString,
     path::{Path, PathBuf},
@@ -14,10 +18,25 @@ use std::{
 /// Overrides the profile location, for example to reach a disposable engine.
 pub const SOCKET_ENV: &str = "SOYEHT_ENGINE_SOCKET";
 
-/// The engine socket: the environment override, else the profile directory under the user's
-/// home, which is where the engine itself keeps its socket on every platform.
+/// The profile this client runs as: `SOYEHT_PROFILE`, else the profile of the build, else Dev.
+pub fn selected() -> Result<&'static Profile> {
+    Ok(selected_profile(
+        std::env::var_os(SELECTION_ENV).as_deref(),
+    )?)
+}
+
+/// The data directory of [`selected`], where the engine keeps its socket and logs.
+pub fn data_directory_of_profile() -> Result<PathBuf> {
+    Ok(data_directory(
+        selected()?,
+        soyeht_platform::dirs::data_base(),
+    )?)
+}
+
+/// The engine socket: the environment override, else the socket in the profile's data directory,
+/// which is where the engine itself keeps it on every platform.
 pub fn engine_socket() -> Result<PathBuf> {
-    resolve(std::env::var_os(SOCKET_ENV), std::env::home_dir())
+    resolve(std::env::var_os(SOCKET_ENV), data_directory_of_profile())
 }
 
 /// The socket the environment names, when it names one: an empty value names nothing. A window
@@ -37,66 +56,64 @@ const LOG_FILE: &str = "desktop.log";
 
 /// The file the client's log lines are also written to, so that a program started from a menu or
 /// an icon (no terminal; on Windows no console) still leaves them somewhere. It lives in the
-/// profile directory under the user's home, on every platform.
+/// profile's data directory, on every platform.
 pub fn log_file() -> Result<PathBuf> {
-    log_file_in(std::env::home_dir())
+    Ok(log_file_in(&data_directory_of_profile()?))
 }
 
-fn log_file_in(home: Option<PathBuf>) -> Result<PathBuf> {
-    Ok(logs_directory(&dev_data_directory(home)?).join(LOG_FILE))
+fn log_file_in(directory: &Path) -> PathBuf {
+    logs_directory(directory).join(LOG_FILE)
 }
 
-fn resolve(override_value: Option<OsString>, home: Option<PathBuf>) -> Result<PathBuf> {
+fn resolve(override_value: Option<OsString>, directory: Result<PathBuf>) -> Result<PathBuf> {
     if let Some(path) = socket_override(override_value) {
         return Ok(path);
     }
-    Ok(dev_data_directory(home)?.join(DEV_ENGINE_SOCKET))
+    Ok(directory?.join(ENGINE_SOCKET))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::Error;
-    use soyeht_protocol::profile::DEV_DATA_DIRECTORY_FROM_HOME;
+    use soyeht_protocol::profile::DEV;
+
+    fn dev_directory() -> Result<PathBuf> {
+        data_directory(&DEV, Some("/data".into())).map_err(Error::from)
+    }
 
     #[test]
     fn override_wins_over_the_profile_directory() {
-        let path = resolve(
-            Some("/run/soyeht/engine.sock".into()),
-            Some("/home/a".into()),
-        );
+        let path = resolve(Some("/run/soyeht/engine.sock".into()), dev_directory());
         assert_eq!(path.unwrap(), PathBuf::from("/run/soyeht/engine.sock"));
     }
 
     #[test]
     fn the_default_is_the_engine_socket_inside_the_profile_directory() {
-        let expected = PathBuf::from("/home/a")
-            .join(DEV_DATA_DIRECTORY_FROM_HOME)
-            .join(DEV_ENGINE_SOCKET);
-        assert_eq!(resolve(None, Some("/home/a".into())).unwrap(), expected);
+        let expected = PathBuf::from("/data")
+            .join(DEV.data_directory.native())
+            .join(ENGINE_SOCKET);
+        assert_eq!(resolve(None, dev_directory()).unwrap(), expected);
         assert_eq!(
-            resolve(Some(OsString::new()), Some("/home/a".into())).unwrap(),
+            resolve(Some(OsString::new()), dev_directory()).unwrap(),
             expected
         );
     }
 
     #[test]
     fn the_log_file_sits_beside_the_engine_log_in_the_profile_directory() {
-        let expected = PathBuf::from("/home/a")
-            .join(DEV_DATA_DIRECTORY_FROM_HOME)
+        let expected = PathBuf::from("/data")
+            .join(DEV.data_directory.native())
             .join("logs")
             .join("desktop.log");
-        assert_eq!(log_file_in(Some("/home/a".into())).unwrap(), expected);
-        assert!(matches!(
-            log_file_in(None),
-            Err(Error::Protocol(soyeht_protocol::Error::HomeMissing))
-        ));
+        assert_eq!(log_file_in(&dev_directory().unwrap()), expected);
     }
 
     #[test]
-    fn without_a_home_directory_there_is_no_default() {
+    fn without_a_base_directory_there_is_no_default() {
+        let missing = data_directory(&DEV, None).map_err(Error::from);
         assert!(matches!(
-            resolve(None, None),
+            resolve(None, missing),
             Err(Error::Protocol(soyeht_protocol::Error::HomeMissing))
         ));
     }

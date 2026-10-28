@@ -21,7 +21,11 @@ use soyeht_platform::{
     log,
 };
 use soyeht_protocol::{
-    AttachmentRef, attachment::attachment_frames, frame::Frame, method, profile::DEV_ENGINE_SOCKET,
+    AttachmentRef,
+    attachment::attachment_frames,
+    frame::Frame,
+    method,
+    profile::{ENGINE_SOCKET, Profile},
 };
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -68,16 +72,6 @@ fn coalesce_catalog_jobs(
 
 const CATALOG_QUEUE_CAPACITY: usize = 128;
 
-async fn update_pair_address(shared: &Shared, address: SocketAddr) -> crate::errors::Result<()> {
-    core_lock::with(shared, "pair_address", move |state| {
-        if !address.ip().is_loopback() || state.pair_address.starts_with("127.") {
-            state.pair_address = address.to_string();
-        }
-        Ok(())
-    })
-    .await
-}
-
 fn local_peer_audit_token(stream: &Stream) -> Option<ui_attestation::PeerAuditToken> {
     if !same_user(stream) {
         return None;
@@ -87,6 +81,8 @@ fn local_peer_audit_token(stream: &Stream) -> Option<ui_attestation::PeerAuditTo
 
 pub struct Config {
     pub directory: PathBuf,
+    /// Which installed copy of Soyeht this engine is.
+    pub profile: &'static Profile,
     pub listen: Vec<SocketAddr>,
     /// Also listen on every tailnet address on this port, following them as they come and go.
     pub tailnet_port: Option<u16>,
@@ -115,13 +111,14 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     let _lock = singleton(&config.directory)?;
     let mut core = Core::open_with(&config.directory, config.hooks)?;
+    core.use_port_of(config.profile);
     if let Some(program) = config.supervisor_program {
         core.restart_supervisor_with(program);
     }
     let core = crate::push::share(core, &config.directory);
     let (catalog_tx, catalog_rx) = mpsc::channel(CATALOG_QUEUE_CAPACITY);
     tokio::spawn(catalog_worker(Arc::clone(&core), catalog_rx));
-    let socket = config.directory.join(DEV_ENGINE_SOCKET);
+    let socket = config.directory.join(ENGINE_SOCKET);
     let local = match Listener::bind(&socket) {
         Ok(listener) => listener,
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
@@ -135,13 +132,14 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     })
     .await?;
     let accept = Accept {
+        profile: config.profile,
         core: Arc::clone(&core),
         permits: Arc::new(Semaphore::new(128)),
         catalog_tx: catalog_tx.clone(),
     };
     for address in config.listen {
         let listener = TcpListener::bind(address).await?;
-        update_pair_address(&core, listener.local_addr()?).await?;
+        network::update_pair_address(&core, listener.local_addr()?).await?;
         let serving = serve_tcp(listener, accept.clone());
         tasks.spawn(async move { Ok::<(), Error>(serving.await?) });
     }
@@ -177,6 +175,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
 /// What every accepted connection shares.
 #[derive(Clone)]
 struct Accept {
+    profile: &'static Profile,
     core: Shared,
     permits: Arc<Semaphore>,
     catalog_tx: mpsc::Sender<CatalogJob>,
@@ -185,6 +184,7 @@ struct Accept {
 /// Accepts the connections of this user on the local endpoint, for as long as the engine runs.
 async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Result<()> {
     let Accept {
+        profile,
         core,
         permits,
         catalog_tx,
@@ -202,7 +202,7 @@ async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Resu
         tokio::spawn(async move {
             let _permit = permit;
             let signed_ui = tokio::task::spawn_blocking(move || {
-                ui_attestation::signed_ui_peer(peer_audit_token)
+                ui_attestation::signed_ui_peer(peer_audit_token, profile)
             })
             .await
             .unwrap_or(false);

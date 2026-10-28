@@ -16,7 +16,7 @@ from e2e import (
 )
 from e2e_agents import AgentServices, harness_registry, open_agent, request, until
 from e2e_platform import connect_endpoint, database
-from generated_profile import DEV_ENGINE_SOCKET
+from generated_profile import ENGINE_SOCKET
 
 
 class WritingServices(AgentServices):
@@ -27,7 +27,7 @@ class WritingServices(AgentServices):
             ).fetchone()[0]
         binding = json.loads(raw)["binding"]
         client = object.__new__(Client)
-        client.stream = connect_endpoint(self.data / DEV_ENGINE_SOCKET)
+        client.stream = connect_endpoint(self.data / ENGINE_SOCKET)
         require(receive(client.stream).get("method") == "auth.challenge", "missing challenge")
         client.next = 0
         client.pending = []

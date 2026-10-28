@@ -58,10 +58,12 @@ and `apps/desktop/crates/soyeht-desktop/src/theme/generated.rs` (`ThemeName`, th
 `DesignTokens.Radius.compact` in Swift and `theme::radius::COMPACT` in Rust. The
 Mac values are pinned to the pre-generation ones by `test_design_tokens.py`.
 
-`profiles.json` is the single source for installed profile values. It defines
-the Dev data directory, socket names, TCP port and launchd labels. The same
-generator emits constants for Rust, Swift and Python, plus the launchd service
-templates. Runtime code and installation scripts consume those generated values.
+`profiles.json` is the single source for installed profile values. It defines the Dev and
+production profiles: their data directory on each system (below the system's native data
+location), TCP port, application ids and launchd labels, and the socket names and the variables
+that select a profile. The same generator emits constants for Rust, Swift and Python, plus the
+Dev launchd service templates. Runtime code and installation scripts consume those generated
+values. Every identifier carries "next" (ADR 0112).
 
 The format is JSON Schema 2020-12. The generator accepts local references in
 `$defs`, objects with required and optional fields, arrays, strings, numbers,

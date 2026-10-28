@@ -13,7 +13,6 @@ pub enum Error {
     ResponseMissingResult,
     InvalidArguments(String),
     MissingArgument,
-    UnsupportedProfile,
     MissingDataDirectory,
     MissingBinding,
     EngineUnavailable(Box<Error>),
@@ -47,15 +46,12 @@ impl fmt::Display for Error {
             Self::ResponseMissingResult => formatter.write_str("response has no result"),
             Self::InvalidArguments(message) => formatter.write_str(message),
             Self::MissingArgument => formatter.write_str("missing command-line argument"),
-            Self::UnsupportedProfile => {
-                formatter.write_str("only the new dev profile is available")
-            }
             Self::MissingDataDirectory => formatter.write_str("missing data directory"),
             Self::MissingBinding => {
                 formatter.write_str("SOYEHT_MCP_BINDING is required with --bound")
             }
             Self::EngineUnavailable(error) => {
-                write!(formatter, "cannot connect to the new Dev engine: {error}")
+                write!(formatter, "cannot connect to the engine: {error}")
             }
         }
     }

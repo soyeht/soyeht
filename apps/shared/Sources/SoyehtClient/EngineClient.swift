@@ -164,7 +164,7 @@ public final class EngineClient {
     try await Task.sleep(for: .seconds(seconds))
   }
 
-  public init(socket: String = DevProfile.socketPath, webHost: (any WebHostPort)? = nil) {
+  public init(socket: String = ActiveProfile.socketPath, webHost: (any WebHostPort)? = nil) {
     self.socket = socket
     credential = nil
     self.webHost = webHost

@@ -12,7 +12,7 @@ use crate::{
     editor_commands, task_commands,
 };
 
-pub const USAGE: &str = "soyeht --profile dev [--data-dir PATH] [--bound] COMMAND\n\
+pub const USAGE: &str = "soyeht [--profile dev|prod] [--data-dir PATH] [--bound] COMMAND\n\
 status\n\
 pane create --shell|--agent HARNESS|--editor FILE [--cwd PATH] [--model MODEL] [--effort EFFORT] [--permission-mode MODE]\n\
 pane list | pane close ID | pane prompt ID TEXT | pane cancel ID\n\

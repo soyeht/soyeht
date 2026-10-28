@@ -14,7 +14,7 @@ from e2e import (
     send,
 )
 from e2e_platform import connect_endpoint, database, executable
-from generated_profile import DEV_PTYD_SOCKET
+from generated_profile import PTYD_SOCKET
 
 
 def until(action, message, seconds=20):
@@ -100,7 +100,7 @@ def open_agent(client, workspace, harness):
 
 
 def supervisor_pending(services, generation, instance):
-    with connect_endpoint(services.data / DEV_PTYD_SOCKET, timeout=5) as stream:
+    with connect_endpoint(services.data / PTYD_SOCKET, timeout=5) as stream:
         send(stream, {"method": "hello", "params": {"version": services.ptyd_version,
                                                      "engine_generation": generation}})
         require(receive(stream)["status"] == "welcome", "supervisor handshake failed")

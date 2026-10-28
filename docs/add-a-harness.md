@@ -30,8 +30,10 @@ works. Sign-in is the ACP `-32000` response with its `authMethods`.
 ## Level 1: a local harness
 
 Local harnesses are entries of `harnesses.json` in the profile's data directory (in the Dev
-profile, `~/Library/Application Support/Soyeht.next/dev/harnesses.json` on every system; a
-`--data-dir` engine reads its own). The file is a JSON array of launch entries:
+profile on macOS, `~/Library/Application Support/Soyeht.next/dev/harnesses.json`; on Windows
+`%LOCALAPPDATA%\Soyeht.next\dev\harnesses.json` and on Linux
+`${XDG_DATA_HOME:-~/.local/share}/soyeht-next/dev/harnesses.json`, ADR 0112; a `--data-dir`
+engine reads its own). The file is a JSON array of launch entries:
 
 ```json
 [

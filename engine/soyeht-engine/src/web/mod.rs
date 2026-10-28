@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn the_engine_and_other_soyeht_programs_are_not_offered_as_local_servers() {
         let own = std::process::id();
-        let engine_port = soyeht_protocol::profile::DEV_TCP_PORT;
+        let engine_port = soyeht_protocol::profile::DEV.tcp_port;
         let listeners = format!(
             "p{own}\0cnode\0n127.0.0.1:4000\0p11\0csoyeht-en\0n127.0.0.1:{engine_port}\0\
              p12\0cSoyeht\0n127.0.0.1:4100\0p10\0cnode\0n127.0.0.1:3000\0"

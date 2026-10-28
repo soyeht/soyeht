@@ -369,6 +369,7 @@ pub fn run(
             }
         }
         Setup {
+            app_id: soyeht_protocol::profile::DEV.linux_app_id,
             engine,
             inbox,
             theme,

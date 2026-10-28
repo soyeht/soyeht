@@ -13,7 +13,7 @@ from unittest import mock
 
 import e2e
 import e2e_platform as platform
-from generated_profile import DEV_ENGINE_SOCKET
+from generated_profile import ENGINE_SOCKET
 
 
 def serve_loopback(listener, secret, outcome):
@@ -129,7 +129,7 @@ class Endpoints(unittest.TestCase):
         self.addCleanup(listener.close)
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
-        path = Path(directory.name) / DEV_ENGINE_SOCKET
+        path = Path(directory.name) / ENGINE_SOCKET
         path.write_text(f"{platform.ENDPOINT_MAGIC} {listener.getsockname()[1]} "
                         f"{secret_for_file.hex()}\n")
         outcome = []
@@ -156,7 +156,7 @@ class Endpoints(unittest.TestCase):
 
     def test_a_unix_socket_path_connects_directly(self):
         with tempfile.TemporaryDirectory(dir="/tmp") as directory:
-            path = Path(directory) / DEV_ENGINE_SOCKET
+            path = Path(directory) / ENGINE_SOCKET
             with socket.socket(socket.AF_UNIX) as listener:
                 listener.bind(str(path))
                 listener.listen(1)
@@ -168,7 +168,7 @@ class Endpoints(unittest.TestCase):
 
     def test_a_missing_endpoint_is_a_missing_file(self):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(FileNotFoundError):
-            platform.connect_endpoint(Path(directory) / DEV_ENGINE_SOCKET)
+            platform.connect_endpoint(Path(directory) / ENGINE_SOCKET)
 
 
 class ProcessLauncherTest(unittest.TestCase):

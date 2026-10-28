@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use soyeht_platform::log::{self, Line};
 use soyeht_protocol::{
     PaneState, PaneStateChangedDraft, StateSource, event,
-    profile::{DEV_PTYD_SOCKET, DEV_TCP_PORT},
+    profile::{DEV, PTYD_SOCKET, Profile},
 };
 use soyeht_ptyd::{
     client::Client,
@@ -85,7 +85,17 @@ fn log_stale_export_cleanup(directory: &Path) {
     }
 }
 
+/// The address a paired device reaches the engine at before the listeners say otherwise.
+fn loopback_address(profile: &Profile) -> String {
+    format!("127.0.0.1:{}", profile.tcp_port)
+}
+
 impl Core {
+    /// Makes the address this engine shows for pairing follow the port of `profile`.
+    pub fn use_port_of(&mut self, profile: &Profile) {
+        self.pair_address = loopback_address(profile);
+    }
+
     pub fn open(directory: &Path) -> Result<Self> {
         Self::open_with(directory, Arc::new(NoHooks))
     }
@@ -150,7 +160,7 @@ impl Core {
             language_waiters: BTreeMap::new(),
             web_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
-            pair_address: format!("127.0.0.1:{DEV_TCP_PORT}"),
+            pair_address: loopback_address(&DEV),
             reachability: crate::network::loopback_only(),
             push: crate::push::Notifier::disabled(),
         };
@@ -386,7 +396,7 @@ impl Core {
     }
 
     pub fn connect_supervisor(&mut self) -> Result<()> {
-        let client = Client::connect(&self.directory.join(DEV_PTYD_SOCKET), self.generation)
+        let client = Client::connect(&self.directory.join(PTYD_SOCKET), self.generation)
             .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))?;
         self.ptyd = Some(Box::new(client));
         let result = self.reconcile_registry();

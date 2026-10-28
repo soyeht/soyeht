@@ -9,15 +9,12 @@
 //! The window leaves an engine alone when `SOYEHT_ENGINE_SOCKET` names one. The decisions are
 //! here, behind [`Host`], so they are tested without starting a process.
 
-use crate::profile::{SOCKET_ENV, socket_override};
+use crate::profile::{SOCKET_ENV, data_directory_of_profile, socket_override};
 use soyeht_platform::{
     fs, log,
     process::detached::{Service, create_logs_directory, spawn_service},
 };
-use soyeht_protocol::{
-    data_directory::{RESTART_SUPERVISOR_FLAG, dev_data_directory},
-    profile::DEV_PTYD_SOCKET,
-};
+use soyeht_protocol::{data_directory::RESTART_SUPERVISOR_FLAG, profile::PTYD_SOCKET};
 use std::{
     any::Any,
     env::consts::EXE_SUFFIX,
@@ -58,20 +55,20 @@ impl Autostart {
     pub fn resolve() -> Self {
         Self::from_parts(
             std::env::var_os(SOCKET_ENV),
-            std::env::home_dir(),
+            data_directory_of_profile(),
             std::env::current_exe(),
         )
     }
 
     fn from_parts(
         socket_override_value: Option<OsString>,
-        home: Option<PathBuf>,
+        directory: crate::Result<PathBuf>,
         executable: io::Result<PathBuf>,
     ) -> Self {
         if socket_override(socket_override_value).is_some() {
             return Self::Off;
         }
-        let Ok(directory) = dev_data_directory(home) else {
+        let Ok(directory) = directory else {
             return Self::Off;
         };
         // A system that cannot say where this program is has no folder to look in; the start
@@ -313,7 +310,7 @@ impl Host for Local<'_> {
     }
 
     fn supervisor_reachable(&self) -> bool {
-        soyeht_platform::local::connect(&self.plan.directory.join(DEV_PTYD_SOCKET)).is_ok()
+        soyeht_platform::local::connect(&self.plan.directory.join(PTYD_SOCKET)).is_ok()
     }
 
     fn program_exists(&self, path: &Path) -> bool {

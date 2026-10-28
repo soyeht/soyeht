@@ -135,8 +135,11 @@ been run by the maintainers; their Windows check is `scripts/check_engine_window
 
 `soyeht --help` lists every command. `--listen 127.0.0.1:0` keeps the engine off the fixed
 port 8291 and off your tailnet. Without `--data-dir` all three programs use the Dev
-profile directory under your home (`~/Library/Application Support/Soyeht.next/dev`, on
-every system), which is where the Mac app and the desktop client look by default.
+profile directory in the native data location of your system (ADR 0112):
+`~/Library/Application Support/Soyeht.next/dev` on macOS, `%LOCALAPPDATA%\Soyeht.next\dev` on
+Windows and `${XDG_DATA_HOME:-~/.local/share}/soyeht-next/dev` on Linux. That is where the Mac
+app and the desktop client look by default. `SOYEHT_PROFILE=prod` selects the production profile
+(`Soyeht.next`, port 8290) instead.
 
 On macOS the Mac app uses only that default profile. Install the engine into it as launchd
 services with `uv run python scripts/install_dev.py`; it signs the binaries with your Apple

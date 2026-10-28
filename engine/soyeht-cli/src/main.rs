@@ -8,29 +8,36 @@ mod task_commands;
 use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
-use soyeht_protocol::data_directory::dev_data_directory;
+use soyeht_protocol::{
+    data_directory::{data_directory, selected_profile},
+    profile::SELECTION_ENV,
+};
 use std::path::PathBuf;
 
 fn run() -> Result<Value> {
-    let mut directory = dev_data_directory(std::env::home_dir())?;
+    let mut requested = std::env::var_os(SELECTION_ENV);
+    let mut directory = None;
     let mut args = std::env::args().skip(1).peekable();
     let mut bound = false;
     while args.peek().is_some_and(|s| s.starts_with("--")) {
         let argument = args.next().ok_or(Error::MissingArgument)?;
         match argument.as_str() {
-            "--profile" => {
-                if args.next().as_deref() != Some("dev") {
-                    return Err(Error::UnsupportedProfile);
-                }
-            }
+            "--profile" => requested = Some(args.next().ok_or(Error::MissingArgument)?.into()),
             "--data-dir" => {
-                directory = PathBuf::from(args.next().ok_or(Error::MissingDataDirectory)?)
+                directory = Some(PathBuf::from(
+                    args.next().ok_or(Error::MissingDataDirectory)?,
+                ))
             }
             "--help" => return Ok(json!({"usage":USAGE})),
             "--bound" => bound = true,
             _ => return Err(Error::InvalidArguments(USAGE.into())),
         }
     }
+    let profile = selected_profile(requested.as_deref())?;
+    let directory = match directory {
+        Some(directory) => directory,
+        None => data_directory(profile, soyeht_platform::dirs::data_base())?,
+    };
     let args: Vec<_> = args.collect();
     let hook = args.first().is_some_and(|arg| arg == "__experiment-hook");
     let connected = if hook {

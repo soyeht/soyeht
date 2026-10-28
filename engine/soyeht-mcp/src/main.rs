@@ -6,7 +6,7 @@ use soyeht_mcp::{
     server,
     tools::{Service, TaskContext},
 };
-use soyeht_protocol::profile::DEV_ENGINE_SOCKET;
+use soyeht_protocol::profile::ENGINE_SOCKET;
 use std::{io, path::PathBuf};
 
 const BINDING_ENV: &str = "SOYEHT_MCP_BINDING";
@@ -90,7 +90,7 @@ fn required(value: Option<String>, message: &'static str) -> Result<String> {
 fn run() -> Result<()> {
     let config = arguments()?;
     let binding = required(std::env::var(BINDING_ENV).ok(), "binding is required")?;
-    let client = Client::connect(&config.data_dir.join(DEV_ENGINE_SOCKET), &binding)?;
+    let client = Client::connect(&config.data_dir.join(ENGINE_SOCKET), &binding)?;
     server::serve(
         io::stdin().lock(),
         io::stdout().lock(),

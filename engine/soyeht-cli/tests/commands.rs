@@ -324,13 +324,13 @@ fn cli_opens_edits_searches_and_reads_history_from_a_real_editor_pane() {
 }
 
 #[test]
-fn another_profile_is_refused_before_connecting() {
+fn an_unknown_profile_is_refused_before_connecting() {
     let output = Command::new(env!("CARGO_BIN_EXE_soyeht"))
         .args(["--profile", "other", "status"])
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("only the new dev profile"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("profile name is not known"));
     assert!(output.stdout.is_empty());
 }
 

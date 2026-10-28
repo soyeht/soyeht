@@ -147,9 +147,9 @@ colors.
   (Hyprland) and Windows 11 against a disposable engine. `scripts/check_engine_linux.sh`
   and `scripts/check_engine_windows.ps1` format-check, lint and test it there.
 
-The engine's socket is found from the Dev profile directory under the user's home on
-every system (the generated `soyeht_protocol::profile` constants); `SOYEHT_ENGINE_SOCKET`
-overrides it. The local transport is `soyeht_platform::local` (ADR 0086): a Unix socket,
+The engine's socket is found in the data directory of the client's profile, below the
+system's native data base (`soyeht_platform::dirs`) on every system (the generated
+`soyeht_protocol::profile` constants, ADR 0112); `SOYEHT_ENGINE_SOCKET` overrides it. The local transport is `soyeht_platform::local` (ADR 0086): a Unix socket,
 or on Windows the loopback endpoint file with its proof of the shared secret.
 
 Window chrome follows the window system. The application draws its own title bar, so on

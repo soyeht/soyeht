@@ -278,8 +278,11 @@ software renderer, which needs an up-to-date Mesa (see "Graphics on Linux" in
 `docs/platforms.md`: `mesa-vulkan-drivers`, and `sudo dnf upgrade mesa-vulkan-drivers` on
 Fedora).
 
-The socket is found from the Dev profile directory under the user's home, which is where the
-engine keeps it on macOS, Linux and Windows. To reach another engine, set the socket path; the
+The socket is found in the data directory of the client's profile, in the system's native data
+location (`~/Library/Application Support/Soyeht.next/dev` on macOS, `%LOCALAPPDATA%\Soyeht.next\dev`
+on Windows, `${XDG_DATA_HOME:-~/.local/share}/soyeht-next/dev` on Linux, ADR 0112), which is where
+the engine keeps it. A build is the Dev profile unless `SOYEHT_PROFILE=prod` is set (or the build
+was compiled with `SOYEHT_BUILD_PROFILE=prod`). To reach another engine, set the socket path; the
 window then starts no engine of its own:
 
 ```sh

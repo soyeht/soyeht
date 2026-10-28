@@ -9,7 +9,7 @@ mod macos {
     use security_framework::os::macos::code_signing::{
         Flags, GuestAttributes, SecCode, SecRequirement,
     };
-    use soyeht_protocol::profile::DEV_ENGINE_LAUNCHD_LABEL;
+    use soyeht_protocol::profile::Profile;
     use std::{
         ffi::c_void,
         mem::{MaybeUninit, size_of},
@@ -21,7 +21,6 @@ mod macos {
     use tokio::net::UnixStream;
 
     const LOCAL_PEERTOKEN: libc::c_int = 0x006;
-    const UI_IDENTIFIER: &str = "com.soyeht.next.dev.mac";
     const SIGNING_INFORMATION: u32 = 1 << 1;
     static ENGINE_TEAM: OnceLock<Option<String>> = OnceLock::new();
 
@@ -114,12 +113,13 @@ mod macos {
         closed_team(team)
     }
 
-    fn engine_team() -> Option<&'static str> {
+    fn engine_team(profile: &Profile) -> Option<&'static str> {
         ENGINE_TEAM
             .get_or_init(|| {
                 let code = SecCode::for_self(Flags::NONE).ok()?;
                 let requirement = SecRequirement::from_str(&format!(
-                    "anchor apple generic and identifier \"{DEV_ENGINE_LAUNCHD_LABEL}\""
+                    "anchor apple generic and identifier \"{}\"",
+                    profile.engine_launchd_label
                 ))
                 .ok()?;
                 code.check_validity(
@@ -132,8 +132,8 @@ mod macos {
             .as_deref()
     }
 
-    pub fn signed_ui(token: PeerAuditToken) -> bool {
-        let Some(team) = engine_team() else {
+    pub fn signed_ui(token: PeerAuditToken, profile: &Profile) -> bool {
+        let Some(team) = engine_team(profile) else {
             return false;
         };
         // SAFETY: PeerAuditToken has the exact C layout of audit_token_t and
@@ -151,7 +151,8 @@ mod macos {
             return false;
         };
         let Ok(requirement) = SecRequirement::from_str(&format!(
-            "anchor apple generic and identifier \"{UI_IDENTIFIER}\" and certificate leaf[subject.OU] = \"{team}\""
+            "anchor apple generic and identifier \"{}\" and certificate leaf[subject.OU] = \"{team}\"",
+            profile.macos_app_id
         )) else {
             return false;
         };
@@ -165,6 +166,7 @@ mod macos {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use soyeht_protocol::profile::DEV;
         use std::os::unix::net::UnixStream as StdUnixStream;
 
         #[test]
@@ -181,7 +183,7 @@ mod macos {
             let token = read_audit_token(left.as_raw_fd()).unwrap();
             assert_eq!(token.words[5], std::process::id());
             assert_ne!(token.words[7], 0, "audit token omitted the PID generation");
-            assert!(!signed_ui(token));
+            assert!(!signed_ui(token, &DEV));
         }
 
         #[test]
@@ -208,7 +210,10 @@ mod macos {
                 "the Mac app must have Debug and Release settings"
             );
             for block in ui {
-                assert_eq!(setting(block, "SOYEHT_APP_BUNDLE_ID"), Some(UI_IDENTIFIER));
+                assert_eq!(
+                    setting(block, "SOYEHT_APP_BUNDLE_ID"),
+                    Some(DEV.macos_app_id)
+                );
                 assert_eq!(
                     setting(block, "PRODUCT_BUNDLE_IDENTIFIER"),
                     Some("$(SOYEHT_APP_BUNDLE_ID)")
@@ -228,7 +233,7 @@ mod macos {
                 let identifier = setting(block, "PRODUCT_BUNDLE_IDENTIFIER")
                     .expect("the UI test must have its own bundle identifier");
                 assert_ne!(
-                    identifier, UI_IDENTIFIER,
+                    identifier, DEV.macos_app_id,
                     "the fixture must not be an attested UI"
                 );
                 assert_ne!(identifier, "$(SOYEHT_APP_BUNDLE_ID)");
@@ -241,8 +246,8 @@ mod macos {
 pub use macos::{PeerAuditToken, peer_audit_token};
 
 #[cfg(target_os = "macos")]
-pub fn signed_ui_peer(token: PeerAuditToken) -> bool {
-    macos::signed_ui(token)
+pub fn signed_ui_peer(token: PeerAuditToken, profile: &soyeht_protocol::profile::Profile) -> bool {
+    macos::signed_ui(token, profile)
 }
 
 /// Only macOS can attest which signed program is on the other end of a local
@@ -260,6 +265,6 @@ pub fn peer_audit_token(
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn signed_ui_peer(_: PeerAuditToken) -> bool {
+pub fn signed_ui_peer(_: PeerAuditToken, _: &soyeht_protocol::profile::Profile) -> bool {
     false
 }

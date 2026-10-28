@@ -5,6 +5,8 @@
 //!
 //! - [`local`]: the endpoint other processes of the same user connect to. A Unix socket on
 //!   macOS and Linux; an authenticated loopback connection on Windows.
+//! - [`dirs`]: the native folder for a user's application data (Application Support,
+//!   `%LOCALAPPDATA%`, XDG).
 //! - [`dialog`]: a native message box for a program with no terminal (Windows; no-op elsewhere).
 //! - [`user`]: who is running the process.
 //! - [`log`]: one structured, escaped log line on standard error.
@@ -20,6 +22,7 @@
 //! The crate has no Soyeht dependencies.
 
 pub mod dialog;
+pub mod dirs;
 pub mod fs;
 pub mod git;
 pub mod local;

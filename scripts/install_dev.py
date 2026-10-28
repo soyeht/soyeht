@@ -10,15 +10,15 @@ import subprocess
 import time
 from pathlib import Path
 
-from generated_profile import (
-    DEV_DATA_DIRECTORY_FROM_HOME,
-    DEV_LAUNCHD_LABELS,
-    DEV_LAUNCHD_PREFIX,
-    DEV_SOCKET_NAMES,
-)
+from generated_profile import ENGINE_SOCKET, PROFILES, PTYD_SOCKET
+from legacy_guard import require_next, require_next_path
 
 ROOT = Path(__file__).resolve().parents[1]
-DATA = Path.home() / DEV_DATA_DIRECTORY_FROM_HOME
+PROFILE = PROFILES["dev"]
+DEV_LAUNCHD_LABELS = PROFILE["launchdLabels"]
+DEV_LAUNCHD_PREFIX = PROFILE["launchdPrefix"]
+DEV_SOCKET_NAMES = {"engine": ENGINE_SOCKET, "ptyd": PTYD_SOCKET}
+DATA = Path.home() / "Library/Application Support" / PROFILE["dataDirectory"]["macos"]
 COMPONENTS = ("ptyd", "engine")
 ENGINE_SUPPORT = ("mcp",)
 SYSTEM_PATHS = (
@@ -111,9 +111,19 @@ def copy_signed_binary(source, temporary, identifier, identity):
         raise SystemExit("Dev binary did not retain its stable signing identity")
 
 
+def refuse_legacy(components):
+    """Stop before anything is written when a value could name the legacy app."""
+    require_next_path("data directory", DATA)
+    for component in components:
+        require_next("service label", DEV_LAUNCHD_LABELS[component])
+    for component, identifier in BINARY_IDENTIFIERS.items():
+        require_next(f"signing identifier of {component}", identifier)
+
+
 def install_components(components, domain="gui", signing_identity=None):
     if not set(components).issubset(COMPONENTS) or domain not in ("gui", "user"):
         raise ValueError("Unsupported Dev service")
+    refuse_legacy(components)
     if DATA.resolve() != DATA.absolute():
         raise SystemExit("Dev data path must not redirect through a symlink")
     target = f"{domain}/{os.getuid()}"

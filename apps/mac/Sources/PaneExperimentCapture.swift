@@ -57,7 +57,7 @@ private struct ExperimentCaptureDialogs: ViewModifier {
   let client: EngineClient
 
   private var exportsPath: String {
-    DevProfile.dataDirectory
+    ActiveProfile.dataDirectory
       .appendingPathComponent("experiments/pane-state/exports", isDirectory: true).path
   }
 

@@ -19,7 +19,7 @@ Each layer depends only on the layers listed above it.
    Soyeht dependencies and no IO or async runtime.
    `engine/soyeht-platform` sits at the same level: the operating-system seams
    (the local endpoint, owner-only files, process launch and termination, the user's
-   identity, the structured log line). It has no Soyeht dependencies, and these system
+   identity, the native data directory, the structured log line). It has no Soyeht dependencies, and these system
    calls live there (ADR 0086). A crate above it may keep a `cfg` module for a concern
    specific to its own job (`soyeht-ptyd`'s child and pty, the engine's log rotation, the
    desktop's `os_notify`), under the rule below: the same public shape on every system.
@@ -349,5 +349,13 @@ inherit the main actor.
   commit removed it: it would stay in every clone. A kept exception goes in its
   `ALLOWED_FILES` with a reason.
 - Never commit `benchmark/`. It is private local analysis and is ignored.
+- Legacy app: the owner's Mac also runs an older app that is not this repository. Its bundle
+  identifiers are `com.soyeht.mac` and `com.soyeht.mac.dev`, its program is
+  `/Applications/Soyeht.app`, and its data is in `~/Library/Application Support/Soyeht` and
+  `~/Library/Application Support/Soyeht Dev`. Every machine identifier of the rewrite (bundle
+  id, service label, data directory, application id) contains "next", for ever (ADR 0112).
+  Never use, read, write, migrate, open, install over or delete any legacy identifier or path.
+  `scripts/legacy_guard.py` refuses them in installers, and `scripts/check_legacy_isolation.py`
+  fails on a profile value without "next" and on any file that names a legacy one.
 - Never commit secrets or machine-specific values: tokens, keys, team IDs, VM
   addresses or the restricted vocabulary. Pass them through the environment.

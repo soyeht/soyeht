@@ -139,7 +139,7 @@ The desktop's assets live in `apps/desktop/packaging/`. The icon is the Mac app'
 | `windows/soyeht.ico` | The icon (16 to 256 pixels). |
 | `windows/soyeht.rc` | The resource script `crates/soyeht-desktop/build.rs` embeds in the executable on Windows, through `embed-resource`: the icon and the version information. |
 | `linux/icons/hicolor/<size>x<size>/apps/soyeht.png` | The icon in the freedesktop theme layout (16 to 512 pixels), to install under `share/icons`. |
-| `linux/soyeht.desktop` | The launcher entry, to install under `share/applications`. Its `Icon` and `StartupWMClass` are the icon name and the application id `soyeht`. |
+| `linux/com.soyeht.next.desktop` | The launcher entry, to install under `share/applications`. Its file name and `StartupWMClass` are the production application id `com.soyeht.next` (`appIds` in `contracts/profiles.json`), which the window sets; its `Icon` is the icon name `soyeht`. The entry is for the production profile: a Dev build sets the application id `com.soyeht.next.dev`, so it needs an entry of its own (`StartupWMClass=com.soyeht.next.dev`) or none. |
 
 `uv run python apps/desktop/packaging/generate_icons.py` writes the files and `--check` fails when
 they are out of date. Packages (an installer, a `.deb`, an AppImage) are not built yet.
@@ -209,8 +209,9 @@ needs a Vulkan driver (`mesa-vulkan-drivers`); its tests open no window.
 
 A release client on Windows is a GUI program with no console, and a Linux client started from a
 menu has no terminal, so standard error goes nowhere. The client also writes every log line,
-including its startup advice, to `logs/desktop.log` in the Dev profile directory under the
-user's home (the directory of the engine's socket; `logs/engine.log` is beside it). The file is
+including its startup advice, to `logs/desktop.log` in the client's profile directory in the
+system's native data location (the directory of the engine's socket; `logs/engine.log` is
+beside it; ADR 0112). The file is
 owner-only and bounded like the engine's log: it rotates at 16 MiB and keeps four rotated files
 (`desktop.log.1` to `desktop.log.4`). The first line it holds names its path and the build id (`0.1.0+<commit>`). The code is
 `soyeht_platform::log::to_file`, built on the same `RotatingFile` as the engine's log (ADR 0082, ADR 0101). A failure before the

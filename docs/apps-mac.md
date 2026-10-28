@@ -1,7 +1,7 @@
 # Mac app in the Dev profile
 
 Install the engine and ptyd following `dev-local.md`. The app exclusively uses
-the socket at `~/Library/Application Support/Soyeht.next/dev/engine.sock`.
+the socket at `~/Library/Application Support/Soyeht.next/dev/engine.sock` (the production app, whose bundle identifier is `com.soyeht.next.mac`, uses `~/Library/Application Support/Soyeht.next/engine.sock`).
 Closing the window does not close the shell. Closing a pane requires confirmation.
 
 Unsigned build, also used in CI:

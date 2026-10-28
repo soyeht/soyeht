@@ -20,7 +20,7 @@ use soyeht_platform::{
 use soyeht_protocol::{
     frame::{read_json, write_json},
     limits,
-    profile::DEV_PTYD_SOCKET,
+    profile::PTYD_SOCKET,
 };
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -85,7 +85,7 @@ pub fn run(directory: &Path) -> Result<()> {
         Err(LockError::Held) => return Err(Error::AlreadyRunning),
         Err(LockError::Io(error)) => return Err(error.into()),
     };
-    let endpoint = directory.join(DEV_PTYD_SOCKET);
+    let endpoint = directory.join(PTYD_SOCKET);
     let listener = match Listener::bind(&endpoint) {
         Ok(listener) => listener,
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),

@@ -58,7 +58,8 @@ the stable identifier, team identifier and designated requirement.
 
 The installer creates only the `com.soyeht.next.dev.ptyd` and
 `com.soyeht.next.dev.engine` services. Executables, database and logs live in
-`~/Library/Application Support/Soyeht.next/dev/`. Service files live in
+`~/Library/Application Support/Soyeht.next/dev/` (the production profile is
+`~/Library/Application Support/Soyeht.next/` with port 8290; ADR 0112). Service files live in
 `~/Library/LaunchAgents/`. The engine listens on loopback and tailnet addresses
 (IPv4 and IPv6), port 8291. Loopback is always on. The engine looks for tailnet
 addresses every two seconds and starts or stops their listeners in place, without

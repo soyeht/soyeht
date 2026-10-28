@@ -35,6 +35,7 @@ pub enum Error {
     InconsistentSnapshotPages,
     SnapshotSectionNotArray,
     HomeMissing,
+    UnknownProfile,
 }
 
 impl fmt::Display for Error {
@@ -84,6 +85,7 @@ impl fmt::Display for Error {
                 formatter.write_str("snapshot section must be an array")
             }
             Self::HomeMissing => formatter.write_str("the home directory is unknown"),
+            Self::UnknownProfile => formatter.write_str("the profile name is not known"),
         }
     }
 }

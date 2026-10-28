@@ -1,9 +1,15 @@
 import Foundation
 import SoyehtProtocol
 
-public enum DevProfile {
+/// The installed profile this process runs as, and where that profile keeps its data
+/// (`contracts/profiles.json`). The Mac app has only its own profile: the Dev app and the
+/// production app are told apart by their bundle identifiers and keep separate folders.
+public enum ActiveProfile {
+  public static let values = ProfileValues.selected(
+    environment: ProcessInfo.processInfo.environment,
+    bundleIdentifier: Bundle.main.bundleIdentifier)
   public static let dataDirectory = URL.applicationSupportDirectory
-    .appending(path: DevProfileValues.applicationSupportSubpath, directoryHint: .isDirectory)
+    .appending(path: values.applicationSupportSubpath, directoryHint: .isDirectory)
   public static let socketPath: String = {
     #if DEBUG
       if let value = ProcessInfo.processInfo.environment["SOYEHT_TEST_SOCKET"],
@@ -12,16 +18,33 @@ public enum DevProfile {
         return fixture
       }
     #endif
-    return dataDirectory.appending(path: DevProfileValues.engineSocketName).path
+    return dataDirectory.appending(path: ProfileValues.engineSocketName).path
   }()
   /// Debug UI tests may use disposable sockets, never another installed profile.
   static func fixtureSocket(_ value: String) -> String? {
     let path = URL(fileURLWithPath: value).resolvingSymlinksInPath().standardizedFileURL
-    guard path.lastPathComponent == DevProfileValues.engineSocketName,
+    guard path.lastPathComponent == ProfileValues.engineSocketName,
       path.deletingLastPathComponent().deletingLastPathComponent().path
         == URL(fileURLWithPath: "/tmp").resolvingSymlinksInPath().standardizedFileURL.path,
       path.deletingLastPathComponent().lastPathComponent.hasPrefix("sn-")
     else { return nil }
     return path.path
+  }
+}
+
+extension ProfileValues {
+  /// The profile a process runs as: the one the environment names, else the one whose Mac app
+  /// identifier is this app's bundle identifier, else Dev. A name that no profile has is
+  /// ignored, so a stray variable cannot stop the app.
+  static func selected(environment: [String: String], bundleIdentifier: String?) -> ProfileValues {
+    if let name = environment[selectionEnvironment],
+      let named = all.first(where: { $0.name == name })
+    {
+      return named
+    }
+    if let bundleIdentifier, let own = all.first(where: { $0.appBundleId == bundleIdentifier }) {
+      return own
+    }
+    return .dev
   }
 }

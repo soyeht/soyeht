@@ -194,10 +194,36 @@ private func terminal(reference: UInt32 = 2, generation: UInt32 = 1, offset: UIn
 
 @Test func fixtureSocketCannotSelectAnInstalledProfile() {
   #expect(
-    DevProfile.fixtureSocket("/tmp/sn-ui-123/engine.sock") == "/tmp/sn-ui-123/engine.sock")
+    ActiveProfile.fixtureSocket("/tmp/sn-ui-123/engine.sock") == "/tmp/sn-ui-123/engine.sock")
+  let installed = ActiveProfile.dataDirectory.appendingPathComponent("engine.sock").path
+  #expect(ActiveProfile.fixtureSocket(installed) == nil)
+  #expect(ActiveProfile.fixtureSocket("/tmp/engine.sock") == nil)
+  #expect(ActiveProfile.fixtureSocket("/tmp/sn-ui-123/../other/engine.sock") == nil)
+}
+
+@Test func theProfileIsNamedByTheEnvironmentThenByTheBundleThenIsDev() {
+  let env = ProfileValues.selectionEnvironment
+  #expect(ProfileValues.selected(environment: [:], bundleIdentifier: nil).name == "dev")
   #expect(
-    DevProfile.fixtureSocket(DevProfile.dataDirectory.appendingPathComponent("engine.sock").path)
-      == nil)
-  #expect(DevProfile.fixtureSocket("/tmp/engine.sock") == nil)
-  #expect(DevProfile.fixtureSocket("/tmp/sn-ui-123/../other/engine.sock") == nil)
+    ProfileValues.selected(environment: [:], bundleIdentifier: ProfileValues.prod.appBundleId)
+      .name == "prod")
+  #expect(
+    ProfileValues.selected(
+      environment: [env: "dev"], bundleIdentifier: ProfileValues.prod.appBundleId
+    ).name == "dev")
+  #expect(
+    ProfileValues.selected(environment: [env: "prod"], bundleIdentifier: nil).name == "prod")
+  #expect(
+    ProfileValues.selected(environment: [env: "other"], bundleIdentifier: "com.example.app").name
+      == "dev")
+}
+
+@Test func everyProfileKeepsItsDataApartAndBelongsToTheNextFamily() {
+  let profiles = ProfileValues.all
+  #expect(Set(profiles.map(\.applicationSupportSubpath)).count == profiles.count)
+  #expect(Set(profiles.map(\.tcpPort)).count == profiles.count)
+  for profile in profiles {
+    #expect(profile.applicationSupportSubpath.hasPrefix("Soyeht.next"))
+    #expect(profile.appBundleId.contains(".next."))
+  }
 }

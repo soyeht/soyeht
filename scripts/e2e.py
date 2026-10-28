@@ -23,11 +23,9 @@ from e2e_platform import (
     require,
     short_temp_root,
 )
-from generated_profile import (
-    DEV_ENGINE_SOCKET,
-    DEV_LAUNCHD_PREFIX,
-    DEV_PTYD_SOCKET,
-)
+from generated_profile import ENGINE_SOCKET, PROFILES, PTYD_SOCKET
+
+DEV_LAUNCHD_PREFIX = PROFILES["dev"]["launchdPrefix"]
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_NAMES = ("soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd")
@@ -57,7 +55,7 @@ def receive(stream):
 
 class Client:
     def __init__(self, data, name="acceptance", capabilities=None):
-        self.stream = connect_endpoint(data / DEV_ENGINE_SOCKET)
+        self.stream = connect_endpoint(data / ENGINE_SOCKET)
         try:
             require(receive(self.stream).get("method") == "auth.challenge", "missing challenge")
             self.next = 0
@@ -257,7 +255,7 @@ class Services:
 
     def close_supervised_processes(self):
         try:
-            with connect_endpoint(self.data / DEV_PTYD_SOCKET, timeout=5) as stream:
+            with connect_endpoint(self.data / PTYD_SOCKET, timeout=5) as stream:
                 send(stream, {"method": "hello", "params": {"version": self.ptyd_version, "engine_generation": 18446744073709551615}})
                 require(receive(stream)["status"] == "welcome", "cleanup supervisor handshake")
                 send(stream, {"method": "list"})

@@ -233,7 +233,7 @@ mod tests {
     use soyeht_protocol::{
         attachment::attachment_header,
         frame::{Frame, read_json, write_json},
-        profile::DEV_ENGINE_SOCKET,
+        profile::ENGINE_SOCKET,
     };
     use std::thread;
 
@@ -259,7 +259,7 @@ mod tests {
     fn framed_engine_connection_proves_the_binding_and_preserves_remote_errors() {
         let directory = scratch().join(format!("mcp-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
-        let socket = directory.join(DEV_ENGINE_SOCKET);
+        let socket = directory.join(ENGINE_SOCKET);
         let listener = Listener::bind(&socket).unwrap();
         let server = thread::spawn(move || {
             let mut stream = listener.accept().unwrap();
@@ -287,7 +287,7 @@ mod tests {
     fn request_reconnects_after_engine_restart_and_reuses_idempotency_key() {
         let directory = scratch().join(format!("mcp-restart-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
-        let socket = directory.join(DEV_ENGINE_SOCKET);
+        let socket = directory.join(ENGINE_SOCKET);
         let listener = Listener::bind(&socket).unwrap();
         let server = thread::spawn(move || {
             let mut first = accept_client(&listener);
@@ -322,7 +322,7 @@ mod tests {
     fn screenshot_bytes_are_committed_only_by_the_matching_response_reference() {
         let directory = scratch().join(format!("mcp-image-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
-        let socket = directory.join(DEV_ENGINE_SOCKET);
+        let socket = directory.join(ENGINE_SOCKET);
         let listener = Listener::bind(&socket).unwrap();
         let server = thread::spawn(move || {
             let mut stream = accept_client(&listener);

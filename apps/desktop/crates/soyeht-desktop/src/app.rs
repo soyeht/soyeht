@@ -25,11 +25,6 @@ use soyeht_client::{
 /// Where the macOS window buttons sit; the top bar leaves room for them.
 const TRAFFIC_LIGHTS: (f32, f32) = (desktop::TRAFFIC_LIGHT_INSET, desktop::TRAFFIC_LIGHT_INSET);
 
-/// The application's identity to the window system: Wayland's `app_id`, and the class X11 window
-/// managers group windows by. Without it a compositor shows the window as nameless and cannot
-/// match a rule or an icon to it.
-const APP_ID: &str = "soyeht";
-
 /// The tasks surface a replay opens on.
 pub(crate) struct TasksStart {
     pub view: crate::tasks_ui::TaskView,
@@ -41,6 +36,10 @@ pub(crate) struct TasksStart {
 
 /// What the window starts from: the engine it talks to, the events it draws, and how it opens.
 pub(crate) struct Setup {
+    /// The application's identity to the window system: Wayland's `app_id`, and the class X11
+    /// window managers group windows by. Without it a compositor shows the window as nameless
+    /// and cannot match a rule or an icon to it. It is the profile's application id.
+    pub app_id: &'static str,
     pub engine: Engine,
     pub inbox: async_channel::Receiver<Event>,
     pub theme: ThemeName,
@@ -73,8 +72,10 @@ pub type Notice = fn(&str);
 /// Opens the window and runs until the application quits.
 pub fn run(notice: Notice) {
     logging::start();
-    let socket = match profile::engine_socket() {
-        Ok(path) => path,
+    let (socket, app_id) = match profile::engine_socket()
+        .and_then(|socket| Ok((socket, profile::selected()?.linux_app_id)))
+    {
+        Ok(found) => found,
         Err(error) => {
             logging::announce_fatal(notice, "profile_unavailable", &format!("soyeht: {error}"));
             std::process::exit(2);
@@ -97,6 +98,7 @@ pub fn run(notice: Notice) {
         let (engine, inbox) = Engine::start_hosted(socket.clone(), Autostart::resolve(), host);
         // Read before the window opens, so the first frame is already in the chosen theme.
         Setup {
+            app_id,
             engine,
             inbox,
             theme: crate::prefs::saved_theme(&LocalPreferences::load(&preferences)),
@@ -164,7 +166,7 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
             window_min_size: Some(size(px(window_size::MINIMUM.0), px(window_size::MINIMUM.1))),
             // The application draws its own title bar and window buttons: the top bar.
             window_decorations: Some(WindowDecorations::Client),
-            app_id: Some(APP_ID.into()),
+            app_id: Some(setup.app_id.into()),
             titlebar: Some(TitlebarOptions {
                 title: Some("Soyeht".into()),
                 appears_transparent: true,

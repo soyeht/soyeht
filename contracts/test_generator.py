@@ -493,37 +493,71 @@ class ProfileTests(unittest.TestCase):
     def setUp(self):
         self.document = json.loads((ROOT / "profiles.json").read_text())
 
-    def test_dev_profile_is_complete_and_safe_to_generate(self):
+    def changed(self, *path_and_value):
+        *path, value = path_and_value
+        document = copy.deepcopy(self.document)
+        target = document
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+        return document
+
+    def test_profiles_are_complete_and_safe_to_generate(self):
         validate_profiles(self.document)
         changes = (
-            ("dataDirectoryFromHome", "/tmp/dev"),
-            ("dataDirectoryFromHome", "Library/Application Support/../dev"),
-            ("tcpPort", 0),
-            ("tcpPort", True),
+            ("profiles", "dev", "dataDirectory", "macos", "/tmp/dev"),
+            ("profiles", "dev", "dataDirectory", "macos", "Soyeht.next/../dev"),
+            ("profiles", "dev", "dataDirectory", "windows", "Soyeht.next\\dev"),
+            ("profiles", "dev", "dataDirectory", "linux", "soyeht-next/"),
+            ("profiles", "dev", "tcpPort", 0),
+            ("profiles", "dev", "tcpPort", True),
+            ("profiles", "prod", "tcpPort", self.document["profiles"]["dev"]["tcpPort"]),
+            ("profiles", "prod", "appIds", "linux", "Not A Name"),
+            ("profiles", "prod", "dataDirectory", {"macos": "Soyeht.next"}),
+            ("selection", "environment", "PROFILE"),
+            ("version", 1),
         )
-        for field, value in changes:
-            changed = copy.deepcopy(self.document)
-            changed["profiles"]["dev"][field] = value
-            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
-                validate_profiles(changed)
+        for change in changes:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_profiles(self.changed(*change))
 
     def test_profile_components_cannot_drift_or_share_endpoints(self):
-        for field in ("sockets", "launchdLabels"):
-            changed = copy.deepcopy(self.document)
-            changed["profiles"]["dev"][field]["ptyd"] = changed["profiles"]["dev"][field][
-                "engine"
-            ]
-            with self.subTest(field=field), self.assertRaises(ValueError):
-                validate_profiles(changed)
+        for path in (("sockets",), ("profiles", "dev", "launchdLabels")):
+            document = copy.deepcopy(self.document)
+            values = document
+            for key in path:
+                values = values[key]
+            values["ptyd"] = values["engine"]
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                validate_profiles(document)
+
+    def test_every_identifier_carries_next_so_none_can_name_the_legacy_app(self):
+        # The legacy app uses com.soyeht.mac and the data folders Soyeht and Soyeht Dev.
+        changes = (
+            ("profiles", "prod", "dataDirectory", "macos", "Soyeht"),
+            ("profiles", "prod", "dataDirectory", "linux", "soyeht"),
+            ("profiles", "prod", "appIds", "macos", "com.soyeht.mac"),
+            ("profiles", "dev", "appIds", "macos", "com.soyeht.mac.dev"),
+            ("profiles", "prod", "launchdLabels", {
+                "engine": "com.soyeht.engine", "ptyd": "com.soyeht.ptyd"}),
+        )
+        for change in changes:
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, "next"):
+                validate_profiles(self.changed(*change))
+
+    def test_profiles_keep_their_state_apart(self):
+        profiles = self.document["profiles"]
+        self.assertEqual(profiles["dev"]["tcpPort"], 8291)
+        self.assertEqual(profiles["prod"]["tcpPort"], 8290)
+        for system, path in profiles["prod"]["dataDirectory"].items():
+            self.assertTrue(profiles["dev"]["dataDirectory"][system].startswith(path + "/"))
 
     def test_profile_values_are_not_typed_again_in_runtime_sources(self):
-        profile = self.document["profiles"]["dev"]
-        values = {
-            profile["dataDirectoryFromHome"],
-            str(profile["tcpPort"]),
-            *profile["sockets"].values(),
-            *profile["launchdLabels"].values(),
-        }
+        values = {self.document["sockets"]["engine"], self.document["sockets"]["ptyd"]}
+        for profile in self.document["profiles"].values():
+            values.add("Library/Application Support/" + profile["dataDirectory"]["macos"])
+            values.add(str(profile["tcpPort"]))
+            values |= set(profile["launchdLabels"].values())
         paths = [
             *ROOT.parent.glob("engine/*/src/**/*.rs"),
             *ROOT.parent.glob("apps/*/Sources/**/*.swift"),
@@ -534,7 +568,7 @@ class ProfileTests(unittest.TestCase):
             ROOT.parent / "scripts/generated_profile.py",
         }
         for path in paths:
-            if path in generated:
+            if path in generated or "test_" in path.name:
                 continue
             source = path.read_text()
             for value in values:
