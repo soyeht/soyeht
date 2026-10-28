@@ -1,4 +1,5 @@
 import hmac
+import io
 import json
 import os
 import socket
@@ -59,6 +60,60 @@ class LaunchdDefinition(unittest.TestCase):
                              ["/x/soyeht-engine", "--listen", "127.0.0.1:0"])
             self.assertEqual((data / "engine.plist").read_text(), "<plist/>")
             self.assertEqual((data / "engine.plist").stat().st_mode & 0o777, 0o600)
+
+
+class LaunchdBootstrap(unittest.TestCase):
+    def launcher(self, directory):
+        with mock.patch.object(platform.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)):
+            return platform.LaunchdLauncher(Path(directory), "com.soyeht.next.test", Path(directory) / "soyeht")
+
+    def failed(self, text):
+        return subprocess.CompletedProcess([], 5, stdout="", stderr=text)
+
+    def test_a_bootstrap_refused_while_launchd_removes_the_job_is_tried_again(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = self.launcher(directory)
+            answers = [
+                self.failed("Bootstrap failed: 5: Input/output error"),
+                self.failed("Bootstrap failed: 37: Operation already in progress"),
+                subprocess.CompletedProcess([], 0),
+            ]
+            with mock.patch.object(platform.subprocess, "run", side_effect=answers) as run, \
+                    mock.patch.object(platform.time, "sleep") as sleep:
+                launcher.start("engine")
+            self.assertEqual(run.call_count, 3)
+            self.assertEqual([call.args[0] for call in sleep.call_args_list], [0.2, 0.4])
+
+    def test_any_other_failure_is_raised_at_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = self.launcher(directory)
+            with mock.patch.object(platform.subprocess, "run",
+                                   return_value=self.failed("Bootstrap failed: 113: Could not find")) as run, \
+                    mock.patch.object(platform.time, "sleep") as sleep, \
+                    self.assertRaises(subprocess.CalledProcessError):
+                launcher.start("engine")
+            self.assertEqual(run.call_count, 1)
+            sleep.assert_not_called()
+
+    def test_the_reason_launchctl_gave_is_printed_before_the_failure_is_raised(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = self.launcher(directory)
+            with mock.patch.object(platform.subprocess, "run",
+                                   return_value=self.failed("Bootstrap failed: 113: Could not find")), \
+                    mock.patch.object(platform.sys, "stderr", new_callable=io.StringIO) as stderr, \
+                    self.assertRaises(subprocess.CalledProcessError):
+                launcher.start("engine")
+            self.assertIn("113: Could not find", stderr.getvalue())
+
+    def test_a_refusal_that_never_clears_is_raised_after_the_last_try(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = self.launcher(directory)
+            with mock.patch.object(platform.subprocess, "run",
+                                   return_value=self.failed("Bootstrap failed: 5: Input/output error")) as run, \
+                    mock.patch.object(platform.time, "sleep"), \
+                    self.assertRaises(subprocess.CalledProcessError):
+                launcher.start("engine")
+            self.assertEqual(run.call_count, len(platform.BOOTSTRAP_BACKOFF) + 1)
 
 
 class LauncherKind(unittest.TestCase):

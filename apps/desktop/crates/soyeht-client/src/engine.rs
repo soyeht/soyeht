@@ -17,7 +17,10 @@ use crate::{
     writing,
 };
 use soyeht_platform::log::Failure;
-use soyeht_protocol::{ErrorKind, PaneInputResult};
+use soyeht_protocol::{
+    ErrorKind, PaneInputResult,
+    client_policy::{CLIENT_NAME_DESKTOP, CLIENT_NAME_DESKTOP_DEV},
+};
 use std::{
     fmt::Display,
     path::{Path, PathBuf},
@@ -32,9 +35,9 @@ use std::{
 /// The `client` name sent in `hello`: `desktop` in a release build, `desktop-dev` in a debug one,
 /// so the engine's log tells a person's window from a developer's.
 pub const CLIENT_NAME: &str = if cfg!(debug_assertions) {
-    "desktop-dev"
+    CLIENT_NAME_DESKTOP_DEV
 } else {
-    "desktop"
+    CLIENT_NAME_DESKTOP
 };
 /// How often a wait before reconnecting looks at whether the application has stopped.
 const WAIT_SLICE: Duration = Duration::from_millis(100);

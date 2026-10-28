@@ -56,12 +56,13 @@ fn log_fatal(kind: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soyeht_protocol::profile::DESKTOP_LOG;
     use std::fs;
 
     #[test]
     fn log_lines_reach_the_file_in_the_log_directory() {
         let root = std::env::temp_dir().join(format!("soyeht-desktop-log-{}", std::process::id()));
-        let path = root.join("logs").join("desktop.log");
+        let path = root.join("logs").join(DESKTOP_LOG);
         start_at(&path);
         announce(|_| (), "soyeht: install a driver");
         log_fatal("window_open_failed");
@@ -73,7 +74,7 @@ mod tests {
             .find(|line| line.contains("desktop.log_file"))
             .unwrap();
         assert!(located.starts_with(r#"{"event":"desktop.log_file","path":""#));
-        assert!(located.contains("desktop.log"));
+        assert!(located.contains(DESKTOP_LOG));
         assert!(text.contains(r#"{"event":"desktop.notice","text":"soyeht: install a driver"}"#));
         assert!(text.contains(r#"{"event":"desktop.fatal","kind":"window_open_failed"}"#));
         assert!(text.contains(r#"{"event":"desktop.test_event"}"#));

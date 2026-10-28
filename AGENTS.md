@@ -41,9 +41,9 @@ Each layer depends only on the layers listed above it.
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
      at login. Only the command line uses it; the engine does not register itself.
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
-   and WebSocket API. The `soyeht-cli` binary uses protocol, platform, ptyd, service and
-   store; the `soyeht-mcp` binary uses protocol, platform and skills. Neither
-   depends on the engine crate.
+   and WebSocket API. The `soyeht-cli` binary uses protocol, platform and service
+   (its tests also use ptyd and store); the `soyeht-mcp` binary uses protocol, platform
+   and skills. Neither depends on the engine crate.
 5. `apps/shared` (`SoyehtClient`): the shared Swift client. It holds the engine
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it.
@@ -137,8 +137,10 @@ ADR when you change a boundary.
 - jscpd clones and duplicated lines per area may not grow. The areas are the engine, the
   desktop (and its views at a smaller window), each Swift package, and the Python of
   `scripts/` and `contracts/`.
-- A new file may not exceed 800 lines. A file already above 800 lines may not
-  grow past its recorded cap. Split it instead.
+- A new Rust or Swift file may not exceed 800 lines. A file already above 800 lines may
+  not grow past its recorded cap. Split it instead. The check does not measure Python
+  (`scripts/`, `contracts/`) or TypeScript yet: the rule still applies to them, but nothing
+  enforces it.
 - Loose Swift padding, corner-radius, system font-size and font-name literals, and the
   numbers `4096` and `512` anywhere in a Rust line of the engine or `apps/desktop` (code, test
   or comment; `limits.rs` and generated files are exempt), may not grow per file. Use a
@@ -353,8 +355,8 @@ inherit the main actor.
   (`docs/platforms.md`). New platform-specific code goes behind `soyeht-platform`
   or a `cfg` module with the same public shape on every system; where a feature
   cannot exist on a system it returns a typed `Unsupported` error.
-  The merge gate lints `soyeht-platform`, `soyeht-process`, `soyeht-ptyd` and `soyeht-mcp`
-  for `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`), and
+  The merge gate lints `soyeht-platform`, `soyeht-process`, `soyeht-ptyd`, `soyeht-mcp` and
+  `soyeht-service` for `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`), and
   `soyeht-engine` and `soyeht-cli` as well when the host also has a C compiler that targets
   Windows (their dependencies compile C); `scripts/check_engine_windows.ps1` checks all of
   it on Windows itself.

@@ -8,6 +8,11 @@
     "engine": "engine.sock",
     "ptyd": "ptyd.sock"
   },
+  "logs": {
+    "engine": "engine.log",
+    "ptyd": "ptyd.log",
+    "desktop": "desktop.log"
+  },
   "profiles": {
     "dev": {
       "dataDirectory": {

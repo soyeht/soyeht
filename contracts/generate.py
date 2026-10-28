@@ -21,6 +21,8 @@ PROFILES_SOURCE = "contracts/profiles.json"
 SCHEMA_PATH = ROOT / SCHEMA_SOURCE
 PROFILES_PATH = ROOT / PROFILES_SOURCE
 PROFILE_COMPONENTS = ("engine", "ptyd")
+# The files the programs write their log to, in the `logs` folder of the data directory.
+PROFILE_LOGS = ("engine", "ptyd", "desktop")
 
 
 def snake(name):
@@ -511,8 +513,8 @@ def _validate_service_names(names, what, noun, pattern):
 
 
 def validate_profiles(document):
-    if set(document) != {"version", "selection", "sockets", "profiles"} or document["version"] != 2:
-        raise ValueError("Profiles document must have version 2, selection, sockets and profiles")
+    if set(document) != {"version", "selection", "sockets", "logs", "profiles"} or document["version"] != 2:
+        raise ValueError("Profiles document must have version 2, selection, sockets, logs and profiles")
     selection = _keys(document["selection"], ("environment", "buildEnvironment"), "selection")
     for field, value in selection.items():
         if not re.fullmatch(r"SOYEHT_[A-Z0-9_]+", _text(value, f"selection {field}")):
@@ -525,6 +527,12 @@ def validate_profiles(document):
     for socket_name in sockets.values():
         if not re.fullmatch(r"[A-Za-z0-9._-]+\.sock", _text(socket_name, "socket name")):
             raise ValueError("Socket names must be .sock basenames")
+    logs = _keys(document["logs"], PROFILE_LOGS, "logs")
+    if len(set(logs.values())) != len(PROFILE_LOGS):
+        raise ValueError("log file names must be unique")
+    for log_name in logs.values():
+        if not re.fullmatch(r"[A-Za-z0-9_-]+\.log", _text(log_name, "log file name")):
+            raise ValueError("Log file names must be .log basenames")
     profiles = _keys(document["profiles"], PROFILE_NAMES, "profiles")
     for name, profile in profiles.items():
         _validate_profile(name, profile)
@@ -558,6 +566,9 @@ def profile_values(document):
         "profiles": profiles,
         "engine_socket": document["sockets"]["engine"],
         "ptyd_socket": document["sockets"]["ptyd"],
+        "engine_log": document["logs"]["engine"],
+        "ptyd_log": document["logs"]["ptyd"],
+        "desktop_log": document["logs"]["desktop"],
         "environment": document["selection"]["environment"],
         "build_environment": document["selection"]["buildEnvironment"],
     }
@@ -649,6 +660,12 @@ pub const SELECTION_ENV: &str = {json.dumps(value["environment"])};
 pub const BUILD_PROFILE: Option<&str> = option_env!({json.dumps(value["build_environment"])});
 pub const ENGINE_SOCKET: &str = {json.dumps(value["engine_socket"])};
 pub const PTYD_SOCKET: &str = {json.dumps(value["ptyd_socket"])};
+/// The file the engine's output is appended to, in the `logs` folder of the data directory.
+pub const ENGINE_LOG: &str = {json.dumps(value["engine_log"])};
+/// The file the supervisor's output is appended to, beside [`ENGINE_LOG`].
+pub const PTYD_LOG: &str = {json.dumps(value["ptyd_log"])};
+/// The file the desktop client writes its log lines to, beside [`ENGINE_LOG`].
+pub const DESKTOP_LOG: &str = {json.dumps(value["desktop_log"])};
 '''
     swift = f'''// {header}
 public struct ProfileValues: Sendable {{
@@ -684,6 +701,9 @@ SELECTION_ENVIRONMENT = {value["environment"]!r}
 BUILD_ENVIRONMENT = {value["build_environment"]!r}
 ENGINE_SOCKET = {value["engine_socket"]!r}
 PTYD_SOCKET = {value["ptyd_socket"]!r}
+ENGINE_LOG = {value["engine_log"]!r}
+PTYD_LOG = {value["ptyd_log"]!r}
+DESKTOP_LOG = {value["desktop_log"]!r}
 '''
     return {
         "engine/soyeht-protocol/src/profile.rs": rustfmt(rust),
@@ -720,7 +740,7 @@ def render(schema):
     constants += "\n".join(f"pub const FRAME_KIND_{k.upper()}: u8 = {v};" for k, v in frame_kinds(schema).items()) + "\n"
     outputs["engine/soyeht-protocol/src/limits.rs"] = constants
     outputs["contracts/typescript/src/limits.ts"] = header + "export const limits = " + json.dumps(schema["x-limits"], indent=2) + " as const;\n"
-    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"{doc_line(notes, k, '    ')}    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
+    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"{doc_line(notes, k, '    ')}    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum ProtocolVersion {\n    public static let current: UInt32 = " + str(schema["x-protocolVersion"]) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
     outputs.update(render_client_policy(schema, header))
     outputs.update(render_readiness(schema, header))
     outputs.update(render_settings(schema, header))

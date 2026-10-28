@@ -291,13 +291,11 @@ public final class EngineClient {
     if let credential {
       hello = try credential.hello(challenge: first["params"].decoded(AuthChallengeEvent.self))
     } else {
-      hello = HelloParams(
-        client: "mac-dev", clientVersion: ProductVersion.current, protocolVersion: 1,
-        capabilities: webHost == nil || webHostRefused ? nil : [.web_host])
+      hello = .mac(capabilities: webHost == nil || webHostRefused ? nil : [.web_host])
     }
     let welcome = try await request(.hello, .encoded(hello)).decoded(Welcome.self)
     guard welcome.role == (pairedDevice ? .human_device : .human_local),
-      welcome.protocolVersion == 1
+      welcome.protocolVersion == ProtocolVersion.current
     else {
       throw ClientFailure.invalidFrame
     }

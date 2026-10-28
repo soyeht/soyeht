@@ -225,7 +225,7 @@ impl Core {
         client.web_host = wants_web_host;
         serde_json::to_value(Welcome {
             engine_version: env!("CARGO_PKG_VERSION").into(),
-            protocol_version: 1,
+            protocol_version: limits::PROTOCOL_VERSION,
             connection_id: connection.into(),
             role,
             capabilities: capabilities(),

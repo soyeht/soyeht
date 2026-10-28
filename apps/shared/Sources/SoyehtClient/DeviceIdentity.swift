@@ -68,8 +68,7 @@ public struct DeviceCredential: Codable, Sendable {
     }
     let key = try Curve25519.Signing.PrivateKey(rawRepresentation: key)
     let bytes = Data("soyeht-hello-v1".utf8) + nonce + Data(engineId.utf8) + Data(token.utf8)
-    return HelloParams(
-      client: "iphone-dev", clientVersion: ProductVersion.current, protocolVersion: 1,
+    return .iphone(
       deviceToken: token, proof: try key.signature(for: bytes).base64EncodedString())
   }
 }

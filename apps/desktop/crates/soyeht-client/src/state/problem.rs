@@ -99,12 +99,13 @@ mod tests {
     use crate::Error;
     use crate::event::Event;
     use soyeht_platform::log::Failure;
+    use soyeht_protocol::profile::DESKTOP_LOG;
     use std::fs;
 
     #[test]
     fn a_reported_failure_is_shown_and_logged_by_its_kind_alone() {
         let root = std::env::temp_dir().join(format!("soyeht-problem-log-{}", std::process::id()));
-        let path = root.join("logs").join("desktop.log");
+        let path = root.join("logs").join(DESKTOP_LOG);
         log::to_file(&path).unwrap();
 
         let mut state = State::default();

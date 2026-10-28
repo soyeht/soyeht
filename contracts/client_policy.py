@@ -35,6 +35,9 @@ UNPREFIXED_GROUPS = ("timeouts", "texts")
 CAPS = "caps"
 # The group of page sizes: each is a request `limit`, which the wire types as an unsigned 32-bit.
 PAGE_SIZES = "pageSize"
+# The group of client names: what each client sends as `client` in `hello`, a release build's name
+# and the `-dev` one of a debug build, so the engine's log tells a person's app from a developer's.
+CLIENT_NAMES = "clientName"
 # A page size that is the protocol's own maximum for the request, not a number of the clients.
 AT_MAXIMUM = "maximum"
 # The request whose `limit` each page size bounds.
@@ -61,6 +64,7 @@ SCALAR_GROUPS = (
     CAPS,
     PAGE_SIZES,
     "texts",
+    CLIENT_NAMES,
     "usageBand",
     "contextBand",
     "usageRing",
@@ -116,6 +120,18 @@ def validate(policy, schema):
     for key, value in policy["texts"].items():
         if not isinstance(value, str) or not value:
             raise ValueError(f"x-clientPolicy.texts.{key} must be a non-empty string")
+    names = policy[CLIENT_NAMES]
+    clients = {"mac", "iphone", "desktop"}
+    if set(names) != clients | {client + "Dev" for client in clients}:
+        raise ValueError("clientName names each client and its debug build")
+    for key, name in names.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,32}", name):
+            raise ValueError(f"clientName.{key} must match [A-Za-z0-9._-]{{1,32}}")
+    for client in clients:
+        if names[client + "Dev"] != names[client] + "-dev":
+            raise ValueError(f"clientName.{client}Dev must be the release name and -dev")
+    if len(set(names.values())) != len(names):
+        raise ValueError("clientName values must be unique")
     if set(policy[PAGE_SIZES]) != set(PAGE_REQUESTS):
         raise ValueError(f"pageSize needs exactly {sorted(PAGE_REQUESTS)}")
     for key, value in policy[PAGE_SIZES].items():
