@@ -67,6 +67,14 @@ the system drops when the holder exits or crashes, so a crashed engine never
 blocks the others and the next session reuses the same file. A session that
 cannot get the turn is unrun and reads as a failed source.
 
+The scratch directory is made while holding the turn, exclusively and
+owner-only (mode 0700): whatever is at the path then (an earlier session's
+leftover, or on Linux something another user put at the predictable path of the
+shared temporary directory, even a link) is removed, never used, and a
+directory or link that appears between the removal and the creation makes the
+session unrun instead of running in it. A failure to make or remove the
+directory is logged by kind, once per streak.
+
 A session that fails (a screen it does not know, a program that never answers)
 is not started again by the background for the longest usage backoff, like a
 signed-out answer; a click tries at once.

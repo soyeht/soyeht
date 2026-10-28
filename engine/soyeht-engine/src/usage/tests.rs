@@ -9,7 +9,10 @@ use std::{
     collections::VecDeque,
     fs,
     path::{Path, PathBuf},
-    sync::Mutex,
+    sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 use uuid::Uuid;
@@ -26,9 +29,11 @@ struct ScriptedHost {
     /// it saw. Without it there is no such program.
     fake_cli: Option<FakeCli>,
     stopped_in: Mutex<Option<Duration>>,
-    /// The scratch directory sessions run in. A session's directory has a fixed name inside it, so
-    /// two hosts sharing one would remove each other's directory under a running child.
+    /// The directory sessions make their scratch directories in. Each test has its own, so that
+    /// what one test leaves or removes there is never seen by another.
     temp: PathBuf,
+    /// Makes the HTTP call panic, as a provider's reader that has a bug does.
+    panic_http: AtomicBool,
 }
 
 impl ScriptedHost {
@@ -38,7 +43,8 @@ impl ScriptedHost {
             claude_login: Mutex::new(None),
             fake_cli: None,
             stopped_in: Mutex::new(None),
-            temp: std::env::temp_dir(),
+            temp: std::env::temp_dir().join(format!("sn-engine-usage-host-{}", Uuid::new_v4())),
+            panic_http: AtomicBool::new(false),
         }
     }
 
@@ -89,6 +95,10 @@ impl Host for ScriptedHost {
         SecretRead::Unsupported
     }
     fn http(&self, request: &HttpRequest) -> HttpResult {
+        assert!(
+            !self.panic_http.load(Ordering::Relaxed),
+            "the reader panics"
+        );
         if request.url.contains("anthropic.com") {
             return HttpResult::Response {
                 status: 200,
@@ -350,10 +360,14 @@ fn automatic_round(service: &mut Service, now_sec: u64) -> Option<bool> {
 }
 
 fn claude_due(service: &mut Service, now_sec: u64) -> bool {
+    provider_due(service, &UsageProvider::Claude, now_sec)
+}
+
+fn provider_due(service: &mut Service, provider: &UsageProvider, now_sec: u64) -> bool {
     service
         .prepare_automatic(now_sec, "t")
         .is_some_and(|prepared| {
-            let due = prepared.providers().contains(&UsageProvider::Claude);
+            let due = prepared.providers().contains(provider);
             service.abandon(prepared.providers());
             due
         })
@@ -567,4 +581,48 @@ fn a_click_that_finds_the_provider_still_signed_out_does_not_lengthen_the_hold()
     let last_attempt = start + 120;
     assert!(!claude_due(&mut service, last_attempt + 599));
     assert!(claude_due(&mut service, last_attempt + 600));
+}
+
+#[test]
+fn a_provider_whose_reader_panics_is_released_logged_once_and_read_again() {
+    let host = Arc::new(ScriptedHost::new(vec![usage_answer(10)]));
+    host.panic_http.store(true, Ordering::Relaxed);
+    let mut service = Service::restore(Vec::new(), host.clone(), true);
+    let start = 1_000_000;
+    let codex = UsageProvider::Codex;
+    let round = |service: &mut Service, at: u64| {
+        let prepared = service.prepare_automatic(at, "t").unwrap();
+        assert!(prepared.providers().contains(&codex));
+        let committed = service.commit(prepared.read());
+        committed
+            .into_iter()
+            .find(|item| item.shown.provider == codex)
+            .expect("the provider that panicked is still answered for")
+    };
+    let first = round(&mut service, start);
+    assert!(first.log_panicked);
+    assert!(!first.fresh && !first.changed);
+    // It is no longer being read: a click is not turned away for it, and the other providers
+    // were read.
+    assert!(
+        service
+            .prepare_manual(Some(codex.clone()), start + 1, "t")
+            .is_ok()
+    );
+    service.abandon(std::slice::from_ref(&codex));
+    assert_eq!(
+        service.shown(&UsageProvider::Claude, start).state,
+        UsageState::LoginNeeded
+    );
+    // The attempt counts: it is not started again on every tick, only after the interval.
+    assert!(!provider_due(&mut service, &codex, start + 299));
+    assert!(provider_due(&mut service, &codex, start + 300));
+    // A reader that keeps panicking is logged at the start of the streak only.
+    assert!(!round(&mut service, start + 300).log_panicked);
+    // Once it reads again the provider is back, and a later panic is a new streak.
+    host.panic_http.store(false, Ordering::Relaxed);
+    let recovered = round(&mut service, start + 600);
+    assert!(recovered.fresh && !recovered.log_panicked);
+    host.panic_http.store(true, Ordering::Relaxed);
+    assert!(round(&mut service, start + 900).log_panicked);
 }

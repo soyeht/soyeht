@@ -25,6 +25,8 @@ pub struct Service {
     readings: Vec<Reading>,
     failure_streaks: Vec<(UsageProvider, u32)>,
     signed_out: Vec<(UsageProvider, Streak)>,
+    /// Providers whose reader panicked, until one of their refreshes ends without a panic.
+    panicked: Vec<(UsageProvider, Streak)>,
     in_flight: Vec<UsageProvider>,
     schedules: bool,
 }
@@ -44,6 +46,8 @@ pub struct RefreshBatch {
     /// A click read it: a click is neither counted in the signed-out streak nor held back.
     manual: bool,
     outcomes: Vec<RefreshOutcome>,
+    /// Providers whose reader panicked: they have no outcome, and still have to be released.
+    panicked: Vec<UsageProvider>,
 }
 
 /// One provider after a commit: what the ring shows now, and whether it is a fresh success to
@@ -56,6 +60,9 @@ pub struct Committed {
     /// This answer is to be logged as a signed-out provider: the first one of a streak, and
     /// then each time the count of reads reaches a power of two.
     pub log_signed_out: bool,
+    /// The provider's reader panicked in this refresh, and this is the first of its streak: it
+    /// is to be logged.
+    pub log_panicked: bool,
 }
 
 pub enum ManualRefusal {
@@ -72,7 +79,7 @@ impl PreparedRefresh {
 
     /// Reads every provider in parallel; each chain bounds its own waits.
     pub fn read(self) -> RefreshBatch {
-        let outcomes = std::thread::scope(|scope| {
+        let (outcomes, panicked) = std::thread::scope(|scope| {
             let handles: Vec<_> = self
                 .providers
                 .iter()
@@ -80,18 +87,26 @@ impl PreparedRefresh {
                     let planner = &self.planner;
                     let fetched_at = &self.fetched_at;
                     let (trigger, now_sec) = (self.trigger, self.now_sec);
-                    scope.spawn(move || planner.refresh(provider, trigger, now_sec, fetched_at))
+                    let handle = scope
+                        .spawn(move || planner.refresh(provider, trigger, now_sec, fetched_at));
+                    (provider, handle)
                 })
                 .collect();
-            handles
-                .into_iter()
-                .filter_map(|handle| handle.join().ok())
-                .collect()
+            let (mut outcomes, mut panicked) = (Vec::new(), Vec::new());
+            for (provider, handle) in handles {
+                match handle.join() {
+                    Ok(outcome) => outcomes.push(outcome),
+                    // The provider is released by the commit, which also logs it.
+                    Err(_payload) => panicked.push(provider.clone()),
+                }
+            }
+            (outcomes, panicked)
         });
         RefreshBatch {
             now_sec: self.now_sec,
             manual: self.trigger == Trigger::Manual,
             outcomes,
+            panicked,
         }
     }
 }
@@ -105,6 +120,7 @@ impl Service {
             readings: stored.iter().map(Reading::restored_from_store).collect(),
             failure_streaks: Vec::new(),
             signed_out: Vec::new(),
+            panicked: Vec::new(),
             in_flight: Vec::new(),
             schedules,
         }
@@ -217,10 +233,14 @@ impl Service {
     }
 
     pub fn commit(&mut self, batch: RefreshBatch) -> Vec<Committed> {
-        let mut committed = Vec::with_capacity(batch.outcomes.len());
+        let mut committed = Vec::with_capacity(batch.outcomes.len() + batch.panicked.len());
+        for provider in &batch.panicked {
+            committed.push(self.commit_panicked(provider, batch.now_sec));
+        }
         for outcome in batch.outcomes {
             let provider = outcome.reading.provider.clone();
             self.in_flight.retain(|item| item != &provider);
+            self.track_panicked(&provider, false);
             self.policy
                 .record(&provider, batch.now_sec, outcome.transient.as_ref());
             let log_signed_out = self.track_signed_out(&provider, &outcome.reading, batch.manual);
@@ -240,9 +260,50 @@ impl Service {
                 fresh,
                 changed,
                 log_signed_out,
+                log_panicked: false,
             });
         }
         committed
+    }
+
+    /// A provider whose reader panicked has no reading to fold in. It is released, so that the
+    /// next refresh reads it, and counted as an attempt, so that the schedule waits its interval
+    /// and a reader that always panics is not started again on every tick. What the ring shows is
+    /// left as it was.
+    fn commit_panicked(&mut self, provider: &UsageProvider, now_sec: u64) -> Committed {
+        self.in_flight.retain(|item| item != provider);
+        self.policy.record(provider, now_sec, None);
+        let log_panicked = self.track_panicked(provider, true);
+        let shown = self
+            .reading(provider)
+            .cloned()
+            .unwrap_or_else(|| self.not_checked(provider, now_sec));
+        Committed {
+            shown,
+            fresh: false,
+            changed: false,
+            log_signed_out: false,
+            log_panicked,
+        }
+    }
+
+    /// Counts a panicked refresh of `provider`, or ends its streak. Returns whether to log.
+    fn track_panicked(&mut self, provider: &UsageProvider, panicked: bool) -> bool {
+        let position = self.panicked.iter().position(|(p, _)| p == provider);
+        match (position, panicked) {
+            (Some(position), true) => self.panicked[position].1.fail("panicked"),
+            (None, true) => {
+                let mut streak = Streak::once();
+                let log = streak.fail("panicked");
+                self.panicked.push((provider.clone(), streak));
+                log
+            }
+            (Some(position), false) => {
+                self.panicked.remove(position);
+                false
+            }
+            (None, false) => false,
+        }
     }
 
     /// A signed-out provider is read again at doubling intervals, from the background schedule's

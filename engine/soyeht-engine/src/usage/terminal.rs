@@ -5,7 +5,11 @@
 //! stopped, the scratch directory removed and the session transcript deleted.
 
 use super::process::harden;
-use soyeht_platform::fs::{LockError, lock_singleton};
+use crate::streak::Streak;
+use soyeht_platform::{
+    fs::{LockError, create_private_dir, lock_singleton},
+    log::{self, Failure},
+};
 use soyeht_ptyd::{
     child::{Child, Reach},
     io::Output,
@@ -17,6 +21,7 @@ use std::{
     io::{self, Read, Write},
     path::Path,
     process::Command,
+    sync::{Mutex, PoisonError},
     thread,
     time::{Duration, Instant},
 };
@@ -43,6 +48,20 @@ const INHERITED: [&str; 10] = [
     "CLAUDE_SECURESTORAGE_CONFIG_DIR",
     "XDG_CONFIG_HOME",
 ];
+
+/// Failures to make or remove the scratch directory, counted across sessions so that a disk that
+/// stays full, or a directory that is not ours to remove, is logged once and not on every refresh.
+static SCRATCH: Mutex<Streak> = Mutex::new(Streak::once());
+
+fn scratch_failed(name: &str, error: &io::Error) {
+    let first = SCRATCH
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .fail(&error.failure_kind());
+    if first {
+        log::failure(name, error);
+    }
+}
 
 /// Takes turns on the scratch directory. A session removes and recreates it, which would pull it
 /// from under a child another session started in it: that session may be a refresh of another
@@ -73,8 +92,8 @@ pub(super) fn run(
     let Some(_turn) = take_turn(request) else {
         return TerminalRun::Incomplete;
     };
-    if prepare(request).is_err() {
-        cleanup(request);
+    if let Err(error) = prepare(request) {
+        scratch_failed("engine.usage_scratch_failed", &error);
         return TerminalRun::Incomplete;
     }
     let outcome = match spawn(program, path_env, request) {
@@ -104,11 +123,20 @@ pub(super) fn run(
     outcome
 }
 
+/// Makes the scratch directory, owner-only, with the session's files. Called under the turn, so a
+/// directory already there is what an earlier session left (or what someone else put at a
+/// predictable path of a shared temporary directory); it is removed, and the new one is made
+/// exclusively: a directory or link created in between is refused, not used. A failure removes
+/// what was made and nothing else: the directory is not ours until it is created here.
 fn prepare(request: &TerminalRequest) -> io::Result<()> {
-    if request.workdir.exists() {
+    if fs::symlink_metadata(&request.workdir).is_ok() {
         remove_dir(&request.workdir)?;
     }
-    fs::create_dir_all(&request.workdir)?;
+    create_private_dir(&request.workdir)?;
+    fill(request).inspect_err(|_| cleanup(request))
+}
+
+fn fill(request: &TerminalRequest) -> io::Result<()> {
     for (relative, contents) in &request.files {
         // Only plain names: nothing may land outside the scratch directory.
         let inside = Path::new(relative)
@@ -129,12 +157,40 @@ fn prepare(request: &TerminalRequest) -> io::Result<()> {
 /// Removes the scratch directory and this session's transcript, and the transcript's directory
 /// when nothing else is left in it.
 fn cleanup(request: &TerminalRequest) {
-    let _ = remove_dir(&request.workdir);
-    if let Some(transcript) = &request.transcript {
-        let _ = fs::remove_file(transcript);
-        if let Some(parent) = transcript.parent() {
-            let _ = fs::remove_dir(parent);
+    let mut clean = true;
+    let mut note = |result: io::Result<()>| {
+        if let Err(error) = result {
+            clean = false;
+            scratch_failed("engine.usage_scratch_cleanup_failed", &error);
         }
+    };
+    note(remove_dir(&request.workdir));
+    if let Some(transcript) = &request.transcript {
+        note(ignore(
+            fs::remove_file(transcript),
+            &[io::ErrorKind::NotFound],
+        ));
+        if let Some(parent) = transcript.parent() {
+            // A directory with something else in it is not ours to clear.
+            note(ignore(
+                fs::remove_dir(parent),
+                &[io::ErrorKind::NotFound, io::ErrorKind::DirectoryNotEmpty],
+            ));
+        }
+    }
+    if clean {
+        SCRATCH
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .succeed();
+    }
+}
+
+/// `result` without the errors of `kinds`, which mean the thing is already as wanted.
+fn ignore(result: io::Result<()>, kinds: &[io::ErrorKind]) -> io::Result<()> {
+    match result {
+        Err(error) if kinds.contains(&error.kind()) => Ok(()),
+        other => other,
     }
 }
 
@@ -372,6 +428,60 @@ mod tests {
         let outcome = run_script(&scratch.join("work"), None, 10);
         assert!(panel_shown(&outcome), "{outcome:?}");
         assert!(started.elapsed() < Duration::from_secs(8));
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    fn request_in(workdir: &Path) -> TerminalRequest {
+        TerminalRequest {
+            program: shell_name().into(),
+            args: Vec::new(),
+            env: Vec::new(),
+            workdir: workdir.to_path_buf(),
+            files: vec![("marker.json".into(), b"{}".to_vec())],
+            transcript: None,
+            timeout: Duration::from_secs(1),
+        }
+    }
+
+    #[test]
+    fn the_scratch_directory_is_made_owner_only_and_replaces_a_leftover() {
+        let scratch = scratch_directory();
+        let workdir = scratch.join("work");
+        fs::create_dir_all(&workdir).unwrap();
+        fs::write(workdir.join("stale"), b"left by an earlier session").unwrap();
+        prepare(&request_in(&workdir)).unwrap();
+        assert!(soyeht_platform::fs::dir_is_owner_only(&workdir).unwrap());
+        assert!(workdir.join("marker.json").exists());
+        assert!(!workdir.join("stale").exists());
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    /// What someone else could leave at the predictable path of a shared temporary directory.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_at_the_path_is_replaced_and_not_followed() {
+        let scratch = scratch_directory();
+        let elsewhere = scratch.join("elsewhere");
+        fs::create_dir_all(&elsewhere).unwrap();
+        fs::write(elsewhere.join("theirs"), b"kept").unwrap();
+        let workdir = scratch.join("work");
+        soyeht_platform::fs::symlink(&elsewhere, &workdir).unwrap();
+        prepare(&request_in(&workdir)).unwrap();
+        assert!(!fs::symlink_metadata(&workdir).unwrap().is_symlink());
+        assert!(workdir.join("marker.json").exists());
+        assert_eq!(fs::read(elsewhere.join("theirs")).unwrap(), b"kept");
+        assert!(!elsewhere.join("marker.json").exists());
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn a_session_files_that_cannot_be_written_leave_no_directory() {
+        let scratch = scratch_directory();
+        let workdir = scratch.join("work");
+        let mut request = request_in(&workdir);
+        request.files = vec![("../outside".into(), Vec::new())];
+        assert!(prepare(&request).is_err());
+        assert!(!workdir.exists());
         fs::remove_dir_all(scratch).unwrap();
     }
 }
