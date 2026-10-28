@@ -5,12 +5,16 @@ use super::{Manager, path_text, remove_definition, write_definition};
 use crate::{
     commands::Commands,
     error::{Error, Result},
+    policy,
     system::Component,
 };
 
 const LAUNCHCTL: &str = "launchctl";
 /// What `launchctl print` says of a job that runs.
 const RUNNING: &str = "state = running";
+/// What `launchctl bootstrap` says while launchd is still removing a job that was booted out:
+/// "5: Input/output error" or "37: Operation already in progress". Nothing else is retried.
+const TRANSIENT: [&str; 2] = ["5: Input/output error", "37: Operation already in progress"];
 
 impl<C: Commands> Manager<'_, C> {
     /// The job's address, `<domain>/<label>`; the domain is the graphical one when the user has
@@ -31,15 +35,26 @@ impl<C: Commands> Manager<'_, C> {
         Ok(output.success.then_some(output.stdout))
     }
 
-    /// Loads the agent into the domain of `target`, which starts it: it runs at load.
+    /// Loads the agent into the domain of `target`, which starts it: it runs at load. Right after
+    /// a `bootout` launchd can still be tearing the job down and refuses the new one for a
+    /// moment, so a refusal of that kind is tried again after a short wait, a bounded number of
+    /// times. Any other failure is returned at once.
     fn launchd_load(&self, component: Component, target: &str) -> Result<()> {
         let domain = target.rsplit_once('/').map_or(target, |(domain, _)| domain);
         let file = self.file(component);
-        self.require(
-            "launchctl bootstrap",
-            LAUNCHCTL,
-            &["bootstrap", domain, path_text(&file)?],
-        )
+        let arguments = ["bootstrap", domain, path_text(&file)?];
+        let mut waits = policy::LAUNCHD_RELOAD_BACKOFF.into_iter();
+        loop {
+            let result = self.require("launchctl bootstrap", LAUNCHCTL, &arguments);
+            let transient = matches!(
+                &result,
+                Err(Error::Failed { detail, .. }) if TRANSIENT.iter().any(|text| detail.contains(text))
+            );
+            match waits.next() {
+                Some(wait) if transient => self.commands.pause(wait),
+                _ => return result,
+            }
+        }
     }
 
     pub(super) fn launchd_install(&self, component: Component, text: &str) -> Result<()> {

@@ -20,6 +20,11 @@ pub struct CommandOutput {
 pub trait Commands {
     /// Runs `program` with `arguments` and waits for it, within a deadline.
     fn run(&self, program: &str, arguments: &[&str]) -> Result<CommandOutput>;
+
+    /// Waits before a command is tried again. A test waits for nothing.
+    fn pause(&self, duration: Duration) {
+        std::thread::sleep(duration);
+    }
 }
 
 /// Runs the commands for real, through the engine's bounded runner (ADR 0079).
@@ -70,6 +75,8 @@ pub(crate) mod fake {
     #[derive(Default)]
     pub(crate) struct Recorder {
         pub(crate) calls: RefCell<Vec<Vec<String>>>,
+        /// The waits asked for, in order; none of them took any time.
+        pub(crate) pauses: RefCell<Vec<Duration>>,
         answer: Option<Answer>,
     }
 
@@ -89,6 +96,7 @@ pub(crate) mod fake {
         pub(crate) fn answering(answer: impl Fn(&[&str]) -> CommandOutput + 'static) -> Self {
             Self {
                 calls: RefCell::default(),
+                pauses: RefCell::default(),
                 answer: Some(Box::new(answer)),
             }
         }
@@ -104,6 +112,10 @@ pub(crate) mod fake {
     }
 
     impl Commands for Recorder {
+        fn pause(&self, duration: Duration) {
+            self.pauses.borrow_mut().push(duration);
+        }
+
         fn run(&self, program: &str, arguments: &[&str]) -> Result<CommandOutput> {
             let mut call = vec![program.to_owned()];
             call.extend(arguments.iter().map(|argument| (*argument).to_owned()));

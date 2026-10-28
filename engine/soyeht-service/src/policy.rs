@@ -21,3 +21,12 @@ pub(crate) const LAUNCHD_PROCESS_TYPE: &str = "Interactive";
 /// The folder of the data directory that keeps the copy of a Windows task's definition that was
 /// handed to `schtasks`.
 pub(crate) const TASK_COPY_FOLDER: &str = "service";
+
+/// How long to wait before each new try of `launchctl bootstrap` that failed because launchd was
+/// still removing the job a `bootout` ended: five tries in all, about two seconds in total.
+pub(crate) const LAUNCHD_RELOAD_BACKOFF: [std::time::Duration; 4] = [
+    std::time::Duration::from_millis(200),
+    std::time::Duration::from_millis(400),
+    std::time::Duration::from_millis(600),
+    std::time::Duration::from_millis(800),
+];

@@ -123,6 +123,11 @@ the time to restart; the engine reconnects as it already does. On Windows a task
 with exit code 0 is not restarted until the next logon, and neither is a task whose 999
 restarts are spent.
 
+On the Mac, launchd can still be removing a job for a moment after `bootout`, and then refuses a
+new `bootstrap` with error 5 ("Input/output error") or 37 ("Operation already in progress"). The
+seam tries again up to four more times, 0.2 s, 0.4 s, 0.6 s and 0.8 s apart (about two seconds),
+and only for those two errors; any other failure is returned at once.
+
 A program started by hand while its service is registered fails on its lock and the system
 restarts the service, which fails again each second. Stop the service first (`soyeht service
 stop`).

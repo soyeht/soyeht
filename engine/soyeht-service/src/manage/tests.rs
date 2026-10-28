@@ -6,7 +6,12 @@ use crate::{
     },
     layout::test_layout,
 };
-use std::{cell::RefCell, collections::HashMap, path::PathBuf, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    path::PathBuf,
+    rc::Rc,
+};
 
 /// A folder of its own for one test; its name carries "next" like every place of the app.
 struct Scratch(PathBuf);
@@ -553,4 +558,123 @@ fn components_are_taken_once_in_start_order_whatever_the_caller_passes() {
         [Component::Ptyd, Component::Engine]
     );
     assert_eq!(ordered(&[Component::Engine]), [Component::Engine]);
+}
+
+/// A launchd whose `bootstrap` refuses the first `refusals` times with `said`, then loads the
+/// job. The domain exists; the job is not loaded until a `bootstrap` succeeds.
+fn launchd_refusing(refusals: usize, said: &'static str) -> Recorder {
+    let refused = Rc::new(Cell::new(0));
+    let loaded = Rc::new(Cell::new(false));
+    Recorder::answering(move |call| match call {
+        ["launchctl", "bootstrap", ..] if refused.get() < refusals => {
+            refused.set(refused.get() + 1);
+            CommandOutput {
+                success: false,
+                stdout: String::new(),
+                stderr: said.to_owned(),
+            }
+        }
+        ["launchctl", "bootstrap", ..] => {
+            loaded.set(true);
+            ok("")
+        }
+        ["launchctl", "print", target] if target.matches('/').count() == 1 => ok(""),
+        ["launchctl", "print", _] if loaded.get() => ok("state = not running"),
+        ["launchctl", "print", _] => no(),
+        _ => ok(""),
+    })
+}
+
+fn bootstraps(recorder: &Recorder) -> usize {
+    recorder
+        .lines()
+        .iter()
+        .filter(|line| line.contains("bootstrap"))
+        .count()
+}
+
+const BUSY: &str = "Bootstrap failed: 5: Input/output error";
+const IN_PROGRESS: &str = "Bootstrap failed: 37: Operation already in progress";
+
+#[test]
+fn a_load_that_launchd_refuses_while_it_tears_the_job_down_succeeds_on_a_retry() {
+    for said in [BUSY, IN_PROGRESS] {
+        let (_scratch, layout) = installed(
+            System::Macos,
+            "mac-retry",
+            &launchd(true, false),
+            &[Component::Ptyd],
+        );
+        let recorder = launchd_refusing(2, said);
+        Manager::new(&layout, &recorder)
+            .start(&[Component::Ptyd])
+            .unwrap();
+        assert_eq!(bootstraps(&recorder), 3, "{said}");
+        let waits = recorder.pauses.borrow().clone();
+        assert_eq!(waits, crate::policy::LAUNCHD_RELOAD_BACKOFF[..2], "{said}");
+    }
+}
+
+#[test]
+fn a_load_gives_up_after_five_tries_in_about_two_seconds() {
+    let (_scratch, layout) = installed(
+        System::Macos,
+        "mac-give-up",
+        &launchd(true, false),
+        &[Component::Ptyd],
+    );
+    let recorder = launchd_refusing(usize::MAX, BUSY);
+    let error = Manager::new(&layout, &recorder)
+        .start(&[Component::Ptyd])
+        .unwrap_err();
+    assert!(matches!(&error, Error::Failed { detail, .. } if detail.contains("5: Input/output")));
+    assert_eq!(bootstraps(&recorder), 5);
+    let total: std::time::Duration = recorder.pauses.borrow().iter().sum();
+    assert_eq!(recorder.pauses.borrow().len(), 4);
+    assert!(
+        (std::time::Duration::from_millis(1500)..=std::time::Duration::from_millis(2500))
+            .contains(&total),
+        "{total:?}"
+    );
+}
+
+#[test]
+fn any_other_load_failure_is_returned_at_once() {
+    let (_scratch, layout) = installed(
+        System::Macos,
+        "mac-other",
+        &launchd(true, false),
+        &[Component::Ptyd],
+    );
+    let recorder = launchd_refusing(usize::MAX, "Bootstrap failed: 119: Service is disabled");
+    let error = Manager::new(&layout, &recorder)
+        .start(&[Component::Ptyd])
+        .unwrap_err();
+    assert!(matches!(error, Error::Failed { .. }));
+    assert_eq!(bootstraps(&recorder), 1);
+    assert!(recorder.pauses.borrow().is_empty());
+}
+
+#[test]
+fn an_idle_agent_that_is_booted_out_is_loaded_again_through_the_same_retry() {
+    let scratch = Scratch::new("mac-idle-retry");
+    let layout = test_layout(System::Macos, &scratch.0);
+    let refused = Rc::new(Cell::new(0));
+    let recorder = Recorder::answering(move |call| match call {
+        ["launchctl", "bootstrap", ..] if refused.get() == 0 => {
+            refused.set(1);
+            CommandOutput {
+                success: false,
+                stdout: String::new(),
+                stderr: BUSY.to_owned(),
+            }
+        }
+        ["launchctl", "print", target] if target.matches('/').count() == 1 => ok(""),
+        ["launchctl", "print", _] => ok("state = not running"),
+        _ => ok(""),
+    });
+    Manager::new(&layout, &recorder)
+        .install(&programs(), &[Component::Engine])
+        .unwrap();
+    assert_eq!(bootstraps(&recorder), 2);
 }
