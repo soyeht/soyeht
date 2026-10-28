@@ -30,8 +30,9 @@ public enum SafariIdentity {
   import AppKit
 
   extension SafariIdentity {
-    /// The token for this Mac, from the installed Safari's own bundle at run time.
-    public static var applicationName: String {
+    /// The token for this Mac, from the installed Safari's own bundle. Read once: the Safari
+    /// that is installed does not change while the app runs, and every web session asks for it.
+    public static let applicationName: String = {
       let safari = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari")
       let installed =
         safari.flatMap { Bundle(url: $0) }?
@@ -39,6 +40,6 @@ public enum SafariIdentity {
       return applicationName(
         installedVersion: installed,
         osMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
-    }
+    }()
   }
 #endif

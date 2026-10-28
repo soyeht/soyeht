@@ -5,14 +5,61 @@ import SoyehtClient
 import SoyehtProtocol
 import WebKit
 
-@MainActor final class MacWebHost: WebHostPort {
-  private weak var client: EngineClient?
+/// What of a web pane decides its session, and whether it is on screen: a change to any of these
+/// needs `MacWebHost.reconcile`.
+struct WebPaneKey: Hashable {
+  let paneId: String
+  let incognito: Bool
+  let url: String?
+  let generation: UInt32
+  let needsSession: Bool
+
+  init(_ pane: Pane, needsSession: Bool) {
+    self.needsSession = needsSession
+    paneId = pane.paneId
+    incognito = pane.incognito == true
+    url = pane.url
+    generation = pane.generation
+  }
+}
+
+/// Owns one session per web pane. Sessions are created and advanced in `reconcile` (and for an
+/// agent command in `execute`), never while a view renders: a view only reads `session(for:)`.
+@MainActor @Observable final class MacWebHost: WebHostPort {
+  @ObservationIgnored private weak var client: EngineClient?
   private var sessions: [String: MacWebSession] = [:]
 
   func bind(_ client: EngineClient) { self.client = client }
 
-  func session(for pane: Pane) -> MacWebSession {
-    if let existing = sessions[pane.paneId], existing.incognito == (pane.incognito == true) {
+  /// The pane's session, once `reconcile` has made it.
+  func session(for pane: Pane) -> MacWebSession? { sessions[pane.paneId] }
+
+  /// Makes the sessions of the web panes on screen (`shownWorkspaceId` under `destination`),
+  /// advances the ones it has, and ends those whose pane is gone. Another window may show another
+  /// workspace, so a pane that is not on screen here keeps the session it has.
+  func reconcile(_ panes: [Pane], shownWorkspaceId: String?, destination: WorkspaceDestination) {
+    end(WebSessionLifecycle.ended(sessions: kinds(of: Set(sessions.keys)), panes: panes))
+    let needed = WebSessionLifecycle.needed(
+      panes: panes, shownWorkspaceId: shownWorkspaceId, destination: destination)
+    for pane in panes where needed.contains(pane.paneId) { synchronize(pane) }
+  }
+
+  private func kinds(of paneIds: Set<String>) -> [String: Bool] {
+    sessions.filter { paneIds.contains($0.key) }.mapValues(\.incognito)
+  }
+
+  private func end(_ paneIds: Set<String>) {
+    for paneId in paneIds { sessions.removeValue(forKey: paneId)?.stop() }
+  }
+
+  /// Makes the session of a pane a view is showing, if `reconcile` has not: a net for a page
+  /// that draws a web pane without `WebSessionLifecycle.needed` knowing it. Called when the view
+  /// appears or the pane changes, never from a body.
+  func ensureSession(for pane: Pane) { synchronize(pane) }
+
+  @discardableResult
+  private func synchronize(_ pane: Pane) -> MacWebSession {
+    if let existing = sessions[pane.paneId] {
       existing.advanceMinimumGeneration(pane.generation)
       existing.loadIfNeeded(pane.url)
       return existing
@@ -33,13 +80,6 @@ import WebKit
     return session
   }
 
-  func reconcile(_ panes: [Pane]) {
-    let live = Set(panes.lazy.filter { $0.mode == .web }.map(\.paneId))
-    for paneId in Array(sessions.keys) where !live.contains(paneId) {
-      sessions.removeValue(forKey: paneId)?.stop()
-    }
-  }
-
   func resynchronize() {
     for session in sessions.values { session.reportCurrentNavigation() }
   }
@@ -53,7 +93,8 @@ import WebKit
       throw ClientFailure.webHost(.internal_error, "The web pane is unavailable.")
     }
     if humanCommand(command.args) { client?.select(command.paneId) }
-    return try await session(for: pane).execute(command)
+    end(WebSessionLifecycle.ended(sessions: kinds(of: [pane.paneId]), panes: [pane]))
+    return try await synchronize(pane).execute(command)
   }
 
   private func humanCommand(_ args: JsonValue) -> Bool {

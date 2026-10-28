@@ -143,12 +143,12 @@ struct WorkspaceWindow: View {
       editorPaletteMode = note.object as? EditorPaletteMode ?? .commands
     }
     .onAppear {
-      webHost.reconcile(client.panes)
+      reconcileWebSessions()
       attentionNotifications.observe(
         client.agentAttention, workspaces: client.workspaces, connected: client.connected)
       openPendingAgentAttention()
     }
-    .onChange(of: client.panes.map(\.paneId)) { _, _ in webHost.reconcile(client.panes) }
+    .onChange(of: webPaneKeys) { _, _ in reconcileWebSessions() }
     .onChange(of: client.connectionRevision) { _, _ in webHost.resynchronize() }
     .onChange(of: client.agentAttention) { _, summary in
       attentionNotifications.observe(
@@ -403,6 +403,25 @@ struct WorkspaceWindow: View {
   private func newPanePlaceholderId() -> String {
     "local-new-pane-\(UUID().uuidString.lowercased())"
   }
+  private var webPaneKeys: [WebPaneKey] {
+    let needed = neededWebSessions
+    return client.panes.filter { $0.mode == .web }.map {
+      WebPaneKey($0, needsSession: needed.contains($0.paneId))
+    }
+  }
+
+  private var neededWebSessions: Set<String> {
+    WebSessionLifecycle.needed(
+      panes: client.panes, shownWorkspaceId: selectedTaskWorkspaceId,
+      destination: navigation.destination)
+  }
+
+  private func reconcileWebSessions() {
+    webHost.reconcile(
+      client.panes, shownWorkspaceId: selectedTaskWorkspaceId,
+      destination: navigation.destination)
+  }
+
   private var selectedTaskWorkspaceId: String? {
     taskWorkspaceId ?? client.selectedPane?.workspaceId ?? client.workspaces.first?.workspaceId
   }

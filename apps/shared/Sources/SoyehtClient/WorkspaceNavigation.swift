@@ -22,6 +22,15 @@ public enum WorkspaceDestination: String, CaseIterable, Sendable {
     }
   }
 
+  /// Whether the page draws the web panes of the workspace it shows: the pane grid of every
+  /// kind and the web page do; the others show no web view.
+  public var showsWebPanes: Bool {
+    switch self {
+    case .agents, .web: true
+    case .editor, .tasks, .terminal, .phone, .texts, .presentations, .screenplays: false
+    }
+  }
+
   public var writingSection: WritingSection? {
     switch self {
     case .texts: .texts

@@ -23,3 +23,12 @@ import Testing
         == "Version/18.0 Safari/605.1.15", "\(unreadable)")
   }
 }
+
+#if os(macOS)
+  @Test func theInstalledSafariTokenHasTheSafariShapeAndIsReadOnce() {
+    let token = SafariIdentity.applicationName
+    #expect(token.hasPrefix("Version/"))
+    #expect(token.hasSuffix(" Safari/605.1.15"))
+    #expect(SafariIdentity.applicationName == token)
+  }
+#endif

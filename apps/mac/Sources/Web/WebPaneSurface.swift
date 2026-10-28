@@ -19,7 +19,19 @@ struct WebPaneSurface: View {
   }
 
   var body: some View {
-    let session = host.session(for: pane)
+    // The host makes the session when the panes change; until then there is nothing to show.
+    // A pane that is on screen without one asks for it here, outside the body.
+    Group {
+      if let session = host.session(for: pane) {
+        content(session)
+      } else {
+        Color.clear
+      }
+    }
+    .task(id: WebPaneKey(pane, needsSession: true)) { host.ensureSession(for: pane) }
+  }
+
+  private func content(_ session: MacWebSession) -> some View {
     VStack(spacing: MacTheme.Space.x8) {
       WebNavigationBar(
         address: $address, pane: pane, session: session,
@@ -61,7 +73,7 @@ struct WebPaneSurface: View {
   }
 
   private func navigate(url: String?, action: WebNavigationAction?) {
-    host.session(for: pane).noteHumanInput()
+    host.session(for: pane)?.noteHumanInput()
     Task {
       do {
         _ = try await client.navigateWeb(paneId: pane.paneId, url: url, action: action)
@@ -72,10 +84,10 @@ struct WebPaneSurface: View {
   }
 
   private func resize(_ preset: WebViewportPreset, rotate: Bool) {
-    host.session(for: pane).noteHumanInput()
+    host.session(for: pane)?.noteHumanInput()
     Task {
       do {
-        let bounds = host.session(for: pane).webView.bounds
+        let bounds = host.session(for: pane)?.webView.bounds ?? .zero
         let width = preset == .responsive ? UInt32(max(1, bounds.width.rounded())) : nil
         let height = preset == .responsive ? UInt32(max(1, bounds.height.rounded())) : nil
         _ = try await client.resizeWeb(
@@ -86,7 +98,7 @@ struct WebPaneSurface: View {
   }
 
   private func attachSelection(to agentPaneId: String) {
-    guard let selection = host.session(for: pane).elementPicker.takeSelection() else { return }
+    guard let selection = host.session(for: pane)?.elementPicker.takeSelection() else { return }
     client.attachWebElements(
       from: pane.paneId, package: selection.package, images: selection.images,
       to: agentPaneId)
