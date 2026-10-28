@@ -1,6 +1,8 @@
 //! The screen of one terminal pane. The engine streams raw terminal bytes, exactly as it does
 //! to the Mac client; this type turns them into styled rows a view can paint.
 
+#[cfg(test)]
+mod contained;
 mod lines;
 pub mod links;
 #[cfg(test)]
@@ -11,7 +13,9 @@ pub mod selection;
 pub mod settle;
 
 use lines::Lines;
+use soyeht_platform::log;
 use soyeht_protocol::client_policy;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Lines of history kept per terminal on the client.
 const SCROLLBACK_LINES: usize = client_policy::TERMINAL_SCROLLBACK_LINES;
@@ -69,6 +73,18 @@ pub struct TerminalScreen {
     history: usize,
     /// What a narrower screen cut from the cursor's line, until something is written to it.
     cut: Option<reflow::Cut>,
+    /// Whether the parser has already panicked on this screen, so that a program that repeats the
+    /// bytes which did it is logged once and not on every write.
+    parser_failed: bool,
+}
+
+/// The label a contained parser panic logs under; the payload of a panic can carry output text.
+struct ParserPanic;
+
+impl log::Failure for ParserPanic {
+    fn failure_kind(&self) -> String {
+        "Panic".to_owned()
+    }
 }
 
 impl TerminalScreen {
@@ -79,12 +95,17 @@ impl TerminalScreen {
 
     pub fn new(rows: u16, cols: u16) -> Self {
         let (rows, cols) = Self::fitted(rows, cols);
+        Self::around(vt100::Parser::new(rows, cols, SCROLLBACK_LINES))
+    }
+
+    fn around(parser: vt100::Parser) -> Self {
         Self {
-            parser: vt100::Parser::new(rows, cols, SCROLLBACK_LINES),
+            parser,
             scroll_remainder: 0.0,
             selection: None,
             history: 0,
             cut: None,
+            parser_failed: false,
         }
     }
 
@@ -96,7 +117,14 @@ impl TerminalScreen {
             self.selection = None;
         }
         let guard = self.selection_guard();
-        self.parser.process(bytes);
+        let parser = &mut self.parser;
+        // The bytes come from whatever runs in the pane, and the parser is code of a dependency:
+        // a panic in it must cost this one screen its text, not the window and every pane in it.
+        if catch_unwind(AssertUnwindSafe(|| parser.process(bytes))).is_err() {
+            let (rows, cols) = self.size();
+            self.recover(rows, cols);
+            return;
+        }
         self.history = Lines::new(&mut self.parser).history();
         self.keep_selection_if_intact(guard);
     }
@@ -104,10 +132,15 @@ impl TerminalScreen {
     /// Forgets everything shown, as a replay that starts from scratch requires.
     pub fn reset(&mut self) {
         let (rows, cols) = self.size();
+        self.restart(rows, cols);
+    }
+
+    fn restart(&mut self, rows: u16, cols: u16) {
         self.parser = vt100::Parser::new(rows, cols, SCROLLBACK_LINES);
         self.selection = None;
         self.history = 0;
         self.cut = None;
+        self.scroll_remainder = 0.0;
     }
 
     /// Fits the screen to a new size. The normal screen keeps its text and cuts the rows again
@@ -120,10 +153,25 @@ impl TerminalScreen {
         }
         // Always by `refit`: the parser's own `set_size` can cut a wide character in two, which
         // makes its next write panic.
-        self.refit(rows, cols);
+        if catch_unwind(AssertUnwindSafe(|| self.refit(rows, cols))).is_err() {
+            self.recover(rows, cols);
+            return;
+        }
         // The cells the selection names are not the same ones any more.
         self.selection = None;
         self.history = Lines::new(&mut self.parser).history();
+    }
+
+    /// Starts the screen again, empty, at `rows` by `cols` after the parser panicked. The shell
+    /// draws its prompt again on the next write, and the pane keeps working. The first panic of a
+    /// screen is logged.
+    fn recover(&mut self, rows: u16, cols: u16) {
+        if !self.parser_failed {
+            self.parser_failed = true;
+            log::failure("desktop.screen_parser_panicked", &ParserPanic);
+        }
+        let (rows, cols) = Self::fitted(rows, cols);
+        self.restart(rows, cols);
     }
 
     /// Replaces the screen by the same one at the new size. The parser stays, so that output
