@@ -124,6 +124,9 @@ def validate(policy, schema):
     clients = {"mac", "iphone", "desktop"}
     if set(names) != clients | {client + "Dev" for client in clients}:
         raise ValueError("clientName names each client and its debug build")
+    for key, name in names.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,32}", name):
+            raise ValueError(f"clientName.{key} must match [A-Za-z0-9._-]{{1,32}}")
     for client in clients:
         if names[client + "Dev"] != names[client] + "-dev":
             raise ValueError(f"clientName.{client}Dev must be the release name and -dev")

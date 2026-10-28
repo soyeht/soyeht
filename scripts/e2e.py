@@ -24,8 +24,9 @@ from e2e_platform import (
     require,
     short_temp_root,
 )
-from generated_profile import ENGINE_SOCKET, PROFILES, PTYD_SOCKET
+from generated_profile import ENGINE_LOG, ENGINE_SOCKET, PROFILES, PTYD_LOG, PTYD_SOCKET
 
+LOG_FILES = {"engine": ENGINE_LOG, "ptyd": PTYD_LOG}
 DEV_LAUNCHD_PREFIX = PROFILES["dev"]["launchdPrefix"]
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -237,7 +238,7 @@ class Services:
         """Add environment variables to a service before it starts."""
         argv, environment = self.definitions[component]
         environment.update(values)
-        self.launcher.define(component, argv, environment, self.data / f"{component}.log")
+        self.launcher.define(component, argv, environment, self.data / LOG_FILES[component])
 
     def prepend_path(self, component, directory):
         """Put `directory` first on a service's PATH, ahead of the launcher's base PATH."""
@@ -318,8 +319,8 @@ class Services:
 
     def contract_mismatches(self):
         """The engine, built with `contract-checks`, logs each event or result that breaks the contract."""
-        # The engine rotates its log: `engine.log` and up to four older files beside it.
-        logs = [self.data / "engine.log", *(self.data / f"engine.log.{n}" for n in range(1, 5))]
+        # The engine rotates its log: the file and up to four older files beside it.
+        logs = [self.data / ENGINE_LOG, *(self.data / f"{ENGINE_LOG}.{n}" for n in range(1, 5))]
         lines = [line for log in logs if log.is_file() for line in log.read_text(errors="replace").splitlines()]
         return [line for line in lines if "engine.contract_mismatch" in line]
 

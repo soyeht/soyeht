@@ -39,6 +39,14 @@ class ClientPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(policy, SCHEMA)
 
+    def test_a_client_name_is_a_plain_label_the_engine_can_log(self):
+        for bad in ("", "a" * 33, "mac dev", "mac/dev", "mäc", 7):
+            policy = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            policy["clientName"]["mac"] = bad
+            policy["clientName"]["macDev"] = f"{bad}-dev"
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate(policy, SCHEMA)
+
     def test_a_timeout_is_whole_positive_milliseconds(self):
         for value in (0, -5, 1.5, "12"):
             changed = copy.deepcopy(SCHEMA["x-clientPolicy"])

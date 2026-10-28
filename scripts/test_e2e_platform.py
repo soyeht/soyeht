@@ -1,4 +1,5 @@
 import hmac
+import io
 import json
 import os
 import socket
@@ -93,6 +94,16 @@ class LaunchdBootstrap(unittest.TestCase):
                 launcher.start("engine")
             self.assertEqual(run.call_count, 1)
             sleep.assert_not_called()
+
+    def test_the_reason_launchctl_gave_is_printed_before_the_failure_is_raised(self):
+        with tempfile.TemporaryDirectory() as directory:
+            launcher = self.launcher(directory)
+            with mock.patch.object(platform.subprocess, "run",
+                                   return_value=self.failed("Bootstrap failed: 113: Could not find")), \
+                    mock.patch.object(platform.sys, "stderr", new_callable=io.StringIO) as stderr, \
+                    self.assertRaises(subprocess.CalledProcessError):
+                launcher.start("engine")
+            self.assertIn("113: Could not find", stderr.getvalue())
 
     def test_a_refusal_that_never_clears_is_raised_after_the_last_try(self):
         with tempfile.TemporaryDirectory() as directory:

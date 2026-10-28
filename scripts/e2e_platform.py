@@ -260,6 +260,8 @@ class LaunchdLauncher(Launcher):
                 return
             detail = result.stderr or result.stdout or ""
             if wait is None or not any(text in detail for text in BOOTSTRAP_TRANSIENT):
+                # The captured output is the only place launchctl says why it refused.
+                print(f"launchctl bootstrap failed: {detail.strip()}", file=sys.stderr)
                 raise subprocess.CalledProcessError(
                     result.returncode, command, result.stdout, result.stderr)
             time.sleep(wait)

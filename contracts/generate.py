@@ -681,9 +681,6 @@ public struct ProfileValues: Sendable {{
     public static let selectionEnvironment = {json.dumps(value["environment"])}
     public static let engineSocketName = {json.dumps(value["engine_socket"])}
     public static let ptydSocketName = {json.dumps(value["ptyd_socket"])}
-    public static let engineLogName = {json.dumps(value["engine_log"])}
-    public static let ptydLogName = {json.dumps(value["ptyd_log"])}
-    public static let desktopLogName = {json.dumps(value["desktop_log"])}
 }}
 '''
     python_profiles = {
