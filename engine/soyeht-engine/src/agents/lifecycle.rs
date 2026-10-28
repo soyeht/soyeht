@@ -2,7 +2,6 @@ use super::{Changes, native_error, state::Phase};
 use crate::{
     core::Core,
     errors::{self, Result},
-    ports::StorePort,
 };
 use serde_json::json;
 use soyeht_protocol::{PaneState, StateSource, ndjson::Decoder};
@@ -23,24 +22,13 @@ impl Core {
             clear_replay: true,
             ..Changes::default()
         };
-        for request in self
-            .store
-            .agent_open_requests(id)
-            .map_err(errors::storage)?
-        {
-            super::questions::decision(
-                &mut state,
-                &request,
-                super::questions::Decision {
-                    option: None,
-                    fields: None,
-                    by: "system",
-                    expired: false,
-                    timestamp: &self.timestamp(),
-                },
-                &mut changes,
-            )?;
-        }
+        super::questions::decide_open_as_system(
+            &self.store,
+            id,
+            &mut state,
+            &mut changes,
+            &self.timestamp(),
+        )?;
         // The old process is absent from the reconciled supervisor registry.
         // Close its decisions locally, without delivering them to a new process.
         changes.outgoing.clear();

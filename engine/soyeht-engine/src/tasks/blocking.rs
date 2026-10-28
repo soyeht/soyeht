@@ -1,4 +1,4 @@
-use super::{PhraseFacts, next_version, phrase};
+use super::{PhraseFacts, events, next_version, phrase};
 use crate::{
     agents::{Changes, state::State},
     core::Core,
@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Attempt, AttemptResult, AttentionItem, Blocking, BlockingKind, Comment, PaneState,
-    PromptOrigin, Task, TaskMove, TaskState, event, limits,
+    PromptOrigin, Task, TaskMove, TaskState, limits,
 };
 use soyeht_store::database::{Change, Result as StoreResult};
 use uuid::Uuid;
@@ -54,29 +54,12 @@ impl TaskBlockingChange {
 
     fn events(&self) -> Vec<(String, Value)> {
         let task = &self.task;
-        let mut events = vec![
-            (
-                event::TASK_UPDATED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"version":task.version}),
-            ),
-            (
-                event::TASK_PHRASE_CHANGED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"phrase":task.phrase}),
-            ),
-        ];
+        let mut events = events::revised(task, true);
         if let Some(movement) = &self.movement {
-            events.push((
-                event::TASK_MOVED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,
-                    "actor":movement.actor,"from":movement.from,"to":movement.to,
-                    "reason":movement.reason}),
-            ));
+            events.push(events::moved(task, movement));
         }
         if let Some(comment) = &self.comment {
-            events.push((
-                event::TASK_COMMENTED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"comment":comment}),
-            ));
+            events.push(events::commented(task, comment));
         }
         events
     }
@@ -370,11 +353,7 @@ impl Core {
             )?);
         }
         if needs_attention.is_some() {
-            events.push((
-                event::TASK_ATTENTION.into(),
-                json!({"workspaceId":task_for_attention.workspace_id,
-                    "taskId":task_for_attention.task_id,"n":1}),
-            ));
+            events.push(events::attention(&task_for_attention));
         }
         let mut changes = Changes {
             task_blocking: Some(change),

@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{
     AttemptResult, Comment, Pane, PaneMode, PaneState, PromptOrigin, StateSource, Task,
-    TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole, event, limits, method,
+    TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole, limits, method,
 };
 use soyeht_store::{
     agents,
@@ -535,10 +535,7 @@ impl ReviewResolution {
     fn events(&self) -> Vec<(String, Value)> {
         vec![
             events::moved(&self.updated, &self.movement),
-            (
-                event::TASK_COMMENTED.into(),
-                json!({"workspaceId":self.updated.workspace_id,"taskId":self.updated.task_id,"comment":self.comment}),
-            ),
+            events::commented(&self.updated, &self.comment),
             events::updated(&self.updated),
             events::phrase_changed(&self.updated),
         ]

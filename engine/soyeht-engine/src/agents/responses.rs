@@ -606,23 +606,7 @@ fn prompt_response(
             TurnStopReason::Error
         }
     };
-    for request in store
-        .agent_open_requests(&saved.pane.pane_id)
-        .map_err(errors::storage)?
-    {
-        super::questions::decision(
-            state,
-            &request,
-            super::questions::Decision {
-                option: None,
-                fields: None,
-                by: "system",
-                expired: false,
-                timestamp,
-            },
-            changes,
-        )?;
-    }
+    super::questions::decide_open_as_system(store, &saved.pane.pane_id, state, changes, timestamp)?;
     transcript::complete(store, &saved.pane.pane_id, state, changes)?;
     if cancel_requested && reason == TurnStopReason::Cancelled {
         changes.messages.push(transcript::new_message(

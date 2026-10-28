@@ -63,24 +63,13 @@ impl Core {
             task_owner_loss,
             ..Changes::default()
         };
-        for request in self
-            .store
-            .agent_open_requests(pane)
-            .map_err(errors::storage)?
-        {
-            super::questions::decision(
-                &mut state,
-                &request,
-                super::questions::Decision {
-                    option: None,
-                    fields: None,
-                    by: "system",
-                    expired: false,
-                    timestamp: &self.timestamp(),
-                },
-                &mut changes,
-            )?;
-        }
+        super::questions::decide_open_as_system(
+            &self.store,
+            pane,
+            &mut state,
+            &mut changes,
+            &self.timestamp(),
+        )?;
         changes.outgoing.clear();
         transcript::close(&self.store, pane, &mut state, &mut changes)?;
         changes.messages.push(transcript::new_message(

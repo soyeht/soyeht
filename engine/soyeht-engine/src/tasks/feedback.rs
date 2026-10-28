@@ -5,12 +5,12 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::StorePort,
-    tasks::{PhraseFacts, next_version, phrase, review_badge, revision::RevisionSnapshot},
+    tasks::{PhraseFacts, events, next_version, phrase, review_badge, revision::RevisionSnapshot},
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
     AttentionItem, Comment, PaneState, Task, TaskCheckState, TaskPullRequest, TaskReviewBadge,
-    TaskReviewState, event,
+    TaskReviewState,
 };
 use soyeht_store::{agents, database::Change, tasks::FeedbackState};
 use uuid::Uuid;
@@ -75,18 +75,9 @@ impl TaskEditorFeedbackChange {
 
     pub(crate) fn events(&self) -> Vec<(String, Value)> {
         vec![
-            (
-                event::TASK_COMMENTED.into(),
-                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"comment":self.comment}),
-            ),
-            (
-                event::TASK_UPDATED.into(),
-                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"version":self.task.version}),
-            ),
-            (
-                event::TASK_PHRASE_CHANGED.into(),
-                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,"phrase":self.task.phrase}),
-            ),
+            events::commented(&self.task, &self.comment),
+            events::updated(&self.task),
+            events::phrase_changed(&self.task),
         ]
     }
 }
@@ -279,10 +270,7 @@ impl Core {
                 let mut committed = events;
                 if attention.next != attention.prior {
                     let items = agents::attention_in_change(change, &workspace)?;
-                    committed.push((
-                        event::ATTENTION_CHANGED.into(),
-                        json!({"workspaceId":workspace,"count":items.len(),"items":items}),
-                    ));
+                    committed.push(events::attention_changed(&workspace, &items));
                 }
                 Ok((json!({}), committed))
             },
@@ -340,10 +328,7 @@ fn feedback_events(
 ) -> Result<Vec<(String, Value)>> {
     let mut events = Vec::new();
     if current != updated {
-        events.push(super::events::updated(updated));
-        if current.phrase != updated.phrase {
-            events.push(super::events::phrase_changed(updated));
-        }
+        events.extend(events::revised(updated, current.phrase != updated.phrase));
     }
     if let Some((prompt, count)) = prompt {
         events.push(crate::model::pane_queued(
@@ -357,10 +342,7 @@ fn feedback_events(
         )?);
     }
     if attention.next.is_some() && attention.next != attention.prior {
-        events.push((
-            event::TASK_ATTENTION.into(),
-            json!({"workspaceId":updated.workspace_id,"taskId":updated.task_id,"n":1}),
-        ));
+        events.push(events::attention(updated));
     }
     Ok(events)
 }

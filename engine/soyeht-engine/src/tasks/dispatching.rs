@@ -19,7 +19,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, Pane, PaneMode, PaneState, PromptOrigin, Role, StateSource, Task, TaskDispatchParams,
-    TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree, event, method,
+    TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree, method,
 };
 use soyeht_store::{
     database::Change,
@@ -742,10 +742,7 @@ fn prepare_new_pane(
 fn claimed_events(task: &Task, movement: &TaskMove, pane: &str) -> Vec<(String, Value)> {
     vec![
         events::moved(task, movement),
-        (
-            event::TASK_CLAIMED.into(),
-            json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"paneId":pane,"attempt":task.current_attempt}),
-        ),
+        events::claimed(task, pane),
         events::phrase_changed(task),
         events::updated(task),
     ]

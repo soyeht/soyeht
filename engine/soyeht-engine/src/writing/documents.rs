@@ -13,7 +13,7 @@ use soyeht_protocol::{
     WritingKind, WritingPreferencesParams, WritingPreferencesResult, WritingSection, event, method,
 };
 use soyeht_store::{
-    editor::{EditorFile, document},
+    editor::{EditorFile, StoredFileVersion, document},
     writing::{WritingCreateIntent, WritingDocumentRecord, WritingSidecar},
 };
 use std::{io, path::Path};
@@ -391,6 +391,39 @@ impl Core {
         file.pane_id = Some(pane.pane_id.clone());
         file.watching = true;
         let saved_pane = stored_pane(pane.clone());
+        self.commit_new_writing(context, saved_pane, file, version)
+    }
+
+    fn open_new_writing(&mut self, context: OpenContext<'_>, relative: String) -> Result<Value> {
+        let text = self.editor.read_disk(context.canonical)?;
+        let pane = writing_pane(
+            context.workspace,
+            &relative,
+            context.kind.clone(),
+            context.section.clone(),
+        );
+        let saved_pane = stored_pane(pane.clone());
+        let file = new_file(
+            context.workspace,
+            &pane,
+            relative,
+            text,
+            context.canonical,
+            self.now_ms(),
+        );
+        self.commit_new_writing(context, saved_pane, file, None)
+    }
+
+    /// Saves a writing pane that is new to this run, with its document, and installs it. A
+    /// reopened file also records the version that the disk text became.
+    fn commit_new_writing(
+        &mut self,
+        context: OpenContext<'_>,
+        saved_pane: StoredPane,
+        file: EditorFile,
+        version: Option<StoredFileVersion>,
+    ) -> Result<Value> {
+        let pane = saved_pane.pane.clone();
         let record = self.record_or_default(file.file_id.clone(), context.kind, context.section)?;
         let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
         let created_event = crate::editor::api::pane_created_event(
@@ -413,51 +446,6 @@ impl Core {
                 if let Some(version) = &version {
                     change.record_file_version(version)?;
                 }
-                Ok((result, vec![created_event]))
-            },
-        )?;
-        if !mutation.repeated {
-            self.install_open_writing(saved_pane, screen, file, syntax);
-        }
-        Ok(mutation.result)
-    }
-
-    fn open_new_writing(&mut self, context: OpenContext<'_>, relative: String) -> Result<Value> {
-        let text = self.editor.read_disk(context.canonical)?;
-        let pane = writing_pane(
-            context.workspace,
-            &relative,
-            context.kind.clone(),
-            context.section.clone(),
-        );
-        let saved_pane = stored_pane(pane.clone());
-        let file = new_file(
-            context.workspace,
-            &pane,
-            relative,
-            text,
-            context.canonical,
-            self.now_ms(),
-        );
-        let record = self.record_or_default(file.file_id.clone(), context.kind, context.section)?;
-        let (opened, syntax) = crate::editor::api::initial_open_result(&file, &pane, None, None)?;
-        let created_event = crate::editor::api::pane_created_event(
-            &saved_pane.pane,
-            &opened.file,
-            Some(&public_document(&file, &record)?),
-        )?;
-        let result = open_result(&file, &record, opened, context.pane_only)?;
-        let screen = self.open_pane_screen(&pane.pane_id)?;
-        let saved_file = file.clone();
-        let saved_record = record.clone();
-        let mutation = self.mutate(
-            context.connection,
-            context.method,
-            context.params,
-            |change| {
-                persist_new_pane(change, &saved_pane, None)?;
-                change.save_editor_file(&saved_file)?;
-                change.save_writing_document(&saved_record)?;
                 Ok((result, vec![created_event]))
             },
         )?;

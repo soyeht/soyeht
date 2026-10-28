@@ -1,4 +1,4 @@
-use super::{api::task, apply_move};
+use super::{api::task, apply_move, events};
 use crate::{
     agents::{Changes, methods::cancel},
     core::Core,
@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Attempt, AttemptResult, AttentionItem, ErrorKind, Role, Task, TaskMove, TaskMoveParams,
-    TaskState, event, method,
+    TaskState, method,
 };
 use soyeht_store::{
     agents,
@@ -42,22 +42,9 @@ impl TaskHumanMove {
 
     pub(crate) fn events(&self) -> Vec<(String, Value)> {
         vec![
-            (
-                event::TASK_MOVED.into(),
-                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
-                    "actor":self.movement.actor,"from":self.movement.from,
-                    "to":self.movement.to,"reason":self.movement.reason}),
-            ),
-            (
-                event::TASK_UPDATED.into(),
-                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
-                    "version":self.task.version}),
-            ),
-            (
-                event::TASK_PHRASE_CHANGED.into(),
-                json!({"workspaceId":self.task.workspace_id,"taskId":self.task.task_id,
-                    "phrase":self.task.phrase}),
-            ),
+            events::moved(&self.task, &self.movement),
+            events::updated(&self.task),
+            events::phrase_changed(&self.task),
         ]
     }
 }
@@ -138,7 +125,6 @@ impl Core {
             return Ok(());
         }
         let workspace = task.workspace_id.clone();
-        let task_id = task.task_id.clone();
         let mutation = StorePort::mutate(
             &mut self.store,
             "engine-task-move",
@@ -150,14 +136,8 @@ impl Core {
                 Ok((
                     json!({}),
                     vec![
-                        (
-                            event::TASK_ATTENTION.into(),
-                            json!({"workspaceId":workspace,"taskId":task_id,"n":1}),
-                        ),
-                        (
-                            event::ATTENTION_CHANGED.into(),
-                            json!({"workspaceId":workspace,"count":items.len(),"items":items}),
-                        ),
+                        events::attention(task),
+                        events::attention_changed(&workspace, &items),
                     ],
                 ))
             },
@@ -240,9 +220,9 @@ impl Core {
             if let Some(item) = &refused_attention {
                 change.remove_attention(&item.pane_id, &item.attention_id)?;
                 let items = agents::attention_in_change(change, &movement.task.workspace_id)?;
-                events.push((
-                    event::ATTENTION_CHANGED.into(),
-                    json!({"workspaceId":movement.task.workspace_id,"count":items.len(),"items":items}),
+                events.push(events::attention_changed(
+                    &movement.task.workspace_id,
+                    &items,
                 ));
             }
             Ok((result, events))

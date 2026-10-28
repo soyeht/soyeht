@@ -468,6 +468,31 @@ pub fn automatic(state: &State, request: &NativeRequest, cwd: &str) -> Result<Op
     }))
 }
 
+/// Closes every open request of a pane as the system: no option, no fields, not expired.
+pub fn decide_open_as_system(
+    store: &impl StorePort,
+    pane: &str,
+    state: &mut State,
+    changes: &mut Changes,
+    timestamp: &str,
+) -> Result<()> {
+    for request in store.agent_open_requests(pane).map_err(errors::storage)? {
+        decision(
+            state,
+            &request,
+            Decision {
+                option: None,
+                fields: None,
+                by: "system",
+                expired: false,
+                timestamp,
+            },
+            changes,
+        )?;
+    }
+    Ok(())
+}
+
 pub fn decision(
     state: &mut State,
     request: &NativeRequest,
