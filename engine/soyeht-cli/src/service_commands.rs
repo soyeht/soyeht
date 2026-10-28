@@ -107,6 +107,7 @@ fn render_text(args: &[&str]) -> Result<Value> {
             .collect(),
         environment: BTreeMap::new(),
         log: None,
+        files: Vec::new(),
         after: None,
         user: None,
     };

@@ -53,7 +53,7 @@ renderer. A name or a place of the legacy app is refused before anything is writ
 | Restart | `KeepAlive` (however it ended), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
 | Order | none: the engine reconnects | engine `Wants=` and `After=` the supervisor (never `Requires=`) | none: the engine reconnects |
 | Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | `PATH` as on the Mac | the user's own environment |
-| Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | none yet (section 6) |
+| Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | the host appends the program's output to the same file (section 6) |
 | Limits | `ProcessType` Interactive | none | no time limit; one instance; runs on battery; normal priority |
 | Account | the user's launchd domain: `gui/<uid>` if it exists, else `user/<uid>` | the user's manager | interactive token, least privilege |
 
@@ -139,9 +139,21 @@ directory, the files the app's own start writes (`process::detached::spawn_servi
 and the files are owner-only. The engine bounds its own file (16 MiB, four rotated files).
 `soyeht service install` creates them, since neither launchd nor systemd makes a folder.
 
-A Task Scheduler task cannot redirect output, so on Windows a service started by the scheduler
-writes to the console the scheduler opens for it and keeps no file. This is a known gap with a
-named follow-up (ADR 0114, open questions).
+A Task Scheduler task cannot redirect output or hide the console of a console program. The task
+therefore starts `soyeht-service-host`, a Windows-subsystem program (no window of its own), as
+
+```text
+soyeht-service-host --log FILE -- PROGRAM [ARGUMENT]...
+```
+
+The host starts `PROGRAM` with a hidden console and its output appended to `FILE` (the same call
+the app's own start uses, without leaving the task's job), waits for it, and exits with its exit
+code. The host passes the program's exit code on whole; its own are 2 (a command line it does not
+understand), 3 (a log it cannot write to) and 1 (a program it could not start, with the reason in
+the log). The task so runs as long as the program does, a failure reaches `RestartOnFailure`, and
+ending the task ends the program. The host must sit in the folder of `--programs` on Windows;
+`install` refuses a missing host like a missing program. A host that cannot start the program
+ends with 1 and writes the reason into the log.
 
 ## 7. Uninstall
 

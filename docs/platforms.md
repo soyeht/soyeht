@@ -115,7 +115,7 @@ Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.re
 `"unwind"`, written out so nobody changes it by accident: the engine recovers a poisoned lock,
 joins a panicked thread and reports a panicked task as a failure of that task, and `abort` would
 turn each of those into the death of the whole process (and of every terminal the supervisor
-holds). Build with `cargo build --release --locked -p soyeht-engine -p soyeht-ptyd -p soyeht-cli -p soyeht-mcp`
+holds). Build with `cargo build --release --locked -p soyeht-engine -p soyeht-ptyd -p soyeht-cli -p soyeht-mcp -p soyeht-service`
 in `engine/` (the engine needs `soyeht-mcp` next to it; a whole-workspace build also makes the
 `soyeht-fake-*` programs that only tests use, and they are not shipped) and
 `cargo build --release --locked` in `apps/desktop/`. A package puts `soyeht-desktop`,
@@ -129,7 +129,8 @@ builds with the default features and never passes `--features dev-tools` or `--a
 A package that starts the engine at login also ships `soyeht` (the command line), which
 registers the services: `soyeht service install --programs DIR` on the Mac, Linux and Windows, a
 launchd user agent, a systemd user unit or a Task Scheduler task per program (ADR 0114,
-`docs/contracts/13-service-seam.md`).
+`docs/contracts/13-service-seam.md`). On Windows the package also ships `soyeht-service-host.exe`
+in the same folder: the task starts it, and it starts the engine or the supervisor with no window.
 
 The desktop binary, `soyeht-desktop`, is a window program in a Windows release: it opens no
 console. Its log lines (`soyeht_platform::log`) go to standard error, which a shell can redirect

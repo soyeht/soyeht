@@ -12,6 +12,10 @@
 //!   of its own: that flag makes the child ignore Ctrl+C, and so does everything the child starts
 //!   after it, a shell in a terminal included.
 //!
+//! [`spawn_attached`] is the same start without the leaving: a hidden console and the same log,
+//! but the child stays in the parent's job (and session), so ending that job ends the child. A
+//! service host that Task Scheduler ends takes its program with it.
+//!
 //! Standard input is closed and standard output and error are appended to an owner-only file.
 //!
 //! The child also keeps no descriptor of this process above 2 (Unix): a library of a windowing
@@ -92,6 +96,18 @@ pub fn spawn_service(
 /// error appended to the file `log`. The folder of `log` must exist. The returned handle can be
 /// dropped: dropping it does not end the child.
 pub fn spawn_detached(program: &Path, arguments: &[&OsStr], log: &Path) -> io::Result<Child> {
+    system::detach_and_spawn(&mut command_with_log(program, arguments, log)?)
+}
+
+/// Starts `program` with `arguments` as a child of this process, with no window and its
+/// standard output and error appended to the file `log`. Unlike [`spawn_detached`] the child
+/// stays in this process's job (Windows) and session (Unix), so whatever ends this process's
+/// job ends the child too: a service host that Task Scheduler ends takes its program with it.
+pub fn spawn_attached(program: &Path, arguments: &[&OsStr], log: &Path) -> io::Result<Child> {
+    system::attach_and_spawn(&mut command_with_log(program, arguments, log)?)
+}
+
+fn command_with_log(program: &Path, arguments: &[&OsStr], log: &Path) -> io::Result<Command> {
     let output = OpenOptions::new()
         .create(true)
         .append(true)
@@ -103,7 +119,7 @@ pub fn spawn_detached(program: &Path, arguments: &[&OsStr], log: &Path) -> io::R
         .stdin(Stdio::null())
         .stderr(Stdio::from(output.try_clone()?))
         .stdout(Stdio::from(output));
-    system::detach_and_spawn(&mut command)
+    Ok(command)
 }
 
 #[cfg(unix)]
@@ -131,6 +147,10 @@ mod system {
                 Ok(())
             });
         }
+        command.spawn()
+    }
+
+    pub(super) fn attach_and_spawn(command: &mut Command) -> io::Result<Child> {
         command.spawn()
     }
 
@@ -186,6 +206,11 @@ mod system {
     /// the parent's Ctrl+C away.
     const DETACHED: u32 = CREATE_NO_WINDOW;
 
+    /// A hidden console of its own and nothing else: the child stays in the job of this process.
+    pub(super) fn attach_and_spawn(command: &mut Command) -> io::Result<Child> {
+        command.creation_flags(CREATE_NO_WINDOW).spawn()
+    }
+
     pub(super) fn detach_and_spawn(command: &mut Command) -> io::Result<Child> {
         // A job that does not allow breakaway refuses the flag with "access denied"; the child
         // then starts in the job as it would have without the flag.
@@ -238,6 +263,18 @@ mod tests {
         let mut child = spawn_detached(program, &arguments, &log).unwrap();
         child.wait().unwrap();
         assert_eq!(fs::read_to_string(&log).unwrap().matches("out").count(), 2);
+        fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn an_attached_child_writes_to_the_log_and_reports_its_exit_code() {
+        let _forks = crate::spawning();
+        let directory = scratch("attached");
+        let log = directory.join("child.log");
+        let (program, arguments) = shell("echo attached && exit 3");
+        let mut child = spawn_attached(program, &arguments, &log).unwrap();
+        assert_eq!(child.wait().unwrap().code(), Some(3));
+        assert!(fs::read_to_string(&log).unwrap().contains("attached"));
         fs::remove_dir_all(&directory).unwrap();
     }
 

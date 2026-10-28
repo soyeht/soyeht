@@ -116,8 +116,8 @@ list itself moves to `contracts/legacy.json`, generated into `soyeht_protocol::l
 - A production install is `soyeht service install` away on all three systems once the programs
   are in place. The installers, the Mac app and the desktop app do not call it in this change;
   the contract is what they call.
-- The Windows service runs in the console that Task Scheduler opens and keeps no log file. This
-  is the one place where Windows is behind the other systems.
+- ~~The Windows service runs in the console that Task Scheduler opens and keeps no log file.~~
+  Closed by the amendment below.
 - Linux units start at login. They start at boot only if the person enables lingering
   (`loginctl enable-linger`), which the seam does not do.
 - A program started by hand while its service is registered makes the service restart in a loop
@@ -138,11 +138,7 @@ with `StandardOutput=append:` needs systemd 240 or later.
    Dev installer. A notarized app may prefer `SMAppService`, whose plist lives inside the bundle
    and which shows the item in System Settings with the app's name. The renderer is one
    function, so a second Mac renderer is local; the choice belongs with signing and packaging.
-2. **A hidden window and a log on Windows.** A console program started by Task Scheduler opens
-   a console window and cannot redirect output. The fix is a Windows-subsystem host that starts
-   the program with a hidden console and appends to `logs/*.log` (the way `spawn_service`
-   does), or `conhost.exe --headless`, which has not been tried. Until then the person sees two
-   console windows at logon.
+2. ~~A hidden window and a log on Windows.~~ Answered by the amendment below.
 3. **Starting at boot.** Login only, by default. Enabling lingering and a machine-wide task are
    product choices.
 4. **First-run registration by the app.** The default is to ask. Registering silently on first
@@ -151,3 +147,62 @@ with `StandardOutput=append:` needs systemd 240 or later.
 5. **Where the programs live on the Mac.** The Dev profile keeps signed copies in
    `<data>/bin` so that privacy grants stay with a stable path. A production app may point the
    agents into the bundle instead. `--programs` takes either.
+
+## Amendment: a windowless host for the Windows task
+
+A console program that Task Scheduler starts opens a console window, and a task cannot redirect
+output, so the first version showed two console windows at logon and kept no log on Windows.
+
+**Chosen: a tiny launcher, `soyeht-service-host`.** It is a second binary of the `soyeht-service`
+crate, built for the Windows subsystem (`windows_subsystem = "windows"`), so it has no window. The
+task starts it, and it starts the engine or the supervisor with
+`soyeht_platform::process::detached::spawn_attached`: a hidden console of its own
+(`CREATE_NO_WINDOW`), standard output and error appended to `logs/<component>.log`, and no
+breakaway from the task's job. It waits for the program and exits with its exit code. The command
+line is `soyeht-service-host --log FILE -- PROGRAM ARGUMENT...` (contract 13 section 6).
+
+**Why not the other options.**
+
+- *Building the engine and the supervisor for the Windows subsystem.* It removes the window but
+  not the missing log: the programs would have no standard error to write to unless each learned
+  to open its own file. It would also silence them on a developer's console and in the tests that
+  read their output, on every run, for the sake of one way of starting them.
+- *`conhost.exe --headless`.* Undocumented, absent before Windows 10 1809, and it does not
+  redirect output either.
+- *A VBS or `wscript` shim.* Excluded: it is deprecated, blocked by many policies and flagged by
+  security software.
+- *`cmd /c` with a redirect.* Its console window stays open as long as the program runs.
+
+**Why this one.** The program is started almost as the desktop app starts it today (ADR 0102,
+ADR 0108: a hidden console of its own, a log file for output, no new process group), a path that
+has been tested on Windows. One difference is deliberate: the app's `spawn_detached` asks to
+leave the parent's job (`CREATE_BREAKAWAY_FROM_JOB`) so that closing the window or ending a
+launcher's job does not end the engine; `spawn_attached` does not, so the program stays in the
+task's job and `End` on the task, which ends the job, ends the program. Without that, ending
+the task would end the host and leave the program running with nothing to restart or stop it.
+Because the host waits, the task is "running" for as long as the program is, and
+`RestartOnFailure` sees a crash. The log gap closes with the window.
+
+The host passes the program's exit code on whole (a Windows code is 32 bits). Its own are 2 for
+a command line it does not understand, 3 for a log it cannot write to and 1 for a program it
+could not start (the reason is in the log); a program's own code can equal one of them.
+
+**Limits.** A host with a command line it does not understand, or a log it cannot open, leaves no
+trace but its exit code in Task Scheduler's history, since it has no console and no file to write
+to. The task file is rendered by tested code, so this means a hand-edited task. The host makes
+the logs folder owner-only, as `install` does.
+
+The logon race. The task-run engine is not given `--restart-supervisor` (above), so it never
+starts the supervisor itself: when the engine's task runs before the supervisor's, the engine
+reconnects, as it does after any loss. A supervisor that something else started outside the
+task's job (the desktop app's fallback start, which breaks away, or a hand start) holds the
+supervisor's lock, so the supervisor's task fails on it and `RestartOnFailure` retries every
+minute until the person stops one of them, the same loop as for any program started by hand
+(contract 13 section 5). The contract has the app start nothing when a service is registered.
+
+The runtime check on Windows is pending: the XML, the host and the task have been
+rendered and the host exercised on the Mac only, and `clippy` ran for
+`x86_64-pc-windows-msvc`. Also unchecked: a `Program Files` path with example in `<Command>`, and the
+logon order of the two tasks. If the program is killed from outside the task (not by `End`), the host
+exits with a failure and the task restarts it a minute later. A host started by hand outside a
+task leaves its child running if the host is killed.

@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[[bin]]
+name = "soyeht-service-host"
+path = "src/bin/soyeht-service-host.rs"
+
 [dependencies]
 soyeht-platform = { path = "../soyeht-platform" }
 soyeht-process = { path = "../soyeht-process" }

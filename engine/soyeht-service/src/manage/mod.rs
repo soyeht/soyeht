@@ -84,8 +84,12 @@ impl<'a, C: Commands> Manager<'a, C> {
         for component in ordered(components) {
             let definition = self.layout.definition(component, programs)?;
             // A service whose program is missing would be restarted, and fail, for ever.
-            if !Path::new(&definition.program).is_file() {
-                return Err(Error::ProgramMissing(definition.program));
+            if let Some(missing) = definition
+                .files
+                .iter()
+                .find(|file| !Path::new(file).is_file())
+            {
+                return Err(Error::ProgramMissing(missing.clone()));
             }
             texts.push((component, render(self.layout.system, &definition)?));
         }
@@ -161,9 +165,6 @@ impl<'a, C: Commands> Manager<'a, C> {
     /// manager (which will not make a folder) has somewhere to append to.
     fn prepare_folders(&self, components: impl Iterator<Item = Component>) -> Result<()> {
         private_folder(&self.layout.data)?;
-        if self.layout.system == System::Windows {
-            return Ok(());
-        }
         private_folder(&soyeht_platform::process::detached::logs_directory(
             &self.layout.data,
         ))?;

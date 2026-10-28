@@ -14,15 +14,19 @@ pub struct Definition {
     /// Task Scheduler task name. It carries "next".
     pub name: String,
     pub description: String,
-    /// The absolute path of the program.
+    /// The absolute path of the program the system starts.
     pub program: String,
     pub arguments: Vec<String>,
     /// Variables the program starts with. Task Scheduler cannot set any, so a definition for
     /// it keeps these empty and passes what the program needs on its command line.
     pub environment: BTreeMap<String, String>,
-    /// The file the program's standard output and error are appended to, when the system's
-    /// manager can do that. Task Scheduler cannot.
+    /// The file the program's standard output and error are appended to. launchd and systemd do
+    /// it themselves; for Task Scheduler the host program does (`host`), and the task file does
+    /// not mention it.
     pub log: Option<String>,
+    /// Every program file the service needs to exist (the program the system starts, and the
+    /// one the Windows host starts for it); an install is refused when one is missing.
+    pub files: Vec<String>,
     /// The name of a service this one starts after (systemd), so the supervisor is up first.
     pub after: Option<String>,
     /// The account a Windows task belongs to, as a security identifier.
@@ -57,6 +61,9 @@ impl Definition {
         for text in [&self.log, &self.after, &self.user].into_iter().flatten() {
             plain("service setting", text)?;
         }
+        for file in &self.files {
+            plain("program file", file)?;
+        }
         if self.program.is_empty() {
             return Err(Error::Unrepresentable("program"));
         }
@@ -80,6 +87,7 @@ pub(crate) fn sample(name: &str) -> Definition {
         arguments: vec!["--data-dir".into(), "/data/next".into()],
         environment: BTreeMap::from([("PATH".into(), "/usr/bin".into())]),
         log: Some("/data/next/logs/engine.log".into()),
+        files: vec!["/opt/next/soyeht-engine".into()],
         after: None,
         user: None,
     }

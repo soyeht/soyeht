@@ -20,6 +20,7 @@ mod commands;
 mod definition;
 mod error;
 pub mod guard;
+pub mod host;
 mod layout;
 mod manage;
 mod policy;

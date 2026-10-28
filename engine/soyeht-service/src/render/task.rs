@@ -9,9 +9,10 @@
 //!   the scheduler takes. Task Scheduler has no restart for a program that ended cleanly, and
 //!   the engine and supervisor never end cleanly unless they were asked to.
 //!
-//! A task cannot set environment variables or redirect output, so a definition for it carries
-//! neither (the program gets what it needs as arguments), and its output goes to the console
-//! the scheduler gives it.
+//! A task cannot set environment variables, redirect output or hide the console of a console
+//! program. A definition for it carries no variables (the program gets what it needs as
+//! arguments), and its program is the service host, a windowless program that starts the real
+//! one with its output in the log (`host`).
 
 use super::xml_escape;
 use crate::{definition::Definition, policy};

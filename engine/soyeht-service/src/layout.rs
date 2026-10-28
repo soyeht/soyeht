@@ -3,7 +3,7 @@
 use crate::{
     definition::Definition,
     error::{Error, Result},
-    guard, policy,
+    guard, host, policy,
     system::{Component, System, service_name},
 };
 use soyeht_protocol::profile::Profile;
@@ -97,24 +97,53 @@ impl Layout {
             arguments.extend(["--profile".to_owned(), self.profile.name.to_owned()]);
         }
         arguments.extend(["--data-dir".to_owned(), text(&self.data, "data directory")?]);
-        let definition = Definition {
+        let mut definition = Definition {
             name: self.name(component).to_owned(),
             description: component.description().to_owned(),
+            files: vec![text(&program, "program folder")?],
             program: text(&program, "program folder")?,
             arguments,
             environment: self.environment()?,
-            log: match self.system {
-                System::Windows => None,
-                System::Macos | System::Linux => {
-                    Some(text(&self.log(component), "data directory")?)
-                }
-            },
+            log: Some(text(&self.log(component), "data directory")?),
             after: (component == Component::Engine && self.system == System::Linux)
                 .then(|| self.name(Component::Ptyd).to_owned()),
             user: (self.system == System::Windows).then(|| self.user_id.clone()),
         };
+        if self.system == System::Windows {
+            definition = self.through_host(definition, programs)?;
+        }
         definition.check()?;
         Ok(definition)
+    }
+
+    /// The definition of a Windows task: the task starts the host, which starts the program with
+    /// no window, its output in the log, and its exit code as its own (`host`).
+    fn through_host(&self, definition: Definition, programs: &Path) -> Result<Definition> {
+        let host = programs.join(format!(
+            "{}{}",
+            host::PROGRAM,
+            self.system.executable_suffix()
+        ));
+        let host = host
+            .to_str()
+            .ok_or(Error::Unrepresentable("program folder"))?
+            .to_owned();
+        let log = definition.log.clone().unwrap_or_default();
+        let mut arguments = vec![
+            host::LOG_OPTION.to_owned(),
+            log,
+            host::PROGRAM_SEPARATOR.to_owned(),
+            definition.program.clone(),
+        ];
+        arguments.extend(definition.arguments);
+        let mut files = vec![host.clone()];
+        files.extend(definition.files);
+        Ok(Definition {
+            program: host,
+            arguments,
+            files,
+            ..definition
+        })
     }
 
     /// The variables the programs start with. launchd and systemd start a program with a
@@ -273,12 +302,36 @@ mod tests {
     }
 
     #[test]
-    fn windows_programs_end_in_exe_and_a_task_has_no_log_to_append_to() {
-        let definition = test_layout(System::Windows, Path::new(ROOT))
+    fn a_windows_task_starts_the_host_which_starts_the_program_and_keeps_its_log() {
+        let layout = test_layout(System::Windows, Path::new(ROOT));
+        let definition = layout.definition(Component::Ptyd, &programs()).unwrap();
+        let log = "/tmp/next-test/data/next/logs/ptyd.log";
+        assert_eq!(definition.program, "/opt/next/bin/soyeht-service-host.exe");
+        assert_eq!(
+            definition.arguments,
+            [
+                "--log",
+                log,
+                "--",
+                "/opt/next/bin/soyeht-ptyd.exe",
+                "--data-dir",
+                "/tmp/next-test/data/next"
+            ]
+        );
+        assert_eq!(definition.log.as_deref(), Some(log));
+        assert_eq!(
+            definition.files,
+            [
+                "/opt/next/bin/soyeht-service-host.exe",
+                "/opt/next/bin/soyeht-ptyd.exe"
+            ]
+        );
+        // The other systems start the program itself.
+        let mac = test_layout(System::Macos, Path::new(ROOT))
             .definition(Component::Ptyd, &programs())
             .unwrap();
-        assert_eq!(definition.program, "/opt/next/bin/soyeht-ptyd.exe");
-        assert_eq!(definition.log, None);
+        assert_eq!(mac.program, "/opt/next/bin/soyeht-ptyd");
+        assert_eq!(mac.files, ["/opt/next/bin/soyeht-ptyd"]);
     }
 
     #[test]

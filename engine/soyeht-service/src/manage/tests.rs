@@ -45,6 +45,7 @@ fn programs() -> PathBuf {
                 "soyeht-engine",
                 "soyeht-ptyd.exe",
                 "soyeht-engine.exe",
+                "soyeht-service-host.exe",
             ] {
                 fs::write(folder.join(name), b"program").unwrap();
             }
@@ -450,8 +451,23 @@ fn windows_install_registers_each_task_from_a_utf16_copy_and_runs_it() {
     let xml = String::from_utf16(&units).unwrap();
     assert!(xml.contains("<LogonTrigger>"));
     assert!(xml.contains("S-1-5-21-1-2-3-1001"));
-    // A task has no log file to prepare.
-    assert!(!layout.data.join("logs").exists());
+    // The task starts the windowless host, which starts the program.
+    let command = format!(
+        "<Command>{}</Command>",
+        programs().join("soyeht-service-host.exe").display()
+    );
+    assert!(xml.contains(&command), "{xml}");
+    let program = programs().join("soyeht-ptyd.exe");
+    assert!(
+        xml.contains(&format!("--log {}", layout.log(Component::Ptyd).display())),
+        "{xml}"
+    );
+    assert!(
+        xml.contains(&format!(" -- {} --data-dir", program.display())),
+        "{xml}"
+    );
+    // The host appends to the same logs as the other systems' managers.
+    assert!(layout.log(Component::Ptyd).is_file());
 }
 
 #[test]
