@@ -114,140 +114,54 @@ impl Core {
 mod tests {
     use super::*;
     use crate::{
-        agents::{Running, state::Phase},
-        model::{RunningPane, StoredPane},
-        panes::persist_new_pane,
-        ports::{StorePort, SupervisorPort, testing::FixedClock},
-        screen::Screen,
-        supervisor_link::tests::{events_named, short_directory},
+        agents::state::Phase, ports::testing::FixedClock, supervisor_link::tests::events_named,
+        test_panes::core_with_agent,
     };
-    use soyeht_protocol::{Pane, PaneMode, Workspace, event};
-    use soyeht_ptyd::{
-        Error as PtydError,
-        wire::{Instance, Response},
-        wire_kind,
-    };
-    use std::{collections::VecDeque, sync::Arc};
-
-    /// A supervisor that fails the next spawns with the kinds it is given, starts the one
-    /// after them, and answers everything else with `Ok`.
-    struct Spawning {
-        failures: VecDeque<&'static str>,
-        spawns: usize,
-    }
-
-    impl SupervisorPort for Spawning {
-        fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
-            match request {
-                Request::Spawn(config) => {
-                    self.spawns += 1;
-                    if let Some(kind) = self.failures.pop_front() {
-                        return Err(PtydError::Remote {
-                            kind: kind.into(),
-                            message: "x".into(),
-                        });
-                    }
-                    Ok(Response::Instance(Instance {
-                        instance_id: format!("instance-{}", self.spawns),
-                        supervisor_id: "spawning".into(),
-                        spawn: config,
-                        pid: 7,
-                        closed: false,
-                        exit_code: None,
-                    }))
-                }
-                _ => Ok(Response::Ok),
-            }
-        }
-
-        fn supervisor_id(&self) -> &str {
-            "spawning"
-        }
-
-        fn supervisor_generation(&self) -> u32 {
-            1
-        }
-    }
-
-    /// A core with an agent pane that has a process, linked to a supervisor that fails the
-    /// next spawns with `failures`; the clock is the test's.
-    fn core_with_agent(failures: &[&'static str]) -> (Core, std::path::PathBuf) {
-        let directory = short_directory();
-        let state = crate::test_panes::ready_agent_state();
-        let cwd = directory.to_string_lossy().into_owned();
-        let pane = Pane {
-            record: true,
-            agent: Some(state.public(0)),
-            ..crate::test_panes::pane("agent", "workspace", PaneMode::Agent, &cwd)
-        };
-        let saved = StoredPane {
-            pane,
-            closed: false,
-            instance_key: "key".into(),
-            instance_id: Some("instance-0".into()),
-            supervisor_id: Some("spawning".into()),
-            sequence_base: 0,
-        };
-        let workspace = Workspace {
-            workspace_id: "workspace".into(),
-            name: "W".into(),
-            path: cwd,
-            layout: json!({}),
-        };
-        let mut core = Core::open(&directory).unwrap();
-        StorePort::mutate(&mut core.store, "test", "seed", "seed", |change| {
-            change.insert_workspace(&workspace)?;
-            persist_new_pane(change, &saved, Some(&state))?;
-            Ok((json!({}), Vec::new()))
-        })
-        .unwrap();
-        let screen = Screen::open(&directory.join("sessions/agent"), true).unwrap();
-        core.panes.insert(
-            "agent".into(),
-            RunningPane {
-                stored: saved,
-                screen,
-            },
-        );
-        core.agents.insert("agent".into(), Running::new(state));
-        core.clock = Arc::new(FixedClock(1_000_000));
-        core.ptyd = Some(Box::new(Spawning {
-            failures: failures.iter().copied().collect(),
-            spawns: 0,
-        }));
-        (core, directory)
-    }
+    use soyeht_protocol::event;
+    use soyeht_ptyd::wire_kind;
+    use std::sync::Arc;
 
     fn set_clock(core: &mut Core, ms: i64) {
         core.clock = Arc::new(FixedClock(ms));
     }
 
+    /// The two ways an agent's process is respawned after it was lost: the role changes
+    /// (its process is closed and recovered) and the drain finds it missing.
+    const RESPAWNS: [fn(&mut Core); 2] = [
+        |core| core.restart_after_role_change("agent"),
+        |core| core.drain_panes().unwrap(),
+    ];
+
     #[test]
-    fn a_role_change_whose_respawn_fails_is_retried_and_the_pane_comes_up() {
-        let (mut core, _directory) = core_with_agent(&[wire_kind::SPAWN_FAILED]);
-        core.restart_after_role_change("agent");
+    fn a_respawn_that_fails_is_retried_and_the_pane_comes_up() {
+        for respawn in RESPAWNS {
+            let (mut core, _directory) = core_with_agent(&[wire_kind::SPAWN_FAILED]);
+            respawn(&mut core);
 
-        assert!(core.ptyd.is_some());
-        assert!(core.panes["agent"].stored.instance_id.is_none());
-        assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 1);
+            assert!(core.ptyd.is_some());
+            assert!(core.panes["agent"].stored.instance_id.is_none());
+            assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 1);
 
-        set_clock(&mut core, 1_100_000);
-        core.advance_spawn_retries().unwrap();
-        assert!(core.panes["agent"].stored.instance_id.is_some());
-        assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
-        assert!(core.ptyd.is_some());
-        assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+            set_clock(&mut core, 1_100_000);
+            core.advance_spawn_retries().unwrap();
+            assert!(core.panes["agent"].stored.instance_id.is_some());
+            assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
+            assert!(core.ptyd.is_some());
+            assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+        }
     }
 
     #[test]
-    fn a_role_change_whose_respawn_is_refused_stops_the_agent() {
-        let (mut core, _directory) = core_with_agent(&[wire_kind::SPAWN_REFUSED]);
-        core.restart_after_role_change("agent");
+    fn a_respawn_that_is_refused_stops_the_agent() {
+        for respawn in RESPAWNS {
+            let (mut core, _directory) = core_with_agent(&[wire_kind::SPAWN_REFUSED]);
+            respawn(&mut core);
 
-        assert!(core.ptyd.is_some());
-        assert_eq!(core.panes["agent"].stored.pane.state, PaneState::Dead);
-        assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
-        assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+            assert!(core.ptyd.is_some());
+            assert_eq!(core.panes["agent"].stored.pane.state, PaneState::Dead);
+            assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
+            assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+        }
     }
 
     #[test]
@@ -261,5 +175,52 @@ mod tests {
         core.advance_spawn_retries().unwrap();
         assert!(core.panes["agent"].stored.instance_id.is_none());
         assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
+    }
+
+    #[test]
+    fn a_recovery_that_fails_before_the_process_is_lost_does_not_stop_a_healthy_agent() {
+        use crate::{
+            agents::terminals::Terminal,
+            test_panes::{Spawning, pty_spawn},
+        };
+        let (mut core, _directory) = core_with_agent(&[]);
+        // A terminal of the agent that the supervisor will not close: the recovery fails
+        // after its first commit and before the pane loses its process.
+        core.agents
+            .get_mut("agent")
+            .unwrap()
+            .state
+            .terminals
+            .insert(
+                "terminal".into(),
+                Terminal {
+                    spawn: pty_spawn("terminal-key"),
+                    instance_id: Some("child".into()),
+                    supervisor_id: Some("spawning".into()),
+                    bytes: String::new(),
+                    from: 0,
+                    next: 0,
+                    limit: 1,
+                    truncated: false,
+                    exit_code: None,
+                    message_seq: None,
+                },
+            );
+        core.ptyd = Some(Box::new(Spawning {
+            failures: Default::default(),
+            spawns: 0,
+            close_failure: Some(wire_kind::OPERATION_FAILED),
+        }));
+        // The drain finds the process missing at every tick.
+        for tick in 0..10 {
+            set_clock(&mut core, 1_000_000 + tick * 10);
+            core.drain_panes().unwrap();
+        }
+        assert!(core.ptyd.is_some());
+        assert!(core.panes["agent"].stored.instance_id.is_some());
+        assert_ne!(core.panes["agent"].stored.pane.state, PaneState::Dead);
+        assert_ne!(core.agents["agent"].state.phase, Phase::Faulted);
+        assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
+        assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
     }
 }

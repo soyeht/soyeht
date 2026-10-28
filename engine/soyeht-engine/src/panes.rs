@@ -480,8 +480,7 @@ impl Core {
                 .map(|i| i.instance_id);
         }
         if let Some(instance_id) = instance_id {
-            let closed = self.pty_request(Request::Close { instance_id }).map(drop);
-            self.settle_supervisor_call("engine.pane_close_failed", closed);
+            self.close_process(&instance_id);
         }
         Ok(())
     }

@@ -1,15 +1,24 @@
 //! Panes for unit tests: a bare one to build on, and a running terminal with no process behind it.
 
 use crate::{
+    agents::Running,
     core::Core,
     model::{RunningPane, StoredPane},
     pane_observations::SegmentStore,
+    panes::persist_new_pane,
+    ports::{StorePort, SupervisorPort, testing::FixedClock},
     screen::Screen,
+    supervisor_link::tests::short_directory,
 };
 use serde_json::json;
 use soyeht_pane_state::{EngineBuild, HarnessIdentity, ObservationPaneKind, RecordedRow};
-use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource};
-use std::path::Path;
+use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource, Workspace};
+use soyeht_ptyd::{
+    Error as PtydError,
+    wire::{Instance, ProcessKind, Request, Response, Spawn},
+    wire_kind,
+};
+use std::{collections::VecDeque, path::Path, sync::Arc};
 
 /// Adds the pane `{label}-pane` to `core`, with its experiment capture `capture`, and returns
 /// its id. Its screen is kept under `root`.
@@ -114,4 +123,121 @@ pub(crate) fn pane(id: &str, workspace_id: &str, mode: PaneMode, cwd: &str) -> P
         writing_kind: None,
         writing_section: None,
     }
+}
+
+/// The request to start a terminal process with the instance key `key`.
+pub(crate) fn pty_spawn(key: &str) -> Spawn {
+    Spawn {
+        instance_key: key.into(),
+        generation: 1,
+        kind: ProcessKind::Pty,
+        cwd: "/".into(),
+        argv: Vec::new(),
+        env: Default::default(),
+        cols: 80,
+        rows: 24,
+    }
+}
+
+/// A supervisor that fails the next spawns with the kinds it is given, starts the one
+/// after them, reports `instance-0` as missing when drained, and answers the rest with `Ok`.
+pub(crate) struct Spawning {
+    pub(crate) failures: VecDeque<&'static str>,
+    pub(crate) spawns: usize,
+    /// The kind every close fails with, when set.
+    pub(crate) close_failure: Option<&'static str>,
+}
+
+impl SupervisorPort for Spawning {
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+        match request {
+            Request::Spawn(config) => {
+                self.spawns += 1;
+                if let Some(kind) = self.failures.pop_front() {
+                    return Err(PtydError::Remote {
+                        kind: kind.into(),
+                        message: "x".into(),
+                    });
+                }
+                Ok(Response::Instance(Instance {
+                    instance_id: format!("instance-{}", self.spawns),
+                    supervisor_id: "spawning".into(),
+                    spawn: config,
+                    pid: 7,
+                    closed: false,
+                    exit_code: None,
+                }))
+            }
+            // The agent's process is gone from the registry: the first drain says so.
+            Request::Drain { instance_id, .. } if instance_id == "instance-0" => {
+                Err(PtydError::Remote {
+                    kind: wire_kind::NOT_FOUND.into(),
+                    message: "x".into(),
+                })
+            }
+            Request::Close { .. } if self.close_failure.is_some() => Err(PtydError::Remote {
+                kind: self.close_failure.unwrap_or_default().into(),
+                message: "x".into(),
+            }),
+            _ => Ok(Response::Ok),
+        }
+    }
+
+    fn supervisor_id(&self) -> &str {
+        "spawning"
+    }
+
+    fn supervisor_generation(&self) -> u32 {
+        1
+    }
+}
+
+/// A core with an agent pane that has a process, linked to a supervisor that fails the
+/// next spawns with `failures`; the clock is the test's.
+pub(crate) fn core_with_agent(failures: &[&'static str]) -> (Core, std::path::PathBuf) {
+    let directory = short_directory();
+    let state = crate::test_panes::ready_agent_state();
+    let cwd = directory.to_string_lossy().into_owned();
+    let pane = Pane {
+        record: true,
+        agent: Some(state.public(0)),
+        ..crate::test_panes::pane("agent", "workspace", PaneMode::Agent, &cwd)
+    };
+    let saved = StoredPane {
+        pane,
+        closed: false,
+        instance_key: "key".into(),
+        instance_id: Some("instance-0".into()),
+        supervisor_id: Some("spawning".into()),
+        sequence_base: 0,
+    };
+    let workspace = Workspace {
+        workspace_id: "workspace".into(),
+        name: "W".into(),
+        path: cwd,
+        layout: json!({}),
+    };
+    let mut core = Core::open(&directory).unwrap();
+    StorePort::mutate(&mut core.store, "test", "seed", "seed", |change| {
+        change.insert_workspace(&workspace)?;
+        persist_new_pane(change, &saved, Some(&state))?;
+        Ok((json!({}), Vec::new()))
+    })
+    .unwrap();
+    let screen = Screen::open(&directory.join("sessions/agent"), true).unwrap();
+    core.panes.insert(
+        "agent".into(),
+        RunningPane {
+            stored: saved,
+            screen,
+        },
+    );
+    core.agents.insert("agent".into(), Running::new(state));
+    core.clock = Arc::new(FixedClock(1_000_000));
+    core.ptyd = Some(Box::new(Spawning {
+        failures: failures.iter().copied().collect(),
+        spawns: 0,
+        close_failure: None,
+    }));
+    (core, directory)
 }

@@ -651,6 +651,7 @@ impl Core {
             return Ok(());
         }
         self.isolated("spawn_retries", Self::advance_spawn_retries);
+        self.isolated("close_retries", Self::advance_close_retries);
         self.isolated("harness_switches", Self::advance_harness_switches);
         self.isolated("retired_agents", Self::cleanup_retired_agent_processes);
         self.isolated("experiment_captures", Self::reconcile_experiment_captures);
@@ -671,7 +672,7 @@ impl Core {
 
     /// Moves new terminal and agent output from the supervisor into each
     /// pane's screen. This is the terminal path.
-    fn drain_panes(&mut self) -> Result<()> {
+    pub(crate) fn drain_panes(&mut self) -> Result<()> {
         let ids: Vec<_> = self
             .panes
             .iter()
@@ -686,7 +687,10 @@ impl Core {
             if self.agents.contains_key(&id) {
                 if let Err(error) = self.poll_agent(&id) {
                     if errors::missing_supervisor_instance(&error) {
-                        self.recover_missing_agent(&id)?;
+                        // A respawn that fails leaves the pane without a process: it is
+                        // retried or stopped, not returned.
+                        let recovered = self.recover_missing_agent(&id);
+                        self.settle_spawn(&id, recovered);
                     } else if errors::agent_poll_failure_is_global(&error) {
                         return Err(error);
                     } else {

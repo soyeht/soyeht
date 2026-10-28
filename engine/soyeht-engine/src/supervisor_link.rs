@@ -69,6 +69,8 @@ pub(crate) struct Retry {
     /// The panes whose process failed to start on a link that stays up, and when each is tried
     /// again (see `spawn_retry`).
     pub(crate) spawn_retries: crate::spawn_retry::SpawnRetries,
+    /// The processes whose close failed on a link that stays up (see `spawn_retry`).
+    pub(crate) close_retries: crate::spawn_retry::CloseRetries,
 }
 
 impl Default for Retry {
@@ -82,6 +84,7 @@ impl Default for Retry {
             start_streak: Streak::once(),
             call_failures: BTreeMap::new(),
             spawn_retries: Default::default(),
+            close_retries: Default::default(),
         }
     }
 }
@@ -195,6 +198,7 @@ impl Core {
             Ok(()) => {
                 // The reconciliation that made the link starts every pane that has no process.
                 self.supervisor_retry.spawn_retries.clear();
+                self.supervisor_retry.close_retries.clear();
                 self.supervisor_retry.connected_ms = Some(now);
                 Link::Up
             }
