@@ -289,6 +289,59 @@ class Teardown(unittest.TestCase):
                     platform.time.sleep(0.05)
 
 
+class WaitEvent(unittest.TestCase):
+    """`Client.wait_event` takes the next message of one method and keeps the rest."""
+
+    def setUp(self):
+        self.near, self.far = socket.socketpair()
+        self.addCleanup(self.near.close)
+        self.addCleanup(self.far.close)
+        self.client = object.__new__(e2e.Client)
+        self.client.stream = self.near
+        self.client.pending = []
+
+    def push(self, method, **params):
+        e2e.send(self.far, {"jsonrpc": "2.0", "method": method, "params": params})
+
+    def test_other_methods_are_skipped_and_kept_in_order(self):
+        self.push("pane.updated", paneId="a")
+        self.push("workspace.renamed", eventId=1)
+        found = self.client.wait_event("workspace.renamed")
+        self.assertEqual(found["params"]["eventId"], 1)
+        self.assertEqual([m["method"] for m in self.client.pending], ["pane.updated"])
+
+    def test_a_message_already_pending_is_found_without_reading(self):
+        self.client.pending = [{"method": "x", "params": {}},
+                               {"method": "y", "params": {"n": 2}}]
+        self.assertEqual(self.client.wait_event("y", seconds=0)["params"], {"n": 2})
+        self.assertEqual(self.client.pending, [{"method": "x", "params": {}}])
+
+    def test_the_predicate_skips_a_message_of_the_right_method(self):
+        self.push("pane.closed", paneId="other")
+        self.push("pane.closed", paneId="mine")
+        found = self.client.wait_event("pane.closed", lambda p: p["paneId"] == "mine")
+        self.assertEqual(found["params"]["paneId"], "mine")
+        self.assertEqual(self.client.pending[0]["params"]["paneId"], "other")
+
+    def test_a_duplicate_of_the_method_is_the_next_match_not_skipped(self):
+        self.push("workspace.renamed", eventId=5)
+        self.push("workspace.renamed", eventId=5)
+        first = self.client.wait_event("workspace.renamed")
+        second = self.client.wait_event("workspace.renamed")
+        self.assertEqual((first["params"]["eventId"], second["params"]["eventId"]), (5, 5))
+
+    def test_a_timeout_names_the_method_and_the_skipped_methods(self):
+        self.push("pane.updated")
+        self.push("stream.gap")
+        with self.assertRaises(AssertionError) as caught:
+            self.client.wait_event("pane.closed", seconds=0.2, message="no close")
+        text = str(caught.exception)
+        for part in ("no close", "pane.closed", "pane.updated", "stream.gap", "2 message"):
+            self.assertIn(part, text)
+        self.assertEqual(len(self.client.pending), 2)
+        self.assertIsNone(self.near.gettimeout())
+
+
 class FakeServices:
     """What `run_suite` asks of the services: start two components, then close."""
 

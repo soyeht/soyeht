@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import struct
 import subprocess
 import tempfile
@@ -80,6 +81,40 @@ class Client:
                 require("error" not in message, f"RPC failed: {method}")
                 return message["result"]
             self.pending.append(message)
+
+    def wait_event(self, method, matches=None, seconds=15, message=None):
+        """Take the next message of `method` whose params satisfy `matches`, within `seconds`.
+
+        Looks in `pending` first, then reads the stream. Every other message is skipped
+        but stays in `pending`, in order, for the caller to inspect. A message of the
+        expected method that `matches` refuses is skipped like any other. On a timeout
+        the failure names the method and the methods skipped.
+        """
+        deadline = time.monotonic() + seconds
+        examined = 0
+        while True:
+            for index in range(examined, len(self.pending)):
+                event = self.pending[index]
+                if event.get("method") == method and (
+                        matches is None or matches(event.get("params", {}))):
+                    del self.pending[index]
+                    return event
+            examined = len(self.pending)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            previous = self.stream.gettimeout()
+            self.stream.settimeout(remaining)
+            try:
+                self.pending.append(receive(self.stream))
+            except socket.timeout:
+                break
+            finally:
+                self.stream.settimeout(previous)
+        skipped = ", ".join(sorted({m.get("method", "<binary frame>") for m in self.pending}))
+        raise AssertionError(
+            f"{message or 'expected event not received'}: waited {seconds}s for {method}; "
+            f"skipped {len(self.pending)} message(s) ({skipped or 'none'})")
 
     def mutate(self, method, **params):
         params.setdefault("idempotencyKey", str(uuid.uuid4()))
@@ -338,18 +373,20 @@ def acceptances(services, results):
     events = [m for m in observer.pending if m.get("method") == "workspace.renamed"]
     require([m["params"]["workspace"]["name"] for m in events] == [f"Replay {i}" for i in range(4)],
             "snapshot-to-subscription lost or duplicated a change")
+    observer.pending.clear()
     ids = [int(m["params"]["eventId"]) for m in events]
     require(ids == sorted(set(ids)) and ids[0] > int(snapshot["cursor"]), "event cursor is not exclusive and monotonic")
     writer.mutate("workspace.rename", workspaceId=workspace, name="Live")
-    live = receive(observer.stream)
-    require(live.get("method") == "workspace.renamed" and live["params"]["workspace"]["name"] == "Live"
+    # Only other methods are skipped: a duplicate or out-of-order rename is the next
+    # `workspace.renamed` and fails the checks below.
+    live = observer.wait_event("workspace.renamed", message="live event did not follow replay")
+    require(live["params"]["workspace"]["name"] == "Live"
             and int(live["params"]["eventId"]) > ids[-1], "live event did not follow replay")
     results.append({"acceptance": 3, "name": "snapshot_then_events", "passed": True})
 
     writer.mutate("pane.close", paneId=pane_id)
-    closed = receive(observer.stream)
-    require(closed.get("method") == "pane.closed" and closed["params"]["paneId"] == pane_id,
-            "other client did not receive the close event")
+    observer.wait_event("pane.closed", lambda params: params.get("paneId") == pane_id,
+                        message="other client did not receive the close event")
     require(writer.pane(pane_id) is None and observer.pane(pane_id) is None, "closed pane remains visible")
     writer = services.restart_engine()
     require(writer.pane(pane_id) is None, "closed pane resurrected after restart")

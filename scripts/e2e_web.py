@@ -75,7 +75,7 @@ def acceptance_reverse_host_routing(services, caller, pane, results):
     send(caller.stream, {
         "jsonrpc": "2.0", "id": operation, "method": "web.navigate", "params": parameters,
     })
-    command = receive(host.stream)
+    command = host.wait_event("web.command", message="engine did not route a reverse host command")
     require(command["method"] == "web.command", "engine did not route a reverse host command")
     require(command["params"]["command"] == "navigate", "engine routed the wrong command")
     require(command["params"]["args"]["url"] == "http://localhost:5173/",
@@ -136,22 +136,9 @@ def open_low_listener():
 
 def next_local_servers(client, deadline, message):
     """The list of the next `servers.local.changed` event, once the engine publishes it."""
-    while True:
-        for index, event in enumerate(client.pending):
-            if event.get("method") == "servers.local.changed":
-                del client.pending[:index + 1]
-                return event["params"]["servers"]
-        client.pending.clear()
-        remaining = deadline - time.monotonic()
-        require(remaining > 0, message)
-        previous = client.stream.gettimeout()
-        client.stream.settimeout(remaining)
-        try:
-            client.pending.append(receive(client.stream))
-        except socket.timeout:
-            require(False, message)
-        finally:
-            client.stream.settimeout(previous)
+    event = client.wait_event("servers.local.changed", seconds=deadline - time.monotonic(),
+                              message=message)
+    return event["params"]["servers"]
 
 
 def wait_for_local_server(client, port, listed, message, servers=None):
