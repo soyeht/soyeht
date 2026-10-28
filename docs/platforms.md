@@ -28,7 +28,8 @@ does nothing silently.
 - Moving a project entry to the trash is unsupported (the caller asks before deleting
   permanently). Reading the macOS keychain and browser cookies for usage sources is
   unsupported; those sources report it as such.
-- A new terminal pane starts `$SHELL` as a login shell (macOS always starts `zsh`).
+- A new terminal pane starts `$SHELL` as a login shell, else the shell the account names in the
+  user database (macOS always starts `zsh`).
 - The tailnet address watcher recognises the `tailscale0` interface.
 
 **Windows** (ADR 0086)
@@ -66,7 +67,9 @@ can make slow. Two things used to hold the socket back for seconds on a busy mac
   that fails keeps the remembered `PATH` and reports the failure in the harness
   catalogue. A catalogue rescan asks the shell again on its own thread, and every other
   request keeps using the previous answer meanwhile, so nothing under the Core lock
-  waits for the shell. Windows has no login shell to ask.
+  waits for the shell. The shell asked is `$SHELL`, else the one the account names in the user
+  database (`soyeht_platform::user::login_shell`), because a program a desktop session started
+  may not carry `$SHELL`. Windows has no login shell to ask.
 - The file-event stream of the user's skill folder. The system's file-event service
   can take seconds to start a stream. It starts on its own thread and the folder is
   read by polling until it is live, then once more.

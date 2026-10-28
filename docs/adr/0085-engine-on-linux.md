@@ -32,8 +32,9 @@ reads) were behind `cfg(target_os = "macos")`. A first run on Ubuntu 26.04
   consent-changing methods are exactly as protected as before.
 - **Default shell.** `soyeht_ptyd::shell::default_login_shell` is the single
   place that names the shell of a new pane. macOS keeps `/bin/zsh -l`. Other
-  systems use `$SHELL` when it is an existing absolute path, then `bash`, then
-  `sh`, always as a login shell.
+  systems use `$SHELL` when it is an existing absolute path, then the shell the
+  account names in the user database, then `bash`, then `sh`, always as a login
+  shell.
 - **Linux log bound.** `capture_stderr` finds the file behind descriptor 2
   through `/proc/self/fd`, as macOS does through `F_GETPATH`, so the 16 MiB
   engine-log bound of ADR 0082 also holds on Linux. Systems with no way to name

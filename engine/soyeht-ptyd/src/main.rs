@@ -5,9 +5,20 @@ use soyeht_protocol::{
     profile::SELECTION_ENV,
 };
 use soyeht_ptyd::{Error, Result};
-use std::{env, path::PathBuf};
+use std::{env, path::PathBuf, process::ExitCode};
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            // The text a person reads in the terminal or the log: not the `Debug` form.
+            eprintln!("soyeht-ptyd: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.as_slice() == ["--protocol-version"] {
         println!("{}", soyeht_ptyd::wire::VERSION);

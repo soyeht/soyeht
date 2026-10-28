@@ -5,6 +5,7 @@
 
 use super::LaunchPathIssue;
 use std::{
+    ffi::OsString,
     io::{self, Read},
     os::{fd::AsRawFd, unix::fs::PermissionsExt},
     path::{Path, PathBuf},
@@ -33,11 +34,26 @@ fn probe_output(bytes: &[u8]) -> Option<String> {
     (!path.is_empty() && !path.contains('\0')).then(|| path.into())
 }
 
+/// The person's shell: `$SHELL`, which the login sets, else the one the account names. A program
+/// the desktop session started (a GNOME or KDE launcher, a service) may not have `$SHELL`.
 fn supported_shell() -> Result<ShellProbe, LaunchPathIssue> {
-    let shell = std::env::var_os("SHELL")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-        .ok_or(LaunchPathIssue::MissingShell)?;
+    supported_shell_of(
+        std::env::var_os("SHELL"),
+        soyeht_platform::user::login_shell,
+    )
+}
+
+fn supported_shell_of(
+    environment: Option<OsString>,
+    account: impl FnOnce() -> io::Result<Option<PathBuf>>,
+) -> Result<ShellProbe, LaunchPathIssue> {
+    let shell = match environment.filter(|value| !value.is_empty()) {
+        Some(shell) => PathBuf::from(shell),
+        // A lookup that fails leaves the engine as it is without a shell: its own `PATH`.
+        None => account()
+            .map_err(|_| LaunchPathIssue::MissingShell)?
+            .ok_or(LaunchPathIssue::MissingShell)?,
+    };
     let command = shell_command(&shell).ok_or(LaunchPathIssue::UnsupportedShell)?;
     let metadata = shell
         .metadata()
@@ -194,6 +210,56 @@ mod tests {
             Err(LaunchPathIssue::ProbeTimedOut)
         );
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    fn account_names(shell: &'static str) -> impl FnOnce() -> io::Result<Option<PathBuf>> {
+        move || Ok(Some(PathBuf::from(shell)))
+    }
+
+    fn account_must_not_be_asked() -> io::Result<Option<PathBuf>> {
+        panic!("the environment names a shell")
+    }
+
+    #[test]
+    fn a_missing_shell_variable_falls_back_to_the_account_shell() {
+        let bash = Path::new("/bin/bash");
+        if !bash.is_file() {
+            return;
+        }
+        for unset in [None, Some(OsString::new())] {
+            let probe = supported_shell_of(unset, account_names("/bin/bash")).unwrap();
+            assert_eq!(probe.executable, bash);
+            assert_eq!(probe.command, POSIX_PATH_COMMAND);
+        }
+    }
+
+    #[test]
+    fn the_shell_variable_beats_the_account_and_is_checked_as_before() {
+        assert_eq!(
+            supported_shell_of(Some("/bin/tcsh".into()), account_must_not_be_asked).unwrap_err(),
+            LaunchPathIssue::UnsupportedShell
+        );
+        assert_eq!(
+            supported_shell_of(Some("/nowhere/zsh".into()), account_must_not_be_asked).unwrap_err(),
+            LaunchPathIssue::UnavailableShell
+        );
+    }
+
+    #[test]
+    fn no_shell_anywhere_is_a_missing_shell() {
+        assert_eq!(
+            supported_shell_of(None, || Ok(None)).unwrap_err(),
+            LaunchPathIssue::MissingShell
+        );
+        assert_eq!(
+            supported_shell_of(None, || Err(io::ErrorKind::Other.into())).unwrap_err(),
+            LaunchPathIssue::MissingShell
+        );
+        // An account whose shell the probe cannot use is that, not a missing shell.
+        assert_eq!(
+            supported_shell_of(None, account_names("/usr/sbin/nologin")).unwrap_err(),
+            LaunchPathIssue::UnsupportedShell
+        );
     }
 
     #[test]

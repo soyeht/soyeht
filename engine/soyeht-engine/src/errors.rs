@@ -568,6 +568,20 @@ impl fmt::Display for Error {
     }
 }
 
+/// What a person reads when the engine cannot start: the error, then what caused it. The text
+/// of [`Display`](fmt::Display) alone is the wire message, which hides the cause (`Protocol
+/// operation failed`); a cause that is a system error carries a code, not a path.
+pub fn startup_failure(error: &Error) -> String {
+    let mut text = error.to_string();
+    let mut cause = std::error::Error::source(error);
+    while let Some(next) = cause {
+        text.push_str(": ");
+        text.push_str(&next.to_string());
+        cause = next.source();
+    }
+    text
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -671,6 +685,24 @@ impl From<tokio::task::JoinError> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_startup_failure_names_its_cause_and_a_bare_error_stays_as_it_is() {
+        let unknown = soyeht_protocol::Error::UnknownProfile("bogus".into());
+        assert_eq!(
+            startup_failure(&Error::Protocol(unknown)),
+            format!(
+                r#"Protocol operation failed: the profile "bogus" is not known (known: {})"#,
+                soyeht_protocol::profile::PROFILES
+                    .map(|profile| profile.name)
+                    .join(", ")
+            )
+        );
+        assert_eq!(
+            startup_failure(&Error::InvalidArguments),
+            "Expected --data-dir or --listen"
+        );
+    }
 
     #[test]
     fn a_missing_git_is_its_own_kind_from_every_path_that_runs_it() {

@@ -330,7 +330,12 @@ fn an_unknown_profile_is_refused_before_connecting() {
         .output()
         .unwrap();
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("profile name is not known"));
+    let known = soyeht_protocol::profile::PROFILES
+        .map(|profile| profile.name)
+        .join(", ");
+    assert!(String::from_utf8_lossy(&output.stderr).contains(&format!(
+        r#"the profile \"other\" is not known (known: {known})"#
+    )));
     assert!(output.stdout.is_empty());
 }
 

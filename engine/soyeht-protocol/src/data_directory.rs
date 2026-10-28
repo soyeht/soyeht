@@ -24,16 +24,19 @@ pub fn selected_profile(requested: Option<&OsStr>) -> Result<&'static Profile> {
 }
 
 fn selection(requested: Option<&OsStr>, build: Option<&str>) -> Result<&'static Profile> {
-    let name = requested
-        .filter(|name| !name.is_empty())
-        .map(|name| name.to_str().ok_or(Error::UnknownProfile))
-        .transpose()?
-        .or(build.filter(|name| !name.is_empty()))
-        .unwrap_or(crate::profile::DEV.name);
+    let requested = requested.filter(|name| !name.is_empty());
+    let name = match requested {
+        Some(name) => name
+            .to_str()
+            .ok_or_else(|| Error::UnknownProfile(name.to_string_lossy().into_owned()))?,
+        None => build
+            .filter(|name| !name.is_empty())
+            .unwrap_or(crate::profile::DEV.name),
+    };
     PROFILES
         .into_iter()
         .find(|profile| profile.name == name)
-        .ok_or(Error::UnknownProfile)
+        .ok_or_else(|| Error::UnknownProfile(name.into()))
 }
 
 /// The data directory of `profile` below `base`, the system's directory for application data.
@@ -65,12 +68,45 @@ mod tests {
     fn an_unknown_name_is_an_error_not_a_silent_dev() {
         assert!(matches!(
             selection(Some("production".as_ref()), None),
-            Err(Error::UnknownProfile)
+            Err(Error::UnknownProfile(name)) if name == "production"
         ));
         assert!(matches!(
             selection(None, Some("Prod")),
-            Err(Error::UnknownProfile)
+            Err(Error::UnknownProfile(name)) if name == "Prod"
         ));
+    }
+
+    fn known_names() -> String {
+        PROFILES
+            .iter()
+            .map(|profile| profile.name)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    #[test]
+    fn the_message_names_the_bad_value_and_every_known_profile() {
+        let error = selection(Some("bogus".as_ref()), None).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                r#"the profile "bogus" is not known (known: {})"#,
+                known_names()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_name_that_is_not_text_is_named_without_failing_the_message() {
+        use std::os::unix::ffi::OsStrExt;
+        let error = selection(Some(OsStr::from_bytes(b"pr\xffod")), None).unwrap_err();
+        assert!(error.to_string().starts_with("the profile \"pr"));
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("(known: {})", known_names()))
+        );
     }
 
     #[test]

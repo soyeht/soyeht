@@ -9,7 +9,10 @@ pub enum Error {
     Io(io::Error),
     Json(serde_json::Error),
     UnknownFrameType(u8),
-    InvalidFrameLength { kind: u8, length: usize },
+    InvalidFrameLength {
+        kind: u8,
+        length: usize,
+    },
     FrameLengthOverflow,
     MissingTerminalHeader,
     MalformedTerminalHeader,
@@ -24,7 +27,10 @@ pub enum Error {
     DuplicateAttachment,
     IncompleteAttachment,
     JsonFrameRequired,
-    NdjsonStreamDiscontinuity { expected: u64, actual: u64 },
+    NdjsonStreamDiscontinuity {
+        expected: u64,
+        actual: u64,
+    },
     NdjsonOffsetExhausted,
     InvalidEmbeddedSchema,
     UnknownMethod,
@@ -35,7 +41,8 @@ pub enum Error {
     InconsistentSnapshotPages,
     SnapshotSectionNotArray,
     HomeMissing,
-    UnknownProfile,
+    /// The profile name asked for, which no profile has (lossy when it was not text).
+    UnknownProfile(String),
 }
 
 impl fmt::Display for Error {
@@ -85,7 +92,13 @@ impl fmt::Display for Error {
                 formatter.write_str("snapshot section must be an array")
             }
             Self::HomeMissing => formatter.write_str("the home directory is unknown"),
-            Self::UnknownProfile => formatter.write_str("the profile name is not known"),
+            Self::UnknownProfile(name) => write!(
+                formatter,
+                "the profile {name:?} is not known (known: {})",
+                crate::profile::PROFILES
+                    .map(|profile| profile.name)
+                    .join(", ")
+            ),
         }
     }
 }
