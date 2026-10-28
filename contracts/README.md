@@ -27,7 +27,8 @@ device, because the system browser they choose between is the device's own.
 greeting, reconnect (first wait and ceiling) and draft-beat timings, the page size of each list
 request (`maximum` takes the request's own limit), the caps the clients stop at (`caps`: the
 waiting messages read for a queue, the links found in one text, the pages of a model catalogue and
-the tool calls the header ticker lists), the terminal input chunk, the lines of terminal history
+the tool calls the header ticker lists), the `client` name each client sends in `hello` (a release
+build's and its `-dev` one for a debug build), the terminal input chunk, the lines of terminal history
 (the `terminal` group's scrollback length, read by the desktop screen and the vector test of its resize; the Mac and
 iOS terminals still use SwiftTerm's own default of 500 lines until its memory is measured), the usage and context
 band thresholds, the ring opacities, the weekly-window keyword, the provider names, the texts two
@@ -60,7 +61,8 @@ Mac values are pinned to the pre-generation ones by `test_design_tokens.py`.
 
 `profiles.json` is the single source for installed profile values. It defines the Dev and
 production profiles: their data directory on each system (below the system's native data
-location), TCP port, application ids and launchd labels, and the socket names and the variables
+location), TCP port, application ids and launchd labels, the socket names, the log file names
+(`engine.log`, `ptyd.log`, `desktop.log` in the `logs` folder of the data directory) and the variables
 that select a profile. The same generator emits constants for Rust, Swift and Python, plus the
 Dev launchd service templates. Runtime code and installation scripts consume those generated
 values. Every identifier carries "next" (ADR 0112).

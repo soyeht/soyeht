@@ -80,3 +80,9 @@ pub const SELECTION_ENV: &str = "SOYEHT_PROFILE";
 pub const BUILD_PROFILE: Option<&str> = option_env!("SOYEHT_BUILD_PROFILE");
 pub const ENGINE_SOCKET: &str = "engine.sock";
 pub const PTYD_SOCKET: &str = "ptyd.sock";
+/// The file the engine's output is appended to, in the `logs` folder of the data directory.
+pub const ENGINE_LOG: &str = "engine.log";
+/// The file the supervisor's output is appended to, beside [`ENGINE_LOG`].
+pub const PTYD_LOG: &str = "ptyd.log";
+/// The file the desktop client writes its log lines to, beside [`ENGINE_LOG`].
+pub const DESKTOP_LOG: &str = "desktop.log";

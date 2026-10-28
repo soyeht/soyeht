@@ -26,6 +26,19 @@ class ClientPolicyTests(unittest.TestCase):
         )
         self.assertIn('"requestTimeoutMs"', outputs[TS_OUTPUT])
 
+    def test_a_debug_build_name_is_the_release_name_and_dev(self):
+        names = SCHEMA["x-clientPolicy"]["clientName"]
+        self.assertEqual(names["macDev"], "mac-dev")
+        for bad in ({"macDev": "mac-debug"}, {"mac": "iphone", "macDev": "iphone-dev"}):
+            policy = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            policy["clientName"].update(bad)
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate(policy, SCHEMA)
+        policy = copy.deepcopy(SCHEMA["x-clientPolicy"])
+        del policy["clientName"]["desktopDev"]
+        with self.assertRaises(ValueError):
+            validate(policy, SCHEMA)
+
     def test_a_timeout_is_whole_positive_milliseconds(self):
         for value in (0, -5, 1.5, "12"):
             changed = copy.deepcopy(SCHEMA["x-clientPolicy"])

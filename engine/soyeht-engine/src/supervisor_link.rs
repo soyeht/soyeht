@@ -14,7 +14,10 @@ use soyeht_platform::{
     log::{self, Failure as _, Line},
     process::detached::spawn_service,
 };
-use soyeht_protocol::{PaneState, profile::PTYD_SOCKET};
+use soyeht_protocol::{
+    PaneState,
+    profile::{PTYD_LOG, PTYD_SOCKET},
+};
 use soyeht_ptyd::wire_kind;
 use std::{collections::BTreeMap, io, path::PathBuf};
 
@@ -35,8 +38,6 @@ const START_GRACE_MS: i64 = 15_000;
 const PROBE_GRACE_MS: i64 = 5_000;
 /// The background job that starts the supervisor, so there is one at a time.
 const START_JOB: &str = "supervisor.start";
-/// The log the supervisor's output is appended to, the file its launch agent also writes.
-const SUPERVISOR_LOG: &str = "ptyd.log";
 
 /// Why a pane that could not be restarted says it stopped; it names no path or command.
 const NOT_RESTARTED: &str = "The pane's working folder or command is missing";
@@ -135,7 +136,7 @@ impl Core {
                 if reached.is_err_and(|error| !supervisor_absent(&error)) {
                     return Ok(Start::Left);
                 }
-                spawn_service(&program, &directory, SUPERVISOR_LOG, &[])?;
+                spawn_service(&program, &directory, PTYD_LOG, &[])?;
                 Ok(Start::Started)
             },
             move |core, result| {

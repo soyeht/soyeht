@@ -14,7 +14,10 @@ use soyeht_platform::{
     fs, log,
     process::detached::{Service, create_logs_directory, spawn_service},
 };
-use soyeht_protocol::{data_directory::RESTART_SUPERVISOR_FLAG, profile::PTYD_SOCKET};
+use soyeht_protocol::{
+    data_directory::RESTART_SUPERVISOR_FLAG,
+    profile::{ENGINE_LOG, PTYD_LOG, PTYD_SOCKET},
+};
 use std::{
     any::Any,
     env::consts::EXE_SUFFIX,
@@ -221,7 +224,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     host.prepare_logs()
         .map_err(|error| StartError::Directory(error.kind()))?;
     if let Some(supervisor) = supervisor {
-        let mut started = launch(host, &supervisor, SUPERVISOR_PROGRAM, "ptyd.log", None)?;
+        let mut started = launch(host, &supervisor, SUPERVISOR_PROGRAM, PTYD_LOG, None)?;
         wait_until(
             host,
             SUPERVISOR_PROGRAM,
@@ -236,7 +239,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
         host,
         &engine,
         ENGINE_PROGRAM,
-        "engine.log",
+        ENGINE_LOG,
         restart.as_deref(),
     )?;
     wait_until(

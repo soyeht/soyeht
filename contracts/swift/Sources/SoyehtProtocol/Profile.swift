@@ -28,4 +28,7 @@ public struct ProfileValues: Sendable {
     public static let selectionEnvironment = "SOYEHT_PROFILE"
     public static let engineSocketName = "engine.sock"
     public static let ptydSocketName = "ptyd.sock"
+    public static let engineLogName = "engine.log"
+    public static let ptydLogName = "ptyd.log"
+    public static let desktopLogName = "desktop.log"
 }

@@ -30,6 +30,10 @@ LAUNCHERS = ("launchd", "process")
 ENDPOINT_MAGIC = "soyeht-local-2"
 NONCE_BYTES = 32
 STOP_SECONDS = 10
+# What `launchctl bootstrap` says while launchd is still removing a job that was booted out, and
+# the waits before each new try (the same rule as `soyeht service install`, contract 13, section 5).
+BOOTSTRAP_TRANSIENT = ("5: Input/output error", "37: Operation already in progress")
+BOOTSTRAP_BACKOFF = (0.2, 0.4, 0.6, 0.8)
 
 
 def require(condition, message):
@@ -249,8 +253,16 @@ class LaunchdLauncher(Launcher):
                               capture_output=True).returncode == 0
 
     def start(self, component):
-        subprocess.run(["launchctl", "bootstrap", self.domain,
-                        str(self.data / f"{component}.plist")], check=True)
+        command = ["launchctl", "bootstrap", self.domain, str(self.data / f"{component}.plist")]
+        for wait in (*BOOTSTRAP_BACKOFF, None):
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode == 0:
+                return
+            detail = result.stderr or result.stdout or ""
+            if wait is None or not any(text in detail for text in BOOTSTRAP_TRANSIENT):
+                raise subprocess.CalledProcessError(
+                    result.returncode, command, result.stdout, result.stderr)
+            time.sleep(wait)
 
     def stop(self, component):
         subprocess.run(["launchctl", "bootout", self.target(component)], check=True)

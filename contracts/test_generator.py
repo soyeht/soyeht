@@ -578,6 +578,21 @@ class ProfileTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(ValueError):
                 validate_profiles(document)
 
+    def test_log_file_names_are_distinct_log_basenames(self):
+        self.assertEqual(set(self.document["logs"]), {"engine", "ptyd", "desktop"})
+        changes = (
+            ("logs", "ptyd", self.document["logs"]["engine"]),
+            ("logs", "desktop", "logs/desktop.log"),
+            ("logs", "engine", "engine.txt"),
+        )
+        for change in changes:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_profiles(self.changed(*change))
+        document = copy.deepcopy(self.document)
+        del document["logs"]["desktop"]
+        with self.assertRaises(ValueError):
+            validate_profiles(document)
+
     def test_every_identifier_carries_next_so_none_can_name_the_legacy_app(self):
         # The legacy app uses com.soyeht.mac and the data folders Soyeht and Soyeht Dev.
         changes = (

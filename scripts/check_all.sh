@@ -181,7 +181,7 @@ lint_windows() {
         echo 'check_all: skipped the Windows lint; run: rustup target add x86_64-pc-windows-msvc'
         return 0
     fi
-    local packages=(-p soyeht-platform -p soyeht-process -p soyeht-ptyd -p soyeht-mcp)
+    local packages=(-p soyeht-platform -p soyeht-process -p soyeht-ptyd -p soyeht-mcp -p soyeht-service)
     if windows_c_compiler; then
         packages+=(-p soyeht-engine -p soyeht-cli)
     else

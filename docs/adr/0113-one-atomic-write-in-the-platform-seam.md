@@ -14,8 +14,9 @@ save were correct but each was its own copy.
 
 ## Decision
 
-`soyeht_platform::fs::write_atomic(target, bytes, mode)` is the only way to replace a file in
-one step. It creates a temporary file in the target's directory under a unique name with
+`soyeht_platform::fs::write_atomic(target, bytes, mode)` is the one way to replace a file by its
+path in one step. Three writers are kept apart on purpose (see "Kept apart"); every other
+temporary-file rename in the engine and the desktop client was replaced by it. It creates a temporary file in the target's directory under a unique name with
 `create_new` and without following a link, writes, syncs, renames over the target, syncs the
 directory, and removes the temporary file on any error. `stage_replacement` is the same in two
 steps, for the callers that must do something between the write and the rename: check that

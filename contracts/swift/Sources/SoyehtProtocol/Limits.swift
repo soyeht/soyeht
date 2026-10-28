@@ -99,6 +99,10 @@ public enum ProtocolLimits {
     public static let experimentExportBytes = 67108864
 }
 
+public enum ProtocolVersion {
+    public static let current: UInt32 = 1
+}
+
 public enum FrameKind {
     public static let json: UInt8 = 1
     public static let terminal: UInt8 = 2

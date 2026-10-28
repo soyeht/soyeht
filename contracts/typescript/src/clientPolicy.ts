@@ -52,6 +52,14 @@ export const clientPolicy = {
     "indentUnit": "    ",
     "indentOpeners": "{[("
   },
+  "clientName": {
+    "mac": "mac",
+    "macDev": "mac-dev",
+    "iphone": "iphone",
+    "iphoneDev": "iphone-dev",
+    "desktop": "desktop",
+    "desktopDev": "desktop-dev"
+  },
   "texts": {
     "harnessSwitchTitle": "Switch agent",
     "harnessSwitchHandover": "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.",

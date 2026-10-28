@@ -38,6 +38,12 @@ public enum ClientPolicy {
     public static let editorSaveFull = "Couldn't save: the disk is full. Free some space, then save again."
     public static let editorSaveOther = "Couldn't save this file. The engine keeps trying; save again to retry now."
     public static let editorSaveAgain = "Save again"
+    public static let clientNameMac = "mac"
+    public static let clientNameMacDev = "mac-dev"
+    public static let clientNameIphone = "iphone"
+    public static let clientNameIphoneDev = "iphone-dev"
+    public static let clientNameDesktop = "desktop"
+    public static let clientNameDesktopDev = "desktop-dev"
     public static let usageBandWarningFrom: Double = 0.5
     public static let usageBandDangerAbove: Double = 0.8
     public static let contextBandWarningAbove: Double = 0.75

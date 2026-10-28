@@ -8,7 +8,7 @@
 use crate::Result;
 use soyeht_protocol::{
     data_directory::{data_directory, selected_profile},
-    profile::{ENGINE_SOCKET, Profile, SELECTION_ENV},
+    profile::{DESKTOP_LOG, ENGINE_SOCKET, Profile, SELECTION_ENV},
 };
 use std::{
     ffi::OsString,
@@ -51,9 +51,6 @@ pub(crate) fn logs_directory(data_directory: &Path) -> PathBuf {
     soyeht_platform::process::detached::logs_directory(data_directory)
 }
 
-/// The client's own log file inside [`logs_directory`].
-const LOG_FILE: &str = "desktop.log";
-
 /// The file the client's log lines are also written to, so that a program started from a menu or
 /// an icon (no terminal; on Windows no console) still leaves them somewhere. It lives in the
 /// profile's data directory, on every platform.
@@ -62,7 +59,7 @@ pub fn log_file() -> Result<PathBuf> {
 }
 
 fn log_file_in(directory: &Path) -> PathBuf {
-    logs_directory(directory).join(LOG_FILE)
+    logs_directory(directory).join(DESKTOP_LOG)
 }
 
 fn resolve(override_value: Option<OsString>, directory: Result<PathBuf>) -> Result<PathBuf> {
@@ -105,7 +102,7 @@ mod tests {
         let expected = PathBuf::from("/data")
             .join(DEV.data_directory.native())
             .join("logs")
-            .join("desktop.log");
+            .join(DESKTOP_LOG);
         assert_eq!(log_file_in(&dev_directory().unwrap()), expected);
     }
 

@@ -36,6 +36,12 @@ pub const EDITOR_SAVE_FULL: &str =
 pub const EDITOR_SAVE_OTHER: &str =
     "Couldn't save this file. The engine keeps trying; save again to retry now.";
 pub const EDITOR_SAVE_AGAIN: &str = "Save again";
+pub const CLIENT_NAME_MAC: &str = "mac";
+pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
+pub const CLIENT_NAME_IPHONE: &str = "iphone";
+pub const CLIENT_NAME_IPHONE_DEV: &str = "iphone-dev";
+pub const CLIENT_NAME_DESKTOP: &str = "desktop";
+pub const CLIENT_NAME_DESKTOP_DEV: &str = "desktop-dev";
 pub const USAGE_BAND_WARNING_FROM: f64 = 0.5;
 pub const USAGE_BAND_DANGER_ABOVE: f64 = 0.8;
 pub const CONTEXT_BAND_WARNING_ABOVE: f64 = 0.75;

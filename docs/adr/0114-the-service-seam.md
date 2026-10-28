@@ -59,8 +59,12 @@ service file says.
 **`install_dev.py` and the e2e launcher use the renderer.** `install_dev.py` still signs and
 copies; it then runs `soyeht --profile dev service install --programs DATA/bin` for each
 component, and asks `service status` before it replaces a binary. `e2e_platform.py` renders its
-disposable agents with `soyeht service render`. Neither writes a plist, calls `launchctl` or
-keeps a template. The installer's `--domain` option is gone: the seam uses the graphical
+disposable agents with `soyeht service render`. Neither writes a plist or keeps a template.
+`install_dev.py` runs no `launchctl`. `e2e_platform.py` still does: its agents have random
+names that are not a profile's, which `soyeht service install` does not take, and it also needs
+`kill`, `disable` and `enable`, which the seam does not offer. It loads an agent with
+`launchctl bootstrap` and tries again on error 5 or 37 with the same four waits as the seam
+(contract 13, section 5). The installer's `--domain` option is gone: the seam uses the graphical
 domain when the user has one and the background domain otherwise (what the e2e launcher always
 did). The refusal to replace a service now looks at whether it runs, not whether it is loaded,
 since what it protects is the person's terminals.

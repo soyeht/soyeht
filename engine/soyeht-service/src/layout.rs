@@ -6,7 +6,7 @@ use crate::{
     guard, host, policy,
     system::{Component, System, service_name},
 };
-use soyeht_protocol::profile::Profile;
+use soyeht_protocol::profile::{ENGINE_LOG, PTYD_LOG, Profile};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -73,8 +73,10 @@ impl Layout {
     /// that: `logs/<component>.log` in the data directory, which a program the app starts
     /// itself writes to as well (`soyeht_platform::process::detached::logs_directory`).
     pub fn log(&self, component: Component) -> PathBuf {
-        soyeht_platform::process::detached::logs_directory(&self.data)
-            .join(format!("{}.log", component.name()))
+        soyeht_platform::process::detached::logs_directory(&self.data).join(match component {
+            Component::Ptyd => PTYD_LOG,
+            Component::Engine => ENGINE_LOG,
+        })
     }
 
     /// The definition of `component` for programs found in `programs`.
