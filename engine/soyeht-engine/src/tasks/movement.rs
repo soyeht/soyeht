@@ -137,7 +137,7 @@ impl Core {
                     json!({}),
                     vec![
                         events::attention(task),
-                        events::attention_changed(&workspace, &items),
+                        crate::model::attention_changed(&workspace, &items),
                     ],
                 ))
             },
@@ -216,16 +216,16 @@ impl Core {
         let result = json!({"task":movement.task});
         let mutation = self.mutate(connection, method::TASK_MOVE, raw, move |change| {
             movement.persist(change)?;
-            let mut events = movement.events();
+            let mut emitted = movement.events();
             if let Some(item) = &refused_attention {
                 change.remove_attention(&item.pane_id, &item.attention_id)?;
                 let items = agents::attention_in_change(change, &movement.task.workspace_id)?;
-                events.push(events::attention_changed(
+                emitted.push(crate::model::attention_changed(
                     &movement.task.workspace_id,
                     &items,
                 ));
             }
-            Ok((result, events))
+            Ok((result, emitted))
         })?;
         Ok(mutation.result)
     }

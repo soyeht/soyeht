@@ -343,8 +343,8 @@ impl Core {
         let phrase_changed = current.phrase != updated.phrase;
         let mutation = self.mutate(connection, method::TASK_UPDATE, raw, move |change| {
             change.replace_task(&updated, expected)?;
-            let events = events::revised(&updated, phrase_changed);
-            Ok((json!({"task":updated}), events))
+            let emitted = events::revised(&updated, phrase_changed);
+            Ok((json!({"task":updated}), emitted))
         })?;
         Ok(mutation.result)
     }

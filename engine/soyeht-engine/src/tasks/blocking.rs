@@ -54,14 +54,14 @@ impl TaskBlockingChange {
 
     fn events(&self) -> Vec<(String, Value)> {
         let task = &self.task;
-        let mut events = events::revised(task, true);
+        let mut emitted = events::revised(task, true);
         if let Some(movement) = &self.movement {
-            events.push(events::moved(task, movement));
+            emitted.push(events::moved(task, movement));
         }
         if let Some(comment) = &self.comment {
-            events.push(events::commented(task, comment));
+            emitted.push(events::commented(task, comment));
         }
-        events
+        emitted
     }
 }
 
@@ -342,10 +342,10 @@ impl Core {
             .as_ref()
             .map_or_else(|| self.agent_state(pane), |(state, _)| Ok(state.clone()))?;
         let saved = self.panes[pane].stored.clone();
-        let mut events = change.events();
+        let mut emitted = change.events();
         if queued.is_some() {
             let prompt_ids = state.queue.iter().map(|item| item.prompt_id.clone());
-            events.push(crate::model::pane_queued(
+            emitted.push(crate::model::pane_queued(
                 pane,
                 state.queue.len(),
                 prompt_ids.collect(),
@@ -353,11 +353,11 @@ impl Core {
             )?);
         }
         if needs_attention.is_some() {
-            events.push(events::attention(&task_for_attention));
+            emitted.push(events::attention(&task_for_attention));
         }
         let mut changes = Changes {
             task_blocking: Some(change),
-            events,
+            events: emitted,
             ..Changes::default()
         };
         if needs_attention.is_some() {
@@ -372,7 +372,7 @@ impl Core {
     }
 
     fn commit_block_without_agent(&mut self, change: TaskBlockingChange) -> Result<()> {
-        let events = change.events();
+        let emitted = change.events();
         let mutation = StorePort::mutate(
             &mut self.store,
             "engine-task",
@@ -380,7 +380,7 @@ impl Core {
             "task.block.maintenance",
             |transaction| {
                 change.persist(transaction)?;
-                Ok((json!({}), events))
+                Ok((json!({}), emitted))
             },
         )
         .map_err(errors::storage)?;

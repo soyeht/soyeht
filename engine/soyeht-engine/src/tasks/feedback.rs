@@ -232,14 +232,14 @@ impl Core {
                 )
             })
             .transpose()?;
-        let events = feedback_events(
+        let emitted = feedback_events(
             &current,
             &decision.task,
             prompt.as_ref().map(|prompt| (prompt, state.queue.len())),
             &attention,
         )?;
         let mut changes = Changes {
-            events,
+            events: emitted,
             task_feedback: Some(feedback_change(&current, &decision)),
             ..Changes::default()
         };
@@ -256,7 +256,7 @@ impl Core {
         attention: AttentionChange,
     ) -> Result<()> {
         let key = Uuid::new_v4().to_string();
-        let events = feedback_events(&current, &decision.task, None, &attention)?;
+        let emitted = feedback_events(&current, &decision.task, None, &attention)?;
         let update = feedback_change(&current, &decision);
         let workspace = current.workspace_id;
         let mutation = StorePort::mutate(
@@ -267,10 +267,10 @@ impl Core {
             |change| {
                 update.persist(change)?;
                 persist_attention_change(change, &workspace, &attention)?;
-                let mut committed = events;
+                let mut committed = emitted;
                 if attention.next != attention.prior {
                     let items = agents::attention_in_change(change, &workspace)?;
-                    committed.push(events::attention_changed(&workspace, &items));
+                    committed.push(crate::model::attention_changed(&workspace, &items));
                 }
                 Ok((json!({}), committed))
             },
@@ -326,12 +326,12 @@ fn feedback_events(
     prompt: Option<(&soyeht_protocol::PromptItem, usize)>,
     attention: &AttentionChange,
 ) -> Result<Vec<(String, Value)>> {
-    let mut events = Vec::new();
+    let mut emitted = Vec::new();
     if current != updated {
-        events.extend(events::revised(updated, current.phrase != updated.phrase));
+        emitted.extend(events::revised(updated, current.phrase != updated.phrase));
     }
     if let Some((prompt, count)) = prompt {
-        events.push(crate::model::pane_queued(
+        emitted.push(crate::model::pane_queued(
             updated
                 .owner_pane_id
                 .as_deref()
@@ -342,9 +342,9 @@ fn feedback_events(
         )?);
     }
     if attention.next.is_some() && attention.next != attention.prior {
-        events.push(events::attention(updated));
+        emitted.push(events::attention(updated));
     }
-    Ok(events)
+    Ok(emitted)
 }
 
 pub fn evaluate(

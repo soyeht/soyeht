@@ -47,17 +47,17 @@ impl TaskOwnerLoss {
     }
 
     pub(crate) fn events(&self) -> Vec<(String, Value)> {
-        let mut events = Vec::new();
+        let mut emitted = Vec::new();
         if let Some(movement) = &self.movement {
-            events.push(events::moved(&self.task, movement));
+            emitted.push(events::moved(&self.task, movement));
         }
-        events.extend([
+        emitted.extend([
             events::released(&self.task, &self.comment.text, self.attempt.n),
             events::commented(&self.task, &self.comment),
             events::updated(&self.task),
             events::phrase_changed(&self.task),
         ]);
-        events
+        emitted
     }
 }
 
@@ -186,17 +186,17 @@ impl Core {
             if let Some(item) = &attention {
                 agents::save_attention(change, &workspace, item)?;
             }
-            let mut events = vec![
+            let mut emitted = vec![
                 events::blocked(&updated, &kind, &reason),
                 events::phrase_changed(&updated),
                 events::updated(&updated),
             ];
             if attention.is_some() {
                 let items = agents::attention_in_change(change, &workspace)?;
-                events.push(events::attention(&updated));
-                events.push(events::attention_changed(&workspace, &items));
+                emitted.push(events::attention(&updated));
+                emitted.push(crate::model::attention_changed(&workspace, &items));
             }
-            Ok((json!({"task":updated}), events))
+            Ok((json!({"task":updated}), emitted))
         })?;
         Ok(mutation.result)
     }
@@ -260,7 +260,7 @@ impl Core {
         attempt.result = Some(AttemptResult::Returned);
         attempt.summary = Some(reason.clone());
         let actor = self.actor_name(&actor)?;
-        self.persist_closing_move(
+        self.persist_release(
             connection,
             method::TASK_RELEASE,
             raw,
@@ -315,21 +315,23 @@ impl Core {
             if let Some(pane) = &owner {
                 change.remove_attention(pane, &format!("task:{task_id}:blocking"))?;
             }
-            let mut events = vec![
+            let mut emitted = vec![
                 events::unblocked(&updated, &reason),
                 events::phrase_changed(&updated),
                 events::updated(&updated),
             ];
             if owner.is_some() {
                 let items = agents::attention_in_change(change, &workspace)?;
-                events.push(events::attention_changed(&workspace, &items));
+                emitted.push(crate::model::attention_changed(&workspace, &items));
             }
-            Ok((json!({"task":updated}), events))
+            Ok((json!({"task":updated}), emitted))
         })?;
         Ok(mutation.result)
     }
 
-    fn persist_closing_move(
+    /// Persists the release of a task by its executor: the move, the closed attempt and the
+    /// `task.released` notification. It is the release path only.
+    fn persist_release(
         &mut self,
         connection: &str,
         method: &str,
@@ -354,7 +356,7 @@ impl Core {
             change.replace_task(&closing.updated, expected)?;
             change.replace_attempt(&workspace, &task_id, &closing.attempt)?;
             change.insert_move(&workspace, &task_id, &movement)?;
-            let events = vec![
+            let emitted = vec![
                 events::moved(&closing.updated, &movement),
                 events::phrase_changed(&closing.updated),
                 events::released(
@@ -363,7 +365,7 @@ impl Core {
                     closing.current.current_attempt,
                 ),
             ];
-            Ok((json!({"task":closing.updated}), events))
+            Ok((json!({"task":closing.updated}), emitted))
         })?;
         Ok(mutation.result)
     }

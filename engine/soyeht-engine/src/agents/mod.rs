@@ -45,7 +45,7 @@ use crate::{
     model::StoredPane,
     ports::StorePort,
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use soyeht_acp::Message;
 use soyeht_protocol::{
     HarnessSetupReason, HarnessSetupState, ProbeCapability, PromptItem, TranscriptMessage,
@@ -316,7 +316,10 @@ impl AgentPersistence<'_> {
         }
         if attention_changed {
             let items = agents::attention_in_change(tx, &self.saved.pane.workspace_id)?;
-            events.push((event::ATTENTION_CHANGED.into(),json!({"workspaceId":self.saved.pane.workspace_id,"count":items.len(),"items":items})));
+            events.push(crate::model::attention_changed(
+                &self.saved.pane.workspace_id,
+                &items,
+            ));
         }
         if self.changes.clear_failed_probes {
             tx.clear_failed_probes(&self.state.fingerprint)?;
