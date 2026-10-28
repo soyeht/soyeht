@@ -124,32 +124,6 @@ impl ObservationQueue {
     }
 }
 
-fn row_start(row: &RecordedRow) -> (&str, ObservationPaneKind, &HarnessIdentity, i64, u64) {
-    match row {
-        RecordedRow::Observation(frame) => (
-            &frame.pane_id,
-            frame.pane_kind,
-            &frame.harness,
-            frame.timestamp_ms,
-            frame.sequence,
-        ),
-        RecordedRow::Label(label) => (
-            &label.pane_id,
-            label.pane_kind,
-            &label.harness,
-            label.timestamp_ms,
-            label.sequence,
-        ),
-        RecordedRow::Gap(gap) => (
-            &gap.pane_id,
-            gap.pane_kind,
-            &gap.harness,
-            gap.first_timestamp_ms,
-            gap.first_sequence,
-        ),
-    }
-}
-
 fn add_loss(total: &mut Option<u64>, count: Option<u64>) -> Result<()> {
     if let Some(count) = count {
         *total = Some(
@@ -457,8 +431,8 @@ fn next_recorded_rows(shared: &SharedRecorder) -> Result<Option<Vec<RecordedRow>
 
 mod store;
 pub(crate) use store::replay_pane;
-use store::row_identity;
 pub use store::{DeletionReceipt, SegmentStore, delete_pane, experiment_root};
+use store::{row_identity, row_start};
 
 #[cfg(test)]
 mod tests;

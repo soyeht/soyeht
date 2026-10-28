@@ -567,32 +567,81 @@ fn parse_segment_name(name: &OsStr) -> Option<u64> {
         .flatten()
 }
 
-pub(super) fn row_identity(
-    row: &RecordedRow,
-) -> (&str, ObservationPaneKind, &HarnessIdentity, i64, u64) {
-    match row {
-        RecordedRow::Observation(frame) => (
-            &frame.pane_id,
-            frame.pane_kind,
-            &frame.harness,
-            frame.timestamp_ms,
-            frame.sequence,
-        ),
-        RecordedRow::Label(label) => (
-            &label.pane_id,
-            label.pane_kind,
-            &label.harness,
-            label.timestamp_ms,
-            label.sequence,
-        ),
+/// Where a row sits: its pane, and the time and sequence of its first and last observation.
+/// An observation or a label is one point; a gap spans several.
+pub(super) struct RowSpan<'a> {
+    pane_id: &'a str,
+    pane_kind: ObservationPaneKind,
+    harness: &'a HarnessIdentity,
+    first: (i64, u64),
+    last: (i64, u64),
+}
+
+pub(super) fn row_span(row: &RecordedRow) -> RowSpan<'_> {
+    let (pane_id, pane_kind, harness, first, last) = match row {
+        RecordedRow::Observation(frame) => {
+            let point = (frame.timestamp_ms, frame.sequence);
+            (
+                &frame.pane_id,
+                frame.pane_kind,
+                &frame.harness,
+                point,
+                point,
+            )
+        }
+        RecordedRow::Label(label) => {
+            let point = (label.timestamp_ms, label.sequence);
+            (
+                &label.pane_id,
+                label.pane_kind,
+                &label.harness,
+                point,
+                point,
+            )
+        }
         RecordedRow::Gap(gap) => (
             &gap.pane_id,
             gap.pane_kind,
             &gap.harness,
-            gap.last_timestamp_ms,
-            gap.last_sequence,
+            (gap.first_timestamp_ms, gap.first_sequence),
+            (gap.last_timestamp_ms, gap.last_sequence),
         ),
+    };
+    RowSpan {
+        pane_id,
+        pane_kind,
+        harness,
+        first,
+        last,
     }
+}
+
+/// The pane, then the time and sequence at which the row ends.
+pub(super) fn row_identity(
+    row: &RecordedRow,
+) -> (&str, ObservationPaneKind, &HarnessIdentity, i64, u64) {
+    let span = row_span(row);
+    (
+        span.pane_id,
+        span.pane_kind,
+        span.harness,
+        span.last.0,
+        span.last.1,
+    )
+}
+
+/// The pane, then the time and sequence at which the row starts.
+pub(super) fn row_start(
+    row: &RecordedRow,
+) -> (&str, ObservationPaneKind, &HarnessIdentity, i64, u64) {
+    let span = row_span(row);
+    (
+        span.pane_id,
+        span.pane_kind,
+        span.harness,
+        span.first.0,
+        span.first.1,
+    )
 }
 
 fn encode_recorded_row(row: &RecordedRow) -> Result<Vec<u8>> {

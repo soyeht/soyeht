@@ -6,9 +6,10 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, ConfigValue, Pane, PaneClosedDraft, PaneConfigFailedDraft, PaneCreatedDraft,
-    PanePermissionAnswerResult, PanePermissionAnsweredDraft, PaneQueuedDraft, PaneTurnEndedDraft,
-    PaneUpdatedDraft, TurnStopReason, Workspace, attachment::AttachmentAssembler, frame::Frame,
+    Actor, AttentionItem, ConfigValue, Pane, PaneClosedDraft, PaneConfigFailedDraft,
+    PaneCreatedDraft, PanePermissionAnswerResult, PanePermissionAnsweredDraft, PaneQueuedDraft,
+    PaneTurnEndedDraft, PaneUpdatedDraft, TurnStopReason, Workspace,
+    attachment::AttachmentAssembler, event, frame::Frame,
 };
 use std::collections::BTreeMap;
 
@@ -112,6 +113,14 @@ pub fn pane_created(pane: &Pane) -> Result<(String, Value)> {
         file: None,
         writing_document: None,
     })
+}
+
+/// `attention.changed`: the attention list of a workspace after a change added or removed an item.
+pub fn attention_changed(workspace: &str, items: &[AttentionItem]) -> (String, Value) {
+    (
+        event::ATTENTION_CHANGED.into(),
+        json!({"workspaceId":workspace,"count":items.len(),"items":items}),
+    )
 }
 
 /// `pane.queued`: `n` prompts wait in the pane; `prompt_ids` are the ones this event names.
@@ -219,6 +228,26 @@ pub fn panes(store: &impl StorePort) -> Result<Vec<StoredPane>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attention_changed_counts_the_items_of_the_workspace() {
+        let item = AttentionItem {
+            attention_id: "task:WS-1:blocking".into(),
+            pane_id: "pane-1".into(),
+            request_id: None,
+            message: "Needs input".into(),
+            created_at: "2026-09-11T00:00:00Z".into(),
+        };
+        assert_eq!(
+            attention_changed("workspace-1", &[item]),
+            (
+                "attention.changed".into(),
+                json!({"workspaceId":"workspace-1","count":1,"items":[{
+                    "attentionId":"task:WS-1:blocking","paneId":"pane-1",
+                    "message":"Needs input","createdAt":"2026-09-11T00:00:00Z"}]})
+            )
+        );
+    }
 
     fn turn_ended_event() -> Value {
         json!({

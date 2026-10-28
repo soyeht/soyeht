@@ -1,4 +1,4 @@
-use super::{PhraseFacts, next_version, phrase};
+use super::{PhraseFacts, events, next_version, phrase};
 use crate::{
     agents::{Changes, state::State},
     core::Core,
@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Attempt, AttemptResult, AttentionItem, Blocking, BlockingKind, Comment, PaneState,
-    PromptOrigin, Task, TaskMove, TaskState, event, limits,
+    PromptOrigin, Task, TaskMove, TaskState, limits,
 };
 use soyeht_store::database::{Change, Result as StoreResult};
 use uuid::Uuid;
@@ -54,31 +54,14 @@ impl TaskBlockingChange {
 
     fn events(&self) -> Vec<(String, Value)> {
         let task = &self.task;
-        let mut events = vec![
-            (
-                event::TASK_UPDATED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"version":task.version}),
-            ),
-            (
-                event::TASK_PHRASE_CHANGED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"phrase":task.phrase}),
-            ),
-        ];
+        let mut emitted = events::revised(task, true);
         if let Some(movement) = &self.movement {
-            events.push((
-                event::TASK_MOVED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,
-                    "actor":movement.actor,"from":movement.from,"to":movement.to,
-                    "reason":movement.reason}),
-            ));
+            emitted.push(events::moved(task, movement));
         }
         if let Some(comment) = &self.comment {
-            events.push((
-                event::TASK_COMMENTED.into(),
-                json!({"workspaceId":task.workspace_id,"taskId":task.task_id,"comment":comment}),
-            ));
+            emitted.push(events::commented(task, comment));
         }
-        events
+        emitted
     }
 }
 
@@ -359,10 +342,10 @@ impl Core {
             .as_ref()
             .map_or_else(|| self.agent_state(pane), |(state, _)| Ok(state.clone()))?;
         let saved = self.panes[pane].stored.clone();
-        let mut events = change.events();
+        let mut emitted = change.events();
         if queued.is_some() {
             let prompt_ids = state.queue.iter().map(|item| item.prompt_id.clone());
-            events.push(crate::model::pane_queued(
+            emitted.push(crate::model::pane_queued(
                 pane,
                 state.queue.len(),
                 prompt_ids.collect(),
@@ -370,15 +353,11 @@ impl Core {
             )?);
         }
         if needs_attention.is_some() {
-            events.push((
-                event::TASK_ATTENTION.into(),
-                json!({"workspaceId":task_for_attention.workspace_id,
-                    "taskId":task_for_attention.task_id,"n":1}),
-            ));
+            emitted.push(events::attention(&task_for_attention));
         }
         let mut changes = Changes {
             task_blocking: Some(change),
-            events,
+            events: emitted,
             ..Changes::default()
         };
         if needs_attention.is_some() {
@@ -393,7 +372,7 @@ impl Core {
     }
 
     fn commit_block_without_agent(&mut self, change: TaskBlockingChange) -> Result<()> {
-        let events = change.events();
+        let emitted = change.events();
         let mutation = StorePort::mutate(
             &mut self.store,
             "engine-task",
@@ -401,7 +380,7 @@ impl Core {
             "task.block.maintenance",
             |transaction| {
                 change.persist(transaction)?;
-                Ok((json!({}), events))
+                Ok((json!({}), emitted))
             },
         )
         .map_err(errors::storage)?;

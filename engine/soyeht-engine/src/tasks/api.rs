@@ -1,5 +1,5 @@
 use super::{
-    ExecutorIdentity, apply_update, new_task, ports::TaskStorePort, validate_dependencies,
+    ExecutorIdentity, apply_update, events, new_task, ports::TaskStorePort, validate_dependencies,
     validate_executor,
 };
 use crate::{
@@ -15,7 +15,7 @@ use soyeht_protocol::{
     Actor, Comment, Role, Subitem, SubitemState, Task, TaskCommentParams, TaskCommentsParams,
     TaskCommentsResult, TaskCreateParams, TaskCreateResult, TaskDispatchParams, TaskDispatchResult,
     TaskExecutor, TaskListParams, TaskListResult, TaskShowParams, TaskSubitemAddParams,
-    TaskSubitemDoneParams, TaskUpdateParams, event, method,
+    TaskSubitemDoneParams, TaskUpdateParams, method,
 };
 use soyeht_store::database::Error as StoreError;
 use uuid::Uuid;
@@ -276,10 +276,7 @@ impl Core {
                 return Err(StoreError::TaskDependencyCycle);
             }
             change.insert_task(&created)?;
-            Ok((
-                json!({"task":created}),
-                vec![(event::TASK_CREATED.into(), json!({"task":created}))],
-            ))
+            Ok((json!({"task":created}), vec![events::created(&created)]))
         })?;
         if !should_dispatch {
             return Ok(Outcome::Reply(mutation.result));
@@ -344,21 +341,10 @@ impl Core {
         let updated = apply_update(&current, &params)?;
         let expected = current.version;
         let phrase_changed = current.phrase != updated.phrase;
-        let workspace = params.workspace_id;
-        let task_id = params.task_id;
         let mutation = self.mutate(connection, method::TASK_UPDATE, raw, move |change| {
             change.replace_task(&updated, expected)?;
-            let mut events = vec![(
-                event::TASK_UPDATED.into(),
-                json!({"workspaceId":workspace,"taskId":task_id,"version":updated.version}),
-            )];
-            if phrase_changed {
-                events.push((
-                    event::TASK_PHRASE_CHANGED.into(),
-                    json!({"workspaceId":workspace,"taskId":task_id,"phrase":updated.phrase}),
-                ));
-            }
-            Ok((json!({"task":updated}), events))
+            let emitted = events::revised(&updated, phrase_changed);
+            Ok((json!({"task":updated}), emitted))
         })?;
         Ok(mutation.result)
     }
@@ -389,10 +375,7 @@ impl Core {
             change.insert_comment(&workspace, &task_id, &comment)?;
             Ok((
                 json!({"comment":comment}),
-                vec![(
-                    event::TASK_COMMENTED.into(),
-                    json!({"workspaceId":workspace,"taskId":task_id,"comment":comment}),
-                )],
+                vec![events::commented(&item, &comment)],
             ))
         })?;
         Ok(mutation.result)
@@ -433,10 +416,7 @@ impl Core {
             change.insert_subitem(&workspace, &task_id, &subitem)?;
             Ok((
                 json!({"subitem":subitem}),
-                vec![(
-                    event::TASK_SUBITEM_CHANGED.into(),
-                    json!({"workspaceId":workspace,"taskId":task_id,"subitem":subitem}),
-                )],
+                vec![events::subitem_changed(&item, &subitem)],
             ))
         })?;
         Ok(mutation.result)
@@ -471,10 +451,7 @@ impl Core {
             change.replace_subitem(&workspace, &task_id, &subitem)?;
             Ok((
                 json!({"subitem":subitem}),
-                vec![(
-                    event::TASK_SUBITEM_CHANGED.into(),
-                    json!({"workspaceId":workspace,"taskId":task_id,"subitem":subitem}),
-                )],
+                vec![events::subitem_changed(&item, &subitem)],
             ))
         })?;
         Ok(mutation.result)

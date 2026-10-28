@@ -143,20 +143,7 @@ pub(crate) fn cancel(
         state.session_id.as_deref(),
         "Active prompt has no native session",
     )?));
-    for request in store.agent_open_requests(pane).map_err(errors::storage)? {
-        super::questions::decision(
-            state,
-            &request,
-            super::questions::Decision {
-                option: None,
-                fields: None,
-                by: "system",
-                expired: false,
-                timestamp,
-            },
-            changes,
-        )?;
-    }
+    super::questions::decide_open_as_system(store, pane, state, changes, timestamp)?;
     Ok(result)
 }
 
@@ -288,24 +275,13 @@ impl Core {
             task_owner_loss,
             ..Changes::default()
         };
-        for question in self
-            .store
-            .agent_open_requests(pane)
-            .map_err(errors::storage)?
-        {
-            super::questions::decision(
-                &mut state,
-                &question,
-                super::questions::Decision {
-                    option: None,
-                    fields: None,
-                    by: "system",
-                    expired: false,
-                    timestamp: &self.timestamp(),
-                },
-                &mut changes,
-            )?;
-        }
+        super::questions::decide_open_as_system(
+            &self.store,
+            pane,
+            &mut state,
+            &mut changes,
+            &self.timestamp(),
+        )?;
         changes.outgoing.clear();
         super::transcript::close(&self.store, pane, &mut state, &mut changes)?;
         if let Some(user) = state.operation_user.take() {
