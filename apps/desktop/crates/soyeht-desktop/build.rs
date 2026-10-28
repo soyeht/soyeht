@@ -66,6 +66,7 @@ fn windows_resources() {
     let folder = "../../packaging/windows";
     println!("cargo:rerun-if-changed={folder}/soyeht.rc");
     println!("cargo:rerun-if-changed={folder}/soyeht.ico");
+    println!("cargo:rerun-if-changed={folder}/revision.h");
     let version = ["MAJOR", "MINOR", "PATCH"].map(|part| {
         let number = env::var(format!("CARGO_PKG_VERSION_{part}")).unwrap_or_default();
         format!("VERSION_{part}={number}")

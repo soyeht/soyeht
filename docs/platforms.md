@@ -110,6 +110,14 @@ need the right to create them on Windows (Developer Mode, or an elevated shell).
 
 ## Release builds
 
+The version is one number, `productVersion` in `contracts/release.json` (ADR 0115), with a `buildRevision`
+(0 to 99) for uploading the same version again. `uv run python scripts/release.py show` prints them and
+the Mac and iOS build number (`(major * 1_000_000 + minor * 1_000 + patch) * 100 + revision`,
+`CFBundleVersion`); `bump major|minor|patch|revision` raises it everywhere and regenerates; `check`
+fails when a Cargo manifest or lockfile, the npm package or an Xcode project disagrees.
+Windows takes the first three fields of the file version from the desktop package's version, which is the
+same number, and the fourth from the revision. The script does not tag, push, build or sign: packaging and notarization are not built yet.
+
 Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.release]`:
 `opt-level = 3`, `lto = "thin"`, `codegen-units = 1` and `strip = "symbols"`. `panic` stays
 `"unwind"`, written out so nobody changes it by accident: the engine recovers a poisoned lock,
@@ -147,6 +155,7 @@ The desktop's assets live in `apps/desktop/packaging/`. The icon is the Mac app'
 | --- | --- |
 | `windows/soyeht.ico` | The icon (16 to 256 pixels). |
 | `windows/soyeht.rc` | The resource script `crates/soyeht-desktop/build.rs` embeds in the executable on Windows, through `embed-resource`: the icon and the version information. |
+| `windows/revision.h` | Generated from `contracts/release.json` (never edited): the build revision, `VERSION_REVISION`, which `soyeht.rc` puts in the fourth field of the version. |
 | `linux/icons/hicolor/<size>x<size>/apps/soyeht.png` | The icon in the freedesktop theme layout (16 to 512 pixels), to install under `share/icons`. |
 | `linux/com.soyeht.next.desktop` | The launcher entry, to install under `share/applications`. Its file name and `StartupWMClass` are the production application id `com.soyeht.next` (`appIds` in `contracts/profiles.json`), which the window sets; its `Icon` is the icon name `soyeht`. The entry is for the production profile: a Dev build sets the application id `com.soyeht.next.dev`, so it needs an entry of its own (`StartupWMClass=com.soyeht.next.dev`) or none. |
 

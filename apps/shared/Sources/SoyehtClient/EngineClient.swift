@@ -292,7 +292,7 @@ public final class EngineClient {
       hello = try credential.hello(challenge: first["params"].decoded(AuthChallengeEvent.self))
     } else {
       hello = HelloParams(
-        client: "mac-dev", clientVersion: "0.1.0", protocolVersion: 1,
+        client: "mac-dev", clientVersion: ProductVersion.current, protocolVersion: 1,
         capabilities: webHost == nil || webHostRefused ? nil : [.web_host])
     }
     let welcome = try await request(.hello, .encoded(hello)).decoded(Welcome.self)

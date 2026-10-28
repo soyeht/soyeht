@@ -454,7 +454,7 @@
 			"buildSettings" = {
 				"INFOPLIST_KEY_NSPrincipalClass" = "NSApplication";
 				"MARKETING_VERSION" = "0.1.0";
-				"CURRENT_PROJECT_VERSION" = "1";
+				"CURRENT_PROJECT_VERSION" = "100000";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.developer-tools";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(SOYEHT_APP_BUNDLE_ID)";
 				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.mac";
@@ -533,7 +533,7 @@
 			"buildSettings" = {
 				"INFOPLIST_KEY_NSPrincipalClass" = "NSApplication";
 				"MARKETING_VERSION" = "0.1.0";
-				"CURRENT_PROJECT_VERSION" = "1";
+				"CURRENT_PROJECT_VERSION" = "100000";
 				"INFOPLIST_KEY_LSApplicationCategoryType" = "public.app-category.developer-tools";
 				"PRODUCT_BUNDLE_IDENTIFIER" = "$(SOYEHT_APP_BUNDLE_ID)";
 				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.mac";

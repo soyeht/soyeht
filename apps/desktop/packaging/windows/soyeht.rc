@@ -3,12 +3,16 @@
 // numbers come from the package version through the macros `build.rs` defines. The constants
 // of <winver.h> are written as numbers so the file needs no include path.
 
+// The fourth field of the version is the build revision, generated from contracts/release.json
+// (0 to 99, so it fits the 16 bits of a field).
+#include "revision.h"
+
 // The icon with the lowest id is the executable's icon.
 1 ICON "soyeht.ico"
 
 1 VERSIONINFO
-FILEVERSION VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,0
-PRODUCTVERSION VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,0
+FILEVERSION VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,VERSION_REVISION
+PRODUCTVERSION VERSION_MAJOR,VERSION_MINOR,VERSION_PATCH,VERSION_REVISION
 FILEFLAGSMASK 0x3F
 FILEFLAGS 0x0
 FILEOS 0x40004

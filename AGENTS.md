@@ -10,9 +10,9 @@ Each layer depends only on the layers listed above it.
 
 1. `contracts/`: `protocol.json` (wire methods, events, limits, the clients' shared policy,
    error codes),
-   `profiles.json` (installed profile values) and `design-tokens.json` (palettes,
-   radii, spacing, type scale, shadows, layout metrics, fonts). This is the only
-   place where wire values and design tokens are defined.
+   `profiles.json` (installed profile values), `release.json` (the product version) and
+   `design-tokens.json` (palettes, radii, spacing, type scale, shadows, layout metrics, fonts).
+   This is the only place where wire values and design tokens are defined.
 2. `engine/soyeht-protocol`: generated wire models, limits and framing, plus the
    transport-agnostic rules every client shares: the greeting and `hello`
    validation (`handshake`) and snapshot page assembly (`snapshot`). It has no
@@ -121,6 +121,11 @@ ADR when you change a boundary.
   `palettes` of `design-tokens.json`; `TerminalColorTheme` and `ThemeName` are generated.
 - One rule, one place. Before you add a helper, a constant or a policy, search
   for an existing one and reuse or extend it.
+- The product version is `productVersion` in `contracts/release.json` (ADR 0115). Never type it:
+  Rust reads `CARGO_PKG_VERSION`, Swift reads the generated `ProductVersion.current`, and the
+  Cargo workspaces, lockfiles, npm package and Xcode projects are written by
+  `uv run python scripts/release.py bump ...` and checked by `release.py check`. A new crate
+  uses `version.workspace = true`.
 - Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard
   `canonicalize` gives Windows' `\\?\C:\...` form, which `cmd.exe` and `git` read differently;
   `engine/soyeht-platform/tests/canonical_paths.rs` fails on any other use.

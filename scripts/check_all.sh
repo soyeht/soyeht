@@ -275,6 +275,8 @@ step always both legacy-isolation:check uv run python scripts/check_legacy_isola
 step always both contracts:generate-check uv run python contracts/generate.py --check
 step always both contracts:unit uv run python -m unittest discover -s contracts -p 'test_*.py'
 step always both install-dev:unit uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
+step always both release:unit uv run python -m unittest discover -s scripts -p 'test_release.py'
+step always both release:check uv run python scripts/release.py check
 step always both agent-precheck:unit uv run python -m unittest discover -s scripts -p 'test_agent_precheck.py'
 
 step engine both engine:fmt in_dir engine cargo fmt --all --check

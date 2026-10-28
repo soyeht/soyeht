@@ -65,6 +65,13 @@ that select a profile. The same generator emits constants for Rust, Swift and Py
 Dev launchd service templates. Runtime code and installation scripts consume those generated
 values. Every identifier carries "next" (ADR 0112).
 
+`release.json` is the single source for the product version (ADR 0115): `productVersion`,
+`MAJOR.MINOR.PATCH`, and an optional `buildRevision` (0 to 99) that tells two uploads of one version
+apart. The generator emits `ProductVersion.current` for the Swift clients and the revision for the
+Windows version resource (`apps/desktop/packaging/windows/revision.h`); the
+Cargo workspaces, the npm package and the Xcode projects are written and checked by
+`uv run python scripts/release.py` (`show`, `bump`, `sync`, `check`), which also derives the Mac and iOS build number.
+
 The format is JSON Schema 2020-12. The generator accepts local references in
 `$defs`, objects with required and optional fields, arrays, strings, numbers,
 integers, booleans, null, enum and oneOf. It accepts numeric and length limits,
