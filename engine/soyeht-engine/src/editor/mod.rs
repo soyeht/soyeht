@@ -42,6 +42,7 @@ mod write_lock;
 
 pub(crate) use project_files::{ProjectFile, checked_wire_path, enumerate_project_files, language};
 pub use project_watch::Watches as ProjectWatches;
+pub use save_failure::ReadOnly;
 pub(crate) use schedule::{Effect, Failure};
 pub use service::{FileSystemPort, Service, SystemFiles};
 pub(crate) use tabs::refresh_tabs;

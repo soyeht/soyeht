@@ -2,7 +2,7 @@
 //! operation or change the file, as a slow disk or another program would. Compiled only for the
 //! unit tests and the `test-hooks` feature, so no shipped engine contains it (ADR 0091).
 
-use super::{FileSystemPort, ProjectFile, SystemFiles};
+use super::{FileSystemPort, ProjectFile, ReadOnly, SystemFiles};
 use std::{
     io,
     path::{Path, PathBuf},
@@ -15,6 +15,12 @@ pub trait Interference: Send + Sync {
     /// Runs before a file is written. An error fails the write.
     fn before_write(&self, _path: &Path) -> io::Result<()> {
         Ok(())
+    }
+
+    /// Whether the file reads as read-only to a write that refuses such a file, as if its owner
+    /// had set the bit; the disk is not touched.
+    fn read_only(&self, _path: &Path) -> bool {
+        false
     }
 }
 
@@ -38,9 +44,18 @@ impl<I: Interference> FileSystemPort for InterferedFiles<I> {
         SystemFiles.read_binary(path, limit)
     }
 
-    fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool> {
+    fn write_text_if_unchanged(
+        &self,
+        path: &Path,
+        expected: &str,
+        text: &str,
+        read_only: ReadOnly,
+    ) -> io::Result<bool> {
+        if read_only == ReadOnly::Refuse && self.0.read_only(path) {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
         self.0.before_write(path)?;
-        SystemFiles.write_text_if_unchanged(path, expected, text)
+        SystemFiles.write_text_if_unchanged(path, expected, text, read_only)
     }
 
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool> {

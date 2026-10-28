@@ -22,8 +22,11 @@ error. Neither said what had gone wrong.
 is read-only), `full` (no room on the disk) or `other`. The engine classifies the I/O error
 (`editor/save_failure.rs`); the error's text, which can carry a path, never leaves the engine.
 
-- The non-durable event `file.save_failed {fileId, reason}` is sent at every failed attempt of
-  a save. It carries no cursor and is not replayed.
+- The non-durable event `file.save_failed {fileId, reason}` is sent when the save's failure
+  streak reports (the engine `Streak`): the first failure, each change of kind, and attempts 2, 4,
+  8 and so on, not at every retry. A save the person asks for starts the streak over. It carries
+  no cursor and is not replayed. A client sets its state from the event and from the page it
+  reads, so none depends on getting it at each retry.
 - `FileReadResult.saveFailure` carries the same reason while the open file's last attempt has
   failed, so a client that reads the file (or connects after the event) learns it. The page of
   `file.open` for a file that is already open and failing carries it too. It is on the
@@ -69,11 +72,12 @@ left in its tab. Only the person's save does.
 
 **The editor's save does not replace a file its owner made read-only.** The save writes a new
 file and renames it over the old one, which a read-only bit does not stop; the old code replaced
-the file and kept it read-only. The autosave and `file.save` (the `DiskJob`, never the shared
-`write_text_if_unchanged`) now refuse it as `denied`. A project replace and an agent's write are
-not the person's save: they are unchanged and still replace such a file. The change is in effect on
-Unix only: on Windows the rename over a read-only file already failed. Changing the bit and saving
-again works. The rule is the read-only bit, not "this user cannot write": a file owned by someone
+the file and kept it read-only. The autosave and `file.save` (the `DiskJob`) ask the file port
+to refuse it (`ReadOnly::Refuse` of `write_text_if_unchanged`; the port decides, so a test port can
+say that a file is read-only) and it is told as `denied`. A project replace and an agent's write are
+not the person's save: they pass `ReadOnly::Replace`, are unchanged and still replace such a file.
+The change is in effect on Unix only: on Windows the rename over a read-only file already
+failed. Changing the bit and saving again works. The rule is the read-only bit, not "this user cannot write": a file owned by someone
 else in a folder the user can write is still replaced.
 
 **The engine keeps retrying; it does not give up.** The backoff already caps the wait at 60 s,

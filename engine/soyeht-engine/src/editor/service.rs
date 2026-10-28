@@ -5,6 +5,7 @@ use super::schedule::{WATCH_INTERVAL_MS, save_backoff, watch_backoff};
 use super::{
     project_files::{ProjectFile, save_temporary_name},
     project_reader::{ProjectReader, disk_text, list_project_files},
+    save_failure::ReadOnly,
     text_refusal::TextRefusal,
 };
 use crate::{errors, errors::Result, streak::Streak};
@@ -27,13 +28,17 @@ pub trait FileSystemPort: Send + Sync {
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>>;
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String>;
     fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>>;
-    fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool>;
+    fn write_text_if_unchanged(
+        &self,
+        path: &Path,
+        expected: &str,
+        text: &str,
+        read_only: ReadOnly,
+    ) -> io::Result<bool>;
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool>;
     fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf>;
     /// Creates a file that is gone with its whole text at once (see `creation`).
-    fn create_text_if_absent(&self, root: &Path, rel: &Path, text: &str) -> io::Result<PathBuf> {
-        super::creation::create_text_if_absent(root, rel, text)
-    }
+    fn create_text_if_absent(&self, root: &Path, rel: &Path, text: &str) -> io::Result<PathBuf>;
     fn create_binary_if_absent_or_matching(
         &self,
         root: &Path,
@@ -96,7 +101,13 @@ impl FileSystemPort for SystemFiles {
         Ok(bytes)
     }
 
-    fn write_text_if_unchanged(&self, path: &Path, expected: &str, text: &str) -> io::Result<bool> {
+    fn write_text_if_unchanged(
+        &self,
+        path: &Path,
+        expected: &str,
+        text: &str,
+        read_only: ReadOnly,
+    ) -> io::Result<bool> {
         // One writer per file between the comparison and the rename (see `write_lock`).
         super::write_lock::exclusive(path, || {
             if self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)? != expected {
@@ -107,6 +118,12 @@ impl FileSystemPort for SystemFiles {
             })?;
             let temporary = parent.join(save_temporary_name());
             let permissions = fs::metadata(path)?.permissions();
+            if read_only == ReadOnly::Refuse && permissions.readonly() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "file is read-only",
+                ));
+            }
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -173,6 +190,10 @@ impl FileSystemPort for SystemFiles {
         }
         soyeht_platform::fs::sync_directory(&parent)?;
         canonical_inside(&root, &target)
+    }
+
+    fn create_text_if_absent(&self, root: &Path, rel: &Path, text: &str) -> io::Result<PathBuf> {
+        super::creation::create_text_if_absent(root, rel, text)
     }
 
     fn create_binary_if_absent_or_matching(
@@ -378,7 +399,7 @@ impl Service {
     ) -> Result<bool> {
         let path = self.resolve(workspace_root, &file.relative_path)?;
         self.files
-            .write_text_if_unchanged(&path.canonical, expected, text)
+            .write_text_if_unchanged(&path.canonical, expected, text, ReadOnly::Replace)
             .map_err(errors::io)
     }
 

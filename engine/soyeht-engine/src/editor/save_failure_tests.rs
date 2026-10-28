@@ -10,7 +10,10 @@ use serde_json::{Value, json};
 use std::{
     fs, io,
     path::Path,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 const TICK_MS: i64 = 250;
@@ -99,6 +102,31 @@ impl Rig {
     fn save_again(&mut self) -> Value {
         let file_id = self.file_id.clone();
         self.fixture.call("file.save", json!({"fileId":file_id}))
+    }
+
+    /// Runs the ticks, backoff included, until `attempts` saves have failed in a row.
+    fn fail_until(&mut self, attempts: u32) {
+        let until = self.now + TEN_MINUTES_MS;
+        while self.attempts() < attempts && self.now < until {
+            self.tick_for(TICK_MS);
+        }
+        assert_eq!(self.attempts(), attempts);
+    }
+
+    fn attempts(&self) -> u32 {
+        self.fixture
+            .core
+            .editor
+            .effect_attempts(&self.file_id, super::Effect::Save)
+    }
+
+    /// The reasons of the `file.save_failed` events sent since the last call.
+    async fn reasons_told(&mut self) -> Vec<Value> {
+        self.failures_told()
+            .await
+            .into_iter()
+            .map(|params| params["reason"].clone())
+            .collect()
     }
 
     async fn failures_told(&mut self) -> Vec<Value> {
@@ -354,4 +382,96 @@ async fn a_client_that_never_saw_the_event_learns_the_failure_by_reading() {
     assert!(!rig.failures_told().await.is_empty());
     assert!(rig.failures_told().await.is_empty());
     assert_eq!(rig.save_failure(), "missing");
+}
+
+/// A disk whose write fails with the kind set by the test, or that the owner made read-only
+/// without the disk being touched.
+#[derive(Default)]
+struct Scripted {
+    failing: Mutex<Option<io::ErrorKind>>,
+    read_only: AtomicBool,
+}
+
+impl Scripted {
+    fn fail_with(&self, kind: Option<io::ErrorKind>) {
+        *self.failing.lock().unwrap() = kind;
+    }
+}
+
+impl Interference for Arc<Scripted> {
+    fn before_write(&self, _path: &Path) -> io::Result<()> {
+        match *self.failing.lock().unwrap() {
+            Some(kind) => Err(kind.into()),
+            None => Ok(()),
+        }
+    }
+
+    fn read_only(&self, _path: &Path) -> bool {
+        self.read_only.load(Ordering::SeqCst)
+    }
+}
+
+async fn scripted_rig() -> (Rig, Arc<Scripted>) {
+    let disk = Arc::new(Scripted::default());
+    let rig = Rig::over(Box::new(InterferedFiles(Arc::clone(&disk)))).await;
+    (rig, disk)
+}
+
+#[tokio::test]
+async fn a_port_that_reports_a_read_only_file_refuses_the_save_without_touching_the_disk() {
+    let (mut rig, disk) = scripted_rig().await;
+    disk.read_only.store(true, Ordering::SeqCst);
+    rig.type_text("// ");
+    rig.tick_for(2_000);
+
+    assert_eq!(rig.save_failure(), "denied");
+    assert!(rig.dirty(), "the draft is kept");
+    assert_eq!(fs::read_to_string(rig.path()).unwrap(), "fn main() {}\n");
+    assert_eq!(rig.reasons_told().await[0], "denied");
+    let real = fs::metadata(rig.path()).unwrap().permissions();
+    assert!(!real.readonly(), "the file on the disk was never changed");
+}
+
+#[tokio::test]
+async fn a_failure_that_repeats_is_told_when_the_streak_says_not_on_every_retry() {
+    let (mut rig, disk) = scripted_rig().await;
+    disk.fail_with(Some(io::ErrorKind::PermissionDenied));
+    rig.type_text("// ");
+
+    // The streak reports the first failure and attempts 2, 4, 8, so the third and fifth are
+    // retried without a new announcement.
+    let mut told = Vec::new();
+    for attempts in 1..=5 {
+        rig.fail_until(attempts);
+        told.push(rig.reasons_told().await.len());
+    }
+    assert_eq!(told, [1, 1, 0, 1, 0]);
+}
+
+#[tokio::test]
+async fn a_new_kind_of_failure_is_told_again_and_a_recovery_starts_the_count_over() {
+    let (mut rig, disk) = scripted_rig().await;
+    disk.fail_with(Some(io::ErrorKind::PermissionDenied));
+    rig.type_text("// ");
+    rig.fail_until(2);
+    assert_eq!(rig.reasons_told().await, ["denied", "denied"]);
+
+    // Attempt 3 is no power of two: only the change of kind makes it worth telling.
+    disk.fail_with(Some(io::ErrorKind::StorageFull));
+    rig.fail_until(3);
+    assert_eq!(rig.reasons_told().await, ["full"]);
+
+    // Attempt 4 is told and 5 is not; a recovery ends the streak, so the next failure is a first.
+    rig.fail_until(5);
+    assert_eq!(rig.reasons_told().await, ["full"]);
+    disk.fail_with(None);
+    rig.save_again();
+    rig.tick_for(TICK_MS);
+    assert_eq!(rig.save_failure(), Value::Null);
+    rig.reasons_told().await;
+
+    disk.fail_with(Some(io::ErrorKind::PermissionDenied));
+    rig.type_text("// ");
+    rig.fail_until(1);
+    assert_eq!(rig.reasons_told().await, ["denied"]);
 }

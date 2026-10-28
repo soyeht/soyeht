@@ -12,7 +12,7 @@
 //! file wait for its job first, and a file closed while its job runs is finished from its
 //! stored row.
 
-use super::save_failure;
+use super::save_failure::{self, ReadOnly};
 use super::{
     Effect, Failure,
     persistence::{next_revision, stored_version},
@@ -137,10 +137,10 @@ impl DiskJob {
         let Some(draft) = self.draft else {
             return Ok(DiskResult::Unchanged);
         };
-        save_failure::refuse_read_only(&path.canonical).map_err(errors::io)?;
+        // The person's own save does not replace a file its owner made read-only.
         let written = self
             .files
-            .write_text_if_unchanged(&path.canonical, &self.known, &draft)
+            .write_text_if_unchanged(&path.canonical, &self.known, &draft, ReadOnly::Refuse)
             .map_err(errors::io)?;
         if written {
             Ok(DiskResult::Written(draft))
@@ -388,7 +388,8 @@ impl Core {
                 let failure =
                     self.editor
                         .effect_failed(file_id, effect, &kind, reason.clone(), now)?;
-                if effect == Effect::Save {
+                // The streak says when: the first failure and each change of kind, not each retry.
+                if effect == Effect::Save && failure.report {
                     self.announce_save_failure(file_id, reason);
                 }
                 failure

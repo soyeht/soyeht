@@ -37,7 +37,7 @@ pub(super) fn exclusive<R>(path: &Path, write: impl FnOnce() -> R) -> R {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::editor::{FileSystemPort, SystemFiles};
+    use crate::editor::{FileSystemPort, ReadOnly, SystemFiles};
     use std::{
         fs,
         sync::{Barrier, atomic::AtomicUsize, atomic::Ordering},
@@ -64,7 +64,7 @@ mod tests {
                     thread::spawn(move || {
                         barrier.wait();
                         if SystemFiles
-                            .write_text_if_unchanged(&path, "alpha", text)
+                            .write_text_if_unchanged(&path, "alpha", text, ReadOnly::Replace)
                             .unwrap()
                         {
                             wins.fetch_add(1, Ordering::SeqCst);

@@ -48,12 +48,21 @@ impl FileSystemPort for FakeFiles {
         path: &Path,
         _expected: &str,
         text: &str,
+        _read_only: ReadOnly,
     ) -> io::Result<bool> {
         self.writes
             .lock()
             .map_err(|_| io::Error::other("fixture lock"))?
             .push((path.into(), text.into()));
         Ok(true)
+    }
+    fn create_text_if_absent(
+        &self,
+        root: &Path,
+        relative: &Path,
+        _text: &str,
+    ) -> io::Result<PathBuf> {
+        Ok(root.join(relative))
     }
     fn creation_target_exists(&self, _root: &Path, relative: &Path) -> io::Result<bool> {
         Ok(self.contents.contains_key(relative))
@@ -112,9 +121,13 @@ impl FileSystemPort for SwappingFiles {
         _path: &Path,
         _expected: &str,
         _text: &str,
+        _overwrite: ReadOnly,
     ) -> io::Result<bool> {
         self.wrote.store(true, Ordering::SeqCst);
         Ok(true)
+    }
+    fn create_text_if_absent(&self, _root: &Path, _rel: &Path, _text: &str) -> io::Result<PathBuf> {
+        Err(io::ErrorKind::Unsupported.into())
     }
     fn creation_target_exists(&self, _root: &Path, _relative: &Path) -> io::Result<bool> {
         Ok(false)
@@ -288,4 +301,57 @@ fn a_file_that_cannot_be_text_is_refused_with_its_own_code() {
     assert_eq!(kind(&large), Some(ErrorKind::FileTooLarge));
     assert_eq!(kind(&root), Some(ErrorKind::InvalidParams));
     fs::remove_dir_all(root).unwrap();
+}
+
+fn temporary_note(text: &str) -> (PathBuf, PathBuf) {
+    let directory = std::env::temp_dir().join(format!("soyeht-read-only-{}", Uuid::new_v4()));
+    fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("note.txt");
+    fs::write(&path, text).unwrap();
+    (directory, path)
+}
+
+fn set_read_only(path: &Path, read_only: bool) {
+    let mut permissions = fs::metadata(path).unwrap().permissions();
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(read_only);
+    fs::set_permissions(path, permissions).unwrap();
+}
+
+#[test]
+fn the_system_disk_refuses_a_read_only_file_only_when_asked_to() {
+    let (directory, path) = temporary_note("before");
+    assert!(
+        SystemFiles
+            .write_text_if_unchanged(&path, "before", "kept", ReadOnly::Refuse)
+            .unwrap()
+    );
+    set_read_only(&path, true);
+
+    let refused = SystemFiles
+        .write_text_if_unchanged(&path, "kept", "lost", ReadOnly::Refuse)
+        .unwrap_err();
+    assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
+    assert_eq!(fs::read_to_string(&path).unwrap(), "kept");
+
+    assert!(
+        SystemFiles
+            .write_text_if_unchanged(&path, "kept", "replaced", ReadOnly::Replace)
+            .unwrap()
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), "replaced");
+    set_read_only(&path, false);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_changed_read_only_file_is_reported_as_changed_not_refused() {
+    let (directory, path) = temporary_note("before");
+    set_read_only(&path, true);
+    let written = SystemFiles
+        .write_text_if_unchanged(&path, "someone else's text", "lost", ReadOnly::Refuse)
+        .unwrap();
+    assert!(!written);
+    set_read_only(&path, false);
+    fs::remove_dir_all(directory).unwrap();
 }
