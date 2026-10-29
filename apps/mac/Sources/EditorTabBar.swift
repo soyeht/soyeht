@@ -91,11 +91,7 @@ struct EditorTabBar: View {
   }
 
   private func close(_ tab: EditorTab) {
-    Task { @MainActor in
-      do { try await client.closeEditorTab(tab.paneId) } catch {
-        client.problem = error.localizedDescription
-      }
-    }
+    Task { @MainActor in await client.closePaneSavingEdits(tab.paneId) }
   }
 
   private func pin(_ tab: EditorTab) {

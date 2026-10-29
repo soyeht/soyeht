@@ -84,6 +84,42 @@ fn closing_the_pane_of_an_editor_waits_for_its_edits_and_any_other_pane_closes_a
 }
 
 #[test]
+fn closing_a_workspace_waits_for_the_edits_of_its_documents() {
+    let mut state = two_editors(vec![pane("t1", "w", "terminal")]);
+    state.apply(read("a", "e1", 1, 0, &["a"], 1));
+    let close = |workspace_id: &str| {
+        Effect::Send(Command::CloseWorkspace {
+            workspace_id: workspace_id.into(),
+        })
+    };
+    // A workspace with nothing unsent goes at once, whichever it is.
+    assert_eq!(state.close_workspace_effects("other"), [close("other")]);
+    state.editors.insert("e1", "x");
+    assert!(state.close_workspace_effects("w").is_empty());
+    let acknowledged = state.apply(written("a", "e1", 2, 1));
+    assert!(acknowledged.contains(&close("w")), "{acknowledged:?}");
+    // It was sent once: the next answer has nothing left to release.
+    let later = state.apply(saved("a", "e1", 2, 1));
+    assert!(!later.contains(&close("w")), "{later:?}");
+}
+
+#[test]
+fn a_close_that_waited_for_edits_is_not_made_on_the_next_connection() {
+    let mut state = two_editors(Vec::new());
+    state.apply(read("a", "e1", 1, 0, &["a"], 1));
+    state.editors.insert("e1", "x");
+    assert!(state.close_workspace_effects("w").is_empty());
+    state.apply(Event::Disconnected("lost".into()));
+    let acknowledged = state.apply(written("a", "e1", 2, 1));
+    assert!(
+        !acknowledged
+            .iter()
+            .any(|effect| matches!(effect, Effect::Send(Command::CloseWorkspace { .. }))),
+        "{acknowledged:?}"
+    );
+}
+
+#[test]
 fn the_editor_place_focuses_the_tab_that_shows_and_an_empty_one_has_nothing_to_focus() {
     let mut state = two_editors(vec![pane("t1", "w", "terminal")]);
     state.focus_pane("e2");

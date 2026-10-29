@@ -18,7 +18,14 @@ impl State {
             effects.push(Effect::FocusPane(opened.pane.pane_id.clone()));
         }
         effects.extend(self.editors.apply(event, &self.panes));
+        effects.extend(self.editors.settled_workspace_closes());
         effects
+    }
+
+    /// Closes a workspace and its panes, once what was typed in its documents has reached the
+    /// engine, as `close_pane_effects` does for one pane.
+    pub fn close_workspace_effects(&mut self, workspace_id: &str) -> Vec<Effect> {
+        self.editors.close_workspace(workspace_id)
     }
 
     pub(super) fn editor_notification(

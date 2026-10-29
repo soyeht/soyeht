@@ -730,7 +730,9 @@ struct EditorNativeViewport: NSViewRepresentable {
       let fileId = parent.view.file.fileId
       switch effect {
       case .close:
-        parent.client.closePane(parent.view.file.paneId)
+        let client = parent.client
+        let paneId = parent.view.file.paneId
+        Task { @MainActor in await client.closePaneSavingEdits(paneId) }
       case .save:
         Task { @MainActor in await report { try await self.parent.client.saveEditorFile(fileId) } }
       case .reload:

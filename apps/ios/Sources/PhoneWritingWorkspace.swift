@@ -939,10 +939,7 @@ private struct PhoneWritingLeaf: View {
   }
 
   private func closePane() {
-    Task { @MainActor in
-      if let fileId = leaf.identity.fileId { await client.flushEditorEdits(fileId: fileId) }
-      client.closePane(leaf.identity.paneId)
-    }
+    Task { @MainActor in await client.closePaneSavingEdits(leaf.identity.paneId) }
   }
 
   private func tabButton(

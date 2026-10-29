@@ -522,10 +522,15 @@ impl EditorFile {
         })
     }
 
+    /// Whether what the person typed has not all reached the engine: edits on their way, and keys
+    /// that wait for a jump, which are the person's too.
+    pub fn is_settling(&self) -> bool {
+        self.has_unsent() || !self.held.is_empty()
+    }
+
     /// Closes the file's pane once its edits have reached the engine, which saves the draft.
     pub fn close(&mut self) -> Vec<Effect> {
-        // Keys that wait for a jump are the person's too: they are typed before the pane closes.
-        if self.has_unsent() || !self.held.is_empty() {
+        if self.is_settling() {
             self.defer(Deferred::Close);
             return Vec::new();
         }

@@ -29,7 +29,9 @@ struct PhonePaneBoardCard: View {
     .contentShape(Rectangle())
     .simultaneousGesture(TapGesture().onEnded(onFocus))
     .contextMenu {
-      Button("Close pane", role: .destructive) { client.closePane(pane.paneId) }
+      Button("Close pane", role: .destructive) {
+        Task { await client.closePaneSavingEdits(pane.paneId) }
+      }
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(pane.name)

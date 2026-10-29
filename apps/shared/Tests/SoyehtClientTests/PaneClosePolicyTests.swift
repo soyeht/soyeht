@@ -179,3 +179,58 @@ private func textEdit() -> TextEdit {
 @MainActor @Test func closingAWorkspaceLeavesTheDocumentsOfOthersAlone() async {
   #expect(await problemWhenTheWorkspaceCloses(editedFileIn: "other") == nil)
 }
+
+/// Plays the close of the pane `p` of a client whose file `f` holds a typed edit, and returns the
+/// requests the engine saw and, for the close, whether the edit had been tried by then (a closed
+/// connection cannot write, so a write that was attempted shows as `problem`).
+@MainActor private func closing(
+  _ mode: PaneMode, typing: Bool = true, extraEditorPane: Bool = false
+) async throws -> (methods: [RequestMethod], editSentFirst: Bool, client: EngineClient) {
+  let client = EngineClient(socket: "/tmp/pane-close-saving-\(mode.rawValue).sock")
+  client.upsertWorkspace(workspace("repo"))
+  try client.applyPaneCreated(
+    PaneCreatedEvent(eventId: "1", at: "2026-10-19T12:00:00Z", pane: pane("p", mode: mode)))
+  if extraEditorPane {
+    try client.applyPaneCreated(
+      PaneCreatedEvent(eventId: "2", at: "2026-10-19T12:00:01Z", pane: pane("q", mode: mode)))
+    var other = file(path: "/repo/b.swift")
+    other.fileId = "g"
+    other.paneId = "q"
+    client.editorFiles["g"] = EditorFileView(file: other)
+  }
+  client.editorFiles["f"] = EditorFileView(file: file(path: "/repo/texts/essay.md"))
+  var methods: [RequestMethod] = []
+  var editSentFirst = false
+  client.requestStub = { method, _ in
+    if method == .paneClose { editSentFirst = client.problem != nil }
+    methods.append(method)
+    return .object([:])
+  }
+  if typing { client.enqueueEditorEdits(fileId: "f", edits: [textEdit()]) }
+  await client.closePaneSavingEdits("p")
+  for _ in 0..<100 where !methods.contains(.paneClose) { await Task.yield() }
+  return (methods, editSentFirst, client)
+}
+
+@MainActor @Test func closingAWritingPaneSendsWhatWasTypedBeforeTheClose() async throws {
+  let typed = try await closing(.writing)
+  #expect(typed.methods == [.paneClose])
+  #expect(typed.editSentFirst)
+  #expect(typed.client.problem != nil)
+
+  let untouched = try await closing(.writing, typing: false)
+  #expect(untouched.methods == [.paneClose])
+  #expect(!untouched.editSentFirst)
+}
+
+@MainActor @Test func closingAnEditorTabSendsWhatWasTypedAndPassesItsPlaceOn() async throws {
+  let closed = try await closing(.editor, extraEditorPane: true)
+  #expect(closed.methods == [.paneClose])
+  #expect(closed.editSentFirst)
+  #expect(closed.client.selectedPaneId == "q")
+}
+
+@MainActor @Test func closingAPaneThatRunsAProcessSendsOnlyTheClose() async throws {
+  let closed = try await closing(.terminal, typing: false)
+  #expect(closed.methods == [.paneClose])
+}
