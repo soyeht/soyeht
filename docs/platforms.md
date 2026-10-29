@@ -142,6 +142,19 @@ launchd user agent, a systemd user unit or a Task Scheduler task per program (AD
 `docs/contracts/13-service-seam.md`). On Windows the package also ships `soyeht-service-host.exe`
 in the same folder: the task starts it, and it starts the engine or the supervisor with no window.
 
+`soyeht uninstall` is the matching removal on all three systems: it stops the engine and the
+supervisor of the profile and unregisters them, and keeps the person's data. `soyeht uninstall
+--delete-data` also deletes the profile's data directory after the person types the profile's name
+(`--yes` skips the question for a script). It touches only the profile's own names and directory,
+all of which carry "next", and never the older app's. Deleting the programs themselves is the
+package's job (docs/contracts/13-service-seam.md, section 7).
+
+When something breaks, `soyeht diagnostics` prints a report to paste into an issue: the product
+version, the system, the profile, whether the engine and the supervisor run, the readiness
+checklist, and the last lines of the engine, supervisor and desktop logs, with every path, user
+name, address and token taken out (`--lines N`, 40 by default). It works with no engine running
+(docs/contracts/14-diagnostics.md).
+
 The desktop binary, `soyeht-desktop`, is a window program in a Windows release: it opens no
 console. Its log lines (`soyeht_platform::log`) go to standard error, which a shell can redirect
 (`2> soyeht.log`; a debug build keeps the console), and always to `logs/desktop.log` (see "The

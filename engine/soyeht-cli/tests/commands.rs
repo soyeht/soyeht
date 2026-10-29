@@ -340,6 +340,45 @@ fn an_unknown_profile_is_refused_before_connecting() {
 }
 
 #[test]
+fn diagnostics_reports_a_running_engine_and_its_readiness_with_no_path() {
+    let rig = Rig::start();
+    let output = rig.run(&["diagnostics", "--lines", "5"], None);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report = String::from_utf8(output.stdout).unwrap();
+    assert!(report.contains(&format!("- version: {}", env!("CARGO_PKG_VERSION"))));
+    assert!(report.contains("- profile: dev"));
+    assert!(report.contains("- engine: running"), "{report}");
+    assert!(report.contains("- supervisor: running"), "{report}");
+    assert!(
+        report.contains("- family: "),
+        "readiness was asked: {report}"
+    );
+    assert!(report.contains("- git: "), "{report}");
+    let folder = rig.path.to_string_lossy().into_owned();
+    for private in [folder.as_str(), "/tmp/sn-cli", "SOYEHT_MCP_BINDING"] {
+        assert!(!report.contains(private), "{private} leaked:\n{report}");
+    }
+}
+
+#[test]
+fn deleting_data_without_a_terminal_or_yes_changes_nothing() {
+    let rig = Rig::start();
+    let output = rig.run(&["uninstall", "--delete-data"], None);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--yes"));
+    assert!(output.stdout.is_empty());
+    assert!(
+        rig.path.join("engine.sock").exists(),
+        "the data is still there"
+    );
+    assert_eq!(rig.command(&["status"])["ptyd"]["connected"], true);
+}
+
+#[test]
 fn bound_mode_requires_the_inherited_session_binding() {
     let output = Command::new(env!("CARGO_BIN_EXE_soyeht"))
         .args(["--bound", "status"])

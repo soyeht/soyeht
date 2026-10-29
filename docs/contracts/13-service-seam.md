@@ -76,8 +76,9 @@ Planned. Today the seam is called by the `soyeht service` command and by
 section is what they are to do.
 
 **The installer** is to register, with the person's consent to install: it copies the programs and
-runs `soyeht service install --programs DIR`. **The uninstaller** is to run `soyeht service
-uninstall` before it removes the programs. **The app** is to register only when the person asks: a
+runs `soyeht service install --programs DIR`. **The uninstaller** is to run `soyeht uninstall`
+(`soyeht uninstall --delete-data --yes` when the person chose to delete their data) before it
+removes the programs. **The app** is to register only when the person asks: a
 first-run question or a setting ("Start Soyeht when I log in"), for a copy that was not installed
 by an installer (an unpacked archive, a package manager that runs no script). It must never
 register silently, since macOS tells the person about every new background item and Windows lists
@@ -93,6 +94,7 @@ The commands, all printing the state of the services after they ran as JSON
 | --- | --- |
 | `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
+| `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
 | `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise. |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
 | `soyeht service status [--component C]` | Reports. Changes nothing. |
@@ -166,11 +168,29 @@ ends with 1 and writes the reason into the log.
 
 ## 7. Uninstall
 
-`service uninstall` stops the programs and removes the registration and the definition files it
-wrote. Stopping the supervisor ends the person's terminals. It leaves the programs, the data
-directory, the database and the logs: deleting a person's data is a separate choice for the
-uninstaller to ask. It touches only the names of its own profile, and never a name or a place
-that lacks "next".
+`soyeht uninstall` is the one command a person or an uninstaller runs. It stops the engine and
+the supervisor of the profile, removes their registration and the definition files the seam wrote
+(`service uninstall` of both components), and prints the state of the services and
+`"dataDeleted"`. It works on all three systems and never connects to the engine. Stopping the
+supervisor ends the person's terminals.
+
+**Data stays by default.** The programs, the data directory, the database and the logs are left
+alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,
+transcripts, settings, logs), and only after the person types the profile's name at the prompt;
+`--yes` confirms for a script (`--yes` alone is refused). A "no" changes nothing: the question is
+asked before any service is touched. Data deletion is refused, and keeps the data, when:
+
+- the place is not the app's own: it lacks "next", or it is, or lies inside, a place of the legacy
+  app (the same guard as every definition, `guard::require_path`);
+- the path is relative, has a `.` or `..` component, is a link, or holds the home folder;
+- the engine or the supervisor still answers on its endpoint (a copy the app started itself, not
+  the service): close it, then run the command again, which is safe to repeat.
+
+A link inside the directory is removed, never followed. The data directory of another profile
+that lies inside this one (Dev is inside prod's) is kept, so deleting prod's data leaves Dev's.
+Programs are the installer's to remove, since it chose where they are. The command touches only
+the names and the directory of its own profile (`--profile P`), and never a name or a place that
+lacks "next".
 
 ## 8. Two profiles on one machine
 

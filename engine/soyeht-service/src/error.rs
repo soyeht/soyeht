@@ -19,6 +19,8 @@ pub enum Error {
     ProgramMissing(String),
     /// The service is not registered, so it cannot be started.
     NotRegistered,
+    /// The engine or the supervisor still answers on its endpoint, so its data is in use.
+    StillRunning,
     Io(io::Error),
     /// A command could not run or ran too long.
     Process(soyeht_process::Error),
@@ -41,6 +43,10 @@ impl Error {
                 format!("the program {program} does not exist; check --programs")
             }
             Self::NotRegistered => "the service is not registered".to_owned(),
+            Self::StillRunning => {
+                "the engine or the supervisor still runs; stop it (soyeht service stop) first"
+                    .to_owned()
+            }
             Self::Io(error) => format!("file error: {error}"),
             Self::Process(error) => format!("command error: {error}"),
             Self::Failed { step, detail } if detail.is_empty() => format!("{step} failed"),

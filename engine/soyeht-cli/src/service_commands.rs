@@ -5,7 +5,7 @@ use crate::args::{Flags, invalid};
 use serde_json::{Value, json};
 use soyeht_cli::Result;
 use soyeht_protocol::profile::Profile;
-use soyeht_service::{Component, Definition, Layout, Manager, Real, System, render};
+use soyeht_service::{Commands, Component, Definition, Layout, Manager, Real, System, render};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -69,7 +69,10 @@ fn components(flags: &Flags) -> Result<Vec<Component>> {
 }
 
 /// What the system says about each component after the command.
-fn report(manager: &Manager<'_, Real>, components: &[Component]) -> Result<Value> {
+pub(crate) fn report(
+    manager: &Manager<'_, impl Commands>,
+    components: &[Component],
+) -> Result<Value> {
     let mut services = Vec::new();
     for component in Component::START_ORDER {
         if components.contains(&component) {
