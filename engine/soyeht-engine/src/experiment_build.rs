@@ -566,7 +566,11 @@ mod tests {
         tick_until(&mut core, "the capture was never restored", |core| {
             !core.terminal_captures.is_empty()
         });
-        core.poll_output().unwrap();
+        // The read starts with the tick, is made by a job, and reaches the screen and the
+        // capture when it is applied.
+        tick_until(&mut core, "the pane never drained", |core| {
+            core.panes[PANE].screen.next_offset() > 0
+        });
         assert_eq!(drains.lock().unwrap().first(), Some(&0));
         // Closing the capture lets its worker write what it was given.
         drop(core.terminal_captures.remove(PANE));

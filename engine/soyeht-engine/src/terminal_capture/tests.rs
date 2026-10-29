@@ -513,6 +513,8 @@ fn cadence_core(root: &Path, chunks: &[Vec<u8>], capture: bool) -> Core {
     // unrelated local-server discovery deterministic across retries.
     core.clock = Arc::new(FixedClock(0));
     core.web = crate::web::Service::new(Box::new(EmptyPortScan));
+    // A poll reads, applies and acknowledges in the caller, in the scripted order below.
+    core.background = crate::offload::Background::inline();
     let pane_id = crate::test_panes::insert_terminal_pane(&mut core, root, "cadence", capture);
     let mut responses = VecDeque::new();
     let mut offset = 0_u64;

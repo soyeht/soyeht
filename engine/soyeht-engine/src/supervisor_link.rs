@@ -429,6 +429,8 @@ pub(crate) mod tests {
         let directory = short_directory();
         let supervisor = HangUp::start(&directory, welcome);
         let mut core = Core::open(&directory).unwrap();
+        // Each attempt is made and settled in its tick, so the burst counts every one.
+        core.background = crate::offload::Background::inline();
         let opened = supervisor.accepted();
         for _ in 0..500 {
             assert!(core.poll_output().is_ok());
