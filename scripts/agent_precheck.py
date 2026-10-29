@@ -57,7 +57,8 @@ FORMAT_STEP = re.compile(r"^\s*step\s+swift\s+\S+\s+swift:format-lint\s+swift fo
 # Unit steps that take minutes: they run only when the script they test, or a module that
 # script imports (at any depth), changed. The other unit steps take seconds and all run when
 # any gate tooling changed.
-SLOW_UNITS = ("post-merge:unit", "main-watch:unit")
+SLOW_UNITS = ("post-merge:unit", "post-merge-editor:unit", "post-merge-flakes:unit",
+              "post-merge-remote:unit", "post-merge-load:unit", "main-watch:unit")
 GATE_TOOLING = ("scripts/", ".githooks/", ".github/")
 FETCH_TIMEOUT_SECONDS = 60
 # The checks that are not run as cheap steps: the precheck does them itself, or last.

@@ -55,14 +55,17 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import gate_flakes
+import gate_worktree
 import post_merge
+import post_merge_editor
+import post_merge_records
 from gate_base import main_checkout, main_health_dir
 
 STATUS_FILE = "watch.json"
 LOCK_FILE = "main_watch.lock"
 BRANCH_PREFIX = "main-watch/revert-"
 GREEN_EXIT, RED_EXIT, INFRASTRUCTURE_EXIT, REVERT_FAILED_EXIT = 0, 1, 2, 3
-NEEDS_MEASUREMENT_EXIT = post_merge.NEEDS_MEASUREMENT_EXIT
+NEEDS_MEASUREMENT_EXIT = post_merge_editor.NEEDS_MEASUREMENT_EXIT
 HISTORY_LIMIT = 50
 LOG_TAIL_LINES = 40
 LOG_TAIL_CHARS = 3000
@@ -89,7 +92,7 @@ def read_json(path: Path) -> dict:
 
 
 def write_json(path: Path, data: dict) -> None:
-    post_merge.write_json(path, data)
+    post_merge_records.write_json(path, data)
 
 
 def revert_title(subject: str) -> str:
@@ -128,7 +131,7 @@ def revert_body(record: dict, culprit: dict) -> str:
 
 
 def identity(root: Path) -> list[str]:
-    configured = post_merge.git(root, "config", "user.name", check=False)
+    configured = gate_worktree.git(root, "config", "user.name", check=False)
     return [] if configured else list(FALLBACK_IDENTITY)
 
 
@@ -144,7 +147,7 @@ def skip_reason(root: Path, culprit: dict) -> str | None:
     on_main = subprocess.run(["git", "merge-base", "--is-ancestor", sha, "origin/main"], cwd=root)
     if on_main.returncode:
         return "the culprit is not in the history of origin/main"
-    reverted = post_merge.git(root, "log", "origin/main", "--format=%H", "-F",
+    reverted = gate_worktree.git(root, "log", "origin/main", "--format=%H", "-F",
                               f"--grep=This reverts commit {sha}", check=False)
     if reverted:
         return f"the culprit was reverted already by {reverted.splitlines()[0][:12]}"
@@ -161,8 +164,8 @@ def run_command(arguments: list[str], cwd: Path) -> str:
 
 def prepare_revert(root: Path, tree: Path, branch: str, culprit: dict, record: dict) -> None:
     """Commit the revert on a new branch from origin/main in `tree`."""
-    post_merge.git(root, "worktree", "add", "-B", branch, str(tree), "origin/main")
-    parents = post_merge.git(root, "rev-list", "--parents", "-n", "1", culprit["sha"]).split()
+    gate_worktree.git(root, "worktree", "add", "-B", branch, str(tree), "origin/main")
+    parents = gate_worktree.git(root, "rev-list", "--parents", "-n", "1", culprit["sha"]).split()
     options = ["-m", "1"] if len(parents) > 2 else []
     try:
         run_command(["git", "revert", "--no-commit", *options, culprit["sha"]], tree)
@@ -209,8 +212,8 @@ def revert_culprit(root: Path, record: dict, culprit: dict, apply: bool, gh: lis
     except RuntimeError as error:
         return Revert(culprit["sha"], branch, title, "failed", reason=str(error))
     finally:
-        post_merge.git(root, "worktree", "remove", "--force", str(tree), check=False)
-        post_merge.git(root, "branch", "-D", branch, check=False)
+        gate_worktree.git(root, "worktree", "remove", "--force", str(tree), check=False)
+        gate_worktree.git(root, "branch", "-D", branch, check=False)
     # Its own branch, merged: best effort, a leftover branch is harmless.
     subprocess.run(["git", "push", "origin", "--delete", branch], cwd=root, capture_output=True)
     return Revert(culprit["sha"], branch, title, "merged", pr=url)
@@ -219,7 +222,7 @@ def revert_culprit(root: Path, record: dict, culprit: dict, apply: bool, gh: lis
 def classify(record: dict) -> str:
     if record.get("result") == "pass":
         return "green"
-    if record.get("result") == post_merge.NEEDS_MEASUREMENT:
+    if record.get("result") == post_merge_editor.NEEDS_MEASUREMENT:
         return "needs-measurement"
     if record.get("result") == "flaky":
         return "flaky"
@@ -239,7 +242,7 @@ def decide(root: Path, record: dict, apply: bool, gh: list[str], scratch: Path) 
                     "skipped": "red-not-reverted", "failed": "red-revert-failed"}
         return outcomes[revert.state], revert
     outcomes = {"green": "green", "flaky": "flaky", "ambiguous": "red-ambiguous", "unknown": "red-unknown",
-                "needs-measurement": post_merge.NEEDS_MEASUREMENT}
+                "needs-measurement": post_merge_editor.NEEDS_MEASUREMENT}
     return outcomes[kind], None
 
 
@@ -249,7 +252,7 @@ def new_commits(root: Path, last: str | None, head: str) -> list[str]:
     known = subprocess.run(["git", "cat-file", "-e", f"{last}^{{commit}}"], cwd=root, capture_output=True)
     if known.returncode:
         return [head]
-    return post_merge.git(root, "rev-list", "--first-parent", "--reverse", f"{last}..{head}",
+    return gate_worktree.git(root, "rev-list", "--first-parent", "--reverse", f"{last}..{head}",
                           check=False).split()
 
 
@@ -277,8 +280,8 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
     status_path = health / STATUS_FILE
     status = read_json(status_path)
     gh = arguments.gh.split()
-    post_merge.git(root, "fetch", "origin", "main")
-    head = post_merge.git(root, "rev-parse", "origin/main")
+    gate_worktree.git(root, "fetch", "origin", "main")
+    head = gate_worktree.git(root, "rev-parse", "origin/main")
     commits = new_commits(root, status.get("last_sha"), head)
     base = {**status, "head": head, "dry_run": not arguments.apply,
             "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
@@ -301,7 +304,7 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
         write_json(status_path, {**base, "result": "infrastructure", "note": "the gate could not run"})
         print("main_watch: the gate could not run; nothing was recorded or reverted", file=sys.stderr)
         return INFRASTRUCTURE_EXIT
-    scratch = Path(tempfile.mkdtemp(prefix="soyeht-main-watch-", dir=post_merge.scratch_root()))
+    scratch = Path(tempfile.mkdtemp(prefix="soyeht-main-watch-", dir=gate_worktree.scratch_root()))
     try:
         result, revert = decide(root, record, arguments.apply, gh, scratch)
     finally:
@@ -318,13 +321,13 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
     }
     # A dry run leaves the pass open for a later --apply; so does a missing measurement, which
     # runs again (cheaply, from the record) until a report for its hash is given.
-    if arguments.apply and result != post_merge.NEEDS_MEASUREMENT:
+    if arguments.apply and result != post_merge_editor.NEEDS_MEASUREMENT:
         update["last_sha"] = head
     write_json(status_path, update)
     print(summary(result, head, record, revert, chronic))
     if revert and revert.state in ("failed", "open"):
         return REVERT_FAILED_EXIT
-    if result == post_merge.NEEDS_MEASUREMENT:
+    if result == post_merge_editor.NEEDS_MEASUREMENT:
         return NEEDS_MEASUREMENT_EXIT
     return GREEN_EXIT if result == "green" else RED_EXIT
 
@@ -344,7 +347,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check-all", default="bash scripts/check_all.sh")
     parser.add_argument("--remote", metavar="HOST")
     parser.add_argument("--remote-root", metavar="PATH")
-    parser.add_argument("--editor-meter", metavar="REPORT", default=os.environ.get(post_merge.EDITOR_METER_ENV),
+    parser.add_argument("--editor-meter", metavar="REPORT", default=os.environ.get(post_merge_editor.EDITOR_METER_ENV),
                         help="the VM1 editor measurement for the gate")
     parser.add_argument("--worktree", metavar="DIR", default=os.environ.get(post_merge.WORKTREE_ENV),
                         help="a warm worktree for the gate, kept between runs")

@@ -137,10 +137,11 @@ ADR when you change a boundary.
 - jscpd clones and duplicated lines per area may not grow. The areas are the engine, the
   desktop (and its views at a smaller window), each Swift package, and the Python of
   `scripts/` and `contracts/`.
-- A new Rust or Swift file may not exceed 800 lines. A file already above 800 lines may
-  not grow past its recorded cap. Split it instead. The check does not measure Python
-  (`scripts/`, `contracts/`) or TypeScript yet: the rule still applies to them, but nothing
-  enforces it.
+- A new Rust, Swift or Python file may not exceed 800 lines, tests included. A file already
+  above 800 lines may not grow past its recorded cap. Split it instead. The Python measured
+  is that of `scripts/` and `contracts/` (a generated output, whose first line starts with
+  `# Generated from contracts/`, is exempt). The check does not measure TypeScript yet: the
+  rule still applies to it, but nothing enforces it.
 - Loose Swift padding, corner-radius, system font-size and font-name literals, and the
   numbers `4096` and `512` anywhere in a Rust line of the engine or `apps/desktop` (code, test
   or comment; `limits.rs` and generated files are exempt), may not grow per file. Use a

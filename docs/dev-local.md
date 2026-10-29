@@ -154,7 +154,8 @@ this and nothing else:
   there for `engine:test`. Without `--remote` they run on this machine. A timing-sensitive step (the
   `timing` area and `editor-performance:rust`) records the load average of the host it ran on (`load` in
   the record; `local_load` is the Mac's, in every record, and `remote_gate.sh --print-load` is the host's).
-  The one rerun of such a step that failed with a load over `LOAD_PER_CPU_LIMIT` (1.0 per processor,
+  The one rerun of such a step that failed with a load over `LOAD_PER_CPU_LIMIT` (in
+  `post_merge_hosts.py`; 1.0 per processor,
   `SOYEHT_LOAD_PER_CPU_LIMIT`) waits for the load of that host to drop. All the waiting of a run, the
   rerun and every probe of the culprit search together, shares `LOAD_WAIT_BUDGET_SECONDS` (30 minutes),
   and the ssh that reads the host's load times out after `LOAD_PROBE_TIMEOUT_SECONDS`. A pass is `flaky`
@@ -173,6 +174,19 @@ this and nothing else:
   the engine needs. On a host with Nix (NixOS) the script enters `scripts/linux-gate.nix`
   itself and needs none of that; `--slot NAME` adds a second persistent worktree
   (docs/platforms.md, "A Linux gate host").
+
+### The parts of `post_merge.py`
+
+`scripts/post_merge.py` is the command line and the order of a run. Its parts are modules of
+`scripts/` named `post_merge_*`, so a change to any of them selects the `gate_scripts` area and
+the full tier like a change to `post_merge.py`: `post_merge_gate.py` runs the gate on a commit
+(here, or split with the remote host) and reads the failed step; `post_merge_hosts.py` holds the
+remote host, a host's load and the wait budget; `post_merge_investigate.py` reruns a failing step,
+decides a flake and runs the steps a failed run never reached; `post_merge_culprit.py` is the
+search for the culprit commit; `post_merge_editor.py` is the editor measurement from VM1;
+`post_merge_records.py` writes the records, the history of a `--force` rerun and the final
+report. Their unit tests are the `test_post_merge*.py` files (`test_post_merge_fixtures.py`
+holds the stand-in gate and repository they share).
 
 ### The health directory, flaky steps and the flake ledger
 
