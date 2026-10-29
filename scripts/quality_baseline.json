@@ -13,8 +13,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 359,
-      "duplicated_lines": 3075
+      "clones": 357,
+      "duplicated_lines": 3059
     },
     "ios": {
       "clones": 4,
@@ -236,7 +236,7 @@
   },
   "swallowed_errors": {
     "rust_err_wildcard": 0,
-    "rust_let_underscore": 9,
+    "rust_let_underscore": 0,
     "rust_ok": 0,
     "swift_try_optional": 31
   },

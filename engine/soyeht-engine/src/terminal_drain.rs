@@ -1,19 +1,24 @@
 //! The terminal path of the tick: new output of a shell pane moves from the supervisor into the
 //! pane's screen, and the supervisor is told it may drop what is safe on disk.
 //!
-//! The tick holds the Core lock, so it never waits for the disk (ADR 0079, ADR 0095). It writes
-//! the output to the pane's segment file and goes on; the flush runs on a background worker and
-//! the acknowledgement follows it. The supervisor keeps the output until then, so a crash
-//! before the flush loses nothing: the engine drains it again from its last durable position.
+//! The tick holds the Core lock, so it never waits for the supervisor or the disk (ADR 0079,
+//! ADR 0095, ADR 0117). Each pane has one background job: it asks the supervisor for the new
+//! output with no lock, and the output is put into the screen under the lock when the job is
+//! applied. It writes the output to the pane's segment file and goes on; the flush runs on a
+//! background worker and the acknowledgement follows it, also off the lock. The supervisor
+//! keeps the output until then, so a crash before the flush loses nothing: the engine drains it
+//! again from its last durable position, and so it does for a read that no longer fits the
+//! pane when it is applied.
 
 use crate::{
     core::Core,
     errors::{self, Result},
+    supervisor_handle::Supervisor,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::log;
 use soyeht_protocol::PaneState;
-use soyeht_ptyd::wire::{Request, Response};
+use soyeht_ptyd::wire::{Output, Request, Response};
 use soyeht_store::segments::Record;
 use std::sync::Arc;
 
@@ -22,9 +27,87 @@ fn flush_job(pane_id: &str) -> String {
     format!("pane.flush:{pane_id}")
 }
 
+/// The background job that reads a pane's new output from the supervisor.
+fn drain_job(pane_id: &str) -> String {
+    format!("pane.drain:{pane_id}")
+}
+
+/// What a drain job read from the supervisor, with no lock.
+struct Read {
+    output: Output,
+    /// The exit status the supervisor recorded, looked up when the output says the process
+    /// exited. The supervisor records it just after it marks the process exited, so a status
+    /// that is not there yet stays unknown rather than guessed.
+    exit_code: Option<i64>,
+    /// The output says the process exited and the pane did not know yet. A process that is
+    /// already known to be dead keeps saying so until it is closed; that is not news.
+    exit_news: bool,
+}
+
+/// Where a drain job started, to tell when it is applied whether the pane is still the one it
+/// read for.
+struct Started {
+    instance_id: String,
+    sequence_base: u64,
+    next: u64,
+    supervisor: Supervisor,
+}
+
+/// Whether a drain found something the tick should apply at once: output, a gap, an exit the
+/// pane did not know, or an error (a lost link is dropped when its error is applied).
+fn has_news(read: &Result<Read>) -> bool {
+    !read.as_ref().is_ok_and(|read| {
+        read.output.bytes.is_empty() && !read.exit_news && read.output.gap.is_none()
+    })
+}
+
+fn read_output(
+    supervisor: &Supervisor,
+    instance_id: &str,
+    from_seq: u64,
+    look_up_exit: bool,
+) -> Result<Read> {
+    let Response::Output(output) = supervisor.call(Request::Drain {
+        instance_id: instance_id.to_owned(),
+        from_seq,
+    })?
+    else {
+        return Err(errors::ptyd_unavailable("Invalid output response"));
+    };
+    let exit_news = output.exited && look_up_exit;
+    let exit_code = if exit_news {
+        exit_code_of(supervisor, instance_id)?
+    } else {
+        None
+    };
+    Ok(Read {
+        output,
+        exit_code,
+        exit_news,
+    })
+}
+
+/// The exit status the supervisor recorded for an instance, if it has recorded one.
+fn exit_code_of(supervisor: &Supervisor, instance_id: &str) -> Result<Option<i64>> {
+    let Response::Instances(instances) = supervisor.call(Request::List)? else {
+        return Err(errors::ptyd_unavailable("Invalid process registry"));
+    };
+    Ok(instances
+        .iter()
+        .find(|i| i.instance_id == instance_id)
+        .and_then(|i| i.exit_code)
+        .map(i64::from))
+}
+
 impl Core {
-    /// Takes what the supervisor holds for the shell pane `id` into its screen.
+    /// Starts reading what the supervisor holds for the shell pane `id`, unless the last read
+    /// of the pane has not been applied yet. The read is applied by
+    /// [`Core::finish_terminal_drain`].
     pub(crate) fn drain_terminal(&mut self, id: &str) -> Result<()> {
+        let job = drain_job(id);
+        if !self.background.accepts(&job) {
+            return Ok(());
+        }
         let saved = self.panes[id].stored.clone();
         let instance_id = errors::invariant(
             saved.instance_id.clone(),
@@ -32,13 +115,52 @@ impl Core {
         )?;
         let next = self.panes[id].screen.next_offset();
         let seq = next.saturating_sub(saved.sequence_base);
-        let Response::Output(output) = self.pty_request(Request::Drain {
+        let supervisor = self.supervisor()?;
+        let started = Started {
             instance_id: instance_id.clone(),
-            from_seq: seq,
-        })?
-        else {
-            return Err(errors::ptyd_unavailable("Invalid output response"));
+            sequence_base: saved.sequence_base,
+            next,
+            supervisor: supervisor.clone(),
         };
+        let look_up_exit = saved.pane.state != PaneState::Dead;
+        let pane_id = id.to_owned();
+        self.spawn_prompt_background(
+            job,
+            move || read_output(&supervisor, &instance_id, seq, look_up_exit),
+            move |core, read| core.finish_terminal_drain(&pane_id, &started, read),
+            has_news,
+        )
+    }
+
+    /// Puts what a drain job read into the screen of pane `id`. A read that no longer fits the
+    /// pane (its process was replaced, it closed, or its screen moved) is dropped: the
+    /// supervisor still holds the output.
+    fn finish_terminal_drain(
+        &mut self,
+        id: &str,
+        started: &Started,
+        read: Result<Read>,
+    ) -> Result<()> {
+        // A failed read on a link that was replaced meanwhile says nothing about the new one.
+        let Some(Read {
+            output, exit_code, ..
+        }) = self.settle_if_current(&started.supervisor, read)?
+        else {
+            return Ok(());
+        };
+        let Some(running) = self.panes.get(id) else {
+            return Ok(());
+        };
+        let saved = running.stored.clone();
+        if saved.closed
+            || saved.instance_id.as_deref() != Some(started.instance_id.as_str())
+            || saved.sequence_base != started.sequence_base
+            || running.screen.next_offset() != started.next
+            || self.agents.contains_key(id)
+            || self.capture_restore_pending(id)
+        {
+            return Ok(());
+        }
         let running = errors::invariant(
             self.panes.get_mut(id),
             "Pane disappeared while polling output",
@@ -78,14 +200,11 @@ impl Core {
         if taken {
             running.screen.take_in_through(output.next_seq);
         }
-        self.acknowledge_when_durable(id, &instance_id)?;
+        self.acknowledge_when_durable(id, &started.instance_id)?;
         if let Some(bytes) = capture_bytes {
             self.observe_terminal(id, bytes)?;
         }
         if output.exited && saved.pane.state != PaneState::Dead {
-            // The supervisor records the status just after it marks the process exited,
-            // so a status that is not there yet stays unknown rather than guessed.
-            let exit_code = self.exit_code_of(&instance_id)?;
             let mut dead = saved;
             dead.pane.exit_code = exit_code;
             dead.pane.state = PaneState::Dead;
@@ -96,8 +215,8 @@ impl Core {
     }
 
     /// Tells the supervisor it may drop the output of pane `id` once that output is on the
-    /// disk. The flush runs off the lock, one at a time per pane; output that arrives while
-    /// it runs is flushed by the next one.
+    /// disk. The flush and the acknowledgement run off the lock, one job at a time per pane;
+    /// output that arrives while it runs is flushed by the next one.
     fn acknowledge_when_durable(&mut self, id: &str, instance_id: &str) -> Result<()> {
         let job = flush_job(id);
         if !self.background.accepts(&job) {
@@ -110,29 +229,41 @@ impl Core {
         else {
             return Ok(());
         };
-        let instance_id = instance_id.to_owned();
-        if !durable.pending() {
-            // Nothing was written to the disk (recording is off): nothing to wait for.
-            let acknowledged = self.acknowledge(&instance_id, durable.through);
-            if acknowledged.is_err() {
-                self.owe_acknowledgement(id, durable.through);
+        let supervisor = match self.supervisor() {
+            Ok(supervisor) => supervisor,
+            Err(error) => {
+                if let Some(running) = self.panes.get_mut(id) {
+                    running.screen.restore_durable(&durable);
+                }
+                return Err(error);
             }
-            return acknowledged;
-        }
+        };
+        let request = Request::Ack {
+            instance_id: instance_id.to_owned(),
+            seq: durable.through,
+        };
         let pane_id = id.to_owned();
         let durable = Arc::new(durable);
         let (waiting, applying) = (Arc::clone(&durable), Arc::clone(&durable));
+        let used = supervisor.clone();
         let started = self.spawn_background(
             job,
-            move || waiting.flush(),
+            move || {
+                // With nothing written to the disk (recording is off) there is nothing to wait
+                // for.
+                if waiting.pending() {
+                    waiting.flush()?;
+                }
+                Ok(supervisor.call(request))
+            },
             move |core, flushed| match flushed {
-                Ok(()) => {
-                    let acknowledged = core.acknowledge(&instance_id, applying.through);
-                    if acknowledged.is_err() {
+                Ok(acknowledged) => {
+                    let acknowledged = core.settle_if_current(&used, acknowledged);
+                    if !matches!(acknowledged, Ok(Some(_))) {
                         // The flush is done: only the acknowledgement is owed again.
                         core.owe_acknowledgement(&pane_id, applying.through);
                     }
-                    acknowledged
+                    acknowledged.map(drop)
                 }
                 Err(error) => {
                     // The next flush retries what this one could not do.
@@ -157,26 +288,6 @@ impl Core {
         if let Some(running) = self.panes.get_mut(id) {
             running.screen.take_in_through(through);
         }
-    }
-
-    fn acknowledge(&mut self, instance_id: &str, seq: u64) -> Result<()> {
-        self.pty_request(Request::Ack {
-            instance_id: instance_id.to_owned(),
-            seq,
-        })
-        .map(|_| ())
-    }
-
-    /// The exit status the supervisor recorded for an instance, if it has recorded one.
-    fn exit_code_of(&mut self, instance_id: &str) -> Result<Option<i64>> {
-        let Response::Instances(instances) = self.pty_request(Request::List)? else {
-            return Err(errors::ptyd_unavailable("Invalid process registry"));
-        };
-        Ok(instances
-            .iter()
-            .find(|i| i.instance_id == instance_id)
-            .and_then(|i| i.exit_code)
-            .map(i64::from))
     }
 }
 
@@ -256,7 +367,7 @@ mod tests {
         let id = insert_terminal_pane(&mut core, &root, "shell", false);
         core.panes.get_mut(&id).unwrap().screen.recording = recording;
         let acknowledged = Arc::new(Mutex::new(Vec::new()));
-        core.ptyd = Some(Box::new(Holding {
+        core.link_supervisor(Box::new(Holding {
             output: VecDeque::from(["hello", " world"]),
             position: 0,
             acknowledged: Arc::clone(&acknowledged),
@@ -277,11 +388,27 @@ mod tests {
         }
     }
 
+    /// Starts a read of pane `id` and applies it, as the next ticks do.
+    fn drain_and_apply(core: &mut Core, id: &str) {
+        core.drain_terminal(id).unwrap();
+        apply_read(core, id);
+    }
+
+    /// Applies finished jobs until the read of pane `id` has been applied.
+    fn apply_read(core: &mut Core, id: &str) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while core.background.is_active(&drain_job(id)) {
+            assert!(Instant::now() < deadline, "the read was never applied");
+            core.apply_background();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
     #[test]
     fn output_is_acknowledged_only_after_its_flush() {
         let (mut core, acknowledged, root, id) = core_with_output(true);
 
-        core.drain_terminal(&id).unwrap();
+        drain_and_apply(&mut core, &id);
 
         // The tick wrote the output and went on: the supervisor still holds it.
         assert!(acknowledged.lock().unwrap().is_empty());
@@ -290,7 +417,7 @@ mod tests {
         assert_eq!(*acknowledged.lock().unwrap(), vec![5]);
 
         // Output that arrives later is flushed and acknowledged by the next job.
-        core.drain_terminal(&id).unwrap();
+        drain_and_apply(&mut core, &id);
         wait_for_acknowledgements(&mut core, &acknowledged, 2);
         assert_eq!(*acknowledged.lock().unwrap(), vec![5, 11]);
         crate::test_paths::remove_after(core, root);
@@ -300,8 +427,10 @@ mod tests {
     fn output_nobody_records_is_acknowledged_at_once() {
         let (mut core, acknowledged, root, id) = core_with_output(false);
 
-        core.drain_terminal(&id).unwrap();
+        drain_and_apply(&mut core, &id);
 
+        // Nothing waits for the disk: the job only asks the supervisor.
+        wait_for_acknowledgements(&mut core, &acknowledged, 1);
         assert_eq!(*acknowledged.lock().unwrap(), vec![5]);
         crate::test_paths::remove_after(core, root);
     }
@@ -353,5 +482,63 @@ mod tests {
         assert!(acknowledged.lock().unwrap()[0] >= 5);
         assert_eq!(core.panes[&id].screen.next_offset(), 11);
         crate::test_paths::remove_after(core, root);
+    }
+
+    #[test]
+    fn a_read_for_a_process_that_was_replaced_meanwhile_is_dropped() {
+        let (mut core, acknowledged, root, id) = core_with_output(true);
+        core.drain_terminal(&id).unwrap();
+        // The pane's process is replaced while the supervisor answers.
+        core.panes.get_mut(&id).unwrap().stored.instance_id = Some("replacement".into());
+        apply_read(&mut core, &id);
+
+        // Nothing of the old process reached the screen, and nothing was acknowledged: the
+        // supervisor still holds the output.
+        assert_eq!(core.panes[&id].screen.next_offset(), 0);
+        assert!(acknowledged.lock().unwrap().is_empty());
+        crate::test_paths::remove_after(core, root);
+    }
+
+    #[test]
+    fn a_drain_that_finds_the_link_gone_drops_it() {
+        let (mut core, _, root, id) = core_with_output(true);
+        core.link_supervisor(Box::new(crate::ports::testing::FakeSupervisor::default()));
+
+        // The fake has no answer for a drain: its transport failed.
+        drain_and_apply(&mut core, &id);
+
+        assert!(core.ptyd.is_none());
+        crate::test_paths::remove_after(core, root);
+    }
+
+    /// The answers of a supervisor whose process exited: every drain says so, as it does until
+    /// the process is closed, and the registry lists nothing.
+    fn exited() -> Supervisor {
+        let output = |from_seq| {
+            Ok(Response::Output(Output {
+                from_seq,
+                next_seq: from_seq,
+                end_seq: from_seq,
+                bytes: String::new(),
+                gap: None,
+                exited: true,
+            }))
+        };
+        Supervisor::new(Box::new(crate::ports::testing::FakeSupervisor {
+            responses: VecDeque::from([output(0), Ok(Response::Instances(Vec::new()))]),
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    fn a_dead_pane_that_is_still_open_does_not_wake_the_tick() {
+        // The pane already knows its process is dead: the read says it again, which is no news.
+        let known = read_output(&exited(), "instance", 0, false).unwrap();
+        assert!(known.output.exited);
+        assert!(!has_news(&Ok(known)));
+
+        // The first time it is news, and the exit status is looked up.
+        let fresh = read_output(&exited(), "instance", 0, true).unwrap();
+        assert!(has_news(&Ok(fresh)));
     }
 }

@@ -206,7 +206,7 @@ mod tests {
                     message_seq: None,
                 },
             );
-        core.ptyd = Some(Box::new(Spawning {
+        core.link_supervisor(Box::new(Spawning {
             failures: Default::default(),
             spawns: 0,
             close_failure: Some(wire_kind::OPERATION_FAILED),

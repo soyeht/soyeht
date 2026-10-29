@@ -9,6 +9,7 @@ use crate::{
     core::Core,
     errors::{self, Error, Result},
     streak::Streak,
+    supervisor_handle::Supervisor,
 };
 use soyeht_platform::{
     log::{self, Failure as _, Line},
@@ -18,7 +19,7 @@ use soyeht_protocol::{
     PaneState,
     profile::{PTYD_LOG, PTYD_SOCKET},
 };
-use soyeht_ptyd::wire_kind;
+use soyeht_ptyd::{client::Client, wire_kind};
 use std::{collections::BTreeMap, io, path::PathBuf};
 
 /// Delay after the first failed attempt is twice this; the delay doubles up to the cap.
@@ -38,6 +39,8 @@ const START_GRACE_MS: i64 = 15_000;
 const PROBE_GRACE_MS: i64 = 5_000;
 /// The background job that starts the supervisor, so there is one at a time.
 const START_JOB: &str = "supervisor.start";
+/// The background job that connects to the supervisor, so there is one at a time.
+const CONNECT_JOB: &str = "supervisor.connect";
 
 /// Why a pane that could not be restarted says it stopped; it names no path or command.
 const NOT_RESTARTED: &str = "The pane's working folder or command is missing";
@@ -178,6 +181,11 @@ impl Core {
     /// tick's own failure log cannot alternate with it.
     pub(crate) fn ensure_supervisor(&mut self) -> Link {
         let now = self.now_ms();
+        if self.ptyd.as_ref().is_some_and(Supervisor::is_broken) {
+            // A call left the stream in an unknown state: it is not used again, whatever the
+            // jobs that failed on it have yet to settle.
+            self.lose_supervisor_link();
+        }
         if self.ptyd.is_some() {
             self.settle_link(now);
             return Link::Up;
@@ -195,24 +203,65 @@ impl Core {
         if now < self.supervisor_retry.due_ms {
             return Link::Down;
         }
-        match self.connect_supervisor() {
+        self.start_connect();
+        // The connection is made off the lock and joined by a later tick, unless a test runs
+        // its jobs in the caller.
+        if self.ptyd.is_some() {
+            Link::Up
+        } else {
+            Link::Down
+        }
+    }
+
+    /// Starts the job that connects to the supervisor, unless one is running. The connection
+    /// waits for the supervisor's welcome for up to five seconds, so it never runs under the
+    /// lock; the registry is reconciled under it when the job is applied.
+    fn start_connect(&mut self) {
+        let socket = self.directory.join(PTYD_SOCKET);
+        let generation = self.generation;
+        // On a thread of its own: connecting to a socket of the local system can wait for as
+        // long as the supervisor does not accept (a full backlog), and a shared worker must not
+        // wait with it. One attempt runs at a time, so at most one such thread exists.
+        self.background.run_alone(CONNECT_JOB);
+        let started = self.spawn_background(
+            CONNECT_JOB.into(),
+            move || {
+                Client::connect(&socket, generation)
+                    .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))
+            },
+            move |core, connected| {
+                core.finish_connect(connected);
+                Ok(())
+            },
+        );
+        if let Err(error) = started {
+            self.connect_failed(&error);
+        }
+    }
+
+    /// Joins the connection a job made: reconciles the registry with the panes, or records the
+    /// failure by the retry streak and starts the supervisor when the engine was told how.
+    fn finish_connect(&mut self, connected: Result<Client>) {
+        let now = self.now_ms();
+        match connected.and_then(|client| self.adopt_supervisor(client)) {
             Ok(()) => {
                 // The reconciliation that made the link starts every pane that has no process.
                 self.supervisor_retry.spawn_retries.clear();
                 self.supervisor_retry.close_retries.clear();
                 self.supervisor_retry.connected_ms = Some(now);
-                Link::Up
             }
-            Err(error) => {
-                if self.supervisor_retry.streak.fail(&error.failure_kind()) {
-                    log::failure("engine.supervisor_unavailable", &error);
-                }
-                self.supervisor_retry.due_ms =
-                    now.saturating_add(self.supervisor_retry.streak.next_delay_ms());
-                self.start_supervisor(now);
-                Link::Down
-            }
+            Err(error) => self.connect_failed(&error),
         }
+    }
+
+    fn connect_failed(&mut self, error: &Error) {
+        let now = self.now_ms();
+        if self.supervisor_retry.streak.fail(&error.failure_kind()) {
+            log::failure("engine.supervisor_unavailable", error);
+        }
+        self.supervisor_retry.due_ms =
+            now.saturating_add(self.supervisor_retry.streak.next_delay_ms());
+        self.start_supervisor(now);
     }
 
     /// Ends the failure streak once the link has stayed up for [`STABLE_MS`].
@@ -380,6 +429,8 @@ pub(crate) mod tests {
         let directory = short_directory();
         let supervisor = HangUp::start(&directory, welcome);
         let mut core = Core::open(&directory).unwrap();
+        // Each attempt is made and settled in its tick, so the burst counts every one.
+        core.background = crate::offload::Background::inline();
         let opened = supervisor.accepted();
         for _ in 0..500 {
             assert!(core.poll_output().is_ok());
@@ -406,6 +457,8 @@ pub(crate) mod tests {
         let mut core = Core::open(&directory).unwrap();
         let clock = Arc::new(Manual(AtomicI64::new(1_000_000)));
         core.clock = clock.clone();
+        // The connection job runs and applies in the caller, for determinism.
+        core.background = crate::offload::Background::inline();
         core.supervisor_retry.connected_ms = Some(999_000);
         assert_eq!(core.ensure_supervisor(), Link::Down);
         assert_eq!(core.supervisor_retry.streak.attempts(), 1);
@@ -541,11 +594,11 @@ pub(crate) mod tests {
     fn only_a_refused_spawn_stops_a_pane() {
         let directory = short_directory();
         let mut core = Core::open(&directory).unwrap();
-        core.ptyd = Some(Box::new(FakeSupervisor::default()));
+        core.link_supervisor(Box::new(FakeSupervisor::default()));
         assert!(core.refused_by_supervisor(&remote(wire_kind::SPAWN_REFUSED)));
         core.ptyd = None;
         assert!(!core.refused_by_supervisor(&remote(wire_kind::SPAWN_REFUSED)));
-        core.ptyd = Some(Box::new(FakeSupervisor::default()));
+        core.link_supervisor(Box::new(FakeSupervisor::default()));
         for kind in [
             // A spawn that failed for lack of a resource or time may succeed on the next try.
             wire_kind::SPAWN_FAILED,
@@ -599,7 +652,7 @@ pub(crate) mod tests {
         pane.stored.instance_id = None;
         pane.stored.supervisor_id = None;
         let calls = Arc::new(AtomicUsize::new(0));
-        core.ptyd = Some(Box::new(Scripted {
+        core.link_supervisor(Box::new(Scripted {
             responses: responses.into(),
             calls: Arc::clone(&calls),
         }));
@@ -711,6 +764,7 @@ pub(crate) mod tests {
         // The registry the engine reconciles is empty: this test is about the link.
         core.panes.remove(&id);
         serve_registry(&directory);
+        core.background = crate::offload::Background::inline();
         assert_eq!(core.ensure_supervisor(), Link::Up);
         assert!(core.ptyd.is_some());
         assert_eq!(

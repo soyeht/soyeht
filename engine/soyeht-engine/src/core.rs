@@ -3,8 +3,9 @@ use crate::{
     hooks::{Hooks, NoHooks},
     model::{self, Connected, RunningPane, StoredPane, Waiter},
     offload::SharedPort,
-    ports::{Clock, StorePort, SupervisorPort, SystemClock, call_supervisor},
+    ports::{Clock, StorePort, SystemClock},
     screen::Screen,
+    supervisor_handle::Supervisor,
     tasks::{revision::GitRevision, worktree::CommandWorktree},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -31,7 +32,13 @@ pub struct Core {
     pub directory: PathBuf,
     pub generation: u64,
     pub(crate) catalog_epoch: u64,
-    pub ptyd: Option<Box<dyn SupervisorPort>>,
+    pub ptyd: Option<Supervisor>,
+    /// Requests to the supervisor nobody waits for, in the order they were made (see
+    /// `Core::send_later`).
+    pub(crate) supervisor_later: Vec<Request>,
+    /// The last send to each process that is ordered against the ones after it (see
+    /// `Core::turn`).
+    pub(crate) send_turns: BTreeMap<String, Arc<crate::offload::Done>>,
     pub(crate) supervisor_retry: crate::supervisor_link::Retry,
     pub clock: Arc<dyn Clock>,
     /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
@@ -132,6 +139,8 @@ impl Core {
             generation,
             catalog_epoch: 0,
             ptyd: None,
+            supervisor_later: Vec::new(),
+            send_turns: BTreeMap::new(),
             supervisor_retry: Default::default(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
@@ -211,6 +220,8 @@ impl Core {
         }
         // The supervisor can start after the engine under the service manager.
         // No process is declared dead until its registry has been reconciled.
+        // ignored: the engine is not shared yet; the tick connects again and logs a failure with
+        // its streak (`ensure_supervisor`).
         let _ = core.connect_supervisor();
         core.system_event(event::ENGINE_RESTARTED, json!({"generation":generation}))?;
         Ok(core)
@@ -366,30 +377,20 @@ impl Core {
         }
     }
 
+    /// Sends `request` to the supervisor and waits for the answer, with the Core lock held.
+    /// Only for what has not moved off the lock yet; `tests/blocking_io_rule.rs` counts the
+    /// callers (ADR 0117).
     pub fn pty_request(&mut self, request: Request) -> Result<Response> {
-        let result = call_supervisor(
-            self.ptyd
-                .as_mut()
-                .ok_or_else(|| errors::ptyd_unavailable(soyeht_protocol::SUPERVISOR_DISCONNECTED))?
-                .as_mut(),
-            request,
-        );
-        match result {
-            Err(error) if errors::supervisor_link_lost(&error) => {
-                self.lose_supervisor_link();
-                // The caller still gets ptyd_unavailable.
-                Err(errors::ptyd_unavailable(
-                    soyeht_protocol::SUPERVISOR_DISCONNECTED,
-                ))
-            }
-            result => result,
-        }
+        let supervisor = self.supervisor()?;
+        let result = supervisor.call(request);
+        self.settle_supervisor(&supervisor, result)
     }
 
     /// Drops the link to the supervisor and records `ptyd.lost`. A lost event that cannot be
     /// recorded must at least reach the log.
     pub(crate) fn lose_supervisor_link(&mut self) {
         self.ptyd = None;
+        self.supervisor_later.clear();
         if let Err(error) = self.system_event(
             event::PTYD_LOST,
             json!({"reason":"Supervisor connection closed"}),
@@ -401,7 +402,13 @@ impl Core {
     pub fn connect_supervisor(&mut self) -> Result<()> {
         let client = Client::connect(&self.directory.join(PTYD_SOCKET), self.generation)
             .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))?;
-        self.ptyd = Some(Box::new(client));
+        self.adopt_supervisor(client)
+    }
+
+    /// Makes `client` the link, reconciles the registry with the panes and records the
+    /// reconnection; the link is dropped again when the reconciliation fails.
+    pub(crate) fn adopt_supervisor(&mut self, client: Client) -> Result<()> {
+        self.link_supervisor(Box::new(client));
         let result = self.reconcile_registry();
         if result.is_err() {
             self.ptyd = None;
@@ -653,6 +660,7 @@ impl Core {
         if self.ensure_supervisor() == crate::supervisor_link::Link::Down {
             return Ok(());
         }
+        self.flush_later();
         self.isolated("spawn_retries", Self::advance_spawn_retries);
         self.isolated("close_retries", Self::advance_close_retries);
         self.isolated("harness_switches", Self::advance_harness_switches);

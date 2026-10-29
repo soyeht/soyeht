@@ -393,7 +393,7 @@ impl Core {
             method::PANE_EXPERIMENT_SET => return self.pane_experiment_set(connection, params),
             method::PANE_EXPERIMENT_EXPORT => self.export_experiment(connection, params)?,
             method::PANE_EXPERIMENT_HOOK => return self.pane_experiment_hook(connection, params),
-            method::PANE_INPUT => self.pane_input(connection, params)?,
+            method::PANE_INPUT => return self.pane_input(connection, params),
             method::PANE_HARNESS_SWITCH => self.agent_harness_switch(connection, params)?,
             method::PANE_ROLE_SET => self.pane_role_set(connection, params)?,
             method::PANE_AUTH_START | method::PANE_AUTH_CANCEL | method::PANE_AUTH_LOGOUT => {

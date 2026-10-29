@@ -542,7 +542,7 @@ mod tests {
     fn recording_core(root: &Path, cell: &'static EngineBuildCell) -> (Core, Arc<Mutex<Vec<u64>>>) {
         let mut core = terminal_core(root, true, cell);
         let drains = Arc::new(Mutex::new(Vec::new()));
-        core.ptyd = Some(Box::new(Recorder {
+        core.link_supervisor(Box::new(Recorder {
             drains: Arc::clone(&drains),
             generation: core.generation as u32,
         }));
@@ -566,7 +566,11 @@ mod tests {
         tick_until(&mut core, "the capture was never restored", |core| {
             !core.terminal_captures.is_empty()
         });
-        core.poll_output().unwrap();
+        // The read starts with the tick, is made by a job, and reaches the screen and the
+        // capture when it is applied.
+        tick_until(&mut core, "the pane never drained", |core| {
+            core.panes[PANE].screen.next_offset() > 0
+        });
         assert_eq!(drains.lock().unwrap().first(), Some(&0));
         // Closing the capture lets its worker write what it was given.
         drop(core.terminal_captures.remove(PANE));
@@ -598,7 +602,10 @@ mod tests {
         assert!(!core.capture_restore_pending(PANE));
         assert!(stop_reason(&core).contains("not known within 60 s"));
         assert!(core.terminal_captures.is_empty());
-        core.poll_output().unwrap();
+        // The read starts with the tick and is made by a job; the pane drains again.
+        tick_until(&mut core, "the pane never drained", |_| {
+            !drains.lock().unwrap().is_empty()
+        });
         assert_eq!(drains.lock().unwrap().first(), Some(&0));
         // The hash that ends later restores nothing.
         GATE.release();

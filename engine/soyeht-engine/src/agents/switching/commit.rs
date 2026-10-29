@@ -157,10 +157,11 @@ impl Core {
                 .screen
                 .append_data(candidate_base, std::mem::take(&mut candidate.raw_output))?;
         }
-        let _ = self.pty_request(Request::Ack {
+        // Flow control only: a missed ack keeps output retained until the next one.
+        self.send_later(Request::Ack {
             instance_id: candidate.instance.instance_id.clone(),
             seq: self.agents[pane].state.acknowledged_offset,
-        }); // Flow control only: a missed ack keeps output retained until the next one.
+        });
         Ok(())
     }
 

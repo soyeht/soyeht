@@ -21,19 +21,33 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut prune = 0_u32;
     let mut streak = Streak::once();
+    let woken = core_lock::with(&core, "tick_wake", |core| Ok(core.background.woken())).await?;
     loop {
-        ticks.tick().await;
-        let result = core_lock::with(&core, "tick", move |core| {
-            let output = core.poll_output();
-            let streams = core.pump_streams();
-            if prune == 0 {
-                core.store.prune().map_err(crate::errors::storage)?;
+        let result = tokio::select! {
+            _ = ticks.tick() => {
+                let due_prune = prune == 0;
+                prune = (prune + 1) % PRUNE_EVERY_TICKS;
+                core_lock::with(&core, "tick", move |core| {
+                    let output = core.poll_output();
+                    let streams = core.pump_streams();
+                    if due_prune {
+                        core.store.prune().map_err(crate::errors::storage)?;
+                    }
+                    output.and(streams)
+                })
+                .await
             }
-            output.and(streams)
-        })
-        .await;
+            // A job asked to be applied at once (a terminal read that found output): apply it
+            // and send what it brought now, and leave the rest of the tick to its turn.
+            () = woken.notified() => {
+                core_lock::with(&core, "background", |core| {
+                    core.apply_background();
+                    core.pump_streams()
+                })
+                .await
+            }
+        };
         crate::slow_holds::emit_due();
-        prune = (prune + 1) % PRUNE_EVERY_TICKS;
         match result {
             Ok(()) => {
                 streak.succeed();

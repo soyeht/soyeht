@@ -1,7 +1,10 @@
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
+    offload::Offload,
     ports::StorePort,
+    supervisor_handle,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -49,7 +52,10 @@ fn resolve_intent(
 }
 
 impl Core {
-    pub fn pane_input(&mut self, connection: &str, params: &Value) -> Result<Value> {
+    /// `pane.input`: the durable intent is recorded under the lock, the bytes go to the
+    /// supervisor with no lock, and the receipt is made durable under it (ADR 0117). The
+    /// connection answers its next request only after this one, so inputs keep their order.
+    pub fn pane_input(&mut self, connection: &str, params: &Value) -> Result<Outcome> {
         let id = errors::param_str(params, "paneId")?;
         let saved = self
             .panes
@@ -69,39 +75,70 @@ impl Core {
             "Terminal process has no adopted supervisor",
         )?;
         let scope = self.clients[connection].scope.clone();
-        let key = errors::param_str(params, "idempotencyKey")?;
+        let key = errors::param_str(params, "idempotencyKey")?.to_owned();
         let fingerprint = STANDARD.encode(crate::auth::token_hash(
             &json!([PANE_INPUT, params]).to_string(),
         ));
+        let bytes = errors::param_str(params, "bytes")?.to_owned();
         // The durable intent precedes the irreversible supervisor write. Only
         // a digest is retained; input bytes may contain credentials.
         let operation_key = resolve_intent(
             &mut self.store,
             &scope,
-            key,
+            &key,
             &fingerprint,
             &supervisor,
             &instance,
             Uuid::new_v4().to_string(),
         )?;
-        let Response::Accepted { bytes } = self.pty_request(Request::Input {
+        let link = self.supervisor()?;
+        let used = link.clone();
+        // The input reaches the supervisor after every send to this process that was made
+        // before it, from whichever thread: the queued ones go in front of it, and its turn
+        // follows the sends already on their way (and the inputs dispatched before it).
+        let carried = self.take_later_for(&instance);
+        let turn = self.turn(&[&instance]);
+        let request = Request::Input {
             instance_id: instance,
-            bytes: errors::param_str(params, "bytes")?.into(),
+            bytes,
             operation_key: operation_key.clone(),
             fingerprint,
-        })?
-        else {
-            return Err(errors::ptyd_unavailable("Invalid input receipt"));
         };
-        let result = self
-            .mutate(connection, PANE_INPUT, params, |tx| {
-                tx.remove_input_intent(&scope, key)?;
-                Ok((json!({"acceptedBytes":bytes}), vec![]))
-            })?
-            .result;
-        // Once the engine receipt is durable, retries are answered by SQLite.
-        let _ = self.pty_request(Request::ConfirmInput { operation_key });
-        Ok(result)
+        let (connection, params) = (connection.to_owned(), params.clone());
+        Ok(Outcome::Offload(Offload::new(
+            "Supervisor input timed out",
+            supervisor_handle::DEADLINE,
+            {
+                let carried = carried.clone();
+                move || {
+                    turn.wait();
+                    // The request ran out of time before its turn came: nothing is sent.
+                    let earlier = carried
+                        .take()
+                        .ok_or_else(|| errors::internal("Input timed out before its turn"))?;
+                    let earlier = link.call_each(earlier);
+                    Ok((earlier, link.call(request)))
+                }
+            },
+            move |core, sent| {
+                // Whatever the work did not take is sent after all, by the follow-up job.
+                core.requeue_later(&carried);
+                let (earlier, receipt) = sent?;
+                core.settle_follow_ups(&used, earlier);
+                let Response::Accepted { bytes } = core.settle_supervisor(&used, receipt)? else {
+                    return Err(errors::ptyd_unavailable("Invalid input receipt"));
+                };
+                let result = core
+                    .mutate(&connection, PANE_INPUT, &params, |tx| {
+                        tx.remove_input_intent(&scope, &key)?;
+                        Ok((json!({"acceptedBytes":bytes}), vec![]))
+                    })?
+                    .result;
+                // Once the engine receipt is durable, retries are answered by SQLite.
+                core.send_later(Request::ConfirmInput { operation_key });
+                Ok(Outcome::Reply(result))
+            },
+        )))
     }
 }
 

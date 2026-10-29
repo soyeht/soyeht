@@ -205,6 +205,9 @@ pub struct Background {
     alone: BTreeSet<String>,
     /// The signal of each job running alone, so a request can wait for it off the lock.
     done: BTreeMap<String, Arc<Done>>,
+    /// Raised by a job that asked to be applied at once (see `Core::spawn_prompt_background`),
+    /// so the tick applies it without waiting for its next turn.
+    wake: Arc<tokio::sync::Notify>,
 }
 
 /// Set when a job on a thread of its own has ended and its result waits to be applied.
@@ -214,16 +217,21 @@ pub(crate) struct Done {
 }
 
 impl Done {
-    fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             ended: Mutex::new(false),
             changed: Condvar::new(),
         })
     }
 
-    fn end(&self) {
+    pub(crate) fn end(&self) {
         *self.ended.lock().unwrap_or_else(PoisonError::into_inner) = true;
         self.changed.notify_all();
+    }
+
+    /// Whether the job has ended.
+    pub(crate) fn is_ended(&self) -> bool {
+        *self.ended.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Waits up to `timeout` for the job to end; whether it did.
@@ -248,6 +256,11 @@ impl Background {
 
     pub(crate) fn is_active(&self, key: &str) -> bool {
         self.active.contains(key)
+    }
+
+    /// The signal a job raises when it asks to be applied at once.
+    pub(crate) fn woken(&self) -> Arc<tokio::sync::Notify> {
+        Arc::clone(&self.wake)
     }
 
     /// Whether `spawn_background` would start `key` now: it is neither running nor cooling
@@ -390,6 +403,20 @@ impl Core {
         W: FnOnce() -> Result<T> + Send + 'static,
         A: FnOnce(&mut Core, Result<T>) -> Result<()> + Send + 'static,
     {
+        self.spawn_prompt_background(key, work, apply, |_| false)
+    }
+
+    /// [`Core::spawn_background`] for work whose result is worth applying at once: when
+    /// `prompt` says so about the result, the tick is woken to apply it instead of waiting for
+    /// its next turn. A result that is not (an empty poll) waits, so a poll that finds nothing
+    /// never makes the tick spin.
+    pub(crate) fn spawn_prompt_background<T: Send + 'static>(
+        &mut self,
+        key: String,
+        work: impl FnOnce() -> Result<T> + Send + 'static,
+        apply: impl FnOnce(&mut Core, Result<T>) -> Result<()> + Send + 'static,
+        prompt: fn(&Result<T>) -> bool,
+    ) -> Result<()> {
         let own_thread = self.background.alone.remove(&key);
         let now = Instant::now();
         if !self.background.accepts(&key) {
@@ -404,6 +431,7 @@ impl Core {
             return applied;
         }
         let finished = Arc::clone(&self.background.finished);
+        let wake = Arc::clone(&self.background.wake);
         let job_key = key.clone();
         let done = own_thread.then(Done::new);
         if let Some(done) = &done {
@@ -412,6 +440,7 @@ impl Core {
         let submitted = self.background.submit(
             Box::new(move || {
                 let result = run_caught(work);
+                let prompt = prompt(&result);
                 let job: ApplyJob = Box::new(move |core| apply(core, result));
                 // The list only gains and loses whole jobs, so a poisoned lock still holds a
                 // valid one; dropping the job here would leave its key active for good.
@@ -419,6 +448,9 @@ impl Core {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .push((job_key, job));
+                if prompt {
+                    wake.notify_one();
+                }
                 if let Some(done) = done {
                     done.end();
                 }

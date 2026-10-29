@@ -316,10 +316,10 @@ impl Core {
         if let Some(instance_id) = instance {
             // Closure intent is durable; reconciliation completes it if this
             // supervisor request fails or the engine exits before sending it.
-            let _ = self.pty_request(soyeht_ptyd::wire::Request::Close { instance_id });
+            self.send_later(soyeht_ptyd::wire::Request::Close { instance_id });
         }
         for instance_id in child_instances {
-            let _ = self.pty_request(soyeht_ptyd::wire::Request::Close { instance_id });
+            self.send_later(soyeht_ptyd::wire::Request::Close { instance_id });
         }
         Ok(result)
     }

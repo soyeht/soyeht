@@ -457,8 +457,9 @@ impl Core {
             .cloned()
             .collect();
         if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
-            // Best effort: the generation bump below makes any late output from it stale.
-            let _ = self.pty_request(Request::Close { instance_id });
+            // Best effort: the generation bump below makes any late output from it stale, and
+            // the replacement starts under a new instance key.
+            self.send_later(Request::Close { instance_id });
         }
         language_mut(&mut self.languages, key)?.restart(detail)?;
         self.persist_language_server(key, Vec::new())?;
@@ -476,7 +477,7 @@ impl Core {
             .collect();
         if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
             // Best effort: the generation bump below makes any late output from it stale.
-            let _ = self.pty_request(Request::Close { instance_id });
+            self.send_later(Request::Close { instance_id });
         }
         let server = language_mut(&mut self.languages, key)?;
         server.restart(detail)?;
@@ -485,7 +486,7 @@ impl Core {
         self.persist_language_server(key, Vec::new())?;
         for operation_key in pending {
             // Best effort: an unconfirmed receipt is reconciled when the supervisor returns.
-            let _ = self.pty_request(Request::ConfirmInput { operation_key });
+            self.send_later(Request::ConfirmInput { operation_key });
         }
         Ok(())
     }

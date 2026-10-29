@@ -201,7 +201,11 @@ request or a directory walk (ADR 0079). Copy the inputs under the lock, run the
 work through `Outcome::Offload` (a request) or `Core::spawn_background` (engine
 work), and apply the result under the lock. Run every external command through
 `soyeht_process::run`, which has a deadline and refuses to start under the lock.
-`tests/blocking_io_rule.rs` and `tests/core_lock.rs` enforce this.
+A request to the supervisor waits too (up to `soyeht_ptyd::client::IO_TIMEOUT`): call it through
+`Supervisor::call` in the work of an offload or a background job and settle the answer under the
+lock with `Core::settle_supervisor`, never through `pty_request` in new code (ADR 0117).
+`tests/blocking_io_rule.rs` and `tests/core_lock.rs` enforce this; the first counts the callers
+of `pty_request` that have not moved yet, and the count may not grow.
 
 ## Test hooks
 
