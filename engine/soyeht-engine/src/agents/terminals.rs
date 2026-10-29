@@ -159,19 +159,19 @@ impl Core {
                 continue;
             };
             if terminal.exit_code.is_some() {
-                self.pty_request(Request::Ack {
+                self.send_later(Request::Ack {
                     instance_id,
                     seq: terminal.next,
-                })?;
+                });
                 continue;
             }
-            let Response::Output(output) = self.pty_request(Request::Drain {
-                instance_id: instance_id.clone(),
-                from_seq: terminal.next,
-            })?
-            else {
-                return Err(errors::ptyd_unavailable("Invalid inline terminal output"));
+            // The read waits for the supervisor off the lock (ADR 0118): with none ready the
+            // terminal waits for the next tick.
+            let owner = crate::read_ahead::agent_terminal(pane, &id);
+            let Some(read) = self.take_read(&owner, &instance_id, terminal.next, true)? else {
+                continue;
             };
+            let output = read.output;
             let incoming = STANDARD
                 .decode(&output.bytes)
                 .map_err(|_| errors::ptyd_unavailable("Invalid terminal output encoding"))?;
@@ -200,22 +200,20 @@ impl Core {
             terminal.next = output.next_seq;
             terminal.bytes = STANDARD.encode(&bytes);
             if output.exited && output.next_seq == output.end_seq {
-                let Response::Instances(instances) = self.pty_request(Request::List)? else {
-                    return Err(errors::ptyd_unavailable("Invalid process registry"));
-                };
+                // The read looked the status up; -1 is a process the supervisor lost.
                 terminal.exit_code = Some(
-                    instances
-                        .iter()
-                        .find(|i| i.instance_id == instance_id)
-                        .and_then(|i| i.exit_code)
-                        .unwrap_or(-1),
+                    read.exit_code
+                        .map_or(-1, |code| i32::try_from(code).unwrap_or(-1)),
                 );
+            } else {
+                // The next read starts while the rest of the poll runs.
+                self.start_read(&owner, &instance_id, terminal.next, true)?;
             }
             if !changed {
-                self.pty_request(Request::Ack {
+                self.send_later(Request::Ack {
                     instance_id,
                     seq: terminal.next,
-                })?;
+                });
                 continue;
             }
             let mut changes = Changes {
@@ -250,10 +248,10 @@ impl Core {
             transcript::put(&mut changes, pane, item, "terminal_output")?;
             state.terminals.insert(id, terminal.clone());
             self.commit_agent(saved, state, changes, None, json!({}))?;
-            self.pty_request(Request::Ack {
+            self.send_later(Request::Ack {
                 instance_id,
                 seq: terminal.next,
-            })?;
+            });
         }
         Ok(())
     }
@@ -338,11 +336,13 @@ impl Core {
                             .instance_id
                             .clone()
                             .ok_or_else(|| errors::pane_busy("Terminal is still starting"))?;
-                        self.pty_request(if request.method == "terminal/kill" {
+                        // The agent is told at once; a failure is logged with the other sends
+                        // nobody waits for.
+                        self.send_later(if request.method == "terminal/kill" {
                             Request::Kill { instance_id }
                         } else {
                             Request::Close { instance_id }
-                        })?;
+                        });
                         if request.method == "terminal/release" {
                             state.terminals.remove(id);
                         }

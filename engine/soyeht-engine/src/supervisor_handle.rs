@@ -194,8 +194,9 @@ impl Carried {
 }
 
 impl Core {
-    /// Makes `port` the link to the supervisor.
-    pub fn link_supervisor(&mut self, port: Box<dyn SupervisorPort>) {
+    /// Makes `port` the link to the supervisor, for a test that scripts the other end.
+    #[cfg(test)]
+    pub(crate) fn link_supervisor(&mut self, port: Box<dyn SupervisorPort>) {
         self.ptyd = Some(Supervisor::new(port));
     }
 

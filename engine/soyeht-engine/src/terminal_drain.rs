@@ -33,12 +33,12 @@ fn drain_job(pane_id: &str) -> String {
 }
 
 /// What a drain job read from the supervisor, with no lock.
-struct Read {
-    output: Output,
+pub(crate) struct Read {
+    pub(crate) output: Output,
     /// The exit status the supervisor recorded, looked up when the output says the process
     /// exited. The supervisor records it just after it marks the process exited, so a status
     /// that is not there yet stays unknown rather than guessed.
-    exit_code: Option<i64>,
+    pub(crate) exit_code: Option<i64>,
     /// The output says the process exited and the pane did not know yet. A process that is
     /// already known to be dead keeps saying so until it is closed; that is not news.
     exit_news: bool,
@@ -61,7 +61,7 @@ fn has_news(read: &Result<Read>) -> bool {
     })
 }
 
-fn read_output(
+pub(crate) fn read_output(
     supervisor: &Supervisor,
     instance_id: &str,
     from_seq: u64,

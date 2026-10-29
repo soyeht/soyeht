@@ -27,6 +27,31 @@ use std::{
 };
 use uuid::Uuid;
 
+/// What the supervisor holds when a link to it is made: the inputs it still owes a confirmation
+/// for, and its processes. A link made while the engine runs reads it in the connect job, before
+/// the link is the engine's, so the reconciliation under the Core lock waits for nothing; no
+/// request goes to the new link in between, so the registry is as it was except for processes
+/// that ended, which the next read of each says.
+pub(crate) struct Registry {
+    receipts: Vec<String>,
+    instances: Vec<Instance>,
+}
+
+impl Registry {
+    pub(crate) fn read(supervisor: &Supervisor) -> Result<Self> {
+        let Response::InputReceipts(receipts) = supervisor.call(Request::PendingInputs)? else {
+            return Err(errors::ptyd_unavailable("Invalid input registry"));
+        };
+        let Response::Instances(instances) = supervisor.call(Request::List)? else {
+            return Err(errors::ptyd_unavailable("Invalid registry response"));
+        };
+        Ok(Self {
+            receipts,
+            instances,
+        })
+    }
+}
+
 pub struct Core {
     pub store: Store,
     pub directory: PathBuf,
@@ -39,6 +64,9 @@ pub struct Core {
     /// The last send to each process that is ordered against the ones after it (see
     /// `Core::turn`).
     pub(crate) send_turns: BTreeMap<String, Arc<crate::offload::Done>>,
+    /// The reads of a process's output that ended off the lock and wait for the poll that asked
+    /// for them (see `read_ahead`).
+    pub(crate) reads: crate::read_ahead::Reads,
     pub(crate) supervisor_retry: crate::supervisor_link::Retry,
     pub clock: Arc<dyn Clock>,
     /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
@@ -141,6 +169,7 @@ impl Core {
             ptyd: None,
             supervisor_later: Vec::new(),
             send_turns: BTreeMap::new(),
+            reads: Default::default(),
             supervisor_retry: Default::default(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
@@ -406,10 +435,23 @@ impl Core {
     }
 
     /// Makes `client` the link, reconciles the registry with the panes and records the
-    /// reconnection; the link is dropped again when the reconciliation fails.
+    /// reconnection; the link is dropped again when the reconciliation fails. It reads the
+    /// registry in place, for a Core that is not shared yet: a link made on a running engine
+    /// is read by its connect job (see [`Registry`]).
     pub(crate) fn adopt_supervisor(&mut self, client: Client) -> Result<()> {
-        self.link_supervisor(Box::new(client));
-        let result = self.reconcile_registry();
+        let supervisor = Supervisor::new(Box::new(client));
+        let registry = Registry::read(&supervisor)?;
+        self.adopt_registry(supervisor, registry)
+    }
+
+    /// Makes `supervisor` the link and reconciles `registry`, which was read through it.
+    pub(crate) fn adopt_registry(
+        &mut self,
+        supervisor: Supervisor,
+        registry: Registry,
+    ) -> Result<()> {
+        self.ptyd = Some(supervisor);
+        let result = self.reconcile_registry(registry);
         if result.is_err() {
             self.ptyd = None;
         } else {
@@ -423,10 +465,11 @@ impl Core {
         result
     }
 
-    fn reconcile_registry(&mut self) -> Result<()> {
-        let Response::InputReceipts(receipts) = self.pty_request(Request::PendingInputs)? else {
-            return Err(errors::ptyd_unavailable("Invalid input registry"));
-        };
+    fn reconcile_registry(&mut self, registry: Registry) -> Result<()> {
+        let Registry {
+            receipts,
+            instances,
+        } = registry;
         for operation_key in receipts {
             let pending = StorePort::input_intent_operation_pending(&self.store, &operation_key)
                 .map_err(errors::storage)?;
@@ -434,12 +477,10 @@ impl Core {
                 && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)?
                 && !self.languages.has_pending_write(&operation_key)
             {
-                self.pty_request(Request::ConfirmInput { operation_key })?;
+                // Nobody waits for it: an unconfirmed receipt is reconciled at the next link.
+                self.send_later(Request::ConfirmInput { operation_key });
             }
         }
-        let Response::Instances(instances) = self.pty_request(Request::List)? else {
-            return Err(errors::ptyd_unavailable("Invalid registry response"));
-        };
         self.recover_harness_switches(&instances)?;
         self.cleanup_retired_agent_processes()?;
         let reserved_panes: std::collections::BTreeSet<_> = self
@@ -497,14 +538,10 @@ impl Core {
             for instance in instances.iter().filter(|instance| {
                 !instance.closed && child_keys.contains(&instance.spawn.instance_key)
             }) {
-                self.pty_request(Request::Close {
-                    instance_id: instance.instance_id.clone(),
-                })?;
+                self.close_process(&instance.instance_id);
             }
             if let Some(instance) = existing.filter(|instance| !instance.closed) {
-                self.pty_request(Request::Close {
-                    instance_id: instance.instance_id.clone(),
-                })?;
+                self.close_process(&instance.instance_id);
             }
             return Ok(());
         }
@@ -617,11 +654,12 @@ impl Core {
             "Shell active"
         }
         .into();
-        self.pty_request(Request::Resize {
+        // The size is durable: nobody waits for the supervisor to take it.
+        self.send_later(Request::Resize {
             instance_id: instance.instance_id.clone(),
             cols: saved.pane.cols as u16,
             rows: saved.pane.rows as u16,
-        })?;
+        });
         self.save_runtime(id, saved)
     }
 

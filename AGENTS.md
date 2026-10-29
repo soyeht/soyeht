@@ -203,7 +203,9 @@ work), and apply the result under the lock. Run every external command through
 `soyeht_process::run`, which has a deadline and refuses to start under the lock.
 A request to the supervisor waits too (up to `soyeht_ptyd::client::IO_TIMEOUT`): call it through
 `Supervisor::call` in the work of an offload or a background job and settle the answer under the
-lock with `Core::settle_supervisor`, never through `pty_request` in new code (ADR 0117).
+lock with `Core::settle_supervisor`, never through `pty_request` in new code (ADR 0117, 0118).
+A poll that keeps its place in the tick takes its read from `read_ahead`; a close nobody waits
+for is `Core::close_process`, and a send nobody waits for is `Core::send_later`.
 `tests/blocking_io_rule.rs` and `tests/core_lock.rs` enforce this; the first counts the callers
 of `pty_request` that have not moved yet, and the count may not grow.
 

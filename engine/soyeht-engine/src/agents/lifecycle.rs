@@ -61,9 +61,7 @@ impl Core {
             if terminal.supervisor_id.as_deref() == self.ptyd.as_ref().map(|p| p.supervisor_id())
                 && let Some(instance_id) = &terminal.instance_id
             {
-                self.pty_request(Request::Close {
-                    instance_id: instance_id.clone(),
-                })?;
+                self.close_process(instance_id);
             }
         }
         state.terminals.clear();

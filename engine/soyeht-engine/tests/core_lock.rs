@@ -136,16 +136,14 @@ impl Drop for Stopped {
     }
 }
 
-#[test]
-fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it() {
-    let rig = Rig::new();
-    let mut client = rig.client();
-    let (_, pane) = client.create(&rig);
-    let mut other = rig.client();
+/// Stops the supervisor for [`STOPPED_FOR`] and returns the longest wait of a status request on
+/// another connection in that time. The tick's reads are waiting for the supervisor meanwhile.
+fn worst_status_latency_while_the_supervisor_is_stopped(
+    rig: &Rig,
+    other: &mut support::Client,
+) -> Duration {
     assert!(other.call("engine.status", json!({}))["generation"].is_number());
-
     let stopped = Stopped::new(rig.ptyd.id());
-    // The tick's read of the pane is waiting for the supervisor now.
     thread::sleep(Duration::from_millis(300));
     let window = Instant::now() + STOPPED_FOR;
     let mut worst = Duration::ZERO;
@@ -157,8 +155,19 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it
         thread::sleep(Duration::from_millis(50));
     }
     drop(stopped);
-
     eprintln!("core lock: worst status latency with the supervisor stopped = {worst:?}");
+    worst
+}
+
+#[test]
+fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let (_, pane) = client.create(&rig);
+    let mut other = rig.client();
+
+    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other);
+
     assert!(
         worst < GAP_FLOOR,
         "a request waited {worst:?} behind the stopped supervisor"
@@ -174,4 +183,27 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it
         );
         reply.get("error").is_none()
     });
+}
+
+/// An agent polls the supervisor for its output, its terminals and its language servers on every
+/// tick (ADR 0118); that wait is off the lock too.
+#[test]
+fn a_supervisor_that_stops_answering_does_not_stall_requests_while_an_agent_polls_it() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let mut other = rig.client();
+
+    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other);
+
+    assert!(
+        worst < GAP_FLOOR,
+        "a request waited {worst:?} behind the stopped supervisor"
+    );
+    // The agent is polled again once the supervisor answers, and answers a prompt.
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"after the stop","idempotencyKey":"after-stop"}),
+    );
+    client.wait_state(&pane, "idle");
+    assert!(client.pane(&pane)["agent"]["sessionId"].is_string());
 }

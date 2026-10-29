@@ -139,6 +139,35 @@ pub(crate) fn pty_spawn(key: &str) -> Spawn {
     }
 }
 
+/// A supervisor that answers each request with `answer`.
+pub(crate) struct Answering<F>(pub(crate) F);
+
+impl<F: FnMut(Request) -> soyeht_ptyd::Result<Response> + Send> SupervisorPort for Answering<F> {
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+        (self.0)(request)
+    }
+
+    fn supervisor_id(&self) -> &str {
+        "answering"
+    }
+
+    fn supervisor_generation(&self) -> u32 {
+        1
+    }
+}
+
+/// The answer of a supervisor whose process has produced no output since `from_seq`.
+pub(crate) fn quiet_read(from_seq: u64) -> Response {
+    Response::Output(soyeht_ptyd::wire::Output {
+        from_seq,
+        next_seq: from_seq,
+        end_seq: from_seq,
+        bytes: String::new(),
+        gap: None,
+        exited: false,
+    })
+}
+
 /// A supervisor that fails the next spawns with the kinds it is given, starts the one
 /// after them, reports `instance-0` as missing when drained, and answers the rest with `Ok`.
 pub(crate) struct Spawning {
@@ -234,6 +263,8 @@ pub(crate) fn core_with_agent(failures: &[&'static str]) -> (Core, std::path::Pa
     );
     core.agents.insert("agent".into(), Running::new(state));
     core.clock = Arc::new(FixedClock(1_000_000));
+    // Reads and closes end in the caller, so a tick sees their result.
+    core.background = crate::offload::Background::inline();
     core.link_supervisor(Box::new(Spawning {
         failures: failures.iter().copied().collect(),
         spawns: 0,

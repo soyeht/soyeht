@@ -458,6 +458,7 @@ impl Core {
         self.editor.remove_pane(id);
         self.terminal_captures.remove(id);
         self.agent_captures.remove(id);
+        self.forget_reads(&crate::read_ahead::agent(id));
         for client in self.clients.values_mut() {
             client.streams.remove(id);
         }

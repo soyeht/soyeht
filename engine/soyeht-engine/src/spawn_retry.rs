@@ -182,14 +182,36 @@ impl Core {
         Ok(())
     }
 
-    /// Closes the process `instance_id` of a closed pane and settles the result.
+    /// Closes the process `instance_id` and settles the result: the close waits for the
+    /// supervisor off the Core lock, in the order of the sends to the process (ADR 0118). For a
+    /// caller that cannot return the failure, which is logged and tried again by the tick.
     pub(crate) fn close_process(&mut self, instance_id: &str) {
-        let closed = self
-            .pty_request(Request::Close {
-                instance_id: instance_id.to_owned(),
-            })
-            .map(drop);
-        self.settle_close(instance_id, closed);
+        let supervisor = match self.supervisor() {
+            Ok(supervisor) => supervisor,
+            Err(error) => return self.settle_close(instance_id, Err(error)),
+        };
+        let turn = self.turn(&[instance_id]);
+        let used = supervisor.clone();
+        let (closing, settling) = (instance_id.to_owned(), instance_id.to_owned());
+        let started = self.spawn_background(
+            format!("close:{instance_id}"),
+            move || {
+                turn.wait();
+                supervisor
+                    .call(Request::Close {
+                        instance_id: closing,
+                    })
+                    .map(drop)
+            },
+            move |core, closed| {
+                let settled = core.settle_supervisor(&used, closed);
+                core.settle_close(&settling, settled);
+                Ok(())
+            },
+        );
+        if let Err(error) = started {
+            self.settle_close(instance_id, Err(error));
+        }
     }
 
     /// The tick's part: starts again each pane whose retry is due. A pane that closed, or
@@ -427,5 +449,44 @@ mod tests {
         core.settle_close("process", closed.map(drop));
         assert!(core.ptyd.is_none());
         assert_eq!(core.supervisor_retry.close_retries.attempts("process"), 0);
+    }
+
+    #[test]
+    fn a_close_waits_for_the_supervisor_off_the_lock_and_is_settled_by_the_tick() {
+        let (mut core, _directory, _id, _calls) = core_with_unstarted_pane(Vec::new());
+        core.background = crate::offload::Background::default();
+        let closed = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&closed);
+        // A supervisor that takes a second to close a process.
+        core.link_supervisor(Box::new(crate::test_panes::Answering(move |request| {
+            if matches!(request, Request::Close { .. }) {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                count.fetch_add(1, Ordering::SeqCst);
+            }
+            Ok(Response::Ok)
+        })));
+
+        let started = std::time::Instant::now();
+        core.close_process("process");
+        // A second close of the same process while one is on its way sends nothing more.
+        core.close_process("process");
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(300),
+            "the close waited for the supervisor: {:?}",
+            started.elapsed()
+        );
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while core.background.is_active("close:process") {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the close never ended"
+            );
+            core.apply_background();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(closed.load(Ordering::SeqCst), 1);
+        assert_eq!(core.supervisor_retry.close_retries.attempts("process"), 0);
+        assert!(core.ptyd.is_some());
     }
 }

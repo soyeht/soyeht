@@ -4,7 +4,7 @@
 //! adapter tree, until the supervisor restarts. Reconciliation closes them.
 
 use crate::{core::Core, errors::Result};
-use soyeht_ptyd::wire::{Instance, ProcessKind, Request};
+use soyeht_ptyd::wire::{Instance, ProcessKind};
 use std::collections::BTreeSet;
 
 impl Core {
@@ -42,7 +42,8 @@ impl Core {
             .map(|instance| instance.instance_id.clone())
             .collect();
         for instance_id in orphans {
-            self.pty_request(Request::Close { instance_id })?;
+            // Best effort: one that stays open is closed again by the tick, or by the next link.
+            self.close_process(&instance_id);
         }
         Ok(())
     }

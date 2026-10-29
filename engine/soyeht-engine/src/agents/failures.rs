@@ -13,7 +13,6 @@ use serde_json::json;
 use soyeht_protocol::{
     AttentionItem, PaneState, StateSource, TranscriptKind, TranscriptRole, TurnStopReason, limits,
 };
-use soyeht_ptyd::wire::Request;
 
 impl Core {
     pub fn close_agent_processes(&mut self, pane: &str) -> Result<()> {
@@ -35,9 +34,7 @@ impl Core {
         // A faulted agent is visited on every tick; each process is closed once.
         ids.retain(|id| !self.agents[pane].idle.already_closed(id));
         for instance_id in ids {
-            self.pty_request(Request::Close {
-                instance_id: instance_id.clone(),
-            })?;
+            self.close_process(&instance_id);
             errors::invariant(self.agents.get_mut(pane), "Agent runtime disappeared")?
                 .idle
                 .mark_closed(instance_id);

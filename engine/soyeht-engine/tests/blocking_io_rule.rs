@@ -169,29 +169,23 @@ fn the_rule_recognises_a_direct_process_run() {
 /// (ADR 0117). A request to the supervisor waits up to `soyeht_ptyd::client::IO_TIMEOUT` for
 /// its answer, so a caller that holds the lock stalls every terminal for that long when the
 /// supervisor is slow. The terminal path (reads, acknowledgements, input, sizes) has moved off
-/// the lock; these callers have not.
+/// the lock, and so have the polls of the agents, of their terminals and of the language
+/// servers, every close, and the reading of the registry when a link is made (ADR 0118); these
+/// callers have not.
 ///
 /// The table may not grow: a new caller waits through `Supervisor::call` off the lock (an
 /// `Outcome::Offload`, or `Core::spawn_background`) and settles the answer under it with
 /// `Core::settle_supervisor`. When a caller moves, lower its count here in the same change.
 const UNDER_LOCK_SUPERVISOR_CALLS: &[(&str, usize)] = &[
     ("soyeht-engine/src/agents/authentication.rs", 1),
-    ("soyeht-engine/src/agents/delivery.rs", 2),
-    ("soyeht-engine/src/agents/driver.rs", 3),
-    ("soyeht-engine/src/agents/failures.rs", 1),
-    ("soyeht-engine/src/agents/lifecycle.rs", 2),
-    ("soyeht-engine/src/agents/orphans.rs", 1),
+    ("soyeht-engine/src/agents/delivery.rs", 1),
+    ("soyeht-engine/src/agents/lifecycle.rs", 1),
     ("soyeht-engine/src/agents/recovery.rs", 2),
-    ("soyeht-engine/src/agents/switching.rs", 1),
-    ("soyeht-engine/src/agents/switching/candidate.rs", 4),
-    ("soyeht-engine/src/agents/switching/commit.rs", 1),
-    ("soyeht-engine/src/agents/terminals.rs", 7),
-    ("soyeht-engine/src/core.rs", 7),
-    ("soyeht-engine/src/languages/runtime.rs", 7),
+    ("soyeht-engine/src/agents/switching/candidate.rs", 3),
+    ("soyeht-engine/src/agents/terminals.rs", 1),
+    ("soyeht-engine/src/core.rs", 1),
+    ("soyeht-engine/src/languages/runtime.rs", 2),
     ("soyeht-engine/src/panes.rs", 1),
-    ("soyeht-engine/src/spawn_retry.rs", 1),
-    ("soyeht-engine/src/tasks/dispatching.rs", 1),
-    ("soyeht-engine/src/tasks/roles.rs", 1),
 ];
 
 /// The files that may name `call_supervisor`, the call that waits for the supervisor on a port

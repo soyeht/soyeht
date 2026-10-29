@@ -148,9 +148,9 @@ The remaining 43 calls, by group:
 | Start, reconnect and reconcile: spawn, adopt, close, list, pending inputs | `core.rs`, `spawn_retry.rs` | 8 |
 | Close of a pane and of a role's process, dispatch step | `panes.rs`, `tasks/roles.rs`, `tasks/dispatching.rs` | 3 |
 
-The agent poll runs on every tick for every agent pane and is the next to move. The spawn
-after a pane is created is the one user action that still waits under the lock; it follows
-with the start-up group, which has to settle its state in order.
+The agent poll runs on every tick for every agent pane and was the next to move: ADR 0118
+moves it with the poll of the language servers and of the agents' terminals, every close, and
+the reading of the registry when a link is made, and leaves 13 calls, with the reason for each.
 
 ## Trade-offs
 

@@ -6,7 +6,7 @@
 //! be restarted never keeps the whole link from being established.
 
 use crate::{
-    core::Core,
+    core::{Core, Registry},
     errors::{self, Error, Result},
     streak::Streak,
     supervisor_handle::Supervisor,
@@ -226,8 +226,13 @@ impl Core {
         let started = self.spawn_background(
             CONNECT_JOB.into(),
             move || {
-                Client::connect(&socket, generation)
-                    .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))
+                let client = Client::connect(&socket, generation)
+                    .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))?;
+                // The registry is read here, with the link not yet the engine's, so the
+                // reconciliation under the lock sends the supervisor nothing it waits for.
+                let supervisor = Supervisor::new(Box::new(client));
+                let registry = Registry::read(&supervisor)?;
+                Ok((supervisor, registry))
             },
             move |core, connected| {
                 core.finish_connect(connected);
@@ -241,9 +246,9 @@ impl Core {
 
     /// Joins the connection a job made: reconciles the registry with the panes, or records the
     /// failure by the retry streak and starts the supervisor when the engine was told how.
-    fn finish_connect(&mut self, connected: Result<Client>) {
+    fn finish_connect(&mut self, connected: Result<(Supervisor, Registry)>) {
         let now = self.now_ms();
-        match connected.and_then(|client| self.adopt_supervisor(client)) {
+        match connected.and_then(|(link, registry)| self.adopt_registry(link, registry)) {
             Ok(()) => {
                 // The reconciliation that made the link starts every pane that has no process.
                 self.supervisor_retry.spawn_retries.clear();
@@ -647,6 +652,8 @@ pub(crate) mod tests {
     ) -> (Core, std::path::PathBuf, String, Arc<AtomicUsize>) {
         let directory = short_directory();
         let mut core = Core::open(&directory).unwrap();
+        // Closes end in the caller, so the call that settles one has run when it returns.
+        core.background = crate::offload::Background::inline();
         let id = crate::test_panes::insert_terminal_pane(&mut core, &directory, "p", false);
         let pane = core.panes.get_mut(&id).unwrap();
         pane.stored.instance_id = None;

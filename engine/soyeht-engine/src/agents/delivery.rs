@@ -89,8 +89,8 @@ impl Core {
             )
             .map_err(errors::storage)?;
             // A crash before this confirmation leaves a stale ptyd receipt;
-            // reconciliation sees the durable next attempt and can retire it.
-            self.pty_request(Request::ConfirmInput { operation_key })?;
+            // reconciliation sees the durable next attempt and can retire it. Nobody waits for it.
+            self.send_later(Request::ConfirmInput { operation_key });
             if accepted == 0 {
                 break;
             }

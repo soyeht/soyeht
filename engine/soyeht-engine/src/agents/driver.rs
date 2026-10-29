@@ -11,7 +11,6 @@ use crate::{
     ports::{Clock, StorePort},
     streak::{Streak, first_failure, recovered},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_acp::{
     Message, RpcError,
@@ -22,7 +21,7 @@ use soyeht_protocol::{
     PaneState, ProbeCapability, ProbeResult, PromptItem, TranscriptKind, TranscriptRole,
     ndjson::Decoder,
 };
-use soyeht_ptyd::wire::{Request, Response};
+use soyeht_ptyd::wire::Request;
 use soyeht_store::segments::Record;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
@@ -448,6 +447,11 @@ impl Core {
             self.poll_agent_authentication(pane)?;
             return self.close_agent_processes(pane);
         }
+        // An idle agent that said nothing is read at a slower pace (see `read_ahead`).
+        let owner = crate::read_ahead::agent(pane);
+        if self.agents[pane].is_settled(self.now_ms()) && self.reads_paused(&owner) {
+            return Ok(());
+        }
         let hooks = Arc::clone(&self.hooks);
         hooks.before_agent_poll(self, pane)?;
         self.decode_agent_log(pane)?;
@@ -458,48 +462,20 @@ impl Core {
             "Agent process has no adopted instance",
         )?;
         let seq = self.panes[pane].screen.next_offset() - sequence_base;
-        let Response::Output(output) = self.pty_request(Request::Drain {
-            instance_id: instance_id.clone(),
-            from_seq: seq,
-        })?
-        else {
-            return Err(errors::ptyd_unavailable("Invalid native output response"));
+        // The read waits for the supervisor off the lock (ADR 0118): with none ready the agent
+        // waits for the next tick.
+        let Some(read) = self.take_read(&owner, &instance_id, seq, false)? else {
+            return Ok(());
         };
-        if output.from_seq != seq {
-            if output.from_seq < seq
-                || output
-                    .gap
-                    .as_ref()
-                    .is_none_or(|gap| gap.from_seq != seq || gap.to_seq != output.from_seq)
-            {
-                return Err(errors::ptyd_unavailable("Invalid native output gap"));
-            }
-            self.panes
-                .get_mut(pane)
-                .ok_or_else(|| errors::internal("Agent pane disappeared during output gap"))?
-                .screen
-                .append(Record::Gap {
-                    from: sequence_base + seq,
-                    to: sequence_base + output.from_seq,
-                })?;
-        }
-        let bytes = STANDARD
-            .decode(output.bytes)
-            .map_err(|_| errors::ptyd_unavailable("Invalid native output encoding"))?;
-        if output.next_seq != output.from_seq + bytes.len() as u64 {
-            return Err(errors::ptyd_unavailable(
-                "Native output offsets disagree with bytes",
-            ));
-        }
-        if !bytes.is_empty() {
-            self.panes
-                .get_mut(pane)
-                .ok_or_else(|| errors::internal("Agent pane disappeared during output append"))?
-                .screen
-                .append(Record::Data {
-                    offset: sequence_base + output.from_seq,
-                    bytes,
-                })?;
+        let output = read.output;
+        self.append_agent_output(pane, &output, seq)?;
+        // The next read starts while the rest of the poll runs, unless an idle agent said nothing.
+        let quiet = output.from_seq == seq && output.next_seq == seq && !output.exited;
+        if quiet && self.agents[pane].is_settled(self.now_ms()) {
+            self.pause_reads(&owner);
+        } else {
+            let next = self.panes[pane].screen.next_offset() - sequence_base;
+            self.start_read(&owner, &instance_id, next, false)?;
         }
         self.decode_agent_log(pane)?;
         let acknowledged = self.agents[pane].state.acknowledged_offset;
@@ -507,10 +483,11 @@ impl Core {
             .idle
             .needs_acknowledgement(&instance_id, acknowledged)
         {
-            self.pty_request(Request::Ack {
+            // Nobody waits for it: the supervisor keeps the output a little longer if it fails.
+            self.send_later(Request::Ack {
                 instance_id,
                 seq: acknowledged,
-            })?;
+            });
         }
         if output.exited {
             // Exit does not imply that the last page has been consumed. Keep
@@ -541,7 +518,8 @@ impl Core {
         let saved = self.panes[pane].stored.clone();
         let retire_instance = saved.instance_id.clone().zip(saved.supervisor_id.clone());
         if let Some(instance_id) = saved.instance_id {
-            self.pty_request(Request::Close { instance_id })?;
+            // The retirement ledger below holds the process until it is closed.
+            self.close_process(&instance_id);
         }
         let mut saved = self.panes[pane].stored.clone();
         let mut state = self.agent_state(pane)?;

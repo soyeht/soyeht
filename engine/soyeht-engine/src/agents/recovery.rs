@@ -10,7 +10,8 @@ use soyeht_acp::{Message, rpc::Record};
 use soyeht_protocol::{
     AttentionItem, PaneState, TranscriptKind, TranscriptRole, limits, ndjson::Decoder,
 };
-use soyeht_ptyd::wire::{Request, Response};
+use soyeht_ptyd::wire::{Output, Request, Response};
+use soyeht_store::segments::Record as SegmentRecord;
 
 fn invalid(message: &str) -> crate::errors::Error {
     errors::harness_unavailable(message)
@@ -98,6 +99,54 @@ impl Core {
                 },
                 false,
             )?;
+        }
+        Ok(())
+    }
+
+    /// Puts what a read of the agent's process found, from offset `seq`, into its screen: the
+    /// gap the supervisor declared before it, if any, then the bytes.
+    pub(crate) fn append_agent_output(
+        &mut self,
+        pane: &str,
+        output: &Output,
+        seq: u64,
+    ) -> Result<()> {
+        let sequence_base = self.panes[pane].stored.sequence_base;
+        if output.from_seq != seq {
+            if output.from_seq < seq
+                || output
+                    .gap
+                    .as_ref()
+                    .is_none_or(|gap| gap.from_seq != seq || gap.to_seq != output.from_seq)
+            {
+                return Err(errors::ptyd_unavailable("Invalid native output gap"));
+            }
+            self.panes
+                .get_mut(pane)
+                .ok_or_else(|| errors::internal("Agent pane disappeared during output gap"))?
+                .screen
+                .append(SegmentRecord::Gap {
+                    from: sequence_base + seq,
+                    to: sequence_base + output.from_seq,
+                })?;
+        }
+        let bytes = STANDARD
+            .decode(&output.bytes)
+            .map_err(|_| errors::ptyd_unavailable("Invalid native output encoding"))?;
+        if output.next_seq != output.from_seq + bytes.len() as u64 {
+            return Err(errors::ptyd_unavailable(
+                "Native output offsets disagree with bytes",
+            ));
+        }
+        if !bytes.is_empty() {
+            self.panes
+                .get_mut(pane)
+                .ok_or_else(|| errors::internal("Agent pane disappeared during output append"))?
+                .screen
+                .append(SegmentRecord::Data {
+                    offset: sequence_base + output.from_seq,
+                    bytes,
+                })?;
         }
         Ok(())
     }

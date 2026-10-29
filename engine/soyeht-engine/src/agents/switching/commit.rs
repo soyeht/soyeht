@@ -284,26 +284,20 @@ impl Core {
         pane: &str,
         instance: &Instance,
     ) -> Result<()> {
-        if self
-            .pty_request(Request::Close {
-                instance_id: instance.instance_id.clone(),
-            })
-            .is_err()
-        {
-            let mut state = self.agent_state(pane)?;
-            state.retired_processes.push(RetiredAgentProcess {
-                instance_key: instance.spawn.instance_key.clone(),
-                instance_id: instance.instance_id.clone(),
-                supervisor_id: instance.supervisor_id.clone(),
-            });
-            self.commit_agent(
-                self.panes[pane].stored.clone(),
-                state,
-                Changes::default(),
-                None,
-                json!({}),
-            )?;
-        }
+        // The ledger holds the process until the tick has closed it.
+        let mut state = self.agent_state(pane)?;
+        state.retired_processes.push(RetiredAgentProcess {
+            instance_key: instance.spawn.instance_key.clone(),
+            instance_id: instance.instance_id.clone(),
+            supervisor_id: instance.supervisor_id.clone(),
+        });
+        self.commit_agent(
+            self.panes[pane].stored.clone(),
+            state,
+            Changes::default(),
+            None,
+            json!({}),
+        )?;
         Ok(())
     }
 }
