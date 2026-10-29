@@ -254,20 +254,6 @@ fn approval_for_an_unreported_tool_call_without_input_stays_blocked() {
                 text.contains("no command to display") && text.contains("Nothing was approved")
             })
     });
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
-        if transcript["items"].as_array().unwrap().iter().any(|item| {
-            item["role"] == "system"
-                && item["text"].as_str().is_some_and(|text| {
-                    text.contains("no command to display") && text.contains("Nothing was approved")
-                })
-        }) {
-            break;
-        }
-        assert!(Instant::now() < deadline, "the approval was not blocked");
-        thread::sleep(Duration::from_millis(20));
-    }
     assert!(client.section("requests").is_empty());
     assert_eq!(
         rig.database_probe()
