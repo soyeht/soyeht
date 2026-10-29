@@ -57,12 +57,10 @@ impl Core {
         saved.instance_key = uuid::Uuid::new_v4().to_string();
         saved.sequence_base = self.panes[id].screen.next_offset();
         state.client = Default::default();
+        // The children of the lost agent are closed from the ledger, which outlives a lost link;
+        // the ones of another supervisor are gone with it.
         for terminal in state.terminals.values() {
-            if terminal.supervisor_id.as_deref() == self.ptyd.as_ref().map(|p| p.supervisor_id())
-                && let Some(instance_id) = &terminal.instance_id
-            {
-                self.close_process(instance_id);
-            }
+            state.retired_processes.extend(terminal.retirement());
         }
         state.terminals.clear();
         state.initialized = None;

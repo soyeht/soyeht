@@ -286,13 +286,24 @@ impl Core {
         if self.ptyd.is_none() {
             return;
         }
-        if let Request::Resize { instance_id, .. } = &request {
-            self.supervisor_later.retain(|queued| {
+        // A newer size or acknowledgement of a process replaces the one not yet sent.
+        match &request {
+            Request::Resize { instance_id, .. } => self.supervisor_later.retain(|queued| {
                 !matches!(queued, Request::Resize { instance_id: other, .. } if other == instance_id)
-            });
+            }),
+            Request::Ack { instance_id, .. } => self.supervisor_later.retain(|queued| {
+                !matches!(queued, Request::Ack { instance_id: other, .. } if other == instance_id)
+            }),
+            _ => {}
         }
         self.supervisor_later.push(request);
         self.flush_later();
+    }
+
+    /// Drops the queued sends to `instance`, which is being closed: they would find it gone.
+    pub(crate) fn forget_later_for(&mut self, instance: &str) {
+        self.supervisor_later
+            .retain(|queued| instance_of(queued) != Some(instance));
     }
 
     /// Takes the queued sends to `instance` out of the queue, for the input that is about to

@@ -327,28 +327,57 @@ pub(super) mod tests {
 
     #[test]
     fn a_slow_supervisor_does_not_hold_the_tick_of_an_agent() {
-        let (mut core, counters, root) = idle_core(2);
+        use crate::test_panes::{Answering, core_with_agent, quiet_read};
+        let (mut core, directory) = core_with_agent(&[]);
         let delay = std::time::Duration::from_millis(600);
+        let closed = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&closed);
         core.background = crate::offload::Background::default();
-        core.link_supervisor(Box::new(quiet_supervisor(counters, delay)));
+        core.link_supervisor(Box::new(Answering(move |request| {
+            std::thread::sleep(delay);
+            Ok(match request {
+                Request::Close { instance_id } => {
+                    record.lock().unwrap().push(instance_id);
+                    Response::Ok
+                }
+                Request::Drain { from_seq, .. } => quiet_read(from_seq),
+                _ => Response::Ok,
+            })
+        })));
+        // The port is "answering", and so is the supervisor of the retired process.
         core.agents
-            .get_mut("agent-0")
+            .get_mut("agent")
             .unwrap()
             .state
             .retired_processes
-            .push(retired("old", "idle-supervisor"));
+            .push(retired("old", "answering"));
 
-        // Each tick starts the reads and the close of the retired process and goes on.
-        for _ in 0..5 {
+        // The tick starts the read of the agent and the close of the retired process, and goes
+        // on with no wait for either.
+        let started = std::time::Instant::now();
+        core.poll_output().unwrap();
+        assert!(
+            started.elapsed() < delay / 3,
+            "the tick waited for the supervisor: {:?}",
+            started.elapsed()
+        );
+        assert!(core.background.is_active("retired:agent"));
+        assert!(core.background.is_active("read:agent:agent"));
+        assert!(closed.lock().unwrap().is_empty());
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !core.agents["agent"].state.retired_processes.is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the close never settled"
+            );
             let started = std::time::Instant::now();
             core.poll_output().unwrap();
-            assert!(
-                started.elapsed() < delay / 3,
-                "the tick waited for the supervisor: {:?}",
-                started.elapsed()
-            );
+            assert!(started.elapsed() < delay / 3, "a later tick waited");
+            std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        crate::test_paths::remove_after(core, root);
+        assert_eq!(*closed.lock().unwrap(), ["old"]);
+        crate::test_paths::remove_after(core, directory);
     }
 
     #[test]

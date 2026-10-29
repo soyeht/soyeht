@@ -420,6 +420,7 @@ impl Core {
     pub(crate) fn lose_supervisor_link(&mut self) {
         self.ptyd = None;
         self.supervisor_later.clear();
+        self.forget_all_reads();
         if let Err(error) = self.system_event(
             event::PTYD_LOST,
             json!({"reason":"Supervisor connection closed"}),

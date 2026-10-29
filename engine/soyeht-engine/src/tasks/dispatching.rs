@@ -595,8 +595,9 @@ impl Core {
         )?
         .decoder = soyeht_protocol::ndjson::Decoder::new(0);
         if let Some(instance_id) = old_instance {
-            // The retirement ledger above holds the process until it is closed.
-            self.close_process(&instance_id);
+            // The retirement ledger above holds the process until it is closed; the new one
+            // starts after the close, not beside it.
+            self.close_and_wait(&instance_id);
         }
         self.spawn(pane_id)?;
         Ok(true)

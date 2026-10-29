@@ -31,7 +31,11 @@ into a screen. So the read is the job and the poll stays where it is:
   error if it failed. If not, a read is started and the poll does nothing this tick.
 - A poll that took a read starts the next one at once, at the offset the output it has just put
   into the screen ends at, and goes on with the rest of its work while the read runs. So an agent
-  that is producing output is read once per tick, as before.
+  that is producing output has a read on its way at every tick.
+- A read that finds output, a gap or an error wakes the tick, as the shell pane's read does: the
+  tick applies it, polls the panes at once and sends what that brought (`Core::poll_woken`), so
+  output is not left waiting for the next tick. A quiet read, or an exit with nothing left to
+  read, does not wake it.
 - A read asked for another process or offset (the process was replaced, the screen moved) is
   discarded when the poll asks. The supervisor keeps the output until it is told to drop it, so
   a read that is never taken costs nothing. The reads of a pane that closes are forgotten.
@@ -68,9 +72,26 @@ that failed used to fail the recovery it was part of; it is now retried by itsel
 that cannot be closed no longer keeps its agent from coming up. The process of a retired agent
 is held by the retirement ledger until the supervisor has closed it, as before:
 `cleanup_retired_agent_processes` closes them in a job per agent and takes the ones that closed
-out of the ledger when it is applied, and the process of a candidate that failed to start goes
-straight into the ledger instead of being closed first. The kill and release of an inline
-terminal, which the agent asked for, are `send_later`.
+out of the ledger when it is applied (a close the supervisor keeps refusing is logged once per
+change of kind, `engine.retired_close_failed`), and the process of a candidate that failed to
+start goes straight into the ledger instead of being closed first.
+
+A process that the engine stops tracking is in the ledger first, because a close that fails, or
+that finds no link, must not leave it running: the inline terminals of a lost agent, the ones of
+a faulted agent (handed over once, and marked closed only then), and a terminal the agent
+released. A kill of an inline terminal keeps the terminal in the agent's state, so a kill that
+fails leaves a process the agent can still release; with no link it is answered with a failure,
+not a success.
+
+The sends of a process that is closing are not left to find it gone: `close_process` drops the
+sends still queued for it, an acknowledgement replaces the one not yet sent as a size does, and a
+close is not started when one is already on its way.
+
+Three callers close a process that a spawn is about to replace (the restart after a probe, after a
+role change and for a task, through `Core::close_and_wait`). The replacement must not start while
+the process it replaces still holds its session or folder, so they wait, under the lock, until
+the close has been sent, as the spawn that follows them waits. That wait goes with the spawn, and
+`tests/blocking_io_rule.rs` counts its callers beside `pty_request`.
 
 **The registry is read before the link is the engine's.** The connect job (ADR 0117) now also
 reads the supervisor's pending inputs and processes through the new handle, and hands both to the
@@ -101,28 +122,32 @@ and not a move:
 ## Trade-offs
 
 - **An agent advances only on a tick that has its read.** A poll with no read ready returns
-  before the advance. In the steady state a read ends well inside a tick, so the cadence is the
-  one it was; with a supervisor that is slow or stopped, an agent waits for it, as it must (its
-  next step is a write to the supervisor), and the rest of the engine does not.
+  before the advance. Reads are always on their way, and one that finds output wakes the tick, so
+  output is polled as soon as the read that found it ends, which is no later than the next tick
+  found it before. A reply to a write the poll made in a tick is read by the read that starts in
+  a later tick, as before. The first step of an idle agent after its state changed starts a read
+  and runs on the next tick: up to one tick (10 ms) and a thread hop later than before, once.
+  With a supervisor that is slow or stopped, an agent waits for it, as it must (its next step is a
+  write to the supervisor), and the rest of the engine does not. I did not measure the latency of
+  a reply separately.
 - **An idle agent hears the process after up to 100 ms**, not 10: what an idle agent says unasked
   (a notification) reaches the clients that much later. Its answer to a prompt is not delayed,
   since a prompt unsettles the agent.
-- **Output of an agent is applied by the tick that follows the read**, as the tick that holds
-  the lock is the one that runs the poll. The shell pane keeps its wake for output that was found
-  (`spawn_prompt_background`); the agent's output is not typed text and does not use it.
 - **The jobs share the four workers of the background pool**, as the terminal's reads do. A
   stopped supervisor holds them for one timeout, after which the handle is broken and every job
   waiting on it fails at once (ADR 0117).
 - **A close that cannot be returned is retried, not returned.** A recovery used to fail, and be
   tried again on its own pace, when a process of the agent could not be closed. It now goes on, the
   close is retried (five attempts, then left to the next link), and a failure is logged under
-  `engine.pane_close_failed`. A kill or a release of an inline terminal that fails is logged under
-  `engine.supervisor_follow_up_failed`, not returned to the agent that asked.
+  `engine.pane_close_failed`. A kill of an inline terminal that fails is logged under
+  `engine.supervisor_follow_up_failed`, not returned to the agent that asked; the terminal stays,
+  and so does the process in the ledger once released.
 
 ## Consequences
 
 - Nothing a tick does on behalf of an agent, a language server or a close waits for the
-  supervisor with the lock held. `tests/core_lock.rs` stops the real supervisor with an agent
+  supervisor with the lock held, except the three closes before a spawn (`close_and_wait`) that go
+  with the spawn. `tests/core_lock.rs` stops the real supervisor with an agent
   running and measures a status request on another connection.
 - The 13 callers left are the table above. The work to bring the count to zero is the three
   state machines (spawn, delivery and the harness switch), each of which needs a state kept

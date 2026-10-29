@@ -37,6 +37,15 @@ fn releasing_terminals(store: &impl StorePort, pane: &str) -> Result<Vec<String>
 }
 
 impl Terminal {
+    /// The ledger entry that holds this terminal's process until it is closed, if it has one.
+    pub(crate) fn retirement(&self) -> Option<super::state::RetiredAgentProcess> {
+        Some(super::state::RetiredAgentProcess {
+            instance_key: self.spawn.instance_key.clone(),
+            instance_id: self.instance_id.clone()?,
+            supervisor_id: self.supervisor_id.clone()?,
+        })
+    }
+
     fn prepare(
         request: &NativeRequest,
         cwd: &str,
@@ -336,17 +345,23 @@ impl Core {
                             .instance_id
                             .clone()
                             .ok_or_else(|| errors::pane_busy("Terminal is still starting"))?;
-                        // The agent is told at once; a failure is logged with the other sends
-                        // nobody waits for.
-                        self.send_later(if request.method == "terminal/kill" {
-                            Request::Kill { instance_id }
+                        let retired = terminal.retirement();
+                        if request.method == "terminal/kill" && self.ptyd.is_none() {
+                            // Nothing can be sent: the agent is told, not given a success.
+                            Err(effects::failure("The supervisor is not connected"))
+                        } else if request.method == "terminal/kill" {
+                            // The terminal stays in the state: a kill that fails leaves a
+                            // process the agent can still release.
+                            self.send_later(Request::Kill { instance_id });
+                            Ok(json!({}))
                         } else {
-                            Request::Close { instance_id }
-                        });
-                        if request.method == "terminal/release" {
+                            // The ledger holds the process until the supervisor has closed it,
+                            // whether or not there is a link now.
+                            state.retired_processes.extend(retired);
                             state.terminals.remove(id);
+                            self.forget_reads(&crate::read_ahead::agent_terminal(pane, id));
+                            Ok(json!({}))
                         }
-                        Ok(json!({}))
                     }
                     _ => Err(effects::failure("Unknown terminal method")),
                 }

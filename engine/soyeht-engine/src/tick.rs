@@ -37,12 +37,15 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
                 })
                 .await
             }
-            // A job asked to be applied at once (a terminal read that found output): apply it
-            // and send what it brought now, and leave the rest of the tick to its turn.
+            // A job asked to be applied at once (a read that found output): apply it, poll what
+            // the read was for and send what it brought now, and leave the rest of the tick to
+            // its turn.
             () = woken.notified() => {
                 core_lock::with(&core, "background", |core| {
                     core.apply_background();
-                    core.pump_streams()
+                    let polled = core.poll_woken();
+                    let streams = core.pump_streams();
+                    polled.and(streams)
                 })
                 .await
             }

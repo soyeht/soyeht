@@ -94,8 +94,9 @@ impl Core {
             .get(pane)
             .and_then(|saved| saved.stored.instance_id.clone());
         if let Some(instance_id) = instance {
-            // Best effort: a close that fails is logged and tried again by the tick.
-            self.close_process(&instance_id);
+            // A close that fails is logged and tried again by the tick; the new process starts
+            // after it, not beside it.
+            self.close_and_wait(&instance_id);
         }
         // A lost link is rebuilt by the tick, which reconciles every pane.
         if self.ptyd.is_some() {
@@ -219,7 +220,66 @@ mod tests {
         assert_ne!(core.panes["agent"].stored.pane.state, PaneState::Dead);
         assert_ne!(core.agents["agent"].state.phase, Phase::Faulted);
         assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
-        assert_eq!(core.supervisor_retry.close_retries.attempts("child"), 1);
+        // The ledger holds the terminal's process until the supervisor has closed it.
+        assert!(
+            core.agents["agent"]
+                .state
+                .retired_processes
+                .iter()
+                .any(|retired| retired.instance_id == "child")
+        );
         assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+    }
+
+    #[test]
+    fn a_recovery_that_failed_before_the_pane_lost_its_process_is_not_retried_as_a_spawn() {
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.settle_spawn("agent", Err(crate::errors::internal("storage")));
+
+        assert!(core.ptyd.is_some());
+        assert!(core.panes["agent"].stored.instance_id.is_some());
+        assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
+        assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+    }
+
+    #[test]
+    fn the_replacing_process_starts_after_the_close_of_the_one_it_replaces() {
+        use crate::test_panes::Answering;
+        use soyeht_ptyd::wire::{Instance, Request, Response};
+        use std::sync::Mutex;
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&order);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            Ok(match request {
+                Request::Close { .. } => {
+                    // The close takes its time: the spawn must not overtake it.
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    record.lock().unwrap().push("close");
+                    Response::Ok
+                }
+                Request::Spawn(config) => {
+                    record.lock().unwrap().push("spawn");
+                    Response::Instance(Instance {
+                        instance_id: "instance-1".into(),
+                        supervisor_id: "answering".into(),
+                        spawn: config,
+                        pid: 7,
+                        closed: false,
+                        exit_code: None,
+                    })
+                }
+                _ => Response::Ok,
+            })
+        })));
+
+        core.restart_after_role_change("agent");
+
+        assert_eq!(*order.lock().unwrap(), ["close", "spawn"]);
+        assert_eq!(
+            core.panes["agent"].stored.instance_id.as_deref(),
+            Some("instance-1")
+        );
     }
 }

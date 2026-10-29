@@ -1,6 +1,7 @@
 use super::{
     Changes,
-    state::{Phase, State},
+    state::{Phase, RetiredAgentProcess, State},
+    terminals::Terminal,
     transcript,
 };
 use crate::{
@@ -18,23 +19,32 @@ impl Core {
     pub fn close_agent_processes(&mut self, pane: &str) -> Result<()> {
         let saved = &self.panes[pane].stored;
         let current = self.ptyd.as_ref().map(|p| p.supervisor_id());
-        let mut ids = Vec::new();
+        let mut processes = Vec::new();
         if saved.supervisor_id.as_deref() == current
-            && let Some(id) = &saved.instance_id
+            && let (Some(instance_id), Some(supervisor_id)) =
+                (&saved.instance_id, &saved.supervisor_id)
         {
-            ids.push(id.clone());
+            processes.push(RetiredAgentProcess {
+                instance_key: saved.instance_key.clone(),
+                instance_id: instance_id.clone(),
+                supervisor_id: supervisor_id.clone(),
+            });
         }
-        for terminal in self.agents[pane].state.terminals.values() {
-            if terminal.supervisor_id.as_deref() == current
-                && let Some(id) = &terminal.instance_id
-            {
-                ids.push(id.clone());
-            }
-        }
-        // A faulted agent is visited on every tick; each process is closed once.
-        ids.retain(|id| !self.agents[pane].idle.already_closed(id));
-        for instance_id in ids {
-            self.close_process(&instance_id);
+        let terminals = self.agents[pane].state.terminals.values();
+        processes.extend(
+            terminals
+                .filter(|terminal| terminal.supervisor_id.as_deref() == current)
+                .filter_map(Terminal::retirement),
+        );
+        // A faulted agent is visited on every tick; each process is handed over once. The ledger
+        // closes it, again and again until the supervisor has, and it survives a lost link.
+        processes.retain(|process| !self.agents[pane].idle.already_closed(&process.instance_id));
+        let handed: Vec<_> = processes
+            .iter()
+            .map(|process| process.instance_id.clone())
+            .collect();
+        self.retire_processes(pane, processes)?;
+        for instance_id in handed {
             errors::invariant(self.agents.get_mut(pane), "Agent runtime disappeared")?
                 .idle
                 .mark_closed(instance_id);

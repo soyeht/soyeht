@@ -322,6 +322,7 @@ impl Core {
                 move || {
                     turn.wait();
                     let mut closed = Vec::new();
+                    let mut refused = Ok(());
                     for instance_id in closing {
                         match supervisor.call(Request::Close {
                             instance_id: instance_id.clone(),
@@ -330,19 +331,53 @@ impl Core {
                             Err(error) if errors::supervisor_link_lost(&error) => {
                                 return Err(error);
                             }
-                            // ignored: the process stays in the ledger; a later tick closes it again.
-                            Err(_) => {}
+                            // The process stays in the ledger; a later tick closes it again.
+                            Err(error) => refused = refused.and(Err(error)),
                         }
                     }
-                    Ok(closed)
+                    Ok((closed, refused))
                 },
                 move |core, closed| {
-                    let closed = core.settle_supervisor(&used, closed)?;
+                    let (closed, refused) = core.settle_supervisor(&used, closed)?;
+                    // A close the supervisor keeps refusing is logged once per change of kind.
+                    core.settle_supervisor_call(CLOSE_REFUSED, refused);
                     core.forget_retired(&pane, &closed)
                 },
             )?;
         }
         Ok(())
+    }
+
+    /// Puts `processes` in the retirement ledger of `pane`, unless they are in it already.
+    pub(crate) fn retire_processes(
+        &mut self,
+        pane: &str,
+        processes: Vec<RetiredAgentProcess>,
+    ) -> Result<()> {
+        let Some(mut state) = self.agents.get(pane).map(|agent| agent.state.clone()) else {
+            return Ok(());
+        };
+        let before = state.retired_processes.len();
+        for process in processes {
+            if !state
+                .retired_processes
+                .iter()
+                .any(|retired| retired.instance_id == process.instance_id)
+            {
+                state.retired_processes.push(process);
+            }
+        }
+        if state.retired_processes.len() == before {
+            return Ok(());
+        }
+        self.commit_agent(
+            self.panes[pane].stored.clone(),
+            state,
+            Changes::default(),
+            None,
+            json!({}),
+        )
+        .map(drop)
     }
 
     /// Takes the processes `instance_ids` out of the retirement ledger of `pane`.
@@ -367,6 +402,9 @@ impl Core {
         .map(drop)
     }
 }
+
+/// The log event of a close of a retired process that the supervisor refused.
+const CLOSE_REFUSED: &str = "engine.retired_close_failed";
 
 /// Model and effort the switch asked for, then the mode the pane keeps when
 /// the new harness offers it.

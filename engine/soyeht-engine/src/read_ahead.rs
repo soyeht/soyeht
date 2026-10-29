@@ -19,7 +19,7 @@ use crate::{
     supervisor_handle::Supervisor,
     terminal_drain::{Read, read_output},
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// The read a job ended with, and what it asked for.
 pub(crate) struct Ready {
@@ -35,12 +35,14 @@ pub(crate) struct Ready {
 /// change of the agent's state ends the wait at once.
 pub(crate) const IDLE_PACE_MS: i64 = 100;
 
-/// The reads that ended and have not been taken, by the owner that asked, and the owners that
-/// are left alone until some time.
+/// The reads that ended and have not been taken, by the owner that asked, the owners that are
+/// left alone until some time, and the owners that are still asking: a read that ends for an
+/// owner that is gone (its pane closed, its link lost) is dropped.
 #[derive(Default)]
 pub(crate) struct Reads {
     ready: BTreeMap<String, Ready>,
     paused_until_ms: BTreeMap<String, i64>,
+    live: BTreeSet<String>,
 }
 
 /// The owner of the reads of an agent's own process.
@@ -56,6 +58,15 @@ pub(crate) fn agent_terminal(pane: &str, terminal: &str) -> String {
 /// The owner of the reads of the language server `key`.
 pub(crate) fn language(key: &str) -> String {
     format!("language:{key}")
+}
+
+/// Whether a read found something the poll should see at once: output, a gap, or an error (a
+/// lost link is dropped when its error is applied). A quiet read, or an exit with nothing left
+/// to read, waits for the next tick, so an idle process never makes the tick spin.
+fn has_news(read: &Result<Read>) -> bool {
+    !read
+        .as_ref()
+        .is_ok_and(|read| read.output.bytes.is_empty() && read.output.gap.is_none())
 }
 
 /// The job that reads for `owner`. One at a time per owner.
@@ -79,9 +90,10 @@ impl Core {
         }
         let supervisor = self.supervisor()?;
         let used: Supervisor = supervisor.clone();
+        self.reads.live.insert(owner.to_owned());
         let (owner, instance_id) = (owner.to_owned(), instance_id.to_owned());
         let asked = instance_id.clone();
-        self.spawn_background(
+        self.spawn_prompt_background(
             job,
             move || read_output(&supervisor, &asked, from_seq, look_up_exit),
             move |core, read| {
@@ -92,6 +104,9 @@ impl Core {
                     Ok(None) => return Ok(()),
                     Err(error) => Err(error),
                 };
+                if !core.reads.live.contains(&owner) {
+                    return Ok(());
+                }
                 core.reads.ready.insert(
                     owner,
                     Ready {
@@ -102,7 +117,17 @@ impl Core {
                 );
                 Ok(())
             },
+            has_news,
         )
+    }
+
+    /// The tick's part when a read brought news: polls at once what the read is for, so output
+    /// is not left waiting for the next tick (see [`has_news`]).
+    pub(crate) fn poll_woken(&mut self) -> Result<()> {
+        if self.ptyd.is_none() {
+            return Ok(());
+        }
+        self.drain_panes()
     }
 
     /// The read `owner` asked for, if it ended: the answer for `instance_id` from `from_seq`. With
@@ -136,6 +161,12 @@ impl Core {
         self.reads
             .paused_until_ms
             .retain(|owner, _| !owner.starts_with(prefix));
+        self.reads.live.retain(|owner| !owner.starts_with(prefix));
+    }
+
+    /// Forgets every read: the link they were made on is gone.
+    pub(crate) fn forget_all_reads(&mut self) {
+        self.reads = Reads::default();
     }
 
     /// Leaves `owner` alone for [`IDLE_PACE_MS`]: its next read starts after that, so a quiet
@@ -260,6 +291,40 @@ mod tests {
                 .is_some()
         );
         assert_eq!(asked.lock().unwrap().len(), before + 1);
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn a_read_that_ends_after_its_owner_was_forgotten_is_dropped() {
+        let (mut core, directory, _) = core_with(Duration::from_millis(200));
+        core.start_read(&agent("pane"), "process", 1, false)
+            .unwrap();
+        core.forget_reads(&agent("pane"));
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while core.background.is_active("read:agent:pane") {
+            assert!(Instant::now() < deadline, "the read never ended");
+            core.apply_background();
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            core.reads.ready.is_empty(),
+            "a read of a closed pane was kept"
+        );
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn a_lost_link_forgets_the_reads_made_on_it() {
+        let (mut core, directory, _) = core_with(Duration::ZERO);
+        core.background = crate::offload::Background::inline();
+        core.start_read(&agent("pane"), "process", 1, false)
+            .unwrap();
+        assert!(!core.reads.ready.is_empty());
+
+        core.lose_supervisor_link();
+
+        assert!(core.reads.ready.is_empty());
         crate::test_paths::remove_after(core, directory);
     }
 }

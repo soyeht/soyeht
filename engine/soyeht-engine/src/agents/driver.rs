@@ -518,8 +518,9 @@ impl Core {
         let saved = self.panes[pane].stored.clone();
         let retire_instance = saved.instance_id.clone().zip(saved.supervisor_id.clone());
         if let Some(instance_id) = saved.instance_id {
-            // The retirement ledger below holds the process until it is closed.
-            self.close_process(&instance_id);
+            // The retirement ledger below holds the process until it is closed; the new one
+            // starts after the close, not beside it.
+            self.close_and_wait(&instance_id);
         }
         let mut saved = self.panes[pane].stored.clone();
         let mut state = self.agent_state(pane)?;

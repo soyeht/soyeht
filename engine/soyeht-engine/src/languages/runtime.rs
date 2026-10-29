@@ -203,6 +203,7 @@ impl Core {
         if let Some(instance) = existing {
             self.close_process(&instance.instance_id);
         }
+        self.forget_reads(&crate::read_ahead::language(key));
         if existing.is_some() || language(&self.languages, key)?.instance_id.is_some() {
             language_mut(&mut self.languages, key)?
                 .restart("No open editor pane requires this language server")?;
@@ -470,6 +471,7 @@ impl Core {
         if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
             self.send_later(Request::Close { instance_id });
         }
+        self.forget_reads(&crate::read_ahead::language(key));
         Ok(pending)
     }
 
