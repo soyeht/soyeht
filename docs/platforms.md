@@ -67,9 +67,11 @@ can make slow. Two things used to hold the socket back for seconds on a busy mac
   that fails keeps the remembered `PATH` and reports the failure in the harness
   catalogue. A catalogue rescan asks the shell again on its own thread, and every other
   request keeps using the previous answer meanwhile, so nothing under the Core lock
-  waits for the shell. The shell asked is `$SHELL`, else the one the account names in the user
-  database (`soyeht_platform::user::login_shell`), because a program a desktop session started
-  may not carry `$SHELL`. Windows has no login shell to ask.
+  waits for the shell. The shell asked is the preferred shell
+  (`soyeht_platform::user::preferred_shell`, the same rule the terminals use on Linux): a usable
+  `$SHELL`, else the one the account names in the user database unless it refuses logins, else
+  `bash`, else `sh`, because a program a desktop session started may carry no `$SHELL`, or a
+  stale one. Windows has no login shell to ask.
 - The file-event stream of the user's skill folder. The system's file-event service
   can take seconds to start a stream. It starts on its own thread and the folder is
   read by polling until it is live, then once more.

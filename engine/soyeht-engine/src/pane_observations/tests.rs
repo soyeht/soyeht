@@ -4,7 +4,9 @@ use soyeht_pane_state::{
     MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame, ObservationReason,
 };
 use soyeht_platform::fs::symlink;
-use soyeht_platform::fs::{create_private_dir, dir_is_owner_only, file_is_owner_only};
+use soyeht_platform::fs::{
+    create_private_dir, dir_is_owner_only, ensure_private_dir, file_is_owner_only,
+};
 use soyeht_protocol::{PaneState, StateSource};
 use std::sync::mpsc;
 use std::{
@@ -390,9 +392,9 @@ fn restart_keeps_sequence_and_build_change_starts_a_self_describing_segment() {
 #[test]
 fn incompatible_segment_is_skipped_locally_and_a_new_segment_does_not_collide() {
     let fixture = Fixture::new();
-    ensure_private_directory(&fixture.root).unwrap();
+    ensure_private_dir(&fixture.root).unwrap();
     let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
-    ensure_private_directory(&pane_directory).unwrap();
+    ensure_private_dir(&pane_directory).unwrap();
     create_segment_file(
         &pane_directory,
         0,

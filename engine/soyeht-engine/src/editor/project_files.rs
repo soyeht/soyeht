@@ -7,10 +7,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-/// True for the engine's own temporary files (an atomic save's and a publish's), which no search,
+/// True for the temporary files of the platform's atomic save and publish, which no search,
 /// listing or file event may ever show.
 pub(super) fn is_save_temporary(name: &OsStr) -> bool {
-    crate::immutable_file::is_engine_temporary(name)
+    soyeht_platform::fs::is_temporary_name(name)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

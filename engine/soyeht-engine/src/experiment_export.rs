@@ -11,15 +11,13 @@ use soyeht_pane_state::{
     RecordedRow, encode_row,
 };
 use soyeht_platform::fs::{
-    OpenOptionsPrivateExt, create_private_dir, dir_is_owner_only, file_is_owner_only,
-    sync_directory,
+    WriteMode, ensure_private_dir, is_temporary_name, publish_new, sync_directory,
 };
 use soyeht_protocol::{limits, method};
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsStr,
-    fs::{self, OpenOptions},
-    io::{Read, Write},
+    fs,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
@@ -293,11 +291,14 @@ fn build_export_at(
         }
     }
     let exports = root.join("exports");
-    ensure_private_directory(&exports)?;
+    ensure_private_dir(&exports)?;
     let stale_temporary_cleanup = cleanup_stale_export_temporaries(&exports, now)?;
     let path = exports.join(format!("export-{fingerprint}.jsonl"));
-    if let Err(error) = write_atomic(&exports, &path, &bytes) {
-        return Err(export_after_cleanup_error(stale_temporary_cleanup, error));
+    if let Err(error) = publish_new(&path, &bytes, WriteMode::OwnerOnly) {
+        return Err(export_after_cleanup_error(
+            stale_temporary_cleanup,
+            error.into(),
+        ));
     }
     Ok(ExportReceipt {
         path,
@@ -447,30 +448,6 @@ fn enforce_row_limit(rows: usize, pane_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn ensure_private_directory(path: &Path) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata)
-            if !metadata.file_type().is_symlink()
-                && metadata.is_dir()
-                && dir_is_owner_only(path)? =>
-        {
-            Ok(())
-        }
-        Ok(_) => Err(errors::internal(
-            "Experiment export directory is not private",
-        )),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            create_private_dir(path)?;
-            sync_directory(
-                path.parent()
-                    .ok_or_else(|| errors::internal("Export root is missing"))?,
-            )?;
-            Ok(())
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
 fn cleanup_stale_export_temporaries(
     directory: &Path,
     now: SystemTime,
@@ -485,9 +462,10 @@ fn cleanup_stale_export_temporaries(
         let path = entry
             .map_err(|error| temporary_cleanup_error(Default::default(), error.into()))?
             .path();
+        // The temporary of a publish, and the name earlier versions gave theirs.
         if path
             .file_name()
-            .is_some_and(is_canonical_export_temporary_name)
+            .is_some_and(|name| is_temporary_name(name) || is_canonical_export_temporary_name(name))
         {
             paths.push(path);
         }
@@ -550,7 +528,7 @@ pub(crate) fn cleanup_stale_export_temporaries_on_start(profile: &Path) -> Resul
         Err(error) => return Err(error.into()),
     }
     let exports = experiment_root(profile)?.join("exports");
-    ensure_private_directory(&exports)?;
+    ensure_private_dir(&exports)?;
     let receipt = cleanup_stale_export_temporaries(&exports, SystemTime::now())?;
     Ok((receipt.files, receipt.bytes))
 }
@@ -581,52 +559,6 @@ fn temporary_cleanup_error(
         "Stale experiment export temporary cleanup removed {} files ({} bytes) before it failed: {error}",
         receipt.files, receipt.bytes
     ))
-}
-
-fn existing_export_matches(path: &Path, bytes: &[u8]) -> Result<bool> {
-    let mut existing = OpenOptions::new().read(true).open_no_follow(path)?;
-    let metadata = existing.metadata()?;
-    if !metadata.is_file() || !file_is_owner_only(&existing)? {
-        return Err(errors::internal(
-            "Existing experiment export is not private",
-        ));
-    }
-    let mut prior = Vec::new();
-    Read::by_ref(&mut existing)
-        .take(limits::EXPERIMENT_EXPORT_BYTES as u64 + 1)
-        .read_to_end(&mut prior)?;
-    Ok(prior == bytes)
-}
-
-fn write_atomic(directory: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(_) if existing_export_matches(path, bytes)? => return Ok(()),
-        Ok(_) => {
-            return Err(errors::internal(
-                "Existing experiment export differs from this retry",
-            ));
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
-        Err(error) => return Err(error.into()),
-    }
-    let temporary = directory.join(format!(".export-{}.tmp", Uuid::new_v4()));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .owner_only()
-        .open_no_follow(&temporary)?;
-    let result = (|| -> Result<()> {
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        fs::hard_link(&temporary, path)?;
-        fs::remove_file(&temporary)?;
-        sync_directory(directory)?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary); // Best effort: the write error is returned.
-    }
-    result
 }
 
 #[cfg(test)]

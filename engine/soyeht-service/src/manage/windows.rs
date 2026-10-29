@@ -5,13 +5,14 @@
 //! of what was registered. Whether a task runs is asked of PowerShell, since the column
 //! `schtasks` prints is translated to the language of the system.
 
-use super::{Manager, path_text, private_folder, remove_definition, write_definition};
+use super::{Manager, path_text, remove_definition, write_definition};
 use crate::{
     commands::Commands,
     error::{Error, Result},
     render::encode_task_file,
     system::Component,
 };
+use soyeht_platform::fs::ensure_private_dir;
 
 const SCHTASKS: &str = "schtasks";
 const POWERSHELL: &str = "powershell.exe";
@@ -43,7 +44,7 @@ impl<C: Commands> Manager<'_, C> {
     pub(super) fn task_install(&self, component: Component, text: &str) -> Result<()> {
         let file = self.file(component);
         if let Some(folder) = file.parent() {
-            private_folder(folder)?;
+            ensure_private_dir(folder)?;
         }
         write_definition(&file, &encode_task_file(text))?;
         // `/F` replaces a task of the same name, and leaves its running instance alone.

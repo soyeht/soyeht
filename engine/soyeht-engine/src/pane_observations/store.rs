@@ -6,7 +6,7 @@ use soyeht_pane_state::{
     SegmentMetadata, decode_segment, encode_row, segment_schema_version,
 };
 use soyeht_platform::fs::{
-    OpenOptionsPrivateExt, create_private_dir, dir_is_owner_only, file_is_owner_only,
+    OpenOptionsPrivateExt, check_private_dir, ensure_private_dir, file_is_owner_only,
     sync_directory,
 };
 use std::{
@@ -72,9 +72,9 @@ impl SegmentStore {
     ) -> Result<Self> {
         let pane_id = pane_id.into();
         validate_identity(&pane_id, pane_kind, &harness, &engine)?;
-        ensure_private_directory(root)?;
+        ensure_private_dir(root)?;
         let directory = root.join(pane_directory_name(&pane_id));
-        ensure_private_directory(&directory)?;
+        ensure_private_dir(&directory)?;
         let (segments, last_sequence, next_segment_number) = load_segments(&directory, &pane_id)?;
         Ok(Self {
             root: root.into(),
@@ -287,9 +287,9 @@ impl SegmentStore {
 
 pub fn experiment_root(profile: &Path) -> Result<PathBuf> {
     let experiments = profile.join("experiments");
-    ensure_private_directory(&experiments)?;
+    ensure_private_dir(&experiments)?;
     let root = experiments.join("pane-state");
-    ensure_private_directory(&root)?;
+    ensure_private_dir(&root)?;
     Ok(root)
 }
 
@@ -299,10 +299,10 @@ pub(crate) fn replay_pane(root: &Path, pane_id: &str) -> Result<PaneReplay> {
             "Pane identity is required for observation replay",
         ));
     }
-    validate_private_directory(root)?;
+    check_private_dir(root)?;
     let directory = root.join(pane_directory_name(pane_id));
     match fs::symlink_metadata(&directory) {
-        Ok(_) => validate_private_directory(&directory)?,
+        Ok(_) => check_private_dir(&directory)?,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(PaneReplay {
                 segments: Vec::new(),
@@ -343,7 +343,7 @@ pub fn delete_pane(root: &Path, pane_id: &str) -> Result<DeletionReceipt> {
             "Pane identity is required for observation deletion",
         ));
     }
-    validate_private_directory(root)?;
+    check_private_dir(root)?;
     let directory = root.join(pane_directory_name(pane_id));
     match fs::symlink_metadata(&directory) {
         Ok(_) => (),
@@ -352,7 +352,7 @@ pub fn delete_pane(root: &Path, pane_id: &str) -> Result<DeletionReceipt> {
         }
         Err(error) => return Err(error.into()),
     }
-    validate_private_directory(&directory)?;
+    check_private_dir(&directory)?;
     let files = validated_segment_files(&directory)?;
     let receipt = deletion_receipt(&files)?;
     for path in files {
@@ -517,27 +517,6 @@ pub(super) fn create_segment_file(directory: &Path, number: u64, header: &[u8]) 
     file.write_all(header)?;
     file.sync_all()?;
     sync_directory(directory)?;
-    Ok(())
-}
-
-pub(super) fn ensure_private_directory(path: &Path) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => validate_private_directory(path),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            create_private_dir(path)?;
-            validate_private_directory(path)
-        }
-        Err(error) => Err(error.into()),
-    }
-}
-
-fn validate_private_directory(path: &Path) -> Result<()> {
-    let metadata = fs::symlink_metadata(path)?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() || !dir_is_owner_only(path)? {
-        return Err(errors::internal(
-            "Observation directory is not private and symlink-free",
-        ));
-    }
     Ok(())
 }
 

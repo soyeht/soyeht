@@ -11,6 +11,8 @@ use std::{
 };
 
 mod atomic;
+mod private_dir;
+mod publish;
 #[cfg(any(windows, test))]
 mod sddl;
 #[cfg(unix)]
@@ -21,6 +23,9 @@ mod windows;
 pub use atomic::{
     Staged, TEMPORARY_PREFIX, WriteMode, is_temporary_name, stage_replacement, write_atomic,
 };
+
+pub use private_dir::{PrivateDirError, check_private_dir, ensure_private_dir};
+pub use publish::publish_new;
 
 #[cfg(unix)]
 use unix as system;

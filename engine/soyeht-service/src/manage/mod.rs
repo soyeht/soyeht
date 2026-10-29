@@ -17,8 +17,7 @@ use crate::{
     system::{Component, System},
 };
 use soyeht_platform::fs::{
-    OpenOptionsPrivateExt as _, WriteMode, create_private_dir, set_private_dir, set_private_file,
-    write_atomic,
+    OpenOptionsPrivateExt as _, WriteMode, ensure_private_dir, set_private_file, write_atomic,
 };
 use std::{
     fs::{self, OpenOptions},
@@ -164,8 +163,8 @@ impl<'a, C: Commands> Manager<'a, C> {
     /// Makes the data and log folders owner-only and the log files present, so the system's
     /// manager (which will not make a folder) has somewhere to append to.
     fn prepare_folders(&self, components: impl Iterator<Item = Component>) -> Result<()> {
-        private_folder(&self.layout.data)?;
-        private_folder(&soyeht_platform::process::detached::logs_directory(
+        ensure_private_dir(&self.layout.data)?;
+        ensure_private_dir(&soyeht_platform::process::detached::logs_directory(
             &self.layout.data,
         ))?;
         for component in components {
@@ -187,25 +186,6 @@ fn ordered(components: &[Component]) -> Vec<Component> {
         .into_iter()
         .filter(|component| components.contains(component))
         .collect()
-}
-
-/// An owner-only folder, made when missing. A link in its place is refused, not followed.
-pub(crate) fn private_folder(path: &Path) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            return Err(Error::Unsafe("a folder"));
-        }
-        Ok(_) => {}
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            create_private_dir(path)?;
-        }
-        Err(error) => return Err(error.into()),
-    }
-    set_private_dir(path)?;
-    Ok(())
 }
 
 /// Replaces the file at `path`, making its folder when missing; a link at `path` is replaced,

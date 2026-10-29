@@ -45,8 +45,9 @@ ADR 0107).
 
 ## Kept apart
 
-- `immutable_file::publish` and `experiment_export::write_atomic` publish with an exclusive
-  hard link and never overwrite; their contract is the opposite of a replacement.
+- `soyeht_platform::fs::publish_new` (ADR 0116, used by `immutable_file::publish` and the
+  experiment export) publishes with an exclusive hard link and never overwrites; its contract is
+  the opposite of a replacement.
 - `agents/filesystem` replaces through a directory handle (`renameat`), so no component of an
   agent-supplied path is followed, and keeps hard links and attributes; it needs the handle,
   which a path-based helper does not have.

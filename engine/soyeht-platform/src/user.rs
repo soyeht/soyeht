@@ -8,30 +8,91 @@ pub fn id() -> io::Result<String> {
     system::id()
 }
 
-/// The login shell of the account running this process, as the system's user database names it,
-/// or `None` when the account has none. It does not depend on the environment, which a program
-/// started from a desktop session or a service may not carry (`SHELL` is set by the login, not
-/// by the system). Windows has no login shell: it returns an `Unsupported` error.
+/// The shell a person's terminals and shell probes start, chosen by one rule on every caller.
 ///
-/// The lookup may read a directory service, so it is not for a hot path.
-pub fn login_shell() -> io::Result<Option<PathBuf>> {
-    system::login_shell()
+/// On Unix: `$SHELL` when it names an existing absolute file (the login sets it; a program a
+/// desktop session or a service started may carry none, or a stale one), else the shell the
+/// account's entry in the user database names, unless that shell exists to refuse a login
+/// (`nologin`, `false`) or is not an existing absolute file, else the first `bash` there is,
+/// else the POSIX `sh`. The user database is asked only when `$SHELL` is not usable, and its
+/// answer is remembered for the life of the process, so a caller on a hot path or under a lock
+/// asks it once at start (the lookup may reach a directory service) and never again.
+///
+/// Windows has no login shell: it returns an `Unsupported` error.
+///
+/// # Errors
+/// Only where the system has no such shell, which is Windows.
+pub fn preferred_shell() -> io::Result<PathBuf> {
+    system::preferred_shell()
 }
 
 #[cfg(unix)]
 mod system {
     use std::{
-        ffi::{CStr, OsStr},
+        ffi::{CStr, OsStr, OsString},
         io,
         os::unix::ffi::OsStrExt as _,
-        path::PathBuf,
+        path::{Path, PathBuf},
         ptr,
+        sync::OnceLock,
     };
 
     /// The largest buffer `getpwuid_r` is offered: a record is a few hundred bytes.
     const MAX_RECORD: usize = 1 << 20;
 
-    pub(super) fn login_shell() -> io::Result<Option<PathBuf>> {
+    pub(super) fn preferred_shell() -> io::Result<PathBuf> {
+        Ok(choose_shell(std::env::var_os("SHELL"), account_shell))
+    }
+
+    /// The shell the user database names for this account, read once per process. A failed
+    /// lookup is logged by kind and names none, which is correct here: the fallbacks after it
+    /// start a shell all the same.
+    fn account_shell() -> Option<PathBuf> {
+        static ACCOUNT: OnceLock<Option<PathBuf>> = OnceLock::new();
+        ACCOUNT
+            .get_or_init(|| match login_shell() {
+                Ok(shell) => shell,
+                Err(error) => {
+                    crate::log::failure("platform.login_shell_lookup_failed", &error);
+                    None
+                }
+            })
+            .clone()
+    }
+
+    /// An account shell that exists to refuse a login: starting it ends the terminal at once.
+    fn refuses_login(shell: &Path) -> bool {
+        matches!(
+            shell.file_name().and_then(|name| name.to_str()),
+            Some("nologin" | "false")
+        )
+    }
+
+    /// `environment`, else `account()` (asked only when `environment` is not usable), each only
+    /// when it names an existing absolute file, else the first `bash` there is, else `sh`.
+    fn choose_shell(
+        environment: Option<OsString>,
+        account: impl FnOnce() -> Option<PathBuf>,
+    ) -> PathBuf {
+        let usable = |shell: PathBuf| (shell.is_absolute() && shell.is_file()).then_some(shell);
+        environment
+            .map(PathBuf::from)
+            .and_then(usable)
+            .or_else(|| {
+                account()
+                    .filter(|shell| !refuses_login(shell))
+                    .and_then(usable)
+            })
+            .unwrap_or_else(|| {
+                ["/bin/bash", "/usr/bin/bash"]
+                    .into_iter()
+                    .map(PathBuf::from)
+                    .find(|candidate| candidate.is_file())
+                    .unwrap_or_else(|| PathBuf::from("/bin/sh"))
+            })
+    }
+
+    fn login_shell() -> io::Result<Option<PathBuf>> {
         // SAFETY: sysconf only reads a limit.
         let hint = unsafe { libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) };
         // -1 (no limit known) or 0 asks for the usual size.
@@ -78,6 +139,134 @@ mod system {
         // SAFETY: geteuid has no arguments or memory preconditions.
         Ok(unsafe { libc::geteuid() }.to_string())
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::fs;
+
+        /// A scratch directory removed when dropped.
+        struct TempDir(PathBuf);
+
+        impl TempDir {
+            fn new(name: &str) -> Self {
+                static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+                let path = std::env::temp_dir().join(format!(
+                    "soyeht-platform-user-{name}-{}-{}",
+                    std::process::id(),
+                    COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                ));
+                fs::create_dir_all(&path).unwrap();
+                Self(path)
+            }
+
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                drop(fs::remove_dir_all(&self.0));
+            }
+        }
+
+        fn file_named(directory: &TempDir, name: &str) -> PathBuf {
+            let path = directory.path().join(name);
+            fs::write(&path, "#!/bin/sh\n").unwrap();
+            path
+        }
+
+        fn must_not_be_asked() -> Option<PathBuf> {
+            panic!("the lookup reads a directory service")
+        }
+
+        fn is_a_fallback(shell: &Path) -> bool {
+            shell.file_name().is_some_and(|name| name == "bash") || shell == Path::new("/bin/sh")
+        }
+
+        #[test]
+        fn the_account_login_shell_is_read_from_the_user_database_not_the_environment() {
+            // A CI container may run as a user with no entry or no shell; an entry names a program.
+            if let Some(shell) = login_shell().unwrap() {
+                assert!(shell.is_absolute(), "{shell:?}");
+            }
+        }
+
+        #[test]
+        fn the_shell_variable_beats_the_account_and_the_account_is_not_asked() {
+            let directory = TempDir::new("shell-variable");
+            let mine = file_named(&directory, "fish");
+            assert_eq!(
+                choose_shell(Some(mine.clone().into_os_string()), must_not_be_asked),
+                mine
+            );
+        }
+
+        #[test]
+        fn a_stale_shell_variable_falls_back_to_the_account_shell() {
+            let directory = TempDir::new("stale-variable");
+            let account = file_named(&directory, "zsh");
+            for stale in [
+                None,
+                Some(OsString::new()),
+                Some("zsh".into()),
+                Some("/nowhere/at/all/zsh".into()),
+                // A directory is not a shell.
+                Some(directory.path().as_os_str().to_owned()),
+            ] {
+                assert_eq!(
+                    choose_shell(stale.clone(), || Some(account.clone())),
+                    account,
+                    "{stale:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn an_account_shell_that_refuses_logins_is_not_started() {
+            assert!(refuses_login(Path::new("/usr/sbin/nologin")));
+            assert!(refuses_login(Path::new("/sbin/nologin")));
+            assert!(refuses_login(Path::new("/bin/false")));
+            assert!(!refuses_login(Path::new("/bin/bash")));
+            // The same through the choice, with files that exist under those names.
+            let directory = TempDir::new("refusing");
+            for name in ["nologin", "false"] {
+                let refusing = file_named(&directory, name);
+                let chosen = choose_shell(None, || Some(refusing.clone()));
+                assert!(is_a_fallback(&chosen), "{name}: {chosen:?}");
+            }
+        }
+
+        #[test]
+        fn no_usable_shell_falls_back_to_bash_then_to_sh() {
+            let directory = TempDir::new("fallbacks");
+            let missing = directory.path().join("missing");
+            for account in [None, Some(missing)] {
+                let chosen = choose_shell(None, || account.clone());
+                assert!(is_a_fallback(&chosen), "{chosen:?}");
+                assert!(chosen.is_file(), "{chosen:?}");
+            }
+            let bash_exists = ["/bin/bash", "/usr/bin/bash"]
+                .into_iter()
+                .any(|path| Path::new(path).is_file());
+            if !bash_exists {
+                assert_eq!(choose_shell(None, || None), Path::new("/bin/sh"));
+            }
+        }
+
+        #[test]
+        fn the_account_is_looked_up_once_per_process() {
+            // The same value is returned from the cell on every call; a changed user database is
+            // not read again.
+            assert_eq!(account_shell(), account_shell());
+        }
+
+        #[test]
+        fn the_preferred_shell_exists_on_a_unix_host() {
+            assert!(preferred_shell().unwrap().is_file());
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -92,7 +281,7 @@ mod system {
         System::Threading::{GetCurrentProcess, OpenProcessToken},
     };
 
-    pub(super) fn login_shell() -> io::Result<Option<PathBuf>> {
+    pub(super) fn preferred_shell() -> io::Result<PathBuf> {
         Err(io::ErrorKind::Unsupported.into())
     }
 
@@ -156,20 +345,11 @@ mod tests {
         assert!(!super::id().unwrap().is_empty());
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn the_account_login_shell_is_read_from_the_user_database_not_the_environment() {
-        // A CI container may run as a user with no entry or no shell; an entry names a program.
-        if let Some(shell) = super::login_shell().unwrap() {
-            assert!(shell.is_absolute(), "{shell:?}");
-        }
-    }
-
     #[cfg(windows)]
     #[test]
-    fn windows_has_no_login_shell() {
+    fn windows_has_no_preferred_shell() {
         assert_eq!(
-            super::login_shell().unwrap_err().kind(),
+            super::preferred_shell().unwrap_err().kind(),
             std::io::ErrorKind::Unsupported
         );
     }

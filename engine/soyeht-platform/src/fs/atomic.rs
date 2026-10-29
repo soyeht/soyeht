@@ -24,7 +24,8 @@ pub const TEMPORARY_PREFIX: &str = ".soyeht-write-";
 /// How many names are tried before giving up; a name only collides with a leftover or a plant.
 const NAME_ATTEMPTS: usize = 16;
 
-/// True for the name of a temporary file of [`write_atomic`] or [`stage_replacement`]. It exists
+/// True for the name of a temporary file of [`write_atomic`], [`stage_replacement`] or
+/// [`publish_new`](super::publish_new). It exists
 /// only while a write is in flight (or after a crash), and belongs to the writer, not to the
 /// folder: no listing, search or file event should show it.
 pub fn is_temporary_name(name: &OsStr) -> bool {
@@ -63,9 +64,9 @@ pub struct Staged {
 }
 
 /// Removes the temporary file unless it was renamed away.
-struct Cleanup {
-    temporary: PathBuf,
-    armed: bool,
+pub(super) struct Cleanup {
+    pub(super) temporary: PathBuf,
+    pub(super) armed: bool,
 }
 
 impl Drop for Cleanup {
@@ -136,16 +137,7 @@ fn stage_named(
     mode: WriteMode,
     names: impl FnMut() -> String,
 ) -> io::Result<Staged> {
-    if target.file_name().is_none() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "target has no file name",
-        ));
-    }
-    let directory = match target.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => parent,
-        _ => Path::new("."),
-    };
+    let directory = directory_of(target)?;
     // Read before the file exists so a missing target is not an error of the open below.
     let kept = match mode {
         WriteMode::OwnerOnly => None,
@@ -179,9 +171,24 @@ fn stage_named(
     })
 }
 
+/// The directory a file beside `target` goes in: its parent, or the working directory for a bare
+/// name. A `target` with no file name (`/`, `..`) is refused.
+pub(super) fn directory_of(target: &Path) -> io::Result<&Path> {
+    if target.file_name().is_none() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "target has no file name",
+        ));
+    }
+    Ok(match target.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    })
+}
+
 /// Creates the temporary file under the first name of `names` nobody has taken. A name that is
 /// taken, by a leftover or a planted link, is skipped and never opened.
-fn create_temporary(
+pub(super) fn create_temporary(
     directory: &Path,
     mode: WriteMode,
     keeps_a_file: bool,
@@ -210,7 +217,7 @@ fn create_temporary(
 
 /// A name no other writer of this process, or of another process, is likely to pick: the process
 /// id, a counter and the clock. `create_new` is what makes a collision harmless.
-fn temporary_name() -> String {
+pub(super) fn temporary_name() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
