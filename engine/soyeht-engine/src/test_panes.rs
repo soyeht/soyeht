@@ -234,7 +234,7 @@ pub(crate) fn core_with_agent(failures: &[&'static str]) -> (Core, std::path::Pa
     );
     core.agents.insert("agent".into(), Running::new(state));
     core.clock = Arc::new(FixedClock(1_000_000));
-    core.ptyd = Some(Box::new(Spawning {
+    core.link_supervisor(Box::new(Spawning {
         failures: failures.iter().copied().collect(),
         spawns: 0,
         close_failure: None,

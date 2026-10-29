@@ -541,11 +541,11 @@ pub(crate) mod tests {
     fn only_a_refused_spawn_stops_a_pane() {
         let directory = short_directory();
         let mut core = Core::open(&directory).unwrap();
-        core.ptyd = Some(Box::new(FakeSupervisor::default()));
+        core.link_supervisor(Box::new(FakeSupervisor::default()));
         assert!(core.refused_by_supervisor(&remote(wire_kind::SPAWN_REFUSED)));
         core.ptyd = None;
         assert!(!core.refused_by_supervisor(&remote(wire_kind::SPAWN_REFUSED)));
-        core.ptyd = Some(Box::new(FakeSupervisor::default()));
+        core.link_supervisor(Box::new(FakeSupervisor::default()));
         for kind in [
             // A spawn that failed for lack of a resource or time may succeed on the next try.
             wire_kind::SPAWN_FAILED,
@@ -599,7 +599,7 @@ pub(crate) mod tests {
         pane.stored.instance_id = None;
         pane.stored.supervisor_id = None;
         let calls = Arc::new(AtomicUsize::new(0));
-        core.ptyd = Some(Box::new(Scripted {
+        core.link_supervisor(Box::new(Scripted {
             responses: responses.into(),
             calls: Arc::clone(&calls),
         }));

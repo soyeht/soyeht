@@ -542,7 +542,7 @@ mod tests {
     fn recording_core(root: &Path, cell: &'static EngineBuildCell) -> (Core, Arc<Mutex<Vec<u64>>>) {
         let mut core = terminal_core(root, true, cell);
         let drains = Arc::new(Mutex::new(Vec::new()));
-        core.ptyd = Some(Box::new(Recorder {
+        core.link_supervisor(Box::new(Recorder {
             drains: Arc::clone(&drains),
             generation: core.generation as u32,
         }));

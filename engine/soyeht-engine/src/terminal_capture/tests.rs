@@ -529,7 +529,7 @@ fn cadence_core(root: &Path, chunks: &[Vec<u8>], capture: bool) -> Core {
         responses.push_back(Ok(Response::Ok));
         offset = next;
     }
-    core.ptyd = Some(Box::new(FakeSupervisor {
+    core.link_supervisor(Box::new(FakeSupervisor {
         responses,
         id: "cadence-supervisor".into(),
         generation: core.generation as u32,

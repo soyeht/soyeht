@@ -38,6 +38,7 @@ mod slow_holds;
 mod spawn_retry;
 pub mod streak;
 pub mod streams;
+pub mod supervisor_handle;
 mod supervisor_link;
 pub mod tasks;
 mod terminal_capture;

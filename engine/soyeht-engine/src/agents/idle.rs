@@ -234,7 +234,7 @@ pub(super) mod tests {
         core.clock = Arc::new(FixedClock(0));
         core.web = crate::web::Service::new(Box::new(EmptyPortScan));
         let counters: [Arc<Mutex<u64>>; 3] = Default::default();
-        core.ptyd = Some(Box::new(QuietSupervisor {
+        core.link_supervisor(Box::new(QuietSupervisor {
             drains: counters[0].clone(),
             acknowledgements: counters[1].clone(),
             others: counters[2].clone(),

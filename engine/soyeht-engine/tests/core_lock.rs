@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use std::{
     fs,
     os::unix::fs::PermissionsExt,
+    process::Command,
     thread,
     time::{Duration, Instant},
 };
@@ -100,4 +101,70 @@ fn terminal_output_keeps_flowing_while_a_usage_source_blocks() {
         slow_gap <= allowed,
         "terminal output stalled for {slow_gap:?} behind the usage source (control {control_gap:?})"
     );
+}
+
+/// How long the supervisor stays stopped. Its client waits up to five seconds for an answer
+/// (`soyeht_ptyd::client::IO_TIMEOUT`), and the engine's tick asks it for output every few
+/// milliseconds, so before ADR 0116 the Core lock was held for that whole wait.
+const STOPPED_FOR: Duration = Duration::from_millis(3_500);
+
+/// Stops the supervisor process, and continues it when dropped, so a failed assertion does not
+/// leave a stopped process behind.
+struct Stopped(u32);
+
+impl Stopped {
+    fn signal(pid: u32, signal: &str) {
+        let status = Command::new("kill")
+            .arg(signal)
+            .arg(pid.to_string())
+            .status()
+            .unwrap();
+        assert!(status.success(), "kill {signal} {pid} failed");
+    }
+
+    fn new(pid: u32) -> Self {
+        Self::signal(pid, "-STOP");
+        Self(pid)
+    }
+}
+
+impl Drop for Stopped {
+    fn drop(&mut self) {
+        Self::signal(self.0, "-CONT");
+    }
+}
+
+#[test]
+fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let (_, pane) = client.create(&rig);
+    let mut other = rig.client();
+    assert!(other.call("engine.status", json!({}))["generation"].is_number());
+
+    let stopped = Stopped::new(rig.ptyd.id());
+    // The tick's read of the pane is waiting for the supervisor now.
+    thread::sleep(Duration::from_millis(300));
+    let window = Instant::now() + STOPPED_FOR;
+    let mut worst = Duration::ZERO;
+    while Instant::now() < window {
+        let started = Instant::now();
+        let status = other.call("engine.status", json!({}));
+        worst = worst.max(started.elapsed());
+        assert!(status["generation"].is_number());
+        thread::sleep(Duration::from_millis(50));
+    }
+    drop(stopped);
+
+    eprintln!("core lock: worst status latency with the supervisor stopped = {worst:?}");
+    assert!(
+        worst < GAP_FLOOR,
+        "a request waited {worst:?} behind the stopped supervisor"
+    );
+    // The terminal works again once the supervisor does.
+    let reply = client.request(
+        "pane.input",
+        json!({"paneId":pane,"bytes":"ZWNobyBva1xuCg==","idempotencyKey":"after-stop"}),
+    );
+    assert!(reply.get("error").is_none(), "{reply}");
 }

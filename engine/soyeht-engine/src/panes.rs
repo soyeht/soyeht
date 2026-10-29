@@ -443,8 +443,8 @@ impl Core {
             self.resize_terminal_capture(id)?;
             if let Some(instance_id) = saved.instance_id {
                 // Best effort: the size is already durable, and a lost supervisor is
-                // recorded by pty_request itself.
-                let _ = self.pty_request(Request::Resize {
+                // recorded when the request is sent.
+                self.send_later(Request::Resize {
                     instance_id,
                     cols: saved.pane.cols as u16,
                     rows: saved.pane.rows as u16,

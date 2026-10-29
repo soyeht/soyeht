@@ -7,6 +7,10 @@ use soyeht_protocol::frame::{read_json, write_json};
 use std::path::Path;
 use std::time::Duration;
 
+/// How long a request to the supervisor waits to be written or answered. A caller that is
+/// not to be held up by it waits off its locks (the engine's Core lock above all).
+pub const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub struct Client {
     stream: Stream,
     pub supervisor_id: String,
@@ -16,8 +20,8 @@ pub struct Client {
 impl Client {
     pub fn connect(socket: &Path, engine_generation: u64) -> Result<Self> {
         let stream = connect(socket)?;
-        stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-        stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+        stream.set_read_timeout(Some(IO_TIMEOUT))?;
+        stream.set_write_timeout(Some(IO_TIMEOUT))?;
         let mut client = Self {
             stream,
             supervisor_id: String::new(),
