@@ -169,27 +169,29 @@ fn the_rule_recognises_a_direct_process_run() {
 /// (ADR 0117). A request to the supervisor waits up to `soyeht_ptyd::client::IO_TIMEOUT` for
 /// its answer, so a caller that holds the lock stalls every terminal for that long when the
 /// supervisor is slow. The terminal path (reads, acknowledgements, input, sizes) has moved off
-/// the lock; these callers have not.
+/// the lock, and so have the polls of the agents, of their terminals and of the language
+/// servers, every close, and the reading of the registry when a link is made (ADR 0119); these
+/// callers have not.
 ///
 /// The table may not grow: a new caller waits through `Supervisor::call` off the lock (an
 /// `Outcome::Offload`, or `Core::spawn_background`) and settles the answer under it with
 /// `Core::settle_supervisor`. When a caller moves, lower its count here in the same change.
 const UNDER_LOCK_SUPERVISOR_CALLS: &[(&str, usize)] = &[
     ("soyeht-engine/src/agents/authentication.rs", 1),
-    ("soyeht-engine/src/agents/delivery.rs", 2),
-    ("soyeht-engine/src/agents/driver.rs", 3),
-    ("soyeht-engine/src/agents/failures.rs", 1),
-    ("soyeht-engine/src/agents/lifecycle.rs", 2),
-    ("soyeht-engine/src/agents/orphans.rs", 1),
+    ("soyeht-engine/src/agents/delivery.rs", 1),
+    ("soyeht-engine/src/agents/lifecycle.rs", 1),
     ("soyeht-engine/src/agents/recovery.rs", 2),
-    ("soyeht-engine/src/agents/switching.rs", 1),
-    ("soyeht-engine/src/agents/switching/candidate.rs", 4),
-    ("soyeht-engine/src/agents/switching/commit.rs", 1),
-    ("soyeht-engine/src/agents/terminals.rs", 7),
-    ("soyeht-engine/src/core.rs", 7),
-    ("soyeht-engine/src/languages/runtime.rs", 7),
+    ("soyeht-engine/src/agents/switching/candidate.rs", 3),
+    ("soyeht-engine/src/agents/terminals.rs", 1),
+    ("soyeht-engine/src/core.rs", 1),
+    ("soyeht-engine/src/languages/runtime.rs", 2),
     ("soyeht-engine/src/panes.rs", 1),
-    ("soyeht-engine/src/spawn_retry.rs", 1),
+];
+
+/// Where `Core::close_and_wait` waits under the Core lock for a close to be sent, because a spawn
+/// that waits under it too follows (ADR 0119). They go with the spawn.
+const CLOSES_BEFORE_A_SPAWN: &[(&str, usize)] = &[
+    ("soyeht-engine/src/agents/driver.rs", 1),
     ("soyeht-engine/src/tasks/dispatching.rs", 1),
     ("soyeht-engine/src/tasks/roles.rs", 1),
 ];
@@ -218,6 +220,7 @@ fn requests_to_the_supervisor_under_the_core_lock_do_not_grow() {
     let mut files = Vec::new();
     rust_files(&root.join("soyeht-engine").join("src"), &mut files);
     let mut found = Vec::new();
+    let mut closing = Vec::new();
     let mut stray = Vec::new();
     for file in files {
         let relative = file
@@ -237,6 +240,10 @@ fn requests_to_the_supervisor_under_the_core_lock_do_not_grow() {
         if waiting > 0 {
             found.push((relative.clone(), waiting));
         }
+        let closes = calls_to(shipped, "close_and_wait");
+        if closes > 0 {
+            closing.push((relative.clone(), closes));
+        }
         if calls_to(shipped, "call_supervisor") > 0
             && !CALL_SUPERVISOR_FILES.contains(&relative.as_str())
         {
@@ -244,6 +251,16 @@ fn requests_to_the_supervisor_under_the_core_lock_do_not_grow() {
         }
     }
     found.sort();
+    closing.sort();
+    assert_eq!(
+        closing,
+        CLOSES_BEFORE_A_SPAWN
+            .iter()
+            .map(|(file, count)| ((*file).to_owned(), *count))
+            .collect::<Vec<_>>(),
+        "a close that waits under the Core lock for the spawn that replaces its process (ADR 0119) \
+         is not new work: use Core::close_process, which waits off the lock"
+    );
     let allowed = UNDER_LOCK_SUPERVISOR_CALLS
         .iter()
         .map(|(file, count)| ((*file).to_owned(), *count))

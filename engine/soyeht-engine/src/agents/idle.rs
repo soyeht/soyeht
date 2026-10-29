@@ -1,8 +1,8 @@
 //! Idle agents cost nothing. An agent that is ready, has no turn, no queued
 //! work, no operation and no open request needs nothing from the engine until
-//! its state is committed or an open request expires. The tick still drains
-//! the agent's output (that is the terminal path), but it skips the whole
-//! advance pass: no SQL, no state clones and no deadline checks.
+//! its state is committed or an open request expires. The tick still reads
+//! the agent's output, at the idle pace of `read_ahead` (ADR 0119), but it
+//! skips the whole advance pass: no SQL, no state clones and no deadline checks.
 //!
 //! The rule is event driven. `Idle::touch` runs on every committed change of
 //! the agent's state, and a pass settles the agent only after it changed
@@ -16,6 +16,7 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::StorePort,
+    streak::Streak,
 };
 use std::collections::BTreeSet;
 
@@ -30,6 +31,24 @@ pub struct Idle {
     acknowledged: Option<(String, u64)>,
     /// Supervisor processes already told to close; a close is sent once.
     closed: BTreeSet<String>,
+    /// The pace of the closes of the processes this agent retired, while the supervisor refuses
+    /// them.
+    retired_close: RetiredClose,
+}
+
+/// The failures of the close of an agent's retired processes, and when it is tried again.
+struct RetiredClose {
+    streak: Streak,
+    due_ms: i64,
+}
+
+impl Default for RetiredClose {
+    fn default() -> Self {
+        Self {
+            streak: Streak::retrying(250, 4_000),
+            due_ms: 0,
+        }
+    }
 }
 
 impl Idle {
@@ -52,6 +71,26 @@ impl Idle {
 
     pub(crate) fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Whether the retired processes may be closed now: not within the delay a refusal left.
+    pub(crate) fn retired_close_due(&self, now_ms: i64) -> bool {
+        now_ms >= self.retired_close.due_ms
+    }
+
+    /// Counts a refused close and delays the next. Returns whether to log it: the first, and each
+    /// change of kind.
+    pub(crate) fn retired_close_refused(&mut self, now_ms: i64, kind: &str) -> bool {
+        let log = self.retired_close.streak.fail(kind);
+        self.retired_close.due_ms =
+            now_ms.saturating_add(self.retired_close.streak.next_delay_ms());
+        log
+    }
+
+    /// Ends the streak of refused closes.
+    pub(crate) fn retired_close_done(&mut self) {
+        self.retired_close.streak.succeed();
+        self.retired_close.due_ms = 0;
     }
 
     pub(crate) fn already_closed(&self, instance_id: &str) -> bool {
@@ -160,7 +199,7 @@ pub(super) mod tests {
         screen::Screen,
     };
     use soyeht_protocol::Pane;
-    use soyeht_ptyd::wire::{Output, Request, Response};
+    use soyeht_ptyd::wire::{Request, Response};
     use std::{
         cell::Cell,
         fs,
@@ -172,42 +211,26 @@ pub(super) mod tests {
         pub(in crate::agents) static CLONES: Cell<u64> = const { Cell::new(0) };
     }
 
-    /// Answers like a supervisor whose process has produced no output, and
-    /// records how many requests of each kind arrived.
-    struct QuietSupervisor {
-        drains: Arc<Mutex<u64>>,
-        acknowledgements: Arc<Mutex<u64>>,
-        others: Arc<Mutex<u64>>,
-    }
-
-    impl SupervisorPort for QuietSupervisor {
-        fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+    /// Answers like a supervisor whose process has produced no output, after `delay`, and
+    /// counts the requests of each kind that arrived.
+    fn quiet_supervisor(
+        counters: [Arc<Mutex<u64>>; 3],
+        delay: std::time::Duration,
+    ) -> impl SupervisorPort {
+        let [drains, acknowledgements, others] = counters;
+        crate::test_panes::Answering(move |request| {
+            std::thread::sleep(delay);
             let count = match request {
-                Request::Drain { .. } => &self.drains,
-                Request::Ack { .. } => &self.acknowledgements,
-                _ => &self.others,
+                Request::Drain { .. } => &drains,
+                Request::Ack { .. } => &acknowledgements,
+                _ => &others,
             };
             *count.lock().unwrap() += 1;
             Ok(match request {
-                Request::Drain { from_seq, .. } => Response::Output(Output {
-                    from_seq,
-                    next_seq: from_seq,
-                    end_seq: from_seq,
-                    bytes: String::new(),
-                    gap: None,
-                    exited: false,
-                }),
+                Request::Drain { from_seq, .. } => crate::test_panes::quiet_read(from_seq),
                 _ => Response::Ok,
             })
-        }
-
-        fn supervisor_id(&self) -> &str {
-            "idle-supervisor"
-        }
-
-        fn supervisor_generation(&self) -> u32 {
-            1
-        }
+        })
     }
 
     /// An agent that is ready for work, with nothing queued or open.
@@ -233,12 +256,13 @@ pub(super) mod tests {
         let mut core = Core::open(&root).unwrap();
         core.clock = Arc::new(FixedClock(0));
         core.web = crate::web::Service::new(Box::new(EmptyPortScan));
+        // Reads end in the caller, so a tick takes the read it started.
+        core.background = crate::offload::Background::inline();
         let counters: [Arc<Mutex<u64>>; 3] = Default::default();
-        core.link_supervisor(Box::new(QuietSupervisor {
-            drains: counters[0].clone(),
-            acknowledgements: counters[1].clone(),
-            others: counters[2].clone(),
-        }));
+        core.link_supervisor(Box::new(quiet_supervisor(
+            counters.clone(),
+            std::time::Duration::ZERO,
+        )));
         for index in 0..panes {
             let id = format!("agent-{index}");
             let pane: Pane = serde_json::from_value(serde_json::json!({
@@ -273,13 +297,15 @@ pub(super) mod tests {
     }
 
     /// The regression guard for the idle engine. Ticks with settled agents
-    /// run no SQL, copy no agent state, send no acknowledgement and make one
-    /// drain request per agent; and a change of an agent wakes it again.
+    /// run no SQL, copy no agent state, send no acknowledgement and read each
+    /// agent only at the idle pace (`read_ahead`); and a change of an agent
+    /// wakes it again.
     #[test]
     fn an_idle_tick_runs_no_sql_and_clones_no_agent_state() {
         let (mut core, [drains, acknowledgements, others], root) = idle_core(3);
-        // The first ticks verify each agent is idle and settle it.
-        for _ in 0..3 {
+        // The first ticks verify each agent is idle and settle it; the one after finds its
+        // read empty and leaves it alone.
+        for _ in 0..4 {
             core.poll_output().unwrap();
         }
         assert!(core.agents.values().all(|a| a.is_settled(core.now_ms())));
@@ -304,18 +330,177 @@ pub(super) mod tests {
         );
         assert_eq!(
             total(&drains) - drained,
-            50 * 3,
-            "one drain per agent per tick"
+            0,
+            "an idle agent was read on every tick"
         );
         assert_eq!(total(&acknowledgements) - acknowledged, 0);
         assert_eq!(total(&others) - other, 0);
+
+        // When the idle pace has passed, each agent is read once and left alone again.
+        core.clock = Arc::new(FixedClock(crate::read_ahead::IDLE_PACE_MS));
+        for _ in 0..50 {
+            core.poll_output().unwrap();
+        }
+        assert_eq!(total(&drains) - drained, 3, "one read per agent per pace");
+        assert!(core.agents.values().all(|a| a.is_settled(core.now_ms())));
 
         let mut changed = core.agent_state("agent-1").unwrap();
         changed.queue_paused = true;
         core.replace_agent_state("agent-1", changed).unwrap();
         assert!(!core.agents["agent-1"].is_settled(core.now_ms()));
         assert!(core.agents["agent-0"].is_settled(core.now_ms()));
+        // The agent that changed is read at once, not at the idle pace.
+        let before = total(&drains);
+        core.poll_output().unwrap();
+        assert!(total(&drains) > before, "the changed agent was not read");
         crate::test_paths::remove_after(core, root);
+    }
+
+    fn retired(instance_id: &str, supervisor_id: &str) -> super::super::state::RetiredAgentProcess {
+        super::super::state::RetiredAgentProcess {
+            instance_key: format!("key-{instance_id}"),
+            instance_id: instance_id.into(),
+            supervisor_id: supervisor_id.into(),
+        }
+    }
+
+    #[test]
+    fn a_slow_supervisor_does_not_hold_the_tick_of_an_agent() {
+        use crate::test_panes::{Answering, core_with_agent, quiet_read};
+        let (mut core, directory) = core_with_agent(&[]);
+        let delay = std::time::Duration::from_millis(600);
+        let closed = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&closed);
+        core.background = crate::offload::Background::default();
+        core.link_supervisor(Box::new(Answering(move |request| {
+            std::thread::sleep(delay);
+            Ok(match request {
+                Request::Close { instance_id } => {
+                    record.lock().unwrap().push(instance_id);
+                    Response::Ok
+                }
+                Request::Drain { from_seq, .. } => quiet_read(from_seq),
+                _ => Response::Ok,
+            })
+        })));
+        // The port is "answering", and so is the supervisor of the retired process.
+        core.agents
+            .get_mut("agent")
+            .unwrap()
+            .state
+            .retired_processes
+            .push(retired("old", "answering"));
+
+        // The tick starts the read of the agent and the close of the retired process, and goes
+        // on with no wait for either.
+        let started = std::time::Instant::now();
+        core.poll_output().unwrap();
+        assert!(
+            started.elapsed() < delay / 3,
+            "the tick waited for the supervisor: {:?}",
+            started.elapsed()
+        );
+        assert!(core.background.is_active("retired:agent"));
+        assert!(core.background.is_active("read:agent:agent"));
+        assert!(closed.lock().unwrap().is_empty());
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !core.agents["agent"].state.retired_processes.is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the close never settled"
+            );
+            let started = std::time::Instant::now();
+            core.poll_output().unwrap();
+            assert!(started.elapsed() < delay / 3, "a later tick waited");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(*closed.lock().unwrap(), ["old"]);
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn a_retired_process_leaves_the_ledger_once_it_is_closed_and_not_before() {
+        use crate::test_panes::{Spawning, core_with_agent};
+        let (mut core, directory) = core_with_agent(&[]);
+        let ledger = |core: &Core| -> Vec<String> {
+            core.agents["agent"]
+                .state
+                .retired_processes
+                .iter()
+                .map(|process| process.instance_id.clone())
+                .collect()
+        };
+        core.agents
+            .get_mut("agent")
+            .unwrap()
+            .state
+            .retired_processes
+            .extend([retired("mine", "spawning"), retired("gone", "dead")]);
+        core.link_supervisor(Box::new(Spawning {
+            failures: Default::default(),
+            spawns: 0,
+            close_failure: Some("refused"),
+        }));
+
+        // The supervisor refuses the close: the process stays, and the one of a supervisor that
+        // is gone is forgotten.
+        core.cleanup_retired_agent_processes().unwrap();
+        assert_eq!(ledger(&core), ["mine"]);
+
+        core.link_supervisor(Box::new(Spawning {
+            failures: Default::default(),
+            spawns: 0,
+            close_failure: None,
+        }));
+        // The refusal delayed the next try; when it is due, the close is sent.
+        core.clock = Arc::new(FixedClock(1_100_000));
+        core.cleanup_retired_agent_processes().unwrap();
+        assert!(ledger(&core).is_empty());
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn a_close_the_supervisor_keeps_refusing_is_tried_again_after_a_delay_not_on_every_tick() {
+        use crate::test_panes::{Answering, core_with_agent};
+        let (mut core, directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::inline();
+        let asked = Arc::new(Mutex::new(0_u32));
+        let count = Arc::clone(&asked);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            if matches!(request, Request::Close { .. }) {
+                *count.lock().unwrap() += 1;
+                return Err(soyeht_ptyd::Error::Remote {
+                    kind: "refused".into(),
+                    message: "refused".into(),
+                });
+            }
+            Ok(Response::Ok)
+        })));
+        core.agents
+            .get_mut("agent")
+            .unwrap()
+            .state
+            .retired_processes
+            .push(retired("mine", "answering"));
+
+        for _ in 0..20 {
+            core.cleanup_retired_agent_processes().unwrap();
+        }
+        assert_eq!(
+            *asked.lock().unwrap(),
+            1,
+            "a refused close was sent on every tick"
+        );
+
+        // After the delay it is tried again, and the delay grows.
+        core.clock = Arc::new(FixedClock(1_000_000 + 10_000));
+        core.cleanup_retired_agent_processes().unwrap();
+        assert_eq!(*asked.lock().unwrap(), 2);
+        core.clock = Arc::new(FixedClock(1_000_000 + 10_000 + 300));
+        core.cleanup_retired_agent_processes().unwrap();
+        assert_eq!(*asked.lock().unwrap(), 2);
+        crate::test_paths::remove_after(core, directory);
     }
 
     #[test]

@@ -73,6 +73,10 @@ impl SupervisorPort for Stub {
                 asked.push("confirm".into());
                 Response::Ok
             }
+            Request::Close { instance_id } => {
+                asked.push(format!("close:{instance_id}"));
+                Response::Ok
+            }
             Request::Resize {
                 instance_id, cols, ..
             } => {
@@ -606,5 +610,42 @@ fn a_failed_read_on_a_replaced_link_does_not_cool_the_pane_down() {
 
     assert!(core.ptyd.is_some());
     assert!(core.background.accepts(&job));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_close_goes_after_the_sends_ahead_of_it_and_the_ones_queued_for_the_process_are_dropped() {
+    let (mut core, root, _, release, asked) = core_with_a_size_on_its_way("a");
+    let ack = |seq| Request::Ack {
+        instance_id: "a".into(),
+        seq,
+    };
+    // Behind the size on its way: a size and two acknowledgements for "a", and one for "b".
+    core.send_later(resize_of("a", 90));
+    core.send_later(ack(1));
+    core.send_later(ack(2));
+    core.send_later(Request::Ack {
+        instance_id: "b".into(),
+        seq: 1,
+    });
+    // The later acknowledgement of a process replaces the one not yet sent.
+    assert_eq!(core.supervisor_later.len(), 3);
+
+    core.close_process("a");
+
+    // Nothing queued for "a" is left to find it closed; "b" keeps its acknowledgement.
+    assert_eq!(core.supervisor_later.len(), 1);
+    // The close waits for the size on its way.
+    thread::sleep(Duration::from_millis(100));
+    assert_eq!(*asked.lock().unwrap(), ["a:80"]);
+    release.send(()).unwrap();
+    wait_for("the close was never sent", || {
+        asked.lock().unwrap().contains(&"close:a".to_owned())
+    });
+    assert_eq!(*asked.lock().unwrap(), ["a:80", "close:a"]);
+    while core.background.is_active("close:a") || core.background.is_active(LATER_JOB) {
+        core.apply_background();
+        thread::sleep(Duration::from_millis(1));
+    }
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -37,6 +37,15 @@ fn releasing_terminals(store: &impl StorePort, pane: &str) -> Result<Vec<String>
 }
 
 impl Terminal {
+    /// The ledger entry that holds this terminal's process until it is closed, if it has one.
+    pub(crate) fn retirement(&self) -> Option<super::state::RetiredAgentProcess> {
+        Some(super::state::RetiredAgentProcess {
+            instance_key: self.spawn.instance_key.clone(),
+            instance_id: self.instance_id.clone()?,
+            supervisor_id: self.supervisor_id.clone()?,
+        })
+    }
+
     fn prepare(
         request: &NativeRequest,
         cwd: &str,
@@ -159,19 +168,19 @@ impl Core {
                 continue;
             };
             if terminal.exit_code.is_some() {
-                self.pty_request(Request::Ack {
+                self.send_later(Request::Ack {
                     instance_id,
                     seq: terminal.next,
-                })?;
+                });
                 continue;
             }
-            let Response::Output(output) = self.pty_request(Request::Drain {
-                instance_id: instance_id.clone(),
-                from_seq: terminal.next,
-            })?
-            else {
-                return Err(errors::ptyd_unavailable("Invalid inline terminal output"));
+            // The read waits for the supervisor off the lock (ADR 0119): with none ready the
+            // terminal waits for the next tick.
+            let owner = crate::read_ahead::agent_terminal(pane, &id);
+            let Some(read) = self.take_read(&owner, &instance_id, terminal.next, true)? else {
+                continue;
             };
+            let output = read.output;
             let incoming = STANDARD
                 .decode(&output.bytes)
                 .map_err(|_| errors::ptyd_unavailable("Invalid terminal output encoding"))?;
@@ -200,22 +209,20 @@ impl Core {
             terminal.next = output.next_seq;
             terminal.bytes = STANDARD.encode(&bytes);
             if output.exited && output.next_seq == output.end_seq {
-                let Response::Instances(instances) = self.pty_request(Request::List)? else {
-                    return Err(errors::ptyd_unavailable("Invalid process registry"));
-                };
+                // The read looked the status up; -1 is a process the supervisor lost.
                 terminal.exit_code = Some(
-                    instances
-                        .iter()
-                        .find(|i| i.instance_id == instance_id)
-                        .and_then(|i| i.exit_code)
-                        .unwrap_or(-1),
+                    read.exit_code
+                        .map_or(-1, |code| i32::try_from(code).unwrap_or(-1)),
                 );
+            } else {
+                // The next read starts while the rest of the poll runs.
+                self.start_read(&owner, &instance_id, terminal.next, true)?;
             }
             if !changed {
-                self.pty_request(Request::Ack {
+                self.send_later(Request::Ack {
                     instance_id,
                     seq: terminal.next,
-                })?;
+                });
                 continue;
             }
             let mut changes = Changes {
@@ -250,10 +257,10 @@ impl Core {
             transcript::put(&mut changes, pane, item, "terminal_output")?;
             state.terminals.insert(id, terminal.clone());
             self.commit_agent(saved, state, changes, None, json!({}))?;
-            self.pty_request(Request::Ack {
+            self.send_later(Request::Ack {
                 instance_id,
                 seq: terminal.next,
-            })?;
+            });
         }
         Ok(())
     }
@@ -338,15 +345,23 @@ impl Core {
                             .instance_id
                             .clone()
                             .ok_or_else(|| errors::pane_busy("Terminal is still starting"))?;
-                        self.pty_request(if request.method == "terminal/kill" {
-                            Request::Kill { instance_id }
+                        let retired = terminal.retirement();
+                        if request.method == "terminal/kill" && self.ptyd.is_none() {
+                            // Nothing can be sent: the agent is told, not given a success.
+                            Err(effects::failure("The supervisor is not connected"))
+                        } else if request.method == "terminal/kill" {
+                            // The terminal stays in the state: a kill that fails leaves a
+                            // process the agent can still release.
+                            self.send_later(Request::Kill { instance_id });
+                            Ok(json!({}))
                         } else {
-                            Request::Close { instance_id }
-                        })?;
-                        if request.method == "terminal/release" {
+                            // The ledger holds the process until the supervisor has closed it,
+                            // whether or not there is a link now.
+                            state.retired_processes.extend(retired);
                             state.terminals.remove(id);
+                            self.forget_reads(&crate::read_ahead::agent_terminal(pane, id));
+                            Ok(json!({}))
                         }
-                        Ok(json!({}))
                     }
                     _ => Err(effects::failure("Unknown terminal method")),
                 }

@@ -10,7 +10,6 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{AgentPaneRole, PaneRoleSetParams, PaneState, PromptOrigin, Role, method};
-use soyeht_ptyd::wire::Request;
 
 const LEAD_PROMPT: &str = "Coordinate; do not implement. Create small, self-contained tasks with how to verify. Never depend on another task's memory. Dispatch only when no free pane is available to claim.";
 
@@ -94,11 +93,11 @@ impl Core {
             .panes
             .get(pane)
             .and_then(|saved| saved.stored.instance_id.clone());
-        let closed = match instance {
-            Some(instance_id) => self.pty_request(Request::Close { instance_id }).map(drop),
-            None => Ok(()),
-        };
-        self.settle_supervisor_call("engine.role_close_failed", closed);
+        if let Some(instance_id) = instance {
+            // A close that fails is logged and tried again by the tick; the new process starts
+            // after it, not beside it.
+            self.close_and_wait(&instance_id);
+        }
         // A lost link is rebuilt by the tick, which reconciles every pane.
         if self.ptyd.is_some() {
             // The recovery gives the pane a new identity and then spawns it, so a failed
@@ -178,14 +177,14 @@ mod tests {
     }
 
     #[test]
-    fn a_recovery_that_fails_before_the_process_is_lost_does_not_stop_a_healthy_agent() {
+    fn a_terminal_the_supervisor_cannot_close_does_not_keep_the_agent_from_recovering() {
         use crate::{
             agents::terminals::Terminal,
             test_panes::{Spawning, pty_spawn},
         };
         let (mut core, _directory) = core_with_agent(&[]);
-        // A terminal of the agent that the supervisor will not close: the recovery fails
-        // after its first commit and before the pane loses its process.
+        // A terminal of the agent that the supervisor will not close: its close is tried again by
+        // the tick, and the recovery goes on.
         core.agents
             .get_mut("agent")
             .unwrap()
@@ -211,16 +210,76 @@ mod tests {
             spawns: 0,
             close_failure: Some(wire_kind::OPERATION_FAILED),
         }));
-        // The drain finds the process missing at every tick.
-        for tick in 0..10 {
-            set_clock(&mut core, 1_000_000 + tick * 10);
-            core.drain_panes().unwrap();
-        }
+        // The drain finds the process missing and the agent gets a new one.
+        core.drain_panes().unwrap();
         assert!(core.ptyd.is_some());
-        assert!(core.panes["agent"].stored.instance_id.is_some());
+        assert_eq!(
+            core.panes["agent"].stored.instance_id.as_deref(),
+            Some("instance-1")
+        );
         assert_ne!(core.panes["agent"].stored.pane.state, PaneState::Dead);
         assert_ne!(core.agents["agent"].state.phase, Phase::Faulted);
         assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
+        // The ledger holds the terminal's process until the supervisor has closed it.
+        assert!(
+            core.agents["agent"]
+                .state
+                .retired_processes
+                .iter()
+                .any(|retired| retired.instance_id == "child")
+        );
         assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+    }
+
+    #[test]
+    fn a_recovery_that_failed_before_the_pane_lost_its_process_is_not_retried_as_a_spawn() {
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.settle_spawn("agent", Err(crate::errors::internal("storage")));
+
+        assert!(core.ptyd.is_some());
+        assert!(core.panes["agent"].stored.instance_id.is_some());
+        assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
+        assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+    }
+
+    #[test]
+    fn the_replacing_process_starts_after_the_close_of_the_one_it_replaces() {
+        use crate::test_panes::Answering;
+        use soyeht_ptyd::wire::{Instance, Request, Response};
+        use std::sync::Mutex;
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let record = Arc::clone(&order);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            Ok(match request {
+                Request::Close { .. } => {
+                    // The close takes its time: the spawn must not overtake it.
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    record.lock().unwrap().push("close");
+                    Response::Ok
+                }
+                Request::Spawn(config) => {
+                    record.lock().unwrap().push("spawn");
+                    Response::Instance(Instance {
+                        instance_id: "instance-1".into(),
+                        supervisor_id: "answering".into(),
+                        spawn: config,
+                        pid: 7,
+                        closed: false,
+                        exit_code: None,
+                    })
+                }
+                _ => Response::Ok,
+            })
+        })));
+
+        core.restart_after_role_change("agent");
+
+        assert_eq!(*order.lock().unwrap(), ["close", "spawn"]);
+        assert_eq!(
+            core.panes["agent"].stored.instance_id.as_deref(),
+            Some("instance-1")
+        );
     }
 }

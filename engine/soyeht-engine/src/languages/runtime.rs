@@ -100,21 +100,21 @@ impl Core {
             let server = language(&self.languages, key)?;
             (required_instance(server)?, server.next_seq)
         };
-        let Response::Output(output) = self.pty_request(Request::Drain {
-            instance_id: instance_id.clone(),
-            from_seq,
-        })?
-        else {
-            return Err(errors::ptyd_unavailable(
-                "Invalid language server output response",
-            ));
+        // The read waits for the supervisor off the lock (ADR 0119): with none ready the server
+        // waits for the next tick.
+        let owner = crate::read_ahead::language(key);
+        let Some(read) = self.take_read(&owner, &instance_id, from_seq, false)? else {
+            return Ok(());
         };
+        let output = read.output;
         if output.gap.is_some() {
             return self.restart_language_server(key, "Language server output was lost");
         }
         let bytes = STANDARD
             .decode(&output.bytes)
             .map_err(|_| errors::ptyd_unavailable("Invalid language server output encoding"))?;
+        // The next read starts while the rest of the poll runs.
+        self.start_read(&owner, &instance_id, output.next_seq, false)?;
         if output.next_seq == from_seq && bytes.is_empty() && !output.exited {
             return Ok(());
         }
@@ -123,10 +123,11 @@ impl Core {
         language_mut(&mut self.languages, key)?.next_seq = output.next_seq;
         let events = diagnostic_events(updates);
         self.persist_language_server(key, events)?;
-        self.pty_request(Request::Ack {
+        // Nobody waits for it: the supervisor keeps the output a little longer if it fails.
+        self.send_later(Request::Ack {
             instance_id,
             seq: output.next_seq,
-        })?;
+        });
         self.publish_language_completions(key)?;
         if output.exited {
             self.restart_language_server(key, "Language server exited")?;
@@ -200,10 +201,9 @@ impl Core {
 
     fn park_language_server(&mut self, key: &str, existing: Option<&Instance>) -> Result<()> {
         if let Some(instance) = existing {
-            self.pty_request(Request::Close {
-                instance_id: instance.instance_id.clone(),
-            })?;
+            self.close_process(&instance.instance_id);
         }
+        self.forget_reads(&crate::read_ahead::language(key));
         if existing.is_some() || language(&self.languages, key)?.instance_id.is_some() {
             language_mut(&mut self.languages, key)?
                 .restart("No open editor pane requires this language server")?;
@@ -446,48 +446,51 @@ impl Core {
             .pending_writes
             .remove(&operation_key);
         self.persist_language_server(key, Vec::new())?;
-        self.pty_request(Request::ConfirmInput { operation_key })?;
+        // Nobody waits for it: an unconfirmed receipt is reconciled when the supervisor returns.
+        self.send_later(Request::ConfirmInput { operation_key });
         Ok(())
     }
 
     fn restart_language_server(&mut self, key: &str, detail: &str) -> Result<()> {
-        let pending: Vec<_> = language(&self.languages, key)?
-            .pending_writes
-            .keys()
-            .cloned()
-            .collect();
-        if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
-            // Best effort: the generation bump below makes any late output from it stale, and
-            // the replacement starts under a new instance key.
-            self.send_later(Request::Close { instance_id });
-        }
+        let pending = self.close_language_process(key)?;
         language_mut(&mut self.languages, key)?.restart(detail)?;
         self.persist_language_server(key, Vec::new())?;
-        for operation_key in pending {
-            self.pty_request(Request::ConfirmInput { operation_key })?;
-        }
+        self.confirm_language_writes(pending);
         self.spawn_language_server(key)
     }
 
-    fn mark_language_unavailable(&mut self, key: &str, detail: &str) -> Result<()> {
-        let pending: Vec<_> = language(&self.languages, key)?
+    /// Sends the close of the server's process, and returns the writes it never confirmed. Best
+    /// effort: the generation bump that follows makes any late output from it stale, and a
+    /// replacement starts under a new instance key.
+    fn close_language_process(&mut self, key: &str) -> Result<Vec<String>> {
+        let pending = language(&self.languages, key)?
             .pending_writes
             .keys()
             .cloned()
             .collect();
         if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
-            // Best effort: the generation bump below makes any late output from it stale.
             self.send_later(Request::Close { instance_id });
         }
+        self.forget_reads(&crate::read_ahead::language(key));
+        Ok(pending)
+    }
+
+    /// Confirms the receipts of writes that will not be delivered. Nobody waits for it: an
+    /// unconfirmed receipt is reconciled when the supervisor returns.
+    fn confirm_language_writes(&mut self, operation_keys: Vec<String>) {
+        for operation_key in operation_keys {
+            self.send_later(Request::ConfirmInput { operation_key });
+        }
+    }
+
+    fn mark_language_unavailable(&mut self, key: &str, detail: &str) -> Result<()> {
+        let pending = self.close_language_process(key)?;
         let server = language_mut(&mut self.languages, key)?;
         server.restart(detail)?;
         server.state = soyeht_protocol::LspState::Unavailable;
         server.detail = Some(detail.chars().take(1024).collect());
         self.persist_language_server(key, Vec::new())?;
-        for operation_key in pending {
-            // Best effort: an unconfirmed receipt is reconciled when the supervisor returns.
-            self.send_later(Request::ConfirmInput { operation_key });
-        }
+        self.confirm_language_writes(pending);
         Ok(())
     }
 }

@@ -339,7 +339,8 @@ impl Core {
             else {
                 return Err(errors::ptyd_unavailable("Invalid candidate input receipt"));
             };
-            self.pty_request(Request::ConfirmInput { operation_key })?;
+            // Nobody waits for it: an unconfirmed receipt is reconciled when the supervisor returns.
+            self.send_later(Request::ConfirmInput { operation_key });
             if accepted == 0 || accepted > bytes.len() {
                 return Err(errors::ptyd_unavailable(
                     "Candidate did not accept its complete input",
