@@ -5,7 +5,7 @@
 //! stopped, the scratch directory removed and the session transcript deleted.
 
 use super::process::harden;
-use crate::streak::Streak;
+use crate::streak::{Streak, first_failure, recovered};
 use soyeht_platform::{
     fs::{LockError, create_private_dir, lock_singleton},
     log::{self, Failure},
@@ -61,11 +61,7 @@ fn scratch_failed(name: &str, error: &io::Error) {
 }
 
 fn failed(streak: &Mutex<Streak>, name: &str, error: &io::Error) {
-    let first = streak
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .fail(&error.failure_kind());
-    if first {
+    if first_failure(streak, &error.failure_kind()) {
         log::failure(name, error);
     }
 }
@@ -105,10 +101,7 @@ pub(super) fn run(
     }
     let outcome = match spawn(program, path_env, request) {
         Ok(mut session) => {
-            SPAWN
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .succeed();
+            recovered(&SPAWN);
             let outcome = drive(
                 &mut session.input,
                 &mut session.output,
@@ -116,7 +109,7 @@ pub(super) fn run(
                 driver,
             );
             let Session {
-                mut child,
+                child,
                 input,
                 output,
                 resizer,
@@ -124,7 +117,7 @@ pub(super) fn run(
             // Close the terminal first: a process exiting with unread output waits for the
             // terminal to drain, so it would never finish while the master stays open.
             drop((input, output, resizer));
-            stop(&mut child);
+            stop(child);
             outcome
         }
         // The run is incomplete, which the reading reports as unavailable.
@@ -299,7 +292,7 @@ fn drive(
 }
 
 /// Stops the whole process group: a request to stop, a short grace, then the kill.
-fn stop(child: &mut Child) {
+fn stop(mut child: Child) {
     child.request_stop();
     let deadline = Instant::now() + STOP_GRACE;
     while Instant::now() < deadline {
@@ -308,7 +301,7 @@ fn stop(child: &mut Child) {
         }
         thread::sleep(POLL);
     }
-    child.end(Reach::Group);
+    child.discard(Reach::Group);
 }
 
 #[cfg(test)]

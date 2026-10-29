@@ -3,10 +3,11 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::StorePort,
+    streak::KeyedStreaks,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_platform::log::{self, Line};
+use soyeht_platform::log::{self, Failure as _, Line};
 use soyeht_protocol::{
     HarnessEnvironmentIssue, HarnessInfo, HarnessSetupReason, HarnessSetupState, HarnessSource,
     ModelInfo, ModelListSource, ModelRefusal, limits, method,
@@ -187,10 +188,19 @@ pub(crate) enum PreparedCatalog {
 fn prepare_or_log(
     entry: &registry::RegistryEntry,
 ) -> Option<(soyeht_protocol::HarnessLaunch, String)> {
+    // Every `harness.list` prepares again, so a harness whose executable is gone would log on
+    // each one: the streak of each harness logs its first failure and each change of kind.
+    static FAILED: KeyedStreaks = KeyedStreaks::new();
+    let id = &entry.launch.id;
     match registry::prepare_entry(entry.clone()) {
-        Ok(prepared) => Some(prepared),
+        Ok(prepared) => {
+            FAILED.succeed(id);
+            Some(prepared)
+        }
         Err(error) => {
-            log::failure("engine.harness_prepare_failed", &error);
+            if FAILED.fail(id, &error.failure_kind()) {
+                log::failure("engine.harness_prepare_failed", &error);
+            }
             None
         }
     }

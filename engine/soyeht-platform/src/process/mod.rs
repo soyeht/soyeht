@@ -14,6 +14,6 @@ mod unix;
 #[cfg(windows)]
 pub mod windows;
 
-pub use end::{ChildEnd, end_child};
+pub use end::end_child;
 #[cfg(unix)]
 pub use unix::{GroupSignal, kill_tree, signal_group};

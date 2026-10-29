@@ -117,7 +117,7 @@ pub(super) fn spawn(mut command: Command, rows: u16, cols: u16) -> io::Result<Se
     command.stdout(Stdio::from(slave.try_clone()?));
     command.stderr(Stdio::from(slave));
     control_from_stdin(&mut command);
-    let mut child = Child::new(command.spawn()?);
+    let child = Child::new(command.spawn()?);
     let setup = crate::io::input_without_waiting(&master).and_then(|()| {
         Ok((
             Output::new(master.try_clone()?)?,
@@ -132,7 +132,7 @@ pub(super) fn spawn(mut command: Command, rows: u16, cols: u16) -> io::Result<Se
             resizer: Resizer(Arc::new(terminal)),
         }),
         Err(error) => {
-            child.end(Reach::Group);
+            child.discard(Reach::Group);
             Err(error)
         }
     }

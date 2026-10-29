@@ -190,7 +190,8 @@ impl ProjectRoot {
 
     /// A cheap summary of one directory level, for change polling.
     pub fn fingerprint(&self, relative: &str) -> Option<u64> {
-        // ignored: a folder that cannot be read has no fingerprint, so the poll sees no change
+        // ignored: a folder that cannot be read has no fingerprint; the poll compares it with the
+        // last one and reports the change, so the folder is read again by its caller
         self.read_fingerprint(relative).ok()
     }
 

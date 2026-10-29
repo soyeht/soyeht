@@ -2,10 +2,14 @@
 //! operating-system event stream of one folder, and the timing that turns a burst of events
 //! into one read.
 
+use crate::streak::{Streak, first_failure, recovered};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
     path::Path,
-    sync::mpsc::{self, Receiver},
+    sync::{
+        Mutex,
+        mpsc::{self, Receiver},
+    },
 };
 
 /// A burst is read once no event arrived for this long ...
@@ -32,11 +36,24 @@ pub mod slow_start {
     }
 }
 
+/// Failed starts of a watcher, counted across folders: a folder is retried every few seconds,
+/// and an exhausted inotify limit fails every one of them, so only the first is logged.
+static UNAVAILABLE: Mutex<Streak> = Mutex::new(Streak::once());
+
 /// No watcher could start at `stage`. The caller polls instead; the notify error carries paths
 /// and text, so only the stage is logged.
 fn unavailable<T>(stage: &str) -> Option<T> {
-    soyeht_platform::log::event("engine.file_watch_unavailable", &[("stage", stage)]);
+    report_unavailable(&UNAVAILABLE, stage);
     None
+}
+
+/// Logs the failed start unless the streak says it repeats one already logged.
+fn report_unavailable(streak: &Mutex<Streak>, stage: &str) -> bool {
+    let first = first_failure(streak, stage);
+    if first {
+        soyeht_platform::log::event("engine.file_watch_unavailable", &[("stage", stage)]);
+    }
+    first
 }
 
 /// The file events of one folder tree. Dropping it stops the stream.
@@ -57,6 +74,7 @@ impl EventStream {
         if watcher.watch(root, RecursiveMode::Recursive).is_err() {
             return unavailable("watch");
         }
+        recovered(&UNAVAILABLE);
         Some(Self {
             receiver,
             _watcher: Some(watcher),
@@ -97,5 +115,25 @@ impl Burst {
     /// Starts the next burst from nothing.
     pub(crate) fn end(&mut self) {
         self.started_ms = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_start_that_keeps_failing_is_logged_once_until_it_recovers() {
+        let streak = Mutex::new(Streak::once());
+        let logged: Vec<bool> = (0..5)
+            .map(|_| report_unavailable(&streak, "watch"))
+            .collect();
+        assert_eq!(logged, [true, false, false, false, false]);
+        assert!(
+            report_unavailable(&streak, "create"),
+            "another stage is another failure"
+        );
+        recovered(&streak);
+        assert!(report_unavailable(&streak, "create"));
     }
 }

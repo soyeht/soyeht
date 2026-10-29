@@ -139,6 +139,23 @@ pub enum Error {
     GitUnavailable,
 }
 
+/// A failure to run a command logs as a bounded label, never as message text: the text names the
+/// program and carries paths.
+impl soyeht_platform::log::Failure for Error {
+    fn failure_kind(&self) -> String {
+        match self {
+            Self::Spawn { source, .. } => format!("spawn:{:?}", source.kind()),
+            Self::Wait { source, .. } => format!("wait:{:?}", source.kind()),
+            Self::Read { source, .. } => format!("read:{:?}", source.kind()),
+            Self::Write { source, .. } => format!("write:{:?}", source.kind()),
+            Self::TimedOut { .. } => "timed_out".to_owned(),
+            Self::OutputTooLarge { .. } => "output_too_large".to_owned(),
+            Self::UnderLock { .. } => "under_lock".to_owned(),
+            Self::GitUnavailable => "git_unavailable".to_owned(),
+        }
+    }
+}
+
 impl Error {
     pub fn timed_out(&self) -> bool {
         matches!(self, Self::TimedOut { .. })

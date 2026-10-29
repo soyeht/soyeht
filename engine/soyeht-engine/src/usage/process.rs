@@ -8,14 +8,21 @@
 //! input as configuration, never on its command line, and no response body or error text is
 //! logged.
 
-use soyeht_platform::process::end_child;
+use crate::streak::{Streak, first_failure, recovered};
+use soyeht_platform::{
+    log::{self, Failure as _},
+    process::end_child,
+};
 use soyeht_protocol::limits;
 use soyeht_usage::host::{HttpRequest, HttpResult, RpcRequest, RpcRun, Secret, SecretRead};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     path::Path,
     process::{ChildStdin, Command, Stdio},
-    sync::mpsc::{self, Receiver},
+    sync::{
+        Mutex,
+        mpsc::{self, Receiver},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -31,6 +38,12 @@ const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(60);
 /// `security` exits with errSecItemNotFound when the item does not exist.
 const KEYCHAIN_ITEM_NOT_FOUND: i32 = 44;
 const STATUS_MARKER: &[u8] = b"\nSOYEHT_STATUS:";
+
+/// The failures below repeat on every refresh of the usage rings, so each keeps a streak: the
+/// first failure and each change of kind are logged, and a success ends the streak.
+static CURL_RUN: Mutex<Streak> = Mutex::new(Streak::once());
+static RPC_SPAWN: Mutex<Streak> = Mutex::new(Streak::once());
+static RPC_WRITE: Mutex<Streak> = Mutex::new(Streak::once());
 
 /// A program that opens nothing and exits at once. Windows has no stock program like it and its
 /// openers do not read `BROWSER`, so nothing is set there.
@@ -151,9 +164,18 @@ pub(super) fn http(program: &Path, request: &HttpRequest) -> HttpResult {
     args.push(&request.url);
     let timeout = request.timeout + Duration::from_secs(5);
     match run_bounded(program, &args, Some(config), timeout) {
-        Ok(output) if output.status.code() == Some(0) => parse_http_output(output.stdout),
-        // ignored: any other exit, and every failure to run curl, is a transport failure.
-        Ok(_) | Err(_) => HttpResult::TransportFailed,
+        Ok(output) if output.status.code() == Some(0) => {
+            recovered(&CURL_RUN);
+            parse_http_output(output.stdout)
+        }
+        // Any other exit is a transport failure that curl reports on its own.
+        Ok(_) => HttpResult::TransportFailed,
+        Err(error) => {
+            if first_failure(&CURL_RUN, &error.failure_kind()) {
+                log::failure("usage.curl_failed", &error);
+            }
+            HttpResult::TransportFailed
+        }
     }
 }
 
@@ -219,9 +241,14 @@ pub(super) fn json_rpc(program: &Path, path_env: &str, request: &RpcRequest) -> 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return RpcRun::ToolNotFound;
         }
-        // ignored: `Failed` reaches the reading as an unavailable source.
-        Err(_) => return RpcRun::Failed,
+        Err(error) => {
+            if first_failure(&RPC_SPAWN, &error.failure_kind()) {
+                log::failure("usage.rpc_spawn_failed", &error);
+            }
+            return RpcRun::Failed;
+        }
     };
+    recovered(&RPC_SPAWN);
     let deadline = Instant::now() + request.timeout;
     let results = (|| {
         let mut stdin = child.stdin.take()?;
@@ -234,13 +261,16 @@ pub(super) fn json_rpc(program: &Path, path_env: &str, request: &RpcRequest) -> 
                 message["id"] = id.into();
             }
             if let Err(error) = write_json_line(&mut stdin, &message) {
-                soyeht_platform::log::failure("usage.rpc_write_failed", &error);
+                if first_failure(&RPC_WRITE, &error.failure_kind()) {
+                    log::failure("usage.rpc_write_failed", &error);
+                }
                 return None;
             }
             if let Some(id) = call.id {
                 results.push(response_with_id(&receiver, id, deadline)?);
             }
         }
+        recovered(&RPC_WRITE);
         Some(results)
     })();
     end_child(&mut child);

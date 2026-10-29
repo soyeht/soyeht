@@ -25,24 +25,36 @@ fn flags() -> OpenFlags {
 }
 
 /// Opens a database another application may hold open, without taking its lock.
-fn open_immutable(path: &Path) -> Option<Connection> {
-    // ignored: the caller reports a database that cannot be opened as denied or empty
-    Connection::open_with_flags(format!("file:{}?immutable=1", path.display()), flags()).ok()
+fn open_immutable(path: &Path) -> rusqlite::Result<Connection> {
+    Connection::open_with_flags(format!("file:{}?immutable=1", path.display()), flags())
 }
 
-/// A value from the `ItemTable` of an Electron state database (Cursor's `state.vscdb`).
-pub fn item_table_value(path: &Path, key: &str) -> SecretRead {
-    if !path.is_file() {
-        return SecretRead::Missing;
+/// Why a state database could not be read: SQLite's result code, never its message, which can
+/// carry the path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unreadable(pub String);
+
+impl Unreadable {
+    fn of(error: &rusqlite::Error) -> Self {
+        Self(match error {
+            rusqlite::Error::SqliteFailure(failure, _) => format!("{:?}", failure.code),
+            _ => "other".to_owned(),
+        })
     }
-    // CodexBar opens it read-only and falls back to `immutable=1` when that fails.
-    let opened = Connection::open_with_flags(path, flags())
-        // ignored: the immutable open below is the fallback, and its failure is reported
-        .ok()
-        .or_else(|| open_immutable(path));
-    let Some(connection) = opened else {
-        return SecretRead::Denied;
-    };
+}
+
+/// A value from the `ItemTable` of an Electron state database (Cursor's `state.vscdb`). A
+/// database that cannot be opened or read is an `Unreadable`, which the caller turns into
+/// `Denied` after logging its kind.
+pub fn item_table_value(path: &Path, key: &str) -> Result<SecretRead, Unreadable> {
+    if !path.is_file() {
+        return Ok(SecretRead::Missing);
+    }
+    // CodexBar opens it read-only and falls back to `immutable=1` when that fails; the
+    // fallback's error is the one reported.
+    let connection = Connection::open_with_flags(path, flags())
+        .or_else(|_| open_immutable(path))
+        .map_err(|error| Unreadable::of(&error))?;
     // ignored: a connection that cannot set its wait fails fast, and the read reports it
     let _ = connection.busy_timeout(BUSY_WAIT);
     let value = connection
@@ -53,10 +65,9 @@ pub fn item_table_value(path: &Path, key: &str) -> SecretRead {
         )
         .optional();
     match value {
-        Ok(Some(Some(text))) => SecretRead::Found(Secret::new(text)),
-        Ok(_) => SecretRead::Missing,
-        // ignored: `Denied` reaches the reading as an unavailable source; the database's text is not logged.
-        Err(_) => SecretRead::Denied,
+        Ok(Some(Some(text))) => Ok(SecretRead::Found(Secret::new(text))),
+        Ok(_) => Ok(SecretRead::Missing),
+        Err(error) => Err(Unreadable::of(&error)),
     }
 }
 
@@ -94,7 +105,7 @@ fn host_patterns(domain: &str) -> [String; 3] {
 
 /// Every cookie of `domain` in a Chromium `Cookies` database.
 pub fn chromium_cookies(database: &Path, domain: &str) -> Vec<EncryptedCookie> {
-    let Some(connection) = open_immutable(database) else {
+    let Ok(connection) = open_immutable(database) else {
         return Vec::new();
     };
     let version: i64 = connection
@@ -124,7 +135,7 @@ pub fn chromium_cookies(database: &Path, domain: &str) -> Vec<EncryptedCookie> {
 
 /// Every cookie of `domain` in a Firefox `cookies.sqlite` database (stored in clear).
 pub fn firefox_cookies(database: &Path, domain: &str) -> Vec<Cookie> {
-    let Some(connection) = open_immutable(database) else {
+    let Ok(connection) = open_immutable(database) else {
         return Vec::new();
     };
     let Ok(mut statement) = connection
@@ -165,18 +176,33 @@ mod tests {
         let before = fs::read(&path).unwrap();
         assert_eq!(
             item_table_value(&path, "text"),
-            SecretRead::Found(Secret::new("abc"))
+            Ok(SecretRead::Found(Secret::new("abc")))
         );
         assert_eq!(
             item_table_value(&path, "blob"),
-            SecretRead::Found(Secret::new("ab"))
+            Ok(SecretRead::Found(Secret::new("ab")))
         );
-        assert_eq!(item_table_value(&path, "absent"), SecretRead::Missing);
+        assert_eq!(item_table_value(&path, "absent"), Ok(SecretRead::Missing));
         assert_eq!(
             item_table_value(&path.with_extension("missing"), "text"),
-            SecretRead::Missing
+            Ok(SecretRead::Missing)
         );
         assert_eq!(fs::read(&path).unwrap(), before);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_database_is_unreadable_and_names_a_result_code_only() {
+        let path = std::env::temp_dir().join(format!("sn-foreign-{}-bad", uuid::Uuid::new_v4()));
+        fs::write(
+            &path,
+            b"this is not a sqlite database, only some text padding it out",
+        )
+        .unwrap();
+        let Err(Unreadable(kind)) = item_table_value(&path, "text") else {
+            panic!("a text file was read as a database");
+        };
+        assert!(!kind.is_empty() && !kind.contains('/'), "{kind}");
         fs::remove_file(path).unwrap();
     }
 

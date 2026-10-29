@@ -2,7 +2,11 @@
 //! terminal behind the usage sources.
 
 use super::{process, terminal};
-use crate::agents::{environment::launch_path, registry::executable};
+use crate::{
+    agents::{environment::launch_path, registry::executable},
+    streak::{Streak, first_failure, recovered},
+};
+use soyeht_platform::log;
 use soyeht_usage::host::{
     CookieRead, FileRead, Host, HttpRequest, HttpResult, Platform, RpcRequest, RpcRun, SecretRead,
     TerminalDriver, TerminalRequest, TerminalRun,
@@ -11,7 +15,11 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
+
+/// A state database that cannot be read, counted across refreshes: it is read on each one.
+static STATE_DB: Mutex<Streak> = Mutex::new(Streak::once());
 
 /// The real host: the machine's files, keychain, HTTPS, browser cookies and pseudo terminal.
 pub struct SystemHost;
@@ -88,7 +96,21 @@ impl Host for SystemHost {
     }
 
     fn state_db_value(&self, path: &Path, key: &str) -> SecretRead {
-        soyeht_usage::foreign_db::item_table_value(path, key)
+        match soyeht_usage::foreign_db::item_table_value(path, key) {
+            Ok(read) => {
+                recovered(&STATE_DB);
+                read
+            }
+            Err(unreadable) => {
+                if first_failure(&STATE_DB, &unreadable.0) {
+                    log::event(
+                        "engine.usage_state_db_unreadable",
+                        &[("kind", &unreadable.0)],
+                    );
+                }
+                SecretRead::Denied
+            }
+        }
     }
 
     fn json_rpc(&self, request: &RpcRequest) -> RpcRun {

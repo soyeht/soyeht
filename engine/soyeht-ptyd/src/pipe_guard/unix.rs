@@ -110,7 +110,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
             guard: Some(Guard(parent)),
         }),
         Err(error) => {
-            child.end(Reach::Tree);
+            child.discard(Reach::Tree);
             Err(error)
         }
     }

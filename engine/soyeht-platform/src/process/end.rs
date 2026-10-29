@@ -19,9 +19,10 @@ const POLL: Duration = Duration::from_millis(5);
 /// caller for good.
 const END_WAIT: Duration = Duration::from_secs(5);
 
-/// How [`end_child`] left the child.
+/// How [`end_child`] left the child. It is logged when it is a failure; nothing else reads it
+/// but the tests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ChildEnd {
+enum ChildEnd {
     /// The child had already ended; it is reaped now.
     AlreadyExited,
     /// The child was running or just ended; it is killed and reaped.
@@ -30,14 +31,18 @@ pub enum ChildEnd {
     /// until this process reaps it or ends.
     Unreaped,
     /// The system refused to kill or to wait. The failure is logged by kind.
-    Failed(io::ErrorKind),
+    Failed,
 }
 
 /// Ends `child`: kills it when it still runs, then waits at most five seconds for the system to
 /// report that it ended. A child that cannot be killed or reaped is logged by kind
-/// (`process.end_child_failed`, `process.end_child_unreaped`) and described by the result, so a
-/// caller that has nothing else to do with it may ignore the result.
-pub fn end_child(child: &mut Child) -> ChildEnd {
+/// (`process.end_child_failed`, `process.end_child_unreaped`); there is nothing else for a
+/// caller to do with such a child.
+pub fn end_child(child: &mut Child) {
+    ended(child);
+}
+
+fn ended(child: &mut Child) -> ChildEnd {
     match child.try_wait() {
         Ok(Some(_)) => return ChildEnd::AlreadyExited,
         Ok(None) => {}
@@ -67,7 +72,7 @@ pub fn end_child(child: &mut Child) -> ChildEnd {
 
 fn failed(error: &io::Error) -> ChildEnd {
     log::failure("process.end_child_failed", error);
-    ChildEnd::Failed(error.kind())
+    ChildEnd::Failed
 }
 
 #[cfg(test)]
@@ -102,7 +107,7 @@ mod tests {
     fn a_running_child_is_killed_and_reaped() {
         let _forks = crate::spawning();
         let mut child = long_running();
-        assert_eq!(end_child(&mut child), ChildEnd::Killed);
+        assert_eq!(ended(&mut child), ChildEnd::Killed);
         // Reaped: the status is already known and a second wait returns it.
         assert!(child.try_wait().unwrap().is_some());
     }
@@ -112,8 +117,8 @@ mod tests {
         let _forks = crate::spawning();
         let mut child = command("exit 0").spawn().unwrap();
         child.wait().unwrap();
-        assert_eq!(end_child(&mut child), ChildEnd::AlreadyExited);
+        assert_eq!(ended(&mut child), ChildEnd::AlreadyExited);
         // Ending it again changes nothing.
-        assert_eq!(end_child(&mut child), ChildEnd::AlreadyExited);
+        assert_eq!(ended(&mut child), ChildEnd::AlreadyExited);
     }
 }
