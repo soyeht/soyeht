@@ -27,6 +27,10 @@ SCAN_TIMEOUT_CEILING = 1800
 SCAN_TIMEOUT_ENV = "SOYEHT_SCAN_TIMEOUT"
 TOOL_TIMEOUT = 60
 FILE_LIMIT = 800
+# The Python of the gate scripts and the contract generator: the same file limit as the other
+# languages (tests included), and one duplication scan.
+PYTHON_DIRS = ("scripts", "contracts")
+GENERATED_PYTHON_HEADER = "# Generated from contracts/"
 AREAS = {
     "engine": ("engine", "rust", ".rs"),
     "desktop": ("apps/desktop", "rust", ".rs"),
@@ -49,7 +53,7 @@ DUPLICATION_SCANS = {
     "desktop_views": (("apps/desktop/crates/soyeht-desktop/src",), "rust"),
     # The gate scripts, the end-to-end harness and the contract generator are code too: the
     # e2e files repeat their setup, and nothing else counts it.
-    "python": (("scripts", "contracts"), "python"),
+    "python": (PYTHON_DIRS, "python"),
 }
 # (minimum lines, minimum tokens) of a clone; the scans not listed use the default.
 DEFAULT_CLONE_SIZE = (5, 40)
@@ -255,8 +259,21 @@ def scan_timeout(
     return min(SCAN_TIMEOUT_CEILING, SCAN_TIMEOUT * max(1.0, load / cores))
 
 
-def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+def oversized_python(repo: Path) -> dict[str, int]:
+    """Python files over FILE_LIMIT lines, a generated output excepted (it is not written by hand)."""
     oversized: dict[str, int] = {}
+    for relative_dir in PYTHON_DIRS:
+        for path in source_files(repo, relative_dir, ".py"):
+            lines = path.read_text(encoding="utf-8").splitlines()
+            if len(lines) > FILE_LIMIT and not (
+                lines and lines[0].startswith(GENERATED_PYTHON_HEADER)
+            ):
+                oversized[path.relative_to(repo).as_posix()] = len(lines)
+    return oversized
+
+
+def source_measurements(repo: Path) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
+    oversized = oversized_python(repo)
     literals: dict[str, dict[str, int]] = {}
     for relative_dir, _, suffix in AREAS.values():
         for path in source_files(repo, relative_dir, suffix):

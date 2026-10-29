@@ -12,7 +12,10 @@ import gate_flakes
 import gate_worktree
 import main_watch
 import post_merge
-from test_post_merge import FAKE_EDITOR_GATE, FAKE_GATE, commit, git, isolate_environment
+import post_merge_editor
+import post_merge_gate
+import post_merge_records
+from test_post_merge_fixtures import FAKE_EDITOR_GATE, FAKE_GATE, commit, git, isolate_environment
 
 # A stand-in for the GitHub CLI. `pr create` records what the pushed branch changes relative to
 # main and what it says; `pr merge` squashes that branch into main of the bare origin, like the
@@ -111,7 +114,7 @@ class WatchCase(unittest.TestCase):
             health = Path(argv[argv.index("--health-dir") + 1])
             log = health / f"{sha}.log"
             log.write_text("step output\ncheck_all: FAILED step unit (area always, exit 1)\n")
-            info = lambda commit: post_merge.commit_info(self.root, commit)
+            info = lambda commit: post_merge_records.commit_info(self.root, commit)
             record = {"sha": sha, "result": result, "log": str(log), "failed_step": step if result != "pass" else None}
             if culprit:
                 record["culprit"] = info(culprit)
@@ -120,7 +123,7 @@ class WatchCase(unittest.TestCase):
             if note:
                 record["note"] = note
             record.update(extra or {})
-            post_merge.write_json(health / f"{sha}.json", record)
+            post_merge_records.write_json(health / f"{sha}.json", record)
             return 0 if result == "pass" else 1 if exit_code is None else exit_code
 
         return mock.patch.object(post_merge, "main", gate)
@@ -320,7 +323,7 @@ class MeasurementTests(WatchCase):
         self.land("two", {"b": "2"})
         gate = {"editor_tree_hash": "ab" * 32, "note": "no valid VM1 measurement"}
         with self.scripted("needs-measurement", step="editor-performance:check",
-                           exit_code=post_merge.NEEDS_MEASUREMENT_EXIT, extra=gate):
+                           exit_code=post_merge_editor.NEEDS_MEASUREMENT_EXIT, extra=gate):
             self.assertEqual(self.watch("--apply"), main_watch.NEEDS_MEASUREMENT_EXIT)
         self.assertEqual(self.gh_calls(), [])
         status = self.status()
@@ -353,7 +356,7 @@ class MeasurementTests(WatchCase):
 
         def gate(argv):
             seen.append(argv)
-            return post_merge.INFRASTRUCTURE_EXIT
+            return post_merge_gate.INFRASTRUCTURE_EXIT
 
         with mock.patch.object(post_merge, "main", gate):
             self.watch("--editor-meter", "/srv/report.json", "--worktree", "/srv/warm")
@@ -364,7 +367,7 @@ class MeasurementTests(WatchCase):
     def test_the_environment_reaches_the_gate_without_options(self):
         seen = []
         with mock.patch.object(post_merge, "main", lambda argv: seen.append(argv) or 2), \
-                mock.patch.dict(os.environ, {post_merge.EDITOR_METER_ENV: "/srv/report.json"}):
+                mock.patch.dict(os.environ, {post_merge_editor.EDITOR_METER_ENV: "/srv/report.json"}):
             self.watch()
         self.assertIn("/srv/report.json", seen[0])
 
@@ -413,7 +416,7 @@ class PassTests(WatchCase):
 
         def gate(argv):
             seen.append(argv)
-            return post_merge.INFRASTRUCTURE_EXIT
+            return post_merge_gate.INFRASTRUCTURE_EXIT
 
         with mock.patch.object(post_merge, "main", gate):
             self.watch("--remote", "linux-host", "--remote-root", "/srv/soyeht", "--since", self.start)
