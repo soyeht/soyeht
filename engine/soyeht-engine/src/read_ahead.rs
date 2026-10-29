@@ -239,6 +239,14 @@ mod tests {
         (core, directory, asked)
     }
 
+    /// Whether the read started for `owner` (at offset 1) was kept: it is taken with no new
+    /// request to the supervisor.
+    fn kept(core: &mut Core, asked: &Mutex<Vec<u64>>, owner: &str) -> bool {
+        let before = asked.lock().unwrap().len();
+        assert!(core.take_read(owner, "process", 1, true).unwrap().is_some());
+        asked.lock().unwrap().len() == before
+    }
+
     #[test]
     fn a_read_waits_off_the_lock_and_the_poll_takes_it_after_the_tick_applied_it() {
         let (mut core, directory, asked) = core_with(Duration::from_millis(300));
@@ -298,19 +306,8 @@ mod tests {
         core.forget_reads(&agent("pane"));
 
         // Only the read of the pane that is still open waits to be taken.
-        let before = asked.lock().unwrap().len();
-        assert!(
-            core.take_read(&agent("other"), "process", 1, false)
-                .unwrap()
-                .is_some()
-        );
-        assert_eq!(asked.lock().unwrap().len(), before);
-        assert!(
-            core.take_read(&agent("pane"), "process", 1, false)
-                .unwrap()
-                .is_some()
-        );
-        assert_eq!(asked.lock().unwrap().len(), before + 1);
+        assert!(kept(&mut core, &asked, &agent("other")));
+        assert!(!kept(&mut core, &asked, &agent("pane")));
         crate::test_paths::remove_after(core, directory);
     }
 
@@ -396,27 +393,16 @@ mod tests {
     fn forgetting_the_reads_of_a_terminal_leaves_the_terminal_whose_id_starts_the_same() {
         let (mut core, directory, asked) = core_with(Duration::ZERO);
         core.background = crate::offload::Background::inline();
-        core.start_read(&agent_terminal("pane", "1"), "a", 1, true)
+        core.start_read(&agent_terminal("pane", "1"), "process", 1, true)
             .unwrap();
-        core.start_read(&agent_terminal("pane", "10"), "b", 1, true)
+        core.start_read(&agent_terminal("pane", "10"), "process", 1, true)
             .unwrap();
-        let before = asked.lock().unwrap().len();
 
         core.forget_reads(&agent_terminal("pane", "1"));
 
         // The read of the terminal `10` is still there; the one of `1` is asked for again.
-        assert!(
-            core.take_read(&agent_terminal("pane", "10"), "b", 1, true)
-                .unwrap()
-                .is_some()
-        );
-        assert_eq!(asked.lock().unwrap().len(), before);
-        assert!(
-            core.take_read(&agent_terminal("pane", "1"), "a", 1, true)
-                .unwrap()
-                .is_some()
-        );
-        assert_eq!(asked.lock().unwrap().len(), before + 1);
+        assert!(kept(&mut core, &asked, &agent_terminal("pane", "10")));
+        assert!(!kept(&mut core, &asked, &agent_terminal("pane", "1")));
         crate::test_paths::remove_after(core, directory);
     }
 }
