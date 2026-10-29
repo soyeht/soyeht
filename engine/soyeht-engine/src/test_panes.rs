@@ -168,6 +168,17 @@ pub(crate) fn quiet_read(from_seq: u64) -> Response {
     })
 }
 
+/// Applies the finished background jobs until `job` is no longer running, for a test that runs its
+/// jobs on the pool.
+pub(crate) fn apply_until_done(core: &mut Core, job: &str) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while core.background.is_active(job) {
+        assert!(std::time::Instant::now() < deadline, "{job} never ended");
+        core.apply_background();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 /// A supervisor that fails the next spawns with the kinds it is given, starts the one
 /// after them, reports `instance-0` as missing when drained, and answers the rest with `Ok`.
 pub(crate) struct Spawning {

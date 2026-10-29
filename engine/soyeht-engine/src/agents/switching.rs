@@ -354,52 +354,42 @@ impl Core {
         pane: &str,
         processes: Vec<RetiredAgentProcess>,
     ) -> Result<()> {
-        let Some(mut state) = self.agents.get(pane).map(|agent| agent.state.clone()) else {
-            return Ok(());
-        };
-        let before = state.retired_processes.len();
-        for process in processes {
-            if !state
-                .retired_processes
-                .iter()
-                .any(|retired| retired.instance_id == process.instance_id)
-            {
-                state.retired_processes.push(process);
+        self.change_ledger(pane, |ledger| {
+            for process in processes {
+                if ledger
+                    .iter()
+                    .all(|retired| retired.instance_id != process.instance_id)
+                {
+                    ledger.push(process);
+                }
             }
-        }
-        if state.retired_processes.len() == before {
-            return Ok(());
-        }
-        self.commit_agent(
-            self.panes[pane].stored.clone(),
-            state,
-            Changes::default(),
-            None,
-            json!({}),
-        )
-        .map(drop)
+        })
     }
 
     /// Takes the processes `instance_ids` out of the retirement ledger of `pane`.
     fn forget_retired(&mut self, pane: &str, instance_ids: &[String]) -> Result<()> {
+        self.change_ledger(pane, |ledger| {
+            ledger.retain(|retired| !instance_ids.contains(&retired.instance_id));
+        })
+    }
+
+    /// Applies `change` to the retirement ledger of `pane` and commits it if it grew or shrank.
+    fn change_ledger(
+        &mut self,
+        pane: &str,
+        change: impl FnOnce(&mut Vec<RetiredAgentProcess>),
+    ) -> Result<()> {
         let Some(mut state) = self.agents.get(pane).map(|agent| agent.state.clone()) else {
             return Ok(());
         };
         let before = state.retired_processes.len();
-        state
-            .retired_processes
-            .retain(|retired| !instance_ids.contains(&retired.instance_id));
+        change(&mut state.retired_processes);
         if state.retired_processes.len() == before {
             return Ok(());
         }
-        self.commit_agent(
-            self.panes[pane].stored.clone(),
-            state,
-            Changes::default(),
-            None,
-            json!({}),
-        )
-        .map(drop)
+        let saved = self.panes[pane].stored.clone();
+        self.commit_agent(saved, state, Changes::default(), None, json!({}))
+            .map(drop)
     }
 }
 

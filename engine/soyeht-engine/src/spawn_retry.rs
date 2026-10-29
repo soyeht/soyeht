@@ -492,15 +492,7 @@ mod tests {
             started.elapsed()
         );
 
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        while core.background.is_active("close:process") {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the close never ended"
-            );
-            core.apply_background();
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        crate::test_panes::apply_until_done(&mut core, "close:process");
         assert_eq!(closed.load(Ordering::SeqCst), 1);
         assert_eq!(core.supervisor_retry.close_retries.attempts("process"), 0);
         assert!(core.ptyd.is_some());
@@ -518,15 +510,7 @@ mod tests {
         })));
 
         core.close_process("process");
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        while core.background.is_active("close:process") {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the close never ended"
-            );
-            core.apply_background();
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        crate::test_panes::apply_until_done(&mut core, "close:process");
         // The refusal was settled under the lock: the link is kept and the close is owed.
         assert_eq!(core.supervisor_retry.close_retries.attempts("process"), 1);
         assert!(core.ptyd.is_some());

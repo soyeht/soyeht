@@ -188,7 +188,7 @@ impl Core {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_panes::{Answering, quiet_read};
+    use crate::test_panes::{Answering, apply_until_done, quiet_read};
     use soyeht_ptyd::wire::{Request, Response};
     use std::{
         sync::{Arc, Mutex},
@@ -235,12 +235,7 @@ mod tests {
                 .is_none()
         );
 
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while core.background.is_active("read:owner") {
-            assert!(Instant::now() < deadline, "the read never ended");
-            core.apply_background();
-            thread::sleep(Duration::from_millis(1));
-        }
+        apply_until_done(&mut core, "read:owner");
         let read = core.take_read("owner", "process", 7, false).unwrap();
         assert_eq!(read.unwrap().output.from_seq, 7);
         assert_eq!(*asked.lock().unwrap(), [7]);
@@ -301,12 +296,7 @@ mod tests {
             .unwrap();
         core.forget_reads(&agent("pane"));
 
-        let deadline = Instant::now() + Duration::from_secs(30);
-        while core.background.is_active("read:agent:pane") {
-            assert!(Instant::now() < deadline, "the read never ended");
-            core.apply_background();
-            thread::sleep(Duration::from_millis(1));
-        }
+        apply_until_done(&mut core, "read:agent:pane");
         assert!(
             core.reads.ready.is_empty(),
             "a read of a closed pane was kept"
