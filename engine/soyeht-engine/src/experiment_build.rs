@@ -598,7 +598,10 @@ mod tests {
         assert!(!core.capture_restore_pending(PANE));
         assert!(stop_reason(&core).contains("not known within 60 s"));
         assert!(core.terminal_captures.is_empty());
-        core.poll_output().unwrap();
+        // The read starts with the tick and is made by a job; the pane drains again.
+        tick_until(&mut core, "the pane never drained", |_| {
+            !drains.lock().unwrap().is_empty()
+        });
         assert_eq!(drains.lock().unwrap().first(), Some(&0));
         // The hash that ends later restores nothing.
         GATE.release();

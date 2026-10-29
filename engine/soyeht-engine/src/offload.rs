@@ -50,11 +50,6 @@ impl<P: ?Sized> SharedPort<P> {
         Self(Arc::new(Mutex::new(port)))
     }
 
-    /// Whether `other` is this very port, not another one of the same kind.
-    pub fn same_as(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-
     pub fn with<R>(&self, use_port: impl FnOnce(&mut P) -> Result<R>) -> Result<R> {
         let mut port = self
             .0
@@ -222,16 +217,21 @@ pub(crate) struct Done {
 }
 
 impl Done {
-    fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             ended: Mutex::new(false),
             changed: Condvar::new(),
         })
     }
 
-    fn end(&self) {
+    pub(crate) fn end(&self) {
         *self.ended.lock().unwrap_or_else(PoisonError::into_inner) = true;
         self.changed.notify_all();
+    }
+
+    /// Whether the job has ended.
+    pub(crate) fn is_ended(&self) -> bool {
+        *self.ended.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Waits up to `timeout` for the job to end; whether it did.

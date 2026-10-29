@@ -457,9 +457,9 @@ impl Core {
             .cloned()
             .collect();
         if let Some(instance_id) = language(&self.languages, key)?.instance_id.clone() {
-            // ignored: best effort, and it must reach the supervisor before the spawn below
-            // that follows it; the generation bump makes any late output from it stale.
-            let _ = self.pty_request(Request::Close { instance_id });
+            // Best effort: the generation bump below makes any late output from it stale, and
+            // the replacement starts under a new instance key.
+            self.send_later(Request::Close { instance_id });
         }
         language_mut(&mut self.languages, key)?.restart(detail)?;
         self.persist_language_server(key, Vec::new())?;

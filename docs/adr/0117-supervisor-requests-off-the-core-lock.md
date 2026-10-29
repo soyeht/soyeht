@@ -37,8 +37,21 @@ the error says it is gone (`errors::supervisor_link_lost`, the one rule) and rec
 `ptyd.lost`. It drops the link only when the link in the Core is still the one the call
 used: a call that outlived its link says nothing about the one that replaced it.
 
-The mutex of the connection orders the users of the one stream, one request and answer at a
-time. It is never taken together with the Core lock by a path that moved.
+The mutex of the connection admits one request and answer at a time. It is never taken
+together with the Core lock by a path that moved.
+
+**A stream that failed is not used again.** The connection is one stream of requests and
+answers, and an answer carries no request identifier. Once a call fails with anything but the
+supervisor's own refusal (a timeout, a transport or framing failure, a panic, which poisons the
+mutex), the next write would be answered by the late reply of the one before: a read of pane A
+could land in pane B, an input could get an output as its receipt. So the handle keeps a
+`broken` flag beside the port, set with the mutex held, and every later call on the handle
+fails at once with the link-lost error without touching the stream. The flag is readable
+without the mutex: the tick (`ensure_supervisor`) drops a broken link before anything else uses
+it, and a caller that was waiting for the mutex sees the flag when it gets it. This also bounds
+the wait of the callers that have not moved, which hold the Core lock while they wait for the
+mutex: one timeout of five seconds, after which every caller queued behind fails at once,
+instead of one timeout per caller.
 
 **What moved** (the terminal path):
 
@@ -53,9 +66,13 @@ time. It is never taken together with the Core lock by a path that moved.
   lock; without recording it sends it at once. A refusal is owed again, as before.
 - `pane.input`. The durable intent is still written under the lock before the irreversible
   write. The write goes to the supervisor in the work of an `Outcome::Offload`; the receipt
-  is made durable under the lock when it is applied. A connection answers its next request
-  after the previous reply, so inputs keep their order, and an input comes before the resize
-  that follows it.
+  is made durable under the lock when it is applied. See "Order".
+- The connection to the supervisor after the link was lost. The welcome is awaited for up to
+  five seconds, so a supervisor that is stopped (it accepts the connection and does not answer)
+  held the lock again at every reconnect. The background job `supervisor.connect` makes the
+  connection; the registry is reconciled under the lock when it is applied, as before. The tick
+  sees the link one tick later than the connection, no later than it saw a link made in the
+  tick before. `Core::open` still connects in place, before the Core is shared.
 - The best-effort requests nobody waits for: the confirmation of an input receipt and the
   size sent after a resize. `Core::send_later` queues them and the background job
   `supervisor.later` sends them in order. A size not yet sent is replaced by the newer one
@@ -63,12 +80,25 @@ time. It is never taken together with the Core lock by a path that moved.
   already ignored and that nothing after them depends on: the close of a pane's processes, the
   flow-control acknowledgement of a harness switch, and the close and confirmations of a language
   server marked unavailable. A failure is logged under `engine.supervisor_follow_up_failed` by
-  `settle_supervisor_call`, once per change of kind.
+  `settle_supervisor_call`, once per change of kind, as is a job that could not be started.
+
+**Order.** Moving the waits off the lock took away the order that holding it gave. Sends to
+one process reach the supervisor in the order they were made under the Core lock, whichever
+thread carries them, by turns (`Core::turn`): taking a turn, under the lock, names the
+processes it is about and returns a guard that waits for the turns taken before it for any of
+them and ends when it is dropped, whether its work ran, failed, panicked or never started. The
+follow-up job and `pane.input` each take one. A queued follow-up that is not yet on its way
+(the job was busy) is taken out of the queue by an input to the same process
+(`Core::take_later_for`) and sent in front of the input's own bytes, after the sends already on
+their way. So a resize is always sent before the input that follows it (the program sees
+SIGWINCH before the typed bytes), and two inputs to one pane reach it in dispatch order even
+from two connections. A wait for a turn is bounded by the deadline below.
 
 **Latency of the terminal.** A job is applied by the tick that follows its end, so a read
 that finds output would show it one tick (10 ms) later than a read made inside the tick.
-A job whose result has news (output, an exit, an error) therefore wakes the tick
-(`Core::spawn_prompt_background`), which applies it and pumps the streams at once. A read
+A job whose result has news (output, a gap, an exit the pane did not know, an error) therefore wakes the tick
+(`Core::spawn_prompt_background`), which applies it and pumps the streams at once. An exited process that is still open says so on every read until it is closed; that is not
+news again, so a dead pane does not wake the tick. A read
 that finds nothing does not wake it, so a quiet pane makes the tick no busier than before.
 The output of a pane is shown after the read that finds it, as it was.
 
@@ -86,13 +116,13 @@ fails on a `call_supervisor` outside the port and the handle. `tests/core_lock.r
 the real supervisor with a signal and measures a request on another connection;
 `supervisor_handle.rs` holds the same with a stub that delays its answer.
 
-The remaining 44 calls, by group:
+The remaining 43 calls, by group:
 
 | Group | Files | Calls |
 | --- | --- | --- |
 | Agent panes: the poll, the drain and the terminals of an agent | `agents/terminals.rs`, `agents/driver.rs`, `agents/delivery.rs`, `agents/recovery.rs`, `agents/failures.rs`, `agents/lifecycle.rs`, `agents/orphans.rs`, `agents/authentication.rs` | 19 |
 | Harness switch | `agents/switching.rs`, `agents/switching/candidate.rs`, `agents/switching/commit.rs` | 6 |
-| Language servers | `languages/runtime.rs` | 8 |
+| Language servers | `languages/runtime.rs` | 7 |
 | Start, reconnect and reconcile: spawn, adopt, close, list, pending inputs | `core.rs`, `spawn_retry.rs` | 8 |
 | Close of a pane and of a role's process, dispatch step | `panes.rs`, `tasks/roles.rs`, `tasks/dispatching.rs` | 3 |
 
@@ -101,6 +131,14 @@ after a pane is created is the one user action that still waits under the lock; 
 with the start-up group, which has to settle its state in order.
 
 ## Trade-offs
+
+- **The background pool is shared.** Reads, flushes and follow-ups run on the four shared
+  workers, as do the other background jobs. A hung supervisor can hold them, but only for one
+  timeout: the first call to fail breaks the handle and the jobs waiting on it fail at once.
+  The disk-hang jobs have a thread of their own (`run_alone`) because a disk can hang for ever;
+  a supervisor call cannot, since the client times out. A lane of their own was not added: what
+  a hung supervisor delays on the pool for those five seconds, other jobs' application included,
+  is bounded and does not touch the Core lock or the terminal.
 
 - **A handle per link, not one thread with a request channel.** A dedicated supervisor thread
   would give strict first-in-first-out order across callers. The mutex of the connection gives

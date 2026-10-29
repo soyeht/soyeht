@@ -93,6 +93,11 @@ impl Core {
         )?;
         let link = self.supervisor()?;
         let used = link.clone();
+        // The input reaches the supervisor after every send to this process that was made
+        // before it, from whichever thread: the queued ones go in front of it, and its turn
+        // follows the sends already on their way (and the inputs dispatched before it).
+        let earlier = self.take_later_for(&instance);
+        let turn = self.turn(&[&instance]);
         let request = Request::Input {
             instance_id: instance,
             bytes,
@@ -103,8 +108,14 @@ impl Core {
         Ok(Outcome::Offload(Offload::new(
             "Supervisor input timed out",
             supervisor_handle::DEADLINE,
-            move || link.call(request),
-            move |core, receipt| {
+            move || {
+                turn.wait();
+                let earlier = link.call_each(earlier);
+                Ok((earlier, link.call(request)))
+            },
+            move |core, sent| {
+                let (earlier, receipt) = sent?;
+                core.settle_follow_ups(&used, earlier);
                 let Response::Accepted { bytes } = core.settle_supervisor(&used, receipt)? else {
                     return Err(errors::ptyd_unavailable("Invalid input receipt"));
                 };

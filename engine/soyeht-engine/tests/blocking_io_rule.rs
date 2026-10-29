@@ -187,7 +187,7 @@ const UNDER_LOCK_SUPERVISOR_CALLS: &[(&str, usize)] = &[
     ("soyeht-engine/src/agents/switching/commit.rs", 1),
     ("soyeht-engine/src/agents/terminals.rs", 7),
     ("soyeht-engine/src/core.rs", 7),
-    ("soyeht-engine/src/languages/runtime.rs", 8),
+    ("soyeht-engine/src/languages/runtime.rs", 7),
     ("soyeht-engine/src/panes.rs", 1),
     ("soyeht-engine/src/spawn_retry.rs", 1),
     ("soyeht-engine/src/tasks/dispatching.rs", 1),
@@ -225,9 +225,10 @@ fn requests_to_the_supervisor_under_the_core_lock_do_not_grow() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        // A file that is only test code (`tests.rs`, `test_panes.rs`, ...) is not shipped.
+        // A file that is only test code (`tests.rs`, `test_panes.rs`, `save_temporary_tests.rs`)
+        // is not shipped; a production file with "test" inside its name still is.
         let name = file.file_name().unwrap().to_string_lossy().into_owned();
-        if name.contains("test") {
+        if name == "tests.rs" || name.starts_with("test_") || name.ends_with("_tests.rs") {
             continue;
         }
         let source = fs::read_to_string(&file).unwrap();

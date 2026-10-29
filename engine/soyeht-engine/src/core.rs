@@ -36,6 +36,9 @@ pub struct Core {
     /// Requests to the supervisor nobody waits for, in the order they were made (see
     /// `Core::send_later`).
     pub(crate) supervisor_later: Vec<Request>,
+    /// The last send to each process that is ordered against the ones after it (see
+    /// `Core::turn`).
+    pub(crate) send_turns: BTreeMap<String, Arc<crate::offload::Done>>,
     pub(crate) supervisor_retry: crate::supervisor_link::Retry,
     pub clock: Arc<dyn Clock>,
     /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
@@ -137,6 +140,7 @@ impl Core {
             catalog_epoch: 0,
             ptyd: None,
             supervisor_later: Vec::new(),
+            send_turns: BTreeMap::new(),
             supervisor_retry: Default::default(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
@@ -398,6 +402,12 @@ impl Core {
     pub fn connect_supervisor(&mut self) -> Result<()> {
         let client = Client::connect(&self.directory.join(PTYD_SOCKET), self.generation)
             .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))?;
+        self.adopt_supervisor(client)
+    }
+
+    /// Makes `client` the link, reconciles the registry with the panes and records the
+    /// reconnection; the link is dropped again when the reconciliation fails.
+    pub(crate) fn adopt_supervisor(&mut self, client: Client) -> Result<()> {
         self.link_supervisor(Box::new(client));
         let result = self.reconcile_registry();
         if result.is_err() {

@@ -14,7 +14,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use support::{Rig, Ticker, longest_gap};
+use support::{Rig, Ticker, longest_gap, wait_until};
 
 /// How long the fake usage source blocks. Before ADR 0079 the engine held its
 /// Core lock for all of it, and no terminal output reached any client.
@@ -103,10 +103,12 @@ fn terminal_output_keeps_flowing_while_a_usage_source_blocks() {
     );
 }
 
-/// How long the supervisor stays stopped. Its client waits up to five seconds for an answer
-/// (`soyeht_ptyd::client::IO_TIMEOUT`), and the engine's tick asks it for output every few
-/// milliseconds, so before ADR 0117 the Core lock was held for that whole wait.
-const STOPPED_FOR: Duration = Duration::from_millis(3_500);
+/// How long the supervisor stays stopped: longer than its client waits for an answer
+/// (`soyeht_ptyd::client::IO_TIMEOUT`, five seconds), so the calls in flight time out and the
+/// connection is dropped while the supervisor still holds their requests. The engine's tick asks
+/// it for output every few milliseconds, so before ADR 0117 the Core lock was held for that
+/// whole wait, and several waits in a row.
+const STOPPED_FOR: Duration = Duration::from_millis(6_500);
 
 /// Stops the supervisor process, and continues it when dropped, so a failed assertion does not
 /// leave a stopped process behind.
@@ -161,10 +163,15 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it
         worst < GAP_FLOOR,
         "a request waited {worst:?} behind the stopped supervisor"
     );
-    // The terminal works again once the supervisor does.
-    let reply = client.request(
-        "pane.input",
-        json!({"paneId":pane,"bytes":"ZWNobyBva1xuCg==","idempotencyKey":"after-stop"}),
-    );
-    assert!(reply.get("error").is_none(), "{reply}");
+    // The engine connects again once the supervisor answers, and the terminal works: the
+    // requests that timed out are not answered to the ones after them.
+    let mut attempt = 0;
+    wait_until("the terminal accepts input again", || {
+        attempt += 1;
+        let reply = client.request(
+            "pane.input",
+            json!({"paneId":pane,"bytes":"ZWNobyBva1xuCg==","idempotencyKey":format!("after-stop-{attempt}")}),
+        );
+        reply.get("error").is_none()
+    });
 }

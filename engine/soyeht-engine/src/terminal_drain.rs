@@ -39,6 +39,9 @@ struct Read {
     /// exited. The supervisor records it just after it marks the process exited, so a status
     /// that is not there yet stays unknown rather than guessed.
     exit_code: Option<i64>,
+    /// The output says the process exited and the pane did not know yet. A process that is
+    /// already known to be dead keeps saying so until it is closed; that is not news.
+    exit_news: bool,
 }
 
 /// Where a drain job started, to tell when it is applied whether the pane is still the one it
@@ -50,11 +53,11 @@ struct Started {
     supervisor: Supervisor,
 }
 
-/// Whether a drain found something the tick should apply at once: output, an exit, or an error
-/// (a lost link is dropped when its error is applied).
+/// Whether a drain found something the tick should apply at once: output, a gap, an exit the
+/// pane did not know, or an error (a lost link is dropped when its error is applied).
 fn has_news(read: &Result<Read>) -> bool {
     !read.as_ref().is_ok_and(|read| {
-        read.output.bytes.is_empty() && !read.output.exited && read.output.gap.is_none()
+        read.output.bytes.is_empty() && !read.exit_news && read.output.gap.is_none()
     })
 }
 
@@ -71,12 +74,17 @@ fn read_output(
     else {
         return Err(errors::ptyd_unavailable("Invalid output response"));
     };
-    let exit_code = if output.exited && look_up_exit {
+    let exit_news = output.exited && look_up_exit;
+    let exit_code = if exit_news {
         exit_code_of(supervisor, instance_id)?
     } else {
         None
     };
-    Ok(Read { output, exit_code })
+    Ok(Read {
+        output,
+        exit_code,
+        exit_news,
+    })
 }
 
 /// The exit status the supervisor recorded for an instance, if it has recorded one.
@@ -133,7 +141,9 @@ impl Core {
         started: &Started,
         read: Result<Read>,
     ) -> Result<()> {
-        let Read { output, exit_code } = self.settle_supervisor(&started.supervisor, read)?;
+        let Read {
+            output, exit_code, ..
+        } = self.settle_supervisor(&started.supervisor, read)?;
         let Some(running) = self.panes.get(id) else {
             return Ok(());
         };
@@ -495,5 +505,36 @@ mod tests {
 
         assert!(core.ptyd.is_none());
         crate::test_paths::remove_after(core, root);
+    }
+
+    /// The answers of a supervisor whose process exited: every drain says so, as it does until
+    /// the process is closed, and the registry lists nothing.
+    fn exited() -> Supervisor {
+        let output = |from_seq| {
+            Ok(Response::Output(Output {
+                from_seq,
+                next_seq: from_seq,
+                end_seq: from_seq,
+                bytes: String::new(),
+                gap: None,
+                exited: true,
+            }))
+        };
+        Supervisor::new(Box::new(crate::ports::testing::FakeSupervisor {
+            responses: VecDeque::from([output(0), Ok(Response::Instances(Vec::new()))]),
+            ..Default::default()
+        }))
+    }
+
+    #[test]
+    fn a_dead_pane_that_is_still_open_does_not_wake_the_tick() {
+        // The pane already knows its process is dead: the read says it again, which is no news.
+        let known = read_output(&exited(), "instance", 0, false).unwrap();
+        assert!(known.output.exited);
+        assert!(!has_news(&Ok(known)));
+
+        // The first time it is news, and the exit status is looked up.
+        let fresh = read_output(&exited(), "instance", 0, true).unwrap();
+        assert!(has_news(&Ok(fresh)));
     }
 }
