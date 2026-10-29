@@ -32,6 +32,13 @@ pub mod slow_start {
     }
 }
 
+/// No watcher could start at `stage`. The caller polls instead; the notify error carries paths
+/// and text, so only the stage is logged.
+fn unavailable<T>(stage: &str) -> Option<T> {
+    soyeht_platform::log::event("engine.file_watch_unavailable", &[("stage", stage)]);
+    None
+}
+
 /// The file events of one folder tree. Dropping it stops the stream.
 pub(crate) struct EventStream {
     pub(crate) receiver: Receiver<notify::Result<Event>>,
@@ -44,8 +51,12 @@ impl EventStream {
         #[cfg(feature = "test-hooks")]
         slow_start::wait();
         let (sender, receiver) = mpsc::channel();
-        let mut watcher = notify::recommended_watcher(sender).ok()?;
-        watcher.watch(root, RecursiveMode::Recursive).ok()?;
+        let Ok(mut watcher) = notify::recommended_watcher(sender) else {
+            return unavailable("create");
+        };
+        if watcher.watch(root, RecursiveMode::Recursive).is_err() {
+            return unavailable("watch");
+        }
         Some(Self {
             receiver,
             _watcher: Some(watcher),

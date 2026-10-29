@@ -28,6 +28,7 @@ impl Host for SystemHost {
     }
 
     fn env(&self, name: &str) -> Option<String> {
+        // ignored: an unset or non-Unicode variable counts as not set
         std::env::var(name).ok()
     }
 
@@ -47,7 +48,7 @@ impl Host for SystemHost {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return FileRead::Missing;
             }
-            // `Unreadable` reaches the reading as an unavailable source.
+            // ignored: `Unreadable` reaches the reading as an unavailable source.
             Err(_) => return FileRead::Unreadable,
         };
         if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
@@ -74,12 +75,15 @@ impl Host for SystemHost {
         process::http(Path::new(process::CURL), request)
     }
 
+    #[cfg_attr(
+        not(target_os = "macos"),
+        allow(unused_variables, reason = "only macOS reads browser cookies")
+    )]
     fn browser_cookies(&self, domain: &str) -> CookieRead {
         #[cfg(target_os = "macos")]
         if let Some(home) = self.home() {
             return super::browser::cookies(&home, domain);
         }
-        let _ = domain;
         CookieRead::default()
     }
 

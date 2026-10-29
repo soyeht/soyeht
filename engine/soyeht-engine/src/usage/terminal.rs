@@ -52,9 +52,16 @@ const INHERITED: [&str; 10] = [
 /// Failures to make or remove the scratch directory, counted across sessions so that a disk that
 /// stays full, or a directory that is not ours to remove, is logged once and not on every refresh.
 static SCRATCH: Mutex<Streak> = Mutex::new(Streak::once());
+/// Failures to start the program, counted the same way: a program that cannot start is retried
+/// on every refresh.
+static SPAWN: Mutex<Streak> = Mutex::new(Streak::once());
 
 fn scratch_failed(name: &str, error: &io::Error) {
-    let first = SCRATCH
+    failed(&SCRATCH, name, error);
+}
+
+fn failed(streak: &Mutex<Streak>, name: &str, error: &io::Error) {
+    let first = streak
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .fail(&error.failure_kind());
@@ -98,6 +105,10 @@ pub(super) fn run(
     }
     let outcome = match spawn(program, path_env, request) {
         Ok(mut session) => {
+            SPAWN
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .succeed();
             let outcome = drive(
                 &mut session.input,
                 &mut session.output,
@@ -116,8 +127,11 @@ pub(super) fn run(
             stop(&mut child);
             outcome
         }
-        // A program that does not start gives an incomplete run, which the reading reports as unavailable.
-        Err(_) => TerminalRun::Incomplete,
+        // The run is incomplete, which the reading reports as unavailable.
+        Err(error) => {
+            failed(&SPAWN, "engine.usage_terminal_spawn_failed", &error);
+            TerminalRun::Incomplete
+        }
     };
     cleanup(request);
     outcome
@@ -208,7 +222,7 @@ fn remove_dir(directory: &Path) -> io::Result<()> {
         match &result {
             Ok(()) => break,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            // Retried after a pause; the last error is returned when the attempts end.
+            // ignored: retried after a pause; the last error is returned when the attempts end.
             Err(_) => {}
         }
     }
@@ -265,7 +279,7 @@ fn drive(
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
-                // EIO: the process closed its side of the terminal.
+                // ignored: EIO: the process closed its side of the terminal.
                 Err(_) => return TerminalRun::Incomplete,
             }
         }
@@ -294,8 +308,7 @@ fn stop(child: &mut Child) {
         }
         thread::sleep(POLL);
     }
-    child.kill(Reach::Group);
-    let _ = child.wait();
+    child.end(Reach::Group);
 }
 
 #[cfg(test)]

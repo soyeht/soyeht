@@ -40,6 +40,7 @@ pub(crate) struct Guard(UnixStream);
 impl Guard {
     /// The exit code the guardian reported for the guarded process, if it reported one.
     pub(crate) fn exit_code(&mut self) -> Option<i32> {
+        // ignored: a guardian that closed its channel reported no code, which `None` says
         match read_json::<Reply>(&mut self.0).ok()?? {
             Reply::Exited(code) => Some(code),
             _ => None,
@@ -109,9 +110,7 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
             guard: Some(Guard(parent)),
         }),
         Err(error) => {
-            child.kill(Reach::Tree);
-            // Reap only: the group was just terminated; an error means it is already gone.
-            let _ = child.wait();
+            child.end(Reach::Tree);
             Err(error)
         }
     }
@@ -165,11 +164,11 @@ pub fn run(fd: i32) -> Result<()> {
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                // The supervisor may already be gone; the exit is final either way.
+                // ignored: the supervisor may already be gone; the exit is final either way.
                 let _ = reply(&mut control, Reply::Exited(status.code().unwrap_or(-1)));
                 kill_own_group();
             }
-            // If the child cannot be waited for, nothing can be kept safe: stop the whole group.
+            // ignored: if the child cannot be waited for, nothing can be kept safe: stop the whole group.
             Err(_) => kill_own_group(),
             Ok(None) => (),
         }

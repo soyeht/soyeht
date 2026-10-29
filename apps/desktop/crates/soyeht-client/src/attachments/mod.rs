@@ -325,15 +325,8 @@ impl Chip {
 
 /// The bytes a base64 text stands for; none when it is not base64, so that a thumbnail the
 /// engine kept damaged is a chip without a picture.
-#[allow(
-    clippy::manual_ok_err,
-    reason = "text that is not base64 has no bytes, and that is the answer"
-)]
 pub fn decode_base64(text: &str) -> Option<Vec<u8>> {
-    match STANDARD.decode(text) {
-        Ok(bytes) => Some(bytes),
-        Err(_) => None,
-    }
+    STANDARD.decode(text).ok()
 }
 
 /// What a paste offers the composer. Copied files and copied images become attachments;

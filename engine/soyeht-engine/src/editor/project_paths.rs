@@ -190,18 +190,22 @@ impl ProjectRoot {
 
     /// A cheap summary of one directory level, for change polling.
     pub fn fingerprint(&self, relative: &str) -> Option<u64> {
-        let directory = self.directory(relative).ok()?;
+        // ignored: a folder that cannot be read has no fingerprint, so the poll sees no change
+        self.read_fingerprint(relative).ok()
+    }
+
+    fn read_fingerprint(&self, relative: &str) -> io::Result<u64> {
         let mut names = BTreeSet::new();
-        for item in fs::read_dir(directory).ok()? {
-            let item = item.ok()?;
+        for item in fs::read_dir(self.directory(relative)?)? {
+            let item = item?;
             if is_excluded(&item.file_name()) {
                 continue;
             }
-            names.insert((item.file_name(), item.file_type().ok()?.is_dir()));
+            names.insert((item.file_name(), item.file_type()?.is_dir()));
         }
         let mut hasher = DefaultHasher::new();
         names.hash(&mut hasher);
-        Some(hasher.finish())
+        Ok(hasher.finish())
     }
 
     fn contained(&self, path: &Path) -> io::Result<PathBuf> {
@@ -216,18 +220,24 @@ impl ProjectRoot {
     }
 
     fn kind(&self, path: &Path) -> Option<ProjectEntryKind> {
-        let metadata = fs::symlink_metadata(path).ok()?;
-        let metadata = if metadata.file_type().is_symlink() {
-            fs::metadata(self.contained(path).ok()?).ok()?
-        } else {
-            metadata
-        };
+        // ignored: an entry that is gone, or a link that leaves the project, has no kind
+        let metadata = self.metadata_of(path).ok()?;
         if metadata.is_dir() {
             Some(ProjectEntryKind::Directory)
         } else if metadata.is_file() {
             Some(ProjectEntryKind::File)
         } else {
             None
+        }
+    }
+
+    /// The metadata of `path`, followed through a link that stays inside the project.
+    fn metadata_of(&self, path: &Path) -> io::Result<fs::Metadata> {
+        let metadata = fs::symlink_metadata(path)?;
+        if metadata.file_type().is_symlink() {
+            fs::metadata(self.contained(path)?)
+        } else {
+            Ok(metadata)
         }
     }
 

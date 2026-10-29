@@ -355,12 +355,12 @@ fn start_pool() -> Result<mpsc::Sender<Task>> {
                 loop {
                     let task = match receiver.lock() {
                         Ok(receiver) => receiver.recv(),
-                        // A worker that panicked while waiting for a task poisoned the queue.
+                        // ignored: A worker that panicked while waiting for a task poisoned the queue.
                         Err(_) => return,
                     };
                     match task {
                         Ok(task) => task(),
-                        // Every sender is gone: the engine is shutting down.
+                        // ignored: every sender is gone: the engine is shutting down.
                         Err(_) => return,
                     }
                 }

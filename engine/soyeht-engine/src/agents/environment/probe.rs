@@ -4,6 +4,7 @@
 //! asks an interactive login shell for it. Only Unix has such shells.
 
 use super::LaunchPathIssue;
+use soyeht_platform::process::end_child;
 use std::{
     io::{self, Read},
     os::{fd::AsRawFd, unix::fs::PermissionsExt},
@@ -132,7 +133,7 @@ fn run_probe_command(
     while Instant::now() < deadline {
         match read_available(&mut stdout, &mut bytes) {
             Ok(done) => eof |= done,
-            // The typed `ProbeFailed` issue is the report; the shell's output is not logged.
+            // ignored: the typed `ProbeFailed` issue is the report; the shell's output is not logged.
             Err(_) => return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed)),
         }
         if bytes.len() > PATH_PROBE_BYTES {
@@ -141,7 +142,7 @@ fn run_probe_command(
         if exited.is_none() {
             match child.try_wait() {
                 Ok(status) => exited = status,
-                // The typed `ProbeFailed` issue is the report.
+                // ignored: the typed `ProbeFailed` issue is the report.
                 Err(_) => return Err(abandon(&mut child, LaunchPathIssue::ProbeFailed)),
             }
         }
@@ -159,11 +160,10 @@ fn run_probe_command(
     probe_output(&bytes).ok_or(LaunchPathIssue::InvalidOutput)
 }
 
-/// Stops a probe that already failed. Best effort: the returned issue already says why
-/// the probe failed, and a kill or reap error would add nothing to it.
+/// Stops a probe that already failed. The returned issue says why it failed; a child that
+/// cannot be ended is logged by `end_child`.
 fn abandon(child: &mut std::process::Child, issue: LaunchPathIssue) -> LaunchPathIssue {
-    let _ = child.kill();
-    let _ = child.wait();
+    end_child(child);
     issue
 }
 

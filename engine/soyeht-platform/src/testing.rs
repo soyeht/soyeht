@@ -1,6 +1,7 @@
 //! Helpers for tests that need a file or folder the account cannot reach, or that everybody can,
 //! and for measurements that only some systems have.
 
+use crate::process::end_child;
 use std::{
     collections::BTreeSet,
     io,
@@ -141,8 +142,7 @@ pub fn warm_up(binary: &Path) -> Duration {
         while matches!(child.try_wait(), Ok(None)) {
             if started.elapsed() > WARM_UP_DEADLINE {
                 // It exits or is already gone; either way nothing is left to wait for.
-                let _ = child.kill();
-                let _ = child.wait();
+                end_child(&mut child);
                 break;
             }
             thread::sleep(Duration::from_millis(5));

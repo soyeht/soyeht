@@ -310,11 +310,11 @@ async fn write_frames(
         };
         match result {
             Ok(()) => packet.written(),
-            // The close reason is the record: it is logged when the connection closes.
+            // ignored: the close reason is the record: it is logged when the connection closes.
             Err(_) => break CloseReason::WriteError,
         }
     };
-    // Bounded best effort; the reason below already says why the connection ended.
+    // ignored: bounded best effort; the reason below already says why the connection ended.
     let _ = tokio::time::timeout(Duration::from_secs(1), writer.close()).await;
     reason
 }
@@ -501,7 +501,7 @@ async fn send_outcome(
             let Ok(frame) = model::failure(request_id, errors::wire(error)) else {
                 return Err(CloseReason::WorkerFailed);
             };
-            // Best effort: the connection closes as rejected whether or not the error page lands.
+            // ignored: best effort: the connection closes as rejected whether or not the error page lands.
             let _ = outbox.write_page(frame).await;
             return Err(CloseReason::HandshakeRejected);
         }
@@ -641,7 +641,7 @@ async fn resolve_offload(
             );
             expire
         }
-        // The deadline passed: the offload's own expiry answers the request.
+        // ignored: the deadline passed: the offload's own expiry answers the request.
         Err(_) => expire,
     };
     core_lock::with(core, "offload_apply", apply).await

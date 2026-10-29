@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_platform::log::Line;
+use soyeht_platform::log::{self, Line};
 use soyeht_protocol::{
     HarnessEnvironmentIssue, HarnessInfo, HarnessSetupReason, HarnessSetupState, HarnessSource,
     ModelInfo, ModelListSource, ModelRefusal, limits, method,
@@ -182,6 +182,20 @@ pub(crate) enum PreparedCatalog {
     },
 }
 
+/// The launch of a harness that has a live session and the digest of its executable. A harness
+/// that cannot be prepared is listed as unprepared, and the reason is logged by kind.
+fn prepare_or_log(
+    entry: &registry::RegistryEntry,
+) -> Option<(soyeht_protocol::HarnessLaunch, String)> {
+    match registry::prepare_entry(entry.clone()) {
+        Ok(prepared) => Some(prepared),
+        Err(error) => {
+            log::failure("engine.harness_prepare_failed", &error);
+            None
+        }
+    }
+}
+
 pub(crate) fn prepare_catalog(
     directory: PathBuf,
     method: &str,
@@ -205,7 +219,7 @@ pub(crate) fn prepare_catalog(
                 let step = Instant::now();
                 let prepared = session_harnesses
                     .contains(&entry.launch.id)
-                    .then(|| registry::prepare_entry(entry.clone()).ok())
+                    .then(|| prepare_or_log(&entry))
                     .flatten();
                 prepare_ms += step.elapsed().as_millis();
                 let step = Instant::now();

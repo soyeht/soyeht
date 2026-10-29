@@ -348,7 +348,7 @@ fn input_delivered(
     match writer.join() {
         Ok(Err(error)) if error.kind() != io::ErrorKind::BrokenPipe => Err(error),
         Ok(_) => Ok(()),
-        // The panic becomes the error the caller gets.
+        // ignored: the panic becomes the error the caller gets.
         Err(_) => Err(io::Error::other("input writer panicked")),
     }
 }
@@ -434,7 +434,7 @@ fn read_in_background<R: Read + Send + 'static>(
 ) {
     let sender = sender.clone();
     thread::spawn(move || {
-        // The receiver is gone once the deadline passed; nobody is left to read this result.
+        // ignored: the receiver is gone once the deadline passed; nobody is left to read this result.
         let _ = sender.send((stream, read_bounded(reader, limit)));
     });
 }

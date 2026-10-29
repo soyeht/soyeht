@@ -85,9 +85,11 @@ fn read_inline_candidate(path: &str) -> Option<Vec<u8>> {
     use std::io::Read;
     let mut bytes = Vec::new();
     std::fs::File::open(path)
-        .ok()?
-        .take(soyeht_protocol::limits::ACP_MESSAGE_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
+        .and_then(|file| {
+            file.take(soyeht_protocol::limits::ACP_MESSAGE_BYTES as u64 + 1)
+                .read_to_end(&mut bytes)
+        })
+        // ignored: a file that cannot be read is not inlined, and the attachment goes by reference
         .ok()?;
     (bytes.len() <= soyeht_protocol::limits::ACP_MESSAGE_BYTES).then_some(bytes)
 }

@@ -112,7 +112,7 @@ impl Workbench {
                 while batch.len() < EVENTS_PER_BATCH {
                     match inbox.try_recv() {
                         Ok(event) => batch.push(event),
-                        // Nothing more is waiting, or the channel closed, which the next
+                        // ignored: nothing more is waiting, or the channel closed, which the next
                         // `recv` above reports by ending the loop.
                         Err(_) => break,
                     }

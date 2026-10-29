@@ -20,12 +20,29 @@ pub enum Reach {
     Tree,
 }
 
+use soyeht_platform::log;
 use std::{
     io, thread,
     time::{Duration, Instant},
 };
 
+/// How long ending a child waits for it to be gone while the caller holds its lock.
+const REAP_LIMIT: Duration = Duration::from_secs(2);
+
 impl Child {
+    /// Ends the child as far as `reach` says and collects its exit. The wait is bounded because
+    /// callers hold the child's lock, which the exit watcher and every other request need; a
+    /// child that outlasts the limit is collected by the watcher when it does end.
+    pub fn end(&mut self, reach: Reach) {
+        self.kill(reach);
+        match self.wait_within(REAP_LIMIT) {
+            Ok(Some(_)) => {}
+            Ok(None) => log::event("ptyd.child_still_running_after_kill", &[]),
+            // The child could not be queried; the watcher reports it.
+            Err(error) => log::failure("ptyd.child_wait_failed", &error),
+        }
+    }
+
     /// Waits for the child to end, for at most `limit`; `None` when it has not. Used after the
     /// child was killed, by callers that hold a lock the rest of the supervisor needs.
     pub fn wait_within(&mut self, limit: Duration) -> io::Result<Option<Exit>> {

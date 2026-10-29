@@ -132,9 +132,7 @@ pub(super) fn spawn(mut command: Command, rows: u16, cols: u16) -> io::Result<Se
             resizer: Resizer(Arc::new(terminal)),
         }),
         Err(error) => {
-            child.kill(Reach::Group);
-            // Reap only: the group was just terminated; an error means it is already gone.
-            let _ = child.wait();
+            child.end(Reach::Group);
             Err(error)
         }
     }

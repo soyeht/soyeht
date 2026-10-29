@@ -26,6 +26,7 @@ fn flags() -> OpenFlags {
 
 /// Opens a database another application may hold open, without taking its lock.
 fn open_immutable(path: &Path) -> Option<Connection> {
+    // ignored: the caller reports a database that cannot be opened as denied or empty
     Connection::open_with_flags(format!("file:{}?immutable=1", path.display()), flags()).ok()
 }
 
@@ -36,11 +37,13 @@ pub fn item_table_value(path: &Path, key: &str) -> SecretRead {
     }
     // CodexBar opens it read-only and falls back to `immutable=1` when that fails.
     let opened = Connection::open_with_flags(path, flags())
+        // ignored: the immutable open below is the fallback, and its failure is reported
         .ok()
         .or_else(|| open_immutable(path));
     let Some(connection) = opened else {
         return SecretRead::Denied;
     };
+    // ignored: a connection that cannot set its wait fails fast, and the read reports it
     let _ = connection.busy_timeout(BUSY_WAIT);
     let value = connection
         .query_row(
@@ -52,7 +55,7 @@ pub fn item_table_value(path: &Path, key: &str) -> SecretRead {
     match value {
         Ok(Some(Some(text))) => SecretRead::Found(Secret::new(text)),
         Ok(_) => SecretRead::Missing,
-        // `Denied` reaches the reading as an unavailable source; the database's text is not logged.
+        // ignored: `Denied` reaches the reading as an unavailable source; the database's text is not logged.
         Err(_) => SecretRead::Denied,
     }
 }
@@ -98,6 +101,7 @@ pub fn chromium_cookies(database: &Path, domain: &str) -> Vec<EncryptedCookie> {
         .query_row("SELECT value FROM meta WHERE key='version'", [], |row| {
             row.get::<_, String>(0)
         })
+        // ignored: a database with no readable version is treated as version 0
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(0);

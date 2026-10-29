@@ -297,8 +297,9 @@ impl Console {
         // The handle leaves the mutex first, so a resize is never blocked behind the close.
         let console = match self.0.lock() {
             Ok(mut guard) => guard.take(),
-            // A poisoned lock means a resize panicked while holding it; there is no handle to take.
-            Err(_) => None,
+            // A resize that panicked while holding the lock leaves the handle in place; take it
+            // so it is still closed.
+            Err(poisoned) => poisoned.into_inner().take(),
         };
         if let Some(console) = console {
             // SAFETY: taken out of the option, so it is closed exactly once.
