@@ -49,7 +49,7 @@ fn has_non_port_scheme(input: &str) -> bool {
 fn parse_bare(input: &str) -> Result<Url> {
     let probe = match Url::parse(&format!("http://{input}")) {
         Ok(value) => value,
-        // Not a bare host: try the input as a full URL.
+        // ignored: not a bare host: try the input as a full URL.
         Err(_) => return Url::parse(input).map_err(|_| Error::InvalidUrl),
     };
     let local_with_port = probe.port().is_some() && is_loopback(probe.host());

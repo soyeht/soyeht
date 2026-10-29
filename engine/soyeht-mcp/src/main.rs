@@ -89,6 +89,7 @@ fn required(value: Option<String>, message: &'static str) -> Result<String> {
 
 fn run() -> Result<()> {
     let config = arguments()?;
+    // ignored: an unset or non-Unicode variable is reported by `required` as a missing binding
     let binding = required(std::env::var(BINDING_ENV).ok(), "binding is required")?;
     let client = Client::connect(&config.data_dir.join(ENGINE_SOCKET), &binding)?;
     server::serve(

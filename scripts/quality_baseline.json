@@ -25,8 +25,8 @@
       "duplicated_lines": 169
     },
     "python": {
-      "clones": 16,
-      "duplicated_lines": 138
+      "clones": 15,
+      "duplicated_lines": 133
     },
     "shared": {
       "clones": 63,
@@ -235,9 +235,9 @@
     "engine/soyeht-store/tests/tasks.rs": 958
   },
   "swallowed_errors": {
-    "rust_err_wildcard": 33,
-    "rust_let_underscore": 40,
-    "rust_ok": 101,
+    "rust_err_wildcard": 0,
+    "rust_let_underscore": 9,
+    "rust_ok": 0,
     "swift_try_optional": 31
   },
   "version": 3

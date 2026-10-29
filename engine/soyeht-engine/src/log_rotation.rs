@@ -125,9 +125,10 @@ pub fn capture_stderr(max_bytes: u64, keep: usize) -> io::Result<Option<StderrRo
     thread::Builder::new()
         .name("engine-log".into())
         .spawn(move || {
-            // Nowhere to report: stderr is this pipe. The sender only wakes a waiting drop,
-            // and a drop that finds the thread gone has nothing left to wait for.
+            // ignored: nowhere to report: stderr is this pipe.
             let _ = copy(reader, &mut log, || {
+                // ignored: the sender only wakes a waiting drop, and a drop that finds the
+                // thread gone has nothing left to wait for
                 let _ = acknowledge.send(());
             });
         })?;
@@ -165,7 +166,7 @@ fn flush(writer: &PipeWriter, flushed: &mpsc::Receiver<()>, deadline: Duration) 
         return false;
     };
     thread::spawn(move || {
-        // A failed write means the copy thread is gone; the caller sees that on `flushed`.
+        // ignored: A failed write means the copy thread is gone; the caller sees that on `flushed`.
         let _ = writer.write_all(FLUSH_MARKER);
     });
     flushed.recv_timeout(deadline).is_ok()

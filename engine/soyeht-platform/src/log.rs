@@ -136,7 +136,7 @@ fn write_line(line: &str) {
 }
 
 fn write_to_stderr(line: &str) {
-    // A closed standard error (a broken pipe) has nowhere to report itself.
+    // ignored: A closed standard error (a broken pipe) has nowhere to report itself.
     let _ = writeln!(io::stderr(), "{line}");
 }
 

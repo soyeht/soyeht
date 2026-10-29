@@ -390,6 +390,7 @@ pub(crate) fn resolve_executable(
     };
     candidates
         .into_iter()
+        // ignored: a search-path entry that does not exist is not a candidate
         .filter_map(|path| soyeht_platform::fs::canonicalize(&path).ok())
         .find(|path| is_executable(path))
 }

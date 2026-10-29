@@ -13,6 +13,11 @@
 //! each failure ([`Streak::next_delay_ms`]) up to a cap. A [`Streak::once`] streak logs no
 //! more than that, and has no delay.
 
+use std::{
+    collections::BTreeMap,
+    sync::{Mutex, PoisonError},
+};
+
 /// Failures counted before the delay stops doubling; keeps the shift in range.
 const MAX_DOUBLINGS: u32 = 20;
 
@@ -84,9 +89,77 @@ impl Streak {
     }
 }
 
+/// Counts a failure of `kind` in a streak kept in a static. True when it is to be logged: the
+/// first of a streak and each change of kind.
+pub fn first_failure(streak: &Mutex<Streak>, kind: &str) -> bool {
+    streak
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .fail(kind)
+}
+
+/// Ends a static streak after an attempt that worked.
+pub fn recovered(streak: &Mutex<Streak>) {
+    streak
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .succeed();
+}
+
+/// One [`Streak::once`] per name, for a failure that repeats for each of several things (the
+/// harnesses of a catalogue), so one that recovers does not reset another that keeps failing.
+#[derive(Default)]
+pub struct KeyedStreaks(Mutex<BTreeMap<String, Streak>>);
+
+impl KeyedStreaks {
+    pub const fn new() -> Self {
+        Self(Mutex::new(BTreeMap::new()))
+    }
+
+    /// Counts a failure of `kind` for `key`. True when it is to be logged.
+    pub fn fail(&self, key: &str, kind: &str) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(key.to_owned())
+            .or_insert_with(Streak::once)
+            .fail(kind)
+    }
+
+    /// Ends the streak of `key` after an attempt that worked.
+    pub fn succeed(&self, key: &str) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(key);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_static_streak_logs_a_repeated_failure_once_and_again_after_a_recovery() {
+        let streak = Mutex::new(Streak::once());
+        let logged: Vec<bool> = (0..4).map(|_| first_failure(&streak, "stage")).collect();
+        assert_eq!(logged, [true, false, false, false]);
+        recovered(&streak);
+        assert!(first_failure(&streak, "stage"));
+    }
+
+    #[test]
+    fn keyed_streaks_do_not_reset_each_other() {
+        let streaks = KeyedStreaks::new();
+        assert!(streaks.fail("a", "io"));
+        assert!(streaks.fail("b", "io"));
+        streaks.succeed("b");
+        assert!(
+            !streaks.fail("a", "io"),
+            "a keeps its streak while b recovers"
+        );
+        assert!(streaks.fail("b", "io"), "b starts a new streak");
+    }
 
     #[test]
     fn the_delay_doubles_up_to_the_cap() {

@@ -40,7 +40,7 @@ fn merge_input(
                 *carry = Some(other);
                 break;
             }
-            // Nothing is waiting, or the queue closed: send what was gathered, and the next
+            // ignored: nothing is waiting, or the queue closed: send what was gathered, and the next
             // read of the queue ends the worker.
             Err(_) => break,
         }
@@ -67,7 +67,7 @@ fn merge_resize(
                 *carry = Some(other);
                 break;
             }
-            // Nothing is waiting, or the queue closed: see `merge_input`.
+            // ignored: nothing is waiting, or the queue closed: see `merge_input`.
             Err(_) => break,
         }
     }

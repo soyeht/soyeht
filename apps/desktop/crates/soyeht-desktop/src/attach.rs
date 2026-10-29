@@ -37,7 +37,7 @@ impl Workbench {
                     format!("The file picker could not open: {error}"),
                     cx,
                 ),
-                // The picker was dropped before it answered: the person is told so.
+                // ignored: the picker was dropped before it answered: the person is told so.
                 Err(_) => this.report(
                     kind::ATTACH_PICKER_CLOSED,
                     "The file picker closed without answering.".to_owned(),

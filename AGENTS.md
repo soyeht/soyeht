@@ -155,8 +155,15 @@ ADR when you change a boundary.
   lints too.
 - Swallowed errors (`swallowed_errors`): Swift `try?` and Rust `.ok()` / `let _ =` /
   `Err(_) =>` in production code may not grow. Log, propagate or surface the error
-  instead, or keep it with a one-line comment saying why ignoring it is correct.
-  `uv run python scripts/check_swallowed_errors.py` lists every counted site.
+  instead. Two forms are not counted: a Rust `.ok()` directly on a pure conversion call
+  (`parse`, `try_from`, `from_utf8`, `parse_from_rfc3339`, ... the `CONVERSIONS` of the script;
+  the call does no IO, and `None` says all it can fail with), and a site that carries a
+  `// ignored: <reason>` comment at the end of its line or alone on the line(s) directly above
+  it, saying why dropping the error is correct. `uv run python scripts/check_swallowed_errors.py`
+  lists every counted site, and `--exempt` the others with the form that exempts them.
+- Ending a child process: kill it if it still runs, then reap it within a bound, through
+  `soyeht_platform::process::end_child` (a `std::process::Child`) or, for a supervisor child,
+  `soyeht_ptyd::child::Child::end`. Do not write `let _ = child.kill(); let _ = child.wait();`.
 - Logging: every log line is written by `soyeht_platform::log` (`event`, `failure`,
   `failure_with`, or a `Line` built now and emitted later). A failure logs its kind, never
   its message text, which can carry paths. A failure that can repeat keeps an engine

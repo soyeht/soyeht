@@ -139,6 +139,23 @@ pub enum Error {
     GitUnavailable,
 }
 
+/// A failure to run a command logs as a bounded label, never as message text: the text names the
+/// program and carries paths.
+impl soyeht_platform::log::Failure for Error {
+    fn failure_kind(&self) -> String {
+        match self {
+            Self::Spawn { source, .. } => format!("spawn:{:?}", source.kind()),
+            Self::Wait { source, .. } => format!("wait:{:?}", source.kind()),
+            Self::Read { source, .. } => format!("read:{:?}", source.kind()),
+            Self::Write { source, .. } => format!("write:{:?}", source.kind()),
+            Self::TimedOut { .. } => "timed_out".to_owned(),
+            Self::OutputTooLarge { .. } => "output_too_large".to_owned(),
+            Self::UnderLock { .. } => "under_lock".to_owned(),
+            Self::GitUnavailable => "git_not_started".to_owned(),
+        }
+    }
+}
+
 impl Error {
     pub fn timed_out(&self) -> bool {
         matches!(self, Self::TimedOut { .. })
@@ -348,7 +365,7 @@ fn input_delivered(
     match writer.join() {
         Ok(Err(error)) if error.kind() != io::ErrorKind::BrokenPipe => Err(error),
         Ok(_) => Ok(()),
-        // The panic becomes the error the caller gets.
+        // ignored: the panic becomes the error the caller gets.
         Err(_) => Err(io::Error::other("input writer panicked")),
     }
 }
@@ -434,7 +451,7 @@ fn read_in_background<R: Read + Send + 'static>(
 ) {
     let sender = sender.clone();
     thread::spawn(move || {
-        // The receiver is gone once the deadline passed; nobody is left to read this result.
+        // ignored: the receiver is gone once the deadline passed; nobody is left to read this result.
         let _ = sender.send((stream, read_bounded(reader, limit)));
     });
 }

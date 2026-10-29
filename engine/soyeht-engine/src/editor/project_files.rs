@@ -87,6 +87,7 @@ pub(crate) fn enumerate_project_files(root: &Path) -> io::Result<Vec<ProjectFile
             let metadata = fs::metadata(&canonical)?;
             let modified_ms = metadata
                 .modified()
+                // ignored: a file system with no modification time reports 0, as before
                 .ok()
                 .and_then(|value| value.duration_since(std::time::UNIX_EPOCH).ok())
                 .and_then(|value| i64::try_from(value.as_millis()).ok())

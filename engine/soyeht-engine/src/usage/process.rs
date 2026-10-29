@@ -8,13 +8,21 @@
 //! input as configuration, never on its command line, and no response body or error text is
 //! logged.
 
+use crate::streak::{Streak, first_failure, recovered};
+use soyeht_platform::{
+    log::{self, Failure as _},
+    process::end_child,
+};
 use soyeht_protocol::limits;
 use soyeht_usage::host::{HttpRequest, HttpResult, RpcRequest, RpcRun, Secret, SecretRead};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     path::Path,
-    process::{Child, ChildStdin, Command, Stdio},
-    sync::mpsc::{self, Receiver},
+    process::{ChildStdin, Command, Stdio},
+    sync::{
+        Mutex,
+        mpsc::{self, Receiver},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -30,6 +38,12 @@ const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(60);
 /// `security` exits with errSecItemNotFound when the item does not exist.
 const KEYCHAIN_ITEM_NOT_FOUND: i32 = 44;
 const STATUS_MARKER: &[u8] = b"\nSOYEHT_STATUS:";
+
+/// The failures below repeat on every refresh of the usage rings, so each keeps a streak: the
+/// first failure and each change of kind are logged, and a success ends the streak.
+static CURL_RUN: Mutex<Streak> = Mutex::new(Streak::once());
+static RPC_SPAWN: Mutex<Streak> = Mutex::new(Streak::once());
+static RPC_WRITE: Mutex<Streak> = Mutex::new(Streak::once());
 
 /// A program that opens nothing and exits at once. Windows has no stock program like it and its
 /// openers do not read `BROWSER`, so nothing is set there.
@@ -70,13 +84,6 @@ fn run_bounded(
         Some(input) => soyeht_process::run_with_input(command, input, limits),
         None => soyeht_process::run(command, limits),
     }
-}
-
-pub(super) fn stop_child(child: &mut Child) {
-    // Best effort: kill fails only when the child already exited, which is the goal, and
-    // wait only reaps it. The callers report the failed exchange, not this teardown.
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 /// A generic password from the login keychain through `/usr/bin/security`. The first read of
@@ -157,9 +164,18 @@ pub(super) fn http(program: &Path, request: &HttpRequest) -> HttpResult {
     args.push(&request.url);
     let timeout = request.timeout + Duration::from_secs(5);
     match run_bounded(program, &args, Some(config), timeout) {
-        Ok(output) if output.status.code() == Some(0) => parse_http_output(output.stdout),
-        // Any other exit, and every failure to run curl, is a transport failure.
-        Ok(_) | Err(_) => HttpResult::TransportFailed,
+        Ok(output) if output.status.code() == Some(0) => {
+            recovered(&CURL_RUN);
+            parse_http_output(output.stdout)
+        }
+        // Any other exit is a transport failure that curl reports on its own.
+        Ok(_) => HttpResult::TransportFailed,
+        Err(error) => {
+            if first_failure(&CURL_RUN, &error.failure_kind()) {
+                log::failure("usage.curl_failed", &error);
+            }
+            HttpResult::TransportFailed
+        }
     }
 }
 
@@ -225,9 +241,14 @@ pub(super) fn json_rpc(program: &Path, path_env: &str, request: &RpcRequest) -> 
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return RpcRun::ToolNotFound;
         }
-        // `Failed` reaches the reading as an unavailable source.
-        Err(_) => return RpcRun::Failed,
+        Err(error) => {
+            if first_failure(&RPC_SPAWN, &error.failure_kind()) {
+                log::failure("usage.rpc_spawn_failed", &error);
+            }
+            return RpcRun::Failed;
+        }
     };
+    recovered(&RPC_SPAWN);
     let deadline = Instant::now() + request.timeout;
     let results = (|| {
         let mut stdin = child.stdin.take()?;
@@ -239,21 +260,27 @@ pub(super) fn json_rpc(program: &Path, path_env: &str, request: &RpcRequest) -> 
             if let Some(id) = call.id {
                 message["id"] = id.into();
             }
-            write_json_line(&mut stdin, &message)?;
+            if let Err(error) = write_json_line(&mut stdin, &message) {
+                if first_failure(&RPC_WRITE, &error.failure_kind()) {
+                    log::failure("usage.rpc_write_failed", &error);
+                }
+                return None;
+            }
             if let Some(id) = call.id {
                 results.push(response_with_id(&receiver, id, deadline)?);
             }
         }
+        recovered(&RPC_WRITE);
         Some(results)
     })();
-    stop_child(&mut child);
+    end_child(&mut child);
     results.map_or(RpcRun::Failed, RpcRun::Results)
 }
 
-fn write_json_line(stdin: &mut ChildStdin, value: &serde_json::Value) -> Option<()> {
-    serde_json::to_writer(&mut *stdin, value).ok()?;
-    stdin.write_all(b"\n").ok()?;
-    stdin.flush().ok()
+fn write_json_line(stdin: &mut ChildStdin, value: &serde_json::Value) -> std::io::Result<()> {
+    serde_json::to_writer(&mut *stdin, value)?;
+    stdin.write_all(b"\n")?;
+    stdin.flush()
 }
 
 fn spawn_line_reader(stdout: impl Read + Send + 'static) -> Receiver<Line> {
@@ -268,6 +295,7 @@ fn spawn_line_reader(stdout: impl Read + Send + 'static) -> Receiver<Line> {
                 .read_until(b'\n', &mut bytes)
                 .unwrap_or(0);
             if count == 0 || bytes.len() > limits::JSON_BYTES {
+                // ignored: the receiver is gone once the exchange ended
                 let _ = sender.send(Line::End);
                 return;
             }
@@ -288,6 +316,7 @@ fn response_with_id(
 ) -> Option<serde_json::Value> {
     loop {
         let remaining = deadline.checked_duration_since(Instant::now())?;
+        // ignored: a timeout or a closed reader ends the exchange, and the caller reports it failed
         match receiver.recv_timeout(remaining).ok()? {
             Line::Bytes(bytes) => {
                 let mut value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;

@@ -117,6 +117,7 @@ pub(super) fn replace(replacement: &super::Replacement<'_>) -> io::Result<()> {
 
 /// Removes this invocation's temporary file after a failure.
 pub(super) fn discard(directory: &Directory, temporary: &Name) {
+    // ignored: cleanup after a failure; the failure that led here is the one reported
     // SAFETY: cleanup names only this invocation's exclusive temporary file.
     let _ = unsafe { libc::unlinkat(directory.0.as_raw_fd(), temporary.0.as_ptr(), 0) };
 }

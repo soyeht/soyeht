@@ -66,11 +66,11 @@ impl RotatingFile {
         if self.keep == 0 {
             self.file.set_len(0)?;
         } else {
-            // Best effort: a missing oldest file is the normal case, and a real failure
+            // ignored: best effort: a missing oldest file is the normal case, and a real failure
             // surfaces in the final rename that this rotation must complete.
             let _ = fs::remove_file(self.numbered(self.keep));
             for index in (1..self.keep).rev() {
-                // Best effort: a gap in the numbered files is normal.
+                // ignored: best effort: a gap in the numbered files is normal.
                 let _ = fs::rename(self.numbered(index), self.numbered(index + 1));
             }
             fs::rename(&self.path, self.numbered(1))?;

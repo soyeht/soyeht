@@ -105,7 +105,7 @@ impl Credentials {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 return Err(ConfigProblem::Missing);
             }
-            // `Unreadable` is the reason `engine.push_disabled` logs.
+            // ignored: `Unreadable` is the reason `engine.push_disabled` logs.
             Err(_) => return Err(ConfigProblem::Unreadable),
         };
         let config: ConfigFile =
@@ -275,7 +275,7 @@ impl Http2 {
         let tls = self.tls.connect(name, tcp).await?;
         let (send, connection) = h2::client::handshake(tls).await.map_err(io::Error::other)?;
         tokio::spawn(async move {
-            // A broken connection fails `ready()` on the next exchange, which re-dials
+            // ignored: A broken connection fails `ready()` on the next exchange, which re-dials
             // and reports the error to the caller there.
             let _ = connection.await;
         });
@@ -307,7 +307,7 @@ impl Http2 {
         let mut bytes = Vec::new();
         while let Some(chunk) = body.data().await {
             let chunk = chunk.map_err(io::Error::other)?;
-            // Only fails once the stream is reset, which the next `data()` reports.
+            // ignored: only fails once the stream is reset, which the next `data()` reports.
             let _ = body.flow_control().release_capacity(chunk.len());
             bytes.extend_from_slice(&chunk);
             if bytes.len() > RESPONSE_BYTES {
@@ -330,7 +330,7 @@ impl Transport for Http2 {
                 self.connections.remove(host);
                 Err(error)
             }
-            // The deadline passed: the connection is dropped and the caller sees `TimedOut`.
+            // ignored: the deadline passed: the connection is dropped and the caller sees `TimedOut`.
             Err(_) => {
                 self.connections.remove(host);
                 Err(io::Error::new(

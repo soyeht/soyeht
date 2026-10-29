@@ -248,7 +248,7 @@ impl TailnetListeners {
                 Ok(Ok(())) => "Stopped".to_string(),
                 Ok(Err(error)) => error.failure_kind(),
                 Err(join) if join.is_panic() => "Panicked".to_string(),
-                // The log line below names the reason: the task was cancelled.
+                // ignored: the log line below names the reason: the task was cancelled.
                 Err(_) => "Cancelled".to_string(),
             };
             // The next lookup binds the address again if it is still present.

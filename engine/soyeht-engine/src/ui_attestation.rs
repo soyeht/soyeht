@@ -116,6 +116,7 @@ mod macos {
     fn engine_team(profile: &Profile) -> Option<&'static str> {
         ENGINE_TEAM
             .get_or_init(|| {
+                // ignored: an engine that cannot read its own signature is unsigned
                 let code = SecCode::for_self(Flags::NONE).ok()?;
                 let requirement = SecRequirement::from_str(&format!(
                     "anchor apple generic and identifier \"{}\"",
@@ -126,6 +127,7 @@ mod macos {
                     Flags::STRICT_VALIDATE | Flags::NO_NETWORK_ACCESS,
                     &requirement,
                 )
+                // ignored: a signature that fails the requirement is the answer "not signed by us"
                 .ok()?;
                 signing_team(&code)
             })
