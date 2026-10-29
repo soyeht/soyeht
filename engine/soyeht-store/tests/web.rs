@@ -14,28 +14,7 @@ use soyeht_store::{
     domain::PaneRecord,
     web::{WebPermissionRequest, WebSessionGrant, WebSessionGrantScope},
 };
-use std::{fs, path::PathBuf};
-use uuid::Uuid;
-
-struct Profile(PathBuf);
-
-impl Profile {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("sn-web-store-{}", Uuid::new_v4()));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-
-    fn store(&self) -> Store {
-        Store::open(&self.0).unwrap()
-    }
-}
-
-impl Drop for Profile {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use support::{Profile, apply_migrations, commit};
 
 fn workspace() -> Workspace {
     Workspace {
@@ -122,12 +101,9 @@ fn answer(request_id: &str, by: DecisionBy) -> PanePermissionAnswerResult {
 }
 
 fn seed_workspace(store: &mut Store) {
-    store
-        .mutate("test", "workspace", "workspace", |change| {
-            change.insert_workspace(&workspace())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, "workspace", |change| {
+        change.insert_workspace(&workspace())
+    });
 }
 
 fn seed_task(store: &Store) {
@@ -141,12 +117,7 @@ fn seed_task(store: &Store) {
 }
 
 fn save_grant(store: &mut Store, item: &WebSessionGrant, key: &str) {
-    store
-        .mutate("test", key, key, |change| {
-            change.save_web_session_grant(item)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, key, |change| change.save_web_session_grant(item));
 }
 
 #[test]
@@ -155,12 +126,7 @@ fn web_pane_metadata_and_scoped_session_grants_survive_reopen() {
     let mut store = profile.store();
     seed_workspace(&mut store);
     seed_task(&store);
-    store
-        .mutate("test", "pane", "pane", |change| {
-            change.insert_pane(&web_pane())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "pane", |change| change.insert_pane(&web_pane()));
     save_grant(
         &mut store,
         &grant(WebSessionGrantScope::Workspace, "mac", 100),
@@ -227,19 +193,11 @@ fn pending_web_permission_survives_reopen_enters_snapshot_and_accepts_one_answer
     let mut store = profile.store();
     seed_workspace(&mut store);
     seed_task(&store);
-    store
-        .mutate("test", "pane", "pane", |change| {
-            change.insert_pane(&web_pane())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "pane", |change| change.insert_pane(&web_pane()));
     let pending = permission("request-1");
-    store
-        .mutate("test", "permission", "permission", |change| {
-            change.save_web_permission_request(&pending)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "permission", |change| {
+        change.save_web_permission_request(&pending)
+    });
     drop(store);
 
     let mut store = profile.store();
@@ -266,19 +224,15 @@ fn pending_web_permission_survives_reopen_enters_snapshot_and_accepts_one_answer
     assert_eq!(requests[0]["request"]["requestId"], "request-1");
 
     let first = answer("request-1", DecisionBy::Mac);
-    store
-        .mutate("test", "answer", "answer", |change| {
-            assert!(change.answer_web_permission("request-1", &first)?);
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "answer", |change| {
+        assert!(change.answer_web_permission("request-1", &first)?);
+        Ok(())
+    });
     let second = answer("request-1", DecisionBy::Iphone);
-    store
-        .mutate("test", "second-answer", "second-answer", |change| {
-            assert!(!change.answer_web_permission("request-1", &second)?);
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "second-answer", |change| {
+        assert!(!change.answer_web_permission("request-1", &second)?);
+        Ok(())
+    });
     let stored = store.web_permission_request("request-1").unwrap().unwrap();
     assert_eq!(stored.result.unwrap().by, DecisionBy::Mac);
     let snapshot = store.snapshot().unwrap();
@@ -299,19 +253,11 @@ fn permission_operation_identity_and_expiry_are_durable_and_bounded() {
     let mut store = profile.store();
     seed_workspace(&mut store);
     seed_task(&store);
-    store
-        .mutate("test", "pane", "pane", |change| {
-            change.insert_pane(&web_pane())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "pane", |change| change.insert_pane(&web_pane()));
     let pending = permission("operation-request");
-    store
-        .mutate("test", "permission", "permission", |change| {
-            change.save_web_permission_request(&pending)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "permission", |change| {
+        change.save_web_permission_request(&pending)
+    });
     drop(store);
 
     let store = profile.store();
@@ -360,12 +306,7 @@ fn web_permission_identity_is_validated_before_sql() {
     let mut store = profile.store();
     seed_workspace(&mut store);
     seed_task(&store);
-    store
-        .mutate("test", "pane", "pane", |change| {
-            change.insert_pane(&web_pane())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "pane", |change| change.insert_pane(&web_pane()));
     for (index, mut invalid) in [
         permission("bad-1"),
         permission("bad-2"),
@@ -453,26 +394,8 @@ fn invalid_grants_fail_before_sql_and_private_page_data_has_no_schema_surface() 
 #[test]
 fn migration_from_populated_v15_preserves_rows_and_adds_web_grants() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-        include_str!("../migrations/012-editor-files.sql"),
-        include_str!("../migrations/013-editor-project-replacements.sql"),
-        include_str!("../migrations/014-language-servers.sql"),
-        include_str!("../migrations/015-editor-agent-reviews.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 15);
     connection
         .execute_batch(
             r#"INSERT INTO metadata(key,value) VALUES ('db_id','v15-db'),('engine_generation','0');
@@ -503,27 +426,8 @@ fn migration_from_populated_v15_preserves_rows_and_adds_web_grants() {
 #[test]
 fn migration_from_populated_v16_preserves_web_state_and_adds_pending_permissions() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-        include_str!("../migrations/012-editor-files.sql"),
-        include_str!("../migrations/013-editor-project-replacements.sql"),
-        include_str!("../migrations/014-language-servers.sql"),
-        include_str!("../migrations/015-editor-agent-reviews.sql"),
-        include_str!("../migrations/016-web-session-grants.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 16);
     connection
         .execute(
             "INSERT INTO metadata(key,value) VALUES ('db_id','v16-db')",
@@ -555,12 +459,9 @@ fn migration_from_populated_v16_preserves_web_state_and_adds_pending_permissions
     assert_eq!(store.web_session_grants("workspace-1").unwrap().len(), 1);
     let mut pending = permission("after-v16");
     pending.task_id = None;
-    store
-        .mutate("test", "pending", "pending", |change| {
-            change.save_web_permission_request(&pending)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "pending", |change| {
+        change.save_web_permission_request(&pending)
+    });
     assert!(store.web_permission_request("after-v16").unwrap().is_some());
     assert_eq!(
         store
@@ -579,27 +480,7 @@ fn migration_from_populated_v17_preserves_permissions_and_adds_operation_identit
     connection
         .pragma_update(None, "foreign_keys", "ON")
         .unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-        include_str!("../migrations/012-editor-files.sql"),
-        include_str!("../migrations/013-editor-project-replacements.sql"),
-        include_str!("../migrations/014-language-servers.sql"),
-        include_str!("../migrations/015-editor-agent-reviews.sql"),
-        include_str!("../migrations/016-web-session-grants.sql"),
-        include_str!("../migrations/017-web-permissions.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    apply_migrations(&connection, 17);
     connection
         .execute(
             "INSERT INTO metadata(key,value) VALUES ('db_id','v17-db')",

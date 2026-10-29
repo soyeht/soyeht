@@ -178,21 +178,11 @@ fn cancelled_dependency_requires_a_decision(lifecycle: &mut TaskLifecycleRig, ac
         "cancelled",
         "cancel-dependency",
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let shown = lifecycle.human.call(
-            "task.show",
-            json!({"workspaceId":lifecycle.workspace,"taskId":active.task_id}),
-        );
-        if shown["task"]["phrase"] == "blocked: dependency cancelled" {
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "cancelled dependency was not reported: {shown}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    lifecycle.wait_task(
+        &active.task_id,
+        "cancelled dependency was not reported",
+        |shown| shown["task"]["phrase"] == "blocked: dependency cancelled",
+    );
     lifecycle.human.call(
         "task.unblock",
         json!({
@@ -208,21 +198,11 @@ fn wait_for_retry(lifecycle: &mut TaskLifecycleRig, active: &Task, count: u32) {
         .database_probe()
         .make_task_retry_due(&lifecycle.workspace, &active.task_id)
         .unwrap();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let shown = lifecycle.human.call(
-            "task.show",
-            json!({"workspaceId":lifecycle.workspace,"taskId":active.task_id}),
-        );
-        if shown["task"]["blocking"]["retryCount"] == count {
-            return;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "retry {count} did not run: {shown}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    lifecycle.wait_task(
+        &active.task_id,
+        &format!("retry {count} did not run"),
+        |shown| shown["task"]["blocking"]["retryCount"] == count,
+    );
 }
 
 fn external_error_exhausts_two_durable_retries(lifecycle: &mut TaskLifecycleRig, active: &Task) {
@@ -251,27 +231,17 @@ fn wait_for_external_escalation(lifecycle: &mut TaskLifecycleRig, active: &Task)
         .database_probe()
         .make_task_retry_due(&lifecycle.workspace, &active.task_id)
         .unwrap();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let shown = lifecycle.human.call(
-            "task.show",
-            json!({"workspaceId":lifecycle.workspace,"taskId":active.task_id}),
-        );
-        if shown["task"]["blocking"]["kind"] == "missing_information" {
-            assert!(
-                shown["task"]["phrase"]
-                    .as_str()
-                    .unwrap()
-                    .starts_with("blocked:")
-            );
-            break;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "external block did not escalate: {shown}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    let shown = lifecycle.wait_task(
+        &active.task_id,
+        "external block did not escalate",
+        |shown| shown["task"]["blocking"]["kind"] == "missing_information",
+    );
+    assert!(
+        shown["task"]["phrase"]
+            .as_str()
+            .unwrap()
+            .starts_with("blocked:")
+    );
 }
 
 #[test]
@@ -582,13 +552,7 @@ fn human_cancellation_stops_the_turn_and_closes_the_attempt_before_the_move() {
 fn human_drag_table_refuses_reserved_targets_and_records_accepted_moves() {
     let rig = Rig::new();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Moves","path":rig.path,"idempotencyKey":"move-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Moves", &rig.path, "move-workspace");
     let task = client.call(
         "task.create",
         json!({"workspaceId":workspace,"title":"Move card","mustNotChange":"Keep history",

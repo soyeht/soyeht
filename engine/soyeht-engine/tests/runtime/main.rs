@@ -21,7 +21,7 @@ use soyeht_store::{
 use std::{
     fs,
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant},
@@ -48,6 +48,68 @@ mod terminal_hooks_and_phone;
 mod terminal_replay_and_capture;
 mod workspace_and_writing;
 mod writing_documents;
+
+/// Polls `observe` until it returns `Ok`; at the deadline the test fails with `what` and the
+/// last `Err`, the state it saw.
+fn eventually<T>(what: &str, mut observe: impl FnMut() -> Result<T, String>) -> T {
+    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
+    loop {
+        match observe() {
+            Ok(value) => return value,
+            Err(seen) => assert!(Instant::now() < deadline, "{what}: {seen}"),
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Waits until `task.show` of the task satisfies `ready` and returns that answer.
+fn wait_task(
+    client: &mut Client,
+    workspace: &str,
+    task_id: impl serde::Serialize,
+    what: &str,
+    ready: impl Fn(&Value) -> bool,
+) -> Value {
+    eventually(what, || {
+        let shown = client.call(
+            "task.show",
+            json!({"workspaceId":workspace,"taskId":task_id}),
+        );
+        if ready(&shown) {
+            Ok(shown)
+        } else {
+            Err(shown.to_string())
+        }
+    })
+}
+
+/// Waits until an item of the pane's transcript satisfies `matches` and returns the transcript.
+fn wait_for_transcript(
+    client: &mut Client,
+    pane: &str,
+    what: &str,
+    matches: impl Fn(&Value) -> bool,
+) -> Value {
+    eventually(what, || {
+        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+        if transcript["items"].as_array().unwrap().iter().any(&matches) {
+            Ok(transcript)
+        } else {
+            Err(transcript.to_string())
+        }
+    })
+}
+
+/// Creates a workspace named `name` on the folder `path` and returns its id.
+fn create_workspace(client: &mut Client, name: &str, path: &Path, key: &str) -> String {
+    client.call(
+        "workspace.create",
+        json!({"name":name,"path":path,"idempotencyKey":key}),
+    )["workspace"]["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
 
 fn experiment_rows(root: &std::path::Path) -> Vec<Value> {
     let Ok(panes) = fs::read_dir(root) else {
@@ -151,13 +213,8 @@ impl TaskLifecycleRig {
         let rig = Rig::new();
         let repository = initialize_review_repository(&rig.path);
         let mut human = rig.client();
-        let workspace = human.call(
-            "workspace.create",
-            json!({"name":"Lifecycle","path":repository,"idempotencyKey":"lifecycle-workspace"}),
-        )["workspace"]["workspaceId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let workspace =
+            create_workspace(&mut human, "Lifecycle", &repository, "lifecycle-workspace");
         let (agent, pane) = rig.agent_in_workspace(&workspace);
         drop(agent);
         let generation = human.pane(&pane)["generation"].as_u64().unwrap() as u32;
@@ -211,18 +268,13 @@ impl TaskLifecycleRig {
     }
 
     fn wait_task_state(&mut self, task: &str, state: &str) -> Value {
-        let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-        loop {
-            let shown = self.human.call(
-                "task.show",
-                json!({"workspaceId":self.workspace,"taskId":task}),
-            );
-            if shown["task"]["state"] == state {
-                return shown;
-            }
-            assert!(Instant::now() < deadline, "expected task {state}: {shown}");
-            thread::sleep(Duration::from_millis(20));
-        }
+        self.wait_task(task, &format!("expected task {state}"), |shown| {
+            shown["task"]["state"] == state
+        })
+    }
+
+    fn wait_task(&mut self, task: &str, what: &str, ready: impl Fn(&Value) -> bool) -> Value {
+        wait_task(&mut self.human, &self.workspace, task, what, ready)
     }
 
     fn review(&self, task: &Task) -> TaskReviewRecord<Value> {

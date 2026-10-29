@@ -158,7 +158,7 @@ impl Core {
 mod tests {
     use super::*;
     use crate::outbox;
-    use crate::web::test_support::{next_json, reply, request, temp_root};
+    use crate::web::test_support::{create_workspace, next_json, reply, request, temp_root};
     use serde_json::json;
     use soyeht_protocol::ErrorKind;
 
@@ -189,18 +189,7 @@ mod tests {
         let root = temp_root();
         let mut core = Core::open(&root).unwrap();
         let (connection, _receiver) = connect(&mut core, "web-navigation-test", json!([])).await;
-        let workspace = reply(
-            &mut core,
-            &connection,
-            request(
-                2,
-                "workspace.create",
-                json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
-            ),
-        )["workspace"]["workspaceId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let workspace = create_workspace(&mut core, &connection, &root);
         reply(
             &mut core,
             &connection,
@@ -305,18 +294,7 @@ mod tests {
         let mut core = Core::open(&root).unwrap();
         let (host, mut host_receiver) = connect(&mut core, "web-host", json!(["web_host"])).await;
         let (caller, mut caller_receiver) = connect(&mut core, "web-caller", json!([])).await;
-        let workspace = reply(
-            &mut core,
-            &caller,
-            request(
-                2,
-                "workspace.create",
-                json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
-            ),
-        )["workspace"]["workspaceId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let workspace = create_workspace(&mut core, &caller, &root);
         let pane = reply(
             &mut core,
             &caller,

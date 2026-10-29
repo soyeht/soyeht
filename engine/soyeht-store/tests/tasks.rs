@@ -16,34 +16,8 @@ use soyeht_store::{
         TaskReviewRecord, UnresolvedTaskReview,
     },
 };
-use std::{fs, path::PathBuf, sync::Arc, thread};
-use uuid::Uuid;
-
-struct Profile(PathBuf);
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-struct ReviewPayload {
-    proposal: Option<String>,
-    findings: Option<Vec<String>>,
-}
-
-impl Profile {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("sn-task-store-{}", Uuid::new_v4()));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-
-    fn store(&self) -> Store {
-        Store::open(&self.0).unwrap()
-    }
-}
-
-impl Drop for Profile {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use std::{sync::Arc, thread};
+use support::{Profile, apply_migrations, commit};
 
 fn workspace() -> Workspace {
     Workspace {
@@ -100,23 +74,22 @@ fn task(id: &str, priority: TaskPriority) -> Task {
 }
 
 fn seed(store: &mut Store) {
-    store
-        .mutate("test", "seed", "seed", |change| {
-            change.insert_workspace(&workspace())?;
-            change.insert_pane(&pane("pane-a"))?;
-            change.insert_pane(&pane("pane-b"))?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, "seed", |change| {
+        change.insert_workspace(&workspace())?;
+        change.insert_pane(&pane("pane-a"))?;
+        change.insert_pane(&pane("pane-b"))?;
+        Ok(())
+    });
 }
 
 fn insert(store: &mut Store, item: &Task, key: &str) {
-    store
-        .mutate("test", key, key, |change| {
-            change.insert_task(item)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, key, |change| change.insert_task(item));
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+struct ReviewPayload {
+    proposal: Option<String>,
+    findings: Option<Vec<String>>,
 }
 
 #[test]
@@ -209,19 +182,9 @@ fn replace_review(
         proposal: proposal.map(String::from),
         findings: findings.map(|items| items.iter().map(|item| String::from(*item)).collect()),
     };
-    store
-        .mutate("test", key, key, |change| {
-            change.replace_task_review(
-                "workspace-1",
-                task_id,
-                1,
-                expected_version,
-                stage,
-                &payload,
-            )?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, key, |change| {
+        change.replace_task_review("workspace-1", task_id, 1, expected_version, stage, &payload)
+    });
 }
 
 fn assert_complete_review(store: &Store, task_id: &str, reviewer: &str) {
@@ -292,12 +255,9 @@ fn dependency_queries_and_versioned_replacement_use_the_real_graph() {
     );
     second.title = "Updated".into();
     second.version = 2;
-    store
-        .mutate("test", "update", "update", |change| {
-            change.replace_task(&second, 1)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "update", |change| {
+        change.replace_task(&second, 1)
+    });
     assert_eq!(
         store.task("workspace-1", "WS-2").unwrap().unwrap().version,
         2
@@ -342,26 +302,22 @@ fn task_details_round_trip_as_separate_named_relations() {
         reason: "No longer needed".into(),
         at: "later".into(),
     };
-    store
-        .mutate("test", "details", "details", |change| {
-            change.insert_subitem("workspace-1", "WS-1", &subitem)?;
-            change.insert_comment("workspace-1", "WS-1", &comment)?;
-            change.insert_attempt("workspace-1", "WS-1", &attempt)?;
-            change.insert_move("workspace-1", "WS-1", &movement)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "details", |change| {
+        change.insert_subitem("workspace-1", "WS-1", &subitem)?;
+        change.insert_comment("workspace-1", "WS-1", &comment)?;
+        change.insert_attempt("workspace-1", "WS-1", &attempt)?;
+        change.insert_move("workspace-1", "WS-1", &movement)?;
+        Ok(())
+    });
     subitem.state = SubitemState::Done;
     let mut closed = attempt;
     closed.end = Some("end".into());
     closed.result = Some(AttemptResult::Completed);
-    store
-        .mutate("test", "detail-updates", "detail-updates", |change| {
-            change.replace_subitem("workspace-1", "WS-1", &subitem)?;
-            change.replace_attempt("workspace-1", "WS-1", &closed)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "detail-updates", |change| {
+        change.replace_subitem("workspace-1", "WS-1", &subitem)?;
+        change.replace_attempt("workspace-1", "WS-1", &closed)?;
+        Ok(())
+    });
     assert_eq!(
         store.task_subitems("workspace-1", "WS-1").unwrap(),
         [subitem]
@@ -420,30 +376,28 @@ fn task_writes_report_stale_versions_and_allocate_subitem_ids_in_the_transaction
     insert(&mut store, &original, "task");
     let mut updated = original.clone();
     updated.version = 2;
-    store
-        .mutate("test", "first-update", "first-update", |change| {
-            change.replace_task(&updated, 1)?;
-            let first = change.allocate_subitem_id("workspace-1", "WS-1")?;
-            assert_eq!(first, "WS-1-T01");
-            change.insert_subitem(
-                "workspace-1",
-                "WS-1",
-                &Subitem {
-                    subitem_id: first,
-                    task_id: "WS-1".into(),
-                    text: "Plan".into(),
-                    agent: None,
-                    instructions: None,
-                    state: SubitemState::Open,
-                },
-            )?;
-            assert_eq!(
-                change.allocate_subitem_id("workspace-1", "WS-1")?,
-                "WS-1-T02"
-            );
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "first-update", |change| {
+        change.replace_task(&updated, 1)?;
+        let first = change.allocate_subitem_id("workspace-1", "WS-1")?;
+        assert_eq!(first, "WS-1-T01");
+        change.insert_subitem(
+            "workspace-1",
+            "WS-1",
+            &Subitem {
+                subitem_id: first,
+                task_id: "WS-1".into(),
+                text: "Plan".into(),
+                agent: None,
+                instructions: None,
+                state: SubitemState::Open,
+            },
+        )?;
+        assert_eq!(
+            change.allocate_subitem_id("workspace-1", "WS-1")?,
+            "WS-1-T02"
+        );
+        Ok(())
+    });
     let error = match store.mutate("test", "stale-update", "stale-update", |change| {
         change.replace_task(&updated, 1)?;
         Ok((json!({}), vec![]))
@@ -460,24 +414,22 @@ fn comment_pages_use_an_exclusive_cursor_from_the_real_database() {
     let mut store = profile.store();
     seed(&mut store);
     insert(&mut store, &task("WS-1", TaskPriority::Medium), "task");
-    store
-        .mutate("test", "comments", "comments", |change| {
-            for (id, text) in [("first", "One"), ("second", "Two"), ("third", "Three")] {
-                change.insert_comment(
-                    "workspace-1",
-                    "WS-1",
-                    &Comment {
-                        comment_id: id.into(),
-                        task_id: "WS-1".into(),
-                        author: "you".into(),
-                        text: text.into(),
-                        at: id.into(),
-                    },
-                )?;
-            }
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "comments", |change| {
+        for (id, text) in [("first", "One"), ("second", "Two"), ("third", "Three")] {
+            change.insert_comment(
+                "workspace-1",
+                "WS-1",
+                &Comment {
+                    comment_id: id.into(),
+                    task_id: "WS-1".into(),
+                    author: "you".into(),
+                    text: text.into(),
+                    at: id.into(),
+                },
+            )?;
+        }
+        Ok(())
+    });
 
     let first = store
         .task_comments_page("workspace-1", "WS-1", None, 2)
@@ -530,14 +482,12 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
         branch: Some("task/ws-1".into()),
         pane_id: None,
     };
-    store
-        .mutate("test", "runtime", "runtime", |change| {
-            change.save_loop_config("pane-a", &config, 4000)?;
-            change.save_feedback("workspace-1", "WS-1", &feedback)?;
-            change.save_dispatch_checkpoint("workspace-1", "WS-1", &checkpoint)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "runtime", |change| {
+        change.save_loop_config("pane-a", &config, 4000)?;
+        change.save_feedback("workspace-1", "WS-1", &feedback)?;
+        change.save_dispatch_checkpoint("workspace-1", "WS-1", &checkpoint)?;
+        Ok(())
+    });
     drop(store);
     let mut store = profile.store();
     assert_eq!(
@@ -565,12 +515,9 @@ fn loop_feedback_and_dispatch_checkpoints_survive_reopen() {
     );
     let mut stopped = config;
     stopped.enabled = false;
-    store
-        .mutate("test", "stop-loop", "stop-loop", |change| {
-            change.save_loop_config("pane-a", &stopped, 0)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "stop-loop", |change| {
+        change.save_loop_config("pane-a", &stopped, 0)
+    });
     assert!(store.due_loop_configs(u64::MAX).unwrap().is_empty());
 }
 
@@ -593,14 +540,12 @@ fn typed_blocking_queries_and_retry_deadlines_use_the_real_database() {
         dependency_task_id: None,
         retry_count: Some(0),
     });
-    store
-        .mutate("test", "blocked", "blocked", |change| {
-            change.insert_task(&dependency)?;
-            change.insert_task(&external)?;
-            change.schedule_task_retry("workspace-1", "WS-2", 2_000)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "blocked", |change| {
+        change.insert_task(&dependency)?;
+        change.insert_task(&external)?;
+        change.schedule_task_retry("workspace-1", "WS-2", 2_000)?;
+        Ok(())
+    });
 
     assert_eq!(
         store.blocked_tasks().unwrap(),
@@ -609,12 +554,9 @@ fn typed_blocking_queries_and_retry_deadlines_use_the_real_database() {
     assert!(store.due_task_retries(1_999).unwrap().is_empty());
     assert_eq!(store.due_task_retries(2_000).unwrap(), vec![external]);
 
-    store
-        .mutate("test", "clear-retry", "clear-retry", |change| {
-            change.clear_task_retry("workspace-1", "WS-2")?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "clear-retry", |change| {
+        change.clear_task_retry("workspace-1", "WS-2")
+    });
     assert!(store.due_task_retries(i64::MAX).unwrap().is_empty());
 }
 
@@ -704,18 +646,8 @@ fn review_inputs_survive_either_arrival_order_and_reject_stale_writes() {
 #[test]
 fn migration_from_v7_preserves_tasks_and_adds_durable_reviews_and_retries() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 7);
     connection
         .execute_batch(
             "INSERT INTO metadata(key,value) VALUES ('db_id','v7-db'),('engine_generation','0');
@@ -782,20 +714,17 @@ fn a_resolved_attempt_can_start_one_new_versioned_review_cycle() {
         proposal: None,
         findings: None,
     };
-    store
-        .mutate("test", "restart-cycle", "restart-cycle", |change| {
-            change.restart_task_review(RestartTaskReview {
-                workspace_id: "workspace-1",
-                task_id: "WS-1",
-                attempt: 1,
-                expected_version: 4,
-                reviewer_pane_id: "reviewer-b",
-                stage: ReviewStage::PromptAccepted,
-                payload: &payload,
-            })?;
-            Ok((json!({}), vec![]))
+    commit(&mut store, "restart-cycle", |change| {
+        change.restart_task_review(RestartTaskReview {
+            workspace_id: "workspace-1",
+            task_id: "WS-1",
+            attempt: 1,
+            expected_version: 4,
+            reviewer_pane_id: "reviewer-b",
+            stage: ReviewStage::PromptAccepted,
+            payload: &payload,
         })
-        .unwrap();
+    });
 
     let restarted: TaskReviewRecord<ReviewPayload> = store
         .task_review("workspace-1", "WS-1", 1)

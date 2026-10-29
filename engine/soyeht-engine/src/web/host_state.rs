@@ -110,10 +110,10 @@ impl Core {
 mod tests {
     use super::*;
     use crate::outbox;
-    use crate::web::test_support::{next_json, reply, request, temp_root};
+    use crate::web::test_support::{create_workspace, next_json, reply, request, temp_root};
     use serde_json::json;
     use soyeht_protocol::ErrorKind;
-    use std::path::PathBuf;
+    use std::path::Path;
 
     async fn connect(core: &mut Core, name: &str, host: bool) -> (String, outbox::Receiver) {
         let (sender, mut receiver) = outbox::channel();
@@ -132,19 +132,8 @@ mod tests {
         (connection, receiver)
     }
 
-    fn workspace_and_pane(core: &mut Core, connection: &str, root: &PathBuf) -> String {
-        let workspace = reply(
-            core,
-            connection,
-            request(
-                2,
-                "workspace.create",
-                json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
-            ),
-        )["workspace"]["workspaceId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+    fn workspace_and_pane(core: &mut Core, connection: &str, root: &Path) -> String {
+        let workspace = create_workspace(core, connection, root);
         reply(
             core,
             connection,

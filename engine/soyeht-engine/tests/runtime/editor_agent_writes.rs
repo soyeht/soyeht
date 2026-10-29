@@ -6,11 +6,12 @@ fn start_agent_case(rig: &Rig) -> (Client, String, Value) {
         "id":"test-agent","name":"Test agent","command":binary,"args":["--state-dir",rig.path.join("native")],"version":"test"
     }])).unwrap()).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Agent test","path":rig.path,"idempotencyKey":Uuid::new_v4().to_string()}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(
+        &mut client,
+        "Agent test",
+        &rig.path,
+        &Uuid::new_v4().to_string(),
+    );
     let pane = client.call("pane.create", json!({"workspaceId":workspace,"mode":"agent","harness":"test-agent","idempotencyKey":Uuid::new_v4().to_string()}))["paneId"].as_str().unwrap().to_owned();
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     let ready = loop {
@@ -224,22 +225,16 @@ fn exercise_cancel_and_tools(rig: &Rig, client: &mut Client, pane: &str) {
         "pane.prompt",
         json!({"paneId":pane,"text":"slow","idempotencyKey":"slow-prompt"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(pane)["state"] != "working" {
-        assert!(Instant::now() < deadline, "slow turn did not start");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("slow turn did not start", || {
+        client.pane(pane)["state"] == "working"
+    });
     client.call(
         "pane.cancel",
         json!({"paneId":pane,"idempotencyKey":"cancel-slow"}),
     );
-    while client.pane(pane)["state"] != "idle" {
-        assert!(
-            Instant::now() < deadline,
-            "healthy cancellation exceeded deadline"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("healthy cancellation exceeded deadline", || {
+        client.pane(pane)["state"] == "idle"
+    });
     assert_eq!(client.pane(pane)["pid"], pid);
     client.call(
         "pane.queue.resume",
@@ -309,13 +304,7 @@ fn editor_open_owns_one_bounded_workspace_file_and_restores_it_in_the_snapshot()
     .unwrap();
     fs::write(repository.join("src/lib.rs"), "pub fn ready() {}\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Editor","path":repository,"idempotencyKey":"editor-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Editor", &repository, "editor-workspace");
     let opened = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"src/main.rs","line":1,"column":4,"idempotencyKey":"open-main"}),
@@ -405,13 +394,7 @@ fn file_diff_uses_the_current_buffer_revalidates_scope_and_rejects_stale_revisio
         ],
     );
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Diff","path":repository,"idempotencyKey":"diff-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Diff", &repository, "diff-workspace");
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"src/main.rs","idempotencyKey":"diff-open"}),
@@ -466,13 +449,12 @@ fn agent_writes_are_attributed_and_each_review_hunk_resolves_once() {
     let baseline = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\neleven\ntwelve\n";
     fs::write(&path, baseline).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Agent editor","path":repository,"idempotencyKey":"agent-editor-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Agent editor",
+        &repository,
+        "agent-editor-workspace",
+    );
     let opened = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"agent-review.txt","idempotencyKey":"open-agent-review"}),
@@ -601,14 +583,9 @@ fn editor_line_comment_is_one_durable_task_change_request() {
         .as_str()
         .unwrap()
         .to_owned();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while native_prompt_count(&lifecycle.rig, &session, expected) != 1 {
-        assert!(
-            Instant::now() < deadline,
-            "change request was not delivered"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("change request was not delivered", || {
+        native_prompt_count(&lifecycle.rig, &session, expected) == 1
+    });
     lifecycle.human.wait_state(&lifecycle.pane, "idle");
     assert_eq!(native_prompt_count(&lifecycle.rig, &session, expected), 1);
 }
@@ -622,13 +599,12 @@ fn agent_write_refuses_a_dirty_editor_file_without_touching_disk() {
     let baseline = "one\ntwo\nthree\n";
     fs::write(&path, baseline).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Dirty editor","path":repository,"idempotencyKey":"dirty-editor-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Dirty editor",
+        &repository,
+        "dirty-editor-workspace",
+    );
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"agent-review.txt","idempotencyKey":"open-dirty-review"}),

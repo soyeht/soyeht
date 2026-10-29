@@ -1,13 +1,7 @@
 use super::*;
 
 fn create_task_fixture(rig: &Rig, client: &mut Client) -> (String, Value, Value) {
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Tasks","path":rig.path,"idempotencyKey":"task-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(client, "Tasks", &rig.path, "task-workspace");
     let invalid = client.request(
         "task.create",
         json!({"workspaceId":workspace,"title":"Invalid","mustNotChange":"","idempotencyKey":"invalid-task"}),
@@ -48,13 +42,12 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     let rig = Rig::new();
     rig.install_fake_harness("config");
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Create dispatch","path":rig.path,"idempotencyKey":"create-dispatch-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Create dispatch",
+        &rig.path,
+        "create-dispatch-workspace",
+    );
     let worktrunk = rig.path.join("bin/wt");
     let healthy_worktrunk = replace_link_with_script(&worktrunk, "#!/bin/sh\nexit 2\n");
     let params = json!({
@@ -75,8 +68,7 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
     assert_eq!(task["state"], "in_progress");
     assert_eq!(task["ownerPaneId"], pane);
 
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    let shown = loop {
+    let shown = eventually("dispatch did not resume", || {
         let shown = client.call(
             "task.show",
             json!({"workspaceId":workspace,"taskId":task["taskId"]}),
@@ -84,14 +76,11 @@ fn create_and_dispatch_resumes_after_an_effect_failure_without_duplicates() {
         if shown["task"]["worktree"]["path"].is_string()
             && client.pane(pane)["agent"]["sessionId"].is_string()
         {
-            break shown;
+            Ok(shown)
+        } else {
+            Err(shown.to_string())
         }
-        assert!(
-            Instant::now() < deadline,
-            "dispatch did not resume: {shown}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    });
     assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
     let tasks = client.call("task.list", json!({"workspaceId":workspace,"limit":100}));
     assert_eq!(tasks["items"].as_array().unwrap().len(), 1);
@@ -107,13 +96,7 @@ fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch(
     let rig = Rig::new();
     rig.install_fake_harness("config");
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Cleanup","path":rig.path,"idempotencyKey":"cleanup-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Cleanup", &rig.path, "cleanup-workspace");
     let task = client.call(
         "task.create",
         json!({
@@ -131,18 +114,17 @@ fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch(
         }),
     );
     let pane = dispatched["paneId"].as_str().unwrap();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    let shown = loop {
+    let shown = eventually("worktree was not prepared", || {
         let shown = client.call(
             "task.show",
             json!({"workspaceId":workspace,"taskId":task["taskId"]}),
         );
         if shown["task"]["worktree"]["path"].is_string() && client.agent_started(pane) {
-            break shown;
+            Ok(shown)
+        } else {
+            Err(shown.to_string())
         }
-        assert!(Instant::now() < deadline, "worktree was not prepared");
-        thread::sleep(Duration::from_millis(20));
-    };
+    });
     let path = PathBuf::from(shown["task"]["worktree"]["path"].as_str().unwrap());
     let clean = |client: &mut Client, key: &str| {
         client.call(
@@ -188,13 +170,7 @@ fn worktree_cleanup_refuses_process_dirty_and_unreachable_then_keeps_the_branch(
 fn task_next_restarts_the_same_pane_in_the_claimed_worktree() {
     let rig = Rig::new();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Pull","path":rig.path,"idempotencyKey":"pull-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Pull", &rig.path, "pull-workspace");
     let (mut client, pane) = rig.open_agent(client, &json!(workspace));
     let before = client.pane(&pane);
     let task = client.call(
@@ -244,13 +220,7 @@ fn task_next_restarts_the_same_pane_in_the_claimed_worktree() {
 fn two_idle_panes_claim_one_task_exactly_once() {
     let rig = Rig::new();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Race","path":rig.path,"idempotencyKey":"race-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Race", &rig.path, "race-workspace");
     let (client, first_pane) = rig.open_agent(client, &json!(workspace));
     let (mut client, second_pane) = rig.open_agent(client, &json!(workspace));
     let task = client.call(

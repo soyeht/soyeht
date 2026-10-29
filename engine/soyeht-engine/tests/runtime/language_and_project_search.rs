@@ -11,13 +11,7 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
     )
     .unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Language","path":repository,"idempotencyKey":"language-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Language", &repository, "language-workspace");
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"language-open"}),
@@ -67,13 +61,12 @@ fn closed_editor_checkpoint_does_not_block_supervisor_reconnect_when_workspace_i
     fs::create_dir_all(&repository).unwrap();
     fs::write(repository.join("main.rs"), "fn main() {}\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Closed language","path":repository,"idempotencyKey":"closed-language-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Closed language",
+        &repository,
+        "closed-language-workspace",
+    );
     let opened = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"closed-language-open"}),
@@ -147,13 +140,7 @@ fn language_format_is_revision_checked_durable_and_idempotent() {
     fs::create_dir_all(&repository).unwrap();
     fs::write(repository.join("main.rs"), "fn main() {}\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Format","path":repository,"idempotencyKey":"format-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Format", &repository, "format-workspace");
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"format-open"}),
@@ -199,13 +186,7 @@ fn every_editor_revision_is_synchronized_with_the_live_language_server() {
     let path = repository.join("main.rs");
     fs::write(&path, "fn main() { alpha(); }\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Language sync","path":repository,"idempotencyKey":"sync-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Language sync", &repository, "sync-workspace");
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"sync-open"}),
@@ -325,13 +306,7 @@ fn editor_open_rejects_absolute_parent_symlink_escape_and_oversized_files() {
         .set_len(soyeht_protocol::limits::EDITOR_HISTORY_BYTES as u64 + 1)
         .unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Boundary","path":repository,"idempotencyKey":"boundary-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Boundary", &repository, "boundary-workspace");
     for (index, (path, kind)) in [
         (outside.to_str().unwrap(), "invalid_params"),
         ("../outside.rs", "invalid_params"),
@@ -367,11 +342,7 @@ fn project_search_is_ignore_aware_symlink_safe_bounded_and_idempotent() {
     fs::write(&outside, "needle\n").unwrap();
     symlink(&outside, repository.join("src/link.txt")).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Search","path":repository,"idempotencyKey":"search-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(&mut client, "Search", &repository, "search-workspace");
 
     let params = json!({
         "workspaceId":workspace,"query":"needle","caseSensitive":true,
@@ -466,11 +437,7 @@ fn project_replacement_refuses_dirty_files_without_touching_disk() {
     let path = repository.join("note.txt");
     fs::write(&path, "clean\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Dirty","path":repository,"idempotencyKey":"dirty-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(&mut client, "Dirty", &repository, "dirty-workspace");
     let opened = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"dirty-open"}),
@@ -508,13 +475,7 @@ fn project_replacement_recovers_after_disk_write_and_preserves_file_identity() {
     let after = "safe\n";
     fs::write(&path, before).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Recovery","path":repository,"idempotencyKey":"recovery-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Recovery", &repository, "recovery-workspace");
     let params = json!({
         "workspaceId":workspace,"query":"needle","replacement":"safe",
         "caseSensitive":true,"limit":10,"idempotencyKey":"recover-replace"

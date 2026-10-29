@@ -1,30 +1,11 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use serde_json::json;
 use soyeht_protocol::{UsageProvider, UsageReading, UsageSource, UsageState, UsageWindow};
 use soyeht_store::{Error, database::Store};
-use std::{fs, path::PathBuf};
-use uuid::Uuid;
-
-struct Profile(PathBuf);
-
-impl Profile {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("sn-usage-store-{}", Uuid::new_v4()));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-
-    fn store(&self) -> Store {
-        Store::open(&self.0).unwrap()
-    }
-}
-
-impl Drop for Profile {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use support::{Profile, apply_migrations, commit};
 
 fn reading(provider: UsageProvider, source: UsageSource, used: f64) -> UsageReading {
     UsageReading {
@@ -43,12 +24,9 @@ fn reading(provider: UsageProvider, source: UsageSource, used: f64) -> UsageRead
 }
 
 fn save(store: &mut Store, item: &UsageReading, observed_at: i64, key: &str) {
-    store
-        .mutate("test", key, key, |change| {
-            change.save_usage_reading(item, observed_at)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, key, |change| {
+        change.save_usage_reading(item, observed_at)
+    });
 }
 
 #[test]
@@ -128,21 +106,8 @@ fn every_chain_source_stores_and_a_window_may_lack_a_reset_time() {
 #[test]
 fn migration_from_populated_v10_preserves_existing_rows_and_adds_usage() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 10);
     connection
         .execute_batch(
             r#"INSERT INTO metadata(key,value) VALUES ('db_id','v10-db'),('engine_generation','0');

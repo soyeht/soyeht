@@ -3,10 +3,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::json;
-use std::{
-    thread,
-    time::{Duration, Instant},
-};
 
 mod support;
 use support::*;
@@ -46,9 +42,7 @@ fn cancelling_an_idle_pane_does_not_pause_its_queue() {
         "pane.prompt",
         json!({"paneId":pane,"text":"hello","idempotencyKey":"after-idle-cancel"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(&pane)["phrase"] != "Agent turn ended" {
-        assert!(Instant::now() < deadline, "the prompt did not run");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("the prompt did not run", || {
+        client.pane(&pane)["phrase"] == "Agent turn ended"
+    });
 }

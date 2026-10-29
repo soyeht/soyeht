@@ -11,13 +11,12 @@ fn beat_board_is_ordered_linked_idempotent_and_restart_durable() {
     )
     .unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Beat board","path":repository,"idempotencyKey":"beat-board-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Beat board",
+        &repository,
+        "beat-board-workspace",
+    );
     let opened = client.call(
         "writing.document.open",
         json!({"workspaceId":workspace,"path":"Writing/Screenplays/episode-one.fountain",
@@ -127,20 +126,14 @@ fn bound_agent_cannot_read_or_add_variants_in_another_workspace() {
     )
     .unwrap();
     let mut human = rig.client();
-    let first_workspace = human.call(
-        "workspace.create",
-        json!({"name":"Variant agent","path":first,"idempotencyKey":"variant-agent-scope"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let second_workspace = human.call(
-        "workspace.create",
-        json!({"name":"Variant document","path":second,"idempotencyKey":"variant-document-scope"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let first_workspace =
+        create_workspace(&mut human, "Variant agent", &first, "variant-agent-scope");
+    let second_workspace = create_workspace(
+        &mut human,
+        "Variant document",
+        &second,
+        "variant-document-scope",
+    );
     let file_id = human.call(
         "writing.document.open",
         json!({"workspaceId":second_workspace,"path":"Writing/Screenplays/private.fountain",
@@ -181,13 +174,12 @@ fn presentation_image_is_content_addressed_recoverable_and_idempotent() {
     )
     .unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Presentation image","path":repository,"idempotencyKey":"presentation-image-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Presentation image",
+        &repository,
+        "presentation-image-workspace",
+    );
     let opened = client.call(
         "writing.document.open",
         json!({"workspaceId":workspace,"path":"Writing/Presentations/review.md","kind":"presentation","idempotencyKey":"presentation-image-open"}),
@@ -357,16 +349,7 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
             .iter()
             .all(|item| !item["text"].as_str().unwrap().contains("seventh"))
     );
-    let other_workspace = human.call(
-        "workspace.create",
-        json!({
-            "name":"Other", "path":rig.path,
-            "idempotencyKey":"other-agent-workspace"
-        }),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let other_workspace = create_workspace(&mut human, "Other", &rig.path, "other-agent-workspace");
     let (_, outsider) = rig.agent_in_workspace(&other_workspace);
     let forbidden = agent.request(
         "agent.message",

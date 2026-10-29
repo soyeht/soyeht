@@ -2,12 +2,7 @@ use super::*;
 
 #[cfg(unix)]
 fn open_claude_hook_session(rig: &mut Rig, client: &mut Client) -> (String, String, u64) {
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Hook labels","path":rig.path,
-            "idempotencyKey":"hook-label-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(client, "Hook labels", &rig.path, "hook-label-workspace");
     let pane = client.call(
         "pane.create",
         json!({"workspaceId":workspace,"mode":"agent","harness":"registry.claude-acp",
@@ -116,12 +111,12 @@ fn managed_terminal_hook_and_screen_observation_share_one_recording() {
         "#!/bin/sh\nprintf 'terminal-ready\\n'\nwhile IFS= read -r line; do printf 'screen:%s\\n' \"$line\"; done\n",
     );
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Terminal bridge","path":rig.path,
-            "idempotencyKey":"terminal-bridge-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(
+        &mut client,
+        "Terminal bridge",
+        &rig.path,
+        "terminal-bridge-workspace",
+    );
     let pane = client.call(
         "pane.create",
         json!({"workspaceId":workspace,"mode":"terminal",
@@ -130,11 +125,9 @@ fn managed_terminal_hook_and_screen_observation_share_one_recording() {
         .as_str()
         .unwrap()
         .to_owned();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(&pane)["pid"].is_null() {
-        assert!(Instant::now() < deadline, "initial terminal did not open");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("initial terminal did not open", || {
+        !client.pane(&pane)["pid"].is_null()
+    });
 
     drop(client);
     rig.kill_engine();
@@ -142,11 +135,9 @@ fn managed_terminal_hook_and_screen_observation_share_one_recording() {
     let generation = rig.install_terminal_harness_session(&pane, &terminal, &capability);
     rig.start();
     let mut client = rig.client();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(&pane)["pid"].is_null() {
-        assert!(Instant::now() < deadline, "managed terminal did not open");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("managed terminal did not open", || {
+        !client.pane(&pane)["pid"].is_null()
+    });
     client.call(
         "pane.input",
         json!({"paneId":pane,"bytes":STANDARD.encode(b"bridge-frame\n"),
@@ -251,14 +242,9 @@ fn claude_session_hook_records_only_engine_stamped_labels_on_its_private_channel
         .unwrap();
     rig.start();
     let mut client = rig.client();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while !client.pane(&pane)["agent"]["sessionId"].is_string() {
-        assert!(
-            Instant::now() < deadline,
-            "Claude test session did not recover"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("Claude test session did not recover", || {
+        client.pane(&pane)["agent"]["sessionId"].is_string()
+    });
     run_claude_hook_command(&rig, &capability);
     wait_for_stamped_hook_label(&rig, &pane, generation, &capability);
 
@@ -536,13 +522,7 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
     let rig = Rig::new();
     rig.install_switch_harnesses();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Dispatch","path":rig.path,"idempotencyKey":"dispatch-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Dispatch", &rig.path, "dispatch-workspace");
     let task = client.call(
         "task.create",
         json!({
@@ -581,27 +561,17 @@ fn dispatch_uses_the_task_named_harness_and_delivers_the_complete_first_prompt()
     assert_eq!(shown["task"]["executor"]["harness"], "next-agent");
     assert_eq!(client.pane(pane)["agent"]["harness"], "next-agent");
     assert_eq!(shown["attempts"].as_array().unwrap().len(), 1);
-    let transcript = loop {
-        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
-        if transcript["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|message| {
-                message["role"] == "user"
-                    && message["text"]
-                        .as_str()
-                        .is_some_and(|text| text.contains("## Must not change\nKeep prior methods"))
-            })
-        {
-            break transcript;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "first prompt was not delivered: {transcript}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    let transcript = wait_for_transcript(
+        &mut client,
+        pane,
+        "first prompt was not delivered",
+        |message| {
+            message["role"] == "user"
+                && message["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("## Must not change\nKeep prior methods"))
+        },
+    );
     let text = transcript["items"]
         .as_array()
         .unwrap()

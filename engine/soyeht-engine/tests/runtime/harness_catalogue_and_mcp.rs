@@ -35,11 +35,7 @@ fn custom_harness_management_is_atomic_idempotent_and_protects_bound_panes() {
         1
     );
 
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Custom harness","path":rig.path,"idempotencyKey":"custom-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(&mut client, "Custom harness", &rig.path, "custom-workspace");
     let pane = client.call(
         "pane.create",
         json!({"workspaceId":workspace,"mode":"agent","harness":"custom-managed","idempotencyKey":"custom-pane"}),
