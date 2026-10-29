@@ -82,8 +82,10 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
         regularWidth: fillsDetail,
         panes: client.layoutPanes(client.panes.filter { $0.workspaceId == pane.workspaceId }))
     {
-      PhonePaneBoardView(client: client, workspaceId: pane.workspaceId, focusedPaneId: $selection)
-        .id(pane.workspaceId)
+      PhonePaneBoardView(
+        client: client, workspaceId: pane.workspaceId, focusedPaneId: $selection, action: $action
+      )
+      .id(pane.workspaceId)
     } else {
       PhonePaneDetail(client: client, paneId: paneId).id(paneId)
     }

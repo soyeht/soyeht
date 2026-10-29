@@ -37,6 +37,7 @@ struct EditorNativeViewport: NSViewRepresentable {
   let onReferences: (TextPosition) -> Void
   var find: EditorFindController? = nil
   var softWrap = false
+  @Environment(\.askToClosePane) private var askToClosePane
   var onToggleSoftWrap: (() -> Void)? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
@@ -730,7 +731,7 @@ struct EditorNativeViewport: NSViewRepresentable {
       let fileId = parent.view.file.fileId
       switch effect {
       case .close:
-        parent.client.closePane(parent.view.file.paneId)
+        parent.askToClosePane(parent.view.file.paneId)
       case .save:
         Task { @MainActor in await report { try await self.parent.client.saveEditorFile(fileId) } }
       case .reload:

@@ -21,6 +21,7 @@ pub mod text;
 pub mod tree;
 mod trees;
 mod viewport;
+mod workspace_close;
 
 pub use commands::{EditorCommand, EditorEvent, Failure};
 use file::Action;
@@ -65,6 +66,9 @@ pub struct Editors {
     /// Where the caret goes when the file the person asked to open at a place is open: by
     /// workspace, the path asked for and the place.
     jumps: HashMap<String, (String, TextPosition)>,
+    /// The workspaces the person closed while a document of theirs still had edits on their
+    /// way: each closes once those edits have reached the engine (`workspace_close`).
+    closing: HashSet<String>,
     pub trees: ProjectTrees,
 }
 
@@ -288,6 +292,7 @@ impl Editors {
         self.refusals.remove(workspace_id);
         self.history.remove(workspace_id);
         self.asked.remove(workspace_id);
+        self.closing.remove(workspace_id);
         self.attempts.forget_workspace(workspace_id);
         self.trees.forget(workspace_id);
     }
@@ -350,6 +355,9 @@ impl Editors {
     /// The connection was lost: a place asked for will not be answered.
     pub fn connection_lost(&mut self) {
         self.jumps.clear();
+        // The edits that were on their way are lost with the connection: a close that waited for
+        // them is not made on the next one, where the person has not seen what was kept.
+        self.closing.clear();
     }
 
     /// Something the engine told the replica.

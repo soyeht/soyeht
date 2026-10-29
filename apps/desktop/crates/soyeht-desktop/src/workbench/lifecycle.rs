@@ -50,10 +50,10 @@ impl Workbench {
         ))
     }
 
+    /// Closes a workspace after what was typed in its documents has reached the engine.
     fn close_workspace(&mut self, workspace_id: &str, cx: &mut Context<Self>) {
-        self.send(Command::CloseWorkspace {
-            workspace_id: workspace_id.to_owned(),
-        });
+        let effects = self.state.close_workspace_effects(workspace_id);
+        self.run_effects(effects);
         cx.notify();
     }
 

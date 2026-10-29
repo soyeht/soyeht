@@ -97,7 +97,11 @@ extension EngineClient {
   }
 
   /// Closes a pane the way its kind needs: an editor tab hands its place to the next tab, and a
-  /// document saves what the person typed first.
+  /// document saves what the person typed first. When the engine refuses an edit the pane closes
+  /// all the same: the replica has dropped the unsent edits, reported `problem` and read the
+  /// file again, so a pane kept open would show text the engine never took (the Mac's text view
+  /// can still hold the typed characters, but they no longer match the file), and a second
+  /// close would lose them just as well.
   public func closePaneSavingEdits(_ paneId: String) async {
     guard let pane = panes.first(where: { $0.paneId == paneId }) else { return }
     switch pane.mode {

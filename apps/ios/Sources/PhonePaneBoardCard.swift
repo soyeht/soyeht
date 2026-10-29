@@ -9,6 +9,7 @@ struct PhonePaneBoardCard: View {
   let pane: Pane
   let isFocused: Bool
   let colors: SoyehtThemeColorSet
+  let onClose: () -> Void
   let onFocus: () -> Void
   private let fontStore = TerminalFontSizeStore.shared
   private let sizeModes = TerminalSizeModeStore.shared
@@ -29,7 +30,7 @@ struct PhonePaneBoardCard: View {
     .contentShape(Rectangle())
     .simultaneousGesture(TapGesture().onEnded(onFocus))
     .contextMenu {
-      Button("Close pane", role: .destructive) { client.closePane(pane.paneId) }
+      Button("Close pane", role: .destructive, action: onClose)
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(pane.name)

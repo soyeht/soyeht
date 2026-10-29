@@ -225,7 +225,7 @@
     }
   },
   "oversized_files": {
-    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1453,
+    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1450,
     "apps/mac/Sources/PreferencesPanel.swift": 832,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 898,

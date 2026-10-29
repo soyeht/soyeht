@@ -26,6 +26,13 @@ import SwiftUI
     WritingDisplayText.fileName(path: writing?.document.file.path, fallback: pane.name)
   }
 
+  /// Closes the pane after what was typed in it has reached the engine.
+  func close() {
+    let client = client
+    let paneId = pane.paneId
+    Task { @MainActor in await client.closePaneSavingEdits(paneId) }
+  }
+
   /// Loads the document's first viewport. A pane that only needs the text once passes
   /// `onlyWithoutViewport`.
   func loadIfNeeded(onlyWithoutViewport: Bool = false) async {
@@ -68,16 +75,14 @@ import SwiftUI
     withAnimation(.easeOut(duration: duration)) { activity = next }
   }
 
-  /// Closes the pane at once, or asks first when its file has unsaved changes.
+  /// Closes the pane at once, or asks first when its file has unsaved changes
+  /// (`PaneClosePolicy`, shared with the iPhone).
   func requestClose(_ context: WritingPaneContext) {
-    switch MacPaneLayoutMetrics.chromePolicy.closeDisposition(
-      fileName: context.documentFileName, dirty: context.file?.file.dirty == true)
-    {
-    case .closeImmediately:
-      context.client.closePane(context.pane.paneId)
-    case .confirm(let title, let message):
-      closePrompt = (title, message)
+    if let question = context.client.closeConfirmation(forPane: context.pane.paneId) {
+      closePrompt = (question.title, question.message)
       isConfirmingClose = true
+    } else {
+      context.close()
     }
   }
 }
@@ -94,7 +99,7 @@ private struct WritingPaneLifecycle: ViewModifier {
       }
       .alert(chrome.closePrompt?.title ?? "", isPresented: $chrome.isConfirmingClose) {
         Button("Cancel", role: .cancel) {}
-        Button("Close", role: .destructive) { context.client.closePane(context.pane.paneId) }
+        Button("Close", role: .destructive) { context.close() }
       } message: {
         Text(chrome.closePrompt?.message ?? "")
       }
