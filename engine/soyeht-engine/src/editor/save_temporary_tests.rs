@@ -53,8 +53,6 @@ fn names(listing: &Value) -> Vec<&str> {
 #[test]
 fn the_writers_temporary_names_are_recognized_and_ordinary_names_are_not() {
     assert!(is_save_temporary(OsStr::new(&save_temporary_name())));
-    // The temporary of a publish (a file created again by save again) is the engine's too.
-    assert!(is_save_temporary(OsStr::new(".soyeht-publish-3f2a")));
     for ordinary in ["note.txt", ".soyeht-saved", ".gitignore", "soyeht-write-x"] {
         assert!(!is_save_temporary(OsStr::new(ordinary)), "{ordinary}");
     }
@@ -70,7 +68,11 @@ async fn a_save_in_flight_is_not_a_project_file() {
 #[tokio::test]
 async fn a_publish_in_flight_or_left_by_a_crash_is_not_a_project_file_or_a_tree_entry() {
     let mut fixture = EditorFixture::new(&[("note.txt", "one\n")]).await;
-    let leftover = format!(".soyeht-publish-{}", Uuid::new_v4());
+    let leftover = format!(
+        "{}{}",
+        soyeht_platform::fs::TEMPORARY_PREFIX,
+        Uuid::new_v4()
+    );
     fs::write(fixture.project().join(&leftover), "the whole draft\n").unwrap();
     assert_eq!(project_paths(&fixture), vec!["note.txt"]);
     let workspace_id = fixture.workspace_id.clone();

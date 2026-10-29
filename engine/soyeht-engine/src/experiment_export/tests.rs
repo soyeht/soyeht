@@ -3,7 +3,9 @@ use crate::{dispatch::Outcome, outbox, pane_observations::SegmentStore};
 use soyeht_pane_state::{
     GroundTruthLabel, ObservationFrame, ObservationGap, ObservationReason, RecordedRow,
 };
+use soyeht_platform::fs::{OpenOptionsPrivateExt, create_private_dir, file_is_owner_only};
 use soyeht_protocol::{PaneState, StateSource};
+use std::{fs::OpenOptions, io::Write};
 
 struct Fixture {
     profile: PathBuf,
@@ -103,7 +105,7 @@ fn export_temporary_match_is_anchored_to_one_canonical_uuid_name() {
 fn cleanup_preserves_a_canonical_temporary_younger_than_the_declared_age() {
     let fixture = Fixture::new();
     let exports = experiment_root(&fixture.profile).unwrap().join("exports");
-    ensure_private_directory(&exports).unwrap();
+    ensure_private_dir(&exports).unwrap();
     let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
     write_private(&temporary, b"still live");
     let modified = fs::symlink_metadata(&temporary)
@@ -119,10 +121,29 @@ fn cleanup_preserves_a_canonical_temporary_younger_than_the_declared_age() {
 }
 
 #[test]
+fn cleanup_removes_an_old_temporary_of_the_platform_publish_and_keeps_a_young_one() {
+    let fixture = Fixture::new();
+    let exports = experiment_root(&fixture.profile).unwrap().join("exports");
+    ensure_private_dir(&exports).unwrap();
+    let orphan = exports.join(format!("{}crashed", soyeht_platform::fs::TEMPORARY_PREFIX));
+    write_private(&orphan, b"raw terminal");
+    let modified = fs::symlink_metadata(&orphan).unwrap().modified().unwrap();
+
+    let young = cleanup_stale_export_temporaries(&exports, modified).unwrap();
+    assert_eq!(young.files, 0);
+    assert!(orphan.exists());
+
+    let now = modified + STALE_EXPORT_TEMP_AGE + Duration::from_secs(1);
+    let old = cleanup_stale_export_temporaries(&exports, now).unwrap();
+    assert_eq!((old.files, old.bytes), (1, b"raw terminal".len() as u64));
+    assert!(!orphan.exists());
+}
+
+#[test]
 fn cleanup_treats_a_future_modification_time_as_age_zero() {
     let fixture = Fixture::new();
     let exports = experiment_root(&fixture.profile).unwrap().join("exports");
-    ensure_private_directory(&exports).unwrap();
+    ensure_private_dir(&exports).unwrap();
     let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
     write_private(&temporary, b"clock moved backwards");
     let modified = fs::symlink_metadata(&temporary)
@@ -142,7 +163,7 @@ fn cleanup_treats_a_future_modification_time_as_age_zero() {
 fn engine_start_removes_an_old_orphan_without_waiting_for_another_export() {
     let fixture = Fixture::new();
     let exports = experiment_root(&fixture.profile).unwrap().join("exports");
-    ensure_private_directory(&exports).unwrap();
+    ensure_private_dir(&exports).unwrap();
     let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
     write_private(&temporary, b"abandoned raw terminal");
     let old = SystemTime::now() - STALE_EXPORT_TEMP_AGE - Duration::from_secs(1);
@@ -162,7 +183,7 @@ fn engine_start_removes_an_old_orphan_without_waiting_for_another_export() {
 fn startup_cleanup_failure_is_visible_but_does_not_block_the_engine() {
     let fixture = Fixture::new();
     let exports = experiment_root(&fixture.profile).unwrap().join("exports");
-    ensure_private_directory(&exports).unwrap();
+    ensure_private_dir(&exports).unwrap();
     let invalid = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
     create_private_dir(&invalid).unwrap();
 
@@ -176,7 +197,7 @@ fn startup_cleanup_failure_is_visible_but_does_not_block_the_engine() {
 fn a_real_export_removes_only_an_old_canonical_temporary_and_reports_it() {
     let fixture = Fixture::new();
     let exports = experiment_root(&fixture.profile).unwrap().join("exports");
-    ensure_private_directory(&exports).unwrap();
+    ensure_private_dir(&exports).unwrap();
     let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
     let neighbour = exports.join(".export-not-a-uuid.tmp");
     let final_export = exports.join(format!("export-{}.jsonl", "a".repeat(64)));
@@ -206,7 +227,7 @@ fn a_real_export_removes_only_an_old_canonical_temporary_and_reports_it() {
 fn a_failure_after_real_cleanup_still_reports_exactly_what_was_removed() {
     let fixture = Fixture::new();
     let exports = experiment_root(&fixture.profile).unwrap().join("exports");
-    ensure_private_directory(&exports).unwrap();
+    ensure_private_dir(&exports).unwrap();
     let temporary = exports.join(".export-550e8400-e29b-41d4-a716-446655440000.tmp");
     write_private(&temporary, b"raw terminal");
     write_private(&exports.join("export-after-cleanup.jsonl"), b"conflict\n");
@@ -456,12 +477,14 @@ fn export_refuses_symlink_destination_without_changing_its_target() {
     let fixture = Fixture::new();
     let root = experiment_root(&fixture.profile).unwrap();
     let exports = root.join("exports");
-    ensure_private_directory(&exports).unwrap();
+    ensure_private_dir(&exports).unwrap();
     let outside = fixture.profile.join("outside");
     fs::write(&outside, b"keep").unwrap();
     let destination = exports.join("export-link.jsonl");
     symlink(&outside, &destination).unwrap();
-    let error = write_atomic(&exports, &destination, b"replace\n").unwrap_err();
+    let error: errors::Error = publish_new(&destination, b"replace\n", WriteMode::OwnerOnly)
+        .unwrap_err()
+        .into();
     assert_eq!(
         errors::kind(&error),
         soyeht_protocol::ErrorKind::InternalError

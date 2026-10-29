@@ -4,7 +4,9 @@ use soyeht_pane_state::{
     MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame, ObservationReason,
 };
 use soyeht_platform::fs::symlink;
-use soyeht_platform::fs::{create_private_dir, dir_is_owner_only, file_is_owner_only};
+use soyeht_platform::fs::{
+    create_private_dir, dir_is_owner_only, ensure_private_dir, file_is_owner_only,
+};
 use soyeht_protocol::{PaneState, StateSource};
 use std::sync::mpsc;
 use std::{
@@ -390,9 +392,9 @@ fn restart_keeps_sequence_and_build_change_starts_a_self_describing_segment() {
 #[test]
 fn incompatible_segment_is_skipped_locally_and_a_new_segment_does_not_collide() {
     let fixture = Fixture::new();
-    ensure_private_directory(&fixture.root).unwrap();
+    ensure_private_dir(&fixture.root).unwrap();
     let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
-    ensure_private_directory(&pane_directory).unwrap();
+    ensure_private_dir(&pane_directory).unwrap();
     create_segment_file(
         &pane_directory,
         0,
@@ -584,4 +586,55 @@ fn partial_tail_and_dangling_pane_symlink_fail_closed() {
             .file_type()
             .is_symlink()
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_store_directory_others_can_reach_is_made_private_when_it_is_opened() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new();
+    let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
+    fs::create_dir_all(&pane_directory).unwrap();
+    for open in [&fixture.root, &pane_directory] {
+        fs::set_permissions(open, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    SegmentStore::open(
+        &fixture.root,
+        "pane-1",
+        ObservationPaneKind::Terminal,
+        harness(),
+        engine('a'),
+    )
+    .unwrap();
+
+    for private in [&fixture.root, &pane_directory] {
+        let mode = fs::metadata(private).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "{private:?}");
+    }
+}
+
+#[test]
+fn a_link_in_the_place_of_the_store_directory_is_refused_and_its_target_untouched() {
+    let fixture = Fixture::new();
+    let outside = fixture.directory.join("outside");
+    fs::create_dir(&outside).unwrap();
+    symlink(&outside, &fixture.root).unwrap();
+
+    let error = SegmentStore::open(
+        &fixture.root,
+        "pane-1",
+        ObservationPaneKind::Terminal,
+        harness(),
+        engine('a'),
+    )
+    .err()
+    .expect("a link must be refused");
+
+    assert_eq!(
+        crate::errors::kind(&error),
+        soyeht_protocol::ErrorKind::InternalError
+    );
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
 }

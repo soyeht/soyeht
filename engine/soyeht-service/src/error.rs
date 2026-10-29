@@ -1,3 +1,4 @@
+use soyeht_platform::fs::PrivateDirError;
 use std::{fmt, io};
 
 /// Why a service could not be rendered, registered or asked about.
@@ -59,6 +60,17 @@ impl std::error::Error for Error {}
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
         Self::Io(error)
+    }
+}
+
+impl From<PrivateDirError> for Error {
+    fn from(error: PrivateDirError) -> Self {
+        match error {
+            PrivateDirError::Unsafe => Self::Unsafe("a folder"),
+            other @ (PrivateDirError::NotPrivate | PrivateDirError::Io(_)) => {
+                Self::Io(other.into())
+            }
+        }
     }
 }
 

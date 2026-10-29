@@ -231,13 +231,7 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-detached-{name}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&directory);
-        fs::create_dir_all(&directory).unwrap();
-        directory
-    }
+    use crate::testing::scratch_dir as scratch;
 
     #[cfg(unix)]
     fn shell(script: &str) -> (&'static Path, Vec<&OsStr>) {

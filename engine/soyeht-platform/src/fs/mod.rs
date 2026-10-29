@@ -11,6 +11,8 @@ use std::{
 };
 
 mod atomic;
+mod private_dir;
+mod publish;
 #[cfg(any(windows, test))]
 mod sddl;
 #[cfg(unix)]
@@ -21,6 +23,9 @@ mod windows;
 pub use atomic::{
     Staged, TEMPORARY_PREFIX, WriteMode, is_temporary_name, stage_replacement, write_atomic,
 };
+
+pub use private_dir::{PrivateDirError, check_private_dir, ensure_private_dir};
+pub use publish::publish_new;
 
 #[cfg(unix)]
 use unix as system;
@@ -162,12 +167,7 @@ impl OpenOptionsPrivateExt for OpenOptions {
 mod tests {
     use super::*;
 
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-platform-fs-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        directory
-    }
+    use crate::testing::scratch_dir as scratch;
 
     #[test]
     fn private_directories_are_created_and_files_open_without_following_links() {

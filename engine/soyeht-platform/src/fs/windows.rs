@@ -42,6 +42,19 @@ pub(super) fn set_private(path: &Path, directory: bool) -> io::Result<()> {
     )
 }
 
+/// Makes the directory at `path` owner-only, by path: Windows has no open that refuses a link
+/// and changes the access list of what it opened in one step, so the parent of `path` must be a
+/// directory only the owner can change (callers check the directory just before, and an attacker
+/// who can swap entries of the parent could redirect the change).
+pub(super) fn set_private_dir_no_follow(path: &Path) -> io::Result<()> {
+    set_private(path, true)
+}
+
+/// Windows' version of [`set_private_dir_no_follow`] has no such refusal: the caller checked.
+pub(super) fn is_link_or_not_directory(_error: &io::Error) -> bool {
+    false
+}
+
 /// Replaces the access list of `path` with the one written in SDDL text.
 pub(super) fn set_access_list(path: &Path, sddl: &str) -> io::Result<()> {
     let sddl = wide(sddl);

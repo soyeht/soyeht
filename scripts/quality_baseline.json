@@ -236,7 +236,7 @@
   },
   "swallowed_errors": {
     "rust_err_wildcard": 33,
-    "rust_let_underscore": 42,
+    "rust_let_underscore": 40,
     "rust_ok": 101,
     "swift_try_optional": 31
   },

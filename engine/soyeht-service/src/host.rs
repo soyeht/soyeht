@@ -83,7 +83,7 @@ pub fn run(arguments: impl Iterator<Item = OsString>) -> i32 {
 fn start(invocation: &Invocation) -> std::io::Result<i32> {
     if let Some(folder) = invocation.log.parent() {
         // Owner-only like the logs folder `install` makes, whoever made it first.
-        crate::manage::private_folder(folder).map_err(std::io::Error::other)?;
+        soyeht_platform::fs::ensure_private_dir(folder)?;
     }
     let arguments: Vec<&OsStr> = invocation
         .arguments

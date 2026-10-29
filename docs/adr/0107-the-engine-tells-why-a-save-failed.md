@@ -46,10 +46,9 @@ the failure shown, starts the failure streak over, saves on the next tick and, i
 gone from the disk, creates it again with the draft, in one step: the text is written beside the
 target and published with an exclusive link (`creation::create_text_if_absent`), so a failed write
 or a crash leaves no file, never an empty one that the next attempt would take for a change made
-by someone else. The temporary file is the engine's own (`.soyeht-publish-`): the project listing,
-search, tree and file events hide it with the save temporary (`soyeht_platform::fs::TEMPORARY_PREFIX`,
-ADR 0113), by one rule
-(`immutable_file::is_engine_temporary`). A crash can leave it, so every publish first removes the
+by someone else. The temporary file is the platform's own (`soyeht_platform::fs::TEMPORARY_PREFIX`, ADRs 0113 and
+0116): the project listing, search, tree and file events hide it, with the save temporary, by one
+rule (`soyeht_platform::fs::is_temporary_name`). A crash can leave it, so every publish first removes the
 engine's temporary files of its own folder that nobody touched for an hour. That is the safest
 sweep: it costs one read of a folder that is being written anyway, needs no walk at start-up, and
 the age keeps it from taking a file another write is using. When the link fails for any
