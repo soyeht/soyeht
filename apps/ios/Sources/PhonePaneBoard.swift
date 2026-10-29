@@ -21,6 +21,8 @@ struct PhonePaneBoardView: View {
   let client: EngineClient
   let workspaceId: String
   @Binding var focusedPaneId: String?
+  /// The close the person asked of a pane's menu, which the workspace asks about first.
+  @Binding var action: PhoneWorkspaceAction?
   @State private var shownTab: String?
 
   var body: some View {
@@ -83,8 +85,9 @@ struct PhonePaneBoardView: View {
   @ViewBuilder private func card(_ paneId: String, colors: SoyehtThemeColorSet) -> some View {
     if let pane = client.panes.first(where: { $0.paneId == paneId }) {
       PhonePaneBoardCard(
-        client: client, pane: pane, isFocused: focusedPaneId == paneId, colors: colors
-      ) { select(paneId) }
+        client: client, pane: pane, isFocused: focusedPaneId == paneId, colors: colors,
+        onClose: { action = .closePane(paneId) }, onFocus: { select(paneId) }
+      )
     }
   }
 

@@ -32,32 +32,14 @@ struct WorkspaceWindow: View {
     .environment(
       \.terminalKeyboardInputEnabled, editorPaletteMode == nil && !slideShow.isPresenting
     )
+    .environment(\.askToClosePane, askToClosePane)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
-    .alert(
-      CloseConfirmation.runningPane.title,
-      isPresented: Binding(get: { paneToClose != nil }, set: { if !$0 { paneToClose = nil } })
-    ) {
-      Button("Cancel", role: .cancel) { paneToClose = nil }
-      Button(CloseConfirmation.runningPane.confirmTitle, role: .destructive) {
-        if let id = paneToClose { client.closePane(id) }
-        paneToClose = nil
-      }
-    } message: {
-      Text(CloseConfirmation.runningPane.message)
-    }
-    .alert(
-      workspaceCloseQuestion?.title ?? "",
-      isPresented: Binding(
-        get: { workspaceCloseQuestion != nil }, set: { if !$0 { workspaceToClose = nil } })
-    ) {
-      Button("Cancel", role: .cancel) { workspaceToClose = nil }
-      Button(workspaceCloseQuestion?.confirmTitle ?? "Close", role: .destructive) {
-        if let id = workspaceToClose { closeWorkspace(id) }
-        workspaceToClose = nil
-      }
-    } message: {
-      Text(workspaceCloseQuestion?.message ?? "")
-    }
+    .modifier(
+      CloseAlerts(
+        paneToClose: $paneToClose, workspaceToClose: $workspaceToClose,
+        paneQuestion: paneCloseQuestion, workspaceQuestion: workspaceCloseQuestion,
+        closePane: closePane, closeWorkspace: closeWorkspace)
+    )
     .alert(
       "Could not complete",
       isPresented: Binding(
@@ -239,25 +221,25 @@ struct WorkspaceWindow: View {
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: nil,
         viewportSize: viewportSize, layoutPersistenceEnabled: !slideShow.isPresenting,
         newPane: newPanePresentation,
-        onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        onClose: askToClosePane, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .terminal:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .terminal,
         viewportSize: viewportSize, layoutPersistenceEnabled: !slideShow.isPresenting,
-        onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        onClose: askToClosePane, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .editor:
       PaneGrid(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId, mode: .editor,
         viewportSize: viewportSize, layoutPersistenceEnabled: !slideShow.isPresenting,
-        onClose: { paneToClose = $0 }, onNewPane: presentNewPane,
+        onClose: askToClosePane, onNewPane: presentNewPane,
         onSplit: presentSplit, onTasks: showTasks)
     case .web:
       WebWorkspace(
         client: client, webHost: webHost, workspaceId: selectedTaskWorkspaceId,
         viewportSize: viewportSize,
-        onClose: { paneToClose = $0 }, onNewPane: presentNewPane, onSplit: presentSplit,
+        onClose: askToClosePane, onNewPane: presentNewPane, onSplit: presentSplit,
         onTasks: showTasks)
     case .phone:
       phoneWorkspace
@@ -283,6 +265,21 @@ struct WorkspaceWindow: View {
     if let pane = client.panes.first(where: { $0.workspaceId == workspaceId }) {
       client.select(pane.paneId)
     }
+  }
+  /// What the person is asked before the pane they chose to close goes (`PaneClosePolicy`,
+  /// shared with the iPhone): a process asks, a document only while it holds unsaved changes.
+  private var paneCloseQuestion: CloseConfirmation? {
+    paneToClose.flatMap { client.closeConfirmation(forPane: $0) }
+  }
+  private func askToClosePane(_ paneId: String) {
+    if client.closeConfirmation(forPane: paneId) == nil {
+      closePane(paneId)
+    } else {
+      paneToClose = paneId
+    }
+  }
+  private func closePane(_ paneId: String) {
+    Task { @MainActor in await client.closePaneSavingEdits(paneId) }
   }
   /// What the person is asked before the workspace they chose to close goes. A workspace with no
   /// pane has nothing to lose and closes at once (`PaneClosePolicy`, shared with the iPhone).
@@ -682,5 +679,57 @@ private struct EmptyWorkspaceView: View {
         .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+}
+
+/// The questions a person answers before a pane or a workspace they chose to close goes.
+private struct CloseAlerts: ViewModifier {
+  @Binding var paneToClose: String?
+  @Binding var workspaceToClose: String?
+  let paneQuestion: CloseConfirmation?
+  let workspaceQuestion: CloseConfirmation?
+  let closePane: (String) -> Void
+  let closeWorkspace: (String) -> Void
+
+  func body(content: Content) -> some View {
+    content
+      .alert(
+        paneQuestion?.title ?? "",
+        isPresented: Binding(get: { paneToClose != nil }, set: { if !$0 { paneToClose = nil } })
+      ) {
+        Button("Cancel", role: .cancel) { paneToClose = nil }
+        Button(paneQuestion?.confirmTitle ?? "Close", role: .destructive) {
+          if let id = paneToClose { closePane(id) }
+          paneToClose = nil
+        }
+      } message: {
+        Text(paneQuestion?.message ?? "")
+      }
+      .alert(
+        workspaceQuestion?.title ?? "",
+        isPresented: Binding(
+          get: { workspaceQuestion != nil }, set: { if !$0 { workspaceToClose = nil } })
+      ) {
+        Button("Cancel", role: .cancel) { workspaceToClose = nil }
+        Button(workspaceQuestion?.confirmTitle ?? "Close", role: .destructive) {
+          if let id = workspaceToClose { closeWorkspace(id) }
+          workspaceToClose = nil
+        }
+      } message: {
+        Text(workspaceQuestion?.message ?? "")
+      }
+  }
+}
+
+private struct AskToClosePaneKey: EnvironmentKey {
+  static let defaultValue: @MainActor @Sendable (String) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+  /// Closes a pane the way its close button does: it asks first when `PaneClosePolicy` says so,
+  /// and saves what was typed. Set by the workspace window, which shows the question.
+  var askToClosePane: @MainActor @Sendable (String) -> Void {
+    get { self[AskToClosePaneKey.self] }
+    set { self[AskToClosePaneKey.self] = newValue }
   }
 }

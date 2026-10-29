@@ -9,7 +9,7 @@ import SwiftUI
 struct EditorTabBar: View {
   @Bindable var client: EngineClient
   let selected: SoyehtProtocol.FileDocument
-  @State private var confirmClose: EditorTab?
+  @Environment(\.askToClosePane) private var askToClosePane
 
   private var workspaceId: String { selected.workspaceId }
   private var tabs: [EditorTab] { client.editorTabs(in: workspaceId) }
@@ -50,20 +50,6 @@ struct EditorTabBar: View {
     .task(id: "\(workspaceId):\(client.connectionRevision)") {
       await client.loadEditorTabsIfNeeded(workspaceId: workspaceId)
     }
-    .alert(
-      "Close \(confirmClose.map { fileName($0.path) } ?? "tab")?",
-      isPresented: Binding(get: { confirmClose != nil }, set: { if !$0 { confirmClose = nil } })
-    ) {
-      Button("Keep editing", role: .cancel) { confirmClose = nil }
-      Button("Close tab") {
-        if let tab = confirmClose { close(tab) }
-        confirmClose = nil
-      }
-    } message: {
-      Text(
-        "The file changed on disk while it had unsaved edits. The draft stays with Soyeht and comes back, with the conflict, when you open the file again."
-      )
-    }
   }
 
   private var agentCursor: EditorAgentCursorEvent? {
@@ -82,21 +68,7 @@ struct EditorTabBar: View {
     return true
   }
 
-  private func requestClose(_ tab: EditorTab) {
-    if EditorTabPolicy.closeNeedsConfirmation(client.editorFiles[tab.fileId]?.file) {
-      confirmClose = tab
-    } else {
-      close(tab)
-    }
-  }
-
-  private func close(_ tab: EditorTab) {
-    Task { @MainActor in
-      do { try await client.closeEditorTab(tab.paneId) } catch {
-        client.problem = error.localizedDescription
-      }
-    }
-  }
+  private func requestClose(_ tab: EditorTab) { askToClosePane(tab.paneId) }
 
   private func pin(_ tab: EditorTab) {
     Task { @MainActor in
@@ -117,10 +89,6 @@ struct EditorTabBar: View {
       } catch { client.problem = error.localizedDescription }
     }
     return true
-  }
-
-  private func fileName(_ path: String) -> String {
-    String(path.split(separator: "/").last ?? "File")
   }
 }
 
