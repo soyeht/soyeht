@@ -151,7 +151,7 @@ impl soyeht_platform::log::Failure for Error {
             Self::TimedOut { .. } => "timed_out".to_owned(),
             Self::OutputTooLarge { .. } => "output_too_large".to_owned(),
             Self::UnderLock { .. } => "under_lock".to_owned(),
-            Self::GitUnavailable => "git_unavailable".to_owned(),
+            Self::GitUnavailable => "git_not_started".to_owned(),
         }
     }
 }
