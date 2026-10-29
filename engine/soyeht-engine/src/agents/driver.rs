@@ -462,7 +462,7 @@ impl Core {
             "Agent process has no adopted instance",
         )?;
         let seq = self.panes[pane].screen.next_offset() - sequence_base;
-        // The read waits for the supervisor off the lock (ADR 0118): with none ready the agent
+        // The read waits for the supervisor off the lock (ADR 0119): with none ready the agent
         // waits for the next tick.
         let Some(read) = self.take_read(&owner, &instance_id, seq, false)? else {
             return Ok(());

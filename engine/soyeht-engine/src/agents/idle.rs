@@ -1,7 +1,7 @@
 //! Idle agents cost nothing. An agent that is ready, has no turn, no queued
 //! work, no operation and no open request needs nothing from the engine until
 //! its state is committed or an open request expires. The tick still reads
-//! the agent's output, at the idle pace of `read_ahead` (ADR 0118), but it
+//! the agent's output, at the idle pace of `read_ahead` (ADR 0119), but it
 //! skips the whole advance pass: no SQL, no state clones and no deadline checks.
 //!
 //! The rule is event driven. `Idle::touch` runs on every committed change of

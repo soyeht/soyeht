@@ -100,7 +100,7 @@ impl Core {
             let server = language(&self.languages, key)?;
             (required_instance(server)?, server.next_seq)
         };
-        // The read waits for the supervisor off the lock (ADR 0118): with none ready the server
+        // The read waits for the supervisor off the lock (ADR 0119): with none ready the server
         // waits for the next tick.
         let owner = crate::read_ahead::language(key);
         let Some(read) = self.take_read(&owner, &instance_id, from_seq, false)? else {

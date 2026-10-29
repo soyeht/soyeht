@@ -1,4 +1,4 @@
-# ADR 0118: The agent polls and every close wait off the Core lock
+# ADR 0119: The agent polls and every close wait off the Core lock
 
 - Status: accepted
 - Date: 2026-10-29

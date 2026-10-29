@@ -170,7 +170,7 @@ fn the_rule_recognises_a_direct_process_run() {
 /// its answer, so a caller that holds the lock stalls every terminal for that long when the
 /// supervisor is slow. The terminal path (reads, acknowledgements, input, sizes) has moved off
 /// the lock, and so have the polls of the agents, of their terminals and of the language
-/// servers, every close, and the reading of the registry when a link is made (ADR 0118); these
+/// servers, every close, and the reading of the registry when a link is made (ADR 0119); these
 /// callers have not.
 ///
 /// The table may not grow: a new caller waits through `Supervisor::call` off the lock (an

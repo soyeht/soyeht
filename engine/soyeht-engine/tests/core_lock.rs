@@ -186,7 +186,7 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it
 }
 
 /// An agent polls the supervisor for its output, its terminals and its language servers on every
-/// tick (ADR 0118); that wait is off the lock too.
+/// tick (ADR 0119); that wait is off the lock too.
 #[test]
 fn a_supervisor_that_stops_answering_does_not_stall_requests_while_an_agent_polls_it() {
     let rig = Rig::new();

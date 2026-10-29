@@ -1,5 +1,5 @@
 //! Reads of a process's output that wait for the supervisor off the Core lock, for the polls that
-//! consume them (ADR 0117, ADR 0118).
+//! consume them (ADR 0117, ADR 0119).
 //!
 //! A shell pane applies its read straight into its screen (`terminal_drain`). The polls of an
 //! agent, of its inline terminals and of a language server hold state machines that are too long

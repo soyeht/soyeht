@@ -270,7 +270,7 @@ impl Core {
     }
 
     /// Closes the processes the agents retired and forgets them once closed. The closes wait for
-    /// the supervisor off the Core lock, one job per agent (ADR 0118); a close that fails leaves
+    /// the supervisor off the Core lock, one job per agent (ADR 0119); a close that fails leaves
     /// the process in the ledger for the next tick.
     pub(crate) fn cleanup_retired_agent_processes(&mut self) -> Result<()> {
         let panes = self.panes_with_retired_processes();

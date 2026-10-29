@@ -183,7 +183,7 @@ impl Core {
     }
 
     /// Closes the process `instance_id` and settles the result: the close waits for the
-    /// supervisor off the Core lock, in the order of the sends to the process (ADR 0118). For a
+    /// supervisor off the Core lock, in the order of the sends to the process (ADR 0119). For a
     /// caller that cannot return the failure, which is logged and tried again by the tick.
     pub(crate) fn close_process(&mut self, instance_id: &str) {
         let supervisor = match self.supervisor() {

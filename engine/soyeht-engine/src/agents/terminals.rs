@@ -165,7 +165,7 @@ impl Core {
                 });
                 continue;
             }
-            // The read waits for the supervisor off the lock (ADR 0118): with none ready the
+            // The read waits for the supervisor off the lock (ADR 0119): with none ready the
             // terminal waits for the next tick.
             let owner = crate::read_ahead::agent_terminal(pane, &id);
             let Some(read) = self.take_read(&owner, &instance_id, terminal.next, true)? else {
