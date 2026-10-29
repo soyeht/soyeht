@@ -137,10 +137,11 @@ ADR when you change a boundary.
 - jscpd clones and duplicated lines per area may not grow. The areas are the engine, the
   desktop (and its views at a smaller window), each Swift package, and the Python of
   `scripts/` and `contracts/`.
-- A new Rust or Swift file may not exceed 800 lines. A file already above 800 lines may
-  not grow past its recorded cap. Split it instead. The check does not measure Python
-  (`scripts/`, `contracts/`) or TypeScript yet: the rule still applies to them, but nothing
-  enforces it.
+- A new Rust, Swift or Python file may not exceed 800 lines, tests included. A file already
+  above 800 lines may not grow past its recorded cap. Split it instead. The Python measured
+  is that of `scripts/` and `contracts/` (a generated output, whose first line starts with
+  `# Generated from contracts/`, is exempt). The check does not measure TypeScript yet: the
+  rule still applies to it, but nothing enforces it.
 - Loose Swift padding, corner-radius, system font-size and font-name literals, and the
   numbers `4096` and `512` anywhere in a Rust line of the engine or `apps/desktop` (code, test
   or comment; `limits.rs` and generated files are exempt), may not grow per file. Use a
@@ -154,8 +155,15 @@ ADR when you change a boundary.
   lints too.
 - Swallowed errors (`swallowed_errors`): Swift `try?` and Rust `.ok()` / `let _ =` /
   `Err(_) =>` in production code may not grow. Log, propagate or surface the error
-  instead, or keep it with a one-line comment saying why ignoring it is correct.
-  `uv run python scripts/check_swallowed_errors.py` lists every counted site.
+  instead. Two forms are not counted: a Rust `.ok()` directly on a pure conversion call
+  (`parse`, `try_from`, `from_utf8`, `parse_from_rfc3339`, ... the `CONVERSIONS` of the script;
+  the call does no IO, and `None` says all it can fail with), and a site that carries a
+  `// ignored: <reason>` comment at the end of its line or alone on the line(s) directly above
+  it, saying why dropping the error is correct. `uv run python scripts/check_swallowed_errors.py`
+  lists every counted site, and `--exempt` the others with the form that exempts them.
+- Ending a child process: kill it if it still runs, then reap it within a bound, through
+  `soyeht_platform::process::end_child` (a `std::process::Child`) or, for a supervisor child,
+  `soyeht_ptyd::child::Child::end`. Do not write `let _ = child.kill(); let _ = child.wait();`.
 - Logging: every log line is written by `soyeht_platform::log` (`event`, `failure`,
   `failure_with`, or a `Line` built now and emitted later). A failure logs its kind, never
   its message text, which can carry paths. A failure that can repeat keeps an engine
@@ -195,7 +203,7 @@ work), and apply the result under the lock. Run every external command through
 `soyeht_process::run`, which has a deadline and refuses to start under the lock.
 A request to the supervisor waits too (up to `soyeht_ptyd::client::IO_TIMEOUT`): call it through
 `Supervisor::call` in the work of an offload or a background job and settle the answer under the
-lock with `Core::settle_supervisor`, never through `pty_request` in new code (ADR 0116).
+lock with `Core::settle_supervisor`, never through `pty_request` in new code (ADR 0117).
 `tests/blocking_io_rule.rs` and `tests/core_lock.rs` enforce this; the first counts the callers
 of `pty_request` that have not moved yet, and the count may not grow.
 

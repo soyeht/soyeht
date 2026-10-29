@@ -1,4 +1,4 @@
-# ADR 0116: Supervisor requests wait off the Core lock
+# ADR 0117: Supervisor requests wait off the Core lock
 
 - Status: accepted
 - Date: 2026-10-28
@@ -59,7 +59,10 @@ time. It is never taken together with the Core lock by a path that moved.
 - The best-effort requests nobody waits for: the confirmation of an input receipt and the
   size sent after a resize. `Core::send_later` queues them and the background job
   `supervisor.later` sends them in order. A size not yet sent is replaced by the newer one
-  for the same process. A failure is logged under `engine.supervisor_follow_up_failed` by
+  for the same process. The same queue carries the other requests whose failure the caller
+  already ignored and that nothing after them depends on: the close of a pane's processes, the
+  flow-control acknowledgement of a harness switch, and the close and confirmations of a language
+  server marked unavailable. A failure is logged under `engine.supervisor_follow_up_failed` by
   `settle_supervisor_call`, once per change of kind.
 
 **Latency of the terminal.** A job is applied by the tick that follows its end, so a read
@@ -83,13 +86,13 @@ fails on a `call_supervisor` outside the port and the handle. `tests/core_lock.r
 the real supervisor with a signal and measures a request on another connection;
 `supervisor_handle.rs` holds the same with a stub that delays its answer.
 
-The remaining 49 calls, by group:
+The remaining 44 calls, by group:
 
 | Group | Files | Calls |
 | --- | --- | --- |
-| Agent panes: the poll, the drain and the terminals of an agent | `agents/terminals.rs`, `agents/driver.rs`, `agents/delivery.rs`, `agents/recovery.rs`, `agents/failures.rs`, `agents/lifecycle.rs`, `agents/orphans.rs`, `agents/methods.rs`, `agents/authentication.rs` | 21 |
-| Harness switch | `agents/switching.rs`, `agents/switching/candidate.rs`, `agents/switching/commit.rs` | 7 |
-| Language servers | `languages/runtime.rs` | 10 |
+| Agent panes: the poll, the drain and the terminals of an agent | `agents/terminals.rs`, `agents/driver.rs`, `agents/delivery.rs`, `agents/recovery.rs`, `agents/failures.rs`, `agents/lifecycle.rs`, `agents/orphans.rs`, `agents/authentication.rs` | 19 |
+| Harness switch | `agents/switching.rs`, `agents/switching/candidate.rs`, `agents/switching/commit.rs` | 6 |
+| Language servers | `languages/runtime.rs` | 8 |
 | Start, reconnect and reconcile: spawn, adopt, close, list, pending inputs | `core.rs`, `spawn_retry.rs` | 8 |
 | Close of a pane and of a role's process, dispatch step | `panes.rs`, `tasks/roles.rs`, `tasks/dispatching.rs` | 3 |
 

@@ -159,7 +159,7 @@ pub fn probe_result(response: Result<&Value, &RpcError>) -> ProbeResult {
         Ok(_) => ProbeResult::Worked,
         Err(error) if error.code == -32601 => ProbeResult::Unsupported,
         Err(error) if crate::rpc::is_auth_required(error) => ProbeResult::Unauthenticated,
-        // Any other error says nothing about whether the agent supports the method.
+        // ignored: any other error says nothing about whether the agent supports the method.
         Err(_) => ProbeResult::Inconclusive,
     }
 }

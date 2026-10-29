@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 import hardening_gate
-import test_post_merge as fixtures
+import test_post_merge_fixtures as fixtures
 
 WAIVER = "Verification change: ignored one slow test"
 

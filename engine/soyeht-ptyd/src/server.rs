@@ -188,7 +188,7 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
             return Err(error);
         }
         if let Some((_, old)) = state.active.take() {
-            // The superseded engine connection may already be closed; either way it ends here.
+            // ignored: the superseded engine connection may already be closed; either way it ends here.
             let _ = old.shutdown(Shutdown::Both);
         }
         state.active = Some((connection_id.clone(), stream.try_clone()?));
@@ -341,8 +341,7 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
             .instances
             .remove(&instance.spawn.instance_key);
         let mut child = lock(&live.child, "child")?;
-        terminate(&live, &child);
-        reap(&mut child);
+        child.end(reach(&live));
         return Err(failure);
     }
     state
@@ -357,28 +356,13 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
     Ok(Response::Instance(instance))
 }
 
-/// Ends an instance's process. A guarded process is an agent adapter or a
+/// How far ending an instance's process reaches. A guarded process is an agent adapter or a
 /// language server, whose whole process tree must go with it.
-fn terminate(live: &Live, child: &Child) {
-    child.kill(if live.guard.is_some() {
+fn reach(live: &Live) -> Reach {
+    if live.guard.is_some() {
         Reach::Tree
     } else {
         Reach::Group
-    });
-}
-
-/// How long a kill waits for the child to be gone while holding its lock.
-const REAP_LIMIT: Duration = Duration::from_secs(2);
-
-/// Collects the exit of a child that was just terminated. The wait is bounded because the
-/// caller holds the child's lock, which the exit watcher and every other request need; a child
-/// that outlasts the limit is collected by the watcher when it does end.
-fn reap(child: &mut Child) {
-    match child.wait_within(REAP_LIMIT) {
-        Ok(Some(_)) => {}
-        Ok(None) => log::event("ptyd.child_still_running_after_kill", &[]),
-        // The child could not be queried; the watcher reports it.
-        Err(error) => log::failure("ptyd.child_wait_failed", &error),
     }
 }
 
@@ -388,8 +372,7 @@ fn execute_kill(state: &State, instance_id: &str) -> Result<Response> {
     };
     let mut child = lock(&live.child, "child")?;
     if child.try_wait()?.is_none() {
-        terminate(live, &child);
-        reap(&mut child);
+        child.end(reach(live));
     }
     // Keep the live output and registry entry until Close. ACP kill stops a
     // command but leaves its output available to the caller.
@@ -418,8 +401,7 @@ fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
         if let Some(live) = state.live.remove(instance_id) {
             let mut child = lock(&live.child, "child")?;
             if child.try_wait()?.is_none() {
-                terminate(&live, &child);
-                reap(&mut child);
+                child.end(reach(&live));
             }
             live.exited.store(true, Ordering::Release);
         }
@@ -591,7 +573,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                         break;
                     }
                 }
-                // EIO is how a pseudoterminal ends when its child exits; any other error ends the reader too.
+                // ignored: EIO is how a pseudoterminal ends when its child exits; any other error ends the reader too.
                 Err(_) => break,
             }
         }
@@ -601,6 +583,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
         loop {
             let exit = match live.child.lock() {
                 Ok(mut child) => child.try_wait(),
+                // ignored: the poisoning is logged by name just below
                 Err(_) => {
                     log::event("ptyd.child_lock_poisoned", &[]);
                     live.exited.store(true, Ordering::Release);

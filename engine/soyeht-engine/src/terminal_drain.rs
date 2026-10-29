@@ -2,7 +2,7 @@
 //! pane's screen, and the supervisor is told it may drop what is safe on disk.
 //!
 //! The tick holds the Core lock, so it never waits for the supervisor or the disk (ADR 0079,
-//! ADR 0095, ADR 0116). Each pane has one background job: it asks the supervisor for the new
+//! ADR 0095, ADR 0117). Each pane has one background job: it asks the supervisor for the new
 //! output with no lock, and the output is put into the screen under the lock when the job is
 //! applied. It writes the output to the pane's segment file and goes on; the flush runs on a
 //! background worker and the acknowledgement follows it, also off the lock. The supervisor

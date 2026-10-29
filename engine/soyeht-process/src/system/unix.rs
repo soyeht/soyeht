@@ -1,7 +1,7 @@
 //! A command that leads its own process group, which is killed as a whole.
 
 use crate::Streams;
-use soyeht_platform::process::kill_tree;
+use soyeht_platform::process::{end_child, kill_tree};
 use std::{
     fs::File,
     io,
@@ -40,10 +40,8 @@ impl Running {
     /// Ends the command with everything it started and reaps it.
     pub(crate) fn kill(&mut self) {
         kill_tree(self.0.id());
-        // Best effort: the caller reports the timeout, whatever happens to the child here.
-        // kill fails only when the child already exited, which is the goal.
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        // The caller reports the timeout; a child that cannot be ended is logged by `end_child`.
+        end_child(&mut self.0);
     }
 
     /// The command finished by itself: what it left running is not ours to end.

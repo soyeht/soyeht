@@ -130,9 +130,11 @@ impl Writer {
     pub async fn close(&mut self) {
         match self {
             Self::Local(writer) => {
+                // ignored: the connection is over either way
                 let _ = writer.shutdown().await;
             }
             Self::Web(writer) => {
+                // ignored: the connection is over either way
                 let _ = writer.close().await;
             }
         }

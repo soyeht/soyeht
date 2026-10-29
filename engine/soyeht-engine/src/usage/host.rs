@@ -2,7 +2,11 @@
 //! terminal behind the usage sources.
 
 use super::{process, terminal};
-use crate::agents::{environment::launch_path, registry::executable};
+use crate::{
+    agents::{environment::launch_path, registry::executable},
+    streak::{Streak, first_failure, recovered},
+};
+use soyeht_platform::log;
 use soyeht_usage::host::{
     CookieRead, FileRead, Host, HttpRequest, HttpResult, Platform, RpcRequest, RpcRun, SecretRead,
     TerminalDriver, TerminalRequest, TerminalRun,
@@ -11,7 +15,11 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
+
+/// A state database that cannot be read, counted across refreshes: it is read on each one.
+static STATE_DB: Mutex<Streak> = Mutex::new(Streak::once());
 
 /// The real host: the machine's files, keychain, HTTPS, browser cookies and pseudo terminal.
 pub struct SystemHost;
@@ -28,6 +36,7 @@ impl Host for SystemHost {
     }
 
     fn env(&self, name: &str) -> Option<String> {
+        // ignored: an unset or non-Unicode variable counts as not set
         std::env::var(name).ok()
     }
 
@@ -47,7 +56,7 @@ impl Host for SystemHost {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return FileRead::Missing;
             }
-            // `Unreadable` reaches the reading as an unavailable source.
+            // ignored: `Unreadable` reaches the reading as an unavailable source.
             Err(_) => return FileRead::Unreadable,
         };
         if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
@@ -74,17 +83,34 @@ impl Host for SystemHost {
         process::http(Path::new(process::CURL), request)
     }
 
+    #[cfg_attr(
+        not(target_os = "macos"),
+        allow(unused_variables, reason = "only macOS reads browser cookies")
+    )]
     fn browser_cookies(&self, domain: &str) -> CookieRead {
         #[cfg(target_os = "macos")]
         if let Some(home) = self.home() {
             return super::browser::cookies(&home, domain);
         }
-        let _ = domain;
         CookieRead::default()
     }
 
     fn state_db_value(&self, path: &Path, key: &str) -> SecretRead {
-        soyeht_usage::foreign_db::item_table_value(path, key)
+        match soyeht_usage::foreign_db::item_table_value(path, key) {
+            Ok(read) => {
+                recovered(&STATE_DB);
+                read
+            }
+            Err(unreadable) => {
+                if first_failure(&STATE_DB, &unreadable.0) {
+                    log::event(
+                        "engine.usage_state_db_unreadable",
+                        &[("kind", &unreadable.0)],
+                    );
+                }
+                SecretRead::Denied
+            }
+        }
     }
 
     fn json_rpc(&self, request: &RpcRequest) -> RpcRun {

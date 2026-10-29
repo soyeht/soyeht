@@ -166,7 +166,7 @@ fn the_rule_recognises_a_direct_process_run() {
 }
 
 /// Where `Core::pty_request` still waits for the supervisor with the Core lock held, by file
-/// (ADR 0116). A request to the supervisor waits up to `soyeht_ptyd::client::IO_TIMEOUT` for
+/// (ADR 0117). A request to the supervisor waits up to `soyeht_ptyd::client::IO_TIMEOUT` for
 /// its answer, so a caller that holds the lock stalls every terminal for that long when the
 /// supervisor is slow. The terminal path (reads, acknowledgements, input, sizes) has moved off
 /// the lock; these callers have not.
@@ -180,15 +180,14 @@ const UNDER_LOCK_SUPERVISOR_CALLS: &[(&str, usize)] = &[
     ("soyeht-engine/src/agents/driver.rs", 3),
     ("soyeht-engine/src/agents/failures.rs", 1),
     ("soyeht-engine/src/agents/lifecycle.rs", 2),
-    ("soyeht-engine/src/agents/methods.rs", 2),
     ("soyeht-engine/src/agents/orphans.rs", 1),
     ("soyeht-engine/src/agents/recovery.rs", 2),
     ("soyeht-engine/src/agents/switching.rs", 1),
     ("soyeht-engine/src/agents/switching/candidate.rs", 4),
-    ("soyeht-engine/src/agents/switching/commit.rs", 2),
+    ("soyeht-engine/src/agents/switching/commit.rs", 1),
     ("soyeht-engine/src/agents/terminals.rs", 7),
     ("soyeht-engine/src/core.rs", 7),
-    ("soyeht-engine/src/languages/runtime.rs", 10),
+    ("soyeht-engine/src/languages/runtime.rs", 8),
     ("soyeht-engine/src/panes.rs", 1),
     ("soyeht-engine/src/spawn_retry.rs", 1),
     ("soyeht-engine/src/tasks/dispatching.rs", 1),
@@ -251,12 +250,12 @@ fn requests_to_the_supervisor_under_the_core_lock_do_not_grow() {
     assert!(
         stray.is_empty(),
         "call_supervisor waits for the supervisor on the caller's thread; use Supervisor::call \
-         off the Core lock (ADR 0116):\n{}",
+         off the Core lock (ADR 0117):\n{}",
         stray.join("\n")
     );
     assert_eq!(
         found, allowed,
-        "a request to the supervisor waits under the Core lock (ADR 0116): do not add one, wait \
+        "a request to the supervisor waits under the Core lock (ADR 0117): do not add one, wait \
          through Supervisor::call off the lock; when one moves, lower its count in \
          UNDER_LOCK_SUPERVISOR_CALLS"
     );

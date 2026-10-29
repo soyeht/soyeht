@@ -98,7 +98,7 @@ impl Packet {
     }
     pub fn written(&mut self) {
         if let Some(sent) = self.sent.take() {
-            // The waiter may have given up; nobody is left to tell then.
+            // ignored: the waiter may have given up; nobody is left to tell then.
             let _ = sent.send(());
         }
     }
@@ -147,7 +147,7 @@ pub fn channel() -> (Outbox, Receiver) {
 
 impl Outbox {
     pub fn close(&self, reason: CloseReason) {
-        // The first close reason wins; a later one is deliberately ignored.
+        // ignored: the first close reason wins; a later one is deliberately ignored.
         let _ = self.budget.close_reason.compare_exchange(
             0,
             reason as u8,

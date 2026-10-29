@@ -1,5 +1,5 @@
 //! The engine's link to the supervisor, as a handle that waiting borrows off the Core lock
-//! (ADR 0116).
+//! (ADR 0117).
 //!
 //! A request to the supervisor waits for its answer for up to [`IO_TIMEOUT`], and the terminal
 //! output path shares the Core lock with every request, so a request that waits under the lock

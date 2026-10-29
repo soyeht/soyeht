@@ -251,14 +251,17 @@ fn start_in_background(
 ) -> Option<Receiver<Option<EventStream>>> {
     let (sender, receiver) = mpsc::channel();
     let root = root.to_owned();
-    thread::Builder::new()
+    let started = thread::Builder::new()
         .name("skill-watch-start".into())
         .spawn(move || {
             // The receiver is gone when the folder was dropped meanwhile; nobody wants the
             // stream then.
             sender.send(start(&root)).unwrap_or_default();
-        })
-        .ok()?;
+        });
+    if let Err(error) = started {
+        soyeht_platform::log::failure("engine.skill_watch_thread_failed", &error);
+        return None;
+    }
     Some(receiver)
 }
 

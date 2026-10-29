@@ -216,6 +216,8 @@ impl Core {
         }
         // The supervisor can start after the engine under the service manager.
         // No process is declared dead until its registry has been reconciled.
+        // ignored: the engine is not shared yet; the tick connects again and logs a failure with
+        // its streak (`ensure_supervisor`).
         let _ = core.connect_supervisor();
         core.system_event(event::ENGINE_RESTARTED, json!({"generation":generation}))?;
         Ok(core)
@@ -373,7 +375,7 @@ impl Core {
 
     /// Sends `request` to the supervisor and waits for the answer, with the Core lock held.
     /// Only for what has not moved off the lock yet; `tests/blocking_io_rule.rs` counts the
-    /// callers (ADR 0116).
+    /// callers (ADR 0117).
     pub fn pty_request(&mut self, request: Request) -> Result<Response> {
         let supervisor = self.supervisor()?;
         let result = supervisor.call(request);

@@ -166,14 +166,18 @@ class AreaTests(unittest.TestCase):
         self.assertIn("GATE_UPGRADE=scripts/check_all.sh", gate_plan.render_shell(plan("scripts/check_all.sh")))
 
     def test_the_new_gate_scripts_upgrade_the_run_too(self):
-        for path in ("scripts/main_watch.py", "scripts/remote_gate.sh"):
+        for path in ("scripts/main_watch.py", "scripts/remote_gate.sh", "scripts/post_merge_hosts.py",
+                     "scripts/post_merge_gate.py", "scripts/post_merge_investigate.py",
+                     "scripts/post_merge_culprit.py", "scripts/post_merge_editor.py",
+                     "scripts/post_merge_records.py"):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).upgrade, (path,))
                 self.assertEqual(plan(path).areas, EVERYTHING_AND_SCRIPTS)
 
     def test_a_test_only_change_of_the_gate_scripts_stays_in_the_fast_tier(self):
         for path in ("scripts/test_gate_plan.py", "scripts/test_post_merge.py", "scripts/test_main_watch.py",
-                     "scripts/test_gate_list.py", "scripts/test_tcc_guard.py", "scripts/test_check_quality.py"):
+                     "scripts/test_gate_list.py", "scripts/test_tcc_guard.py", "scripts/test_check_quality.py",
+                     "scripts/test_post_merge_fixtures.py", "scripts/test_post_merge_load.py"):
             with self.subTest(path=path):
                 result = plan(path)
                 self.assertEqual(result.upgrade, ())

@@ -9,6 +9,7 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::{Clock, StorePort},
+    streak::{Streak, first_failure, recovered},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -23,7 +24,7 @@ use soyeht_protocol::{
 };
 use soyeht_ptyd::wire::{Request, Response};
 use soyeht_store::segments::Record;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 /// How long a probe may stay silent before the agent restarts without its answers.
@@ -81,14 +82,25 @@ fn prompt_payload(
     .map_err(native_error)
 }
 
+/// The bytes of an attachment to send inline, when it is small enough and readable. One that
+/// cannot be read goes by reference instead; the first such failure, and each change of kind, is
+/// logged.
 fn read_inline_candidate(path: &str) -> Option<Vec<u8>> {
+    use soyeht_platform::log::{self, Failure as _};
     use std::io::Read;
+    static UNREADABLE: Mutex<Streak> = Mutex::new(Streak::once());
     let mut bytes = Vec::new();
-    std::fs::File::open(path)
-        .ok()?
-        .take(soyeht_protocol::limits::ACP_MESSAGE_BYTES as u64 + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
+    let read = std::fs::File::open(path).and_then(|file| {
+        file.take(soyeht_protocol::limits::ACP_MESSAGE_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+    });
+    if let Err(error) = read {
+        if first_failure(&UNREADABLE, &error.failure_kind()) {
+            log::failure("engine.attachment_read_failed", &error);
+        }
+        return None;
+    }
+    recovered(&UNREADABLE);
     (bytes.len() <= soyeht_protocol::limits::ACP_MESSAGE_BYTES).then_some(bytes)
 }
 

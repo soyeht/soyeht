@@ -562,11 +562,13 @@ impl Service {
                                 .steps
                                 .iter()
                                 .try_for_each(|edits| document.apply_all(edits).map(|_| ()))
+                                // ignored: a document that cannot take the edits is rebuilt below
                                 .ok()
                                 .map(|()| document)
                         })
                         .flatten()
                 })
+                // ignored: text no grammar can parse has no syntax tree, and the editor works without
                 .or_else(|| SyntaxDocument::new(&prepared.file.draft_text.clone()?, language).ok());
             item.syntax = syntax;
             item.save_due_ms = Some(prepared.file.updated_ms.saturating_add(autosave_ms()));

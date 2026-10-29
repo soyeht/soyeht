@@ -105,7 +105,7 @@ fn terminal_output_keeps_flowing_while_a_usage_source_blocks() {
 
 /// How long the supervisor stays stopped. Its client waits up to five seconds for an answer
 /// (`soyeht_ptyd::client::IO_TIMEOUT`), and the engine's tick asks it for output every few
-/// milliseconds, so before ADR 0116 the Core lock was held for that whole wait.
+/// milliseconds, so before ADR 0117 the Core lock was held for that whole wait.
 const STOPPED_FOR: Duration = Duration::from_millis(3_500);
 
 /// Stops the supervisor process, and continues it when dropped, so a failed assertion does not

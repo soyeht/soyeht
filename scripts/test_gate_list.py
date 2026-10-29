@@ -10,7 +10,8 @@ import unittest
 from pathlib import Path
 
 import gate_plan
-import post_merge
+import post_merge_gate
+import post_merge_hosts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,7 +62,8 @@ E2E_SET = (
 )
 # The unit tests of the gate scripts that only a change to the scripts can break.
 GATE_SCRIPT_UNITS = (
-    "post-merge:unit", "post-merge-waiver:unit", "main-watch:unit", "quality:unit",
+    "post-merge:unit", "post-merge-editor:unit", "post-merge-flakes:unit", "post-merge-remote:unit",
+    "post-merge-load:unit", "post-merge-waiver:unit", "main-watch:unit", "quality:unit",
     "gate-list:unit", "gate-timings:unit",
 )
 # One sample change per kind: files that `gate_plan.py` maps to areas.
@@ -178,7 +180,7 @@ class StepListTests(unittest.TestCase):
         steps = {step_id: area for area, _, step_id in gate_steps()}
         for step_id in (*E2E_SET, "engine:test"):
             with self.subTest(step=step_id):
-                self.assertIn(steps[step_id], post_merge.REMOTE_AREAS)
+                self.assertIn(steps[step_id], post_merge_hosts.REMOTE_AREAS)
 
     def test_the_gate_script_unit_tests_have_their_own_area(self):
         steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
@@ -190,7 +192,7 @@ class StepListTests(unittest.TestCase):
 
     def test_post_merge_prerequisites_are_steps_of_the_same_area(self):
         steps = {step_id: area for area, _, step_id in gate_steps()}
-        for step_id, prerequisite in post_merge.PREREQUISITES.items():
+        for step_id, prerequisite in post_merge_gate.PREREQUISITES.items():
             with self.subTest(step=step_id):
                 self.assertIn(step_id, steps)
                 self.assertEqual(steps.get(prerequisite), steps[step_id])

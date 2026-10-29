@@ -53,7 +53,7 @@ fn resolve_intent(
 
 impl Core {
     /// `pane.input`: the durable intent is recorded under the lock, the bytes go to the
-    /// supervisor with no lock, and the receipt is made durable under it (ADR 0116). The
+    /// supervisor with no lock, and the receipt is made durable under it (ADR 0117). The
     /// connection answers its next request only after this one, so inputs keep their order.
     pub fn pane_input(&mut self, connection: &str, params: &Value) -> Result<Outcome> {
         let id = errors::param_str(params, "paneId")?;
