@@ -22,21 +22,35 @@ redaction below is the second guard, for a line that carries more than it should
 
 ## 2. What is removed from a log line
 
-Every line of every log passes through `Redactor::redact`, which reads the text only, so it is the
-same on every system:
+Every line of every log, and the readiness family and item ids, pass through `Redactor::redact`.
+It reads the text and the person's home folder, user name and host name, so it is the same on
+every system:
 
-- the home folder of the person, in every spelling (`/`, `\`, and the doubled `\\` of a JSON line),
-  and their user name as a word (names under three characters are left, so other words stay whole);
-- every path: absolute (`/x`, `~/x`, `C:\x`, `C:/x`, `\\server\x`), including one with blanks inside a
-  quoted JSON value, and any relative path of two folders or more;
+- the home folder, in every spelling (`/`, `\`, and the doubled `\\` of a JSON line);
+- every absolute path (`/x`, `~/x`, `C:\x`, `C:/x`, `\\server\x`). A quoted JSON value ends at its
+  quote. An unquoted path runs through blanks in its folder names (`My Projects`) to a quote, a
+  bracket, a comma, ` -x`, or `: ` and a letter, and so may take a word after it with it. Any
+  relative path of two folders or more goes too;
 - every link (`scheme://...`) and every e-mail address;
-- the value of a field whose name holds `token`, `secret`, `password`, `passwd`, `authorization`,
-  `apikey`, `api_key`, `cookie`, `credential` or `bearer` (`"token":"..."`, `password=...`,
-  `Authorization: Bearer ...`), and the word after a `Bearer` or `Basic`;
-- any run of 24 characters or more that mixes letters with digits, or upper with lower case.
+- addresses: IPv4 (with its port), IPv6 (with its zone), hardware addresses, names ending in
+  `.local`, `.lan`, `.ts.net`, `.localdomain`, `.internal` or `.home.arpa`, and the machine's own
+  host name and its first label (read through `soyeht_platform::hostname`);
+- the user's name, as a word, in any case, with a plural or possessive `s` (`Caios-Mac-Studio` for
+  `caio`). A name of fewer than three characters is not replaced as a word, so other words stay
+  whole (it is still removed wherever a path or an address shows it);
+- the value of a field whose name holds `token`, `secret`, `password`, `passwd`, `passphrase`,
+  `authorization`, `apikey`, `api_key`, `cookie`, `credential`, `bearer`, `pairing`, `session` or
+  `private`, or a word `pin`, `otp`, `code` or `key` (`"pairingCode":"482913"`, `x-api-key: ...`,
+  `password=...`, `Authorization: Bearer ...`), whatever the value's length. The short words must
+  start a word of the name, so `mapping` and `monkey` do not match;
+- any run of 24 characters or more that mixes letters with digits, or upper with lower case. A
+  UUID or a ULID standing alone (the ids of panes and workspaces) is kept, so an issue can tell
+  panes apart, unless a field named like a secret holds it; a name in camel case
+  (`ConnectionRefusedByTheServer`) is kept. A ULID-shaped random key is the one token this keeps.
 
-It errs toward removing. Event names (`engine.reconnect_attempts_exhausted`) and failure kinds
-(`ConnectionRefused`) stay. A line is cut at 600 characters.
+It errs toward removing: text that is harmless can be lost. Event names
+(`engine.reconnect_attempts_exhausted`) and failure kinds (`ConnectionRefused`) stay. A line is cut
+at 600 characters. The pass over a line is linear in its length.
 
 ## 3. Rules
 

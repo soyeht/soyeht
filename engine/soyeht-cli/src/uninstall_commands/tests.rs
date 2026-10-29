@@ -1,4 +1,5 @@
 use super::*;
+use soyeht_protocol::data_directory::data_directory;
 use soyeht_service::{CommandOutput, System};
 use std::{cell::RefCell, fs};
 
@@ -25,13 +26,18 @@ struct Rig {
 
 impl Rig {
     fn new(label: &str) -> Self {
-        let root =
-            std::env::temp_dir().join(format!("next-uninstall-{label}-{}", std::process::id()));
+        // Short enough for the path of a Unix socket, which the temporary folder of macOS is not.
+        let parent = if cfg!(unix) {
+            PathBuf::from("/tmp")
+        } else {
+            std::env::temp_dir()
+        };
+        let root = parent.join(format!("next-uninstall-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let layout = Layout {
             system: System::current(),
             profile: &soyeht_protocol::profile::PROD,
-            data: root.join("data/next"),
+            data: data_directory(&soyeht_protocol::profile::PROD, Some(root.join("base"))).unwrap(),
             home: root.join("home"),
             config_home: None,
             user_id: "501".into(),
@@ -41,6 +47,32 @@ impl Rig {
         fs::write(layout.data.join("soyeht.db"), "rows").unwrap();
         fs::create_dir_all(&layout.home).unwrap();
         Self { root, layout }
+    }
+}
+
+impl Rig {
+    fn run(
+        &self,
+        commands: &Yes,
+        options: &Options,
+        ask: impl FnOnce(&Layout) -> Result<String>,
+    ) -> Result<Value> {
+        uninstall(
+            &self.layout,
+            commands,
+            options,
+            (&self.root.join("base"), Duration::ZERO),
+            ask,
+        )
+    }
+}
+
+impl Rig {
+    /// The message of a run that must be refused.
+    fn refusal(&self, commands: &Yes, options: &Options) -> String {
+        self.run(commands, options, no_question)
+            .unwrap_err()
+            .to_string()
     }
 }
 
@@ -77,18 +109,22 @@ fn only_the_profile_name_confirms() {
     }
 }
 
+const DELETE: Options = Options {
+    delete_data: true,
+    yes: false,
+};
+const DELETE_YES: Options = Options {
+    delete_data: true,
+    yes: true,
+};
+
 #[test]
 fn the_default_unregisters_both_services_and_keeps_the_data() {
     let rig = Rig::new("keep");
     let commands = Yes::default();
-    let result = uninstall(
-        &rig.layout,
-        &commands,
-        &Options::default(),
-        &rig.root,
-        no_question,
-    )
-    .unwrap();
+    let result = rig
+        .run(&commands, &Options::default(), no_question)
+        .unwrap();
     assert_eq!(result["dataDeleted"], json!(false));
     assert_eq!(result["services"].as_array().unwrap().len(), 2);
     assert!(rig.layout.data.join("soyeht.db").is_file());
@@ -104,15 +140,10 @@ fn the_default_unregisters_both_services_and_keeps_the_data() {
 fn delete_data_asks_first_and_a_wrong_answer_changes_nothing() {
     let rig = Rig::new("refuse");
     let commands = Yes::default();
-    let options = Options {
-        delete_data: true,
-        yes: false,
-    };
-    let error = uninstall(&rig.layout, &commands, &options, &rig.root, |_| {
-        Ok("yes\n".into())
-    })
-    .unwrap_err()
-    .to_string();
+    let error = rig
+        .run(&commands, &DELETE, |_| Ok("yes\n".into()))
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("nothing was changed"), "{error}");
     assert!(commands.0.borrow().is_empty(), "no service was touched");
     assert!(rig.layout.data.join("soyeht.db").is_file());
@@ -122,14 +153,9 @@ fn delete_data_asks_first_and_a_wrong_answer_changes_nothing() {
 fn delete_data_with_the_profile_name_removes_the_data_after_the_services() {
     let rig = Rig::new("delete");
     let commands = Yes::default();
-    let options = Options {
-        delete_data: true,
-        yes: false,
-    };
-    let result = uninstall(&rig.layout, &commands, &options, &rig.root, |_| {
-        Ok("prod\n".into())
-    })
-    .unwrap();
+    let result = rig
+        .run(&commands, &DELETE, |_| Ok("prod\n".into()))
+        .unwrap();
     assert_eq!(result["dataDeleted"], json!(true));
     assert!(!rig.layout.data.exists());
     assert!(!commands.0.borrow().is_empty());
@@ -138,42 +164,53 @@ fn delete_data_with_the_profile_name_removes_the_data_after_the_services() {
 #[test]
 fn yes_deletes_without_asking() {
     let rig = Rig::new("yes");
-    let options = Options {
-        delete_data: true,
-        yes: true,
-    };
-    let result = uninstall(
-        &rig.layout,
-        &Yes::default(),
-        &options,
-        &rig.root,
-        no_question,
-    )
-    .unwrap();
+    let result = rig.run(&Yes::default(), &DELETE_YES, no_question).unwrap();
     assert_eq!(result["dataDeleted"], json!(true));
     assert!(!rig.layout.data.exists());
 }
 
 #[test]
-fn a_place_that_is_not_the_apps_is_not_deleted_even_when_confirmed() {
-    let mut rig = Rig::new("guard");
-    let plain = std::env::temp_dir().join(format!("plain-folder-cli-{}", std::process::id()));
-    fs::create_dir_all(&plain).unwrap();
-    fs::write(plain.join("mine"), "x").unwrap();
-    rig.layout.data = plain.clone();
-    let options = Options {
-        delete_data: true,
-        yes: true,
-    };
-    let refused = uninstall(
-        &rig.layout,
-        &Yes::default(),
-        &options,
-        &rig.root,
-        no_question,
+fn a_refused_deletion_leaves_the_services_registered_and_asks_nothing() {
+    for name in ["nextcloud", "Documents/nextjs-app", "next-notes"] {
+        let mut rig = Rig::new("guard");
+        let place = rig.root.join("base").join(name);
+        fs::create_dir_all(&place).unwrap();
+        fs::write(place.join("mine"), "x").unwrap();
+        rig.layout.data = place.clone();
+        let commands = Yes::default();
+        let error = rig.refusal(&commands, &DELETE_YES);
+        assert!(error.contains("nothing was deleted"), "{name}: {error}");
+        assert!(
+            commands.0.borrow().is_empty(),
+            "{name}: a service was touched"
+        );
+        assert!(place.join("mine").is_file(), "{name}");
+        // Nor does the prompt come first for a place that would be refused.
+        let asked = rig
+            .run(&commands, &DELETE, no_question)
+            .unwrap_err()
+            .to_string();
+        assert!(!asked.contains("asked a question"), "{name}: {asked}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn programs_that_do_not_stop_keep_the_data_and_the_message_says_what_happened() {
+    let rig = Rig::new("running");
+    let _engine = std::os::unix::net::UnixListener::bind(
+        rig.layout
+            .data
+            .join(soyeht_protocol::profile::ENGINE_SOCKET),
+    )
+    .unwrap();
+    let commands = Yes::default();
+    let error = rig.refusal(&commands, &DELETE_YES);
+    assert!(error.contains("services are unregistered"), "{error}");
+    assert!(!error.contains("soyeht service stop"), "{error}");
+    assert!(rig.layout.data.join("soyeht.db").is_file());
+    assert!(
+        !commands.0.borrow().is_empty(),
+        "the services were unregistered"
     );
-    let kept = plain.join("mine").is_file();
-    fs::remove_dir_all(&plain).unwrap();
-    assert!(refused.is_err());
-    assert!(kept);
 }

@@ -177,17 +177,28 @@ supervisor ends the person's terminals.
 **Data stays by default.** The programs, the data directory, the database and the logs are left
 alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,
 transcripts, settings, logs), and only after the person types the profile's name at the prompt;
-`--yes` confirms for a script (`--yes` alone is refused). A "no" changes nothing: the question is
-asked before any service is touched. Data deletion is refused, and keeps the data, when:
+`--yes` confirms for a script (`--yes` alone is refused).
 
-- the place is not the app's own: it lacks "next", or it is, or lies inside, a place of the legacy
-  app (the same guard as every definition, `guard::require_path`);
-- the path is relative, has a `.` or `..` component, is a link, or holds the home folder;
-- the engine or the supervisor still answers on its endpoint (a copy the app started itself, not
-  the service): close it, then run the command again, which is safe to repeat.
+**The order is: check, confirm, unregister, wait, delete.** The check (`plan_removal`) changes
+nothing and runs first, before the prompt and before any service is touched, so a deletion that
+would be refused leaves the services registered. After the services are unregistered the command
+waits up to 15 seconds for the engine and the supervisor to stop answering on their endpoints; if
+one still does (a copy the app started itself), it deletes nothing and says so, and the command can
+be run again.
 
-A link inside the directory is removed, never followed. The data directory of another profile
-that lies inside this one (Dev is inside prod's) is kept, so deleting prod's data leaves Dev's.
+**Only the profile's own folder is deleted.** Every check reads canonical paths
+(`soyeht_platform::fs::canonicalize`), and the directory must be the folder `contracts/profiles.json`
+names for the profile below the system's folder for application data. So `--data-dir` pointing at
+anything else, however its name reads (`nextcloud`, `~/Documents/nextjs-app`), is refused, and so is:
+
+- the legacy app's folders, however they are reached (a link or an alternate spelling resolves to
+  them first), and any path that is relative or has a `.` or `..` component;
+- a data directory that is itself a link;
+- a folder that holds the home folder, however the home is spelled.
+
+A link inside the directory is removed, never followed (on Windows a link to a folder is removed
+as a folder). The data directory of another profile that lies inside this one (Dev is inside
+prod's) is kept, so deleting prod's data leaves Dev's.
 Programs are the installer's to remove, since it chose where they are. The command touches only
 the names and the directory of its own profile (`--profile P`), and never a name or a place that
 lacks "next".

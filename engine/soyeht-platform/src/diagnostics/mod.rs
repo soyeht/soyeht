@@ -94,14 +94,15 @@ pub fn report(input: &Input<'_>) -> String {
             lines.push("The engine did not answer, so nothing was checked.".to_owned());
         }
         Readiness::Checked { system, checks } => {
-            lines.push(format!("- family: {system}"));
+            lines.push(format!("- family: {}", input.redactor.redact(system)));
             for check in checks {
+                let id = input.redactor.redact(&check.id);
                 let state = match (check.found, check.required) {
                     (true, _) => "found",
                     (false, true) => "MISSING (required)",
                     (false, false) => "missing (optional)",
                 };
-                lines.push(format!("- {}: {state}", check.id));
+                lines.push(format!("- {id}: {state}"));
             }
         }
     }

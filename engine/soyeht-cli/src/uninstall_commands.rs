@@ -6,11 +6,16 @@ use crate::{args::invalid, service_commands::report};
 use serde_json::{Value, json};
 use soyeht_cli::Result;
 use soyeht_protocol::profile::Profile;
-use soyeht_service::{Commands, Component, Layout, Manager, Real, remove_data};
+use soyeht_service::{Commands, Component, Layout, Manager, Real, plan_removal};
 use std::{
     io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
+    time::Duration,
 };
+
+/// How long the programs are given to end, after their services are unregistered, before the
+/// data they hold open is deleted.
+const STOP_WAIT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Options {
@@ -39,18 +44,32 @@ pub fn execute(profile: &'static Profile, directory: PathBuf, args: &[String]) -
     let layout = Layout::current(profile, directory)?;
     let base = soyeht_platform::dirs::data_base()
         .ok_or(soyeht_service::Error::Environment("the data folder"))?;
-    uninstall(&layout, &Real, &options, &base, ask_on_terminal)
+    uninstall(
+        &layout,
+        &Real,
+        &options,
+        (&base, STOP_WAIT),
+        ask_on_terminal,
+    )
 }
 
-/// The steps: confirm first, so a "no" changes nothing; then unregister, engine first; then,
-/// when asked, delete the data.
+/// The steps: check the deletion, which changes nothing; confirm, so a "no" changes nothing
+/// either; then unregister, engine first; then delete. A deletion that would be refused is
+/// refused before any service is touched. `place` is the system's folder for application data
+/// and how long the programs get to stop.
 fn uninstall(
     layout: &Layout,
     commands: &impl Commands,
     options: &Options,
-    base: &Path,
+    place: (&Path, Duration),
     ask: impl FnOnce(&Layout) -> Result<String>,
 ) -> Result<Value> {
+    let (base, wait) = place;
+    let removal = if options.delete_data {
+        plan_removal(layout, base)?
+    } else {
+        None
+    };
     if options.delete_data && !options.yes {
         let answer = ask(layout)?;
         if !confirms(&answer, layout.profile.name) {
@@ -59,7 +78,13 @@ fn uninstall(
     }
     let manager = Manager::new(layout, commands);
     manager.uninstall(&Component::START_ORDER)?;
-    let deleted = options.delete_data && remove_data(layout, base)?;
+    let deleted = match removal {
+        Some(removal) => {
+            removal.execute(wait)?;
+            true
+        }
+        None => false,
+    };
     let mut result = report(&manager, &Component::START_ORDER)?;
     result["dataDeleted"] = json!(deleted);
     Ok(result)

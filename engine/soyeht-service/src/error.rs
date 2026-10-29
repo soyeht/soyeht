@@ -21,6 +21,8 @@ pub enum Error {
     NotRegistered,
     /// The engine or the supervisor still answers on its endpoint, so its data is in use.
     StillRunning,
+    /// The data directory is not one that may be deleted; the text says why.
+    DataRefused(String),
     Io(io::Error),
     /// A command could not run or ran too long.
     Process(soyeht_process::Error),
@@ -43,9 +45,12 @@ impl Error {
                 format!("the program {program} does not exist; check --programs")
             }
             Self::NotRegistered => "the service is not registered".to_owned(),
-            Self::StillRunning => {
-                "the engine or the supervisor still runs; stop it (soyeht service stop) first"
-                    .to_owned()
+            Self::StillRunning => "the engine or the supervisor still answers; quit the app or \
+                 program that runs it, then run the command again (the services are unregistered \
+                 and the data is untouched)"
+                .to_owned(),
+            Self::DataRefused(reason) => {
+                format!("refusing to delete the data: {reason}; nothing was deleted")
             }
             Self::Io(error) => format!("file error: {error}"),
             Self::Process(error) => format!("command error: {error}"),

@@ -54,7 +54,11 @@ fn the_report_names_the_facts_and_keeps_no_path_name_or_token() {
     )
     .unwrap();
     fs::write(logs.join("ptyd.log"), "").unwrap();
-    let redactor = Redactor::new(Some(Path::new("/Users/dana.example")), Some("dana.example"));
+    let redactor = Redactor::new(
+        Some(Path::new("/Users/dana.example")),
+        Some("dana.example"),
+        None,
+    );
     let text = report(&input(&data, &redactor, 10));
     for leaked in [
         "dana.example",
@@ -124,4 +128,27 @@ fn an_engine_that_did_not_answer_is_said_so() {
     let text = report(&facts);
     assert!(text.contains("- engine: not running"));
     assert!(text.contains("The engine did not answer"));
+}
+
+#[test]
+fn a_hostile_readiness_id_or_family_is_redacted_like_a_log_line() {
+    let data = scratch_dir("diagnostics-hostile");
+    let redactor = Redactor::new(
+        Some(Path::new("/Users/dana.example")),
+        Some("dana.example"),
+        None,
+    );
+    let mut facts = input(&data, &redactor, 5);
+    facts.readiness = Readiness::Checked {
+        system: "/Users/dana.example/My Projects/system".into(),
+        checks: vec![Check {
+            id: "node 100.64.12.7 token=abc123".into(),
+            required: true,
+            found: false,
+        }],
+    };
+    let text = report(&facts);
+    for leaked in ["dana.example", "Projects", "100.64", "abc123"] {
+        assert!(!text.contains(leaked), "{leaked} leaked:\n{text}");
+    }
 }

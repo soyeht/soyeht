@@ -29,6 +29,7 @@ pub mod dialog;
 pub mod dirs;
 pub mod fs;
 pub mod git;
+pub mod hostname;
 pub mod local;
 pub mod log;
 pub mod process;

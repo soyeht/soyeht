@@ -31,7 +31,7 @@ mod system;
 mod testing;
 
 pub use commands::{CommandOutput, Commands, Real};
-pub use data::remove_data;
+pub use data::{Removal, plan_removal};
 pub use definition::Definition;
 pub use error::{Error, Result};
 pub use layout::Layout;

@@ -53,6 +53,7 @@ fn with_no_engine_the_report_still_has_the_logs_and_never_asks() {
     let redactor = soyeht_platform::diagnostics::Redactor::new(
         Some(Path::new("/Users/dana.example")),
         Some("dana.example"),
+        None,
     );
     let text = gather(&PROD, &data, 20, &redactor, |_| panic!("no engine to ask"));
     fs::remove_dir_all(&data).unwrap();

@@ -365,11 +365,13 @@ fn diagnostics_reports_a_running_engine_and_its_readiness_with_no_path() {
 }
 
 #[test]
-fn deleting_data_without_a_terminal_or_yes_changes_nothing() {
+fn deleting_the_data_of_a_custom_directory_is_refused_and_changes_nothing() {
     let rig = Rig::start();
     let output = rig.run(&["uninstall", "--delete-data"], None);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("--yes"));
+    let error = String::from_utf8_lossy(&output.stderr);
+    // The rig's folder has no "next" in its name, which the guard names first.
+    assert!(error.contains("must contain"), "{error}");
     assert!(output.stdout.is_empty());
     assert!(
         rig.path.join("engine.sock").exists(),
