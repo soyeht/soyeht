@@ -1,5 +1,5 @@
 use super::*;
-use crate::web::test_support::{next_json, reply, request, temp_root};
+use crate::web::test_support::{create_web_pane, next_json, reply, request, temp_root};
 use crate::{dispatch::Outcome, outbox, ports::testing::FixedClock};
 use serde_json::json;
 use soyeht_protocol::frame::Frame;
@@ -58,30 +58,7 @@ async fn one_local_host_routes_typed_bounded_results_and_disconnects_fail_waiter
     core.clock = Arc::new(FixedClock(10));
     let (host, mut host_receiver) = connect(&mut core, json!(["web_host"])).await;
     let (caller, mut caller_receiver) = connect(&mut core, json!([])).await;
-    let workspace = reply(
-        &mut core,
-        &caller,
-        request(
-            2,
-            "workspace.create",
-            json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
-        ),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let pane = reply(
-        &mut core,
-        &caller,
-        request(
-            3,
-            "pane.create",
-            json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"pane"}),
-        ),
-    )["paneId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let pane = create_web_pane(&mut core, &caller, &root);
     let raw = navigate_params(&pane, "operation");
     let params = command_params(&pane, "operation");
     let command_id = core
@@ -210,30 +187,7 @@ async fn reads_are_fresh_and_mutations_are_typed_bounded_and_idempotent() {
     let mut core = Core::open(&root).unwrap();
     let (host, mut host_receiver) = connect(&mut core, json!(["web_host"])).await;
     let (caller, mut caller_receiver) = connect(&mut core, json!([])).await;
-    let workspace = reply(
-        &mut core,
-        &caller,
-        request(
-            2,
-            "workspace.create",
-            json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
-        ),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let pane = reply(
-        &mut core,
-        &caller,
-        request(
-            3,
-            "pane.create",
-            json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"pane"}),
-        ),
-    )["paneId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let pane = create_web_pane(&mut core, &caller, &root);
     let Outcome::Queued = core
         .dispatch(
             &caller,
@@ -372,30 +326,7 @@ async fn image_after_late_answer(
     let mut core = Core::open(&root).unwrap();
     let (host, mut host_receiver) = connect(&mut core, json!(["web_host"])).await;
     let (caller, mut caller_receiver) = connect(&mut core, json!([])).await;
-    let workspace = reply(
-        &mut core,
-        &caller,
-        request(
-            2,
-            "workspace.create",
-            json!({"name":"Web","path":root,"idempotencyKey":"workspace"}),
-        ),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let pane = reply(
-        &mut core,
-        &caller,
-        request(
-            3,
-            "pane.create",
-            json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"pane"}),
-        ),
-    )["paneId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let pane = create_web_pane(&mut core, &caller, &root);
     if late {
         let Outcome::Queued = core
             .dispatch(&caller, request(5, method, json!({"paneId":pane})))

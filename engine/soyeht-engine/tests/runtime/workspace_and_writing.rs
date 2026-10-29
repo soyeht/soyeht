@@ -4,13 +4,7 @@ use super::*;
 fn workspace_pane_layout_is_validated_persisted_and_restored() {
     let mut rig = Rig::new();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Layout","path":rig.path,"idempotencyKey":"layout-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Layout", &rig.path, "layout-workspace");
     let first_pane = client.call(
         "pane.create",
         json!({
@@ -105,13 +99,7 @@ fn writing_section_listing_ignores_protected_workspace_siblings() {
     deny_everyone(&protected).unwrap();
 
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Scoped writing","path":rig.path,"idempotencyKey":"scoped-writing"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Scoped writing", &rig.path, "scoped-writing");
     let listed = client.request(
         "writing.section.list",
         json!({"workspaceId":workspace,"section":"texts","limit":50}),
@@ -139,13 +127,12 @@ fn pane_created_events_carry_replica_metadata_for_other_clients() {
     .unwrap();
 
     let mut writer = rig.client();
-    let workspace = writer.call(
-        "workspace.create",
-        json!({"name":"Live replica","path":rig.path,"idempotencyKey":"live-replica-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut writer,
+        "Live replica",
+        &rig.path,
+        "live-replica-workspace",
+    );
     let mut observer = rig.client();
     let (snapshot, _) = observer.snapshot();
     observer.call("events.subscribe", json!({"since":snapshot["cursor"]}));
@@ -204,13 +191,7 @@ fn writing_documents_reuse_owned_files_and_restore_preferences_and_structure() {
     )
     .unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Writing","path":rig.path,"idempotencyKey":"writing-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Writing", &rig.path, "writing-workspace");
 
     let opened = client.call(
         "writing.document.open",

@@ -1,5 +1,20 @@
 use super::*;
 
+/// The public form of a permission request, as the engine presents it to a client.
+fn permission(
+    params: &Value,
+    tracked_tool: Option<&Value>,
+    pane_names: &PaneNames<'_>,
+) -> Result<(Value, &'static str)> {
+    public_question(
+        "session/request_permission",
+        params,
+        tracked_tool,
+        json!({}),
+        pane_names,
+    )
+}
+
 #[test]
 fn permission_exposes_typed_diff_without_raw_tool_input() {
     let params = json!({
@@ -14,14 +29,7 @@ fn permission_exposes_typed_diff_without_raw_tool_input() {
         "_meta": {"permission": {"version": 1, "title": "Write note.txt",
             "description": "Review this edit"}}
     });
-    let (public, event) = public_question(
-        "session/request_permission",
-        &params,
-        None,
-        json!({}),
-        &PaneNames::new(),
-    )
-    .expect("valid permission");
+    let (public, event) = permission(&params, None, &PaneNames::new()).expect("valid permission");
     assert_eq!(event, "pane.permission_requested");
     assert_eq!(public["title"], "Write note.txt");
     assert_eq!(public["detail"], "Review this edit");
@@ -65,14 +73,8 @@ fn claude_execute_permission_shows_raw_command_not_summary() {
             "title": "Create file and list directory contents",
             "description": "Review shell command"}}
     });
-    let (public, _) = public_question(
-        "session/request_permission",
-        &params,
-        None,
-        json!({}),
-        &PaneNames::new(),
-    )
-    .expect("complete command must be displayable");
+    let (public, _) =
+        permission(&params, None, &PaneNames::new()).expect("complete command must be displayable");
     assert_eq!(public["title"], "Create file and list directory contents");
     assert_eq!(public["presentation"]["command"], command);
     assert_eq!(public["presentation"]["executionDetails"], Value::Null);
@@ -90,14 +92,8 @@ fn execute_permission_preserves_long_multiline_command_and_extra_content() {
                 "text": "Working directory: /project"}}]},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
     });
-    let (public, _) = public_question(
-        "session/request_permission",
-        &params,
-        None,
-        json!({}),
-        &PaneNames::new(),
-    )
-    .expect("complete command must be displayable");
+    let (public, _) =
+        permission(&params, None, &PaneNames::new()).expect("complete command must be displayable");
     assert_eq!(public["presentation"]["command"], command);
     assert_eq!(
         public["presentation"]["executionDetails"][0],
@@ -115,14 +111,8 @@ fn codex_execute_permission_uses_adapter_command_not_generic_title() {
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
         "_meta": {"permission": {"version": 1, "title": "Run command?"}}
     });
-    let (public, _) = public_question(
-        "session/request_permission",
-        &params,
-        None,
-        json!({}),
-        &PaneNames::new(),
-    )
-    .expect("Codex command must be displayable");
+    let (public, _) =
+        permission(&params, None, &PaneNames::new()).expect("Codex command must be displayable");
     assert_eq!(public["title"], "Run command?");
     assert_eq!(public["presentation"]["command"], "ls -la");
     assert_eq!(public["presentation"]["toolArguments"], Value::Null);
@@ -144,14 +134,8 @@ fn codex_mcp_tool_approval_shows_server_tool_and_arguments() {
                 "server": "soyeht-workspace", "tool": "message_agent"}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
     });
-    let (public, _) = public_question(
-        "session/request_permission",
-        &params,
-        None,
-        json!({}),
-        &workspace_panes(),
-    )
-    .expect("MCP tool approval must be displayable");
+    let (public, _) = permission(&params, None, &workspace_panes())
+        .expect("MCP tool approval must be displayable");
     assert_eq!(public["title"], "Use soyeht-workspace · message_agent");
     assert_eq!(public["presentation"]["command"], Value::Null);
     assert_eq!(
@@ -184,15 +168,9 @@ fn claude_and_codex_mcp_approvals_render_identically() {
             "title": "mcp__soyeht-workspace__message_agent"}}
     });
     let present = |params: &Value| {
-        public_question(
-            "session/request_permission",
-            params,
-            None,
-            json!({}),
-            &workspace_panes(),
-        )
-        .expect("MCP tool approval must be displayable")
-        .0
+        permission(params, None, &workspace_panes())
+            .expect("MCP tool approval must be displayable")
+            .0
     };
     let (codex, claude) = (present(&codex), present(&claude));
     assert_eq!(claude["title"], "Use soyeht-workspace · message_agent");
@@ -224,11 +202,9 @@ fn codex_mcp_approval_is_presented_from_the_tracked_tool_call() {
         "kind": "execute", "status": "in_progress", "locations": [],
         "rawInput": {"arguments": {"targetPaneId": "pane-claude", "text": "  indented\n  reply"},
             "server": "soyeht-workspace", "tool": "message_agent"}});
-    let (public, _) = public_question(
-        "session/request_permission",
+    let (public, _) = permission(
         &bare_codex_mcp_request("exec-a8b5"),
         Some(&tracked),
-        json!({}),
         &workspace_panes(),
     )
     .expect("tracked MCP tool approval must be displayable");
@@ -253,14 +229,8 @@ fn request_fields_override_the_tracked_tool_call() {
             "title": "Run command", "rawInput": {"command": "ls", "cwd": "/project"}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]
     });
-    let (public, _) = public_question(
-        "session/request_permission",
-        &params,
-        Some(&tracked),
-        json!({}),
-        &workspace_panes(),
-    )
-    .expect("command must be displayable");
+    let (public, _) = permission(&params, Some(&tracked), &workspace_panes())
+        .expect("command must be displayable");
     assert_eq!(public["title"], "Run command");
     assert_eq!(public["presentation"]["command"], "ls");
     assert_eq!(public["presentation"]["toolArguments"], Value::Null);
@@ -268,11 +238,9 @@ fn request_fields_override_the_tracked_tool_call() {
 
 #[test]
 fn untracked_bare_codex_approval_fails_closed() {
-    let error = public_question(
-        "session/request_permission",
+    let error = permission(
         &bare_codex_mcp_request("exec-unknown"),
         None,
-        json!({}),
         &workspace_panes(),
     )
     .expect_err("an approval with nothing to show must not be presented");
@@ -281,11 +249,9 @@ fn untracked_bare_codex_approval_fails_closed() {
     let tracked = json!({"toolCallId": "exec-unknown", "title": "Tool", "kind": "execute",
         "status": "in_progress", "locations": [], "rawInput": {"server": "soyeht-workspace"}});
     assert!(
-        public_question(
-            "session/request_permission",
+        permission(
             &bare_codex_mcp_request("exec-unknown"),
             Some(&tracked),
-            json!({}),
             &workspace_panes(),
         )
         .is_err()
@@ -298,16 +264,7 @@ fn mcp_arguments_over_display_limit_fail_closed() {
         "rawInput": {"server": "server", "tool": "tool",
             "arguments": {"text": "x".repeat(limits::PERMISSION_COMMAND_BYTES)}}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-    assert!(
-        public_question(
-            "session/request_permission",
-            &params,
-            None,
-            json!({}),
-            &PaneNames::new()
-        )
-        .is_err()
-    );
+    assert!(permission(&params, None, &PaneNames::new()).is_err());
 }
 
 #[test]
@@ -315,14 +272,8 @@ fn opencode_execute_permission_with_command_uses_command_not_bash_title() {
     let params = json!({"toolCall": {"kind": "execute", "title": "bash",
         "rawInput": {"command": "echo test", "description": "Print a test line"}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-    let (public, _) = public_question(
-        "session/request_permission",
-        &params,
-        None,
-        json!({}),
-        &PaneNames::new(),
-    )
-    .expect("OpenCode command must be displayable");
+    let (public, _) =
+        permission(&params, None, &PaneNames::new()).expect("OpenCode command must be displayable");
     assert_eq!(public["presentation"]["command"], "echo test");
     assert!(!public.to_string().contains("Print a test line"));
 }
@@ -333,46 +284,19 @@ fn execute_without_displayable_command_fails_closed() {
         "content": [{"type": "content", "content": {"type": "text",
             "text": "List directory"}}]},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-    assert!(
-        public_question(
-            "session/request_permission",
-            &params,
-            None,
-            json!({}),
-            &PaneNames::new()
-        )
-        .is_err()
-    );
+    assert!(permission(&params, None, &PaneNames::new()).is_err());
 
     let params = json!({"toolCall": {"kind": "execute", "title": "List directory",
         "rawInput": {"command": "  \n  "}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-    assert!(
-        public_question(
-            "session/request_permission",
-            &params,
-            None,
-            json!({}),
-            &PaneNames::new()
-        )
-        .is_err()
-    );
+    assert!(permission(&params, None, &PaneNames::new()).is_err());
 
     // OpenCode has emitted a pending bash permission with rawInput: {};
     // a title of "bash" cannot authorize an undisclosed command.
     let params = json!({"toolCall": {"kind": "execute", "title": "bash",
         "rawInput": {}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-    assert!(
-        public_question(
-            "session/request_permission",
-            &params,
-            None,
-            json!({}),
-            &PaneNames::new()
-        )
-        .is_err()
-    );
+    assert!(permission(&params, None, &PaneNames::new()).is_err());
 
     // A partial or malformed MCP shape is not a recognised tool request.
     for raw_input in [
@@ -382,32 +306,14 @@ fn execute_without_displayable_command_fails_closed() {
         let params = json!({"toolCall": {"kind": "execute", "title": "Run tool",
             "rawInput": raw_input},
             "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-        assert!(
-            public_question(
-                "session/request_permission",
-                &params,
-                None,
-                json!({}),
-                &PaneNames::new()
-            )
-            .is_err()
-        );
+        assert!(permission(&params, None, &PaneNames::new()).is_err());
     }
 
     // An argv array is not a shell command string; never join it by guesswork.
     let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
         "rawInput": {"command": ["ls", "-la"]}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-    assert!(
-        public_question(
-            "session/request_permission",
-            &params,
-            None,
-            json!({}),
-            &PaneNames::new()
-        )
-        .is_err()
-    );
+    assert!(permission(&params, None, &PaneNames::new()).is_err());
 }
 
 #[test]
@@ -415,14 +321,5 @@ fn execute_command_over_display_limit_fails_closed() {
     let params = json!({"toolCall": {"kind": "execute", "title": "Run command",
         "rawInput": {"command": "x".repeat(limits::PERMISSION_COMMAND_BYTES + 1)}},
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
-    assert!(
-        public_question(
-            "session/request_permission",
-            &params,
-            None,
-            json!({}),
-            &PaneNames::new()
-        )
-        .is_err()
-    );
+    assert!(permission(&params, None, &PaneNames::new()).is_err());
 }

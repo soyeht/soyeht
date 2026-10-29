@@ -7,13 +7,12 @@ fn writing_structure_counts_the_whole_document_and_recalculates_after_an_edit() 
     let text = format!("{}{}\n", "\n".repeat(2_100), vec!["word"; 914].join(" "));
     fs::write(rig.path.join("Writing/Texts/ensaio.md"), text).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Whole document count","path":rig.path,"idempotencyKey":"word-count-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Whole document count",
+        &rig.path,
+        "word-count-workspace",
+    );
     let opened = client.call(
         "writing.document.open",
         json!({"workspaceId":workspace,"path":"Writing/Texts/ensaio.md","kind":"text","idempotencyKey":"open-word-count"}),
@@ -50,13 +49,12 @@ fn writing_document_creation_is_durable_disjoint_and_idempotent_across_restart()
     let repository = rig.path.join("writing-create-repository");
     fs::create_dir(&repository).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Writing create","path":repository,"idempotencyKey":"writing-create-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Writing create",
+        &repository,
+        "writing-create-workspace",
+    );
 
     let created = client.call(
         "writing.document.create",
@@ -144,13 +142,12 @@ fn writing_format_uses_the_owned_revisioned_file_and_survives_restart() {
     let path = repository.join("Writing/Texts/field-notes.md");
     fs::write(&path, "# Field notes\n\nDraft safely.\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Writing format","path":repository,"idempotencyKey":"writing-format-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Writing format",
+        &repository,
+        "writing-format-workspace",
+    );
     let opened = client.call(
         "writing.document.open",
         json!({"workspaceId":workspace,"path":"Writing/Texts/field-notes.md","kind":"text","idempotencyKey":"writing-format-open"}),
@@ -180,14 +177,9 @@ fn writing_format_uses_the_owned_revisioned_file_and_survives_restart() {
     );
     assert_eq!(stale["error"]["data"]["kind"], "stale_version");
 
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while fs::read_to_string(&path).unwrap() != "# Field notes\n\n**Draft** safely.\n" {
-        assert!(
-            Instant::now() < deadline,
-            "formatted draft did not autosave"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("formatted draft did not autosave", || {
+        fs::read_to_string(&path).unwrap() == "# Field notes\n\n**Draft** safely.\n"
+    });
     drop(client);
     rig.kill_engine();
     rig.start();
@@ -327,13 +319,12 @@ fn screenplay_variant_fixture(rig: &Rig) -> (Client, String, String, PathBuf) {
     let path = repository.join("Writing/Screenplays/night-train.fountain");
     fs::write(&path, VARIANT_SCREENPLAY).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Screenplay variants","path":repository,"idempotencyKey":"variant-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(
+        &mut client,
+        "Screenplay variants",
+        &repository,
+        "variant-workspace",
+    );
     let file_id = client.call(
         "writing.document.open",
         json!({"workspaceId":workspace,"path":"Writing/Screenplays/night-train.fountain",
@@ -346,9 +337,7 @@ fn screenplay_variant_fixture(rig: &Rig) -> (Client, String, String, PathBuf) {
 }
 
 fn wait_for_path_text(path: &std::path::Path, expected: &str) {
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while fs::read_to_string(path).unwrap() != expected {
-        assert!(Instant::now() < deadline, "writing draft did not autosave");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("writing draft did not autosave", || {
+        fs::read_to_string(path).unwrap() == expected
+    });
 }

@@ -284,11 +284,9 @@ fn persisted_agent_capture_records_real_protocol_transitions_as_labels() {
 
     let root = rig.path.join("experiments/pane-state");
     let mut client = rig.client();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while !client.pane(&pane)["agent"]["sessionId"].is_string() {
-        assert!(Instant::now() < deadline, "agent session did not recover");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("agent session did not recover", || {
+        client.pane(&pane)["agent"]["sessionId"].is_string()
+    });
     assert_eq!(client.pane(&pane)["experimentCapture"]["on"], true);
     client.call(
         "pane.prompt",
@@ -296,9 +294,8 @@ fn persisted_agent_capture_records_real_protocol_transitions_as_labels() {
             "idempotencyKey":"capture-protocol-labels"}),
     );
 
-    let labels = loop {
-        let rows = experiment_rows(&root);
-        let labels = rows
+    let labels = eventually("ACP transitions did not reach experiment labels", || {
+        let labels = experiment_rows(&root)
             .into_iter()
             .filter(|row| row["kind"] == "label" && row["pane_id"] == pane)
             .collect::<Vec<_>>();
@@ -307,14 +304,11 @@ fn persisted_agent_capture_records_real_protocol_transitions_as_labels() {
             .filter_map(|row| row["state"].as_str())
             .collect::<Vec<_>>();
         if states.contains(&"working") && states.contains(&"idle") {
-            break labels;
+            Ok(labels.clone())
+        } else {
+            Err(format!("{states:?}"))
         }
-        assert!(
-            Instant::now() < deadline,
-            "ACP transitions did not reach experiment labels: {states:?}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    });
     assert!(labels.iter().all(|row| row["pane_kind"] == "agent"));
     assert!(labels.iter().all(|row| row["source"] == "protocol"));
     assert!(labels.iter().all(|row| {

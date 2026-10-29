@@ -1,33 +1,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use serde_json::json;
 use soyeht_protocol::EditorLanguage;
 use soyeht_store::{
     database::{SCHEMA_VERSION, Store},
     languages::LanguageServerCheckpoint,
 };
-use std::fs;
+use support::{Profile, apply_migrations};
 use uuid::Uuid;
-
-struct Profile(std::path::PathBuf);
-
-impl Profile {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("soyeht-languages-{}", Uuid::new_v4()));
-        fs::create_dir_all(&path).unwrap();
-        Self(path)
-    }
-
-    fn store(&self) -> Store {
-        Store::open(&self.0).unwrap()
-    }
-}
-
-impl Drop for Profile {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 fn checkpoint(generation: u32) -> LanguageServerCheckpoint {
     LanguageServerCheckpoint {
@@ -116,24 +98,8 @@ fn invalid_language_and_payload_are_rejected_before_sql() {
 #[test]
 fn migration_from_populated_v13_preserves_existing_rows_and_adds_checkpoints() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-        include_str!("../migrations/012-editor-files.sql"),
-        include_str!("../migrations/013-editor-project-replacements.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 13);
     connection
         .execute_batch(
             r#"INSERT INTO metadata(key,value) VALUES ('db_id','v13-db'),('engine_generation','0');

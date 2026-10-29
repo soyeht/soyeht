@@ -63,14 +63,9 @@ fn a_lost_output_page_preserves_pending_permission_and_declares_the_gap() {
     );
     client.wait_state(&pane, "working");
     rig.kill_engine();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while !rig.path.join("native/overflow.done").exists() {
-        assert!(
-            Instant::now() < deadline,
-            "fake did not fill output retention"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("fake did not fill output retention", || {
+        rig.path.join("native/overflow.done").exists()
+    });
     let generation = rig.database_probe().engine_generation().unwrap();
     let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), generation).unwrap();
     let Response::Instances(instances) = supervisor.request(Request::List).unwrap() else {

@@ -8,25 +8,10 @@ fn observed_model_refusal_is_plain_durable_and_does_not_guess_from_generic_error
         "pane.prompt",
         json!({"paneId":pane,"text":"refuse-disabled-model","idempotencyKey":"disabled-model"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    let transcript = loop {
-        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
-        if transcript["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|message| {
-                message["text"] == "The agent refused model \"model-a\": Model is disabled"
-            })
-        {
-            break transcript;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "refusal was not published: {transcript}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    let transcript =
+        wait_for_transcript(&mut client, &pane, "refusal was not published", |message| {
+            message["text"] == "The agent refused model \"model-a\": Model is disabled"
+        });
     assert!(!transcript.to_string().contains("Internal error:"));
     let models = client.call(
         "model.list",
@@ -66,23 +51,12 @@ fn observed_model_refusal_is_plain_durable_and_does_not_guess_from_generic_error
         "pane.prompt",
         json!({"paneId":pane,"text":"refuse-generic-error","idempotencyKey":"generic-error"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    let transcript = loop {
-        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
-        if transcript["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|message| message["text"] == "Agent error: Temporary upstream failure")
-        {
-            break transcript;
-        }
-        assert!(
-            Instant::now() < deadline,
-            "generic error was not published: {transcript}"
-        );
-        thread::sleep(Duration::from_millis(20));
-    };
+    let transcript = wait_for_transcript(
+        &mut client,
+        &pane,
+        "generic error was not published",
+        |message| message["text"] == "Agent error: Temporary upstream failure",
+    );
     assert!(!transcript.to_string().contains("Internal error:"));
     let models = client.call(
         "model.list",
@@ -197,19 +171,12 @@ fn codex_mcp_approval_carrying_only_the_tool_call_id_is_presented_from_the_track
         "pane.prompt",
         json!({"paneId":pane,"text":"permission-tracked-mcp:list_agents","idempotencyKey":"list-again"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while rig
-        .database_probe()
-        .event_count_by_field("pane.permission_answered", "by", "rule")
-        .unwrap()
-        == 0
-    {
-        assert!(
-            Instant::now() < deadline,
-            "the granted tool was not approved by its rule"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("the granted tool was not approved by its rule", || {
+        rig.database_probe()
+            .event_count_by_field("pane.permission_answered", "by", "rule")
+            .unwrap()
+            != 0
+    });
     client.wait_state(&pane, "idle");
     assert_eq!(
         rig.database_probe()
@@ -281,20 +248,12 @@ fn approval_for_an_unreported_tool_call_without_input_stays_blocked() {
         "pane.prompt",
         json!({"paneId":pane,"text":"permission-untracked-mcp","idempotencyKey":"untracked"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    loop {
-        let transcript = client.call("pane.transcript", json!({"paneId":pane}));
-        if transcript["items"].as_array().unwrap().iter().any(|item| {
-            item["role"] == "system"
-                && item["text"].as_str().is_some_and(|text| {
-                    text.contains("no command to display") && text.contains("Nothing was approved")
-                })
-        }) {
-            break;
-        }
-        assert!(Instant::now() < deadline, "the approval was not blocked");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_for_transcript(&mut client, &pane, "the approval was not blocked", |item| {
+        item["role"] == "system"
+            && item["text"].as_str().is_some_and(|text| {
+                text.contains("no command to display") && text.contains("Nothing was approved")
+            })
+    });
     assert!(client.section("requests").is_empty());
     assert_eq!(
         rig.database_probe()

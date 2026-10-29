@@ -1,27 +1,15 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod support;
+
 use serde_json::json;
 use soyeht_protocol::Workspace;
 use soyeht_store::{
     database::{Error, Store},
     segments::{Log, Record},
 };
-use std::{fs, io::Write, path::PathBuf};
-use uuid::Uuid;
-
-struct Directory(PathBuf);
-impl Directory {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("soyeht-next-store-{}", Uuid::new_v4()));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-}
-impl Drop for Directory {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use std::{fs, io::Write};
+use support::Profile;
 
 fn workspace(id: &str, name: String) -> Workspace {
     Workspace {
@@ -34,7 +22,7 @@ fn workspace(id: &str, name: String) -> Workspace {
 
 #[test]
 fn state_event_and_idempotent_result_commit_together_and_survive_reopen() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut store = Store::open(&directory.0).unwrap();
     let id = store.db_id.clone();
     assert_eq!(
@@ -91,7 +79,7 @@ fn state_event_and_idempotent_result_commit_together_and_survive_reopen() {
 
 #[test]
 fn failed_mutation_leaves_no_state_event_or_idempotency_receipt() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut store = Store::open(&directory.0).unwrap();
     let failed = store.mutate("local:test", "key-1", "request", |change| {
         change.insert_workspace(&workspace("w1", "Workspace".into()))?;
@@ -111,7 +99,7 @@ fn failed_mutation_leaves_no_state_event_or_idempotency_receipt() {
 
 #[test]
 fn old_cursor_is_rejected_even_after_all_events_are_pruned() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut store = Store::open(&directory.0).unwrap();
     store
         .mutate("system", "first", "event", |_| {
@@ -132,7 +120,7 @@ fn old_cursor_is_rejected_even_after_all_events_are_pruned() {
 
 #[test]
 fn future_database_version_is_refused() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let store = Store::open(&directory.0).unwrap();
     store
         .connection()
@@ -147,8 +135,8 @@ fn future_database_version_is_refused() {
 
 #[test]
 fn migration_backs_up_an_existing_database_before_changing_version() {
-    let directory = Directory::new();
-    let old = rusqlite::Connection::open(directory.0.join("soyeht.db")).unwrap();
+    let directory = Profile::new();
+    let old = directory.connection();
     old.execute_batch("PRAGMA user_version=0").unwrap();
     drop(old);
     let store = Store::open(&directory.0).unwrap();
@@ -172,8 +160,8 @@ fn migration_backs_up_an_existing_database_before_changing_version() {
 
 #[test]
 fn version_23_migration_backfills_durable_workspace_and_pane_creation_sequences() {
-    let directory = Directory::new();
-    let old = rusqlite::Connection::open(directory.0.join("soyeht.db")).unwrap();
+    let directory = Profile::new();
+    let old = directory.connection();
     old.execute_batch(
         "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
          INSERT INTO metadata(key,value) VALUES
@@ -263,7 +251,7 @@ fn version_23_migration_backfills_durable_workspace_and_pane_creation_sequences(
 
 #[test]
 fn full_database_does_not_confirm_a_partial_mutation() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut store = Store::open(&directory.0).unwrap();
     let pages = store
         .connection()
@@ -290,8 +278,8 @@ fn full_database_does_not_confirm_a_partial_mutation() {
 
 #[test]
 fn version_one_migration_preserves_identity_and_records_the_actor() {
-    let directory = Directory::new();
-    let old = rusqlite::Connection::open(directory.0.join("soyeht.db")).unwrap();
+    let directory = Profile::new();
+    let old = directory.connection();
     old.execute_batch(include_str!("../migrations/001-initial.sql"))
         .unwrap();
     old.execute(
@@ -336,7 +324,7 @@ fn version_one_migration_preserves_identity_and_records_the_actor() {
 
 #[test]
 fn an_explicit_domain_actor_is_not_replaced_by_the_request_actor() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut store = Store::open(&directory.0).unwrap();
     let request_actor = json!({"role":"human_local","client":"test"});
     let changed = store
@@ -370,7 +358,7 @@ fn an_explicit_domain_actor_is_not_replaced_by_the_request_actor() {
 
 #[test]
 fn output_gap_and_delta_survive_reopen_without_inventing_bytes() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut log = Log::open(&directory.0).unwrap();
     log.append(Record::Data {
         offset: 0,
@@ -406,7 +394,7 @@ fn output_gap_and_delta_survive_reopen_without_inventing_bytes() {
 
 #[test]
 fn incomplete_last_record_is_truncated_but_checksum_corruption_is_refused() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut log = Log::open(&directory.0).unwrap();
     log.append(Record::Data {
         offset: 0,
@@ -442,7 +430,7 @@ fn incomplete_last_record_is_truncated_but_checksum_corruption_is_refused() {
 
 #[test]
 fn unsynced_records_are_readable_and_owe_one_flush_per_segment_until_it_is_taken() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut log = Log::open(&directory.0).unwrap();
     assert!(log.take_unsynced().is_none());
     // Enough output to fill the first segment and move on to the next.
@@ -494,7 +482,7 @@ fn unsynced_records_are_readable_and_owe_one_flush_per_segment_until_it_is_taken
 
 #[test]
 fn segments_rotate_and_retention_removes_only_whole_old_segments() {
-    let directory = Directory::new();
+    let directory = Profile::new();
     let mut log = Log::open(&directory.0).unwrap();
     for n in 0..520 {
         log.append(Record::Data {

@@ -14,36 +14,16 @@ use soyeht_store::{
     database::{Error, SCHEMA_VERSION, Store},
     domain::PaneRecord,
 };
-use std::{fs, path::PathBuf};
-use uuid::Uuid;
-
-struct Profile(PathBuf);
-impl Profile {
-    fn new() -> Self {
-        let p = Self(std::env::temp_dir().join(format!("sn-agent-store-{}", Uuid::new_v4())));
-        fs::create_dir(&p.0).unwrap();
-        p
-    }
-    fn store(&self) -> Store {
-        Store::open(&self.0).unwrap()
-    }
-}
-impl Drop for Profile {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use std::fs;
+use support::{Profile, apply_migrations, commit};
 
 #[test]
 fn readiness_survives_reopen_and_later_failure_replaces_success_without_erasing_its_time() {
     let profile = Profile::new();
     let mut store = profile.store();
-    store
-        .mutate("test", "ready", "ready", |tx| {
-            agents::save_harness_readiness(tx, "harness", HarnessSetupState::Ready, None, 100)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "ready", |tx| {
+        agents::save_harness_readiness(tx, "harness", HarnessSetupState::Ready, None, 100)
+    });
     drop(store);
     let mut store = profile.store();
     assert_eq!(
@@ -53,18 +33,15 @@ fn readiness_survives_reopen_and_later_failure_replaces_success_without_erasing_
             .state,
         HarnessSetupState::Ready
     );
-    store
-        .mutate("test", "failed", "failed", |tx| {
-            agents::save_harness_readiness(
-                tx,
-                "harness",
-                HarnessSetupState::CheckSetup,
-                Some(HarnessSetupReason::SessionFailed),
-                200,
-            )?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "failed", |tx| {
+        agents::save_harness_readiness(
+            tx,
+            "harness",
+            HarnessSetupState::CheckSetup,
+            Some(HarnessSetupReason::SessionFailed),
+            200,
+        )
+    });
     let recorded = agents::harness_readiness(&store, "harness")
         .unwrap()
         .unwrap();
@@ -73,30 +50,28 @@ fn readiness_survives_reopen_and_later_failure_replaces_success_without_erasing_
     assert_eq!(recorded.last_ready_ms, Some(100));
 }
 fn seed(store: &mut Store) {
-    store
-        .mutate("test", "seed", "seed", |change| {
-            change.insert_workspace(&Workspace {
-                workspace_id: "w".into(),
-                name: "Workspace".into(),
-                path: "/tmp".into(),
-                layout: json!({}),
-            })?;
-            change.insert_pane(&PaneRecord {
-                pane: Pane {
-                    name: "Agent".into(),
-                    record: true,
-                    ..support::pane("p", "w", PaneMode::Agent, "/tmp")
-                },
-                closed: false,
-                instance_key: "process".into(),
-                instance_id: None,
-                supervisor_id: None,
-                sequence_base: 0,
-            })?;
-            agents::save_runtime(change, "p", 1, &json!({"nextOffset":0,"queue":[]}))?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, "seed", |change| {
+        change.insert_workspace(&Workspace {
+            workspace_id: "w".into(),
+            name: "Workspace".into(),
+            path: "/tmp".into(),
+            layout: json!({}),
+        })?;
+        change.insert_pane(&PaneRecord {
+            pane: Pane {
+                name: "Agent".into(),
+                record: true,
+                ..support::pane("p", "w", PaneMode::Agent, "/tmp")
+            },
+            closed: false,
+            instance_key: "process".into(),
+            instance_id: None,
+            supervisor_id: None,
+            sequence_base: 0,
+        })?;
+        agents::save_runtime(change, "p", 1, &json!({"nextOffset":0,"queue":[]}))?;
+        Ok(())
+    });
 }
 
 #[test]
@@ -175,34 +150,32 @@ fn message(seq: u64, text: &str, complete: bool) -> TranscriptMessage {
 fn observed_model_refusals_are_bounded_upserted_and_survive_reopen() {
     let profile = Profile::new();
     let mut store = profile.store();
-    store
-        .mutate("test", "refusals", "refusals", |tx| {
-            for index in 0..=limits::MODEL_REFUSALS {
-                let observed_at = chrono::DateTime::from_timestamp(1_700_000_000 + index as i64, 0)
-                    .unwrap()
-                    .to_rfc3339();
-                agents::save_model_refusal(
-                    tx,
-                    &AgentModelRefusal {
-                        harness_id: "test-agent".into(),
-                        model_id: format!("model-{index:03}"),
-                        reason: "Model is disabled".into(),
-                        observed_at,
-                    },
-                )?;
-            }
+    commit(&mut store, "refusals", |tx| {
+        for index in 0..=limits::MODEL_REFUSALS {
+            let observed_at = chrono::DateTime::from_timestamp(1_700_000_000 + index as i64, 0)
+                .unwrap()
+                .to_rfc3339();
             agents::save_model_refusal(
                 tx,
                 &AgentModelRefusal {
                     harness_id: "test-agent".into(),
-                    model_id: format!("model-{:03}", limits::MODEL_REFUSALS),
-                    reason: "Subscription expired".into(),
-                    observed_at: "2026-09-15T21:00:00Z".into(),
+                    model_id: format!("model-{index:03}"),
+                    reason: "Model is disabled".into(),
+                    observed_at,
                 },
             )?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+        }
+        agents::save_model_refusal(
+            tx,
+            &AgentModelRefusal {
+                harness_id: "test-agent".into(),
+                model_id: format!("model-{:03}", limits::MODEL_REFUSALS),
+                reason: "Subscription expired".into(),
+                observed_at: "2026-09-15T21:00:00Z".into(),
+            },
+        )?;
+        Ok(())
+    });
     drop(store);
 
     let store = profile.store();
@@ -245,7 +218,7 @@ fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
     seed(&mut store);
     drop(store);
 
-    let connection = Connection::open(profile.0.join("soyeht.db")).unwrap();
+    let connection = profile.connection();
     connection
         .execute_batch(
             "DROP TABLE harness_sign_in; DROP TABLE editor_tabs; DROP TABLE push_registrations; DROP TABLE agent_model_refusals;
@@ -285,16 +258,14 @@ fn native_replay_is_private_until_atomic_publication_and_survives_restart() {
     let profile = Profile::new();
     let mut store = profile.store();
     seed(&mut store);
-    store
-        .mutate("test", "original", "original", |tx| {
-            agents::save_message(tx, "p", &message(1, "Original", true))?;
-            agents::save_runtime(tx, "p", 2, &json!({"phase":"Loading"}))?;
-            let mut staged = message(2, "Restored", true);
-            staged.generation = 2;
-            agents::stage_message(tx, "p", &staged)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "original", |tx| {
+        agents::save_message(tx, "p", &message(1, "Original", true))?;
+        agents::save_runtime(tx, "p", 2, &json!({"phase":"Loading"}))?;
+        let mut staged = message(2, "Restored", true);
+        staged.generation = 2;
+        agents::stage_message(tx, "p", &staged)?;
+        Ok(())
+    });
     drop(store);
     let mut store = profile.store();
     assert_eq!(
@@ -542,30 +513,9 @@ fn queued_attachments_are_paths_that_survive_reopen_and_fail_closed() {
 #[test]
 fn migration_from_populated_v18_preserves_the_queue_and_drops_attachment_blobs() {
     let profile = Profile::new();
-    let connection = Connection::open(profile.0.join("soyeht.db")).unwrap();
+    let connection = profile.connection();
     connection.execute_batch("PRAGMA foreign_keys=ON").unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-        include_str!("../migrations/012-editor-files.sql"),
-        include_str!("../migrations/013-editor-project-replacements.sql"),
-        include_str!("../migrations/014-language-servers.sql"),
-        include_str!("../migrations/015-editor-agent-reviews.sql"),
-        include_str!("../migrations/016-web-session-grants.sql"),
-        include_str!("../migrations/017-web-permissions.sql"),
-        include_str!("../migrations/018-web-permission-operations.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    apply_migrations(&connection, 18);
     connection
         .execute_batch(
             "INSERT INTO metadata(key,value) VALUES ('db_id','old'),('engine_generation','1');
@@ -606,20 +556,13 @@ fn partial_and_zero_byte_receipts_keep_progress_without_repeating_prior_bytes() 
     let profile = Profile::new();
     let mut store = profile.store();
     seed(&mut store);
-    store
-        .mutate("test", "enqueue", "enqueue", |tx| {
-            agents::enqueue(tx, &outgoing())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
-    store
-        .mutate("test", "partial", "partial", |tx| {
-            let next = agents::advance(tx, &outgoing(), 11)?;
-            assert_eq!(next.accepted_bytes, 11);
-            assert_eq!(next.attempt, 1);
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "enqueue", |tx| agents::enqueue(tx, &outgoing()));
+    commit(&mut store, "partial", |tx| {
+        let next = agents::advance(tx, &outgoing(), 11)?;
+        assert_eq!(next.accepted_bytes, 11);
+        assert_eq!(next.attempt, 1);
+        Ok(())
+    });
     drop(store);
     let mut store = profile.store();
     let prior = agents::outbox(&store, "p").unwrap().remove(0);
@@ -640,15 +583,13 @@ fn partial_and_zero_byte_receipts_keep_progress_without_repeating_prior_bytes() 
             })
             .is_err()
     );
-    store
-        .mutate("test", "zero", "zero", |tx| {
-            let next = agents::advance(tx, &prior, 0)?;
-            assert_eq!(next.accepted_bytes, 11);
-            assert_eq!(next.attempt, 2);
-            agents::enqueue(tx, &outgoing())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "zero", |tx| {
+        let next = agents::advance(tx, &prior, 0)?;
+        assert_eq!(next.accepted_bytes, 11);
+        assert_eq!(next.attempt, 2);
+        agents::enqueue(tx, &outgoing())?;
+        Ok(())
+    });
     let stored = agents::outgoing(&store, "reply-1").unwrap().unwrap();
     assert_eq!(stored.accepted_bytes, 11);
     assert_eq!(stored.attempt, 2);
@@ -659,13 +600,11 @@ fn process_identity_stale_generation_and_different_native_replays_are_refused() 
     let profile = Profile::new();
     let mut store = profile.store();
     seed(&mut store);
-    store
-        .mutate("test", "initial", "initial", |tx| {
-            agents::receive(tx, &incoming())?;
-            agents::enqueue(tx, &outgoing())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "initial", |tx| {
+        agents::receive(tx, &incoming())?;
+        agents::enqueue(tx, &outgoing())?;
+        Ok(())
+    });
     let mut wrong = outgoing();
     wrong.instance_id = "replacement".into();
     assert!(
@@ -694,12 +633,9 @@ fn process_identity_stale_generation_and_different_native_replays_are_refused() 
             })
             .is_err()
     );
-    store
-        .mutate("test", "replacement", "replacement", |tx| {
-            agents::save_runtime(tx, "p", 2, &json!({}))?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "replacement", |tx| {
+        agents::save_runtime(tx, "p", 2, &json!({}))
+    });
     for kind in [0, 1, 2] {
         assert!(
             store
@@ -751,12 +687,9 @@ fn transcript_pages_are_bounded_ordered_and_updates_cannot_change_identity() {
     assert_eq!(earlier.items[0].seq, start.to_string());
     assert!(earlier.next_cursor.is_none());
     let finished = message(start, "Complete", true);
-    store
-        .mutate("test", "finish", "finish", |tx| {
-            agents::save_message(tx, "p", &finished)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "finish", |tx| {
+        agents::save_message(tx, "p", &finished)
+    });
     assert!(
         store
             .mutate("test", "rewrite", "rewrite", |tx| {
@@ -798,23 +731,21 @@ fn transcript_retention_discards_whole_old_messages_and_probe_cache_tracks_finge
     let profile = Profile::new();
     let mut store = profile.store();
     seed(&mut store);
-    store
-        .mutate("test", "history", "history", |tx| {
-            for seq in 0..145 {
-                agents::save_message(tx, "p", &message(seq, &"x".repeat(240000), true))?;
-            }
-            agents::save_probe(
-                tx,
-                "fingerprint-1",
-                &ProbeCapability {
-                    method: "session/load".into(),
-                    result: ProbeResult::Unsupported,
-                    checked_at: "fixed".into(),
-                },
-            )?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "history", |tx| {
+        for seq in 0..145 {
+            agents::save_message(tx, "p", &message(seq, &"x".repeat(240000), true))?;
+        }
+        agents::save_probe(
+            tx,
+            "fingerprint-1",
+            &ProbeCapability {
+                method: "session/load".into(),
+                result: ProbeResult::Unsupported,
+                checked_at: "fixed".into(),
+            },
+        )?;
+        Ok(())
+    });
     drop(store);
     let store = profile.store();
     let (first, total): (Vec<u8>, i64) = store
@@ -844,14 +775,8 @@ fn transcript_retention_discards_whole_old_messages_and_probe_cache_tracks_finge
 #[test]
 fn migration_from_v3_preserves_live_panes_and_takes_a_backup() {
     let profile = Profile::new();
-    let old = Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for sql in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-    ] {
-        old.execute_batch(sql).unwrap();
-    }
+    let old = profile.connection();
+    apply_migrations(&old, 3);
     old.execute(
         "INSERT INTO metadata VALUES ('db_id','stable'),('engine_generation','23')",
         [],
@@ -881,15 +806,8 @@ fn migration_from_v3_preserves_live_panes_and_takes_a_backup() {
 }
 
 fn populate_v4(profile: &Profile) -> (Value, Outgoing) {
-    let mut old = Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for sql in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-    ] {
-        old.execute_batch(sql).unwrap();
-    }
+    let mut old = profile.connection();
+    apply_migrations(&old, 4);
     old.execute(
         "INSERT INTO metadata VALUES ('db_id','v4-live'),('engine_generation','8')",
         [],
@@ -1012,16 +930,8 @@ fn migration_from_populated_v4_preserves_native_receipts_and_offsets() {
 #[test]
 fn migration_from_v5_adds_reconnectable_authentication_state() {
     let profile = Profile::new();
-    let old = Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for sql in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-    ] {
-        old.execute_batch(sql).unwrap();
-    }
+    let old = profile.connection();
+    apply_migrations(&old, 5);
     old.execute(
         "INSERT INTO metadata VALUES ('db_id','v5-live'),('engine_generation','8')",
         [],

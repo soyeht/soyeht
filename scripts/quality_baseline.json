@@ -13,8 +13,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 357,
-      "duplicated_lines": 3059
+      "clones": 279,
+      "duplicated_lines": 2150
     },
     "ios": {
       "clones": 4,
@@ -231,8 +231,8 @@
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 898,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-store/src/editor.rs": 839,
-    "engine/soyeht-store/tests/agents.rs": 1066,
-    "engine/soyeht-store/tests/tasks.rs": 958
+    "engine/soyeht-store/tests/agents.rs": 976,
+    "engine/soyeht-store/tests/tasks.rs": 887
   },
   "swallowed_errors": {
     "rust_err_wildcard": 0,

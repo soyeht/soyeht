@@ -1,5 +1,5 @@
 use super::{store::*, *};
-use soyeht_pane_state::{EngineBuild, MAX_RETAINED_SEGMENTS};
+use soyeht_pane_state::{EngineBuild, MAX_RETAINED_SEGMENTS, ReplayedSegment};
 use soyeht_pane_state::{
     MAX_SCREEN_LINE_BYTES, MAX_SCREEN_LINES, ObservationFrame, ObservationReason,
 };
@@ -26,6 +26,25 @@ impl Fixture {
         create_private_dir(&directory).unwrap();
         let root = directory.join("raw-terminal");
         Self { directory, root }
+    }
+
+    /// Opens the store of `pane-1` as the engine of build `digest`.
+    fn try_open(&self, digest: char) -> Result<SegmentStore> {
+        SegmentStore::open(
+            &self.root,
+            "pane-1",
+            ObservationPaneKind::Terminal,
+            harness(),
+            engine(digest),
+        )
+    }
+
+    fn store(&self) -> SegmentStore {
+        self.try_open('a').unwrap()
+    }
+
+    fn replay(&self) -> Vec<ReplayedSegment> {
+        self.store().replay().unwrap()
     }
 }
 
@@ -73,6 +92,24 @@ fn frame(sequence: u64) -> ObservationFrame {
         unreachable!()
     };
     frame
+}
+
+fn label(
+    sequence: u64,
+    state: PaneState,
+    source: StateSource,
+    provenance: soyeht_pane_state::GroundTruthProvenance,
+) -> GroundTruthLabel {
+    GroundTruthLabel {
+        pane_id: "pane-1".into(),
+        pane_kind: ObservationPaneKind::Terminal,
+        harness: harness(),
+        timestamp_ms: 1_800_000_000_000 + sequence as i64,
+        sequence,
+        state,
+        source,
+        provenance,
+    }
 }
 
 fn byte_gap(sequence: u64, dropped_bytes: u64) -> ObservationGap {
@@ -132,14 +169,7 @@ fn writer_pressure_preserves_both_projected_and_raw_loss_units() {
 #[test]
 fn asynchronous_writer_drains_without_losing_a_frame() {
     let fixture = Fixture::new();
-    let store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let store = fixture.store();
     let recorder = ObservationRecorder::open(store).unwrap();
     for sequence in 0..8 {
         assert_eq!(
@@ -148,16 +178,7 @@ fn asynchronous_writer_drains_without_losing_a_frame() {
         );
     }
     recorder.finish().unwrap();
-    let replayed = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap()
-    .replay()
-    .unwrap();
+    let replayed = fixture.replay();
     assert!(replayed.iter().all(|segment| segment.clean_close.is_some()));
     assert_eq!(
         replayed
@@ -174,14 +195,7 @@ fn asynchronous_writer_drains_without_losing_a_frame() {
 #[test]
 fn saturated_real_recorder_persists_the_declared_loss_as_its_next_row() {
     let fixture = Fixture::new();
-    let store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let store = fixture.store();
     let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 2).unwrap();
     assert_eq!(recorder.try_record(frame(0)).unwrap(), QueueOutcome::Queued);
     assert_eq!(recorder.try_record(frame(1)).unwrap(), QueueOutcome::Queued);
@@ -192,16 +206,7 @@ fn saturated_real_recorder_persists_the_declared_loss_as_its_next_row() {
     writer_gate.wait();
     recorder.finish().unwrap();
 
-    let replayed = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap()
-    .replay()
-    .unwrap();
+    let replayed = fixture.replay();
     assert_eq!(replayed.len(), 1);
     assert!(replayed[0].clean_close.is_some());
     let [RecordedRow::Gap(gap)] = replayed[0].rows.as_slice() else {
@@ -216,14 +221,7 @@ fn saturated_real_recorder_persists_the_declared_loss_as_its_next_row() {
 #[test]
 fn a_label_waits_for_a_saturated_writer_and_is_never_folded_into_its_gap() {
     let fixture = Fixture::new();
-    let store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let store = fixture.store();
     let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 2).unwrap();
     recorder.try_record(frame(0)).unwrap();
     recorder.try_record(frame(1)).unwrap();
@@ -231,16 +229,12 @@ fn a_label_waits_for_a_saturated_writer_and_is_never_folded_into_its_gap() {
         recorder.try_record(frame(2)).unwrap(),
         QueueOutcome::GapExtended
     );
-    let label = GroundTruthLabel {
-        pane_id: "pane-1".into(),
-        pane_kind: ObservationPaneKind::Terminal,
-        harness: harness(),
-        timestamp_ms: 1_800_000_000_003,
-        sequence: 3,
-        state: PaneState::WaitingForYou,
-        source: StateSource::Hook,
-        provenance: soyeht_pane_state::GroundTruthProvenance::session_hook(1, "a".repeat(64)),
-    };
+    let label = label(
+        3,
+        PaneState::WaitingForYou,
+        StateSource::Hook,
+        soyeht_pane_state::GroundTruthProvenance::session_hook(1, "a".repeat(64)),
+    );
     let (started_sender, started_receiver) = mpsc::sync_channel(1);
     let (result_sender, result_receiver) = mpsc::sync_channel(1);
 
@@ -259,19 +253,11 @@ fn a_label_waits_for_a_saturated_writer_and_is_never_folded_into_its_gap() {
     });
     recorder.finish().unwrap();
 
-    let rows = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap()
-    .replay()
-    .unwrap()
-    .into_iter()
-    .flat_map(|segment| segment.rows)
-    .collect::<Vec<_>>();
+    let rows = fixture
+        .replay()
+        .into_iter()
+        .flat_map(|segment| segment.rows)
+        .collect::<Vec<_>>();
     let [RecordedRow::Gap(gap), RecordedRow::Label(label)] = rows.as_slice() else {
         panic!("writer pressure did not preserve the gap before the label")
     };
@@ -285,26 +271,15 @@ fn a_label_waits_for_a_saturated_writer_and_is_never_folded_into_its_gap() {
 #[test]
 fn a_label_deadline_closes_a_slow_writer_instead_of_stalling_silently() {
     let fixture = Fixture::new();
-    let store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let store = fixture.store();
     let (recorder, writer_gate) = ObservationRecorder::open_paused(store, 1).unwrap();
     recorder.try_record(frame(0)).unwrap();
-    let label = GroundTruthLabel {
-        pane_id: "pane-1".into(),
-        pane_kind: ObservationPaneKind::Terminal,
-        harness: harness(),
-        timestamp_ms: 1_800_000_000_001,
-        sequence: 1,
-        state: PaneState::Working,
-        source: StateSource::Protocol,
-        provenance: soyeht_pane_state::GroundTruthProvenance::protocol(1),
-    };
+    let label = label(
+        1,
+        PaneState::Working,
+        StateSource::Protocol,
+        soyeht_pane_state::GroundTruthProvenance::protocol(1),
+    );
 
     let error = recorder
         .record_label_with_timeout(label, Duration::from_millis(10))
@@ -324,14 +299,7 @@ fn a_label_deadline_closes_a_slow_writer_instead_of_stalling_silently() {
 #[test]
 fn rotation_replays_every_whole_row_and_repeats_exact_provenance() {
     let fixture = Fixture::new();
-    let mut store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let mut store = fixture.store();
     for sequence in 0..9 {
         store.append(observation(sequence, true)).unwrap();
     }
@@ -360,24 +328,10 @@ fn rotation_replays_every_whole_row_and_repeats_exact_provenance() {
 #[test]
 fn restart_keeps_sequence_and_build_change_starts_a_self_describing_segment() {
     let fixture = Fixture::new();
-    let mut first = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let mut first = fixture.store();
     first.append(observation(0, false)).unwrap();
     drop(first);
-    let mut second = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('b'),
-    )
-    .unwrap();
+    let mut second = fixture.try_open('b').unwrap();
     second.append(observation(1, false)).unwrap();
     let replayed = second.replay().unwrap();
     assert_eq!(replayed.len(), 2);
@@ -402,14 +356,7 @@ fn incompatible_segment_is_skipped_locally_and_a_new_segment_does_not_collide() 
     )
     .unwrap();
 
-    let mut store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let mut store = fixture.store();
     assert_eq!(store.next_sequence().unwrap(), 0);
     store.append(observation(0, false)).unwrap();
     drop(store);
@@ -430,50 +377,18 @@ fn incompatible_segment_is_skipped_locally_and_a_new_segment_does_not_collide() 
 #[test]
 fn clean_close_and_abrupt_end_remain_distinguishable_after_reopen() {
     let fixture = Fixture::new();
-    let store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let store = fixture.store();
     let recorder = ObservationRecorder::open(store).unwrap();
     recorder.try_record(frame(0)).unwrap();
     recorder.finish().unwrap();
-    let clean = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap()
-    .replay()
-    .unwrap();
+    let clean = fixture.replay();
     assert_eq!(clean.len(), 1);
     assert_eq!(clean[0].clean_close.as_ref().unwrap().last_sequence, 0);
 
-    let mut abrupt = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let mut abrupt = fixture.store();
     abrupt.append(observation(1, false)).unwrap();
     drop(abrupt);
-    let replayed = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap()
-    .replay()
-    .unwrap();
+    let replayed = fixture.replay();
     assert_eq!(replayed.len(), 2);
     assert!(replayed[0].clean_close.is_some());
     assert_eq!(replayed[1].clean_close, None);
@@ -482,14 +397,7 @@ fn clean_close_and_abrupt_end_remain_distinguishable_after_reopen() {
 #[test]
 fn retention_removes_only_whole_old_segments() {
     let fixture = Fixture::new();
-    let mut store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let mut store = fixture.store();
     for sequence in 0..70 {
         store.append(observation(sequence, true)).unwrap();
     }
@@ -506,14 +414,7 @@ fn retention_removes_only_whole_old_segments() {
 #[test]
 fn private_permissions_and_delete_refuse_symlinks_before_removing_anything() {
     let fixture = Fixture::new();
-    let mut store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let mut store = fixture.store();
     store.append(observation(0, false)).unwrap();
     let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
     assert!(dir_is_owner_only(&fixture.root).unwrap());
@@ -547,14 +448,7 @@ fn private_permissions_and_delete_refuse_symlinks_before_removing_anything() {
 #[test]
 fn partial_tail_and_dangling_pane_symlink_fail_closed() {
     let fixture = Fixture::new();
-    let mut store = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    let mut store = fixture.store();
     store.append(observation(0, false)).unwrap();
     let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
     let segment = validated_segment_files(&pane_directory).unwrap().remove(0);
@@ -566,16 +460,7 @@ fn partial_tail_and_dangling_pane_symlink_fail_closed() {
         .set_len(length - 1)
         .unwrap();
     drop(store);
-    assert!(
-        SegmentStore::open(
-            &fixture.root,
-            "pane-1",
-            ObservationPaneKind::Terminal,
-            harness(),
-            engine('a')
-        )
-        .is_err()
-    );
+    assert!(fixture.try_open('a').is_err());
 
     let dangling = fixture.root.join(pane_directory_name("pane-2"));
     symlink(fixture.directory.join("missing"), &dangling).unwrap();
@@ -600,14 +485,7 @@ fn a_store_directory_others_can_reach_is_made_private_when_it_is_opened() {
         fs::set_permissions(open, fs::Permissions::from_mode(0o755)).unwrap();
     }
 
-    SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .unwrap();
+    fixture.store();
 
     for private in [&fixture.root, &pane_directory] {
         let mode = fs::metadata(private).unwrap().permissions().mode() & 0o777;
@@ -622,15 +500,7 @@ fn a_link_in_the_place_of_the_store_directory_is_refused_and_its_target_untouche
     fs::create_dir(&outside).unwrap();
     symlink(&outside, &fixture.root).unwrap();
 
-    let error = SegmentStore::open(
-        &fixture.root,
-        "pane-1",
-        ObservationPaneKind::Terminal,
-        harness(),
-        engine('a'),
-    )
-    .err()
-    .expect("a link must be refused");
+    let error = fixture.try_open('a').err().expect("a link must be refused");
 
     assert_eq!(
         crate::errors::kind(&error),

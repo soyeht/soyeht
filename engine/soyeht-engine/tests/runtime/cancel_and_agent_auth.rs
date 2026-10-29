@@ -315,11 +315,7 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
         client.call("model.list", json!({"harness":"auth-test"}))["source"],
         "not_probed"
     );
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Auth test","path":rig.path,"idempotencyKey":"auth-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(&mut client, "Auth test", &rig.path, "auth-workspace");
     let pane = client.call("pane.create",json!({"workspaceId":workspace,"mode":"agent","harness":"auth-test","idempotencyKey":"auth-pane"}))["paneId"].as_str().unwrap().to_owned();
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     while client.pane(&pane)["phrase"] != "Sign-in required" {
@@ -364,14 +360,9 @@ fn terminal_sign_in_uses_a_separate_pane_then_retries_the_agent() {
             .iter()
             .any(|value| value == "--require-login")
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while !client.pane(&pane)["agent"]["sessionId"].is_string() {
-        assert!(
-            Instant::now() < deadline,
-            "sign-in did not unlock session creation"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("sign-in did not unlock session creation", || {
+        client.pane(&pane)["agent"]["sessionId"].is_string()
+    });
     assert!(rig.path.join("native/login.ok").is_file());
     let finished = wait_for_pane_event(&mut observer, "pane.auth_finished", &pane);
     assert_eq!(finished["ok"], true, "{finished}");
@@ -451,12 +442,12 @@ fn sign_in_that_is_not_confirmed_keeps_its_terminal_and_the_agent_signed_out() {
         fs::create_dir_all(rig.path.join("native")).unwrap();
         fs::write(rig.path.join("native").join(fixture), b"fixture").unwrap();
         let mut client = rig.client();
-        let workspace = client.call(
-            "workspace.create",
-            json!({"name":"Sign-in ending","path":rig.path,
-                "idempotencyKey":"unconfirmed-auth-workspace"}),
-        )["workspace"]["workspaceId"]
-            .clone();
+        let workspace = create_workspace(
+            &mut client,
+            "Sign-in ending",
+            &rig.path,
+            "unconfirmed-auth-workspace",
+        );
         let pane = client.call(
             "pane.create",
             json!({"workspaceId":workspace,"mode":"agent","harness":"auth-test",
@@ -544,14 +535,9 @@ fn prompt_auth_required_downgrades_a_previously_ready_harness_without_guessing_f
         "pane.prompt",
         json!({"paneId":pane,"text":"auth-expired","idempotencyKey":"expired-auth"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(&pane)["phrase"] != "Sign-in required" {
-        assert!(
-            Instant::now() < deadline,
-            "auth_required did not change the pane phase"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("auth_required did not change the pane phase", || {
+        client.pane(&pane)["phrase"] == "Sign-in required"
+    });
     let signed_out = client.call("harness.list", json!({}));
     assert_eq!(signed_out["items"][0]["setupState"], "sign_in");
     assert_eq!(
@@ -603,11 +589,9 @@ fn acp_message_ids_keep_distinct_assistant_blocks_separate() {
         "pane.prompt",
         json!({"paneId":pane,"text":"separate-message-ids","idempotencyKey":"distinct-message-ids"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(&pane)["phrase"] != "Agent turn ended" {
-        assert!(Instant::now() < deadline, "agent turn did not finish");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("agent turn did not finish", || {
+        client.pane(&pane)["phrase"] == "Agent turn ended"
+    });
     assert_eq!(assistant_texts(&mut client, &pane), expected);
     drop(client);
     rig.kill_engine();
@@ -624,14 +608,9 @@ fn typed_auth_error_already_streamed_by_adapter_appears_once() {
         "pane.prompt",
         json!({"paneId":pane,"text":"auth-expired-with-chunk","idempotencyKey":"auth-streamed-once"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(&pane)["phrase"] != "Sign-in required" {
-        assert!(
-            Instant::now() < deadline,
-            "auth error did not reach the pane"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("auth error did not reach the pane", || {
+        client.pane(&pane)["phrase"] == "Sign-in required"
+    });
     let transcript = client.call("pane.transcript", json!({"paneId":pane}));
     let errors = transcript["items"]
         .as_array()
@@ -664,14 +643,9 @@ fn untyped_internal_error_with_auth_words_does_not_downgrade_ready() {
         "pane.prompt",
         json!({"paneId":pane,"text":"auth-expired-untagged","idempotencyKey":"untyped-auth"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while client.pane(&pane)["phrase"] != "Agent turn ended" {
-        assert!(
-            Instant::now() < deadline,
-            "untagged error did not end the turn"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("untagged error did not end the turn", || {
+        client.pane(&pane)["phrase"] == "Agent turn ended"
+    });
     assert_eq!(
         client.call("harness.list", json!({}))["items"][0]["setupState"],
         "ready"

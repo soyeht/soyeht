@@ -9,13 +9,7 @@ fn project_replacement_never_overwrites_unexpected_disk_content() {
     let before = "needle\n";
     fs::write(&path, before).unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Race","path":repository,"idempotencyKey":"race-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Race", &repository, "race-workspace");
     let params = json!({
         "workspaceId":workspace,"query":"needle","replacement":"safe",
         "caseSensitive":true,"limit":10,"idempotencyKey":"race-replace"
@@ -53,11 +47,7 @@ fn editor_draft_survives_restart_then_autosaves_versions_and_reverts() {
     let path = repository.join("note.txt");
     fs::write(&path, "alpha\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Save","path":repository,"idempotencyKey":"save-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(&mut client, "Save", &repository, "save-workspace");
     let opened = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"open-save"}),
@@ -157,11 +147,7 @@ fn editor_disk_reload_and_conflict_preserve_both_versions_until_resolution() {
     let path = repository.join("note.txt");
     fs::write(&path, "base\n").unwrap();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Conflict","path":repository,"idempotencyKey":"conflict-workspace"}),
-    )["workspace"]["workspaceId"]
-        .clone();
+    let workspace = create_workspace(&mut client, "Conflict", &repository, "conflict-workspace");
     let opened = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"open-conflict"}),
@@ -332,13 +318,7 @@ fn unsigned_local_client_cannot_change_experiment_consent() {
 fn web_panes_are_bounded_durable_and_never_enter_the_process_registry() {
     let mut rig = Rig::new();
     let mut client = rig.client();
-    let workspace = client.call(
-        "workspace.create",
-        json!({"name":"Web","path":rig.path,"idempotencyKey":"web-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut client, "Web", &rig.path, "web-workspace");
     let first_request = json!({
         "workspaceId":workspace,"mode":"web","url":"localhost:5173",
         "incognito":true,"idempotencyKey":"web-pane-0"

@@ -55,11 +55,9 @@ fn requests_answer_while_a_rescan_waits_for_the_login_shell_during_an_agent_turn
         "pane.prompt",
         json!({"paneId":pane,"text":"slow","idempotencyKey":"turn-during-rescan"}),
     );
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while human.pane(&pane)["state"] != "working" {
-        assert!(Instant::now() < deadline, "the turn did not start");
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("the turn did not start", || {
+        human.pane(&pane)["state"] == "working"
+    });
 
     fs::write(shell_directory.join("slow"), b"").unwrap();
     let mut scanner = rig.client();

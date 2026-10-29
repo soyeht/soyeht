@@ -15,28 +15,7 @@ use soyeht_store::{
         StoredFileVersion,
     },
 };
-use std::{fs, path::PathBuf};
-use uuid::Uuid;
-
-struct Profile(PathBuf);
-
-impl Profile {
-    fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("sn-editor-store-{}", Uuid::new_v4()));
-        fs::create_dir(&path).unwrap();
-        Self(path)
-    }
-
-    fn store(&self) -> Store {
-        Store::open(&self.0).unwrap()
-    }
-}
-
-impl Drop for Profile {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
+use support::{Profile, apply_migrations, commit};
 
 fn author(name: &str) -> FileAuthor {
     FileAuthor {
@@ -166,14 +145,12 @@ fn seed(store: &mut Store) {
         supervisor_id: None,
         sequence_base: 0,
     };
-    store
-        .mutate("test", "seed", "seed", |change| {
-            change.insert_workspace(&workspace)?;
-            change.insert_pane(&pane)?;
-            change.save_editor_file(&editor_file())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(store, "seed", |change| {
+        change.insert_workspace(&workspace)?;
+        change.insert_pane(&pane)?;
+        change.save_editor_file(&editor_file())?;
+        Ok(())
+    });
 }
 
 fn save_version(store: &mut Store, item: &StoredFileVersion) {
@@ -195,12 +172,9 @@ fn an_unsaved_draft_and_conflict_survive_reopen_without_losing_the_disk_base() {
     conflicted.revision = 3;
     conflicted.conflict_text = Some("fn changed_elsewhere() {}\n".into());
     conflicted.updated_ms = 200;
-    store
-        .mutate("test", "conflict", "conflict", |change| {
-            change.save_editor_file(&conflicted)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "conflict", |change| {
+        change.save_editor_file(&conflicted)
+    });
     drop(store);
 
     let store = profile.store();
@@ -221,12 +195,9 @@ fn one_agent_review_per_file_replaces_atomically_survives_reopen_and_clears() {
     let mut store = profile.store();
     seed(&mut store);
     let first = agent_review();
-    store
-        .mutate("test", "review-1", "review-1", |change| {
-            change.save_editor_agent_review(&first)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "review-1", |change| {
+        change.save_editor_agent_review(&first)
+    });
     drop(store);
 
     let mut store = profile.store();
@@ -235,20 +206,15 @@ fn one_agent_review_per_file_replaces_atomically_survives_reopen_and_clears() {
     updated.revision = 3;
     updated.baseline_text = "fn main() { accepted(); }\n".into();
     updated.updated_ms = 200;
-    store
-        .mutate("test", "review-2", "review-2", |change| {
-            change.save_editor_agent_review(&updated)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "review-2", |change| {
+        change.save_editor_agent_review(&updated)
+    });
     assert_eq!(store.editor_agent_review("file-1").unwrap(), Some(updated));
-    store
-        .mutate("test", "review-clear", "review-clear", |change| {
-            assert!(change.clear_editor_agent_review("file-1")?);
-            assert!(!change.clear_editor_agent_review("file-1")?);
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "review-clear", |change| {
+        assert!(change.clear_editor_agent_review("file-1")?);
+        assert!(!change.clear_editor_agent_review("file-1")?);
+        Ok(())
+    });
     assert!(store.editor_agent_review("file-1").unwrap().is_none());
 }
 
@@ -351,12 +317,7 @@ fn replacement_journal_keeps_detached_history_and_closes_only_after_every_item()
         watching: false,
         updated_ms: 200,
     };
-    store
-        .mutate("test", "clean", "clean", |change| {
-            change.save_editor_file(&open)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "clean", |change| change.save_editor_file(&open));
     let journal = replacement(&[open.clone(), detached.clone()]);
     assert_eq!(
         store
@@ -474,22 +435,8 @@ fn finish_replacement_after_reopen(
 #[test]
 fn migration_from_populated_v11_preserves_existing_rows_and_adds_editor_storage() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 11);
     connection
         .execute_batch(
             r#"INSERT INTO metadata(key,value) VALUES ('db_id','v11-db'),('engine_generation','0');
@@ -502,12 +449,9 @@ fn migration_from_populated_v11_preserves_existing_rows_and_adds_editor_storage(
 
     let mut store = profile.store();
     assert!(store.usage_readings().unwrap().len() == 1);
-    store
-        .mutate("test", "editor", "editor", |change| {
-            change.save_editor_file(&editor_file())?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "editor", |change| {
+        change.save_editor_file(&editor_file())
+    });
     assert!(store.editor_file("file-1").unwrap().is_some());
     assert_eq!(
         store
@@ -521,23 +465,8 @@ fn migration_from_populated_v11_preserves_existing_rows_and_adds_editor_storage(
 #[test]
 fn migration_from_populated_v12_preserves_open_files_and_history() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-        include_str!("../migrations/012-editor-files.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 12);
     connection
         .execute_batch(
             r#"INSERT INTO metadata(key,value) VALUES ('db_id','v12-db'),('engine_generation','0');
@@ -588,25 +517,8 @@ fn migration_from_populated_v12_preserves_open_files_and_history() {
 #[test]
 fn migration_from_populated_v14_preserves_files_and_adds_agent_reviews() {
     let profile = Profile::new();
-    let connection = rusqlite::Connection::open(profile.0.join("soyeht.db")).unwrap();
-    for migration in [
-        include_str!("../migrations/001-initial.sql"),
-        include_str!("../migrations/002-client-state.sql"),
-        include_str!("../migrations/003-english-values.sql"),
-        include_str!("../migrations/004-agent-sessions.sql"),
-        include_str!("../migrations/005-native-replay.sql"),
-        include_str!("../migrations/006-agent-auth-snapshot.sql"),
-        include_str!("../migrations/007-workspace-tasks.sql"),
-        include_str!("../migrations/008-task-reviews.sql"),
-        include_str!("../migrations/009-task-block-retries.sql"),
-        include_str!("../migrations/010-agent-pane-role.sql"),
-        include_str!("../migrations/011-usage-readings.sql"),
-        include_str!("../migrations/012-editor-files.sql"),
-        include_str!("../migrations/013-editor-project-replacements.sql"),
-        include_str!("../migrations/014-language-servers.sql"),
-    ] {
-        connection.execute_batch(migration).unwrap();
-    }
+    let connection = profile.connection();
+    apply_migrations(&connection, 14);
     connection
         .execute_batch(
             r#"INSERT INTO metadata(key,value) VALUES ('db_id','v14-db'),('engine_generation','0');
@@ -628,12 +540,9 @@ fn migration_from_populated_v14_preserves_files_and_adds_agent_reviews() {
         "saved\n"
     );
     let review = agent_review();
-    store
-        .mutate("test", "review", "review", |change| {
-            change.save_editor_agent_review(&review)?;
-            Ok((json!({}), vec![]))
-        })
-        .unwrap();
+    commit(&mut store, "review", |change| {
+        change.save_editor_agent_review(&review)
+    });
     assert_eq!(store.editor_agent_review("file-1").unwrap(), Some(review));
     assert_eq!(
         store

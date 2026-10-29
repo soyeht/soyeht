@@ -7,11 +7,7 @@ use soyeht_ptyd::{
     client::Client as PtyClient,
     wire::{Instance, ProcessKind, Request, Response, Spawn},
 };
-use std::{
-    collections::BTreeMap,
-    thread,
-    time::{Duration, Instant},
-};
+use std::collections::BTreeMap;
 use uuid::Uuid;
 
 mod support;
@@ -62,15 +58,9 @@ fn an_agent_process_no_pane_owns_is_closed_when_the_engine_reconciles() {
 
     let generation = rig.database_probe().engine_generation().unwrap();
     let mut supervisor = PtyClient::connect(&rig.path.join("ptyd.sock"), generation + 1).unwrap();
-    let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-    while open_instances(&mut supervisor)
-        .iter()
-        .any(|i| i.instance_id == orphan.instance_id)
-    {
-        assert!(
-            Instant::now() < deadline,
-            "the unowned agent process was never closed"
-        );
-        thread::sleep(Duration::from_millis(20));
-    }
+    wait_until("the unowned agent process was never closed", || {
+        open_instances(&mut supervisor)
+            .iter()
+            .all(|i| i.instance_id != orphan.instance_id)
+    });
 }

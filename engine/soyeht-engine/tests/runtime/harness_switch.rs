@@ -108,13 +108,7 @@ fn held_agent_message_follows_the_sent_draft_as_its_own_attributed_turn() {
 fn web_host_attachment_frames_are_accepted_and_forwarded_before_the_response() {
     let rig = Rig::new();
     let mut caller = rig.client();
-    let workspace = caller.call(
-        "workspace.create",
-        json!({"name":"Web","path":rig.path,"idempotencyKey":"web-workspace"}),
-    )["workspace"]["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let workspace = create_workspace(&mut caller, "Web", &rig.path, "web-workspace");
     let pane = caller.call(
         "pane.create",
         json!({"workspaceId":workspace,"mode":"web","idempotencyKey":"web-pane"}),
