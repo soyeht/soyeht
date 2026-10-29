@@ -62,7 +62,12 @@ new engine method (a follow-up: it starts in `contracts/protocol.json` and
   redaction errs toward removing: a long mixed-case word, a two-folder relative path, or the words
   that follow an unquoted absolute path on its line are lost even when harmless. One token shape
   is kept on purpose: a ULID standing alone, like a UUID, because a pane id is more useful in an
-  issue than the rare random key that looks like one.
+  issue than the rare random key that looks like one, unless it follows a key prefix.
+- The redaction does not remove a domain name without a local or tailnet suffix, a relative path
+  with a single separator, the rest of a quoted path after a quote inside it, or short secrets in
+  a field not named like one (contract 14 section 2 lists them). A secret field is told by the
+  last word of its name, so `exitCode` and `sessionCount` stay. A text is cut at 2,400 characters
+  before the scans, which re-read a line, so a huge log line cannot hang the command.
 - A custom `--data-dir` cannot be deleted by `soyeht uninstall`. A test or a script that wants it
   gone deletes it itself.
 - The report does not say whether the services are registered; that needs the service manager's

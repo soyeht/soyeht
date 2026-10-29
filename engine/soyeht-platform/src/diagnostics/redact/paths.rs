@@ -21,6 +21,12 @@ fn starts_token(c: char) -> bool {
         )
 }
 
+/// Whether the text before `index` is a JSON escape of a line break or a tab (`\n`, `\t`, `\r`,
+/// written as a backslash and a letter), which ends a line of text as a blank does.
+fn after_escape(chars: &[char], index: usize) -> bool {
+    index >= 2 && chars[index - 2] == '\\' && matches!(chars[index - 1], 'n' | 't' | 'r')
+}
+
 fn is_separator(c: char) -> bool {
     matches!(c, '/' | '\\')
 }
@@ -68,11 +74,17 @@ fn token_at(chars: &[char], start: usize) -> Option<(usize, &'static str)> {
     let first = chars[start];
     let next = chars.get(start + 1).copied();
     let quote = (start > 0 && matches!(chars[start - 1], '"' | '\'')).then(|| chars[start - 1]);
+    // A JSON escape of a line break ends a token as a blank does.
     let token_end = |from: usize| {
-        chars[from..]
-            .iter()
-            .position(|c| ends_token(*c))
-            .map_or(chars.len(), |length| from + length)
+        (from..chars.len())
+            .find(|index| {
+                ends_token(chars[*index])
+                    || (chars[*index] == '\\'
+                        && chars
+                            .get(index + 1)
+                            .is_some_and(|c| matches!(c, 'n' | 't' | 'r')))
+            })
+            .unwrap_or(chars.len())
     };
     let letters = chars[start..]
         .iter()
@@ -106,7 +118,7 @@ fn token_at(chars: &[char], start: usize) -> Option<(usize, &'static str)> {
 
 pub(super) fn without_paths(text: &str) -> String {
     super::replace_spans(text, |chars, index| {
-        let boundary = index == 0 || starts_token(chars[index - 1]);
+        let boundary = index == 0 || starts_token(chars[index - 1]) || after_escape(chars, index);
         boundary.then(|| token_at(chars, index)).flatten()
     })
 }

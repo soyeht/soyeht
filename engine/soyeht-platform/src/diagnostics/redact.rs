@@ -15,6 +15,8 @@ mod tests;
 
 use std::{borrow::Cow, path::Path};
 
+/// The most characters of a text that are read. A log line a person would paste is far shorter.
+const INPUT_CHARS: usize = 2_400;
 const USER: &str = "<user>";
 const HOST: &str = "<host>";
 
@@ -72,7 +74,10 @@ impl Redactor {
     /// `text` with the home folder, paths, links, secrets, addresses, the machine's name and the
     /// user's name taken out.
     pub fn redact(&self, text: &str) -> String {
-        let text = self.without_home(text);
+        // The scans read a line more than once; a line is cut first, so the time they take cannot
+        // grow past a bound, and what is cut is dropped, never shown.
+        let text: String = text.chars().take(INPUT_CHARS).collect();
+        let text = self.without_home(&text);
         let text = paths::without_paths(&text);
         let text = network::without_addresses(&text);
         let text = secrets::without_secret_fields(&text);

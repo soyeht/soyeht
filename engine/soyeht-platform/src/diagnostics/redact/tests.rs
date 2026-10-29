@@ -165,7 +165,10 @@ fn pairing_codes_pins_and_session_keys_are_removed() {
             r#"{"event":"device.pair_started","pairingCode":"482913"}"#,
             "482913",
         ),
-        (r#"{"event":"device.pair","code":"AB-12"}"#, "AB-12"),
+        (
+            r#"{"event":"device.pair","verificationCode":"AB-12"}"#,
+            "AB-12",
+        ),
         ("pin=1234 given", "1234"),
         ("pin: 4455 given", "4455"),
         ("otp: 556677 sent", "556677"),
@@ -209,5 +212,92 @@ fn the_ids_of_panes_stay_and_a_token_beside_them_goes() {
 fn a_long_line_with_many_secret_words_is_handled_in_one_pass() {
     let line = "token=a ".repeat(20_000);
     let clean = redactor().redact(&line);
-    assert_eq!(clean, "token=<redacted> ".repeat(20_000));
+    // The line is cut at 2,400 characters (300 of the 8-character units) before it is read.
+    assert_eq!(clean, "token=<redacted> ".repeat(300));
+}
+
+#[test]
+fn fields_that_only_contain_a_secret_word_survive() {
+    for line in [
+        r#"{"event":"pty.exit","exitCode":"137"}"#,
+        r#"{"event":"x","sessionCount":"3","keyboard":"us","tokens_used":"12"}"#,
+        r#"{"event":"x","statusCode":"500","monkey":"1","mapping":"on"}"#,
+    ] {
+        assert_eq!(redactor().redact(line), line);
+    }
+    for line in [
+        r#"{"pairingCode":"AB12"}"#,
+        r#"{"otpCode":"AB12"}"#,
+        r#"{"pin":"AB12"}"#,
+        r#"{"otp":"AB12"}"#,
+        r#"{"session":"AB12"}"#,
+        r#"{"apiKey":"AB12"}"#,
+        r#"{"x-api-key":"AB12"}"#,
+        r#"{"APIKey":"AB12"}"#,
+    ] {
+        assert_gone(&redactor(), line, &["AB12"]);
+    }
+}
+
+#[test]
+fn a_key_prefix_in_front_of_an_id_keeps_it_a_key_and_a_number_after_a_code_word_goes() {
+    let uuid = "3f2a9c1e-7b4d-4e8a-9c3b-1a2b3c4d5e6f";
+    for key in [
+        format!("sk-{uuid}"),
+        "sk-01ARZ3NDEKTSV4RRFFQ69G5FAV".to_owned(),
+        "ghp_01ARZ3NDEKTSV4RRFFQ69G5FAV".to_owned(),
+    ] {
+        assert_gone(&redactor(), &format!("key {key} used"), &[&key[3..]]);
+    }
+    for (line, leaked) in [
+        ("pairing code 482913 shown", "482913"),
+        ("the pin 123456 was sent", "123456"),
+        ("otp 556677 sent", "556677"),
+        ("verification code 998877 sent", "998877"),
+    ] {
+        assert_gone(&redactor(), line, &[leaked]);
+    }
+    // A number that is not a code, and a word without one, stay.
+    assert_eq!(redactor().redact("pin 12 and pin"), "pin 12 and pin");
+    assert_eq!(redactor().redact("exit code 137"), "exit code 137");
+}
+
+#[test]
+fn an_address_after_an_underscore_or_a_hyphen_goes() {
+    for (line, leaked) in [
+        ("peer_100.64.12.7 up", "100.64"),
+        ("addr-192.168.1.9 up", "192.168"),
+        ("host_fe80::1 up", "fe80"),
+    ] {
+        assert_gone(&redactor(), line, &[leaked]);
+    }
+}
+
+#[test]
+fn a_json_line_break_before_a_path_ends_the_text_before_it() {
+    let clean = redactor().redact(r#"msg\n/Users/other/Secret Client/x.rs:3:4 panicked"#);
+    assert!(
+        !clean.contains("Secret") && !clean.contains("Client"),
+        "{clean}"
+    );
+    assert!(clean.starts_with(r"msg\n<path>"), "{clean}");
+    assert_gone(&redactor(), r#"a\t/home/o/My Stuff/b"#, &["Stuff"]);
+}
+
+#[test]
+fn a_huge_line_takes_a_bounded_time() {
+    let started = std::time::Instant::now();
+    for unit in ["a=", "a:", "/a ", "a/b/", "token=", "1.2.3.", "a@"] {
+        let line = unit.repeat(200_000 / unit.len());
+        let clean = redactor().redact(&line);
+        assert!(
+            clean.chars().count() <= 20_000,
+            "{unit}: the line was cut first"
+        );
+    }
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
 }

@@ -8,10 +8,9 @@ const EMAIL: &str = "<email>";
 /// lower case, is taken for a key or a token.
 const TOKEN_MIN: usize = 24;
 
-/// A field whose name holds one of these words has its value removed. A word of
-/// [`SHORT_WORD`] letters or fewer ("pin", "key") must start a word of the name (after a
-/// separator or at a capital: `apiKey`, `x-api-key`), so "mapping" and "monkey" do not match.
-const SECRET_WORDS: [&str; 18] = [
+/// A field is secret when the last word of its name is one of these (`token`, `authToken`,
+/// `x-api-key`, `session`): `sessionCount` and `keyboard` are not, `mapping` is not.
+const SECRET_NAMES: [&str; 17] = [
     "token",
     "secret",
     "password",
@@ -19,92 +18,180 @@ const SECRET_WORDS: [&str; 18] = [
     "passphrase",
     "authorization",
     "apikey",
-    "api_key",
     "cookie",
     "credential",
+    "credentials",
     "bearer",
     "pairing",
     "session",
     "private",
     "pin",
     "otp",
-    "code",
     "key",
 ];
-const SHORT_WORD: usize = 4;
+/// `code` is secret only after one of these (`pairingCode`, `verification code`), so `exitCode`
+/// is not.
+const CODE_PREFIXES: [&str; 9] = [
+    "pairing",
+    "otp",
+    "verification",
+    "confirmation",
+    "security",
+    "login",
+    "auth",
+    "activation",
+    "invite",
+];
+/// The fewest digits of a number that follows `pin` or `pairing code` in running text.
+const CODE_DIGITS_MIN: usize = 4;
 
-/// Where a name's word starts: at the start, after a character that is not a letter or a digit,
-/// or at a capital letter after a lower-case one.
-fn starts_word(text: &str, at: usize) -> bool {
-    let mut before = text[..at].chars().rev();
-    match before.next() {
-        None => true,
-        Some(previous) => {
-            !previous.is_ascii_alphanumeric()
-                || (previous.is_ascii_lowercase()
-                    && text[at..]
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_ascii_uppercase()))
+fn is_name_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '_' | '-')
+}
+
+/// The words of a field name, in lower case: split at `_` and `-` and at a capital letter
+/// (`pairingCode`, `APIKey`).
+fn name_words(name: &str) -> Vec<String> {
+    let chars: Vec<char> = name.chars().collect();
+    let mut words = vec![String::new()];
+    for (index, c) in chars.iter().enumerate() {
+        if matches!(c, '_' | '-') {
+            words.push(String::new());
+            continue;
         }
+        let previous = index.checked_sub(1).map(|i| chars[i]);
+        let next = chars.get(index + 1);
+        let capital_starts = c.is_ascii_uppercase()
+            && previous.is_some_and(|p| {
+                p.is_ascii_lowercase()
+                    || p.is_ascii_digit()
+                    || (p.is_ascii_uppercase() && next.is_some_and(char::is_ascii_lowercase))
+            });
+        if capital_starts {
+            words.push(String::new());
+        }
+        if let Some(word) = words.last_mut() {
+            word.push(c.to_ascii_lowercase());
+        }
+    }
+    words.retain(|word| !word.is_empty());
+    words
+}
+
+/// What a name says about the value after it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Secret {
+    No,
+    /// The value after a `:` or `=` is removed.
+    Field,
+    /// A number: it also goes when a space and no separator follow the name (`pin 123456`).
+    Number,
+}
+
+/// Whether `words` name a secret; `before` is the word that stood before the name in the text,
+/// one space away (`verification code`).
+fn classify(words: &[String], before: Option<&str>) -> Secret {
+    let Some(last) = words.last().map(String::as_str) else {
+        return Secret::No;
+    };
+    let second = words
+        .len()
+        .checked_sub(2)
+        .map(|i| words[i].as_str())
+        .or(before);
+    if last == "code" {
+        return if second.is_some_and(|word| CODE_PREFIXES.contains(&word)) {
+            Secret::Number
+        } else {
+            Secret::No
+        };
+    }
+    match last {
+        "pin" | "otp" | "pairing" => Secret::Number,
+        _ if SECRET_NAMES.contains(&last) => Secret::Field,
+        _ => Secret::No,
     }
 }
 
-/// Every place a secret word occurs in `text`, in order. `lower` is `text` in ASCII lower case.
-fn occurrences(text: &str, lower: &str) -> Vec<(usize, usize)> {
-    let mut found = Vec::new();
-    for word in SECRET_WORDS {
-        let mut from = 0;
-        while let Some(at) = lower[from..].find(word) {
-            let at = from + at;
-            from = at + word.len();
-            if word.len() > SHORT_WORD || starts_word(text, at) {
-                found.push((at, word.len()));
-            }
-        }
-    }
-    found.sort_unstable();
-    found
-}
-
-/// The value after a field whose name holds a secret word: `"token":"..."`, `token=...`,
-/// `Authorization: Bearer ...`, `"pairingCode":"482913"`. One pass over the line.
+/// The value after a field whose name ends in a secret word: `"token":"..."`, `token=...`,
+/// `Authorization: Bearer ...`, `"pairingCode":"482913"`, and the number after `pin` or
+/// `pairing code` in running text. One pass over the line.
 pub(super) fn without_secret_fields(text: &str) -> String {
-    let lower = text.to_ascii_lowercase();
     let mut out = String::with_capacity(text.len());
     let mut copied = 0;
     let mut skip_to = 0;
-    for (at, length) in occurrences(text, &lower) {
-        if at < skip_to {
+    let mut at = 0;
+    // The end of the name before this one, and its last word.
+    let mut before: Option<(usize, String)> = None;
+    while let Some(start) = text[at..].find(is_name_char).map(|offset| at + offset) {
+        let end = find_from(text, start, |c| !is_name_char(c));
+        at = end;
+        if start < skip_to {
             continue;
         }
-        let name_end = find_from(text, at + length, |c| {
-            !(c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
-        });
-        let value_start = find_from(text, name_end, |c| {
-            !matches!(c, '"' | '\'' | ' ' | ':' | '=')
-        });
-        // A word with no separator after it is just a word ("the token was refused"), except
-        // `Bearer`, which is followed by its token.
-        let bearer = &lower[at..at + length] == "bearer";
-        if !(bearer || text[name_end..value_start].contains([':', '='])) {
+        let words = name_words(&text[start..end]);
+        let previous = before
+            .take()
+            .filter(|(previous_end, _)| text[*previous_end..start] == *" ")
+            .map(|(_, word)| word);
+        before = words.last().map(|word| (end, word.clone()));
+        let kind = classify(&words, previous.as_deref());
+        if kind == Secret::No {
             continue;
         }
-        let mut end = find_from(text, value_start, ends_value);
-        // `Authorization: Bearer <token>`: the scheme is one more word.
-        if matches!(&lower[value_start..end], "bearer" | "basic") {
-            let next = find_from(text, end, |c| c != ' ');
-            end = find_from(text, next, ends_value);
-        }
-        if end > value_start {
-            out.push_str(&text[copied..value_start]);
+        let value_start = find_from(text, end, |c| !matches!(c, '"' | '\'' | ' ' | ':' | '='));
+        let bearer = words.last().is_some_and(|word| word == "bearer");
+        let separated = text[end..value_start].contains([':', '=']);
+        let span = if separated || bearer {
+            Some(value_end(text, value_start))
+        } else if kind == Secret::Number {
+            number_after(text, end)
+        } else {
+            None
+        };
+        if let Some((from, to)) = span.filter(|(from, to)| to > from) {
+            out.push_str(&text[copied..from]);
             out.push_str(SECRET);
-            copied = end;
-            skip_to = end;
+            copied = to;
+            skip_to = to;
         }
     }
     out.push_str(&text[copied..]);
     out
+}
+
+/// The value that starts at `start`, as `(start, end)`: a word, or for `Authorization: Bearer x`
+/// the word after the scheme.
+fn value_end(text: &str, start: usize) -> (usize, usize) {
+    let end = find_from(text, start, ends_value);
+    if matches!(
+        text[start..end].to_ascii_lowercase().as_str(),
+        "bearer" | "basic"
+    ) {
+        let next = find_from(text, end, |c| c != ' ');
+        return (start, find_from(text, next, ends_value));
+    }
+    (start, end)
+}
+
+/// The digits of a code written after the name in plain text: `pin 123456`, `pairing code
+/// 482913`; the word `code`, `pin` or `number` between is skipped.
+fn number_after(text: &str, name_end: usize) -> Option<(usize, usize)> {
+    let mut from = find_from(text, name_end, |c| c != ' ');
+    let word_end = find_from(text, from, |c| !c.is_ascii_alphabetic());
+    if matches!(
+        text[from..word_end].to_ascii_lowercase().as_str(),
+        "code" | "pin" | "number"
+    ) {
+        from = find_from(text, word_end, |c| c != ' ');
+    }
+    let end = find_from(text, from, |c| !c.is_ascii_digit());
+    let digits = end - from;
+    let alone = !text[end..]
+        .chars()
+        .next()
+        .is_some_and(char::is_alphanumeric);
+    (digits >= CODE_DIGITS_MIN && alone).then_some((from, end))
 }
 
 /// The byte offset of the first character at or after `from` for which `stop` holds, else the
@@ -167,6 +254,29 @@ fn id_len(chars: &[char], start: usize) -> Option<usize> {
         .map(|_| ULID)
 }
 
+/// The beginnings of the keys that services hand out (`sk-...`, `ghp_...`). An id-shaped value
+/// glued to one is a key, not a pane's id.
+const KEY_PREFIXES: [&str; 14] = [
+    "sk", "pk", "rk", "ghp", "gho", "ghu", "ghs", "ghr", "xoxb", "xoxp", "xoxa", "glpat", "npm",
+    "pat",
+];
+
+/// Whether the id that starts at `start` follows a key prefix and a `-` or `_`.
+fn glued_to_key_prefix(chars: &[char], start: usize) -> bool {
+    let Some(before) = start
+        .checked_sub(1)
+        .filter(|i| matches!(chars[*i], '-' | '_'))
+    else {
+        return false;
+    };
+    let word_start = chars[..before]
+        .iter()
+        .rposition(|c| !c.is_ascii_alphanumeric())
+        .map_or(0, |i| i + 1);
+    let word: String = chars[word_start..before].iter().collect();
+    KEY_PREFIXES.contains(&word.to_ascii_lowercase().as_str())
+}
+
 /// Whether `chars[start..start + length]` stands alone: no token character on either side.
 fn stands_alone(chars: &[char], start: usize, length: usize) -> bool {
     let before = start.checked_sub(1).and_then(|index| chars.get(index));
@@ -196,7 +306,9 @@ fn without_tokens_in_run(run: &[char]) -> String {
     let mut piece = 0;
     let mut cursor = 0;
     while cursor < run.len() {
-        match id_len(run, cursor).filter(|length| stands_alone(run, cursor, *length)) {
+        match id_len(run, cursor).filter(|length| {
+            stands_alone(run, cursor, *length) && !glued_to_key_prefix(run, cursor)
+        }) {
             Some(length) => {
                 push_run(&mut out, &run[piece..cursor]);
                 out.extend(&run[cursor..cursor + length]);

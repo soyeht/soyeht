@@ -102,13 +102,22 @@ fn host_len(chars: &[char], start: usize) -> Option<usize> {
 pub(super) fn without_addresses(text: &str) -> String {
     super::replace_spans(text, |chars, index| {
         let boundary = index == 0 || !is_word(chars[index - 1]);
-        boundary
+        // An address may follow a `_` or `-` (`peer_100.64.12.7`), a name may not.
+        let after_joiner =
+            index > 0 && !chars[index - 1].is_ascii_alphanumeric() && chars[index - 1] != '.';
+        let address = |length: Option<usize>| length.map(|length| (length, IP));
+        (boundary || after_joiner)
             .then(|| {
                 mac_len(chars, index)
                     .map(|length| (length, MAC))
-                    .or_else(|| ipv4_len(chars, index).map(|length| (length, IP)))
-                    .or_else(|| ipv6_len(chars, index).map(|length| (length, IP)))
-                    .or_else(|| host_len(chars, index).map(|length| (length, HOST)))
+                    .or_else(|| address(ipv4_len(chars, index)))
+                    .or_else(|| address(ipv6_len(chars, index)))
+                    .or_else(|| {
+                        boundary
+                            .then(|| host_len(chars, index))
+                            .flatten()
+                            .map(|length| (length, HOST))
+                    })
             })
             .flatten()
             .map(|(length, label)| (index + length, label))

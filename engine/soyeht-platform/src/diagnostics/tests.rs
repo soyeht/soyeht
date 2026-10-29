@@ -152,3 +152,24 @@ fn a_hostile_readiness_id_or_family_is_redacted_like_a_log_line() {
         assert!(!text.contains(leaked), "{leaked} leaked:\n{text}");
     }
 }
+
+#[test]
+fn a_log_of_huge_lines_makes_a_report_in_well_under_a_second() {
+    let data = scratch_dir("diagnostics-huge");
+    let logs = logs(&data);
+    let mut text = String::new();
+    for unit in ["a=", "a:", "/a ", "a/b/"] {
+        text.push_str(&unit.repeat(200_000 / unit.len()));
+        text.push('\n');
+    }
+    fs::write(logs.join("engine.log"), text).unwrap();
+    let redactor = Redactor::default();
+    let started = std::time::Instant::now();
+    let report = report(&input(&data, &redactor, 10));
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(1),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(report.contains("#### engine.log"));
+}

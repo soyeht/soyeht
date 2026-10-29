@@ -38,19 +38,41 @@ every system:
 - the user's name, as a word, in any case, with a plural or possessive `s` (`Caios-Mac-Studio` for
   `caio`). A name of fewer than three characters is not replaced as a word, so other words stay
   whole (it is still removed wherever a path or an address shows it);
-- the value of a field whose name holds `token`, `secret`, `password`, `passwd`, `passphrase`,
-  `authorization`, `apikey`, `api_key`, `cookie`, `credential`, `bearer`, `pairing`, `session` or
-  `private`, or a word `pin`, `otp`, `code` or `key` (`"pairingCode":"482913"`, `x-api-key: ...`,
-  `password=...`, `Authorization: Bearer ...`), whatever the value's length. The short words must
-  start a word of the name, so `mapping` and `monkey` do not match;
+- the value of a field whose name ends in a secret word: `token`, `secret`, `password`, `passwd`,
+  `passphrase`, `authorization`, `apikey`, `cookie`, `credential(s)`, `bearer`, `pairing`,
+  `session`, `private`, `pin`, `otp` or `key` (`"authToken":"..."`, `x-api-key: ...`,
+  `password=...`, `Authorization: Bearer ...`, `"pairingCode":"482913"`), and `code` only after
+  `pairing`, `otp`, `verification`, `confirmation`, `security`, `login`, `auth`, `activation` or
+  `invite`. Words are split at `_`, `-` and capitals, and the secret word must be the last one, so
+  `exitCode`, `sessionCount`, `keyboard`, `mapping` and `monkey` stay. In running text, the
+  number of four digits or more after `pin`, `otp` or `pairing`, with or without `code` (`pairing
+  code 482913`), and after `verification code` and the like, goes too;
 - any run of 24 characters or more that mixes letters with digits, or upper with lower case. A
   UUID or a ULID standing alone (the ids of panes and workspaces) is kept, so an issue can tell
-  panes apart, unless a field named like a secret holds it; a name in camel case
+  panes apart, unless a field named like a secret holds it or it follows a key prefix such as
+  `sk-`, `pk-` or `ghp_`; a name in camel case
   (`ConnectionRefusedByTheServer`) is kept. A ULID-shaped random key is the one token this keeps.
+
+A text is cut at 2,400 characters before it is read, and what is cut is dropped, never shown, so
+a huge line (a 200,000-character one is read in well under a second) cannot hold the command. An address
+may follow `_` or `-` (`peer_100.64.12.7`). A JSON escape of a line break or tab (`\n`, `\t`)
+before a path ends the text before it.
 
 It errs toward removing: text that is harmless can be lost. Event names
 (`engine.reconnect_attempts_exhausted`) and failure kinds (`ConnectionRefused`) stay. A line is cut
 at 600 characters. The pass over a line is linear in its length.
+
+What it does not remove, on purpose or for want of a rule:
+
+- a domain name that does not end in a local or tailnet suffix (`example.org`), unless it is a
+  link or part of an address;
+- a relative path with a single separator (`src/main.rs`, `Client/x.rs`), since a word with a
+  slash is too common to cut, and a path that starts with a bare word (`Projects`);
+- a quote inside a quoted path: a path in a JSON value ends at its first unescaped quote, so a
+  folder name with a quote in it leaks the rest;
+- a random key that is shaped like a ULID or a UUID and stands alone, and a secret of fewer than
+  24 characters in a field whose name is not a secret word;
+- the words of a passphrase after its first.
 
 ## 3. Rules
 
