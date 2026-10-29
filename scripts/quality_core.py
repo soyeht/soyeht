@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from check_swallowed_errors import measure as swallowed_errors
+from check_wire_names import generated_prefix
 from hardening_gate import engine_production_panics as count_engine_panics
 
 
@@ -30,7 +31,7 @@ FILE_LIMIT = 800
 # The Python of the gate scripts and the contract generator: the same file limit as the other
 # languages (tests included), and one duplication scan.
 PYTHON_DIRS = ("scripts", "contracts")
-GENERATED_PYTHON_HEADER = "# Generated from contracts/"
+GENERATED_PYTHON_HEADER = "# " + generated_prefix()
 AREAS = {
     "engine": ("engine", "rust", ".rs"),
     "desktop": ("apps/desktop", "rust", ".rs"),
