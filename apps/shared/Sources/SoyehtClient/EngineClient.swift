@@ -75,7 +75,7 @@ public final class EngineClient {
   public internal(set) var pairCode: DevicePairStartResult?
   /// Whether paired devices can reach the engine; `nil` until the engine says.
   public internal(set) var reachability: EngineReachability?
-  public private(set) var connectionActor: Actor?
+  public internal(set) var connectionActor: Actor?
   @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
   @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
   @ObservationIgnored private var terminalOutputSinks: [String: TerminalOutputTarget] = [:]

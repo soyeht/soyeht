@@ -184,7 +184,8 @@ private func textEdit() -> TextEdit {
 /// requests the engine saw and, for the close, whether the edit had been tried by then (a closed
 /// connection cannot write, so a write that was attempted shows as `problem`).
 @MainActor private func closing(
-  _ mode: PaneMode, typing: Bool = true, extraEditorPane: Bool = false
+  _ mode: PaneMode, typing: Bool = true, extraEditorPane: Bool = false,
+  engineAnswersEdits: Bool = false
 ) async throws -> (methods: [RequestMethod], editSentFirst: Bool, client: EngineClient) {
   let client = EngineClient(socket: "/tmp/pane-close-saving-\(mode.rawValue).sock")
   client.upsertWorkspace(workspace("repo"))
@@ -199,12 +200,15 @@ private func textEdit() -> TextEdit {
     client.editorFiles["g"] = EditorFileView(file: other)
   }
   client.editorFiles["f"] = EditorFileView(file: file(path: "/repo/texts/essay.md"))
+  if engineAnswersEdits { client.connectionActor = Actor(role: .human_local, client: "test") }
+  let written = FileWriteResult(
+    file: file(path: "/repo/texts/essay.md", dirty: true), changedLines: [0])
   var methods: [RequestMethod] = []
   var editSentFirst = false
   client.requestStub = { method, _ in
     if method == .paneClose { editSentFirst = client.problem != nil }
     methods.append(method)
-    return .object([:])
+    return method == .fileWrite ? try JsonValue.encoded(written) : .object([:])
   }
   if typing { client.enqueueEditorEdits(fileId: "f", edits: [textEdit()]) }
   await client.closePaneSavingEdits("p")
@@ -221,6 +225,40 @@ private func textEdit() -> TextEdit {
   let untouched = try await closing(.writing, typing: false)
   #expect(untouched.methods == [.paneClose])
   #expect(!untouched.editSentFirst)
+}
+
+/// The engine takes the edit: it is the request before the close, and nothing is left to tell.
+@MainActor @Test func closingAPaneWritesTheEditTheEngineAcceptsBeforeTheClose() async throws {
+  for mode in [PaneMode.writing, .editor] {
+    let closed = try await closing(mode, engineAnswersEdits: true)
+    #expect(closed.methods == [.fileWrite, .paneClose], "\(mode)")
+    #expect(closed.client.problem == nil, "\(mode)")
+  }
+}
+
+/// A write the engine refuses is not retried and does not keep the pane: the replica drops the
+/// edits and reads the engine's text again, so the pane holds nothing a second close could save.
+/// The person is told by `problem`.
+@MainActor @Test func aRefusedEditIsReportedAndTheCloseStillGoes() async throws {
+  let client = EngineClient(socket: "/tmp/pane-close-refused.sock")
+  client.upsertWorkspace(workspace("repo"))
+  try client.applyPaneCreated(
+    PaneCreatedEvent(eventId: "1", at: "2026-10-19T12:00:00Z", pane: pane("p", mode: .writing)))
+  client.editorFiles["f"] = EditorFileView(file: file(path: "/repo/texts/essay.md"))
+  client.connectionActor = Actor(role: .human_local, client: "test")
+  var methods: [RequestMethod] = []
+  client.requestStub = { method, _ in
+    methods.append(method)
+    if method == .fileWrite { throw ClientFailure.remote("internal_error", "Engine failed") }
+    return .object([:])
+  }
+  client.enqueueEditorEdits(fileId: "f", edits: [textEdit()])
+  await client.closePaneSavingEdits("p")
+  for _ in 0..<100 where !methods.contains(.paneClose) { await Task.yield() }
+
+  #expect(client.problem != nil)
+  #expect(methods.first == .fileWrite)
+  #expect(methods.contains(.paneClose))
 }
 
 @MainActor @Test func closingAnEditorTabSendsWhatWasTypedAndPassesItsPlaceOn() async throws {

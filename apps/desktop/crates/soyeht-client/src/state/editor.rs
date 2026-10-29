@@ -105,7 +105,9 @@ impl State {
 
     /// Closes a pane, as the close button of its header asks. An editor pane is a tab, which
     /// closes after its edits have reached the engine, and so does a writing pane; any other pane
-    /// closes at once.
+    /// closes at once. When the engine refuses an edit the close still goes on: the replica drops
+    /// the edits and reads the engine's text again, so the pane would show text that was never
+    /// saved, and the failure is on the problem line.
     pub fn close_pane_effects(&mut self, pane_id: &str) -> Vec<Effect> {
         if self
             .pane(pane_id)

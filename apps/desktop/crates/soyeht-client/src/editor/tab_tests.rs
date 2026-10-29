@@ -83,6 +83,38 @@ fn closing_the_pane_of_an_editor_waits_for_its_edits_and_any_other_pane_closes_a
     assert_eq!(state.close_pane_effects("gone"), [close("gone")]);
 }
 
+/// A write the engine refuses drops the edits and reads the engine's text again, so a pane kept
+/// open would show text that was never saved: the close goes on, and the person is told.
+#[test]
+fn a_refused_write_does_not_keep_the_pane_because_the_text_is_read_again() {
+    let mut state = two_editors(Vec::new());
+    state.apply(read("a", "e1", 1, 0, &["a"], 1));
+    state.editors.insert("e1", "x");
+    let page = |state: &State| {
+        state
+            .editors
+            .file_of_pane("e1")
+            .unwrap()
+            .page
+            .as_ref()
+            .unwrap()
+            .text(0)
+            .to_owned()
+    };
+    assert_eq!(page(&state), "xa");
+    let close = Effect::Send(Command::ClosePane {
+        pane_id: "e1".into(),
+    });
+    assert!(!state.close_pane_effects("e1").contains(&close));
+
+    let refused = state.apply(Event::Editor(super::EditorEvent::Failed(
+        super::Failure::Edit("a".into()),
+    )));
+    assert!(refused.contains(&close), "{refused:?}");
+    state.apply(read("a", "e1", 1, 0, &["a"], 1));
+    assert_eq!(page(&state), "a");
+}
+
 #[test]
 fn closing_a_workspace_waits_for_the_edits_of_its_documents() {
     let mut state = two_editors(vec![pane("t1", "w", "terminal")]);

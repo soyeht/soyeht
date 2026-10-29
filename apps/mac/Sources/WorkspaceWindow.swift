@@ -32,6 +32,7 @@ struct WorkspaceWindow: View {
     .environment(
       \.terminalKeyboardInputEnabled, editorPaletteMode == nil && !slideShow.isPresenting
     )
+    .environment(\.askToClosePane, askToClosePane)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
     .modifier(
       CloseAlerts(
@@ -717,5 +718,18 @@ private struct CloseAlerts: ViewModifier {
       } message: {
         Text(workspaceQuestion?.message ?? "")
       }
+  }
+}
+
+private struct AskToClosePaneKey: EnvironmentKey {
+  static let defaultValue: @MainActor @Sendable (String) -> Void = { _ in }
+}
+
+extension EnvironmentValues {
+  /// Closes a pane the way its close button does: it asks first when `PaneClosePolicy` says so,
+  /// and saves what was typed. Set by the workspace window, which shows the question.
+  var askToClosePane: @MainActor @Sendable (String) -> Void {
+    get { self[AskToClosePaneKey.self] }
+    set { self[AskToClosePaneKey.self] = newValue }
   }
 }
