@@ -28,6 +28,7 @@ use soyeht_acp::{
     rpc::decode,
     session,
 };
+use soyeht_platform::log::{self, Failure as _};
 use soyeht_protocol::{
     ConfigValue, PaneHarnessSwitchParams, PaneState, StateSource, TranscriptKind, TranscriptRole,
     event, limits, method::PANE_HARNESS_SWITCH, ndjson::Decoder,
@@ -276,7 +277,14 @@ impl Core {
         let panes = self.panes_with_retired_processes();
         for pane in panes {
             let job = format!("retired:{pane}");
-            if !self.background.accepts(&job) {
+            let now = self.now_ms();
+            // Not while the job runs, nor within the delay a refusal left.
+            if !self.background.accepts(&job)
+                || self
+                    .agents
+                    .get(&pane)
+                    .is_none_or(|agent| !agent.idle.retired_close_due(now))
+            {
                 continue;
             }
             // Closed agent panes remain in the runtime map so their durable
@@ -339,13 +347,29 @@ impl Core {
                 },
                 move |core, closed| {
                     let (closed, refused) = core.settle_supervisor(&used, closed)?;
-                    // A close the supervisor keeps refusing is logged once per change of kind.
-                    core.settle_supervisor_call(CLOSE_REFUSED, refused);
+                    core.note_retired_closes(&pane, refused);
                     core.forget_retired(&pane, &closed)
                 },
             )?;
         }
         Ok(())
+    }
+
+    /// Settles what the supervisor said to the closes of `pane`'s retired processes: a refusal
+    /// delays the next try, and is logged once per change of kind.
+    fn note_retired_closes(&mut self, pane: &str, refused: Result<()>) {
+        let now = self.now_ms();
+        let Some(agent) = self.agents.get_mut(pane) else {
+            return;
+        };
+        match refused {
+            Ok(()) => agent.idle.retired_close_done(),
+            Err(error) => {
+                if agent.idle.retired_close_refused(now, &error.failure_kind()) {
+                    log::failure(CLOSE_REFUSED, &error);
+                }
+            }
+        }
     }
 
     /// Puts `processes` in the retirement ledger of `pane`, unless they are in it already.

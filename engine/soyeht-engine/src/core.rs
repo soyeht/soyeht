@@ -734,6 +734,10 @@ impl Core {
             if self.capture_restore_pending(&id) {
                 continue;
             }
+            // A tick woken by a read polls the agents only.
+            if self.polling_woken() && !self.agents.contains_key(&id) {
+                continue;
+            }
             if self.agents.contains_key(&id) {
                 if let Err(error) = self.poll_agent(&id) {
                     if errors::missing_supervisor_instance(&error) {

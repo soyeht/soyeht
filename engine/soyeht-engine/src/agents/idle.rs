@@ -16,6 +16,7 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::StorePort,
+    streak::Streak,
 };
 use std::collections::BTreeSet;
 
@@ -30,6 +31,24 @@ pub struct Idle {
     acknowledged: Option<(String, u64)>,
     /// Supervisor processes already told to close; a close is sent once.
     closed: BTreeSet<String>,
+    /// The pace of the closes of the processes this agent retired, while the supervisor refuses
+    /// them.
+    retired_close: RetiredClose,
+}
+
+/// The failures of the close of an agent's retired processes, and when it is tried again.
+struct RetiredClose {
+    streak: Streak,
+    due_ms: i64,
+}
+
+impl Default for RetiredClose {
+    fn default() -> Self {
+        Self {
+            streak: Streak::retrying(250, 4_000),
+            due_ms: 0,
+        }
+    }
 }
 
 impl Idle {
@@ -52,6 +71,26 @@ impl Idle {
 
     pub(crate) fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Whether the retired processes may be closed now: not within the delay a refusal left.
+    pub(crate) fn retired_close_due(&self, now_ms: i64) -> bool {
+        now_ms >= self.retired_close.due_ms
+    }
+
+    /// Counts a refused close and delays the next. Returns whether to log it: the first, and each
+    /// change of kind.
+    pub(crate) fn retired_close_refused(&mut self, now_ms: i64, kind: &str) -> bool {
+        let log = self.retired_close.streak.fail(kind);
+        self.retired_close.due_ms =
+            now_ms.saturating_add(self.retired_close.streak.next_delay_ms());
+        log
+    }
+
+    /// Ends the streak of refused closes.
+    pub(crate) fn retired_close_done(&mut self) {
+        self.retired_close.streak.succeed();
+        self.retired_close.due_ms = 0;
     }
 
     pub(crate) fn already_closed(&self, instance_id: &str) -> bool {
@@ -414,8 +453,53 @@ pub(super) mod tests {
             spawns: 0,
             close_failure: None,
         }));
+        // The refusal delayed the next try; when it is due, the close is sent.
+        core.clock = Arc::new(FixedClock(1_100_000));
         core.cleanup_retired_agent_processes().unwrap();
         assert!(ledger(&core).is_empty());
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn a_close_the_supervisor_keeps_refusing_is_tried_again_after_a_delay_not_on_every_tick() {
+        use crate::test_panes::{Answering, core_with_agent};
+        let (mut core, directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::inline();
+        let asked = Arc::new(Mutex::new(0_u32));
+        let count = Arc::clone(&asked);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            if matches!(request, Request::Close { .. }) {
+                *count.lock().unwrap() += 1;
+                return Err(soyeht_ptyd::Error::Remote {
+                    kind: "refused".into(),
+                    message: "refused".into(),
+                });
+            }
+            Ok(Response::Ok)
+        })));
+        core.agents
+            .get_mut("agent")
+            .unwrap()
+            .state
+            .retired_processes
+            .push(retired("mine", "answering"));
+
+        for _ in 0..20 {
+            core.cleanup_retired_agent_processes().unwrap();
+        }
+        assert_eq!(
+            *asked.lock().unwrap(),
+            1,
+            "a refused close was sent on every tick"
+        );
+
+        // After the delay it is tried again, and the delay grows.
+        core.clock = Arc::new(FixedClock(1_000_000 + 10_000));
+        core.cleanup_retired_agent_processes().unwrap();
+        assert_eq!(*asked.lock().unwrap(), 2);
+        core.clock = Arc::new(FixedClock(1_000_000 + 10_000 + 300));
+        core.cleanup_retired_agent_processes().unwrap();
+        assert_eq!(*asked.lock().unwrap(), 2);
         crate::test_paths::remove_after(core, directory);
     }
 

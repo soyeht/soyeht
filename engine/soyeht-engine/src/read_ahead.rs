@@ -43,6 +43,9 @@ pub(crate) struct Reads {
     ready: BTreeMap<String, Ready>,
     paused_until_ms: BTreeMap<String, i64>,
     live: BTreeSet<String>,
+    /// Set while the tick polls what a read woke: the polls take the reads that ended and start
+    /// none, and leave the panes that are not agents to the regular tick.
+    polling_woken: bool,
 }
 
 /// The owner of the reads of an agent's own process.
@@ -69,6 +72,17 @@ fn has_news(read: &Result<Read>) -> bool {
         .is_ok_and(|read| read.output.bytes.is_empty() && read.output.gap.is_none())
 }
 
+/// Whether a read for `owner` may wake the tick. A language server's read does not: nothing the
+/// woken tick polls is its.
+fn wakes(owner: &str) -> bool {
+    !owner.starts_with("language:")
+}
+
+/// A read that never wakes the tick.
+fn quiet(_: &Result<Read>) -> bool {
+    false
+}
+
 /// The job that reads for `owner`. One at a time per owner.
 fn job(owner: &str) -> String {
     format!("read:{owner}")
@@ -85,12 +99,13 @@ impl Core {
         look_up_exit: bool,
     ) -> Result<()> {
         let job = job(owner);
-        if !self.background.accepts(&job) {
+        if self.reads.polling_woken || !self.background.accepts(&job) {
             return Ok(());
         }
         let supervisor = self.supervisor()?;
         let used: Supervisor = supervisor.clone();
         self.reads.live.insert(owner.to_owned());
+        let prompt: fn(&Result<Read>) -> bool = if wakes(owner) { has_news } else { quiet };
         let (owner, instance_id) = (owner.to_owned(), instance_id.to_owned());
         let asked = instance_id.clone();
         self.spawn_prompt_background(
@@ -117,17 +132,27 @@ impl Core {
                 );
                 Ok(())
             },
-            has_news,
+            prompt,
         )
     }
 
-    /// The tick's part when a read brought news: polls at once what the read is for, so output
-    /// is not left waiting for the next tick (see [`has_news`]).
+    /// The tick's part when a read brought news: the agents take what it found at once, so
+    /// output is not left waiting for the next tick (see [`has_news`]). It starts no read: the
+    /// next one starts on the regular tick, so a process that never stops writing is polled at
+    /// the pace of the tick, not at the pace of the round trip.
     pub(crate) fn poll_woken(&mut self) -> Result<()> {
         if self.ptyd.is_none() {
             return Ok(());
         }
-        self.drain_panes()
+        self.reads.polling_woken = true;
+        let polled = self.drain_panes();
+        self.reads.polling_woken = false;
+        polled
+    }
+
+    /// Whether the tick is polling what a read woke (see [`Core::poll_woken`]).
+    pub(crate) fn polling_woken(&self) -> bool {
+        self.reads.polling_woken
     }
 
     /// The read `owner` asked for, if it ended: the answer for `instance_id` from `from_seq`. With
@@ -155,13 +180,13 @@ impl Core {
 
     /// Forgets the reads of the owners that start with `prefix`: their pane or server is gone.
     pub(crate) fn forget_reads(&mut self, prefix: &str) {
-        self.reads
-            .ready
-            .retain(|owner, _| !owner.starts_with(prefix));
-        self.reads
-            .paused_until_ms
-            .retain(|owner, _| !owner.starts_with(prefix));
-        self.reads.live.retain(|owner| !owner.starts_with(prefix));
+        // The owner itself and the ones below it (`agent:{pane}:terminal:{id}`), not another
+        // owner whose name starts the same way (the terminal `10` is not below the terminal `1`).
+        let below = format!("{prefix}:");
+        let owned = |owner: &str| owner == prefix || owner.starts_with(&below);
+        self.reads.ready.retain(|owner, _| !owned(owner));
+        self.reads.paused_until_ms.retain(|owner, _| !owned(owner));
+        self.reads.live.retain(|owner| !owned(owner));
     }
 
     /// Forgets every read: the link they were made on is gone.
@@ -315,6 +340,83 @@ mod tests {
         core.lose_supervisor_link();
 
         assert!(core.reads.ready.is_empty());
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    /// A core with an agent pane and a shell pane, over a supervisor that has nothing to say and
+    /// counts the reads it is asked for.
+    fn core_with_two_panes() -> (Core, std::path::PathBuf, Arc<Mutex<u64>>) {
+        let (mut core, directory) = crate::test_panes::core_with_agent(&[]);
+        crate::test_panes::insert_terminal_pane(&mut core, &directory, "shell", false);
+        let reads = Arc::new(Mutex::new(0));
+        let count = Arc::clone(&reads);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            Ok(match request {
+                Request::Drain { from_seq, .. } => {
+                    *count.lock().unwrap() += 1;
+                    quiet_read(from_seq)
+                }
+                _ => Response::Ok,
+            })
+        })));
+        (core, directory, reads)
+    }
+
+    #[test]
+    fn a_woken_tick_takes_what_ended_and_starts_no_read_so_a_flood_is_polled_at_the_tick() {
+        let (mut core, directory, reads) = core_with_two_panes();
+        core.background = crate::offload::Background::inline();
+
+        // The regular tick starts the reads of the agent and of the shell.
+        core.drain_panes().unwrap();
+        let started = *reads.lock().unwrap();
+        assert!(started >= 2, "the tick started {started} reads");
+
+        // A wake storm takes the read that ended and starts nothing, and leaves the shell to
+        // the tick: however often a read wakes the tick, the supervisor is asked no more.
+        for _ in 0..50 {
+            core.poll_woken().unwrap();
+        }
+        assert_eq!(*reads.lock().unwrap(), started);
+
+        // The next regular tick starts them again.
+        core.drain_panes().unwrap();
+        assert!(*reads.lock().unwrap() > started);
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn only_the_reads_of_an_agent_wake_the_tick() {
+        assert!(wakes(&agent("pane")));
+        assert!(wakes(&agent_terminal("pane", "t")));
+        assert!(!wakes(&language("rust")));
+    }
+
+    #[test]
+    fn forgetting_the_reads_of_a_terminal_leaves_the_terminal_whose_id_starts_the_same() {
+        let (mut core, directory, asked) = core_with(Duration::ZERO);
+        core.background = crate::offload::Background::inline();
+        core.start_read(&agent_terminal("pane", "1"), "a", 1, true)
+            .unwrap();
+        core.start_read(&agent_terminal("pane", "10"), "b", 1, true)
+            .unwrap();
+        let before = asked.lock().unwrap().len();
+
+        core.forget_reads(&agent_terminal("pane", "1"));
+
+        // The read of the terminal `10` is still there; the one of `1` is asked for again.
+        assert!(
+            core.take_read(&agent_terminal("pane", "10"), "b", 1, true)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(asked.lock().unwrap().len(), before);
+        assert!(
+            core.take_read(&agent_terminal("pane", "1"), "a", 1, true)
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(asked.lock().unwrap().len(), before + 1);
         crate::test_paths::remove_after(core, directory);
     }
 }

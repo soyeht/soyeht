@@ -33,9 +33,12 @@ into a screen. So the read is the job and the poll stays where it is:
   into the screen ends at, and goes on with the rest of its work while the read runs. So an agent
   that is producing output has a read on its way at every tick.
 - A read that finds output, a gap or an error wakes the tick, as the shell pane's read does: the
-  tick applies it, polls the panes at once and sends what that brought (`Core::poll_woken`), so
-  output is not left waiting for the next tick. A quiet read, or an exit with nothing left to
-  read, does not wake it.
+  tick applies it, polls the agents at once and sends what that brought (`Core::poll_woken`), so
+  output is not left waiting for the next tick. The woken poll takes the reads that ended and
+  starts none, and leaves the shell panes to the tick: the next read starts on the regular tick,
+  so a process that never stops writing is polled at the pace of the tick and not at the pace of
+  the round trip. A quiet read, an exit with nothing left to read, and every read of a language
+  server do not wake it (a language server's output is not polled by the woken tick).
 - A read asked for another process or offset (the process was replaced, the screen moved) is
   discarded when the poll asks. The supervisor keeps the output until it is told to drop it, so
   a read that is never taken costs nothing. The reads of a pane that closes are forgotten.
@@ -61,7 +64,7 @@ The acknowledgements of these polls (`Ack`) and the confirmations of delivered i
 (`ConfirmInput`) are `send_later`: nobody waits for them, and the supervisor keeps the output a
 little longer if one fails.
 
-**Every close is off the lock.** `Core::close_process` is the one way to close a process whose
+**Every close is off the lock, except three.** `Core::close_process` is the one way to close a process whose
 failure the caller cannot return: a job that takes a turn for the process, sends the close, and
 settles the answer under the lock with the retries that already existed (`settle_close`: logged,
 tried again by the tick a bounded number of times, left to the next link when the link is gone).
@@ -73,7 +76,8 @@ that cannot be closed no longer keeps its agent from coming up. The process of a
 is held by the retirement ledger until the supervisor has closed it, as before:
 `cleanup_retired_agent_processes` closes them in a job per agent and takes the ones that closed
 out of the ledger when it is applied (a close the supervisor keeps refusing is logged once per
-change of kind, `engine.retired_close_failed`), and the process of a candidate that failed to
+change of kind, `engine.retired_close_failed`, and then not sent again before a delay that
+doubles from 250 ms to 4 s), and the process of a candidate that failed to
 start goes straight into the ledger instead of being closed first.
 
 A process that the engine stops tracking is in the ledger first, because a close that fails, or
@@ -91,7 +95,10 @@ Three callers close a process that a spawn is about to replace (the restart afte
 role change and for a task, through `Core::close_and_wait`). The replacement must not start while
 the process it replaces still holds its session or folder, so they wait, under the lock, until
 the close has been sent, as the spawn that follows them waits. That wait goes with the spawn, and
-`tests/blocking_io_rule.rs` counts its callers beside `pty_request`.
+`tests/blocking_io_rule.rs` counts its callers beside `pty_request`. So those three paths still
+hold the Core lock while the supervisor is slow: with the supervisor stopped, the lock is held
+for the close, up to five seconds (the client timeout), and the spawn that follows fails at once on
+the broken handle: no worse than before this change, and no better. They move with the spawn.
 
 **The registry is read before the link is the engine's.** The connect job (ADR 0117) now also
 reads the supervisor's pending inputs and processes through the new handle, and hands both to the
