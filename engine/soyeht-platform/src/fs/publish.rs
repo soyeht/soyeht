@@ -19,8 +19,9 @@ use super::{
 /// [`TEMPORARY_PREFIX`](super::TEMPORARY_PREFIX)), synced, and linked to `target` with an
 /// exclusive hard link, so a file with missing bytes is never visible, not even after a crash. A
 /// regular file already at `target` with the same bytes is accepted, as after an interrupted
-/// retry; any other entry, a link included, fails with [`io::ErrorKind::AlreadyExists`]. The
-/// temporary file is removed on every path.
+/// retry, before anything is written, so it works in a directory that has become read-only; any
+/// other entry, a link included, fails with [`io::ErrorKind::AlreadyExists`]. The temporary file
+/// is removed on every path.
 ///
 /// `mode` says who may reach the file: [`WriteMode::OwnerOnly`] makes it owner-only from the
 /// moment it exists and accepts an existing file only when that is owner-only too;
@@ -47,6 +48,13 @@ fn publish_linking(
     link: impl FnOnce(&Path, &Path) -> io::Result<()>,
 ) -> io::Result<()> {
     let directory = directory_of(target)?;
+    // A retry finds the file it published: accepted before anything is written, so it works in a
+    // directory that has become read-only, and it leaves no temporary file to clean up.
+    match fs::symlink_metadata(target) {
+        Ok(_) => return verify_existing(target, bytes, mode),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
     let (mut file, temporary) = create_temporary(directory, mode, false, temporary_name)?;
     // Removes the temporary file on every path, a successful link included; a rename takes it
     // away first and then there is nothing to remove.

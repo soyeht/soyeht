@@ -10,6 +10,24 @@ pub(super) fn set_private(path: &Path, directory: bool) -> io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
 }
 
+/// Makes the directory at `path` owner-only through an open handle that refused a link: the
+/// directory is opened with `O_NOFOLLOW | O_DIRECTORY` and the mode is set on that handle, so a
+/// link swapped in for the directory after a check is never followed and its target never
+/// changed.
+pub(super) fn set_private_dir_no_follow(path: &Path) -> io::Result<()> {
+    let directory = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
+        .open(path)?;
+    directory.set_permissions(fs::Permissions::from_mode(0o700))
+}
+
+/// Whether `error` is the refusal of [`set_private_dir_no_follow`] for a link or a non-directory
+/// in the place of the directory.
+pub(super) fn is_link_or_not_directory(error: &io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(libc::ELOOP | libc::ENOTDIR))
+}
+
 #[cfg(target_os = "macos")]
 pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};

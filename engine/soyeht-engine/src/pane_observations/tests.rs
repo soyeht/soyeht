@@ -587,3 +587,54 @@ fn partial_tail_and_dangling_pane_symlink_fail_closed() {
             .is_symlink()
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_store_directory_others_can_reach_is_made_private_when_it_is_opened() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture::new();
+    let pane_directory = fixture.root.join(pane_directory_name("pane-1"));
+    fs::create_dir_all(&pane_directory).unwrap();
+    for open in [&fixture.root, &pane_directory] {
+        fs::set_permissions(open, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    SegmentStore::open(
+        &fixture.root,
+        "pane-1",
+        ObservationPaneKind::Terminal,
+        harness(),
+        engine('a'),
+    )
+    .unwrap();
+
+    for private in [&fixture.root, &pane_directory] {
+        let mode = fs::metadata(private).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700, "{private:?}");
+    }
+}
+
+#[test]
+fn a_link_in_the_place_of_the_store_directory_is_refused_and_its_target_untouched() {
+    let fixture = Fixture::new();
+    let outside = fixture.directory.join("outside");
+    fs::create_dir(&outside).unwrap();
+    symlink(&outside, &fixture.root).unwrap();
+
+    let error = SegmentStore::open(
+        &fixture.root,
+        "pane-1",
+        ObservationPaneKind::Terminal,
+        harness(),
+        engine('a'),
+    )
+    .err()
+    .expect("a link must be refused");
+
+    assert_eq!(
+        crate::errors::kind(&error),
+        soyeht_protocol::ErrorKind::InternalError
+    );
+    assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+}

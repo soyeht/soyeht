@@ -14,14 +14,15 @@ pub fn id() -> io::Result<String> {
 /// desktop session or a service started may carry none, or a stale one), else the shell the
 /// account's entry in the user database names, unless that shell exists to refuse a login
 /// (`nologin`, `false`) or is not an existing absolute file, else the first `bash` there is,
-/// else the POSIX `sh`. The user database is asked only when `$SHELL` is not usable, and its
+/// else the POSIX `sh`. A path that is not UTF-8 is never chosen, so the result can always be an
+/// argument of a command line. The user database is asked only when `$SHELL` is not usable, and its
 /// answer is remembered for the life of the process, so a caller on a hot path or under a lock
 /// asks it once at start (the lookup may reach a directory service) and never again.
 ///
 /// Windows has no login shell: it returns an `Unsupported` error.
 ///
 /// # Errors
-/// Only where the system has no such shell, which is Windows.
+/// `Unsupported` on Windows; a `NotFound` error on a Unix host that has not even a `sh`.
 pub fn preferred_shell() -> io::Result<PathBuf> {
     system::preferred_shell()
 }
@@ -41,8 +42,12 @@ mod system {
     const MAX_RECORD: usize = 1 << 20;
 
     pub(super) fn preferred_shell() -> io::Result<PathBuf> {
-        Ok(choose_shell(std::env::var_os("SHELL"), account_shell))
+        choose_shell(std::env::var_os("SHELL"), account_shell, LAST_RESORTS)
+            .ok_or_else(|| io::ErrorKind::NotFound.into())
     }
+
+    /// The shells tried, in this order, when neither `$SHELL` nor the account names a usable one.
+    const LAST_RESORTS: &[&str] = &["/bin/bash", "/usr/bin/bash", "/bin/sh"];
 
     /// The shell the user database names for this account, read once per process. A failed
     /// lookup is logged by kind and names none, which is correct here: the fallbacks after it
@@ -69,12 +74,16 @@ mod system {
     }
 
     /// `environment`, else `account()` (asked only when `environment` is not usable), each only
-    /// when it names an existing absolute file, else the first `bash` there is, else `sh`.
+    /// when it names an existing absolute file with a UTF-8 path, else the first of `last_resorts`
+    /// that is a file; `None` when there is none.
     fn choose_shell(
         environment: Option<OsString>,
         account: impl FnOnce() -> Option<PathBuf>,
-    ) -> PathBuf {
-        let usable = |shell: PathBuf| (shell.is_absolute() && shell.is_file()).then_some(shell);
+        last_resorts: &[&str],
+    ) -> Option<PathBuf> {
+        let usable = |shell: PathBuf| {
+            (shell.is_absolute() && shell.to_str().is_some() && shell.is_file()).then_some(shell)
+        };
         environment
             .map(PathBuf::from)
             .and_then(usable)
@@ -83,12 +92,11 @@ mod system {
                     .filter(|shell| !refuses_login(shell))
                     .and_then(usable)
             })
-            .unwrap_or_else(|| {
-                ["/bin/bash", "/usr/bin/bash"]
-                    .into_iter()
+            .or_else(|| {
+                last_resorts
+                    .iter()
                     .map(PathBuf::from)
                     .find(|candidate| candidate.is_file())
-                    .unwrap_or_else(|| PathBuf::from("/bin/sh"))
             })
     }
 
@@ -143,46 +151,22 @@ mod system {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use std::fs;
+        use crate::testing::scratch_dir;
+        use std::{ffi::OsStr, fs};
 
-        /// A scratch directory removed when dropped.
-        struct TempDir(PathBuf);
-
-        impl TempDir {
-            fn new(name: &str) -> Self {
-                static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-                let path = std::env::temp_dir().join(format!(
-                    "soyeht-platform-user-{name}-{}-{}",
-                    std::process::id(),
-                    COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                ));
-                fs::create_dir_all(&path).unwrap();
-                Self(path)
-            }
-
-            fn path(&self) -> &Path {
-                &self.0
-            }
-        }
-
-        impl Drop for TempDir {
-            fn drop(&mut self) {
-                drop(fs::remove_dir_all(&self.0));
-            }
-        }
-
-        fn file_named(directory: &TempDir, name: &str) -> PathBuf {
-            let path = directory.path().join(name);
+        /// A file named `name` in `directory`, standing for a shell.
+        fn shell_named(directory: &Path, name: &str) -> PathBuf {
+            let path = directory.join(name);
             fs::write(&path, "#!/bin/sh\n").unwrap();
             path
         }
 
-        fn must_not_be_asked() -> Option<PathBuf> {
-            panic!("the lookup reads a directory service")
+        fn text(path: &Path) -> &str {
+            path.to_str().unwrap()
         }
 
-        fn is_a_fallback(shell: &Path) -> bool {
-            shell.file_name().is_some_and(|name| name == "bash") || shell == Path::new("/bin/sh")
+        fn must_not_be_asked() -> Option<PathBuf> {
+            panic!("the lookup reads a directory service")
         }
 
         #[test]
@@ -195,32 +179,60 @@ mod system {
 
         #[test]
         fn the_shell_variable_beats_the_account_and_the_account_is_not_asked() {
-            let directory = TempDir::new("shell-variable");
-            let mine = file_named(&directory, "fish");
+            let directory = scratch_dir("shell-variable");
+            let mine = shell_named(&directory, "fish");
             assert_eq!(
-                choose_shell(Some(mine.clone().into_os_string()), must_not_be_asked),
-                mine
+                choose_shell(Some(mine.clone().into()), must_not_be_asked, &[]),
+                Some(mine)
             );
+            fs::remove_dir_all(directory).unwrap();
         }
 
         #[test]
         fn a_stale_shell_variable_falls_back_to_the_account_shell() {
-            let directory = TempDir::new("stale-variable");
-            let account = file_named(&directory, "zsh");
+            let directory = scratch_dir("stale-variable");
+            let account = shell_named(&directory, "zsh");
             for stale in [
                 None,
                 Some(OsString::new()),
                 Some("zsh".into()),
                 Some("/nowhere/at/all/zsh".into()),
                 // A directory is not a shell.
-                Some(directory.path().as_os_str().to_owned()),
+                Some(directory.as_os_str().to_owned()),
             ] {
                 assert_eq!(
-                    choose_shell(stale.clone(), || Some(account.clone())),
-                    account,
+                    choose_shell(stale.clone(), || Some(account.clone()), &[]),
+                    Some(account.clone()),
                     "{stale:?}"
                 );
             }
+            fs::remove_dir_all(directory).unwrap();
+        }
+
+        #[test]
+        fn a_shell_whose_path_is_not_text_is_never_chosen() {
+            let directory = scratch_dir("not-utf8");
+            let name = OsStr::from_bytes(b"sh-\xff\xfe");
+            let odd = directory.join(name);
+            // Some file systems (APFS) refuse a name that is not UTF-8; there is nothing to test.
+            if fs::write(&odd, "#!/bin/sh\n").is_err() {
+                fs::remove_dir_all(directory).unwrap();
+                return;
+            }
+            assert!(odd.is_file() && odd.to_str().is_none());
+            let account = shell_named(&directory, "zsh");
+            // As `$SHELL`, it is passed over for the account's shell.
+            assert_eq!(
+                choose_shell(Some(odd.clone().into()), || Some(account.clone()), &[]),
+                Some(account.clone())
+            );
+            // As the account's shell, for the last resorts.
+            let resort = shell_named(&directory, "bash");
+            assert_eq!(
+                choose_shell(None, || Some(odd.clone()), &[text(&resort)]),
+                Some(resort)
+            );
+            fs::remove_dir_all(directory).unwrap();
         }
 
         #[test]
@@ -230,29 +242,37 @@ mod system {
             assert!(refuses_login(Path::new("/bin/false")));
             assert!(!refuses_login(Path::new("/bin/bash")));
             // The same through the choice, with files that exist under those names.
-            let directory = TempDir::new("refusing");
+            let directory = scratch_dir("refusing");
+            let resort = shell_named(&directory, "bash");
             for name in ["nologin", "false"] {
-                let refusing = file_named(&directory, name);
-                let chosen = choose_shell(None, || Some(refusing.clone()));
-                assert!(is_a_fallback(&chosen), "{name}: {chosen:?}");
+                let refusing = shell_named(&directory, name);
+                assert_eq!(
+                    choose_shell(None, || Some(refusing.clone()), &[text(&resort)]),
+                    Some(resort.clone()),
+                    "{name}"
+                );
             }
+            fs::remove_dir_all(directory).unwrap();
         }
 
         #[test]
-        fn no_usable_shell_falls_back_to_bash_then_to_sh() {
-            let directory = TempDir::new("fallbacks");
-            let missing = directory.path().join("missing");
-            for account in [None, Some(missing)] {
-                let chosen = choose_shell(None, || account.clone());
-                assert!(is_a_fallback(&chosen), "{chosen:?}");
-                assert!(chosen.is_file(), "{chosen:?}");
+        fn no_usable_shell_falls_back_to_the_first_last_resort_that_exists() {
+            let directory = scratch_dir("fallbacks");
+            let missing = directory.join("missing");
+            let bash = shell_named(&directory, "bash");
+            let sh = shell_named(&directory, "sh");
+            let order = [text(&missing), text(&bash), text(&sh)];
+            for account in [None, Some(missing.clone())] {
+                let chosen = choose_shell(None, || account.clone(), &order);
+                assert_eq!(chosen, Some(bash.clone()));
             }
-            let bash_exists = ["/bin/bash", "/usr/bin/bash"]
-                .into_iter()
-                .any(|path| Path::new(path).is_file());
-            if !bash_exists {
-                assert_eq!(choose_shell(None, || None), Path::new("/bin/sh"));
-            }
+            // Bash gone: the POSIX shell. Nothing at all: no shell, not a made-up one.
+            assert_eq!(
+                choose_shell(None, || None, &[text(&missing), text(&sh)]),
+                Some(sh)
+            );
+            assert_eq!(choose_shell(None, || None, &[text(&missing)]), None);
+            fs::remove_dir_all(directory).unwrap();
         }
 
         #[test]
@@ -263,8 +283,9 @@ mod system {
         }
 
         #[test]
-        fn the_preferred_shell_exists_on_a_unix_host() {
-            assert!(preferred_shell().unwrap().is_file());
+        fn the_preferred_shell_exists_and_is_text_on_a_unix_host() {
+            let shell = preferred_shell().unwrap();
+            assert!(shell.is_file() && shell.to_str().is_some(), "{shell:?}");
         }
     }
 }

@@ -14,10 +14,10 @@ pub fn default_login_shell() -> Vec<String> {
     if cfg!(windows) {
         return vec![std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into())];
     }
-    // Only Windows has no preferred shell, and it returned above; a path that is not text cannot
-    // be an argument, and the POSIX shell is always there.
+    // Only a host with no `sh` has no preferred shell, and then the start of the shell fails
+    // visibly. The platform never returns a path that is not text, so nothing is lost here.
     let shell = soyeht_platform::user::preferred_shell().unwrap_or_else(|_| "/bin/sh".into());
-    vec![shell.to_str().unwrap_or("/bin/sh").to_owned(), "-l".into()]
+    vec![shell.to_string_lossy().into_owned(), "-l".into()]
 }
 
 /// Reads what the engine's shell choices need from the system now, so that neither the first
@@ -47,6 +47,9 @@ mod tests {
         } else {
             assert_eq!(command.last().map(String::as_str), Some("-l"));
             assert!(Path::new(&command[0]).is_file());
+            // The rule is the platform's: the engine's probe and a terminal cannot disagree.
+            let preferred = soyeht_platform::user::preferred_shell().unwrap();
+            assert_eq!(Path::new(&command[0]), preferred);
         }
     }
 }

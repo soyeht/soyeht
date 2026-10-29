@@ -34,9 +34,9 @@ fn probe_output(bytes: &[u8]) -> Option<String> {
 }
 
 /// The person's shell, by the rule every caller shares (`soyeht_platform::user::preferred_shell`),
-/// checked for what the probe needs: one it can ask, that exists.
+/// checked for what the probe needs: one it can ask, that exists. A host with no shell at all
+/// leaves the engine as it is without one: its own `PATH`.
 fn supported_shell() -> Result<ShellProbe, LaunchPathIssue> {
-    // A system with no preferred shell leaves the engine as it is without one: its own `PATH`.
     let shell =
         soyeht_platform::user::preferred_shell().map_err(|_| LaunchPathIssue::MissingShell)?;
     probe_of(shell)
@@ -230,8 +230,9 @@ mod tests {
     }
 
     #[test]
-    fn the_probe_asks_the_shell_the_terminals_start() {
-        // One rule: this host's preferred shell is what the probe is offered.
+    fn the_probe_is_offered_the_preferred_shell() {
+        // One rule: this host's preferred shell is what the probe is offered. Terminals start the
+        // same shell on Linux; on macOS they always start `zsh`, which the supervisor decides.
         let preferred = soyeht_platform::user::preferred_shell().unwrap();
         match supported_shell() {
             Ok(probe) => assert_eq!(probe.executable, preferred),

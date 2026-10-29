@@ -6,10 +6,39 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{Mutex, PoisonError},
+    sync::{
+        Mutex, PoisonError,
+        atomic::{AtomicU32, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
+
+/// A new, empty directory in the system's temporary folder for the test called `name`; it is
+/// unique to this process and call. The
+/// test removes it when it ends.
+///
+/// A directory that cannot be made is logged by kind and still returned: the first use of it in
+/// the test fails with the real error.
+pub fn scratch_dir(name: &str) -> PathBuf {
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    let directory = std::env::temp_dir().join(format!(
+        "soyeht-platform-{name}-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    // What a killed run with the same process id left is cleared; a directory that is not there
+    // is what was wanted.
+    if let Err(error) = std::fs::remove_dir_all(&directory)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        crate::log::failure("platform.scratch_dir_failed", &error);
+    }
+    if let Err(error) = std::fs::create_dir_all(&directory) {
+        crate::log::failure("platform.scratch_dir_failed", &error);
+    }
+    directory
+}
 
 /// Takes every permission away from `path`, the way macOS protects a Photos library. Undo it
 /// with [`allow_owner`] before removing the folder.

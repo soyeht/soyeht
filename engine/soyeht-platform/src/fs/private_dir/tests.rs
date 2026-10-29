@@ -1,16 +1,7 @@
 use super::*;
-use crate::fs::symlink;
-use std::path::PathBuf;
+use crate::fs::{set_private_dir, symlink};
 
-fn scratch(name: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "soyeht-platform-private-dir-{name}-{}",
-        std::process::id()
-    ));
-    drop(fs::remove_dir_all(&directory));
-    fs::create_dir_all(&directory).unwrap();
-    directory
-}
+use crate::testing::scratch_dir as scratch;
 
 #[test]
 fn a_missing_directory_is_made_with_its_parents_and_is_owner_only() {
@@ -104,4 +95,31 @@ fn the_errors_convert_to_io_errors_by_what_they_say() {
         io::Error::from(PrivateDirError::Io(io::ErrorKind::NotFound.into())).kind(),
         io::ErrorKind::NotFound
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_repair_never_changes_what_a_link_points_at() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = scratch("repair-link");
+    let target = root.join("target");
+    fs::create_dir(&target).unwrap();
+    fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+    let link = root.join("link");
+    symlink(&target, &link).unwrap();
+    // The repair itself, as it runs after a check that a swap can outdate.
+    let error = system::set_private_dir_no_follow(&link).unwrap_err();
+    assert!(system::is_link_or_not_directory(&error), "{error:?}");
+    assert_eq!(
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    // And on a real directory it sets the mode.
+    system::set_private_dir_no_follow(&target).unwrap();
+    assert_eq!(
+        fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    fs::remove_dir_all(&root).unwrap();
 }

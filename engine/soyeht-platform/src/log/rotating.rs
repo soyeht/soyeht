@@ -119,14 +119,7 @@ fn bounded_lines(lines: &[u8]) -> Cow<'_, [u8]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// A fresh directory for the test called `name`.
-    fn scratch(name: &str) -> PathBuf {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-rotating-{name}-{}", std::process::id()));
-        fs::remove_dir_all(&directory).ok();
-        fs::create_dir_all(&directory).unwrap();
-        directory
-    }
+    use crate::testing::scratch_dir as scratch;
 
     /// `count` whole JSON lines, about a hundred bytes each.
     fn records(count: usize) -> Vec<u8> {

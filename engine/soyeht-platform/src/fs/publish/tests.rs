@@ -1,16 +1,7 @@
 use super::*;
 use crate::fs::{is_temporary_name, set_private_dir, symlink};
-use std::path::PathBuf;
 
-fn scratch(name: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "soyeht-platform-publish-{name}-{}-{}",
-        std::process::id(),
-        temporary_name()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    directory
-}
+use crate::testing::scratch_dir as scratch;
 
 fn entries(directory: &Path) -> usize {
     fs::read_dir(directory).unwrap().count()
@@ -152,4 +143,76 @@ fn the_temporary_file_has_the_name_a_listing_hides() {
 fn a_target_without_a_file_name_is_refused() {
     let error = publish_new(Path::new("/"), b"x", WriteMode::OwnerOnly).unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn an_identical_file_is_accepted_before_anything_is_written() {
+    let directory = scratch("early");
+    let target = directory.join("asset.bin");
+    publish_new(&target, b"bytes", WriteMode::KeepPermissions).unwrap();
+    // The link is never reached, and no temporary file is made.
+    publish_linking(&target, b"bytes", WriteMode::KeepPermissions, |_, _| {
+        panic!("a retry must not link")
+    })
+    .unwrap();
+    let error = publish_linking(&target, b"other", WriteMode::KeepPermissions, |_, _| {
+        panic!("a retry must not link")
+    })
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert_eq!(entries(&directory), 1);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_retry_works_in_a_directory_that_has_become_read_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = scratch("read-only");
+    let target = directory.join("asset.bin");
+    publish_new(&target, b"bytes", WriteMode::OwnerOnly).unwrap();
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o500)).unwrap();
+    let same = publish_new(&target, b"bytes", WriteMode::OwnerOnly);
+    let other = publish_new(&target, b"other", WriteMode::OwnerOnly);
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+    same.unwrap();
+    assert_eq!(other.unwrap_err().kind(), io::ErrorKind::AlreadyExists);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_target_that_appears_between_the_check_and_the_link_is_judged_like_any_other() {
+    for failure in [
+        || io::Error::from(io::ErrorKind::AlreadyExists),
+        || io::Error::from_raw_os_error(45),
+    ] {
+        let directory = scratch("raced");
+        let target = directory.join("doc.txt");
+        let appears = |content: &'static [u8]| {
+            move |_: &Path, to: &Path| {
+                fs::write(to, content)?;
+                Err(failure())
+            }
+        };
+        publish_linking(
+            &target,
+            b"same",
+            WriteMode::KeepPermissions,
+            appears(b"same"),
+        )
+        .unwrap();
+        fs::remove_file(&target).unwrap();
+        let error = publish_linking(
+            &target,
+            b"same",
+            WriteMode::KeepPermissions,
+            appears(b"diff"),
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&target).unwrap(), b"diff");
+        assert_eq!(entries(&directory), 1, "no temporary file");
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

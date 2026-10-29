@@ -30,7 +30,7 @@ pub mod log;
 pub mod process;
 #[cfg(feature = "tokio")]
 pub mod shutdown;
-#[cfg(feature = "test-support")]
+#[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod user;
 pub mod worktrunk;

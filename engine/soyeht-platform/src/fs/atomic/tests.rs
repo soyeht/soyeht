@@ -3,13 +3,7 @@ use crate::fs::{file_is_owner_only, set_private_dir};
 use std::{collections::BTreeSet, sync::Arc, thread};
 
 fn scratch(name: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "soyeht-platform-atomic-{name}-{}-{}",
-        std::process::id(),
-        temporary_name()
-    ));
-    fs::create_dir_all(&directory).unwrap();
-    directory
+    crate::testing::scratch_dir(name)
 }
 
 /// Every entry of `directory` that is a temporary file of this module.

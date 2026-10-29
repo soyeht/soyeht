@@ -167,12 +167,7 @@ impl OpenOptionsPrivateExt for OpenOptions {
 mod tests {
     use super::*;
 
-    fn scratch(name: &str) -> std::path::PathBuf {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-platform-fs-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        directory
-    }
+    use crate::testing::scratch_dir as scratch;
 
     #[test]
     fn private_directories_are_created_and_files_open_without_following_links() {
