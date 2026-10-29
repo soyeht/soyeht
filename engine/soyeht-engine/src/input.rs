@@ -96,7 +96,7 @@ impl Core {
         // The input reaches the supervisor after every send to this process that was made
         // before it, from whichever thread: the queued ones go in front of it, and its turn
         // follows the sends already on their way (and the inputs dispatched before it).
-        let earlier = self.take_later_for(&instance);
+        let carried = self.take_later_for(&instance);
         let turn = self.turn(&[&instance]);
         let request = Request::Input {
             instance_id: instance,
@@ -108,12 +108,21 @@ impl Core {
         Ok(Outcome::Offload(Offload::new(
             "Supervisor input timed out",
             supervisor_handle::DEADLINE,
-            move || {
-                turn.wait();
-                let earlier = link.call_each(earlier);
-                Ok((earlier, link.call(request)))
+            {
+                let carried = carried.clone();
+                move || {
+                    turn.wait();
+                    // The request ran out of time before its turn came: nothing is sent.
+                    let earlier = carried
+                        .take()
+                        .ok_or_else(|| errors::internal("Input timed out before its turn"))?;
+                    let earlier = link.call_each(earlier);
+                    Ok((earlier, link.call(request)))
+                }
             },
             move |core, sent| {
+                // Whatever the work did not take is sent after all, by the follow-up job.
+                core.requeue_later(&carried);
                 let (earlier, receipt) = sent?;
                 core.settle_follow_ups(&used, earlier);
                 let Response::Accepted { bytes } = core.settle_supervisor(&used, receipt)? else {

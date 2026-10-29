@@ -141,9 +141,13 @@ impl Core {
         started: &Started,
         read: Result<Read>,
     ) -> Result<()> {
-        let Read {
+        // A failed read on a link that was replaced meanwhile says nothing about the new one.
+        let Some(Read {
             output, exit_code, ..
-        } = self.settle_supervisor(&started.supervisor, read)?;
+        }) = self.settle_if_current(&started.supervisor, read)?
+        else {
+            return Ok(());
+        };
         let Some(running) = self.panes.get(id) else {
             return Ok(());
         };
@@ -254,12 +258,12 @@ impl Core {
             },
             move |core, flushed| match flushed {
                 Ok(acknowledged) => {
-                    let acknowledged = core.settle_supervisor(&used, acknowledged).map(drop);
-                    if acknowledged.is_err() {
+                    let acknowledged = core.settle_if_current(&used, acknowledged);
+                    if !matches!(acknowledged, Ok(Some(_))) {
                         // The flush is done: only the acknowledgement is owed again.
                         core.owe_acknowledgement(&pane_id, applying.through);
                     }
-                    acknowledged
+                    acknowledged.map(drop)
                 }
                 Err(error) => {
                     // The next flush retries what this one could not do.

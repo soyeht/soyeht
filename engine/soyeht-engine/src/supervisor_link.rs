@@ -219,6 +219,10 @@ impl Core {
     fn start_connect(&mut self) {
         let socket = self.directory.join(PTYD_SOCKET);
         let generation = self.generation;
+        // On a thread of its own: connecting to a socket of the local system can wait for as
+        // long as the supervisor does not accept (a full backlog), and a shared worker must not
+        // wait with it. One attempt runs at a time, so at most one such thread exists.
+        self.background.run_alone(CONNECT_JOB);
         let started = self.spawn_background(
             CONNECT_JOB.into(),
             move || {

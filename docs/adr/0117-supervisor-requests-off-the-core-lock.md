@@ -94,6 +94,28 @@ their way. So a resize is always sent before the input that follows it (the prog
 SIGWINCH before the typed bytes), and two inputs to one pane reach it in dispatch order even
 from two connections. A wait for a turn is bounded by the deadline below.
 
+Typing never depends on the shared pool: the follow-up job, which holds a turn an input waits
+for, runs on a thread of its own (`run_alone`), so it never waits for a free worker. If an input's
+request runs out of time before its work got its turn, the work sends nothing (the typed bytes
+included) and the answer to the request puts the sends it took back in the queue
+(`Core::requeue_later`). A close that a caller sends in place can overtake an input still on its
+way, which is then refused as `not_found`; that is harmless, the process is gone.
+
+**A link that was replaced.** A job that outlives its link may fail on it after a new link was
+made: the failure says nothing about the new one, so the read of a pane or an acknowledgement
+that failed on a link that is no longer current is dropped (`Core::settle_if_current`), and
+neither fails the job nor cools it down for a second after every reconnect. The output stays in
+the supervisor and the acknowledgement is owed again.
+
+**The connection** is made by a job of its own that waits for the welcome for up to five
+seconds. The connect of a Unix socket is the one call that is not bounded by the client's
+timeouts: on a system that blocks on a full backlog it waits for as long as the supervisor
+does not accept. It cannot be bounded without a non-blocking connect in the platform seam, so
+the job runs on a thread of its own, one attempt at a time: a hung supervisor costs one idle
+thread, never a shared worker or the lock, and the attempt ends when the supervisor accepts or
+its socket is gone. The loopback endpoint of Windows is bounded already (a connect and
+handshake deadline in `soyeht-platform`).
+
 **Latency of the terminal.** A job is applied by the tick that follows its end, so a read
 that finds output would show it one tick (10 ms) later than a read made inside the tick.
 A job whose result has news (output, a gap, an exit the pane did not know, an error) therefore wakes the tick
