@@ -5,6 +5,7 @@ use crate::{
         fake::{Recorder, no, ok},
     },
     layout::test_layout,
+    testing::Scratch,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -12,25 +13,6 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
-
-/// A folder of its own for one test; its name carries "next" like every place of the app.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new(label: &str) -> Self {
-        let root =
-            std::env::temp_dir().join(format!("next-service-{label}-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        Self(root)
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
-}
 
 /// A folder with the programs of every system, made once for the whole run.
 fn programs() -> PathBuf {

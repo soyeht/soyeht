@@ -24,6 +24,7 @@ pane queue ID [--cursor CURSOR] | pane queue-resume ID | pane queue-remove ID PR
 harness list [--cursor CURSOR] | model list HARNESS [--pane ID] [--cursor CURSOR]\n\
 device pair-start | device list\n\
 service install [--component engine|ptyd] [--programs DIR] | service uninstall|start|stop|status [--component engine|ptyd]\n\
+uninstall [--delete-data [--yes]] | diagnostics [--lines COUNT]\n\
 service render --system macos|linux|windows --name NAME [--description TEXT] [--log PATH] [--after NAME] [--user ID] [--env KEY=VALUE]... -- PROGRAM [ARGUMENT]...\n\
 task create WORKSPACE TITLE --must-not-change TEXT [OPTIONS]\n\
 task next WORKSPACE PANE GENERATION | task list WORKSPACE [OPTIONS] | task show WORKSPACE TASK\n\

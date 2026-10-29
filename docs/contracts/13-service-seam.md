@@ -76,8 +76,9 @@ Planned. Today the seam is called by the `soyeht service` command and by
 section is what they are to do.
 
 **The installer** is to register, with the person's consent to install: it copies the programs and
-runs `soyeht service install --programs DIR`. **The uninstaller** is to run `soyeht service
-uninstall` before it removes the programs. **The app** is to register only when the person asks: a
+runs `soyeht service install --programs DIR`. **The uninstaller** is to run `soyeht uninstall`
+(`soyeht uninstall --delete-data --yes` when the person chose to delete their data) before it
+removes the programs. **The app** is to register only when the person asks: a
 first-run question or a setting ("Start Soyeht when I log in"), for a copy that was not installed
 by an installer (an unpacked archive, a package manager that runs no script). It must never
 register silently, since macOS tells the person about every new background item and Windows lists
@@ -93,6 +94,7 @@ The commands, all printing the state of the services after they ran as JSON
 | --- | --- |
 | `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
+| `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
 | `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise. |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
 | `soyeht service status [--component C]` | Reports. Changes nothing. |
@@ -166,11 +168,40 @@ ends with 1 and writes the reason into the log.
 
 ## 7. Uninstall
 
-`service uninstall` stops the programs and removes the registration and the definition files it
-wrote. Stopping the supervisor ends the person's terminals. It leaves the programs, the data
-directory, the database and the logs: deleting a person's data is a separate choice for the
-uninstaller to ask. It touches only the names of its own profile, and never a name or a place
-that lacks "next".
+`soyeht uninstall` is the one command a person or an uninstaller runs. It stops the engine and
+the supervisor of the profile, removes their registration and the definition files the seam wrote
+(`service uninstall` of both components), and prints the state of the services and
+`"dataDeleted"`. It works on all three systems and never connects to the engine. Stopping the
+supervisor ends the person's terminals.
+
+**Data stays by default.** The programs, the data directory, the database and the logs are left
+alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,
+transcripts, settings, logs), and only after the person types the profile's name at the prompt;
+`--yes` confirms for a script (`--yes` alone is refused).
+
+**The order is: check, confirm, unregister, wait, delete.** The check (`plan_removal`) changes
+nothing and runs first, before the prompt and before any service is touched, so a deletion that
+would be refused leaves the services registered. After the services are unregistered the command
+waits up to 15 seconds for the engine and the supervisor to stop answering on their endpoints; if
+one still does (a copy the app started itself), it deletes nothing and says so, and the command can
+be run again.
+
+**Only the profile's own folder is deleted.** Every check reads canonical paths
+(`soyeht_platform::fs::canonicalize`), and the directory must be the folder `contracts/profiles.json`
+names for the profile below the system's folder for application data. So `--data-dir` pointing at
+anything else, however its name reads (`nextcloud`, `~/Documents/nextjs-app`), is refused, and so is:
+
+- the legacy app's folders, however they are reached (a link or an alternate spelling resolves to
+  them first), and any path that is relative or has a `.` or `..` component;
+- a data directory that is itself a link;
+- a folder that holds the home folder, however the home is spelled.
+
+A link inside the directory is removed, never followed (on Windows a link to a folder is removed
+as a folder). The data directory of another profile that lies inside this one (Dev is inside
+prod's) is kept, so deleting prod's data leaves Dev's.
+Programs are the installer's to remove, since it chose where they are. The command touches only
+the names and the directory of its own profile (`--profile P`), and never a name or a place that
+lacks "next".
 
 ## 8. Two profiles on one machine
 

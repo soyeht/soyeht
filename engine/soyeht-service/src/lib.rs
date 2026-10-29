@@ -17,6 +17,7 @@
 //! definition whose name or location could be the legacy app's is refused ([`guard`]).
 
 mod commands;
+mod data;
 mod definition;
 mod error;
 pub mod guard;
@@ -26,8 +27,11 @@ mod manage;
 mod policy;
 mod render;
 mod system;
+#[cfg(test)]
+mod testing;
 
 pub use commands::{CommandOutput, Commands, Real};
+pub use data::{Removal, plan_removal};
 pub use definition::Definition;
 pub use error::{Error, Result};
 pub use layout::Layout;
