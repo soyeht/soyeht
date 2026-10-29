@@ -128,9 +128,13 @@ fn the_default_unregisters_both_services_and_keeps_the_data() {
     assert_eq!(result["dataDeleted"], json!(false));
     assert_eq!(result["services"].as_array().unwrap().len(), 2);
     assert!(rig.layout.data.join("soyeht.db").is_file());
-    // Only the names of this profile were asked about, never a legacy one.
+    // Both services are this profile's own, and no legacy name was asked about. A systemd
+    // manager with no unit file asks only for a reload, so the names come from the report.
+    for service in result["services"].as_array().unwrap() {
+        let name = service["name"].as_str().unwrap().to_lowercase();
+        assert!(name.contains("next"), "{name}");
+    }
     let asked = commands.0.borrow().join("\n");
-    assert!(asked.contains("next"), "{asked}");
     for legacy in soyeht_protocol::legacy::BUNDLE_IDS {
         assert!(!asked.contains(legacy), "{asked}");
     }
