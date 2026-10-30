@@ -123,8 +123,10 @@ agent works.
   recorded, in the lines the Mac shows above and below its screen.
 - On Linux and Windows the top bar carries the window controls (minimize, maximize, close),
   drags the window, and on Linux the window edges resize it. The window opens no larger than
-  its display. A tiling desktop (Hyprland, sway and the like, told by `XDG_CURRENT_DESKTOP`)
-  ignores minimize and maximize, so a window there gets only the close button and no resize
+  its display (a Wayland session names its displays only after the application has started, so
+  the window waits for them: opened earlier, it would be larger than a small screen holds, and
+  restoring it after a maximize would push its buttons off the screen). A tiling desktop
+  (Hyprland, sway and the like, told by `XDG_CURRENT_DESKTOP`) ignores minimize and maximize, so a window there gets only the close button and no resize
   edges; a window snapped to half of the screen on GNOME or KDE keeps the buttons and loses the
   resize edges. The window announces itself as `soyeht` (Wayland `app_id`, X11 class) for window
   rules.
