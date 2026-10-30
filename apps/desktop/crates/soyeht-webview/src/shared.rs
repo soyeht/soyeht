@@ -107,7 +107,7 @@ pub(crate) fn ask_found<Table, View, T>(
 }
 
 /// The calls of a view that read what it shares: the facade of each back end has them as they are.
-#[cfg_attr(not(target_os = "linux"), allow(unused_macros))]
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(unused_macros))]
 macro_rules! shared_view_calls {
     () => {
         /// The latest picture the page drew, once; `None` when it has drawn nothing since.
@@ -125,7 +125,7 @@ macro_rules! shared_view_calls {
         }
     };
 }
-#[cfg_attr(not(target_os = "linux"), allow(unused_imports))]
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(unused_imports))]
 pub(crate) use shared_view_calls;
 
 /// An answer to a request that the thread of the views makes, or does not.
@@ -143,7 +143,9 @@ pub(crate) fn await_answer<T>(answer: &mpsc::Receiver<Result<T>>, timeout: Durat
     })?
 }
 
-/// Starts the thread of the views and waits until it says it can take them.
+/// Starts the thread of the views and waits until it says it can take them. (The Windows back
+/// end keeps the start it is waiting for, so it has its own.)
+#[cfg(target_os = "linux")]
 pub(crate) fn start_thread<T: Send + 'static>(
     timeout: Duration,
     serve: impl FnOnce(mpsc::Sender<Result<T>>) + Send + 'static,

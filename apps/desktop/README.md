@@ -257,8 +257,14 @@ agent works.
   `web_wait` reach the page (`soyeht_client::web_host`); a person's input in the pane stops an
   agent until "Hand back to the agent". Left out: click, type, press, hover, select, evaluate,
   console and network for agents, a `<select>` list, a context menu, pop-up windows and file
-  choosers, text composition shown inside the page, and Windows (WebView2, phase 2). Dictation is
-  listed with a notice.
+  choosers and text composition shown inside the page. Dictation is listed with a notice.
+- Web panes (Windows, ADR 0124): the page is Microsoft Edge WebView2 (the runtime Windows 11 ships;
+  a machine without it says so in the pane), a window of its own over the pane that follows the
+  window and is cut to what of the pane is on screen, and hidden under menus and popovers, while
+  a pane is dragged and when the pane is not in the frame. The engine's page takes the person's
+  pointer, keys and text itself. The address line, the profile, the agent's tools and the
+  hand-back are as on Linux; an agent's scripts run in an isolated world made by the engine's own
+  protocol in the process (no port; four calls, no domain switched on).
 - Left out of Preferences, because the Mac's panel is not a feature of this client or of the engine:
   General (system alerts and Dock badges: an operating-system notification setting), Engine, Phone
   and Tasks and loops (placeholders on the Mac too), Shortcuts (Vim mode: the editor has none), Links (opening a link in a web pane) and Dictation. Of the Harnesses panel, adding, editing and

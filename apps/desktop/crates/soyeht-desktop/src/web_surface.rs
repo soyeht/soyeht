@@ -341,8 +341,21 @@ impl WebSurface {
     }
 }
 
-/// The system's handle of the window, where a page is placed over it. No system draws a page as a
-/// window of its own yet, so there is none to give.
+/// The system's handle of the window, where a page is placed over it.
+#[cfg(windows)]
+fn window_handle(window: &Window) -> Option<WindowHandle> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    // The window's own method of this name gives GPUI's handle; the trait's gives the system's.
+    let Ok(handle) = HasWindowHandle::window_handle(window) else {
+        return None;
+    };
+    match handle.as_raw() {
+        RawWindowHandle::Win32(handle) => Some(WindowHandle(handle.hwnd.get())),
+        _ => None,
+    }
+}
+
+#[cfg(not(windows))]
 fn window_handle(_: &Window) -> Option<WindowHandle> {
     None
 }

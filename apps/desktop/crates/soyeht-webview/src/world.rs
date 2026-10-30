@@ -6,6 +6,38 @@
 use crate::{Error, Result};
 use serde_json::{Value, json};
 
+/// The calls of the engine's protocol the reader makes, and no others (ADR 0124). A call is made
+/// from this list, so no name is built from text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Method {
+    FrameTree,
+    CreateWorld,
+    Evaluate,
+    ReloadIgnoringCache,
+}
+
+impl Method {
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 4] = [
+        Self::FrameTree,
+        Self::CreateWorld,
+        Self::Evaluate,
+        Self::ReloadIgnoringCache,
+    ];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::FrameTree => "Page.getFrameTree",
+            Self::CreateWorld => "Page.createIsolatedWorld",
+            Self::Evaluate => "Runtime.evaluate",
+            Self::ReloadIgnoringCache => "Page.reload",
+        }
+    }
+}
+
+/// The arguments of [`Method::ReloadIgnoringCache`].
+pub(crate) const RELOAD_ARGUMENTS: &str = r#"{"ignoreCache":true}"#;
+
 /// The name of the world every script of the reader runs in. A page has no handle on it.
 pub(crate) const WORLD_NAME: &str = "soyeht-read";
 
@@ -77,6 +109,21 @@ fn parse(answer: &str) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_calls_of_the_reader_are_four_and_none_enables_a_domain() {
+        let names: Vec<&str> = Method::ALL.iter().map(|method| method.name()).collect();
+        assert_eq!(
+            names,
+            [
+                "Page.getFrameTree",
+                "Page.createIsolatedWorld",
+                "Runtime.evaluate",
+                "Page.reload"
+            ]
+        );
+        assert!(names.iter().all(|name| !name.ends_with(".enable")));
+    }
 
     #[test]
     fn a_string_comes_back_as_it_is_and_other_values_as_the_page_writes_them() {
