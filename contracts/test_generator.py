@@ -537,6 +537,11 @@ class ProfileTests(unittest.TestCase):
             ("profiles", "dev", "tcpPort", 0),
             ("profiles", "dev", "displayNames", {"macApp": "Soyeht Dev"}),
             ("profiles", "dev", "displayNames", "window", "  "),
+            ("profiles", "dev", "displayNames", "windowsFolder", "Soyeht Dev"),
+            ("profiles", "dev", "displayNames", "windowsFolder", "Soyeht\\Next"),
+            ("profiles", "dev", "displayNames", "windowsFolder", "Soyeht Next."),
+            ("profiles", "dev", "displayNames", "windowsFolder", "Soyeht: Next"),
+            ("profiles", "prod", "displayNames", "windowsFolder", self.document["profiles"]["dev"]["displayNames"]["windowsFolder"]),
             ("profiles", "prod", "displayNames", dict(self.document["profiles"]["dev"]["displayNames"])),
             ("profiles", "dev", "tcpPort", True),
             ("profiles", "prod", "tcpPort", self.document["profiles"]["dev"]["tcpPort"]),
@@ -613,6 +618,12 @@ class ProfileTests(unittest.TestCase):
         for change in changes:
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, "next"):
                 validate_profiles(self.changed(*change))
+
+    def test_the_windows_install_folder_is_pinned(self):
+        # Never change it: the login tasks of a release hold the absolute path of each program in
+        # this folder (contract 13), so a new name would strand every registration.
+        names = self.document["profiles"]["prod"]["displayNames"]
+        self.assertEqual(names["windowsFolder"], "Soyeht Next")
 
     def test_profiles_keep_their_state_apart(self):
         profiles = self.document["profiles"]

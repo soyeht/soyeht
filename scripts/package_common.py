@@ -152,11 +152,13 @@ def c_flags(paths):
 
 def quoted_flag(flag, windows):
     """`flag` as `cc` reads it from `CFLAGS` with `CC_SHELL_ESCAPED_FLAGS`: quoted when it holds a
-    blank, a quote or a backslash, so a user name with a space or a Windows path survives."""
+    blank, a quote or a backslash, so a user name with a space or a Windows path survives. Inside
+    double quotes a backslash before another backslash or a quote is an escape, so every backslash
+    is doubled: a UNC path (`\\\\server\\share`) comes out as it went in."""
     if not any(character in flag for character in ' \t"\'\\'):
         return flag
     if windows:
-        return '"' + flag.replace('"', '\\"') + '"'
+        return '"' + flag.replace("\\", "\\\\").replace('"', '\\"') + '"'
     return shlex.quote(flag)
 
 

@@ -51,12 +51,13 @@ SCRIPT = PACKAGING / "soyeht.iss"
 PROFILE = PROFILES[PROFILE_NAME]
 # What people see, and what the machine knows the installer by, all from the profile (ADR 0112).
 # The name of the installer's entries (the shortcut, Add or remove programs, the description of a
-# signature) is the window's title; the folder below Programs is the name of the app's folder on
-# the Mac, which carries "next"; the installer id, and with it the key of Add or remove
-# programs, is the profile's application id for Windows.
+# signature) is the window's title; the folder below Programs is `windowsFolder`, which carries
+# "next" and never changes once released, since the login tasks hold the absolute path of every
+# program in it; the installer id, and with it the key of Add or remove programs, is the
+# profile's application id for Windows.
 PRODUCT_NAME = PROFILE["displayNames"]["window"]
 PUBLISHER = PRODUCT_NAME
-INSTALL_FOLDER = PROFILE["displayNames"]["macApp"]
+INSTALL_FOLDER = PROFILE["displayNames"]["windowsFolder"]
 APP_ID = PROFILE["appIds"]["windows"]
 
 ENGINE_PROGRAMS = ("soyeht", "soyeht-engine", "soyeht-ptyd", "soyeht-mcp", "soyeht-service-host")

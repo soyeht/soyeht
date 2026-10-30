@@ -9,7 +9,8 @@ PROFILES = {
         "tcpPort": 8291,
         "displayNames": {
             "macApp": "Soyeht Dev",
-            "window": "Soyeht \u00b7 Dev"
+            "window": "Soyeht \u00b7 Dev",
+            "windowsFolder": "Soyeht Next Dev"
         },
         "appIds": {
             "macos": "com.soyeht.next.dev.mac",
@@ -39,7 +40,8 @@ PROFILES = {
         "tcpPort": 8290,
         "displayNames": {
             "macApp": "Soyeht Next",
-            "window": "Soyeht"
+            "window": "Soyeht",
+            "windowsFolder": "Soyeht Next"
         },
         "appIds": {
             "macos": "com.soyeht.next.mac",
