@@ -134,7 +134,18 @@ adds what the system web view needs.
   at the top level), which `policy::allows_frame` says (changed by ADR 0124: before, they were
   refused in frames too). WebKitGTK reports a frame and the top level alike, so the decision lets a
   frame's address through and the top level is held to the stricter rule once it has begun to load:
-  a page that commits as `data:` or `about:srcdoc` is replaced by `about:blank`.
+  a page that commits as `data:` or `about:srcdoc` is sent back to the page before it (so Back has no
+  entry of the refused page to return to), or replaced by `about:blank` when it is the first.
+  Evidence that the decision has no main-frame signal (libwebkit2gtk-4.1 2.52.6 on Ubuntu 26.04;
+  the development headers are not installed, so the exported symbols were read with `nm -D`): a
+  navigation decision offers `webkit_navigation_policy_decision_` `get_request`, `get_frame_name`,
+  `get_navigation_type`, `get_mouse_button`, `get_modifiers` and `get_navigation_action`, and the
+  action offers `webkit_navigation_action_` `get_request`, `get_frame_name`, `get_navigation_type`,
+  `get_mouse_button`, `get_modifiers`, `is_redirect` and `is_user_gesture`. The frame name is the
+  target frame's name attribute, which a frame may not have and the top level never has, so it does
+  not say which is which. `webkit_frame_is_main_frame` and `webkit_web_page_get_main_frame` belong to
+  the web process extension API (`WebKitFrame`), which this program does not load, and
+  `webkit_response_policy_decision_is_main_frame_main_resource` is for responses, not navigations.
 
 ### The web host
 

@@ -80,13 +80,25 @@ impl ViewCtx {
 
     /// The top level may not be a `data:` or `about:srcdoc` document, though a frame may (the
     /// decision of the navigation cannot tell them apart): when the page committed is one, the
-    /// pane goes blank.
+    /// view goes back to the page before it, which leaves no entry of the refused page for Back
+    /// to return to, or goes blank when there is none (`policy::top_level`).
     fn keep_the_top_level_to_the_web(&self) {
         // SAFETY: the web view is alive; the string it returns is copied before the next call.
-        let uri = unsafe { copy_string((self.api.webkit_web_view_get_uri)(self.webview)) };
-        if !uri.is_empty() && !policy::allows(&uri) {
-            // SAFETY: the web view is alive; the address is a constant.
-            unsafe { (self.api.webkit_web_view_load_uri)(self.webview, c"about:blank".as_ptr()) };
+        let (uri, can_go_back) = unsafe {
+            (
+                copy_string((self.api.webkit_web_view_get_uri)(self.webview)),
+                (self.api.webkit_web_view_can_go_back)(self.webview) != ffi::FALSE,
+            )
+        };
+        // SAFETY: the web view is alive; the address is a constant.
+        unsafe {
+            match policy::top_level(&uri, can_go_back) {
+                policy::TopLevel::Keep => {}
+                policy::TopLevel::GoBack => (self.api.webkit_web_view_go_back)(self.webview),
+                policy::TopLevel::Blank => {
+                    (self.api.webkit_web_view_load_uri)(self.webview, c"about:blank".as_ptr());
+                }
+            }
         }
     }
 
