@@ -66,6 +66,63 @@ class ReleaseManifestTests(unittest.TestCase):
         old = manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, floor=78)
         self.assertEqual(old, {"status": "failed", "failure": "staleManifest"})
 
+    def test_a_sequence_more_than_a_day_ahead_is_refused_with_the_recovery(self):
+        self.packages()
+        now = 1_800_000_000
+        day = release_manifest.MAX_LEAD_SECONDS
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=now + day, now=now)
+        self.assertEqual(manifest.check_payload(manifest.open_envelope(text, KEYS))["sequence"], now + day)
+        with self.assertRaises(release_manifest.Refused) as caught:
+            release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=now + day + 1, now=now)
+        self.assertIn("for ever", str(caught.exception))
+        self.assertIn(f"at most {now + day}", str(caught.exception))
+        # Seconds written as milliseconds is the usual slip.
+        with self.assertRaises(release_manifest.Refused):
+            release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=now * 1000, now=now)
+
+    def test_a_sequence_must_be_above_the_last_published_and_not_far_above_it(self):
+        self.packages()
+        now = 1_800_000_000
+        last = now - 5
+        for bad in (last, last - 1):
+            with self.assertRaises(release_manifest.Refused) as caught:
+                release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=bad, last_sequence=last, now=now)
+            self.assertIn(f"--sequence {last + 1}", str(caught.exception))
+        release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=last + 1, last_sequence=last, now=now)
+        # A last manifest that is itself ahead of the clock (a mistake made before) moves the ceiling
+        # with it, so the way out is a sequence just above it, and the default (the clock) is refused.
+        ahead = now + 3 * 86400
+        with self.assertRaises(release_manifest.Refused):
+            release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, last_sequence=ahead, now=now)
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=ahead + 1,
+                                         last_sequence=ahead, now=now)
+        self.assertEqual(manifest.check_payload(manifest.open_envelope(text, KEYS))["sequence"], ahead + 1)
+
+    def test_the_previous_manifest_gives_the_last_sequence_and_must_verify(self):
+        self.packages()
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=500, now=500)
+        self.assertEqual(release_manifest.previous_sequence(text, KEYS), 500)
+        document = json.loads(text)
+        document["signature"] = base64.b64encode(bytes(64)).decode()
+        with self.assertRaises(release_manifest.Refused):
+            release_manifest.previous_sequence(json.dumps(document), KEYS)
+
+    def test_a_checksum_beside_a_package_is_no_package_and_the_appimage_outranks_the_deb(self):
+        self.package(f"soyeht-{VERSION}-macos-aarch64.dmg", b"mac")
+        self.package(f"soyeht-{VERSION}-macos-aarch64.dmg.sha256", b"sum")
+        self.package(f"soyeht-{VERSION}-linux-x86_64.deb", b"deb")
+        self.package(f"soyeht-{VERSION}-linux-x86_64.AppImage", b"image")
+        _, packages = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS)
+        self.assertEqual({(p["system"], p["architecture"]) for p in packages},
+                         {("macos", "aarch64"), ("linux", "x86_64")})
+        linux = next(p for p in packages if p["system"] == "linux")
+        self.assertTrue(linux["url"].endswith("-linux-x86_64.AppImage"))
+        self.assertEqual(linux["sha256"], hashlib.sha256(b"image").hexdigest())
+
+    def test_the_release_tag_comes_from_the_notes_address_of_the_contract(self):
+        self.assertEqual(release_manifest.release_tag("1.2.3"), "v1.2.3")
+        self.assertTrue(release_manifest.POLICY["release"]["notesUrl"].endswith("/" + release_manifest.release_tag("{version}")))
+
     def test_a_tampered_manifest_is_refused_by_verify(self):
         self.packages()
         text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS)

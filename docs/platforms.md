@@ -118,7 +118,7 @@ the Mac and iOS build number (`(major * 1_000_000 + minor * 1_000 + patch) * 100
 `CFBundleVersion`); `bump major|minor|patch|revision` raises it everywhere and regenerates; `check`
 fails when a Cargo manifest or lockfile, the npm package or an Xcode project disagrees.
 Windows takes the first three fields of the file version from the desktop package's version, which is the
-same number, and the fourth from the revision. The script does not tag, push, build or sign. The Linux packages are built by `scripts/package_linux.py` ("Linux packages" below), the Mac package by `scripts/package_mac.py` ("The Mac package" below) and the Windows installers by `scripts/package_windows.py` ("Windows packages").
+same number, and the fourth from the revision. The script does not tag, push, build or sign. A whole release (the packages of the three systems, the checksums, the signed update manifest and the draft GitHub release) is ordered by `scripts/release_flow.py` and written up in [docs/release.md](release.md). The Linux packages are built by `scripts/package_linux.py` ("Linux packages" below), the Mac package by `scripts/package_mac.py` ("The Mac package" below) and the Windows installers by `scripts/package_windows.py` ("Windows packages").
 
 A release made by `package_mac.py`, `package_linux.py` or `package_windows.py` is built with `--remap-path-prefix` for the builder's source, home, cargo and rustup folders (`package_common.release_environment`), so no path of the build machine ends up in a program (the C libraries get `-ffile-prefix-map` too, and a Windows release compiles its C with clang, so LLVM is needed for x64 as well as Arm).
 
