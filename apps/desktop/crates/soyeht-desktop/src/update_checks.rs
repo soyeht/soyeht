@@ -4,18 +4,23 @@
 
 use crate::workbench::Workbench;
 use gpui::{AppContext as _, Context};
-use soyeht_client::{local_preferences::LocalPreferences, update};
+use soyeht_client::{
+    local_preferences::LocalPreferences,
+    update::{self, Updates},
+};
 use soyeht_protocol::update_policy::CHECK_INTERVAL_SECONDS;
 use std::time::Duration;
 
 impl Workbench {
     /// Reads the person's choice and starts the daily check. Called once, when the window opens.
     pub(crate) fn start_update_checks(&mut self, cx: &mut Context<Self>) {
-        let enabled = self
-            .preferences
-            .as_deref()
-            .is_none_or(|directory| LocalPreferences::load(directory).checks_for_updates());
-        self.updates.set_enabled(enabled);
+        let saved = self.preferences.as_deref().map(LocalPreferences::load);
+        self.updates = Updates::new(
+            saved
+                .as_ref()
+                .is_none_or(LocalPreferences::checks_for_updates),
+            saved.as_ref().map_or(0, LocalPreferences::update_floor),
+        );
         self.update_loop = Some(cx.spawn(async move |this, cx| {
             loop {
                 if this
@@ -37,16 +42,31 @@ impl Workbench {
             return;
         }
         cx.notify();
-        let work = cx.background_spawn(async { update::check() });
+        let floor = self.updates.floor();
+        let work = cx.background_spawn(async move { update::check(floor) });
         cx.spawn(async move |this, cx| {
             let result = work.await;
             // Once the window is gone the update fails, and nobody waits for the answer.
             this.update(cx, |this, cx| {
                 this.updates.finish(result);
+                this.keep_update_floor();
                 cx.notify();
             })
         })
         .detach();
+    }
+
+    /// Writes the highest sequence number read to the device's own choices when it rose.
+    fn keep_update_floor(&self) {
+        let floor = self.updates.floor();
+        if let Some(directory) = self.preferences.as_deref()
+            && LocalPreferences::load(directory).update_floor() < floor
+            && let Err(error) = LocalPreferences::change(directory, |saved| {
+                saved.update_sequence = Some(floor);
+            })
+        {
+            soyeht_platform::log::failure("desktop.update_sequence_not_saved", &error);
+        }
     }
 
     /// The switch of Preferences: applies the choice now and keeps it for the next launch.

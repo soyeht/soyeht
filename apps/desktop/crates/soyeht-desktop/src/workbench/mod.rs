@@ -172,7 +172,7 @@ impl Workbench {
             alerts: Alerts::new(),
             places: Places::default(),
             web: None,
-            updates: Updates::new(true),
+            updates: Updates::new(true, 0),
             update_loop: None,
             _web_signals: None,
             _events: events,

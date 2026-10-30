@@ -7,10 +7,10 @@
 
 use soyeht_platform::log;
 use soyeht_process::{Error as ProcessError, Limits};
-use soyeht_protocol::update::{Build, Offer, Outcome, Version, evaluate};
+use soyeht_protocol::update::{Build, Checked, Offer, Outcome, Version, evaluate};
 use soyeht_protocol::update_policy::{
-    CHECK_TIMEOUT_SECONDS, DEFAULT_CHANNEL, Failure, MANIFEST_MAX_BYTES, MANIFEST_URL, PUBLIC_KEYS,
-    PublicKey, text,
+    CHECK_TIMEOUT_SECONDS, CONNECT_SECONDS, DEFAULT_CHANNEL, Failure, MANIFEST_MAX_BYTES,
+    MANIFEST_URL, MAX_REDIRECTS, PUBLIC_KEYS, PublicKey, USER_AGENT, text,
 };
 use std::{ffi::OsStr, process::Command, time::Duration};
 
@@ -21,29 +21,34 @@ const CURL: &str = "curl.exe";
 const CURL: &str = "curl";
 /// curl's exit code for a body larger than `--max-filesize`.
 const CURL_FILE_TOO_BIG: i32 = 63;
-/// How long a connection may take to open.
-const CONNECT_SECONDS: &str = "10";
-/// Redirects a release asset address goes through before the file.
-const MAX_REDIRECTS: &str = "5";
 /// The runner waits this long past curl's own limit before it kills the process.
 const RUNNER_GRACE: Duration = Duration::from_secs(5);
 
 /// This build: the package version, this system and the stable channel; `None` when the version
 /// is not three plain numbers (a build with such a version checks nothing).
 pub fn running() -> Option<Build<'static>> {
+    build_of(env!("CARGO_PKG_VERSION"))
+}
+
+/// The build that runs version `version` on this system.
+fn build_of(version: &str) -> Option<Build<'static>> {
     Some(Build {
-        version: Version::parse(env!("CARGO_PKG_VERSION"))?,
+        version: Version::parse(version)?,
         system: std::env::consts::OS,
         architecture: std::env::consts::ARCH,
         channel: DEFAULT_CHANNEL,
     })
 }
 
-/// The arguments of the manifest fetch: HTTPS only, a few redirects, a size and a time limit.
+/// The arguments of the manifest fetch: HTTPS only, a few redirects, a size and a time limit, and
+/// the contract's `User-Agent`. `--disable` comes first, the only place curl reads it, so that no
+/// `.curlrc` of the person changes the request or the output.
 fn curl_arguments(url: &str) -> Vec<String> {
     let timeout = CHECK_TIMEOUT_SECONDS.to_string();
     let largest = MANIFEST_MAX_BYTES.to_string();
+    let (connect, redirects) = (CONNECT_SECONDS.to_string(), MAX_REDIRECTS.to_string());
     [
+        "--disable",
         "--silent",
         "--fail",
         "--location",
@@ -52,9 +57,11 @@ fn curl_arguments(url: &str) -> Vec<String> {
         "--proto-redir",
         "=https",
         "--max-redirs",
-        MAX_REDIRECTS,
+        &redirects,
+        "--user-agent",
+        USER_AGENT,
         "--connect-timeout",
-        CONNECT_SECONDS,
+        &connect,
         "--max-time",
         &timeout,
         "--max-filesize",
@@ -84,24 +91,25 @@ fn fetch_with(program: &OsStr, url: &str) -> Result<String, Failure> {
     }
 }
 
-/// The verdict of `fetch` read against `keys`. A build with no key fetches nothing: it could
-/// not trust the answer.
+/// The verdict of `fetch` read against `keys`, refusing a manifest below `floor`. A build with
+/// no key fetches nothing: it could not trust the answer.
 fn check_with(
     build: &Build<'_>,
     keys: &[PublicKey],
+    floor: u64,
     fetch: impl FnOnce() -> Result<String, Failure>,
-) -> Result<Outcome, Failure> {
+) -> Result<Checked, Failure> {
     if keys.is_empty() {
         return Err(Failure::NotConfigured);
     }
-    evaluate(&fetch()?, build, keys)
+    evaluate(&fetch()?, build, keys, floor)
 }
 
-/// Asks for the manifest and reads it. It blocks for up to the check's time: run it off the
-/// window's thread.
-pub fn check() -> Result<Outcome, Failure> {
-    let build = running().ok_or(Failure::BadManifest)?;
-    check_with(&build, PUBLIC_KEYS, || {
+/// Asks for the manifest and reads it; `floor` is the highest sequence this device has read. It
+/// blocks for up to the check's time: run it off the window's thread.
+pub fn check(floor: u64) -> Result<Checked, Failure> {
+    let build = running().ok_or(Failure::UnknownBuild)?;
+    check_with(&build, PUBLIC_KEYS, floor, || {
         fetch_with(OsStr::new(CURL), MANIFEST_URL)
     })
 }
@@ -123,17 +131,29 @@ pub enum Status {
 pub struct Updates {
     enabled: bool,
     status: Status,
+    /// A check is running, whatever the switch did meanwhile: one at a time.
+    in_flight: bool,
+    /// The highest sequence number read so far; the next manifest may not be below it.
+    floor: u64,
     /// The failure the log last said, so a check that fails the same way each day says it once.
     logged: Option<Failure>,
 }
 
 impl Updates {
-    pub fn new(enabled: bool) -> Self {
+    /// `floor` is the highest sequence number the device has kept from earlier runs.
+    pub fn new(enabled: bool, floor: u64) -> Self {
         Self {
             enabled,
             status: Status::Unknown,
+            in_flight: false,
+            floor,
             logged: None,
         }
+    }
+
+    /// The highest sequence number read so far, for the next check and for the device to keep.
+    pub fn floor(&self) -> u64 {
+        self.floor
     }
 
     pub fn enabled(&self) -> bool {
@@ -180,31 +200,37 @@ impl Updates {
             .map(|offer| text::DOWNLOAD.replace("{version}", &offer.version))
     }
 
-    /// Turns the check on or off. Off forgets what it found, so no badge outlives the choice.
+    /// Turns the check on or off. Off forgets what it found, so no badge outlives the choice. On
+    /// again while a check still runs shows that one: it is not started a second time.
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
         if !enabled {
             self.status = Status::Unknown;
+        } else if self.in_flight {
+            self.status = Status::Checking;
         }
     }
 
     /// A check is about to run: false when it is off or one is already running.
     pub fn begin(&mut self) -> bool {
-        if !self.enabled || self.status == Status::Checking {
+        if !self.enabled || self.in_flight {
             return false;
         }
+        self.in_flight = true;
         self.status = Status::Checking;
         true
     }
 
     /// A check ended. The answer of a check that was turned off meanwhile is dropped.
-    pub fn finish(&mut self, result: Result<Outcome, Failure>) {
+    pub fn finish(&mut self, result: Result<Checked, Failure>) {
+        self.in_flight = false;
         if !self.enabled {
             return;
         }
         match result {
-            Ok(outcome) => {
+            Ok(Checked { sequence, outcome }) => {
                 self.logged = None;
+                self.floor = self.floor.max(sequence);
                 self.status = match outcome {
                     Outcome::UpToDate => Status::UpToDate,
                     Outcome::Available(offer) => Status::Available(offer),
@@ -249,19 +275,17 @@ mod tests {
 
     #[test]
     fn a_build_with_no_key_asks_nobody() {
-        let result = check_with(&build(), &[], || panic!("fetched without a key"));
+        let result = check_with(&build(), &[], 0, || panic!("fetched without a key"));
         assert_eq!(result, Err(Failure::NotConfigured));
     }
 
     #[test]
     fn a_fetch_that_fails_is_its_own_failure_and_text_that_is_no_manifest_is_refused() {
-        let unreachable = check_with(&build(), &[KEY], || Err(Failure::Unreachable));
+        let unreachable = check_with(&build(), &[KEY], 0, || Err(Failure::Unreachable));
         assert_eq!(unreachable, Err(Failure::Unreachable));
-        let garbage = check_with(
-            &build(),
-            &[KEY],
-            || Ok("<html>captive portal</html>".into()),
-        );
+        let garbage = check_with(&build(), &[KEY], 0, || {
+            Ok("<html>captive portal</html>".into())
+        });
         assert_eq!(garbage, Err(Failure::BadEnvelope));
     }
 
@@ -285,6 +309,14 @@ mod tests {
             MANIFEST_MAX_BYTES.to_string()
         );
         assert!(arguments.contains(&"--fail".to_owned()));
+        // curl reads `--disable` only as its first argument; it keeps `.curlrc` out of the request.
+        assert_eq!(arguments[0], "--disable");
+        assert_eq!(arguments[at("--user-agent") + 1], USER_AGENT);
+        assert_eq!(arguments[at("--max-redirs") + 1], MAX_REDIRECTS.to_string());
+        assert_eq!(
+            arguments[at("--connect-timeout") + 1],
+            CONNECT_SECONDS.to_string()
+        );
         assert_eq!(
             arguments.last().unwrap(),
             "https://example.test/manifest.json"
@@ -317,7 +349,7 @@ mod tests {
         let cases = vectors["cases"].as_array().unwrap();
         assert!(cases.len() >= 8);
         for case in cases {
-            let mut updates = Updates::new(case["enabled"].as_bool().unwrap());
+            let mut updates = Updates::new(case["enabled"].as_bool().unwrap(), 0);
             let status = &case["status"];
             updates.status = match status["kind"].as_str().unwrap() {
                 "unknown" => Status::Unknown,
@@ -366,12 +398,65 @@ mod tests {
         }
     }
 
+    fn checked(outcome: Outcome, sequence: u64) -> Checked {
+        Checked { sequence, outcome }
+    }
+
+    #[test]
+    fn a_version_that_is_not_three_plain_numbers_makes_no_build() {
+        // `check` ends such a build as `UnknownBuild`, not as a fault of the manifest.
+        for bad in ["", "0.1", "0.1.0-beta", "01.2.3"] {
+            assert!(build_of(bad).is_none(), "{bad}");
+        }
+        assert!(build_of("0.1.0").is_some());
+    }
+
+    #[test]
+    fn turning_the_check_off_and_on_while_one_runs_keeps_it_one_check() {
+        let mut updates = Updates::new(true, 0);
+        assert!(updates.begin());
+        updates.set_enabled(false);
+        updates.set_enabled(true);
+        assert!(!updates.begin(), "a second check started beside the first");
+        assert_eq!(updates.status(), &Status::Checking);
+        updates.finish(Ok(checked(Outcome::UpToDate, 3)));
+        assert_eq!(updates.status(), &Status::UpToDate);
+        assert!(updates.begin());
+    }
+
+    #[test]
+    fn the_answer_of_a_check_turned_off_meanwhile_is_dropped_and_frees_the_next() {
+        let mut updates = Updates::new(true, 0);
+        assert!(updates.begin());
+        updates.set_enabled(false);
+        updates.finish(Ok(checked(Outcome::UpToDate, 9)));
+        assert_eq!(updates.status(), &Status::Unknown);
+        assert_eq!(updates.floor(), 0);
+        updates.set_enabled(true);
+        assert!(updates.begin());
+    }
+
+    #[test]
+    fn the_floor_only_rises_with_what_was_read() {
+        let mut updates = Updates::new(true, 5);
+        assert_eq!(updates.floor(), 5);
+        assert!(updates.begin());
+        updates.finish(Ok(checked(Outcome::UpToDate, 9)));
+        assert_eq!(updates.floor(), 9);
+        assert!(updates.begin());
+        updates.finish(Ok(checked(Outcome::UpToDate, 7)));
+        assert_eq!(updates.floor(), 9);
+        assert!(updates.begin());
+        updates.finish(Err(Failure::StaleManifest));
+        assert_eq!(updates.floor(), 9);
+    }
+
     #[test]
     fn a_check_runs_once_at_a_time_and_only_while_it_is_on() {
-        let mut updates = Updates::new(true);
+        let mut updates = Updates::new(true, 0);
         assert!(updates.begin());
         assert!(!updates.begin());
-        updates.finish(Ok(Outcome::UpToDate));
+        updates.finish(Ok(checked(Outcome::UpToDate, 1)));
         assert_eq!(updates.status(), &Status::UpToDate);
         assert!(updates.begin());
         updates.set_enabled(false);
@@ -392,12 +477,12 @@ mod tests {
                 size: 1,
             },
         };
-        let mut updates = Updates::new(true);
-        updates.finish(Ok(Outcome::Available(offer.clone())));
+        let mut updates = Updates::new(true, 0);
+        updates.finish(Ok(checked(Outcome::Available(offer.clone()), 1)));
         assert_eq!(updates.offer(), Some(&offer));
         updates.finish(Err(Failure::Unreachable));
         assert_eq!(updates.offer(), None);
-        updates.finish(Ok(Outcome::Available(offer.clone())));
+        updates.finish(Ok(checked(Outcome::Available(offer.clone()), 1)));
         updates.set_enabled(false);
         assert_eq!(updates.offer(), None);
     }

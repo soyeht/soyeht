@@ -24,6 +24,10 @@ pub struct LocalPreferences {
     /// 0122). On unless the person turned it off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check_for_updates: Option<bool>,
+    /// The highest sequence number of an update manifest this device has read: an older manifest
+    /// is refused (ADR 0122).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_sequence: Option<u64>,
 }
 
 /// The directory the file lives in: the one `socket` is in, so a disposable engine
@@ -66,6 +70,11 @@ impl LocalPreferences {
                 Self::default()
             }
         }
+    }
+
+    /// The sequence number to refuse manifests below; 0 before any was read.
+    pub fn update_floor(&self) -> u64 {
+        self.update_sequence.unwrap_or(0)
     }
 
     /// Reads the file, lets `edit` change one choice and writes the file again, so the other
@@ -141,12 +150,15 @@ mod tests {
         assert!(LocalPreferences::load(&directory).checks_for_updates());
         let saved = LocalPreferences {
             check_for_updates: Some(false),
+            update_sequence: Some(1_793_000_000),
             ..LocalPreferences::default()
         };
         saved.save(&directory).unwrap();
         let loaded = LocalPreferences::load(&directory);
         assert!(!loaded.checks_for_updates());
         assert_eq!(loaded, saved);
+        assert_eq!(loaded.update_floor(), 1_793_000_000);
+        assert_eq!(LocalPreferences::default().update_floor(), 0);
         let _ = fs::remove_dir_all(&directory);
     }
 

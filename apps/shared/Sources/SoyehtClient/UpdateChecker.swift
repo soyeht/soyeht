@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SoyehtProtocol
+import os
 
 /// What the last check found.
 public enum UpdateStatus: Equatable, Sendable {
@@ -54,9 +55,28 @@ public struct UpdatePresentation: Equatable, Sendable {
 /// Fetches the manifest at an address: its text, or why that was not possible.
 public typealias UpdateFetch = @Sendable (URL) async -> Result<String, UpdateFailure>
 
-/// The fetch of the app: HTTPS through the system, never more than the manifest's size. The
-/// answer is not trusted (a key of the contract has to have signed it), so the system's own
-/// certificate checks are all this adds.
+/// Counts the redirects of one fetch and refuses the one past the contract's limit, or one that
+/// leaves HTTPS.
+private final class RedirectLimit: NSObject, URLSessionTaskDelegate, Sendable {
+  private let followed = OSAllocatedUnfairLock(initialState: 0)
+
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest
+  ) async -> URLRequest? {
+    let count = followed.withLock { value -> Int in
+      value += 1
+      return value
+    }
+    guard count <= UpdatePolicy.maxRedirects, request.url?.scheme == "https" else { return nil }
+    return request
+  }
+}
+
+/// The fetch of the app: HTTPS through the system, never more than the manifest's size, with the
+/// contract's one `User-Agent`. The answer is not trusted (a key of the contract has to have
+/// signed it), so the system's own certificate checks are all this adds.
 public func fetchUpdateManifest(_ address: URL) async -> Result<String, UpdateFailure> {
   guard address.scheme == "https" else { return .failure(.unreachable) }
   let configuration = URLSessionConfiguration.ephemeral
@@ -64,8 +84,10 @@ public func fetchUpdateManifest(_ address: URL) async -> Result<String, UpdateFa
   configuration.timeoutIntervalForResource = TimeInterval(UpdatePolicy.checkTimeoutSeconds)
   let session = URLSession(configuration: configuration)
   defer { session.finishTasksAndInvalidate() }
+  var request = URLRequest(url: address)
+  request.setValue(UpdatePolicy.userAgent, forHTTPHeaderField: "User-Agent")
   do {
-    let (bytes, response) = try await session.bytes(from: address)
+    let (bytes, response) = try await session.bytes(for: request, delegate: RedirectLimit())
     guard (response as? HTTPURLResponse)?.statusCode == 200 else { return .failure(.unreachable) }
     var body = Data()
     for try await byte in bytes {
@@ -83,6 +105,8 @@ public func fetchUpdateManifest(_ address: URL) async -> Result<String, UpdateFa
 @MainActor @Observable
 public final class UpdateChecker {
   public static let enabledKey = "soyeht.updates.check"
+  /// The highest sequence number of a manifest this device has read (ADR 0122).
+  public static let sequenceKey = "soyeht.updates.sequence"
 
   public private(set) var enabled: Bool
   public private(set) var status: UpdateStatus = .unknown
@@ -92,6 +116,8 @@ public final class UpdateChecker {
   @ObservationIgnored private let fetch: UpdateFetch
   @ObservationIgnored private let interval: Duration
   @ObservationIgnored private var loop: Task<Void, Never>?
+  /// A check is running, whatever the switch did meanwhile: one at a time.
+  @ObservationIgnored private var inFlight = false
   /// The failure the log last said, so a check that fails the same way each day says it once.
   @ObservationIgnored private var logged: UpdateFailure?
 
@@ -140,6 +166,7 @@ public final class UpdateChecker {
     self.enabled = enabled
     preferences.set(enabled, forKey: Self.enabledKey)
     if enabled {
+      if inFlight { status = .checking }
       Task { await checkNow() }
     } else {
       status = .unknown
@@ -148,16 +175,26 @@ public final class UpdateChecker {
 
   /// Asks now, unless the check is off or one is already running.
   public func checkNow() async {
-    guard enabled, status != .checking, let build else { return }
+    guard enabled, !inFlight else { return }
+    guard let build else {
+      status = .failed(.unknownBuild)
+      return
+    }
+    inFlight = true
     status = .checking
-    let result = await Self.read(build: build, keys: keys, fetch: fetch)
+    let floor = UInt64(max(preferences.integer(forKey: Self.sequenceKey) ?? 0, 0))
+    let result = await Self.read(build: build, keys: keys, floor: floor, fetch: fetch)
+    inFlight = false
     guard enabled else { return }
     switch result {
-    case .success(.upToDate):
-      status = .upToDate
-      logged = nil
-    case .success(.available(let offer)):
-      status = .available(offer)
+    case .success(let checked):
+      if checked.sequence > floor {
+        preferences.set(Int(clamping: checked.sequence), forKey: Self.sequenceKey)
+      }
+      switch checked.outcome {
+      case .upToDate: status = .upToDate
+      case .available(let offer): status = .available(offer)
+      }
       logged = nil
     case .failure(let failure):
       if logged != failure {
@@ -169,14 +206,15 @@ public final class UpdateChecker {
   }
 
   private nonisolated static func read(
-    build: UpdateBuild, keys: [UpdatePublicKey], fetch: UpdateFetch
-  ) async -> Result<UpdateOutcome, UpdateFailure> {
+    build: UpdateBuild, keys: [UpdatePublicKey], floor: UInt64, fetch: UpdateFetch
+  ) async -> Result<UpdateChecked, UpdateFailure> {
     // A build with no key asks nobody: it could not trust the answer.
     guard !keys.isEmpty, let address = URL(string: UpdatePolicy.manifestURL) else {
       return .failure(.notConfigured)
     }
     switch await fetch(address) {
-    case .success(let text): return UpdateCheck.evaluate(text, build: build, keys: keys)
+    case .success(let text):
+      return UpdateCheck.evaluate(text, build: build, keys: keys, floor: floor)
     case .failure(let failure): return .failure(failure)
     }
   }

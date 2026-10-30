@@ -98,6 +98,77 @@ private let offer = UpdateOffer(
   #expect(!checker(preferences: store) { _ in .failure(.unreachable) }.enabled)
 }
 
+private actor Gate {
+  private var isOpen = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    if isOpen { return }
+    await withCheckedContinuation { waiters.append($0) }
+  }
+
+  func open() {
+    isOpen = true
+    waiters.forEach { $0.resume() }
+    waiters = []
+  }
+}
+
+@Test @MainActor func turningTheCheckOffAndOnWhileOneRunsKeepsItOneCheck() async {
+  let gate = Gate()
+  let asked = AskedCounter()
+  let updates = checker { _ in
+    await asked.add()
+    await gate.wait()
+    return .failure(.unreachable)
+  }
+  let first = Task { await updates.checkNow() }
+  while await asked.count == 0 { await Task.yield() }
+  updates.setEnabled(false)
+  updates.setEnabled(true)
+  for _ in 0..<20 { await Task.yield() }
+  #expect(updates.status == .checking)
+  await gate.open()
+  await first.value
+  for _ in 0..<20 { await Task.yield() }
+  #expect(await asked.count == 1)
+  #expect(updates.status == .failed(.unreachable))
+}
+
+@Test @MainActor func aBuildWithNoComparableVersionEndsAsUnknownBuild() async {
+  let updates = UpdateChecker(
+    build: nil, keys: [UpdatePublicKey(id: "k", key: "")], preferences: MemoryPreferenceStore(),
+    fetch: { _ in .failure(.unreachable) }, interval: .seconds(86400))
+  await updates.checkNow()
+  #expect(updates.status == .failed(.unknownBuild))
+}
+
+@Test @MainActor func theHighestSequenceReadIsKeptAndAnOlderManifestIsRefused() async throws {
+  let vector = try ContractVector.load("update")
+  let item = try #require(vector["cases"].array?.first)
+  let key = vector["keys"]["first"]
+  let text = item["manifest"].string ?? ""
+  let keys = [UpdatePublicKey(id: key["id"].string ?? "", key: key["key"].string ?? "")]
+  let sequence = try #require(item["expected"]["sequence"].int)
+  let store = MemoryPreferenceStore()
+  func updates() -> UpdateChecker {
+    UpdateChecker(
+      build: UpdateVersion("0.1.0").map {
+        UpdateBuild(version: $0, system: "macos", architecture: "aarch64", channel: "stable")
+      }, keys: keys, preferences: store, fetch: { _ in .success(text) }, interval: .seconds(86400))
+  }
+  let first = updates()
+  await first.checkNow()
+  #expect(first.offer?.version == "0.2.0")
+  #expect(store.integers[UpdateChecker.sequenceKey] == sequence)
+  store.integers[UpdateChecker.sequenceKey] = sequence + 1
+  let later = updates()
+  await later.checkNow()
+  #expect(later.status == .failed(.staleManifest))
+  #expect(later.offer == nil)
+  #expect(store.integers[UpdateChecker.sequenceKey] == sequence + 1)
+}
+
 private actor AskedCounter {
   private(set) var addresses: [String] = []
   var count: Int { addresses.count }
