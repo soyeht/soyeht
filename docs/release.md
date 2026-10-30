@@ -54,7 +54,9 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    It runs `release.py bump` and drafts the section of `CHANGELOG.md` from the squash commits since
    the last tag (`scripts/changelog.py`). Edit the entries so they read well for a person who uses
    Soyeht, delete the line that starts with `<!-- draft:`, commit the bump and the changelog, and
-   merge them as a pull request. `--dry-run` shows what it would do.
+   merge them as a pull request. `--dry-run` shows what it would do. Running `prepare` again replaces a
+   section that still has its draft line, and refuses one you have edited (`changelog.py draft
+   --replace --force` writes over it on purpose).
 
 2. **Build.** From a clean checkout of the merged commit of `main` (the script refuses any other):
 
@@ -74,10 +76,11 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    ```powershell
    git fetch origin; git checkout <commit>
    uv run python scripts\package_windows.py --require-signature
+   git rev-parse HEAD > dist\BUILD_SHA
    ```
 
-   It writes `dist\soyeht-<version>-windows-x86_64.exe` and `-aarch64.exe`. Copy them to a folder on
-   the Mac (`scp`, a share) for the next step.
+   It writes `dist\soyeht-<version>-windows-x86_64.exe` and `-aarch64.exe`. Copy them and `BUILD_SHA`
+   to a folder on the Mac (`scp`, a share) for the next step.
 
 4. **Collect.**
 
@@ -85,7 +88,9 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    uv run python scripts/release_flow.py collect --from ~/windows-installers
    ```
 
-   It copies the packages into `dist/` and checks that all five are there (the Mac image, the `.deb`
+   `build` wrote `dist/BUILD_SHA`, the commit the packages come from; `collect` and `publish` refuse
+   packages of another commit (or of another version, which are never uploaded). It copies the packages
+   into `dist/` and checks that all five are there (the Mac image, the `.deb`
    and AppImage, the two installers), that the image is signed with a Developer ID certificate,
    notarized and accepted by Gatekeeper, that each installer carries a signature, and that the
    changelog section is written. Then it writes the release notes (`release-notes.md`), the signed

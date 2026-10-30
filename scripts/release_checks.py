@@ -16,6 +16,8 @@ from release_manifest import sha256_of
 
 CHECKSUMS = "SHA256SUMS"
 NOTES = "release-notes.md"
+# The commit the packages were built from, written by `build` beside them.
+BUILD_SHA = "BUILD_SHA"
 DEVELOPER_ID = "Authority=Developer ID Application:"
 # Offset of the data directories in the optional header of a PE32 and a PE32+ file, and the
 # index of the certificate table (the Authenticode signature) among them.

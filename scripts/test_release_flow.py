@@ -13,6 +13,7 @@ from unittest import mock
 
 import changelog
 import release
+import package_common
 import release_checks
 import release_flow
 import release_manifest
@@ -65,7 +66,7 @@ class Recorder:
         self.inputs.append(stdin)
 
 
-def probe_for(release_exists=False, dirty=False, on_main=True):
+def probe_for(release_exists=False, dirty=False, on_main=True, gh_fails=False):
     def probe(command):
         if command[:2] == ["git", "status"]:
             return 0, " M file\n" if dirty else ""
@@ -73,8 +74,10 @@ def probe_for(release_exists=False, dirty=False, on_main=True):
             return (0 if on_main else 1), ""
         if command[:2] == ["git", "rev-parse"]:
             return 0, SHA + "\n"
-        if command[:3] == ["gh", "release", "view"]:
-            return (0 if release_exists else 1), ""
+        if command[:3] == ["gh", "release", "list"]:
+            if gh_fails:
+                return 1, ""
+            return 0, json.dumps([{"tagName": f"v{VERSION}", "isDraft": True}] if release_exists else [{"tagName": "v0.0.1", "isDraft": False}])
         return 0, ""
 
     return probe
@@ -104,6 +107,7 @@ class FlowCase(unittest.TestCase):
         return name
 
     def all_packages(self, signed=True):
+        (self.dist / release_checks.BUILD_SHA).write_text(SHA + "\n")
         self.package("macos", "aarch64", "dmg")
         self.package("linux", "x86_64", "deb")
         self.package("linux", "x86_64", "AppImage")
@@ -114,7 +118,7 @@ class FlowCase(unittest.TestCase):
         return release_flow.parser().parse_args([*argv, "--dist", str(self.dist)])
 
     def collect(self, *argv, environment=ENVIRONMENT, fetch=lambda _address: None, tool=developer_id_tool):
-        return release_flow.collect(self.options("collect", *argv), environment, fetch, tool)
+        return release_flow.collect(self.options("collect", *argv), environment, fetch, tool, probe_for())
 
     def quiet(self, function, *args, **kwargs):
         with contextlib.redirect_stdout(io.StringIO()) as out:
@@ -126,7 +130,7 @@ class CollectTests(FlowCase):
     def test_collect_writes_the_checksums_the_notes_and_a_manifest_a_client_accepts(self):
         self.all_packages()
         self.quiet(self.collect)
-        names = release_flow.package_names(self.dist)
+        names = release_flow.package_names(self.dist, VERSION)
         assets = [*names, release_manifest.POLICY["manifest"]["asset"]]
         self.assertEqual(release_checks.checksum_problems(self.dist, assets), [])
         self.assertEqual((self.dist / release_checks.NOTES).read_text(), NOTES.split("\n", 1)[1].strip() + "\n")
@@ -139,7 +143,7 @@ class CollectTests(FlowCase):
         self.all_packages()
         self.quiet(self.collect)
         (self.dist / release_checks.package_name(VERSION, "linux", "x86_64", "deb")).write_bytes(b"changed")
-        names = release_flow.package_names(self.dist)
+        names = release_flow.package_names(self.dist, VERSION)
         self.assertTrue(any("deb" in line for line in release_checks.checksum_problems(self.dist, names)))
 
     def test_every_missing_or_unsigned_part_is_listed_at_once(self):
@@ -163,6 +167,7 @@ class CollectTests(FlowCase):
         self.assertTrue((self.dist / release_checks.CHECKSUMS).is_file())
 
     def test_a_pre_release_takes_the_ad_hoc_image_and_leaves_a_system_out(self):
+        (self.dist / release_checks.BUILD_SHA).write_text(SHA + "\n")
         (self.dist / "ad-hoc").mkdir()
         (self.dist / "ad-hoc" / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")).write_bytes(b"adhoc")
         self.package("linux", "x86_64", "deb")
@@ -181,12 +186,35 @@ class CollectTests(FlowCase):
             (self.dist / name).unlink()
             (windows / name).write_bytes(pe(True))
         (windows / "soyeht-0.0.9-windows-x86_64.exe").write_bytes(pe(True))
+        (windows / release_checks.BUILD_SHA).write_text(SHA + "\n")
         with self.assertRaises(release_flow.Refused):
             self.quiet(self.collect, "--from", str(windows))
         (windows / "soyeht-0.0.9-windows-x86_64.exe").unlink()
         _, out = self.quiet(self.collect, "--from", str(windows))
         self.assertIn("copied soyeht-", out)
         self.assertEqual(release_checks.missing_packages(self.dist, VERSION), [])
+
+    def test_packages_from_another_commit_or_without_a_commit_are_refused(self):
+        self.all_packages()
+        windows = self.root / "windows"
+        windows.mkdir()
+        (windows / release_checks.package_name(VERSION, "windows", "x86_64", "exe")).write_bytes(pe(True))
+        with self.assertRaisesRegex(release_flow.Refused, "no BUILD_SHA"):
+            self.quiet(self.collect, "--from", str(windows))
+        (windows / release_checks.BUILD_SHA).write_text("b" * 40 + "\n")
+        with self.assertRaisesRegex(release_flow.Refused, "built from bbbbbbbbb"):
+            self.quiet(self.collect, "--from", str(windows))
+        (self.dist / release_checks.BUILD_SHA).write_text("c" * 40 + "\n")
+        with self.assertRaisesRegex(release_flow.Refused, "built from cccccccc"):
+            self.quiet(self.collect)
+
+    def test_a_package_of_another_version_is_never_collected_or_uploaded(self):
+        self.all_packages()
+        (self.dist / "soyeht-0.0.9-macos-aarch64.dmg").write_bytes(b"old")
+        self.assertNotIn("soyeht-0.0.9-macos-aarch64.dmg", release_flow.package_names(self.dist, VERSION))
+        self.assertEqual([p.name for p in release_flow.publish_files(self.dist, VERSION)].count("soyeht-0.0.9-macos-aarch64.dmg"), 0)
+        with self.assertRaisesRegex(release_flow.Refused, "another version than"):
+            self.quiet(self.collect)
 
     def test_a_draft_changelog_stops_the_release(self):
         self.all_packages()
@@ -266,14 +294,14 @@ class PublishTests(FlowCase):
         with self.assertRaises(release_flow.Refused) as caught:
             self.publish(probe=probe_for(release_exists=True, dirty=True, on_main=False))
         text = str(caught.exception)
-        for part in ("working tree has changes", "not on origin/main", "does not match SHA256SUMS", "still a draft", "already exists"):
+        for part in ("working tree has changes", "not on origin/main", "does not match SHA256SUMS", "still a draft", "(a draft counts)"):
             self.assertIn(part, text)
 
     def test_a_manifest_that_lists_other_bytes_than_the_files_is_refused(self):
         self.ready()
         other = self.dist / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")
         other.write_bytes(b"swapped")
-        release_checks.write_checksums(self.dist, [*release_flow.package_names(self.dist), "update-manifest.json"])
+        release_checks.write_checksums(self.dist, [*release_flow.package_names(self.dist, VERSION), "update-manifest.json"])
         with self.assertRaises(release_flow.Refused) as caught:
             self.publish()
         self.assertIn("hash or size that is not the file's", str(caught.exception))
@@ -285,6 +313,26 @@ class PublishTests(FlowCase):
         with self.assertRaises(release_flow.Refused) as caught:
             self.publish("--last-sequence", str(sequence))
         self.assertIn("not above", str(caught.exception))
+
+    def test_the_packages_must_come_from_the_commit_that_is_tagged(self):
+        self.ready()
+        (self.dist / release_checks.BUILD_SHA).write_text("d" * 40 + "\n")
+        with self.assertRaisesRegex(release_flow.Refused, "built from ddddddddd, not from aaaaaaaaa"):
+            self.publish()
+        (self.dist / release_checks.BUILD_SHA).unlink()
+        with self.assertRaisesRegex(release_flow.Refused, "BUILD_SHA is missing"):
+            self.publish()
+
+    def test_a_leftover_draft_is_found_and_so_is_a_gh_that_cannot_list(self):
+        self.ready()
+        with self.assertRaisesRegex(release_flow.Refused, "a draft counts"):
+            self.publish(probe=probe_for(release_exists=True))
+        with self.assertRaisesRegex(release_flow.Refused, "cannot list the releases of soyeht/soyeht"):
+            self.publish(probe=probe_for(gh_fails=True))
+        asked = []
+        release_flow.existing_release_problems(f"v{VERSION}", lambda command: asked.append(command) or (0, "[]"))
+        self.assertEqual(asked[0][:3], ["gh", "release", "list"])
+        self.assertIn("tagName,isDraft", asked[0])
 
     def test_a_missing_release_folder_is_a_list_of_reasons_not_a_crash(self):
         found = release_flow.publish_problems(
@@ -350,8 +398,30 @@ class BuildTests(FlowCase):
         self.assertTrue(recorder.commands[0][2].startswith("other:"))
         with self.assertRaises(release_flow.Refused):
             self.build("--linux", "--linux-host", "x; rm -rf ~")
+        for name in ("-oProxyCommand=x", "--upload-pack=x", "-"):
+            with self.assertRaises(release_flow.Refused):
+                self.build("--linux", f"--linux-host={name}")
         with self.assertRaises(release_flow.Refused):
             release_flow.linux_script(VERSION, "../../etc")
+
+    def test_build_records_its_commit_and_a_dry_run_creates_nothing(self):
+        fresh = self.root / "fresh"
+        options = release_flow.parser().parse_args(["build", "--mac", "--dist", str(fresh)])
+        self.quiet(release_flow.build, options, Recorder(), probe_for(), {})
+        self.assertEqual((fresh / release_checks.BUILD_SHA).read_text().strip(), SHA)
+        dry = self.root / "dry"
+        options = release_flow.parser().parse_args(["build", "--mac", "--dry-run", "--dist", str(dry)])
+        _, out = self.quiet(release_flow.build, options, Recorder(), probe_for(), {})
+        self.assertFalse(dry.exists())
+        self.assertIn("would write", out)
+
+    def test_packages_left_by_a_build_of_another_commit_stop_a_new_build(self):
+        self.all_packages()
+        (self.dist / release_checks.BUILD_SHA).write_text("e" * 40 + "\n")
+        with self.assertRaisesRegex(release_flow.Refused, "built from another commit"):
+            self.build("--mac")
+        (self.dist / release_checks.BUILD_SHA).write_text(SHA + "\n")
+        self.build("--mac")
 
     def test_the_windows_command_is_printed_not_run(self):
         _, recorder, out = self.build("--windows")
@@ -386,7 +456,7 @@ class SmallPartTests(FlowCase):
 
     def test_the_mac_image_cannot_be_checked_off_the_mac(self):
         self.all_packages()
-        found = release_checks.mac_problems(self.dist, release_flow.package_names(self.dist), system="linux")
+        found = release_checks.mac_problems(self.dist, release_flow.package_names(self.dist, VERSION), system="linux")
         self.assertEqual(len(found), 1)
         self.assertIn("collect on the Mac", found[0])
 
@@ -397,15 +467,28 @@ class SmallPartTests(FlowCase):
         (self.dist / name).write_bytes(b"damaged")
         self.assertEqual(len(release_checks.sidecar_problems(self.dist)), 1)
 
-    def test_prepare_bumps_then_drafts_and_a_dry_run_writes_nothing(self):
+    def test_the_repository_is_one_name_in_the_contract_the_homepage_and_the_release_address(self):
+        self.assertEqual(release_flow.REPOSITORY, "soyeht/soyeht")
+        self.assertEqual(package_common.HOMEPAGE, "https://github.com/" + release_flow.REPOSITORY)
+        for address in (release_manifest.POLICY["manifest"]["url"], release_manifest.POLICY["release"]["packageUrl"],
+                        release_manifest.POLICY["release"]["notesUrl"], *release_manifest.POLICY["urlPrefixes"]):
+            self.assertTrue(address.startswith(package_common.HOMEPAGE + "/"), address)
+
+    def test_prepare_bumps_then_drafts_the_target_version_and_a_dry_run_writes_nothing(self):
+        current = release.current()
+        target = str(release.next_release(current, "minor").version)
         with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
             self.quiet(release_flow.prepare, SimpleNamespace(target="minor", dry_run=False))
             bump.assert_called_with(["bump", "minor"])
-            draft.assert_called_with(["draft", "--replace"])
+            draft.assert_called_with(["draft", "--version", target, "--replace"])
+        with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
+            self.quiet(release_flow.prepare, SimpleNamespace(target="minor", dry_run=True))
+            bump.assert_called_with(["bump", "minor", "--dry-run"])
+            draft.assert_called_with(["draft", "--version", target, "--print"])
         with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
             self.quiet(release_flow.prepare, SimpleNamespace(target="current", dry_run=True))
             bump.assert_not_called()
-            draft.assert_called_with(["draft", "--print"])
+            draft.assert_called_with(["draft", "--version", str(current.version), "--print"])
 
 
 if __name__ == "__main__":

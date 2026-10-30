@@ -56,9 +56,20 @@ class ChangelogTests(unittest.TestCase):
         text = START + OLDER
         with self.assertRaises(changelog.ChangelogError):
             changelog.insert(text, "## [0.1.0] - 2026-11-01\n", "0.1.0", False)
-        again = changelog.insert(text, "## [0.1.0] - 2026-11-01\n\n- Different.\n", "0.1.0", True)
+        again = changelog.insert(text, "## [0.1.0] - 2026-11-01\n\n- Different.\n", "0.1.0", True, force=True)
         self.assertEqual([name for name, _, _ in changelog.sections(again)], ["Unreleased", "0.1.0"])
         self.assertNotIn("The first thing", again)
+
+    def test_replace_writes_over_a_draft_but_never_over_an_edited_section(self):
+        draft = changelog.render("0.2.0", "2026-11-01", ["Add b (#3)"], "v0.1.0")
+        text = changelog.insert(START, draft, "0.2.0", False)
+        again = changelog.insert(text, changelog.render("0.2.0", "2026-11-02", ["Add c (#4)"], "v0.1.0"), "0.2.0", True)
+        self.assertIn("Add c", again)
+        self.assertNotIn("Add b", again)
+        edited = text.replace(changelog.DRAFT_MARK, "<!-- gone:").replace("<!-- gone:", "")
+        with self.assertRaisesRegex(changelog.ChangelogError, "has been edited"):
+            changelog.insert(edited, draft, "0.2.0", True)
+        self.assertIn("Add b", changelog.insert(edited, draft, "0.2.0", True, force=True))
 
     def test_the_notes_are_the_section_without_its_heading_and_a_draft_is_refused(self):
         self.assertEqual(changelog.notes_of(START + OLDER, "0.1.0"), "### Added\n\n- The first thing.\n")
@@ -120,7 +131,7 @@ class GitTests(unittest.TestCase):
         self.git("tag", "v0.1.0")
         self.commit("Add one (#2)")
         before = changelog.git("rev-parse", "HEAD", root=self.root)
-        arguments = SimpleNamespace(version="0.2.0", since=None, date=None, replace=False, print=False)
+        arguments = SimpleNamespace(version="0.2.0", since=None, date=None, replace=False, force=False, print=False)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(changelog.draft_command(arguments, self.root, date(2026, 11, 1)), 0)
         text = (self.root / "CHANGELOG.md").read_text()

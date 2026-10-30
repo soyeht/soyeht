@@ -31,6 +31,7 @@ published.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shlex
@@ -47,10 +48,10 @@ import release_checks
 import release_manifest
 import update_manifest  # the contracts directory is on the path once release is imported
 from generated_profile import PROFILES
-from package_common import HOMEPAGE, PROFILE_NAME, ROOT
+from package_common import PROFILE_NAME, ROOT
 
 DIST = ROOT / "dist"
-REPOSITORY = HOMEPAGE.removeprefix("https://github.com/")
+REPOSITORY = release_manifest.repository()
 SYSTEMS = ("macos", "linux", "windows")
 # The Linux CI host (docs/platforms.md, "A Linux gate host"): a mirror that the Mac pushes to and a
 # clone of it. Everything the release does there stays below CI_FOLDER of the account's home.
@@ -62,7 +63,8 @@ MIRROR = f"{CI_FOLDER}/mirror.git"
 CLONE = f"{CI_FOLDER}/repo"
 TREES = f"{CI_FOLDER}/release"
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
-HOST_NAME = re.compile(r"^[A-Za-z0-9._@-]+$")
+# No leading dash: a value that starts with one would be read as an option by ssh, scp and git.
+HOST_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
 
 
 class Refused(Exception):
@@ -124,17 +126,24 @@ def source_problems(probe=probe):
 
 
 def prepare(options):
+    old = release.current()
     if options.target == "current":
-        print(f"release: keeping {release.describe(release.current())}")
+        new = old
+        print(f"release: keeping {release.describe(old)}")
     else:
-        status = release.main(["bump", options.target, *(["--dry-run"] if options.dry_run else [])])
-        if status:
+        try:
+            new = release.next_release(old, options.target)
+        except ValueError as failure:
+            raise Refused(str(failure)) from None
+        if release.main(["bump", options.target, *(["--dry-run"] if options.dry_run else [])]):
             raise Refused("the version could not be raised")
+    draft = ["draft", "--version", str(new.version)]
     if options.dry_run:
         print("release: dry run: the changelog section would be:\n")
-        changelog.main(["draft", "--print"])
+        changelog.main([*draft, "--print"])
         return 0
-    if changelog.main(["draft", "--replace"]):
+    # `--replace` writes over a draft only: a section a person has edited is never discarded.
+    if changelog.main([*draft, "--replace"]):
         raise Refused("the changelog draft could not be written")
     print(
         "\nNext: edit CHANGELOG.md (delete the draft line when the entries read well for a user), commit "
@@ -186,7 +195,8 @@ def windows_instructions(version, sha):
             "Windows: run this on the Windows host (docs/release.md, \"The Windows installers\"), in a clone:",
             f"    git fetch origin && git checkout {sha}",
             "    uv run python scripts\\package_windows.py --require-signature",
-            f"then copy dist\\soyeht-{version}-windows-*.exe to a folder here and pass it to collect with --from.",
+            f"    git rev-parse HEAD > dist\\{release_checks.BUILD_SHA}",
+            f"then copy dist\\soyeht-{version}-windows-*.exe and dist\\{release_checks.BUILD_SHA} to a folder here and pass it to collect with --from.",
             "Set the SOYEHT_WINDOWS_SIGN_* variables first (docs/platforms.md, \"Windows packages\").",
         ]
     )
@@ -203,12 +213,30 @@ def refuse_or_warn(found, what, dry_run):
     return 1
 
 
+def mark_build(folder, version, sha, dry_run):
+    """Write the commit the packages are built from beside them (`BUILD_SHA`). Packages left in the
+    folder by a build of another commit would be taken for this one's, so that is refused."""
+    marker = folder / release_checks.BUILD_SHA
+    recorded = marker.read_text().strip() if marker.is_file() else None
+    stale = package_names(folder, version) if folder.is_dir() else []
+    if stale and recorded != sha:
+        found = [f"{folder} holds packages {'of commit ' + recorded[:9] if recorded else 'with no ' + release_checks.BUILD_SHA}: "
+                 "clear it (they were built from another commit)"]
+        return refuse_or_warn(found, "cannot build here", dry_run)
+    if dry_run:
+        print(f"dry run: would write {marker} ({sha[:9]})")
+    else:
+        folder.mkdir(parents=True, exist_ok=True)
+        marker.write_text(sha + "\n")
+    return 0
+
+
 def build(options, runner=None, probe=probe, environment=os.environ):
     runner = runner or Runner(options.dry_run)
     chosen = [system for system, flag in TARGETS.items() if getattr(options, flag)] or list(TARGETS)
     status = refuse_or_warn(source_problems(probe), "not a release checkout", options.dry_run)
     version, sha = str(release.current().version), head(probe)
-    options.dist.mkdir(parents=True, exist_ok=True)
+    status |= mark_build(options.dist, version, sha, options.dry_run)
     if "macos" in chosen:
         command = ["nice", "-n", "15", "uv", "run", "python", "scripts/package_mac.py", "--dist", str(options.dist)]
         runner.must(command if options.allow_unsigned else [*command, "--release"])
@@ -225,11 +253,22 @@ def build(options, runner=None, probe=probe, environment=os.environ):
 
 
 def gather(folder, version, sources):
-    """Copy the packages of `version` from each source folder into `folder`."""
+    """Copy the packages of `version` from each source folder into `folder`.
+
+    A folder made elsewhere (the Windows installers) must say, in `BUILD_SHA`, that its packages
+    were built from the commit of the rest. The `ad-hoc` folder of this build is the exception."""
     copied = []
     for source in sources:
         if not source.is_dir() or source.resolve() == folder.resolve():
             continue
+        if source.name != "ad-hoc":
+            theirs = source / release_checks.BUILD_SHA
+            ours = folder / release_checks.BUILD_SHA
+            if not theirs.is_file():
+                raise Refused(f"{source} has no {release_checks.BUILD_SHA}: copy it from the machine that built the packages")
+            if not ours.is_file() or theirs.read_text().strip() != ours.read_text().strip():
+                raise Refused(f"{source} holds packages built from {theirs.read_text().strip()[:9]}, not from the "
+                              f"commit of {folder}: build them again")
         for path in sorted(source.glob("soyeht-*")):
             if not path.is_file():
                 continue
@@ -240,8 +279,8 @@ def gather(folder, version, sources):
     return copied
 
 
-def package_names(folder):
-    """The packages in `folder`, not the checksums beside them."""
+def all_package_names(folder):
+    """Every `soyeht-<version>-...` package in `folder`, of any version, not the checksums beside them."""
     if not folder.is_dir():
         return []
     return sorted(
@@ -251,6 +290,19 @@ def package_names(folder):
         and release_manifest.PACKAGE.fullmatch(path.name)
         and not path.name.endswith(release_manifest.SIDECAR_SUFFIXES)
     )
+
+
+def package_names(folder, version):
+    """The packages of `version` in `folder`: one of another version is never collected or uploaded."""
+    return [name for name in all_package_names(folder) if name.startswith(f"soyeht-{version}-")]
+
+
+def stale_problems(folder, version):
+    return [
+        f"{name} is a package of another version than {version}: remove it from {folder}"
+        for name in all_package_names(folder)
+        if not name.startswith(f"soyeht-{version}-")
+    ]
 
 
 def fetch_text(address):
@@ -294,7 +346,7 @@ def changelog_problems(version):
     return []
 
 
-def collect(options, environment=os.environ, fetch=fetch_text, tool=release_checks.run_tool):
+def collect(options, environment=os.environ, fetch=fetch_text, tool=release_checks.run_tool, probe=probe):
     version = str(release.current().version)
     found = [f"{line} (release.py check)" for line in release.problems()]
     folder = options.dist
@@ -303,7 +355,9 @@ def collect(options, environment=os.environ, fetch=fetch_text, tool=release_chec
         raise Refused("--without leaves a system out of the release: it is for a pre-release (--allow-unsigned)")
     for name in gather(folder, version, [*options.sources, *([folder / "ad-hoc"] if options.allow_unsigned else [])]):
         print(f"collect: copied {name}")
-    names = package_names(folder)
+    names = package_names(folder, version)
+    found += stale_problems(folder, version)
+    found += build_sha_problems(folder, probe)
     found += [f"{name} is missing" for name in release_checks.missing_packages(folder, version, options.without)]
     found += release_checks.sidecar_problems(folder)
     found += signing_problems(folder, names, options, tool)
@@ -338,11 +392,11 @@ def collect(options, environment=os.environ, fetch=fetch_text, tool=release_chec
 # --- publish ------------------------------------------------------------------------------------
 
 
-def publish_files(folder):
+def publish_files(folder, version):
     """The assets of the release in the order they are uploaded: the manifest last."""
     asset = release_manifest.POLICY["manifest"]["asset"]
     extra = [folder / name for name in (release_checks.CHECKSUMS, asset) if (folder / name).is_file()]
-    return [*(folder / name for name in package_names(folder)), *extra]
+    return [*(folder / name for name in package_names(folder, version)), *extra]
 
 
 def manifest_problems(folder, version, fetch, options):
@@ -379,7 +433,9 @@ def publish_problems(options, files, probe=probe, fetch=fetch_text, tool=release
         found += release_checks.checksum_problems(folder, listed)
     else:
         found.append(f"{release_checks.CHECKSUMS} is missing: run collect")
-    found += signing_problems(folder, package_names(folder), options, tool)
+    found += stale_problems(folder, version)
+    found += build_sha_problems(folder, probe)
+    found += signing_problems(folder, package_names(folder, version), options, tool)
     found += changelog_problems(version)
     if not (folder / release_checks.NOTES).is_file():
         found.append(f"{release_checks.NOTES} is missing: run collect")
@@ -388,10 +444,33 @@ def publish_problems(options, files, probe=probe, fetch=fetch_text, tool=release
         found += manifest_problems(folder, version, fetch, options)
     elif not options.allow_unsigned:
         found.append(f"{asset} is missing: set {release_manifest.KEY_ENVIRONMENT} and run collect")
-    status, _ = probe(["gh", "release", "view", release_manifest.release_tag(version), "--repo", REPOSITORY])
-    if status == 0:
-        found.append(f"the release {release_manifest.release_tag(version)} already exists in {REPOSITORY}: raise the version, or delete the draft by hand")
+    found += existing_release_problems(release_manifest.release_tag(version), probe)
     return found
+
+
+def existing_release_problems(tag, probe=probe):
+    """`gh release list` shows drafts as well as public releases (a draft has no tag to view yet)."""
+    status, output = probe(["gh", "release", "list", "--repo", REPOSITORY, "--limit", "1000", "--json", "tagName,isDraft"])
+    try:
+        listed = json.loads(output) if status == 0 else None
+    except ValueError:
+        listed = None
+    if not isinstance(listed, list):
+        return [f"cannot list the releases of {REPOSITORY} (gh login?): publishing blind could duplicate {tag}"]
+    if any(isinstance(item, dict) and item.get("tagName") == tag for item in listed):
+        return [f"the release {tag} already exists in {REPOSITORY} (a draft counts): raise the version, or delete it by hand"]
+    return []
+
+
+def build_sha_problems(folder, probe=probe):
+    """The packages must have been built from the commit that is tagged."""
+    marker = folder / release_checks.BUILD_SHA
+    if not marker.is_file():
+        return [f"{release_checks.BUILD_SHA} is missing: the packages are not tied to a commit; run build"]
+    built, current = marker.read_text().strip(), head(probe)
+    if built != current:
+        return [f"the packages were built from {built[:9]}, not from {current[:9]}, the commit to tag: build again"]
+    return []
 
 
 def create_command(options, files, sha):
@@ -408,7 +487,7 @@ def create_command(options, files, sha):
 
 def publish(options, runner=None, probe=probe, fetch=fetch_text, tool=release_checks.run_tool):
     runner = runner or Runner(options.dry_run)
-    files = publish_files(options.dist)
+    files = publish_files(options.dist, str(release.current().version))
     status = refuse_or_warn(publish_problems(options, files, probe, fetch, tool), "will not publish", options.dry_run)
     runner.must(create_command(options, files, head(probe)))
     tag = release_manifest.release_tag(str(release.current().version))

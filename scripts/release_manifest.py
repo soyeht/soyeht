@@ -204,6 +204,12 @@ def previous_sequence(text, keys):
         raise Refused(f"the previous manifest is refused: {failed.failure}") from None
 
 
+def repository():
+    """`owner/name` of the public repository, from the release address prefix of the contract."""
+    prefix = POLICY["urlPrefixes"][0]
+    return prefix.removeprefix("https://github.com/").removesuffix("/releases/")
+
+
 def release_tag(version):
     """The git tag (and release name) of a version, from the release notes address of the contract."""
     return POLICY["release"]["notesUrl"].rsplit("/", 1)[1].format(version=version)

@@ -123,11 +123,19 @@ def section_of(text, version):
     return None
 
 
-def insert(text, section, version, replace):
-    """`text` with the section of `version` just below `[Unreleased]`."""
+def insert(text, section, version, replace, force=False):
+    """`text` with the section of `version` just below `[Unreleased]`.
+
+    A section a person has edited (no draft line any more) is only written over with `force`.
+    """
     existing = [(start, end) for name, start, end in sections(text) if name == version]
     if existing and not replace:
         raise ChangelogError(f"CHANGELOG.md already has a section for {version}; pass --replace to write it again")
+    if existing and DRAFT_MARK not in text[existing[0][0] : existing[0][1]] and not force:
+        raise ChangelogError(
+            f"the section for {version} in CHANGELOG.md has been edited (it has no draft line): "
+            "--replace would discard that; pass --force if you mean to"
+        )
     if existing:
         text = text[: existing[0][0]] + text[existing[0][1] :]
     block = section.rstrip("\n") + "\n"
@@ -169,8 +177,9 @@ def draft_command(arguments, root=ROOT, today=None):
         return 0
     path = root / "CHANGELOG.md"
     text = path.read_text()
-    path.write_text(insert(text, section, version, arguments.replace))
-    print(f"changelog: wrote the draft of {version} ({len(subjects)} subject{"s" if len(subjects) != 1 else ""}) to CHANGELOG.md; edit it, then delete its draft line")
+    path.write_text(insert(text, section, version, arguments.replace, arguments.force))
+    plural = "s" if len(subjects) != 1 else ""
+    print(f"changelog: wrote the draft of {version} ({len(subjects)} subject{plural}) to CHANGELOG.md; edit it, then delete its draft line")
     if unreleased_has_entries(text):
         print("changelog: [Unreleased] has entries; move the ones that belong to this version into its section")
     return 0
@@ -195,6 +204,7 @@ def parser():
     drafted.add_argument("--since", help="list the commits after this revision (default: the last tag)")
     drafted.add_argument("--date", help="the date of the section, YYYY-MM-DD (default: today, UTC)")
     drafted.add_argument("--replace", action="store_true", help="write over an existing section of the version")
+    drafted.add_argument("--force", action="store_true", help="with --replace, also write over a section that was edited")
     drafted.add_argument("--print", action="store_true", help="print the section and write nothing")
     for name, help_text in (("notes", "print the release notes of a version"), ("check", "fail unless the section is written")):
         commands.add_parser(name, help=help_text).add_argument("version", nargs="?")
