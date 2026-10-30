@@ -18,8 +18,8 @@ use windows::{
             Accessibility::{HWINEVENTHOOK, SetWinEventHook, UnhookWinEvent},
             WindowsAndMessaging::{
                 CreateWindowExW, DefWindowProcW, DestroyWindow, EVENT_OBJECT_LOCATIONCHANGE,
-                GW_OWNER, GWLP_HWNDPARENT, GetWindow, GetWindowThreadProcessId, HWND_TOP, IsWindow,
-                OBJID_WINDOW, PostMessageW, RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE,
+                GW_OWNER, GWLP_HWNDPARENT, GetWindow, GetWindowThreadProcessId, HWND_TOP, IsIconic,
+                IsWindow, OBJID_WINDOW, PostMessageW, RegisterClassExW, SW_HIDE, SW_SHOWNOACTIVATE,
                 SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow,
                 WINDOW_EX_STYLE, WINDOW_STYLE, WINEVENT_OUTOFCONTEXT, WM_CLOSE, WM_ERASEBKGND,
                 WNDCLASSEXW, WNDPROC, WS_CLIPCHILDREN, WS_EX_TOOLWINDOW, WS_POPUP,
@@ -142,6 +142,12 @@ pub(super) fn client_origin(window: WindowHandle) -> (i32, i32) {
     } else {
         (0, 0)
     }
+}
+
+/// Whether the window is minimized, which has it report a place no screen has.
+pub(super) fn is_minimized(window: WindowHandle) -> bool {
+    // SAFETY: a query about a window, which the system checks.
+    unsafe { IsIconic(HWND(window.0 as *mut std::ffi::c_void)) }.as_bool()
 }
 
 /// Has the thread hear of the window `owner` moving or changing its size, which moves the pages

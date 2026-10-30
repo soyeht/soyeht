@@ -1,16 +1,20 @@
-//! The web view of the operating system, behind one small interface (ADR 0110).
+//! The web view of the operating system, behind one small interface (ADR 0110, ADR 0124).
 //!
-//! A page is drawn off screen by the system's own engine (WebKitGTK on Linux) and handed over as
+//! On Linux a page is drawn off screen by the system's own engine (WebKitGTK) and handed over as
 //! pixels, so the window that shows it is free to put anything over it and stays one window on
-//! Wayland and on X11. The person's pointer and keys reach the page as the engine's own input
-//! events, which the page sees as a person's. What the agent reads is read in an isolated script
-//! world of the engine, which the page cannot see, and the page is captured by the engine itself.
+//! Wayland and on X11; the person's pointer and keys reach the page as the engine's own input
+//! events, which the page sees as a person's. On Windows the page is the engine's own (Microsoft
+//! Edge WebView2) in a window of its own, placed over the pane ([`WebView::place`]), which takes
+//! the person's input itself ([`embedded`]). Either way what the agent reads is read in an
+//! isolated script world of the engine, which the page cannot see, and the page is captured by
+//! the engine itself.
 //!
-//! The library is found when the first view opens, not when the program is built: a machine
-//! without WebKitGTK builds and runs this client, and a web pane there says what is missing.
+//! The system's web view is found when the first view opens, not when the program is built: a
+//! machine without it builds and runs this client, and a web pane there says what is missing.
 //!
 //! This crate depends on no other crate of Soyeht. It starts no automation interface of the
-//! engine, opens no debugging port, and does not change what the page can tell about the browser
+//! engine, opens no debugging port, refuses to run where the environment or a policy of the
+//! machine would open one, and does not change what the page can tell about the browser
 //! (`tests::nothing_here_names_an_automation_or_debugging_interface`).
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
@@ -113,7 +117,8 @@ mod tests {
 
     /// The reader of a system whose web view has no script world of its own makes four calls of
     /// the engine's protocol and no other, and switches no domain of it on (ADR 0124): the calls a
-    /// page can detect are the ones that enable a domain.
+    /// page can detect are the ones that enable a domain. A name is never built from text: a call
+    /// is made from `world::Method`, and the web view's call is made in one place.
     #[test]
     fn the_engines_protocol_is_used_for_four_calls_and_switches_nothing_on() {
         let domains = [
@@ -133,17 +138,28 @@ mod tests {
             "Storage",
         ];
         let mut found = std::collections::BTreeSet::new();
-        for (_, text) in sources() {
+        let mut call_sites = 0;
+        for (path, text) in sources() {
+            call_sites += text
+                .matches(concat!("CallDevTools", "ProtocolMethod("))
+                .count();
             for domain in domains {
-                let opening = format!("\"{domain}.");
-                for piece in text.split(opening.as_str()).skip(1) {
-                    let call: String = piece
-                        .chars()
-                        .take_while(|c| c.is_ascii_alphanumeric())
-                        .collect();
-                    found.insert(format!("{domain}.{call}"));
+                // A name written out, or built by `format!` from a domain and a name.
+                for opening in [format!("\"{domain}."), format!("\"{{{domain}")] {
+                    for piece in text.split(opening.as_str()).skip(1) {
+                        let call: String = piece
+                            .chars()
+                            .take_while(|c| c.is_ascii_alphanumeric())
+                            .collect();
+                        found.insert(format!("{domain}.{call}"));
+                    }
                 }
             }
+            assert!(
+                !text.contains(concat!("format!(\"", "{method}")),
+                "{} builds a method name",
+                path.display()
+            );
         }
         let allowed: std::collections::BTreeSet<String> = [
             "Page.getFrameTree",
@@ -154,5 +170,9 @@ mod tests {
         .map(str::to_owned)
         .into();
         assert_eq!(found, allowed);
+        assert_eq!(
+            call_sites, 1,
+            "the web view's protocol call is made in one place"
+        );
     }
 }

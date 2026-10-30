@@ -67,6 +67,9 @@ button, none in the switcher) owned by the program's window, with the system web
   registry hides the rest. A hidden page does not draw. For a picture of a hidden page, the engine's
   capture shows it off screen for the length of the capture (a capture of a page that does not show
   never answers, which was measured) and puts it back.
+- Until the page has drawn it shows the face color of the pane (`ViewOptions::background`), so a
+  new page does not flash white; a minimized window does not move its pages, since it reports a
+  place no screen has.
 - Alt+F4 on the page's window closes the program's window.
 
 This costs what ADR 0110's table said of a second window: it is a window to activate (a click on the
@@ -107,22 +110,44 @@ The page keeps its cookies, storage and cache in `web` under the directory the w
 profile: `<engine data directory>/browser/web`, where the engine's data directory is the
 profile's (`Soyeht.next/dev` or `Soyeht.next`, so it contains "next", ADR 0112) and is not ours to
 compute here. The crate takes the path and does not know profiles. One environment is made per
-folder and shared by its views. A private (incognito) pane has no profile: its page is an InPrivate
-controller on an environment in `%TEMP%\soyeht-next-private-<pid>`, which keeps nothing of what the
-person does and is removed at the next start of the program if its process has ended. The
-environment's options turn off single sign-on with the person's Windows account, and leave
-everything else at the runtime's own values; no command-line switch is given, and the program
-refuses to open a web view when the environment of the process carries switches for the browser
-(`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`), since one of them opens a debugging port.
+folder and shared by its views.
+
+A private (incognito) pane has no profile. Its page is an InPrivate controller on an environment of
+its own, in a folder of its own: `<profile>/private/<pid>-<count>`, made new for it (`create_dir`,
+which fails when the name is taken, so a folder somebody else made is never used) and refused when
+the `private` folder or the new one is a reparse point. An environment of its own matters:
+InPrivate pages of one environment share the session a private browser keeps, and one private pane
+must not see another's cookies. Nothing the person does is kept, but the browser's own files are,
+so the first private page of a run removes the folders of programs that have ended (the number says
+whose; a program that cannot be looked at, or whose folder is a link, is left alone).
+
+The environment's options turn off single sign-on with the person's Windows account and leave
+everything else at the runtime's own values. The loader reads overrides from outside the program,
+so the program refuses to open a web view while any is set: the environment variables
+`WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`, `WEBVIEW2_USER_DATA_FOLDER`,
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (which can open a debugging port), `WEBVIEW2_CHANNEL_SEARCH_KIND`,
+`WEBVIEW2_RELEASE_CHANNELS`, `WEBVIEW2_RELEASE_CHANNEL_PREFERENCE`,
+`WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER` and `WEBVIEW2_WAIT_FOR_SCRIPT_DEBUGGER`, and, in `HKLM` and
+`HKCU`, any value under `Software\Policies\Microsoft\Edge\WebView2\` in the keys
+`BrowserExecutableFolder`, `UserDataFolder`, `ReleaseChannels`, `ChannelSearchKind` and
+`AdditionalBrowserArguments` (the list is Microsoft's documentation of
+`CreateCoreWebView2EnvironmentWithOptions`). A variable that is set, even to nothing, refuses. Not
+covered: a policy of the machine that the loader does not document, and `COREWEBVIEW2_MAX_INSTANCES`,
+which only bounds how many old runtimes may stay.
 
 ### Without the runtime
 
 `Backend::get()` asks for the runtime's version when its thread starts and fails with
-`Error::Unavailable("the Microsoft Edge WebView2 runtime is not installed")`. The registry keeps the
-error, the pane shows "Web panes are not available here. ..." and the log has
-`desktop.web_view_unavailable`. A runtime that exists but cannot start (`HRESULT` of the loader or of
-the environment) is `Unavailable` too, and a view that cannot be made does not leave a host window
-behind. Nothing panics, and no call blocks the interface.
+`Error::Unavailable("the Microsoft Edge WebView2 runtime is not installed")`. That answer, and the
+refusal of an override, are kept for the run; a start that only ran out of time is not (the next
+call waits for the same start, it does not make another thread). The registry keeps a definite
+error, the pane shows "Web panes are not available here: ..." and the log has
+`desktop.web_view_unavailable` with the error, which is a kind of failure, never the system's
+message. A runtime that exists but cannot start is `Unavailable` too, named by the code of the
+loader (runtime not found, profile in use with other settings, access refused). A view that cannot
+be made does not leave a host window behind, and a view that was made after its caller gave up (the
+wait of 70 s covers the two steps of 30 s) is closed, not kept. A message loop that has ended
+fails every waiting and later call with `Closed`. Nothing panics, and no call blocks the interface.
 
 ### What a page can and cannot do
 
@@ -136,8 +161,11 @@ The rules of ADR 0110 apply as they are; on this engine:
 - Permissions (camera, microphone, position, notifications, clipboard, anything) are denied, as on
   Linux: the pane asks the person nothing yet.
 - A download is cancelled. A new window is opened in the same page when its address is `http` or
-  `https`. Navigation is limited to `http`, `https`, `about:blank` and `blob:` (`policy.rs`, shared
-  with Linux); `file:` and the rest are cancelled.
+  `https`. Navigation, of the page and of each frame in it, is limited to `http`, `https`,
+  `about:blank` and `blob:` (`policy.rs`, shared with Linux); `file:` and the rest are cancelled.
+  A link to a program of the system (the runtime's external-scheme launch) is cancelled. A runtime
+  that has none of these events (frame navigation, download, external scheme) is not used: a view
+  there fails with `Unavailable`, since a page could do what is refused here.
 - A script dialog is closed: an alert is accepted and a question answered "no", leaving a page is
   allowed. The runtime's own dialogs are off.
 - Not the same as Linux: a file chooser of the page opens the runtime's own dialog, since WebView2

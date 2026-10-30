@@ -29,12 +29,33 @@ fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let (profile, url, prefix) = (&arguments[1], &arguments[2], &arguments[3]);
     let backend = Backend::get().unwrap();
+    // `PROBE_PRIVATE_ROOT` opens two private views that keep their files under that folder.
+    if let Some(root) = std::env::var_os("PROBE_PRIVATE_ROOT") {
+        for _ in 0..2 {
+            let private = backend.open(
+                &ViewOptions {
+                    profile: None,
+                    scratch: Some(PathBuf::from(&root)),
+                    background: 0xffffff,
+                    width: 400,
+                    height: 300,
+                },
+                Arc::new(|_| {}),
+            );
+            println!("private view: {:?}", private.as_ref().map(|_| ()));
+            std::mem::forget(private);
+        }
+    }
+    let background = std::env::var("PROBE_BACKGROUND")
+        .ok()
+        .and_then(|hex| u32::from_str_radix(&hex, 16).ok())
+        .unwrap_or(0xff_ffff);
     let view = backend
         .open(
             &ViewOptions {
                 profile: Some(PathBuf::from(profile)),
                 scratch: None,
-                background: 0xffffff,
+                background,
                 width: 1100,
                 height: 760,
             },
@@ -58,6 +79,20 @@ fn main() {
     };
     if embedded() {
         view.place(placement(true));
+    }
+    // Before anything is loaded the page shows its face color.
+    for _ in 0..5 {
+        std::thread::sleep(Duration::from_millis(500));
+        match view.capture() {
+            Ok(frame) => {
+                println!(
+                    "first pixel before a page (blue, green, red): {:?}",
+                    &frame.bytes[..3]
+                );
+                break;
+            }
+            Err(error) => println!("capture before a page: {error}"),
+        }
     }
     view.navigate(Navigation::Url(url)).unwrap();
     for _ in 0..150 {

@@ -4,17 +4,18 @@
 //! same page.
 
 use super::view::{ViewCtx, target};
-use crate::{Error, Navigation, Result, ViewUpdate, policy};
+use crate::{Error, Navigation, Result, policy};
 use std::rc::{Rc, Weak};
 use webview2_com::Microsoft::Web::WebView2::Win32;
 use webview2_com::{
     AcceleratorKeyPressedEventHandler, DocumentTitleChangedEventHandler,
     DownloadStartingEventHandler, FocusChangedEventHandler, HistoryChangedEventHandler,
+    LaunchingExternalUriSchemeEventHandler,
     Microsoft::Web::WebView2::Win32::{
         COREWEBVIEW2_PERMISSION_STATE_DENY, COREWEBVIEW2_SCRIPT_DIALOG_KIND_ALERT,
-        COREWEBVIEW2_SCRIPT_DIALOG_KIND_BEFOREUNLOAD, ICoreWebView2_4, ICoreWebView2Settings,
-        ICoreWebView2Settings3, ICoreWebView2Settings4, ICoreWebView2Settings5,
-        ICoreWebView2Settings6,
+        COREWEBVIEW2_SCRIPT_DIALOG_KIND_BEFOREUNLOAD, ICoreWebView2_4, ICoreWebView2_18,
+        ICoreWebView2Settings, ICoreWebView2Settings3, ICoreWebView2Settings4,
+        ICoreWebView2Settings5, ICoreWebView2Settings6,
     },
     NavigationCompletedEventHandler, NavigationStartingEventHandler,
     NewWindowRequestedEventHandler, PermissionRequestedEventHandler, ProcessFailedEventHandler,
@@ -67,15 +68,60 @@ pub(super) fn connect(view: &Rc<ViewCtx>) -> Result<()> {
             })
     };
     heard.map_err(|_| Error::Unavailable("the web view events could not be connected"))?;
-    // A download is not saved; a runtime without the event cannot start one either way that
-    // matters here.
-    if let Ok(page) = view.webview.cast::<ICoreWebView2_4>() {
-        // SAFETY: as above.
-        if unsafe { page.add_DownloadStarting(&download(), &raw mut token) }.is_err() {
-            // The page stays without the event: a download then shows the runtime's own bar.
-        }
+    keep_to_the_web(view, &mut token)?;
+    Ok(())
+}
+
+/// What a page may not take out of the pane, so that no way of leaving it is left open: a frame
+/// goes only where the pane goes, a download is not saved and a program of the system is not
+/// started. A runtime that lacks one of these events is not used: a page there could do what
+/// is refused here.
+fn keep_to_the_web(view: &ViewCtx, token: &mut i64) -> Result<()> {
+    let refused = || Error::Unavailable("the web view lacks what keeps a page in the pane");
+    // SAFETY: the handlers own nothing of the context; the token is the call's own.
+    unsafe {
+        view.webview
+            .add_FrameNavigationStarting(&frame_navigation_starting(), token)
+            .map_err(|_| refused())?;
+        view.webview
+            .cast::<ICoreWebView2_4>()
+            .and_then(|page| page.add_DownloadStarting(&download(), token))
+            .map_err(|_| refused())?;
+        view.webview
+            .cast::<ICoreWebView2_18>()
+            .and_then(|page| page.add_LaunchingExternalUriScheme(&external_scheme(), token))
+            .map_err(|_| refused())?;
     }
     Ok(())
+}
+
+/// A frame of the page goes where the pane goes, and nowhere else.
+fn frame_navigation_starting() -> Win32::ICoreWebView2NavigationStartingEventHandler {
+    NavigationStartingEventHandler::create(Box::new(move |_, args| {
+        if let Some(args) = args {
+            let mut uri = PWSTR::null();
+            // SAFETY: the arguments are alive for the call of the handler.
+            let address = address_of(unsafe { args.Uri(&raw mut uri) }, uri);
+            // SAFETY: as above.
+            if !policy::allows(&address) && unsafe { args.SetCancel(true) }.is_err() {
+                // The frame went on its way before it could be stopped.
+            }
+        }
+        Ok(())
+    }))
+}
+
+/// A link to a program of the system (a mail client, a store) is not followed.
+fn external_scheme() -> Win32::ICoreWebView2LaunchingExternalUriSchemeEventHandler {
+    LaunchingExternalUriSchemeEventHandler::create(Box::new(move |_, args| {
+        if let Some(args) = args {
+            // SAFETY: the arguments are alive for the call of the handler.
+            if unsafe { args.SetCancel(true) }.is_err() {
+                // The program was started before it could be stopped.
+            }
+        }
+        Ok(())
+    }))
 }
 
 /// What the page may do: no tools for a person to open it, no objects of ours in it, no windows
@@ -290,7 +336,7 @@ on_view!(
     ICoreWebView2FocusChangedEventHandler,
     |view| {
         if !view.focus_was_asked_for() {
-            view.shared.tell(ViewUpdate::Person);
+            view.person();
         }
     }
 );
@@ -299,5 +345,5 @@ on_view!(
     key_pressed,
     AcceleratorKeyPressedEventHandler,
     ICoreWebView2AcceleratorKeyPressedEventHandler,
-    |view| { view.shared.tell(ViewUpdate::Person) }
+    |view| { view.person() }
 );

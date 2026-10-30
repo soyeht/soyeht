@@ -11,8 +11,8 @@ use super::{
     view::ViewCtx,
     wide::{pcwstr, wide},
 };
-use crate::{Error, Result, ScrollInput, world};
-use std::sync::mpsc::Sender;
+use crate::{Error, Result, ScrollInput, world, world::Method};
+use std::{cell::Cell, rc::Rc, sync::mpsc::Sender};
 use webview2_com::{
     CallDevToolsProtocolMethodCompletedHandler, GetCookiesCompletedHandler,
     Microsoft::Web::WebView2::Win32::{ICoreWebView2, ICoreWebView2_2},
@@ -22,18 +22,23 @@ use windows::core::Interface;
 /// One call of the engine's protocol; `done` hears of its answer on this thread.
 fn call(
     webview: &ICoreWebView2,
-    method: &str,
+    method: Method,
     arguments: &str,
     done: impl FnOnce(Result<String>) + 'static,
 ) {
-    let (method, arguments) = (wide(method), wide(arguments));
+    let (method, arguments) = (wide(method.name()), wide(arguments));
+    type Done = Box<dyn FnOnce(Result<String>)>;
+    let done: Rc<Cell<Option<Done>>> = Rc::new(Cell::new(Some(Box::new(done))));
+    let heard = Rc::clone(&done);
     let handler =
         CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |result, answer| {
-            done(
-                result
-                    .map(|()| answer)
-                    .map_err(|_| Error::Page("the page did not answer")),
-            );
+            if let Some(done) = heard.take() {
+                done(
+                    result
+                        .map(|()| answer)
+                        .map_err(|_| Error::Page("the page did not answer")),
+                );
+            }
             Ok(())
         }));
     // SAFETY: the strings outlive the call, which copies them; the handler is the call's own.
@@ -41,7 +46,10 @@ fn call(
         webview.CallDevToolsProtocolMethod(pcwstr(&method), pcwstr(&arguments), &handler)
     };
     if started.is_err() {
-        // The call was never made, so its handler never runs: the caller's wait times out.
+        // The call was never made, so its handler never runs: the caller is told here.
+        if let Some(done) = done.take() {
+            done(Err(Error::Page("the page did not answer")));
+        }
     }
 }
 
@@ -49,7 +57,7 @@ fn call(
 pub(super) fn run(view: &ViewCtx, source: &str, reply: Sender<Result<String>>) {
     let webview = view.webview.clone();
     let source = source.to_owned();
-    call(&view.webview, "Page.getFrameTree", "{}", move |tree| {
+    call(&view.webview, Method::FrameTree, "{}", move |tree| {
         let frame = match tree.and_then(|answer| world::frame_id(&answer)) {
             Ok(frame) => frame,
             Err(error) => return reply_with(&reply, Err(error)),
@@ -57,7 +65,7 @@ pub(super) fn run(view: &ViewCtx, source: &str, reply: Sender<Result<String>>) {
         let again = webview.clone();
         call(
             &webview,
-            "Page.createIsolatedWorld",
+            Method::CreateWorld,
             &world::create_world_arguments(&frame),
             move |made| {
                 let context = match made.and_then(|answer| world::context_id(&answer)) {
@@ -66,7 +74,7 @@ pub(super) fn run(view: &ViewCtx, source: &str, reply: Sender<Result<String>>) {
                 };
                 call(
                     &again,
-                    "Runtime.evaluate",
+                    Method::Evaluate,
                     &world::evaluate_arguments(context, &source),
                     move |answer| {
                         reply_with(&reply, answer.and_then(|text| world::value_text(&text)))
@@ -105,8 +113,8 @@ pub(super) fn scroll(view: &ViewCtx, scroll: &ScrollInput) {
 pub(super) fn reload_ignoring_cache(view: &ViewCtx) {
     call(
         &view.webview,
-        "Page.reload",
-        r#"{"ignoreCache":true}"#,
+        Method::ReloadIgnoringCache,
+        world::RELOAD_ARGUMENTS,
         |answer| {
             if answer.is_err() {
                 // The page was gone before it reloaded.

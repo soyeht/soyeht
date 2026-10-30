@@ -7,6 +7,8 @@
 mod capture;
 mod handlers;
 mod host;
+mod overrides;
+mod private;
 mod script;
 mod thread;
 mod view;
@@ -22,7 +24,7 @@ use crate::{
 };
 use std::{
     rc::Rc,
-    sync::{Arc, OnceLock, atomic::AtomicU64, mpsc},
+    sync::{Arc, Mutex, PoisonError, atomic::AtomicU64, mpsc},
     time::Duration,
 };
 use thread::Ui;
@@ -33,20 +35,27 @@ pub struct Backend {
     next_view: AtomicU64,
 }
 
-static BACKEND: OnceLock<std::result::Result<Backend, Error>> = OnceLock::new();
+/// What the first start said, when it said it for good: a machine without the runtime, or with
+/// an override of it, gets the same answer on every call. A start that only ran out of time is
+/// not kept, and is asked for again.
+static BACKEND: Mutex<Option<Result<&'static Backend>>> = Mutex::new(None);
 
 impl Backend {
-    /// The service, started on first use. A machine without the WebView2 runtime gets the same
-    /// error on every call.
+    /// The service, started on first use.
     pub fn get() -> Result<&'static Self> {
-        BACKEND
-            .get_or_init(|| {
-                thread::start(START_TIMEOUT).map(|()| Self {
-                    next_view: AtomicU64::new(1),
-                })
-            })
-            .as_ref()
-            .map_err(Clone::clone)
+        let mut kept = BACKEND.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(answer) = kept.as_ref() {
+            return answer.clone();
+        }
+        let answer = match thread::start(START_TIMEOUT) {
+            Ok(()) => Ok(&*Box::leak(Box::new(Self {
+                next_view: AtomicU64::new(1),
+            }))),
+            Err(error) if matches!(error, Error::Unavailable(_) | Error::Unsupported) => Err(error),
+            Err(error) => return Err(error),
+        };
+        *kept = Some(answer.clone());
+        answer
     }
 
     /// Opens a view. `sink` hears of the state and the navigations from the web view thread.
@@ -54,8 +63,9 @@ impl Backend {
         let (id, shared) = new_view(&self.next_view, sink);
         let options = options.clone();
         let for_view = Arc::clone(&shared);
-        thread::ask(START_TIMEOUT, move |ui, reply| {
-            reply_with(&reply, view::create(ui, id, &options, for_view));
+        // The wait covers the two steps of a page's making, each with its own deadline.
+        thread::ask(view::OPEN_TIMEOUT, move |ui, reply| {
+            view::create(ui, id, &options, for_view, &reply);
         })?;
         Ok(WebView { id, shared })
     }
@@ -132,9 +142,11 @@ impl WebView {
 
     /// Takes a picture of what the pane shows, as the engine itself draws it.
     pub fn capture(&self) -> Result<Frame> {
-        self.ask_view(CAPTURE_TIMEOUT, move |_, view, reply| {
+        let (png, scale) = self.ask_view(CAPTURE_TIMEOUT, move |_, view, reply| {
             capture::capture(view, reply);
-        })
+        })?;
+        // The PNG is read into pixels here, off the thread that serves every page.
+        Frame::from_png(&png, scale).ok_or(Error::Page("the picture could not be read"))
     }
 
     /// Runs a script in a world of the engine where the page cannot see it, and returns what it

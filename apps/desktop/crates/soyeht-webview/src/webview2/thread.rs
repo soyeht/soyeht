@@ -3,19 +3,19 @@
 //! the loop, so it runs again inside a wait that pumps messages; nothing here is borrowed across
 //! such a wait.
 
-use super::{host, view::ViewCtx};
+use super::{host, overrides, view::ViewCtx};
 use crate::{
     Error, Result,
-    shared::{await_answer, refuse_environment, reply_with, start_thread},
+    shared::{await_answer, reply_with},
 };
 use std::{
     cell::RefCell,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     path::PathBuf,
     rc::Rc,
     sync::{
         Mutex, PoisonError,
-        atomic::{AtomicIsize, Ordering},
+        atomic::{AtomicBool, AtomicIsize, Ordering},
         mpsc,
     },
     time::{Duration, Instant},
@@ -53,6 +53,8 @@ pub(crate) struct Ui {
     views: RefCell<HashMap<u64, Rc<ViewCtx>>>,
     /// One environment for each user data folder, shared by its views.
     environments: RefCell<HashMap<PathBuf, ICoreWebView2Environment>>,
+    /// The private folders whose stale neighbours were removed already.
+    scratched: RefCell<HashSet<PathBuf>>,
     /// The hook that follows each window a page sits over, by the window's handle.
     pub(super) hooks: RefCell<HashMap<isize, HWINEVENTHOOK>>,
 }
@@ -66,6 +68,7 @@ impl Ui {
         Self {
             views: RefCell::new(HashMap::new()),
             environments: RefCell::new(HashMap::new()),
+            scratched: RefCell::new(HashSet::new()),
             hooks: RefCell::new(HashMap::new()),
         }
     }
@@ -86,6 +89,11 @@ impl Ui {
         self.views.borrow().values().cloned().collect()
     }
 
+    /// Whether this is the first private page under `root` since the program started.
+    pub(super) fn first_use(&self, root: &std::path::Path) -> bool {
+        self.scratched.borrow_mut().insert(root.to_path_buf())
+    }
+
     pub(super) fn environment(&self, folder: &PathBuf) -> Option<ICoreWebView2Environment> {
         self.environments.borrow().get(folder).cloned()
     }
@@ -100,19 +108,46 @@ pub(super) fn current() -> Option<Rc<Ui>> {
     UI.with(|ui| ui.borrow().clone())
 }
 
+/// What the start of the thread says, kept while it has not said it, so that a caller whose wait
+/// ran out and asks again waits for the same start and does not make a second thread.
+static STARTING: Mutex<Option<mpsc::Receiver<Result<()>>>> = Mutex::new(None);
+/// Set when the message loop has ended: nothing posted afterwards is ever run.
+static ENDED: AtomicBool = AtomicBool::new(false);
+
 /// Starts the thread and waits until it can take jobs. A machine without the runtime fails here.
 pub(super) fn start(timeout: Duration) -> Result<()> {
-    // The browser can be given command-line switches from the environment of the process, among
-    // them one that opens a debugging port.
-    refuse_environment(
-        &["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"],
-        "the environment gives the web view switches of its own",
-    )?;
-    start_thread(timeout, |ready| serve(&ready))
+    overrides::refuse()?;
+    let mut starting = STARTING.lock().unwrap_or_else(PoisonError::into_inner);
+    if starting.is_none() {
+        let (ready, started) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("soyeht-webview".into())
+            .spawn(move || serve(&ready))
+            .map_err(|_| Error::Unavailable("the web view thread did not start"))?;
+        *starting = Some(started);
+    }
+    let answer = starting
+        .as_ref()
+        .map(|started| started.recv_timeout(timeout));
+    match answer {
+        Some(Ok(result)) => {
+            *starting = None;
+            result
+        }
+        Some(Err(mpsc::RecvTimeoutError::Timeout)) | None => Err(Error::Timeout),
+        Some(Err(mpsc::RecvTimeoutError::Disconnected)) => {
+            *starting = None;
+            Err(Error::Closed)
+        }
+    }
 }
 
 /// Runs `job` on the web view thread, after what was posted before it.
 pub(super) fn post(job: Job) {
+    if ENDED.load(Ordering::Acquire) {
+        // The loop has ended: the job is dropped, and whoever waits for it hears of that.
+        return;
+    }
     JOBS.lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push_back(job);
@@ -172,7 +207,7 @@ fn serve(ready: &mpsc::Sender<Result<()>>) {
         Err(error) => return reply_with(ready, Err(error)),
     }
     let mut message = MSG::default();
-    // SAFETY: the loop of this thread, which owns the windows; a quit or an error ends it.
+    // SAFETY: the loop of this thread, which owns the windows; a quit (0) or an error (-1) ends it.
     unsafe {
         while GetMessageW(&raw mut message, None, 0, 0).0 > 0 {
             if TranslateMessage(&raw const message).as_bool() {
@@ -181,6 +216,10 @@ fn serve(ready: &mpsc::Sender<Result<()>>) {
             DispatchMessageW(&raw const message);
         }
     }
+    // The loop ended and will not run a job again: every job still queued is dropped, which ends
+    // the wait of each caller with `Closed`, and so is every job posted from now on.
+    ENDED.store(true, Ordering::Release);
+    JOBS.lock().unwrap_or_else(PoisonError::into_inner).clear();
 }
 
 /// The apartment, the runtime check, the classes and the window of the jobs.
@@ -200,7 +239,6 @@ fn prepare() -> Result<()> {
     found
         .map_err(|_| Error::Unavailable("the Microsoft Edge WebView2 runtime is not installed"))?;
     webview2_com::take_pwstr(version);
-    super::view::remove_stale_private_folders();
     host::register_hosts()?;
     let wake = make_wake_window()?;
     WAKE.store(wake.0 as isize, Ordering::Release);

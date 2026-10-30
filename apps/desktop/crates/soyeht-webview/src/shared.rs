@@ -143,7 +143,9 @@ pub(crate) fn await_answer<T>(answer: &mpsc::Receiver<Result<T>>, timeout: Durat
     })?
 }
 
-/// Starts the thread of the views and waits until it says it can take them.
+/// Starts the thread of the views and waits until it says it can take them. (The Windows back
+/// end keeps the start it is waiting for, so it has its own.)
+#[cfg(target_os = "linux")]
 pub(crate) fn start_thread<T: Send + 'static>(
     timeout: Duration,
     serve: impl FnOnce(mpsc::Sender<Result<T>>) + Send + 'static,

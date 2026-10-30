@@ -1,7 +1,7 @@
 //! The engine's own picture of what the pane shows.
 
 use super::{reply_with, view::ViewCtx};
-use crate::{Error, Frame, Result};
+use crate::{Error, Result};
 use std::{
     rc::{Rc, Weak},
     sync::mpsc::Sender,
@@ -21,8 +21,9 @@ use windows::Win32::{
 /// The most a picture of a page may weigh as a PNG, in bytes.
 const MAX_PNG_BYTES: u64 = 64 * 1024 * 1024;
 
-/// Takes the picture and sends it to `reply` when the engine has made it.
-pub(super) fn capture(view: &Rc<ViewCtx>, reply: Sender<Result<Frame>>) {
+/// Takes the picture and sends it, as the PNG the engine made and the scale it was drawn at, to
+/// `reply` when the engine has made it.
+pub(super) fn capture(view: &Rc<ViewCtx>, reply: Sender<Result<(Vec<u8>, u32)>>) {
     // SAFETY: a stream on memory of its own, which it frees with its last reference.
     let Ok(stream) = (unsafe { CreateStreamOnHGlobal(HGLOBAL::default(), true) }) else {
         return reply_with(&reply, Err(Error::Page("the page could not be captured")));
@@ -37,13 +38,11 @@ pub(super) fn capture(view: &Rc<ViewCtx>, reply: Sender<Result<Frame>>) {
         if revealed && let Some(view) = Weak::upgrade(&weak) {
             view.conceal();
         }
-        let frame = result
+        let png = result
             .map_err(|_| Error::Page("the page could not be captured"))
             .and_then(|()| read_stream(&read))
-            .and_then(|png| {
-                Frame::from_png(&png, scale).ok_or(Error::Page("the picture could not be read"))
-            });
-        reply_with(&answered, frame);
+            .map(|png| (png, scale));
+        reply_with(&answered, png);
         Ok(())
     }));
     // SAFETY: the stream and the handler are the call's own; the web view is alive.
