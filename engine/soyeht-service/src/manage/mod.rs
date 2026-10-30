@@ -87,6 +87,13 @@ impl<C: Commands> Manager<'_, C> {
     }
 }
 
+/// What `install` hands to a system's registration: the definition, and whether to start the
+/// program (it is not, when one already runs).
+pub(crate) struct Install<'t> {
+    pub(crate) text: &'t str,
+    pub(crate) start: bool,
+}
+
 impl<'a, C: Commands> Manager<'a, C> {
     pub fn new(layout: &'a Layout, commands: &'a C) -> Self {
         Self { layout, commands }
@@ -118,11 +125,14 @@ impl<'a, C: Commands> Manager<'a, C> {
         }
         self.prepare_folders(texts.iter().map(|(component, _)| *component))?;
         for (component, text) in texts {
-            let start = !self.program_runs(component)?;
+            let install = Install {
+                text: &text,
+                start: !self.program_runs(component)?,
+            };
             match self.layout.system {
-                System::Macos => self.launchd_install(component, &text, start)?,
-                System::Linux => self.systemd_install(component, &text, start)?,
-                System::Windows => self.task_install(component, &text, start)?,
+                System::Macos => self.launchd_install(component, &install)?,
+                System::Linux => self.systemd_install(component, &install)?,
+                System::Windows => self.task_install(component, &install)?,
             }
         }
         Ok(())

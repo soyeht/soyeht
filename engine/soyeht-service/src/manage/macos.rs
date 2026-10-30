@@ -1,7 +1,7 @@
 //! launchd: a user agent, loaded into the user's graphical domain (`gui/<uid>`), or into the
 //! background domain (`user/<uid>`) of a session that has no screen, such as one over SSH.
 
-use super::{Manager, path_text, remove_definition, write_definition};
+use super::{Install, Manager, path_text, remove_definition, write_definition};
 use crate::{
     commands::Commands,
     error::{Error, Result},
@@ -58,14 +58,9 @@ impl<C: Commands> Manager<'_, C> {
         }
     }
 
-    pub(super) fn launchd_install(
-        &self,
-        component: Component,
-        text: &str,
-        start: bool,
-    ) -> Result<()> {
-        write_definition(&self.file(component), text.as_bytes())?;
-        if !start {
+    pub(super) fn launchd_install(&self, component: Component, install: &Install) -> Result<()> {
+        write_definition(&self.file(component), install.text.as_bytes())?;
+        if !install.start {
             // The agent's file in `LaunchAgents` is the registration: launchd loads it at the
             // next login. Loading it now would start a second copy of a program that runs.
             return Ok(());
