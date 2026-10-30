@@ -23,6 +23,8 @@ const WORLD: &CStr = c"soyeht-read";
 const FRAME_INTERVAL_MS: c_uint = 33;
 /// `WEBKIT_COOKIE_PERSISTENT_STORAGE_SQLITE`.
 const COOKIES_SQLITE: c_int = 1;
+/// `WEBKIT_LOAD_COMMITTED`.
+const LOAD_COMMITTED: c_int = 2;
 /// `WEBKIT_LOAD_STARTED`.
 const LOAD_STARTED: c_int = 0;
 /// `WEBKIT_POLICY_DECISION_TYPE_RESPONSE`.
@@ -73,6 +75,18 @@ impl ViewCtx {
                     (self.api.webkit_web_view_reload_bypass_cache)(self.webview);
                 }
             }
+        }
+    }
+
+    /// The top level may not be a `data:` or `about:srcdoc` document, though a frame may (the
+    /// decision of the navigation cannot tell them apart): when the page committed is one, the
+    /// pane goes blank.
+    fn keep_the_top_level_to_the_web(&self) {
+        // SAFETY: the web view is alive; the string it returns is copied before the next call.
+        let uri = unsafe { copy_string((self.api.webkit_web_view_get_uri)(self.webview)) };
+        if !uri.is_empty() && !policy::allows(&uri) {
+            // SAFETY: the web view is alive; the address is a constant.
+            unsafe { (self.api.webkit_web_view_load_uri)(self.webview, c"about:blank".as_ptr()) };
         }
     }
 
@@ -447,6 +461,8 @@ unsafe extern "C" fn on_load_changed(_page: Ptr, event: c_int, data: Ptr) {
     let view = unsafe { context(data) };
     if event == LOAD_STARTED {
         view.shared.navigation_began();
+    } else if event == LOAD_COMMITTED {
+        view.keep_the_top_level_to_the_web();
     }
     view.refresh_state();
 }
@@ -475,7 +491,10 @@ unsafe extern "C" fn on_decide_policy(_page: Ptr, decision: Ptr, kind: c_int, da
         let action = (api.webkit_navigation_policy_decision_get_navigation_action)(decision);
         let request = (api.webkit_navigation_action_get_request)(action);
         let uri = copy_string((api.webkit_uri_request_get_uri)(request));
-        if policy::allows(&uri) {
+        // WebKitGTK reports a frame and the top level the same way, so this lets through what a
+        // frame may load; the top level is held to its own rule once it has begun to load
+        // (`keep_the_top_level_to_the_web`).
+        if policy::allows_frame(&uri) {
             return ffi::FALSE;
         }
         (api.webkit_policy_decision_ignore)(decision);
