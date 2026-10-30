@@ -1,4 +1,4 @@
-# ADR 0126: The start of a process waits for the supervisor off the Core lock
+# ADR 0126: The starts of processes and the last supervisor requests wait off the Core lock
 
 - Status: accepted
 - Date: 2026-10-30
@@ -85,6 +85,49 @@ was recorded asked the registry for the process of its instance key; a start tha
 pane's close now ends by closing its own process, and a process lost on the way is found and
 closed by a job (`close_unrecorded_process`).
 
+**The writes to a process are jobs that take a turn** (`Core::start_input`). One shape serves the
+three: the request carries `Request::Input` and the instance, the job takes the sends queued for
+that process (`take_later_for`) and a `Turn`, waits for the turn, sends the queued ones and then
+the bytes (`Supervisor::send_input`, shared with `pane.input`), and the apply settles the
+receipt (`Core::settle_input`, also shared) and hands `done` the bytes the supervisor accepted. A
+receipt that fails on a link that was replaced meanwhile is dropped.
+
+- **The outbox of an agent** (`flush_agent_outbox`) sends one page as the job `outbox:{pane}`. When
+  the page is accepted, `finish_outbox_page` checks that the oldest unsent message is still the one
+  the page belongs to (the process may have been replaced), makes the advance durable, confirms the
+  receipt and starts the next page. The poll starts the job on each tick that finds a message
+  and nothing on its way, so a message goes out at the pace of the round trips. A failure is
+  settled as the poll settled it (`settle_agent_poll`, which the tick uses too): a process the
+  supervisor lost is recovered, a failure of the pane stops it, one that every pane shares is
+  returned.
+- **A language server's pending writes** (`deliver_language_write`) are one job each, keyed by
+  the operation. They stay pending, and stored so, until the supervisor has accepted all the bytes;
+  a write accepted by a server that was restarted meanwhile only confirms its receipt. A failure
+  leaves the server unavailable (`language_failed`).
+- **The requests a gap hides** (`recover_agent_requests_before`) are read by a job that lists
+  the requests the supervisor holds and pages through the bytes of the ones the engine does not
+  have (`fetch_pending`, with the bounds it always checked). The poll that meets the gap starts
+  the job and leaves the gap for the next tick (`agent_output_gap` and
+  `skip_interrupted_agent_record` say `false` until the answer is in `Core::reads`);
+  the apply of the answer into the agent (`apply_recovered`) is the loop that was there.
+
+**A harness switch is a step per job.** The state kept between ticks is the runtime that already
+was: the candidate, its phase and its decoder. What changed is that the tick no longer talks to
+the candidate. `advance_harness_switches` starts the next step of each switch as the job
+`switch:{pane}`, unless one is on its way:
+
+- With no candidate, the step builds everything under the lock (`draft_switch_candidate`: the
+  state, the request to start it, the `initialize` message) and the job starts the process and
+  writes `initialize`. `finish_candidate_spawn` records the candidate before it settles the write,
+  so a failure after the process exists retires it through the ledger.
+- With a candidate, the job writes the message the last step queued (`Candidate::queue`, which
+  replaced writing from the handler of the answer) and reads the candidate's output
+  (`write_candidate` and `read_candidate`, which wait and so run off the lock);
+  `finish_candidate_read` decodes the output and takes the handshake's next step, exactly as the
+  tick did. A write or a read that fails, or that ends on a link that was replaced, ends the
+  switch and restores the original session: a write is never repeated, since some pages of it may
+  have reached the candidate.
+
 ## Trade-offs
 
 - **A started pane is adopted on the tick after its answer, not in the call that asked.** Except
@@ -97,18 +140,28 @@ closed by a job (`close_unrecorded_process`).
   every one of them already did for the failures that could not be returned: the pane is retried
   by the tick, and stopped when the supervisor refused. A non-refusal during a reconciliation no
   longer fails the reconciliation (and with it the link): the pane alone is retried.
+- **An agent's message, a gap's requests and a switch's steps wait for the tick that applies
+  them.** Each is a round trip and a thread hop later than when it was a call under the lock
+  (the first page of a message goes out on the tick after the poll that found it, the next pages
+  as their receipts come back). A switch has 30 seconds to complete either way.
+- **A write of a switch that fails is not repeated**, and a request recovery that finds that the
+  engine recorded a request meanwhile reads it again.
 - **The jobs share the four workers of the background pool**, as the terminal's reads and the
   closes do. A start waits on a worker while it waits for the supervisor, and for the turn of the
   close it follows; the close is queued first, so it is never behind the start that waits for it.
 
 ## Consequences
 
-- No start of a process, and no restart, waits for the supervisor with the Core lock held. The
-  callers of `pty_request` left are seven (`tests/blocking_io_rule.rs`), and `close_and_wait` has
-  none. `tests/core_lock.rs` creates a pane while the supervisor is stopped and measures a status
+- Nothing waits for the supervisor with the Core lock held. `Core::pty_request` and
+  `close_and_wait` are gone, and `tests/blocking_io_rule.rs` fails on a caller of either name
+  instead of counting them. `tests/core_lock.rs` creates a pane while the supervisor is stopped and measures a status
   request on another connection.
 - The unit tests of `process_start.rs` run the jobs on the pool with a supervisor that takes a
   second to answer, and prove that the call returns at once, that a second start asks for
   nothing, that a pane that closed or changed identity does not take the process it got, that a
   start answered on a replaced link is left to the retry, that the replacement of a process asks
   after the close, and that `pane.create` answers only when the process has started.
+- The tests of the later steps are as direct: an input job returns at once and sends the queued
+  size first (`supervisor_handle`), a gap's requests are read off the lock (`recovery`), a switch
+  step returns at once while the supervisor takes its time to start the candidate
+  (`switching`), and `tests/core_lock.rs` delivers a prompt while the supervisor is stopped.

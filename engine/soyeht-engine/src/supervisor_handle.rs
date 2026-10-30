@@ -140,6 +140,21 @@ impl Supervisor {
         first
     }
 
+    /// The work of an input: waits for its turn, sends the follow-ups queued for the process
+    /// that it carried (in front of its own bytes), then the input. `None` when the request ran
+    /// out of time before its turn came: nothing was sent.
+    pub(crate) fn send_input(
+        &self,
+        turn: &Turn,
+        carried: &Carried,
+        request: Request,
+    ) -> Option<(Result<()>, Result<Response>)> {
+        turn.wait();
+        let earlier = carried.take()?;
+        let earlier = self.call_each(earlier);
+        Some((earlier, self.call(request)))
+    }
+
     /// Whether `other` is the same connection, not a later one to the same supervisor.
     pub(crate) fn same_link(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.connection, &other.connection)
@@ -200,6 +215,15 @@ impl Core {
         self.ptyd = Some(Supervisor::new(port));
     }
 
+    /// Sends `request` and waits for the answer with the Core lock held, for a test that scripts
+    /// the supervisor. No engine code does: `tests/blocking_io_rule.rs` fails on any caller.
+    #[cfg(test)]
+    pub(crate) fn pty_request(&mut self, request: Request) -> Result<Response> {
+        let supervisor = self.supervisor()?;
+        let result = supervisor.call(request);
+        self.settle_supervisor(&supervisor, result)
+    }
+
     /// A handle to the current link, for work that waits off the Core lock.
     pub(crate) fn supervisor(&self) -> Result<Supervisor> {
         self.ptyd
@@ -257,6 +281,56 @@ impl Core {
     pub(crate) fn settle_follow_ups(&mut self, used: &Supervisor, result: Result<()>) {
         let settled = self.settle_supervisor(used, result);
         self.settle_supervisor_call(LATER_FAILED, settled);
+    }
+
+    /// Takes the receipt of an input back under the lock: puts back what the work did not send,
+    /// settles the follow-ups it carried and the receipt, and says how many bytes the supervisor
+    /// accepted. `None` when the receipt is a failure of a link that was replaced meanwhile.
+    pub(crate) fn settle_input(
+        &mut self,
+        used: &Supervisor,
+        carried: &Carried,
+        sent: Option<(Result<()>, Result<Response>)>,
+    ) -> Result<Option<usize>> {
+        self.requeue_later(carried);
+        let (earlier, receipt) =
+            sent.ok_or_else(|| errors::internal("Input timed out before its turn"))?;
+        self.settle_follow_ups(used, earlier);
+        match self.settle_if_current(used, receipt)? {
+            Some(Response::Accepted { bytes }) => Ok(Some(bytes)),
+            Some(_) => Err(errors::ptyd_unavailable("Invalid input receipt")),
+            None => Ok(None),
+        }
+    }
+
+    /// Sends the input `request` to the process `instance_id` off the Core lock, as the job
+    /// `job`, in the order of the sends to that process (the queued ones go in front of it), and
+    /// gives `done` the bytes the supervisor accepted under the lock; `None` for a failure of a
+    /// link that was replaced meanwhile. Nothing is sent when `job` is running.
+    pub(crate) fn start_input(
+        &mut self,
+        job: String,
+        instance_id: &str,
+        request: Request,
+        done: impl FnOnce(&mut Core, Result<Option<usize>>) -> Result<()> + Send + 'static,
+    ) -> Result<()> {
+        if !self.background.accepts(&job) {
+            return Ok(());
+        }
+        let link = self.supervisor()?;
+        let used = link.clone();
+        let carried = self.take_later_for(instance_id);
+        let turn = self.turn(&[instance_id]);
+        let taken = carried.clone();
+        self.spawn_prompt_background(
+            job,
+            move || Ok(link.send_input(&turn, &taken, request)),
+            move |core, sent| {
+                let accepted = sent.and_then(|sent| core.settle_input(&used, &carried, sent));
+                done(core, accepted)
+            },
+            |_| true,
+        )
     }
 
     /// Takes a place in the order of the sends to `instances`.

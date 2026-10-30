@@ -14,7 +14,7 @@ use soyeht_platform::log;
 use soyeht_protocol::{
     FileDiagnostic, LspStatusParams, LspStatusResult, TextPosition, TextRange, event,
 };
-use soyeht_ptyd::wire::{Instance, Request, Response};
+use soyeht_ptyd::wire::{Instance, Request};
 use soyeht_store::editor::EditorFile;
 use std::path::Path;
 use uuid::Uuid;
@@ -460,6 +460,9 @@ impl Core {
         Ok(())
     }
 
+    /// Sends a write of the server's pending writes to its process, off the lock (ADR 0126). It
+    /// stays pending, and is stored so, until the supervisor has accepted all of it. A write
+    /// already on its way is left alone.
     fn deliver_language_write(
         &mut self,
         key: &str,
@@ -470,21 +473,45 @@ impl Core {
         let decoded = STANDARD
             .decode(&bytes)
             .map_err(|_| errors::internal("Stored language server write is invalid"))?;
-        let response = self.pty_request(Request::Input {
-            instance_id: required_instance(language(&self.languages, key)?)?,
+        let instance_id = required_instance(language(&self.languages, key)?)?;
+        let job = format!("lsp-write:{key}:{operation_key}");
+        let request = Request::Input {
+            instance_id: instance_id.clone(),
             bytes,
             operation_key: operation_key.clone(),
             fingerprint: STANDARD.encode(Sha256::digest(&decoded)),
-        })?;
-        if !matches!(response, Response::Accepted { bytes: count } if count == decoded_len) {
+        };
+        let key = key.to_owned();
+        self.start_input(job, &instance_id, request, move |core, accepted| {
+            if let Err(error) =
+                core.finish_language_write(&key, operation_key, decoded_len, accepted)
+            {
+                core.language_failed(&key, &error);
+            }
+            Ok(())
+        })
+    }
+
+    fn finish_language_write(
+        &mut self,
+        key: &str,
+        operation_key: String,
+        decoded_len: usize,
+        accepted: Result<Option<usize>>,
+    ) -> Result<()> {
+        let Some(accepted) = accepted? else {
+            return Ok(());
+        };
+        if accepted != decoded_len {
             return Err(errors::ptyd_unavailable(
                 "Stored language server input was not accepted exactly",
             ));
         }
-        language_mut(&mut self.languages, key)?
-            .pending_writes
-            .remove(&operation_key);
-        self.persist_language_server(key, Vec::new())?;
+        // A server restarted meanwhile no longer holds the write.
+        if let Some(server) = self.languages.get_mut(key) {
+            server.pending_writes.remove(&operation_key);
+            self.persist_language_server(key, Vec::new())?;
+        }
         // Nobody waits for it: an unconfirmed receipt is reconciled when the supervisor returns.
         self.send_later(Request::ConfirmInput { operation_key });
         Ok(())
