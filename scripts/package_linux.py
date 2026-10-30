@@ -39,6 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 import release  # noqa: E402  (the scripts directory is on the path of a script)
 from generated_profile import BUILD_ENVIRONMENT, PROFILES  # noqa: E402
+from package_common import PackagingError, sha256_of  # noqa: E402
 
 PROFILE = "prod"
 APPLICATION_ID = PROFILES[PROFILE]["appIds"]["linux"]
@@ -96,6 +97,9 @@ LINKED_PACKAGES = {
 # are `Depends`; the rest serves the OpenGL fallback, a vendor driver that replaces Mesa, or the
 # optional web pane, so they are `Recommends`.
 LOADED_REQUIRED = ("libvulkan1", "libwayland-client0")
+# The programs the window starts: `curl` makes the update check's request (ADR 0122). An AppImage
+# does not carry it and relies on the system's.
+STARTED_REQUIRED = ("curl",)
 LOADED_RECOMMENDED = (
     "mesa-vulkan-drivers",
     "libegl1",
@@ -128,10 +132,6 @@ class Plan:
 
     def artifact(self, out, extension):
         return out / f"{PACKAGE}-{self.version}-linux-{self.arch}.{extension}"
-
-
-class PackagingError(Exception):
-    pass
 
 
 # ---- reading the programs --------------------------------------------------------------------
@@ -265,7 +265,7 @@ def dependencies(floor, sonames):
     """(Depends, Recommends) lines, from what the programs link and what the window loads."""
     linked = {LINKED_PACKAGES[name] for name in sonames} - {"libc6"}
     depends = [f"libc6 (>= {version_text(floor)})"] if floor else ["libc6"]
-    depends += sorted(linked) + list(LOADED_REQUIRED)
+    depends += sorted(linked) + list(LOADED_REQUIRED) + list(STARTED_REQUIRED)
     return ", ".join(depends), ", ".join(LOADED_RECOMMENDED)
 
 
@@ -355,10 +355,6 @@ def build_deb(plan, floor, sonames, out):
 
 
 # ---- the AppImage ----------------------------------------------------------------------------
-
-
-def sha256_of(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def runtime_file(arch, given, cache):

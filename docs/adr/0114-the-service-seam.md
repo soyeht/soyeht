@@ -138,17 +138,17 @@ with `StandardOutput=append:` needs systemd 240 or later.
 
 ## Open questions for the owner
 
-1. **Mac registration style.** The seam writes a plist into `~/Library/LaunchAgents`, like the
+1. **Mac registration style.** (Answered by ADR 0120: the bundled command line, not `SMAppService`, for now.) The seam writes a plist into `~/Library/LaunchAgents`, like the
    Dev installer. A notarized app may prefer `SMAppService`, whose plist lives inside the bundle
    and which shows the item in System Settings with the app's name. The renderer is one
    function, so a second Mac renderer is local; the choice belongs with signing and packaging.
 2. ~~A hidden window and a log on Windows.~~ Answered by the amendment below.
 3. **Starting at boot.** Login only, by default. Enabling lingering and a machine-wide task are
    product choices.
-4. **First-run registration by the app.** The default is to ask. Registering silently on first
+4. **First-run registration by the app.** (Done by ADR 0120: the Mac app asks once.) The default is to ask. Registering silently on first
    run would make the app work with no installer at the cost of a macOS notification the person
    did not ask for.
-5. **Where the programs live on the Mac.** The Dev profile keeps signed copies in
+5. **Where the programs live on the Mac.** (Answered by ADR 0120: the production app's programs are in the bundle's `Contents/MacOS`.) The Dev profile keeps signed copies in
    `<data>/bin` so that privacy grants stay with a stable path. A production app may point the
    agents into the bundle instead. `--programs` takes either.
 

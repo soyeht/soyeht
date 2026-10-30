@@ -22,6 +22,7 @@ use crate::{
 use gpui::{Context, FocusHandle, Task, actions};
 use soyeht_client::{
     Command, Engine, Event, State, loops, screen::TerminalScreen, state::problem::kind,
+    update::Updates,
 };
 use soyeht_platform::log::Failure;
 
@@ -96,6 +97,10 @@ pub struct Workbench {
     pub(crate) web: Option<std::sync::Arc<WebRegistry>>,
     /// The web panes the frame being built draws.
     pub(crate) web_shown: std::collections::HashSet<String>,
+    /// Whether the window asks for a newer version, and what it found (ADR 0122).
+    pub(crate) updates: Updates,
+    /// The daily check, for as long as the window lives.
+    pub(crate) update_loop: Option<Task<()>>,
     _web_signals: Option<Task<()>>,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
@@ -170,6 +175,8 @@ impl Workbench {
             places: Places::default(),
             web: None,
             web_shown: std::collections::HashSet::new(),
+            updates: Updates::new(true, 0),
+            update_loop: None,
             _web_signals: None,
             _events: events,
             _clock: clock,

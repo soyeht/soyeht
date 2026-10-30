@@ -6,6 +6,8 @@ every output. `generate.py --check` compares the whole regenerated content, so a
 caught without it.
 """
 
+import subprocess
+
 # The prefix that marks an output. `scripts/check_wire_names.py` reads it from here to skip
 # outputs, and the generator's tests check every output against it.
 PREFIX = "Generated from contracts/"
@@ -16,3 +18,10 @@ def header_text(source):
     if not source.startswith("contracts/"):
         raise ValueError(f"{source} is not a contract file")
     return f"Generated from {source}. Do not edit."
+
+
+def rustfmt(source):
+    """`source` formatted the way the repository's Rust is."""
+    return subprocess.run(
+        ["rustfmt", "--edition", "2024"], input=source, text=True, capture_output=True, check=True
+    ).stdout

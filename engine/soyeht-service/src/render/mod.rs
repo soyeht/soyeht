@@ -35,6 +35,14 @@ pub(crate) fn xml_escape(text: &str) -> String {
     escaped
 }
 
+/// The inverse of [`xml_escape`]: the text of an element read back from a file we wrote.
+pub(crate) fn xml_unescape(text: &str) -> String {
+    // `&amp;` last, so that `&amp;lt;` reads back as `&lt;` and not as `<`.
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,6 +50,10 @@ mod tests {
 
     #[test]
     fn xml_text_cannot_close_an_element_or_start_another() {
+        assert_eq!(
+            xml_unescape(&xml_escape("a & b <c> &lt; &amp;")),
+            "a & b <c> &lt; &amp;"
+        );
         assert_eq!(
             xml_escape(r#"<a href="x">&</a>"#),
             r#"&lt;a href="x"&gt;&amp;&lt;/a&gt;"#
