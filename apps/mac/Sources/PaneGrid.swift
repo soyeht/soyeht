@@ -116,7 +116,7 @@ struct PaneGrid: View {
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
           Button("New pane", action: onNewPane).buttonStyle(NeoPillButtonStyle(accent: true))
           if !client.readinessChecklist.complete {
-            ReadinessChecklistView(client: client)
+            ReadinessChecklistView(client: client, offersDiagnostics: true)
               .frame(maxWidth: DesignTokens.Layout.readinessWidth)
           }
         }

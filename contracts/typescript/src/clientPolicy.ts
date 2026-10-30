@@ -71,7 +71,14 @@ export const clientPolicy = {
     "editorSaveDenied": "Couldn't save: permission denied. Fix the permissions, then save again.",
     "editorSaveFull": "Couldn't save: the disk is full. Free some space, then save again.",
     "editorSaveOther": "Couldn't save this file. The engine keeps trying; save again to retry now.",
-    "editorSaveAgain": "Save again"
+    "editorSaveAgain": "Save again",
+    "diagnosticsTitle": "Diagnostics",
+    "diagnosticsSummary": "Copies a report of this Soyeht and its recent logs, with paths, names, addresses and tokens removed, to paste into a support message.",
+    "diagnosticsAction": "Copy diagnostics",
+    "diagnosticsWorking": "Collecting diagnostics",
+    "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
+    "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
+    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program."
   },
   "inlineImageTypes": [
     "image/png",

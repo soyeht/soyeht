@@ -250,7 +250,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     )
 }
 
-fn program_file(programs: &Path, name: &str) -> PathBuf {
+pub(crate) fn program_file(programs: &Path, name: &str) -> PathBuf {
     programs.join(format!("{name}{EXE_SUFFIX}"))
 }
 

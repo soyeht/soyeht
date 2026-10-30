@@ -1,7 +1,8 @@
 # Contract 14 · The diagnostics report
 
-Status: v1. Decision: ADR 0118. Code: `soyeht_platform::diagnostics` (the report and the
-redaction), used through `soyeht diagnostics`.
+Status: v1. Decision: ADR 0118 (the report), amended for the clients' "Copy diagnostics" action.
+Code: `soyeht_platform::diagnostics` (the report and the redaction), used through
+`soyeht diagnostics`.
 
 A person whose Soyeht breaks must be able to send us something useful without us asking for
 files, and without the report leaking anything of theirs. `soyeht diagnostics` prints one
@@ -76,16 +77,62 @@ What it does not remove, on purpose or for want of a rule:
 
 ## 3. Rules
 
-- The report is built in one place, `soyeht_platform::diagnostics::report`. A client that shows
-  "Copy diagnostics" calls the same function (or the command), and adds no fact of its own.
+- The report is built in one place, `soyeht_platform::diagnostics::report`, and gathered by one
+  program, `soyeht diagnostics`. A client that shows "Copy diagnostics" runs that program (section
+  4) and adds no fact of its own.
 - Nothing in the report may be a value typed in the code: the version comes from the build, the
   profile and the log names from the contracts.
 - A failure to read a log is said by its kind (`unreadable: PermissionDenied`), never by the
   message, which can carry a path.
 
-## 4. Not covered
+## 4. Copy diagnostics in the clients
 
-A "Copy diagnostics" action in the Mac app and in the Windows and Linux app, and a
-new engine method for clients that cannot run the command, are follow-ups. The report
-does not say whether the services are registered with the system (that needs the service
+The Mac app and the Windows and Linux app each have one action, "Copy diagnostics", that puts the
+report of section 1 on the clipboard so a person can paste it into a support message. It is in
+Preferences (the Setup page on the Windows and Linux app) and, while the engine does not answer, in
+the area that says so (the setup list of the empty workspace on the Mac, the welcome screen on
+Windows and Linux).
+
+**The seam is the program, not a library call and not an engine method.** Each client runs the
+`soyeht` program that ships with it, `soyeht --profile <profile> --data-dir <data directory>
+diagnostics`, and copies what it printed (standard output, UTF-8 Markdown) as it is:
+
+- The Mac runs the `soyeht` of its bundle (`Contents/MacOS`), through the same bounded runner it
+  uses for `soyeht service` (ADR 0120). A Dev build, which carries no programs, runs the copy the
+  Dev installer put in the profile's `bin` folder.
+- The Windows and Linux app runs the `soyeht` that sits in the folder of its own executable, where
+  the engine and the supervisor are (ADR 0102), through `soyeht_process::run`, which gives it a
+  deadline and a byte limit and kills it with everything it started.
+- The profile and the data directory are the ones the client itself resolved, so the report is
+  about the engine the client talks to.
+
+Why the program and not a call to `soyeht_platform::diagnostics::report`: the report needs more
+than the builder, namely whether the two endpoints answer, the readiness question to an engine
+that does, and the list of log files. That gathering is `soyeht-cli`'s, and a client that called
+the builder would copy it, in Swift as well as in Rust. Running the program gives both clients the
+same text from the same code, the case that matters (an engine that is down) included, and no
+client holds a redaction rule. The cost is that the client must find the program beside it; a
+build that does not carry it says so (below) instead of making up a report.
+
+The client adds nothing to the text and removes nothing from it, and it does not show it: the
+report goes to the clipboard only, since the person reads it in the support message they paste it
+in. A failure is never silent. The client says one sentence, and logs the kind of the failure and
+never its message (the program's error text can carry a path, which the report's redaction would
+have removed):
+
+| Case | What the person reads |
+|---|---|
+| Collecting (the action is disabled meanwhile) | `diagnosticsWorking` |
+| The report is on the clipboard | `diagnosticsCopied` |
+| The program ran and failed, did not finish in time, or printed something that is not text | `diagnosticsFailed` |
+| The client cannot find the program | `diagnosticsUnavailable` |
+
+The labels and sentences are the `diagnostics*` entries of `x-clientPolicy.texts` in
+`contracts/protocol.json` (`diagnosticsTitle`, `diagnosticsSummary`, `diagnosticsAction`, and the
+four above), which both clients read through their generated forms.
+
+## 5. Not covered
+
+A new engine method for a client that cannot run the program (a web client) is a follow-up. The
+report does not say whether the services are registered with the system (that needs the service
 manager's own tool); `soyeht service status` does.

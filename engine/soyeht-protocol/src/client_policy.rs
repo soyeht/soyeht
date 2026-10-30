@@ -36,6 +36,13 @@ pub const EDITOR_SAVE_FULL: &str =
 pub const EDITOR_SAVE_OTHER: &str =
     "Couldn't save this file. The engine keeps trying; save again to retry now.";
 pub const EDITOR_SAVE_AGAIN: &str = "Save again";
+pub const DIAGNOSTICS_TITLE: &str = "Diagnostics";
+pub const DIAGNOSTICS_SUMMARY: &str = "Copies a report of this Soyeht and its recent logs, with paths, names, addresses and tokens removed, to paste into a support message.";
+pub const DIAGNOSTICS_ACTION: &str = "Copy diagnostics";
+pub const DIAGNOSTICS_WORKING: &str = "Collecting diagnostics";
+pub const DIAGNOSTICS_COPIED: &str = "Diagnostics copied. Paste them into your message.";
+pub const DIAGNOSTICS_FAILED: &str = "Soyeht could not collect the diagnostics.";
+pub const DIAGNOSTICS_UNAVAILABLE: &str = "This copy of Soyeht has no diagnostics program.";
 pub const CLIENT_NAME_MAC: &str = "mac";
 pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
 pub const CLIENT_NAME_IPHONE: &str = "iphone";

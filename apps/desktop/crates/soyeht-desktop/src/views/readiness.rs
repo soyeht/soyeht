@@ -26,7 +26,8 @@ impl Workbench {
     pub(super) fn setup_page(&mut self, palette: &'static Palette, cx: &mut Context<Self>) -> Div {
         let content = self
             .readiness_list(palette, cx)
-            .child(self.updates_section(palette, cx));
+            .child(self.updates_section(palette, cx))
+            .child(self.diagnostics_section(palette, cx));
         page(palette, "Setup", Some(SUMMARY), None, content)
     }
 

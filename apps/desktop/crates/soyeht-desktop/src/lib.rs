@@ -12,6 +12,7 @@ mod attach;
 mod build_info;
 mod composer_field;
 mod destination;
+mod diagnostics_copy;
 mod editor_input;
 mod editor_ui;
 mod editor_view;

@@ -76,8 +76,23 @@
       return !path.hasPrefix("/Volumes/") && !path.contains("/AppTranslocation/")
     }
 
+    /// What every call of the command line for this profile starts with.
+    private var profileArguments: [String] {
+      ["--profile", profile.name, "--data-dir", dataDirectory.path]
+    }
+
     func arguments(_ action: [String]) -> [String] {
-      ["--profile", profile.name, "--data-dir", dataDirectory.path, "service"] + action
+      profileArguments + ["service"] + action
+    }
+
+    /// The report `soyeht diagnostics` prints (ADR 0118, contract 14 section 4), as it printed
+    /// it: the app adds no fact and no redaction rule, and the report needs no engine.
+    public func diagnosticsReport() async throws -> String {
+      let output = try await runner.run(command, arguments: profileArguments + ["diagnostics"])
+      guard let text = String(data: output, encoding: .utf8) else {
+        throw ServiceCommandError.unreadable
+      }
+      return text
     }
 
     private func services(_ action: [String]) async throws -> [ServiceState] {
