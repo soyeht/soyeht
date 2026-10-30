@@ -2,11 +2,11 @@
 
 use super::{
     Gtk,
-    calls::{Pending, Target, copy_string},
+    calls::{Pending, Target, copy_string, target},
     ffi::{self, Api, GBool, Ptr},
     private_directory,
 };
-use crate::{Error, Frame, PageState, Result, ViewOptions, ViewSink, ViewUpdate, policy};
+use crate::{Error, Frame, PageState, Result, ViewOptions, policy, shared::Shared};
 use std::{
     cell::Cell,
     ffi::{CStr, CString, c_char, c_int, c_uint},
@@ -14,10 +14,7 @@ use std::{
     path::Path,
     ptr,
     rc::Rc,
-    sync::{
-        Arc, Mutex, PoisonError,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::Arc,
 };
 
 /// The script world of everything the reader runs. The page has no handle on it.
@@ -36,29 +33,6 @@ const DIALOG_BEFORE_UNLOAD: c_int = 3;
 /// `WEBKIT_SNAPSHOT_REGION_VISIBLE`, and no snapshot options.
 const SNAPSHOT_VISIBLE: c_int = 0;
 const SNAPSHOT_PLAIN: c_int = 0;
-
-/// What the other threads see of a view.
-pub(super) struct Shared {
-    pub frame: Mutex<Option<Frame>>,
-    pub state: Mutex<PageState>,
-    pub navigations: AtomicU64,
-    sink: ViewSink,
-}
-
-impl Shared {
-    pub fn new(sink: ViewSink) -> Self {
-        Self {
-            frame: Mutex::new(None),
-            state: Mutex::new(PageState::default()),
-            navigations: AtomicU64::new(0),
-            sink,
-        }
-    }
-
-    fn tell(&self, update: ViewUpdate) {
-        (self.sink)(update);
-    }
-}
 
 /// The GTK objects of one view, and what the handlers of its signals need.
 pub(crate) struct ViewCtx {
@@ -140,12 +114,7 @@ impl ViewCtx {
             read_surface(self.api, surface)
         };
         if let Some(frame) = frame {
-            *self
-                .shared
-                .frame
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = Some(frame);
-            self.shared.tell(ViewUpdate::Frame);
+            self.shared.put_frame(frame);
         }
     }
 
@@ -181,16 +150,7 @@ impl ViewCtx {
                 can_go_forward: (api.webkit_web_view_can_go_forward)(self.webview) != ffi::FALSE,
             }
         };
-        let mut current = self
-            .shared
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if *current != state {
-            *current = state;
-            drop(current);
-            self.shared.tell(ViewUpdate::State);
-        }
+        self.shared.set_state(state);
     }
 
     pub(super) fn capture(&self, reply: std::sync::mpsc::Sender<Result<Frame>>) {
@@ -486,8 +446,7 @@ unsafe extern "C" fn on_load_changed(_page: Ptr, event: c_int, data: Ptr) {
     // SAFETY: the signal's handler data is this view's context.
     let view = unsafe { context(data) };
     if event == LOAD_STARTED {
-        let count = view.shared.navigations.fetch_add(1, Ordering::Relaxed) + 1;
-        view.shared.tell(ViewUpdate::Navigating { count });
+        view.shared.navigation_began();
     }
     view.refresh_state();
 }
@@ -535,7 +494,7 @@ unsafe extern "C" fn on_create(_page: Ptr, action: Ptr, data: Ptr) -> Ptr {
         copy_string((view.api.webkit_uri_request_get_uri)(request))
     };
     if policy::allows_request(&uri)
-        && let Ok(target) = Target::new(crate::Navigation::Url(&uri))
+        && let Ok(target) = target(crate::Navigation::Url(&uri))
     {
         view.navigate(&target);
     }

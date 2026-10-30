@@ -511,7 +511,13 @@ pub(super) fn notice_body(palette: &Palette, message: &str) -> AnyElement {
         .justify_center()
         .px(px(space::X18))
         .text_color(rgb(palette.muted))
-        .child(SharedString::from(message.to_owned()))
+        // The sentence wraps inside the card, whatever its width.
+        .child(
+            div()
+                .min_w_0()
+                .text_center()
+                .child(SharedString::from(message.to_owned())),
+        )
         .into_any_element()
 }
 

@@ -94,6 +94,8 @@ pub struct Workbench {
     pub(crate) places: Places,
     /// The web view of the window, when it has one: the pages of the web panes.
     pub(crate) web: Option<std::sync::Arc<WebRegistry>>,
+    /// The web panes the frame being built draws.
+    pub(crate) web_shown: std::collections::HashSet<String>,
     _web_signals: Option<Task<()>>,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
@@ -167,6 +169,7 @@ impl Workbench {
             alerts: Alerts::new(),
             places: Places::default(),
             web: None,
+            web_shown: std::collections::HashSet::new(),
             _web_signals: None,
             _events: events,
             _clock: clock,

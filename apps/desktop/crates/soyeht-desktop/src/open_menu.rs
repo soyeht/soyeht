@@ -57,6 +57,11 @@ impl OpenMenu {
         self.open.as_ref() == Some(menu)
     }
 
+    /// Whether any menu is open.
+    pub fn any_open(&self) -> bool {
+        self.open.is_some()
+    }
+
     /// Whether "More harnesses" is expanded in the open menu.
     pub fn more_harnesses(&self) -> bool {
         self.open.is_some() && self.more_harnesses
@@ -125,10 +130,11 @@ mod tests {
     fn a_second_press_on_the_button_closes_the_menu() {
         let now = Instant::now();
         let mut menus = OpenMenu::default();
+        assert!(!menus.any_open());
         assert!(menus.toggle(Menu::NewPane, now));
-        assert!(menus.is_open(&Menu::NewPane));
+        assert!(menus.is_open(&Menu::NewPane) && menus.any_open());
         assert!(menus.toggle(Menu::NewPane, now));
-        assert!(!menus.open.is_some());
+        assert!(!menus.open.is_some() && !menus.any_open());
     }
 
     #[test]

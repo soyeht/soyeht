@@ -6,8 +6,8 @@
 use soyeht_client::web_host::{Handoff, HostError, Page, PageInfo, Pages, Picture, Target};
 use soyeht_protocol::Pane;
 use soyeht_webview::{
-    Backend, Error, Frame, Modifiers, Navigation, PageState, ScrollInput, ViewOptions, ViewSink,
-    ViewUpdate, WebView,
+    Backend, Error, Frame, Modifiers, Navigation, PageState, Placement, ScrollInput, ViewOptions,
+    ViewSink, ViewUpdate, WebView,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -39,12 +39,14 @@ pub(crate) struct WebPage {
     /// The pane's stored generation when the page was made: navigations count from there.
     base_generation: u64,
     /// Who has the pane, the person or an agent.
-    handoff: Handoff,
+    handoff: Arc<Handoff>,
     /// A picture is ready and the window has not taken it yet; another is not announced meanwhile.
     frame_ready: Arc<AtomicBool>,
     /// What the engine was last told about the page, so a page that changes only in loading is
     /// not reported again.
     reported: Mutex<(String, String)>,
+    /// Where the page was last placed over its pane, when the system's page is a window of its own.
+    placed: Mutex<Option<Placement>>,
 }
 
 impl WebPage {
@@ -60,6 +62,31 @@ impl WebPage {
 
     pub(crate) fn view(&self) -> &WebView {
         &self.view
+    }
+
+    /// Puts the page over its pane, when it is a window of its own. The same place is not sent
+    /// twice.
+    pub(crate) fn place(&self, placement: Placement) {
+        let mut placed = self.placed.lock().unwrap_or_else(PoisonError::into_inner);
+        if *placed == Some(placement) {
+            return;
+        }
+        *placed = Some(placement);
+        drop(placed);
+        self.view.place(placement);
+    }
+
+    /// Takes the page off the screen, where it was, until it is placed again.
+    pub(crate) fn hide(&self) {
+        let mut placed = self.placed.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(placement) = placed.as_mut()
+            && placement.visible
+        {
+            placement.visible = false;
+            let hidden = *placement;
+            drop(placed);
+            self.view.place(hidden);
+        }
     }
 
     pub(crate) fn control(&self) -> &Handoff {
@@ -184,6 +211,25 @@ impl WebRegistry {
             .cloned()
     }
 
+    /// Takes every page off the screen but those of the panes the window shows now. A page that is
+    /// a window of its own does not go away with the pane that was drawn over it.
+    pub(crate) fn hide_except(&self, shown: &HashSet<String>) {
+        if !soyeht_webview::embedded() {
+            return;
+        }
+        let pages: Vec<Arc<WebPage>> = self
+            .pages
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|(id, _)| !shown.contains(*id))
+            .map(|(_, page)| Arc::clone(page))
+            .collect();
+        for page in pages {
+            page.hide();
+        }
+    }
+
     /// Why the system web view is not available, once a page has failed to open.
     pub(crate) fn unavailable(&self) -> Option<Error> {
         self.unavailable
@@ -196,10 +242,16 @@ impl WebRegistry {
     /// gone. A page is made off the interface thread: the first one loads the system library.
     pub(crate) fn sync<'a>(self: &Arc<Self>, panes: impl Iterator<Item = &'a Pane>) {
         let live: Vec<&Pane> = panes.collect();
+        let is_live = |id: &String| live.iter().any(|pane| &pane.pane_id == id);
         self.pages
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .retain(|id, _| live.iter().any(|pane| &pane.pane_id == id));
+            .retain(|id, _| is_live(id));
+        // A pane that went and came back has its page made again, not left without one.
+        self.making
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(is_live);
         if self.unavailable().is_some() {
             return;
         }
@@ -222,12 +274,19 @@ impl WebRegistry {
         let sink = self.sink(&id);
         let frame_ready = Arc::new(AtomicBool::new(false));
         let announced = Arc::clone(&frame_ready);
+        let handoff = Arc::new(Handoff::default());
+        let person = Arc::clone(&handoff);
         let sink: ViewSink = Arc::new(move |update| match update {
             ViewUpdate::Frame => {
                 // One announcement for as many pictures as the window has not taken yet.
                 if !announced.swap(true, Ordering::AcqRel) {
                     sink(update);
                 }
+            }
+            ViewUpdate::Person => {
+                // The person works in the page's own window: the pane is theirs until handed back.
+                person.note_person();
+                sink(update);
             }
             other => sink(other),
         });
@@ -248,9 +307,10 @@ impl WebRegistry {
                     view,
                     incognito,
                     base_generation: u64::from(pane.generation),
-                    handoff: Handoff::default(),
+                    handoff,
                     frame_ready,
                     reported: Mutex::new((String::new(), String::new())),
+                    placed: Mutex::new(None),
                 });
                 if let Some(url) = &pane.url {
                     // A pane the engine already holds opens on the page it was on. An address
@@ -282,7 +342,9 @@ impl WebRegistry {
         move |update| {
             let signal = match update {
                 ViewUpdate::Frame => Signal::Frame(pane_id.clone()),
-                ViewUpdate::State | ViewUpdate::Navigating { .. } => Signal::State(pane_id.clone()),
+                ViewUpdate::State | ViewUpdate::Navigating { .. } | ViewUpdate::Person => {
+                    Signal::State(pane_id.clone())
+                }
             };
             if signals.try_send(signal).is_err() {
                 // The window is closing; nobody is left to draw.
