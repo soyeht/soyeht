@@ -212,6 +212,15 @@ On a Windows 11 Arm64 VM (24H2), as the signed-in standard user, with Inno Setup
   were untouched. With a stand-in supervisor that reports another protocol and runs, nothing was ended and the
   log says the services must restart. The earlier x64 run: the window stayed open and kept running from its
   moved copy.
+- Builder paths: with the release environment, none of the six programs of the arm64 package holds the
+  builder's user name, home, cargo or source folder (searched as text and as UTF-16); a build without it did.
+  Before the C compiler change `soyeht-engine.exe` still held the registry path of tree-sitter in one assertion
+  string (Microsoft's compiler), which is why a Windows release compiles its C with clang. The same search of
+  a release build of the engine, the supervisor and the command line on the Mac host found nothing. x64 and
+  Linux releases were not built with it.
+- Final run on the merged tree (arm64, `/VERYSILENT`): install with `/TASKS=loginstart` started both tasks; the
+  upgrade ended the old engine and the install step started the new one, with the supervisor's process
+  identifier unchanged; the uninstall removed the folder, shortcut, key, tasks and processes and left the data.
 - Registering while the programs run (`soyeht service install`, on the build that holds the lock check): with the
   window's engine and supervisor running and nothing registered, both tasks were registered, none started, and
   no second program ran. With the login tasks registered, an upgrade ended the old engine and the install step
