@@ -15,7 +15,7 @@ use std::{
 };
 
 /// A folder with the programs of every system, made once for the whole run.
-fn programs() -> PathBuf {
+pub(super) fn programs() -> PathBuf {
     static FOLDER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     FOLDER
         .get_or_init(|| {
@@ -37,7 +37,7 @@ fn programs() -> PathBuf {
 }
 
 /// A scratch folder and the layout in it, with `components` installed through `fake`.
-fn installed(
+pub(super) fn installed(
     system: System,
     label: &str,
     fake: &Recorder,
@@ -51,7 +51,7 @@ fn installed(
     (scratch, layout)
 }
 
-const BOTH: [Component; 2] = [Component::Engine, Component::Ptyd];
+pub(super) const BOTH: [Component; 2] = [Component::Engine, Component::Ptyd];
 
 /// A launchd that has a graphical domain or not, and loads a job when it is bootstrapped and
 /// forgets it when it is booted out. `loaded` says whether every job is loaded before anything

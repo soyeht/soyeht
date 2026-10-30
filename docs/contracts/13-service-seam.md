@@ -89,11 +89,16 @@ started with, and the new text applies when it is next loaded (`service stop` th
 or the next login). A launch agent that is loaded but idle is loaded again at once.
 
 **An app that moves.** A definition names the programs by path, so a caller that can be moved
-runs `service install` again from where it is: the Mac app does so at every launch once any
-component is registered, which repairs the registration of an app dragged from Downloads to
-Applications. It does not register from a disk image or a translocated path, which are gone when
-the image is ejected or the app is moved. A program that runs when its folder moves keeps running;
-if it ends before the repair, the system cannot restart it from the old path.
+asks `service status --programs DIR` (each service then carries `"current"`: its definition on disk
+is, byte for byte, what `install --programs DIR` would write) and runs `service install` only for
+a service that is registered and not current. The Mac app does so at every launch. This repairs
+the registration of an app dragged from Downloads to Applications, and leaves a right registration
+alone: a person who ran `service stop` does not find the services started again by the next
+launch, and the system announces no new background item. `install` itself writes a definition file
+only when its bytes differ from what is there. The Mac app does not register from a disk image or
+a translocated path, which are gone when the image is ejected or the app is moved. A program that
+runs when its folder moves keeps running; if it ends before the repair, the system cannot restart
+it from the old path.
 
 The commands, all printing the state of the services after they ran as JSON
 (`{"services": [{"component", "name", "registered", "running"}]}`):
@@ -105,7 +110,7 @@ The commands, all printing the state of the services after they ran as JSON
 | `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
 | `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux with "the program ... does not exist" when the unit's program is gone (systemd would skip the unit and report success). |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
-| `soyeht service status [--component C]` | Reports. Changes nothing. |
+| `soyeht service status [--component C] [--programs DIR]` | Reports. Changes nothing. With `--programs`, each service also says whether its definition is current for that folder. |
 | `soyeht service render --system S --name N [...] -- PROGRAM ARGS` | Prints the file for explicit values without touching the system. For scripts that start disposable services. |
 
 `registered` means the system will start it at login: the definition is in place (macOS), the

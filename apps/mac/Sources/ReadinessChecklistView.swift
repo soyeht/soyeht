@@ -1,5 +1,6 @@
 import AppKit
 import SoyehtClient
+import SoyehtProtocol
 import SwiftUI
 
 /// The setup checklist: what this machine has of what Soyeht needs, and the command that
@@ -92,7 +93,7 @@ private struct ReadinessRowView: View {
       }
     }
     .padding(.horizontal, MacTheme.Space.x10)
-    .frame(minHeight: 30)
+    .frame(minHeight: DesignTokens.Layout.readinessRowHeight)
     .paneWell(radius: MacTheme.Radius.compact)
     .accessibilityIdentifier("readiness-row-\(row.id)")
   }
@@ -133,7 +134,7 @@ private struct EngineStartRow: View {
       }
     }
     .padding(.horizontal, MacTheme.Space.x10)
-    .frame(minHeight: 30)
+    .frame(minHeight: DesignTokens.Layout.readinessRowHeight)
     .paneWell(radius: MacTheme.Radius.compact)
     .accessibilityIdentifier("readiness-engine-start")
   }

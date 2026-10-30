@@ -428,7 +428,8 @@ def validate_schema(schema):
 PROFILE_NAMES = ("dev", "prod")
 PROFILE_SYSTEMS = ("macos", "windows", "linux")
 PROFILE_APP_SYSTEMS = ("macos", "linux")
-PROFILE_FIELDS = {"dataDirectory", "tcpPort", "appIds", "launchdLabels", "systemdUnits", "windowsTasks"}
+PROFILE_NAME_KEYS = ("macApp", "window")
+PROFILE_FIELDS = {"dataDirectory", "tcpPort", "displayNames", "appIds", "launchdLabels", "systemdUnits", "windowsTasks"}
 # The owner's legacy app is not this repository (AGENTS.md, "Legacy app"). Every machine
 # identifier of a profile carries this marker, so no value can name the legacy app's.
 LEGACY_MARKER = "next"
@@ -470,6 +471,12 @@ def _validate_profile(name, profile):
     port = profile["tcpPort"]
     if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
         raise ValueError(f"{name} TCP port must be between 1 and 65535")
+    names = _keys(profile["displayNames"], PROFILE_NAME_KEYS, f"{name} displayNames")
+    for key, text in names.items():
+        # What the person reads: the Mac app's file name and the window title. Not an identifier,
+        # so the legacy marker is not required here (the packaging script checks the app name).
+        if not isinstance(text, str) or not text.strip() or not text.isprintable():
+            raise ValueError(f"{name} display name {key} must be printable text")
     _keys(profile["appIds"], PROFILE_APP_SYSTEMS, f"{name} appIds")
     for system, app_id in profile["appIds"].items():
         _text(app_id, f"{name} app id for {system}")
@@ -536,7 +543,7 @@ def validate_profiles(document):
     profiles = _keys(document["profiles"], PROFILE_NAMES, "profiles")
     for name, profile in profiles.items():
         _validate_profile(name, profile)
-    for field in ("tcpPort", "appIds", "launchdLabels", "dataDirectory", "systemdUnits", "windowsTasks"):
+    for field in ("tcpPort", "displayNames", "appIds", "launchdLabels", "dataDirectory", "systemdUnits", "windowsTasks"):
         seen = [json.dumps(profile[field], sort_keys=True) for profile in profiles.values()]
         if len(set(seen)) != len(seen):
             raise ValueError(f"profiles must not share their {field}")
@@ -553,6 +560,8 @@ def profile_values(document):
             "name": name,
             "data": profile["dataDirectory"],
             "port": profile["tcpPort"],
+            "mac_app_name": profile["displayNames"]["macApp"],
+            "window_title": profile["displayNames"]["window"],
             "app_ids": profile["appIds"],
             "engine_label": labels["engine"],
             "ptyd_label": labels["ptyd"],
@@ -584,6 +593,8 @@ def _rust_profile(profile):
         linux: {json.dumps(data["linux"])},
     }},
     tcp_port: {profile["port"]},
+    mac_app_name: {json.dumps(profile["mac_app_name"], ensure_ascii=False)},
+    window_title: {json.dumps(profile["window_title"], ensure_ascii=False)},
     macos_app_id: {json.dumps(apps["macos"])},
     linux_app_id: {json.dumps(apps["linux"])},
     engine_launchd_label: {json.dumps(profile["engine_label"])},
@@ -601,6 +612,8 @@ def _swift_profile(profile):
         name: {json.dumps(profile["name"])},
         applicationSupportSubpath: {json.dumps(profile["data"]["macos"])},
         tcpPort: {profile["port"]},
+        macAppName: {json.dumps(profile["mac_app_name"], ensure_ascii=False)},
+        windowTitle: {json.dumps(profile["window_title"], ensure_ascii=False)},
         appBundleId: {json.dumps(profile["app_ids"]["macos"])},
         engineLaunchdLabel: {json.dumps(profile["engine_label"])},
         ptydLaunchdLabel: {json.dumps(profile["ptyd_label"])}
@@ -641,6 +654,10 @@ pub struct Profile {{
     pub name: &'static str,
     pub data_directory: DataDirectory,
     pub tcp_port: u16,
+    /// The Mac app's name, which is also its file name (`<name>.app`).
+    pub mac_app_name: &'static str,
+    /// The title of the Mac app's main window.
+    pub window_title: &'static str,
     pub macos_app_id: &'static str,
     pub linux_app_id: &'static str,
     pub engine_launchd_label: &'static str,
@@ -672,6 +689,8 @@ public struct ProfileValues: Sendable {{
     public let name: String
     public let applicationSupportSubpath: String
     public let tcpPort: UInt16
+    public let macAppName: String
+    public let windowTitle: String
     public let appBundleId: String
     public let engineLaunchdLabel: String
     public let ptydLaunchdLabel: String
@@ -687,6 +706,7 @@ public struct ProfileValues: Sendable {{
         profile["name"]: {
             "dataDirectory": profile["data"],
             "tcpPort": profile["port"],
+            "displayNames": {"macApp": profile["mac_app_name"], "window": profile["window_title"]},
             "appIds": profile["app_ids"],
             "launchdLabels": {"engine": profile["engine_label"], "ptyd": profile["ptyd_label"]},
             "launchdPrefix": profile["label_prefix"],

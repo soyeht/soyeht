@@ -9,6 +9,9 @@
     public let name: String
     public let registered: Bool
     public let running: Bool
+    /// Only in the answer to `status --programs`: the definition on disk is exactly what
+    /// `install` would write for those programs.
+    public let current: Bool?
   }
 
   public enum ServiceCommandError: Error, Equatable, Sendable {
@@ -88,8 +91,9 @@
 
     private struct Report: Decodable { let services: [ServiceState] }
 
+    /// The services as registered, each with whether its definition names this bundle's programs.
     public func status() async throws -> [ServiceState] {
-      try await services(["status"])
+      try await services(["status", "--programs", programs.path])
     }
 
     /// Writes the definitions for this bundle's path, registers and starts them. Running it
@@ -198,8 +202,11 @@
       }
     }
 
-    /// At launch: when the services are registered, write them again for this bundle's path, which
-    /// repairs the registration of an app that was moved; when they are not, offer.
+    /// At launch: when the services are registered for another path than this bundle's, write them
+    /// again for this one, which repairs the registration of an app that was moved. A
+    /// registration that is right is left alone, so a person who stopped the services with
+    /// `soyeht service stop` does not find them started at the next launch, and the system does
+    /// not announce a background item every time. When nothing is registered, offer.
     public func refresh() async {
       guard let service else { return }
       guard service.runsFromStablePlace else {
@@ -209,11 +216,12 @@
       phase = .checking
       do {
         let states = try await service.status()
-        if states.contains(where: \.registered) {
-          try await service.install()
-          phase = .ready
-        } else {
+        let registered = states.filter(\.registered)
+        if registered.isEmpty {
           phase = .offered
+        } else {
+          if registered.contains(where: { $0.current != true }) { try await service.install() }
+          phase = .ready
         }
       } catch {
         phase = .failed(Self.describe(error))

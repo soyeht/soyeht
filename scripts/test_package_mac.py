@@ -1,11 +1,14 @@
 import json
 import plistlib
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import package_common
 import package_mac
+from package_common import PackagingError
 from generated_profile import PROFILES
 from legacy_guard import names_legacy
 from profile_programs import binary_identifiers
@@ -57,13 +60,13 @@ class SigningChoiceTests(unittest.TestCase):
 
     def test_ad_hoc_ignores_the_environment_and_release_refuses_to_fall_back(self):
         self.assertTrue(package_mac.resolve_signing(FULL, ad_hoc=True).ad_hoc)
-        with self.assertRaisesRegex(SystemExit, "needs .*SOYEHT_MAC_SIGNING_IDENTITY"):
+        with self.assertRaisesRegex(PackagingError, "needs .*SOYEHT_MAC_SIGNING_IDENTITY"):
             package_mac.resolve_signing({}, strict=True)
-        with self.assertRaisesRegex(SystemExit, "contradict"):
+        with self.assertRaisesRegex(PackagingError, "contradict"):
             package_mac.resolve_signing(FULL, ad_hoc=True, strict=True)
 
     def test_a_release_names_every_missing_variable_and_never_a_value(self):
-        with self.assertRaises(SystemExit) as caught:
+        with self.assertRaises(PackagingError) as caught:
             package_mac.resolve_signing({package_mac.IDENTITY_VARIABLE: "x"}, strict=True)
         self.assertIn(package_mac.TEAM_VARIABLE, str(caught.exception))
         self.assertIn(package_mac.NOTARY_VARIABLE, str(caught.exception))
@@ -71,11 +74,11 @@ class SigningChoiceTests(unittest.TestCase):
 
     def test_an_identity_needs_its_team_and_must_be_a_developer_id(self):
         identity = {package_mac.IDENTITY_VARIABLE: FULL[package_mac.IDENTITY_VARIABLE]}
-        with self.assertRaisesRegex(SystemExit, "TEAM"):
+        with self.assertRaisesRegex(PackagingError, "TEAM"):
             package_mac.resolve_signing(identity)
-        with self.assertRaisesRegex(SystemExit, "ten-character"):
+        with self.assertRaisesRegex(PackagingError, "ten-character"):
             package_mac.resolve_signing({**FULL, package_mac.TEAM_VARIABLE: "short"})
-        with self.assertRaisesRegex(SystemExit, "Developer ID Application"):
+        with self.assertRaisesRegex(PackagingError, "Developer ID Application"):
             package_mac.resolve_signing(
                 {**FULL, package_mac.IDENTITY_VARIABLE: "Apple Development: Example (ABCDE12345)"}
             )
@@ -177,7 +180,7 @@ class SigningCallTests(unittest.TestCase):
             root = Path(temporary)
             app = fake_app(root)
             with patch.object(package_mac, "run"):
-                with self.assertRaisesRegex(SystemExit, "build the engine first"):
+                with self.assertRaisesRegex(PackagingError, "build the engine first"):
                     package_mac.assemble(app, {"soyeht-engine": root / "absent"}, root / "out/Soyeht Next.app")
 
 
@@ -202,6 +205,37 @@ class CheckTests(unittest.TestCase):
             "ABCDE12345", "not set"
         )
         self.assertEqual(package_mac.check_signature(details, identifier="com.soyeht.next.engine"), [])
+
+    def test_an_answer_with_no_signature_line_never_passes_the_runtime_check(self):
+        for details in ("", "code object is not signed at all\n"):
+            self.assertEqual(package_mac.check_signature(details), ["no signature was found"])
+        self.assertEqual(package_mac.check_signature("", runtime=False), [])
+
+    def test_every_item_inside_the_bundle_is_checked_for_runtime_and_team(self):
+        signed = self.DETAILS.replace("com.soyeht.next.engine", "x")
+        unsigned = signed.replace("0x10000(runtime)", "0x0(none)")
+
+        def details(path):
+            return unsigned if Path(path).name == "Inner" else signed
+
+        with tempfile.TemporaryDirectory() as temporary:
+            app = fake_app(Path(temporary))
+            answer = type("R", (), {"stdout": "arm64", "stderr": "", "returncode": 0})()
+            made = package_mac.release.current()
+            with (
+                patch.object(package_mac, "run", return_value=answer),
+                patch.object(package_mac, "check_info", return_value=[]),
+                patch.object(package_mac, "signature_details", side_effect=details),
+                patch.object(
+                    package_mac, "entitlements_of",
+                    side_effect=lambda path: package_mac.EXPECTED_APP_ENTITLEMENTS if Path(path) == app else set(),
+                ),
+            ):
+                problems = package_mac.verify_bundle(app, package_mac.resolve_signing(FULL), made)
+        text = "\n".join(problems)
+        self.assertIn("Inner: hardened runtime is off", text)
+        self.assertIn("Frameworks/Inner.framework", text.replace("Contents/", ""), "a bundle is checked too")
+        self.assertIn("soyeht-engine: identifier is not com.soyeht.next.engine", text)
 
     def test_the_bundle_info_must_match_the_contract_and_the_production_identity(self):
         made = package_mac.release.current()
@@ -231,9 +265,26 @@ class CheckTests(unittest.TestCase):
             type("R", (), {"stdout": "the log", "stderr": "", "returncode": 0})(),
         ]
         with patch.object(package_mac, "run", side_effect=answers) as run:
-            with self.assertRaisesRegex(SystemExit, "was not accepted: Invalid"):
+            with self.assertRaisesRegex(PackagingError, "was not accepted: Invalid"):
                 package_mac.notarize(Path("a.zip"), signing)
         self.assertIn("abc", run.call_args_list[1].args[0])
+
+
+class SharedHelperTests(unittest.TestCase):
+    def test_the_checksum_file_reads_back_with_shasum(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "a.dmg"
+            image.write_bytes(b"abc")
+            checksum = package_common.write_checksum(image)
+            self.assertEqual(checksum.name, "a.dmg.sha256")
+            self.assertEqual(
+                checksum.read_text(),
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad  a.dmg\n",
+            )
+
+    def test_a_failed_command_names_itself_and_what_it_said(self):
+        with self.assertRaisesRegex(PackagingError, "status 3"):
+            package_common.run([sys.executable, "-c", "import sys; sys.exit(3)"])
 
 
 class EntitlementTests(unittest.TestCase):
@@ -244,6 +295,13 @@ class EntitlementTests(unittest.TestCase):
         adr = (ROOT / "docs/adr/0120-mac-release-packaging-and-the-bundled-services.md").read_text()
         for name in entitlements:
             self.assertIn(name, adr)
+
+    def test_the_dev_and_the_production_app_share_one_entitlements_file(self):
+        project = (ROOT / "apps/mac/SoyehtMac.xcodeproj/project.pbxproj").read_text()
+        self.assertEqual(project.count('"CODE_SIGN_ENTITLEMENTS" = "Soyeht.entitlements";'), 2)
+        self.assertEqual(package_mac.ENTITLEMENTS, ROOT / "apps/mac/Soyeht.entitlements")
+        dev = PROFILES["dev"]["displayNames"]["macApp"]
+        self.assertEqual(project.count(f'"SOYEHT_PRODUCT_NAME" = "{dev}";'), 2)
 
     def test_the_microphone_text_the_entitlement_serves_is_in_the_app(self):
         info = plistlib.loads((ROOT / "apps/mac/Resources/Info.plist").read_bytes())

@@ -26,15 +26,20 @@ labels `com.soyeht.next.engine` and `.ptyd`, data directory `Soyeht.next`). The 
 1. builds `soyeht-engine`, `soyeht-ptyd`, `soyeht` and `soyeht-mcp` with `cargo build --release
    --locked --target aarch64-apple-darwin`, with `SOYEHT_BUILD_PROFILE=prod` so none of them can
    fall back to Dev data (ADR 0112);
-2. builds the app with `xcodebuild` in Release, with `SOYEHT_APP_BUNDLE_ID`, `PRODUCT_NAME`, the
-   display name and the version given as build settings. The project itself stays Dev, since the
-   engine's tests read its identifier; the version is `contracts/release.json` (ADR 0115), and the
-   script stops when `release.py check` finds any place that disagrees;
+2. builds the app with `xcodebuild` in Release, with `SOYEHT_APP_BUNDLE_ID`, `SOYEHT_PRODUCT_NAME`
+   and the version given as build settings. These two `SOYEHT_*` settings belong to the app target
+   (its `PRODUCT_NAME` and display name are `$(SOYEHT_PRODUCT_NAME)`, Dev by default): a global
+   `PRODUCT_NAME` on the command line would rename the resource bundle of every Swift package and
+   make two commands produce one file. The project itself stays Dev, since the engine's tests read
+   its identifier; the version is `contracts/release.json` (ADR 0115), and the script stops when
+   `release.py check` finds any place that disagrees;
 3. copies the app, puts the four programs in `Contents/MacOS`, and signs every nested program,
    then the app (below);
 4. notarizes and staples the app, makes the disk image, signs, notarizes and staples the image;
-5. checks the result without opening it: `codesign --verify --deep --strict`, the identifier, team
-   and hardened-runtime flag of every program, the entitlements of the app and of each program,
+5. checks the result without opening it: `codesign --verify --deep --strict`; the team and the
+   hardened-runtime flag of **every** program, library and bundle inside the app (found by
+   scanning, not by name; a missing signature line fails the check); the identifier of the app and
+   of each of the four programs; the entitlements of the app and of everything inside it,
    `lipo -archs`, the bundle's identifier and versions, a read-only `hdiutil attach -nobrowse` of
    the image with the same checks on the app inside, and `spctl --assess` of both.
 
@@ -87,9 +92,14 @@ this ADR does not decide that.
 
 The bundle is `Soyeht Next.app`. `Soyeht.app` is the legacy app's program on the owner's Mac, and
 a DMG that put a `Soyeht.app` in front of `/Applications` would offer to replace it (ADR 0112,
-`contracts/legacy.json`). The window title is "Soyeht". The name carries "next" like every other
-identifier, and the script passes it through `require_next`. When the legacy app is retired the
-name is a one-line change here and in `PRODUCT_NAME`.
+`contracts/legacy.json`). The window title is "Soyeht". Both names are `displayNames` of each
+profile in `contracts/profiles.json` (`macApp`, `window`), generated into the Swift, Rust and
+Python forms; no script or view types them. The generator checks they are printable text and that
+two profiles do not share them. The product name is not an identifier, so the generator does not
+demand "next" of it, but the packaging script passes the production name through `require_next`
+before it builds anything (the same check as the bundle identifier and every signing identifier),
+so a name without it, or one that is the legacy app's, stops the run. When the legacy app is
+retired the name is one line of the profile.
 
 ### Where the programs are, and how they are signed
 
@@ -109,6 +119,12 @@ signs by guessing and gives every program the app's flags):
   `.ptyd`, `.cli` and `.mcp`. The engine's identifier must be its launchd label, since it checks
   its own signature against it;
 - the app is signed with `apps/mac/Soyeht.entitlements`, the programs with none.
+
+The Dev app uses the same file (`CODE_SIGN_ENTITLEMENTS` in both configurations of the project),
+so dictation in a development build is not denied under hardened runtime either, and there is one
+list. Before this the Dev build relied on `ENABLE_RESOURCE_ACCESS_AUDIO_INPUT`, which Xcode turns
+into the same entitlement when it signs; I did not build and sign a Dev app to prove that, which
+is why the explicit file is there.
 
 ### Entitlements
 
@@ -190,7 +206,7 @@ What this gives up, stated plainly:
 answered, the first by giving the programs a way to open their own log and find their data
 directory with no arguments.
 
-**First launch.** The app asks once: "Keep Soyeht running in the background?" (a sheet on the
+**First launch.** The app asks once: "Keep Soyeht running in the background?" (an alert on the
 main window, shown only when the engine is not reachable and nothing is registered). "Turn on"
 runs `soyeht service install`; "Not now" is remembered and the setup list keeps a "Start Soyeht"
 button, so a no is never a dead end. This follows contract 13, section 3: the app registers only
@@ -200,11 +216,18 @@ registered silently.
 **A moved app does not leave a stale path.** The registered definitions name the bundle's path.
 Three things keep that true:
 
-1. At every launch, when any component is registered, the app runs `soyeht service install
-   --programs <its own folder>` again. The command is idempotent (contract 13, section 3): it
-   rewrites the definitions for the current path, leaves a running program running, and loads a
-   registered-but-idle agent again with the new path. So an app moved from `~/Downloads` to
-   `/Applications` repairs itself the first time it is opened there.
+1. At every launch the app asks `soyeht service status --programs <its own folder>`. Each
+   service answers with `current`: whether its definition on disk is, byte for byte, what
+   `install` would write for that folder. **The rule: the app runs `service install` only when a
+   service is registered and not current.** So an app moved from `~/Downloads` to `/Applications`
+   repairs itself the first time it is opened there; and an app that did not move does nothing,
+   which matters in two ways. A person who ran `soyeht service stop` does not find the services
+   started again by the next launch (they stay registered, stopped, until the next login or
+   `service start`), and macOS is not asked to announce a background item at every launch.
+   The seam backs this up: `write_definition` leaves a regular file that already holds the same
+   bytes untouched (a link is still replaced by a file). The install itself, when it does run, is
+   idempotent (contract 13, section 3): it leaves a running program running and loads a
+   registered-but-idle agent again with the new path.
 2. The app **refuses to register from a disk image or from an App Translocation path**
    (`/Volumes/...`, `.../AppTranslocation/...`), the two places a freshly downloaded app runs from
    before it is moved. The setup list says "Move Soyeht Next to your Applications folder and open
@@ -228,7 +251,9 @@ check's job (ADR 0122), because stopping the supervisor ends the person's termin
 - A copy with no `soyeht` in its bundle (every development build) does none of this: the Dev
   installer registers its services.
 - `scripts/profile_programs.py` holds the signing identifiers, now used by `install_dev.py` and
-  the packaging script alike.
+  the packaging script alike; `scripts/package_common.py` holds the error, the SHA-256 and the
+  command runners that `package_mac.py` and `package_linux.py` share.
+- `soyeht service status --programs DIR` adds `current` to each service (`Manager::is_current`).
 
 ## Consequences
 

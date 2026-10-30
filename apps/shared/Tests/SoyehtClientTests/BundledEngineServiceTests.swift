@@ -10,10 +10,12 @@
   private final class ScriptedRunner: ServiceCommandRunning, Sendable {
     private let calls = OSAllocatedUnfairLock<[[String]]>(initialState: [])
     private let registered: Bool
+    private let current: Bool
     private let failure: ServiceCommandError?
 
-    init(registered: Bool, failure: ServiceCommandError? = nil) {
+    init(registered: Bool, current: Bool = false, failure: ServiceCommandError? = nil) {
       self.registered = registered
+      self.current = current
       self.failure = failure
     }
 
@@ -22,7 +24,8 @@
     func run(_ executable: URL, arguments: [String]) async throws -> Data {
       calls.withLock { $0.append(arguments) }
       if let failure, arguments.contains("install") { throw failure }
-      let state = #"{"component":"engine","name":"n","registered":\#(registered),"running":false}"#
+      let state =
+        #"{"component":"engine","name":"n","registered":\#(registered),"running":false,"current":\#(current)}"#
       return Data(#"{"services":[\#(state)]}"#.utf8)
     }
   }
@@ -54,7 +57,7 @@
     let prefix = ["--profile", "prod", "--data-dir", data.path, "service"]
     #expect(
       runner.asked == [
-        prefix + ["status"],
+        prefix + ["status", "--programs", "/Applications/Soyeht Next.app/Contents/MacOS"],
         prefix + ["install", "--programs", "/Applications/Soyeht Next.app/Contents/MacOS"],
       ])
   }
@@ -90,13 +93,22 @@
     #expect(setup.offersStart, "the setup list keeps the button after a no")
   }
 
-  @MainActor @Test func registeredServicesAreWrittenAgainForThisBundleAtLaunch() async {
-    let runner = ScriptedRunner(registered: true)
+  @MainActor @Test func servicesRegisteredForAnotherPathAreWrittenAgainAtLaunch() async {
+    let runner = ScriptedRunner(registered: true, current: false)
     let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
     await setup.refresh()
     #expect(setup.phase == .ready)
     #expect(runner.asked.last?.contains("install") == true)
     #expect(!setup.shouldAsk)
+  }
+
+  @MainActor @Test func aRegistrationThatIsRightIsLeftAloneSoAStoppedEngineStaysStopped() async {
+    let runner = ScriptedRunner(registered: true, current: true)
+    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
+    await setup.refresh()
+    #expect(setup.phase == .ready)
+    #expect(runner.asked.count == 1, "only the status was asked")
+    #expect(runner.asked[0].last == "/Applications/Soyeht Next.app/Contents/MacOS")
   }
 
   @MainActor @Test func agreeingRegistersAndAFailureShowsWhatTheCommandSaid() async {

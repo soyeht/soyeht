@@ -8,8 +8,8 @@ public enum ActiveProfile {
   public static let values = ProfileValues.selected(
     environment: ProcessInfo.processInfo.environment,
     bundleIdentifier: Bundle.main.bundleIdentifier)
-  /// The main window's title: the Dev app says so, the production app does not.
-  public static let windowTitle = values.name == ProfileValues.dev.name ? "Soyeht · Dev" : "Soyeht"
+  /// The main window's title (`displayNames` of `contracts/profiles.json`).
+  public static let windowTitle = values.windowTitle
   public static let dataDirectory = URL.applicationSupportDirectory
     .appending(path: values.applicationSupportSubpath, directoryHint: .isDirectory)
   public static let socketPath: String = {

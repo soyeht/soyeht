@@ -171,7 +171,7 @@ in `Contents/MacOS`, every program signed under its identifier and then the app 
 secure timestamp, the entitlements of `apps/mac/Soyeht.entitlements`, never `--deep`), the app
 notarized and stapled, and `dist/soyeht-<version>-macos-aarch64.dmg` with its `.sha256`, signed,
 notarized and stapled. The version is `contracts/release.json`; `dist/` is ignored. The bundle is
-`Soyeht Next.app` (`Soyeht.app` is the older app's name) with the identifier `com.soyeht.next.mac`.
+`Soyeht Next.app` (`displayNames` in `contracts/profiles.json`; `Soyeht.app` is the older app's name) with the identifier `com.soyeht.next.mac`.
 It is Apple silicon only (the dictation engines are built on MLX).
 
 | Variable | Holds |
@@ -191,8 +191,10 @@ the image (an ad-hoc build is rejected there, as it should be). The script's exi
 non-zero when any check found a problem.
 
 The app starts its engine from its own bundle, with the person's consent, by running the bundled
-`soyeht service install --programs <Contents/MacOS>` at first launch and again at every launch
-once registered, so a moved app repairs its registration. It does not register from a disk image
+`soyeht service install --programs <Contents/MacOS>` at first launch. At every later launch it runs
+`soyeht service status --programs <Contents/MacOS>` and installs again only for a service whose
+definition is not current, so a moved app repairs its registration and a person who stopped the
+services does not find them started again. It does not register from a disk image
 or a translocated path. `soyeht uninstall` (run it before dragging the app to the Trash) removes
 the registration and keeps the data.
 

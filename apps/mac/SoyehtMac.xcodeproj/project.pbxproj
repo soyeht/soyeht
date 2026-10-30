@@ -473,6 +473,7 @@
 				"SOYEHT_PRODUCT_NAME" = "Soyeht Dev";
 				"INFOPLIST_KEY_SoyehtLicense" = "Apache-2.0";
 				"ENABLE_APP_SANDBOX" = "NO";
+				"CODE_SIGN_ENTITLEMENTS" = "Soyeht.entitlements";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"ENABLE_RESOURCE_ACCESS_AUDIO_INPUT" = "YES";
 				"GENERATE_INFOPLIST_FILE" = "YES";
@@ -553,6 +554,7 @@
 				"SOYEHT_PRODUCT_NAME" = "Soyeht Dev";
 				"INFOPLIST_KEY_SoyehtLicense" = "Apache-2.0";
 				"ENABLE_APP_SANDBOX" = "NO";
+				"CODE_SIGN_ENTITLEMENTS" = "Soyeht.entitlements";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
 				"ENABLE_RESOURCE_ACCESS_AUDIO_INPUT" = "YES";
 				"GENERATE_INFOPLIST_FILE" = "YES";

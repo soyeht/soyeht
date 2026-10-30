@@ -24,13 +24,11 @@ the result. Nothing here opens the app, installs it or registers a service.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import plistlib
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -39,12 +37,13 @@ from pathlib import Path
 import release
 from generated_profile import PROFILES
 from legacy_guard import names_legacy, require_next
+from package_common import PackagingError, run, stream, write_checksum
 from profile_programs import binary_identifiers
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = PROFILES["prod"]
 APP_ID = PROFILE["appIds"]["macos"]
-PRODUCT_NAME = "Soyeht Next"
+PRODUCT_NAME = PROFILE["displayNames"]["macApp"]
 VOLUME_NAME = PRODUCT_NAME
 OPERATING_SYSTEM = "macos"
 ARCHITECTURE = "arm64"  # what `lipo` and Xcode call it
@@ -74,12 +73,7 @@ TEAM_PATTERN = re.compile(r"^[A-Z0-9]{10}$")
 CERTIFICATE_KIND = "Developer ID Application:"
 HASH_PATTERN = re.compile(r"^[0-9A-Fa-f]{40}$")
 MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
-COMMAND_SECONDS = 600
 NOTARY_TIMEOUT = "1h"
-
-
-class PackagingError(SystemExit):
-    """A step failed; the message says which and why."""
 
 
 @dataclass(frozen=True)
@@ -163,27 +157,6 @@ def artifact_name(version, extension):
 
 def output_directory(signing, dist=DIST):
     return dist if not signing.ad_hoc else dist / "ad-hoc"
-
-
-def run(command, *, check=True, timeout=COMMAND_SECONDS, environment=None, cwd=None):
-    """Run a command, print it first, and return the finished process."""
-    print("+ " + " ".join(str(part) for part in command), flush=True)
-    result = subprocess.run(
-        [str(part) for part in command], capture_output=True, text=True, timeout=timeout,
-        env=environment, cwd=cwd,
-    )
-    if check and result.returncode:
-        detail = (result.stderr or result.stdout).strip()[-2000:]
-        raise PackagingError(f"{command[0]} failed with status {result.returncode}:\n{detail}")
-    return result
-
-
-def stream(command, *, environment=None, cwd=None):
-    """Run a long build with its output on the terminal."""
-    print("+ " + " ".join(str(part) for part in command), flush=True)
-    status = subprocess.run([str(part) for part in command], env=environment, cwd=cwd).returncode
-    if status:
-        raise PackagingError(f"{command[0]} failed with status {status}")
 
 
 # --- building ---------------------------------------------------------------------------------
@@ -292,8 +265,7 @@ def codesign_command(path, signing, *, identifier=None, entitlements=None):
 
 def sign_bundle(app, signing):
     """Sign every nested program under its identifier, then the app with its entitlements."""
-    identifiers = binary_identifiers(PROFILE)
-    by_name = {name: identifiers[key] for name, key in PROGRAMS}
+    by_name = helper_identifiers()
     for path in nested_code(app):
         identifier = by_name.get(path.name) if path.parent == app / HELPERS_FOLDER else None
         if identifier:
@@ -366,13 +338,6 @@ def make_image(app, destination, scratch):
          "-format", "UDZO", "-ov", destination])
 
 
-def write_checksum(image):
-    digest = hashlib.sha256(image.read_bytes()).hexdigest()
-    checksum = image.with_name(image.name + ".sha256")
-    checksum.write_text(f"{digest}  {image.name}\n")
-    return checksum
-
-
 # --- checking the result ----------------------------------------------------------------------
 
 
@@ -387,15 +352,28 @@ def signature_details(path):
     return run(["codesign", "-dvv", path], check=False).stderr
 
 
+def flags_of(details):
+    """The `flags=` text of the code directory line, or None when there is no such line."""
+    for line in details.splitlines():
+        if "flags=" in line:
+            return line.split("flags=", 1)[1]
+    return None
+
+
 def check_signature(details, *, identifier=None, team=None, runtime=True):
-    """What `codesign -dvv` says, against what was asked; one line per disagreement."""
+    """What `codesign -dvv` says, against what was asked; one line per disagreement. An answer
+    with no code directory line (nothing signed, or an error) never passes the runtime check."""
     problems = []
     if identifier and f"Identifier={identifier}\n" not in details:
         problems.append(f"identifier is not {identifier}")
     if team and f"TeamIdentifier={team}\n" not in details:
         problems.append(f"team is not {team}")
-    if runtime and "flags=" in details and "runtime" not in details.split("flags=", 1)[1].split("\n", 1)[0]:
-        problems.append("hardened runtime is off")
+    if runtime:
+        flags = flags_of(details)
+        if flags is None:
+            problems.append("no signature was found")
+        elif "runtime" not in flags:
+            problems.append("hardened runtime is off")
     return problems
 
 
@@ -417,21 +395,35 @@ def check_info(app, made):
     return problems
 
 
+def helper_identifiers():
+    """The signing identifier of each program inside the bundle, by file name."""
+    identifiers = binary_identifiers(PROFILE)
+    return {name: identifiers[key] for name, key in PROGRAMS}
+
+
 def verify_bundle(app, signing, made):
-    """Everything that can be checked on the app without opening it. Returns the problems."""
+    """Everything that can be checked on the app without opening it. Returns the problems.
+
+    Every program, library and bundle inside the app is checked, not only the ones this script
+    knows by name: each must carry the hardened runtime and the team, and none an entitlement.
+    """
     problems = check_info(app, made)
     team = signing.team
-    identifiers = binary_identifiers(PROFILE)
     run(["codesign", "--verify", "--deep", "--strict", "--verbose=2", app])
     problems += check_signature(signature_details(app), identifier=APP_ID, team=team)
     if (entitled := entitlements_of(app)) != EXPECTED_APP_ENTITLEMENTS:
         problems.append(f"app entitlements are {sorted(entitled)}")
     main = plistlib.loads((app / "Contents/Info.plist").read_bytes())["CFBundleExecutable"]
     problems += check_architecture(app / "Contents/MacOS" / main)
-    for name, key in PROGRAMS:
-        path = app / HELPERS_FOLDER / name
-        problems += check_architecture(path)
-        problems += check_signature(signature_details(path), identifier=identifiers[key], team=team)
+    identifiers = helper_identifiers()
+    present = {path.name for path in (app / HELPERS_FOLDER).iterdir()}
+    problems += [f"{name} is not in the bundle" for name in identifiers if name not in present]
+    for path in nested_code(app):
+        name = str(path.relative_to(app))
+        own = identifiers.get(path.name) if path.parent == app / HELPERS_FOLDER else None
+        problems += [f"{name}: {line}" for line in check_signature(signature_details(path), identifier=own, team=team)]
+        if is_macho(path):
+            problems += check_architecture(path)
         if entitled := entitlements_of(path):
             problems.append(f"{name} has entitlements {sorted(entitled)}")
     return problems
@@ -479,6 +471,7 @@ def package(options, environment):
     if wrong:
         raise PackagingError("The version disagrees with contracts/release.json:\n" + "\n".join(wrong))
     require_next("bundle identifier", APP_ID)
+    require_next("product name", PRODUCT_NAME)
     signing = resolve_signing(environment, options.ad_hoc, options.release)
     print("\n".join(banner(signing)), file=sys.stderr)
     programs = {name: program_path(name, environment) for name, _ in PROGRAMS}
@@ -517,7 +510,11 @@ def report(image, checksum, app, signing, problems):
 
 
 def main(argv=None):
-    return package(parser().parse_args(argv), os.environ)
+    try:
+        return package(parser().parse_args(argv), os.environ)
+    except PackagingError as failure:
+        print(f"package_mac: {failure}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
