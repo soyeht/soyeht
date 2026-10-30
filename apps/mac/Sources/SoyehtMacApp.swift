@@ -16,6 +16,7 @@ struct SoyehtMacApp: App {
   @State private var webLinkPreferences = WebLinkPreferences()
   @State private var engineService = EngineServiceSetup()
   @State private var updateChecker = UpdateChecker()
+  @State private var diagnosticsCopy = DiagnosticsCopy()
   private let webHost: MacWebHost
 
   init() {
@@ -121,6 +122,7 @@ struct SoyehtMacApp: App {
       .environment(webLinkPreferences)
       .environment(engineService)
       .environment(updateChecker)
+      .environment(diagnosticsCopy)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
       .task { updateChecker.start() }

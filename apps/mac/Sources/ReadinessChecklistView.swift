@@ -7,6 +7,9 @@ import SwiftUI
 /// installs each thing it lacks. The empty workspace and Preferences both show it.
 struct ReadinessChecklistView: View {
   let client: EngineClient
+  /// While the engine does not answer, the checklist also offers to copy the diagnostics: the
+  /// empty workspace asks for it, Preferences has a section of its own.
+  var offersDiagnostics = false
   @Environment(EngineServiceSetup.self) private var service
 
   var body: some View {
@@ -24,6 +27,11 @@ struct ReadinessChecklistView: View {
       group(checklist.rows.filter { $0.kind != .harness })
       if !client.connected, service.offersStart {
         EngineStartRow(setup: service)
+      }
+      if !client.connected, offersDiagnostics {
+        DiagnosticsCopyAction(identifier: "readiness-diagnostics-copy")
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .readinessRow(identifier: "readiness-diagnostics")
       }
       let agents = checklist.rows(of: .harness)
       if !agents.isEmpty {
@@ -155,5 +163,44 @@ private struct EngineStartRow: View {
 
   private var buttonTitle: String {
     if case .failed = setup.phase { "Try again" } else { "Start Soyeht" }
+  }
+}
+
+/// The "Copy diagnostics" button and the sentence about the last try (ADR 0118, contract 14
+/// section 4). The desktop app shows the same sentences. It works with no engine, which is when a
+/// person needs the report most.
+struct DiagnosticsCopyAction: View {
+  @Environment(DiagnosticsCopy.self) private var diagnostics
+  let identifier: String
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      Button(ClientPolicy.diagnosticsAction) { Task { await diagnostics.copy() } }
+        .buttonStyle(.paneSecondary)
+        .disabled(diagnostics.phase == .working)
+        .accessibilityIdentifier(identifier)
+      if let message = diagnostics.message {
+        Text(message)
+          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(diagnostics.isFailure ? MacTheme.warning : MacTheme.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+          .accessibilityIdentifier("\(identifier)-message")
+      }
+    }
+  }
+}
+
+/// The Diagnostics block of Preferences: what the report is, and the button.
+struct DiagnosticsSection: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: MacTheme.Space.x8) {
+      Text(ClientPolicy.diagnosticsTitle)
+        .padding(.top, MacTheme.Space.x10)
+        .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
+      Text(ClientPolicy.diagnosticsSummary)
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
+      DiagnosticsCopyAction(identifier: "diagnostics-copy")
+    }
   }
 }

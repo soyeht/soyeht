@@ -6,7 +6,8 @@ export const clientPolicy = {
     "reconnectDelayMs": 1000,
     "reconnectCeilingMs": 30000,
     "draftBeatMs": 8000,
-    "agentPartialFlushMs": 16
+    "agentPartialFlushMs": 16,
+    "diagnosticsMs": 30000
   },
   "terminal": {
     "inputChunkBytes": 16384,
@@ -17,7 +18,8 @@ export const clientPolicy = {
     "fileLinks": 128,
     "webLinks": 128,
     "modelPages": 32,
-    "tickerHistory": 3
+    "tickerHistory": 3,
+    "diagnosticsReportBytes": 4194304
   },
   "pageSize": {
     "queue": 64,
@@ -71,7 +73,14 @@ export const clientPolicy = {
     "editorSaveDenied": "Couldn't save: permission denied. Fix the permissions, then save again.",
     "editorSaveFull": "Couldn't save: the disk is full. Free some space, then save again.",
     "editorSaveOther": "Couldn't save this file. The engine keeps trying; save again to retry now.",
-    "editorSaveAgain": "Save again"
+    "editorSaveAgain": "Save again",
+    "diagnosticsTitle": "Diagnostics",
+    "diagnosticsSummary": "Copies a report of this Soyeht and its recent logs, with paths, names, addresses and tokens removed, to paste into a support message.",
+    "diagnosticsAction": "Copy diagnostics",
+    "diagnosticsWorking": "Collecting diagnostics",
+    "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
+    "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
+    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program."
   },
   "inlineImageTypes": [
     "image/png",

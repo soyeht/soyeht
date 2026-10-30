@@ -34,6 +34,7 @@ struct GeneralPreferencesPanel: View {
       .font(MacTheme.chrome(MacTheme.TypeScale.caption))
       .foregroundStyle(MacTheme.secondary)
       UpdatesSection()
+      DiagnosticsSection()
     }
     .frame(maxWidth: .infinity, alignment: .topLeading)
     .padding(MacTheme.Space.x14)

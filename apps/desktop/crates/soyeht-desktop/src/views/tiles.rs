@@ -61,7 +61,17 @@ impl Workbench {
         }
         let Some(workspace) = self.state.selected_workspace() else {
             return match super::connection_hint(&self.state.connection) {
-                Some(hint) => empty(palette, None, hint),
+                Some(hint) => {
+                    let stage = empty_state(palette, None, hint, None);
+                    // Without an engine the report still has the logs, and this is when it is needed.
+                    if self.state.engine_down() {
+                        stage
+                            .child(self.diagnostics_action(palette, "stage", cx))
+                            .into_any_element()
+                    } else {
+                        stage.into_any_element()
+                    }
+                }
                 None => self.welcome(palette, cx),
             };
         };

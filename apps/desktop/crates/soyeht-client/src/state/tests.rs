@@ -105,6 +105,18 @@ fn starting_an_engine_is_a_connection_state_of_its_own() {
 }
 
 #[test]
+fn the_engine_is_down_only_once_the_connection_is_lost() {
+    let (mut state, _) = connected(across_workspaces());
+    assert!(!state.engine_down());
+    state.apply(Event::Disconnected("gone".into()));
+    assert!(state.engine_down());
+    state.apply(Event::Starting);
+    assert!(!state.engine_down(), "a start is on its way");
+    state.apply(Event::Connected(across_workspaces()));
+    assert!(!state.engine_down());
+}
+
+#[test]
 fn reconnecting_keeps_the_selection_and_resubscribes() {
     let (mut state, _) = connected(across_workspaces());
     state.focus_pane("t2");

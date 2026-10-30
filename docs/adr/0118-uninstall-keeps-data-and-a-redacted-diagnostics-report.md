@@ -49,10 +49,22 @@ client can call without a new layer: the report builder takes the facts the call
 and `Redactor` takes out the home folder, the user name, the machine's name and addresses, every
 path (an unquoted one through the blanks of its folder names), link and e-mail address, secret
 fields (tokens, pairing codes, PINs, keys, sessions) and token-shaped runs, and keeps the ids of
-panes and workspaces. The readiness family and item ids pass through it too. A client that wants a "Copy diagnostics" action calls the same
-function; the Mac app, which has no Rust, would run the command or wait for a
-new engine method (a follow-up: it starts in `contracts/protocol.json` and
-`docs/contracts/`).
+panes and workspaces. The readiness family and item ids pass through it too. A client's "Copy diagnostics" action is the amendment below.
+
+### Amendment (2026-10-30): the clients run the program
+
+The Mac app and the Windows and Linux app put the report on the clipboard by running the
+`soyeht` program that ships with them, `soyeht diagnostics`, with the profile and data directory
+they resolved, and copying its standard output unchanged (contract 14, section 4). Not an engine
+method, because the engine may be down. Not a call to `soyeht_platform::diagnostics::report` from
+the Windows and Linux app, though it is Rust and could: the builder takes the facts the caller
+gathers (whether each endpoint answers, the readiness items, the log names), and that gathering
+is in `soyeht-cli`, so a library call would copy it into the client and the Mac would still need
+the program. One program means the same text, one redaction, and no layer change: the Mac already
+runs its bundled `soyeht` for `service` (ADR 0120), and the Windows and Linux app already starts
+programs from its own folder (ADR 0102) and runs `curl` through the bounded runner (ADR 0122). A
+client that cannot find the program says so, and a failure is said in one sentence and logged by
+kind, never by message.
 
 ## Consequences
 

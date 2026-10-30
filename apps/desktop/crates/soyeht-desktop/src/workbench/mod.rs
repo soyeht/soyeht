@@ -21,8 +21,8 @@ use crate::{
 };
 use gpui::{Context, FocusHandle, Task, actions};
 use soyeht_client::{
-    Command, Engine, Event, State, loops, screen::TerminalScreen, state::problem::kind,
-    update::Updates,
+    Command, Engine, Event, State, diagnostics, loops, screen::TerminalScreen,
+    state::problem::kind, update::Updates,
 };
 use soyeht_platform::log::Failure;
 
@@ -101,6 +101,8 @@ pub struct Workbench {
     pub(crate) updates: Updates,
     /// The daily check, for as long as the window lives.
     pub(crate) update_loop: Option<Task<()>>,
+    /// How the last "Copy diagnostics" went (contract 14, section 4).
+    pub(crate) diagnostics: diagnostics::Phase,
     _web_signals: Option<Task<()>>,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
@@ -177,6 +179,7 @@ impl Workbench {
             web_shown: std::collections::HashSet::new(),
             updates: Updates::new(true, 0),
             update_loop: None,
+            diagnostics: diagnostics::Phase::default(),
             _web_signals: None,
             _events: events,
             _clock: clock,

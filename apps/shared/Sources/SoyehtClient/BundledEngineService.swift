@@ -18,6 +18,8 @@
     case failed(status: Int32, detail: String)
     case timedOut
     case unreadable
+    /// The program printed more than the caller allows.
+    case tooLarge
   }
 
   /// Runs the bundled command line. A seam so tests run no program.
@@ -76,8 +78,23 @@
       return !path.hasPrefix("/Volumes/") && !path.contains("/AppTranslocation/")
     }
 
+    /// What every call of the command line for this profile starts with.
+    private var profileArguments: [String] {
+      ["--profile", profile.name, "--data-dir", dataDirectory.path]
+    }
+
     func arguments(_ action: [String]) -> [String] {
-      ["--profile", profile.name, "--data-dir", dataDirectory.path, "service"] + action
+      profileArguments + ["service"] + action
+    }
+
+    /// The report `soyeht diagnostics` prints (ADR 0118, contract 14 section 4), as it printed
+    /// it: the app adds no fact and no redaction rule, and the report needs no engine.
+    public func diagnosticsReport() async throws -> String {
+      let output = try await runner.run(command, arguments: profileArguments + ["diagnostics"])
+      guard let text = String(data: output, encoding: .utf8) else {
+        throw ServiceCommandError.unreadable
+      }
+      return text
     }
 
     private func services(_ action: [String]) async throws -> [ServiceState] {
@@ -105,23 +122,53 @@
     }
   }
 
-  /// Runs a program and returns what it printed; a non-zero status carries what it said.
+  /// Runs a program and returns what it printed; a non-zero status carries what it said. A
+  /// program that runs past `seconds` is ended, and so is one that prints more than
+  /// `maxOutputBytes` (the diagnostics report is bounded, contract 14 section 4).
   public struct ProcessRunner: ServiceCommandRunning {
-    public init() {}
+    let seconds: Double
+    let maxOutputBytes: Int?
+
+    public init(seconds: Double = BundledEngineService.commandSeconds, maxOutputBytes: Int? = nil) {
+      self.seconds = seconds
+      self.maxOutputBytes = maxOutputBytes
+    }
 
     public func run(_ executable: URL, arguments: [String]) async throws -> Data {
-      try await withCheckedThrowingContinuation { continuation in
+      let (seconds, limit) = (seconds, maxOutputBytes)
+      return try await withCheckedThrowingContinuation { continuation in
         DispatchQueue.global(qos: .userInitiated).async {
-          continuation.resume(with: Result { try Self.runBlocking(executable, arguments) })
+          continuation.resume(
+            with: Result { try Self.runBlocking(executable, arguments, seconds, limit) })
         }
       }
     }
 
     private final class Captured: @unchecked Sendable {
       var data = Data()
+      var exceeded = false
     }
 
-    private static func runBlocking(_ executable: URL, _ arguments: [String]) throws -> Data {
+    /// Reads `pipe` to its end. What passes `limit` is dropped and ends `process`.
+    private static func drain(_ pipe: Pipe, into sink: Captured, limit: Int?, process: Process) {
+      let handle = pipe.fileHandleForReading
+      while true {
+        let chunk = handle.availableData
+        if chunk.isEmpty { return }
+        if let limit, sink.data.count + chunk.count > limit {
+          if !sink.exceeded {
+            sink.exceeded = true
+            process.terminate()
+          }
+          continue
+        }
+        sink.data.append(chunk)
+      }
+    }
+
+    private static func runBlocking(
+      _ executable: URL, _ arguments: [String], _ seconds: Double, _ limit: Int?
+    ) throws -> Data {
       let process = Process()
       process.executableURL = executable
       process.arguments = arguments
@@ -135,16 +182,16 @@
       let printed = Captured()
       let said = Captured()
       let group = DispatchGroup()
-      for (pipe, sink) in [(output, printed), (errors, said)] {
+      for (pipe, sink, cap) in [(output, printed, limit), (errors, said, nil)] {
         DispatchQueue.global().async(group: group) {
-          sink.data = pipe.fileHandleForReading.readDataToEndOfFile()
+          drain(pipe, into: sink, limit: cap, process: process)
         }
       }
-      let timedOut =
-        finished.wait(timeout: .now() + BundledEngineService.commandSeconds) == .timedOut
+      let timedOut = finished.wait(timeout: .now() + seconds) == .timedOut
       if timedOut { process.terminate() }
       group.wait()
       if timedOut { throw ServiceCommandError.timedOut }
+      if printed.exceeded { throw ServiceCommandError.tooLarge }
       guard process.terminationStatus == 0 else {
         let detail = String(decoding: said.data, as: UTF8.self)
           .trimmingCharacters(in: .whitespacesAndNewlines)
