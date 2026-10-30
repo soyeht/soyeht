@@ -100,6 +100,11 @@ a translocated path, which are gone when the image is ejected or the app is move
 runs when its folder moves keeps running; if it ends before the repair, the system cannot restart
 it from the old path.
 
+A caller also compares how many services are registered with how many it expects: one missing
+(a deleted file, a half-finished install) is stale like a changed path. A service that is
+registered and current but not running is not started by the caller at launch; it offers the
+person a start (`service install`, which loads an idle job and leaves a running one alone).
+
 The commands, all printing the state of the services after they ran as JSON
 (`{"services": [{"component", "name", "registered", "running"}]}`):
 

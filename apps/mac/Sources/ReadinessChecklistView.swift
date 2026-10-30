@@ -148,6 +148,7 @@ private struct EngineStartRow: View {
     case .moveFirst:
       "Move Soyeht Next to your Applications folder and open it from there to start the engine."
     case .failed(let detail): detail
+    case .ready: "Soyeht's engine is set up to start at login, but it is not running now."
     default: "Start the engine now and keep it running whenever you are logged in."
     }
   }

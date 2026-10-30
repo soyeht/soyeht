@@ -227,6 +227,12 @@ Three things keep that true:
    bytes untouched (a link is still replaced by a file). The install itself, when it does run, is
    idempotent (contract 13, section 3): it leaves a running program running and loads a
    registered-but-idle agent again with the new path.
+   A registration that lost one of its two services (a deleted file, an install that stopped half
+   way) counts as stale and is repaired the same way; one with nothing registered is a first run.
+   **Registered and right, but not answering** (a stop by the person, a crash, a job the system did
+   not load again): the app does not start anything at launch, since the stop must be respected,
+   and the setup list offers "Start Soyeht", whose action is `install` (it loads an idle job and
+   leaves a running one alone).
 2. The app **refuses to register from a disk image or from an App Translocation path**
    (`/Volumes/...`, `.../AppTranslocation/...`), the two places a freshly downloaded app runs from
    before it is moved. The setup list says "Move Soyeht Next to your Applications folder and open

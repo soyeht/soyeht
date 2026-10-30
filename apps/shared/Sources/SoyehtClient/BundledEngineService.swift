@@ -194,11 +194,14 @@
       phase == .offered && !preferences.bool(forKey: Self.declinedKey)
     }
 
-    /// Whether the setup list should offer to start Soyeht (the engine is not running).
+    /// Whether the setup list should offer to start Soyeht. The caller shows it only while the
+    /// engine is not reachable, so `.ready` counts: services that are registered and right but
+    /// not answering (stopped by the person, crashed, or not loaded again by the system) get the
+    /// explicit button. Nothing starts them at launch, so a stop is respected.
     public var offersStart: Bool {
       switch phase {
-      case .offered, .failed, .moveFirst: true
-      case .unavailable, .checking, .ready, .working: false
+      case .offered, .ready, .failed, .moveFirst: true
+      case .unavailable, .checking, .working: false
       }
     }
 
@@ -220,7 +223,10 @@
         if registered.isEmpty {
           phase = .offered
         } else {
-          if registered.contains(where: { $0.current != true }) { try await service.install() }
+          // A service that is missing from a registration the person made (a deleted file, an
+          // install that stopped half way) is as stale as one that names another path.
+          let stale = registered.count < states.count || registered.contains { $0.current != true }
+          if stale { try await service.install() }
           phase = .ready
         }
       } catch {
