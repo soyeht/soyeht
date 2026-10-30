@@ -1,0 +1,757 @@
+{
+  "description": "The signed update manifest read by the desktop client (soyeht_protocol::update), the Mac app (UpdateCheck) and the release script (contracts/update_manifest.py). `trust` names the keys of `keys` a build carries; `expected` is the result of reading `manifest` as version `running` on `system` and `architecture` in `channel`. The keys are throwaway test keys. Regenerate with: uv run python contracts/test_update_manifest.py --write",
+  "keys": {
+    "first": {
+      "id": "test-1",
+      "key": "zhbOOCFaFWThMb6D9ssehKUm2CCFVdBSoz0vh08+2jo="
+    },
+    "second": {
+      "id": "test-2",
+      "key": "k7RB/A92i5GMDDEs1ZHw5HxqFqJtLyaP25466GyM3mQ="
+    }
+  },
+  "cases": [
+    {
+      "name": "a newer version is offered with the package of this system",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.2.0",
+        "required": false,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-macos-aarch64.dmg",
+          "sha256": "037b3edbb636763a95f58cd91379ccccba4786d8add576a4cfb55d12b9204083",
+          "size": 40000030
+        }
+      }
+    },
+    {
+      "name": "the same version is up to date",
+      "running": "0.2.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "upToDate"
+      }
+    },
+    {
+      "name": "a newer build than the manifest is up to date",
+      "running": "0.10.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "upToDate"
+      }
+    },
+    {
+      "name": "a version below the minimum supported is required",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMi4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"GNgHKSBh75jTk9QGoaYNLjEKhougWh1A5l6OqF/4Gf8E1uuA6uAvuiUDBduzJ6mthQFxOIwLvCdl7XugPjQUCA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.2.0",
+        "required": true,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-macos-aarch64.dmg",
+          "sha256": "037b3edbb636763a95f58cd91379ccccba4786d8add576a4cfb55d12b9204083",
+          "size": 40000030
+        }
+      }
+    },
+    {
+      "name": "a version at the minimum supported is not required",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.2.0",
+        "required": false,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-macos-aarch64.dmg",
+          "sha256": "037b3edbb636763a95f58cd91379ccccba4786d8add576a4cfb55d12b9204083",
+          "size": 40000030
+        }
+      }
+    },
+    {
+      "name": "an Intel Mac gets its own package",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "x86_64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.2.0",
+        "required": false,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-macos-x86_64.dmg",
+          "sha256": "8b19d46b34812853b576f90301b553f7eec32af6cbb93246051fbd12a0f9bdd7",
+          "size": 40000029
+        }
+      }
+    },
+    {
+      "name": "Linux gets its own package",
+      "running": "0.1.0",
+      "system": "linux",
+      "architecture": "x86_64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.2.0",
+        "required": false,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-linux-x86_64.tar.gz",
+          "sha256": "095b7336bf1af2568a54f1e92133002f356bdf8d2ae5886ff1621ea7823d3b27",
+          "size": 40000032
+        }
+      }
+    },
+    {
+      "name": "Windows gets its own package",
+      "running": "0.1.0",
+      "system": "windows",
+      "architecture": "x86_64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.2.0",
+        "required": false,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-windows-x86_64.zip",
+          "sha256": "67aab11ce485793d67e9f822a0da1e1d0b5a82ecdd7af78147f5816be46b498b",
+          "size": 40000031
+        }
+      }
+    },
+    {
+      "name": "a system with no package is told so",
+      "running": "0.1.0",
+      "system": "windows",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "noPackage"
+      }
+    },
+    {
+      "name": "up to date wins over a missing package",
+      "running": "0.2.0",
+      "system": "windows",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "upToDate"
+      }
+    },
+    {
+      "name": "versions compare as numbers, not text",
+      "running": "0.9.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4xMC4wIiwibWluaW11bVN1cHBvcnRlZFZlcnNpb24iOiIwLjkuMCIsInJlbGVhc2VOb3Rlc1VybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL3RhZy92MC4yLjAiLCJwYWNrYWdlcyI6W3sic3lzdGVtIjoibWFjb3MiLCJhcmNoaXRlY3R1cmUiOiJhYXJjaDY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy1hYXJjaDY0LmRtZyIsInNoYTI1NiI6IjAzN2IzZWRiYjYzNjc2M2E5NWY1OGNkOTEzNzljY2NjYmE0Nzg2ZDhhZGQ1NzZhNGNmYjU1ZDEyYjkyMDQwODMiLCJzaXplIjo0MDAwMDAzMH0seyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbWFjb3MteDg2XzY0LmRtZyIsInNoYTI1NiI6IjhiMTlkNDZiMzQ4MTI4NTNiNTc2ZjkwMzAxYjU1M2Y3ZWVjMzJhZjZjYmI5MzI0NjA1MWZiZDEyYTBmOWJkZDciLCJzaXplIjo0MDAwMDAyOX0seyJzeXN0ZW0iOiJsaW51eCIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbGludXgteDg2XzY0LnRhci5neiIsInNoYTI1NiI6IjA5NWI3MzM2YmYxYWYyNTY4YTU0ZjFlOTIxMzMwMDJmMzU2YmRmOGQyYWU1ODg2ZmYxNjIxZWE3ODIzZDNiMjciLCJzaXplIjo0MDAwMDAzMn0seyJzeXN0ZW0iOiJ3aW5kb3dzIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC13aW5kb3dzLXg4Nl82NC56aXAiLCJzaGEyNTYiOiI2N2FhYjExY2U0ODU3OTNkNjdlOWY4MjJhMGRhMWUxZDBiNWE4MmVjZGQ3YWY3ODE0N2Y1ODE2YmU0NmI0OThiIiwic2l6ZSI6NDAwMDAwMzF9XX0=\",\n  \"signature\": \"3ZP3F7qW4DiNdio/T5ZmOLsyF9xgr0qhNaFdZKi726PoXSnM2iWNeDNZSL1gpfQibco+EGgYBNCdprbr26mhCA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.10.0",
+        "required": false,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-macos-aarch64.dmg",
+          "sha256": "037b3edbb636763a95f58cd91379ccccba4786d8add576a4cfb55d12b9204083",
+          "size": 40000030
+        }
+      }
+    },
+    {
+      "name": "another channel is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "beta",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "wrongChannel"
+      }
+    },
+    {
+      "name": "a build with no key trusts nothing",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "notConfigured"
+      }
+    },
+    {
+      "name": "a payload changed after signing is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiOS45LjkiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badSignature"
+      }
+    },
+    {
+      "name": "a signature with one bit changed is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badSignature"
+      }
+    },
+    {
+      "name": "a signature with the scalar raised by the group order is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGhmrJftqeiK5pTntdupofaU6a6Prw4taq9qYnwr1kYVHA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badSignature"
+      }
+    },
+    {
+      "name": "a manifest signed without the context is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\"format\": 1, \"keyId\": \"test-1\", \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\", \"signature\": \"ms2zq+wg1Gu3y/yCWA4weSXSO2K5QgRjVt8l7wzckcQno5XI8ExHB6/ss6fLd1DvGFRe+GQ22c6wrmfnK4bDBg==\"}",
+      "expected": {
+        "status": "failed",
+        "failure": "badSignature"
+      }
+    },
+    {
+      "name": "a manifest signed by another key under the trusted id is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"LVBwft0yPw1aChN63fR2u+iBy9zOhVY1vPt9pUGufq3dOMim3aQyfLfsBoFyFlFesTdtnn7ojMHJVog7xYJwBA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badSignature"
+      }
+    },
+    {
+      "name": "a key id this build does not carry is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-2\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"LVBwft0yPw1aChN63fR2u+iBy9zOhVY1vPt9pUGufq3dOMim3aQyfLfsBoFyFlFesTdtnn7ojMHJVog7xYJwBA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "unknownKey"
+      }
+    },
+    {
+      "name": "a second trusted key is accepted",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first",
+        "second"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-2\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"LVBwft0yPw1aChN63fR2u+iBy9zOhVY1vPt9pUGufq3dOMim3aQyfLfsBoFyFlFesTdtnn7ojMHJVog7xYJwBA==\"\n}\n",
+      "expected": {
+        "status": "available",
+        "version": "0.2.0",
+        "required": false,
+        "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v0.2.0",
+        "package": {
+          "url": "https://github.com/soyeht/soyeht/releases/download/v0.2.0/soyeht-0.2.0-macos-aarch64.dmg",
+          "sha256": "037b3edbb636763a95f58cd91379ccccba4786d8add576a4cfb55d12b9204083",
+          "size": 40000030
+        }
+      }
+    },
+    {
+      "name": "text that is not JSON is not an envelope",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "not json",
+      "expected": {
+        "status": "failed",
+        "failure": "badEnvelope"
+      }
+    },
+    {
+      "name": "an envelope of another format is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 2,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badEnvelope"
+      }
+    },
+    {
+      "name": "a boolean is not a format",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": true,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badEnvelope"
+      }
+    },
+    {
+      "name": "an envelope with no signature is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\"format\": 1, \"keyId\": \"test-1\", \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\"}",
+      "expected": {
+        "status": "failed",
+        "failure": "badEnvelope"
+      }
+    },
+    {
+      "name": "a short signature is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYV\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badEnvelope"
+      }
+    },
+    {
+      "name": "a payload that is not canonical base64 is refused",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ\",\n  \"signature\": \"dUiEkBUSifTrl5E04XYYWzbUoTfSdgSv0jAAKEGolGh52KGQj4V4jr5KvjjLpxeA6a6Prw4taq9qYnwr1kYVDA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badEnvelope"
+      }
+    },
+    {
+      "name": "a version with two parts is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yIiwibWluaW11bVN1cHBvcnRlZFZlcnNpb24iOiIwLjEuMCIsInJlbGVhc2VOb3Rlc1VybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL3RhZy92MC4yLjAiLCJwYWNrYWdlcyI6W3sic3lzdGVtIjoibWFjb3MiLCJhcmNoaXRlY3R1cmUiOiJhYXJjaDY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy1hYXJjaDY0LmRtZyIsInNoYTI1NiI6IjAzN2IzZWRiYjYzNjc2M2E5NWY1OGNkOTEzNzljY2NjYmE0Nzg2ZDhhZGQ1NzZhNGNmYjU1ZDEyYjkyMDQwODMiLCJzaXplIjo0MDAwMDAzMH0seyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbWFjb3MteDg2XzY0LmRtZyIsInNoYTI1NiI6IjhiMTlkNDZiMzQ4MTI4NTNiNTc2ZjkwMzAxYjU1M2Y3ZWVjMzJhZjZjYmI5MzI0NjA1MWZiZDEyYTBmOWJkZDciLCJzaXplIjo0MDAwMDAyOX0seyJzeXN0ZW0iOiJsaW51eCIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbGludXgteDg2XzY0LnRhci5neiIsInNoYTI1NiI6IjA5NWI3MzM2YmYxYWYyNTY4YTU0ZjFlOTIxMzMwMDJmMzU2YmRmOGQyYWU1ODg2ZmYxNjIxZWE3ODIzZDNiMjciLCJzaXplIjo0MDAwMDAzMn0seyJzeXN0ZW0iOiJ3aW5kb3dzIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC13aW5kb3dzLXg4Nl82NC56aXAiLCJzaGEyNTYiOiI2N2FhYjExY2U0ODU3OTNkNjdlOWY4MjJhMGRhMWUxZDBiNWE4MmVjZGQ3YWY3ODE0N2Y1ODE2YmU0NmI0OThiIiwic2l6ZSI6NDAwMDAwMzF9XX0=\",\n  \"signature\": \"u45+zinoknH1M/WR0cf60kp8k/48XwithUtmYPWj9C3uCRD4b+G0t7mECU3C5BavIKvG18VjKs2ldNINkRhpBQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a version with a leading zero is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4wMi4wIiwibWluaW11bVN1cHBvcnRlZFZlcnNpb24iOiIwLjEuMCIsInJlbGVhc2VOb3Rlc1VybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL3RhZy92MC4yLjAiLCJwYWNrYWdlcyI6W3sic3lzdGVtIjoibWFjb3MiLCJhcmNoaXRlY3R1cmUiOiJhYXJjaDY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy1hYXJjaDY0LmRtZyIsInNoYTI1NiI6IjAzN2IzZWRiYjYzNjc2M2E5NWY1OGNkOTEzNzljY2NjYmE0Nzg2ZDhhZGQ1NzZhNGNmYjU1ZDEyYjkyMDQwODMiLCJzaXplIjo0MDAwMDAzMH0seyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbWFjb3MteDg2XzY0LmRtZyIsInNoYTI1NiI6IjhiMTlkNDZiMzQ4MTI4NTNiNTc2ZjkwMzAxYjU1M2Y3ZWVjMzJhZjZjYmI5MzI0NjA1MWZiZDEyYTBmOWJkZDciLCJzaXplIjo0MDAwMDAyOX0seyJzeXN0ZW0iOiJsaW51eCIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbGludXgteDg2XzY0LnRhci5neiIsInNoYTI1NiI6IjA5NWI3MzM2YmYxYWYyNTY4YTU0ZjFlOTIxMzMwMDJmMzU2YmRmOGQyYWU1ODg2ZmYxNjIxZWE3ODIzZDNiMjciLCJzaXplIjo0MDAwMDAzMn0seyJzeXN0ZW0iOiJ3aW5kb3dzIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC13aW5kb3dzLXg4Nl82NC56aXAiLCJzaGEyNTYiOiI2N2FhYjExY2U0ODU3OTNkNjdlOWY4MjJhMGRhMWUxZDBiNWE4MmVjZGQ3YWY3ODE0N2Y1ODE2YmU0NmI0OThiIiwic2l6ZSI6NDAwMDAwMzF9XX0=\",\n  \"signature\": \"z+/DxItA1dKPzvY7b1BAq4VK+yt88WqABfX13oNPkSdr1oLUyway71kiG1aIsEGxxMG0wM9eAv46WnRCp0E4Bw==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a version part of 1000 is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4xMDAwLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"zADm/rREA3Ym5IDnao+HO8TOcpgKlFbu6huwHSE2VYOuEcfxHoZIKjM6gJWUGm1rycGzRIABXovF2wO023jMBQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a minimum above the version is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMy4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"xekQhsGb0AMFSu4msORGrnDTC2GpN05ut198oVRhhRreJYOahniSasJhuZA+WnQjfDyKqUR6OuezP97VueFQDQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a channel the contract does not list is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJuaWdodGx5IiwidmVyc2lvbiI6IjAuMi4wIiwibWluaW11bVN1cHBvcnRlZFZlcnNpb24iOiIwLjEuMCIsInJlbGVhc2VOb3Rlc1VybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL3RhZy92MC4yLjAiLCJwYWNrYWdlcyI6W3sic3lzdGVtIjoibWFjb3MiLCJhcmNoaXRlY3R1cmUiOiJhYXJjaDY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy1hYXJjaDY0LmRtZyIsInNoYTI1NiI6IjAzN2IzZWRiYjYzNjc2M2E5NWY1OGNkOTEzNzljY2NjYmE0Nzg2ZDhhZGQ1NzZhNGNmYjU1ZDEyYjkyMDQwODMiLCJzaXplIjo0MDAwMDAzMH0seyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbWFjb3MteDg2XzY0LmRtZyIsInNoYTI1NiI6IjhiMTlkNDZiMzQ4MTI4NTNiNTc2ZjkwMzAxYjU1M2Y3ZWVjMzJhZjZjYmI5MzI0NjA1MWZiZDEyYTBmOWJkZDciLCJzaXplIjo0MDAwMDAyOX0seyJzeXN0ZW0iOiJsaW51eCIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbGludXgteDg2XzY0LnRhci5neiIsInNoYTI1NiI6IjA5NWI3MzM2YmYxYWYyNTY4YTU0ZjFlOTIxMzMwMDJmMzU2YmRmOGQyYWU1ODg2ZmYxNjIxZWE3ODIzZDNiMjciLCJzaXplIjo0MDAwMDAzMn0seyJzeXN0ZW0iOiJ3aW5kb3dzIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC13aW5kb3dzLXg4Nl82NC56aXAiLCJzaGEyNTYiOiI2N2FhYjExY2U0ODU3OTNkNjdlOWY4MjJhMGRhMWUxZDBiNWE4MmVjZGQ3YWY3ODE0N2Y1ODE2YmU0NmI0OThiIiwic2l6ZSI6NDAwMDAwMzF9XX0=\",\n  \"signature\": \"KKq4UJB6pAtu0ZV/IWNgEEvHtweoTrDJFyRBgdE+JDRkZs5ReC4MhXxlRRxI6V/JFLwzgxm7OVTI4usIlOl8CQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a payload of another format is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjIsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1tYWNvcy14ODZfNjQuZG1nIiwic2hhMjU2IjoiOGIxOWQ0NmIzNDgxMjg1M2I1NzZmOTAzMDFiNTUzZjdlZWMzMmFmNmNiYjkzMjQ2MDUxZmJkMTJhMGY5YmRkNyIsInNpemUiOjQwMDAwMDI5fSx7InN5c3RlbSI6ImxpbnV4IiwiYXJjaGl0ZWN0dXJlIjoieDg2XzY0IiwidXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvZG93bmxvYWQvdjAuMi4wL3NveWVodC0wLjIuMC1saW51eC14ODZfNjQudGFyLmd6Iiwic2hhMjU2IjoiMDk1YjczMzZiZjFhZjI1NjhhNTRmMWU5MjEzMzAwMmYzNTZiZGY4ZDJhZTU4ODZmZjE2MjFlYTc4MjNkM2IyNyIsInNpemUiOjQwMDAwMDMyfSx7InN5c3RlbSI6IndpbmRvd3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLXdpbmRvd3MteDg2XzY0LnppcCIsInNoYTI1NiI6IjY3YWFiMTFjZTQ4NTc5M2Q2N2U5ZjgyMmEwZGExZTFkMGI1YTgyZWNkZDdhZjc4MTQ3ZjU4MTZiZTQ2YjQ5OGIiLCJzaXplIjo0MDAwMDAzMX1dfQ==\",\n  \"signature\": \"U4UaUO92wulRpaiaJhZr3OXFPkg7F2pyFvtEnnicDCOQGuNljMMzGTAsOvn19P4gTRv8vIiwLVGMBqfEnwNbDg==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a notes address that is not https is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cDovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy90YWcvdjAuMi4wIiwicGFja2FnZXMiOlt7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoiYWFyY2g2NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbWFjb3MtYWFyY2g2NC5kbWciLCJzaGEyNTYiOiIwMzdiM2VkYmI2MzY3NjNhOTVmNThjZDkxMzc5Y2NjY2JhNDc4NmQ4YWRkNTc2YTRjZmI1NWQxMmI5MjA0MDgzIiwic2l6ZSI6NDAwMDAwMzB9LHsic3lzdGVtIjoibWFjb3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLXg4Nl82NC5kbWciLCJzaGEyNTYiOiI4YjE5ZDQ2YjM0ODEyODUzYjU3NmY5MDMwMWI1NTNmN2VlYzMyYWY2Y2JiOTMyNDYwNTFmYmQxMmEwZjliZGQ3Iiwic2l6ZSI6NDAwMDAwMjl9LHsic3lzdGVtIjoibGludXgiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLWxpbnV4LXg4Nl82NC50YXIuZ3oiLCJzaGEyNTYiOiIwOTViNzMzNmJmMWFmMjU2OGE1NGYxZTkyMTMzMDAyZjM1NmJkZjhkMmFlNTg4NmZmMTYyMWVhNzgyM2QzYjI3Iiwic2l6ZSI6NDAwMDAwMzJ9LHsic3lzdGVtIjoid2luZG93cyIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtd2luZG93cy14ODZfNjQuemlwIiwic2hhMjU2IjoiNjdhYWIxMWNlNDg1NzkzZDY3ZTlmODIyYTBkYTFlMWQwYjVhODJlY2RkN2FmNzgxNDdmNTgxNmJlNDZiNDk4YiIsInNpemUiOjQwMDAwMDMxfV19\",\n  \"signature\": \"daJL7mryr98kPkJNDMd3uTRLtJa5CHzdb+/ggNvOmpRR0FJA+N05h40pgxYioFB3hRL3Vkka6AU17ElmiJDJCw==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a notes address outside the release pages is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9leGFtcGxlLmNvbS9zb3llaHQvcmVsZWFzZXMvIiwicGFja2FnZXMiOlt7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoiYWFyY2g2NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbWFjb3MtYWFyY2g2NC5kbWciLCJzaGEyNTYiOiIwMzdiM2VkYmI2MzY3NjNhOTVmNThjZDkxMzc5Y2NjY2JhNDc4NmQ4YWRkNTc2YTRjZmI1NWQxMmI5MjA0MDgzIiwic2l6ZSI6NDAwMDAwMzB9LHsic3lzdGVtIjoibWFjb3MiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLXg4Nl82NC5kbWciLCJzaGEyNTYiOiI4YjE5ZDQ2YjM0ODEyODUzYjU3NmY5MDMwMWI1NTNmN2VlYzMyYWY2Y2JiOTMyNDYwNTFmYmQxMmEwZjliZGQ3Iiwic2l6ZSI6NDAwMDAwMjl9LHsic3lzdGVtIjoibGludXgiLCJhcmNoaXRlY3R1cmUiOiJ4ODZfNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLWxpbnV4LXg4Nl82NC50YXIuZ3oiLCJzaGEyNTYiOiIwOTViNzMzNmJmMWFmMjU2OGE1NGYxZTkyMTMzMDAyZjM1NmJkZjhkMmFlNTg4NmZmMTYyMWVhNzgyM2QzYjI3Iiwic2l6ZSI6NDAwMDAwMzJ9LHsic3lzdGVtIjoid2luZG93cyIsImFyY2hpdGVjdHVyZSI6Ing4Nl82NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtd2luZG93cy14ODZfNjQuemlwIiwic2hhMjU2IjoiNjdhYWIxMWNlNDg1NzkzZDY3ZTlmODIyYTBkYTFlMWQwYjVhODJlY2RkN2FmNzgxNDdmNTgxNmJlNDZiNDk4YiIsInNpemUiOjQwMDAwMDMxfV19\",\n  \"signature\": \"8gYKm4BEUkRbuevP5n5o/xMHz0sVjiNxayrp9UE0szPdnlKN6NP8vnI+SZZzMjw/YOwRnsm02deiSUnpEfYuBg==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "no packages is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbXX0=\",\n  \"signature\": \"XLaM6HotzQj0anrNTs7A8NveYSZZv87X1AZ1jbRKneXbQuT0zcothYfQpdv11fxQuVRKxNRxaRxxmuMtR0+sDw==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a package address outside the release pages is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2V4YW1wbGUuY29tL3NveWVodC5kbWciLCJzaGEyNTYiOiIwMzdiM2VkYmI2MzY3NjNhOTVmNThjZDkxMzc5Y2NjY2JhNDc4NmQ4YWRkNTc2YTRjZmI1NWQxMmI5MjA0MDgzIiwic2l6ZSI6NDAwMDAwMzB9XX0=\",\n  \"signature\": \"CYHlukKKwvT0d5FgRduXdpNEgRDWaRMvNnPEQ9jDhG9IyvEC9hX1lOzprvwFidXL7mgNSZNhKEplH9v/0n+zCQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a package address with a space is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0IDAuMi4wLmRtZyIsInNoYTI1NiI6IjAzN2IzZWRiYjYzNjc2M2E5NWY1OGNkOTEzNzljY2NjYmE0Nzg2ZDhhZGQ1NzZhNGNmYjU1ZDEyYjkyMDQwODMiLCJzaXplIjo0MDAwMDAzMH1dfQ==\",\n  \"signature\": \"KMKAiyRRJ3nsRnDZh9+AwoAzC22Bo9qRQ5mE6a1B/d1RV146WjI39L14LYFKk11DvdfOI/KTkcSgsKcapX1NAg==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a checksum in capitals is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSIsInNpemUiOjQwMDAwMDMwfV19\",\n  \"signature\": \"/m735iENhmvCYiCNwLKq6i76+E+RvLT6AnSteLpC50VdXUVQYXi9zvJoIVwgQkwyhFRwkj0Vnewb0FHex9gDCQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a checksum that is too short is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhIiwic2l6ZSI6NDAwMDAwMzB9XX0=\",\n  \"signature\": \"ILdoa52UpyT7vTsUcdY4sA/U0p2bXO22KKHqTuNfRgNoP/nFe4hdVk2wkoRfIRAR/NkDEWAOjhTcA5rcytVjAw==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a package of no bytes is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjB9XX0=\",\n  \"signature\": \"ydGI2lErRa/4M3KvUGnWQ6CCdP1IsNDbs/5EK26eUxgmuGcyqyP+kkA1GTdhLa/Mgz61dZgosHhmZ7Y7OSoYBw==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a package size that is text is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOiIxMiJ9XX0=\",\n  \"signature\": \"6OYqtDA2OUvXX3+rXXZKa4pzEvdYhu1AgoJ/e4iea58dZCIvL8pxLoLnHF4vUoSXI9c/4vqAl3KPXxPXqULyBA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a package larger than the limit is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQyOTQ5NjcyOTd9XX0=\",\n  \"signature\": \"j61wGFNscCqz+qv8PNXsnxUXUWz7lsYfecw/+hRiu5mxdF47m5gfvjtKjU8PTv+OG1Uol8brdoNeuGxNanszBg==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "a system the contract does not list is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJzb2xhcmlzIiwiYXJjaGl0ZWN0dXJlIjoiYWFyY2g2NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtc29sYXJpcy1hYXJjaDY0LnBrZyIsInNoYTI1NiI6IjQxMmU2YjZkZDYyNDFhYzBiNzUxZDBkNTQxZmJjODY0ODc5ZmQ3NWU0NGExMGY3YzczZTJjZmU0YzFmN2NjYWMiLCJzaXplIjo0MDAwMDAzMn1dfQ==\",\n  \"signature\": \"ZHLXUKVY8vYvmZa6FS0BX6aObQJ7+L4yjjvbyIx8lzW0F5NN7D73HCl7oRzwHhnE85KaBq0X02NSdZWfMfhuBg==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "an architecture the contract does not list is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6InJpc2N2NjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLXJpc2N2NjQuZG1nIiwic2hhMjU2IjoiMjA5MjIwOWM5YjIwNzM2MzUyNjk2OTkzNWI0YzZlNmVjNGQ1MDBiYTQwYmI2NjUzNzJjMzVhYmYyMjA0NDIwMSIsInNpemUiOjQwMDAwMDMwfV19\",\n  \"signature\": \"E39dHwh6Gis/2H53ZN066BZENBBeP/XWE64uoux49CjGQxHbBbEG0MmPOeKIpDpXvdR8xm2UklaW4outAjSaBA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "one system and architecture twice is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"eyJmb3JtYXQiOjEsImNoYW5uZWwiOiJzdGFibGUiLCJ2ZXJzaW9uIjoiMC4yLjAiLCJtaW5pbXVtU3VwcG9ydGVkVmVyc2lvbiI6IjAuMS4wIiwicmVsZWFzZU5vdGVzVXJsIjoiaHR0cHM6Ly9naXRodWIuY29tL3NveWVodC9zb3llaHQvcmVsZWFzZXMvdGFnL3YwLjIuMCIsInBhY2thZ2VzIjpbeyJzeXN0ZW0iOiJtYWNvcyIsImFyY2hpdGVjdHVyZSI6ImFhcmNoNjQiLCJ1cmwiOiJodHRwczovL2dpdGh1Yi5jb20vc295ZWh0L3NveWVodC9yZWxlYXNlcy9kb3dubG9hZC92MC4yLjAvc295ZWh0LTAuMi4wLW1hY29zLWFhcmNoNjQuZG1nIiwic2hhMjU2IjoiMDM3YjNlZGJiNjM2NzYzYTk1ZjU4Y2Q5MTM3OWNjY2NiYTQ3ODZkOGFkZDU3NmE0Y2ZiNTVkMTJiOTIwNDA4MyIsInNpemUiOjQwMDAwMDMwfSx7InN5c3RlbSI6Im1hY29zIiwiYXJjaGl0ZWN0dXJlIjoiYWFyY2g2NCIsInVybCI6Imh0dHBzOi8vZ2l0aHViLmNvbS9zb3llaHQvc295ZWh0L3JlbGVhc2VzL2Rvd25sb2FkL3YwLjIuMC9zb3llaHQtMC4yLjAtbWFjb3MtYWFyY2g2NC5kbWciLCJzaGEyNTYiOiIwMzdiM2VkYmI2MzY3NjNhOTVmNThjZDkxMzc5Y2NjY2JhNDc4NmQ4YWRkNTc2YTRjZmI1NWQxMmI5MjA0MDgzIiwic2l6ZSI6NDAwMDAwMzB9XX0=\",\n  \"signature\": \"OXi2tgFsWXZeYEiEgwBrrtsVKgJDzYhS0NvFUeXQWzoFmSOrvBnRdNAUuXQJAtdNTLQKsN1kN5vGkxcZQbjbAQ==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    },
+    {
+      "name": "text that is not JSON is refused after the signature checks out",
+      "running": "0.1.0",
+      "system": "macos",
+      "architecture": "aarch64",
+      "channel": "stable",
+      "trust": [
+        "first"
+      ],
+      "manifest": "{\n  \"format\": 1,\n  \"keyId\": \"test-1\",\n  \"payload\": \"bm90IGpzb24=\",\n  \"signature\": \"91vIFjVdwAFeSmoWlyfPUKrAFSg7j9hSP2rjaFm/ZOsR3qu//Kj1FEScwP8SOAFs7ZIZAnzcHleCzYd6dMonCA==\"\n}\n",
+      "expected": {
+        "status": "failed",
+        "failure": "badManifest"
+      }
+    }
+  ]
+}

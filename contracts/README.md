@@ -165,3 +165,13 @@ the two panes of a writing companion only change sides). Each case gives the flo
 with; both clients pass one per kind and never draw a pane below its floor. A window too small
 for the floors scrolls on the desktop; the Mac first presents the panes in a row, a column or
 tabs (`PaneLayoutFit`), which the desktop does not do yet.
+
+`update.json` is the update check's contract (ADR 0122, `docs/contracts/15-updates.md`): where the
+signed manifest is published, the Ed25519 public keys that may sign it (empty until the release key
+exists, and a build with no key checks nothing), its limits, the systems, architectures and channels
+it may name, the daily interval, the sentences both clients show and the failures a check ends in.
+The generator emits `engine/soyeht-protocol/src/update_policy.rs` and
+`contracts/swift/Sources/SoyehtProtocol/UpdatePolicy.swift`. `vectors/update.json` holds 46 signed
+manifests (good, tampered and broken) that `soyeht_protocol::update`, `UpdateCheck` and
+`update_manifest.py` all read the same way, and `vectors/update-status.json` the sentence of each
+state; regenerate the first with `uv run python contracts/test_update_manifest.py --write`.

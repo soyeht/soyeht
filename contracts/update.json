@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "manifest": {
+    "asset": "update-manifest.json",
+    "url": "https://github.com/soyeht/soyeht/releases/latest/download/update-manifest.json",
+    "format": 1,
+    "maxBytes": 65536,
+    "maxPackages": 32,
+    "maxPackageBytes": 4294967296
+  },
+  "signature": {
+    "algorithm": "ed25519",
+    "context": "soyeht-update-manifest-v1\n",
+    "publicKeys": []
+  },
+  "channels": [
+    "stable"
+  ],
+  "defaultChannel": "stable",
+  "systems": [
+    "macos",
+    "linux",
+    "windows"
+  ],
+  "architectures": [
+    "aarch64",
+    "x86_64"
+  ],
+  "urlPrefixes": [
+    "https://github.com/soyeht/soyeht/releases/"
+  ],
+  "release": {
+    "packageUrl": "https://github.com/soyeht/soyeht/releases/download/v{version}/{file}",
+    "notesUrl": "https://github.com/soyeht/soyeht/releases/tag/v{version}"
+  },
+  "check": {
+    "intervalSeconds": 86400,
+    "timeoutSeconds": 20
+  },
+  "texts": {
+    "title": "Updates",
+    "summary": "Soyeht asks GitHub once a day whether a newer version is published. Nothing is installed without you.",
+    "toggle": "Check for updates automatically",
+    "checkNow": "Check now",
+    "download": "Download Soyeht {version}",
+    "notes": "Release notes",
+    "off": "Automatic checks are off.",
+    "notChecked": "Not checked yet.",
+    "checking": "Checking for updates…",
+    "upToDate": "Soyeht {version} is up to date.",
+    "available": "Soyeht {version} is available.",
+    "required": "This version is no longer supported. Update to keep using Soyeht.",
+    "notConfigured": "Update checks are not set up in this build.",
+    "failed": "Could not check for updates."
+  },
+  "failures": [
+    {
+      "id": "notConfigured",
+      "meaning": "This build carries no public key, so no manifest can be trusted."
+    },
+    {
+      "id": "unreachable",
+      "meaning": "The manifest could not be fetched: no network, a refusal or a timeout."
+    },
+    {
+      "id": "tooLarge",
+      "meaning": "The manifest is larger than the limit."
+    },
+    {
+      "id": "badEnvelope",
+      "meaning": "The manifest is not an envelope of the supported format."
+    },
+    {
+      "id": "unknownKey",
+      "meaning": "The manifest names a key this build does not carry."
+    },
+    {
+      "id": "badSignature",
+      "meaning": "The signature does not match the payload and the key."
+    },
+    {
+      "id": "badManifest",
+      "meaning": "The signed payload breaks a rule of the format."
+    },
+    {
+      "id": "wrongChannel",
+      "meaning": "The manifest is for another channel."
+    },
+    {
+      "id": "noPackage",
+      "meaning": "A newer version exists but has no package for this system and architecture."
+    }
+  ]
+}
