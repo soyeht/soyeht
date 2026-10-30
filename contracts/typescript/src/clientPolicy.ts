@@ -6,7 +6,8 @@ export const clientPolicy = {
     "reconnectDelayMs": 1000,
     "reconnectCeilingMs": 30000,
     "draftBeatMs": 8000,
-    "agentPartialFlushMs": 16
+    "agentPartialFlushMs": 16,
+    "diagnosticsMs": 30000
   },
   "terminal": {
     "inputChunkBytes": 16384,
@@ -17,7 +18,8 @@ export const clientPolicy = {
     "fileLinks": 128,
     "webLinks": 128,
     "modelPages": 32,
-    "tickerHistory": 3
+    "tickerHistory": 3,
+    "diagnosticsReportBytes": 4194304
   },
   "pageSize": {
     "queue": 64,

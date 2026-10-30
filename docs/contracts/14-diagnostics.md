@@ -97,14 +97,20 @@ Windows and Linux).
 `soyeht` program that ships with it, `soyeht --profile <profile> --data-dir <data directory>
 diagnostics`, and copies what it printed (standard output, UTF-8 Markdown) as it is:
 
-- The Mac runs the `soyeht` of its bundle (`Contents/MacOS`), through the same bounded runner it
-  uses for `soyeht service` (ADR 0120). A Dev build, which carries no programs, runs the copy the
-  Dev installer put in the profile's `bin` folder.
+- The Mac runs the `soyeht` of its bundle (`Contents/MacOS`), through the same runner it uses for
+  `soyeht service` (ADR 0120). A build whose bundle carries no `soyeht` (a Dev build, or any
+  profile packaged without the programs) runs the copy in the profile's `bin` folder when there is
+  one, which is where the Dev installer puts it, and otherwise says there is no program.
 - The Windows and Linux app runs the `soyeht` that sits in the folder of its own executable, where
-  the engine and the supervisor are (ADR 0102), through `soyeht_process::run`, which gives it a
-  deadline and a byte limit and kills it with everything it started.
+  the engine and the supervisor are (ADR 0102), through `soyeht_process::run`.
+- Both clients bound the program the same way, with the values of `x-clientPolicy`: it ends after
+  `timeouts.diagnosticsMs` (the runner kills it and what it started), and a report larger than
+  `caps.diagnosticsReportBytes` is a failure, not a truncated copy. The Mac's runner stops reading
+  and ends the program at the cap, as the Windows and Linux runner does.
 - The profile and the data directory are the ones the client itself resolved, so the report is
-  about the engine the client talks to.
+  about the profile's own data directory. When a window was pointed at another engine, with
+  `SOYEHT_ENGINE_SOCKET` (a developer or test setting), the report still covers the profile's own
+  directory and says nothing of that engine.
 
 Why the program and not a call to `soyeht_platform::diagnostics::report`: the report needs more
 than the builder, namely whether the two endpoints answer, the readiness question to an engine
@@ -124,7 +130,7 @@ have removed):
 |---|---|
 | Collecting (the action is disabled meanwhile) | `diagnosticsWorking` |
 | The report is on the clipboard | `diagnosticsCopied` |
-| The program ran and failed, did not finish in time, or printed something that is not text | `diagnosticsFailed` |
+| The program ran and failed, did not finish in time, or printed more than the cap or something that is not text | `diagnosticsFailed` |
 | The client cannot find the program | `diagnosticsUnavailable` |
 
 The labels and sentences are the `diagnostics*` entries of `x-clientPolicy.texts` in

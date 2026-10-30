@@ -34,6 +34,35 @@ fn the_program_is_the_soyeht_file_in_the_folder_of_the_window() {
 }
 
 #[cfg(unix)]
+#[test]
+fn the_report_is_what_the_soyeht_program_beside_the_window_prints() {
+    // `echo` stands in for the program: a link to it needs no file written and then run.
+    let folder =
+        std::env::temp_dir().join(format!("next-diagnostics-collect-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::os::unix::fs::symlink("/bin/echo", program_file(&folder, PROGRAM)).unwrap();
+    let report = collect_with(
+        &folder.join("soyeht-desktop"),
+        "prod",
+        Path::new("/data/Soyeht.next"),
+    );
+    std::fs::remove_dir_all(&folder).unwrap();
+    assert_eq!(
+        report,
+        Ok("--profile prod --data-dir /data/Soyeht.next diagnostics\n".to_owned())
+    );
+}
+
+#[test]
+fn a_window_with_no_soyeht_program_beside_it_has_no_report() {
+    let folder = std::env::temp_dir().join(format!("next-diagnostics-none-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let report = collect_with(&folder.join("soyeht-desktop"), "prod", Path::new("/data"));
+    std::fs::remove_dir_all(&folder).unwrap();
+    assert_eq!(report, Err(Failure::Unavailable));
+}
+
+#[cfg(unix)]
 mod running {
     use super::*;
 

@@ -72,7 +72,7 @@
   @Test @MainActor func aFailureIsShownAndNothingIsCopied() async {
     for failure in [
       ServiceCommandError.failed(status: 2, detail: "boom /Users/person/x"),
-      .timedOut, .unreadable,
+      .timedOut, .unreadable, .tooLarge,
     ] {
       let clipboard = Clipboard()
       let copy = action(ScriptedReport(.failure(failure)), clipboard)
@@ -102,6 +102,20 @@
     await copy.copy()
     #expect(clipboard.written == [report, report])
     #expect(copy.phase == .copied)
+  }
+
+  @Test func theRunnerEndsAProgramThatPrintsMoreThanItMayOrRunsTooLong() async {
+    let sh = URL(fileURLWithPath: "/bin/sh")
+    await #expect(throws: ServiceCommandError.tooLarge) {
+      try await ProcessRunner(maxOutputBytes: 100).run(
+        sh, arguments: ["-c", "yes | head -c 100000"])
+    }
+    let small = try? await ProcessRunner(maxOutputBytes: 100).run(
+      sh, arguments: ["-c", "printf ok"])
+    #expect(small.map { String(decoding: $0, as: UTF8.self) } == "ok")
+    await #expect(throws: ServiceCommandError.timedOut) {
+      try await ProcessRunner(seconds: 0.3).run(sh, arguments: ["-c", "sleep 5"])
+    }
   }
 
   @Test func aProgramBesideTheAppIsFoundInTheBundleOrTheDevFolder() throws {

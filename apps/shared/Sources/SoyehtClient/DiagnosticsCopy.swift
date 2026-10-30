@@ -11,7 +11,9 @@
     public static func forDiagnostics(
       bundle: Bundle = .main, profile: ProfileValues = ActiveProfile.values,
       dataDirectory: URL = ActiveProfile.dataDirectory,
-      runner: any ServiceCommandRunning = ProcessRunner()
+      runner: any ServiceCommandRunning = ProcessRunner(
+        seconds: Double(ClientPolicy.diagnosticsMs) / 1000,
+        maxOutputBytes: ClientPolicy.capsDiagnosticsReportBytes)
     ) -> BundledEngineService? {
       if let bundled = BundledEngineService(
         bundle: bundle, profile: profile, dataDirectory: dataDirectory, runner: runner)
@@ -95,6 +97,7 @@
       case ServiceCommandError.failed(let status, _): "status:\(status)"
       case ServiceCommandError.timedOut: "timed_out"
       case ServiceCommandError.unreadable: "not_text"
+      case ServiceCommandError.tooLarge: "too_large"
       default: "run"
       }
     }

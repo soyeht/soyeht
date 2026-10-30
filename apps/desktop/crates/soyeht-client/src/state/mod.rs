@@ -26,6 +26,13 @@ pub enum Connection {
     Disconnected(String),
 }
 
+impl Connection {
+    /// No engine answers and none is being started: the person has to start it.
+    pub fn engine_down(&self) -> bool {
+        matches!(self, Self::Disconnected(_))
+    }
+}
+
 /// Work the application must do because the state changed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Effect {
@@ -242,6 +249,11 @@ impl State {
         self.workspaces
             .iter()
             .find(|workspace| workspace.workspace_id == workspace_id)
+    }
+
+    /// The engine is not running and the window is not starting one.
+    pub fn engine_down(&self) -> bool {
+        self.connection.engine_down()
     }
 
     pub fn selected_workspace(&self) -> Option<&Workspace> {

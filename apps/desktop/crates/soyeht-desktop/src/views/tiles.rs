@@ -64,10 +64,7 @@ impl Workbench {
                 Some(hint) => {
                     let stage = empty_state(palette, None, hint, None);
                     // Without an engine the report still has the logs, and this is when it is needed.
-                    if matches!(
-                        self.state.connection,
-                        soyeht_client::Connection::Disconnected(_)
-                    ) {
+                    if self.state.engine_down() {
                         stage
                             .child(self.diagnostics_action(palette, "stage", cx))
                             .into_any_element()

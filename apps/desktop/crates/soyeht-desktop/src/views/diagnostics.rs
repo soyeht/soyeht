@@ -4,7 +4,7 @@
 //! running, which is when a person needs the report most. The Mac shows the same sentences.
 
 use super::{preferences::pill_button, prelude::*};
-use crate::theme::{Palette, space, type_scale};
+use crate::theme::{Palette, pane_interior, space, type_scale};
 use soyeht_protocol::client_policy::{DIAGNOSTICS_ACTION, DIAGNOSTICS_SUMMARY, DIAGNOSTICS_TITLE};
 
 impl Workbench {
@@ -33,13 +33,22 @@ impl Workbench {
         place: &str,
         cx: &mut Context<Self>,
     ) -> Div {
+        // One collection at a time: the button waits for the one that runs.
+        let working = self.diagnostics.working();
         let copy = pill_button(
             palette,
             SharedString::from(format!("diagnostics-copy-{place}")),
             Some(Icon::Copy),
             DIAGNOSTICS_ACTION,
         )
-        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_diagnostics(cx)));
+        .when(working, |button| {
+            button
+                .opacity(pane_interior::DISABLED_OPACITY)
+                .cursor_default()
+        })
+        .when(!working, |button| {
+            button.on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_diagnostics(cx)))
+        });
         let color = if self.diagnostics.is_failure() {
             palette.warning()
         } else {

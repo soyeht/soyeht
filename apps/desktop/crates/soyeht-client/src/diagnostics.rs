@@ -9,7 +9,8 @@ use crate::{autostart::program_file, profile};
 use soyeht_platform::log;
 use soyeht_process::Limits;
 use soyeht_protocol::client_policy::{
-    DIAGNOSTICS_COPIED, DIAGNOSTICS_FAILED, DIAGNOSTICS_UNAVAILABLE, DIAGNOSTICS_WORKING,
+    CAPS_DIAGNOSTICS_REPORT_BYTES, DIAGNOSTICS_COPIED, DIAGNOSTICS_FAILED, DIAGNOSTICS_MS,
+    DIAGNOSTICS_UNAVAILABLE, DIAGNOSTICS_WORKING,
 };
 use std::{
     ffi::OsString,
@@ -18,10 +19,6 @@ use std::{
 };
 
 const PROGRAM: &str = "soyeht";
-/// The report reads files and asks the engine once, so a program that takes longer is stuck.
-const TIMEOUT: Duration = Duration::from_secs(30);
-/// Three logs of the most lines a report takes, with room to spare.
-const REPORT_BYTES: usize = 4 * 1024 * 1024;
 
 /// Why there is no report to copy. [`log::Failure::failure_kind`] is what the log keeps; the
 /// message the program printed can carry a path, so it is neither logged nor shown.
@@ -54,10 +51,17 @@ impl log::Failure for Failure {
 pub fn collect() -> Result<String, Failure> {
     // A system that cannot say where this program is has no folder to look in.
     let executable = std::env::current_exe().map_err(|_| Failure::Unavailable)?;
-    let program = program_beside(&executable)?;
     let profile = profile::selected().map_err(|_| Failure::Profile)?;
+    // The profile's own data directory, also when the window was pointed at another engine with
+    // `SOYEHT_ENGINE_SOCKET` (contract 14, section 4).
     let directory = profile::data_directory_of_profile().map_err(|_| Failure::Profile)?;
-    run(&program, &arguments(profile.name, &directory))
+    collect_with(&executable, profile.name, &directory)
+}
+
+/// The report of `profile`, whose data is in `directory`, from the `soyeht` program that sits in
+/// the folder of `executable`.
+fn collect_with(executable: &Path, profile: &str, directory: &Path) -> Result<String, Failure> {
+    run(&program_beside(executable)?, &arguments(profile, directory))
 }
 
 /// The `soyeht` program in the folder of `executable`.
@@ -83,8 +87,14 @@ fn arguments(profile: &str, directory: &Path) -> Vec<OsString> {
 fn run(program: &Path, arguments: &[OsString]) -> Result<String, Failure> {
     let mut command = std::process::Command::new(program);
     command.args(arguments);
-    let output = soyeht_process::run(command, Limits::new(TIMEOUT, REPORT_BYTES))
-        .map_err(|error| Failure::Run(log::Failure::failure_kind(&error)))?;
+    let output = soyeht_process::run(
+        command,
+        Limits::new(
+            Duration::from_millis(DIAGNOSTICS_MS),
+            CAPS_DIAGNOSTICS_REPORT_BYTES,
+        ),
+    )
+    .map_err(|error| Failure::Run(log::Failure::failure_kind(&error)))?;
     if !output.success() {
         return Err(Failure::Run(output.status.code().map_or_else(
             || "signal".to_owned(),

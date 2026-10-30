@@ -14,6 +14,8 @@ public enum ClientPolicy {
     public static let draftBeatSeconds: Double = 8.0
     public static let agentPartialFlushMs = 16
     public static let agentPartialFlushSeconds: Double = 0.016
+    public static let diagnosticsMs = 30000
+    public static let diagnosticsSeconds: Double = 30.0
     public static let terminalInputChunkBytes = 16384
     public static let terminalScrollbackLines = 10000
     public static let capsWaitingMessages = 1000
@@ -21,6 +23,7 @@ public enum ClientPolicy {
     public static let capsWebLinks = 128
     public static let capsModelPages = 32
     public static let capsTickerHistory = 3
+    public static let capsDiagnosticsReportBytes = 4194304
     public static let pageSizeQueue: UInt32 = 64
     public static let pageSizeHarnesses: UInt32 = 64
     public static let pageSizeModels: UInt32 = 64
