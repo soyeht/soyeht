@@ -26,7 +26,10 @@ esac
 release_url="https://cdimage.ubuntu.com/ubuntu-base/releases/22.04/release"
 tarball="ubuntu-base-22.04.5-base-$arch.tar.gz"
 rootfs="$base/$arch/root"
-mkdir -p "$base/$arch"
+# The downloaded AppImage runtime lives beside the userland, not in the sources that are
+# replaced on every run.
+cache="$base/$arch/cache"
+mkdir -p "$base/$arch" "$cache"
 
 packages="build-essential curl ca-certificates git pkg-config cmake clang libclang-dev python3
  squashfs-tools binutils xz-utils libwayland-dev libx11-dev libxcb1-dev libxkbcommon-dev
@@ -37,7 +40,8 @@ packages="${packages//$'\n'/}"
 # Runs a command as the user namespace's root inside the Ubuntu userland.
 inside() {
     bwrap --unshare-user --uid 0 --gid 0 --bind "$rootfs" / --dev /dev --proc /proc --tmpfs /tmp \
-        --ro-bind /etc/resolv.conf /etc/resolv.conf --setenv HOME /root --setenv TMPDIR /tmp \
+        --bind "$cache" /cache --ro-bind /etc/resolv.conf /etc/resolv.conf \
+        --setenv HOME /root --setenv TMPDIR /tmp \
         --setenv PATH /root/.cargo/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
         --chdir / "$@"
 }
@@ -56,6 +60,7 @@ if [[ ! -f "$rootfs/etc/os-release" ]]; then
         dpkg --configure -a"
 fi
 
+mkdir -p "$rootfs/cache"
 # The committed sources, in a folder of their own for every run.
 sources="$rootfs/src"
 rm -rf "${sources:?}"
@@ -72,8 +77,10 @@ if [ ! -x /root/.cargo/bin/rustup ]; then
 fi
 mkdir -p /build
 cd /src
+# The script is plain `python3`, not `uv run python`: it imports only the standard library, and
+# the Ubuntu base has no `uv`.
 exec python3 scripts/package_linux.py --engine-target /build/engine --desktop-target /build/desktop \
-    --out /src/dist "$@"
+    --out /src/dist --cache /cache "$@"
 INSIDE
 inside --setenv SOURCE_DATE_EPOCH "$epoch" --setenv SOYEHT_BUILD_COMMIT "$commit" \
     --setenv CARGO_BUILD_JOBS "$jobs" /bin/sh /package-in-root.sh "$@"

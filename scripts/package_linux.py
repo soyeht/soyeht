@@ -30,14 +30,13 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "contracts"))
-
 import release  # noqa: E402  (the scripts directory is on the path of a script)
 from generated_profile import BUILD_ENVIRONMENT, PROFILES  # noqa: E402
 
@@ -187,6 +186,15 @@ def write_file(path, data, mode=0o644):
     path.chmod(mode)
 
 
+def normalize_modes(root):
+    """Every staged folder 0755, whatever the builder's umask: the AppImage keeps what the
+    staging folder says, and a person's umask must not decide who can read the programs."""
+    root.chmod(0o755)
+    for path in root.rglob("*"):
+        if path.is_dir() and not path.is_symlink():
+            path.chmod(0o755)
+
+
 def metainfo_text(template, plan):
     date = datetime.fromtimestamp(plan.epoch, timezone.utc).strftime("%Y-%m-%d")
     line = f'<release version="{plan.version}" date="{date}"/>'
@@ -228,6 +236,7 @@ def stage_deb(root, plan):
     documents = root / "usr/share/doc" / PACKAGE
     write_file(documents / "copyright", copyright_text().encode())
     write_file(documents / "NOTICE", (ROOT / "NOTICE").read_bytes())
+    normalize_modes(root)
 
 
 def build_id(plan):
@@ -246,6 +255,7 @@ def stage_appimage(root, plan):
     write_file(root / f"{APPLICATION_ID}.desktop", entry)
     write_file(root / "soyeht.png", (PACKAGING / "icons/hicolor/256x256/apps/soyeht.png").read_bytes())
     (root / ".DirIcon").symlink_to("soyeht.png")
+    normalize_modes(root)
 
 
 # ---- the .deb --------------------------------------------------------------------------------
@@ -347,15 +357,25 @@ def build_deb(plan, floor, sonames, out):
 # ---- the AppImage ----------------------------------------------------------------------------
 
 
+def sha256_of(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def runtime_file(arch, given, cache):
-    """The type 2 runtime for `arch`: the file given, else the pinned download, checked by hash."""
+    """The type 2 runtime for `arch`: the file given, else the pinned download. A download is
+    checked by hash before it is renamed into `cache`, so an unverified file is never kept."""
+    wanted = ARCHITECTURES[arch][1]
     path = Path(given) if given else cache / f"runtime-{arch}"
     if not path.exists():
         cache.mkdir(parents=True, exist_ok=True)
-        with urllib.request.urlopen(RUNTIME_URL.format(arch=arch), timeout=60) as response:
-            path.write_bytes(response.read())
-    wanted = ARCHITECTURES[arch][1]
-    found = hashlib.sha256(path.read_bytes()).hexdigest()
+        with tempfile.NamedTemporaryFile(dir=cache, prefix=".download-", delete=False) as partial:
+            with urllib.request.urlopen(RUNTIME_URL.format(arch=arch), timeout=60) as response:
+                partial.write(response.read())
+        if sha256_of(partial.name) != wanted:
+            Path(partial.name).unlink()
+            raise PackagingError(f"the download of the {arch} runtime is not the pinned one (sha256 {wanted})")
+        os.replace(partial.name, path)
+    found = sha256_of(path)
     if found != wanted:
         raise PackagingError(f"{path} is not the pinned runtime (sha256 {found}, wanted {wanted})")
     return path
@@ -422,6 +442,10 @@ def source_epoch():
     return int(shown.stdout.strip()) if shown.returncode == 0 and shown.stdout.strip() else 0
 
 
+def absolute(path):
+    return str(Path(path).resolve()) if path else None
+
+
 def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--format", choices=("deb", "appimage", "all"), default="all")
@@ -430,6 +454,7 @@ def parse(argv):
     parser.add_argument("--engine-target", help="cargo target directory of engine/ (default engine/target)")
     parser.add_argument("--desktop-target", help="cargo target directory of apps/desktop/")
     parser.add_argument("--out", default=str(ROOT / "dist"))
+    parser.add_argument("--cache", help="where the downloaded runtime is kept (default OUT/.cache)")
     parser.add_argument("--runtime", help="the type 2 runtime file (default: download, pinned by hash)")
     parser.add_argument("--max-glibc", default=DEFAULT_MAX_GLIBC, help="newest glibc allowed, or 'any'")
     return parser.parse_args(argv)
@@ -437,7 +462,10 @@ def parse(argv):
 
 def main(argv=None):
     args = parse(argv)
-    out = Path(args.out)
+    # Both are used from other working folders (cargo runs in each workspace).
+    args.engine_target = absolute(args.engine_target)
+    args.desktop_target = absolute(args.desktop_target)
+    out = Path(args.out).resolve()
     if args.arch != host_arch() and not args.skip_build:
         raise PackagingError(f"this machine is {host_arch()}: build {args.arch} packages on one")
     if not args.skip_build:
@@ -452,7 +480,7 @@ def main(argv=None):
     if args.format in ("deb", "all"):
         written.append(build_deb(plan, floor, sonames, out))
     if args.format in ("appimage", "all"):
-        runtime = runtime_file(args.arch, args.runtime, out / ".cache")
+        runtime = runtime_file(args.arch, args.runtime, Path(args.cache) if args.cache else out / ".cache")
         written.append(build_appimage(plan, runtime, out))
     for path in written:
         print(f"{path} ({path.stat().st_size} bytes, needs glibc {version_text(floor) or 'none'})")

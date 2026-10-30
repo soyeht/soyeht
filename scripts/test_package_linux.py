@@ -3,6 +3,7 @@ import io
 import lzma
 import os
 import re
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -12,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import package_linux as package
+from generated_profile import PROFILES
 
 APP_RUN = package.PACKAGING / "AppRun"
 
@@ -133,9 +135,10 @@ class ShippedFilesTests(unittest.TestCase):
         for script in scripts:
             subprocess.run(["sh", "-n", str(script)], check=True)
 
-    def test_the_folders_the_launcher_writes_carry_next(self):
-        text = APP_RUN.read_text()
-        self.assertRegex(text, r"soyeht-next-appimage")
+    def test_the_folder_the_launcher_writes_is_named_after_the_production_data_directory(self):
+        folder = PROFILES[package.PROFILE]["dataDirectory"]["linux"] + "-appimage"
+        self.assertIn("next", folder)
+        self.assertIn(f"/{folder}\n", APP_RUN.read_text())
 
 
 class DebTests(unittest.TestCase):
@@ -224,6 +227,26 @@ class DebTests(unittest.TestCase):
             self.assertEqual([p.name for p in out.iterdir()], ["soyeht-0.1.0-linux-x86_64.deb"])
 
 
+class StagingTests(unittest.TestCase):
+    def test_modes_do_not_depend_on_the_builders_umask(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            plan = make_plan(fake_programs(directory))
+            previous = os.umask(0o077)
+            self.addCleanup(os.umask, previous)
+            for stage, name in ((package.stage_deb, "deb"), (package.stage_appimage, "image")):
+                root = directory / name
+                stage(root, plan)
+                folders = [root, *(p for p in root.rglob("*") if p.is_dir() and not p.is_symlink())]
+                self.assertTrue(all(p.stat().st_mode & 0o777 == 0o755 for p in folders), name)
+                files = [p for p in root.rglob("*") if p.is_file() and not p.is_symlink()]
+                self.assertTrue(all(p.stat().st_mode & 0o044 == 0o044 for p in files), name)
+
+    def test_relative_targets_become_absolute(self):
+        self.assertTrue(Path(package.absolute("target")).is_absolute())
+        self.assertIsNone(package.absolute(None))
+
+
 class AppImageTests(unittest.TestCase):
     def test_the_staged_image_has_the_entry_point_the_icon_and_a_build_id(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -253,6 +276,28 @@ class AppImageTests(unittest.TestCase):
             runtime.write_bytes(b"not the runtime")
             with self.assertRaisesRegex(package.PackagingError, "not the pinned runtime"):
                 package.runtime_file("x86_64", str(runtime), Path(folder))
+
+    def test_a_download_is_checked_before_it_is_kept(self):
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *arguments):
+                return False
+
+        with tempfile.TemporaryDirectory() as folder:
+            cache = Path(folder) / "cache"
+            with patch.object(package.urllib.request, "urlopen", return_value=Response(b"tampered")):
+                with self.assertRaisesRegex(package.PackagingError, "not the pinned one"):
+                    package.runtime_file("x86_64", None, cache)
+            self.assertEqual(list(cache.iterdir()), [], "nothing unverified stays in the cache")
+            body = b"the runtime"
+            with patch.dict(package.ARCHITECTURES, {"x86_64": ("amd64", hashlib.sha256(body).hexdigest())}):
+                with patch.object(package.urllib.request, "urlopen", return_value=Response(body)):
+                    kept = package.runtime_file("x86_64", None, cache)
+            self.assertEqual(kept, cache / "runtime-x86_64")
+            self.assertEqual(kept.read_bytes(), body)
+            self.assertEqual([p.name for p in cache.iterdir()], ["runtime-x86_64"])
 
     def test_both_architectures_have_a_pinned_runtime(self):
         for arch, (debian, digest) in package.ARCHITECTURES.items():
@@ -327,6 +372,16 @@ class LauncherTests(unittest.TestCase):
         leftovers = [p.name for p in self.programs.parent.iterdir() if p.name != "programs"]
         self.assertNotIn("programs.old", " ".join(leftovers))
         self.assertFalse([name for name in leftovers if name.startswith("programs.")])
+        self.assertFalse(list(self.programs.glob("programs*")), "no folder nested by a swap")
+
+    @unittest.skipUnless(shutil.which("flock"), "the launcher cleans leftovers only under flock")
+    def test_leftovers_of_a_launch_that_was_killed_are_removed(self):
+        self.run_launcher()
+        self.image("two")
+        (self.programs.parent / "programs.new.99").mkdir()
+        (self.programs.parent / "programs.old.99").mkdir()
+        self.run_launcher()
+        self.assertEqual(sorted(p.name for p in self.programs.parent.iterdir() if p.name != ".lock"), ["programs"])
 
     def test_uninstall_removes_the_copied_programs_only_when_it_succeeded(self):
         self.run_launcher()

@@ -27,7 +27,10 @@ directory `soyeht-next`) and writes `dist/soyeht-<version>-linux-<arch>.deb` and
 `x86_64` and `aarch64`. The version is `contracts/release.json` and nothing else. `dist/` is
 ignored. A package of one architecture is built on that architecture. The `.deb` is written by the
 script in Python (an `ar` of `debian-binary`, `control.tar.xz`, `data.tar.xz`), so it needs no
-`dpkg-deb` and its bytes depend only on the commit (`SOURCE_DATE_EPOCH`, else the commit time).
+`dpkg-deb`, and given the same programs it is byte for byte the same (owner root, every time
+`SOURCE_DATE_EPOCH`, else the commit time). The programs themselves are as reproducible as the
+build that made them: the rootless build base installs `rustup` over the network and its
+Ubuntu packages are not pinned.
 The AppImage is a pinned type 2 runtime (checked by sha256) followed by a `mksquashfs` image.
 
 **The programs never live in a path that moves.**
@@ -53,11 +56,14 @@ who wants Soyeht running at login runs `soyeht service install` (`AppImage soyeh
 for an AppImage). The `.deb` does not enable a system-wide unit, since the unit must carry the
 person's data directory.
 
-**A unit whose program is gone does nothing.** `soyeht-service` now renders
-`ConditionPathExists=<program>` in the `[Unit]` section. Without it, a package removed (or a copied
-folder deleted) while the unit file stays in the person's home would fail and restart every
+**A unit whose program is gone does nothing, and says so when asked to start.** `soyeht-service` now
+renders `ConditionPathExists=<program>` in the `[Unit]` section. Without it, a package removed (or a
+copied folder deleted) while the unit file stays in the person's home would fail and restart every
 second for ever (`Restart=always`, no start limit). With it, systemd skips the start without a
-failure. This is the safety net, not the removal.
+failure. Because a skipped unit makes `systemctl start` and `enable --now` exit 0, the seam checks the
+program itself: `service install` already refused a missing program, and `service start` now reads
+the program back from the unit's condition line and fails with the typed `ProgramMissing` error
+instead of reporting a success that started nothing.
 
 **Removal.** The data stays unless asked, as everywhere (ADR 0118).
 
@@ -90,6 +96,13 @@ the version and the commit time) are installed by both formats.
 
 ## Consequences
 
+- A skipped unit is not retried. An engine that exits while the programs are briefly missing (for
+  example during the swap of `AppRun`, or a developer relinking the folder) stays stopped until the
+  next `service start` or login, where `Restart=always` alone would have started it again a second
+  later. That is the price of not restarting for ever a service whose program was removed with its
+  package, which fills the log and burns a processor with nothing the person can see; the swap itself
+  leaves the old programs in place until the new ones are complete, so the gap is short, and
+  `soyeht service start` now says plainly when the programs are not there.
 - Upgrading a package or an AppImage replaces the programs on disk but not a running engine or
   supervisor; `soyeht service stop` and `start` (or the next login) pick up the new build.
 - A `.deb` removed without `soyeht uninstall` leaves the engine running until it stops or the

@@ -9,8 +9,11 @@ use crate::{
     error::{Error, Result},
     system::Component,
 };
+use std::{fs, path::Path};
 
 const SYSTEMCTL: &str = "systemctl";
+/// The line of a unit that makes systemd skip it, without a failure, when the program is gone.
+const CONDITION: &str = "ConditionPathExists=";
 
 impl<C: Commands> Manager<'_, C> {
     /// A `systemctl --user` command that must succeed.
@@ -35,8 +38,16 @@ impl<C: Commands> Manager<'_, C> {
     }
 
     pub(super) fn systemd_start(&self, component: Component) -> Result<()> {
-        if !self.file(component).is_file() {
+        let file = self.file(component);
+        if !file.is_file() {
             return Err(Error::NotRegistered);
+        }
+        // A unit whose program is gone is skipped and `systemctl start` still succeeds, so the
+        // program is checked here: a start that runs nothing must not say it worked.
+        if let Some(program) = unit_program(&fs::read_to_string(&file)?)
+            && !Path::new(&program).is_file()
+        {
+            return Err(Error::ProgramMissing(program));
         }
         self.systemd_do("systemctl start", &["start", self.name(component)])
     }
@@ -65,5 +76,29 @@ impl<C: Commands> Manager<'_, C> {
             present && self.systemd_says("is-enabled", component)?,
             present && self.systemd_says("is-active", component)?,
         ))
+    }
+}
+
+/// The program a unit's `ConditionPathExists=` line names, with the `%%` of the file read back
+/// as `%`.
+fn unit_program(unit: &str) -> Option<String> {
+    unit.lines()
+        .find_map(|line| line.strip_prefix(CONDITION))
+        .map(|program| program.replace("%%", "%"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unit_program;
+
+    #[test]
+    fn the_program_is_read_back_from_the_condition_line() {
+        let unit =
+            "[Unit]\nDescription=x\nConditionPathExists=/opt/50%%/soyeht-engine\n\n[Service]\n";
+        assert_eq!(
+            unit_program(unit).as_deref(),
+            Some("/opt/50%/soyeht-engine")
+        );
+        assert_eq!(unit_program("[Unit]\nDescription=x\n"), None);
     }
 }

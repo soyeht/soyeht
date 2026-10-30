@@ -96,7 +96,7 @@ The commands, all printing the state of the services after they ran as JSON
 | `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
 | `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
-| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise. |
+| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux with "the program ... does not exist" when the unit's program is gone (systemd would skip the unit and report success). |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
 | `soyeht service status [--component C]` | Reports. Changes nothing. |
 | `soyeht service render --system S --name N [...] -- PROGRAM ARGS` | Prints the file for explicit values without touching the system. For scripts that start disposable services. |

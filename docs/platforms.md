@@ -221,7 +221,7 @@ private folder, maintainer scripts included; `desktop-file-validate` and `appstr
 | | `.deb` | AppImage |
 | --- | --- | --- |
 | Programs | `/usr/lib/soyeht/`, with `/usr/bin/soyeht` and `/usr/bin/soyeht-desktop` linked to it | copied by `AppRun` to `~/.local/share/soyeht-next-appimage/programs` once per build, and run from there |
-| Install | `sudo apt install ./soyeht-<version>-linux-<arch>.deb` | `chmod +x` the file and run it; `--appimage-extract-and-run` where FUSE is missing |
+| Install | `sudo apt install ./soyeht-<version>-linux-<arch>.deb` | `chmod +x` the file and run it. It mounts itself with FUSE (`fusermount`, from `fuse3` or `fuse`); without FUSE run it with `--appimage-extract-and-run` |
 | Login start | `soyeht service install` once, as the person | `./Soyeht.AppImage soyeht service install` once |
 | Command line | `soyeht ...` | `./Soyeht.AppImage soyeht ...` |
 | Remove | `soyeht uninstall`, then `sudo apt remove soyeht` | `./Soyeht.AppImage soyeht uninstall`, then delete the file |
