@@ -29,6 +29,19 @@ impl Workbench {
         }));
     }
 
+    /// Whether something of the window is drawn over the panes: a menu or a popover, or a divider
+    /// being dragged. A page that is a window of its own would show above it.
+    pub(crate) fn web_covered(&self) -> bool {
+        self.menus.any_open() || self.switch.is_some() || self.stage.gestures.dragging_divider()
+    }
+
+    /// Takes the pages of the panes the last frame did not draw off the screen.
+    pub(crate) fn hide_unshown_web(&self) {
+        if let Some(registry) = &self.web {
+            registry.hide_except(&self.web_shown);
+        }
+    }
+
     /// Makes the page of each web pane that has none and drops the pages of closed panes, when
     /// the engine's events say a pane may have come or gone.
     pub(super) fn sync_web(&mut self, events: &[Event]) {

@@ -9,8 +9,12 @@ mod input;
 mod view;
 
 use crate::{
-    Error, Frame, KeyInput, Modifiers, Navigation, PageState, Pointer, Result, ScrollInput,
+    Error, Frame, KeyInput, Modifiers, Navigation, Placement, Pointer, Result, ScrollInput,
     ViewOptions, ViewSink,
+    shared::{
+        CAPTURE_TIMEOUT, SCRIPT_TIMEOUT, START_TIMEOUT, Shared, ask_found, await_answer, new_view,
+        refuse_environment, reply_with, shared_view_calls, start_thread,
+    },
 };
 use ffi::{Api, Ptr};
 use std::{
@@ -19,21 +23,10 @@ use std::{
     ffi::c_int,
     path::PathBuf,
     rc::Rc,
-    sync::{
-        Arc, OnceLock, PoisonError,
-        atomic::{AtomicU64, Ordering},
-        mpsc,
-    },
+    sync::{Arc, OnceLock, atomic::AtomicU64, mpsc},
     time::Duration,
 };
-use view::{Shared, ViewCtx};
-
-/// How long the first view waits for the GTK thread to start.
-const START_TIMEOUT: Duration = Duration::from_secs(30);
-/// How long a script waits for an answer.
-const SCRIPT_TIMEOUT: Duration = Duration::from_secs(20);
-/// How long a capture of the page waits for an answer.
-const CAPTURE_TIMEOUT: Duration = Duration::from_secs(45);
+use view::ViewCtx;
 
 type Job = Box<dyn FnOnce(&Gtk) + Send>;
 
@@ -71,22 +64,20 @@ impl Backend {
     }
 
     fn start() -> Result<Self> {
-        refuse_debugging_environment()?;
-        let (ready, started) = mpsc::channel();
-        std::thread::Builder::new()
-            .name("soyeht-webview".into())
-            .spawn(move || serve(&ready))
-            .map_err(|_| Error::Unavailable("the web view thread did not start"))?;
-        match started.recv_timeout(START_TIMEOUT) {
-            Ok(Ok(api)) => Ok(Self {
-                api,
-                next_view: AtomicU64::new(1),
-            }),
-            Ok(Err(error)) => Err(error),
-            Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => {
-                Err(Error::Timeout)
-            }
-        }
+        // A site's inspector can be opened from the environment of the process (an inspector
+        // server that listens on a port).
+        refuse_environment(
+            &[
+                concat!("WEBKIT", "_INSPECTOR_SERVER"),
+                concat!("WEBKIT", "_INSPECTOR_HTTP_SERVER"),
+            ],
+            "the environment turns on a debugging server of the web view",
+        )?;
+        let api = start_thread(START_TIMEOUT, |ready| serve(&ready))?;
+        Ok(Self {
+            api,
+            next_view: AtomicU64::new(1),
+        })
     }
 
     /// Runs `job` on the GTK thread, after what was posted before it.
@@ -106,16 +97,12 @@ impl Backend {
     ) -> Result<T> {
         let (reply, answer) = mpsc::channel();
         self.post(Box::new(move |gtk| job(gtk, reply)));
-        answer.recv_timeout(timeout).map_err(|error| match error {
-            mpsc::RecvTimeoutError::Timeout => Error::Timeout,
-            mpsc::RecvTimeoutError::Disconnected => Error::Closed,
-        })?
+        await_answer(&answer, timeout)
     }
 
     /// Opens a view. `sink` hears of pictures, state and navigations from the GTK thread.
     pub fn open(&'static self, options: &ViewOptions, sink: ViewSink) -> Result<WebView> {
-        let id = self.next_view.fetch_add(1, Ordering::Relaxed);
-        let shared = Arc::new(Shared::new(sink));
+        let (id, shared) = new_view(&self.next_view, sink);
         let options = options.clone();
         let for_view = Arc::clone(&shared);
         self.ask(START_TIMEOUT, move |gtk, reply| {
@@ -127,28 +114,6 @@ impl Backend {
             shared,
         })
     }
-}
-
-fn reply_with<T>(reply: &mpsc::Sender<Result<T>>, value: Result<T>) {
-    if reply.send(value).is_err() {
-        // The caller timed out and left; there is nobody to tell.
-    }
-}
-
-/// A site's inspector can be opened from the environment of the process (an inspector server
-/// that listens on a port). A web pane never runs with one: it would be a way into the page.
-fn refuse_debugging_environment() -> Result<()> {
-    for name in [
-        concat!("WEBKIT", "_INSPECTOR_SERVER"),
-        concat!("WEBKIT", "_INSPECTOR_HTTP_SERVER"),
-    ] {
-        if std::env::var_os(name).is_some() {
-            return Err(Error::Unavailable(
-                "the environment turns on a debugging server of the web view",
-            ));
-        }
-    }
-    Ok(())
 }
 
 /// The body of the GTK thread.
@@ -211,19 +176,17 @@ impl WebView {
     fn ask_view<T: Send + 'static>(
         &self,
         timeout: Duration,
-        work: impl FnOnce(&Gtk, &ViewCtx, mpsc::Sender<Result<T>>) + Send + 'static,
+        work: impl FnOnce(&Gtk, &Rc<ViewCtx>, mpsc::Sender<Result<T>>) + Send + 'static,
     ) -> Result<T> {
         let id = self.id;
-        self.backend
-            .ask(timeout, move |gtk, reply| match gtk.view(id) {
-                Some(view) => work(gtk, &view, reply),
-                None => reply_with(&reply, Err(Error::Closed)),
-            })
+        self.backend.ask(timeout, move |gtk, reply| {
+            ask_found(gtk, gtk.view(id), reply, work);
+        })
     }
 
     /// Loads an address, or goes back, forward or again.
     pub fn navigate(&self, navigation: Navigation<'_>) -> Result<()> {
-        let target = calls::Target::new(navigation)?;
+        let target = calls::target(navigation)?;
         self.with_view(move |_, view| view.navigate(&target));
         Ok(())
     }
@@ -231,6 +194,19 @@ impl WebView {
     /// The size the page lays out for, in logical pixels.
     pub fn resize(&self, width: u32, height: u32) {
         self.with_view(move |_, view| view.resize(width, height));
+    }
+
+    /// A page drawn off screen is not placed over its pane: the window paints its pictures where
+    /// it wants them, and only the size matters.
+    pub fn place(&self, placement: Placement) {
+        let side = |logical: f64| (logical * placement.scale).round().max(1.0);
+        let (width, height) = (placement.page.width, placement.page.height);
+        // The conversion cannot truncate: the sides are bounded by the web view's own limit.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        self.resize(
+            side(width).min(16_384.0) as u32,
+            side(height).min(16_384.0) as u32,
+        );
     }
 
     pub fn pointer(&self, pointer: Pointer, modifiers: Modifiers) {
@@ -264,27 +240,7 @@ impl WebView {
         self.with_view(|_, view| view.edit_with(c"Delete", None));
     }
 
-    /// The latest picture the page drew, once; `None` when it has drawn nothing since.
-    pub fn take_frame(&self) -> Option<Frame> {
-        self.shared
-            .frame
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-    }
-
-    pub fn state(&self) -> PageState {
-        self.shared
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-
-    /// How many navigations the view has begun.
-    pub fn navigations(&self) -> u64 {
-        self.shared.navigations.load(Ordering::Relaxed)
-    }
+    shared_view_calls!();
 
     /// Takes a picture of what the pane shows, as the engine itself draws it.
     pub fn capture(&self) -> Result<Frame> {

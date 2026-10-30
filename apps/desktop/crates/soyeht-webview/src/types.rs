@@ -6,6 +6,11 @@ pub struct ViewOptions {
     /// Where the profile's cookies, local storage and cache live. `None` makes a private view
     /// that keeps nothing when it closes (an incognito pane).
     pub profile: Option<PathBuf>,
+    /// Where a private view keeps what its page needs while it runs, in a folder of its own that
+    /// the next start removes. It matters where the page cannot be kept in memory (Windows).
+    pub scratch: Option<PathBuf>,
+    /// The color of the page's face until it has drawn, as 0xRRGGBB.
+    pub background: u32,
     /// The size the page lays out for, in logical pixels, until the pane's size is known.
     pub width: u32,
     pub height: u32,
@@ -46,6 +51,9 @@ pub enum ViewUpdate {
     State,
     /// A navigation began. `count` is the number of navigations this view has begun.
     Navigating { count: u64 },
+    /// The person worked in the page itself: a page that is a window of its own takes their
+    /// pointer and keys, which the program's window does not see.
+    Person,
 }
 
 /// Where a view reports. It runs on the thread of the web view and must not block.
@@ -98,4 +106,32 @@ pub struct KeyInput {
     pub keysym: crate::Keysym,
     pub pressed: bool,
     pub modifiers: Modifiers,
+}
+
+/// A window of the system, as the integer its handle is (an `HWND` on Windows). Zero is the
+/// desktop.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WindowHandle(pub isize);
+
+/// A rectangle of the window's client area, in logical pixels from its top left.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Where a page that is a window of the system's own sits over the window of the program, and
+/// whether it shows. `page` is the pane's whole area, which the page lays out for; `clip` is the
+/// part of it that is on screen (a pane scrolled half out of its stage shows half), so the page
+/// never draws outside what the program shows of it. `scale` is the device pixels in one logical
+/// pixel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Placement {
+    pub window: WindowHandle,
+    pub page: Rect,
+    pub clip: Rect,
+    pub scale: f64,
+    pub visible: bool,
 }

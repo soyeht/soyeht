@@ -87,11 +87,14 @@ pub fn run(notice: Notice) {
     };
     launch(notice, move || {
         let preferences = local_preferences::directory(&socket);
-        // Where the web panes keep their cookies and storage: a login lasts across runs.
+        // Read before the window opens, so the first frame is already in the chosen theme.
+        let theme = crate::prefs::saved_theme(&LocalPreferences::load(&preferences));
+        // Where the web panes keep their cookies and storage: a login lasts across runs. A page
+        // is the color of the pane's face until it has drawn.
         let web = soyeht_webview::supported().then(|| {
             let (signals, raised) = async_channel::unbounded();
             (
-                WebRegistry::new(preferences.join("browser"), signals),
+                WebRegistry::new(preferences.join("browser"), theme.palette().face, signals),
                 raised,
             )
         });
@@ -100,12 +103,11 @@ pub fn run(notice: Notice) {
             std::sync::Arc::new(soyeht_client::web_host::Host::new(registry.clone()))
         });
         let (engine, inbox) = Engine::start_hosted(socket.clone(), Autostart::resolve(), host);
-        // Read before the window opens, so the first frame is already in the chosen theme.
         Setup {
             app_id,
             engine,
             inbox,
-            theme: crate::prefs::saved_theme(&LocalPreferences::load(&preferences)),
+            theme,
             preferences: Some(preferences),
             menu: None,
             panel: None,

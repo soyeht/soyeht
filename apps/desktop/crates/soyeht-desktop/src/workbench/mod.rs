@@ -95,6 +95,8 @@ pub struct Workbench {
     pub(crate) places: Places,
     /// The web view of the window, when it has one: the pages of the web panes.
     pub(crate) web: Option<std::sync::Arc<WebRegistry>>,
+    /// The web panes the frame being built draws.
+    pub(crate) web_shown: std::collections::HashSet<String>,
     /// Whether the window asks for a newer version, and what it found (ADR 0122).
     pub(crate) updates: Updates,
     /// The daily check, for as long as the window lives.
@@ -172,6 +174,7 @@ impl Workbench {
             alerts: Alerts::new(),
             places: Places::default(),
             web: None,
+            web_shown: std::collections::HashSet::new(),
             updates: Updates::new(true, 0),
             update_loop: None,
             _web_signals: None,

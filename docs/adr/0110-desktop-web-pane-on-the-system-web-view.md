@@ -1,6 +1,6 @@
 # ADR 0110: The desktop web pane draws the system's web view off screen
 
-- Status: accepted for Linux (phase 1); Windows is phase 2
+- Status: accepted for Linux (phase 1); Windows is settled by ADR 0124
 - Date: 2026-10-25
 
 ## Context
@@ -129,7 +129,23 @@ adds what the system web view needs.
   permission (refused), show a dialog (an alert is closed, a question is answered "no", leaving a
   page is allowed), choose a file or go full screen; none of those has a window of ours to
   appear in. A navigation to anything but `http`, `https`, `about:blank` and `blob:` is
-  ignored, and a response the engine cannot show is not downloaded.
+  ignored, and a response the engine cannot show is not downloaded. A frame inside a page may
+  also hold `data:` and `about:srcdoc` (many pages embed their own; a browser refuses `data:` only
+  at the top level), which `policy::allows_frame` says (changed by ADR 0124: before, they were
+  refused in frames too). WebKitGTK reports a frame and the top level alike, so the decision lets a
+  frame's address through and the top level is held to the stricter rule once it has begun to load:
+  a page that commits as `data:` or `about:srcdoc` is sent back to the page before it (so Back has no
+  entry of the refused page to return to), or replaced by `about:blank` when it is the first.
+  Evidence that the decision has no main-frame signal (libwebkit2gtk-4.1 2.52.6 on Ubuntu 26.04;
+  the development headers are not installed, so the exported symbols were read with `nm -D`): a
+  navigation decision offers `webkit_navigation_policy_decision_` `get_request`, `get_frame_name`,
+  `get_navigation_type`, `get_mouse_button`, `get_modifiers` and `get_navigation_action`, and the
+  action offers `webkit_navigation_action_` `get_request`, `get_frame_name`, `get_navigation_type`,
+  `get_mouse_button`, `get_modifiers`, `is_redirect` and `is_user_gesture`. The frame name is the
+  target frame's name attribute, which a frame may not have and the top level never has, so it does
+  not say which is which. `webkit_frame_is_main_frame` and `webkit_web_page_get_main_frame` belong to
+  the web process extension API (`WebKitFrame`), which this program does not load, and
+  `webkit_response_policy_decision_is_main_frame_main_resource` is for responses, not navigations.
 
 ### The web host
 
@@ -229,7 +245,9 @@ not available.
 
 ## Windows (phase 2)
 
-Not built here. What was weighed, and what phase 2 must settle:
+Settled by ADR 0124 (WebView2, in a window of its own over the pane: a child window does not
+show over GPUI's window). What was weighed here, and what phase 2 had to settle, is kept as it was
+written:
 
 - Embedding: WebView2 hosts in an `HWND`. A child window over GPUI's window has the same
   limits as the Linux child surface (it covers GPUI's popovers). Composition hosting

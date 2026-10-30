@@ -35,6 +35,13 @@ pub(crate) struct Gestures {
     pub(crate) redock: crate::redock::Redock,
 }
 
+impl Gestures {
+    /// Whether a divider is being dragged.
+    pub(crate) fn dragging_divider(&self) -> bool {
+        self.gesture.is_some()
+    }
+}
+
 impl Workbench {
     /// Splits a pane: the new pane opens beside it, of the same kind.
     pub(crate) fn split_pane(&mut self, pane_id: &str, axis: Axis, cx: &mut Context<Self>) {

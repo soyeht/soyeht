@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+# What a script of the reader answers is read as JSON (`world.rs`).
+serde_json.workspace = true
+
 # The web view of the operating system, loaded when the first pane opens: WebKitGTK on Linux. No
 # other crate of Soyeht is a dependency: this crate knows pages and pixels, not the protocol.
 [target.'cfg(target_os = "linux")'.dependencies]

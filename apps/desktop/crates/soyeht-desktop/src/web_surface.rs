@@ -1,6 +1,8 @@
-//! The page of a web pane on the window: the picture the system web view draws, and the person's
-//! pointer, wheel and keys sent back to it. The page sees them as events of a real device
-//! (ADR 0110).
+//! The page of a web pane on the window. Where the system's page is drawn off screen it is the
+//! picture the system web view draws, and the person's pointer, wheel and keys are sent back to it,
+//! so the page sees them as events of a real device (ADR 0110). Where the page is a window of its
+//! own (Windows) the surface only says where the pane is, and the window of the page takes the
+//! person's input itself (ADR 0124).
 
 use crate::{composer_field::edit_of, theme::Palette, web_page::WebPage};
 use gpui::{
@@ -12,7 +14,8 @@ use gpui::{
 };
 use soyeht_client::text_input::keys::Edit;
 use soyeht_webview::{
-    Button, Frame, KeyInput, Modifiers, Navigation, Pointer, ScrollInput, keysym_for_key,
+    Button, Frame, KeyInput, Modifiers, Navigation, Placement, Pointer, Rect, ScrollInput,
+    WindowHandle, keysym_for_key,
 };
 use std::{ops::Range, sync::Arc};
 
@@ -36,6 +39,9 @@ pub(crate) struct WebSurface {
     /// A button went down on the page and has not come up: its release is the page's, wherever
     /// the pointer is when it comes.
     pressed: bool,
+    /// Something of the window is drawn over the page (a menu, a popover): a page that is a
+    /// window of its own would be above it, so it is taken off the screen meanwhile.
+    covered: bool,
 }
 
 impl Focusable for WebSurface {
@@ -59,11 +65,17 @@ impl WebSurface {
             picture: None,
             told_focus: false,
             pressed: false,
+            covered: false,
         }
     }
 
     pub(crate) fn style(&mut self, palette: &'static Palette) {
         self.palette = palette;
+    }
+
+    /// Whether something of the window is over the page.
+    pub(crate) fn cover(&mut self, covered: bool) {
+        self.covered = covered;
     }
 
     /// Where a window position is on the page, in logical pixels.
@@ -236,6 +248,10 @@ impl WebSurface {
     /// the keyboard, and the latest picture.
     fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
         self.bounds = Some(bounds);
+        if soyeht_webview::embedded() {
+            self.place(bounds, window, cx);
+            return;
+        }
         let wanted = (
             f32::from(bounds.size.width).floor().max(1.0) as u32,
             f32::from(bounds.size.height).floor().max(1.0) as u32,
@@ -244,11 +260,7 @@ impl WebSurface {
             self.sent_size = wanted;
             self.page.view().resize(wanted.0, wanted.1);
         }
-        let focused = self.focus.is_focused(window);
-        if focused != self.told_focus {
-            self.told_focus = focused;
-            self.page.view().focus(focused);
-        }
+        self.sync_focus(window);
         if let Some(frame) = self.page.take_frame()
             && let Some(image) = render_image(frame)
             && let Some((old, _)) = self.picture.replace(image)
@@ -282,6 +294,63 @@ impl WebSurface {
                 }
             });
         }
+    }
+}
+
+impl WebSurface {
+    /// Puts the page, a window of its own, over `bounds`, cut to what the window shows of it, and
+    /// gives it the keyboard when the pane has it.
+    fn place(&mut self, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(handle) = window_handle(window) else {
+            return;
+        };
+        let rect = |bounds: Bounds<Pixels>| {
+            let sides = [
+                bounds.origin.x,
+                bounds.origin.y,
+                bounds.size.width,
+                bounds.size.height,
+            ]
+            .map(|side| f64::from(f32::from(side)));
+            Rect {
+                x: sides[0],
+                y: sides[1],
+                width: sides[2],
+                height: sides[3],
+            }
+        };
+        // A page is over the window and outside GPUI's clipping, so it is cut here to what the
+        // window shows of the pane, and it waits while a drag is over the panes.
+        self.page.place(Placement {
+            window: handle,
+            page: rect(bounds),
+            clip: rect(window.content_mask().bounds),
+            scale: f64::from(window.scale_factor()),
+            visible: !self.covered && !cx.has_active_drag(),
+        });
+        self.sync_focus(window);
+    }
+
+    /// Tells the page when the pane has or has lost the keyboard.
+    fn sync_focus(&mut self, window: &Window) {
+        let focused = self.focus.is_focused(window);
+        if focused != self.told_focus {
+            self.told_focus = focused;
+            self.page.view().focus(focused);
+        }
+    }
+}
+
+/// The system's handle of the window, where a page is placed over it. No system draws a page as a
+/// window of its own yet, so there is none to give.
+fn window_handle(_: &Window) -> Option<WindowHandle> {
+    None
+}
+
+impl Drop for WebSurface {
+    /// A page that is a window of its own goes off the screen with the pane's surface.
+    fn drop(&mut self) {
+        self.page.hide();
     }
 }
 

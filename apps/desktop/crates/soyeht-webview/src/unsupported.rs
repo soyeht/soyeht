@@ -1,8 +1,8 @@
 //! Systems with no system web view of ours: every call says so.
 
 use crate::{
-    Error, Frame, KeyInput, Modifiers, Navigation, PageState, Pointer, Result, ScrollInput,
-    ViewOptions, ViewSink,
+    Error, Frame, KeyInput, Modifiers, Navigation, PageState, Placement, Pointer, Result,
+    ScrollInput, ViewOptions, ViewSink,
 };
 
 pub struct Backend;
@@ -25,6 +25,7 @@ impl WebView {
         Err(Error::Unsupported)
     }
     pub fn resize(&self, _: u32, _: u32) {}
+    pub fn place(&self, _: Placement) {}
     pub fn pointer(&self, _: Pointer, _: Modifiers) {}
     pub fn scroll(&self, _: ScrollInput, _: Modifiers) {}
     pub fn key(&self, _: KeyInput) {}

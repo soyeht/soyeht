@@ -2,7 +2,7 @@
 //! the cookies of an address. The answer arrives on the GTK thread and is sent to whoever waits.
 
 use super::ffi::{Api, Ptr};
-use crate::{Error, Navigation, Result};
+use crate::{Navigation, Result};
 use std::{
     ffi::{CStr, CString, c_char},
     sync::mpsc::Sender,
@@ -36,30 +36,12 @@ impl<T> Pending<T> {
     }
 }
 
-/// What a navigation loads, made into the form the library takes.
-pub(super) enum Target {
-    Url(CString),
-    Back,
-    Forward,
-    Reload,
-    ReloadIgnoringCache,
-}
+/// What a navigation loads, with the address made into the form the library takes.
+pub(super) type Target = crate::shared::Target<CString>;
 
-impl Target {
-    pub fn new(navigation: Navigation<'_>) -> Result<Self> {
-        Ok(match navigation {
-            Navigation::Url(url) => {
-                if !crate::policy::allows_request(url) {
-                    return Err(Error::Page("only http and https addresses open"));
-                }
-                Self::Url(c_string(url).ok_or(Error::Page("the address is not text"))?)
-            }
-            Navigation::Back => Self::Back,
-            Navigation::Forward => Self::Forward,
-            Navigation::Reload => Self::Reload,
-            Navigation::ReloadIgnoringCache => Self::ReloadIgnoringCache,
-        })
-    }
+/// The target of `navigation`, an address as the library takes it.
+pub(super) fn target(navigation: Navigation<'_>) -> Result<Target> {
+    Target::new(navigation, c_string)
 }
 
 /// Text for the library, which ends a string at a zero byte: text that holds one is refused.

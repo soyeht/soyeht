@@ -17,6 +17,7 @@ use soyeht_webview::Error;
 fn unavailable_message(error: &Error) -> String {
     match error {
         Error::Unsupported => super::ui::not_available("Web panes"),
+        Error::Unavailable(why) => format!("Web panes are not available here: {why}."),
         other => format!("Web panes are not available here. {other}."),
     }
 }
@@ -39,6 +40,7 @@ impl Workbench {
             return super::pane::notice_body(palette, "Opening the page\u{2026}");
         };
         let pane_id = pane_id.to_owned();
+        self.web_shown.insert(pane_id.clone());
         let state = page.state();
         let (surface, field) = self.web_widgets(&pane_id, &page, palette, cx);
         let band = Self::web_controls(&pane_id, &page, &state, field, palette, cx);
@@ -109,8 +111,12 @@ impl Workbench {
         }
         let ui = self.panes.of(&pane_id);
         let (surface, field) = (ui.web.surface.clone(), ui.web.address.clone());
+        let covered = self.web_covered();
         if let Some(surface) = &surface {
-            surface.update(cx, |surface, _| surface.style(palette));
+            surface.update(cx, |surface, _| {
+                surface.style(palette);
+                surface.cover(covered);
+            });
         }
         if let Some(field) = &field {
             field.update(cx, |field, _| field.style(palette, "Enter an address"));

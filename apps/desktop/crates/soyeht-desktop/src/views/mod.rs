@@ -73,9 +73,10 @@ impl Render for Workbench {
         self.settle_rename(window, cx);
         self.window.height = f32::from(window.viewport_size().height);
         self.window.width = f32::from(window.viewport_size().width);
+        self.web_shown.clear();
         menus::window_measured(self.window.height, cx);
         let palette = self.theme.palette();
-        div()
+        let screen = div()
             .id("workbench")
             .key_context("Workbench")
             .track_focus(&self.focus)
@@ -124,7 +125,10 @@ impl Render for Workbench {
                     .then(|| self.preferences_overlay(palette, window.viewport_size(), cx)),
             )
             .children(resize_handles::handles(window))
-            .child(crate::workbench::input_surface(&self.focus, cx))
+            .child(crate::workbench::input_surface(&self.focus, cx));
+        // A page that is a window of its own stays where it was until it is told to go.
+        self.hide_unshown_web();
+        screen
     }
 }
 

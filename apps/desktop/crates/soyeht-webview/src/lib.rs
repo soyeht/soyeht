@@ -20,15 +20,23 @@ mod frame;
 mod keys;
 #[cfg(target_os = "linux")]
 mod linux;
+// Used by the back end of a system that draws a page as a window of its own (ADR 0124).
+#[allow(dead_code)]
+mod placement;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod policy;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod shared;
 mod types;
+// Used by the back end of a system that has no script world of its own (ADR 0124).
+#[allow(dead_code)]
+mod world;
 
 pub use error::{Error, Result};
 pub use keys::{Keysym, keysym_for_key};
 pub use types::{
-    Button, Frame, KeyInput, Modifiers, Navigation, PageState, Pointer, ScrollInput, ViewOptions,
-    ViewSink, ViewUpdate,
+    Button, Frame, KeyInput, Modifiers, Navigation, PageState, Placement, Pointer, Rect,
+    ScrollInput, ViewOptions, ViewSink, ViewUpdate, WindowHandle,
 };
 
 #[cfg(target_os = "linux")]
@@ -40,6 +48,13 @@ pub const fn supported() -> bool {
     cfg!(target_os = "linux")
 }
 
+/// Whether a page is a window of the system's own, placed over its pane (`WebView::place`), which
+/// takes the person's pointer and keys itself and is never handed over as a picture. Where it is
+/// false the page is drawn off screen and the window paints its pictures and forwards the input.
+pub const fn embedded() -> bool {
+    false
+}
+
 #[cfg(not(target_os = "linux"))]
 mod unsupported;
 #[cfg(not(target_os = "linux"))]
@@ -47,6 +62,26 @@ pub use unsupported::{Backend, WebView};
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    /// Every source file of this crate but this one, with its text.
+    fn sources() -> Vec<(PathBuf, String)> {
+        let mut stack = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src")];
+        let mut found = Vec::new();
+        while let Some(directory) = stack.pop() {
+            for entry in std::fs::read_dir(&directory).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.file_name().is_some_and(|name| name != "lib.rs") {
+                    let text = std::fs::read_to_string(&path).unwrap();
+                    found.push((path, text));
+                }
+            }
+        }
+        found
+    }
+
     /// The agent's read must not look like automation to a page or to a site (ADR 0110): no
     /// automation protocol, no debugging port, no inspector server. The names below may appear
     /// in no source file of this crate except this one.
@@ -62,26 +97,14 @@ mod tests {
             ["pupp", "eteer"].concat(),
             ["enable_developer", "_extras(true"].concat(),
         ];
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut stack = vec![root];
-        while let Some(directory) = stack.pop() {
-            for entry in std::fs::read_dir(&directory).unwrap() {
-                let path = entry.unwrap().path();
-                if path.is_dir() {
-                    stack.push(path);
-                    continue;
-                }
-                if path.file_name().is_some_and(|name| name == "lib.rs") {
-                    continue;
-                }
-                let text = std::fs::read_to_string(&path).unwrap().to_lowercase();
-                for name in &forbidden {
-                    assert!(
-                        !text.contains(&name.to_lowercase()),
-                        "{} names {name}",
-                        path.display()
-                    );
-                }
+        for (path, text) in sources() {
+            let text = text.to_lowercase();
+            for name in &forbidden {
+                assert!(
+                    !text.contains(&name.to_lowercase()),
+                    "{} names {name}",
+                    path.display()
+                );
             }
         }
     }
