@@ -48,6 +48,7 @@ pub(crate) use ui::is_turn_down;
 
 mod top_bar;
 mod ui;
+mod updates;
 mod usage_ring;
 mod welcome;
 mod window_controls;
@@ -73,6 +74,7 @@ impl Render for Workbench {
         self.window.height = f32::from(window.viewport_size().height);
         self.window.width = f32::from(window.viewport_size().width);
         self.web_shown.clear();
+        menus::window_measured(self.window.height, cx);
         let palette = self.theme.palette();
         let screen = div()
             .id("workbench")

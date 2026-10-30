@@ -16,21 +16,17 @@ from pathlib import Path
 
 from generated_profile import ENGINE_SOCKET, PROFILES, PTYD_SOCKET
 from legacy_guard import require_next, require_next_path
+from profile_programs import binary_identifiers
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = PROFILES["dev"]
 DEV_LAUNCHD_LABELS = PROFILE["launchdLabels"]
-DEV_LAUNCHD_PREFIX = PROFILE["launchdPrefix"]
 DEV_SOCKET_NAMES = {"engine": ENGINE_SOCKET, "ptyd": PTYD_SOCKET}
 DATA = Path.home() / "Library/Application Support" / PROFILE["dataDirectory"]["macos"]
 COMPONENTS = ("ptyd", "engine")
 ENGINE_SUPPORT = ("mcp",)
 SERVICE_COMMAND_SECONDS = 60
-BINARY_IDENTIFIERS = {
-    **DEV_LAUNCHD_LABELS,
-    "mcp": f"{DEV_LAUNCHD_PREFIX}.mcp",
-    "cli": f"{DEV_LAUNCHD_PREFIX}.cli",
-}
+BINARY_IDENTIFIERS = binary_identifiers(PROFILE)
 IDENTITY_PATTERN = re.compile(
     r'^\s*\d+\)\s+([0-9A-F]{40})\s+"(Apple Development:[^"]+\([A-Z0-9]{10}\))"$'
 )

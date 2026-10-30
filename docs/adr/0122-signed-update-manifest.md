@@ -95,8 +95,10 @@ engine does for its probes: HTTPS only, at most five redirects (a release asset 
 to the file), a size and a time limit. This adds no HTTP crate to the desktop workspace. It adds
 a dependency of `soyeht-client` on `soyeht-process` (a sibling of `soyeht-platform` in the same
 layer), which `check_layers.py` and `AGENTS.md` now list. The consequence is that the Linux
-package depends on `curl`, which every desktop distribution ships and Windows has shipped since
-Windows 10. A machine without it sees "Could not check for updates".
+`.deb` lists `curl` in `Depends` (`scripts/package_linux.py`, with its test), and an AppImage,
+which carries no `curl`, relies on the system's. Windows has shipped `curl.exe` since Windows 10.
+A machine without it sees "Could not check for updates". `curl` is started with `--disable` as its
+first argument, so a `.curlrc` cannot change the request or the output.
 
 The transport is not trusted at all. The signature is what makes the manifest count, so a
 captive portal, a proxy or a bad certificate store can only make a check fail.

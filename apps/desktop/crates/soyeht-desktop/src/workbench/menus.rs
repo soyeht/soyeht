@@ -8,6 +8,8 @@ use std::time::Instant;
 impl Workbench {
     pub(crate) fn toggle_menu(&mut self, menu: Menu, cx: &mut Context<Self>) {
         if self.menus.toggle(menu.clone(), Instant::now()) {
+            // The popup of another control is measured again.
+            crate::views::menus::control_forgotten(cx);
             if self.menus.is_open(&menu) {
                 match &menu {
                     Menu::Harness(pane_id) => self.begin_switch(pane_id, cx),

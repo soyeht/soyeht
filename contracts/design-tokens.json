@@ -320,6 +320,7 @@
     "workspaceOverflowPopoverWidth": 340,
     "workspaceOverflowPopoverMaximumHeight": 420,
     "readinessWidth": 480,
+    "readinessRowHeight": 30,
     "loopPanelWidth": 400,
     "taskColumnWidth": 250,
     "taskColumnMinHeight": 500,

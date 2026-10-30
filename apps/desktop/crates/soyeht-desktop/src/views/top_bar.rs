@@ -336,7 +336,10 @@ impl Workbench {
         with_list(
             palette,
             open,
-            layout::WORKSPACE_OVERFLOW_BUTTON_WIDTH,
+            (
+                layout::WORKSPACE_OVERFLOW_BUTTON_WIDTH,
+                layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT,
+            ),
             rows,
             cx,
             top_bar_button(
@@ -370,10 +373,14 @@ impl Workbench {
     ) -> AnyElement {
         let open = self.menus.is_open(&Menu::NewPane);
         let rows = self.new_pane_rows(open, palette, cx);
+        // The agents are in this menu: it grows to what the window has room for.
         with_list(
             palette,
             open,
-            layout::TOP_BAR_CONTROL_HEIGHT,
+            (
+                layout::TOP_BAR_CONTROL_HEIGHT,
+                desktop::SWITCH_POPOVER_MAXIMUM_HEIGHT,
+            ),
             rows,
             cx,
             top_bar_button(
@@ -451,14 +458,15 @@ impl Workbench {
             menus::heading(palette, "Open a workspace").into_any_element(),
             folder,
         ];
-        rows.extend(menus::folder_rows(
+        let recent = menus::folder_rows(
             ("recent-folder", ""),
             palette,
             self.state.recent_folders(),
             cx,
             |this, path, cx| this.open_folder_path(std::path::Path::new(path), cx),
-        ));
+        );
         if self.state.selected_workspace().is_none() {
+            rows.extend(recent);
             return rows;
         }
         let pick: Pick = Rc::new(|this, harness, cx| this.open_pane(Some(harness.to_owned()), cx));
@@ -471,16 +479,19 @@ impl Workbench {
             ));
         }
         rows.extend(self.harness_rows(Picker::default(), palette, &pick, cx));
+        // The folders come last: when the window cannot hold the whole list, what is cut is
+        // what is opened least, and the agents stay in view.
+        rows.extend(recent);
         rows
     }
 }
 
-/// A button of the top bar and, while `open`, the list of `rows` under its right edge. `width`
-/// is the button's width, which puts the list's corner under it.
+/// A button of the top bar and, while `open`, the list of `rows` under its right edge, as tall as
+/// `max_height` at most. `width` is the button's width, which puts the list's corner under it.
 fn with_list(
     palette: &'static Palette,
     open: bool,
-    width: f32,
+    (width, max_height): (f32, f32),
     rows: Vec<AnyElement>,
     cx: &mut Context<Workbench>,
     button: impl IntoElement,
@@ -490,10 +501,11 @@ fn with_list(
         .flex_none()
         .child(button)
         .when(open, |slot| {
-            slot.child(menus::popup(
+            slot.child(menus::popup_up_to(
                 palette,
                 Anchor::TopRight,
                 (width, layout::TOP_BAR_CONTROL_HEIGHT + space::X6),
+                max_height,
                 menus::list(rows),
                 cx,
             ))

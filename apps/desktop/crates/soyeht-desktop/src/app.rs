@@ -11,8 +11,8 @@ use crate::{
     workbench::{CopySelection, NewTerminal, Paste, Quit, Workbench},
 };
 use gpui::{
-    App, AppContext, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions, WindowBounds,
-    WindowDecorations, WindowOptions, point, px, size,
+    App, AppContext, Bounds, KeyBinding, Menu, MenuItem, PlatformDisplay, TitlebarOptions,
+    WindowBounds, WindowDecorations, WindowOptions, point, px, size,
 };
 use gpui_platform::application;
 use soyeht_client::{
@@ -20,6 +20,10 @@ use soyeht_client::{
     autostart::Autostart,
     local_preferences::{self, LocalPreferences},
     profile,
+};
+use std::{
+    rc::Rc,
+    time::{Duration, Instant},
 };
 
 /// Where the macOS window buttons sit; the top bar leaves room for them.
@@ -157,77 +161,114 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
                 MenuItem::action("Paste", Paste),
             ]),
         ]);
-        let display = cx
-            .primary_display()
-            .map(|display| display.bounds().size)
-            .map(|extent| (f32::from(extent.width), f32::from(extent.height)));
-        let (width, height) = setup.size.unwrap_or_else(|| opening_size(display));
-        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            window_min_size: Some(size(px(window_size::MINIMUM.0), px(window_size::MINIMUM.1))),
-            // The application draws its own title bar and window buttons: the top bar.
-            window_decorations: Some(WindowDecorations::Client),
-            app_id: Some(setup.app_id.into()),
-            titlebar: Some(TitlebarOptions {
-                title: Some("Soyeht".into()),
-                appears_transparent: true,
-                traffic_light_position: Some(point(px(TRAFFIC_LIGHTS.0), px(TRAFFIC_LIGHTS.1))),
-            }),
-            ..WindowOptions::default()
-        };
-        let opened = cx.open_window(options, |window, cx| {
-            let workbench = cx.new(|cx| {
-                let mut workbench = Workbench::new(setup.engine, setup.inbox, cx);
-                workbench.theme = setup.theme;
-                workbench.preferences = setup.preferences;
-                workbench.prefs.section = setup.panel;
-                for (pane_id, staged) in setup.staged {
-                    workbench.panes.of(&pane_id).staged = Some(staged);
+        let known = || cx.primary_display().is_some() || !cx.displays().is_empty();
+        if setup.size.is_some() || known() {
+            open_window(cx, setup, notice);
+        } else {
+            open_when_displays_are_known(cx, setup, notice);
+        }
+    });
+}
+
+/// How long the window waits for the window system to name a display, and how often it asks.
+const DISPLAY_WAIT: Duration = Duration::from_secs(2);
+const DISPLAY_POLL: Duration = Duration::from_millis(20);
+
+/// Opens the window once the window system has told the application its displays. A Wayland
+/// session announces them only after the application has started: a window opened before then
+/// is sized for no display, and is larger than a small screen holds, which the compositor then
+/// maximizes, and restoring brings back a window wider than the screen. A session that never
+/// names one opens the window at the design size after [`DISPLAY_WAIT`].
+fn open_when_displays_are_known(cx: &mut App, setup: Setup, notice: Notice) {
+    cx.spawn(async move |cx| {
+        let started = Instant::now();
+        while started.elapsed() < DISPLAY_WAIT
+            && !cx.update(|cx| cx.primary_display().is_some() || !cx.displays().is_empty())
+        {
+            cx.background_executor().timer(DISPLAY_POLL).await;
+        }
+        cx.update(|cx| open_window(cx, setup, notice));
+    })
+    .detach();
+}
+
+/// The window, sized for the display it opens on, showing what `setup` says.
+fn open_window(cx: &mut App, setup: Setup, notice: Notice) {
+    let extent = |display: &Rc<dyn PlatformDisplay>| {
+        let size = display.bounds().size;
+        (f32::from(size.width), f32::from(size.height))
+    };
+    let display = window_size::display_to_fit(
+        cx.primary_display().map(|display| extent(&display)),
+        &cx.displays().iter().map(extent).collect::<Vec<_>>(),
+    );
+    let (width, height) = setup.size.unwrap_or_else(|| opening_size(display));
+    let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        window_min_size: Some(size(px(window_size::MINIMUM.0), px(window_size::MINIMUM.1))),
+        // The application draws its own title bar and window buttons: the top bar.
+        window_decorations: Some(WindowDecorations::Client),
+        app_id: Some(setup.app_id.into()),
+        titlebar: Some(TitlebarOptions {
+            title: Some("Soyeht".into()),
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(TRAFFIC_LIGHTS.0), px(TRAFFIC_LIGHTS.1))),
+        }),
+        ..WindowOptions::default()
+    };
+    let opened = cx.open_window(options, |window, cx| {
+        let workbench = cx.new(|cx| {
+            let mut workbench = Workbench::new(setup.engine, setup.inbox, cx);
+            workbench.theme = setup.theme;
+            workbench.preferences = setup.preferences;
+            workbench.start_update_checks(cx);
+            workbench.prefs.section = setup.panel;
+            for (pane_id, staged) in setup.staged {
+                workbench.panes.of(&pane_id).staged = Some(staged);
+            }
+            for (pane_id, text) in setup.drafts {
+                let field = workbench.composer_field(&pane_id, cx);
+                field.update(cx, |field, cx| field.insert(&text, cx));
+            }
+            if let Some(place) = setup.destination {
+                workbench.destination = place;
+            }
+            if let Some((registry, signals)) = setup.web {
+                workbench.attach_web(registry, signals, cx);
+            }
+            if let Some(start) = setup.tasks {
+                workbench.destination = crate::destination::Destination::Tasks;
+                workbench.tasks_ui.view = start.view;
+                workbench.tasks_ui.selected = start.task;
+                if start.new_task {
+                    workbench.open_new_task(cx);
                 }
-                for (pane_id, text) in setup.drafts {
-                    let field = workbench.composer_field(&pane_id, cx);
-                    field.update(cx, |field, cx| field.insert(&text, cx));
-                }
-                if let Some(place) = setup.destination {
-                    workbench.destination = place;
-                }
-                if let Some((registry, signals)) = setup.web {
-                    workbench.attach_web(registry, signals, cx);
-                }
-                if let Some(start) = setup.tasks {
-                    workbench.destination = crate::destination::Destination::Tasks;
-                    workbench.tasks_ui.view = start.view;
-                    workbench.tasks_ui.selected = start.task;
-                    if start.new_task {
-                        workbench.open_new_task(cx);
-                    }
-                }
-                if let Some(menu) = setup.menu {
-                    workbench.toggle_menu(menu, cx);
-                }
-                workbench
-            });
-            let focus = workbench.read(cx).focus.clone();
-            window.focus(&focus, cx);
-            workbench.update(cx, |workbench, cx| workbench.listen_for_alerts(window, cx));
-            if let Some(note) = graphics::software_note(window.gpu_specs().as_ref()) {
-                logging::announce(notice, &note);
-                // The window shows it too, in a line a connection does not clear.
-                workbench.update(cx, |workbench, _| {
-                    workbench.show_notice(notices::SOFTWARE_RENDERER, note)
-                });
+            }
+            if let Some(menu) = setup.menu {
+                workbench.toggle_menu(menu, cx);
             }
             workbench
         });
-        if let Err(error) = opened {
-            logging::announce_fatal(
-                notice,
-                "window_open_failed",
-                &graphics::open_failure(&error, cfg!(target_os = "linux")),
-            );
-            cx.quit();
+        let focus = workbench.read(cx).focus.clone();
+        window.focus(&focus, cx);
+        workbench.update(cx, |workbench, cx| workbench.listen_for_alerts(window, cx));
+        if let Some(note) = graphics::software_note(window.gpu_specs().as_ref()) {
+            logging::announce(notice, &note);
+            // The window shows it too, in a line a connection does not clear.
+            workbench.update(cx, |workbench, _| {
+                workbench.show_notice(notices::SOFTWARE_RENDERER, note)
+            });
         }
-        cx.activate(true);
+        workbench
     });
+    if let Err(error) = opened {
+        logging::announce_fatal(
+            notice,
+            "window_open_failed",
+            &graphics::open_failure(&error, cfg!(target_os = "linux")),
+        );
+        cx.quit();
+    }
+    cx.activate(true);
 }

@@ -123,8 +123,10 @@ agent works.
   recorded, in the lines the Mac shows above and below its screen.
 - On Linux and Windows the top bar carries the window controls (minimize, maximize, close),
   drags the window, and on Linux the window edges resize it. The window opens no larger than
-  its display. A tiling desktop (Hyprland, sway and the like, told by `XDG_CURRENT_DESKTOP`)
-  ignores minimize and maximize, so a window there gets only the close button and no resize
+  its display (a Wayland session names its displays only after the application has started, so
+  the window waits for them: opened earlier, it would be larger than a small screen holds, and
+  restoring it after a maximize would push its buttons off the screen). A tiling desktop
+  (Hyprland, sway and the like, told by `XDG_CURRENT_DESKTOP`) ignores minimize and maximize, so a window there gets only the close button and no resize
   edges; a window snapped to half of the screen on GNOME or KDE keeps the buttons and loses the
   resize edges. The window announces itself as `soyeht` (Wayland `app_id`, X11 class) for window
   rules.
@@ -135,8 +137,11 @@ agent works.
   full size and scrolls them sideways in the same way.
 - The "+" menu lists the installed agents by readiness, each with how ready it is, and the others
   under a collapsed "More harnesses" entry; an agent that cannot start is shown dimmed. The grouping
-  and order are the rules of `contracts/vectors/harness-picker.json`, which the Mac passes too. Popup menus are as tall as the Mac's popover at most, scroll inside, and close on
-  Escape.
+  and order are the rules of `contracts/vectors/harness-picker.json`, which the Mac passes too. The
+  recent folders come last in the "+" menu, so that a window too short for the whole list shows the
+  agents. Every popup menu fits the window (`popup_fit`): it opens on the side of its button that
+  has the room, is never taller than that room (the Mac's popover height at most, the harness
+  lists up to a window's height), scrolls inside, and closes on Escape.
 - The transcript carries the Mac's cards: messages queued behind a running turn (with remove and
   resume), the notice when a turn goes quiet, the sign-in card, the answer form for an agent's
   question, subagent cards, and "Load earlier messages" for older history.
@@ -184,7 +189,9 @@ agent works.
   on a workspace tab or on a pane's title renames it in place (Return keeps the name, Escape drops
   it), and the tab's close mark closes the workspace and selects the next tab, or the previous one
   when it was last. The "+" menu also lists the recent folders (the roots of the workspaces, then
-  the folders panes run in). The naming, path, reuse, recent-folder, rename and close rules are
+  the folders panes run in), after the "Open a pane" entries and the agents once a workspace is
+  selected, and right after "Folder…" while there is none. The naming, path, reuse,
+  recent-folder, rename and close rules are
   `contracts/vectors/workspaces.json`, which the Mac and iOS clients pass too.
 - The Texts place lists the documents of the selected workspace, a page at a time, as the Mac's
   section view does: the section's name and what it holds, "New document" (also "Text" in the "+"

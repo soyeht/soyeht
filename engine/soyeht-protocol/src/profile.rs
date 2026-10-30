@@ -27,6 +27,10 @@ pub struct Profile {
     pub name: &'static str,
     pub data_directory: DataDirectory,
     pub tcp_port: u16,
+    /// The Mac app's name, which is also its file name (`<name>.app`).
+    pub mac_app_name: &'static str,
+    /// The title of the Mac app's main window.
+    pub window_title: &'static str,
     pub macos_app_id: &'static str,
     pub linux_app_id: &'static str,
     pub engine_launchd_label: &'static str,
@@ -45,6 +49,8 @@ pub static DEV: Profile = Profile {
         linux: "soyeht-next/dev",
     },
     tcp_port: 8291,
+    mac_app_name: "Soyeht Dev",
+    window_title: "Soyeht · Dev",
     macos_app_id: "com.soyeht.next.dev.mac",
     linux_app_id: "com.soyeht.next.dev",
     engine_launchd_label: "com.soyeht.next.dev.engine",
@@ -62,6 +68,8 @@ pub static PROD: Profile = Profile {
         linux: "soyeht-next",
     },
     tcp_port: 8290,
+    mac_app_name: "Soyeht Next",
+    window_title: "Soyeht",
     macos_app_id: "com.soyeht.next.mac",
     linux_app_id: "com.soyeht.next",
     engine_launchd_label: "com.soyeht.next.engine",

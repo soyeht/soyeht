@@ -5088,6 +5088,7 @@ dependencies = [
  "serde",
  "serde_json",
  "soyeht-platform",
+ "soyeht-process",
  "soyeht-protocol",
  "unicode-segmentation",
  "unicode-width",
@@ -5123,6 +5124,13 @@ dependencies = [
  "libc",
  "sha2",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "soyeht-process"
+version = "0.1.0"
+dependencies = [
+ "soyeht-platform",
 ]
 
 [[package]]
