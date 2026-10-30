@@ -50,8 +50,8 @@ renderer. A name or a place of the legacy app is refused before anything is writ
 | | macOS | Linux | Windows |
 | --- | --- | --- | --- |
 | Start | `RunAtLoad` | `WantedBy=default.target`, enabled | `LogonTrigger` for this user (its SID) |
-| Restart | `KeepAlive` (however it ended), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
-| Program gone | none | `ConditionPathExists=` the program: the unit is skipped, not failed, so no restart loop (ADR 0121) | none |
+| Restart | `KeepAlive` (however it ended, while the program exists: `PathState`), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
+| Program gone | `KeepAlive` `PathState` on the program: launchd stops restarting it (see section 5) | `ConditionPathExists=` the program: the unit is skipped, not failed, so no restart loop (ADR 0121) | none |
 | Order | none: the engine reconnects | engine `Wants=` and `After=` the supervisor (never `Requires=`) | none: the engine reconnects |
 | Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | `PATH` as on the Mac | the user's own environment |
 | Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | the host appends the program's output to the same file (section 6) |
@@ -113,7 +113,7 @@ The commands, all printing the state of the services after they ran as JSON
 | `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
 | `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
-| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux with "the program ... does not exist" when the unit's program is gone (systemd would skip the unit and report success). |
+| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux and the Mac with "the program ... does not exist" when the program is gone (systemd would skip the unit, and launchd would not run the agent, and both would report success). |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
 | `soyeht service status [--component C] [--programs DIR]` | Reports. Changes nothing. With `--programs`, each service also says whether its definition is current for that folder. |
 | `soyeht service render --system S --name N [...] -- PROGRAM ARGS` | Prints the file for explicit values without touching the system. For scripts that start disposable services. |
@@ -157,6 +157,28 @@ On the Mac, launchd can still be removing a job for a moment after `bootout`, an
 new `bootstrap` with error 5 ("Input/output error") or 37 ("Operation already in progress"). The
 seam tries again up to four more times, 0.2 s, 0.4 s, 0.6 s and 0.8 s apart (about two seconds),
 and only for those two errors; any other failure is returned at once.
+
+**A program that is gone** (the app was dragged to the Trash, or the programs were deleted) does not
+leave a failing restart loop on the Mac: the agent's `KeepAlive` is `PathState` on the program, so
+launchd keeps it alive only while the file exists. At the next login `RunAtLoad` tries once and
+the start fails once; after that nothing runs and nothing is retried. When the program comes back
+(an app dragged back, or installed again) launchd starts it by itself. `soyeht service start` of
+an agent whose program is gone fails with "the program ... is missing", as on Linux, instead of
+loading an agent that cannot run. `soyeht uninstall` is still the way to remove the registration.
+An app update that replaces the bundle briefly removes the program. Whether launchd's `PathState`
+watch re-arms and starts the program again when the bundle is replaced by a rename (how an update
+or a drag over the old copy does it) is **untested**: it was not run, and this contract does not
+promise it. The recovery that does not depend on it is the app's "Start Soyeht" offer, shown
+whenever the services are registered and right but the engine does not answer, whose action is
+`service install`.
+
+*Manual check (not run: it needs a real login session and registers services, which was not done
+on the machine where this was written).* Install the production app, say yes to the background
+start, then `launchctl print gui/$(id -u)/com.soyeht.next.engine` shows `state = running` and a
+`keepalive` with the program path. Move the app out of Applications: the engine keeps running (it
+is already running) but after `launchctl kill TERM gui/$(id -u)/com.soyeht.next.engine` it does not
+come back, and `soyeht service start --component engine` from the moved app's folder reports the
+program missing for the old path. Move the app back: the engine starts without any command.
 
 A program started by hand while its service is registered fails on its lock and the system
 restarts the service, which fails again each second. Stop the service first (`soyeht service

@@ -194,10 +194,9 @@ What this gives up, stated plainly:
 - **Attribution.** A launch agent whose program sits in an app bundle is listed in Login Items by
   macOS; whether it is listed under the app's name or the developer's, and which process privacy
   prompts are attributed to, was not verified (no Developer ID, no registration).
-- **Removal.** Dragging the app to the Trash leaves the agent registered, with a program that is
-  gone; launchd starts it again every second (`ThrottleInterval`) and fails. `soyeht uninstall`
-  (ADR 0118) is the removal, and the documentation says to run it first. A follow-up can ask the
-  app to offer it and could add a `KeepAlive` condition on the program's existence.
+- **Removal.** Dragging the app to the Trash leaves the agent registered. Its `KeepAlive` is
+  conditioned on the program's existence (see the amendment), so launchd does not retry a program
+  that is gone. `soyeht uninstall` (ADR 0118) is still the removal.
 - **Tamper evidence.** The property list in `~/Library/LaunchAgents` is the person's own file,
   not part of the signature.
 
@@ -303,3 +302,24 @@ xcrun notarytool store-credentials soyeht-notary   # once; asks for the Apple ID
 export SOYEHT_NOTARY_PROFILE=soyeht-notary
 uv run python scripts/package_mac.py --release
 ```
+
+## Amendment: an agent lives only while its program does
+
+The removal gap above is closed in the service seam, not in the app. The launchd property list now
+says `KeepAlive` = `{ PathState = { "<program>" = true } }` instead of `<true/>`: launchd restarts
+the program however it ended, but only while the file exists, and starts it again when the file
+reappears. `launchd_start` returns `ProgramMissing` when the registered program is gone, as the
+Linux side does (ADR 0121). Tests cover the rendering (including a path with markup in it), the
+program read back from a written property list, and a start with the program removed.
+
+**Untested: an update.** Whether `PathState` re-arms and starts the program again when the bundle
+is replaced by a rename (how an update, or a drag over the old copy, does it) was not tested and
+is not promised. The recovery that does not depend on it is the app's "Start Soyeht" offer, shown
+whenever the services are registered and right but the engine does not answer; its action is
+`service install`, which loads an idle agent.
+
+**Not verified.** The `PathState` semantics are launchd's, from its documentation (`launchd.plist`);
+no agent was loaded to see launchd obey them, because that registers services on the owner's Mac.
+The manual check is in contract 13, section 5. An agent already loaded with the old `<true/>`
+keeps it until it is installed again, which the app does the first time it finds the definition
+stale (the new text differs from the file on disk, so `current` is false).

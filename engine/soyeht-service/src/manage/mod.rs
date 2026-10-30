@@ -45,6 +45,27 @@ pub struct Manager<'a, C: Commands> {
 
 /// What the system files of this folder ask of a manager.
 impl<C: Commands> Manager<'_, C> {
+    /// Before a start: fails with `NotRegistered` when there is no definition, and with
+    /// `ProgramMissing` when the program the definition starts (as `read_program` finds it in the
+    /// text) is no longer there. A start that would run nothing must not say it worked: systemd
+    /// skips such a unit and launchd does not run such an agent, and both report success.
+    fn require_startable(
+        &self,
+        component: Component,
+        read_program: fn(&str) -> Option<String>,
+    ) -> Result<()> {
+        let file = self.file(component);
+        if !file.is_file() {
+            return Err(Error::NotRegistered);
+        }
+        if let Some(program) = read_program(&fs::read_to_string(&file)?)
+            && !Path::new(&program).is_file()
+        {
+            return Err(Error::ProgramMissing(program));
+        }
+        Ok(())
+    }
+
     /// The name the system knows `component` by.
     fn name(&self, component: Component) -> &'static str {
         self.layout.name(component)
@@ -245,5 +266,7 @@ pub(crate) fn path_text(path: &Path) -> Result<&str> {
 
 #[cfg(test)]
 mod current_tests;
+#[cfg(test)]
+mod program_tests;
 #[cfg(test)]
 mod tests;

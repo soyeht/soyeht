@@ -4,12 +4,7 @@
 //! login (and, with lingering enabled by the person, at boot).
 
 use super::{Manager, remove_definition, write_definition};
-use crate::{
-    commands::Commands,
-    error::{Error, Result},
-    system::Component,
-};
-use std::{fs, path::Path};
+use crate::{commands::Commands, error::Result, system::Component};
 
 const SYSTEMCTL: &str = "systemctl";
 /// The line of a unit that makes systemd skip it, without a failure, when the program is gone.
@@ -38,17 +33,7 @@ impl<C: Commands> Manager<'_, C> {
     }
 
     pub(super) fn systemd_start(&self, component: Component) -> Result<()> {
-        let file = self.file(component);
-        if !file.is_file() {
-            return Err(Error::NotRegistered);
-        }
-        // A unit whose program is gone is skipped and `systemctl start` still succeeds, so the
-        // program is checked here: a start that runs nothing must not say it worked.
-        if let Some(program) = unit_program(&fs::read_to_string(&file)?)
-            && !Path::new(&program).is_file()
-        {
-            return Err(Error::ProgramMissing(program));
-        }
+        self.require_startable(component, unit_program)?;
         self.systemd_do("systemctl start", &["start", self.name(component)])
     }
 
