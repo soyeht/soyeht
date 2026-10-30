@@ -47,9 +47,8 @@ private let offer = UpdateOffer(
   fetch: @escaping UpdateFetch
 ) -> UpdateChecker {
   UpdateChecker(
-    build: UpdateVersion("0.1.0").map {
-      UpdateBuild(version: $0, system: "macos", architecture: "aarch64", channel: "stable")
-    }, keys: keys, preferences: preferences, fetch: fetch, interval: .seconds(86400))
+    build: updateTestBuild("0.1.0"), keys: keys, preferences: preferences, fetch: fetch,
+    interval: .seconds(86400))
 }
 
 @Test @MainActor func aBuildWithNoKeyAsksNobody() async {
@@ -109,7 +108,7 @@ private actor Gate {
 
   func open() {
     isOpen = true
-    waiters.forEach { $0.resume() }
+    for waiter in waiters { waiter.resume() }
     waiters = []
   }
 }
@@ -146,16 +145,14 @@ private actor Gate {
 @Test @MainActor func theHighestSequenceReadIsKeptAndAnOlderManifestIsRefused() async throws {
   let vector = try ContractVector.load("update")
   let item = try #require(vector["cases"].array?.first)
-  let key = vector["keys"]["first"]
   let text = item["manifest"].string ?? ""
-  let keys = [UpdatePublicKey(id: key["id"].string ?? "", key: key["key"].string ?? "")]
+  let keys = [updateTestKey(vector, "first")]
   let sequence = try #require(item["expected"]["sequence"].int)
   let store = MemoryPreferenceStore()
   func updates() -> UpdateChecker {
     UpdateChecker(
-      build: UpdateVersion("0.1.0").map {
-        UpdateBuild(version: $0, system: "macos", architecture: "aarch64", channel: "stable")
-      }, keys: keys, preferences: store, fetch: { _ in .success(text) }, interval: .seconds(86400))
+      build: updateTestBuild("0.1.0"), keys: keys, preferences: store,
+      fetch: { _ in .success(text) }, interval: .seconds(86400))
   }
   let first = updates()
   await first.checkNow()
