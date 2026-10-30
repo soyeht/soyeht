@@ -189,7 +189,9 @@ agent works.
   on a workspace tab or on a pane's title renames it in place (Return keeps the name, Escape drops
   it), and the tab's close mark closes the workspace and selects the next tab, or the previous one
   when it was last. The "+" menu also lists the recent folders (the roots of the workspaces, then
-  the folders panes run in). The naming, path, reuse, recent-folder, rename and close rules are
+  the folders panes run in), after the "Open a pane" entries and the agents once a workspace is
+  selected, and right after "Folder…" while there is none. The naming, path, reuse,
+  recent-folder, rename and close rules are
   `contracts/vectors/workspaces.json`, which the Mac and iOS clients pass too.
 - The Texts place lists the documents of the selected workspace, a page at a time, as the Mac's
   section view does: the section's name and what it holds, "New document" (also "Text" in the "+"
