@@ -246,4 +246,6 @@ pub(crate) fn path_text(path: &Path) -> Result<&str> {
 #[cfg(test)]
 mod current_tests;
 #[cfg(test)]
+mod program_tests;
+#[cfg(test)]
 mod tests;

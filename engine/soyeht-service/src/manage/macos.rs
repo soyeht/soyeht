@@ -6,8 +6,10 @@ use crate::{
     commands::Commands,
     error::{Error, Result},
     policy,
+    render::xml_unescape,
     system::Component,
 };
+use std::{fs, path::Path};
 
 const LAUNCHCTL: &str = "launchctl";
 /// What `launchctl print` says of a job that runs.
@@ -75,8 +77,17 @@ impl<C: Commands> Manager<'_, C> {
     }
 
     pub(super) fn launchd_start(&self, component: Component) -> Result<()> {
-        if !self.file(component).is_file() {
+        let file = self.file(component);
+        if !file.is_file() {
             return Err(Error::NotRegistered);
+        }
+        // An agent whose program is gone (the app was dragged to the Trash) is kept from
+        // starting by its `PathState`, so loading it would run nothing and still look like
+        // success: say so, as the Linux side does.
+        if let Some(program) = agent_program(&fs::read_to_string(&file)?)
+            && !Path::new(&program).is_file()
+        {
+            return Err(Error::ProgramMissing(program));
         }
         let target = self.launchd_target(component)?;
         if self.launchd_job(&target)?.is_some() {
@@ -106,5 +117,34 @@ impl<C: Commands> Manager<'_, C> {
         let job = self.launchd_job(&target)?;
         let running = job.is_some_and(|text| text.contains(RUNNING));
         Ok((self.file(component).is_file(), running))
+    }
+}
+
+/// The program a property list starts: the first string of its `ProgramArguments`.
+fn agent_program(plist: &str) -> Option<String> {
+    let (_, after) = plist.split_once("<key>ProgramArguments</key>")?;
+    let (_, after) = after.split_once("<string>")?;
+    let (program, _) = after.split_once("</string>")?;
+    Some(xml_unescape(program))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::agent_program;
+    use crate::{definition::sample, render::render, system::System};
+
+    #[test]
+    fn the_program_is_read_back_from_the_property_list_as_it_was_written() {
+        let mut definition = sample("com.soyeht.next.test.engine");
+        assert_eq!(
+            agent_program(&render(System::Macos, &definition).unwrap()).as_deref(),
+            Some("/opt/next/soyeht-engine")
+        );
+        definition.program = "/Apps/A & B <next>/soyeht-engine".into();
+        assert_eq!(
+            agent_program(&render(System::Macos, &definition).unwrap()).as_deref(),
+            Some("/Apps/A & B <next>/soyeht-engine")
+        );
+        assert_eq!(agent_program("<plist></plist>"), None);
     }
 }
