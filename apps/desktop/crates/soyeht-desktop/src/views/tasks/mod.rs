@@ -10,7 +10,7 @@ mod new_task;
 
 use self::chips::well_card;
 use crate::{
-    neo,
+    neo, popup_fit,
     tasks_ui::TaskView,
     theme::{Palette, desktop, elevation, layout, pane_layout, radius, space, type_scale},
     views::{
@@ -21,15 +21,25 @@ use crate::{
 use soyeht_client::{Connection, tasks};
 use soyeht_protocol::Task;
 
-/// The raised panel of the lists the header's summary and the Dispatch button open.
-fn popover(palette: &'static Palette, width: f32) -> Div {
+/// The raised panel of the lists the header's summary and the Dispatch button open, `top` from
+/// the top of the surface it floats over, which is `surface_height` tall. It is as tall as the
+/// surface has room for under it, and its list scrolls.
+fn popover(
+    palette: &'static Palette,
+    (id, width, top): (&'static str, f32, f32),
+    surface_height: f32,
+) -> gpui::Stateful<Div> {
     neo::raised(palette, radius::CARD, elevation::PANEL)
         .absolute()
+        .top(px(top))
         .w(px(width))
+        .max_h(px(popup_fit::height_from(top, surface_height)))
         .flex()
         .flex_col()
         .gap(px(space::X10))
         .p(px(space::X14))
+        .id(id)
+        .overflow_y_scroll()
         .occlude()
 }
 
@@ -343,31 +353,37 @@ impl Workbench {
             })
             .collect();
         Some(
-            popover(palette, layout::ATTENTION_POPOVER_WIDTH)
-                .id("attention-popover")
-                .top(px(space::X18 * 2.0))
-                .right(px(space::X18))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.tasks_ui.attention = false;
-                    cx.notify();
-                }))
-                .child(
+            popover(
+                palette,
+                (
+                    "attention-popover",
+                    layout::ATTENTION_POPOVER_WIDTH,
+                    space::X18 * 2.0,
+                ),
+                self.window.height - layout::TOP_BAR_HEIGHT,
+            )
+            .right(px(space::X18))
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.tasks_ui.attention = false;
+                cx.notify();
+            }))
+            .child(
+                div()
+                    .font_weight(FontWeight::BOLD)
+                    .text_size(px(type_scale::BODY))
+                    .child(SharedString::from(format!("{} need you", items.len()))),
+            )
+            .children(if rows.is_empty() {
+                vec![
                     div()
-                        .font_weight(FontWeight::BOLD)
-                        .text_size(px(type_scale::BODY))
-                        .child(SharedString::from(format!("{} need you", items.len()))),
-                )
-                .children(if rows.is_empty() {
-                    vec![
-                        div()
-                            .text_color(rgb(palette.secondary))
-                            .child("Nothing needs your attention.")
-                            .into_any_element(),
-                    ]
-                } else {
-                    rows
-                })
-                .into_any_element(),
+                        .text_color(rgb(palette.secondary))
+                        .child("Nothing needs your attention.")
+                        .into_any_element(),
+                ]
+            } else {
+                rows
+            })
+            .into_any_element(),
         )
     }
 
@@ -400,22 +416,26 @@ impl Workbench {
             })
             .collect();
         Some(
-            popover(palette, layout::ATTENTION_POPOVER_WIDTH)
-                .id("dispatch-popover")
-                .top(px(space::X18 * 3.0))
-                .right(px(space::X18 * 4.0))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                    this.tasks_ui.dispatch_menu = false;
-                    cx.notify();
-                }))
-                .children(if rows.is_empty() {
-                    vec![
-                        crate::views::menus::note(palette, tasks::NO_TASK_READY).into_any_element(),
-                    ]
-                } else {
-                    rows
-                })
-                .into_any_element(),
+            popover(
+                palette,
+                (
+                    "dispatch-popover",
+                    layout::ATTENTION_POPOVER_WIDTH,
+                    space::X18 * 3.0,
+                ),
+                self.window.height - layout::TOP_BAR_HEIGHT,
+            )
+            .right(px(space::X18 * 4.0))
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.tasks_ui.dispatch_menu = false;
+                cx.notify();
+            }))
+            .children(if rows.is_empty() {
+                vec![crate::views::menus::note(palette, tasks::NO_TASK_READY).into_any_element()]
+            } else {
+                rows
+            })
+            .into_any_element(),
         )
     }
 }

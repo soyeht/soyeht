@@ -33,6 +33,7 @@ mod os_notify;
 mod pane_floors;
 mod pane_ui;
 mod pointer;
+mod popup_fit;
 mod prefs;
 mod redock;
 mod rename;
