@@ -62,6 +62,13 @@
     BundledEngineService(command: command, profile: .prod, dataDirectory: data, runner: runner)
   }
 
+  /// The setup after the app's first look at the services.
+  @MainActor private func launched(_ runner: ScriptedRunner) async -> EngineServiceSetup {
+    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
+    await setup.refresh()
+    return setup
+  }
+
   @Test func theBundledCommandRunsForTheProfileWithTheBundlesOwnPrograms() async throws {
     let runner = ScriptedRunner(registered: false)
     let bundled = service(runner)
@@ -108,8 +115,7 @@
 
   @MainActor @Test func servicesRegisteredForAnotherPathAreWrittenAgainAtLaunch() async {
     let runner = ScriptedRunner(registered: true, current: false)
-    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
-    await setup.refresh()
+    let setup = await launched(runner)
     #expect(setup.phase == .ready)
     #expect(runner.asked.last?.contains("install") == true)
     #expect(!setup.shouldAsk)
@@ -117,8 +123,7 @@
 
   @MainActor @Test func aRegistrationThatIsRightIsLeftAloneSoAStoppedEngineStaysStopped() async {
     let runner = ScriptedRunner(registered: true, current: true)
-    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
-    await setup.refresh()
+    let setup = await launched(runner)
     #expect(setup.phase == .ready)
     #expect(runner.asked.count == 1, "only the status was asked")
     #expect(runner.asked[0].last == "/Applications/Soyeht Next.app/Contents/MacOS")
@@ -128,8 +133,7 @@
     async
   {
     let runner = ScriptedRunner(registered: true, current: true)
-    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
-    await setup.refresh()
+    let setup = await launched(runner)
     #expect(setup.phase == .ready)
     #expect(setup.offersStart, "the setup list offers Start Soyeht while the engine is silent")
     #expect(!setup.shouldAsk, "the question is only for a first run")
@@ -140,13 +144,11 @@
 
   @MainActor @Test func aRegistrationThatLostOneServiceIsRepairedLikeAStaleOne() async {
     let runner = ScriptedRunner(registered: true, current: true, supervisorRegistered: false)
-    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
-    await setup.refresh()
+    let setup = await launched(runner)
     #expect(setup.phase == .ready)
     #expect(runner.asked.last?.contains("install") == true)
     let none = ScriptedRunner(registered: false, supervisorRegistered: false)
-    let fresh = EngineServiceSetup(service: service(none), preferences: MemoryPreferences())
-    await fresh.refresh()
+    let fresh = await launched(none)
     #expect(fresh.phase == .offered, "nothing registered is a first run, not a repair")
     #expect(none.asked.allSatisfy { !$0.contains("install") })
   }
@@ -154,8 +156,7 @@
   @MainActor @Test func agreeingRegistersAndAFailureShowsWhatTheCommandSaid() async {
     let failing = ScriptedRunner(
       registered: false, failure: .failed(status: 1, detail: "A program is missing"))
-    let setup = EngineServiceSetup(service: service(failing), preferences: MemoryPreferences())
-    await setup.refresh()
+    let setup = await launched(failing)
     await setup.enable()
     #expect(setup.phase == .failed("A program is missing"))
     #expect(setup.offersStart)
