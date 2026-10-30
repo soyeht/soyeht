@@ -32,6 +32,29 @@ pub(crate) fn allows_frame(uri: &str) -> bool {
         })
 }
 
+/// What to do with the page a web view has committed at its top level, for a back end that could
+/// not tell the top level from a frame when it decided the navigation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TopLevel {
+    /// The page is one the top level may hold.
+    Keep,
+    /// The page is not, and there is a page before it: go back to that one, which leaves no entry
+    /// of the refused page behind the person's Back button.
+    GoBack,
+    /// The page is not, and it is the first: replace it with `about:blank`.
+    Blank,
+}
+
+pub(crate) fn top_level(uri: &str, can_go_back: bool) -> TopLevel {
+    if uri.is_empty() || allows(uri) {
+        TopLevel::Keep
+    } else if can_go_back {
+        TopLevel::GoBack
+    } else {
+        TopLevel::Blank
+    }
+}
+
 /// Whether the address is one a person or an agent may ask for: `http` or `https`, with a host.
 pub(crate) fn allows_request(uri: &str) -> bool {
     let lower = uri.to_ascii_lowercase();
@@ -129,6 +152,18 @@ mod tests {
             assert!(!allows_request(frame_only), "{frame_only}");
         }
         assert!(allows_request("https://example.com/") && allows("about:blank"));
+    }
+
+    #[test]
+    fn a_top_level_page_that_is_refused_goes_back_when_it_can_and_goes_blank_when_it_cannot() {
+        assert_eq!(top_level("https://example.com/", true), TopLevel::Keep);
+        assert_eq!(top_level("about:blank", false), TopLevel::Keep);
+        assert_eq!(top_level("", true), TopLevel::Keep);
+        assert_eq!(top_level("data:text/html,x", true), TopLevel::GoBack);
+        assert_eq!(top_level("about:srcdoc", true), TopLevel::GoBack);
+        assert_eq!(top_level("data:text/html,x", false), TopLevel::Blank);
+        // Going back is not a loop: the page it lands on is one the top level may hold.
+        assert_eq!(top_level("http://127.0.0.1:8765/", false), TopLevel::Keep);
     }
 
     #[test]
