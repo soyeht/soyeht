@@ -12,6 +12,12 @@ comes from a file of this repository. The version is `productVersion` of `contra
 `verify` reads a manifest the way a client does, against the keys of `contracts/update.json`
 (or `--trust-key ID=BASE64`), so a release can be checked before it is uploaded.
 
+The sequence only grows and a device never accepts a lower one than it has read, so one set too
+high locks every later release out of that device. `build` therefore refuses a sequence more than
+a day (`MAX_LEAD_SECONDS`) ahead of the clock or of the last one published, and one that is not
+above the last one published when that is known (`--previous FILE`, or `--last-sequence N`).
+`docs/release.md` says how to recover when a manifest with a sequence too high was published.
+
 The manifest is published as an asset of the GitHub release of the same version, under the name
 `update-manifest.json`. This script does not upload, tag or build anything.
 """
@@ -37,8 +43,16 @@ import update_manifest as manifest  # noqa: E402
 KEY_ENVIRONMENT = "SOYEHT_UPDATE_SIGNING_KEY"
 PACKAGE = re.compile(
     r"soyeht-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)-(?P<system>[a-z]+)-(?P<architecture>[a-z0-9_]+)"
-    r"\.(?P<extension>[a-z0-9]+(?:\.[a-z0-9]+)*)"
+    r"\.(?P<extension>[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)"
 )
+# Files that sit beside a package and are not one (`package_mac.py` writes `<file>.sha256`).
+SIDECAR_SUFFIXES = (".sha256",)
+# A system whose release holds more than one package of an architecture says which one the manifest
+# offers, best first (lower case): the AppImage runs on any distribution, the `.deb` on Debian's.
+# Any other repeated target is an error.
+PREFERRED_EXTENSIONS = {"linux": ("appimage", "deb")}
+# The sequence may be at most this far ahead of the clock (and of the last one published).
+MAX_LEAD_SECONDS = 86400
 # Names the packagers may use for an architecture; the manifest always says the Rust spelling.
 ARCHITECTURE_ALIASES = {"arm64": "aarch64", "amd64": "x86_64", "x64": "x86_64"}
 POLICY = manifest.POLICY
@@ -68,12 +82,23 @@ def key_id_for(seed, keys):
     )
 
 
+def preferred(system, first, second):
+    """Which of two packages for one target the manifest offers; None when the system has no rule
+    that picks between them."""
+    order = PREFERRED_EXTENSIONS.get(system, ())
+    ranks = [order.index(path.suffix.lstrip(".").lower()) if path.suffix.lstrip(".").lower() in order else None
+             for path in (first, second)]
+    if None in ranks or ranks[0] == ranks[1]:
+        return None
+    return first if ranks[0] < ranks[1] else second
+
+
 def package_files(dist, version):
     """`{(system, architecture): path}` for the packages of `version` in `dist`."""
     found = {}
     for path in sorted(dist.iterdir()):
         match = PACKAGE.fullmatch(path.name)
-        if not match or not path.is_file():
+        if not match or not path.is_file() or path.name.endswith(SIDECAR_SUFFIXES):
             continue
         if match["version"] != version:
             raise Refused(f"{path.name} is a package of another version than {version}; clear dist/ first")
@@ -82,9 +107,13 @@ def package_files(dist, version):
         if system not in POLICY["systems"] or architecture not in POLICY["architectures"]:
             raise Refused(f"{path.name}: the system and architecture must be one of "
                           f"{POLICY['systems']} and {POLICY['architectures']}")
-        if (system, architecture) in found:
-            raise Refused(f"{path.name} and {found[(system, architecture)].name} are for the same system and architecture")
-        found[(system, architecture)] = path
+        target = (system, architecture)
+        if target in found:
+            winner = preferred(system, found[target], path)
+            if winner is None:
+                raise Refused(f"{path.name} and {found[target].name} are for the same system and architecture")
+            path = winner
+        found[target] = path
     if not found:
         raise Refused(f"no soyeht-{version}-<system>-<architecture>.<extension> package in {dist}")
     return found
@@ -98,7 +127,28 @@ def sha256_of(path):
     return digest.hexdigest()
 
 
-def build(dist, environment, minimum, keys=None, sequence=None):
+def check_sequence(sequence, last, now):
+    """Refuse a sequence that a device would keep for ever and that would lock later releases out.
+
+    `last` is the sequence of the manifest published before (None when there is none), `now` the
+    time in seconds. The ceiling is a day above the later of the two.
+    """
+    ceiling = max(now, last or 0) + MAX_LEAD_SECONDS
+    if sequence > ceiling:
+        raise Refused(
+            f"sequence {sequence} is {(sequence - max(now, last or 0)) // 3600} hours ahead of "
+            f"{'the last published manifest' if last and last > now else 'the clock'}, more than the {MAX_LEAD_SECONDS // 3600} "
+            "allowed. A device remembers the highest sequence it has read and refuses every lower one "
+            "for ever, so a manifest this far ahead would block the next releases on every device that read it. "
+            f"Leave --sequence out (the default is the clock) or give one of at most {ceiling}")
+    if last is not None and sequence <= last:
+        raise Refused(
+            f"sequence {sequence} is not above {last}, the last one published: devices that read that manifest "
+            f"would refuse this one as stale. Give --sequence {last + 1} or more (a clock behind the one "
+            "that signed the last manifest is the usual cause; docs/release.md, \"When something goes wrong\")")
+
+
+def build(dist, environment, minimum, keys=None, sequence=None, last_sequence=None, now=None):
     release = product_version.load((ROOT / product_version.RELEASE_SOURCE).read_text())
     version = str(release.version)
     keys = POLICY["signature"]["publicKeys"] if keys is None else keys
@@ -117,7 +167,9 @@ def build(dist, environment, minimum, keys=None, sequence=None):
     ]
     # The signing time in seconds: it only grows, and a manifest signed again for the same version
     # (a changed minimum) still outranks the one before it.
-    sequence = int(time.time()) if sequence is None else sequence
+    now = int(time.time()) if now is None else now
+    sequence = now if sequence is None else sequence
+    check_sequence(sequence, last_sequence, now)
     payload = manifest.payload_text(version, minimum, templates["notesUrl"].format(version=version), packages, sequence)
     try:
         manifest.check_payload(payload)
@@ -144,6 +196,25 @@ def describe(text, keys, running, system, architecture, channel):
     return "\n".join(lines)
 
 
+def previous_sequence(text, keys):
+    """The sequence of a manifest published before, read as a client would (its signature is checked)."""
+    try:
+        return manifest.check_payload(manifest.open_envelope(text, keys))["sequence"]
+    except manifest.Failed as failed:
+        raise Refused(f"the previous manifest is refused: {failed.failure}") from None
+
+
+def repository():
+    """`owner/name` of the public repository, from the release address prefix of the contract."""
+    prefix = POLICY["urlPrefixes"][0]
+    return prefix.removeprefix("https://github.com/").removesuffix("/releases/")
+
+
+def release_tag(version):
+    """The git tag (and release name) of a version, from the release notes address of the contract."""
+    return POLICY["release"]["notesUrl"].rsplit("/", 1)[1].format(version=version)
+
+
 def trusted_keys(options):
     keys = list(POLICY["signature"]["publicKeys"])
     for item in options:
@@ -162,7 +233,10 @@ def run(args, environment):
         return
     if args.command == "build":
         dist = Path(args.dist)
-        text, packages = build(dist, environment, args.minimum, sequence=args.sequence)
+        last = args.last_sequence
+        if args.previous:
+            last = previous_sequence(Path(args.previous).read_text(), trusted_keys([]))
+        text, packages = build(dist, environment, args.minimum, sequence=args.sequence, last_sequence=last)
         output = Path(args.output) if args.output else dist / POLICY["manifest"]["asset"]
         output.write_text(text)
         print(f"wrote {output} with {len(packages)} packages")
@@ -182,7 +256,11 @@ def main(argv=None, environment=None):
     made.add_argument("--dist", default=str(ROOT / "dist"))
     made.add_argument("--output", help="where to write it (default: the asset name in --dist)")
     made.add_argument("--sequence", type=int, help="the manifest's sequence number (default: the signing time in "
-                      "seconds; it must be above that of the last manifest published)")
+                      "seconds; it must be above that of the last manifest published and at most a day ahead of "
+                      "the clock)")
+    made.add_argument("--previous", metavar="FILE", help="the manifest published before, to read its sequence from")
+    made.add_argument("--last-sequence", type=int, metavar="N", help="the sequence of the manifest published "
+                      "before, when there is no file of it")
     made.add_argument("--minimum", default="0.0.0",
                       help="the oldest version that is still supported (default: every version is)")
     checked = commands.add_parser("verify", help="read a manifest as a client would")

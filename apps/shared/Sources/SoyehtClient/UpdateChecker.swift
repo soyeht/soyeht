@@ -78,8 +78,15 @@ private final class RedirectLimit: NSObject, URLSessionTaskDelegate, Sendable {
 /// contract's one `User-Agent`. The answer is not trusted (a key of the contract has to have
 /// signed it), so the system's own certificate checks are all this adds.
 public func fetchUpdateManifest(_ address: URL) async -> Result<String, UpdateFailure> {
+  await fetchManifest(address, configuration: .ephemeral)
+}
+
+/// The same fetch over a given session configuration, so a test can put a `URLProtocol` stub in
+/// front of the network. The redirect rules and the limits are the ones of the app's fetch.
+func fetchManifest(_ address: URL, configuration: URLSessionConfiguration) async
+  -> Result<String, UpdateFailure>
+{
   guard address.scheme == "https" else { return .failure(.unreachable) }
-  let configuration = URLSessionConfiguration.ephemeral
   configuration.timeoutIntervalForRequest = TimeInterval(UpdatePolicy.checkTimeoutSeconds)
   configuration.timeoutIntervalForResource = TimeInterval(UpdatePolicy.checkTimeoutSeconds)
   let session = URLSession(configuration: configuration)

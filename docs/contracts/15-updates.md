@@ -144,13 +144,18 @@ rail carries the accent dot. No token, color or font is added.
 
 ## 8. Writing it
 
-`scripts/release_manifest.py` (see its docstring):
+`scripts/release_manifest.py` (see its docstring), called by `scripts/release_flow.py` (ADR 0125, `docs/release.md`):
 
 - `keygen` prints a new signing seed and the `publicKeys` entry for the contract.
 - `build` reads `contracts/release.json`, lists `dist/soyeht-<version>-<system>-<architecture>.<extension>`
   (a package of another version in `dist/` stops the build), hashes each, writes and signs
   `dist/update-manifest.json` with `SOYEHT_UPDATE_SIGNING_KEY`, and reads it back as a client does.
-  It refuses a key the contract does not carry, because no client would accept it.
+  It refuses a key the contract does not carry, because no client would accept it. When a release holds
+  a `.deb` and an AppImage, the manifest offers the AppImage; a `.sha256` beside a package is not one.
+  The `sequence` is the signing time, and `build` refuses one more than a day ahead of the clock or of
+  the last manifest published, or not above that one (`--previous FILE` or `--last-sequence N`), because
+  a device never accepts a lower sequence than it has read (section 3, step 9). The recovery is in
+  `docs/release.md`.
 - `verify FILE [--running X.Y.Z --system S --architecture A]` reads a manifest against the
   contract's keys (or `--trust-key ID=BASE64`) and prints what it holds and what that version would do.
 
@@ -166,6 +171,8 @@ restart the engine, which reconnects to the supervisor and restores the panes (c
   passed by `soyeht_protocol::update` and `soyeht_client::update` (Rust),
   `UpdateCheckTests`, `UpdateCheckerTests` (Swift) and `contracts/test_update_manifest.py`
   (Python, which also checks the vectors file is current and Ed25519 against RFC 8032).
-- `scripts/test_release_manifest.py`: the build, the refusals, a tampered manifest.
+- `scripts/test_release_manifest.py`: the build, the refusals (the sequence among them), a tampered manifest.
+- `apps/shared` `UpdateFetchTests`: the redirect limit and the refusal of a redirect that leaves HTTPS,
+  through a `URLProtocol` stub.
 - No test reaches the network: the fetch is a function the tests replace, and the desktop's runs
   a stand-in program.

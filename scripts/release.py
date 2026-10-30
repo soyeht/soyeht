@@ -10,10 +10,10 @@ npm package, the Mac and iOS Xcode projects) are rewritten here and checked here
     uv run python scripts/release.py sync [--dry-run]
     uv run python scripts/release.py check
 
-This script never tags, pushes, builds or signs. Packaging and notarization are not here yet:
-they need accounts and certificates that do not exist. When they do, each is one function that
-reads `current(ROOT)` (the version, the revision and the build number) and one entry in
-`COMMANDS`; they sign with credentials taken from the environment, never from this repository.
+This script never tags, pushes, builds or signs. The packagers (`package_mac.py`,
+`package_linux.py`, `package_windows.py`) read `current(ROOT)` (the version, the revision and the
+build number) and sign with credentials taken from the environment, never from this repository;
+`release_flow.py` orders a whole release (docs/release.md).
 """
 
 import argparse
