@@ -274,6 +274,8 @@ class InstallerScriptTests(unittest.TestCase):
         end = self.script[self.script.index("procedure EndProgramsOfTheFolder") :]
         self.assertLess(end.index("soyeht-engine*"), end.index("Live ''soyeht*''"))
         self.assertIn("RunWithin(Cli()", self.script)
+        # A program that cannot start must not read as a success (the script would exit 0).
+        self.assertIn("catch { exit 125 }", self.script)
         self.assertIn("WaitForExit(", self.script)
 
     def test_a_silent_run_never_waits_for_a_message_box(self):

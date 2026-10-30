@@ -129,17 +129,19 @@ begin
 end;
 
 // Runs a program with a deadline and returns its exit code: 124 when the deadline passed (the
-// program is ended), -1 when it did not start.
+// program is ended), 125 when it did not start, -1 when PowerShell did not.
 function RunWithin(Exe, Arguments: String; Seconds: Integer): Integer;
 begin
   SetEnvironmentVariable('SOYEHT_RUN_EXE', Exe);
   SetEnvironmentVariable('SOYEHT_RUN_ARGUMENTS', Arguments);
   SetEnvironmentVariable('SOYEHT_RUN_MS', IntToStr(Seconds * 1000));
+  // A program that cannot start (the system refused it, for example) is 125, never a success.
   Result := RunScript(
+    '$ErrorActionPreference = ''Stop''; try { ' +
     '$p = Start-Process -FilePath $env:SOYEHT_RUN_EXE -ArgumentList $env:SOYEHT_RUN_ARGUMENTS ' +
     '-WindowStyle Hidden -PassThru; $null = $p.Handle; ' +
     'if (-not $p.WaitForExit([int]$env:SOYEHT_RUN_MS)) { Stop-Process -Id $p.Id -Force; exit 124 }; ' +
-    'exit $p.ExitCode');
+    'exit $p.ExitCode } catch { exit 125 }');
   Log('"' + Exe + '" ' + Arguments + ' -> ' + IntToStr(Result));
 end;
 
