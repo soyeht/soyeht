@@ -195,6 +195,7 @@ class DebTests(unittest.TestCase):
             self.assertEqual(fields["Architecture"], "amd64")
             self.assertIn("libc6 (>= 2.35)", fields["Depends"])
             self.assertIn("libvulkan1", fields["Depends"])
+            self.assertIn("curl", [name.strip() for name in fields["Depends"].split(",")])
             self.assertIn("libgtk-3-0t64 | libgtk-3-0", fields["Recommends"])
             self.assertGreater(int(fields["Installed-Size"]), 0)
             for script in ("postinst", "postrm", "prerm"):

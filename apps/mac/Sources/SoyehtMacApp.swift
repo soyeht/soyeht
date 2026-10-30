@@ -15,6 +15,7 @@ struct SoyehtMacApp: App {
   @State private var editorInputPreferences = EditorInputPreferences()
   @State private var webLinkPreferences = WebLinkPreferences()
   @State private var engineService = EngineServiceSetup()
+  @State private var updateChecker = UpdateChecker()
   private let webHost: MacWebHost
 
   init() {
@@ -119,8 +120,10 @@ struct SoyehtMacApp: App {
       .environment(editorInputPreferences)
       .environment(webLinkPreferences)
       .environment(engineService)
+      .environment(updateChecker)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
+      .task { updateChecker.start() }
       .task { await engineService.refresh() }
       .alert(
         "Keep Soyeht running in the background?",
