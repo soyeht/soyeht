@@ -252,6 +252,19 @@ def assemble(app, programs, destination):
     return destination
 
 
+def thin_libraries(app):
+    """Keep only the arm64 slice of a library that Xcode copied in as a universal file (the Swift
+    back-deployment libraries are), so the whole bundle is Apple silicon only and smaller. The
+    signature goes first, and the signing step makes a new one."""
+    for path in nested_code(app):
+        if is_macho(path) and (archs := run(["lipo", "-archs", path]).stdout.split()) != [ARCHITECTURE]:
+            if ARCHITECTURE not in archs:
+                raise PackagingError(f"{path.name} has no {ARCHITECTURE} slice ({' '.join(archs)})")
+            thin = path.with_name(path.name + ".thin")
+            run(["lipo", "-thin", ARCHITECTURE, path, "-output", thin])
+            thin.replace(path)
+
+
 def codesign_command(path, signing, *, identifier=None, entitlements=None):
     """One `codesign` call: hardened runtime and, with an identity, a secure timestamp."""
     command = ["codesign", "--force", "--sign", signing.identity or "-", "--options", "runtime"]
@@ -480,6 +493,7 @@ def package(options, environment):
     built = (WORK / "derived/Build/Products/Release" / f"{PRODUCT_NAME}.app") if options.reuse_build else build_app(made, environment)
     WORK.mkdir(parents=True, exist_ok=True)
     app = assemble(built, programs, WORK / "stage" / f"{PRODUCT_NAME}.app")
+    thin_libraries(app)
     sign_bundle(app, signing)
     if signing.notarizes:
         notarize_and_staple_app(app, signing, WORK)

@@ -158,6 +158,32 @@ class SigningCallTests(unittest.TestCase):
                 set(names), {"Inner", "Inner.framework", "soyeht", "soyeht-engine", "soyeht-mcp", "soyeht-ptyd"}
             )
 
+    def test_a_universal_library_is_thinned_to_arm64_and_one_without_it_stops_the_run(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = fake_app(Path(temporary))
+            calls = []
+
+            def answer(command, **_):
+                calls.append([str(part) for part in command])
+                archs = "x86_64 arm64 arm64e" if Path(command[-1]).name == "Inner" else "arm64"
+                return type("R", (), {"stdout": archs, "stderr": "", "returncode": 0})()
+
+            def thin(command, **_):
+                if "-thin" in command:
+                    Path(command[-1]).write_bytes(MACHO)
+                return answer(command)
+
+            with patch.object(package_mac, "run", side_effect=thin):
+                package_mac.thin_libraries(app)
+            thinned = [call for call in calls if "-thin" in call]
+            self.assertEqual(len(thinned), 1)
+            self.assertTrue(thinned[0][-3].endswith("Inner"))
+            self.assertFalse((app / "Contents/Frameworks/Inner.framework/Versions/A/Inner.thin").exists())
+            only_intel = type("R", (), {"stdout": "x86_64", "stderr": "", "returncode": 0})()
+            with patch.object(package_mac, "run", return_value=only_intel):
+                with self.assertRaisesRegex(PackagingError, "no arm64 slice"):
+                    package_mac.thin_libraries(app)
+
     def test_the_programs_are_signed_under_their_identifiers_then_the_bundle_with_its_entitlements(self):
         with tempfile.TemporaryDirectory() as temporary:
             app = fake_app(Path(temporary))
