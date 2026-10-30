@@ -40,7 +40,7 @@ fn the_report_is_what_the_soyeht_program_beside_the_window_prints() {
     let folder =
         std::env::temp_dir().join(format!("next-diagnostics-collect-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
-    std::os::unix::fs::symlink("/bin/echo", program_file(&folder, PROGRAM)).unwrap();
+    std::os::unix::fs::symlink(echo_on_path(), program_file(&folder, PROGRAM)).unwrap();
     let report = collect_with(
         &folder.join("soyeht-desktop"),
         "prod",
@@ -51,6 +51,17 @@ fn the_report_is_what_the_soyeht_program_beside_the_window_prints() {
         report,
         Ok("--profile prod --data-dir /data/Soyeht.next diagnostics\n".to_owned())
     );
+}
+
+/// The `echo` program found on `PATH`: not every system has `/bin/echo` (NixOS has no `/bin`
+/// beyond `sh`).
+#[cfg(unix)]
+fn echo_on_path() -> PathBuf {
+    let path = std::env::var_os("PATH").unwrap();
+    std::env::split_paths(&path)
+        .map(|folder| folder.join("echo"))
+        .find(|candidate| candidate.is_file())
+        .unwrap()
 }
 
 #[test]
