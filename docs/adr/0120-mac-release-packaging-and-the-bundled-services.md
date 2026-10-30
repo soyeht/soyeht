@@ -126,6 +126,13 @@ list. Before this the Dev build relied on `ENABLE_RESOURCE_ACCESS_AUDIO_INPUT`, 
 into the same entitlement when it signs; I did not build and sign a Dev app to prove that, which
 is why the explicit file is there.
 
+**No path of the build machine in a program.** A release is built with `--remap-path-prefix` for the source
+folder, the home folder, `CARGO_HOME`, `RUSTUP_HOME` and a custom `CARGO_TARGET_DIR`, so a panic message or
+a debug record names `/soyeht/...` and `/cargo/...`, never the builder's user name. The rules are set once, in
+`scripts/package_common.py` (`release_environment`), which the Mac, Linux and Windows packagers all build
+through (flags in `CARGO_ENCODED_RUSTFLAGS`, since a user name can hold a blank; flags already set are kept).
+The Swift part of the Mac app is not covered.
+
 ### Entitlements
 
 Hardened runtime closes doors; an entitlement opens one, and a signed app carries what it

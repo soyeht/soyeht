@@ -146,6 +146,13 @@ themselves (`soyeht_platform::fs::singleton_held`), registers a component whose 
 not start it; the logon trigger starts it the next time. `AlreadyRunning` of the programs stays an error:
 a second copy started by hand still fails on its lock.
 
+**No path of the build machine in a program.** A release is built with `--remap-path-prefix` for the source
+folder, the home folder, `CARGO_HOME`, `RUSTUP_HOME` and a custom `CARGO_TARGET_DIR`, so a panic message or
+a debug record names `/soyeht/...` and `/cargo/...`, never the builder's user name. The rules are set once, in
+`scripts/package_common.py` (`release_environment`), which the Mac, Linux and Windows packagers all build
+through (flags in `CARGO_ENCODED_RUSTFLAGS`, since a user name can hold a blank; flags already set are kept).
+The Swift part of the Mac app is not covered.
+
 ### Signing
 
 `SOYEHT_WINDOWS_SIGN_THUMBPRINT` (a certificate in the builder's store) or

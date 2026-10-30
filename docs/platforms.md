@@ -120,6 +120,8 @@ fails when a Cargo manifest or lockfile, the npm package or an Xcode project dis
 Windows takes the first three fields of the file version from the desktop package's version, which is the
 same number, and the fourth from the revision. The script does not tag, push, build or sign. The Linux packages are built by `scripts/package_linux.py` ("Linux packages" below), the Mac package by `scripts/package_mac.py` ("The Mac package" below) and the Windows installers by `scripts/package_windows.py` ("Windows packages").
 
+A release made by `package_mac.py`, `package_linux.py` or `package_windows.py` is built with `--remap-path-prefix` for the builder's source, home, cargo and rustup folders (`package_common.release_environment`), so no path of the build machine ends up in a program.
+
 Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.release]`:
 `opt-level = 3`, `lto = "thin"`, `codegen-units = 1` and `strip = "symbols"`. `panic` stays
 `"unwind"`, written out so nobody changes it by accident: the engine recovers a poisoned lock,

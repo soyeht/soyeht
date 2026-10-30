@@ -115,18 +115,59 @@ def add_build_arguments(parser):
     parser.add_argument("--out", default=str(ROOT / "dist"))
 
 
+# What the paths of the machine that built a release are called inside it.
+REMAPPED_SOURCE = "/soyeht"
+REMAPPED_CARGO_HOME = "/cargo"
+REMAPPED_RUSTUP_HOME = "/rustup"
+REMAPPED_TARGET = "/target"
+REMAPPED_HOME = "/home"
+
+
+def builder_paths(environment):
+    """(path, name) of every place of the builder's machine a build can write into a program, the
+    widest first: rustc maps a path by the last rule that matches it, so the folder of the source
+    and the cargo folders, which sit below the home folder, come after it."""
+    home = Path.home()
+    cargo_home = Path(environment.get("CARGO_HOME") or home / ".cargo")
+    rustup_home = Path(environment.get("RUSTUP_HOME") or home / ".rustup")
+    paths = [(home, REMAPPED_HOME), (cargo_home, REMAPPED_CARGO_HOME), (rustup_home, REMAPPED_RUSTUP_HOME)]
+    if environment.get("CARGO_TARGET_DIR"):
+        paths.append((Path(environment["CARGO_TARGET_DIR"]).resolve(), REMAPPED_TARGET))
+    paths.append((ROOT, REMAPPED_SOURCE))
+    return paths
+
+
+def release_environment(environment=None):
+    """The environment of a release build: the production profile built in (ADR 0112), and no
+    path of the builder's machine in a program (a panic message, a debug record or a library
+    path names its file). `CARGO_ENCODED_RUSTFLAGS` carries the flags, since a path with a blank,
+    a user name with a space, would be split in two by `RUSTFLAGS`; flags already set are kept."""
+    result = dict(os.environ if environment is None else environment)
+    if result.get("CARGO_ENCODED_RUSTFLAGS"):
+        flags = result["CARGO_ENCODED_RUSTFLAGS"].split("\x1f")
+    else:
+        flags = result.get("RUSTFLAGS", "").split()
+    flags += [f"--remap-path-prefix={path}={name}" for path, name in builder_paths(result)]
+    result["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
+    result.pop("RUSTFLAGS", None)
+    result[BUILD_ENVIRONMENT] = PROFILE_NAME
+    return result
+
+
 def cargo_build(engine_target, desktop_target, triple=None):
     """Release programs of both workspaces for the production profile; `--locked`, default
     features. `triple` builds for another target of the same system (Windows builds arm64 and x64
     on either). The output is on the terminal."""
-    environment = dict(os.environ, **{BUILD_ENVIRONMENT: PROFILE_NAME})
     target = ["--target", triple] if triple else []
     for folder, directory, extra in (
         ("engine", engine_target, [arg for name in ENGINE_PACKAGES for arg in ("-p", name)]),
         ("apps/desktop", desktop_target, []),
     ):
-        env = dict(environment, CARGO_TARGET_DIR=str(directory)) if directory else environment
-        stream(["cargo", "build", "--release", "--locked", *target, *extra], environment=env, cwd=ROOT / folder)
+        base = dict(os.environ)
+        if directory:
+            base["CARGO_TARGET_DIR"] = str(directory)
+        environment = release_environment(base)
+        stream(["cargo", "build", "--release", "--locked", *target, *extra], environment=environment, cwd=ROOT / folder)
 
 
 def built_programs(engine_target, desktop_target, engine_programs, desktop_programs, triple=None, suffix=""):

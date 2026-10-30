@@ -405,5 +405,61 @@ class SharedPiecesTests(unittest.TestCase):
                 common.built_programs(folder, folder, ("soyeht-engine",), (), "x86_64-pc-windows-msvc", ".exe")
 
 
+class ReleaseEnvironmentTests(unittest.TestCase):
+    """The release build of all three packagers (Mac, Linux, Windows) goes through one environment."""
+
+    def flags(self, environment):
+        return common.release_environment(environment)["CARGO_ENCODED_RUSTFLAGS"].split("\x1f")
+
+    def test_no_path_of_the_builder_is_left_to_the_compiler(self):
+        environment = {"CARGO_HOME": "/b/cargo", "RUSTUP_HOME": "/b/rustup", "CARGO_TARGET_DIR": "/b/out"}
+        flags = self.flags(environment)
+        self.assertIn(f"--remap-path-prefix={common.ROOT}=/soyeht", flags)
+        self.assertIn("--remap-path-prefix=/b/cargo=/cargo", flags)
+        self.assertIn("--remap-path-prefix=/b/rustup=/rustup", flags)
+        self.assertIn(f"--remap-path-prefix={Path('/b/out').resolve()}=/target", flags)
+        self.assertIn(f"--remap-path-prefix={Path.home()}=/home", flags)
+
+    def test_the_narrowest_rule_comes_last_since_the_last_matching_rule_wins(self):
+        flags = self.flags({})
+        home = flags.index(f"--remap-path-prefix={Path.home()}=/home")
+        self.assertEqual(flags[-1], f"--remap-path-prefix={common.ROOT}=/soyeht")
+        self.assertLess(home, len(flags) - 1)
+
+    def test_flags_already_set_are_kept_and_a_path_with_a_blank_stays_one_flag(self):
+        with patch.object(common.Path, "home", return_value=Path("/Users/Jane Smith")):
+            flags = self.flags({"RUSTFLAGS": "-C target-cpu=native -D warnings"})
+        self.assertEqual(flags[:4], ["-C", "target-cpu=native", "-D", "warnings"])
+        self.assertIn("--remap-path-prefix=/Users/Jane Smith=/home", flags)
+        encoded = common.release_environment({"CARGO_ENCODED_RUSTFLAGS": "-C\x1fdebuginfo=0"})
+        self.assertTrue(encoded["CARGO_ENCODED_RUSTFLAGS"].startswith("-C\x1fdebuginfo=0\x1f--remap"))
+
+    def test_the_production_profile_is_built_in_and_the_plain_variable_cannot_override_the_flags(self):
+        result = common.release_environment({"RUSTFLAGS": "-C opt-level=1"})
+        self.assertEqual(result[common.BUILD_ENVIRONMENT], common.PROFILE_NAME)
+        self.assertNotIn("RUSTFLAGS", result)
+
+    def test_both_workspaces_are_built_with_it(self):
+        calls = []
+        with patch.object(common, "stream", lambda command, environment=None, cwd=None: calls.append((command, environment))):
+            common.cargo_build("/t/engine", "/t/desktop", "x86_64-pc-windows-msvc")
+        self.assertEqual(len(calls), 2)
+        for command, environment in calls:
+            self.assertIn("--locked", command)
+            self.assertIn(f"--remap-path-prefix={common.ROOT}=/soyeht", environment["CARGO_ENCODED_RUSTFLAGS"].split("\x1f"))
+        self.assertTrue(calls[0][1]["CARGO_TARGET_DIR"].endswith("engine"))
+
+    def test_the_mac_and_linux_packagers_use_the_same_environment(self):
+        import package_linux
+        import package_mac
+
+        self.assertIs(package_linux.cargo_build, common.cargo_build)
+        calls = []
+        with patch.object(package_mac, "stream", lambda command, environment=None, cwd=None: calls.append(environment)):
+            package_mac.build_engine({})
+        self.assertEqual(len(calls), 1)
+        self.assertIn(f"--remap-path-prefix={common.ROOT}=/soyeht", calls[0]["CARGO_ENCODED_RUSTFLAGS"].split("\x1f"))
+
+
 if __name__ == "__main__":
     unittest.main()

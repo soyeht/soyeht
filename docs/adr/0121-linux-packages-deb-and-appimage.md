@@ -94,6 +94,13 @@ without root: the Ubuntu 22.04 base image, entered with `bwrap`, with the build 
 `com.soyeht.next.metainfo.xml` (id `com.soyeht.next`; its release line is written by the script from
 the version and the commit time) are installed by both formats.
 
+**No path of the build machine in a program.** A release is built with `--remap-path-prefix` for the source
+folder, the home folder, `CARGO_HOME`, `RUSTUP_HOME` and a custom `CARGO_TARGET_DIR`, so a panic message or
+a debug record names `/soyeht/...` and `/cargo/...`, never the builder's user name. The rules are set once, in
+`scripts/package_common.py` (`release_environment`), which the Mac, Linux and Windows packagers all build
+through (flags in `CARGO_ENCODED_RUSTFLAGS`, since a user name can hold a blank; flags already set are kept).
+The Swift part of the Mac app is not covered.
+
 ## Consequences
 
 - A skipped unit is not retried. An engine that exits while the programs are briefly missing (for

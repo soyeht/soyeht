@@ -37,7 +37,16 @@ from pathlib import Path
 import release
 from generated_profile import PROFILES
 from legacy_guard import names_legacy, require_next
-from package_common import PROFILE_NAME, ROOT, PackagingError, artifact_path, run, stream, write_checksum
+from package_common import (
+    PROFILE_NAME,
+    ROOT,
+    PackagingError,
+    artifact_path,
+    release_environment,
+    run,
+    stream,
+    write_checksum,
+)
 from profile_programs import binary_identifiers
 
 PROFILE = PROFILES[PROFILE_NAME]
@@ -170,7 +179,7 @@ def build_engine(environment):
     command = ["cargo", "build", "--release", "--locked", "--target", RUST_TARGET]
     for name, _ in PROGRAMS:
         command += ["--bin", name]
-    stream(command, environment={**environment, "SOYEHT_BUILD_PROFILE": "prod"}, cwd=ROOT / "engine")
+    stream(command, environment=release_environment(environment), cwd=ROOT / "engine")
     return {name: program_path(name, environment) for name, _ in PROGRAMS}
 
 
