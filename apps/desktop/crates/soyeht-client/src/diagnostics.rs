@@ -11,7 +11,11 @@ use soyeht_process::Limits;
 use soyeht_protocol::client_policy::{
     DIAGNOSTICS_COPIED, DIAGNOSTICS_FAILED, DIAGNOSTICS_UNAVAILABLE, DIAGNOSTICS_WORKING,
 };
-use std::{ffi::OsString, path::Path, time::Duration};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 const PROGRAM: &str = "soyeht";
 /// The report reads files and asks the engine once, so a program that takes longer is stuck.
@@ -50,14 +54,19 @@ impl log::Failure for Failure {
 pub fn collect() -> Result<String, Failure> {
     // A system that cannot say where this program is has no folder to look in.
     let executable = std::env::current_exe().map_err(|_| Failure::Unavailable)?;
-    let program = executable
-        .parent()
-        .map(|programs| program_file(programs, PROGRAM))
-        .filter(|program| program.is_file())
-        .ok_or(Failure::Unavailable)?;
+    let program = program_beside(&executable)?;
     let profile = profile::selected().map_err(|_| Failure::Profile)?;
     let directory = profile::data_directory_of_profile().map_err(|_| Failure::Profile)?;
     run(&program, &arguments(profile.name, &directory))
+}
+
+/// The `soyeht` program in the folder of `executable`.
+fn program_beside(executable: &Path) -> Result<PathBuf, Failure> {
+    executable
+        .parent()
+        .map(|programs| program_file(programs, PROGRAM))
+        .filter(|program| program.is_file())
+        .ok_or(Failure::Unavailable)
 }
 
 /// The command line that asks for the report of a profile, the one the Mac app builds too.

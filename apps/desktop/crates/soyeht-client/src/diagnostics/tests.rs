@@ -21,9 +21,16 @@ fn the_program_is_asked_for_the_profile_and_directory_the_window_resolved() {
 }
 
 #[test]
-fn without_a_soyeht_program_beside_the_window_the_action_says_so() {
-    // The test executable sits in a folder with no `soyeht` in it.
-    assert_eq!(collect(), Err(Failure::Unavailable));
+fn the_program_is_the_soyeht_file_in_the_folder_of_the_window() {
+    let folder =
+        std::env::temp_dir().join(format!("next-diagnostics-beside-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let window = folder.join("soyeht-desktop");
+    assert_eq!(program_beside(&window), Err(Failure::Unavailable));
+    let program = program_file(&folder, PROGRAM);
+    std::fs::write(&program, "").unwrap();
+    assert_eq!(program_beside(&window), Ok(program));
+    std::fs::remove_dir_all(&folder).unwrap();
 }
 
 #[cfg(unix)]
