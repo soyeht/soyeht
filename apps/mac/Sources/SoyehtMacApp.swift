@@ -14,6 +14,7 @@ struct SoyehtMacApp: App {
   @State private var attentionNotifications = AgentAttentionNotifications()
   @State private var editorInputPreferences = EditorInputPreferences()
   @State private var webLinkPreferences = WebLinkPreferences()
+  @State private var updateChecker = UpdateChecker()
   private let webHost: MacWebHost
 
   init() {
@@ -117,8 +118,10 @@ struct SoyehtMacApp: App {
       .environment(attentionNotifications)
       .environment(editorInputPreferences)
       .environment(webLinkPreferences)
+      .environment(updateChecker)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
+      .task { updateChecker.start() }
   }
 
   /// Cycles the installed engines. With only one installed, the install step of another opens

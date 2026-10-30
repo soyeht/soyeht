@@ -45,6 +45,7 @@ mod tasks_ui;
 mod terminal_input;
 mod terminal_view;
 pub mod theme;
+mod update_checks;
 mod views;
 mod web_page;
 mod web_surface;

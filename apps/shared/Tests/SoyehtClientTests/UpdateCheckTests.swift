@@ -4,6 +4,19 @@ import Testing
 
 @testable import SoyehtClient
 
+/// The key `name` of the vector's `keys`, as a build would carry it.
+func updateTestKey(_ vector: JsonValue, _ name: String) -> UpdatePublicKey {
+  let key = vector["keys"][name]
+  return UpdatePublicKey(id: key["id"].string ?? "", key: key["key"].string ?? "")
+}
+
+/// A Mac build at `version` on the stable channel.
+func updateTestBuild(_ version: String) -> UpdateBuild? {
+  UpdateVersion(version).map {
+    UpdateBuild(version: $0, system: "macos", architecture: "aarch64", channel: "stable")
+  }
+}
+
 /// The cases of `contracts/vectors/update.json`, which the desktop client and the release script
 /// pass as well.
 @Test func everySharedCaseReadsTheManifestAsRecorded() throws {
@@ -12,10 +25,7 @@ import Testing
   #expect(cases.count > 60)
   for item in cases {
     let name = item["name"].string ?? ""
-    let keys = (item["trust"].array ?? []).map { named -> UpdatePublicKey in
-      let key = vector["keys"][named.string ?? ""]
-      return UpdatePublicKey(id: key["id"].string ?? "", key: key["key"].string ?? "")
-    }
+    let keys = (item["trust"].array ?? []).map { updateTestKey(vector, $0.string ?? "") }
     let build = UpdateBuild(
       version: try #require(UpdateVersion(item["running"].string ?? "")),
       system: item["system"].string ?? "", architecture: item["architecture"].string ?? "",
@@ -60,13 +70,12 @@ import Testing
 @Test func aManifestOverTheLimitIsRefusedBeforeItIsRead() throws {
   let vector = try ContractVector.load("update")
   let item = try #require(vector["cases"].array?.first)
-  let key = vector["keys"]["first"]
   let text =
     (item["manifest"].string ?? "") + String(repeating: " ", count: UpdatePolicy.manifestMaxBytes)
   let build = try #require(UpdateBuild.current)
   let result = UpdateCheck.evaluate(
     text, build: build,
-    keys: [UpdatePublicKey(id: key["id"].string ?? "", key: key["key"].string ?? "")])
+    keys: [updateTestKey(vector, "first")])
   #expect(result == .failure(.tooLarge))
 }
 

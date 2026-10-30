@@ -20,6 +20,14 @@ pub struct LocalPreferences {
     /// The standing notes the person dismissed for good, by id (`softwareRenderer`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dismissed_notices: Vec<String>,
+    /// Whether the window asks, at start and then daily, if a newer Soyeht is published (ADR
+    /// 0122). On unless the person turned it off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_for_updates: Option<bool>,
+    /// The highest sequence number of an update manifest this device has read: an older manifest
+    /// is refused (ADR 0122).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub update_sequence: Option<u64>,
 }
 
 /// The directory the file lives in: the one `socket` is in, so a disposable engine
@@ -29,6 +37,11 @@ pub fn directory(socket: &Path) -> PathBuf {
 }
 
 impl LocalPreferences {
+    /// Whether the window checks for a newer version: it does until the person says it should not.
+    pub fn checks_for_updates(&self) -> bool {
+        self.check_for_updates.unwrap_or(true)
+    }
+
     /// Whether the person dismissed the note `id` for good.
     pub fn is_dismissed(&self, id: &str) -> bool {
         self.dismissed_notices
@@ -57,6 +70,19 @@ impl LocalPreferences {
                 Self::default()
             }
         }
+    }
+
+    /// The sequence number to refuse manifests below; 0 before any was read.
+    pub fn update_floor(&self) -> u64 {
+        self.update_sequence.unwrap_or(0)
+    }
+
+    /// Reads the file, lets `edit` change one choice and writes the file again, so the other
+    /// choices stay as they were.
+    pub fn change(directory: &Path, edit: impl FnOnce(&mut Self)) -> io::Result<()> {
+        let mut saved = Self::load(directory);
+        edit(&mut saved);
+        saved.save(directory)
     }
 
     /// Writes the choices to `directory`, replacing the file in one step so a crash leaves
@@ -115,6 +141,24 @@ mod tests {
         assert!(!loaded.is_dismissed("other"));
         assert_eq!(loaded.dismissed_notices.len(), 1);
         assert_eq!(loaded.theme.as_deref(), Some("neoDeepForest"));
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn the_update_check_is_on_until_it_is_turned_off_and_the_choice_stays() {
+        let directory = scratch("updates");
+        assert!(LocalPreferences::load(&directory).checks_for_updates());
+        let saved = LocalPreferences {
+            check_for_updates: Some(false),
+            update_sequence: Some(1_793_000_000),
+            ..LocalPreferences::default()
+        };
+        saved.save(&directory).unwrap();
+        let loaded = LocalPreferences::load(&directory);
+        assert!(!loaded.checks_for_updates());
+        assert_eq!(loaded, saved);
+        assert_eq!(loaded.update_floor(), 1_793_000_000);
+        assert_eq!(LocalPreferences::default().update_floor(), 0);
         let _ = fs::remove_dir_all(&directory);
     }
 

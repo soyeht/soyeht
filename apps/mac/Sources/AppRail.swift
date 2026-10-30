@@ -4,6 +4,7 @@ import SwiftUI
 
 struct AppRail: View {
   @Bindable var client: EngineClient
+  @Environment(UpdateChecker.self) private var updates
   let destination: WorkspaceDestination
   let onSelect: (WorkspaceDestination) -> Void
   let onSettings: () -> Void
@@ -34,7 +35,8 @@ struct AppRail: View {
       // The scroller would sit over the rings: the column is as wide as a ring.
       .scrollIndicators(.hidden)
       AppRailButton(
-        glyph: .system("gearshape"), label: "Settings", selected: false, action: onSettings)
+        glyph: .system("gearshape"), label: "Settings", selected: false,
+        hasUpdate: updates.presentation.badge, action: onSettings)
     }
     .padding(.vertical, MacTheme.Space.x12)
     .padding(.horizontal, MacTheme.Space.x8)
@@ -78,6 +80,8 @@ private struct AppRailButton: View {
   let selected: Bool
   var badgeCount = 0
   var isWorking = false
+  /// A newer Soyeht is published (ADR 0122): the dot of a working agent, in the same corner.
+  var hasUpdate = false
   let action: () -> Void
 
   var body: some View {
@@ -90,7 +94,7 @@ private struct AppRailButton: View {
         .overlay(alignment: .topTrailing) {
           if badgeCount > 0 {
             AgentAttentionBadge(count: badgeCount)
-          } else if isWorking {
+          } else if isWorking || hasUpdate {
             AgentWorkingDot().padding(MacTheme.Space.x2)
           }
         }
@@ -106,7 +110,7 @@ private struct AppRailButton: View {
     .accessibilityLabel(
       badgeCount > 0
         ? "\(label), \(AgentAttentionPolicy.waitingLabel(count: badgeCount))"
-        : isWorking ? "\(label), agents working" : label
+        : isWorking ? "\(label), agents working" : hasUpdate ? "\(label), update available" : label
     )
     .accessibilityIdentifier("app-bar-\(label.lowercased())")
   }

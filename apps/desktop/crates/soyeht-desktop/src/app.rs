@@ -179,6 +179,7 @@ pub(crate) fn launch(notice: Notice, setup: impl FnOnce() -> Setup + 'static) {
                 let mut workbench = Workbench::new(setup.engine, setup.inbox, cx);
                 workbench.theme = setup.theme;
                 workbench.preferences = setup.preferences;
+                workbench.start_update_checks(cx);
                 workbench.prefs.section = setup.panel;
                 for (pane_id, staged) in setup.staged {
                     workbench.panes.of(&pane_id).staged = Some(staged);
