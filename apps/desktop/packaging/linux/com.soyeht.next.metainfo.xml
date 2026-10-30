@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for the production profile. The id is the application id of
+     contracts/profiles.json; the release line is written by scripts/package_linux.py from
+     contracts/release.json, so this file carries no version of its own. -->
+<component type="desktop-application">
+  <id>com.soyeht.next</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>Soyeht</name>
+  <summary>Terminals and coding agents in one workspace</summary>
+  <description>
+    <p>
+      Soyeht puts terminals, coding agents, files and web pages side by side in one workspace.
+      The agents you already use run in panes, can read each other's work, and ask for your
+      attention only when they need you.
+    </p>
+    <p>
+      An engine and a terminal supervisor run in the background so that your terminals and
+      agents keep running when you close the window.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.soyeht.next.desktop</launchable>
+  <provides>
+    <binary>soyeht-desktop</binary>
+  </provides>
+  <url type="homepage">https://github.com/soyeht/soyeht</url>
+  <url type="bugtracker">https://github.com/soyeht/soyeht/issues</url>
+  <categories>
+    <category>Development</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <!--RELEASES-->
+  </releases>
+</component>

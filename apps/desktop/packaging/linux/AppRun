@@ -1,0 +1,74 @@
+#!/bin/sh
+# The entry point of the Soyeht AppImage (ADR 0121).
+#
+# An AppImage is a read-only image mounted at a path that changes on every run, so a program
+# started from it cannot be registered as a login service or left running after the window
+# closes. The first run of each build copies the programs out of the image into a folder of the
+# person's own, which never moves, and everything runs from that folder: the window, the
+# engine and the supervisor it starts (ADR 0102), and the units `soyeht service install` writes
+# (ADR 0114). Moving, renaming or deleting the AppImage leaves them working.
+#
+#   Soyeht.AppImage                         open the window
+#   Soyeht.AppImage soyeht ARGS...          the command line (`soyeht service status`, ...)
+#   Soyeht.AppImage soyeht uninstall ...    unregister the services, then remove the copied programs
+#
+# `uninstall` keeps the person's data unless `--delete-data` is given, as it does everywhere.
+set -eu
+
+here=$(dirname "$(readlink -f "$0")")
+appdir=${APPDIR:-$here}
+source_folder=$appdir/usr/lib/soyeht
+base=${XDG_DATA_HOME:-$HOME/.local/share}/soyeht-next-appimage
+programs=$base/programs
+
+# True when the copy in `programs` is the one this image carries.
+current() {
+    [ -f "$programs/BUILD_ID" ] && cmp -s "$programs/BUILD_ID" "$source_folder/BUILD_ID"
+}
+
+# Copy to a new folder and swap it in with renames, so a running engine keeps the files it was
+# started from and a failed copy leaves the old programs in place.
+swap() {
+    staging=$base/programs.new.$$
+    rm -rf "$staging"
+    cp -R "$source_folder" "$staging"
+    if [ -d "$programs" ]; then
+        mv "$programs" "$base/programs.old.$$"
+    fi
+    mv "$staging" "$programs"
+    rm -rf "$base"/programs.old.*
+}
+
+# Two windows opened together copy once: the second waits for the first and finds it done. The
+# lock lives in a subshell so that the program started afterwards does not inherit it.
+refresh() {
+    mkdir -p "$base"
+    chmod 700 "$base"
+    if command -v flock >/dev/null 2>&1; then
+        (
+            flock 9
+            current || swap
+        ) 9>"$base/.lock"
+    else
+        swap
+    fi
+}
+
+current || refresh
+
+if [ "${1:-}" = soyeht ]; then
+    shift
+    if [ "${1:-}" = uninstall ]; then
+        status=0
+        "$programs/soyeht" "$@" || status=$?
+        # Only a command that ran to the end removes the programs: a refused or cancelled
+        # `--delete-data` leaves everything as it was.
+        if [ "$status" -eq 0 ]; then
+            rm -rf "$base"
+        fi
+        exit "$status"
+    fi
+    exec "$programs/soyeht" "$@"
+fi
+
+exec "$programs/soyeht-desktop" "$@"

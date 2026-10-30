@@ -118,7 +118,7 @@ the Mac and iOS build number (`(major * 1_000_000 + minor * 1_000 + patch) * 100
 `CFBundleVersion`); `bump major|minor|patch|revision` raises it everywhere and regenerates; `check`
 fails when a Cargo manifest or lockfile, the npm package or an Xcode project disagrees.
 Windows takes the first three fields of the file version from the desktop package's version, which is the
-same number, and the fourth from the revision. The script does not tag, push, build or sign: packaging and notarization are not built yet.
+same number, and the fourth from the revision. The script does not tag, push, build or sign. The Linux packages are built by `scripts/package_linux.py` ("Linux packages" below).
 
 Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.release]`:
 `opt-level = 3`, `lto = "thin"`, `codegen-units = 1` and `strip = "symbols"`. `panic` stays
@@ -172,15 +172,57 @@ The desktop's assets live in `apps/desktop/packaging/`. The icon is the Mac app'
 | `windows/soyeht.rc` | The resource script `crates/soyeht-desktop/build.rs` embeds in the executable on Windows, through `embed-resource`: the icon and the version information. |
 | `windows/revision.h` | Generated from `contracts/release.json` (never edited): the build revision, `VERSION_REVISION`, which `soyeht.rc` puts in the fourth field of the version. |
 | `linux/icons/hicolor/<size>x<size>/apps/soyeht.png` | The icon in the freedesktop theme layout (16 to 512 pixels), to install under `share/icons`. |
+| `linux/com.soyeht.next.metainfo.xml` | The AppStream description of the application (id `com.soyeht.next`). It carries no version: `scripts/package_linux.py` writes the release line. |
+| `linux/AppRun`, `linux/deb/` | The AppImage's entry point and the `.deb`'s maintainer scripts (ADR 0121). |
 | `linux/com.soyeht.next.desktop` | The launcher entry, to install under `share/applications`. Its file name and `StartupWMClass` are the production application id `com.soyeht.next` (`appIds` in `contracts/profiles.json`), which the window sets; its `Icon` is the icon name `soyeht`. The entry is for the production profile: a Dev build sets the application id `com.soyeht.next.dev`, so it needs an entry of its own (`StartupWMClass=com.soyeht.next.dev`) or none. |
 
 `uv run python apps/desktop/packaging/generate_icons.py` writes the files and `--check` fails when
-they are out of date. Packages (an installer, a `.deb`, an AppImage) are not built yet.
+they are out of date. The Linux `.deb` and AppImage are built from these files (next section).
 
 The build id is the package version plus the short commit, `0.1.0+a1b2c3d4e`. `build.rs` reads the
 commit from git; `SOYEHT_BUILD_COMMIT` overrides it for a build from a source archive, and a build
 with neither says `unknown`. Preferences shows it at the foot of its sidebar. The Mac app shows only
 its marketing version there.
+
+## Linux packages
+
+`uv run python scripts/package_linux.py` builds the production profile (`SOYEHT_BUILD_PROFILE=prod`,
+application id `com.soyeht.next`) in release mode and writes, below the ignored `dist/`,
+`soyeht-<version>-linux-<arch>.deb` and `soyeht-<version>-linux-<arch>.AppImage` for the machine's
+architecture (`x86_64` or `aarch64`; build each on its own). The version is `contracts/release.json`.
+Options: `--format deb|appimage|all`, `--skip-build` with `--engine-target` and `--desktop-target`
+for programs already built, `--runtime FILE` for the AppImage runtime (otherwise the pinned release
+of `AppImage/type2-runtime` is downloaded and checked by hash) and `--max-glibc`. The decisions are
+in ADR 0121. The `.deb` needs only Python; the AppImage needs `mksquashfs` (`squashfs-tools`); both need
+`readelf`.
+
+**Build in the oldest base.** A program needs the glibc of the machine that built it, and the script
+refuses a build above `--max-glibc` (2.35). A release is therefore built in an Ubuntu 22.04 userland,
+with the packages of the section above, `rustup` and `squashfs-tools`. Without root, an Ubuntu base
+tarball can be unpacked and entered with `bwrap` (see "Building a package without root" below). The
+`.deb` then says `libc6 (>= X)` for the glibc it really needs.
+
+| | `.deb` | AppImage |
+| --- | --- | --- |
+| Programs | `/usr/lib/soyeht/`, with `/usr/bin/soyeht` and `/usr/bin/soyeht-desktop` linked to it | copied by `AppRun` to `~/.local/share/soyeht-next-appimage/programs` once per build, and run from there |
+| Install | `sudo apt install ./soyeht-<version>-linux-<arch>.deb` | `chmod +x` the file and run it; `--appimage-extract-and-run` where FUSE is missing |
+| Login start | `soyeht service install` once, as the person | `./Soyeht.AppImage soyeht service install` once |
+| Command line | `soyeht ...` | `./Soyeht.AppImage soyeht ...` |
+| Remove | `soyeht uninstall`, then `sudo apt remove soyeht` | `./Soyeht.AppImage soyeht uninstall`, then delete the file |
+
+Neither format registers the login services by itself, and both keep the person's data on removal
+(`soyeht uninstall --delete-data` deletes it). Because the units hold the path of the programs and
+the programs sit in a path that does not move, an AppImage can be renamed or upgraded without
+breaking them; a unit whose program has gone is skipped by systemd (`ConditionPathExists`), not
+restarted every second. A running engine keeps its old build after an upgrade until
+`soyeht service stop` and `start`, or the next login.
+
+What the machine must provide, since the AppImage bundles no library and the `.deb` cannot see what
+is loaded at run time: Vulkan (`libvulkan1`, and `mesa-vulkan-drivers` on a machine without a
+vendor driver), `libxkbcommon0`, `libxkbcommon-x11-0`, `libwayland-client0`, `libxcb1`,
+`libfontconfig1`, and for web panes GTK 3 and WebKitGTK 4.1 (`libgtk-3-0t64`,
+`libwebkit2gtk-4.1-0` on Ubuntu 24.04). The `.deb` declares the first group as `Depends` and the
+rest as `Recommends`.
 
 ## Agents messaging each other
 
