@@ -71,11 +71,22 @@ own architecture. The licence permits free commercial use.
 - Folder `%LOCALAPPDATA%\Programs\Soyeht Next` (no directory page: the folder carries "next", does not move,
   and cannot be a place of the legacy app). Installer id and registry key `Soyeht.Next` (`Soyeht.Next_is1`),
   both derived by the script from the production profile's task names (`Soyeht.Next.Engine`,
-  `Soyeht.Next.Ptyd`) so they cannot drift from them; one Start menu shortcut, "Soyeht".
+  `Soyeht.Next.Ptyd`) so they cannot drift from them; one Start menu shortcut, "Soyeht" (the product name is one
+  constant of the script, passed to the installer script and to `signtool`).
 - An x64 installer also opens on Windows on Arm (`x64compatible`); an Arm64 one opens only on Arm.
 - **No silent registration.** The wizard has a task "Start Soyeht when I log in", unchecked. Ticking it runs
   `soyeht service install --programs <folder>`; silent installs opt in with `/TASKS=loginstart`. Otherwise
   the first run works as ADR 0102 describes. The wizard remembers the choice for the next upgrade.
+
+### Only this folder, only these programs
+
+The installer moves, renames and deletes programs, so it refuses any folder but
+`%LOCALAPPDATA%\Programs\Soyeht Next`. `DisableDirPage=yes` hides the page but not `/DIR=` or a remembered
+folder, so the folder is checked at the start for `/DIR=` (a silent run ends with exit code 1 and no message
+box) and again before the first file (`PrepareToInstall`) for the folder Setup resolved. Everything it renames,
+deletes or ends is limited to the shipped names: `soyeht*.exe`, and their moved copies `soyeht*.exe.*.old`;
+never a bare `*.exe` or `*.old`, and there is no `[InstallDelete]` entry. A process is ended only when its
+executable is below the install folder and named `soyeht*`.
 
 ### Upgrade
 
@@ -85,25 +96,44 @@ The newer installer runs over the older one. The install folder, the tasks and t
   `soyeht-desktop.exe`). Closing the window ends nothing else. It is best effort: when the window stays open
   (it did for the x64 build on the Arm64 VM, and closed for the Arm64 build) it keeps running from its
   renamed file like the others.
-- The engine and the supervisor are not stopped. Windows allows renaming, not overwriting, a running
-  program, so before the new files are written each installed program is renamed to
-  `NAME.exe.<n>.old`; the new ones take its place, and the `.old` files that can be deleted are. A
-  running engine or supervisor continues from its renamed file, with the terminals it holds, and the
-  installer tells the person so (a window left open too). The new build starts the next time that program starts: the registered
-  tasks restart on failure and at login, and `soyeht service stop` then `start` applies it at once (a
-  supervisor restart ends the terminals, which is the person's decision, not the installer's). This is the
-  Windows form of the AppImage rule: replacing the programs never ends a running supervisor.
-- Leftover `.old` files of a program that still runs are deleted by the next install or by the uninstall.
+- Windows allows renaming, not overwriting, a running program, so before the new files are written each
+  installed program is renamed to `NAME.exe.<stamp>.old` and the new ones take its place. The moved copies
+  are deleted only after every file is installed (`ssPostInstall`); when the install does not complete, they
+  are renamed back (`DeinitializeSetup`), so a failed upgrade leaves the old build as it was. A copy that
+  still runs stays, and the next install or the uninstall removes it.
+- **The supervisor is never ended**, since it holds the terminals (contract 07). When something was running
+  the installer compares `soyeht-ptyd --protocol-version` of the moved copy and of the new one:
+  - *Same protocol* (the usual case), and no window left open: the old engine is ended. The terminals stay
+    in the supervisor (contract 07: an engine restart loses nothing), and the new engine is started by the
+    next window (ADR 0102) or by its login task (Task Scheduler restarts it at once). A window-started
+    engine is in no task, so ending it is what lets the next window start the new build.
+  - *Different protocol* (or the old copy cannot answer): nothing is ended. The running engine and supervisor
+    keep the previous build, which still works together, and the person is told (a message box when not
+    silent, a log line when silent) that the services must restart for the new build, and that restarting
+    the supervisor ends the terminals.
+  - *A window is still open:* nothing is ended and the person is told to close and open it again.
+- A message box is shown only when a person can read it: `WizardSilent` and `UninstallSilent` runs only log.
+  A `/VERYSILENT` run without `/SUPPRESSMSGBOXES` can still meet a message box of Setup's own (a file in use
+  during the copy, for example); `/SUPPRESSMSGBOXES` is what a script passes.
 
 ### Uninstall
 
 After Inno's own "are you sure", the uninstaller asks one question, "Also delete your data?", with No as the
-default (a silent removal keeps the data unless `/DELETEDATA` is given). Then, in order: `soyeht uninstall` (stops and unregisters the profile's
-tasks, keeps the data; ADR 0118); the engine and supervisor the window started, which are in no task and would
-lock their files, ended by process identifier and only if their executable is in the install folder; with
-"delete", `soyeht uninstall --delete-data --yes`; then Inno removes the programs, the shortcut and the
-registry key. Only the install folder is removed from the programs' side, and the data directory only
-through `soyeht uninstall`, which already refuses anything but the profile's own folder.
+default (a silent removal keeps the data unless `/DELETEDATA` is given). Then, in order: `soyeht uninstall`
+(stops and unregisters the profile's tasks, keeps the data; ADR 0118, skipped when `soyeht.exe` is gone);
+the programs of the folder that still run (the window's engine and supervisor are in no task and would lock
+their files), ended by process identifier, the engine first because it would start a lost supervisor again
+(ADR 0108), then the rest, twice in case something restarted; with "delete", `soyeht uninstall
+--delete-data --yes`; then Inno removes the programs, the shortcut and the registry key. The data directory
+is deleted only through `soyeht uninstall`, which already refuses anything but the profile's own folder.
+
+### Robustness of the script
+
+The paths the PowerShell steps use are passed in environment variables, never in the script text (a user
+name such as O'Brien would break a quoted string). Setup is a 32-bit program, so it runs the native PowerShell
+(`{sysnative}`) and asks `Win32_Process` for the executable path (the 32-bit `Get-Process` can leave it blank
+for a 64-bit process). Every command of the installed `soyeht.exe` runs with a 120 second limit and is ended
+when it passes; every exit code is written to Setup's log (`/LOG=`).
 
 ### Signing
 
@@ -146,11 +176,21 @@ On a Windows 11 Arm64 VM (24H2), as the signed-in standard user, with Inno Setup
 - `/TASKS=loginstart`: the tasks `Soyeht.Next.Engine` and `Soyeht.Next.Ptyd` are registered and running through
   `soyeht-service-host.exe`, with the path (it contains a space) quoted; a window opened afterwards attached to
   that engine and started none.
-- Upgrade (0.1.0 to 0.1.1, bumped on the VM only): with a window, the engine and the supervisor running, the
-  new installer exited 0 with no restart; the engine and supervisor kept their process identifiers, the files of
-  the running programs were renamed `*.old` and replaced, the shortcut and the registry entry showed 0.1.1. The
-  same with the registered tasks running (the service host is renamed too, and the tasks kept running). The
-  window closed on the arm64 upgrade and stayed open on the x64 one.
+- Upgrade (0.1.0 to 0.1.1, bumped on the VM only), after the review changes, on arm64, with `/VERYSILENT` and no
+  `/SUPPRESSMSGBOXES`: with the window, engine and supervisor running, the installer exited 0 and never waited
+  for a message box; the window was closed, the supervisor kept its process identifier, the engine (same
+  protocol, `5` and `5`) was ended, and opening the window again started a new engine from the new file while
+  the supervisor, which still runs from its moved copy, kept its identifier. With the login tasks registered the
+  same upgrade ended the engine and Task Scheduler started the new one at once; the supervisor and its task
+  were untouched. With a stand-in supervisor that reports another protocol and runs, nothing was ended and the
+  log says the services must restart. The earlier x64 run: the window stayed open and kept running from its
+  moved copy.
+- A failed upgrade (a file Setup could not replace, with `/SUPPRESSMSGBOXES`): exit code 5, "Rolling back
+  changes", and every program renamed back, so the old build was whole. Without `/SUPPRESSMSGBOXES` the same
+  failure waits on Setup's own message box (a limit named above).
+- `/DIR=` with a folder that holds another program and a `.old` file, the same folder with a trailing
+  backslash, and `C:\Tools`: each exited 1 with no message box, and the other program and its hash were
+  unchanged. `/DIR=` with the expected folder installs.
 - Uninstall: silent, with a window, engine and supervisor started by the window running (no task): the exit
   left nothing in the install folder, no shortcut, no registry key, no task and no program of the install
   running; only the data folder remains. With the tasks registered, they were removed. `/DELETEDATA` deleted
@@ -169,7 +209,7 @@ untrusted, as expected for such a certificate, so `signtool verify /pa` was not 
 Not verified: a build signed with a trusted certificate or through Azure Artifact Signing (no certificate or
 account exists yet; the Azure command is tested as text only); installing on
 x64 hardware (only the x64 build on Windows on Arm, under emulation); Windows 10; a machine with a
-SmartScreen or antivirus policy; the interactive uninstall after the final change of the dialog; an upgrade whose
+SmartScreen or antivirus policy; the interactive uninstall after the final change of the dialog; a user name with an apostrophe (the path goes through an environment variable, which was not tried with one); an upgrade whose
 new build changes the supervisor's protocol; a registration made while a window-started engine already runs
 (the task's program fails on the lock and Task Scheduler retries it every minute until the first stops); an
 MSI or MSIX (not built).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the Windows installers of the production profile (ADR 0123).
 
-    python scripts\\package_windows.py [--arch x86_64|aarch64|all] [--skip-build]
+    uv run python scripts\\package_windows.py [--arch x86_64|aarch64|all] [--skip-build]
         [--engine-target DIR] [--desktop-target DIR] [--out DIR] [--inno ISCC.exe]
         [--signtool signtool.exe] [--require-signature]
 
@@ -11,7 +11,8 @@ find the production profile of `contracts/profiles.json` without setup (ADR 0112
 program is for the right processor and the right subsystem, signs them when asked to, and has Inno
 Setup compile `apps/desktop/packaging/windows/soyeht.iss` into
 `dist/soyeht-<version>-windows-<arch>.exe`. The version is `contracts/release.json` and nothing else
-(ADR 0115). Run it on Windows with Python 3; the programs and the installer are built there.
+(ADR 0115). Run it on Windows, where the programs and the installer are built; it needs only the
+standard library (`uv` is `winget install astral-sh.uv`, and plain `python` works as well).
 
 Signing is on when the `SOYEHT_WINDOWS_SIGN_*` variables name a certificate (`signing_from`): every
 program and the installer are signed with `signtool` and a timestamp. With none the packages are built
@@ -29,6 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from generated_profile import PROFILES
+from legacy_guard import require_next
 from packaging_common import (
     HOMEPAGE,
     PROFILE,
@@ -45,7 +47,10 @@ from packaging_common import Plan as BasePlan
 
 PACKAGING = ROOT / "apps/desktop/packaging/windows"
 SCRIPT = PACKAGING / "soyeht.iss"
-PUBLISHER = "Soyeht"
+# The name people see: the installer, the shortcut, Add or remove programs and the signature's
+# description. One value, given to the installer script and to `signtool`.
+PRODUCT_NAME = "Soyeht"
+PUBLISHER = PRODUCT_NAME
 
 # The names of a machine carry "next", for ever (ADR 0112). The id of the installer, and with it the
 # key of Add or remove programs, is the common part of the production profile's task names
@@ -146,10 +151,9 @@ def check_programs(programs, plan):
 
 
 def check_names():
-    """Every machine identifier of the rewrite carries "next" (ADR 0112)."""
+    """Every machine identifier of the rewrite carries "next", and none is the legacy app's (ADR 0112)."""
     for what, value in (("installer id", APP_ID), ("install folder", INSTALL_FOLDER)):
-        if "next" not in value.lower():
-            raise PackagingError(f"the {what} {value!r} has no 'next': see ADR 0112")
+        require_next(what, value)
 
 
 # ---- signing ---------------------------------------------------------------------------------
@@ -164,7 +168,8 @@ class Signing:
 
     def command(self, signtool, path=None):
         """The `signtool sign` command line; `path` None leaves the file for the caller to add."""
-        arguments = [str(signtool), "sign", "/fd", "SHA256", "/tr", self.timestamp, "/td", "SHA256", "/d", "Soyeht"]
+        arguments = [str(signtool), "sign", "/fd", "SHA256", "/tr", self.timestamp, "/td", "SHA256"]
+        arguments += ["/d", PRODUCT_NAME]
         return arguments + list(self.selection) + ([str(path)] if path else [])
 
 
@@ -258,6 +263,7 @@ def stage(plan, out):
 def inno_arguments(plan, staging, out, signing, signtool):
     """The `ISCC` command line after the compiler: every value `soyeht.iss` reads, then the script."""
     values = {
+        "AppName": PRODUCT_NAME,
         "AppId": APP_ID,
         "InstallFolder": INSTALL_FOLDER,
         "Version": plan.display_version,

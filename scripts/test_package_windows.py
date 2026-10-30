@@ -80,7 +80,7 @@ class NamingTests(unittest.TestCase):
         package.check_names()
         self.assertEqual(package.APP_ID, "Soyeht.Next")
         self.assertEqual(package.INSTALL_FOLDER, "Soyeht Next")
-        with patch.object(package, "APP_ID", "Soyeht"), self.assertRaisesRegex(package.PackagingError, "no 'next'"):
+        with patch.object(package, "APP_ID", "Soyeht"), self.assertRaises(SystemExit):
             package.check_names()
 
     def test_the_installer_is_named_for_the_update_manifest(self):
@@ -195,6 +195,7 @@ class InstallerScriptTests(unittest.TestCase):
         self.assertEqual(values["VersionInfo"], "0.1.0.2")
         self.assertEqual(values["Allowed"], "arm64")
         self.assertEqual(values["Profile"], "prod")
+        self.assertEqual(values["AppName"], package.PRODUCT_NAME)
         self.assertEqual(values["AppId"], "Soyeht.Next")
         self.assertEqual(values["OutputName"], "soyeht-0.1.0-windows-aarch64")
         self.assertEqual(self.arguments()[-1], str(package.SCRIPT))
@@ -236,6 +237,61 @@ class InstallerScriptTests(unittest.TestCase):
         # The names come from the profile through the script; nothing is typed here twice.
         for typed in ("Soyeht.Next", "Soyeht.next", "Soyeht Next"):
             self.assertNotIn(typed, self.script)
+
+    def test_the_product_name_is_typed_nowhere_in_the_script(self):
+        lines = [line for line in self.script.splitlines() if not line.lstrip().startswith((";", "//"))]
+        self.assertEqual([line for line in lines if "Soyeht" in line], [])
+
+    def test_the_install_folder_is_checked_whatever_way_it_was_given(self):
+        # /DIR= and a remembered folder get past the missing directory page: the folder is checked
+        # at the start for /DIR= (silent: exit code 1, no message box) and before the first file.
+        initialize = self.script[self.script.index("function InitializeSetup") :]
+        initialize = initialize[: initialize.index("\nend;")]
+        self.assertIn("{param:DIR|}", initialize)
+        self.assertIn("FolderIsRefused(", initialize)
+        prepare = self.script[self.script.index("function PrepareToInstall") :]
+        self.assertIn("FolderIsRefused(ExpandConstant('{app}'))", prepare[: prepare.index("\nend;")])
+        self.assertIn("{localappdata}\\Programs\\{#InstallFolder}", self.script)
+        self.assertIn("DisableDirPage=yes", self.script)
+
+    def test_only_the_programs_this_installer_ships_are_moved_deleted_or_ended(self):
+        # No bare `*.exe` or `*.old`: a folder given by /DIR= may hold other programs.
+        self.assertNotRegex(self.script, r"[\\']\*\.(exe|old)")
+        self.assertNotIn("[InstallDelete]", self.script)
+        self.assertIn("soyeht*.exe.*.old", self.script)
+        self.assertEqual(self.script.count("FindFirst("), 2)
+        self.assertEqual(self.script.count("'soyeht*.exe'") + self.script.count("'soyeht*.exe.*.old'"), 2)
+
+    def test_the_programs_are_ended_by_a_script_that_reads_the_path_from_the_environment(self):
+        # A quote in a user name must not break the script, and the 32-bit Setup must not use the
+        # 32-bit PowerShell (it may not see the path of a 64-bit process).
+        self.assertIn("{sysnative}", self.script)
+        self.assertIn("Win32_Process", self.script)
+        self.assertIn("SOYEHT_END_FOLDER", self.script)
+        self.assertNotIn("$d = '''", self.script)
+
+    def test_the_engine_is_ended_before_the_supervisor_and_the_programs_run_with_a_deadline(self):
+        end = self.script[self.script.index("procedure EndProgramsOfTheFolder") :]
+        self.assertLess(end.index("soyeht-engine*"), end.index("Live ''soyeht*''"))
+        self.assertIn("RunWithin(Cli()", self.script)
+        self.assertIn("WaitForExit(", self.script)
+
+    def test_a_silent_run_never_waits_for_a_message_box(self):
+        tell = self.script[self.script.index("procedure Tell") :]
+        tell = tell[: tell.index("\nend;")]
+        self.assertIn("WizardSilent()", tell)
+        self.assertIn("UninstallSilent()", tell)
+        self.assertNotIn("SuppressibleMsgBox('{#AppName} is installed", self.script)
+
+    def test_a_failed_install_puts_the_programs_back(self):
+        self.assertIn("RestoreMovedAside()", self.script[self.script.index("procedure DeinitializeSetup") :])
+        post = self.script[self.script.index("else if CurStep = ssPostInstall") :]
+        self.assertIn("InstallCompleted := True", post)
+
+    def test_an_upgrade_compares_the_supervisor_protocol_before_ending_anything(self):
+        self.assertIn("--protocol-version", self.script)
+        settle = self.script[self.script.index("procedure SettleUpgrade") :]
+        self.assertLess(settle.index("OldProtocol <> NewProtocol"), settle.index("EndProgramsOfTheFolder(False)"))
 
 
 class BuildTests(unittest.TestCase):

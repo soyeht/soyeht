@@ -243,7 +243,7 @@ declares the linked libraries and the first two loaded ones as `Depends` and the
 
 ## Windows packages
 
-`python scripts\package_windows.py` (run on Windows; the machine can be x64 or Arm64, it builds both) compiles
+`uv run python scripts\package_windows.py` (run on Windows, where `uv` comes from `winget install astral-sh.uv`; plain `python` works too, as the script needs only the standard library; the machine can be x64 or Arm64, it builds both) compiles
 the production profile (`SOYEHT_BUILD_PROFILE=prod`) for `x86_64-pc-windows-msvc` and
 `aarch64-pc-windows-msvc` and writes, below the ignored `dist/`, `soyeht-<version>-windows-x86_64.exe` and
 `soyeht-<version>-windows-aarch64.exe`: a per-user installer built by Inno Setup 6 from
