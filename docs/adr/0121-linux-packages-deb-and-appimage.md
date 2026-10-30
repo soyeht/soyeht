@@ -70,10 +70,11 @@ failure. This is the safety net, not the removal.
 **Dependencies are read from the programs, not remembered.** The script reads the newest glibc
 symbol version in the programs and writes `libc6 (>= X)`; it reads `DT_NEEDED` and fails on a
 library that `LINKED_PACKAGES` does not name. What the window loads at run time is declared by
-hand: `Depends` for what it cannot open without (`libvulkan1`, `libxkbcommon0`,
-`libxkbcommon-x11-0`, `libwayland-client0`, `libxcb1`, `libfontconfig1`) and `Recommends` for what
-serves something optional or may come in another form (`mesa-vulkan-drivers`, GTK 3 and WebKitGTK
-4.1 for the web pane). The AppImage bundles no library: the graphics stack and the web view must be
+hand: `Depends` for what it cannot open without (`libvulkan1`, `libwayland-client0`) and
+`Recommends` for what serves something optional or may come in another form (`mesa-vulkan-drivers`,
+`libegl1` and `libwayland-egl1` for the OpenGL fallback, GTK 3 and WebKitGTK 4.1 for the web
+pane). The libraries the window links (`libxcb1`, `libxkbcommon0`, `libxkbcommon-x11-0`) come from
+the first rule. The AppImage bundles no library: the graphics stack and the web view must be
 the machine's own, and the notes in `docs/platforms.md` list them.
 
 **Portability is the build base.** A binary needs at least the glibc of the machine that built

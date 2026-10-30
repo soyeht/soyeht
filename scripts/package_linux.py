@@ -88,20 +88,19 @@ LINKED_PACKAGES = {
     "ld-linux-x86-64.so.2": "libc6",
     "ld-linux-aarch64.so.1": "libc6",
     "libgcc_s.so.1": "libgcc-s1",
+    "libxcb.so.1": "libxcb1",
+    "libxkbcommon.so.0": "libxkbcommon0",
+    "libxkbcommon-x11.so.0": "libxkbcommon-x11-0",
 }
-# What the window loads when it runs (ADR 0110 for the web view), which no linker records. The
-# window cannot open without the first group, so they are `Depends`; the second only serves
-# something optional or something a machine may have in another form, so they are `Recommends`.
-LOADED_REQUIRED = (
-    "libvulkan1",
-    "libxkbcommon0",
-    "libxkbcommon-x11-0",
-    "libwayland-client0",
-    "libxcb1",
-    "libfontconfig1",
-)
+# What the window loads when it runs (`dlopen`: the graphics stack, the Wayland client, and the
+# web view of ADR 0110), which no linker records. It cannot open without the first group, so they
+# are `Depends`; the rest serves the OpenGL fallback, a vendor driver that replaces Mesa, or the
+# optional web pane, so they are `Recommends`.
+LOADED_REQUIRED = ("libvulkan1", "libwayland-client0")
 LOADED_RECOMMENDED = (
     "mesa-vulkan-drivers",
+    "libegl1",
+    "libwayland-egl1",
     "libgtk-3-0t64 | libgtk-3-0",
     "libwebkit2gtk-4.1-0",
 )
