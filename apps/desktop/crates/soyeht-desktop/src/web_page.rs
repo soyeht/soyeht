@@ -184,6 +184,10 @@ impl Page for WebPage {
 pub(crate) struct WebRegistry {
     /// Where the profile's cookies, local storage and cache are kept.
     profile: PathBuf,
+    /// The color of a page's face until it has drawn, as 0xRRGGBB.
+    background: u32,
+    /// The web panes the engine holds, as the last sync saw them.
+    live: Mutex<HashSet<String>>,
     pages: Mutex<HashMap<String, Arc<WebPage>>>,
     /// Panes whose page is being made.
     making: Mutex<HashSet<String>>,
@@ -193,9 +197,15 @@ pub(crate) struct WebRegistry {
 }
 
 impl WebRegistry {
-    pub(crate) fn new(profile: PathBuf, signals: async_channel::Sender<Signal>) -> Arc<Self> {
+    pub(crate) fn new(
+        profile: PathBuf,
+        background: u32,
+        signals: async_channel::Sender<Signal>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             profile,
+            background,
+            live: Mutex::new(HashSet::new()),
             pages: Mutex::new(HashMap::new()),
             making: Mutex::new(HashSet::new()),
             signals,
@@ -243,6 +253,8 @@ impl WebRegistry {
     pub(crate) fn sync<'a>(self: &Arc<Self>, panes: impl Iterator<Item = &'a Pane>) {
         let live: Vec<&Pane> = panes.collect();
         let is_live = |id: &String| live.iter().any(|pane| &pane.pane_id == id);
+        *self.live.lock().unwrap_or_else(PoisonError::into_inner) =
+            live.iter().map(|pane| pane.pane_id.clone()).collect();
         self.pages
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -295,6 +307,8 @@ impl WebRegistry {
             backend.open(
                 &ViewOptions {
                     profile: (!incognito).then(|| self.profile.clone()),
+                    scratch: Some(self.profile.join("private")),
+                    background: self.background,
                     width: FIRST_SIZE.0,
                     height: FIRST_SIZE.1,
                 },
@@ -302,6 +316,8 @@ impl WebRegistry {
             )
         });
         match opened {
+            // The pane went while its page was being made: nobody is left to show it.
+            Ok(_) if !self.is_live(&id) => self.forget(&id),
             Ok(view) => {
                 let page = Arc::new(WebPage {
                     view,
@@ -326,14 +342,38 @@ impl WebRegistry {
                 self.tell(Signal::Created(id));
             }
             Err(error) => {
-                soyeht_platform::log::event("desktop.web_view_unavailable", &[]);
-                *self
-                    .unavailable
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner) = Some(error);
+                soyeht_platform::log::event(
+                    "desktop.web_view_unavailable",
+                    &[("error", error.to_string().as_str())],
+                );
+                // A system with no web view says so for good; a view that was only slow or
+                // closed is tried again at the next sync.
+                if matches!(error, Error::Unsupported | Error::Unavailable(_)) {
+                    *self
+                        .unavailable
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner) = Some(error);
+                } else {
+                    self.forget(&id);
+                }
                 self.tell(Signal::Created(id));
             }
         }
+    }
+
+    fn is_live(&self, pane_id: &str) -> bool {
+        self.live
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(pane_id)
+    }
+
+    /// Lets the next sync make the page of `pane_id` again.
+    fn forget(&self, pane_id: &str) {
+        self.making
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(pane_id);
     }
 
     /// What a page of `pane_id` reports, as a signal for the window.

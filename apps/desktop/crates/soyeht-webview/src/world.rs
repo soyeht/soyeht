@@ -1,6 +1,6 @@
 //! The script world of the reader on the systems whose web view has no world of its own to hand
 //! out (ADR 0124): what a script is run with, and what it answers, as text. The calls themselves
-//! are in `windows/script.rs`; this is the arithmetic of their JSON, which is the same on every
+//! are in `webview2/script.rs`; this is the arithmetic of their JSON, which is the same on every
 //! system and is tested on each.
 
 use crate::{Error, Result};

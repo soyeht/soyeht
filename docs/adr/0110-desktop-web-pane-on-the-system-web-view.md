@@ -1,6 +1,6 @@
 # ADR 0110: The desktop web pane draws the system's web view off screen
 
-- Status: accepted for Linux (phase 1); Windows is phase 2
+- Status: accepted for Linux (phase 1); Windows is settled by ADR 0124
 - Date: 2026-10-25
 
 ## Context
@@ -229,7 +229,9 @@ not available.
 
 ## Windows (phase 2)
 
-Not built here. What was weighed, and what phase 2 must settle:
+Settled by ADR 0124 (WebView2, in a window of its own over the pane: a child window does not
+show over GPUI's window). What was weighed here, and what phase 2 had to settle, is kept as it was
+written:
 
 - Embedding: WebView2 hosts in an `HWND`. A child window over GPUI's window has the same
   limits as the Linux child surface (it covers GPUI's popovers). Composition hosting

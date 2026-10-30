@@ -164,10 +164,7 @@ pub(crate) fn start_thread<T: Send + 'static>(
 /// The web view can be given a debugging server or switches from the environment of the process.
 /// A web pane never runs with one: it would be a way into the page.
 pub(crate) fn refuse_environment(names: &[&str], why: &'static str) -> Result<()> {
-    if names
-        .iter()
-        .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty()))
-    {
+    if names.iter().any(|name| std::env::var_os(name).is_some()) {
         return Err(Error::Unavailable(why));
     }
     Ok(())

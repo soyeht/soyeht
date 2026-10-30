@@ -6,6 +6,11 @@ pub struct ViewOptions {
     /// Where the profile's cookies, local storage and cache live. `None` makes a private view
     /// that keeps nothing when it closes (an incognito pane).
     pub profile: Option<PathBuf>,
+    /// Where a private view keeps what its page needs while it runs, in a folder of its own that
+    /// the next start removes. It matters where the page cannot be kept in memory (Windows).
+    pub scratch: Option<PathBuf>,
+    /// The color of the page's face until it has drawn, as 0xRRGGBB.
+    pub background: u32,
     /// The size the page lays out for, in logical pixels, until the pane's size is known.
     pub width: u32,
     pub height: u32,
