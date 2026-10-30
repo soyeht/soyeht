@@ -45,6 +45,27 @@ pub struct Manager<'a, C: Commands> {
 
 /// What the system files of this folder ask of a manager.
 impl<C: Commands> Manager<'_, C> {
+    /// Before a start: fails with `NotRegistered` when there is no definition, and with
+    /// `ProgramMissing` when the program the definition starts (as `read_program` finds it in the
+    /// text) is no longer there. A start that would run nothing must not say it worked: systemd
+    /// skips such a unit and launchd does not run such an agent, and both report success.
+    fn require_startable(
+        &self,
+        component: Component,
+        read_program: fn(&str) -> Option<String>,
+    ) -> Result<()> {
+        let file = self.file(component);
+        if !file.is_file() {
+            return Err(Error::NotRegistered);
+        }
+        if let Some(program) = read_program(&fs::read_to_string(&file)?)
+            && !Path::new(&program).is_file()
+        {
+            return Err(Error::ProgramMissing(program));
+        }
+        Ok(())
+    }
+
     /// The name the system knows `component` by.
     fn name(&self, component: Component) -> &'static str {
         self.layout.name(component)
@@ -203,19 +224,6 @@ fn ordered(components: &[Component]) -> Vec<Component> {
         .into_iter()
         .filter(|component| components.contains(component))
         .collect()
-}
-
-/// Fails with `ProgramMissing` when the definition in `file` starts a program (as `read_program`
-/// finds it in the text) that is no longer there. A start that would run nothing must not say it
-/// worked: systemd skips such a unit and launchd does not run such an agent, and both report
-/// success to `start`.
-pub(crate) fn require_program(file: &Path, read_program: fn(&str) -> Option<String>) -> Result<()> {
-    if let Some(program) = read_program(&fs::read_to_string(file)?)
-        && !Path::new(&program).is_file()
-    {
-        return Err(Error::ProgramMissing(program));
-    }
-    Ok(())
 }
 
 /// The bytes of a definition file: a Task Scheduler file is UTF-16, the others are text.

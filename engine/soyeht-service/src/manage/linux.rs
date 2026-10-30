@@ -3,12 +3,8 @@
 //! `enable` links the unit into the user's `default.target`, which the user's manager starts at
 //! login (and, with lingering enabled by the person, at boot).
 
-use super::{Manager, remove_definition, require_program, write_definition};
-use crate::{
-    commands::Commands,
-    error::{Error, Result},
-    system::Component,
-};
+use super::{Manager, remove_definition, write_definition};
+use crate::{commands::Commands, error::Result, system::Component};
 
 const SYSTEMCTL: &str = "systemctl";
 /// The line of a unit that makes systemd skip it, without a failure, when the program is gone.
@@ -37,12 +33,7 @@ impl<C: Commands> Manager<'_, C> {
     }
 
     pub(super) fn systemd_start(&self, component: Component) -> Result<()> {
-        let file = self.file(component);
-        if !file.is_file() {
-            return Err(Error::NotRegistered);
-        }
-        // A unit whose program is gone is skipped and `systemctl start` still succeeds.
-        require_program(&file, unit_program)?;
+        self.require_startable(component, unit_program)?;
         self.systemd_do("systemctl start", &["start", self.name(component)])
     }
 

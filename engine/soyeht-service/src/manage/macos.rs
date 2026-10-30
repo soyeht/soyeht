@@ -1,7 +1,7 @@
 //! launchd: a user agent, loaded into the user's graphical domain (`gui/<uid>`), or into the
 //! background domain (`user/<uid>`) of a session that has no screen, such as one over SSH.
 
-use super::{Manager, path_text, remove_definition, require_program, write_definition};
+use super::{Manager, path_text, remove_definition, write_definition};
 use crate::{
     commands::Commands,
     error::{Error, Result},
@@ -76,14 +76,9 @@ impl<C: Commands> Manager<'_, C> {
     }
 
     pub(super) fn launchd_start(&self, component: Component) -> Result<()> {
-        let file = self.file(component);
-        if !file.is_file() {
-            return Err(Error::NotRegistered);
-        }
         // An agent whose program is gone (the app was dragged to the Trash) is kept from
-        // starting by its `PathState`, so loading it would run nothing and still look like
-        // success.
-        require_program(&file, agent_program)?;
+        // starting by its `PathState`, so loading it would run nothing.
+        self.require_startable(component, agent_program)?;
         let target = self.launchd_target(component)?;
         if self.launchd_job(&target)?.is_some() {
             self.require("launchctl kickstart", LAUNCHCTL, &["kickstart", &target])
