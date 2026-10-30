@@ -36,6 +36,10 @@ gpui.workspace = true
 image.workspace = true
 gpui_platform.workspace = true
 
+# The handle of the window a web page is placed over (ADR 0124). GPUI brings the crate in already.
+[target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
+
 # Notifications exist on Linux and Windows. Elsewhere `os_notify` reports `Unsupported`.
 [target.'cfg(any(target_os = "linux", windows))'.dependencies]
 notify-rust.workspace = true

@@ -15,21 +15,21 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod error;
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(any(target_os = "linux", windows, test))]
 mod frame;
 mod keys;
 #[cfg(target_os = "linux")]
 mod linux;
-// Used by the back end of a system that draws a page as a window of its own (ADR 0124).
-#[allow(dead_code)]
+#[cfg_attr(not(windows), allow(dead_code))]
 mod placement;
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod policy;
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "linux", windows)), allow(dead_code))]
 mod shared;
 mod types;
-// Used by the back end of a system that has no script world of its own (ADR 0124).
-#[allow(dead_code)]
+#[cfg(windows)]
+mod webview2;
+#[cfg_attr(not(windows), allow(dead_code))]
 mod world;
 
 pub use error::{Error, Result};
@@ -41,23 +41,25 @@ pub use types::{
 
 #[cfg(target_os = "linux")]
 pub use linux::{Backend, WebView};
+#[cfg(windows)]
+pub use webview2::{Backend, WebView};
 
 /// Whether this build has a system web view to load. Where it is false every call fails with
 /// [`Error::Unsupported`], and the window says the web pane is not available.
 pub const fn supported() -> bool {
-    cfg!(target_os = "linux")
+    cfg!(any(target_os = "linux", windows))
 }
 
 /// Whether a page is a window of the system's own, placed over its pane (`WebView::place`), which
 /// takes the person's pointer and keys itself and is never handed over as a picture. Where it is
 /// false the page is drawn off screen and the window paints its pictures and forwards the input.
 pub const fn embedded() -> bool {
-    false
+    cfg!(windows)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 mod unsupported;
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", windows)))]
 pub use unsupported::{Backend, WebView};
 
 #[cfg(test)]
@@ -107,5 +109,50 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The reader of a system whose web view has no script world of its own makes four calls of
+    /// the engine's protocol and no other, and switches no domain of it on (ADR 0124): the calls a
+    /// page can detect are the ones that enable a domain.
+    #[test]
+    fn the_engines_protocol_is_used_for_four_calls_and_switches_nothing_on() {
+        let domains = [
+            "Page",
+            "Runtime",
+            "Network",
+            "Input",
+            "Emulation",
+            "DOM",
+            "Target",
+            "Browser",
+            "Debugger",
+            "Log",
+            "Fetch",
+            "Security",
+            "Console",
+            "Storage",
+        ];
+        let mut found = std::collections::BTreeSet::new();
+        for (_, text) in sources() {
+            for domain in domains {
+                let opening = format!("\"{domain}.");
+                for piece in text.split(opening.as_str()).skip(1) {
+                    let call: String = piece
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric())
+                        .collect();
+                    found.insert(format!("{domain}.{call}"));
+                }
+            }
+        }
+        let allowed: std::collections::BTreeSet<String> = [
+            "Page.getFrameTree",
+            "Page.createIsolatedWorld",
+            "Runtime.evaluate",
+            "Page.reload",
+        ]
+        .map(str::to_owned)
+        .into();
+        assert_eq!(found, allowed);
     }
 }
