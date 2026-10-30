@@ -72,21 +72,28 @@ terminals (ADR 0108).
 
 ## 3. Who registers
 
-Planned. Today the seam is called by the `soyeht service` command and by
-`scripts/install_dev.py`; no release installer, uninstaller or app calls it yet (section 9). This
-section is what they are to do.
+Today the seam is called by the `soyeht service` command, by `scripts/install_dev.py` and by the
+Mac app (ADR 0120). The release installers of Linux and Windows are to do what is said below.
 
 **The installer** is to register, with the person's consent to install: it copies the programs and
 runs `soyeht service install --programs DIR`. **The uninstaller** is to run `soyeht uninstall`
 (`soyeht uninstall --delete-data --yes` when the person chose to delete their data) before it
-removes the programs. **The app** is to register only when the person asks: a
-first-run question or a setting ("Start Soyeht when I log in"), for a copy that was not installed
-by an installer (an unpacked archive, a package manager that runs no script). It must never
-register silently, since macOS tells the person about every new background item and Windows lists
-the task. All three run the same command, which is idempotent: a registration that is already in
-place is rewritten; a program that runs is left running with the definition it started with, and
-the new text applies when it is next loaded (`service stop` then `service start`, or the next
-login). A launchd agent that is loaded but idle is loaded again at once.
+removes the programs. **The app** registers only when the person asks, for a copy that was not
+installed by an installer (an unpacked archive, a package manager that runs no script, a dragged
+app). It never registers silently, since macOS tells the person about every new background item
+and Windows lists the task. The Mac app asks once at first launch and keeps a "Start Soyeht"
+button in its setup list; it runs the `soyeht` of its own bundle with `--programs` set to the
+folder of its own programs. All of them run the same command, which is idempotent: a registration
+that is already in place is rewritten; a program that runs is left running with the definition it
+started with, and the new text applies when it is next loaded (`service stop` then `service start`,
+or the next login). A launch agent that is loaded but idle is loaded again at once.
+
+**An app that moves.** A definition names the programs by path, so a caller that can be moved
+runs `service install` again from where it is: the Mac app does so at every launch once any
+component is registered, which repairs the registration of an app dragged from Downloads to
+Applications. It does not register from a disk image or a translocated path, which are gone when
+the image is ejected or the app is moved. A program that runs when its folder moves keeps running;
+if it ends before the repair, the system cannot restart it from the old path.
 
 The commands, all printing the state of the services after they ran as JSON
 (`{"services": [{"component", "name", "registered", "running"}]}`):
@@ -106,9 +113,10 @@ unit is enabled (Linux), the task exists (Windows). `running` means it runs now.
 
 ## 4. How the app finds an engine
 
-Planned. No app asks the seam to start anything yet: the Windows and Linux app only does what step
-2 describes (ADR 0102), and the Mac app has no start of its own (section 9). The steps below are
-the behaviour to build.
+Planned for the Linux and Windows app: it does only what step 2 describes (ADR 0102) and no app
+there asks the seam to start anything yet. The Mac app has no start of its own (section 9): it
+runs `soyeht service install` when the person says so (section 3), and connects with its backoff
+once the engine listens. The steps below are the behaviour to build for the others.
 
 The endpoint is the truth: the socket of the data directory (Windows: the endpoint file, ADR
 0108). The app never asks a service manager whether an engine runs. When a connection fails
@@ -214,7 +222,7 @@ installed over a prod install replaces nothing of it.
 
 ## 9. Not covered
 
-The Mac app, the desktop app and the release installers do not call the seam yet (only the
-`soyeht service` command and `scripts/install_dev.py` do); sections 3 and 4 are what they are to
-do. Signing and notarization, auto-update, a machine-wide (all users) service, and
-starting at boot rather than at login are out of scope.
+The desktop app (Linux and Windows) and the release installers do not call the seam yet; the Mac
+app does only through the section 3 command. Signing and notarization of the Mac package are ADR
+0120. Auto-update, a machine-wide (all users) service, and starting at boot rather than at login
+are out of scope.

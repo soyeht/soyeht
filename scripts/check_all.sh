@@ -287,6 +287,7 @@ step always both contracts:unit uv run python -m unittest discover -s contracts 
 step always both install-dev:unit uv run python -m unittest discover -s scripts -p 'test_install_dev.py'
 step always both release:unit uv run python -m unittest discover -s scripts -p 'test_release.py'
 step always both package-linux:unit uv run python -m unittest discover -s scripts -p 'test_package_linux.py'
+step always both package-mac:unit uv run python -m unittest discover -s scripts -p 'test_package_mac.py'
 step always both release:check uv run python scripts/release.py check
 step always both agent-precheck:unit uv run python -m unittest discover -s scripts -p 'test_agent_precheck.py'
 

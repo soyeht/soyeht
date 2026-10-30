@@ -460,7 +460,7 @@
 				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.mac";
 				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
 				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
-				"INFOPLIST_KEY_CFBundleDisplayName" = "Soyeht Dev";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "$(SOYEHT_PRODUCT_NAME)";
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf";
 				"CODE_SIGN_STYLE" = "Automatic";
@@ -469,7 +469,8 @@
 				"LD_RUNPATH_SEARCH_PATHS" = ( "$(inherited)", "@executable_path/../Frameworks", );
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"PRODUCT_NAME" = "Soyeht Dev";
+				"PRODUCT_NAME" = "$(SOYEHT_PRODUCT_NAME)";
+				"SOYEHT_PRODUCT_NAME" = "Soyeht Dev";
 				"INFOPLIST_KEY_SoyehtLicense" = "Apache-2.0";
 				"ENABLE_APP_SANDBOX" = "NO";
 				"ENABLE_HARDENED_RUNTIME" = "YES";
@@ -539,7 +540,7 @@
 				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.mac";
 				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
 				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
-				"INFOPLIST_KEY_CFBundleDisplayName" = "Soyeht Dev";
+				"INFOPLIST_KEY_CFBundleDisplayName" = "$(SOYEHT_PRODUCT_NAME)";
 				"MACOSX_DEPLOYMENT_TARGET" = "15.0";
 				"DEBUG_INFORMATION_FORMAT" = "dwarf";
 				"CODE_SIGN_STYLE" = "Automatic";
@@ -548,7 +549,8 @@
 				"LD_RUNPATH_SEARCH_PATHS" = ( "$(inherited)", "@executable_path/../Frameworks", );
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"PRODUCT_NAME" = "Soyeht Dev";
+				"PRODUCT_NAME" = "$(SOYEHT_PRODUCT_NAME)";
+				"SOYEHT_PRODUCT_NAME" = "Soyeht Dev";
 				"INFOPLIST_KEY_SoyehtLicense" = "Apache-2.0";
 				"ENABLE_APP_SANDBOX" = "NO";
 				"ENABLE_HARDENED_RUNTIME" = "YES";

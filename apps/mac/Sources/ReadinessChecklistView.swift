@@ -6,6 +6,7 @@ import SwiftUI
 /// installs each thing it lacks. The empty workspace and Preferences both show it.
 struct ReadinessChecklistView: View {
   let client: EngineClient
+  @Environment(EngineServiceSetup.self) private var service
 
   var body: some View {
     let checklist = client.readinessChecklist
@@ -20,6 +21,9 @@ struct ReadinessChecklistView: View {
           .accessibilityIdentifier("readiness-refresh")
       }
       group(checklist.rows.filter { $0.kind != .harness })
+      if !client.connected, service.offersStart {
+        EngineStartRow(setup: service)
+      }
       let agents = checklist.rows(of: .harness)
       if !agents.isEmpty {
         Text("Agents · one is enough")
@@ -107,5 +111,43 @@ private struct ReadinessRowView: View {
     case (.missing, true): MacTheme.warning
     case (.missing, false): MacTheme.muted
     }
+  }
+}
+
+/// The way to start the engine from the app's own bundle, for a person who has not turned on its
+/// background start (or whose start failed). It is a button, never an automatic registration.
+private struct EngineStartRow: View {
+  let setup: EngineServiceSetup
+
+  var body: some View {
+    HStack(spacing: MacTheme.Space.x10) {
+      Text(message)
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(MacTheme.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: MacTheme.Space.x10)
+      if setup.phase != .moveFirst {
+        Button(buttonTitle) { Task { await setup.enable() } }
+          .buttonStyle(.paneSecondary)
+          .accessibilityIdentifier("engine-service-start")
+      }
+    }
+    .padding(.horizontal, MacTheme.Space.x10)
+    .frame(minHeight: 30)
+    .paneWell(radius: MacTheme.Radius.compact)
+    .accessibilityIdentifier("readiness-engine-start")
+  }
+
+  private var message: String {
+    switch setup.phase {
+    case .moveFirst:
+      "Move Soyeht Next to your Applications folder and open it from there to start the engine."
+    case .failed(let detail): detail
+    default: "Start the engine now and keep it running whenever you are logged in."
+    }
+  }
+
+  private var buttonTitle: String {
+    if case .failed = setup.phase { "Try again" } else { "Start Soyeht" }
   }
 }
