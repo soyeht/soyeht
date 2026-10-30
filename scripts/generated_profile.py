@@ -13,6 +13,7 @@ PROFILES = {
         },
         "appIds": {
             "macos": "com.soyeht.next.dev.mac",
+            "windows": "com.soyeht.next.dev",
             "linux": "com.soyeht.next.dev"
         },
         "launchdLabels": {
@@ -42,6 +43,7 @@ PROFILES = {
         },
         "appIds": {
             "macos": "com.soyeht.next.mac",
+            "windows": "com.soyeht.next",
             "linux": "com.soyeht.next"
         },
         "launchdLabels": {

@@ -32,6 +32,7 @@ pub struct Profile {
     /// The title of the Mac app's main window.
     pub window_title: &'static str,
     pub macos_app_id: &'static str,
+    pub windows_app_id: &'static str,
     pub linux_app_id: &'static str,
     pub engine_launchd_label: &'static str,
     pub ptyd_launchd_label: &'static str,
@@ -52,6 +53,7 @@ pub static DEV: Profile = Profile {
     mac_app_name: "Soyeht Dev",
     window_title: "Soyeht · Dev",
     macos_app_id: "com.soyeht.next.dev.mac",
+    windows_app_id: "com.soyeht.next.dev",
     linux_app_id: "com.soyeht.next.dev",
     engine_launchd_label: "com.soyeht.next.dev.engine",
     ptyd_launchd_label: "com.soyeht.next.dev.ptyd",
@@ -71,6 +73,7 @@ pub static PROD: Profile = Profile {
     mac_app_name: "Soyeht Next",
     window_title: "Soyeht",
     macos_app_id: "com.soyeht.next.mac",
+    windows_app_id: "com.soyeht.next",
     linux_app_id: "com.soyeht.next",
     engine_launchd_label: "com.soyeht.next.engine",
     ptyd_launchd_label: "com.soyeht.next.ptyd",

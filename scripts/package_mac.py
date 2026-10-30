@@ -37,11 +37,19 @@ from pathlib import Path
 import release
 from generated_profile import PROFILES
 from legacy_guard import names_legacy, require_next
-from package_common import PackagingError, run, stream, write_checksum
+from package_common import (
+    PROFILE_NAME,
+    ROOT,
+    PackagingError,
+    artifact_path,
+    release_environment,
+    run,
+    stream,
+    write_checksum,
+)
 from profile_programs import binary_identifiers
 
-ROOT = Path(__file__).resolve().parents[1]
-PROFILE = PROFILES["prod"]
+PROFILE = PROFILES[PROFILE_NAME]
 APP_ID = PROFILE["appIds"]["macos"]
 PRODUCT_NAME = PROFILE["displayNames"]["macApp"]
 VOLUME_NAME = PRODUCT_NAME
@@ -150,11 +158,6 @@ def banner(signing):
     ]
 
 
-def artifact_name(version, extension):
-    """`soyeht-<version>-<os>-<arch>.<ext>`, the name every platform's package follows."""
-    return f"soyeht-{version}-{OPERATING_SYSTEM}-{ARTIFACT_ARCHITECTURE}.{extension}"
-
-
 def output_directory(signing, dist=DIST):
     return dist if not signing.ad_hoc else dist / "ad-hoc"
 
@@ -176,7 +179,7 @@ def build_engine(environment):
     command = ["cargo", "build", "--release", "--locked", "--target", RUST_TARGET]
     for name, _ in PROGRAMS:
         command += ["--bin", name]
-    stream(command, environment={**environment, "SOYEHT_BUILD_PROFILE": "prod"}, cwd=ROOT / "engine")
+    stream(command, environment=release_environment(environment), cwd=ROOT / "engine")
     return {name: program_path(name, environment) for name, _ in PROGRAMS}
 
 
@@ -499,7 +502,7 @@ def package(options, environment):
         notarize_and_staple_app(app, signing, WORK)
     problems = verify_bundle(app, signing, made)
     folder = output_directory(signing, options.dist)
-    image = folder / artifact_name(made.version, "dmg")
+    image = artifact_path(folder, made.version, OPERATING_SYSTEM, ARTIFACT_ARCHITECTURE, "dmg")
     make_image(app, image, WORK)
     sign_file(image, signing)
     if signing.notarizes:

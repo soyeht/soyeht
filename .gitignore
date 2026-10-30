@@ -15,5 +15,5 @@ __pycache__/
 # Private local analysis: never commit
 benchmark/
 
-# Release packages (scripts/package_linux.py, scripts/package_mac.py)
+# Release packages (scripts/package_linux.py, package_mac.py, package_windows.py)
 dist/

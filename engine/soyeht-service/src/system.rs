@@ -87,6 +87,14 @@ impl Component {
         }
     }
 
+    /// The singleton lock the program takes in the data directory while it runs.
+    pub(crate) const fn lock(self) -> &'static str {
+        match self {
+            Self::Ptyd => soyeht_platform::fs::PTYD_LOCK,
+            Self::Engine => soyeht_platform::fs::ENGINE_LOCK,
+        }
+    }
+
     pub(crate) const fn description(self) -> &'static str {
         match self {
             Self::Ptyd => "Soyeht terminal supervisor",

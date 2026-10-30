@@ -120,6 +120,27 @@ pub fn lock_singleton(directory: &Path, name: &str) -> Result<File, LockError> {
     }
 }
 
+/// The names of the locks the engine and the supervisor take with [`lock_singleton`] in their data
+/// directory, so that whoever asks whether one runs reads the same file.
+pub const ENGINE_LOCK: &str = "engine.lock";
+pub const PTYD_LOCK: &str = "ptyd.lock";
+
+/// Whether another process holds the singleton lock `name` in `directory`: a program that
+/// [`lock_singleton`]ed it and still runs, whoever started it. A lock that does not exist is not
+/// held. A free lock is taken for an instant and given back, and nothing is created.
+pub fn singleton_held(directory: &Path, name: &str) -> io::Result<bool> {
+    let lock = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open_no_follow(&directory.join(name))
+    {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    Ok(!system::try_lock(&lock)?)
+}
+
 /// Takes the exclusive lock `lock_singleton` takes, on a file that is already open; `false` when
 /// another holder has it. The lock lasts as long as `file` stays open and leaves the contents of
 /// the file readable.
@@ -249,6 +270,26 @@ mod tests {
         let link = directory.join("link");
         std::os::unix::fs::symlink(&target, &link).unwrap();
         assert!(OpenOptions::new().read(true).open_no_follow(&link).is_err());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_singleton_lock_is_held_only_while_a_program_holds_it() {
+        let directory = scratch("singleton-held");
+        std::fs::create_dir_all(&directory).unwrap();
+        // No lock file: nothing runs, and asking creates nothing.
+        assert!(!singleton_held(&directory, ENGINE_LOCK).unwrap());
+        assert!(!directory.join(ENGINE_LOCK).exists());
+        let lock = lock_singleton(&directory, ENGINE_LOCK).unwrap();
+        assert!(singleton_held(&directory, ENGINE_LOCK).unwrap());
+        // Another program's lock is another file.
+        assert!(!singleton_held(&directory, PTYD_LOCK).unwrap());
+        drop(lock);
+        // The file stays after the program ends; the lock does not.
+        assert!(directory.join(ENGINE_LOCK).is_file());
+        assert!(!singleton_held(&directory, ENGINE_LOCK).unwrap());
+        // Asking took no lock for good: a program can take it now.
+        drop(lock_singleton(&directory, ENGINE_LOCK).unwrap());
         std::fs::remove_dir_all(&directory).unwrap();
     }
 }

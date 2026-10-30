@@ -676,3 +676,100 @@ fn an_idle_agent_that_is_booted_out_is_loaded_again_through_the_same_retry() {
         .unwrap();
     assert_eq!(bootstraps(&recorder), 2);
 }
+
+/// Installs both components on `system` while the program of `running` runs, which is to say while
+/// its singleton lock is held as the program holds it.
+fn install_while_running(
+    system: System,
+    label: &str,
+    running: Component,
+    recorder: &Recorder,
+) -> (Scratch, Layout) {
+    let scratch = Scratch::new(label);
+    let layout = test_layout(system, &scratch.0);
+    let lock = soyeht_platform::fs::lock_singleton(&layout.data, running.lock()).unwrap();
+    Manager::new(&layout, recorder)
+        .install(&programs(), &BOTH)
+        .unwrap();
+    drop(lock);
+    (scratch, layout)
+}
+
+#[test]
+fn linux_registers_a_unit_whose_program_runs_and_does_not_start_it() {
+    let recorder = Recorder::default();
+    let (_scratch, layout) = install_while_running(
+        System::Linux,
+        "linux-held-lock",
+        Component::Engine,
+        &recorder,
+    );
+    let (ptyd, engine) = (
+        layout.profile.ptyd_systemd_unit,
+        layout.profile.engine_systemd_unit,
+    );
+    let wanted = [format!("enable --now {ptyd}"), format!("enable {engine}")];
+    let enables: Vec<String> = recorder
+        .lines()
+        .iter()
+        .filter_map(|line| line.strip_prefix("systemctl --user enable"))
+        .map(|rest| format!("enable{rest}"))
+        .collect();
+    assert_eq!(enables, wanted);
+    assert!(layout.definition_file(Component::Engine).is_file());
+}
+
+#[test]
+fn windows_registers_a_task_whose_program_runs_and_does_not_run_it() {
+    let recorder = task_scheduler("stopped\r\n");
+    let (_scratch, layout) = install_while_running(
+        System::Windows,
+        "windows-held-lock",
+        Component::Ptyd,
+        &recorder,
+    );
+    let lines = recorder.lines();
+    let created = |task: &str| {
+        lines
+            .iter()
+            .any(|line| line.starts_with(&format!("schtasks /Create /TN {task} ")))
+    };
+    let ran = |task: &str| lines.contains(&format!("schtasks /Run /TN {task}"));
+    let (ptyd, engine) = (
+        layout.profile.ptyd_windows_task,
+        layout.profile.engine_windows_task,
+    );
+    assert!(created(ptyd) && created(engine), "{lines:?}");
+    assert!(!ran(ptyd), "{lines:?}");
+    assert!(ran(engine), "{lines:?}");
+}
+
+#[test]
+fn macos_writes_the_agent_of_a_program_that_runs_and_does_not_load_it() {
+    let recorder = launchd(true, false);
+    let (_scratch, layout) =
+        install_while_running(System::Macos, "mac-held-lock", Component::Engine, &recorder);
+    assert_eq!(bootstraps(&recorder), 1);
+    assert!(mentions(&recorder, layout.profile.ptyd_launchd_label));
+    assert!(!mentions(&recorder, layout.profile.engine_launchd_label));
+    assert!(layout.definition_file(Component::Engine).is_file());
+}
+
+#[test]
+fn a_lock_nobody_holds_does_not_stop_the_start() {
+    let recorder = Recorder::default();
+    // The lock of the engine was taken and given back, as a program that ended leaves it.
+    let (_scratch, layout) = install_while_running(
+        System::Linux,
+        "linux-free-lock",
+        Component::Engine,
+        &recorder,
+    );
+    let again = Recorder::default();
+    Manager::new(&layout, &again)
+        .install(&programs(), &BOTH)
+        .unwrap();
+    let started = |lines: Vec<String>| lines.iter().filter(|l| l.contains("enable --now")).count();
+    assert_eq!(started(recorder.lines()), 1);
+    assert_eq!(started(again.lines()), 2);
+}
