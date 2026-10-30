@@ -11,12 +11,23 @@
     private let calls = OSAllocatedUnfairLock<[[String]]>(initialState: [])
     private let registered: Bool
     private let current: Bool
+    private let supervisorRegistered: Bool
     private let failure: ServiceCommandError?
 
-    init(registered: Bool, current: Bool = false, failure: ServiceCommandError? = nil) {
+    /// `supervisorRegistered` is whether the supervisor is registered when the engine is (a
+    /// registration that lost one file has only one of them).
+    init(
+      registered: Bool, current: Bool = false, supervisorRegistered: Bool = true,
+      failure: ServiceCommandError? = nil
+    ) {
       self.registered = registered
       self.current = current
+      self.supervisorRegistered = supervisorRegistered
       self.failure = failure
+    }
+
+    private func state(_ component: String, registered: Bool) -> String {
+      #"{"component":"\#(component)","name":"n","registered":\#(registered),"running":false,"current":\#(current)}"#
     }
 
     var asked: [[String]] { calls.withLock { $0 } }
@@ -24,9 +35,11 @@
     func run(_ executable: URL, arguments: [String]) async throws -> Data {
       calls.withLock { $0.append(arguments) }
       if let failure, arguments.contains("install") { throw failure }
-      let state =
-        #"{"component":"engine","name":"n","registered":\#(registered),"running":false,"current":\#(current)}"#
-      return Data(#"{"services":[\#(state)]}"#.utf8)
+      let states = [
+        state("ptyd", registered: registered && supervisorRegistered),
+        state("engine", registered: registered),
+      ]
+      return Data(#"{"services":[\#(states.joined(separator: ","))]}"#.utf8)
     }
   }
 
@@ -109,6 +122,33 @@
     #expect(setup.phase == .ready)
     #expect(runner.asked.count == 1, "only the status was asked")
     #expect(runner.asked[0].last == "/Applications/Soyeht Next.app/Contents/MacOS")
+  }
+
+  @MainActor @Test func registeredAndRightServicesThatDoNotAnswerGetTheButtonAndNoSilentStart()
+    async
+  {
+    let runner = ScriptedRunner(registered: true, current: true)
+    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
+    await setup.refresh()
+    #expect(setup.phase == .ready)
+    #expect(setup.offersStart, "the setup list offers Start Soyeht while the engine is silent")
+    #expect(!setup.shouldAsk, "the question is only for a first run")
+    #expect(runner.asked.allSatisfy { !$0.contains("install") }, "a stop is respected at launch")
+    await setup.enable()
+    #expect(runner.asked.last?.contains("install") == true, "the button runs install")
+  }
+
+  @MainActor @Test func aRegistrationThatLostOneServiceIsRepairedLikeAStaleOne() async {
+    let runner = ScriptedRunner(registered: true, current: true, supervisorRegistered: false)
+    let setup = EngineServiceSetup(service: service(runner), preferences: MemoryPreferences())
+    await setup.refresh()
+    #expect(setup.phase == .ready)
+    #expect(runner.asked.last?.contains("install") == true)
+    let none = ScriptedRunner(registered: false, supervisorRegistered: false)
+    let fresh = EngineServiceSetup(service: service(none), preferences: MemoryPreferences())
+    await fresh.refresh()
+    #expect(fresh.phase == .offered, "nothing registered is a first run, not a repair")
+    #expect(none.asked.allSatisfy { !$0.contains("install") })
   }
 
   @MainActor @Test func agreeingRegistersAndAFailureShowsWhatTheCommandSaid() async {
