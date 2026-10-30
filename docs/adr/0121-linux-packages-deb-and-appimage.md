@@ -80,7 +80,9 @@ the machine's own, and the notes in `docs/platforms.md` list them.
 **Portability is the build base.** A binary needs at least the glibc of the machine that built
 it. The script refuses a build that needs more than `--max-glibc` (default 2.35, Ubuntu 22.04), so
 a release is built in that base (`docs/platforms.md`, "Linux packages"). `--max-glibc any` is for a
-build that only has to run where it was built.
+build that only has to run where it was built. `scripts/package_linux_rootless.sh` makes the base
+without root: the Ubuntu 22.04 base image, entered with `bwrap`, with the build libraries and
+`rustup` installed inside it, then `package_linux.py` run on the committed sources.
 
 **The launcher and metadata are shared.** `com.soyeht.next.desktop` and the AppStream file
 `com.soyeht.next.metainfo.xml` (id `com.soyeht.next`; its release line is written by the script from
@@ -98,3 +100,24 @@ the version and the commit time) are installed by both formats.
 - Not done: signing of packages or a repository, an update check (ADR 0122), RPM, Flatpak, a menu
   entry for an AppImage (a tool such as AppImageLauncher adds it), and a prompt in the window to
   register the login services.
+
+## Verification
+
+On Ubuntu 26.04 arm64 (a VM), for the packages built in the Ubuntu 22.04 base (glibc 2.35):
+`dpkg-deb -I/-c`, `apt-get -s install`, a full `dpkg` install, remove and purge into a private root
+(maintainer scripts included), `desktop-file-validate` and `appstreamcli validate` all pass; the
+AppImage opens the window (a screenshot shows the empty workspace, the engine ready), the engine and
+supervisor it starts run from `~/.local/share/soyeht-next-appimage/programs`;
+`soyeht service install` through the AppImage writes units that name that folder and survive the AppImage
+being renamed and moved; hiding the programs makes systemd skip the unit (`ConditionResult=no`, zero
+restarts); `soyeht uninstall` through the AppImage unregisters the units, removes the copied programs and
+keeps the data, and `--delete-data --yes` deletes the production data and leaves the Dev folder inside it.
+Units written by the `.deb` layout name the real `usr/lib/soyeht` folder through the `usr/bin` link, and are
+skipped after the package files are removed. On x86_64 (Ubuntu 22.04 base on a gate host) the packages
+build, `dpkg-deb`, a private `dpkg` install, remove and purge work, and the AppImage's command line,
+engine and supervisor run.
+
+Not verified: `sudo apt install ./soyeht.deb` (the VM account has no passwordless `sudo`, so the install
+went into a private root); a window on x86_64 (no display there); a systemd user manager on x86_64;
+installing on any distribution other than Ubuntu; the AppImage on a system without FUSE (only its
+`--appimage-extract-and-run` path on x86_64); package signing.

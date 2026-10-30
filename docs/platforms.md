@@ -198,9 +198,25 @@ in ADR 0121. The `.deb` needs only Python; the AppImage needs `mksquashfs` (`squ
 
 **Build in the oldest base.** A program needs the glibc of the machine that built it, and the script
 refuses a build above `--max-glibc` (2.35). A release is therefore built in an Ubuntu 22.04 userland,
-with the packages of the section above, `rustup` and `squashfs-tools`. Without root, an Ubuntu base
-tarball can be unpacked and entered with `bwrap` (see "Building a package without root" below). The
-`.deb` then says `libc6 (>= X)` for the glibc it really needs.
+with the packages of the section above, `rustup` and `squashfs-tools`. `scripts/package_linux_rootless.sh` makes that userland without root (below). The `.deb` says
+`libc6 (>= X)` for the glibc the programs really need.
+
+*Building without root.* `bwrap` (bubblewrap) and `curl`, `git`, `tar` are all it asks of the host:
+`scripts/package_linux_rootless.sh [--format deb|appimage|all]` unpacks the Ubuntu 22.04 base image of
+the host's architecture into `~/.cache/soyeht-package-base` (`SOYEHT_PACKAGE_BASE`), checks it against
+Ubuntu's `SHA256SUMS`, installs the build libraries with `apt` inside a user namespace, installs
+`rustup`, copies the committed sources (`git archive HEAD`) and runs `package_linux.py` there; the
+packages come out in `dist/`. The first run downloads about 1.5 GB and builds from scratch (about
+15 minutes on 8 cores); later runs reuse the toolchain and the build folder. On a Nix host, `bubblewrap`
+comes from `nix-shell -p bubblewrap`, and `SOYEHT_PACKAGE_BASE` can point to a RAM disk when the disk
+is small.
+
+*Checking a build.* `dpkg-deb -I` and `-c` list the `.deb`; `apt-get -s install ./file.deb` simulates
+the install and its dependencies without root; with no root, `dpkg --root=DIR --force-not-root
+--force-depends --force-script-chrootless -i file.deb` runs a full install, `-r` and `-P` into a
+private folder, maintainer scripts included; `desktop-file-validate` and `appstreamcli validate
+--no-net` check the launcher entry and the metainfo; an AppImage runs with
+`--appimage-extract-and-run` where FUSE is missing.
 
 | | `.deb` | AppImage |
 | --- | --- | --- |
