@@ -2,8 +2,8 @@
 //!
 //! `KeepAlive` restarts the program however it ended, but only while the program is there
 //! (`PathState`): an app dragged to the Trash must not leave an agent that fails to start every
-//! second for ever. `RunAtLoad` starts it when the agent loads, which is at login. `ProcessType` `Interactive` keeps the system from throttling a
-//! program a person is waiting on.
+//! second for ever. `RunAtLoad` starts it when the agent loads, which is at login. `ProcessType`
+//! `Interactive` keeps the system from throttling a program a person is waiting on.
 
 use super::xml_escape;
 use crate::{definition::Definition, policy};

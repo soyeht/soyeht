@@ -312,6 +312,12 @@ reappears. `launchd_start` returns `ProgramMissing` when the registered program 
 Linux side does (ADR 0121). Tests cover the rendering (including a path with markup in it), the
 program read back from a written property list, and a start with the program removed.
 
+**Untested: an update.** Whether `PathState` re-arms and starts the program again when the bundle
+is replaced by a rename (how an update, or a drag over the old copy, does it) was not tested and
+is not promised. The recovery that does not depend on it is the app's "Start Soyeht" offer, shown
+whenever the services are registered and right but the engine does not answer; its action is
+`service install`, which loads an idle agent.
+
 **Not verified.** The `PathState` semantics are launchd's, from its documentation (`launchd.plist`);
 no agent was loaded to see launchd obey them, because that registers services on the owner's Mac.
 The manual check is in contract 13, section 5. An agent already loaded with the old `<true/>`

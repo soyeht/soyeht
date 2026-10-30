@@ -165,8 +165,12 @@ the start fails once; after that nothing runs and nothing is retried. When the p
 (an app dragged back, or installed again) launchd starts it by itself. `soyeht service start` of
 an agent whose program is gone fails with "the program ... is missing", as on Linux, instead of
 loading an agent that cannot run. `soyeht uninstall` is still the way to remove the registration.
-An app update that replaces the bundle briefly removes the program; launchd starts it again when it
-reappears.
+An app update that replaces the bundle briefly removes the program. Whether launchd's `PathState`
+watch re-arms and starts the program again when the bundle is replaced by a rename (how an update
+or a drag over the old copy does it) is **untested**: it was not run, and this contract does not
+promise it. The recovery that does not depend on it is the app's "Start Soyeht" offer, shown
+whenever the services are registered and right but the engine does not answer, whose action is
+`service install`.
 
 *Manual check (not run: it needs a real login session and registers services, which was not done
 on the machine where this was written).* Install the production app, say yes to the background
