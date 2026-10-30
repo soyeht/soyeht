@@ -72,12 +72,13 @@ terminals (ADR 0108).
 
 ## 3. Who registers
 
-Planned. Today the seam is called by the `soyeht service` command and by
-`scripts/install_dev.py`; no release installer, uninstaller or app calls it yet (section 9). This
-section is what they are to do.
+Today the seam is called by the `soyeht service` command, by `scripts/install_dev.py` and by the
+Windows installer (ADR 0123); the Linux packages leave the registration to the person (ADR 0121) and no
+Mac installer or app calls it yet (section 9). This section is what they are to do.
 
 **The installer** is to register, with the person's consent to install: it copies the programs and
-runs `soyeht service install --programs DIR`. **The uninstaller** is to run `soyeht uninstall`
+runs `soyeht service install --programs DIR`. The Windows installer asks with a box, unchecked by
+default ("Start Soyeht when I log in"), and registers nothing when it stays unchecked. **The uninstaller** is to run `soyeht uninstall`
 (`soyeht uninstall --delete-data --yes` when the person chose to delete their data) before it
 removes the programs. **The app** is to register only when the person asks: a
 first-run question or a setting ("Start Soyeht when I log in"), for a copy that was not installed
@@ -214,7 +215,7 @@ installed over a prod install replaces nothing of it.
 
 ## 9. Not covered
 
-The Mac app, the desktop app and the release installers do not call the seam yet (only the
-`soyeht service` command and `scripts/install_dev.py` do); sections 3 and 4 are what they are to
-do. Signing and notarization, auto-update, a machine-wide (all users) service, and
+Of the installers only the Windows one calls the seam (section 3), beside the `soyeht service` command
+and `scripts/install_dev.py`. The Mac app, the desktop app and a Mac installer do not; sections 3 and 4
+are what they are to do. Signing and notarization, auto-update, a machine-wide (all users) service, and
 starting at boot rather than at login are out of scope.
