@@ -51,6 +51,16 @@ struct ReadinessChecklistView: View {
   }
 }
 
+extension View {
+  /// The well every row of the setup list sits in.
+  fileprivate func readinessRow(identifier: String) -> some View {
+    padding(.horizontal, MacTheme.Space.x10)
+      .frame(minHeight: DesignTokens.Layout.readinessRowHeight)
+      .paneWell(radius: MacTheme.Radius.compact)
+      .accessibilityIdentifier(identifier)
+  }
+}
+
 private struct ReadinessRowView: View {
   let row: ReadinessChecklist.Row
 
@@ -92,10 +102,7 @@ private struct ReadinessRowView: View {
         .accessibilityLabel("Copy the install command for \(row.title)")
       }
     }
-    .padding(.horizontal, MacTheme.Space.x10)
-    .frame(minHeight: DesignTokens.Layout.readinessRowHeight)
-    .paneWell(radius: MacTheme.Radius.compact)
-    .accessibilityIdentifier("readiness-row-\(row.id)")
+    .readinessRow(identifier: "readiness-row-\(row.id)")
   }
 
   private var symbol: String {
@@ -133,10 +140,7 @@ private struct EngineStartRow: View {
           .accessibilityIdentifier("engine-service-start")
       }
     }
-    .padding(.horizontal, MacTheme.Space.x10)
-    .frame(minHeight: DesignTokens.Layout.readinessRowHeight)
-    .paneWell(radius: MacTheme.Radius.compact)
-    .accessibilityIdentifier("readiness-engine-start")
+    .readinessRow(identifier: "readiness-engine-start")
   }
 
   private var message: String {
