@@ -172,7 +172,9 @@ The rules of ADR 0110 apply as they are; on this engine:
   refuses `data:` only at the top level: many real pages embed their own such frames. WebView2 tells
   a frame from the top level, so each event has its own rule; WebKitGTK does not (ADR 0110: the
   decision lets a frame's address through and a top level that commits as `data:` or
-  `about:srcdoc` becomes `about:blank`).
+  `about:srcdoc` is sent back to the page before it, or becomes `about:blank` when it is the
+  first; ADR 0110 records the symbols of the installed WebKitGTK that were read to find no
+  main-frame signal).
   A link to a program of the system (the runtime's external-scheme launch) is cancelled. A runtime
   that has none of these events (frame navigation, download, external scheme) is not used: a view
   there fails with `Unavailable`, since a page could do what is refused here.
