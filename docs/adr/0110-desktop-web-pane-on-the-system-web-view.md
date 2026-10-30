@@ -129,7 +129,12 @@ adds what the system web view needs.
   permission (refused), show a dialog (an alert is closed, a question is answered "no", leaving a
   page is allowed), choose a file or go full screen; none of those has a window of ours to
   appear in. A navigation to anything but `http`, `https`, `about:blank` and `blob:` is
-  ignored, and a response the engine cannot show is not downloaded.
+  ignored, and a response the engine cannot show is not downloaded. A frame inside a page may
+  also hold `data:` and `about:srcdoc` (many pages embed their own; a browser refuses `data:` only
+  at the top level), which `policy::allows_frame` says (changed by ADR 0124: before, they were
+  refused in frames too). WebKitGTK reports a frame and the top level alike, so the decision lets a
+  frame's address through and the top level is held to the stricter rule once it has begun to load:
+  a page that commits as `data:` or `about:srcdoc` is replaced by `about:blank`.
 
 ### The web host
 
