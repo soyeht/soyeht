@@ -97,6 +97,40 @@ mod tests {
         }
     }
 
+    /// What a frame may not load, whatever else it may: a script, a file, a program of the system.
+    #[test]
+    fn a_frame_still_may_not_run_a_script_read_a_file_or_start_a_program() {
+        for refused in [
+            "javascript:alert(1)",
+            "JavaScript:void(0)",
+            "file:///etc/passwd",
+            "file://host/share",
+            "mailto:a@b.c",
+            "tel:123",
+            "ms-settings:network",
+            "x-steam://run/1",
+            "slack://open",
+            "vbscript:msgbox(1)",
+            "about:config",
+            "about:",
+            "view-source:https://example.com/",
+        ] {
+            assert!(!allows_frame(refused), "{refused}");
+            assert!(!allows(refused), "{refused}");
+            assert!(!allows_request(refused), "{refused}");
+        }
+    }
+
+    /// The top level, and a request to open a page, are as strict as before the frame rule.
+    #[test]
+    fn the_top_level_and_a_request_still_refuse_data_and_srcdoc() {
+        for frame_only in ["data:text/html,<p>x</p>", "data:,x", "about:srcdoc"] {
+            assert!(!allows(frame_only), "{frame_only}");
+            assert!(!allows_request(frame_only), "{frame_only}");
+        }
+        assert!(allows_request("https://example.com/") && allows("about:blank"));
+    }
+
     #[test]
     fn a_request_to_open_a_page_is_http_or_https_only() {
         assert!(allows_request("https://example.com/"));
