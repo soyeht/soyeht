@@ -31,6 +31,7 @@ and a newline.
 |---|---|
 | `format` | The same whole number, 1. |
 | `channel` | One of `channels` (today `stable`). |
+| `sequence` | A whole number from 1 to `manifest.maxSequence` (2^53 - 1) that rises with every manifest published. `release_manifest.py` writes the signing time in seconds. Devices refuse a manifest below the highest one they have read (section 3). |
 | `version` | `MAJOR.MINOR.PATCH`: three plain numbers, none with a leading zero, each below 1,000 (ADR 0115). |
 | `minimumSupportedVersion` | The same form, not above `version`. |
 | `releaseNotesUrl` | An address below one of `urlPrefixes`. |
@@ -39,8 +40,16 @@ and a newline.
 A package: `system` (one of `systems`: `macos`, `linux`, `windows`, as `std::env::consts::OS`
 spells them), `architecture` (one of `architectures`: `aarch64`, `x86_64`, as `ARCH` spells them),
 `url` (below a prefix of `urlPrefixes`), `sha256` (64 lowercase hexadecimal digits), `size` (a whole
-number from 1 to `manifest.maxPackageBytes`, 4 GiB). An address is printable ASCII without a space
-and at most 2,048 bytes. Unknown fields are ignored.
+number from 1 to `manifest.maxPackageBytes`, 4 GiB). Unknown fields are ignored.
+
+An **address** (a package's `url`, `releaseNotesUrl`) is printable ASCII without a space, at most
+`manifest.maxAddressBytes` (2,048) bytes, starts with one of `urlPrefixes`, and names a file by a
+plain path: it has no backslash, its path (the part before `?` or `#`) holds no `%2f` or `%5c` in
+any case, and none of its `/`-separated segments is `.`, `..` or an encoding of either (`%2e`,
+`.%2e`, `%2e.`, `%2e%2e`, in any case). A prefix check alone would let `.../releases/../x` leave
+the release pages once a server or a browser resolves the path. `sha256` has
+`manifest.sha256HexLength` (64) digits and every part of a version is below
+`manifest.versionPartLimit` (1,000).
 
 ## 3. Reading it
 
@@ -51,18 +60,28 @@ The order is fixed, because the vectors fix the failure each broken manifest end
 3. Not JSON, not the envelope, or a `format` that is not the supported one: `badEnvelope`.
 4. `keyId` is not a key of the build: `unknownKey`.
 5. `payload` or `signature` is not canonical base64, or the signature is not 64 bytes: `badEnvelope`.
-6. The signature does not verify under that key (strictly: a scalar at or above the group order and
-   a weak key are refused): `badSignature`.
+6. The signature does not verify under that key: `badSignature`. A scalar at or above the group
+   order is refused, and so is a key that is not a point or has an order of 8 or less (with such a
+   key the identity point and a zero scalar verify every message). `contracts/update.json` cannot
+   hold such a key (`validate_update` checks it), and every reader refuses one anyway, because
+   CryptoKit's verifier is not strict: the Mac compares the key with `UpdatePolicy.smallOrderKeys`,
+   the desktop asks `is_weak()` and the script computes the order.
 7. The payload breaks a rule of section 2: `badManifest`.
 8. The payload's `channel` is not the channel the build follows: `wrongChannel`.
-9. `version` is not above the running version: up to date. A manifest that is older or equal never
+9. `sequence` is below the `floor`, the highest sequence this device has read: `staleManifest`.
+    An old manifest that someone replays, or a release page that is rolled back, is refused once
+    this device has read a newer one. A device that reads a manifest of any outcome (up to date or available) remembers its sequence if it is the highest.
+    A re-published manifest keeps its sequence and is read again. A release that must be rolled
+    back is published again with a higher `sequence`.
+10. `version` is not above the running version: up to date. A manifest that is older or equal never
    offers anything, whatever else it holds.
-10. No package for the build's system and architecture: `noPackage`.
-11. Otherwise a newer version is **available**, with that package. It is **required** when the
+11. No package for the build's system and architecture: `noPackage`.
+12. Otherwise a newer version is **available**, with that package. It is **required** when the
     running version is below `minimumSupportedVersion`.
 
-A fetch that fails is `unreachable` (no network, a status other than 200, a timeout, a redirect
-away from HTTPS); it is the client's, not the reader's. The failures are `failures` of
+A build whose own version is not three plain numbers ends the check as `unknownBuild`. A fetch
+that fails is `unreachable` (no network, a status other than 200, a timeout, a redirect away from
+HTTPS); both are the client's, not the reader's. The failures are `failures` of
 `update.json`; the logs say `kind` with the id, never the text of an error.
 
 The version compared is `MAJOR.MINOR.PATCH` only. A re-upload of one version (the revision of
@@ -76,15 +95,33 @@ ADR 0115) is not an update.
 - The build's own identity: the product version (`ProductVersion.current`, `CARGO_PKG_VERSION`),
   its system and architecture, and the `defaultChannel`.
 
-## 5. When a client asks
+## 5. What a check sends
+
+Each check is one HTTPS `GET` of `manifest.url`, which GitHub answers, with a redirect to the file
+store of its releases. What leaves the machine:
+
+- the IP address of the connection (the server sees it, as with any request);
+- the `User-Agent` `check.userAgent` (`Soyeht-update-check`), the same on both clients, so the
+  request names neither the version, nor the system, nor the architecture, nor any identifier of
+  the person or the installation. It sends no cookie and no credential;
+- the headers the HTTP stack adds on its own: `Host`, `Accept`, and on the Mac `URLSession`'s
+  `Accept-Language` and `Accept-Encoding`. The desktop passes `--disable` to curl so that no
+  `.curlrc` can add more.
+
+The release is public, so the server cannot know who asked beyond the address. The check is on by
+default, and the first request is made at launch without asking: that is an owner decision (ADR
+0122), and the switch turns it off.
+
+## 6. When a client asks
 
 At start, then every `check.intervalSeconds` (a day) while it runs, and when the person presses
-"Check now". The fetch has `check.timeoutSeconds` (20) and follows redirects over HTTPS only. The
+"Check now". One check runs at a time. The fetch has `check.timeoutSeconds` (20), opens its connection in
+`check.connectSeconds` (10) and follows at most `check.maxRedirects` (5), over HTTPS only. The
 switch "Check for updates automatically" is on by default, per device (the desktop's local
 preferences file `client-preferences.json`, the Mac's user defaults), and when it is off nothing is
 fetched and any offer is forgotten. The check does not need the engine.
 
-## 6. What the person sees
+## 7. What the person sees
 
 The wording is the `texts` of `update.json`, and the sentence of each state is fixed by
 `contracts/vectors/update-status.json`:
@@ -105,7 +142,7 @@ offer, "Download Soyeht {version}" and "Release notes", which open the package a
 notes address in the system browser. While a newer version is on offer the Settings button of the
 rail carries the accent dot. No token, color or font is added.
 
-## 7. Writing it
+## 8. Writing it
 
 `scripts/release_manifest.py` (see its docstring):
 
@@ -117,15 +154,15 @@ rail carries the accent dot. No token, color or font is added.
 - `verify FILE [--running X.Y.Z --system S --architecture A]` reads a manifest against the
   contract's keys (or `--trust-key ID=BASE64`) and prints what it holds and what that version would do.
 
-## 8. Replacing a running installation (not in this version)
+## 9. Replacing a running installation (not in this version)
 
 The rule that phase 2 and a manual update both follow (ADR 0122): never stop the supervisor unless
 its program changed; when it changed, say that terminals end and wait for the person's answer;
 restart the engine, which reconnects to the supervisor and restores the panes (contract 07).
 
-## 9. Tests
+## 10. Tests
 
-- `contracts/vectors/update.json` (46 cases) and `contracts/vectors/update-status.json` (10),
+- `contracts/vectors/update.json` (over 60 cases) and `contracts/vectors/update-status.json` (10),
   passed by `soyeht_protocol::update` and `soyeht_client::update` (Rust),
   `UpdateCheckTests`, `UpdateCheckerTests` (Swift) and `contracts/test_update_manifest.py`
   (Python, which also checks the vectors file is current and Ed25519 against RFC 8032).

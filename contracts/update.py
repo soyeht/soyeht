@@ -14,6 +14,8 @@ import json
 import re
 import subprocess
 
+import ed25519
+import product_version
 from generated_header import header_text
 
 UPDATE_SOURCE = "contracts/update.json"
@@ -21,7 +23,9 @@ RUST_OUTPUT = "engine/soyeht-protocol/src/update_policy.rs"
 SWIFT_OUTPUT = "contracts/swift/Sources/SoyehtProtocol/UpdatePolicy.swift"
 FIELDS = ("version", "manifest", "signature", "channels", "defaultChannel", "systems",
           "architectures", "urlPrefixes", "release", "check", "texts", "failures")
-MANIFEST_FIELDS = ("asset", "url", "format", "maxBytes", "maxPackages", "maxPackageBytes")
+MANIFEST_FIELDS = ("asset", "url", "format", "maxBytes", "maxPackages", "maxPackageBytes", "maxAddressBytes",
+                   "sha256HexLength", "versionPartLimit", "maxSequence")
+CHECK_FIELDS = ("intervalSeconds", "timeoutSeconds", "connectSeconds", "maxRedirects", "userAgent")
 WORD = re.compile(r"[a-z][a-z0-9_]*")
 FAILURE_ID = re.compile(r"[a-z][A-Za-z0-9]*")
 TEXT_KEY = re.compile(r"[a-z][A-Za-z0-9]*")
@@ -57,8 +61,12 @@ def validate_update(document):
     manifest = document["manifest"]
     if set(manifest) != set(MANIFEST_FIELDS) or manifest["format"] != 1:
         raise ValueError(f"update manifest takes exactly {', '.join(MANIFEST_FIELDS)}, format 1")
-    for field in ("maxBytes", "maxPackages", "maxPackageBytes"):
+    for field in MANIFEST_FIELDS[4:]:
         _whole(manifest[field], field)
+    if manifest["versionPartLimit"] != product_version.PART_LIMIT:
+        raise ValueError("versionPartLimit is the limit of a part of the product version (ADR 0115)")
+    if manifest["sha256HexLength"] != 64:
+        raise ValueError("sha256HexLength is the 64 digits of a SHA-256")
     signature = document["signature"]
     if set(signature) != {"algorithm", "context", "publicKeys"} or signature["algorithm"] != "ed25519":
         raise ValueError("update signature takes an ed25519 algorithm, a context and publicKeys")
@@ -71,7 +79,8 @@ def validate_update(document):
     for key in signature["publicKeys"]:
         if set(key) != {"id", "key"} or not KEY_ID.fullmatch(key["id"]):
             raise ValueError("an update public key is an id (lowercase, digits, dashes) and a key")
-        public_key_bytes(key["key"])
+        if ed25519.is_weak(public_key_bytes(key["key"])):
+            raise ValueError(f"update public key {key['id']} is not a point, or has an order of 8 or less")
     _words(document["channels"], "channels")
     _words(document["systems"], "systems")
     _words(document["architectures"], "architectures")
@@ -90,10 +99,13 @@ def validate_update(document):
     ) or "{file}" not in release["packageUrl"]:
         raise ValueError("update release templates are addresses below a prefix with {version} (and {file} for a package)")
     check = document["check"]
-    if set(check) != {"intervalSeconds", "timeoutSeconds"}:
-        raise ValueError("update check takes intervalSeconds and timeoutSeconds")
-    _whole(check["intervalSeconds"], "intervalSeconds")
-    _whole(check["timeoutSeconds"], "timeoutSeconds")
+    if set(check) != set(CHECK_FIELDS):
+        raise ValueError(f"update check takes exactly {', '.join(CHECK_FIELDS)}")
+    for field in CHECK_FIELDS[:4]:
+        _whole(check[field], field)
+    agent = check["userAgent"]
+    if not agent.isascii() or not agent.isprintable() or not agent.strip() or '"' in agent or "\\" in agent:
+        raise ValueError("the update user agent is printable ASCII without quotes or backslashes")
     texts = document["texts"]
     if not texts or not all(
         TEXT_KEY.fullmatch(key) and isinstance(text, str) and text for key, text in texts.items()
@@ -148,6 +160,14 @@ pub const MANIFEST_FORMAT: u32 = {manifest["format"]};
 pub const MANIFEST_MAX_BYTES: usize = {manifest["maxBytes"]};
 pub const MAX_PACKAGES: usize = {manifest["maxPackages"]};
 pub const MAX_PACKAGE_BYTES: u64 = {manifest["maxPackageBytes"]};
+/// The longest address a manifest may carry.
+pub const MAX_ADDRESS_BYTES: usize = {manifest["maxAddressBytes"]};
+/// The digits of a hexadecimal SHA-256.
+pub const SHA256_HEX_LENGTH: usize = {manifest["sha256HexLength"]};
+/// Each part of a version stays below this (ADR 0115).
+pub const VERSION_PART_LIMIT: u32 = {manifest["versionPartLimit"]};
+/// The largest sequence number a manifest may carry.
+pub const MAX_SEQUENCE: u64 = {manifest["maxSequence"]};
 /// Put before the payload in the bytes that are signed.
 pub const SIGNING_CONTEXT: &[u8] = b"{context}";
 /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.
@@ -162,6 +182,12 @@ pub const DEFAULT_CHANNEL: &str = "{document["defaultChannel"]}";
 pub const CHECK_INTERVAL_SECONDS: u64 = {check["intervalSeconds"]};
 /// How long a fetch of the manifest may take.
 pub const CHECK_TIMEOUT_SECONDS: u64 = {check["timeoutSeconds"]};
+/// How long a connection may take to open.
+pub const CONNECT_SECONDS: u64 = {check["connectSeconds"]};
+/// Redirects a release asset address goes through before the file.
+pub const MAX_REDIRECTS: u64 = {check["maxRedirects"]};
+/// The one thing a check says about the program that asks: no version, no system.
+pub const USER_AGENT: &str = "{check["userAgent"]}";
 
 /// What both clients say about the check; `{{version}}` is the version the sentence is about.
 pub mod text {{
@@ -192,6 +218,7 @@ def _swift_list(name, values, doc):
 def render_swift(document, header):
     manifest, signature, check = document["manifest"], document["signature"], document["check"]
     keys = ", ".join(f'UpdatePublicKey(id: "{k["id"]}", key: "{k["key"]}")' for k in signature["publicKeys"])
+    small_order = ", ".join(f'"{base64.b64encode(raw).decode()}"' for raw in ed25519.small_order_encodings())
     context = signature["context"].replace("\n", "\\n")
     cases = "".join(f"  /// {f['meaning']}\n  case {f['id']}\n" for f in document["failures"])
     return (
@@ -208,6 +235,13 @@ def render_swift(document, header):
         f"  public static let manifestMaxBytes = {manifest['maxBytes']}\n"
         f"  public static let maxPackages = {manifest['maxPackages']}\n"
         f"  public static let maxPackageBytes: UInt64 = {manifest['maxPackageBytes']}\n"
+        f"  /// The longest address a manifest may carry.\n  public static let maxAddressBytes = {manifest['maxAddressBytes']}\n"
+        f"  /// The digits of a hexadecimal SHA-256.\n  public static let sha256HexLength = {manifest['sha256HexLength']}\n"
+        f"  /// Each part of a version stays below this (ADR 0115).\n  public static let versionPartLimit = {manifest['versionPartLimit']}\n"
+        f"  /// The largest sequence number a manifest may carry.\n  public static let maxSequence: UInt64 = {manifest['maxSequence']}\n"
+        "  /// Every 32-byte form (base64) of a point of order 8 or less: no such key may be trusted.\n"
+        "  /// CryptoKit does not refuse them as a strict verifier does.\n"
+        f"  public static let smallOrderKeys: Set<String> = [{small_order}]\n"
         f'  /// Put before the payload in the bytes that are signed.\n  public static let signingContext = "{context}"\n'
         "  /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.\n"
         f"  public static let publicKeys: [UpdatePublicKey] = [{keys}]\n"
@@ -218,6 +252,10 @@ def render_swift(document, header):
         + _swift_list("urlPrefixes", document["urlPrefixes"], "A package and a notes address must start with one of these.")
         + f"  /// How often a running client asks again.\n  public static let checkIntervalSeconds = {check['intervalSeconds']}\n"
         f"  /// How long a fetch of the manifest may take.\n  public static let checkTimeoutSeconds = {check['timeoutSeconds']}\n"
+        f"  /// How long a connection may take to open.\n  public static let connectSeconds = {check['connectSeconds']}\n"
+        f"  /// Redirects a release asset address goes through before the file.\n  public static let maxRedirects = {check['maxRedirects']}\n"
+        f"  /// The one thing a check says about the program that asks: no version, no system.\n"
+        f'  public static let userAgent = "{check["userAgent"]}"\n'
         "}\n\n"
         "/// What both clients say about the check; `{version}` is the version the sentence is about.\n"
         "public enum UpdateText {\n"

@@ -20,6 +20,17 @@ public enum UpdatePolicy {
   public static let manifestMaxBytes = 65536
   public static let maxPackages = 32
   public static let maxPackageBytes: UInt64 = 4294967296
+  /// The longest address a manifest may carry.
+  public static let maxAddressBytes = 2048
+  /// The digits of a hexadecimal SHA-256.
+  public static let sha256HexLength = 64
+  /// Each part of a version stays below this (ADR 0115).
+  public static let versionPartLimit = 1000
+  /// The largest sequence number a manifest may carry.
+  public static let maxSequence: UInt64 = 9007199254740991
+  /// Every 32-byte form (base64) of a point of order 8 or less: no such key may be trusted.
+  /// CryptoKit does not refuse them as a strict verifier does.
+  public static let smallOrderKeys: Set<String> = ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=", "JuiVj8KyJ7BFw/SJ8u+Y8NXfrAXTxjM5sTgCiG1T/AU=", "JuiVj8KyJ7BFw/SJ8u+Y8NXfrAXTxjM5sTgCiG1T/IU=", "xxdqcD1N2E+6PAt2DRBnDyogU/osOczGTsf9d5KsA3o=", "xxdqcD1N2E+6PAt2DRBnDyogU/osOczGTsf9d5KsA/o=", "7P///////////////////////////////////////38=", "7P////////////////////////////////////////8=", "7f///////////////////////////////////////38=", "7f////////////////////////////////////////8=", "7v///////////////////////////////////////38=", "7v////////////////////////////////////////8="]
   /// Put before the payload in the bytes that are signed.
   public static let signingContext = "soyeht-update-manifest-v1\n"
   /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.
@@ -37,6 +48,12 @@ public enum UpdatePolicy {
   public static let checkIntervalSeconds = 86400
   /// How long a fetch of the manifest may take.
   public static let checkTimeoutSeconds = 20
+  /// How long a connection may take to open.
+  public static let connectSeconds = 10
+  /// Redirects a release asset address goes through before the file.
+  public static let maxRedirects = 5
+  /// The one thing a check says about the program that asks: no version, no system.
+  public static let userAgent = "Soyeht-update-check"
 }
 
 /// What both clients say about the check; `{version}` is the version the sentence is about.
@@ -77,4 +94,8 @@ public enum UpdateFailure: String, Error, Sendable, Equatable {
   case wrongChannel
   /// A newer version exists but has no package for this system and architecture.
   case noPackage
+  /// The manifest is older than one this device has already seen.
+  case staleManifest
+  /// This build's own version is not one the rules can compare.
+  case unknownBuild
 }

@@ -24,6 +24,7 @@ import os
 import re
 import secrets
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,7 +98,7 @@ def sha256_of(path):
     return digest.hexdigest()
 
 
-def build(dist, environment, minimum, keys=None):
+def build(dist, environment, minimum, keys=None, sequence=None):
     release = product_version.load((ROOT / product_version.RELEASE_SOURCE).read_text())
     version = str(release.version)
     keys = POLICY["signature"]["publicKeys"] if keys is None else keys
@@ -114,7 +115,10 @@ def build(dist, environment, minimum, keys=None):
         }
         for (system, architecture), path in package_files(dist, version).items()
     ]
-    payload = manifest.payload_text(version, minimum, templates["notesUrl"].format(version=version), packages)
+    # The signing time in seconds: it only grows, and a manifest signed again for the same version
+    # (a changed minimum) still outranks the one before it.
+    sequence = int(time.time()) if sequence is None else sequence
+    payload = manifest.payload_text(version, minimum, templates["notesUrl"].format(version=version), packages, sequence)
     try:
         manifest.check_payload(payload)
     except manifest.Failed:
@@ -129,7 +133,7 @@ def build(dist, environment, minimum, keys=None):
 def describe(text, keys, running, system, architecture, channel):
     payload = manifest.check_payload(manifest.open_envelope(text, keys))
     lines = [f"version {payload['version']} (minimum supported {payload['minimumSupportedVersion']}, "
-             f"channel {payload['channel']})", f"notes {payload['releaseNotesUrl']}"]
+             f"channel {payload['channel']}, sequence {payload['sequence']})", f"notes {payload['releaseNotesUrl']}"]
     lines += [f"{p['system']}-{p['architecture']}  {p['size']} bytes  {p['sha256']}  {p['url']}" for p in payload["packages"]]
     if running:
         version = manifest.parse_version(running)
@@ -158,7 +162,7 @@ def run(args, environment):
         return
     if args.command == "build":
         dist = Path(args.dist)
-        text, packages = build(dist, environment, args.minimum)
+        text, packages = build(dist, environment, args.minimum, sequence=args.sequence)
         output = Path(args.output) if args.output else dist / POLICY["manifest"]["asset"]
         output.write_text(text)
         print(f"wrote {output} with {len(packages)} packages")
@@ -177,6 +181,8 @@ def main(argv=None, environment=None):
     made = commands.add_parser("build", help="write and sign the manifest of the packages in dist/")
     made.add_argument("--dist", default=str(ROOT / "dist"))
     made.add_argument("--output", help="where to write it (default: the asset name in --dist)")
+    made.add_argument("--sequence", type=int, help="the manifest's sequence number (default: the signing time in "
+                      "seconds; it must be above that of the last manifest published)")
     made.add_argument("--minimum", default="0.0.0",
                       help="the oldest version that is still supported (default: every version is)")
     checked = commands.add_parser("verify", help="read a manifest as a client would")

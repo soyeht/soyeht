@@ -26,9 +26,9 @@ POLICY = json.loads((Path(__file__).resolve().parent.parent / UPDATE_SOURCE).rea
 validate_update(POLICY)
 
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
-SHA256 = re.compile(r"[0-9a-f]{64}")
-PART_LIMIT = 1000
-URL_LIMIT = 2048
+HEX = frozenset("0123456789abcdef")
+# A path segment that moves up or stays, in any spelling a browser or a server may read as one.
+DOT_SEGMENTS = frozenset({".", "..", "%2e", ".%2e", "%2e.", "%2e%2e"})
 PACKAGE_FIELDS = {"system", "architecture", "url", "sha256", "size"}
 
 
@@ -40,12 +40,12 @@ class Failed(Exception):
         self.failure = failure
 
 
-def parse_version(text):
+def parse_version(text, policy=POLICY):
     """`MAJOR.MINOR.PATCH` as a tuple, the rule of `contracts/product_version.py`; or None."""
     if not isinstance(text, str) or not VERSION.fullmatch(text):
         return None
     parts = tuple(int(part) for part in text.split("."))
-    return parts if max(parts) < PART_LIMIT else None
+    return parts if max(parts) < policy["manifest"]["versionPartLimit"] else None
 
 
 def canonical_base64(text):
@@ -80,11 +80,12 @@ def envelope(payload, seed, key_id, policy=POLICY):
     ) + "\n"
 
 
-def payload_text(version, minimum, notes_url, packages, channel=None, policy=POLICY):
+def payload_text(version, minimum, notes_url, packages, sequence, channel=None, policy=POLICY):
     """The payload for `packages` (dicts with the five package fields), as bytes."""
     document = {
         "format": policy["manifest"]["format"],
         "channel": channel or policy["defaultChannel"],
+        "sequence": sequence,
         "version": version,
         "minimumSupportedVersion": minimum,
         "releaseNotesUrl": notes_url,
@@ -94,12 +95,18 @@ def payload_text(version, minimum, notes_url, packages, channel=None, policy=POL
 
 
 def _address(value, policy):
-    return (
+    """An address below an allowed prefix that names a file by a plain path: printable ASCII, no
+    backslash, no encoded slash or backslash, and no segment that moves up or stays."""
+    if not (
         isinstance(value, str)
-        and len(value) <= URL_LIMIT
+        and len(value) <= policy["manifest"]["maxAddressBytes"]
         and all(0x21 <= ord(c) <= 0x7E for c in value)
         and any(value.startswith(prefix) for prefix in policy["urlPrefixes"])
-    )
+        and "\\" not in value
+    ):
+        return False
+    path = re.split(r"[?#]", value, maxsplit=1)[0].lower()
+    return "%2f" not in path and "%5c" not in path and not DOT_SEGMENTS & set(path.split("/"))
 
 
 def check_payload(payload, policy=POLICY):
@@ -111,10 +118,14 @@ def check_payload(payload, policy=POLICY):
     manifest = policy["manifest"]
     if not _format_ok(document, policy):
         raise Failed("badManifest")
-    version, minimum = parse_version(document.get("version")), parse_version(document.get("minimumSupportedVersion"))
+    version = parse_version(document.get("version"), policy)
+    minimum = parse_version(document.get("minimumSupportedVersion"), policy)
     packages = document.get("packages")
+    sequence = document.get("sequence")
     if (
         document.get("channel") not in policy["channels"]
+        or type(sequence) is not int
+        or not 0 < sequence <= manifest["maxSequence"]
         or version is None
         or minimum is None
         or minimum > version
@@ -125,7 +136,12 @@ def check_payload(payload, policy=POLICY):
         raise Failed("badManifest")
     seen = set()
     for package in packages:
-        if not isinstance(package, dict) or not PACKAGE_FIELDS <= set(package):
+        if (
+            not isinstance(package, dict)
+            or not PACKAGE_FIELDS <= set(package)
+            or not isinstance(package["system"], str)
+            or not isinstance(package["architecture"], str)
+        ):
             raise Failed("badManifest")
         target = (package["system"], package["architecture"])
         size = package["size"]
@@ -135,7 +151,8 @@ def check_payload(payload, policy=POLICY):
             or target[1] not in policy["architectures"]
             or not _address(package["url"], policy)
             or not isinstance(package["sha256"], str)
-            or not SHA256.fullmatch(package["sha256"])
+            or len(package["sha256"]) != manifest["sha256HexLength"]
+            or not HEX.issuperset(package["sha256"])
             or type(size) is not int
             or not 0 < size <= manifest["maxPackageBytes"]
         ):
@@ -171,14 +188,19 @@ def open_envelope(text, keys, policy=POLICY):
     return payload
 
 
-def evaluate(text, running, system, architecture, channel, keys, policy=POLICY):
-    """What a build at version `running` (a tuple) should do with the manifest `text`."""
+def evaluate(text, running, system, architecture, channel, keys, floor=0, policy=POLICY):
+    """What a build at version `running` (a tuple) should do with the manifest `text`.
+
+    `floor` is the highest sequence this device has seen: a manifest below it is refused, and the
+    sequence of one that is read is part of the answer, for the caller to remember."""
     document = check_payload(open_envelope(text, keys, policy), policy)
     if document["channel"] != channel:
         raise Failed("wrongChannel")
-    version = parse_version(document["version"])
+    if document["sequence"] < floor:
+        raise Failed("staleManifest")
+    version = parse_version(document["version"], policy)
     if version <= running:
-        return {"status": "upToDate"}
+        return {"status": "upToDate", "sequence": document["sequence"]}
     package = next(
         (p for p in document["packages"] if (p["system"], p["architecture"]) == (system, architecture)), None
     )
@@ -186,16 +208,17 @@ def evaluate(text, running, system, architecture, channel, keys, policy=POLICY):
         raise Failed("noPackage")
     return {
         "status": "available",
+        "sequence": document["sequence"],
         "version": document["version"],
-        "required": running < parse_version(document["minimumSupportedVersion"]),
+        "required": running < parse_version(document["minimumSupportedVersion"], policy),
         "notesUrl": document["releaseNotesUrl"],
         "package": {key: package[key] for key in ("url", "sha256", "size")},
     }
 
 
-def outcome(text, running, system, architecture, channel, keys, policy=POLICY):
+def outcome(text, running, system, architecture, channel, keys, floor=0, policy=POLICY):
     """`evaluate`, with a failure as a result: what the vectors record."""
     try:
-        return evaluate(text, running, system, architecture, channel, keys, policy)
+        return evaluate(text, running, system, architecture, channel, keys, floor, policy)
     except Failed as failed:
         return {"status": "failed", "failure": failed.failure}

@@ -171,7 +171,7 @@ signed manifest is published, the Ed25519 public keys that may sign it (empty un
 exists, and a build with no key checks nothing), its limits, the systems, architectures and channels
 it may name, the daily interval, the sentences both clients show and the failures a check ends in.
 The generator emits `engine/soyeht-protocol/src/update_policy.rs` and
-`contracts/swift/Sources/SoyehtProtocol/UpdatePolicy.swift`. `vectors/update.json` holds 46 signed
+`contracts/swift/Sources/SoyehtProtocol/UpdatePolicy.swift`. `vectors/update.json` holds more than 60 signed
 manifests (good, tampered and broken) that `soyeht_protocol::update`, `UpdateCheck` and
 `update_manifest.py` all read the same way, and `vectors/update-status.json` the sentence of each
 state; regenerate the first with `uv run python contracts/test_update_manifest.py --write`.
