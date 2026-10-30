@@ -121,14 +121,7 @@ impl Workbench {
                 )
             })
             .when(waiting == 0 && working, |button| {
-                button.child(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .right_0()
-                        .p(px(space::X2))
-                        .child(working_dot(palette)),
-                )
+                button.child(corner_dot(palette))
             })
             .into_any_element()
     }
@@ -136,6 +129,7 @@ impl Workbench {
     fn settings_button(&mut self, palette: &'static Palette, cx: &mut Context<Self>) -> AnyElement {
         let open = self.menus.is_open(&Menu::Settings);
         rail_slot("rail-settings".into(), open, palette)
+            .relative()
             .tooltip(hint("Settings", palette))
             .on_click(
                 cx.listener(|this, _: &ClickEvent, _, cx| this.toggle_menu(Menu::Settings, cx)),
@@ -149,8 +143,23 @@ impl Workbench {
                     palette.secondary
                 },
             ))
+            // A newer Soyeht is published (ADR 0122): the dot of a working agent, in the same
+            // corner. Preferences, under Setup, say which and offer the download.
+            .when(self.updates.offer().is_some(), |button| {
+                button.child(corner_dot(palette))
+            })
             .into_any_element()
     }
+}
+
+/// The accent dot in the top right corner of a rail button.
+fn corner_dot(palette: &Palette) -> Div {
+    div()
+        .absolute()
+        .top_0()
+        .right_0()
+        .p(px(space::X2))
+        .child(working_dot(palette))
 }
 
 /// A square button of the rail: on the well while it is the selected one, on the hover color
