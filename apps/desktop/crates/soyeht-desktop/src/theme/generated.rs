@@ -415,6 +415,7 @@ pub mod layout {
     pub const WORKSPACE_OVERFLOW_POPOVER_WIDTH: f32 = 340.0;
     pub const WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT: f32 = 420.0;
     pub const READINESS_WIDTH: f32 = 480.0;
+    pub const READINESS_ROW_HEIGHT: f32 = 30.0;
     pub const LOOP_PANEL_WIDTH: f32 = 400.0;
     pub const TASK_COLUMN_WIDTH: f32 = 250.0;
     pub const TASK_COLUMN_MIN_HEIGHT: f32 = 500.0;

@@ -13,7 +13,7 @@ use crate::{
     commands::{CommandOutput, Commands, require},
     error::{Error, Result},
     layout::Layout,
-    render::render,
+    render::{encode_task_file, render},
     system::{Component, System},
 };
 use soyeht_platform::fs::{
@@ -146,6 +146,23 @@ impl<'a, C: Commands> Manager<'a, C> {
         Ok(())
     }
 
+    /// Whether the definition on disk is the one `install` would write for programs found in
+    /// `programs`: the same bytes. A caller that can be moved (the Mac app) asks this before it
+    /// installs, so a registration that is right is left alone, and one that a person stopped
+    /// with `stop` is not started again.
+    pub fn is_current(&self, programs: &Path, component: Component) -> Result<bool> {
+        let definition = self.layout.definition(component, programs)?;
+        let wanted = file_bytes(
+            self.layout.system,
+            &render(self.layout.system, &definition)?,
+        );
+        match fs::read(self.file(component)) {
+            Ok(found) => Ok(found == wanted),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub fn status(&self, component: Component) -> Result<Status> {
         let (registered, running) = match self.layout.system {
             System::Macos => self.launchd_status(component)?,
@@ -188,9 +205,23 @@ fn ordered(components: &[Component]) -> Vec<Component> {
         .collect()
 }
 
+/// The bytes of a definition file: a Task Scheduler file is UTF-16, the others are text.
+fn file_bytes(system: System, text: &str) -> Vec<u8> {
+    match system {
+        System::Windows => encode_task_file(text),
+        System::Macos | System::Linux => text.as_bytes().to_vec(),
+    }
+}
+
 /// Replaces the file at `path`, making its folder when missing; a link at `path` is replaced,
-/// not written through.
+/// not written through. A regular file that already holds exactly `bytes` is left alone, so a
+/// repair that changes nothing leaves no new modification time and no new background item for
+/// the system to announce.
 pub(crate) fn write_definition(path: &Path, bytes: &[u8]) -> Result<()> {
+    let regular = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file());
+    if regular && fs::read(path).is_ok_and(|found| found == bytes) {
+        return Ok(());
+    }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -212,5 +243,7 @@ pub(crate) fn path_text(path: &Path) -> Result<&str> {
     path.to_str().ok_or(Error::Unrepresentable("path"))
 }
 
+#[cfg(test)]
+mod current_tests;
 #[cfg(test)]
 mod tests;

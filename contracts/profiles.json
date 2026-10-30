@@ -21,6 +21,10 @@
         "linux": "soyeht-next/dev"
       },
       "tcpPort": 8291,
+      "displayNames": {
+        "macApp": "Soyeht Dev",
+        "window": "Soyeht · Dev"
+      },
       "appIds": {
         "macos": "com.soyeht.next.dev.mac",
         "linux": "com.soyeht.next.dev"
@@ -45,6 +49,10 @@
         "linux": "soyeht-next"
       },
       "tcpPort": 8290,
+      "displayNames": {
+        "macApp": "Soyeht Next",
+        "window": "Soyeht"
+      },
       "appIds": {
         "macos": "com.soyeht.next.mac",
         "linux": "com.soyeht.next"

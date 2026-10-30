@@ -39,6 +39,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 import release  # noqa: E402  (the scripts directory is on the path of a script)
 from generated_profile import BUILD_ENVIRONMENT, PROFILES  # noqa: E402
+from package_common import PackagingError, sha256_of  # noqa: E402
 
 PROFILE = "prod"
 APPLICATION_ID = PROFILES[PROFILE]["appIds"]["linux"]
@@ -131,10 +132,6 @@ class Plan:
 
     def artifact(self, out, extension):
         return out / f"{PACKAGE}-{self.version}-linux-{self.arch}.{extension}"
-
-
-class PackagingError(Exception):
-    pass
 
 
 # ---- reading the programs --------------------------------------------------------------------
@@ -358,10 +355,6 @@ def build_deb(plan, floor, sonames, out):
 
 
 # ---- the AppImage ----------------------------------------------------------------------------
-
-
-def sha256_of(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def runtime_file(arch, given, cache):

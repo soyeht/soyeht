@@ -3,6 +3,8 @@ public struct ProfileValues: Sendable {
     public let name: String
     public let applicationSupportSubpath: String
     public let tcpPort: UInt16
+    public let macAppName: String
+    public let windowTitle: String
     public let appBundleId: String
     public let engineLaunchdLabel: String
     public let ptydLaunchdLabel: String
@@ -11,6 +13,8 @@ public struct ProfileValues: Sendable {
         name: "dev",
         applicationSupportSubpath: "Soyeht.next/dev",
         tcpPort: 8291,
+        macAppName: "Soyeht Dev",
+        windowTitle: "Soyeht · Dev",
         appBundleId: "com.soyeht.next.dev.mac",
         engineLaunchdLabel: "com.soyeht.next.dev.engine",
         ptydLaunchdLabel: "com.soyeht.next.dev.ptyd"
@@ -19,6 +23,8 @@ public struct ProfileValues: Sendable {
         name: "prod",
         applicationSupportSubpath: "Soyeht.next",
         tcpPort: 8290,
+        macAppName: "Soyeht Next",
+        windowTitle: "Soyeht",
         appBundleId: "com.soyeht.next.mac",
         engineLaunchdLabel: "com.soyeht.next.engine",
         ptydLaunchdLabel: "com.soyeht.next.ptyd"

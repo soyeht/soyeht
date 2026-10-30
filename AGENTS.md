@@ -41,7 +41,8 @@ Each layer depends only on the layers listed above it.
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
-     at login. Only the command line uses it; the engine does not register itself.
+     at login. Only the command line uses it; the engine does not register itself, and the Mac app
+     registers the services by running the `soyeht` command line it carries in its bundle (ADR 0120).
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
    and WebSocket API. The `soyeht-cli` binary uses protocol, platform and service
    (its tests also use ptyd and store); the `soyeht-mcp` binary uses protocol, platform

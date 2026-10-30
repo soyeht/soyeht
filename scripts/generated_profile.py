@@ -7,6 +7,10 @@ PROFILES = {
             "linux": "soyeht-next/dev"
         },
         "tcpPort": 8291,
+        "displayNames": {
+            "macApp": "Soyeht Dev",
+            "window": "Soyeht \u00b7 Dev"
+        },
         "appIds": {
             "macos": "com.soyeht.next.dev.mac",
             "linux": "com.soyeht.next.dev"
@@ -32,6 +36,10 @@ PROFILES = {
             "linux": "soyeht-next"
         },
         "tcpPort": 8290,
+        "displayNames": {
+            "macApp": "Soyeht Next",
+            "window": "Soyeht"
+        },
         "appIds": {
             "macos": "com.soyeht.next.mac",
             "linux": "com.soyeht.next"

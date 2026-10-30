@@ -14,6 +14,7 @@ struct SoyehtMacApp: App {
   @State private var attentionNotifications = AgentAttentionNotifications()
   @State private var editorInputPreferences = EditorInputPreferences()
   @State private var webLinkPreferences = WebLinkPreferences()
+  @State private var engineService = EngineServiceSetup()
   @State private var updateChecker = UpdateChecker()
   private let webHost: MacWebHost
 
@@ -28,7 +29,7 @@ struct SoyehtMacApp: App {
   }
 
   var body: some Scene {
-    Window("Soyeht · Dev", id: "main") {
+    Window(ActiveProfile.windowTitle, id: "main") {
       #if SOYEHT_PERFORMANCE_METER
         if let options = EditorPerformanceFixture.requestedOptions() {
           Color.clear.onAppear {
@@ -118,10 +119,25 @@ struct SoyehtMacApp: App {
       .environment(attentionNotifications)
       .environment(editorInputPreferences)
       .environment(webLinkPreferences)
+      .environment(engineService)
       .environment(updateChecker)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
       .task { updateChecker.start() }
+      .task { await engineService.refresh() }
+      .alert(
+        "Keep Soyeht running in the background?",
+        isPresented: Binding(
+          get: { engineService.shouldAsk && !client.connected },
+          set: { _ in })
+      ) {
+        Button("Turn on") { Task { await engineService.enable() } }
+        Button("Not now", role: .cancel) { engineService.decline() }
+      } message: {
+        Text(
+          "Soyeht's engine keeps your terminals and agents running when this window is closed, "
+            + "and starts when you log in. You can turn it on later from Preferences.")
+      }
   }
 
   /// Cycles the installed engines. With only one installed, the install step of another opens

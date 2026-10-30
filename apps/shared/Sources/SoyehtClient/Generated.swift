@@ -266,6 +266,7 @@ public enum DesignTokens {
     public static let workspaceOverflowPopoverWidth: CGFloat = 340
     public static let workspaceOverflowPopoverMaximumHeight: CGFloat = 420
     public static let readinessWidth: CGFloat = 480
+    public static let readinessRowHeight: CGFloat = 30
     public static let loopPanelWidth: CGFloat = 400
     public static let taskColumnWidth: CGFloat = 250
     public static let taskColumnMinHeight: CGFloat = 500
