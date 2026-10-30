@@ -93,18 +93,18 @@ impl Core {
             .panes
             .get(pane)
             .and_then(|saved| saved.stored.instance_id.clone());
-        if let Some(instance_id) = instance {
+        if let Some(instance_id) = &instance {
             // A close that fails is logged and tried again by the tick; the new process starts
-            // after it, not beside it.
-            self.close_and_wait(&instance_id);
+            // after it has been sent, not beside it.
+            self.close_process(instance_id);
         }
         // A lost link is rebuilt by the tick, which reconciles every pane.
         if self.ptyd.is_some() {
             // The recovery gives the pane a new identity and then spawns it, so a failed
             // spawn leaves a pane without a process: it is settled as a spawn (retried or
             // stopped), not only logged.
-            let recovered = self.recover_missing_agent(pane);
-            self.settle_spawn(pane, recovered);
+            let recovered = self.recover_missing_agent_after(pane, instance.as_deref());
+            self.spawn_begun(pane, recovered);
         }
     }
 }
@@ -275,6 +275,7 @@ mod tests {
         })));
 
         core.restart_after_role_change("agent");
+        crate::test_panes::apply_until_idle(&mut core);
 
         assert_eq!(*order.lock().unwrap(), ["close", "spawn"]);
         assert_eq!(

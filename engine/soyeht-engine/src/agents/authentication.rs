@@ -5,6 +5,7 @@ use super::{
     registry, responses,
     state::{Phase, State},
 };
+use crate::dispatch::Outcome;
 use crate::model::pending;
 use crate::{
     core::Core,
@@ -17,7 +18,7 @@ use soyeht_acp::session::AuthKind;
 use soyeht_platform::log::Line;
 use soyeht_protocol::PaneAuthFinishedDraft;
 use soyeht_protocol::{HarnessLaunch, PaneMode, PaneState, StateSource, method};
-use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
+use soyeht_ptyd::wire::{ProcessKind, Spawn};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -163,15 +164,23 @@ fn login_terminal(
 
 impl Core {
     /// `pane.auth.start`, `pane.auth.cancel` and `pane.auth.logout`.
-    pub fn agent_auth(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
+    pub fn agent_auth(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Outcome> {
         match method {
             method::PANE_AUTH_CANCEL => self.agent_auth_cancel(connection, params),
             method::PANE_AUTH_LOGOUT => self.agent_auth_logout(connection, params),
-            _ => self.agent_auth_start(connection, params),
+            _ => return self.agent_auth_start(connection, params),
         }
+        .map(Outcome::Reply)
     }
 
-    pub fn agent_auth_start(&mut self, connection: &str, params: &Value) -> Result<Value> {
+    /// Starts a sign-in. The terminal it opens answers the request once its process has
+    /// started, as `pane.create` does (ADR 0126).
+    pub fn agent_auth_start(&mut self, connection: &str, params: &Value) -> Result<Outcome> {
         let id = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(id)?;
         let relogin = state.is_signed_in();
@@ -184,15 +193,16 @@ impl Core {
                 .is_some_and(|p| !p.stored.closed && p.stored.pane.state != PaneState::Dead)
         }) {
             let result = json!({"paneId":id,"terminalPaneId":pane});
-            return Ok(self
-                .commit_agent(
+            return Ok(Outcome::Reply(
+                self.commit_agent(
                     self.panes[id].stored.clone(),
                     state,
                     Changes::default(),
                     Some((connection, method::PANE_AUTH_START, params)),
                     result,
                 )?
-                .result);
+                .result,
+            ));
         }
         if state
             .client
@@ -223,15 +233,16 @@ impl Core {
             .ok_or_else(|| errors::invalid("Authentication method is not offered"))?;
         if method.kind == AuthKind::Agent && !relogin {
             let changes = embedded_auth(&mut state, &method.public.id, self.now_ms())?;
-            return Ok(self
-                .commit_agent(
+            return Ok(Outcome::Reply(
+                self.commit_agent(
                     self.panes[id].stored.clone(),
                     state,
                     changes,
                     Some((connection, method::PANE_AUTH_START, params)),
                     json!({"paneId":id}),
                 )?
-                .result);
+                .result,
+            ));
         }
         if method.kind != AuthKind::Terminal {
             return Err(errors::invalid("Unsupported authentication method"));
@@ -267,10 +278,9 @@ impl Core {
                     screen,
                 },
             );
-            let spawned = self.spawn(&child_id);
-            self.settle_spawn(&child_id, spawned);
+            return self.spawn_then_reply(&child_id, mutation.result);
         }
-        Ok(mutation.result)
+        Ok(Outcome::Reply(mutation.result))
     }
 
     pub fn poll_agent_authentication(&mut self, id: &str) -> Result<()> {
@@ -300,13 +310,8 @@ impl Core {
             // The restart that picks up the new account waits for the turn.
             return Ok(());
         }
-        let Response::Instances(instances) = self.pty_request(Request::List)? else {
-            return Err(errors::ptyd_unavailable("Invalid sign-in process registry"));
-        };
-        let exit_code = instances
-            .iter()
-            .find(|i| i.spawn.instance_key == child.instance_key)
-            .and_then(|i| i.exit_code);
+        // The pane's drain recorded the exit status when it saw the process end.
+        let exit_code = child.pane.exit_code;
         let exited_cleanly = !child.closed && exit_code == Some(0);
         // The only durable account of why a sign-in process ended.
         Line::new("engine.sign_in_ended")

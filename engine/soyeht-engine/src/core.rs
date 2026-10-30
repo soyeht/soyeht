@@ -17,7 +17,7 @@ use soyeht_protocol::{
 };
 use soyeht_ptyd::{
     client::Client,
-    wire::{Instance, ProcessKind, Request, Response, Spawn},
+    wire::{Instance, Request, Response},
 };
 use soyeht_store::database::{Change, Event, Mutation, Store};
 use std::{
@@ -600,40 +600,7 @@ impl Core {
         self.spawn(id)
     }
 
-    pub fn spawn(&mut self, id: &str) -> Result<()> {
-        if self.agents.contains_key(id) {
-            return self.spawn_agent(id);
-        }
-        let pane = &self.panes[id].stored;
-        let managed = self
-            .terminal_harnesses
-            .get(id)
-            .map(|session| session.spawn.clone());
-        let launch: Option<Spawn> = if managed.is_some() {
-            managed
-        } else {
-            StorePort::pane_launch(&self.store, id).map_err(errors::storage)?
-        };
-        let config = Spawn {
-            instance_key: pane.instance_key.clone(),
-            generation: pane.pane.generation,
-            kind: ProcessKind::Pty,
-            cwd: pane.pane.cwd.clone(),
-            argv: launch
-                .as_ref()
-                .map(|l| l.argv.clone())
-                .unwrap_or_else(soyeht_ptyd::shell::default_login_shell),
-            env: launch.map(|l| l.env).unwrap_or_default(),
-            cols: pane.pane.cols as u16,
-            rows: pane.pane.rows as u16,
-        };
-        let Response::Instance(instance) = self.pty_request(Request::Spawn(config))? else {
-            return Err(errors::ptyd_unavailable("Invalid spawn response"));
-        };
-        self.adopt(id, &instance)
-    }
-
-    fn adopt(&mut self, id: &str, instance: &Instance) -> Result<()> {
+    pub(crate) fn adopt(&mut self, id: &str, instance: &Instance) -> Result<()> {
         if self.agents.contains_key(id) {
             return self.adopt_agent(id, instance);
         }
@@ -744,7 +711,7 @@ impl Core {
                         // A respawn that fails leaves the pane without a process: it is
                         // retried or stopped, not returned.
                         let recovered = self.recover_missing_agent(&id);
-                        self.settle_spawn(&id, recovered);
+                        self.spawn_begun(&id, recovered);
                     } else if errors::agent_poll_failure_is_global(&error) {
                         return Err(error);
                     } else {

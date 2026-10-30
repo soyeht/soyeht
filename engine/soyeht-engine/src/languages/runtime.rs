@@ -4,6 +4,7 @@ use crate::{
     errors::{self, Result},
     model,
     ports::StorePort,
+    process_start::Started,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -222,27 +223,65 @@ impl Core {
                 continue;
             }
             if let Err(error) = self.poll_language_server(&key) {
-                let marked = self.mark_language_unavailable(&key, &error.to_string());
-                errors::log_if_failed("engine.lsp_mark_unavailable_failed", marked);
-                let failed = self.fail_language_waiters(
-                    &key,
-                    errors::harness_unavailable("Language server became unavailable"),
-                );
-                // A failure here can leave editor requests waiting: it must reach the log.
-                errors::log_if_failed("engine.lsp_fail_waiters_failed", failed);
-                log::failure("engine.lsp_failed", &error);
+                self.language_failed(&key, &error);
             }
         }
     }
 
+    /// Asks the supervisor for the server's process, off the lock (ADR 0126). The server is
+    /// adopted when it has made it; a server restarted meanwhile starts under its new identity.
     fn spawn_language_server(&mut self, key: &str) -> Result<()> {
         let spawn = language(&self.languages, key)?.spawn()?;
-        let Response::Instance(instance) = self.pty_request(Request::Spawn(spawn))? else {
-            return Err(errors::ptyd_unavailable(
-                "Invalid language server spawn response",
-            ));
+        let (owner, key, identity) = (
+            format!("lsp:{key}:{}", spawn.instance_key),
+            key.to_owned(),
+            spawn.instance_key.clone(),
+        );
+        self.start_process(&owner, spawn, &[], move |core, started| {
+            core.finish_language_start(&key, &identity, started);
+            Ok(())
+        })
+    }
+
+    /// Takes the answer of the start of a language server's process under the lock. The process
+    /// of a server that was restarted or parked meanwhile is closed; a failure leaves the server
+    /// unavailable, as a failed poll does.
+    fn finish_language_start(&mut self, key: &str, identity: &str, started: Started) {
+        let result = match started {
+            Started::Process(instance) => {
+                let current = self.languages.get(key).is_some_and(|server| {
+                    server.instance_key == identity && server.instance_id.is_none()
+                });
+                if !current {
+                    return self.close_process(&instance.instance_id);
+                }
+                self.adopt_language_process(key, &instance)
+            }
+            Started::Failed(error) => Err(error),
+            // The reconciliation of the link that replaced it adopts or restarts every server.
+            Started::Stale => return,
         };
-        language_mut(&mut self.languages, key)?.adopt(&instance)?;
+        if let Err(error) = result {
+            self.language_failed(key, &error);
+        }
+    }
+
+    /// Leaves the server unavailable and fails the editor requests waiting for it, after a failure
+    /// that stops it.
+    fn language_failed(&mut self, key: &str, error: &errors::Error) {
+        let marked = self.mark_language_unavailable(key, &error.to_string());
+        errors::log_if_failed("engine.lsp_mark_unavailable_failed", marked);
+        let failed = self.fail_language_waiters(
+            key,
+            errors::harness_unavailable("Language server became unavailable"),
+        );
+        // A failure here can leave editor requests waiting: it must reach the log.
+        errors::log_if_failed("engine.lsp_fail_waiters_failed", failed);
+        log::failure("engine.lsp_failed", error);
+    }
+
+    fn adopt_language_process(&mut self, key: &str, instance: &Instance) -> Result<()> {
+        language_mut(&mut self.languages, key)?.adopt(instance)?;
         self.persist_language_server(key, Vec::new())?;
         let root = root_uri(Path::new(&language(&self.languages, key)?.root))?;
         let initialize = language_mut(&mut self.languages, key)?

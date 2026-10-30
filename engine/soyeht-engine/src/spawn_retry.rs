@@ -18,7 +18,7 @@ use crate::{
 };
 use soyeht_platform::log::Line;
 use soyeht_protocol::PaneState;
-use soyeht_ptyd::wire::Request;
+use soyeht_ptyd::wire::{Request, Response};
 use std::collections::BTreeMap;
 
 /// The delay after the first failed attempt is twice this; the delay doubles up to the cap.
@@ -120,9 +120,19 @@ impl Core {
         }
     }
 
+    /// Settles the result of beginning a start of `id`'s process: `Core::spawn`, or a recovery
+    /// that ends in it. A start that began has nothing to settle yet, and must not end the
+    /// failures it follows: [`Core::finish_pane_start`] settles it when the supervisor answers. A
+    /// start that could not begin is a failed one.
+    pub(crate) fn spawn_begun(&mut self, id: &str, begun: Result<()>) {
+        if let Err(error) = begun {
+            self.settle_spawn(id, Err(error));
+        }
+    }
+
     /// Counts one more failed start of `id`, and either schedules the next try or stops the
     /// pane.
-    fn schedule_spawn_retry(&mut self, id: &str) {
+    pub(crate) fn schedule_spawn_retry(&mut self, id: &str) {
         let now = self.now_ms();
         let pending = self
             .supervisor_retry
@@ -221,13 +231,38 @@ impl Core {
         }
     }
 
-    /// [`Core::close_process`] for a process that a spawn is about to replace: it returns once the
-    /// close has been sent, so the replacement never starts while the process it replaces (and
-    /// whatever session or folder it holds) is still open. The spawn that follows waits under the
-    /// lock too, and the wait goes with it (ADR 0119).
-    pub(crate) fn close_and_wait(&mut self, instance_id: &str) {
-        self.close_process(instance_id);
-        self.turn(&[instance_id]).wait();
+    /// Closes the process the supervisor started under `instance_key` for a pane that closed
+    /// before the engine recorded it, if there is one. The registry is read and the process closed
+    /// off the Core lock, in a job. With no link there is nothing to ask: the reconciliation of the
+    /// next one closes the processes of closed panes.
+    pub(crate) fn close_unrecorded_process(&mut self, instance_key: &str) {
+        let job = format!("close-unrecorded:{instance_key}");
+        let Ok(supervisor) = self.supervisor() else {
+            return;
+        };
+        let (used, key) = (supervisor.clone(), instance_key.to_owned());
+        let started = self.spawn_background(
+            job,
+            move || {
+                let Response::Instances(instances) = supervisor.call(Request::List)? else {
+                    return Err(errors::ptyd_unavailable("Invalid registry response"));
+                };
+                match instances.iter().find(|i| i.spawn.instance_key == key) {
+                    Some(found) => supervisor
+                        .call(Request::Close {
+                            instance_id: found.instance_id.clone(),
+                        })
+                        .map(drop),
+                    None => Ok(()),
+                }
+            },
+            move |core, closed| {
+                let settled = core.settle_supervisor(&used, closed);
+                core.settle_supervisor_call("engine.pane_close_failed", settled);
+                Ok(())
+            },
+        );
+        self.settle_supervisor_call("engine.pane_close_failed", started);
     }
 
     /// The tick's part: starts again each pane whose retry is due. A pane that closed, or
@@ -256,7 +291,7 @@ impl Core {
                 continue;
             }
             let spawned = self.spawn(&id);
-            self.settle_spawn(&id, spawned);
+            self.spawn_begun(&id, spawned);
         }
         Ok(())
     }
@@ -314,9 +349,9 @@ mod tests {
         let (mut core, directory, id, calls) = core_with_unstarted_pane(responses);
         let clock = Arc::new(Manual(AtomicI64::new(1_000_000)));
         core.clock = clock.clone();
-        let spawned = core.spawn(&id);
-        assert!(spawned.is_err());
-        core.settle_spawn(&id, spawned);
+        // The start ends in the caller here, so its failure is settled when `spawn` returns.
+        core.spawn(&id).unwrap();
+        assert_eq!(core.supervisor_retry.spawn_retries.attempts(&id), 1);
         (core, directory, id, calls, clock)
     }
 
@@ -391,8 +426,7 @@ mod tests {
         // The next try meets a lost link: nothing is scheduled again.
         core.settle_spawn(&id, Err(remote(wire_kind::SPAWN_FAILED)));
         let attempts = core.supervisor_retry.spawn_retries.attempts(&id);
-        let lost = core.spawn(&id);
-        core.settle_spawn(&id, lost);
+        core.spawn(&id).unwrap();
         assert!(core.ptyd.is_none());
         assert_eq!(core.supervisor_retry.spawn_retries.attempts(&id), attempts);
     }

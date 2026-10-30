@@ -517,10 +517,11 @@ impl Core {
     pub(crate) fn restart_after_probe(&mut self, pane: &str) -> Result<()> {
         let saved = self.panes[pane].stored.clone();
         let retire_instance = saved.instance_id.clone().zip(saved.supervisor_id.clone());
-        if let Some(instance_id) = saved.instance_id {
+        let replaced = saved.instance_id;
+        if let Some(instance_id) = &replaced {
             // The retirement ledger below holds the process until it is closed; the new one
-            // starts after the close, not beside it.
-            self.close_and_wait(&instance_id);
+            // starts after the close has been sent, not beside it.
+            self.close_process(instance_id);
         }
         let mut saved = self.panes[pane].stored.clone();
         let mut state = self.agent_state(pane)?;
@@ -560,7 +561,7 @@ impl Core {
             "Agent runtime disappeared during restart",
         )?
         .decoder = Decoder::new(0);
-        self.spawn_agent(pane)
+        self.spawn_after(pane, replaced.as_deref())
     }
 
     fn advance_agent(&mut self, pane: &str) -> Result<()> {

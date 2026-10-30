@@ -3,12 +3,13 @@ use crate::{
     core::Core,
     errors::{self, Result},
     ports::StorePort,
+    process_start::Started,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{ErrorKind, TerminalOutput, TranscriptKind, TranscriptRole};
-use soyeht_ptyd::wire::{ProcessKind, Request, Response, Spawn};
+use soyeht_ptyd::wire::{ProcessKind, Request, Spawn};
 use soyeht_store::agents::NativeRequest;
 use std::{collections::BTreeMap, path::Path};
 
@@ -264,6 +265,71 @@ impl Core {
         }
         Ok(())
     }
+    /// Asks the supervisor to start the process of the inline terminal `id` that `request` asked
+    /// for, off the lock (ADR 0126). A start already on its way is left alone.
+    fn start_inline_terminal(
+        &mut self,
+        pane: &str,
+        request: &NativeRequest,
+        id: &str,
+        spawn: Spawn,
+    ) -> Result<()> {
+        let owner = format!("{pane}:terminal:{id}");
+        let (pane, request, id) = (pane.to_owned(), request.clone(), id.to_owned());
+        self.start_process(&owner, spawn, &[], move |core, started| {
+            core.finish_inline_terminal_start(&pane, &request, &id, started)
+        })
+    }
+
+    /// Takes the answer of the start of an inline terminal under the lock: the terminal gets its
+    /// process and the agent its answer, or the agent is told the harness is unavailable. The
+    /// process of a terminal that was released, or of an agent that is gone, is closed.
+    fn finish_inline_terminal_start(
+        &mut self,
+        pane: &str,
+        request: &NativeRequest,
+        id: &str,
+        started: Started,
+    ) -> Result<()> {
+        let Ok(mut state) = self.agent_state(pane) else {
+            // The agent is gone: a process it started is closed, and the reconciliation closes
+            // the ones of its terminals that are still open.
+            if let Started::Process(instance) = started {
+                self.close_process(&instance.instance_id);
+            }
+            return Ok(());
+        };
+        let saved = self.panes[pane].stored.clone();
+        let mut changes = Changes::default();
+        let result = match started {
+            Started::Process(instance) => {
+                let Some(terminal) = state
+                    .terminals
+                    .get_mut(id)
+                    .filter(|terminal| terminal.instance_id.is_none())
+                else {
+                    self.close_process(&instance.instance_id);
+                    return Ok(());
+                };
+                terminal.instance_id = Some(instance.instance_id);
+                terminal.supervisor_id = Some(instance.supervisor_id);
+                Ok(json!({"terminalId":id}))
+            }
+            Started::Failed(error) if errors::kind(&error) == ErrorKind::HarnessUnavailable => {
+                // This explicit supervisor result proves that no process survived. Ambiguous
+                // transport/storage failures still retain the spawn key for reconciliation.
+                state.terminals.remove(id);
+                Err(effects::failure(error.to_string()))
+            }
+            // The request stays open and the next poll starts it again.
+            Started::Failed(error) => return Err(error),
+            Started::Stale => return Ok(()),
+        };
+        effects::finish(request, result, &mut changes);
+        self.commit_agent(saved, state, changes, None, json!({}))
+            .map(drop)
+    }
+
     pub fn run_native_terminals(&mut self, pane: &str) -> Result<()> {
         self.poll_agent_terminals(pane)?;
         let requests = self
@@ -302,30 +368,13 @@ impl Core {
                 }
                 let terminal = state
                     .terminals
-                    .get_mut(&id)
+                    .get(&id)
                     .ok_or_else(|| errors::internal("Reserved inline terminal disappeared"))?;
-                let instance = match self.pty_request(Request::Spawn(terminal.spawn.clone())) {
-                    Ok(Response::Instance(instance)) => instance,
-                    Err(error) if errors::kind(&error) == ErrorKind::HarnessUnavailable => {
-                        // This explicit supervisor result proves that no process
-                        // survived. Ambiguous transport/storage failures still
-                        // retain the spawn key for reconciliation.
-                        state.terminals.remove(&id);
-                        effects::finish(
-                            &request,
-                            Err(effects::failure(error.to_string())),
-                            &mut changes,
-                        );
-                        self.commit_agent(saved, state, changes, None, json!({}))?;
-                        continue;
-                    }
-                    Err(error) => return Err(error),
-                    Ok(_) => {
-                        return Err(errors::ptyd_unavailable("Invalid terminal spawn response"));
-                    }
-                };
-                terminal.instance_id = Some(instance.instance_id);
-                terminal.supervisor_id = Some(instance.supervisor_id);
+                if terminal.instance_id.is_none() {
+                    // The supervisor starts it off the lock; the request is answered when it has.
+                    self.start_inline_terminal(pane, &request, &id, terminal.spawn.clone())?;
+                    continue;
+                }
                 Ok(json!({"terminalId":id}))
             } else if let Some(id) = request.params["terminalId"]
                 .as_str()

@@ -137,13 +137,16 @@ impl Drop for Stopped {
 }
 
 /// Stops the supervisor for [`STOPPED_FOR`] and returns the longest wait of a status request on
-/// another connection in that time. The tick's reads are waiting for the supervisor meanwhile.
+/// another connection in that time. The tick's reads are waiting for the supervisor meanwhile,
+/// and so is whatever `meanwhile` starts once the supervisor is stopped.
 fn worst_status_latency_while_the_supervisor_is_stopped(
     rig: &Rig,
     other: &mut support::Client,
+    meanwhile: impl FnOnce(),
 ) -> Duration {
     assert!(other.call("engine.status", json!({}))["generation"].is_number());
     let stopped = Stopped::new(rig.ptyd.id());
+    meanwhile();
     thread::sleep(Duration::from_millis(300));
     let window = Instant::now() + STOPPED_FOR;
     let mut worst = Duration::ZERO;
@@ -166,7 +169,7 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_that_do_not_need_it
     let (_, pane) = client.create(&rig);
     let mut other = rig.client();
 
-    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other);
+    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other, || {});
 
     assert!(
         worst < GAP_FLOOR,
@@ -193,7 +196,7 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_while_an_agent_poll
     let (mut client, pane) = rig.agent();
     let mut other = rig.client();
 
-    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other);
+    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other, || {});
 
     assert!(
         worst < GAP_FLOOR,
@@ -206,4 +209,41 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_while_an_agent_poll
     );
     client.wait_state(&pane, "idle");
     assert!(client.pane(&pane)["agent"]["sessionId"].is_string());
+}
+
+/// A pane that is created while the supervisor is stopped asks it for the process, and that wait
+/// is off the lock too (ADR 0126): the reply waits, the other connections do not.
+#[test]
+fn a_supervisor_that_stops_answering_does_not_stall_requests_while_a_pane_starts() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let (workspace, _) = client.create(&rig);
+    let mut other = rig.client();
+    let mut creator = rig.client();
+
+    let mut created = None;
+    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other, || {
+        created = Some(thread::spawn(move || {
+            creator.call(
+                "pane.create",
+                json!({"workspaceId":workspace,"mode":"terminal",
+                "idempotencyKey":"created-while-stopped"}),
+            )
+        }));
+    });
+
+    assert!(
+        worst < GAP_FLOOR,
+        "a request waited {worst:?} behind the pane that was starting"
+    );
+    // The pane exists whatever happened to its first start, and gets its process once the
+    // supervisor answers again: the tick starts it, or the reconciliation of the new link does.
+    let pane = created.unwrap().join().unwrap()["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    wait_until(
+        "the pane started while the supervisor was stopped has a process",
+        || !other.pane(&pane)["pid"].is_null(),
+    );
 }

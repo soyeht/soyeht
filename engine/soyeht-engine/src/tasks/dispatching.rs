@@ -594,12 +594,12 @@ impl Core {
             "Agent runtime disappeared during task restart",
         )?
         .decoder = soyeht_protocol::ndjson::Decoder::new(0);
-        if let Some(instance_id) = old_instance {
+        if let Some(instance_id) = &old_instance {
             // The retirement ledger above holds the process until it is closed; the new one
-            // starts after the close, not beside it.
-            self.close_and_wait(&instance_id);
+            // starts after the close has been sent, not beside it.
+            self.close_process(instance_id);
         }
-        self.spawn(pane_id)?;
+        self.spawn_after(pane_id, old_instance.as_deref())?;
         Ok(true)
     }
 
