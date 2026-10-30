@@ -104,6 +104,11 @@ child windows: an owner on another thread is allowed, and the input queues are n
 are for a child window of another thread's parent). Nothing on the interface thread waits for the web
 view thread except the calls that ask for an answer, which the host (not the interface) makes.
 
+The minimum runtime is the one that has `ICoreWebView2_18` (`LaunchingExternalUriScheme`), Microsoft
+Edge WebView2 Runtime 119 or later; the Evergreen runtime of Windows 11 updates itself well past
+it. A view on an older runtime fails closed: it is not made, the pane says the runtime lacks what
+keeps a page in it, and nothing is shown that the runtime would let leave the pane.
+
 ### The user data folder
 
 The page keeps its cookies, storage and cache in `web` under the directory the window passes as the
@@ -123,7 +128,7 @@ whose; a program that cannot be looked at, or whose folder is a link, is left al
 
 The environment's options turn off single sign-on with the person's Windows account and leave
 everything else at the runtime's own values. The loader reads overrides from outside the program,
-so the program refuses to open a web view while any is set: the environment variables
+so the program refuses to open a web view while any is set (the notice says which kind and how to proceed: unset the variable, or ask the administrator who set the policy): the environment variables
 `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`, `WEBVIEW2_USER_DATA_FOLDER`,
 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` (which can open a debugging port), `WEBVIEW2_CHANNEL_SEARCH_KIND`,
 `WEBVIEW2_RELEASE_CHANNELS`, `WEBVIEW2_RELEASE_CHANNEL_PREFERENCE`,

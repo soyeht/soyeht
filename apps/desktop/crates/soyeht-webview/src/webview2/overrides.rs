@@ -41,13 +41,15 @@ const POLICY_ROOT: &str = "Software\\Policies\\Microsoft\\Edge\\WebView2";
 pub(super) fn refuse() -> Result<()> {
     refuse_environment(
         &VARIABLES,
-        "the environment changes which web view runs, or how",
+        "a WEBVIEW2_ variable of this program's environment changes which web view runs, or how; \
+unset it and start the program again",
     )?;
     for hive in [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER] {
         for name in POLICIES {
             if holds_a_value(hive, &format!("{POLICY_ROOT}\\{name}")) {
                 return Err(Error::Unavailable(
-                    "a policy of this machine changes which web view runs, or how",
+                    "a WebView2 policy of this machine (Software\\Policies\\Microsoft\\Edge\\WebView2) changes which \
+web view runs, or how; ask the administrator who set it to remove it",
                 ));
             }
         }

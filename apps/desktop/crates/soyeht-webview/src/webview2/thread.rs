@@ -15,7 +15,7 @@ use std::{
     rc::Rc,
     sync::{
         Mutex, PoisonError,
-        atomic::{AtomicBool, AtomicIsize, Ordering},
+        atomic::{AtomicIsize, Ordering},
         mpsc,
     },
     time::{Duration, Instant},
@@ -44,7 +44,18 @@ const WM_JOBS: u32 = WM_APP + 1;
 
 pub(super) type Job = Box<dyn FnOnce(&Ui) + Send>;
 
-static JOBS: Mutex<VecDeque<Job>> = Mutex::new(VecDeque::new());
+/// The jobs waiting, and whether the loop that runs them has ended. Both are under one lock, so a
+/// job is either queued before the loop's last look at the queue, and dropped by it, or sees that
+/// the loop ended and is dropped by whoever posted it: no job is left that nothing will run.
+struct Queue {
+    jobs: VecDeque<Job>,
+    ended: bool,
+}
+
+static JOBS: Mutex<Queue> = Mutex::new(Queue {
+    jobs: VecDeque::new(),
+    ended: false,
+});
 /// The window that receives the jobs, as the integer its handle is; zero before the thread starts.
 static WAKE: AtomicIsize = AtomicIsize::new(0);
 
@@ -111,8 +122,6 @@ pub(super) fn current() -> Option<Rc<Ui>> {
 /// What the start of the thread says, kept while it has not said it, so that a caller whose wait
 /// ran out and asks again waits for the same start and does not make a second thread.
 static STARTING: Mutex<Option<mpsc::Receiver<Result<()>>>> = Mutex::new(None);
-/// Set when the message loop has ended: nothing posted afterwards is ever run.
-static ENDED: AtomicBool = AtomicBool::new(false);
 
 /// Starts the thread and waits until it can take jobs. A machine without the runtime fails here.
 pub(super) fn start(timeout: Duration) -> Result<()> {
@@ -144,13 +153,16 @@ pub(super) fn start(timeout: Duration) -> Result<()> {
 
 /// Runs `job` on the web view thread, after what was posted before it.
 pub(super) fn post(job: Job) {
-    if ENDED.load(Ordering::Acquire) {
-        // The loop has ended: the job is dropped, and whoever waits for it hears of that.
+    let mut queue = JOBS.lock().unwrap_or_else(PoisonError::into_inner);
+    if queue.ended {
+        // The loop has ended: the job is dropped (outside the lock), and whoever waits for it
+        // hears that its sender is gone.
+        drop(queue);
+        drop(job);
         return;
     }
-    JOBS.lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push_back(job);
+    queue.jobs.push_back(job);
+    drop(queue);
     let wake = HWND(WAKE.load(Ordering::Acquire) as *mut std::ffi::c_void);
     // SAFETY: a plain message to a window that lives as long as the thread; a failure means the
     // thread is gone, and the job is never run.
@@ -218,8 +230,12 @@ fn serve(ready: &mpsc::Sender<Result<()>>) {
     }
     // The loop ended and will not run a job again: every job still queued is dropped, which ends
     // the wait of each caller with `Closed`, and so is every job posted from now on.
-    ENDED.store(true, Ordering::Release);
-    JOBS.lock().unwrap_or_else(PoisonError::into_inner).clear();
+    let dropped: Vec<Job> = {
+        let mut queue = JOBS.lock().unwrap_or_else(PoisonError::into_inner);
+        queue.ended = true;
+        queue.jobs.drain(..).collect()
+    };
+    drop(dropped);
 }
 
 /// The apartment, the runtime check, the classes and the window of the jobs.
@@ -275,6 +291,7 @@ fn run_jobs() {
         let job = JOBS
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .jobs
             .pop_front();
         match job {
             Some(job) => job(&ui),

@@ -339,9 +339,11 @@ fn build(ui: &Ui, options: &ViewOptions, shared: Arc<Shared>) -> Result<Rc<ViewC
                 "a private page needs a folder to run in",
             ))?;
             // The folders of programs that ended go when the first private page of this one is
-            // made, not while the program starts.
+            // made, not while the program starts, and off this thread: it serves every page.
+            // Only a folder of a program that has ended is removed, never one just made.
             if ui.first_use(root) {
-                private::remove_stale(root);
+                let stale = root.to_path_buf();
+                std::thread::spawn(move || private::remove_stale(&stale));
             }
             (environment(&private::make_folder(root)?)?, true)
         }
