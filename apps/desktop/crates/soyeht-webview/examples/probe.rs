@@ -33,6 +33,8 @@ fn main() {
         .open(
             &ViewOptions {
                 profile: Some(PathBuf::from(profile)),
+                scratch: None,
+                background: 0xffffff,
                 width: 1100,
                 height: 760,
             },
@@ -76,6 +78,8 @@ fn main() {
     let second = backend.open(
         &ViewOptions {
             profile: Some(PathBuf::from(profile)),
+            scratch: None,
+            background: 0xffffff,
             width: 800,
             height: 600,
         },
