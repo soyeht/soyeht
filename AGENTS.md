@@ -58,8 +58,7 @@ Each layer depends only on the layers listed above it.
    (`check_mac_environment.py`).
 7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
    its own cargo workspace and depends on `engine/soyeht-protocol` and, for the local endpoint
-   (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`, and,
-   for the update check's `curl` (ADR 0122), `engine/soyeht-process`. Its
+   (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`. Its
    `soyeht-client` crate holds the connection and state (and the web host the engine's agents
    read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
    run time, with no Soyeht dependency, ADR 0110), `soyeht-desktop` the

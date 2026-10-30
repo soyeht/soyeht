@@ -16,6 +16,14 @@ pub const MANIFEST_FORMAT: u32 = 1;
 pub const MANIFEST_MAX_BYTES: usize = 65536;
 pub const MAX_PACKAGES: usize = 32;
 pub const MAX_PACKAGE_BYTES: u64 = 4294967296;
+/// The longest address a manifest may carry.
+pub const MAX_ADDRESS_BYTES: usize = 2048;
+/// The digits of a hexadecimal SHA-256.
+pub const SHA256_HEX_LENGTH: usize = 64;
+/// Each part of a version stays below this (ADR 0115).
+pub const VERSION_PART_LIMIT: u32 = 1000;
+/// The largest sequence number a manifest may carry.
+pub const MAX_SEQUENCE: u64 = 9007199254740991;
 /// Put before the payload in the bytes that are signed.
 pub const SIGNING_CONTEXT: &[u8] = b"soyeht-update-manifest-v1\n";
 /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.
@@ -37,6 +45,12 @@ pub const URL_PREFIXES: [&str; 1] = ["https://github.com/soyeht/soyeht/releases/
 pub const CHECK_INTERVAL_SECONDS: u64 = 86400;
 /// How long a fetch of the manifest may take.
 pub const CHECK_TIMEOUT_SECONDS: u64 = 20;
+/// How long a connection may take to open.
+pub const CONNECT_SECONDS: u64 = 10;
+/// Redirects a release asset address goes through before the file.
+pub const MAX_REDIRECTS: u64 = 5;
+/// The one thing a check says about the program that asks: no version, no system.
+pub const USER_AGENT: &str = "Soyeht-update-check";
 
 /// What both clients say about the check; `{version}` is the version the sentence is about.
 pub mod text {
@@ -77,6 +91,10 @@ pub enum Failure {
     WrongChannel,
     /// A newer version exists but has no package for this system and architecture.
     NoPackage,
+    /// The manifest is older than one this device has already seen.
+    StaleManifest,
+    /// This build's own version is not one the rules can compare.
+    UnknownBuild,
 }
 
 impl Failure {
@@ -92,6 +110,8 @@ impl Failure {
             Self::BadManifest => "badManifest",
             Self::WrongChannel => "wrongChannel",
             Self::NoPackage => "noPackage",
+            Self::StaleManifest => "staleManifest",
+            Self::UnknownBuild => "unknownBuild",
         }
     }
 }

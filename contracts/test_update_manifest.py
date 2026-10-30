@@ -22,10 +22,14 @@ ROOT = Path(__file__).resolve().parent
 VECTORS = ROOT / "vectors" / "update.json"
 FIRST = hashlib.sha256(b"soyeht test update key one").digest()
 SECOND = hashlib.sha256(b"soyeht test update key two").digest()
+IDENTITY = b"\x01" + b"\x00" * 31
 KEYS = {
+    "weak": {"id": "test-weak", "key": base64.b64encode(IDENTITY).decode()},
     "first": {"id": "test-1", "key": base64.b64encode(ed25519.public_key(FIRST)).decode()},
     "second": {"id": "test-2", "key": base64.b64encode(ed25519.public_key(SECOND)).decode()},
 }
+SEQUENCE = 1_000
+UP_TO_DATE = {"status": "upToDate", "sequence": SEQUENCE}
 NOTES = "https://github.com/soyeht/soyeht/releases/tag/v0.2.0"
 BASE = "https://github.com/soyeht/soyeht/releases/download/v0.2.0/"
 
@@ -54,6 +58,7 @@ def payload(**changes):
     document = {
         "format": 1,
         "channel": "stable",
+        "sequence": SEQUENCE,
         "version": "0.2.0",
         "minimumSupportedVersion": "0.1.0",
         "releaseNotesUrl": NOTES,
@@ -86,7 +91,8 @@ def malleable(encoded):
     return base64.b64encode(raw[:32] + scalar.to_bytes(32, "little")).decode()
 
 
-def case(name, text, expected, running="0.1.0", system="macos", architecture="aarch64", channel="stable", trust=("first",)):
+def case(name, text, expected, running="0.1.0", system="macos", architecture="aarch64", channel="stable",
+         trust=("first",), floor=0):
     return {
         "name": name,
         "running": running,
@@ -94,9 +100,22 @@ def case(name, text, expected, running="0.1.0", system="macos", architecture="aa
         "architecture": architecture,
         "channel": channel,
         "trust": list(trust),
+        "floor": floor,
         "manifest": text,
         "expected": expected,
     }
+
+
+def weak_signed():
+    """A manifest "signed" by the identity point: it verifies under a lenient check, for any text."""
+    return json.dumps(
+        {
+            "format": 1,
+            "keyId": "test-weak",
+            "payload": base64.b64encode(payload()).decode(),
+            "signature": base64.b64encode(IDENTITY + bytes(32)).decode(),
+        }
+    )
 
 
 def failed(failure):
@@ -107,6 +126,7 @@ def available(version="0.2.0", required=False, index=0):
     chosen = PACKAGES[index]
     return {
         "status": "available",
+        "sequence": SEQUENCE,
         "version": version,
         "required": required,
         "notesUrl": NOTES,
@@ -126,8 +146,8 @@ def build_cases():
     )
     cases = [
         case("a newer version is offered with the package of this system", good, available()),
-        case("the same version is up to date", good, {"status": "upToDate"}, running="0.2.0"),
-        case("a newer build than the manifest is up to date", good, {"status": "upToDate"}, running="0.10.0"),
+        case("the same version is up to date", good, UP_TO_DATE, running="0.2.0"),
+        case("a newer build than the manifest is up to date", good, UP_TO_DATE, running="0.10.0"),
         case("a version below the minimum supported is required", signed(payload(minimumSupportedVersion="0.2.0")),
              available(required=True)),
         case("a version at the minimum supported is not required", signed(payload(minimumSupportedVersion="0.1.0")),
@@ -136,7 +156,7 @@ def build_cases():
         case("Linux gets its own package", good, available(index=2), system="linux", architecture="x86_64"),
         case("Windows gets its own package", good, available(index=3), system="windows", architecture="x86_64"),
         case("a system with no package is told so", good, failed("noPackage"), system="windows", architecture="aarch64"),
-        case("up to date wins over a missing package", good, {"status": "upToDate"}, running="0.2.0",
+        case("up to date wins over a missing package", good, UP_TO_DATE, running="0.2.0",
              system="windows", architecture="aarch64"),
         case("versions compare as numbers, not text", signed(payload(version="0.10.0", minimumSupportedVersion="0.9.0")),
              available(version="0.10.0"), running="0.9.0"),
@@ -153,6 +173,16 @@ def build_cases():
         case("a key id this build does not carry is refused", signed(payload(), seed=SECOND, key_id="test-2"), failed("unknownKey")),
         case("a second trusted key is accepted", signed(payload(), seed=SECOND, key_id="test-2"), available(),
              trust=("first", "second")),
+        case("a key of the identity point verifies nothing, whatever the signature", weak_signed(),
+             failed("badSignature"), trust=("weak",)),
+        case("a manifest as new as the newest seen is read", good, available(), floor=SEQUENCE),
+        case("a manifest older than one already seen is refused", good, failed("staleManifest"), floor=SEQUENCE + 1),
+        case("an older manifest is refused even when it offers nothing newer", good, failed("staleManifest"),
+             running="0.2.0", floor=SEQUENCE + 1),
+        case("a newer sequence is read", signed(payload(sequence=SEQUENCE + 5)),
+             {**available(), "sequence": SEQUENCE + 5}, floor=SEQUENCE),
+        case("another channel is refused before the sequence is compared", good, failed("wrongChannel"),
+             channel="beta", floor=SEQUENCE + 1),
         case("text that is not JSON is not an envelope", "not json", failed("badEnvelope")),
         case("an envelope of another format is refused", tampered(good, "format", lambda _: 2), failed("badEnvelope")),
         case("a boolean is not a format", tampered(good, "format", lambda _: True), failed("badEnvelope")),
@@ -170,6 +200,25 @@ def build_cases():
         "a minimum above the version": payload(minimumSupportedVersion="0.3.0"),
         "a channel the contract does not list": payload(channel="nightly"),
         "a payload of another format": payload(format=2),
+        "no sequence": json.dumps({**json.loads(payload()), "sequence": None}).encode(),
+        "a sequence of 0": payload(sequence=0),
+        "a negative sequence": payload(sequence=-1),
+        "a sequence that is text": payload(sequence="1000"),
+        "a fractional sequence": json.dumps({**json.loads(payload()), "sequence": 1000.5}).encode(),
+        "a sequence above the limit": payload(sequence=manifest.POLICY["manifest"]["maxSequence"] + 1),
+        "a notes address with a dot segment": payload(releaseNotesUrl=BASE + "../../../evil/x"),
+        "a package address going up a folder": payload(
+            packages=[package("macos", "aarch64", "dmg", url=BASE + "../v0.1.0/soyeht.dmg")]),
+        "a package address with an encoded dot segment": payload(
+            packages=[package("macos", "aarch64", "dmg", url=BASE + "%2E%2e/other/soyeht.dmg")]),
+        "a package address with a half encoded dot segment": payload(
+            packages=[package("macos", "aarch64", "dmg", url=BASE + ".%2e/other/soyeht.dmg")]),
+        "a package address with a lone encoded dot": payload(
+            packages=[package("macos", "aarch64", "dmg", url=BASE + "%2e/soyeht.dmg")]),
+        "a package address with an encoded slash": payload(
+            packages=[package("macos", "aarch64", "dmg", url=BASE + "..%2Fother/soyeht.dmg")]),
+        "a package address with a backslash": payload(
+            packages=[package("macos", "aarch64", "dmg", url=BASE + "..\\other\\soyeht.dmg")]),
         "a notes address that is not https": payload(releaseNotesUrl="http://github.com/soyeht/soyeht/releases/tag/v0.2.0"),
         "a notes address outside the release pages": payload(releaseNotesUrl="https://example.com/soyeht/releases/"),
         "no packages": payload(packages=[]),
@@ -199,7 +248,8 @@ def build_vectors():
             "The signed update manifest read by the desktop client (soyeht_protocol::update), the Mac app "
             "(UpdateCheck) and the release script (contracts/update_manifest.py). `trust` names the keys "
             "of `keys` a build carries; `expected` is the result of reading `manifest` as version "
-            "`running` on `system` and `architecture` in `channel`. The keys are throwaway test keys. "
+            "`running` on `system` and `architecture` in `channel`, when the highest sequence this device has seen is "
+            "`floor`. The keys are throwaway test keys. "
             "Regenerate with: uv run python contracts/test_update_manifest.py --write"
         ),
         "keys": KEYS,
@@ -210,7 +260,7 @@ def build_vectors():
 def read(case_):
     keys = [KEYS[name] for name in case_["trust"]]
     return manifest.outcome(case_["manifest"], manifest.parse_version(case_["running"]), case_["system"],
-                            case_["architecture"], case_["channel"], keys)
+                            case_["architecture"], case_["channel"], keys, case_["floor"])
 
 
 class Ed25519Tests(unittest.TestCase):
@@ -252,6 +302,24 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_update(self.document)
 
+    def test_a_key_that_is_not_a_point_or_has_a_small_order_can_never_be_committed(self):
+        order_two = (2**255 - 20).to_bytes(32, "little")
+        for weak in (IDENTITY, bytes(32), order_two, bytes([0xFF] * 32), *ed25519.small_order_encodings()):
+            self.document["signature"]["publicKeys"] = [{"id": "k1", "key": base64.b64encode(weak).decode()}]
+            with self.assertRaises(ValueError, msg=weak.hex()):
+                validate_update(self.document)
+        self.document["signature"]["publicKeys"] = [KEYS["first"], KEYS["second"]]
+        validate_update(self.document)
+
+    def test_the_small_order_forms_are_what_a_strict_check_would_refuse(self):
+        forms = ed25519.small_order_encodings()
+        self.assertIn(IDENTITY, forms)
+        self.assertTrue(all(ed25519.is_weak(raw) for raw in forms))
+        self.assertFalse(any(ed25519.is_weak(ed25519.public_key(seed)) for seed in (FIRST, SECOND)))
+        self.assertTrue(ed25519.verify(ed25519.public_key(FIRST), b"x", ed25519.sign(FIRST, b"x")))
+        # The identity key and a zero signature "verify" every message without the weak-key rule.
+        self.assertFalse(ed25519.verify(IDENTITY, b"anything", IDENTITY + bytes(32)))
+
     def test_the_manifest_url_is_below_an_allowed_prefix(self):
         self.document["urlPrefixes"] = ["https://example.com/"]
         with self.assertRaises(ValueError):
@@ -278,7 +346,7 @@ class VectorTests(unittest.TestCase):
 
     def test_every_failure_of_the_contract_that_a_manifest_can_cause_is_in_the_vectors(self):
         recorded = {c["expected"].get("failure") for c in json.loads(VECTORS.read_text())["cases"]}
-        needs_transport = {"unreachable", "tooLarge"}
+        needs_transport = {"unreachable", "tooLarge", "unknownBuild"}
         listed = {f["id"] for f in manifest.POLICY["failures"]}
         self.assertEqual(listed - needs_transport, recorded - {None})
 

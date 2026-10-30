@@ -6,7 +6,11 @@
     "format": 1,
     "maxBytes": 65536,
     "maxPackages": 32,
-    "maxPackageBytes": 4294967296
+    "maxPackageBytes": 4294967296,
+    "maxAddressBytes": 2048,
+    "sha256HexLength": 64,
+    "versionPartLimit": 1000,
+    "maxSequence": 9007199254740991
   },
   "signature": {
     "algorithm": "ed25519",
@@ -35,7 +39,10 @@
   },
   "check": {
     "intervalSeconds": 86400,
-    "timeoutSeconds": 20
+    "timeoutSeconds": 20,
+    "connectSeconds": 10,
+    "maxRedirects": 5,
+    "userAgent": "Soyeht-update-check"
   },
   "texts": {
     "title": "Updates",
@@ -89,6 +96,14 @@
     {
       "id": "noPackage",
       "meaning": "A newer version exists but has no package for this system and architecture."
+    },
+    {
+      "id": "staleManifest",
+      "meaning": "The manifest is older than one this device has already seen."
+    },
+    {
+      "id": "unknownBuild",
+      "meaning": "This build's own version is not one the rules can compare."
     }
   ]
 }

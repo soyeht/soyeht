@@ -51,6 +51,7 @@ renderer. A name or a place of the legacy app is refused before anything is writ
 | --- | --- | --- | --- |
 | Start | `RunAtLoad` | `WantedBy=default.target`, enabled | `LogonTrigger` for this user (its SID) |
 | Restart | `KeepAlive` (however it ended), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
+| Program gone | none | `ConditionPathExists=` the program: the unit is skipped, not failed, so no restart loop (ADR 0121) | none |
 | Order | none: the engine reconnects | engine `Wants=` and `After=` the supervisor (never `Requires=`) | none: the engine reconnects |
 | Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | `PATH` as on the Mac | the user's own environment |
 | Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | the host appends the program's output to the same file (section 6) |
@@ -95,7 +96,7 @@ The commands, all printing the state of the services after they ran as JSON
 | `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
 | `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
-| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise. |
+| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux with "the program ... does not exist" when the unit's program is gone (systemd would skip the unit and report success). |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
 | `soyeht service status [--component C]` | Reports. Changes nothing. |
 | `soyeht service render --system S --name N [...] -- PROGRAM ARGS` | Prints the file for explicit values without touching the system. For scripts that start disposable services. |

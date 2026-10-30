@@ -44,7 +44,7 @@ written), which is where
 signed-JSON schemes break. The context keeps a signature made for this purpose from being valid
 for any other purpose the same key might one day have.
 
-The payload carries `format`, `channel`, `version`, `minimumSupportedVersion`, `releaseNotesUrl`
+The payload carries `format`, `channel`, `sequence`, `version`, `minimumSupportedVersion`, `releaseNotesUrl`
 and a list of `packages` (`system`, `architecture`, `url`, `sha256`, `size`). Its rules, and the
 order in which a reader applies them, are in `docs/contracts/15-updates.md`.
 
@@ -68,7 +68,7 @@ Reading a manifest is a security rule, so it exists once per language and is hel
 data. The desktop client uses `soyeht_protocol::update` (layer 2, pure: no IO, no clock, no
 runtime, which is what that crate is for). The Mac app uses `UpdateCheck` in `apps/shared`.
 `contracts/update_manifest.py` is the third reader, used by the release script. All three pass
-`contracts/vectors/update.json`: 46 cases that include a tampered payload, a flipped signature
+`contracts/vectors/update.json`: over 60 cases that include a tampered payload, a flipped signature
 bit, a signature whose scalar was raised by the group order (the malleable form), a manifest
 signed without the context, a key the build does not carry, a second trusted key, every rule of
 the payload, and the choice of package by system and architecture. The vectors are generated
@@ -100,6 +100,26 @@ Windows 10. A machine without it sees "Could not check for updates".
 
 The transport is not trusted at all. The signature is what makes the manifest count, so a
 captive portal, a proxy or a bad certificate store can only make a check fail.
+
+### What a check sends, and what the owner decides
+
+A check is one HTTPS `GET`. The server (GitHub, and the file store its release assets redirect
+to) sees the IP address of the connection and one `User-Agent`, `Soyeht-update-check` (a value of
+`update.json`, set by both clients, so the request names neither the version, nor the system, nor
+the architecture), plus the headers the HTTP stack adds itself: `Host` and `Accept` everywhere,
+`Accept-Language` and `Accept-Encoding` from `URLSession` on the Mac. No cookie, no identifier of
+the person or the installation, no credential. The desktop passes `--disable` to `curl`, so a
+`.curlrc` cannot add anything or change the output. Without a version in the request the server
+learns nothing about which release a machine runs; the price is that GitHub's counts cannot tell
+versions apart by this request.
+
+These are **owner decisions**, taken here as the defaults and open to change:
+
+1. The check is **on by default**, and the first request is made at launch without asking.
+   (The alternative, off until the person opts in, means most installs never learn of an update.)
+2. The request carries no version, system or identifier (above). The decision is made on the device, so
+   the server has no need to know which versions are installed, and does not.
+3. The channel is `stable` only, from the repository's releases, with no domain of ours yet.
 
 ### When it runs, and the setting
 
@@ -185,9 +205,21 @@ This is a decision for later and costs nothing now. Phase 1 adds no dependency t
 - A leaked private key cannot be recalled. The remedy is a release signed by the old key that
   carries the new public key and no longer lists the old one; the installed copies that took it
   stop trusting the leaked key. A copy that did not update stays exposed.
-- The manifest is not timestamped. An attacker who can serve old files can hide a new release
-  (a freeze) but cannot offer a version that was not signed, and cannot make a copy go backwards:
-  only a newer version than the running one is offered.
+- **Replay and freeze.** The payload carries a `sequence` that rises with every manifest
+  (`release_manifest.py` writes the signing time in seconds), and each device remembers the
+  highest it has read (the desktop in its local preferences file, the Mac in its user defaults)
+  and refuses a manifest below it. Someone who can serve old files can still hide a new release
+  from a device that has not yet read it (a freeze), but cannot hand it an older manifest after
+  it has read a newer one, cannot offer a version that was not signed, and cannot make a copy go
+  backwards: only a version above the running one is offered. Publishing a manifest with a lower
+  sequence than the last one locks every device that read the last; correct a release by
+  publishing it again with a higher sequence. A signing machine with a wrong clock far ahead has
+  the same effect, so `--sequence` can set it by hand. The rule is required before phase 2.
+- **Keys of small order.** CryptoKit has no strict verification, and a public key that is the
+  identity point verifies every message with the identity point as its signature. A key that is
+  not a point or has an order of 8 or less is refused by `validate_update` (so it can never be
+  committed) and again by every reader (the desktop through `is_weak()`, the Mac against the list
+  generated into `UpdatePolicy.smallOrderKeys`, the script by computing the order), with a vector.
 - A packager must name files `dist/soyeht-<version>-<system>-<architecture>.<extension>` with
   `system` in `macos|linux|windows` and `architecture` in `aarch64|x86_64` (the spelling of
   Rust's `std::env::consts`; `arm64`, `amd64` and `x64` are accepted and rewritten).

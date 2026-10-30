@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -48,7 +49,22 @@ class ReleaseManifestTests(unittest.TestCase):
         offer = manifest.evaluate(text, older, "linux", "x86_64", "stable", KEYS)
         self.assertEqual(offer["version"], str(VERSION))
         self.assertEqual(offer["package"]["sha256"], linux["sha256"])
-        self.assertEqual(manifest.evaluate(text, tuple(VERSION), "linux", "x86_64", "stable", KEYS), {"status": "upToDate"})
+        same = manifest.evaluate(text, tuple(VERSION), "linux", "x86_64", "stable", KEYS)
+        self.assertEqual(same["status"], "upToDate")
+
+    def test_the_sequence_is_the_signing_time_unless_given_and_must_be_a_valid_one(self):
+        self.packages()
+        before = int(time.time())
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS)
+        sequence = manifest.check_payload(manifest.open_envelope(text, KEYS))["sequence"]
+        self.assertTrue(before <= sequence <= int(time.time()))
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=77)
+        self.assertEqual(manifest.check_payload(manifest.open_envelope(text, KEYS))["sequence"], 77)
+        with self.assertRaises(release_manifest.Refused):
+            release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=0)
+        # An older manifest is refused by a device that has read the one with sequence 77.
+        old = manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, floor=78)
+        self.assertEqual(old, {"status": "failed", "failure": "staleManifest"})
 
     def test_a_tampered_manifest_is_refused_by_verify(self):
         self.packages()

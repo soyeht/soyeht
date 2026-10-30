@@ -5,6 +5,9 @@
 //! unit "failed" for good after a few quick restarts. `WantedBy=default.target` starts it when
 //! the user's manager starts, which is at login. The engine `Wants=` and starts `After=` the
 //! supervisor, but does not `Require` it: restarting the supervisor must not restart the engine.
+//! `ConditionPathExists=` the program skips the start, without a failure and so without the
+//! one-second restart, when the program has been removed or moved (a package removed, a folder
+//! deleted) while the unit file stays in the person's home (ADR 0121).
 
 use crate::{definition::Definition, policy};
 
@@ -26,6 +29,10 @@ pub(super) fn render(definition: &Definition) -> String {
         "[Unit]\nDescription={}\n",
         definition.description.replace('%', "%%")
     );
+    text.push_str(&format!(
+        "ConditionPathExists={}\n",
+        definition.program.replace('%', "%%")
+    ));
     if let Some(after) = &definition.after {
         text.push_str(&format!("Wants={after}\nAfter={after}\n"));
     }
@@ -67,6 +74,7 @@ mod tests {
         assert_eq!(
             render(&definition),
             "[Unit]\nDescription=Soyeht engine\n\
+ConditionPathExists=/opt/next/soyeht-engine\n\
 Wants=soyeht-next-test-ptyd.service\nAfter=soyeht-next-test-ptyd.service\n\
 StartLimitIntervalSec=0\n\n\
 [Service]\nType=simple\n\
@@ -103,5 +111,6 @@ StandardError=append:/data/next/logs/engine.log\n\n\
             "ExecStart=\"/My Apps/50%%/next \\\"x\\\"/soyeht-engine\" \"$$HOME and \\\\n\"\n"
         ));
         assert!(text.contains("Environment=\"GREETING=100%% \\\"quoted\\\" $x\"\n"));
+        assert!(text.contains("ConditionPathExists=/My Apps/50%%/next \"x\"/soyeht-engine\n"));
     }
 }

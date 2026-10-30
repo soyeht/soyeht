@@ -4,7 +4,6 @@ import SoyehtProtocol
 
 /// `MAJOR.MINOR.PATCH`: three plain numbers, none with a leading zero and each below 1000.
 public struct UpdateVersion: Comparable, Equatable, Sendable, CustomStringConvertible {
-  private static let partLimit = 1000
   private let parts: [Int]
 
   public init?(_ text: String) {
@@ -14,7 +13,7 @@ public struct UpdateVersion: Comparable, Equatable, Sendable, CustomStringConver
     for piece in pieces {
       let plain = !piece.isEmpty && piece.utf8.allSatisfy { (0x30...0x39).contains($0) }
       guard plain, piece == "0" || !piece.hasPrefix("0"), let number = Int(piece),
-        number < Self.partLimit
+        number < UpdatePolicy.versionPartLimit
       else { return nil }
       numbers.append(number)
     }
@@ -85,6 +84,13 @@ public enum UpdateOutcome: Equatable, Sendable {
   case available(UpdateOffer)
 }
 
+/// What a manifest that passed every check says, with its sequence number: the caller keeps the
+/// highest one it has read and passes it back as the floor, so an older manifest is refused.
+public struct UpdateChecked: Equatable, Sendable {
+  public let sequence: UInt64
+  public let outcome: UpdateOutcome
+}
+
 /// Reading the signed update manifest (ADR 0122, contract 15). `soyeht_protocol::update` and
 /// `contracts/update_manifest.py` follow the same order of checks, and
 /// `contracts/vectors/update.json` holds the cases all three pass.
@@ -107,37 +113,42 @@ public enum UpdateCheck {
   private struct Payload: Decodable {
     let format: Int
     let channel: String
+    let sequence: UInt64
     let version: String
     let minimumSupportedVersion: String
     let releaseNotesUrl: String
     let packages: [Listed]
   }
 
-  private static let addressLimit = 2048
-  private static let sha256Length = 64
+  /// A path segment that moves up or stays, in any spelling a browser or a server may read as one.
+  private static let dotSegments: Set<Substring> = [".", "..", "%2e", ".%2e", "%2e.", "%2e%2e"]
 
-  /// What `build` should do with the manifest `text`, trusting `keys`.
+  /// What `build` should do with the manifest `text`, trusting `keys`. `floor` is the highest
+  /// sequence this device has read: a manifest below it is refused (`staleManifest`).
   public static func evaluate(
-    _ text: String, build: UpdateBuild, keys: [UpdatePublicKey] = UpdatePolicy.publicKeys
-  ) -> Result<UpdateOutcome, UpdateFailure> {
+    _ text: String, build: UpdateBuild, keys: [UpdatePublicKey] = UpdatePolicy.publicKeys,
+    floor: UInt64 = 0
+  ) -> Result<UpdateChecked, UpdateFailure> {
     do {
       let payload = try checked(try open(text, keys: keys))
       guard payload.channel == build.channel else { return .failure(.wrongChannel) }
+      guard payload.sequence >= floor else { return .failure(.staleManifest) }
       guard let version = UpdateVersion(payload.version),
         let minimum = UpdateVersion(payload.minimumSupportedVersion)
       else { return .failure(.badManifest) }
-      guard version > build.version else { return .success(.upToDate) }
+      guard version > build.version else {
+        return .success(UpdateChecked(sequence: payload.sequence, outcome: .upToDate))
+      }
       guard
         let listed = payload.packages.first(where: {
           $0.system == build.system && $0.architecture == build.architecture
         })
       else { return .failure(.noPackage) }
-      return .success(
-        .available(
-          UpdateOffer(
-            version: payload.version, required: build.version < minimum,
-            notesURL: payload.releaseNotesUrl,
-            package: UpdatePackage(url: listed.url, sha256: listed.sha256, size: listed.size))))
+      let offer = UpdateOffer(
+        version: payload.version, required: build.version < minimum,
+        notesURL: payload.releaseNotesUrl,
+        package: UpdatePackage(url: listed.url, sha256: listed.sha256, size: listed.size))
+      return .success(UpdateChecked(sequence: payload.sequence, outcome: .available(offer)))
     } catch let failure as UpdateFailure {
       return .failure(failure)
     } catch {
@@ -164,9 +175,20 @@ public enum UpdateCheck {
     return raw
   }
 
+  /// An address below an allowed prefix that names a file by a plain path: printable ASCII, no
+  /// backslash, no encoded slash or backslash, and no segment that moves up or stays.
   private static func isAddress(_ value: String) -> Bool {
-    value.utf8.count <= addressLimit && value.utf8.allSatisfy { (0x21...0x7e).contains($0) }
-      && UpdatePolicy.urlPrefixes.contains { value.hasPrefix($0) }
+    guard value.utf8.count <= UpdatePolicy.maxAddressBytes,
+      value.utf8.allSatisfy({ (0x21...0x7e).contains($0) }), !value.contains("\\"),
+      UpdatePolicy.urlPrefixes.contains(where: { value.hasPrefix($0) })
+    else { return false }
+    let path = value.split(
+      maxSplits: 1, omittingEmptySubsequences: false, whereSeparator: { $0 == "?" || $0 == "#" }
+    )[0].lowercased()
+    return !path.contains("%2f") && !path.contains("%5c")
+      && !path.split(separator: "/", omittingEmptySubsequences: false).contains(where: {
+        dotSegments.contains($0)
+      })
   }
 
   /// The payload bytes of `text` when a key of `keys` signed them.
@@ -182,8 +204,10 @@ public enum UpdateCheck {
     guard let payload = canonicalBase64(envelope.payload),
       let signature = canonicalBase64(envelope.signature), signature.count == 64
     else { throw UpdateFailure.badEnvelope }
-    // A key in the contract that is not 32 bytes of base64 never verifies anything.
+    // A key in the contract that is not 32 bytes of base64 never verifies anything, and neither
+    // does one of small order: CryptoKit would accept the identity point as its signature.
     guard let raw = canonicalBase64(key.key),
+      !UpdatePolicy.smallOrderKeys.contains(raw.base64EncodedString()),
       let publicKey = signingKey(raw),
       publicKey.isValidSignature(signature, for: Data(UpdatePolicy.signingContext.utf8) + payload)
     else { throw UpdateFailure.badSignature }
@@ -198,6 +222,7 @@ public enum UpdateCheck {
       let version = UpdateVersion(payload.version),
       let minimum = UpdateVersion(payload.minimumSupportedVersion), minimum <= version,
       isAddress(payload.releaseNotesUrl),
+      payload.sequence > 0, payload.sequence <= UpdatePolicy.maxSequence,
       !payload.packages.isEmpty, payload.packages.count <= UpdatePolicy.maxPackages
     else { throw UpdateFailure.badManifest }
     var seen = Set<String>()
@@ -213,7 +238,7 @@ public enum UpdateCheck {
   }
 
   private static func isSha256(_ value: String) -> Bool {
-    value.utf8.count == sha256Length
+    value.utf8.count == UpdatePolicy.sha256HexLength
       && value.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
   }
 }

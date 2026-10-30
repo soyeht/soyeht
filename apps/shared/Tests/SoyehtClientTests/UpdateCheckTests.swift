@@ -9,7 +9,7 @@ import Testing
 @Test func everySharedCaseReadsTheManifestAsRecorded() throws {
   let vector = try ContractVector.load("update")
   let cases = ContractVector.cases(vector, "cases")
-  #expect(cases.count > 40)
+  #expect(cases.count > 60)
   for item in cases {
     let name = item["name"].string ?? ""
     let keys = (item["trust"].array ?? []).map { named -> UpdatePublicKey in
@@ -20,15 +20,20 @@ import Testing
       version: try #require(UpdateVersion(item["running"].string ?? "")),
       system: item["system"].string ?? "", architecture: item["architecture"].string ?? "",
       channel: item["channel"].string ?? "")
-    let result = UpdateCheck.evaluate(item["manifest"].string ?? "", build: build, keys: keys)
+    let result = UpdateCheck.evaluate(
+      item["manifest"].string ?? "", build: build, keys: keys,
+      floor: UInt64(item["floor"].int ?? 0))
     let expected = item["expected"]
     switch result {
     case .failure(let failure):
       #expect(expected["status"].string == "failed", "\(name)")
       #expect(expected["failure"].string == failure.rawValue, "\(name)")
-    case .success(.upToDate):
-      #expect(expected["status"].string == "upToDate", "\(name)")
-    case .success(.available(let offer)):
+    case .success(let checked):
+      #expect(expected["sequence"].int.map(UInt64.init) == checked.sequence, "\(name)")
+      guard case .available(let offer) = checked.outcome else {
+        #expect(expected["status"].string == "upToDate", "\(name)")
+        continue
+      }
       #expect(expected["status"].string == "available", "\(name)")
       #expect(expected["version"].string == offer.version, "\(name)")
       #expect(expected["required"].bool == offer.required, "\(name)")
