@@ -148,6 +148,11 @@ environment. Nothing of this is in the repository.
 
 ## Consequences
 
+- Windows Defender's machine-learning detection flagged the unsigned `soyeht.exe` (the command line, which
+  registers scheduled tasks) on the test VM after a few runs, as `Trojan:Win32/Bearfoos.A!ml`, and blocked it
+  from running (an installer that depends on it reports the failure instead of a success). This is a false
+  positive of the kind an unsigned, unknown program meets; a signed build and a submission of the programs to
+  Microsoft are the remedy, so a release must be signed before a stranger runs it.
 - A person who runs an unsigned installer meets SmartScreen. Until a certificate or an Azure signing profile
   exists, a release is not ready for strangers; the hook is the only thing to switch on.
 - An upgrade leaves an old engine or supervisor running until it restarts; for a few versions that is
