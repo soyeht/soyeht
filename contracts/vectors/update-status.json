@@ -1,0 +1,80 @@
+{
+  "description": "What the Mac (UpdatePresentation) and the desktop client (soyeht_client::update::Updates) say about the update check. `badge` is whether the Settings entry carries the dot: a newer version is on offer and the check is on. The sentences are the `texts` of contracts/update.json.",
+  "cases": [
+    {
+      "name": "the check is off",
+      "enabled": false,
+      "status": { "kind": "upToDate" },
+      "running": "0.1.0",
+      "expected": { "headline": "Automatic checks are off.", "warning": null, "download": null, "badge": false }
+    },
+    {
+      "name": "a check that is off shows no offer it found before",
+      "enabled": false,
+      "status": { "kind": "available", "version": "0.2.0", "required": true },
+      "running": "0.1.0",
+      "expected": { "headline": "Automatic checks are off.", "warning": null, "download": null, "badge": false }
+    },
+    {
+      "name": "nothing was checked yet",
+      "enabled": true,
+      "status": { "kind": "unknown" },
+      "running": "0.1.0",
+      "expected": { "headline": "Not checked yet.", "warning": null, "download": null, "badge": false }
+    },
+    {
+      "name": "a check is running",
+      "enabled": true,
+      "status": { "kind": "checking" },
+      "running": "0.1.0",
+      "expected": { "headline": "Checking for updates…", "warning": null, "download": null, "badge": false }
+    },
+    {
+      "name": "this is the newest version",
+      "enabled": true,
+      "status": { "kind": "upToDate" },
+      "running": "0.1.0",
+      "expected": { "headline": "Soyeht 0.1.0 is up to date.", "warning": null, "download": null, "badge": false }
+    },
+    {
+      "name": "a newer version is available",
+      "enabled": true,
+      "status": { "kind": "available", "version": "0.2.0", "required": false },
+      "running": "0.1.0",
+      "expected": { "headline": "Soyeht 0.2.0 is available.", "warning": null, "download": "Download Soyeht 0.2.0", "badge": true }
+    },
+    {
+      "name": "this version is no longer supported",
+      "enabled": true,
+      "status": { "kind": "available", "version": "1.0.0", "required": true },
+      "running": "0.1.0",
+      "expected": {
+        "headline": "Soyeht 1.0.0 is available.",
+        "warning": "This version is no longer supported. Update to keep using Soyeht.",
+        "download": "Download Soyeht 1.0.0",
+        "badge": true
+      }
+    },
+    {
+      "name": "the build carries no key",
+      "enabled": true,
+      "status": { "kind": "failed", "failure": "notConfigured" },
+      "running": "0.1.0",
+      "expected": { "headline": "Update checks are not set up in this build.", "warning": null, "download": null, "badge": false }
+    },
+    {
+      "name": "no network",
+      "enabled": true,
+      "status": { "kind": "failed", "failure": "unreachable" },
+      "running": "0.1.0",
+      "expected": { "headline": "Could not check for updates.", "warning": null, "download": null, "badge": false }
+    },
+    {
+      "name": "a manifest that fails its signature is the same quiet failure",
+      "enabled": true,
+      "status": { "kind": "failed", "failure": "badSignature" },
+      "running": "0.1.0",
+      "expected": { "headline": "Could not check for updates.", "warning": null, "download": null, "badge": false }
+    }
+  ]
+}

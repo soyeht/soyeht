@@ -53,7 +53,7 @@ LAYERS: dict[str, set[str]] = {
     },
     "soyeht-mcp": {"soyeht-protocol", "soyeht-platform", "soyeht-skills"},
     # Layer 7: the Rust desktop client, its own workspace.
-    "soyeht-client": {"soyeht-protocol", "soyeht-platform"},
+    "soyeht-client": {"soyeht-protocol", "soyeht-platform", "soyeht-process"},
     # The system web view of the desktop client (ADR 0110): it knows pages and pixels, and no
     # other crate of Soyeht.
     "soyeht-webview": set(),

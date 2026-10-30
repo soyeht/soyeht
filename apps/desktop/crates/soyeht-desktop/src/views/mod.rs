@@ -48,6 +48,7 @@ pub(crate) use ui::is_turn_down;
 
 mod top_bar;
 mod ui;
+mod updates;
 mod usage_ring;
 mod welcome;
 mod window_controls;
