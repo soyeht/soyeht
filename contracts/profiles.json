@@ -23,7 +23,8 @@
       "tcpPort": 8291,
       "displayNames": {
         "macApp": "Soyeht Dev",
-        "window": "Soyeht · Dev"
+        "window": "Soyeht · Dev",
+        "windowsFolder": "Soyeht Next Dev"
       },
       "appIds": {
         "macos": "com.soyeht.next.dev.mac",
@@ -52,7 +53,8 @@
       "tcpPort": 8290,
       "displayNames": {
         "macApp": "Soyeht Next",
-        "window": "Soyeht"
+        "window": "Soyeht",
+        "windowsFolder": "Soyeht Next"
       },
       "appIds": {
         "macos": "com.soyeht.next.mac",

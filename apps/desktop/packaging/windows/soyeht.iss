@@ -77,9 +77,15 @@ const
   Profile = '{#Profile}';
   // How long a command of the installed program, or a probe of it, may run.
   CliSeconds = 120;
+  // What RunScript returns when PowerShell itself did not start: no exit code of a program is
+  // this (a program may exit with 0xFFFFFFFF, which is -1).
+  PowerShellDidNotStart = -2;
   ProbeSeconds = 15;
 
 function SetEnvironmentVariable(Name, Value: String): Boolean;
+  external 'SetEnvironmentVariableW@kernel32.dll stdcall';
+// The same call with no value: the variable is removed.
+function RemoveEnvironmentVariable(Name: String; NoValue: Integer): Boolean;
   external 'SetEnvironmentVariableW@kernel32.dll stdcall';
 
 var
@@ -114,9 +120,20 @@ begin
   Result := ExpandConstant('{sysnative}\WindowsPowerShell\v1.0\powershell.exe');
 end;
 
+// What the scripts below read. Setup's own environment is what the window it opens at the end
+// and the programs it starts inherit, so each is removed again once the script has run.
+procedure ClearScriptEnvironment();
+begin
+  RemoveEnvironmentVariable('SOYEHT_RUN_EXE', 0);
+  RemoveEnvironmentVariable('SOYEHT_RUN_ARGUMENTS', 0);
+  RemoveEnvironmentVariable('SOYEHT_RUN_MS', 0);
+  RemoveEnvironmentVariable('SOYEHT_END_FOLDER', 0);
+  RemoveEnvironmentVariable('SOYEHT_END_REST', 0);
+end;
+
 // Runs a PowerShell script that reads its inputs from the environment (a path never goes into
-// the script text, so a quote in a user name cannot break it). Returns the exit code, -1 when
-// PowerShell did not start.
+// the script text, so a quote in a user name cannot break it). Returns the exit code, or
+// PowerShellDidNotStart.
 function RunScript(Script: String): Integer;
 var
   Code: Integer;
@@ -124,12 +141,13 @@ begin
   if not Exec(PowerShell(), '-NoProfile -NonInteractive -Command "' + Script + '"', '', SW_HIDE,
     ewWaitUntilTerminated, Code) then
     Code := -1;
+  ClearScriptEnvironment();
   Log('powershell exit code ' + IntToStr(Code));
   Result := Code;
 end;
 
 // Runs a program with a deadline and returns its exit code: 124 when the deadline passed (the
-// program is ended), 125 when it did not start, -1 when PowerShell did not.
+// program is ended), 125 when it did not start, -1 when it did not start directly either.
 function RunWithin(Exe, Arguments: String; Seconds: Integer): Integer;
 begin
   SetEnvironmentVariable('SOYEHT_RUN_EXE', Exe);
@@ -142,6 +160,14 @@ begin
     '-WindowStyle Hidden -PassThru; $null = $p.Handle; ' +
     'if (-not $p.WaitForExit([int]$env:SOYEHT_RUN_MS)) { Stop-Process -Id $p.Id -Force; exit 124 }; ' +
     'exit $p.ExitCode } catch { exit 125 }');
+  if Result = PowerShellDidNotStart then
+  begin
+    // PowerShell itself would not start (a policy, a missing component): run the program
+    // directly, so that an uninstall still unregisters the tasks. No deadline, but no script.
+    Log('powershell did not start; running the program directly');
+    if not Exec(Exe, Arguments, '', SW_HIDE, ewWaitUntilTerminated, Result) then
+      Result := -1;
+  end;
   Log('"' + Exe + '" ' + Arguments + ' -> ' + IntToStr(Result));
 end;
 
@@ -355,12 +381,13 @@ begin
   if (Supervisor <> '') and FileExists(Supervisor) and ((OldProtocol = '') or (OldProtocol <> NewProtocol)) then
     Tell('{#AppName} was updated, and the new terminal supervisor speaks a different protocol from the ' +
       'one that is running. The running engine and supervisor keep the previous build until they restart. ' +
-      'To use the new build, quit {#AppName}, run "soyeht service stop" if you started it at login, and ' +
-      'open it again. Restarting the supervisor ends your terminals.', False)
+      'To use the new build, quit {#AppName}, then sign out and in again, or end both soyeht-engine.exe and ' +
+      'soyeht-ptyd.exe in Task Manager, and open {#AppName} again. Either ends your terminals.', False)
   else if WindowRuns() then
     Tell('{#AppName} was running while it was updated. The running programs keep the previous build, and ' +
-      'your terminals keep running, until they restart. Close the window and open it again; the engine ' +
-      'starts the new build once it is restarted.', False)
+      'your terminals keep running, until they restart. A window that is open does not restart the engine: ' +
+      'close the window, end soyeht-engine.exe in Task Manager (your terminals stay) and open {#AppName} ' +
+      'again, or sign out and in.', False)
   else
   begin
     EndProgramsOfTheFolder(False);

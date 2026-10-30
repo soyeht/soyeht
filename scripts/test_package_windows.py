@@ -1,6 +1,7 @@
 import contextlib
 import io
 import re
+import shlex
 import struct
 import tempfile
 import unittest
@@ -285,6 +286,37 @@ class InstallerScriptTests(unittest.TestCase):
         self.assertIn("UninstallSilent()", tell)
         self.assertNotIn("SuppressibleMsgBox('{#AppName} is installed", self.script)
 
+    def test_a_command_still_runs_when_powershell_will_not_start(self):
+        run = self.script[self.script.index("function RunWithin") :]
+        run = run[: run.index("\nend;")]
+        self.assertLess(run.index("RunScript("), run.index("if Result = PowerShellDidNotStart then"))
+        self.assertIn("Exec(Exe, Arguments", run)
+        # PowerShell not starting has a value no program exits with: a program that exits with
+        # 0xFFFFFFFF (-1) must not be run a second time.
+        self.assertIn("PowerShellDidNotStart = -2;", self.script)
+        self.assertIn("if Result = PowerShellDidNotStart then", run)
+        self.assertNotIn("Result = -1", run)
+
+    def test_the_mismatch_message_names_nothing_that_is_not_on_the_path(self):
+        self.assertNotIn("soyeht service stop", self.script)
+        self.assertIn("Task ", self.script)
+        self.assertIn("sign out", self.script)
+        # The old engine restarts a lost supervisor with its old protocol: both must end.
+        self.assertIn("end both soyeht-engine.exe and ' +\n      'soyeht-ptyd.exe in Task Manager", self.script)
+
+    def test_an_open_window_message_says_what_really_applies_the_new_build(self):
+        # Closing a window does not restart the engine it started.
+        self.assertIn("A window that is open does not restart the engine", self.script)
+        self.assertIn("end soyeht-engine.exe in Task Manager", self.script)
+
+    def test_the_environment_the_scripts_read_is_removed_after_use(self):
+        used = set(re.findall(r"SetEnvironmentVariable\('(SOYEHT_\w+)'", self.script))
+        cleared = set(re.findall(r"RemoveEnvironmentVariable\('(SOYEHT_\w+)'", self.script))
+        self.assertTrue(used)
+        self.assertEqual(used, cleared)
+        run = self.script[self.script.index("function RunScript") :]
+        self.assertIn("ClearScriptEnvironment();", run[: run.index("\nend;")])
+
     def test_a_failed_install_puts_the_programs_back(self):
         self.assertIn("RestoreMovedAside()", self.script[self.script.index("procedure DeinitializeSetup") :])
         post = self.script[self.script.index("else if CurStep = ssPostInstall") :]
@@ -445,11 +477,25 @@ class ReleaseEnvironmentTests(unittest.TestCase):
             ["-ffile-prefix-map=/b/home=/home", "-ffile-prefix-map=/b/src=/soyeht"],
         )
 
-    def test_the_flags_of_the_c_compiler_survive_a_blank_and_a_backslash(self):
+    def test_the_flags_of_the_c_compiler_survive_a_blank_a_backslash_and_a_unc_path(self):
         self.assertEqual(common.quoted_flag("-O2", windows=True), "-O2")
-        quoted = common.quoted_flag(r"-ffile-prefix-map=C:\Users\Jane Smith=/home", windows=True)
-        self.assertEqual(quoted, r'"-ffile-prefix-map=C:\Users\Jane Smith=/home"')
-        self.assertEqual(common.quoted_flag("-ffile-prefix-map=/Users/Jane Smith=/home", windows=False), "'-ffile-prefix-map=/Users/Jane Smith=/home'")
+        self.assertEqual(
+            common.quoted_flag("-ffile-prefix-map=/Users/Jane Smith=/home", windows=False),
+            "'-ffile-prefix-map=/Users/Jane Smith=/home'",
+        )
+        # `cc` reads CFLAGS as shell words: the flag must come back exactly as it went in.
+        for flag in (
+            r"-ffile-prefix-map=C:\Users\Jane Smith=/home",
+            r"-ffile-prefix-map=\\server\share\src=/soyeht",
+            r"-ffile-prefix-map=\\build host\share\x=/soyeht",
+            r"-ffile-prefix-map=C:\a\\b\"c=/d",
+        ):
+            with self.subTest(flag=flag):
+                self.assertEqual(shlex.split(common.quoted_flag(flag, windows=True)), [flag])
+        self.assertEqual(
+            common.quoted_flag(r"-ffile-prefix-map=\\server\share=/s", windows=True),
+            r'"-ffile-prefix-map=\\\\server\\share=/s"',
+        )
 
     def test_cflags_keep_what_the_builder_set_and_are_read_as_shell_words(self):
         result = common.release_environment({"CFLAGS": "-O2 -g"})

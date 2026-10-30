@@ -70,7 +70,7 @@ own architecture. The licence permits free commercial use.
 
 - Folder `%LOCALAPPDATA%\Programs\Soyeht Next` (no directory page: the folder carries "next", does not move,
   and cannot be a place of the legacy app). All of it comes from `contracts/profiles.json`, never typed in
-  the script: the folder is the profile's `displayNames.macApp` (`Soyeht Next`), the installer id is
+  the script: the folder is the profile's `displayNames.windowsFolder` (`Soyeht Next`; it never changes once released, since the login tasks hold the path of each program), the installer id is
   `appIds.windows` (`com.soyeht.next`, so the key of Add or remove programs is `com.soyeht.next_is1`), and
   the name of the shortcut, of the entry in Add or remove programs and of the signature's description is
   `displayNames.window` (`Soyeht`). `check_names` passes the id and the folder through `legacy_guard.require_next`.
