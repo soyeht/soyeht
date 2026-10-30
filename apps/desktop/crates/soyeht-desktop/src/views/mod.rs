@@ -73,6 +73,7 @@ impl Render for Workbench {
         self.settle_rename(window, cx);
         self.window.height = f32::from(window.viewport_size().height);
         self.window.width = f32::from(window.viewport_size().width);
+        menus::window_measured(self.window.height, cx);
         let palette = self.theme.palette();
         div()
             .id("workbench")
