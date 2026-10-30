@@ -32,11 +32,12 @@ packages="build-essential curl ca-certificates git pkg-config cmake clang libcla
  squashfs-tools binutils xz-utils libwayland-dev libx11-dev libxcb1-dev libxkbcommon-dev
  libxkbcommon-x11-dev libxcursor-dev libxrandr-dev libxi-dev libfontconfig-dev libfreetype-dev
  libssl-dev libasound2-dev"
+packages="${packages//$'\n'/}"
 
 # Runs a command as the user namespace's root inside the Ubuntu userland.
 inside() {
     bwrap --unshare-user --uid 0 --gid 0 --bind "$rootfs" / --dev /dev --proc /proc --tmpfs /tmp \
-        --ro-bind /etc/resolv.conf /etc/resolv.conf --setenv HOME /root \
+        --ro-bind /etc/resolv.conf /etc/resolv.conf --setenv HOME /root --setenv TMPDIR /tmp \
         --setenv PATH /root/.cargo/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
         --chdir / "$@"
 }
