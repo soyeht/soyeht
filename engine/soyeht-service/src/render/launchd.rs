@@ -1,8 +1,9 @@
 //! A launchd user agent (`~/Library/LaunchAgents/<label>.plist`).
 //!
-//! `KeepAlive` restarts the program however it ended and `RunAtLoad` starts it when the agent
-//! loads, which is at login. `ProcessType` `Interactive` keeps the system from throttling a
-//! program a person is waiting on.
+//! `KeepAlive` restarts the program however it ended, but only while the program is there
+//! (`PathState`): an app dragged to the Trash must not leave an agent that fails to start every
+//! second for ever. `RunAtLoad` starts it when the agent loads, which is at login. `ProcessType`
+//! `Interactive` keeps the system from throttling a program a person is waiting on.
 
 use super::xml_escape;
 use crate::{definition::Definition, policy};
@@ -36,7 +37,13 @@ pub(super) fn render(definition: &Definition) -> String {
     }
     text.push_str(&format!(
         r#"  <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>PathState</key>
+    <dict>
+      <key>{}</key>
+      <true/>
+    </dict>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>ThrottleInterval</key>
@@ -44,6 +51,7 @@ pub(super) fn render(definition: &Definition) -> String {
   <key>ProcessType</key>
   <string>{}</string>
 "#,
+        xml_escape(&definition.program),
         policy::RESTART_DELAY_SECONDS,
         policy::LAUNCHD_PROCESS_TYPE
     ));
@@ -67,7 +75,7 @@ mod tests {
     use crate::definition::sample;
 
     #[test]
-    fn the_agent_runs_at_login_and_restarts_however_it_ended() {
+    fn the_agent_runs_at_login_and_restarts_however_it_ended_while_its_program_exists() {
         let text = render(&sample("com.soyeht.next.test.engine"));
         assert_eq!(
             text,
@@ -89,7 +97,13 @@ mod tests {
     <string>/usr/bin</string>
   </dict>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>PathState</key>
+    <dict>
+      <key>/opt/next/soyeht-engine</key>
+      <true/>
+    </dict>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>ThrottleInterval</key>
@@ -114,6 +128,8 @@ mod tests {
         definition.log = None;
         let text = render(&definition);
         assert!(text.contains("<string>/Apps/A &amp; B &lt;next&gt;/soyeht-engine</string>"));
+        // The path that keeps the agent alive is the same program, escaped the same way.
+        assert!(text.contains("<key>/Apps/A &amp; B &lt;next&gt;/soyeht-engine</key>"));
         assert!(!text.contains("EnvironmentVariables"));
         assert!(!text.contains("StandardOutPath"));
     }

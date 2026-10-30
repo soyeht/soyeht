@@ -32,7 +32,7 @@ signs when asked to, and runs `ISCC` on `apps/desktop/packaging/windows/soyeht.i
 `contracts/release.json` and nothing else (ADR 0115): the script passes it, with the profile and every name,
 to the installer script through `ISCC /D` options, and a test fails if the script reads a value the
 command line does not give it. The version, naming, plan, release build and program lookup are the shared
-module `scripts/packaging_common.py`, which `package_linux.py` now uses too.
+module `scripts/package_common.py`, which `package_linux.py` and `package_mac.py` use too (ADR 0120, ADR 0121).
 
 ### Why not an MSI or an MSIX
 
@@ -69,10 +69,11 @@ own architecture. The licence permits free commercial use.
 ### What an install is
 
 - Folder `%LOCALAPPDATA%\Programs\Soyeht Next` (no directory page: the folder carries "next", does not move,
-  and cannot be a place of the legacy app). Installer id and registry key `Soyeht.Next` (`Soyeht.Next_is1`),
-  both derived by the script from the production profile's task names (`Soyeht.Next.Engine`,
-  `Soyeht.Next.Ptyd`) so they cannot drift from them; one Start menu shortcut, "Soyeht" (the product name is one
-  constant of the script, passed to the installer script and to `signtool`).
+  and cannot be a place of the legacy app). All of it comes from `contracts/profiles.json`, never typed in
+  the script: the folder is the profile's `displayNames.macApp` (`Soyeht Next`), the installer id is
+  `appIds.windows` (`com.soyeht.next`, so the key of Add or remove programs is `com.soyeht.next_is1`), and
+  the name of the shortcut, of the entry in Add or remove programs and of the signature's description is
+  `displayNames.window` (`Soyeht`). `check_names` passes the id and the folder through `legacy_guard.require_next`.
 - An x64 installer also opens on Windows on Arm (`x64compatible`); an Arm64 one opens only on Arm.
 - **No silent registration.** The wizard has a task "Start Soyeht when I log in", unchecked. Ticking it runs
   `soyeht service install --programs <folder>`; silent installs opt in with `/TASKS=loginstart`. Otherwise
@@ -135,6 +136,16 @@ name such as O'Brien would break a quoted string). Setup is a 32-bit program, so
 for a 64-bit process). Every command of the installed `soyeht.exe` runs with a 120 second limit and is ended
 when it passes; every exit code is written to Setup's log (`/LOG=`).
 
+### Registering while the programs run
+
+A person may open the window before ticking "Start Soyeht when I log in" (or install over a copy whose window
+started the engine). The window's engine and supervisor are in no task, and a task started beside them would
+fail on the program's singleton lock and be restarted every minute. So `soyeht service install` (all three
+systems, `soyeht-service`) asks `engine.lock` and `ptyd.lock` in the data directory, the files the programs lock
+themselves (`soyeht_platform::fs::singleton_held`), registers a component whose program holds its lock and does
+not start it; the logon trigger starts it the next time. `AlreadyRunning` of the programs stays an error:
+a second copy started by hand still fails on its lock.
+
 ### Signing
 
 `SOYEHT_WINDOWS_SIGN_THUMBPRINT` (a certificate in the builder's store) or
@@ -175,7 +186,7 @@ On a Windows 11 Arm64 VM (24H2), as the signed-in standard user, with Inno Setup
   The arm64 build needs `clang` on `PATH` (`ring`); without it the script stops before cargo with a message.
 - Install (silent, no elevation, `User privileges: None`; the arm64 one also through the wizard, whose task page
   shows "Start Soyeht when I log in" unchecked): the six programs, `LICENSE`, `NOTICE` and the uninstaller in
-  `%LOCALAPPDATA%\Programs\Soyeht Next`, the shortcut "Soyeht" in the Start menu, the entry `Soyeht.Next_is1` in
+  `%LOCALAPPDATA%\Programs\Soyeht Next`, the shortcut "Soyeht" in the Start menu, the entry `com.soyeht.next_is1` in
   `HKCU`, and no scheduled task. The shortcut, opened from the Start menu search, opens the window for both
   architectures, which starts `soyeht-engine.exe` and `soyeht-ptyd.exe` from the install folder.
 - `/TASKS=loginstart`: the tasks `Soyeht.Next.Engine` and `Soyeht.Next.Ptyd` are registered and running through
@@ -190,6 +201,11 @@ On a Windows 11 Arm64 VM (24H2), as the signed-in standard user, with Inno Setup
   were untouched. With a stand-in supervisor that reports another protocol and runs, nothing was ended and the
   log says the services must restart. The earlier x64 run: the window stayed open and kept running from its
   moved copy.
+- Registering while the programs run (`soyeht service install`, on the build that holds the lock check): with the
+  window's engine and supervisor running and nothing registered, both tasks were registered, none started, and
+  no second program ran. With the login tasks registered, an upgrade ended the old engine and the install step
+  started the new one at once (the supervisor kept its process identifier); a fresh install with
+  `/TASKS=loginstart` started both. A removal then unregistered both tasks and left nothing running.
 - A failed upgrade (a file Setup could not replace, with `/SUPPRESSMSGBOXES`): exit code 5, "Rolling back
   changes", and every program renamed back, so the old build was whole. Without `/SUPPRESSMSGBOXES` the same
   failure waits on Setup's own message box (a limit named above).
@@ -215,6 +231,5 @@ Not verified: a build signed with a trusted certificate or through Azure Artifac
 account exists yet; the Azure command is tested as text only); installing on
 x64 hardware (only the x64 build on Windows on Arm, under emulation); Windows 10; a machine with a
 SmartScreen or antivirus policy; the interactive uninstall after the final change of the dialog; a user name with an apostrophe (the path goes through an environment variable, which was not tried with one); an upgrade whose
-new build changes the supervisor's protocol; a registration made while a window-started engine already runs
-(the task's program fails on the lock and Task Scheduler retries it every minute until the first stops); an
+new build changes the supervisor's protocol; an
 MSI or MSIX (not built).

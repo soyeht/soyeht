@@ -32,6 +32,7 @@ ADDED_AFTER_GENERATION = {
     ("glyph", "taskToolbarIcon"),
     ("glyph", "taskToolbarChevron"),
     ("layout", "readinessWidth"),
+    ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.
     ("paneLayout", "editorPreviewDividerWidth"),
 }

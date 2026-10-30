@@ -36,10 +36,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # The pieces every platform's package shares (the scripts directory is on the path of a script).
-from packaging_common import (  # noqa: E402
+from package_common import (  # noqa: E402
     HOMEPAGE,
     PACKAGE,
-    PROFILE,
+    PROFILE_NAME,
     ROOT,
     PackagingError,
     absolute,
@@ -49,11 +49,11 @@ from packaging_common import (  # noqa: E402
     make_plan,
     sha256_of,
 )
-from packaging_common import Plan as BasePlan  # noqa: E402
-from packaging_common import built_programs as find_programs  # noqa: E402
+from package_common import Plan as BasePlan  # noqa: E402
+from package_common import built_programs as find_programs  # noqa: E402
 from generated_profile import PROFILES  # noqa: E402
 
-APPLICATION_ID = PROFILES[PROFILE]["appIds"]["linux"]
+APPLICATION_ID = PROFILES[PROFILE_NAME]["appIds"]["linux"]
 PACKAGING = ROOT / "apps/desktop/packaging/linux"
 # Where the programs sit inside a package: one folder, as `soyeht service install --programs`
 # and the window's own start of the engine expect (ADR 0102, ADR 0114).
@@ -105,6 +105,9 @@ LINKED_PACKAGES = {
 # are `Depends`; the rest serves the OpenGL fallback, a vendor driver that replaces Mesa, or the
 # optional web pane, so they are `Recommends`.
 LOADED_REQUIRED = ("libvulkan1", "libwayland-client0")
+# The programs the window starts: `curl` makes the update check's request (ADR 0122). An AppImage
+# does not carry it and relies on the system's.
+STARTED_REQUIRED = ("curl",)
 LOADED_RECOMMENDED = (
     "mesa-vulkan-drivers",
     "libegl1",
@@ -264,7 +267,7 @@ def dependencies(floor, sonames):
     """(Depends, Recommends) lines, from what the programs link and what the window loads."""
     linked = {LINKED_PACKAGES[name] for name in sonames} - {"libc6"}
     depends = [f"libc6 (>= {version_text(floor)})"] if floor else ["libc6"]
-    depends += sorted(linked) + list(LOADED_REQUIRED)
+    depends += sorted(linked) + list(LOADED_REQUIRED) + list(STARTED_REQUIRED)
     return ", ".join(depends), ", ".join(LOADED_RECOMMENDED)
 
 

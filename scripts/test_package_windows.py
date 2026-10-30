@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import package_windows as package
-import packaging_common as common
+import package_common as common
 
 IMAGE_X64, IMAGE_ARM64 = 0x8664, 0xAA64
 
@@ -78,8 +78,9 @@ class ProgramTests(unittest.TestCase):
 class NamingTests(unittest.TestCase):
     def test_every_name_of_the_installer_carries_next(self):
         package.check_names()
-        self.assertEqual(package.APP_ID, "Soyeht.Next")
+        self.assertEqual(package.APP_ID, "com.soyeht.next")
         self.assertEqual(package.INSTALL_FOLDER, "Soyeht Next")
+        self.assertEqual(package.PRODUCT_NAME, "Soyeht")
         with patch.object(package, "APP_ID", "Soyeht"), self.assertRaises(SystemExit):
             package.check_names()
 
@@ -196,7 +197,7 @@ class InstallerScriptTests(unittest.TestCase):
         self.assertEqual(values["Allowed"], "arm64")
         self.assertEqual(values["Profile"], "prod")
         self.assertEqual(values["AppName"], package.PRODUCT_NAME)
-        self.assertEqual(values["AppId"], "Soyeht.Next")
+        self.assertEqual(values["AppId"], "com.soyeht.next")
         self.assertEqual(values["OutputName"], "soyeht-0.1.0-windows-aarch64")
         self.assertEqual(self.arguments()[-1], str(package.SCRIPT))
 
@@ -235,7 +236,7 @@ class InstallerScriptTests(unittest.TestCase):
 
     def test_the_script_names_no_machine_identifier_of_its_own(self):
         # The names come from the profile through the script; nothing is typed here twice.
-        for typed in ("Soyeht.Next", "Soyeht.next", "Soyeht Next"):
+        for typed in ("Soyeht.Next", "Soyeht.next", "Soyeht Next", "com.soyeht.next"):
             self.assertNotIn(typed, self.script)
 
     def test_the_product_name_is_typed_nowhere_in_the_script(self):
@@ -331,8 +332,9 @@ class BuildTests(unittest.TestCase):
             return fake_programs(built, IMAGE_ARM64 if triple.startswith("aarch64") else IMAGE_X64)
 
         def run(command, **keywords):
-            calls.append(("run", [str(part) for part in command]))
-            if "ISCC.exe" in str(command[0]):
+            command = [str(part) for part in command]
+            calls.append(("run", command))
+            if "ISCC.exe" in command[0]:
                 name = next(a for a in command if a.startswith("/DOutputName=")).split("=", 1)[1]
                 (Path(folder) / "out" / f"{name}.exe").write_bytes(b"installer")
 
@@ -342,7 +344,8 @@ class BuildTests(unittest.TestCase):
             patch.object(package, "cargo_build", build),
             patch.object(package.shutil, "which", return_value="clang.exe"),
             patch.object(package, "built_programs", find),
-            patch.object(package.subprocess, "run", run),
+            patch.object(package, "run", run),
+            patch.object(package, "stream", run),
             patch.object(common, "source_epoch", return_value=0),
             patch.dict(package.os.environ, environment, clear=True),
             contextlib.redirect_stdout(output),

@@ -15,7 +15,7 @@ use std::{
 };
 
 /// A folder with the programs of every system, made once for the whole run.
-fn programs() -> PathBuf {
+pub(super) fn programs() -> PathBuf {
     static FOLDER: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     FOLDER
         .get_or_init(|| {
@@ -37,7 +37,7 @@ fn programs() -> PathBuf {
 }
 
 /// A scratch folder and the layout in it, with `components` installed through `fake`.
-fn installed(
+pub(super) fn installed(
     system: System,
     label: &str,
     fake: &Recorder,
@@ -51,7 +51,7 @@ fn installed(
     (scratch, layout)
 }
 
-const BOTH: [Component; 2] = [Component::Engine, Component::Ptyd];
+pub(super) const BOTH: [Component; 2] = [Component::Engine, Component::Ptyd];
 
 /// A launchd that has a graphical domain or not, and loads a job when it is bootstrapped and
 /// forgets it when it is booted out. `loaded` says whether every job is loaded before anything
@@ -391,29 +391,6 @@ fn linux_stop_goes_engine_first_and_start_leaves_an_active_unit_alone() {
     assert!(!mentions(&running, " start "));
 }
 
-#[test]
-fn linux_start_refuses_a_unit_whose_program_is_gone_instead_of_reporting_success() {
-    let folder = std::env::temp_dir().join(format!("next-service-gone-{}", std::process::id()));
-    fs::create_dir_all(&folder).unwrap();
-    for name in ["soyeht-ptyd", "soyeht-engine"] {
-        fs::write(folder.join(name), b"program").unwrap();
-    }
-    let scratch = Scratch::new("linux-start-gone");
-    let layout = test_layout(System::Linux, &scratch.0);
-    Manager::new(&layout, &Recorder::default())
-        .install(&folder, &BOTH)
-        .unwrap();
-    fs::remove_file(folder.join("soyeht-engine")).unwrap();
-    let inactive = Recorder::answering(|_| no());
-    let result = Manager::new(&layout, &inactive).start(&[Component::Engine]);
-    assert!(
-        matches!(&result, Err(Error::ProgramMissing(program)) if program.ends_with("soyeht-engine")),
-        "{result:?}"
-    );
-    assert!(!mentions(&inactive, " start "));
-    fs::remove_dir_all(&folder).unwrap();
-}
-
 /// PowerShell answers the question about the task's state; every other command succeeds.
 fn task_scheduler(state: &'static str) -> Recorder {
     Recorder::answering(move |call| {
@@ -698,4 +675,99 @@ fn an_idle_agent_that_is_booted_out_is_loaded_again_through_the_same_retry() {
         .install(&programs(), &[Component::Engine])
         .unwrap();
     assert_eq!(bootstraps(&recorder), 2);
+}
+
+/// Holds the singleton lock of `component` as the running program would, until the returned file
+/// is dropped.
+fn running(layout: &Layout, component: Component) -> fs::File {
+    soyeht_platform::fs::lock_singleton(&layout.data, component.lock()).unwrap()
+}
+
+#[test]
+fn linux_registers_a_unit_whose_program_runs_and_does_not_start_it() {
+    let scratch = Scratch::new("linux-running");
+    let layout = test_layout(System::Linux, &scratch.0);
+    let _engine = running(&layout, Component::Engine);
+    let recorder = Recorder::default();
+    Manager::new(&layout, &recorder)
+        .install(&programs(), &BOTH)
+        .unwrap();
+    let ptyd = layout.profile.ptyd_systemd_unit;
+    let engine = layout.profile.engine_systemd_unit;
+    assert_eq!(
+        recorder.lines(),
+        [
+            "systemctl --user daemon-reload".to_owned(),
+            format!("systemctl --user enable --now {ptyd}"),
+            "systemctl --user daemon-reload".to_owned(),
+            format!("systemctl --user enable {engine}"),
+        ]
+    );
+    assert!(layout.definition_file(Component::Engine).is_file());
+}
+
+#[test]
+fn windows_registers_a_task_whose_program_runs_and_does_not_run_it() {
+    let scratch = Scratch::new("windows-running");
+    let layout = test_layout(System::Windows, &scratch.0);
+    let _ptyd = running(&layout, Component::Ptyd);
+    let recorder = task_scheduler("stopped\r\n");
+    Manager::new(&layout, &recorder)
+        .install(&programs(), &BOTH)
+        .unwrap();
+    let lines = recorder.lines();
+    for task in [
+        layout.profile.ptyd_windows_task,
+        layout.profile.engine_windows_task,
+    ] {
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with(&format!("schtasks /Create /TN {task} "))),
+            "{lines:?}"
+        );
+    }
+    assert!(!lines.contains(&format!(
+        "schtasks /Run /TN {}",
+        layout.profile.ptyd_windows_task
+    )));
+    assert!(lines.contains(&format!(
+        "schtasks /Run /TN {}",
+        layout.profile.engine_windows_task
+    )));
+}
+
+#[test]
+fn macos_writes_the_agent_of_a_program_that_runs_and_does_not_load_it() {
+    let scratch = Scratch::new("mac-running");
+    let layout = test_layout(System::Macos, &scratch.0);
+    let _engine = running(&layout, Component::Engine);
+    let recorder = launchd(true, false);
+    Manager::new(&layout, &recorder)
+        .install(&programs(), &BOTH)
+        .unwrap();
+    assert_eq!(bootstraps(&recorder), 1);
+    assert!(mentions(&recorder, layout.profile.ptyd_launchd_label));
+    assert!(!mentions(&recorder, layout.profile.engine_launchd_label));
+    assert!(layout.definition_file(Component::Engine).is_file());
+}
+
+#[test]
+fn a_lock_nobody_holds_does_not_stop_the_start() {
+    let scratch = Scratch::new("linux-free");
+    let layout = test_layout(System::Linux, &scratch.0);
+    // A lock that was held and given back, as a program that ended leaves it.
+    drop(running(&layout, Component::Engine));
+    let recorder = Recorder::default();
+    Manager::new(&layout, &recorder)
+        .install(&programs(), &BOTH)
+        .unwrap();
+    assert_eq!(
+        recorder
+            .lines()
+            .iter()
+            .filter(|line| line.contains("enable --now"))
+            .count(),
+        2
+    );
 }

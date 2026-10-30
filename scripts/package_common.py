@@ -1,9 +1,9 @@
-"""What every platform's package script shares (ADR 0121, ADR 0123).
+"""What the packaging scripts of every platform share (`package_mac.py`, `package_linux.py`,
+`package_windows.py`; ADRs 0120, 0121 and 0123): the error a step raises, the digest of a file, the
+command runners, the product version and the name of a package file (`contracts/release.json`, ADR
+0115), the release build of the two cargo workspaces and the programs it leaves."""
 
-The product version (`contracts/release.json`, ADR 0115), the profile a package ships, the names
-of a package file, the release build of the two cargo workspaces and the programs it leaves. A
-platform script (`package_linux.py`, `package_windows.py`) adds only what its format needs.
-"""
+from __future__ import annotations
 
 import hashlib
 import os
@@ -12,12 +12,13 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-import release  # noqa: E402  (the scripts directory is on the path of a script)
-from generated_profile import BUILD_ENVIRONMENT  # noqa: E402
+import release
+from generated_profile import BUILD_ENVIRONMENT
 
-# The production profile: the names a stranger's machine gets (ADR 0112).
-PROFILE = "prod"
+ROOT = Path(__file__).resolve().parents[1]
+COMMAND_SECONDS = 600
+# The production profile, by its name in `contracts/profiles.json` (a package ships no other).
+PROFILE_NAME = "prod"
 PACKAGE = "soyeht"
 HOMEPAGE = "https://github.com/soyeht/soyeht"
 # The programs of `engine/` that a package ships, by cargo package.
@@ -25,7 +26,43 @@ ENGINE_PACKAGES = ("soyeht-engine", "soyeht-ptyd", "soyeht-cli", "soyeht-mcp", "
 
 
 class PackagingError(Exception):
-    pass
+    """A step failed; the message says which and why."""
+
+
+def sha256_of(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def write_checksum(path):
+    """`<file>.sha256` beside `path`, in the format `shasum -a 256 -c` reads."""
+    path = Path(path)
+    checksum = path.with_name(path.name + ".sha256")
+    checksum.write_text(f"{sha256_of(path)}  {path.name}\n")
+    return checksum
+
+
+def _words(command):
+    return [str(part) for part in command]
+
+
+def run(command, *, check=True, timeout=COMMAND_SECONDS, environment=None, cwd=None):
+    """Run a command, print it first, and return the finished process (output captured)."""
+    print("+ " + " ".join(_words(command)), flush=True)
+    result = subprocess.run(
+        _words(command), capture_output=True, text=True, timeout=timeout, env=environment, cwd=cwd,
+    )
+    if check and result.returncode:
+        detail = (result.stderr or result.stdout).strip()[-2000:]
+        raise PackagingError(f"{command[0]} failed with status {result.returncode}:\n{detail}")
+    return result
+
+
+def stream(command, *, environment=None, cwd=None):
+    """Run a long build with its output on the terminal."""
+    print("+ " + " ".join(_words(command)), flush=True)
+    status = subprocess.run(_words(command), env=environment, cwd=cwd).returncode
+    if status:
+        raise PackagingError(f"{command[0]} failed with status {status}")
 
 
 @dataclass(frozen=True)
@@ -40,17 +77,17 @@ class Plan:
 
     def artifact_path(self, out, system, extension):
         """`soyeht-<version>-<system>-<arch>.<extension>`: the name the update manifest expects."""
-        return Path(out) / f"{PACKAGE}-{self.version}-{system}-{self.arch}.{extension}"
+        return artifact_path(out, self.version, system, self.arch, extension)
+
+
+def artifact_path(out, version, system, arch, extension):
+    return Path(out) / f"{PACKAGE}-{version}-{system}-{arch}.{extension}"
 
 
 def make_plan(plan_class, arch, programs):
     """The plan of this commit's release: the version and revision come from the contract only."""
     made = release.current(ROOT)
     return plan_class(str(made.version), made.revision, arch, source_epoch(), programs)
-
-
-def sha256_of(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def host_arch():
@@ -81,16 +118,15 @@ def add_build_arguments(parser):
 def cargo_build(engine_target, desktop_target, triple=None):
     """Release programs of both workspaces for the production profile; `--locked`, default
     features. `triple` builds for another target of the same system (Windows builds arm64 and x64
-    on either)."""
-    environment = dict(os.environ, **{BUILD_ENVIRONMENT: PROFILE})
+    on either). The output is on the terminal."""
+    environment = dict(os.environ, **{BUILD_ENVIRONMENT: PROFILE_NAME})
     target = ["--target", triple] if triple else []
     for folder, directory, extra in (
         ("engine", engine_target, [arg for name in ENGINE_PACKAGES for arg in ("-p", name)]),
         ("apps/desktop", desktop_target, []),
     ):
         env = dict(environment, CARGO_TARGET_DIR=str(directory)) if directory else environment
-        command = ["cargo", "build", "--release", "--locked", *target, *extra]
-        subprocess.run(command, cwd=ROOT / folder, env=env, check=True)
+        stream(["cargo", "build", "--release", "--locked", *target, *extra], environment=env, cwd=ROOT / folder)
 
 
 def built_programs(engine_target, desktop_target, engine_programs, desktop_programs, triple=None, suffix=""):

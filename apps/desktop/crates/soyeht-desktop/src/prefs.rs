@@ -99,9 +99,7 @@ pub(crate) fn saved_theme(saved: &LocalPreferences) -> ThemeName {
 
 /// Writes `theme` as the choice of the next launch, keeping the other choices in the file.
 fn remember_theme(directory: &Path, theme: ThemeName) -> std::io::Result<()> {
-    let mut saved = LocalPreferences::load(directory);
-    saved.theme = Some(theme.id().to_owned());
-    saved.save(directory)
+    LocalPreferences::change(directory, |saved| saved.theme = Some(theme.id().to_owned()))
 }
 
 impl Prefs {

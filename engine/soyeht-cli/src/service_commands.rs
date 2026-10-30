@@ -27,10 +27,18 @@ pub fn execute(profile: &'static Profile, directory: PathBuf, args: &[String]) -
             manager.install(&programs, &components)?;
             report(&manager, &components)
         }
-        [
-            action @ ("uninstall" | "start" | "stop" | "status"),
-            rest @ ..,
-        ] => {
+        ["status", rest @ ..] => {
+            let flags = Flags::parse(rest, &["--component", "--programs"])?;
+            let components = components(&flags)?;
+            let layout = Layout::current(profile, directory)?;
+            let manager = Manager::new(&layout, &Real);
+            let mut result = report(&manager, &components)?;
+            if let Some(programs) = flags.get("--programs") {
+                add_current(&manager, &mut result, Path::new(programs))?;
+            }
+            Ok(result)
+        }
+        [action @ ("uninstall" | "start" | "stop"), rest @ ..] => {
             let flags = Flags::parse(rest, &["--component"])?;
             let components = components(&flags)?;
             let layout = Layout::current(profile, directory)?;
@@ -38,8 +46,7 @@ pub fn execute(profile: &'static Profile, directory: PathBuf, args: &[String]) -
             match *action {
                 "uninstall" => manager.uninstall(&components)?,
                 "start" => manager.start(&components)?,
-                "stop" => manager.stop(&components)?,
-                _ => {}
+                _ => manager.stop(&components)?,
             }
             report(&manager, &components)
         }
@@ -86,6 +93,25 @@ pub(crate) fn report(
         }
     }
     Ok(json!({ "services": services }))
+}
+
+/// Adds `"current"` to each service of a status report: whether its definition is exactly what
+/// `install --programs PROGRAMS` would write (contract 13, section 3).
+fn add_current(
+    manager: &Manager<'_, impl Commands>,
+    result: &mut Value,
+    programs: &Path,
+) -> Result<()> {
+    if let Some(services) = result["services"].as_array_mut() {
+        for service in services {
+            let component = service["component"]
+                .as_str()
+                .and_then(Component::parse)
+                .ok_or_else(|| invalid("The report names a component that does not exist"))?;
+            service["current"] = json!(manager.is_current(programs, component)?);
+        }
+    }
+    Ok(())
 }
 
 /// `service render`: the text of a service file for values given on the command line, without

@@ -101,7 +101,7 @@ class NamesTests(unittest.TestCase):
 
     def test_the_package_is_for_the_production_profile(self):
         self.assertEqual(package.APPLICATION_ID, "com.soyeht.next")
-        self.assertEqual(package.PROFILE, "prod")
+        self.assertEqual(package.PROFILE_NAME, "prod")
 
 
 class ShippedFilesTests(unittest.TestCase):
@@ -136,7 +136,7 @@ class ShippedFilesTests(unittest.TestCase):
             subprocess.run(["sh", "-n", str(script)], check=True)
 
     def test_the_folder_the_launcher_writes_is_named_after_the_production_data_directory(self):
-        folder = PROFILES[package.PROFILE]["dataDirectory"]["linux"] + "-appimage"
+        folder = PROFILES[package.PROFILE_NAME]["dataDirectory"]["linux"] + "-appimage"
         self.assertIn("next", folder)
         self.assertIn(f"/{folder}\n", APP_RUN.read_text())
 
@@ -195,6 +195,7 @@ class DebTests(unittest.TestCase):
             self.assertEqual(fields["Architecture"], "amd64")
             self.assertIn("libc6 (>= 2.35)", fields["Depends"])
             self.assertIn("libvulkan1", fields["Depends"])
+            self.assertIn("curl", [name.strip() for name in fields["Depends"].split(",")])
             self.assertIn("libgtk-3-0t64 | libgtk-3-0", fields["Recommends"])
             self.assertGreater(int(fields["Installed-Size"]), 0)
             for script in ("postinst", "postrm", "prerm"):

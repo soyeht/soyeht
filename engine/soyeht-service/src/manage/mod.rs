@@ -13,7 +13,7 @@ use crate::{
     commands::{CommandOutput, Commands, require},
     error::{Error, Result},
     layout::Layout,
-    render::render,
+    render::{encode_task_file, render},
     system::{Component, System},
 };
 use soyeht_platform::fs::{
@@ -45,6 +45,27 @@ pub struct Manager<'a, C: Commands> {
 
 /// What the system files of this folder ask of a manager.
 impl<C: Commands> Manager<'_, C> {
+    /// Before a start: fails with `NotRegistered` when there is no definition, and with
+    /// `ProgramMissing` when the program the definition starts (as `read_program` finds it in the
+    /// text) is no longer there. A start that would run nothing must not say it worked: systemd
+    /// skips such a unit and launchd does not run such an agent, and both report success.
+    fn require_startable(
+        &self,
+        component: Component,
+        read_program: fn(&str) -> Option<String>,
+    ) -> Result<()> {
+        let file = self.file(component);
+        if !file.is_file() {
+            return Err(Error::NotRegistered);
+        }
+        if let Some(program) = read_program(&fs::read_to_string(&file)?)
+            && !Path::new(&program).is_file()
+        {
+            return Err(Error::ProgramMissing(program));
+        }
+        Ok(())
+    }
+
     /// The name the system knows `component` by.
     fn name(&self, component: Component) -> &'static str {
         self.layout.name(component)
@@ -72,7 +93,10 @@ impl<'a, C: Commands> Manager<'a, C> {
     }
 
     /// Writes the definition of each component in `components` (programs found in `programs`),
-    /// registers it with the system and starts it, the supervisor first. A definition that is
+    /// registers it with the system and starts it, the supervisor first. A component whose program
+    /// already runs is registered and not started, whoever started that program (the app starts
+    /// its own when nothing is registered): a second instance would fail on the program's lock
+    /// and be restarted for ever, so the logon trigger starts it the next time. A definition that is
     /// already registered and running is rewritten and left running: the new text applies when
     /// the system next loads it (after `stop` and `start`, or at the next login), so a person's
     /// terminals are not ended by an installer that only repairs the registration. A launchd
@@ -94,13 +118,24 @@ impl<'a, C: Commands> Manager<'a, C> {
         }
         self.prepare_folders(texts.iter().map(|(component, _)| *component))?;
         for (component, text) in texts {
+            let start = !self.program_runs(component)?;
             match self.layout.system {
-                System::Macos => self.launchd_install(component, &text)?,
-                System::Linux => self.systemd_install(component, &text)?,
-                System::Windows => self.task_install(component, &text)?,
+                System::Macos => self.launchd_install(component, &text, start)?,
+                System::Linux => self.systemd_install(component, &text, start)?,
+                System::Windows => self.task_install(component, &text, start)?,
             }
         }
         Ok(())
+    }
+
+    /// Whether a program of `component` runs now, found by the singleton lock it holds in the
+    /// data directory (the same file the engine and the supervisor lock), not by asking the
+    /// service manager: the window starts its own.
+    fn program_runs(&self, component: Component) -> Result<bool> {
+        Ok(soyeht_platform::fs::singleton_held(
+            &self.layout.data,
+            component.lock(),
+        )?)
     }
 
     /// Stops each component and removes its registration and definition, the engine first. The
@@ -146,6 +181,23 @@ impl<'a, C: Commands> Manager<'a, C> {
         Ok(())
     }
 
+    /// Whether the definition on disk is the one `install` would write for programs found in
+    /// `programs`: the same bytes. A caller that can be moved (the Mac app) asks this before it
+    /// installs, so a registration that is right is left alone, and one that a person stopped
+    /// with `stop` is not started again.
+    pub fn is_current(&self, programs: &Path, component: Component) -> Result<bool> {
+        let definition = self.layout.definition(component, programs)?;
+        let wanted = file_bytes(
+            self.layout.system,
+            &render(self.layout.system, &definition)?,
+        );
+        match fs::read(self.file(component)) {
+            Ok(found) => Ok(found == wanted),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        }
+    }
+
     pub fn status(&self, component: Component) -> Result<Status> {
         let (registered, running) = match self.layout.system {
             System::Macos => self.launchd_status(component)?,
@@ -188,9 +240,23 @@ fn ordered(components: &[Component]) -> Vec<Component> {
         .collect()
 }
 
+/// The bytes of a definition file: a Task Scheduler file is UTF-16, the others are text.
+fn file_bytes(system: System, text: &str) -> Vec<u8> {
+    match system {
+        System::Windows => encode_task_file(text),
+        System::Macos | System::Linux => text.as_bytes().to_vec(),
+    }
+}
+
 /// Replaces the file at `path`, making its folder when missing; a link at `path` is replaced,
-/// not written through.
+/// not written through. A regular file that already holds exactly `bytes` is left alone, so a
+/// repair that changes nothing leaves no new modification time and no new background item for
+/// the system to announce.
 pub(crate) fn write_definition(path: &Path, bytes: &[u8]) -> Result<()> {
+    let regular = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file());
+    if regular && fs::read(path).is_ok_and(|found| found == bytes) {
+        return Ok(());
+    }
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -212,5 +278,9 @@ pub(crate) fn path_text(path: &Path) -> Result<&str> {
     path.to_str().ok_or(Error::Unrepresentable("path"))
 }
 
+#[cfg(test)]
+mod current_tests;
+#[cfg(test)]
+mod program_tests;
 #[cfg(test)]
 mod tests;

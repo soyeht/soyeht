@@ -53,6 +53,7 @@ pub mod text_input;
 pub mod timestamp;
 pub mod transcript_rows;
 pub mod transport;
+pub mod update;
 pub mod usage;
 pub mod web_host;
 pub mod writing;

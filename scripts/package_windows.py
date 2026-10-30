@@ -24,16 +24,15 @@ import argparse
 import os
 import shutil
 import struct
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from generated_profile import PROFILES
 from legacy_guard import require_next
-from packaging_common import (
+from package_common import (
     HOMEPAGE,
-    PROFILE,
+    PROFILE_NAME,
     ROOT,
     PackagingError,
     absolute,
@@ -42,21 +41,23 @@ from packaging_common import (
     cargo_build,
     host_arch,
     make_plan,
+    run,
+    stream,
 )
-from packaging_common import Plan as BasePlan
+from package_common import Plan as BasePlan
 
 PACKAGING = ROOT / "apps/desktop/packaging/windows"
 SCRIPT = PACKAGING / "soyeht.iss"
-# The name people see: the installer, the shortcut, Add or remove programs and the signature's
-# description. One value, given to the installer script and to `signtool`.
-PRODUCT_NAME = "Soyeht"
+PROFILE = PROFILES[PROFILE_NAME]
+# What people see, and what the machine knows the installer by, all from the profile (ADR 0112).
+# The name of the installer's entries (the shortcut, Add or remove programs, the description of a
+# signature) is the window's title; the folder below Programs is the name of the app's folder on
+# the Mac, which carries "next"; the installer id, and with it the key of Add or remove
+# programs, is the profile's application id for Windows.
+PRODUCT_NAME = PROFILE["displayNames"]["window"]
 PUBLISHER = PRODUCT_NAME
-
-# The names of a machine carry "next", for ever (ADR 0112). The id of the installer, and with it the
-# key of Add or remove programs, is the common part of the production profile's task names
-# (every task is `<id>.<Component>`), and the folder below Programs is the same words.
-APP_ID = PROFILES[PROFILE]["windowsTasks"]["engine"].rsplit(".", 1)[0]
-INSTALL_FOLDER = APP_ID.replace(".", " ")
+INSTALL_FOLDER = PROFILE["displayNames"]["macApp"]
+APP_ID = PROFILE["appIds"]["windows"]
 
 ENGINE_PROGRAMS = ("soyeht", "soyeht-engine", "soyeht-ptyd", "soyeht-mcp", "soyeht-service-host")
 DESKTOP_PROGRAMS = ("soyeht-desktop",)
@@ -241,8 +242,12 @@ def loud_unsigned():
 
 
 def sign_file(signtool, signing, path):
-    subprocess.run(signing.command(signtool, path), check=True)
-    subprocess.run([str(signtool), "verify", "/pa", "/q", str(path)], check=True)
+    run(signing.command(signtool, path))
+    verify(signtool, path)
+
+
+def verify(signtool, path):
+    run([signtool, "verify", "/pa", "/q", path])
 
 
 # ---- the installer ---------------------------------------------------------------------------
@@ -272,7 +277,7 @@ def inno_arguments(plan, staging, out, signing, signtool):
         "Stage": staging,
         "OutputDir": out,
         "OutputName": plan.artifact(out).stem,
-        "Profile": PROFILE,
+        "Profile": PROFILE_NAME,
         "Publisher": PUBLISHER,
         "Url": HOMEPAGE,
         "Icon": PACKAGING / "soyeht.ico",
@@ -303,10 +308,10 @@ def build_installer(plan, out, inno, signing, signtool):
     if signing:
         for path in sorted(staging.glob("*.exe")):
             sign_file(signtool, signing, path)
-    subprocess.run([str(inno), *inno_arguments(plan, staging, out, signing, signtool)], check=True)
+    stream([inno, *inno_arguments(plan, staging, out, signing, signtool)])
     target = plan.artifact(out)
     if signing:
-        subprocess.run([str(signtool), "verify", "/pa", "/q", str(target)], check=True)
+        verify(signtool, target)
     shutil.rmtree(staging)
     return target
 
@@ -358,5 +363,5 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
-    except (PackagingError, subprocess.CalledProcessError) as failure:
+    except PackagingError as failure:
         sys.exit(f"package_windows: {failure}")

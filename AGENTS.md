@@ -10,12 +10,14 @@ Each layer depends only on the layers listed above it.
 
 1. `contracts/`: `protocol.json` (wire methods, events, limits, the clients' shared policy,
    error codes),
-   `profiles.json` (installed profile values), `release.json` (the product version) and
+   `profiles.json` (installed profile values), `release.json` (the product version),
+   `update.json` (the update manifest's address, public keys, limits and wording, ADR 0122) and
    `design-tokens.json` (palettes, radii, spacing, type scale, shadows, layout metrics, fonts).
    This is the only place where wire values and design tokens are defined.
 2. `engine/soyeht-protocol`: generated wire models, limits and framing, plus the
    transport-agnostic rules every client shares: the greeting and `hello`
-   validation (`handshake`) and snapshot page assembly (`snapshot`). It has no
+   validation (`handshake`), snapshot page assembly (`snapshot`) and the reading of the signed
+   update manifest (`update`). It has no
    Soyeht dependencies and no IO or async runtime.
    `engine/soyeht-platform` sits at the same level: the operating-system seams
    (the local endpoint, owner-only files, process launch and termination, the user's
@@ -39,7 +41,8 @@ Each layer depends only on the layers listed above it.
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
-     at login. Only the command line uses it; the engine does not register itself.
+     at login. Only the command line uses it; the engine does not register itself, and the Mac app
+     registers the services by running the `soyeht` command line it carries in its bundle (ADR 0120).
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
    and WebSocket API. The `soyeht-cli` binary uses protocol, platform and service
    (its tests also use ptyd and store); the `soyeht-mcp` binary uses protocol, platform
@@ -56,7 +59,8 @@ Each layer depends only on the layers listed above it.
    (`check_mac_environment.py`).
 7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
    its own cargo workspace and depends on `engine/soyeht-protocol` and, for the local endpoint
-   (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`. Its
+   (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`, and,
+   for the update check's `curl` (ADR 0122), `engine/soyeht-process`. Its
    `soyeht-client` crate holds the connection and state (and the web host the engine's agents
    read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
    run time, with no Soyeht dependency, ADR 0110), `soyeht-desktop` the
@@ -126,6 +130,13 @@ ADR when you change a boundary.
   Cargo workspaces, lockfiles, npm package and Xcode projects are written by
   `uv run python scripts/release.py bump ...` and checked by `release.py check`. A new crate
   uses `version.workspace = true`.
+- The update check reads one signed manifest (ADR 0122, `docs/contracts/15-updates.md`). Its
+  address, public keys, limits and wording are `contracts/update.json`, generated as
+  `soyeht_protocol::update_policy` and `UpdatePolicy`/`UpdateText`. The reading rules exist in
+  `soyeht_protocol::update`, `UpdateCheck` and `contracts/update_manifest.py`, and all three pass
+  `contracts/vectors/update.json`; change the vectors first
+  (`uv run python contracts/test_update_manifest.py --write`). The private signing key never
+  enters the repository: `scripts/release_manifest.py` reads it from the environment.
 - Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard
   `canonicalize` gives Windows' `\\?\C:\...` form, which `cmd.exe` and `git` read differently;
   `engine/soyeht-platform/tests/canonical_paths.rs` fails on any other use.

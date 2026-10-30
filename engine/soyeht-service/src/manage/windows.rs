@@ -41,7 +41,7 @@ impl<C: Commands> Manager<'_, C> {
         self.require("schtasks run", SCHTASKS, &["/Run", "/TN", name])
     }
 
-    pub(super) fn task_install(&self, component: Component, text: &str) -> Result<()> {
+    pub(super) fn task_install(&self, component: Component, text: &str, start: bool) -> Result<()> {
         let file = self.file(component);
         if let Some(folder) = file.parent() {
             ensure_private_dir(folder)?;
@@ -51,7 +51,7 @@ impl<C: Commands> Manager<'_, C> {
         let name = self.name(component);
         let arguments = ["/Create", "/TN", name, "/XML", path_text(&file)?, "/F"];
         self.require("schtasks create", SCHTASKS, &arguments)?;
-        if self.task_runs(component)? {
+        if !start || self.task_runs(component)? {
             Ok(())
         } else {
             self.task_run(component)
