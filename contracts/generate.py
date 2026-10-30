@@ -14,6 +14,7 @@ from legacy import LEGACY_SOURCE, render_legacy, validate_legacy
 from product_version import RELEASE_SOURCE, load as load_version, render as render_version
 from readiness import render_readiness
 from settings import render_settings
+from update import render_update_source
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_SOURCE = "contracts/protocol.json"
@@ -777,6 +778,7 @@ def main():
     legacy = json.loads((ROOT / LEGACY_SOURCE).read_bytes())
     validate_legacy(legacy)
     outputs.update(render_legacy(legacy))
+    outputs.update(render_update_source(ROOT))
     outputs.update(render_version(load_version((ROOT / RELEASE_SOURCE).read_text())))
     token_data = (ROOT / TOKENS_PATH).read_bytes()
     outputs.update(render_tokens(json.loads(token_data)))

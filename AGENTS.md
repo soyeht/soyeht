@@ -10,12 +10,14 @@ Each layer depends only on the layers listed above it.
 
 1. `contracts/`: `protocol.json` (wire methods, events, limits, the clients' shared policy,
    error codes),
-   `profiles.json` (installed profile values), `release.json` (the product version) and
+   `profiles.json` (installed profile values), `release.json` (the product version),
+   `update.json` (the update manifest's address, public keys, limits and wording, ADR 0122) and
    `design-tokens.json` (palettes, radii, spacing, type scale, shadows, layout metrics, fonts).
    This is the only place where wire values and design tokens are defined.
 2. `engine/soyeht-protocol`: generated wire models, limits and framing, plus the
    transport-agnostic rules every client shares: the greeting and `hello`
-   validation (`handshake`) and snapshot page assembly (`snapshot`). It has no
+   validation (`handshake`), snapshot page assembly (`snapshot`) and the reading of the signed
+   update manifest (`update`). It has no
    Soyeht dependencies and no IO or async runtime.
    `engine/soyeht-platform` sits at the same level: the operating-system seams
    (the local endpoint, owner-only files, process launch and termination, the user's
@@ -126,6 +128,13 @@ ADR when you change a boundary.
   Cargo workspaces, lockfiles, npm package and Xcode projects are written by
   `uv run python scripts/release.py bump ...` and checked by `release.py check`. A new crate
   uses `version.workspace = true`.
+- The update check reads one signed manifest (ADR 0122, `docs/contracts/15-updates.md`). Its
+  address, public keys, limits and wording are `contracts/update.json`, generated as
+  `soyeht_protocol::update_policy` and `UpdatePolicy`/`UpdateText`. The reading rules exist in
+  `soyeht_protocol::update`, `UpdateCheck` and `contracts/update_manifest.py`, and all three pass
+  `contracts/vectors/update.json`; change the vectors first
+  (`uv run python contracts/test_update_manifest.py --write`). The private signing key never
+  enters the repository: `scripts/release_manifest.py` reads it from the environment.
 - Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard
   `canonicalize` gives Windows' `\\?\C:\...` form, which `cmd.exe` and `git` read differently;
   `engine/soyeht-platform/tests/canonical_paths.rs` fails on any other use.

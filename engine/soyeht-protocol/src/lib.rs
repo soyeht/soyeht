@@ -19,6 +19,8 @@ pub mod profile;
 pub mod readiness;
 pub mod setting;
 pub mod snapshot;
+pub mod update;
+pub mod update_policy;
 pub mod validate;
 pub mod web;
 
