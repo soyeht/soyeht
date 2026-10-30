@@ -49,7 +49,15 @@ pub(super) fn make_folder(root: &Path) -> Result<PathBuf> {
             Ok(()) if !is_reparse_point(&folder) => return Ok(folder),
             Ok(()) => return Err(refuses("the private web folder is not a plain folder")),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(_) => return Err(refuses("the private web folder cannot be made")),
+            Err(error) => {
+                return Err(refuses(
+                    if error.kind() == std::io::ErrorKind::PermissionDenied {
+                        "access to the private web folder was refused"
+                    } else {
+                        "the private web folder cannot be made"
+                    },
+                ));
+            }
         }
     }
     Err(refuses("the private web folder cannot be made"))

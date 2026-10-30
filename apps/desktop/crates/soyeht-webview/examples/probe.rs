@@ -25,31 +25,37 @@ fn save(frame: &Frame, path: &str) {
     );
 }
 
+/// `PROBE_PRIVATE_ROOT` opens two private views that keep their files under that folder.
+fn open_private_views(backend: &'static Backend) -> Vec<WebView> {
+    let Some(root) = std::env::var_os("PROBE_PRIVATE_ROOT") else {
+        return Vec::new();
+    };
+    let mut views = Vec::new();
+    for _ in 0..2 {
+        let private = backend.open(
+            &ViewOptions {
+                profile: None,
+                scratch: Some(PathBuf::from(&root)),
+                background: 0xffffff,
+                width: 400,
+                height: 300,
+            },
+            Arc::new(|_| {}),
+        );
+        println!("private view: {:?}", private.as_ref().map(|_| ()));
+        views.extend(private);
+    }
+    views
+}
+
 fn main() {
     let arguments: Vec<String> = std::env::args().collect();
     let (profile, url, prefix) = (&arguments[1], &arguments[2], &arguments[3]);
     let backend = Backend::get().unwrap();
-    // `PROBE_PRIVATE_ROOT` opens two private views that keep their files under that folder.
-    if let Some(root) = std::env::var_os("PROBE_PRIVATE_ROOT") {
-        for _ in 0..2 {
-            let private = backend.open(
-                &ViewOptions {
-                    profile: None,
-                    scratch: Some(PathBuf::from(&root)),
-                    background: 0xffffff,
-                    width: 400,
-                    height: 300,
-                },
-                Arc::new(|_| {}),
-            );
-            println!("private view: {:?}", private.as_ref().map(|_| ()));
-            std::mem::forget(private);
-        }
-    }
-    let background = std::env::var("PROBE_BACKGROUND")
-        .ok()
-        .and_then(|hex| u32::from_str_radix(&hex, 16).ok())
-        .unwrap_or(0xff_ffff);
+    let _private_views = open_private_views(backend);
+    let background = std::env::var("PROBE_BACKGROUND").map_or(0xff_ffff, |hex| {
+        u32::from_str_radix(&hex, 16).unwrap_or(0xff_ffff)
+    });
     let view = backend
         .open(
             &ViewOptions {
