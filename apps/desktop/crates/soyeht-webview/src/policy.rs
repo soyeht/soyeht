@@ -34,6 +34,7 @@ pub(crate) fn allows_frame(uri: &str) -> bool {
 
 /// What to do with the page a web view has committed at its top level, for a back end that could
 /// not tell the top level from a frame when it decided the navigation.
+#[cfg(any(target_os = "linux", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TopLevel {
     /// The page is one the top level may hold.
@@ -45,6 +46,7 @@ pub(crate) enum TopLevel {
     Blank,
 }
 
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn top_level(uri: &str, can_go_back: bool) -> TopLevel {
     if uri.is_empty() || allows(uri) {
         TopLevel::Keep
