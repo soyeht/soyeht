@@ -19,6 +19,9 @@
       agents keep running when you close the window.
     </p>
   </description>
+  <developer id="com.soyeht">
+    <name>Soyeht</name>
+  </developer>
   <launchable type="desktop-id">com.soyeht.next.desktop</launchable>
   <provides>
     <binary>soyeht-desktop</binary>
