@@ -161,8 +161,13 @@ The rules of ADR 0110 apply as they are; on this engine:
 - Permissions (camera, microphone, position, notifications, clipboard, anything) are denied, as on
   Linux: the pane asks the person nothing yet.
 - A download is cancelled. A new window is opened in the same page when its address is `http` or
-  `https`. Navigation, of the page and of each frame in it, is limited to `http`, `https`,
-  `about:blank` and `blob:` (`policy.rs`, shared with Linux); `file:` and the rest are cancelled.
+  `https`. Navigation of the page is limited to `http`, `https`, `about:blank` and `blob:`
+  (`policy::allows`, shared with Linux); `file:` and the rest are cancelled. A frame in the page may
+  load those and also `data:` and `about:srcdoc` (`policy::allows_frame`), as in a browser, which
+  refuses `data:` only at the top level: many real pages embed their own such frames. WebView2 tells
+  a frame from the top level, so each event has its own rule; WebKitGTK does not (ADR 0110: the
+  decision lets a frame's address through and a top level that commits as `data:` or
+  `about:srcdoc` becomes `about:blank`).
   A link to a program of the system (the runtime's external-scheme launch) is cancelled. A runtime
   that has none of these events (frame navigation, download, external scheme) is not used: a view
   there fails with `Unavailable`, since a page could do what is refused here.

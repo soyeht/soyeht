@@ -95,7 +95,8 @@ fn keep_to_the_web(view: &ViewCtx, token: &mut i64) -> Result<()> {
     Ok(())
 }
 
-/// A frame of the page goes where the pane goes, and nowhere else.
+/// A frame of the page goes where a frame may (`policy::allows_frame`: the pane's addresses and
+/// the `data:` and `about:srcdoc` a page embeds), and nowhere else.
 fn frame_navigation_starting() -> Win32::ICoreWebView2NavigationStartingEventHandler {
     NavigationStartingEventHandler::create(Box::new(move |_, args| {
         if let Some(args) = args {
@@ -103,7 +104,7 @@ fn frame_navigation_starting() -> Win32::ICoreWebView2NavigationStartingEventHan
             // SAFETY: the arguments are alive for the call of the handler.
             let address = address_of(unsafe { args.Uri(&raw mut uri) }, uri);
             // SAFETY: as above.
-            if !policy::allows(&address) && unsafe { args.SetCancel(true) }.is_err() {
+            if !policy::allows_frame(&address) && unsafe { args.SetCancel(true) }.is_err() {
                 // The frame went on its way before it could be stopped.
             }
         }
