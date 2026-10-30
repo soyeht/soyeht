@@ -391,6 +391,29 @@ fn linux_stop_goes_engine_first_and_start_leaves_an_active_unit_alone() {
     assert!(!mentions(&running, " start "));
 }
 
+#[test]
+fn linux_start_refuses_a_unit_whose_program_is_gone_instead_of_reporting_success() {
+    let folder = std::env::temp_dir().join(format!("next-service-gone-{}", std::process::id()));
+    fs::create_dir_all(&folder).unwrap();
+    for name in ["soyeht-ptyd", "soyeht-engine"] {
+        fs::write(folder.join(name), b"program").unwrap();
+    }
+    let scratch = Scratch::new("linux-start-gone");
+    let layout = test_layout(System::Linux, &scratch.0);
+    Manager::new(&layout, &Recorder::default())
+        .install(&folder, &BOTH)
+        .unwrap();
+    fs::remove_file(folder.join("soyeht-engine")).unwrap();
+    let inactive = Recorder::answering(|_| no());
+    let result = Manager::new(&layout, &inactive).start(&[Component::Engine]);
+    assert!(
+        matches!(&result, Err(Error::ProgramMissing(program)) if program.ends_with("soyeht-engine")),
+        "{result:?}"
+    );
+    assert!(!mentions(&inactive, " start "));
+    fs::remove_dir_all(&folder).unwrap();
+}
+
 /// PowerShell answers the question about the task's state; every other command succeeds.
 fn task_scheduler(state: &'static str) -> Recorder {
     Recorder::answering(move |call| {

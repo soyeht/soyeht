@@ -1,0 +1,9 @@
+#!/bin/sh
+# Soyeht: a package script runs as root and cannot reach the login services of each person's
+# account, so it only says how to remove them (ADR 0121).
+set -e
+if [ "$1" = remove ]; then
+    echo "Soyeht: if you registered it to start at login, run 'soyeht uninstall' as that user" >&2
+    echo "to stop and unregister it (your data is kept; add --delete-data to delete it)." >&2
+fi
+exit 0

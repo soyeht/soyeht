@@ -42,7 +42,9 @@ impl Error {
             Self::Environment(what) => format!("{what} is unknown"),
             Self::Unsafe(what) => format!("{what} is a link; refusing to write through it"),
             Self::ProgramMissing(program) => {
-                format!("the program {program} does not exist; check --programs")
+                format!(
+                    "the program {program} does not exist; check --programs or install it again"
+                )
             }
             Self::NotRegistered => "the service is not registered".to_owned(),
             Self::StillRunning => "the engine or the supervisor still answers; quit the app or \
