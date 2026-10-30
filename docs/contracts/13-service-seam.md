@@ -73,10 +73,12 @@ terminals (ADR 0108).
 ## 3. Who registers
 
 Today the seam is called by the `soyeht service` command, by `scripts/install_dev.py` and by the
-Mac app (ADR 0120). The release installers of Linux and Windows are to do what is said below.
+Mac app (ADR 0120) and the Windows installer (ADR 0123). The Linux packages leave the registration to the
+person (ADR 0121); the Linux and Windows desktop apps do not call it yet. The rest of this section is what they are to do.
 
 **The installer** is to register, with the person's consent to install: it copies the programs and
-runs `soyeht service install --programs DIR`. **The uninstaller** is to run `soyeht uninstall`
+runs `soyeht service install --programs DIR`. The Windows installer asks with a box, unchecked by
+default ("Start Soyeht when I log in"), and registers nothing when it stays unchecked. **The uninstaller** is to run `soyeht uninstall`
 (`soyeht uninstall --delete-data --yes` when the person chose to delete their data) before it
 removes the programs. **The app** registers only when the person asks, for a copy that was not
 installed by an installer (an unpacked archive, a package manager that runs no script, a dragged
@@ -110,7 +112,7 @@ The commands, all printing the state of the services after they ran as JSON
 
 | Command | Effect |
 | --- | --- |
-| `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). |
+| `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). A component whose program already runs, which the window starts when nothing is registered, is registered and not started: the program holds a singleton lock in the data directory (`engine.lock`, `ptyd.lock`), and a second copy would fail on it and be restarted for ever, so the logon trigger starts it next time. Ask the lock, never the service manager. |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
 | `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
 | `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux and the Mac with "the program ... does not exist" when the program is gone (systemd would skip the unit, and launchd would not run the agent, and both would report success). |
@@ -254,7 +256,6 @@ installed over a prod install replaces nothing of it.
 
 ## 9. Not covered
 
-The desktop app (Linux and Windows) and the release installers do not call the seam yet; the Mac
-app does only through the section 3 command. Signing and notarization of the Mac package are ADR
-0120. Auto-update, a machine-wide (all users) service, and starting at boot rather than at login
-are out of scope.
+The desktop app (Linux and Windows) does not call the seam yet, and of the release installers only the Windows one
+does (section 3); the Mac app does through the section 3 command. Signing and notarization of the Mac package are ADR
+0120. Auto-update, a machine-wide (all users) service, and starting at boot rather than at login are out of scope.

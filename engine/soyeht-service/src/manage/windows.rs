@@ -5,7 +5,7 @@
 //! of what was registered. Whether a task runs is asked of PowerShell, since the column
 //! `schtasks` prints is translated to the language of the system.
 
-use super::{Manager, path_text, remove_definition, write_definition};
+use super::{Install, Manager, path_text, remove_definition, write_definition};
 use crate::{
     commands::Commands,
     error::{Error, Result},
@@ -41,17 +41,17 @@ impl<C: Commands> Manager<'_, C> {
         self.require("schtasks run", SCHTASKS, &["/Run", "/TN", name])
     }
 
-    pub(super) fn task_install(&self, component: Component, text: &str) -> Result<()> {
+    pub(super) fn task_install(&self, component: Component, install: &Install) -> Result<()> {
         let file = self.file(component);
         if let Some(folder) = file.parent() {
             ensure_private_dir(folder)?;
         }
-        write_definition(&file, &encode_task_file(text))?;
+        write_definition(&file, &encode_task_file(install.text))?;
         // `/F` replaces a task of the same name, and leaves its running instance alone.
         let name = self.name(component);
         let arguments = ["/Create", "/TN", name, "/XML", path_text(&file)?, "/F"];
         self.require("schtasks create", SCHTASKS, &arguments)?;
-        if self.task_runs(component)? {
+        if !install.start || self.task_runs(component)? {
             Ok(())
         } else {
             self.task_run(component)

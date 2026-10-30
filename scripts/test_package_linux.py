@@ -101,7 +101,7 @@ class NamesTests(unittest.TestCase):
 
     def test_the_package_is_for_the_production_profile(self):
         self.assertEqual(package.APPLICATION_ID, "com.soyeht.next")
-        self.assertEqual(package.PROFILE, "prod")
+        self.assertEqual(package.PROFILE_NAME, "prod")
 
 
 class ShippedFilesTests(unittest.TestCase):
@@ -136,7 +136,7 @@ class ShippedFilesTests(unittest.TestCase):
             subprocess.run(["sh", "-n", str(script)], check=True)
 
     def test_the_folder_the_launcher_writes_is_named_after_the_production_data_directory(self):
-        folder = PROFILES[package.PROFILE]["dataDirectory"]["linux"] + "-appimage"
+        folder = PROFILES[package.PROFILE_NAME]["dataDirectory"]["linux"] + "-appimage"
         self.assertIn("next", folder)
         self.assertIn(f"/{folder}\n", APP_RUN.read_text())
 

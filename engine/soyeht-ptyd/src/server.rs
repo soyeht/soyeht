@@ -13,7 +13,7 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
-    fs::{LockError, lock_singleton},
+    fs::{LockError, PTYD_LOCK, lock_singleton},
     local::{BindError, Listener, Stream},
     log,
 };
@@ -80,7 +80,7 @@ fn refuse(stream: &mut Stream, kind: &str, message: &str) -> Result<()> {
 }
 
 pub fn run(directory: &Path) -> Result<()> {
-    let _lock = match lock_singleton(directory, "ptyd.lock") {
+    let _lock = match lock_singleton(directory, PTYD_LOCK) {
         Ok(lock) => lock,
         Err(LockError::Held) => return Err(Error::AlreadyRunning),
         Err(LockError::Io(error)) => return Err(error.into()),

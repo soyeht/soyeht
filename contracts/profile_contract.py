@@ -14,7 +14,7 @@ PROFILE_LOGS = ("engine", "ptyd", "desktop")
 
 PROFILE_NAMES = ("dev", "prod")
 PROFILE_SYSTEMS = ("macos", "windows", "linux")
-PROFILE_APP_SYSTEMS = ("macos", "linux")
+PROFILE_APP_SYSTEMS = ("macos", "windows", "linux")
 PROFILE_NAME_KEYS = ("macApp", "window")
 PROFILE_FIELDS = {"dataDirectory", "tcpPort", "displayNames", "appIds", "launchdLabels", "systemdUnits", "windowsTasks"}
 # The owner's legacy app is not this repository (AGENTS.md, "Legacy app"). Every machine
@@ -183,6 +183,7 @@ def _rust_profile(profile):
     mac_app_name: {json.dumps(profile["mac_app_name"], ensure_ascii=False)},
     window_title: {json.dumps(profile["window_title"], ensure_ascii=False)},
     macos_app_id: {json.dumps(apps["macos"])},
+    windows_app_id: {json.dumps(apps["windows"])},
     linux_app_id: {json.dumps(apps["linux"])},
     engine_launchd_label: {json.dumps(profile["engine_label"])},
     ptyd_launchd_label: {json.dumps(profile["ptyd_label"])},
@@ -246,6 +247,7 @@ pub struct Profile {{
     /// The title of the Mac app's main window.
     pub window_title: &'static str,
     pub macos_app_id: &'static str,
+    pub windows_app_id: &'static str,
     pub linux_app_id: &'static str,
     pub engine_launchd_label: &'static str,
     pub ptyd_launchd_label: &'static str,

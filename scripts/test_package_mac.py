@@ -93,7 +93,7 @@ class SigningChoiceTests(unittest.TestCase):
 
 class NamesAndOutputTests(unittest.TestCase):
     def test_the_image_is_named_from_the_version_the_way_every_platform_is(self):
-        self.assertEqual(package_mac.artifact_name("1.2.3", "dmg"), "soyeht-1.2.3-macos-aarch64.dmg")
+        self.assertEqual(package_mac.artifact_path(".", "1.2.3", package_mac.OPERATING_SYSTEM, package_mac.ARTIFACT_ARCHITECTURE, "dmg").name, "soyeht-1.2.3-macos-aarch64.dmg")
 
     def test_an_ad_hoc_build_can_never_land_beside_the_release(self):
         dist = Path("dist")
