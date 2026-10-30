@@ -376,9 +376,12 @@ mod tests {
         (core, acknowledged, root, id)
     }
 
-    fn wait_for_acknowledgements(core: &mut Core, seen: &Mutex<Vec<u64>>, count: usize) {
+    /// Waits for `count` acknowledgements, and then for the flush job of pane `id` to be
+    /// applied: the supervisor sees the acknowledgement before the job that sent it ends, and
+    /// only an ended job lets the next flush start.
+    fn wait_for_acknowledgements(core: &mut Core, id: &str, seen: &Mutex<Vec<u64>>, count: usize) {
         let deadline = Instant::now() + Duration::from_secs(30);
-        while seen.lock().unwrap().len() < count {
+        while seen.lock().unwrap().len() < count || core.background.is_active(&flush_job(id)) {
             assert!(
                 Instant::now() < deadline,
                 "the output was never acknowledged"
@@ -408,17 +411,22 @@ mod tests {
     fn output_is_acknowledged_only_after_its_flush() {
         let (mut core, acknowledged, root, id) = core_with_output(true);
 
+        // The supervisor records an acknowledgement under this lock, so holding it keeps the
+        // flush job from finishing: the flush runs on its own thread and, left alone, could
+        // acknowledge before the test looks.
+        let held = acknowledged.lock().unwrap();
         drain_and_apply(&mut core, &id);
 
         // The tick wrote the output and went on: the supervisor still holds it.
-        assert!(acknowledged.lock().unwrap().is_empty());
+        assert!(held.is_empty());
         assert_eq!(core.panes[&id].screen.next_offset(), 5);
-        wait_for_acknowledgements(&mut core, &acknowledged, 1);
+        drop(held);
+        wait_for_acknowledgements(&mut core, &id, &acknowledged, 1);
         assert_eq!(*acknowledged.lock().unwrap(), vec![5]);
 
         // Output that arrives later is flushed and acknowledged by the next job.
         drain_and_apply(&mut core, &id);
-        wait_for_acknowledgements(&mut core, &acknowledged, 2);
+        wait_for_acknowledgements(&mut core, &id, &acknowledged, 2);
         assert_eq!(*acknowledged.lock().unwrap(), vec![5, 11]);
         crate::test_paths::remove_after(core, root);
     }
@@ -430,7 +438,7 @@ mod tests {
         drain_and_apply(&mut core, &id);
 
         // Nothing waits for the disk: the job only asks the supervisor.
-        wait_for_acknowledgements(&mut core, &acknowledged, 1);
+        wait_for_acknowledgements(&mut core, &id, &acknowledged, 1);
         assert_eq!(*acknowledged.lock().unwrap(), vec![5]);
         crate::test_paths::remove_after(core, root);
     }
