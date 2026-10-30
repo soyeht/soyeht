@@ -77,6 +77,9 @@ const
   Profile = '{#Profile}';
   // How long a command of the installed program, or a probe of it, may run.
   CliSeconds = 120;
+  // What RunScript returns when PowerShell itself did not start: no exit code of a program is
+  // this (a program may exit with 0xFFFFFFFF, which is -1).
+  PowerShellDidNotStart = -2;
   ProbeSeconds = 15;
 
 function SetEnvironmentVariable(Name, Value: String): Boolean;
@@ -129,8 +132,8 @@ begin
 end;
 
 // Runs a PowerShell script that reads its inputs from the environment (a path never goes into
-// the script text, so a quote in a user name cannot break it). Returns the exit code, -1 when
-// PowerShell did not start.
+// the script text, so a quote in a user name cannot break it). Returns the exit code, or
+// PowerShellDidNotStart.
 function RunScript(Script: String): Integer;
 var
   Code: Integer;
@@ -144,7 +147,7 @@ begin
 end;
 
 // Runs a program with a deadline and returns its exit code: 124 when the deadline passed (the
-// program is ended), 125 when it did not start, -1 when PowerShell did not.
+// program is ended), 125 when it did not start, -1 when it did not start directly either.
 function RunWithin(Exe, Arguments: String; Seconds: Integer): Integer;
 begin
   SetEnvironmentVariable('SOYEHT_RUN_EXE', Exe);
@@ -157,7 +160,7 @@ begin
     '-WindowStyle Hidden -PassThru; $null = $p.Handle; ' +
     'if (-not $p.WaitForExit([int]$env:SOYEHT_RUN_MS)) { Stop-Process -Id $p.Id -Force; exit 124 }; ' +
     'exit $p.ExitCode } catch { exit 125 }');
-  if Result = -1 then
+  if Result = PowerShellDidNotStart then
   begin
     // PowerShell itself would not start (a policy, a missing component): run the program
     // directly, so that an uninstall still unregisters the tasks. No deadline, but no script.
@@ -378,12 +381,13 @@ begin
   if (Supervisor <> '') and FileExists(Supervisor) and ((OldProtocol = '') or (OldProtocol <> NewProtocol)) then
     Tell('{#AppName} was updated, and the new terminal supervisor speaks a different protocol from the ' +
       'one that is running. The running engine and supervisor keep the previous build until they restart. ' +
-      'To use the new build, quit {#AppName}, then sign out and in again, or end soyeht-ptyd.exe in Task ' +
-      'Manager, and open {#AppName} again. Either ends your terminals.', False)
+      'To use the new build, quit {#AppName}, then sign out and in again, or end both soyeht-engine.exe and ' +
+      'soyeht-ptyd.exe in Task Manager, and open {#AppName} again. Either ends your terminals.', False)
   else if WindowRuns() then
     Tell('{#AppName} was running while it was updated. The running programs keep the previous build, and ' +
-      'your terminals keep running, until they restart. Close the window and open it again; the engine ' +
-      'starts the new build once it is restarted.', False)
+      'your terminals keep running, until they restart. A window that is open does not restart the engine: ' +
+      'close the window, end soyeht-engine.exe in Task Manager (your terminals stay) and open {#AppName} ' +
+      'again, or sign out and in.', False)
   else
   begin
     EndProgramsOfTheFolder(False);

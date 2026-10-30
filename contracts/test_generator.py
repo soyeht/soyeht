@@ -541,6 +541,9 @@ class ProfileTests(unittest.TestCase):
             ("profiles", "dev", "displayNames", "windowsFolder", "Soyeht\\Next"),
             ("profiles", "dev", "displayNames", "windowsFolder", "Soyeht Next."),
             ("profiles", "dev", "displayNames", "windowsFolder", "Soyeht: Next"),
+            # Names Windows keeps for devices, in any case, with or without an extension.
+            *(("profiles", "dev", "displayNames", "windowsFolder", device)
+              for device in ("CON", "con", "Nul", "AUX.next", "prn.d", "COM1", "lpt9", "Com3.txt", "COM\u00b2", "CONOUT$")),
             ("profiles", "prod", "displayNames", "windowsFolder", self.document["profiles"]["dev"]["displayNames"]["windowsFolder"]),
             ("profiles", "prod", "displayNames", dict(self.document["profiles"]["dev"]["displayNames"])),
             ("profiles", "dev", "tcpPort", True),
@@ -618,6 +621,12 @@ class ProfileTests(unittest.TestCase):
         for change in changes:
             with self.subTest(change=change), self.assertRaisesRegex(ValueError, "next"):
                 validate_profiles(self.changed(*change))
+
+    def test_device_names_are_refused_but_names_that_merely_start_like_one_are_not(self):
+        for fine in ("Console Next", "Auxiliary Next", "COM10 Next", "Next Soyeht"):
+            with self.subTest(folder=fine):
+                document = self.changed("profiles", "dev", "displayNames", "windowsFolder", fine)
+                validate_profiles(document)
 
     def test_the_windows_install_folder_is_pinned(self):
         # Never change it: the login tasks of a release hold the absolute path of each program in

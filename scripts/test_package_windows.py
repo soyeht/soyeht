@@ -289,13 +289,25 @@ class InstallerScriptTests(unittest.TestCase):
     def test_a_command_still_runs_when_powershell_will_not_start(self):
         run = self.script[self.script.index("function RunWithin") :]
         run = run[: run.index("\nend;")]
-        self.assertLess(run.index("RunScript("), run.index("if Result = -1 then"))
+        self.assertLess(run.index("RunScript("), run.index("if Result = PowerShellDidNotStart then"))
         self.assertIn("Exec(Exe, Arguments", run)
+        # PowerShell not starting has a value no program exits with: a program that exits with
+        # 0xFFFFFFFF (-1) must not be run a second time.
+        self.assertIn("PowerShellDidNotStart = -2;", self.script)
+        self.assertIn("if Result = PowerShellDidNotStart then", run)
+        self.assertNotIn("Result = -1", run)
 
     def test_the_mismatch_message_names_nothing_that_is_not_on_the_path(self):
         self.assertNotIn("soyeht service stop", self.script)
         self.assertIn("Task ", self.script)
         self.assertIn("sign out", self.script)
+        # The old engine restarts a lost supervisor with its old protocol: both must end.
+        self.assertIn("end both soyeht-engine.exe and ' +\n      'soyeht-ptyd.exe in Task Manager", self.script)
+
+    def test_an_open_window_message_says_what_really_applies_the_new_build(self):
+        # Closing a window does not restart the engine it started.
+        self.assertIn("A window that is open does not restart the engine", self.script)
+        self.assertIn("end soyeht-engine.exe in Task Manager", self.script)
 
     def test_the_environment_the_scripts_read_is_removed_after_use(self):
         used = set(re.findall(r"SetEnvironmentVariable\('(SOYEHT_\w+)'", self.script))

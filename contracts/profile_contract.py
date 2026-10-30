@@ -20,6 +20,12 @@ PROFILE_NAME_KEYS = ("macApp", "window", "windowsFolder")
 # uses. It is a name for the machine as much as for people: the login tasks hold the absolute path of
 # each program in it (contract 13), so it must never change once a release is out.
 WINDOWS_FOLDER_REJECTED = re.compile(r'[<>:"/\\|?*\x00-\x1f]|[ .]$|^[ .]')
+# The names Windows keeps for devices: a folder cannot be called any of them, with or without an
+# extension, in any case (`con`, `Aux.d`, `COM1`).
+WINDOWS_DEVICE_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    | {f"{device}{number}" for device in ("COM", "LPT") for number in "123456789\u00b9\u00b2\u00b3"}
+)
 PROFILE_FIELDS = {"dataDirectory", "tcpPort", "displayNames", "appIds", "launchdLabels", "systemdUnits", "windowsTasks"}
 # The owner's legacy app is not this repository (AGENTS.md, "Legacy app"). Every machine
 # identifier of a profile carries this marker, so no value can name the legacy app's.
@@ -71,6 +77,8 @@ def _validate_profile(name, profile):
     folder = names["windowsFolder"]
     if WINDOWS_FOLDER_REJECTED.search(folder):
         raise ValueError(f"{name} windowsFolder must be a valid Windows folder name")
+    if folder.split(".")[0].rstrip().upper() in WINDOWS_DEVICE_NAMES:
+        raise ValueError(f"{name} windowsFolder must not be a Windows device name")
     _next_marked(folder, f"{name} windowsFolder")
     _keys(profile["appIds"], PROFILE_APP_SYSTEMS, f"{name} appIds")
     for system, app_id in profile["appIds"].items():
