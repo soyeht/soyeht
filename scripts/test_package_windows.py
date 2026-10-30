@@ -164,13 +164,12 @@ class SigningTests(unittest.TestCase):
             with self.assertRaisesRegex(package.PackagingError, "signtool.exe was not found"):
                 package.find_signtool(None, {"ProgramFiles(x86)": str(Path(folder) / "none")}, "x86_64")
 
-    def test_an_arm_build_without_clang_stops_before_cargo_runs(self):
+    def test_a_build_without_clang_stops_before_cargo_runs(self):
         with patch.object(package.shutil, "which", return_value=None):
             with self.assertRaisesRegex(package.PackagingError, "needs clang"):
-                package.check_build_tools("aarch64")
-            package.check_build_tools("x86_64")
+                package.check_build_tools()
         with patch.object(package.shutil, "which", return_value="clang.exe"):
-            package.check_build_tools("aarch64")
+            package.check_build_tools()
 
     def test_the_unsigned_warning_cannot_be_missed(self):
         text = package.loud_unsigned()
@@ -438,6 +437,34 @@ class ReleaseEnvironmentTests(unittest.TestCase):
         result = common.release_environment({"RUSTFLAGS": "-C opt-level=1"})
         self.assertEqual(result[common.BUILD_ENVIRONMENT], common.PROFILE_NAME)
         self.assertNotIn("RUSTFLAGS", result)
+
+    def test_the_c_libraries_get_the_same_rules_in_the_form_clang_and_gcc_read(self):
+        paths = [(Path("/b/home"), "/home"), (Path("/b/src"), "/soyeht")]
+        self.assertEqual(
+            common.c_flags(paths),
+            ["-ffile-prefix-map=/b/home=/home", "-ffile-prefix-map=/b/src=/soyeht"],
+        )
+
+    def test_the_flags_of_the_c_compiler_survive_a_blank_and_a_backslash(self):
+        self.assertEqual(common.quoted_flag("-O2", windows=True), "-O2")
+        quoted = common.quoted_flag(r"-ffile-prefix-map=C:\Users\Jane Smith=/home", windows=True)
+        self.assertEqual(quoted, r'"-ffile-prefix-map=C:\Users\Jane Smith=/home"')
+        self.assertEqual(common.quoted_flag("-ffile-prefix-map=/Users/Jane Smith=/home", windows=False), "'-ffile-prefix-map=/Users/Jane Smith=/home'")
+
+    def test_cflags_keep_what_the_builder_set_and_are_read_as_shell_words(self):
+        result = common.release_environment({"CFLAGS": "-O2 -g"})
+        self.assertEqual(result["CC_SHELL_ESCAPED_FLAGS"], "1")
+        words = result["CFLAGS"].split()
+        self.assertEqual(words[:2], ["-O2", "-g"])
+        self.assertTrue(any(word.endswith("=/soyeht") for word in words))
+
+    def test_a_windows_release_compiles_its_c_with_clang_for_every_target(self):
+        with patch.object(common, "is_windows", return_value=True):
+            result = common.release_environment({}, "aarch64-pc-windows-msvc")
+            self.assertEqual(result["CC_aarch64_pc_windows_msvc"], "clang")
+            self.assertNotIn("CC_x86_64_pc_windows_msvc", result)
+        with patch.object(common, "is_windows", return_value=False):
+            self.assertFalse([key for key in common.release_environment({}, "x86_64-unknown-linux-gnu") if key.startswith("CC_x86")])
 
     def test_both_workspaces_are_built_with_it(self):
         calls = []

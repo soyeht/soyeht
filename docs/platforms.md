@@ -120,7 +120,7 @@ fails when a Cargo manifest or lockfile, the npm package or an Xcode project dis
 Windows takes the first three fields of the file version from the desktop package's version, which is the
 same number, and the fourth from the revision. The script does not tag, push, build or sign. The Linux packages are built by `scripts/package_linux.py` ("Linux packages" below), the Mac package by `scripts/package_mac.py` ("The Mac package" below) and the Windows installers by `scripts/package_windows.py` ("Windows packages").
 
-A release made by `package_mac.py`, `package_linux.py` or `package_windows.py` is built with `--remap-path-prefix` for the builder's source, home, cargo and rustup folders (`package_common.release_environment`), so no path of the build machine ends up in a program.
+A release made by `package_mac.py`, `package_linux.py` or `package_windows.py` is built with `--remap-path-prefix` for the builder's source, home, cargo and rustup folders (`package_common.release_environment`), so no path of the build machine ends up in a program (the C libraries get `-ffile-prefix-map` too, and a Windows release compiles its C with clang, so LLVM is needed for x64 as well as Arm).
 
 Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.release]`:
 `opt-level = 3`, `lto = "thin"`, `codegen-units = 1` and `strip = "symbols"`. `panic` stays
@@ -291,8 +291,7 @@ version is `contracts/release.json`. Options: `--arch x86_64|aarch64|all`, `--sk
 architectures), `--inno` and `--signtool` for the tools, `--require-signature`.
 
 What the build machine needs: rustup with both MSVC targets, the Visual Studio Build Tools with the C++ tools
-for x64 and Arm64 and a Windows SDK, Git, Python 3, LLVM on `PATH` for the Arm64 build (`ring` compiles C for
-Arm with `clang`: `winget install LLVM.LLVM`), and Inno Setup 6.7 (`winget install JRSoftware.InnoSetup
+for x64 and Arm64 and a Windows SDK, Git, Python 3, LLVM on `PATH` (`winget install LLVM.LLVM`: a Windows release compiles its C with clang, which also keeps the builder's paths out of the programs), and Inno Setup 6.7 (`winget install JRSoftware.InnoSetup
 --scope user`; the script looks in the usual folders, else `SOYEHT_INNO_COMPILER`). Before it packs anything the script reads the header of
 each program and stops when one is for the other processor, or when the window or the service host would
 open a console.

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -137,7 +138,29 @@ def builder_paths(environment):
     return paths
 
 
-def release_environment(environment=None):
+def is_windows():
+    return os.name == "nt"
+
+
+def c_flags(paths):
+    """The flags that keep a builder's path out of `__FILE__` and the debug records of the C
+    libraries a program is linked with (the SQLite and tree-sitter of the engine, built by the
+    `cc` crate). Only clang and gcc have them (`-ffile-prefix-map`), so a Windows release is
+    compiled with clang as well (see `release_environment`)."""
+    return [f"-ffile-prefix-map={path}={name}" for path, name in paths]
+
+
+def quoted_flag(flag, windows):
+    """`flag` as `cc` reads it from `CFLAGS` with `CC_SHELL_ESCAPED_FLAGS`: quoted when it holds a
+    blank, a quote or a backslash, so a user name with a space or a Windows path survives."""
+    if not any(character in flag for character in ' \t"\'\\'):
+        return flag
+    if windows:
+        return '"' + flag.replace('"', '\\"') + '"'
+    return shlex.quote(flag)
+
+
+def release_environment(environment=None, triple=None):
     """The environment of a release build: the production profile built in (ADR 0112), and no
     path of the builder's machine in a program (a panic message, a debug record or a library
     path names its file). `CARGO_ENCODED_RUSTFLAGS` carries the flags, since a path with a blank,
@@ -150,6 +173,15 @@ def release_environment(environment=None):
     flags += [f"--remap-path-prefix={path}={name}" for path, name in builder_paths(result)]
     result["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
     result.pop("RUSTFLAGS", None)
+    windows = is_windows()
+    existing = [quoted_flag(flag, windows) for flag in result.get("CFLAGS", "").split()]
+    ours = [quoted_flag(flag, windows) for flag in c_flags(builder_paths(result))]
+    result["CFLAGS"] = " ".join(existing + ours)
+    result["CC_SHELL_ESCAPED_FLAGS"] = "1"
+    if windows and triple:
+        # Microsoft's compiler has no such flag, so every C file of a Windows release goes through
+        # clang (LLVM is a build requirement already: `ring` needs it for Arm).
+        result["CC_" + triple.replace("-", "_")] = "clang"
     result[BUILD_ENVIRONMENT] = PROFILE_NAME
     return result
 
@@ -166,7 +198,7 @@ def cargo_build(engine_target, desktop_target, triple=None):
         base = dict(os.environ)
         if directory:
             base["CARGO_TARGET_DIR"] = str(directory)
-        environment = release_environment(base)
+        environment = release_environment(base, triple)
         stream(["cargo", "build", "--release", "--locked", *target, *extra], environment=environment, cwd=ROOT / folder)
 
 

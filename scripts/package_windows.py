@@ -225,10 +225,11 @@ def find_signtool(given, environment, host):
     raise PackagingError(f"signing is on but signtool.exe was not found: install the Windows SDK or set {SIGNTOOL_PATH}")
 
 
-def check_build_tools(arch):
-    """`ring` compiles C for Arm with clang, which Visual Studio does not install: LLVM must be on `PATH`."""
-    if arch == "aarch64" and not shutil.which("clang"):
-        raise PackagingError("an aarch64 build needs clang (LLVM) on PATH: winget install LLVM.LLVM")
+def check_build_tools():
+    """Every C file of a release is compiled with clang (`package_common.release_environment`),
+    which Visual Studio does not install: LLVM must be on `PATH`."""
+    if not shutil.which("clang"):
+        raise PackagingError("a release build needs clang (LLVM) on PATH: winget install LLVM.LLVM")
 
 
 def loud_unsigned():
@@ -348,7 +349,7 @@ def main(argv=None):
     for arch in arches:
         triple = ARCHITECTURES[arch][0]
         if not args.skip_build:
-            check_build_tools(arch)
+            check_build_tools()
             cargo_build(args.engine_target, args.desktop_target, triple)
         programs = built_programs(
             args.engine_target, args.desktop_target, ENGINE_PROGRAMS, DESKTOP_PROGRAMS, triple, ".exe"
