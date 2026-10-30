@@ -169,6 +169,7 @@ class CollectTests(FlowCase):
     def test_a_pre_release_takes_the_ad_hoc_image_and_leaves_a_system_out(self):
         (self.dist / release_checks.BUILD_SHA).write_text(SHA + "\n")
         (self.dist / "ad-hoc").mkdir()
+        (self.dist / "ad-hoc" / release_checks.BUILD_SHA).write_text(SHA + "\n")
         (self.dist / "ad-hoc" / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")).write_bytes(b"adhoc")
         self.package("linux", "x86_64", "deb")
         self.package("linux", "x86_64", "AppImage")
@@ -207,6 +208,44 @@ class CollectTests(FlowCase):
         (self.dist / release_checks.BUILD_SHA).write_text("c" * 40 + "\n")
         with self.assertRaisesRegex(release_flow.Refused, "built from cccccccc"):
             self.quiet(self.collect)
+
+    def test_the_marker_is_read_from_what_windows_powershell_writes(self):
+        windows = self.root / "windows"
+        windows.mkdir()
+        marker = windows / release_checks.BUILD_SHA
+        for data in (SHA.encode() + b"\n", b"\xef\xbb\xbf" + SHA.encode() + b"\r\n", (SHA + "\r\n").encode("utf-16")):
+            marker.write_bytes(data)
+            self.assertEqual(release_checks.read_build_sha(marker), SHA)
+        for data in (b"\xff\xfe\x00", b"\xc3\x28", b"abc\n", b""):
+            marker.write_bytes(data)
+            with self.assertRaises(release_checks.MarkerError):
+                release_checks.read_build_sha(marker)
+        self.all_packages()
+        (windows / release_checks.package_name(VERSION, "windows", "x86_64", "exe")).write_bytes(pe(True))
+        marker.write_bytes((SHA + "\r\n").encode("utf-16"))
+        self.quiet(release_flow.gather, self.dist, VERSION, [windows])
+        marker.write_bytes(b"\xc3\x28")
+        with self.assertRaisesRegex(release_flow.Refused, "not a commit id"):
+            release_flow.gather(self.dist, VERSION, [windows])
+        (self.dist / release_checks.BUILD_SHA).write_bytes(b"\xff\xfe\x00")
+        self.assertIn("build again", release_flow.build_sha_problems(self.dist, probe_for())[0])
+
+    def test_an_ad_hoc_folder_is_tied_to_the_commit_like_any_other(self):
+        self.all_packages()
+        adhoc = self.dist / "ad-hoc"
+        adhoc.mkdir()
+        (adhoc / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")).write_bytes(b"adhoc")
+        with self.assertRaisesRegex(release_flow.Refused, "ad-hoc has no BUILD_SHA"):
+            self.quiet(self.collect, "--allow-unsigned", tool=ad_hoc_tool)
+        (adhoc / release_checks.BUILD_SHA).write_text("f" * 40 + "\n")
+        with self.assertRaisesRegex(release_flow.Refused, "built from fffffffff"):
+            self.quiet(self.collect, "--allow-unsigned", tool=ad_hoc_tool)
+        # A folder named ad-hoc anywhere else is not exempt either.
+        elsewhere = self.root / "elsewhere" / "ad-hoc"
+        elsewhere.mkdir(parents=True)
+        (elsewhere / release_checks.package_name(VERSION, "linux", "x86_64", "deb")).write_bytes(b"x")
+        with self.assertRaisesRegex(release_flow.Refused, "has no BUILD_SHA"):
+            release_flow.gather(self.dist, VERSION, [elsewhere])
 
     def test_a_package_of_another_version_is_never_collected_or_uploaded(self):
         self.all_packages()
@@ -415,6 +454,28 @@ class BuildTests(FlowCase):
         self.assertFalse(dry.exists())
         self.assertIn("would write", out)
 
+    def test_the_commit_is_recorded_after_the_packages_are_built_not_before(self):
+        seen = []
+
+        class Watching(Recorder):
+            def must(inner, command, **options):
+                seen.append((tuple(command[:2]), (self.dist / release_checks.BUILD_SHA).exists()))
+                super().must(command, **options)
+
+        self.quiet(release_flow.build, self.options("build", "--mac", "--linux"), Watching(), probe_for(), {})
+        self.assertTrue(seen and all(not existed for _, existed in seen))
+        self.assertTrue((self.dist / release_checks.BUILD_SHA).is_file())
+
+    def test_a_build_also_marks_an_ad_hoc_folder_and_refuses_one_of_another_commit(self):
+        adhoc = self.dist / "ad-hoc"
+        adhoc.mkdir()
+        (adhoc / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")).write_bytes(b"old")
+        with self.assertRaisesRegex(release_flow.Refused, "ad-hoc holds packages with no BUILD_SHA"):
+            self.build("--linux")
+        (adhoc / release_checks.BUILD_SHA).write_text(SHA + "\n")
+        self.build("--linux")
+        self.assertEqual((adhoc / release_checks.BUILD_SHA).read_text().strip(), SHA)
+
     def test_packages_left_by_a_build_of_another_commit_stop_a_new_build(self):
         self.all_packages()
         (self.dist / release_checks.BUILD_SHA).write_text("e" * 40 + "\n")
@@ -427,6 +488,7 @@ class BuildTests(FlowCase):
         _, recorder, out = self.build("--windows")
         self.assertEqual(recorder.commands, [])
         self.assertIn("package_windows.py --require-signature", out)
+        self.assertIn("| Out-File -Encoding ascii dist\\BUILD_SHA", out)
         self.assertIn(f"git checkout {SHA}", out)
 
     def test_a_release_checkout_is_required_and_a_dry_run_only_reports_it(self):

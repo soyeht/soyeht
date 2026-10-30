@@ -195,7 +195,7 @@ def windows_instructions(version, sha):
             "Windows: run this on the Windows host (docs/release.md, \"The Windows installers\"), in a clone:",
             f"    git fetch origin && git checkout {sha}",
             "    uv run python scripts\\package_windows.py --require-signature",
-            f"    git rev-parse HEAD > dist\\{release_checks.BUILD_SHA}",
+            f"    git rev-parse HEAD | Out-File -Encoding ascii dist\\{release_checks.BUILD_SHA}",
             f"then copy dist\\soyeht-{version}-windows-*.exe and dist\\{release_checks.BUILD_SHA} to a folder here and pass it to collect with --from.",
             "Set the SOYEHT_WINDOWS_SIGN_* variables first (docs/platforms.md, \"Windows packages\").",
         ]
@@ -213,22 +213,45 @@ def refuse_or_warn(found, what, dry_run):
     return 1
 
 
-def mark_build(folder, version, sha, dry_run):
-    """Write the commit the packages are built from beside them (`BUILD_SHA`). Packages left in the
-    folder by a build of another commit would be taken for this one's, so that is refused."""
-    marker = folder / release_checks.BUILD_SHA
-    recorded = marker.read_text().strip() if marker.is_file() else None
-    stale = package_names(folder, version) if folder.is_dir() else []
-    if stale and recorded != sha:
-        found = [f"{folder} holds packages {'of commit ' + recorded[:9] if recorded else 'with no ' + release_checks.BUILD_SHA}: "
-                 "clear it (they were built from another commit)"]
-        return refuse_or_warn(found, "cannot build here", dry_run)
-    if dry_run:
-        print(f"dry run: would write {marker} ({sha[:9]})")
-    else:
-        folder.mkdir(parents=True, exist_ok=True)
-        marker.write_text(sha + "\n")
-    return 0
+def marker_sha(path):
+    try:
+        return release_checks.read_build_sha(path)
+    except release_checks.MarkerError as failure:
+        raise Refused(str(failure)) from None
+
+
+def build_folders(folder):
+    """The folders this build's packages land in: `dist/` and, for an ad-hoc Mac build, `dist/ad-hoc/`."""
+    return [folder, ad_hoc_folder(folder)]
+
+
+def ad_hoc_folder(folder):
+    return folder / "ad-hoc"
+
+
+def stale_build_problems(folder, version, sha):
+    """Packages left by a build of another commit would be taken for this one's."""
+    found = []
+    for place in build_folders(folder):
+        marker = place / release_checks.BUILD_SHA
+        recorded = marker_sha(marker) if marker.is_file() else None
+        if package_names(place, version) and recorded != sha:
+            found.append(f"{place} holds packages {'of commit ' + recorded[:9] if recorded else 'with no ' + release_checks.BUILD_SHA}: "
+                         "clear it (they were built from another commit)")
+    return found
+
+
+def mark_build(folder, sha, dry_run):
+    """Write the commit the packages were built from beside them (`BUILD_SHA`), after they exist."""
+    for place in build_folders(folder):
+        if place != folder and not place.is_dir():
+            continue
+        marker = place / release_checks.BUILD_SHA
+        if dry_run:
+            print(f"dry run: would write {marker} ({sha[:9]})")
+        else:
+            place.mkdir(parents=True, exist_ok=True)
+            marker.write_text(sha + "\n")
 
 
 def build(options, runner=None, probe=probe, environment=os.environ):
@@ -236,7 +259,7 @@ def build(options, runner=None, probe=probe, environment=os.environ):
     chosen = [system for system, flag in TARGETS.items() if getattr(options, flag)] or list(TARGETS)
     status = refuse_or_warn(source_problems(probe), "not a release checkout", options.dry_run)
     version, sha = str(release.current().version), head(probe)
-    status |= mark_build(options.dist, version, sha, options.dry_run)
+    status |= refuse_or_warn(stale_build_problems(options.dist, version, sha), "cannot build here", options.dry_run)
     if "macos" in chosen:
         command = ["nice", "-n", "15", "uv", "run", "python", "scripts/package_mac.py", "--dist", str(options.dist)]
         runner.must(command if options.allow_unsigned else [*command, "--release"])
@@ -245,6 +268,7 @@ def build(options, runner=None, probe=probe, environment=os.environ):
         build_linux(runner, host, version, sha, options.dist, environment)
     if "windows" in chosen:
         print(windows_instructions(version, sha))
+    mark_build(options.dist, sha, options.dry_run)
     print(f"\nbuild: {version} at {sha[:9]}: {', '.join(chosen)}. Next: collect")
     return status
 
@@ -256,19 +280,20 @@ def gather(folder, version, sources):
     """Copy the packages of `version` from each source folder into `folder`.
 
     A folder made elsewhere (the Windows installers) must say, in `BUILD_SHA`, that its packages
-    were built from the commit of the rest. The `ad-hoc` folder of this build is the exception."""
+    were built from the commit of the rest; so must the `dist/ad-hoc` folder of an ad-hoc Mac build."""
     copied = []
     for source in sources:
         if not source.is_dir() or source.resolve() == folder.resolve():
             continue
-        if source.name != "ad-hoc":
-            theirs = source / release_checks.BUILD_SHA
-            ours = folder / release_checks.BUILD_SHA
-            if not theirs.is_file():
-                raise Refused(f"{source} has no {release_checks.BUILD_SHA}: copy it from the machine that built the packages")
-            if not ours.is_file() or theirs.read_text().strip() != ours.read_text().strip():
-                raise Refused(f"{source} holds packages built from {theirs.read_text().strip()[:9]}, not from the "
-                              f"commit of {folder}: build them again")
+        if not any(path.is_file() for path in source.glob("soyeht-*")):
+            continue
+        theirs = source / release_checks.BUILD_SHA
+        ours = folder / release_checks.BUILD_SHA
+        if not theirs.is_file():
+            raise Refused(f"{source} has no {release_checks.BUILD_SHA}: copy it from the machine that built the packages")
+        if not ours.is_file() or marker_sha(theirs) != marker_sha(ours):
+            raise Refused(f"{source} holds packages built from {marker_sha(theirs)[:9]}, not from the "
+                          f"commit of {folder}: build them again")
         for path in sorted(source.glob("soyeht-*")):
             if not path.is_file():
                 continue
@@ -353,7 +378,7 @@ def collect(options, environment=os.environ, fetch=fetch_text, tool=release_chec
     folder.mkdir(parents=True, exist_ok=True)
     if options.without and not options.allow_unsigned:
         raise Refused("--without leaves a system out of the release: it is for a pre-release (--allow-unsigned)")
-    for name in gather(folder, version, [*options.sources, *([folder / "ad-hoc"] if options.allow_unsigned else [])]):
+    for name in gather(folder, version, [*options.sources, *([ad_hoc_folder(folder)] if options.allow_unsigned else [])]):
         print(f"collect: copied {name}")
     names = package_names(folder, version)
     found += stale_problems(folder, version)
@@ -467,7 +492,11 @@ def build_sha_problems(folder, probe=probe):
     marker = folder / release_checks.BUILD_SHA
     if not marker.is_file():
         return [f"{release_checks.BUILD_SHA} is missing: the packages are not tied to a commit; run build"]
-    built, current = marker.read_text().strip(), head(probe)
+    try:
+        built = release_checks.read_build_sha(marker)
+    except release_checks.MarkerError as failure:
+        return [f"{failure}: build again"]
+    current = head(probe)
     if built != current:
         return [f"the packages were built from {built[:9]}, not from {current[:9]}, the commit to tag: build again"]
     return []

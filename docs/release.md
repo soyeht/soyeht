@@ -76,7 +76,7 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    ```powershell
    git fetch origin; git checkout <commit>
    uv run python scripts\package_windows.py --require-signature
-   git rev-parse HEAD > dist\BUILD_SHA
+   git rev-parse HEAD | Out-File -Encoding ascii dist\BUILD_SHA
    ```
 
    It writes `dist\soyeht-<version>-windows-x86_64.exe` and `-aarch64.exe`. Copy them and `BUILD_SHA`
@@ -88,7 +88,7 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    uv run python scripts/release_flow.py collect --from ~/windows-installers
    ```
 
-   `build` wrote `dist/BUILD_SHA`, the commit the packages come from; `collect` and `publish` refuse
+   `build` wrote `dist/BUILD_SHA` (and `dist/ad-hoc/BUILD_SHA`) after the packages were built: the commit the packages come from; `collect` and `publish` refuse
    packages of another commit (or of another version, which are never uploaded). It copies the packages
    into `dist/` and checks that all five are there (the Mac image, the `.deb`
    and AppImage, the two installers), that the image is signed with a Developer ID certificate,

@@ -35,6 +35,27 @@ REQUIRED = (
 )
 
 
+class MarkerError(Exception):
+    """A `BUILD_SHA` that cannot be read as a commit id."""
+
+
+def read_build_sha(path):
+    """The commit id in a `BUILD_SHA` file. Windows PowerShell 5.1 writes redirected text as UTF-16
+    with a byte order mark, so that and UTF-8 with a mark are read as well as plain ASCII."""
+    data = Path(path).read_bytes()
+    try:
+        for mark, encoding in ((b"\xff\xfe", "utf-16"), (b"\xfe\xff", "utf-16"), (b"\xef\xbb\xbf", "utf-8-sig")):
+            if data.startswith(mark):
+                data = data.decode(encoding).encode()
+                break
+        text = data.decode("ascii").strip()
+    except UnicodeDecodeError:
+        raise MarkerError(f"{path} is not a commit id (not text)") from None
+    if len(text) != 40 or any(c not in "0123456789abcdef" for c in text):
+        raise MarkerError(f"{path} does not hold a full commit id")
+    return text
+
+
 def package_name(version, system, architecture, extension):
     return f"soyeht-{version}-{system}-{architecture}.{extension}"
 
