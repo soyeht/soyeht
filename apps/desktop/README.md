@@ -137,8 +137,11 @@ agent works.
   full size and scrolls them sideways in the same way.
 - The "+" menu lists the installed agents by readiness, each with how ready it is, and the others
   under a collapsed "More harnesses" entry; an agent that cannot start is shown dimmed. The grouping
-  and order are the rules of `contracts/vectors/harness-picker.json`, which the Mac passes too. Popup menus are as tall as the Mac's popover at most, scroll inside, and close on
-  Escape.
+  and order are the rules of `contracts/vectors/harness-picker.json`, which the Mac passes too. The
+  recent folders come last in the "+" menu, so that a window too short for the whole list shows the
+  agents. Every popup menu fits the window (`popup_fit`): it opens on the side of its button that
+  has the room, is never taller than that room (the Mac's popover height at most, the harness
+  lists up to a window's height), scrolls inside, and closes on Escape.
 - The transcript carries the Mac's cards: messages queued behind a running turn (with remove and
   resume), the notice when a turn goes quiet, the sign-in card, the answer form for an agent's
   question, subagent cards, and "Load earlier messages" for older history.

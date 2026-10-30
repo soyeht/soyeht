@@ -299,8 +299,7 @@ impl Workbench {
         let popover = open.then(|| {
             (
                 self.switch_popover(pane, palette, cx),
-                desktop::SWITCH_POPOVER_MAXIMUM_HEIGHT
-                    .min(self.window.height - 2.0 * desktop::PREFERENCES_INSET),
+                desktop::SWITCH_POPOVER_MAXIMUM_HEIGHT,
             )
         });
         ControlChip {

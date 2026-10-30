@@ -1,19 +1,42 @@
 //! Popup menus: a raised card that opens beside the control that asked for it and closes when
 //! the person clicks anywhere else.
 
-use super::ui::{OwnPress, Typeface, column, icon, id, row};
+use super::ui::{OwnPress, Typeface, bounds_probe, column, icon, id, row};
 use crate::{
     assets::Icon,
     neo,
+    popup_fit::{self, Extent, Side, Want},
     theme::{Palette, desktop, elevation, layout, pane_interior, radius, space, type_scale},
     workbench::Workbench,
 };
 use gpui::{
-    Anchor, Anchored, AnyElement, ClickEvent, Context, Div, FontWeight, Pixels, Point,
+    Anchor, Anchored, AnyElement, App, ClickEvent, Context, Div, FontWeight, Global, Pixels, Point,
     SharedString, Stateful, anchored, deferred, div, point, prelude::*, px, rgb,
 };
 
-/// `body` opened below or beside the element it is placed in. The element must be `relative`.
+/// What the popups of a frame know of the window: how tall it is, and where the control of the
+/// popup that is open was laid out (a popup reports it from its first frame, and the window
+/// draws the next with it).
+#[derive(Default)]
+struct Frame {
+    window_height: Option<f32>,
+    control: Option<Extent>,
+}
+
+impl Global for Frame {}
+
+/// Tells the popups how tall the window is. Called by every frame of the window.
+pub fn window_measured(height: f32, cx: &mut App) {
+    cx.default_global::<Frame>().window_height = Some(height);
+}
+
+/// Forgets where the control of the last popup was: the next popup is of another control.
+pub fn control_forgotten(cx: &mut App) {
+    cx.default_global::<Frame>().control = None;
+}
+
+/// `body` opened below or beside the element it is placed in, as tall as the Mac's popover at
+/// most. The element must be `relative`.
 pub fn popup(
     palette: &Palette,
     anchor: Anchor,
@@ -31,7 +54,9 @@ pub fn popup(
     )
 }
 
-/// As [`popup`], for a card that may grow to `max_height` before it scrolls.
+/// As [`popup`], for a card that may grow to `max_height` before it scrolls. The card is cut to
+/// the room the window has on the side it opens on, and opens on the other side of its element
+/// when there is more room there (`popup_fit`).
 pub fn popup_up_to(
     palette: &Palette,
     anchor: Anchor,
@@ -40,38 +65,110 @@ pub fn popup_up_to(
     body: Div,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
+    let prefer = if matches!(anchor, Anchor::BottomLeft | Anchor::BottomRight) {
+        Side::Above
+    } else {
+        Side::Below
+    };
+    let want = Want {
+        prefer,
+        offset: offset.1,
+        height: max_height,
+        gap: popup_fit::GAP,
+    };
+    let frame = cx.default_global::<Frame>();
+    let fit = popup_fit::fit(want, frame.control, frame.window_height.unwrap_or(f32::MAX));
+    let anchor = if fit.side == prefer {
+        anchor
+    } else {
+        across(anchor)
+    };
+    let workbench = cx.entity();
+    let probe = bounds_probe(move |bounds, cx| {
+        let top = f32::from(bounds.origin.y);
+        let extent = Extent {
+            top,
+            bottom: top + f32::from(bounds.size.height),
+        };
+        let frame = cx.default_global::<Frame>();
+        if frame.control != Some(extent) {
+            frame.control = Some(extent);
+            workbench.update(cx, |_, cx| cx.notify());
+        }
+    });
+    // The overlay is as large as the element, so that the probe measures it; the card is
+    // placed from the element's top left corner.
     float(
+        palette,
         anchored()
             .anchor(anchor)
-            .offset(point(px(offset.0), px(offset.1))),
-        card(palette, max_height, body, cx),
+            .offset(point(px(offset.0), px(fit.offset))),
+        (fit.max_height, body),
+        cx,
     )
+    .size_full()
+    .child(probe)
+    .into_any_element()
 }
 
-/// `body` opened at a place in the window, as a context menu is: the pointer's.
+/// The card of `body`, `max_height` tall at most, placed by `place` above everything else and
+/// kept inside the window, out of the flow of the element it is in. The element it is returned
+/// into must be `relative`.
+fn float(
+    palette: &Palette,
+    place: Anchored,
+    (max_height, body): (f32, Div),
+    cx: &mut Context<Workbench>,
+) -> Div {
+    div().absolute().top_0().left_0().child(deferred(
+        place
+            .snap_to_window_with_margin(px(popup_fit::MARGIN))
+            .child(card(palette, max_height, body, cx)),
+    ))
+}
+
+/// `anchor` on the other side of the element: the corner above for one below, and the reverse.
+fn across(anchor: Anchor) -> Anchor {
+    match anchor {
+        Anchor::TopLeft => Anchor::BottomLeft,
+        Anchor::TopRight => Anchor::BottomRight,
+        Anchor::BottomLeft => Anchor::TopLeft,
+        Anchor::BottomRight => Anchor::TopRight,
+        other => other,
+    }
+}
+
+/// `body` opened at a place in the window, as a context menu is: the pointer's. It opens below
+/// the place, or above it when there is more room there.
 pub fn popup_at(
     palette: &Palette,
     at: Point<Pixels>,
     body: Div,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let height = layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT;
+    let y = f32::from(at.y);
+    let window_height = cx.default_global::<Frame>().window_height;
+    let fit = popup_fit::fit(
+        Want {
+            prefer: Side::Below,
+            offset: 0.0,
+            height: layout::WORKSPACE_OVERFLOW_POPOVER_MAXIMUM_HEIGHT,
+            gap: 0.0,
+        },
+        Some(Extent { top: y, bottom: y }),
+        window_height.unwrap_or(f32::MAX),
+    );
+    let corner = match fit.side {
+        Side::Below => Anchor::TopLeft,
+        Side::Above => Anchor::BottomLeft,
+    };
     float(
-        anchored().position(at).anchor(Anchor::TopLeft),
-        card(palette, height, body, cx),
+        palette,
+        anchored().position(at).anchor(corner),
+        (fit.max_height, body),
+        cx,
     )
-}
-
-/// `card` placed by `place` above everything else, out of the flow of the element it is in.
-fn float(place: Anchored, card: Stateful<Div>) -> AnyElement {
-    div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .child(deferred(
-            place.snap_to_window_with_margin(px(space::X8)).child(card),
-        ))
-        .into_any_element()
+    .into_any_element()
 }
 
 /// The card of the approved harness picker: radius 20 and the panel elevation.
