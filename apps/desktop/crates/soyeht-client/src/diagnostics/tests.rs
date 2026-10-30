@@ -36,11 +36,12 @@ fn the_program_is_the_soyeht_file_in_the_folder_of_the_window() {
 #[cfg(unix)]
 #[test]
 fn the_report_is_what_the_soyeht_program_beside_the_window_prints() {
-    // `echo` stands in for the program: a link to it needs no file written and then run.
+    // A script that prints its arguments stands in for the program. A link to `echo` would not
+    // do: on some systems `echo` is a link to one multi-call program that reads its own name.
     let folder =
         std::env::temp_dir().join(format!("next-diagnostics-collect-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
-    std::os::unix::fs::symlink("/bin/echo", program_file(&folder, PROGRAM)).unwrap();
+    write_printing_script(&program_file(&folder, PROGRAM));
     let report = collect_with(
         &folder.join("soyeht-desktop"),
         "prod",
@@ -51,6 +52,15 @@ fn the_report_is_what_the_soyeht_program_beside_the_window_prints() {
         report,
         Ok("--profile prod --data-dir /data/Soyeht.next diagnostics\n".to_owned())
     );
+}
+
+/// Writes an executable `/bin/sh` script at `path` that prints its arguments, as `echo` does.
+/// Every Unix has `/bin/sh`; not every one has `/bin/echo` (NixOS).
+#[cfg(unix)]
+fn write_printing_script(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, "#!/bin/sh\necho \"$@\"\n").unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
 }
 
 #[test]
