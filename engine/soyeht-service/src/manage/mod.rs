@@ -87,13 +87,23 @@ impl<C: Commands> Manager<'_, C> {
     }
 }
 
+/// What `install` hands to a system's registration: the definition, and whether to start the
+/// program (it is not, when one already runs).
+pub(crate) struct Install<'t> {
+    pub(crate) text: &'t str,
+    pub(crate) start: bool,
+}
+
 impl<'a, C: Commands> Manager<'a, C> {
     pub fn new(layout: &'a Layout, commands: &'a C) -> Self {
         Self { layout, commands }
     }
 
     /// Writes the definition of each component in `components` (programs found in `programs`),
-    /// registers it with the system and starts it, the supervisor first. A definition that is
+    /// registers it with the system and starts it, the supervisor first. A component whose program
+    /// already runs is registered and not started, whoever started that program (the app starts
+    /// its own when nothing is registered): a second instance would fail on the program's lock
+    /// and be restarted for ever, so the logon trigger starts it the next time. A definition that is
     /// already registered and running is rewritten and left running: the new text applies when
     /// the system next loads it (after `stop` and `start`, or at the next login), so a person's
     /// terminals are not ended by an installer that only repairs the registration. A launchd
@@ -115,13 +125,27 @@ impl<'a, C: Commands> Manager<'a, C> {
         }
         self.prepare_folders(texts.iter().map(|(component, _)| *component))?;
         for (component, text) in texts {
+            let install = Install {
+                text: &text,
+                start: !self.program_runs(component)?,
+            };
             match self.layout.system {
-                System::Macos => self.launchd_install(component, &text)?,
-                System::Linux => self.systemd_install(component, &text)?,
-                System::Windows => self.task_install(component, &text)?,
+                System::Macos => self.launchd_install(component, &install)?,
+                System::Linux => self.systemd_install(component, &install)?,
+                System::Windows => self.task_install(component, &install)?,
             }
         }
         Ok(())
+    }
+
+    /// Whether a program of `component` runs now, found by the singleton lock it holds in the
+    /// data directory (the same file the engine and the supervisor lock), not by asking the
+    /// service manager: the window starts its own.
+    fn program_runs(&self, component: Component) -> Result<bool> {
+        Ok(soyeht_platform::fs::singleton_held(
+            &self.layout.data,
+            component.lock(),
+        )?)
     }
 
     /// Stops each component and removes its registration and definition, the engine first. The

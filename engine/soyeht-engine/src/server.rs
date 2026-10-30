@@ -13,7 +13,7 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_platform::{
-    fs::{LockError, lock_singleton},
+    fs::{ENGINE_LOCK, LockError, lock_singleton},
     local::{
         BindError,
         asynchronous::{Listener, Stream, same_user},
@@ -94,7 +94,7 @@ pub struct Config {
 }
 
 fn singleton(directory: &Path) -> crate::errors::Result<File> {
-    match lock_singleton(directory, "engine.lock") {
+    match lock_singleton(directory, ENGINE_LOCK) {
         Ok(lock) => Ok(lock),
         Err(LockError::Held) => Err(Error::AlreadyRunning),
         Err(LockError::Io(error)) => Err(error.into()),

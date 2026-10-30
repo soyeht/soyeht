@@ -24,7 +24,6 @@ import hashlib
 import io
 import lzma
 import os
-import platform
 import re
 import shutil
 import subprocess
@@ -36,14 +35,25 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-import release  # noqa: E402  (the scripts directory is on the path of a script)
-from generated_profile import BUILD_ENVIRONMENT, PROFILES  # noqa: E402
-from package_common import PackagingError, sha256_of  # noqa: E402
+# The pieces every platform's package shares (the scripts directory is on the path of a script).
+from package_common import (  # noqa: E402
+    HOMEPAGE,
+    PACKAGE,
+    PROFILE_NAME,
+    ROOT,
+    PackagingError,
+    absolute,
+    add_build_arguments,
+    cargo_build,
+    host_arch,
+    make_plan,
+    sha256_of,
+)
+from package_common import Plan as BasePlan  # noqa: E402
+from package_common import built_programs as find_programs  # noqa: E402
+from generated_profile import PROFILES  # noqa: E402
 
-PROFILE = "prod"
-APPLICATION_ID = PROFILES[PROFILE]["appIds"]["linux"]
-PACKAGE = "soyeht"
+APPLICATION_ID = PROFILES[PROFILE_NAME]["appIds"]["linux"]
 PACKAGING = ROOT / "apps/desktop/packaging/linux"
 # Where the programs sit inside a package: one folder, as `soyeht service install --programs`
 # and the window's own start of the engine expect (ADR 0102, ADR 0114).
@@ -52,7 +62,6 @@ LIBRARY_FOLDER = "usr/lib/soyeht"
 # server are not, since only the window and the engine start them.
 ON_PATH = ("soyeht", "soyeht-desktop")
 ENGINE_PROGRAMS = ("soyeht", "soyeht-engine", "soyeht-ptyd", "soyeht-mcp")
-ENGINE_PACKAGES = ("soyeht-engine", "soyeht-ptyd", "soyeht-cli", "soyeht-mcp", "soyeht-service")
 DESKTOP_PROGRAMS = ("soyeht-desktop",)
 
 # architecture -> (Debian name, type 2 runtime sha256). The runtime is the one at
@@ -65,7 +74,6 @@ RUNTIME_URL = "https://github.com/AppImage/type2-runtime/releases/download/20251
 DEFAULT_MAX_GLIBC = "2.35"
 
 MAINTAINER = "Caio Salgado <caio.salgado@hotmail.com>"
-HOMEPAGE = "https://github.com/soyeht/soyeht"
 SUMMARY = "Terminals and coding agents in one workspace"
 DESCRIPTION = (
     " Soyeht puts terminals, coding agents, files and web pages side by side in one\n"
@@ -112,14 +120,8 @@ ICON_SIZES = (16, 32, 64, 128, 256, 512)
 
 
 @dataclass(frozen=True)
-class Plan:
+class Plan(BasePlan):
     """Everything a package depends on, so that two runs of one commit write the same bytes."""
-
-    version: str
-    revision: int
-    arch: str
-    epoch: int
-    programs: dict  # program name -> built file
 
     @property
     def deb_arch(self):
@@ -131,7 +133,7 @@ class Plan:
         return self.version if self.revision == 0 else f"{self.version}-{self.revision}"
 
     def artifact(self, out, extension):
-        return out / f"{PACKAGE}-{self.version}-linux-{self.arch}.{extension}"
+        return self.artifact_path(out, "linux", extension)
 
 
 # ---- reading the programs --------------------------------------------------------------------
@@ -400,56 +402,15 @@ def build_appimage(plan, runtime, out):
 # ---- building and the command line -----------------------------------------------------------
 
 
-def host_arch():
-    machine = platform.machine()
-    return {"arm64": "aarch64", "amd64": "x86_64"}.get(machine, machine)
-
-
-def cargo_build(engine_target, desktop_target):
-    """Release programs of both workspaces for the production profile; `--locked`, default features."""
-    environment = dict(os.environ, **{BUILD_ENVIRONMENT: PROFILE})
-    for folder, target, extra in (
-        ("engine", engine_target, [arg for name in ENGINE_PACKAGES for arg in ("-p", name)]),
-        ("apps/desktop", desktop_target, []),
-    ):
-        env = dict(environment, CARGO_TARGET_DIR=str(target)) if target else environment
-        subprocess.run(["cargo", "build", "--release", "--locked", *extra], cwd=ROOT / folder, env=env, check=True)
-
-
 def built_programs(engine_target, desktop_target):
-    found = {}
-    for names, target, folder in (
-        (ENGINE_PROGRAMS, engine_target, "engine"),
-        (DESKTOP_PROGRAMS, desktop_target, "apps/desktop"),
-    ):
-        release_folder = Path(target or ROOT / folder / "target") / "release"
-        for name in names:
-            if not (release_folder / name).is_file():
-                raise PackagingError(f"{release_folder / name} is missing: build first, or drop --skip-build")
-            found[name] = release_folder / name
-    return found
-
-
-def source_epoch():
-    """`SOURCE_DATE_EPOCH`, else the time of the commit, so a rebuild of one commit is identical."""
-    if os.environ.get("SOURCE_DATE_EPOCH"):
-        return int(os.environ["SOURCE_DATE_EPOCH"])
-    shown = subprocess.run(["git", "log", "-1", "--format=%ct"], cwd=ROOT, capture_output=True, text=True)
-    return int(shown.stdout.strip()) if shown.returncode == 0 and shown.stdout.strip() else 0
-
-
-def absolute(path):
-    return str(Path(path).resolve()) if path else None
+    return find_programs(engine_target, desktop_target, ENGINE_PROGRAMS, DESKTOP_PROGRAMS)
 
 
 def parse(argv):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--format", choices=("deb", "appimage", "all"), default="all")
     parser.add_argument("--arch", choices=sorted(ARCHITECTURES), default=host_arch())
-    parser.add_argument("--skip-build", action="store_true", help="package the programs already built")
-    parser.add_argument("--engine-target", help="cargo target directory of engine/ (default engine/target)")
-    parser.add_argument("--desktop-target", help="cargo target directory of apps/desktop/")
-    parser.add_argument("--out", default=str(ROOT / "dist"))
+    add_build_arguments(parser)
     parser.add_argument("--cache", help="where the downloaded runtime is kept (default OUT/.cache)")
     parser.add_argument("--runtime", help="the type 2 runtime file (default: download, pinned by hash)")
     parser.add_argument("--max-glibc", default=DEFAULT_MAX_GLIBC, help="newest glibc allowed, or 'any'")
@@ -469,8 +430,7 @@ def main(argv=None):
     programs = built_programs(args.engine_target, args.desktop_target)
     floor, sonames = inspect_programs(programs)
     check_glibc(floor, args.max_glibc)
-    made = release.current(ROOT)
-    plan = Plan(str(made.version), made.revision, args.arch, source_epoch(), programs)
+    plan = make_plan(Plan, args.arch, programs)
     out.mkdir(parents=True, exist_ok=True)
     written = []
     if args.format in ("deb", "all"):

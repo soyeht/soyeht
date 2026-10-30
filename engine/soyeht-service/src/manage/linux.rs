@@ -3,7 +3,7 @@
 //! `enable` links the unit into the user's `default.target`, which the user's manager starts at
 //! login (and, with lingering enabled by the person, at boot).
 
-use super::{Manager, remove_definition, write_definition};
+use super::{Install, Manager, remove_definition, write_definition};
 use crate::{commands::Commands, error::Result, system::Component};
 
 const SYSTEMCTL: &str = "systemctl";
@@ -24,12 +24,18 @@ impl<C: Commands> Manager<'_, C> {
         Ok(self.ask(SYSTEMCTL, &["--user", question, unit])?.success)
     }
 
-    pub(super) fn systemd_install(&self, component: Component, text: &str) -> Result<()> {
-        write_definition(&self.file(component), text.as_bytes())?;
+    pub(super) fn systemd_install(&self, component: Component, install: &Install) -> Result<()> {
+        write_definition(&self.file(component), install.text.as_bytes())?;
         self.systemd_do("systemctl daemon-reload", &["daemon-reload"])?;
-        // `--now` starts a unit that is not running and leaves one that is.
+        // `--now` starts a unit that is not running and leaves one that is; without it the unit
+        // is only enabled, for a program that already runs.
         let unit = self.name(component);
-        self.systemd_do("systemctl enable", &["enable", "--now", unit])
+        let arguments: &[&str] = if install.start {
+            &["enable", "--now", unit]
+        } else {
+            &["enable", unit]
+        };
+        self.systemd_do("systemctl enable", arguments)
     }
 
     pub(super) fn systemd_start(&self, component: Component) -> Result<()> {

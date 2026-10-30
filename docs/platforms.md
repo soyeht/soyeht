@@ -118,7 +118,9 @@ the Mac and iOS build number (`(major * 1_000_000 + minor * 1_000 + patch) * 100
 `CFBundleVersion`); `bump major|minor|patch|revision` raises it everywhere and regenerates; `check`
 fails when a Cargo manifest or lockfile, the npm package or an Xcode project disagrees.
 Windows takes the first three fields of the file version from the desktop package's version, which is the
-same number, and the fourth from the revision. The script does not tag, push, build or sign. The Linux packages are built by `scripts/package_linux.py` ("Linux packages" below) and the Mac package by `scripts/package_mac.py` ("The Mac package" below).
+same number, and the fourth from the revision. The script does not tag, push, build or sign. The Linux packages are built by `scripts/package_linux.py` ("Linux packages" below), the Mac package by `scripts/package_mac.py` ("The Mac package" below) and the Windows installers by `scripts/package_windows.py` ("Windows packages").
+
+A release made by `package_mac.py`, `package_linux.py` or `package_windows.py` is built with `--remap-path-prefix` for the builder's source, home, cargo and rustup folders (`package_common.release_environment`), so no path of the build machine ends up in a program (the C libraries get `-ffile-prefix-map` too, and a Windows release compiles its C with clang, so LLVM is needed for x64 as well as Arm).
 
 Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.release]`:
 `opt-level = 3`, `lto = "thin"`, `codegen-units = 1` and `strip = "symbols"`. `panic` stays
@@ -276,6 +278,68 @@ is loaded at run time: `libxcb1`, `libxkbcommon0` and `libxkbcommon-x11-0` (link
 panes GTK 3 and WebKitGTK 4.1 (`libgtk-3-0t64`, `libwebkit2gtk-4.1-0` on Ubuntu 24.04). The `.deb`
 declares the linked libraries and the first two loaded ones as `Depends` and the rest as
 `Recommends`.
+
+## Windows packages
+
+`uv run python scripts\package_windows.py` (run on Windows, where `uv` comes from `winget install astral-sh.uv`; plain `python` works too, as the script needs only the standard library; the machine can be x64 or Arm64, it builds both) compiles
+the production profile (`SOYEHT_BUILD_PROFILE=prod`) for `x86_64-pc-windows-msvc` and
+`aarch64-pc-windows-msvc` and writes, below the ignored `dist/`, `soyeht-<version>-windows-x86_64.exe` and
+`soyeht-<version>-windows-aarch64.exe`: a per-user installer built by Inno Setup 6 from
+`apps/desktop/packaging/windows/soyeht.iss` (ADR 0123, which weighs it against an MSI and an MSIX). The
+version is `contracts/release.json`. Options: `--arch x86_64|aarch64|all`, `--skip-build` with
+`--engine-target` and `--desktop-target` for programs already built (one target directory serves both
+architectures), `--inno` and `--signtool` for the tools, `--require-signature`.
+
+What the build machine needs: rustup with both MSVC targets, the Visual Studio Build Tools with the C++ tools
+for x64 and Arm64 and a Windows SDK, Git, Python 3, LLVM on `PATH` (`winget install LLVM.LLVM`: a Windows release compiles its C with clang, which also keeps the builder's paths out of the programs), and Inno Setup 6.7 (`winget install JRSoftware.InnoSetup
+--scope user`; the script looks in the usual folders, else `SOYEHT_INNO_COMPILER`). Before it packs anything the script reads the header of
+each program and stops when one is for the other processor, or when the window or the service host would
+open a console.
+
+| | |
+| --- | --- |
+| Needs | no administrator. An x64 installer also opens on Windows on Arm (it runs the x64 programs); an Arm64 one opens only on Arm |
+| Programs | `%LOCALAPPDATA%\Programs\Soyeht Next\`: `soyeht-desktop.exe` (no console), `soyeht-engine.exe`, `soyeht-ptyd.exe`, `soyeht-mcp.exe`, `soyeht.exe` (the command line) and `soyeht-service-host.exe`, with `LICENSE` and `NOTICE` |
+| Start menu | one shortcut, "Soyeht" |
+| Add or remove programs | "Soyeht", under `HKCU`, key `com.soyeht.next_is1` (`appIds.windows`) |
+| Data | `%LOCALAPPDATA%\Soyeht.next`, outside the install folder; install, upgrade and removal keep it unless the person says otherwise |
+| Login start | a box on the installer, **unchecked**: "Start Soyeht when I log in" runs `soyeht service install --programs <folder>` (contract 13 section 3). A silent install opts in with `/TASKS=loginstart`. Nothing is registered otherwise |
+| Silent install | `soyeht-<version>-windows-<arch>.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART [/TASKS=loginstart]` |
+| Upgrade | run the newer installer; it replaces the programs in place and keeps the data and the person's choice about login start |
+| Remove | Settings > Apps, or `"%LOCALAPPDATA%\Programs\Soyeht Next\unins000.exe"`; `/VERYSILENT` for a script, `/DELETEDATA` to delete the data as well |
+
+*Upgrade.* The installer asks only the window to close (Windows' Restart Manager, so a window with an
+unsaved dialog is not killed silently). It does not stop the engine or the supervisor, because restarting the
+supervisor ends the person's terminals (contract 07). Windows lets a running program's file be renamed but
+not overwritten, so the installer first renames each installed program to `NAME.exe.<n>.old`, writes the new
+ones, and deletes the `.old` files it can. An engine or a supervisor that was running keeps running from its
+renamed file, and the installer says so; the new build starts the next time it starts (`soyeht service stop`
+and `start` for the registered tasks, or the next login; a supervisor restart ends the terminals). The
+leftovers of a program still running are removed by the next install or the uninstall. The login tasks name
+the same paths in every version, so they need no re-registration.
+
+*Removal.* After the usual "are you sure" the uninstaller asks "Also delete your data?" (default: No). It runs
+`soyeht uninstall` (the tasks of the production profile, `Soyeht.Next.Engine` and `Soyeht.Next.Ptyd`, are
+stopped and unregistered; ADR 0118), ends the engine and the supervisor the window started (they are in no
+task) by their process identifiers, only those whose program is in the install folder, and with "delete" runs
+`soyeht uninstall --delete-data --yes`. It then removes the programs, the shortcut and the registry key. A
+silent removal keeps the data unless `/DELETEDATA` is given.
+
+*Signing.* With none of the variables below the installers are built **unsigned**, with a loud message on
+standard error; Windows SmartScreen then warns the person who runs one, which is fine for a test and not for a
+release (`--require-signature` makes it an error). To sign, set one of:
+
+| Variable | Meaning |
+| --- | --- |
+| `SOYEHT_WINDOWS_SIGN_THUMBPRINT` | SHA-1 thumbprint of a code-signing certificate in the builder's certificate store (an EV or OV certificate, or a hardware token) |
+| `SOYEHT_WINDOWS_SIGN_AZURE_DLIB` and `SOYEHT_WINDOWS_SIGN_AZURE_METADATA` | Azure Artifact Signing: the path of `Azure.CodeSigning.Dlib.dll` and of the `metadata.json` that names the account, the endpoint and the certificate profile. The Azure credentials are the usual Azure ones of the environment (`AZURE_TENANT_ID`, ...) |
+| `SOYEHT_WINDOWS_SIGN_TIMESTAMP_URL` | replaces the timestamp service (DigiCert's for a thumbprint, Microsoft's for Azure) |
+| `SOYEHT_WINDOWS_SIGNTOOL` | `signtool.exe` (default: the newest Windows SDK) |
+
+Every program is signed with `signtool sign /fd SHA256 /tr <timestamp> /td SHA256` and verified with
+`signtool verify /pa` before the installer is built; Inno then signs the installer and its uninstaller with the
+same command, and the installer is verified as well. A certificate, a password or a token is never in the
+repository.
 
 ## Agents messaging each other
 
