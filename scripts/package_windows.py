@@ -59,6 +59,9 @@ PRODUCT_NAME = PROFILE["displayNames"]["window"]
 PUBLISHER = PRODUCT_NAME
 INSTALL_FOLDER = PROFILE["displayNames"]["windowsFolder"]
 APP_ID = PROFILE["appIds"]["windows"]
+# The login tasks of the profile: the uninstall removes them by name when the command line cannot.
+ENGINE_TASK = PROFILE["windowsTasks"]["engine"]
+PTYD_TASK = PROFILE["windowsTasks"]["ptyd"]
 
 ENGINE_PROGRAMS = ("soyeht", "soyeht-engine", "soyeht-ptyd", "soyeht-mcp", "soyeht-service-host")
 DESKTOP_PROGRAMS = ("soyeht-desktop",)
@@ -154,7 +157,12 @@ def check_programs(programs, plan):
 
 def check_names():
     """Every machine identifier of the rewrite carries "next", and none is the legacy app's (ADR 0112)."""
-    for what, value in (("installer id", APP_ID), ("install folder", INSTALL_FOLDER)):
+    for what, value in (
+        ("installer id", APP_ID),
+        ("install folder", INSTALL_FOLDER),
+        ("engine task", ENGINE_TASK),
+        ("supervisor task", PTYD_TASK),
+    ):
         require_next(what, value)
 
 
@@ -280,6 +288,8 @@ def inno_arguments(plan, staging, out, signing, signtool):
         "OutputDir": out,
         "OutputName": plan.artifact(out).stem,
         "Profile": PROFILE_NAME,
+        "EngineTask": ENGINE_TASK,
+        "PtydTask": PTYD_TASK,
         "Publisher": PUBLISHER,
         "Url": HOMEPAGE,
         "Icon": PACKAGING / "soyeht.ico",
