@@ -1,5 +1,5 @@
 use super::{
-    capture::{message_kind, source_path, symbol_names},
+    capture::{message_kind, source_path},
     report::*,
     store::*,
     *,
@@ -19,7 +19,6 @@ fn sample(time: u64, fatal: bool) -> Report {
         kind: "unwrap_none".into(),
         location: "soyeht-engine/src/launch.rs:12:5".into(),
         frames: vec!["soyeht-engine+0x1a2b3c".into(), "libsystem+0x10".into()],
-        symbols: vec!["soyeht_engine::launch::run (launch.rs:12)".into()],
         log: vec![r#"{"event":"engine.ready"}"#.into()],
     }
 }
@@ -48,7 +47,6 @@ fn a_text_that_is_not_a_report_is_refused() {
 fn a_report_stays_within_its_bounds() {
     let mut report = sample(1, true);
     report.frames = (0..500).map(|n| format!("module+{n:#x}")).collect();
-    report.symbols = (0..500).map(|n| format!("symbol_{n}")).collect();
     report.log = (0..500)
         .map(|n| format!("{{\"event\":\"line.{n}\"}}"))
         .collect();
@@ -57,7 +55,6 @@ fn a_report_stays_within_its_bounds() {
     assert!(text.len() <= MAX_REPORT_BYTES);
     let read = Report::parse(&text).unwrap();
     assert_eq!(read.frames.len(), MAX_FRAMES);
-    assert_eq!(read.symbols.len(), MAX_SYMBOLS);
     assert_eq!(read.log.len(), MAX_LOG_LINES);
     assert!(read.location.chars().count() <= 160);
 }
@@ -124,15 +121,6 @@ fn a_panic_message_is_reduced_to_a_label() {
 }
 
 #[test]
-fn the_names_of_the_frames_come_without_machinery_or_folders() {
-    let backtrace = "   0: std::backtrace_rs::backtrace::libunwind::trace\n             at /rustc/abc/library/std/src/x.rs:117:9\n   1: soyeht_platform::crash::capture::symbols\n   2: engine::core::run\n             at /Users/dana/work/engine/src/core.rs:40:9\n   3: __mh_execute_header\n   4: <unknown>\n   5: main\n";
-    assert_eq!(
-        symbol_names(backtrace),
-        vec!["engine::core::run (core.rs:40)", "main"]
-    );
-}
-
-#[test]
 fn frames_are_module_and_offset() {
     if cfg!(any(windows, all(unix, not(target_env = "musl")))) {
         let frames = frames::capture(MAX_FRAMES);
@@ -177,9 +165,9 @@ fn a_report_is_pending_until_it_is_acknowledged() {
         1,
         "a panic that ended a task is not a closing"
     );
-    assert_eq!(acknowledge(&data).unwrap(), 1);
+    assert_eq!(acknowledge(&data, &[]).unwrap(), 1);
     assert!(pending(&data).unwrap().is_empty());
-    assert_eq!(acknowledge(&data).unwrap(), 0);
+    assert_eq!(acknowledge(&data, &[]).unwrap(), 0);
     assert_eq!(
         names_of(&data).len(),
         2,
@@ -220,5 +208,59 @@ fn the_diagnostics_text_removes_the_home_folder_and_redacts_the_log() {
         !text.contains("dana") && !text.contains("secret.txt"),
         "{text}"
     );
+    fs::remove_dir_all(data).ok();
+}
+
+#[test]
+fn acknowledging_what_was_shown_leaves_a_later_or_earlier_named_report_pending() {
+    let data = scratch_dir("crash-ack-names");
+    let mut first = sample(100, true);
+    first.program = Program::Supervisor;
+    write(&data, &first).unwrap();
+    let shown = pending(&data).unwrap();
+    // Two more arrive: one in the same second whose name sorts BEFORE the shown one (a program
+    // name that sorts earlier), one after a clock that stepped back.
+    write(&data, &sample(100, true)).unwrap();
+    write(&data, &sample(50, true)).unwrap();
+    let names: Vec<String> = shown.iter().map(|stored| stored.name.clone()).collect();
+    assert_eq!(acknowledge(&data, &names).unwrap(), 1);
+    assert_eq!(pending(&data).unwrap().len(), 2);
+    assert_eq!(acknowledge(&data, &[]).unwrap(), 2);
+    assert!(pending(&data).unwrap().is_empty());
+    fs::remove_dir_all(data).ok();
+}
+
+#[test]
+fn the_list_of_seen_reports_forgets_the_reports_that_are_gone() {
+    let data = scratch_dir("crash-ack-forget");
+    for time in 1..=(MAX_REPORTS as u64 + 3) {
+        write(&data, &sample(time, true)).unwrap();
+        acknowledge(&data, &[]).unwrap();
+    }
+    let kept = fs::read_to_string(directory(&data).join("acknowledged")).unwrap();
+    assert_eq!(kept.lines().count(), MAX_REPORTS);
+    fs::remove_dir_all(data).ok();
+}
+
+#[test]
+fn reports_written_at_the_same_moment_by_threads_never_replace_each_other() {
+    let data = scratch_dir("crash-same-second");
+    for round in 0..20 {
+        let folder = data.join(round.to_string());
+        let writers: Vec<_> = (0..4)
+            .map(|_| {
+                let folder = folder.clone();
+                std::thread::spawn(move || {
+                    let mut report = sample(7, true);
+                    report.kind = format!("{:?}", std::thread::current().id());
+                    write(&folder, &report).unwrap();
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        assert_eq!(list(&folder).unwrap().len(), 4, "round {round}");
+    }
     fs::remove_dir_all(data).ok();
 }

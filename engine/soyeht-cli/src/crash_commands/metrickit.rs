@@ -10,9 +10,14 @@ use soyeht_platform::crash::{LINE_CHARS, MAX_FRAMES, Program, Report};
 /// A version or architecture name is at most this long, and only these characters.
 const NAME_CHARS: usize = 32;
 
-pub fn report(diagnostic: &Value, time: u64) -> Report {
+/// The report of a crash diagnostic, or `None` when `diagnostic` is not one (it has neither the
+/// metadata nor the call stack tree of `MXCrashDiagnostic`).
+pub fn report(diagnostic: &Value, time: u64) -> Option<Report> {
+    if !diagnostic["diagnosticMetaData"].is_object() && !diagnostic["callStackTree"].is_object() {
+        return None;
+    }
     let meta = &diagnostic["diagnosticMetaData"];
-    Report {
+    Some(Report {
         version: name(&meta["appVersion"]).unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned()),
         system: format!(
             "macos {}",
@@ -27,9 +32,8 @@ pub fn report(diagnostic: &Value, time: u64) -> Report {
         kind: kind(meta),
         location: String::new(),
         frames: frames(&diagnostic["callStackTree"]),
-        symbols: Vec::new(),
         log: Vec::new(),
-    }
+    })
 }
 
 /// A short name from the system's text: letters, digits and `.+-_` only.

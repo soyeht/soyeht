@@ -1,26 +1,30 @@
 //! The panic hook: what a panic leaves in a report.
+//!
+//! The hook runs inside a panic. A panic raised inside a panic hook aborts the process before any
+//! code of ours can see it, so nothing here can be guarded against it: the hook only does what
+//! cannot panic (no indexing, no arithmetic that can overflow, no `unwrap`) and returns every I/O
+//! failure as a value. It takes no lock the panicking thread may already hold (the log file's
+//! lock is only tried), so it can never keep a thread from unwinding.
 
 use super::{
     frames,
-    report::{LINE_CHARS, MAX_FRAMES, MAX_LOG_LINES, MAX_SYMBOLS, Program, Report, one_line},
+    report::{LINE_CHARS, MAX_FRAMES, MAX_LOG_LINES, Program, Report, one_line, unix_seconds},
     store,
 };
 use crate::{diagnostics::Redactor, log, process::detached::logs_directory};
 use std::{
-    backtrace::Backtrace,
-    cell::Cell,
     panic::{self, PanicHookInfo},
     path::PathBuf,
     sync::{
         OnceLock,
         atomic::{AtomicUsize, Ordering},
     },
-    time::{SystemTime, UNIX_EPOCH},
 };
 
-/// A program writes at most this many reports, so a panic in a loop cannot push the older
-/// reports out of the folder.
-const MAX_PER_PROCESS: usize = 3;
+/// A program writes at most this many reports of panics that do not end it (a task, a worker
+/// thread), so a panic in a loop cannot push the older reports out. A panic that ends the program
+/// is always written: there is at most one.
+const MAX_NON_FATAL: usize = 3;
 /// The name of the thread a program ends with when it panics.
 const MAIN_THREAD: &str = "main";
 /// A location is cut here.
@@ -39,15 +43,10 @@ pub struct Settings {
 struct State {
     settings: Settings,
     redactor: Redactor,
-    written: AtomicUsize,
+    non_fatal: AtomicUsize,
 }
 
 static STATE: OnceLock<State> = OnceLock::new();
-
-thread_local! {
-    /// A panic inside the hook does not start another report.
-    static WRITING: Cell<bool> = const { Cell::new(false) };
-}
 
 /// Writes a report to `crashes/` of the data directory each time a thread of this program
 /// panics, then runs the hook that was there. The program keeps its behaviour: a panic unwinds,
@@ -57,7 +56,7 @@ pub fn install(settings: Settings) {
     let state = State {
         settings,
         redactor: Redactor::current(),
-        written: AtomicUsize::new(0),
+        non_fatal: AtomicUsize::new(0),
     };
     if STATE.set(state).is_err() {
         return;
@@ -73,18 +72,17 @@ pub fn install(settings: Settings) {
 
 impl State {
     fn on_panic(&self, info: &PanicHookInfo<'_>) {
-        if WRITING.replace(true) {
-            return;
+        let thread = std::thread::current();
+        let name = thread.name().unwrap_or("unnamed");
+        let fatal = name == MAIN_THREAD;
+        if fatal || self.non_fatal.fetch_add(1, Ordering::Relaxed) < MAX_NON_FATAL {
+            self.write(&self.report(info, name, fatal));
         }
-        if self.written.fetch_add(1, Ordering::Relaxed) < MAX_PER_PROCESS {
-            self.write(&self.report(info));
-        }
-        WRITING.set(false);
     }
 
     fn write(&self, report: &Report) {
         match store::write(&self.settings.data, report) {
-            Ok(()) => log::event(
+            Ok(()) => log::try_event(
                 "crash.report_written",
                 &[
                     ("program", report.program.name()),
@@ -92,24 +90,20 @@ impl State {
                     ("fatal", if report.fatal { "yes" } else { "no" }),
                 ],
             ),
-            Err(error) => log::failure("crash.report_failed", &error),
+            Err(error) => log::try_failure("crash.report_failed", &error),
         }
     }
 
-    fn report(&self, info: &PanicHookInfo<'_>) -> Report {
-        let thread = std::thread::current();
-        let name = thread.name().unwrap_or("unnamed");
+    fn report(&self, info: &PanicHookInfo<'_>, thread: &str, fatal: bool) -> Report {
         let strip = |text: String| self.redactor.strip_home(&text);
         Report {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             system: format!("{} {}", std::env::consts::OS, std::env::consts::ARCH),
             program: self.settings.program,
-            time: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |elapsed| elapsed.as_secs()),
+            time: unix_seconds(),
             pid: std::process::id(),
-            thread: one_line(name, LINE_CHARS),
-            fatal: name == MAIN_THREAD,
+            thread: one_line(thread, LINE_CHARS),
+            fatal,
             kind: kind(info).to_owned(),
             location: info
                 .location()
@@ -126,26 +120,23 @@ impl State {
                 })
                 .unwrap_or_default(),
             frames: frames::capture(MAX_FRAMES),
-            symbols: symbols().into_iter().map(strip).collect(),
             log: self.log_tail(),
         }
     }
 
     /// The last structured lines of the program's own log, with paths, names and tokens removed.
-    /// A line that is not a structured one (what the default hook prints, with the panic's
-    /// message) is left out.
+    /// `tail` keeps only structured lines, so what the default hook prints (with the panic's
+    /// message) is not among them.
     fn log_tail(&self) -> Vec<String> {
         let path = logs_directory(&self.settings.data).join(self.settings.log);
-        let Ok(lines) = crate::diagnostics::tail(&path, MAX_LOG_LINES * 4) else {
-            return Vec::new();
-        };
-        let mut kept: Vec<String> = lines
-            .iter()
-            .filter(|line| line.starts_with("{\"event\":"))
-            .map(|line| one_line(&self.redactor.redact(line), LINE_CHARS))
-            .collect();
-        kept.drain(..kept.len().saturating_sub(MAX_LOG_LINES));
-        kept
+        crate::diagnostics::tail(&path, MAX_LOG_LINES)
+            .map(|lines| {
+                lines
+                    .iter()
+                    .map(|line| one_line(&self.redactor.redact(line), LINE_CHARS))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -215,52 +206,4 @@ pub(super) fn source_path(file: &str) -> String {
         .filter(|part| *part != ".." && *part != ".")
         .collect::<Vec<_>>()
         .join("/")
-}
-
-/// The frames' names, when the program carries symbols, as `name (file.rs:12)`. Frames of the
-/// panic machinery itself are left out.
-fn symbols() -> Vec<String> {
-    symbol_names(&Backtrace::force_capture().to_string())
-}
-
-pub(super) fn symbol_names(backtrace: &str) -> Vec<String> {
-    const MACHINERY: [&str; 6] = [
-        "std::backtrace",
-        "soyeht_platform::crash",
-        "std::panicking",
-        "core::panicking",
-        "rust_begin_unwind",
-        "__rust_end_short_backtrace",
-    ];
-    let mut names: Vec<String> = Vec::new();
-    let mut skipping = false;
-    for line in backtrace.lines() {
-        let line = line.trim();
-        if let Some(place) = line.strip_prefix("at ") {
-            if !skipping && let Some(last) = names.last_mut() {
-                last.push_str(&format!(" ({})", file_line(place)));
-            }
-            continue;
-        }
-        let Some((index, name)) = line.split_once(": ") else {
-            continue;
-        };
-        skipping = !index.chars().all(|c| c.is_ascii_digit())
-            || name.contains("__mh_execute_header")
-            || name == "<unknown>"
-            || (names.is_empty() && MACHINERY.iter().any(|part| name.contains(part)))
-            || name.contains('/');
-        if !skipping {
-            names.push(one_line(name, LINE_CHARS));
-        }
-    }
-    names.truncate(MAX_SYMBOLS);
-    names
-}
-
-/// `file.rs:12` of `/some/folder/file.rs:12:5`.
-fn file_line(place: &str) -> String {
-    let normalized = place.replace('\\', "/");
-    let name = normalized.rsplit('/').next().unwrap_or_default();
-    name.splitn(3, ':').take(2).collect::<Vec<_>>().join(":")
 }

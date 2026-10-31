@@ -83,6 +83,9 @@ mod system {
         let mut path = [0_u16; PATH_UNITS];
         // SAFETY: the buffer holds `PATH_UNITS` units and outlives the call.
         let length = unsafe { GetModuleFileNameW(module, path.as_mut_ptr(), PATH_UNITS as u32) };
+        if length == 0 {
+            return None;
+        }
         let path = String::from_utf16_lossy(path.get(..length as usize)?);
         let name = path.rsplit(['\\', '/']).next().unwrap_or_default();
         let offset = (address as usize).wrapping_sub(module as usize);

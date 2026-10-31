@@ -14,7 +14,7 @@ mod tests;
 
 pub use capture::{Settings, install};
 pub use report::{
-    LINE_CHARS, MAGIC, MAX_FRAMES, MAX_LOG_LINES, MAX_REPORT_BYTES, MAX_SYMBOLS, Program, Report,
+    LINE_CHARS, MAGIC, MAX_FRAMES, MAX_LOG_LINES, MAX_REPORT_BYTES, Program, Report, unix_seconds,
     utc,
 };
 
@@ -46,11 +46,6 @@ pub fn markdown(reports: &[store::Stored], redactor: &Redactor) -> Vec<String> {
             location: home(&report.location),
             frames: report
                 .frames
-                .iter()
-                .map(|line| redactor.strip_home(line))
-                .collect(),
-            symbols: report
-                .symbols
                 .iter()
                 .map(|line| redactor.strip_home(line))
                 .collect(),
