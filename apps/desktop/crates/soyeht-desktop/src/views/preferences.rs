@@ -160,7 +160,7 @@ impl Workbench {
                     .text_size(px(type_scale::MICRO))
                     .text_color(rgb(palette.muted))
                     .child(format!("Soyeht {}", build_info::id()))
-                    .child("Dev profile")
+                    .children(build_info::profile_note())
                     .child(format!("{engine} \u{b7} ACP v1")),
             )
     }
