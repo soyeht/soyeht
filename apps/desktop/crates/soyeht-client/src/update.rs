@@ -238,7 +238,8 @@ impl Updates {
             }
             Err(failure) => {
                 if self.logged != Some(failure) {
-                    log::event("desktop.update_check_failed", &[("kind", failure.as_str())]);
+                    let (name, fields) = log_line(failure);
+                    log::event(name, &fields);
                 }
                 self.logged = Some(failure);
                 self.status = Status::Failed(failure);
@@ -247,9 +248,33 @@ impl Updates {
     }
 }
 
+/// What a check that ended in `failure` writes to the log. A build with no key asks nobody: that is
+/// its state, not a failure, so it has an event of its own and no kind.
+fn log_line(failure: Failure) -> (&'static str, Vec<(&'static str, &'static str)>) {
+    match failure {
+        Failure::NotConfigured => ("desktop.update_check_not_configured", Vec::new()),
+        other => ("desktop.update_check_failed", vec![("kind", other.as_str())]),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_build_with_no_key_logs_its_state_and_a_failed_check_logs_its_kind() {
+        assert_eq!(
+            log_line(Failure::NotConfigured),
+            ("desktop.update_check_not_configured", vec![])
+        );
+        assert_eq!(
+            log_line(Failure::Unreachable),
+            (
+                "desktop.update_check_failed",
+                vec![("kind", Failure::Unreachable.as_str())]
+            )
+        );
+    }
 
     const KEY: PublicKey = PublicKey {
         id: "test",
