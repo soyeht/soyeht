@@ -205,7 +205,12 @@ public final class UpdateChecker {
       logged = nil
     case .failure(let failure):
       if logged != failure {
-        clientLogger.notice("mac.update_check_failed kind=\(failure.rawValue, privacy: .public)")
+        // A build with no key asks nobody: that is its state, not a failure.
+        if failure == .notConfigured {
+          clientLogger.notice("mac.update_check_not_configured")
+        } else {
+          clientLogger.notice("mac.update_check_failed kind=\(failure.rawValue, privacy: .public)")
+        }
       }
       logged = failure
       status = .failed(failure)
