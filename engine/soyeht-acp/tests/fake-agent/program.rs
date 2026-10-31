@@ -532,7 +532,8 @@ fn main() -> Result<()> {
             Message::Notification { method, params } if method == "session/cancel" => {
                 // A cancel that reaches an agent before its turn has begun is dropped, as the
                 // real adapters do: the marker makes the first one that.
-                if std::fs::remove_file(runtime.settings.directory.join("drop-first-cancel")).is_ok()
+                if std::fs::remove_file(runtime.settings.directory.join("drop-first-cancel"))
+                    .is_ok()
                 {
                     continue;
                 }
