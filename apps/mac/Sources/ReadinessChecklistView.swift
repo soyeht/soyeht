@@ -179,13 +179,23 @@ struct DiagnosticsCopyAction: View {
         .buttonStyle(.paneSecondary)
         .disabled(diagnostics.phase == .working)
         .accessibilityIdentifier(identifier)
-      if let message = diagnostics.message {
-        Text(message)
-          .font(MacTheme.chrome(MacTheme.TypeScale.caption))
-          .foregroundStyle(diagnostics.isFailure ? MacTheme.warning : MacTheme.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-          .accessibilityIdentifier("\(identifier)-message")
-      }
+      DiagnosticsMessage(identifier: identifier)
+    }
+  }
+}
+
+/// The sentence about the last "Copy diagnostics" try, in a warning color when it failed.
+struct DiagnosticsMessage: View {
+  @Environment(DiagnosticsCopy.self) private var diagnostics
+  let identifier: String
+
+  var body: some View {
+    if let message = diagnostics.message {
+      Text(message)
+        .font(MacTheme.chrome(MacTheme.TypeScale.caption))
+        .foregroundStyle(diagnostics.isFailure ? MacTheme.warning : MacTheme.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("\(identifier)-message")
     }
   }
 }
