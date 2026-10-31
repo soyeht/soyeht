@@ -160,10 +160,23 @@ def set_mode(client, pane_id, mode):
     require(mode_option(client, pane_id)["currentValue"] == mode, f"mode {mode} is not shown")
 
 
+# A person's own Claude settings may allow every shell command in any mode. This disposable
+# project rule restores asking. Claude Code keeps an `ask` rule in its bypass mode too, so the
+# full-access check lifts the rule while it runs (`ask_for_shell`).
+ASK_FOR_SHELL = {"permissions": {"ask": ["Bash(*)"]}}
+
+
+def ask_for_shell(services, asking):
+    """Turns the project's rule that every shell command asks on or off. The CLI reads the
+    settings again for the next turn, so no restart is needed."""
+    path = services.data / ".claude" / "settings.local.json"
+    settings = json.loads(path.read_text())
+    settings.pop("permissions", None)
+    path.write_text(json.dumps({**settings, **(ASK_FOR_SHELL if asking else {})}))
+
+
 def open_real_agent(services, name, adapter, version):
-    # A person's own Claude settings may allow every shell command in any
-    # mode. This disposable project rule restores asking outside full access.
-    quiet_workspace(services.data, [adapter], {"permissions": {"ask": ["Bash(*)"]}})
+    quiet_workspace(services.data, [adapter], ASK_FOR_SHELL)
     (services.data / "harnesses.json").write_text(json.dumps([{
         "id": f"real-{name}",
         "name": f"Real {name}",
@@ -232,8 +245,10 @@ def full_access_runs_without_asking(services, mac, pane_id, full_access, approva
     count = len(events(services, "pane.permission_requested", pane_id))
     set_mode(mac, pane_id, full_access)
     target = outside / "full-access-check.txt"
+    ask_for_shell(services, asking=False)
     prompt_id = shell_turn(mac, pane_id, target)
     until(lambda: ended(services, prompt_id), "full-access turn did not end", seconds=180)
+    ask_for_shell(services, asking=True)
     require(
         target.read_text().strip() == "SAFE"
         and len(events(services, "pane.permission_requested", pane_id)) == count,
