@@ -54,6 +54,17 @@ struct PhoneHome: View {
       } message: {
         Text(model.problem ?? "")
       }
+      .confirmationDialog(
+        model.incomingPairing?.title ?? "",
+        isPresented: Binding(
+          get: { model.incomingPairing != nil }, set: { if !$0 { model.incomingPairing = nil } }),
+        titleVisibility: .visible, presenting: model.incomingPairing
+      ) { incoming in
+        Button("Pair") { model.pair(incoming.link) }
+        Button("Cancel", role: .cancel) {}
+      } message: { incoming in
+        Text(incoming.message)
+      }
       .confirmationDialog("Forget this Mac?", isPresented: $forget, titleVisibility: .visible) {
         Button("Forget", role: .destructive) { model.forgetMac() }
         Button("Cancel", role: .cancel) {}
