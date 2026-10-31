@@ -5,17 +5,27 @@ use crate::{
 };
 use serde_json::json;
 use soyeht_protocol::{PaneState, StateSource, ndjson::Decoder};
-use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
+use soyeht_ptyd::wire::{Instance, ProcessKind, Spawn};
 
 impl Core {
     pub(crate) fn recover_missing_agent(&mut self, id: &str) -> Result<()> {
+        self.recover_missing_agent_after(id, None)
+    }
+
+    /// [`Core::recover_missing_agent`] for an agent whose process is being closed and replaced:
+    /// the new process starts once the close of `after` has been sent.
+    pub(crate) fn recover_missing_agent_after(
+        &mut self,
+        id: &str,
+        after: Option<&str>,
+    ) -> Result<()> {
         let mut saved = self.panes[id].stored.clone();
         let mut state = self.agent_state(id)?;
         if state.phase == Phase::RestartAfterProbe {
             return self.restart_after_probe(id);
         }
         if saved.instance_id.is_none() {
-            return self.spawn_agent(id);
+            return self.spawn_after(id, after);
         }
         let mut changes = Changes {
             retire_instance: saved.instance_id.clone().zip(saved.supervisor_id.clone()),
@@ -79,15 +89,16 @@ impl Core {
             "Agent runtime disappeared during recovery",
         )?
         .decoder = Decoder::new(0);
-        self.spawn_agent(id)
+        self.spawn_after(id, after)
     }
 
-    pub fn spawn_agent(&mut self, id: &str) -> Result<()> {
+    /// The process the agent of pane `id` runs under the identity the pane has saved.
+    pub(crate) fn agent_spawn_config(&self, id: &str) -> Spawn {
         let saved = &self.panes[id].stored;
         let state = &self.agents[id].state;
         let mut argv = vec![state.launch.command.clone()];
         argv.extend(state.launch.args.clone());
-        let config = Spawn {
+        Spawn {
             instance_key: saved.instance_key.clone(),
             generation: saved.pane.generation,
             kind: ProcessKind::PipesAcp,
@@ -96,11 +107,7 @@ impl Core {
             env: super::environment::launch_environment_with(state.launch.environment.as_deref()),
             cols: saved.pane.cols as u16,
             rows: saved.pane.rows as u16,
-        };
-        let Response::Instance(instance) = self.pty_request(Request::Spawn(config))? else {
-            return Err(errors::ptyd_unavailable("Invalid agent spawn response"));
-        };
-        self.adopt_agent(id, &instance)
+        }
     }
 
     pub fn adopt_agent(&mut self, id: &str, instance: &Instance) -> Result<()> {

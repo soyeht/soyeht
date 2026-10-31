@@ -383,7 +383,7 @@ impl Core {
             method if crate::workspaces::handles(method) => {
                 self.workspace_request(connection, method, params)?
             }
-            method::PANE_CREATE => self.pane_create(connection, params)?,
+            method::PANE_CREATE => return self.pane_create(connection, params),
             method::PANE_CLOSE
             | method::PANE_FOCUS
             | method::PANE_RENAME
@@ -397,7 +397,7 @@ impl Core {
             method::PANE_HARNESS_SWITCH => self.agent_harness_switch(connection, params)?,
             method::PANE_ROLE_SET => self.pane_role_set(connection, params)?,
             method::PANE_AUTH_START | method::PANE_AUTH_CANCEL | method::PANE_AUTH_LOGOUT => {
-                self.agent_auth(connection, method, params)?
+                return self.agent_auth(connection, method, params);
             }
             method if method.starts_with("harness.custom.") => {
                 self.agent_custom_harness(connection, method, params)?

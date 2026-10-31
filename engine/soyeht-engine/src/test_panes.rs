@@ -179,6 +179,17 @@ pub(crate) fn apply_until_done(core: &mut Core, job: &str) {
     }
 }
 
+/// Applies the finished background jobs until none is running or waiting to be applied, for a
+/// test whose jobs start others.
+pub(crate) fn apply_until_idle(core: &mut Core) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while core.background.has_work() {
+        assert!(std::time::Instant::now() < deadline, "the jobs never ended");
+        core.apply_background();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 /// A supervisor that fails the next spawns with the kinds it is given, starts the one
 /// after them, reports `instance-0` as missing when drained, and answers the rest with `Ok`.
 pub(crate) struct Spawning {

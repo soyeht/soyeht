@@ -683,9 +683,7 @@ pub(crate) mod tests {
                 kind: wire_kind::SPAWN_REFUSED.into(),
                 message: "the folder is missing".into(),
             })]);
-        let spawned = core.spawn(&id);
-        assert!(spawned.is_err());
-        core.settle_spawn(&id, spawned);
+        core.spawn(&id).unwrap();
 
         assert!(core.ptyd.is_some());
         assert_eq!(core.panes[&id].stored.pane.state, PaneState::Dead);
@@ -756,9 +754,7 @@ pub(crate) mod tests {
     #[test]
     fn a_lost_link_is_dropped_once_and_then_made_again() {
         let (mut core, directory, id, calls) = core_with_unstarted_pane(Vec::new());
-        let spawned = core.spawn(&id);
-        assert!(spawned.is_err());
-        core.settle_spawn(&id, spawned);
+        core.spawn(&id).unwrap();
 
         assert!(core.ptyd.is_none());
         assert_eq!(calls.load(Ordering::SeqCst), 1);

@@ -141,7 +141,7 @@ impl Supervisor {
     }
 
     /// Whether `other` is the same connection, not a later one to the same supervisor.
-    fn same_link(&self, other: &Self) -> bool {
+    pub(crate) fn same_link(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.connection, &other.connection)
     }
 }
@@ -207,6 +207,13 @@ impl Core {
             .ok_or_else(|| errors::ptyd_unavailable(soyeht_protocol::SUPERVISOR_DISCONNECTED))
     }
 
+    /// Whether `link` is the engine's link now, not one that was replaced.
+    pub(crate) fn is_current_link(&self, link: &Supervisor) -> bool {
+        self.ptyd
+            .as_ref()
+            .is_some_and(|current| current.same_link(link))
+    }
+
     /// Takes the answer of a call made through `used` back under the lock. An error that says
     /// the link is gone drops it, unless it is already another link than the one `used` called
     /// (a call that outlived the link says nothing about the new one). The caller still gets
@@ -218,11 +225,7 @@ impl Core {
     ) -> Result<T> {
         match result {
             Err(error) if errors::supervisor_link_lost(&error) => {
-                if self
-                    .ptyd
-                    .as_ref()
-                    .is_some_and(|current| current.same_link(used))
-                {
+                if self.is_current_link(used) {
                     self.lose_supervisor_link();
                 }
                 Err(errors::ptyd_unavailable(
@@ -241,10 +244,7 @@ impl Core {
         used: &Supervisor,
         result: Result<T>,
     ) -> Result<Option<T>> {
-        let current = self
-            .ptyd
-            .as_ref()
-            .is_some_and(|current| current.same_link(used));
+        let current = self.is_current_link(used);
         let settled = self.settle_supervisor(used, result);
         if !current && settled.is_err() {
             return Ok(None);

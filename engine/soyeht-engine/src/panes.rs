@@ -1,5 +1,6 @@
 use crate::{
     core::{Core, persist_pane},
+    dispatch::Outcome,
     errors::{self, Result},
     model::{self, RunningPane, StoredPane},
     ports::StorePort,
@@ -208,15 +209,17 @@ impl Core {
         ))
     }
 
-    pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
-        if params["mode"] == "editor" {
-            return self.editor_pane_create(connection, params);
-        }
-        if params["mode"] == "web" {
-            return self.web_pane_create(connection, params);
-        }
-        if params["mode"] == "writing" {
-            return self.writing_pane_create(connection, params);
+    /// Creates a pane. A pane with a process replies once the supervisor has started it, so the
+    /// reply still means a pane that takes input; the wait is off the Core lock (ADR 0126).
+    pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Outcome> {
+        let editor_like = match params["mode"].as_str() {
+            Some("editor") => Some(self.editor_pane_create(connection, params)),
+            Some("web") => Some(self.web_pane_create(connection, params)),
+            Some("writing") => Some(self.writing_pane_create(connection, params)),
+            _ => None,
+        };
+        if let Some(created) = editor_like {
+            return created.map(Outcome::Reply);
         }
         let defaults = pane_defaults(&self.store)?;
         let agent = new_agent(&self.directory, &self.store, params)?;
@@ -253,10 +256,9 @@ impl Core {
             }
             // A disconnected supervisor leaves a durable creation intent for
             // reconciliation, never a second process on an RPC retry.
-            let spawned = self.spawn(&id);
-            self.settle_spawn(&id, spawned);
+            return self.spawn_then_reply(&id, mutation.result);
         }
-        Ok(mutation.result)
+        Ok(Outcome::Reply(mutation.result))
     }
 
     pub(crate) fn prepare_pane_close(
@@ -469,19 +471,15 @@ impl Core {
         ) {
             return Ok(());
         }
-        let mut instance_id = saved.instance_id.clone();
-        let key = saved.instance_key.clone();
-        if instance_id.is_none()
-            && let Ok(soyeht_ptyd::wire::Response::Instances(instances)) =
-                self.pty_request(Request::List)
-        {
-            instance_id = instances
-                .into_iter()
-                .find(|i| i.spawn.instance_key == key)
-                .map(|i| i.instance_id);
-        }
-        if let Some(instance_id) = instance_id {
-            self.close_process(&instance_id);
+        match saved.instance_id.clone() {
+            Some(instance_id) => self.close_process(&instance_id),
+            // A process the engine never recorded: a start that outran the pane's close ends by
+            // closing its own (`finish_pane_start`), and one that was lost on the way is found
+            // by the identity it was asked for.
+            None => {
+                let key = saved.instance_key.clone();
+                self.close_unrecorded_process(&key);
+            }
         }
         Ok(())
     }
