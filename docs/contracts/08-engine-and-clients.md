@@ -88,6 +88,8 @@ while the Mac's “Add iPhone” window is open:
    `consumed`, `bad_proof`, `denied`, `revoked`.
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
+Only the local human opens the window, decides a request or revokes a device; a paired
+device may revoke only itself (`forbidden_role` otherwise, ADR 0128).
 
 **2.3 Push.** A paired device calls `push.register {platform: "apns",
 token, environment: "sandbox" | "production"}` and `push.unregister {}`; any
