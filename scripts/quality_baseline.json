@@ -13,8 +13,8 @@
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 276,
-      "duplicated_lines": 2125
+      "clones": 275,
+      "duplicated_lines": 2119
     },
     "ios": {
       "clones": 4,
@@ -161,9 +161,6 @@
       "rust_limits": 2
     },
     "engine/soyeht-engine/src/experiment_export/tests.rs": {
-      "rust_limits": 1
-    },
-    "engine/soyeht-engine/src/languages/runtime.rs": {
       "rust_limits": 1
     },
     "engine/soyeht-engine/src/tasks/revision.rs": {

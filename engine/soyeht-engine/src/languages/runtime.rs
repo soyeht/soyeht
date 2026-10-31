@@ -222,7 +222,19 @@ impl Core {
             {
                 continue;
             }
-            if let Err(error) = self.poll_language_server(&key) {
+            // A write whose job ended without a receipt (its link was replaced meanwhile) is still
+            // pending: it goes out again, under the same operation key, which the supervisor
+            // answers once. A write whose job is on its way is left alone.
+            let pending = self
+                .languages
+                .get(&key)
+                .is_some_and(|server| !server.pending_writes.is_empty());
+            let sent = if pending {
+                self.resume_language_writes(&key)
+            } else {
+                Ok(())
+            };
+            if let Err(error) = sent.and_then(|()| self.poll_language_server(&key)) {
                 self.language_failed(&key, &error);
             }
         }
@@ -249,21 +261,34 @@ impl Core {
     fn finish_language_start(&mut self, key: &str, identity: &str, started: Started) {
         let result = match started {
             Started::Process(instance) => {
-                let current = self.languages.get(key).is_some_and(|server| {
-                    server.instance_key == identity && server.instance_id.is_none()
-                });
-                if !current {
-                    return self.close_process(&instance.instance_id);
+                if !self.language_waits_for(key, identity) {
+                    // Unless the reconciliation of a new link already adopted this very process.
+                    let adopted = self.languages.get(key).is_some_and(|server| {
+                        server.instance_id.as_deref() == Some(instance.instance_id.as_str())
+                    });
+                    if !adopted {
+                        self.close_process(&instance.instance_id);
+                    }
+                    return;
                 }
                 self.adopt_language_process(key, &instance)
             }
-            Started::Failed(error) => Err(error),
+            // A failure of a server restarted meanwhile is not the new server's.
+            Started::Failed(error) if self.language_waits_for(key, identity) => Err(error),
+            Started::Failed(_) => return,
             // The reconciliation of the link that replaced it adopts or restarts every server.
             Started::Stale => return,
         };
         if let Err(error) = result {
             self.language_failed(key, &error);
         }
+    }
+
+    /// Whether the server `key` is still waiting for the process started under `identity`.
+    fn language_waits_for(&self, key: &str, identity: &str) -> bool {
+        self.languages
+            .get(key)
+            .is_some_and(|server| server.instance_key == identity && server.instance_id.is_none())
     }
 
     /// Leaves the server unavailable and fails the editor requests waiting for it, after a failure
@@ -483,38 +508,63 @@ impl Core {
         };
         let key = key.to_owned();
         self.start_input(job, &instance_id, request, move |core, accepted| {
-            if let Err(error) =
-                core.finish_language_write(&key, operation_key, decoded_len, accepted)
-            {
-                core.language_failed(&key, &error);
-            }
+            core.settle_language_write(&key, operation_key, decoded_len, accepted);
             Ok(())
         })
     }
 
-    fn finish_language_write(
+    /// Takes the receipt of a write under the lock. A server restarted meanwhile no longer holds
+    /// the write, and its process is not the one the answer is about: the answer, a failure
+    /// included, says nothing about the new one, and a receipt is only confirmed. A failure of a
+    /// write the server still holds leaves it unavailable.
+    fn settle_language_write(
         &mut self,
         key: &str,
         operation_key: String,
         decoded_len: usize,
         accepted: Result<Option<usize>>,
-    ) -> Result<()> {
+    ) {
+        let held = self
+            .languages
+            .get(key)
+            .is_some_and(|server| server.pending_writes.contains_key(&operation_key));
+        let confirm = if held {
+            match self.finish_language_write(key, &operation_key, decoded_len, accepted) {
+                Ok(confirm) => confirm,
+                Err(error) => return self.language_failed(key, &error),
+            }
+        } else {
+            matches!(accepted, Ok(Some(_)))
+        };
+        if confirm {
+            // Nobody waits for it: an unconfirmed receipt is reconciled when the supervisor
+            // returns.
+            self.send_later(Request::ConfirmInput { operation_key });
+        }
+    }
+
+    /// Makes the receipt of a write the server holds durable. `false` for the failure of a link
+    /// that was replaced meanwhile: the write stays pending.
+    fn finish_language_write(
+        &mut self,
+        key: &str,
+        operation_key: &str,
+        decoded_len: usize,
+        accepted: Result<Option<usize>>,
+    ) -> Result<bool> {
         let Some(accepted) = accepted? else {
-            return Ok(());
+            return Ok(false);
         };
         if accepted != decoded_len {
             return Err(errors::ptyd_unavailable(
                 "Stored language server input was not accepted exactly",
             ));
         }
-        // A server restarted meanwhile no longer holds the write.
-        if let Some(server) = self.languages.get_mut(key) {
-            server.pending_writes.remove(&operation_key);
-            self.persist_language_server(key, Vec::new())?;
-        }
-        // Nobody waits for it: an unconfirmed receipt is reconciled when the supervisor returns.
-        self.send_later(Request::ConfirmInput { operation_key });
-        Ok(())
+        language_mut(&mut self.languages, key)?
+            .pending_writes
+            .remove(operation_key);
+        self.persist_language_server(key, Vec::new())?;
+        Ok(true)
     }
 
     fn restart_language_server(&mut self, key: &str, detail: &str) -> Result<()> {
@@ -674,27 +724,4 @@ pub(crate) fn file_uri(root: &Path, relative: &str) -> Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use soyeht_protocol::{DiagnosticSeverity, TextPosition, TextRange};
-
-    #[test]
-    fn diagnostic_publication_is_bounded_after_wire_expansion() {
-        let item = FileDiagnostic {
-            diagnostic_id: "d".repeat(36),
-            range: TextRange {
-                start: TextPosition { line: 0, column: 0 },
-                end: TextPosition { line: 0, column: 1 },
-            },
-            severity: DiagnosticSeverity::Warning,
-            message: "x".repeat(4096),
-            source: "server".into(),
-        };
-        let (items, omitted) = bounded_diagnostics("file-1", 7, vec![item; 500]).unwrap();
-        let event = json!({"fileId":"file-1","revision":"7","items":items});
-        assert!(
-            serde_json::to_vec(&event).unwrap().len() <= soyeht_protocol::limits::JSON_BYTES - 1024
-        );
-        assert!(omitted > 0);
-    }
-}
+mod tests;

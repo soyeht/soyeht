@@ -165,6 +165,60 @@ fn the_rule_recognises_a_direct_process_run() {
     );
 }
 
+/// Where the engine waits for the supervisor (`Supervisor::call`, `call_each`, `send_input`), by
+/// file, and what runs it. Every one is the work of a job (`Core::spawn_background`,
+/// `spawn_prompt_background`, `start_process`, `start_input`) or of an `Outcome::Offload`, never
+/// code that holds the Core lock; the apply of each settles the answer under the lock. The table
+/// may not grow: a new wait is a new job, and its file and count are added here with the reason
+/// (ADR 0117, ADR 0126). A wait on the caller's thread under the lock fails here.
+const SUPERVISOR_WAITS: &[(&str, usize, &str)] = &[
+    (
+        "soyeht-engine/src/agents/recovery.rs",
+        2,
+        "job: the requests a gap hides",
+    ),
+    (
+        "soyeht-engine/src/agents/switching.rs",
+        2,
+        "jobs: a switch step, the retired closes",
+    ),
+    (
+        "soyeht-engine/src/agents/switching/candidate.rs",
+        2,
+        "work of the switch step jobs",
+    ),
+    (
+        "soyeht-engine/src/core.rs",
+        2,
+        "the connect job and Core::open, before the Core is shared",
+    ),
+    ("soyeht-engine/src/input.rs", 1, "offload: pane.input"),
+    (
+        "soyeht-engine/src/process_start.rs",
+        1,
+        "launch: job or offload",
+    ),
+    ("soyeht-engine/src/spawn_retry.rs", 3, "jobs: closes"),
+    (
+        "soyeht-engine/src/supervisor_handle.rs",
+        5,
+        "the handle itself, start_input, the follow-up job",
+    ),
+    (
+        "soyeht-engine/src/terminal_drain.rs",
+        3,
+        "jobs: the drain, the exit lookup and the ack",
+    ),
+];
+
+/// The waits in `shipped` source: `Supervisor::call`, `call_each` and `send_input`.
+fn supervisor_waits(shipped: &str) -> usize {
+    [".call", ".call_each", ".send_input", "pty_request"]
+        .iter()
+        .map(|name| calls_to(shipped, name))
+        .sum()
+}
+
 /// The files that may name `call_supervisor`, the call that waits for the supervisor on a port
 /// it is handed: the port's own module and the handle that wraps it.
 const CALL_SUPERVISOR_FILES: &[&str] = &[
@@ -199,12 +253,16 @@ fn requests_to_the_supervisor_under_the_core_lock_do_not_grow() {
         // A file that is only test code (`tests.rs`, `test_panes.rs`, `save_temporary_tests.rs`)
         // is not shipped; a production file with "test" inside its name still is.
         let name = file.file_name().unwrap().to_string_lossy().into_owned();
-        if name == "tests.rs" || name.starts_with("test_") || name.ends_with("_tests.rs") {
+        if name == "tests.rs"
+            || name.starts_with("test_")
+            || name.ends_with("_tests.rs")
+            || relative.contains("/tests/")
+        {
             continue;
         }
         let source = fs::read_to_string(&file).unwrap();
         let shipped = shipped(&source);
-        let waiting = calls_to(shipped, "pty_request");
+        let waiting = supervisor_waits(shipped);
         if waiting > 0 {
             found.push((relative.clone(), waiting));
         }
@@ -221,11 +279,16 @@ fn requests_to_the_supervisor_under_the_core_lock_do_not_grow() {
          off the Core lock (ADR 0117):\n{}",
         stray.join("\n")
     );
-    assert!(
-        found.is_empty(),
-        "a request to the supervisor waits under the Core lock (ADR 0117, ADR 0126): wait \
-         through Supervisor::call off the lock, in an Outcome::Offload or a Core::spawn_background \
-         job, and settle the answer with Core::settle_supervisor:\n{found:?}"
+    let allowed = SUPERVISOR_WAITS
+        .iter()
+        .map(|(file, count, _)| ((*file).to_owned(), *count))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        found, allowed,
+        "a request to the supervisor waits somewhere that is not a known job or offload (ADR 0117, \
+         ADR 0126): wait through Supervisor::call off the lock, in an Outcome::Offload or a \
+         Core::spawn_background job, settle the answer with Core::settle_supervisor, and add the \
+         site to SUPERVISOR_WAITS with its reason"
     );
 }
 
@@ -246,5 +309,23 @@ fn the_supervisor_rule_recognises_a_waiting_call() {
             "pty_request"
         ),
         2
+    );
+}
+
+#[test]
+fn the_supervisor_wait_rule_counts_every_way_to_wait() {
+    assert_eq!(
+        supervisor_waits("let r = supervisor.call(Request::List)?;\nlink.call_each(batch);"),
+        2
+    );
+    assert_eq!(
+        supervisor_waits("link.send_input(&turn, &carried, request)"),
+        1
+    );
+    assert_eq!(supervisor_waits("self.pty_request(Request::List)?;"), 1);
+    // Definitions and comments are not waits.
+    assert_eq!(
+        supervisor_waits("pub fn call(&self) {}\n// supervisor.call(a)\nfn send_input(&self) {}"),
+        0
     );
 }

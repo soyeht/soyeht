@@ -31,13 +31,10 @@ impl Core {
     /// Sends the next page of the agent's oldest unsent message, off the Core lock (ADR 0126): the
     /// bytes go to the supervisor in a job, and the page is made durable when the supervisor
     /// has accepted it, under the lock ([`Core::finish_outbox_page`]), which then sends the next.
-    /// A page already on its way is left alone. The engine never sends a page twice with the
+    /// The job is keyed by the page, so the next page can start while the apply of the last one
+    /// runs, and a page already on its way is left alone. A page is never sent twice with the
     /// same attempt: the supervisor answers the same operation key with the same receipt.
     pub fn flush_agent_outbox(&mut self, pane: &str) -> Result<()> {
-        let job = format!("outbox:{pane}");
-        if !self.background.accepts(&job) {
-            return Ok(());
-        }
         let Some(prior) = self
             .store
             .agent_outbox(pane)
@@ -47,6 +44,13 @@ impl Core {
         else {
             return Ok(());
         };
+        let job = format!(
+            "outbox:{pane}:{}:{}:{}",
+            prior.operation_key, prior.attempt, prior.accepted_bytes
+        );
+        if !self.background.accepts(&job) {
+            return Ok(());
+        }
         let saved = &self.panes[pane].stored;
         if saved.closed
             || saved.pane.generation != prior.generation
@@ -72,9 +76,24 @@ impl Core {
         };
         let (pane, attempted, instance) = (pane.to_owned(), bytes.len(), prior.instance_id.clone());
         self.start_input(job, &instance, request, move |core, accepted| {
+            let process = prior.instance_id.clone();
             let settled = core.finish_outbox_page(&pane, prior, operation_key, attempted, accepted);
-            core.settle_agent_poll(&pane, settled)
+            core.settle_page(&pane, &process, settled)
         })
+    }
+
+    /// Settles the failure of a page sent to `process`, as the poll settles its own. A failure of
+    /// a process the pane no longer has (it was replaced while the page was on its way) says
+    /// nothing about the new one, and is dropped.
+    fn settle_page(&mut self, pane: &str, process: &str, settled: Result<()>) -> Result<()> {
+        let current = self
+            .panes
+            .get(pane)
+            .is_some_and(|saved| saved.stored.instance_id.as_deref() == Some(process));
+        if settled.is_err() && !current {
+            return Ok(());
+        }
+        self.settle_agent_poll(pane, settled)
     }
 
     /// Makes the page the supervisor accepted durable and sends the next one. A page of a message
@@ -126,5 +145,39 @@ impl Core {
             return Ok(());
         }
         self.flush_agent_outbox(pane)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::test_panes::core_with_agent;
+    use soyeht_ptyd::{Error as PtydError, wire_kind};
+
+    fn missing_process() -> crate::errors::Error {
+        crate::errors::Error::Supervisor(PtydError::Remote {
+            kind: wire_kind::NOT_FOUND.into(),
+            message: "gone".into(),
+        })
+    }
+
+    #[test]
+    fn a_page_that_failed_on_a_replaced_process_does_not_recover_the_healthy_one() {
+        let (mut core, _directory) = core_with_agent(&[]);
+
+        // The page went to a process the pane no longer has.
+        core.settle_page("agent", "old-process", Err(missing_process()))
+            .unwrap();
+        assert_eq!(
+            core.panes["agent"].stored.instance_id.as_deref(),
+            Some("instance-0")
+        );
+
+        // The same failure of the process the pane has is recovered, as the poll does.
+        core.settle_page("agent", "instance-0", Err(missing_process()))
+            .unwrap();
+        assert_eq!(
+            core.panes["agent"].stored.instance_id.as_deref(),
+            Some("instance-1")
+        );
     }
 }

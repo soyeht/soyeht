@@ -92,7 +92,8 @@ the bytes (`Supervisor::send_input`, shared with `pane.input`), and the apply se
 receipt (`Core::settle_input`, also shared) and hands `done` the bytes the supervisor accepted. A
 receipt that fails on a link that was replaced meanwhile is dropped.
 
-- **The outbox of an agent** (`flush_agent_outbox`) sends one page as the job `outbox:{pane}`. When
+- **The outbox of an agent** (`flush_agent_outbox`) sends one page as a job keyed by the page
+  (`outbox:{pane}:{operation}:{attempt}:{offset}`), so the apply of one page can start the next. When
   the page is accepted, `finish_outbox_page` checks that the oldest unsent message is still the one
   the page belongs to (the process may have been replaced), makes the advance durable, confirms the
   receipt and starts the next page. The poll starts the job on each tick that finds a message
@@ -140,6 +141,20 @@ the candidate. `advance_harness_switches` starts the next step of each switch as
   every one of them already did for the failures that could not be returned: the pane is retried
   by the tick, and stopped when the supervisor refused. A non-refusal during a reconciliation no
   longer fails the reconciliation (and with it the link): the pane alone is retried.
+- **The reconciliation of the language servers no longer fails on a start that errors.** A
+  non-refusal error of a server's restart used to fail the reconciliation (and drop the link to
+  try again); it is now the server's own failure, settled when the supervisor answers
+  (`language_failed`: unavailable, with the waiting editor requests failed). So a refused start
+  is logged as `engine.lsp_failed` and no longer as `engine.lsp_not_restarted`, which only a
+  restart that could not begin can still reach.
+- **A repeated `idempotencyKey` during a create that is still starting returns the stored reply
+  at once**, before the process exists, as the first request's reply would have been if it had
+  not waited. The pane is in the state a pane waiting for its retry has, which clients tolerate.
+- **A write that lost its link is sent again by the tick.** A language server's write whose job
+  ended on a replaced link stays pending, and the tick sends the pending writes that have no job
+  (the operation key is the same, so the supervisor answers once). A result that arrives for a
+  write the server no longer holds, or for a process the pane no longer has, is dropped (the
+  receipt is confirmed): it says nothing about the new process.
 - **An agent's message, a gap's requests and a switch's steps wait for the tick that applies
   them.** Each is a round trip and a thread hop later than when it was a call under the lock
   (the first page of a message goes out on the tick after the poll that found it, the next pages
@@ -152,10 +167,11 @@ the candidate. `advance_harness_switches` starts the next step of each switch as
 
 ## Consequences
 
-- Nothing waits for the supervisor with the Core lock held. `Core::pty_request` and
-  `close_and_wait` are gone, and `tests/blocking_io_rule.rs` fails on a caller of either name
-  instead of counting them. `tests/core_lock.rs` creates a pane while the supervisor is stopped and measures a status
-  request on another connection.
+- Nothing waits for the supervisor with the Core lock held. `Core::pty_request` (now test-only)
+  and `close_and_wait` are gone, and `tests/blocking_io_rule.rs` holds a table of the files that
+  wait for the supervisor (`call`, `call_each`, `send_input`), each the work of a job or an
+  offload: a wait anywhere else, or one more in a file, fails it. `tests/core_lock.rs` creates a
+  pane while the supervisor is stopped and measures a status request on another connection.
 - The unit tests of `process_start.rs` run the jobs on the pool with a supervisor that takes a
   second to answer, and prove that the call returns at once, that a second start asks for
   nothing, that a pane that closed or changed identity does not take the process it got, that a

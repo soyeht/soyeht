@@ -110,7 +110,7 @@ impl Core {
             saved.instance_id.as_ref(),
             "Agent process has no adopted instance during recovery",
         )?;
-        let fetched = self.reads.fetches.remove(pane);
+        let fetched = self.reads.fetches.remove(&crate::read_ahead::agent(pane));
         if let Some(fetched) = fetched.filter(|f| f.instance_id == *instance && f.before == before)
         {
             return self.apply_recovered(pane, saved.pane.generation, fetched.requests?);
@@ -136,8 +136,12 @@ impl Core {
             move || fetch_pending(&supervisor, &asked, before, &known),
             move |core, requests| {
                 let requests = core.settle_supervisor(&used, requests);
+                // A pane that closed meanwhile has nobody to take it.
+                if core.panes.get(&owner).is_none_or(|pane| pane.stored.closed) {
+                    return Ok(());
+                }
                 core.reads.fetches.insert(
-                    owner,
+                    crate::read_ahead::agent(&owner),
                     Fetched {
                         instance_id: answered,
                         before,

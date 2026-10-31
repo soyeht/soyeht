@@ -215,15 +215,6 @@ impl Core {
         self.ptyd = Some(Supervisor::new(port));
     }
 
-    /// Sends `request` and waits for the answer with the Core lock held, for a test that scripts
-    /// the supervisor. No engine code does: `tests/blocking_io_rule.rs` fails on any caller.
-    #[cfg(test)]
-    pub(crate) fn pty_request(&mut self, request: Request) -> Result<Response> {
-        let supervisor = self.supervisor()?;
-        let result = supervisor.call(request);
-        self.settle_supervisor(&supervisor, result)
-    }
-
     /// A handle to the current link, for work that waits off the Core lock.
     pub(crate) fn supervisor(&self) -> Result<Supervisor> {
         self.ptyd
@@ -322,7 +313,8 @@ impl Core {
         let carried = self.take_later_for(instance_id);
         let turn = self.turn(&[instance_id]);
         let taken = carried.clone();
-        self.spawn_prompt_background(
+        let requeue = carried.clone();
+        let started = self.spawn_prompt_background(
             job,
             move || Ok(link.send_input(&turn, &taken, request)),
             move |core, sent| {
@@ -330,7 +322,12 @@ impl Core {
                 done(core, accepted)
             },
             |_| true,
-        )
+        );
+        if started.is_err() {
+            // The job never ran: the sends it took go back.
+            self.requeue_later(&requeue);
+        }
+        started
     }
 
     /// Takes a place in the order of the sends to `instances`.

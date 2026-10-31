@@ -190,6 +190,7 @@ impl Core {
         self.reads.ready.retain(|owner, _| !owned(owner));
         self.reads.paused_until_ms.retain(|owner, _| !owned(owner));
         self.reads.live.retain(|owner| !owned(owner));
+        self.reads.fetches.retain(|owner, _| !owned(owner));
     }
 
     /// Forgets every read: the link they were made on is gone.
