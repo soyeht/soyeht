@@ -755,11 +755,12 @@ fn a_cancel_the_agent_dropped_is_sent_again_until_the_turn_ends() {
     );
     client.wait_state(&pane, "idle");
     assert!(!marker.exists(), "the first cancel was not dropped");
-    assert!(
-        client.call("pane.transcript", json!({"paneId":pane}))["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|message| message["text"] == "Turn cancelled by the user.")
-    );
+    let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+    let texts: Vec<&str> = transcript["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["text"].as_str())
+        .collect();
+    assert!(texts.contains(&"Turn cancelled by the user."), "{texts:?}");
 }
