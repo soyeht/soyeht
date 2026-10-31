@@ -21,20 +21,26 @@ the notice are contract 16.
   already holds the log, the redaction and the owner-only files. The engine installs it in
   `launch::run` (both the product and the test program run it), the supervisor in its `main`, the
   Windows and Linux app in its `main`. It writes, then calls the hook that was there; it never
-  aborts, never exits, and `panic = "unwind"` stays, so the programs crash and restart as they did
-  (ADR 0114's service manager restarts the engine and the supervisor).
+  exits on purpose and `panic = "unwind"` stays, so the programs crash and restart as they did
+  (ADR 0114's service manager restarts the engine and the supervisor). It runs inside a panic, where
+  a second panic aborts the process before anything can catch it, so there is no guard against one:
+  the hook does only what cannot panic and takes no lock its thread may hold (the log file's lock is
+  tried, not waited for).
 - **The message of the panic is never recorded**, only a label from the shapes the standard
   library gives its own (`unwrap_none`, `index_out_of_bounds`, ...) and the source location. A
   message can carry a file name or a fragment of what the person was doing, and ADR 0088 keeps
   message text out of the logs for the same reason. The log lines in the report are the program's
-  own structured lines, redacted as in contract 14.
+  own structured lines, redacted as in contract 14. The default hook writes the message to standard
+  error, which the services' redirection and the engine's copy put into the same log file; so the log
+  sections of the reports and of `soyeht diagnostics` keep only `{"event":...}` lines.
+  A panic that ends the program is always written; those that do not are limited to three per process.
 - **The backtrace is `module+0xoffset`, not names.** A shipped program is stripped, and stripping
   is a decision (the engine hashes its own executable at start, and the profile says so in `Cargo.toml`). The
   hook captures the return addresses with the system's own call (`backtrace` and `dladdr` on Unix,
   `RtlCaptureStackBackTrace` on Windows) and records the module's file name and the offset from
   its load address, which survives ASLR. With the unstripped build of that version, the offset is a
-  name. A program that does carry symbols (a development build) adds them in `symbols`. The
-  alternative, keeping symbols in the release, costs binary size and start time for every person to
+  name. The hook does not resolve names itself (that is slow and allocates in a crashing process); a
+  maintainer names the offsets. The alternative, keeping symbols in the release, costs binary size and start time for every person to
   save a lookup for the few who crash. No third-party backtrace crate is added.
 - **A report is a text file, not JSON.** `soyeht-platform` has no parser and no Soyeht
   dependency; the text form is read and written there, pasted as it is into the diagnostics, and

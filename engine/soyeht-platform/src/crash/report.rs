@@ -10,8 +10,6 @@ pub const MAGIC: &str = "soyeht-crash-report 1";
 
 /// Most frames of a backtrace a report keeps.
 pub const MAX_FRAMES: usize = 48;
-/// Most symbol names a report keeps.
-pub const MAX_SYMBOLS: usize = 24;
 /// Most log lines a report keeps.
 pub const MAX_LOG_LINES: usize = 20;
 /// A frame, a symbol or a log line is cut here.
@@ -73,8 +71,6 @@ pub struct Report {
     pub location: String,
     /// `module+0xoffset` of each frame, innermost first, for a symbolicator.
     pub frames: Vec<String>,
-    /// The names of the frames, when the program carries symbols.
-    pub symbols: Vec<String>,
     /// The last structured log lines the program wrote.
     pub log: Vec<String>,
 }
@@ -96,7 +92,7 @@ pub(super) fn one_line(text: &str, limit: usize) -> String {
 }
 
 impl Report {
-    /// The stored form. Frames, then symbols, then log lines are dropped, in the opposite order,
+    /// The stored form. Frames and log lines are dropped, the log lines first,
     /// until it is no longer than [`MAX_REPORT_BYTES`].
     pub fn to_text(&self) -> String {
         let mut report = self.clone();
@@ -105,10 +101,7 @@ impl Report {
             if text.len() <= MAX_REPORT_BYTES {
                 return text;
             }
-            if report.log.pop().is_none()
-                && report.symbols.pop().is_none()
-                && report.frames.pop().is_none()
-            {
+            if report.log.pop().is_none() && report.frames.pop().is_none() {
                 return text.chars().take(MAX_REPORT_BYTES).collect();
             }
         }
@@ -129,7 +122,6 @@ impl Report {
         ];
         for (name, section, limit) in [
             ("frames:", &self.frames, MAX_FRAMES),
-            ("symbols:", &self.symbols, MAX_SYMBOLS),
             ("log:", &self.log, MAX_LOG_LINES),
         ] {
             lines.push(name.to_owned());
@@ -165,14 +157,13 @@ impl Report {
             kind: String::new(),
             location: String::new(),
             frames: Vec::new(),
-            symbols: Vec::new(),
             log: Vec::new(),
         };
         let mut program = None;
         let mut section = None;
         for line in lines {
             match line {
-                "frames:" | "symbols:" | "log:" => section = Some(line),
+                "frames:" | "log:" => section = Some(line),
                 _ => match section {
                     None => {
                         let Some((key, value)) = line.split_once(": ") else {
@@ -195,9 +186,6 @@ impl Report {
                     Some("frames:") if report.frames.len() < MAX_FRAMES => {
                         report.frames.push(one_line(line, LINE_CHARS));
                     }
-                    Some("symbols:") if report.symbols.len() < MAX_SYMBOLS => {
-                        report.symbols.push(one_line(line, LINE_CHARS));
-                    }
                     Some("log:") if report.log.len() < MAX_LOG_LINES => {
                         report.log.push(one_line(line, LINE_CHARS));
                     }
@@ -208,6 +196,13 @@ impl Report {
         report.program = program?;
         Some(report)
     }
+}
+
+/// Seconds since the Unix epoch, 0 when the clock is before it.
+pub fn unix_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
 }
 
 /// `seconds` since the Unix epoch as `2026-10-31 10:11:12 UTC`.

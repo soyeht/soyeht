@@ -90,7 +90,6 @@ fn the_crash_reports_of_the_profile_are_part_of_the_report() {
             kind: "unwrap_none".into(),
             location: "soyeht-ptyd/src/server.rs:1:1".into(),
             frames: vec!["soyeht-ptyd+0x10".into()],
-            symbols: vec![],
             log: vec![],
         },
     )
