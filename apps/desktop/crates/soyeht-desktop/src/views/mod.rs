@@ -25,6 +25,7 @@ mod pane;
 mod pane_drag;
 mod permission;
 mod places;
+pub(crate) mod overlay;
 mod preferences;
 mod prefs_harnesses;
 mod prefs_skills;
@@ -76,6 +77,7 @@ impl Render for Workbench {
         self.window.width = f32::from(window.viewport_size().width);
         self.web_shown.clear();
         menus::window_measured(self.window.height, cx);
+        overlay::begin_frame(cx);
         let palette = self.theme.palette();
         let screen = div()
             .id("workbench")
