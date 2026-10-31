@@ -135,15 +135,8 @@ fn failure_record(name: &str, fields: &[(&str, &str)], error: &dyn Failure) -> S
 /// standard error, so a full disk is not retried on every line.
 fn write_line(line: &str) {
     write_to_stderr(line);
-    let Ok(mut file) = FILE.lock() else {
-        return;
-    };
-    let Some(open) = file.as_mut() else {
-        return;
-    };
-    if let Err(error) = open.write_lines(format!("{line}\n").as_bytes()) {
-        *file = None;
-        write_to_stderr(&failure_record("log.file_write_failed", &[], &error));
+    if let Ok(mut file) = FILE.lock() {
+        append(&mut file, line);
     }
 }
 
@@ -151,10 +144,18 @@ fn write_line_without_waiting(line: &str) {
     write_to_stderr(line);
     // A lock that is busy (or poisoned) means the line is not written to the file; the other
     // thread's own lines are.
-    if let Ok(mut file) = FILE.try_lock()
-        && let Some(open) = file.as_mut()
-        && let Err(error) = open.write_lines(format!("{line}\n").as_bytes())
-    {
+    if let Ok(mut file) = FILE.try_lock() {
+        append(&mut file, line);
+    }
+}
+
+/// Writes `line` to the open file, if there is one. A file that fails is dropped, so a full disk
+/// is not retried on every line.
+fn append(file: &mut Option<RotatingFile>, line: &str) {
+    let Some(open) = file.as_mut() else {
+        return;
+    };
+    if let Err(error) = open.write_lines(format!("{line}\n").as_bytes()) {
         *file = None;
         write_to_stderr(&failure_record("log.file_write_failed", &[], &error));
     }
