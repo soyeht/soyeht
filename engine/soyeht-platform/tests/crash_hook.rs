@@ -12,12 +12,15 @@ use std::{
 static PREVIOUS_HOOK_CALLS: AtomicUsize = AtomicUsize::new(0);
 
 fn panic_on(name: &str) {
+    panic_with(name, "the message names a secret project");
+}
+
+/// A thread called `name` that panics with `message`. Two reports of one program with the same
+/// bytes in one second are one report, so tests tell their panics apart by thread or kind.
+fn panic_with(name: &str, message: &'static str) {
     let result = thread::Builder::new()
         .name(name.to_owned())
-        .spawn(|| {
-            let missing: Option<u8> = std::hint::black_box(None);
-            missing.expect("the message names a secret project");
-        })
+        .spawn(move || std::panic::panic_any(message))
         .unwrap()
         .join();
     assert!(result.is_err(), "the panic still unwinds to the join");
@@ -35,7 +38,8 @@ fn a_panic_leaves_a_report_and_keeps_the_hook_that_was_there() {
         format!(
             "{{\"event\":\"engine.ready\"}}\n\
              {{\"event\":\"engine.opened\",\"path\":\"{}/Projects/secret.txt\"}}\n\
-             thread 'main' panicked at x.rs:1:1:\nthe message names a secret project\n",
+             thread 'main' panicked at x.rs:1:1:\nthe message names a secret project\n\
+             {{\"event\":\"engine.after\"}}\n",
             home.display()
         ),
     )
@@ -66,7 +70,7 @@ fn a_panic_leaves_a_report_and_keeps_the_hook_that_was_there() {
     assert!(!report.frames.is_empty());
     assert_eq!(report.version, env!("CARGO_PKG_VERSION"));
     // Structured log lines only, redacted; the default hook's message line is not kept.
-    assert_eq!(report.log.len(), 2, "{:?}", report.log);
+    assert_eq!(report.log.len(), 3, "{:?}", report.log);
     assert!(report.log[0].contains("engine.ready"));
     let stored = fs::read_to_string(store::directory(&data).join(&pending[0].name)).unwrap();
     assert!(stored.len() <= MAX_REPORT_BYTES);
@@ -81,12 +85,23 @@ fn a_panic_leaves_a_report_and_keeps_the_hook_that_was_there() {
     assert_eq!(store::list(&data).unwrap().len(), 2);
     assert_eq!(store::pending(&data).unwrap().len(), 1);
 
-    // A program in a panic loop cannot push the older reports out.
-    for _ in 0..10 {
-        panic_on("worker");
+    // A program in a panic loop of tasks cannot push the older reports out...
+    for index in 0..10 {
+        panic_on(&format!("worker-{index}"));
     }
-    assert_eq!(store::list(&data).unwrap().len(), 3);
-    assert_eq!(PREVIOUS_HOOK_CALLS.load(Ordering::Relaxed), 12);
+    assert_eq!(
+        store::list(&data).unwrap().len(),
+        4,
+        "the first one and three non-fatal ones"
+    );
+    // ...and cannot keep the panic that ends the program from leaving its report.
+    panic_with(
+        "main",
+        "index out of bounds: the len is 1 but the index is 2",
+    );
+    assert_eq!(store::list(&data).unwrap().len(), 5);
+    assert_eq!(store::pending(&data).unwrap().len(), 2);
+    assert_eq!(PREVIOUS_HOOK_CALLS.load(Ordering::Relaxed), 13);
 
     fs::remove_dir_all(data).ok();
 }

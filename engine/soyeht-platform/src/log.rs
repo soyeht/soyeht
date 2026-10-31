@@ -41,6 +41,18 @@ pub fn event(name: &str, fields: &[(&str, &str)]) {
     write_line(&record(name, fields));
 }
 
+/// [`event`] for a place that may run while this thread holds the log file's lock (a panic hook):
+/// the line goes to standard error always, and to the file only when its lock is free, so it can
+/// never wait for itself.
+pub fn try_event(name: &str, fields: &[(&str, &str)]) {
+    write_line_without_waiting(&record(name, fields));
+}
+
+/// [`failure`] for the same places as [`try_event`].
+pub fn try_failure(name: &str, error: &dyn Failure) {
+    write_line_without_waiting(&failure_record(name, &[], error));
+}
+
 /// One log line that is built now and written later.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Line {
@@ -135,6 +147,19 @@ fn write_line(line: &str) {
     }
 }
 
+fn write_line_without_waiting(line: &str) {
+    write_to_stderr(line);
+    // A lock that is busy (or poisoned) means the line is not written to the file; the other
+    // thread's own lines are.
+    if let Ok(mut file) = FILE.try_lock()
+        && let Some(open) = file.as_mut()
+        && let Err(error) = open.write_lines(format!("{line}\n").as_bytes())
+    {
+        *file = None;
+        write_to_stderr(&failure_record("log.file_write_failed", &[], &error));
+    }
+}
+
 fn write_to_stderr(line: &str) {
     // ignored: A closed standard error (a broken pipe) has nowhere to report itself.
     let _ = writeln!(io::stderr(), "{line}");
@@ -216,6 +241,15 @@ mod tests {
             line.json(),
             r#"{"event":"engine.editor_effect_failed","action":"save","attempts":"4"}"#
         );
+    }
+
+    #[test]
+    fn a_line_written_without_waiting_does_not_wait_for_the_file_lock_its_thread_holds() {
+        // A panic raised while this thread holds the lock must still reach the hook's own line.
+        let held = FILE.lock().unwrap();
+        try_event("test.during_panic", &[("kind", "explicit")]);
+        try_failure("test.failed", &io::Error::from(io::ErrorKind::NotFound));
+        drop(held);
     }
 
     #[test]

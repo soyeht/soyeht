@@ -25,7 +25,7 @@ harness list [--cursor CURSOR] | model list HARNESS [--pane ID] [--cursor CURSOR
 device pair-start | device list\n\
 service install [--component engine|ptyd] [--programs DIR] | service uninstall|start|stop [--component engine|ptyd] | service status [--component engine|ptyd] [--programs DIR]\n\
 uninstall [--delete-data [--yes]] | diagnostics [--lines COUNT]\n\
-crash-reports status | crash-reports acknowledge | crash-reports import FILE\n\
+crash-reports status | crash-reports acknowledge [NAME...] | crash-reports import FILE\n\
 service render --system macos|linux|windows --name NAME [--description TEXT] [--log PATH] [--after NAME] [--user ID] [--env KEY=VALUE]... -- PROGRAM [ARGUMENT]...\n\
 task create WORKSPACE TITLE --must-not-change TEXT [OPTIONS]\n\
 task next WORKSPACE PANE GENERATION | task list WORKSPACE [OPTIONS] | task show WORKSPACE TASK\n\
