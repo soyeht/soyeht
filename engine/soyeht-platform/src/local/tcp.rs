@@ -33,14 +33,7 @@ pub struct Listener {
 
 /// A loopback socket on a free port that no other process can bind, whatever it asks for.
 pub(super) fn bind_loopback() -> io::Result<TcpListener> {
-    #[cfg(windows)]
-    {
-        super::exclusive::bind_loopback()
-    }
-    #[cfg(not(windows))]
-    {
-        TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-    }
+    crate::net::listen(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
 }
 
 impl Listener {
