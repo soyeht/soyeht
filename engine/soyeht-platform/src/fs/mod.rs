@@ -6,7 +6,7 @@
 
 use std::{
     fs::{File, OpenOptions},
-    io,
+    io::{self, Write as _},
     path::Path,
 };
 
@@ -114,10 +114,18 @@ pub fn lock_singleton(directory: &Path, name: &str) -> Result<File, LockError> {
         .owner_only()
         .open_no_follow(&directory.join(name))?;
     if system::try_lock(&lock)? {
+        record_process(&lock)?;
         Ok(lock)
     } else {
         Err(LockError::Held)
     }
+}
+
+/// Writes the id of this process over the contents of a lock it holds, so that whoever must end
+/// the program (an uninstall) can find it from the lock alone ([`singleton_process`]).
+fn record_process(mut lock: &File) -> io::Result<()> {
+    lock.set_len(0)?;
+    lock.write_all(std::process::id().to_string().as_bytes())
 }
 
 /// The names of the locks the engine and the supervisor take with [`lock_singleton`] in their data
@@ -140,6 +148,31 @@ pub fn singleton_held(directory: &Path, name: &str) -> io::Result<bool> {
     };
     Ok(!system::try_lock(&lock)?)
 }
+
+/// The id of the process that holds the singleton lock `name` in `directory`, which that process
+/// wrote when it took the lock; `None` when nobody holds it or the id cannot be read. The lock
+/// is the proof that the process is alive and is the one that wrote its id, so a record left by
+/// a program that ended is never returned. A program that has taken the lock and not yet written
+/// its id would show the id of the one before it, so the id is read twice, a moment apart, and
+/// only an id that both reads agree on, with the lock held both times, is returned.
+pub fn singleton_process(directory: &Path, name: &str) -> io::Result<Option<u32>> {
+    let path = directory.join(name);
+    let read = || -> io::Result<Option<u32>> {
+        if !singleton_held(directory, name)? {
+            return Ok(None);
+        }
+        Ok(std::fs::read_to_string(&path)?.trim().parse().ok())
+    };
+    let Some(first) = read()? else {
+        return Ok(None);
+    };
+    std::thread::sleep(RECORD_SETTLE);
+    Ok((read()? == Some(first)).then_some(first))
+}
+
+/// How long [`singleton_process`] waits between its two reads: far longer than a program takes
+/// to write its id after it takes the lock.
+const RECORD_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// Takes the exclusive lock `lock_singleton` takes, on a file that is already open; `false` when
 /// another holder has it. The lock lasts as long as `file` stays open and leaves the contents of
@@ -290,6 +323,26 @@ mod tests {
         assert!(!singleton_held(&directory, ENGINE_LOCK).unwrap());
         // Asking took no lock for good: a program can take it now.
         drop(lock_singleton(&directory, ENGINE_LOCK).unwrap());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn the_holder_of_a_lock_is_found_by_the_id_it_wrote() {
+        let directory = scratch("singleton-process");
+        std::fs::create_dir_all(&directory).unwrap();
+        // Nothing holds it yet: no file, then a record left by a program that ended.
+        assert_eq!(singleton_process(&directory, ENGINE_LOCK).unwrap(), None);
+        std::fs::write(directory.join(ENGINE_LOCK), "4242").unwrap();
+        assert_eq!(singleton_process(&directory, ENGINE_LOCK).unwrap(), None);
+        let lock = lock_singleton(&directory, ENGINE_LOCK).unwrap();
+        // Taking the lock replaced the old record, and a longer one leaves nothing of itself.
+        assert_eq!(
+            singleton_process(&directory, ENGINE_LOCK).unwrap(),
+            Some(std::process::id())
+        );
+        assert_eq!(singleton_process(&directory, PTYD_LOCK).unwrap(), None);
+        drop(lock);
+        assert_eq!(singleton_process(&directory, ENGINE_LOCK).unwrap(), None);
         std::fs::remove_dir_all(&directory).unwrap();
     }
 }

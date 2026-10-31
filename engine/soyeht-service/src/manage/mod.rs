@@ -23,7 +23,13 @@ use std::{
     fs::{self, OpenOptions},
     io,
     path::{Path, PathBuf},
+    time::Duration,
 };
+
+/// How long a program that was asked to end is given before it is reported as still running.
+const END_WAIT: Duration = Duration::from_secs(10);
+/// How often the lock of a program that was asked to end is looked at.
+const END_POLL: Duration = Duration::from_millis(100);
 
 /// What the system says about one component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,15 +154,69 @@ impl<'a, C: Commands> Manager<'a, C> {
         )?)
     }
 
-    /// Stops each component and removes its registration and definition, the engine first. The
-    /// data, the database and the logs stay.
+    /// Stops each component and removes its registration and definition, the engine first, then
+    /// ends the program of a component that still runs: the one the window started, which no
+    /// registration covers ([`Self::end_running`]). The data, the database and the logs stay.
+    ///
+    /// # Errors
+    /// [`Error::StillRunning`] after every component was tried, when a program could not be
+    /// ended; the services are unregistered by then.
     pub fn uninstall(&self, components: &[Component]) -> Result<()> {
+        let mut still_running = false;
         for component in ordered(components).into_iter().rev() {
             match self.layout.system {
                 System::Macos => self.launchd_uninstall(component)?,
                 System::Linux => self.systemd_uninstall(component)?,
                 System::Windows => self.task_uninstall(component)?,
             }
+            match self.end_running(component) {
+                Ok(()) => {}
+                Err(Error::StillRunning) => still_running = true,
+                Err(error) => return Err(error),
+            }
+        }
+        if still_running {
+            return Err(Error::StillRunning);
+        }
+        Ok(())
+    }
+
+    /// Ends the program of `component` when one still runs, after its registration is gone: a
+    /// copy the window started detached, which neither the service manager nor the registration
+    /// knows. The program is found by the singleton lock it holds, which names its process
+    /// (`soyeht_platform::fs::singleton_process`), asked to end, and waited for up to
+    /// [`END_WAIT`] so the engine has stopped before the supervisor is asked.
+    ///
+    /// # Errors
+    /// [`Error::StillRunning`] when the program still holds its lock after the wait, or holds it
+    /// without a process to ask (a program of an older build, which wrote none).
+    fn end_running(&self, component: Component) -> Result<()> {
+        if !self.program_runs(component)? {
+            return Ok(());
+        }
+        let Some(process) =
+            soyeht_platform::fs::singleton_process(&self.layout.data, component.lock())?
+        else {
+            // Held, and no id to ask: it ended in between, or it never wrote one.
+            return if self.program_runs(component)? {
+                Err(Error::StillRunning)
+            } else {
+                Ok(())
+            };
+        };
+        match self.commands.terminate(process) {
+            Ok(()) => {}
+            // Ended between the lock and the request.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        }
+        let mut waited = Duration::ZERO;
+        while self.program_runs(component)? {
+            if waited >= END_WAIT {
+                return Err(Error::StillRunning);
+            }
+            self.commands.pause(END_POLL);
+            waited += END_POLL;
         }
         Ok(())
     }

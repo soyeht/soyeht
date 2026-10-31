@@ -217,6 +217,16 @@ the supervisor of the profile, removes their registration and the definition fil
 `"dataDeleted"`. It works on all three systems and never connects to the engine. Stopping the
 supervisor ends the person's terminals.
 
+**It also ends a program that no registration covers**, the copy the Linux and Windows window
+started (section 4, step 2). After a component is unregistered, the engine first, a program that
+still holds its singleton lock is asked to end: it wrote its process id into the lock file when
+it took the lock, and the id is read only while the lock is held, twice, so that an id left by a
+program that ended is never used (ADR 0131). Unix sends the stop request that the programs
+already answer by stopping cleanly; Windows ends the process, and its children with it. The
+command waits up to ten seconds for the lock to be free before it asks the supervisor. A program
+that does not end, or that holds the lock with no id (one of an older build), makes the command
+fail with "still answers" once both were tried; the services are unregistered by then.
+
 **Data stays by default.** The programs, the data directory, the database and the logs are left
 alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,
 transcripts, settings, logs), and only after the person types the profile's name at the prompt;
@@ -226,8 +236,8 @@ transcripts, settings, logs), and only after the person types the profile's name
 nothing and runs first, before the prompt and before any service is touched, so a deletion that
 would be refused leaves the services registered. After the services are unregistered the command
 waits up to 15 seconds for the engine and the supervisor to stop answering on their endpoints; if
-one still does (a copy the app started itself), it deletes nothing and says so, and the command can
-be run again.
+one still does (it does not end when asked, above), it deletes nothing and says so, and the command
+can be run again.
 
 **Only the profile's own folder is deleted.** Every check reads canonical paths
 (`soyeht_platform::fs::canonicalize`), and the directory must be the folder `contracts/profiles.json`
