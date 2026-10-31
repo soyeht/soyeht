@@ -570,6 +570,13 @@ fn reconnecting_note(palette: &Palette) -> AnyElement {
         .into_any_element()
 }
 
+/// Asks for another frame once this one is drawn: the window ignores a notification that a view
+/// makes while it is being drawn.
+fn notify_after_draw(cx: &mut Context<Workbench>) {
+    let workbench = cx.entity();
+    cx.defer(move |cx| workbench.update(cx, |_, cx| cx.notify()));
+}
+
 #[cfg(test)]
 mod tests {
     use super::open_pane_entries;
@@ -599,11 +606,4 @@ mod tests {
         // Diff has no pane here, and a web pane has a row only where it has a page to draw.
         assert!(ids.iter().all(|id| *id != "diff"));
     }
-}
-
-/// Asks for another frame once this one is drawn: the window ignores a notification that a view
-/// makes while it is being drawn.
-fn notify_after_draw(cx: &mut Context<Workbench>) {
-    let workbench = cx.entity();
-    cx.defer(move |cx| workbench.update(cx, |_, cx| cx.notify()));
 }
