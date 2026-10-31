@@ -125,6 +125,11 @@ impl WebSurface {
     }
 
     fn mouse_up(&mut self, event: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // A pane dragged over this page is dropped by the card of the pane, which is under this
+        // handler: stopping the event here would leave the drag unanswered.
+        if cx.has_active_drag() {
+            return;
+        }
         self.release(event);
         cx.stop_propagation();
     }
