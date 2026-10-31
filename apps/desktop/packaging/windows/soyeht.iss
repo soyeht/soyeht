@@ -2,8 +2,8 @@
 ;
 ; Every value that is not written here comes from the script through `ISCC /DName=value`, which
 ; reads them from `contracts/release.json` and `contracts/profiles.json`: AppName, AppId, InstallFolder,
-; Version, VersionInfo, Allowed, Stage, OutputDir, OutputName, Profile, Publisher, Url, Icon and,
-; for a signed build, Signed.
+; Version, VersionInfo, Allowed, Stage, OutputDir, OutputName, Profile, EngineTask, PtydTask,
+; Publisher, Url, Icon and, for a signed build, Signed.
 ;
 ; A per-user install: no administrator, nothing outside the person's own account. The programs
 ; go to %LOCALAPPDATA%\Programs\<InstallFolder>, the shortcut to the person's Start menu, the
@@ -75,6 +75,10 @@ const
   // The command line of the installed program, by its profile, so that a SOYEHT_PROFILE in the
   // person's environment cannot point it at another one.
   Profile = '{#Profile}';
+  // The two login tasks of the profile, which the uninstall removes by name when the installed
+  // command line could not (the system refused to start it).
+  EngineTask = '{#EngineTask}';
+  PtydTask = '{#PtydTask}';
   // How long a command of the installed program, or a probe of it, may run.
   CliSeconds = 120;
   // What RunScript returns when PowerShell itself did not start: no exit code of a program is
@@ -169,6 +173,33 @@ begin
       Result := -1;
   end;
   Log('"' + Exe + '" ' + Arguments + ' -> ' + IntToStr(Result));
+end;
+
+// Removes one login task by name, ending it first. True when it is gone, or was never there.
+function RemoveLoginTask(Name: String): Boolean;
+var
+  Schtasks: String;
+  Code: Integer;
+begin
+  Schtasks := ExpandConstant('{sysnative}\schtasks.exe');
+  Result := True;
+  if Exec(Schtasks, '/Query /TN "' + Name + '"', '', SW_HIDE, ewWaitUntilTerminated, Code) and
+    (Code = 0) then
+  begin
+    Exec(Schtasks, '/End /TN "' + Name + '"', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Result := Exec(Schtasks, '/Delete /TN "' + Name + '" /F', '', SW_HIDE,
+      ewWaitUntilTerminated, Code) and (Code = 0);
+    Log('task ' + Name + ' removed by name: ' + IntToStr(Code));
+  end;
+end;
+
+// The fallback of the uninstall, for a command line that would not run: the tasks of the
+// profile are removed by name. The data is not touched; only `soyeht uninstall` deletes it.
+function RemoveLoginTasks(): Boolean;
+begin
+  Result := RemoveLoginTask(EngineTask);
+  if not RemoveLoginTask(PtydTask) then
+    Result := False;
 end;
 
 // Runs the installed command line and returns its exit code.
@@ -450,7 +481,10 @@ begin
   if FileExists(Cli()) then
   begin
     Code := RunCli('uninstall');
-    if Code <> 0 then
+    if (Code <> 0) and RemoveLoginTasks() then
+      Log('{#AppName} unregistered its login tasks by name, since its command line failed (' +
+        IntToStr(Code) + ').')
+    else if Code <> 0 then
       Tell('{#AppName} could not unregister its login tasks (exit code ' + IntToStr(Code) + '). ' +
         'Install {#AppName} again and remove it, or delete its tasks in Task Scheduler.', True);
   end;

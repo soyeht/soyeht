@@ -197,6 +197,10 @@ class DebTests(unittest.TestCase):
             self.assertIn("libvulkan1", fields["Depends"])
             self.assertIn("curl", [name.strip() for name in fields["Depends"].split(",")])
             self.assertIn("libgtk-3-0t64 | libgtk-3-0", fields["Recommends"])
+            recommended = [name.strip() for name in fields["Recommends"].split(",")]
+            for tool in ("git", "nodejs", "npm"):
+                self.assertIn(tool, recommended)
+                self.assertNotIn(tool, fields["Depends"])
             self.assertGreater(int(fields["Installed-Size"]), 0)
             for script in ("postinst", "postrm", "prerm"):
                 self.assertEqual(control.getmember(f"./{script}").mode, 0o755)

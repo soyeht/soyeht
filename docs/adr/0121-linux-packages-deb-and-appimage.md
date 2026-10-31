@@ -79,7 +79,10 @@ library that `LINKED_PACKAGES` does not name. What the window loads at run time 
 hand: `Depends` for what it cannot open without (`libvulkan1`, `libwayland-client0`) and
 `Recommends` for what serves something optional or may come in another form (`mesa-vulkan-drivers`,
 `libegl1` and `libwayland-egl1` for the OpenGL fallback, GTK 3 and WebKitGTK 4.1 for the web
-pane). The libraries the window links (`libxcb1`, `libxkbcommon0`, `libxkbcommon-x11-0`) come from
+pane). The tools the Setup page lists as required (`git`, `nodejs`, `npm`) are `Recommends` too:
+the window opens without them, and a machine may have them in another form. `curl` stays in
+`Depends`: the window runs it for the update check (ADR 0122) and the engine's usage host runs
+it. The libraries the window links (`libxcb1`, `libxkbcommon0`, `libxkbcommon-x11-0`) come from
 the first rule. The AppImage bundles no library: the graphics stack and the web view must be
 the machine's own, and the notes in `docs/platforms.md` list them.
 

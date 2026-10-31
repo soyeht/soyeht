@@ -62,7 +62,8 @@ button, none in the switcher) owned by the program's window, with the system web
   location changes (`SetWinEventHook`, delivered to the web view thread), so it follows within a
   frame, without the interface thread waiting on it.
 - The window hides the page when a menu or popover is open (GPUI's popovers would be below it), while
-  a divider or a pane is dragged, and when the pane is not in the frame (another workspace, another
+  a tooltip is drawn over it (the tooltip says where it is for the frame, `views/overlay.rs`, and only
+  a page it overlaps waits), while a divider or a pane is dragged, and when the pane is not in the frame (another workspace, another
   place, the pane scrolled out): `Workbench` collects the web panes each frame draws and the
   registry hides the rest. A hidden page does not draw. For a picture of a hidden page, the engine's
   capture shows it off screen for the length of the capture (a capture of a page that does not show
@@ -243,7 +244,7 @@ window is resized, dragged, covered by a menu and closed.
 - A web pane works on Windows with the person's own login, and an agent reads it through the tools
   that already exist.
 - The page is above GPUI's drawing while it shows, so the window hides it under anything it draws
-  over the pane; a tooltip over a page is below it.
+  over the pane: a menu, a popover, a drag, and a tooltip that overlaps it.
 - Three crates are new to the desktop's lock file, and the owner has to decide on the use of the
   engine's protocol for the reader's world.
 - Not done: the program's own shortcuts while the page has the keyboard (the page's window gets the
