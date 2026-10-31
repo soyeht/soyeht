@@ -56,7 +56,7 @@ public final class EngineClient {
   public internal(set) var connected = false
   public internal(set) var connectionRevision: UInt64 = 0
   public private(set) var credentialRejected = false
-  public internal(set) var connectionText = "Connecting to the Dev profile…"
+  public internal(set) var connectionText = ActiveProfile.values.connectingText
   public var problem: String?
   var backgroundLoads: [BackgroundLoad: BackgroundLoadRecord] = [:]
   public internal(set) var selectedPaneId: String?
