@@ -63,6 +63,8 @@ No other request is accepted before `welcome` (`unauthorized` response and
 connection closed). Without valid `hello` within 5 s, the engine closes.
 `role` ∈ `human_local | human_device | agent | chief`. The pairing dialogue
 (§2.2) uses `pair.*` instead of `hello` and follows the code's deadline.
+The local endpoint and the TCP listeners have separate connection slots, and one remote
+address holds at most 16 of the listeners' (ADR 0129).
 
 **2.2 iPhone pairing (the path to a `deviceToken`).**
 Only on the WebSocket connection, before authenticated `hello`, and only
