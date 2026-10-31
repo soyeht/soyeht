@@ -41,7 +41,7 @@ pub fn local(stream: Stream) -> (Reader, Writer) {
 
 /// Refuses a handshake that names an `Origin`. A browser puts the page's origin on every
 /// WebSocket it opens and no script can leave it out; none of the engine's clients is a page, so
-/// a connection that has one is a web page reaching for the listener (ADR 0130).
+/// a connection that has one is a web page reaching for the listener (ADR 0129).
 #[expect(
     clippy::result_large_err,
     reason = "the signature is tungstenite's handshake callback"

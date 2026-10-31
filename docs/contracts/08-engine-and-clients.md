@@ -42,7 +42,7 @@ and Windows), CLI and agents' MCP server.
 |---|---|---|
 | Mac (Swift), Linux/Windows (Rust desktop), CLI | Unix socket at `<data>/engine.sock`; directory 0700, socket 0600; on Windows, the loopback endpoint described in §2.5 | same OS user + `hello` |
 | MCP server (one per agent pane) | same local socket | `hello` with `binding` issued by the engine when creating the pane (short secret + paneId); without a valid `binding`, becomes a “local human” client without a role |
-| iPhone | plaintext WebSocket on the Soyeht port at Tailscale addresses (contract 06); a handshake with an `Origin` header (a web page) is refused with 403 (ADR 0130) | `deviceToken` issued during pairing (§2.2) |
+| iPhone | plaintext WebSocket on the Soyeht port at Tailscale addresses (contract 06); a handshake with an `Origin` header (a web page) is refused with 403 (ADR 0129) | `deviceToken` issued during pairing (§2.2) |
 
 Declared limit: arbitrary processes belonging to the same user can open the
 local socket; isolation is per OS user, not per process.
