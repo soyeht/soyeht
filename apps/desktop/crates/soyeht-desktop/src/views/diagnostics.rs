@@ -33,36 +33,53 @@ impl Workbench {
         place: &str,
         cx: &mut Context<Self>,
     ) -> Div {
-        // One collection at a time: the button waits for the one that runs.
-        let working = self.diagnostics.working();
-        let copy = pill_button(
+        let copy = self.diagnostics_button(
             palette,
             SharedString::from(format!("diagnostics-copy-{place}")),
-            Some(Icon::Copy),
             DIAGNOSTICS_ACTION,
-        )
-        .when(working, |button| {
-            button
-                .opacity(pane_interior::DISABLED_OPACITY)
-                .cursor_default()
-        })
-        .when(!working, |button| {
-            button.on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_diagnostics(cx)))
-        });
+            cx,
+        );
+        row()
+            .gap(px(space::X10))
+            .child(copy)
+            .children(self.diagnostics_message(palette))
+    }
+
+    /// The button that copies the report: disabled while a collection runs, since there is one
+    /// at a time. The crash notice's "Copy report" is this button with another label.
+    pub(super) fn diagnostics_button(
+        &self,
+        palette: &'static Palette,
+        key: SharedString,
+        label: &str,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<Div> {
+        let working = self.diagnostics.working();
+        pill_button(palette, key, Some(Icon::Copy), label)
+            .when(working, |button| {
+                button
+                    .opacity(pane_interior::DISABLED_OPACITY)
+                    .cursor_default()
+            })
+            .when(!working, |button| {
+                button
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.copy_diagnostics(cx)))
+            })
+    }
+
+    /// The sentence about the last try, a warning color when it failed.
+    pub(super) fn diagnostics_message(&self, palette: &'static Palette) -> Option<Div> {
         let color = if self.diagnostics.is_failure() {
             palette.warning()
         } else {
             palette.secondary
         };
-        row()
-            .gap(px(space::X10))
-            .child(copy)
-            .children(self.diagnostics.message().map(|message| {
-                div().flex_1().min_w_0().child(
-                    chrome_text(FontWeight::NORMAL, type_scale::CAPTION)
-                        .text_color(rgb(color))
-                        .child(message),
-                )
-            }))
+        self.diagnostics.message().map(|message| {
+            div().flex_1().min_w_0().child(
+                chrome_text(FontWeight::NORMAL, type_scale::CAPTION)
+                    .text_color(rgb(color))
+                    .child(message),
+            )
+        })
     }
 }
