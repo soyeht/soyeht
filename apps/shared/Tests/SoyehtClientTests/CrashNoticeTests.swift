@@ -9,16 +9,22 @@
   /// Plays the `soyeht` program: reports are pending until acknowledged, as the real one does.
   private final class FakeProgram: ServiceCommandRunning, Sendable {
     private struct State {
-      var pending: Int
+      var pending: [String]
       var calls: [[String]] = []
       var failDiagnostics = false
+      var failImport = false
     }
     private let state: OSAllocatedUnfairLock<State>
 
-    init(pending: Int, failDiagnostics: Bool = false) {
+    init(pending: Int, failDiagnostics: Bool = false, failImport: Bool = false) {
       state = OSAllocatedUnfairLock(
-        initialState: State(pending: pending, failDiagnostics: failDiagnostics))
+        initialState: State(
+          pending: (0..<pending).map { "report-\($0)" }, failDiagnostics: failDiagnostics,
+          failImport: failImport))
     }
+
+    /// A report that arrives on its own, as when a program crashes while the notice is up.
+    func arrive(_ name: String) { state.withLock { $0.pending.append(name) } }
 
     var calls: [[String]] { state.withLock { $0.calls } }
 
@@ -28,17 +34,21 @@
         let action = Array(arguments.dropFirst(4))
         switch action {
         case ["crash-reports", "status"]:
-          return Data(#"{"pending":\#(state.pending),"latest":null}"#.utf8)
-        case ["crash-reports", "acknowledge"]:
-          let count = state.pending
-          state.pending = 0
-          return Data(#"{"acknowledged":\#(count)}"#.utf8)
+          let names = state.pending.map { "\"\($0)\"" }.joined(separator: ",")
+          return Data(
+            #"{"pending":\#(state.pending.count),"reports":[\#(names)],"latest":null}"#.utf8)
+        case _ where action.starts(with: ["crash-reports", "acknowledge"]):
+          let named = Array(action.dropFirst(2))
+          let before = state.pending.count
+          state.pending.removeAll { named.isEmpty || named.contains($0) }
+          return Data(#"{"acknowledged":\#(before - state.pending.count)}"#.utf8)
         case ["diagnostics"]:
           if state.failDiagnostics { throw ServiceCommandError.timedOut }
           return Data("## Soyeht diagnostics\n### Crash reports\n".utf8)
         default:
           if action.first == "crash-reports", action.dropFirst().first == "import" {
-            state.pending += 1
+            if state.failImport { throw ServiceCommandError.failed(status: 1, detail: "refused") }
+            state.pending.append("imported-\(state.pending.count)")
             return Data(#"{"imported":"now"}"#.utf8)
           }
           throw ServiceCommandError.failed(status: 2, detail: "unknown")
@@ -92,7 +102,7 @@
     #expect(first.isShowing)
     await first.dismiss()
     #expect(!first.isShowing)
-    #expect(program.calls.last?.suffix(2) == ["crash-reports", "acknowledge"])
+    #expect(program.calls.last?.suffix(3) == ["crash-reports", "acknowledge", "report-0"])
     // The next start of the app asks again and the program says nothing is pending.
     let next = notice(program, directory)
     await next.refresh()
@@ -116,7 +126,7 @@
     await shown.copyReport(using: copy)
     #expect(clipboard.written == ["## Soyeht diagnostics\n### Crash reports\n"])
     #expect(!shown.isShowing)
-    #expect(program.calls.last?.suffix(2) == ["crash-reports", "acknowledge"])
+    #expect(program.calls.last?.suffix(3) == ["crash-reports", "acknowledge", "report-0"])
   }
 
   @MainActor @Test func aFailedCopyKeepsTheNoticeAndAcknowledgesNothing() async {
@@ -143,6 +153,46 @@
       try FileManager.default.attributesOfItem(atPath: file.path)[.posixPermissions] as? Int
     #expect(mode == 0o600)
     #expect(shown.isShowing)
+  }
+
+  @MainActor @Test func dismissAcknowledgesWhatWasShownNotWhatArrivedSince() async {
+    let directory = data("shown")
+    let program = FakeProgram(pending: 1)
+    let shown = notice(program, directory)
+    await shown.refresh()
+    program.arrive("a-second-crash")
+    await shown.dismiss()
+    let next = notice(program, directory)
+    await next.refresh()
+    #expect(next.isShowing, "the crash that came while the notice was up is not hidden by Dismiss")
+  }
+
+  @MainActor @Test func aDiagnosticTheProgramRefusedIsDeletedNotKept() async throws {
+    let directory = data("refused")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let program = FakeProgram(pending: 0, failImport: true)
+    let shown = notice(program, directory)
+    await shown.receive([Data(#"{"diagnosticMetaData":{},"terminationReason":"free text"}"#.utf8)])
+    let folder = directory.appending(path: "crashes", directoryHint: .isDirectory)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+    #expect(!shown.isShowing)
+  }
+
+  @MainActor @Test func staleIncomingDiagnosticsAreSweptAtStartButNothingElse() throws {
+    let directory = data("sweep")
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let folder = directory.appending(path: "crashes", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    for name in ["incoming-1.json", "incoming-2.json", "crash-000000000001-mac-0-00.txt"] {
+      try Data("x".utf8).write(to: folder.appending(path: name))
+    }
+    CrashNotice.sweepIncoming(in: directory)
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: folder.path) == [
+        "crash-000000000001-mac-0-00.txt"
+      ])
+    // A data directory with no crashes folder is nothing to sweep.
+    CrashNotice.sweepIncoming(in: data("none-at-all"))
   }
 
   @MainActor @Test func aCopyOfTheAppWithNoProgramShowsNothing() async {

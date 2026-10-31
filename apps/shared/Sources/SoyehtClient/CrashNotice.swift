@@ -12,7 +12,7 @@
   public final class CrashNotice {
     /// What `soyeht crash-reports status` prints.
     struct Status: Decodable, Equatable {
-      let pending: Int
+      let reports: [String]
     }
 
     /// Whether the notice is on screen: there is a report the person has not seen.
@@ -20,6 +20,9 @@
     @ObservationIgnored private let command: BundledEngineService?
     @ObservationIgnored private let dataDirectory: URL
     @ObservationIgnored private var subscriber: CrashDiagnosticSubscriber?
+    /// The reports the notice shows, which Dismiss acknowledges: a report that arrives while it is
+    /// up is not hidden by it.
+    @ObservationIgnored private var shown: [String] = []
 
     public convenience init() {
       self.init(
@@ -34,6 +37,8 @@
     /// Starts listening for the system's crash diagnostics and looks for reports not yet seen.
     public func start() async {
       if subscriber == nil {
+        // A diagnostic left by a run that ended before the program read it holds free text.
+        Self.sweepIncoming(in: dataDirectory)
         let subscriber = CrashDiagnosticSubscriber { [weak self] diagnostics in
           await self?.receive(diagnostics)
         }
@@ -50,7 +55,8 @@
       do {
         let status = try JSONDecoder().decode(
           Status.self, from: try await command.crashReports(["status"]))
-        isShowing = status.pending > 0
+        shown = status.reports
+        isShowing = !shown.isEmpty
       } catch {
         clientLogger.notice("mac.crash_notice_failed kind=status")
       }
@@ -67,9 +73,11 @@
     /// them.
     public func dismiss() async {
       isShowing = false
-      guard let command else { return }
+      let acknowledged = shown
+      shown = []
+      guard let command, !acknowledged.isEmpty else { return }
       do {
-        _ = try await command.crashReports(["acknowledge"])
+        _ = try await command.crashReports(["acknowledge"] + acknowledged)
       } catch {
         clientLogger.notice("mac.crash_notice_failed kind=acknowledge")
       }
@@ -80,14 +88,43 @@
     func receive(_ diagnostics: [Data]) async {
       guard let command else { return }
       for diagnostic in diagnostics {
+        var file: URL?
         do {
-          let file = try Self.drop(diagnostic, in: dataDirectory)
-          _ = try await command.crashReports(["import", file.path])
+          file = try Self.drop(diagnostic, in: dataDirectory)
+          if let file { _ = try await command.crashReports(["import", file.path]) }
         } catch {
           clientLogger.notice("mac.crash_notice_failed kind=import")
+          // The program deletes what it imports; what it refused, or never saw, is deleted here.
+          Self.discard(file)
         }
       }
       await refresh()
+    }
+
+    static func discard(_ file: URL?) {
+      guard let file else { return }
+      do {
+        try FileManager.default.removeItem(at: file)
+      } catch CocoaError.fileNoSuchFile {
+        // The program had already deleted it.
+      } catch {
+        clientLogger.notice("mac.crash_notice_failed kind=discard")
+      }
+    }
+
+    /// Removes the `incoming-*` files in `crashes/`: diagnostics no run is waiting on.
+    static func sweepIncoming(in dataDirectory: URL) {
+      let folder = dataDirectory.appending(path: "crashes", directoryHint: .isDirectory)
+      let names: [String]
+      do {
+        names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+      } catch {
+        // No folder yet holds nothing to sweep.
+        return
+      }
+      for name in names where name.hasPrefix("incoming-") {
+        discard(folder.appending(path: name))
+      }
     }
 
     /// Writes a diagnostic where the program reads it (`crashes/` of the data directory,
