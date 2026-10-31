@@ -13,44 +13,10 @@ elif [[ $# -gt 0 ]]; then
     exit 2
 fi
 
-run_shared_tests() {
-swift test --package-path apps/shared --filter PaneLayout
-
-shared_log=$(mktemp -t soyeht-shared-tests.XXXXXX)
-cleanup() {
-    rm -f -- "$shared_log"
-}
-trap cleanup EXIT
-set +e
-swift test --package-path apps/shared >"$shared_log" 2>&1
-shared_status=$?
-set -e
-cat "$shared_log"
-if [[ $shared_status -eq 0 ]]; then
-    echo 'shared: suite integral verde'
-elif ! uv run python - "$shared_log" <<'PY'
-import pathlib
-import re
-import sys
-
-output = pathlib.Path(sys.argv[1]).read_text()
-summaries = re.findall(
-    r"Test run with (\d+) tests in .* failed after .* with (\d+) issue", output
-)
-failures = re.findall(r"Test ([A-Za-z0-9_]+)\(\) failed after", output)
-known = "phonePairsByConsentReadsFreshStateAndLosesRevokedAccess"
-if summaries and int(summaries[-1][1]) == 1 and failures == [known]:
-    total = int(summaries[-1][0])
-    print(f"shared: {total - 1}/{total}, falha conhecida: PhoneConnectionTests (#339)")
-    raise SystemExit(0)
-print("shared: falha inesperada; veja a saida integral acima", file=sys.stderr)
-raise SystemExit(1)
-PY
-then
-    exit "$shared_status"
-fi
-}
-run_shared_tests
+# This script builds the app. It runs no test suite: the shared package's tests are the
+# `swift:test-shared` gate step (and `swift test --package-path apps/shared` by hand). Running
+# them here too repeated that suite on a loaded host, and a timing-sensitive test failing in
+# this step was reported as a failed app build.
 
 xcodebuild -project apps/mac/SoyehtMac.xcodeproj -scheme SoyehtMac \
     -configuration Debug -destination "platform=macOS,arch=$(uname -m)" \
