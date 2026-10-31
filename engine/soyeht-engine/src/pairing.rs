@@ -201,10 +201,9 @@ impl Core {
         Ok(())
     }
 
-    /// Who may change which devices can control this Mac. Consent is given on the Mac: a paired
-    /// device that could open a pairing window, approve a request or revoke another device would
-    /// keep control after its own revocation by pairing a second device (ADR 0128). A device may
-    /// still revoke itself.
+    /// Who may change which devices can control this Mac. Consent is given on the Mac, so only
+    /// the local human opens a pairing window, decides a request or revokes a device (ADR 0128).
+    /// A paired device may still revoke itself.
     fn authorize_device_management(
         &self,
         connection: &str,
