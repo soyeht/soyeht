@@ -138,7 +138,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         catalog_tx: catalog_tx.clone(),
     };
     for address in config.listen {
-        let listener = TcpListener::bind(address).await?;
+        let listener = network::listen(address)?;
         network::update_pair_address(&core, listener.local_addr()?).await?;
         let serving = serve_tcp(listener, accept.clone());
         tasks.spawn(async move { Ok::<(), Error>(serving.await?) });
