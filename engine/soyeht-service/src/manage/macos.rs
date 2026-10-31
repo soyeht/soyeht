@@ -22,12 +22,23 @@ impl<C: Commands> Manager<'_, C> {
     /// one.
     fn launchd_target(&self, component: Component) -> Result<String> {
         let graphical = format!("gui/{}", self.layout.user_id);
-        let domain = if self.ask(LAUNCHCTL, &["print", &graphical])?.success {
+        let domain = if self.domain_exists(&graphical)? {
             graphical
         } else {
             format!("user/{}", self.layout.user_id)
         };
         Ok(format!("{domain}/{}", self.name(component)))
+    }
+
+    /// Whether launchd has the domain. `launchctl print <domain>` lists every job the domain
+    /// holds, which on a Mac with many agents is far more than the command's output budget; the
+    /// runner then ends it, and a domain that printed that much is a domain that exists.
+    fn domain_exists(&self, domain: &str) -> Result<bool> {
+        match self.ask(LAUNCHCTL, &["print", domain]) {
+            Ok(output) => Ok(output.success),
+            Err(Error::Process(soyeht_process::Error::OutputTooLarge { .. })) => Ok(true),
+            Err(error) => Err(error),
+        }
     }
 
     /// The loaded job's own text, when the agent is loaded.
