@@ -138,7 +138,7 @@ impl Workbench {
         if hidden.len() != self.stage.hidden_tabs {
             // The "+N" button changes the strip's room: lay it out again with the new count.
             self.stage.hidden_tabs = hidden.len();
-            cx.notify();
+            notify_after_draw(cx);
         }
         let (left, right) = hidden_ends(&self.stage.tab_scroll);
         let first_hidden = hidden.first().copied();
@@ -599,4 +599,11 @@ mod tests {
         // Diff has no pane here, and a web pane has a row only where it has a page to draw.
         assert!(ids.iter().all(|id| *id != "diff"));
     }
+}
+
+/// Asks for another frame once this one is drawn: the window ignores a notification that a view
+/// makes while it is being drawn.
+fn notify_after_draw(cx: &mut Context<Workbench>) {
+    let workbench = cx.entity();
+    cx.defer(move |cx| workbench.update(cx, |_, cx| cx.notify()));
 }
