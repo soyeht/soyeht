@@ -71,6 +71,39 @@ fn with_no_engine_the_report_still_has_the_logs_and_never_asks() {
 }
 
 #[test]
+fn the_crash_reports_of_the_profile_are_part_of_the_report() {
+    use soyeht_platform::crash::{Program, Report, store};
+    let data = std::env::temp_dir().join(format!("next-diagnostics-crash-{}", std::process::id()));
+    let redactor = soyeht_platform::diagnostics::Redactor::new(None, None, None);
+    let without = gather(&PROD, &data, 20, &redactor, |_| Readiness::Unavailable);
+    assert!(without.contains("### Crash reports\n\n(none)"), "{without}");
+    store::write(
+        &data,
+        &Report {
+            version: "1.2.3".into(),
+            system: "macos aarch64".into(),
+            program: Program::Supervisor,
+            time: 1_761_907_872,
+            pid: 9,
+            thread: "main".into(),
+            fatal: true,
+            kind: "unwrap_none".into(),
+            location: "soyeht-ptyd/src/server.rs:1:1".into(),
+            frames: vec!["soyeht-ptyd+0x10".into()],
+            symbols: vec![],
+            log: vec![],
+        },
+    )
+    .unwrap();
+    let with = gather(&PROD, &data, 20, &redactor, |_| Readiness::Unavailable);
+    fs::remove_dir_all(&data).unwrap();
+    assert!(with.contains("### Crash reports"), "{with}");
+    assert!(with.contains("#### supervisor · 2025-10-31 10:51:12 UTC · closed"));
+    assert!(with.contains("kind: unwrap_none"));
+    assert!(with.contains("soyeht-ptyd+0x10"));
+}
+
+#[test]
 fn the_lines_option_is_a_number() {
     assert!(
         execute(

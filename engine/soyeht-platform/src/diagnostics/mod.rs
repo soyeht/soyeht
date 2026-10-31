@@ -11,7 +11,7 @@ mod redact;
 
 pub use redact::Redactor;
 
-use crate::{fs::OpenOptionsPrivateExt as _, process::detached::logs_directory};
+use crate::{crash, fs::OpenOptionsPrivateExt as _, process::detached::logs_directory};
 use std::{
     fs::OpenOptions,
     io::{self, Read, Seek, SeekFrom},
@@ -130,6 +130,16 @@ pub fn report(input: &Input<'_>) -> String {
         lines.push("```".to_owned());
     }
     lines.push(String::new());
+    lines.push("### Crash reports".to_owned());
+    match crash::store::list(input.data) {
+        Ok(reports) if reports.is_empty() => {
+            lines.extend([String::new(), "(none)".to_owned()]);
+        }
+        Ok(reports) => lines.extend(crash::markdown(&reports, input.redactor)),
+        // The kind only: an I/O message can carry a path.
+        Err(error) => lines.extend([String::new(), format!("(unreadable: {:?})", error.kind())]),
+    }
+    lines.push(String::new());
     lines.join("\n")
 }
 
@@ -144,7 +154,7 @@ fn clip(line: &str) -> String {
 
 /// The last `count` lines of the log at `path`, then of the file rotation made of it before
 /// (`<path>.1`) when the live file holds fewer. Reads only the end of each file.
-fn tail(path: &Path, count: usize) -> io::Result<Vec<String>> {
+pub(crate) fn tail(path: &Path, count: usize) -> io::Result<Vec<String>> {
     let mut lines = last_lines(path, count)?;
     if lines.len() < count {
         let mut rotated = path.as_os_str().to_owned();
