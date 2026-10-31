@@ -253,7 +253,10 @@ impl Updates {
 fn log_line(failure: Failure) -> (&'static str, Vec<(&'static str, &'static str)>) {
     match failure {
         Failure::NotConfigured => ("desktop.update_check_not_configured", Vec::new()),
-        other => ("desktop.update_check_failed", vec![("kind", other.as_str())]),
+        other => (
+            "desktop.update_check_failed",
+            vec![("kind", other.as_str())],
+        ),
     }
 }
 
