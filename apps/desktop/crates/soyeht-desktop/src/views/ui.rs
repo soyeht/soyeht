@@ -134,6 +134,8 @@ struct Hint {
 impl Render for Hint {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         neo::raised(self.palette, radius::COMPACT, elevation::CHIP)
+            .relative()
+            .child(super::overlay::footprint())
             .max_w(px(desktop::TOOLTIP_MAX_WIDTH))
             .px(px(space::X8))
             .py(px(space::X4))
