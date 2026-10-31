@@ -7,8 +7,7 @@
 //! placed while the panes paint, so the page reads this frame's footprints, not the last one's.
 //! The workbench clears them as its view is built.
 
-use super::ui::bounds_probe;
-use gpui::{App, Bounds, Global, IntoElement, Pixels};
+use gpui::{App, Bounds, Global, IntoElement, Pixels, Styled, canvas};
 
 /// Where this frame's overlays are, in the window's own coordinates.
 #[derive(Default)]
@@ -30,7 +29,14 @@ pub(crate) fn begin_frame(cx: &mut App) {
 /// An element that tells where its parent is drawn, to go inside an overlay, which must be
 /// `relative` or `absolute`.
 pub(crate) fn footprint() -> impl IntoElement {
-    bounds_probe(|bounds, cx| cx.default_global::<Overlays>().0.push(bounds))
+    // At once, not after the frame as `ui::bounds_probe` reports: the page is placed in this
+    // frame's paint and must find the footprint there.
+    canvas(
+        |bounds, _, cx| cx.default_global::<Overlays>().0.push(bounds),
+        |_, (), _, _| {},
+    )
+    .absolute()
+    .size_full()
 }
 
 /// Whether an overlay of this frame is over a page placed at `page`.
