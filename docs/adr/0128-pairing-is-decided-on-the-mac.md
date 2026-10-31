@@ -9,10 +9,8 @@ ADR 0013 gives a paired iPhone or iPad the powers of the person at the Mac, so t
 into terminals and drive agents. Pairing a device is the one thing that was meant to stay with the
 Mac: a device is approved on the Mac, by the person looking at it (contract 08 §2.2).
 
-The engine did not enforce that. `device.pair.start`, `device.pair.decide` and `device.revoke`
-accepted any human, so a paired device could open a pairing window, approve a request for another
-device and revoke other devices. Control of a device would then outlive its revocation: whoever
-held it could pair a second device first.
+The engine did not enforce that: `device.pair.start`, `device.pair.decide` and `device.revoke`
+accepted any human, a paired device included.
 
 ## Decision
 
