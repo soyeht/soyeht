@@ -78,6 +78,8 @@ pub(crate) mod fake {
         /// The waits asked for, in order; none of them took any time.
         pub(crate) pauses: RefCell<Vec<Duration>>,
         answer: Option<Answer>,
+        /// Commands (as one line) that print more than the budget allows.
+        too_large: Vec<String>,
     }
 
     pub(crate) fn ok(stdout: &str) -> CommandOutput {
@@ -98,7 +100,14 @@ pub(crate) mod fake {
                 calls: RefCell::default(),
                 pauses: RefCell::default(),
                 answer: Some(Box::new(answer)),
+                too_large: Vec::new(),
             }
+        }
+
+        /// The command that reads exactly `line` is ended by the runner for printing too much.
+        pub(crate) fn printing_too_much(mut self, line: &str) -> Self {
+            self.too_large.push(line.to_owned());
+            self
         }
 
         /// Every command as one line, `program argument ...`.
@@ -122,6 +131,11 @@ pub(crate) mod fake {
             self.calls.borrow_mut().push(call);
             let mut whole = vec![program];
             whole.extend_from_slice(arguments);
+            if self.too_large.contains(&whole.join(" ")) {
+                return Err(Error::Process(soyeht_process::Error::OutputTooLarge {
+                    program: program.to_owned(),
+                }));
+            }
             Ok(self
                 .answer
                 .as_ref()

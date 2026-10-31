@@ -330,6 +330,10 @@ impl ComposerField {
             return;
         }
         window.focus(&self.focus, cx);
+        // GPUI gives the keyboard to the nearest element that tracks focus when it is pressed, and
+        // a focusable parent takes it unless the press says it was handled (the field does so
+        // itself when its own text is pressed). Without this the parent took the keyboard back.
+        window.prevent_default();
         clear_selection(cx);
         self.goal_x = None;
         self.draft.place(self.draft.text().len(), false);
