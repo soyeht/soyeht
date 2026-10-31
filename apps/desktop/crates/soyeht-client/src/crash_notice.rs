@@ -11,24 +11,27 @@ use serde::Deserialize;
 /// What `soyeht crash-reports status` prints.
 #[derive(Deserialize)]
 struct Status {
-    pending: usize,
+    reports: Vec<String>,
 }
 
-/// Whether a report is waiting for the person. Blocks until the program ends: run it off the
-/// window's thread.
-pub fn pending() -> Result<bool, Failure> {
+/// The names of the reports waiting for the person, none when there is nothing to tell. Blocks
+/// until the program ends: run it off the window's thread.
+pub fn pending() -> Result<Vec<String>, Failure> {
     parse(&ask(&["crash-reports", "status"])?)
 }
 
-fn parse(text: &str) -> Result<bool, Failure> {
+fn parse(text: &str) -> Result<Vec<String>, Failure> {
     serde_json::from_str::<Status>(text)
-        .map(|status| status.pending > 0)
+        .map(|status| status.reports)
         .map_err(|_| Failure::NotText)
 }
 
-/// Marks the reports as seen: the notice does not come back for them.
-pub fn acknowledge() -> Result<(), Failure> {
-    ask(&["crash-reports", "acknowledge"]).map(drop)
+/// Marks the reports the notice showed as seen: the notice does not come back for them, and a
+/// report that came after it was drawn is still pending.
+pub fn acknowledge(shown: &[String]) -> Result<(), Failure> {
+    let mut words = vec!["crash-reports", "acknowledge"];
+    words.extend(shown.iter().map(String::as_str));
+    ask(&words).map(drop)
 }
 
 #[cfg(test)]
@@ -36,12 +39,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_count_above_zero_is_a_notice() {
+    fn the_names_of_the_pending_reports_are_the_notice() {
         assert_eq!(
-            parse(r#"{"pending":2,"latest":{"program":"engine","time":5}}"#),
-            Ok(true)
+            parse(r#"{"pending":2,"reports":["a.txt","b.txt"],"latest":null}"#),
+            Ok(vec!["a.txt".to_owned(), "b.txt".to_owned()])
         );
-        assert_eq!(parse(r#"{"pending":0,"latest":null}"#), Ok(false));
+        assert_eq!(
+            parse(r#"{"pending":0,"reports":[],"latest":null}"#),
+            Ok(vec![])
+        );
     }
 
     #[test]

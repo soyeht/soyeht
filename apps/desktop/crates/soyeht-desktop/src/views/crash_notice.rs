@@ -13,7 +13,7 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> Option<gpui::Stateful<Div>> {
-        if !self.crash_notice {
+        if self.crash_notice.is_empty() {
             return None;
         }
         let copy =
@@ -34,7 +34,10 @@ impl Workbench {
                 .px(px(pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING))
                 .py(px(space::X8))
                 .child(
+                    // The title gives way to the buttons at a narrow window.
                     chrome_text(FontWeight::BOLD, type_scale::CONTROL)
+                        .min_w_0()
+                        .truncate()
                         .text_color(rgb(palette.ink))
                         .child(CRASH_NOTICE_TITLE),
                 )
