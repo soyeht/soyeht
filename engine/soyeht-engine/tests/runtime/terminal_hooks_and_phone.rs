@@ -400,6 +400,15 @@ fn assert_paired_phone_acts_like_the_local_human(
         local.call("settings.get", json!({"key":key_name}))["value"],
         "phone-choice"
     );
+    // Consent is the Mac's: a paired device opens no pairing window and decides none (ADR 0128).
+    let window = phone.request(
+        "device.pair.start",
+        json!({"idempotencyKey":"phone-pair-window"}),
+    );
+    assert_eq!(
+        window["error"]["data"]["kind"], "forbidden_role",
+        "{window}"
+    );
     let listed = phone.request("device.list", json!({}));
     assert_eq!(
         listed["result"]["items"].as_array().unwrap().len(),
