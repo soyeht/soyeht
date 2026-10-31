@@ -8,6 +8,7 @@
 //! - [`dirs`]: the native folder for a user's application data (Application Support,
 //!   `%LOCALAPPDATA%`, XDG).
 //! - [`dialog`]: a native message box for a program with no terminal (Windows; no-op elsewhere).
+//! - [`crash`]: the report a program writes when it panics, kept locally until a person sends it.
 //! - [`diagnostics`]: the report a person pastes into an issue, and the redaction that takes
 //!   paths, names and tokens out of it.
 //! - [`user`]: who is running the process.
@@ -24,6 +25,7 @@
 //!
 //! The crate has no Soyeht dependencies.
 
+pub mod crash;
 pub mod diagnostics;
 pub mod dialog;
 pub mod dirs;

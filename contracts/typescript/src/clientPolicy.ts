@@ -80,7 +80,11 @@ export const clientPolicy = {
     "diagnosticsWorking": "Collecting diagnostics",
     "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
     "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
-    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program."
+    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+    "crashNoticeTitle": "Soyeht closed unexpectedly",
+    "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
+    "crashNoticeCopy": "Copy report",
+    "crashNoticeDismiss": "Dismiss"
   },
   "inlineImageTypes": [
     "image/png",

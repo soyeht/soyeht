@@ -12,7 +12,7 @@ use crate::{
 use soyeht_platform::log::rotating::{KEEP_ROTATED, MAX_BYTES};
 use soyeht_protocol::{
     data_directory::{RESTART_SUPERVISOR_FLAG, resolve},
-    profile::SELECTION_ENV,
+    profile::{ENGINE_LOG, SELECTION_ENV},
 };
 use std::{ffi::OsString, net::SocketAddr, path::Path, path::PathBuf, sync::Arc};
 
@@ -39,6 +39,13 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
         directory,
         soyeht_platform::dirs::data_base(),
     )?;
+    // A panic on the main thread ends the engine and the service manager starts it again; the
+    // report it leaves is what the next window tells the person about (ADR 0127).
+    soyeht_platform::crash::install(soyeht_platform::crash::Settings {
+        program: soyeht_platform::crash::Program::Engine,
+        data: directory.clone(),
+        log: ENGINE_LOG,
+    });
     let hooks = hooks(&directory);
     if !listen.is_empty() {
         return server::run(Config {

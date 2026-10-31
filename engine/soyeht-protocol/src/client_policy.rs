@@ -45,6 +45,11 @@ pub const DIAGNOSTICS_WORKING: &str = "Collecting diagnostics";
 pub const DIAGNOSTICS_COPIED: &str = "Diagnostics copied. Paste them into your message.";
 pub const DIAGNOSTICS_FAILED: &str = "Soyeht could not collect the diagnostics.";
 pub const DIAGNOSTICS_UNAVAILABLE: &str = "This copy of Soyeht has no diagnostics program.";
+pub const CRASH_NOTICE_TITLE: &str = "Soyeht closed unexpectedly";
+pub const CRASH_NOTICE_SUMMARY: &str =
+    "A crash report was saved on this computer. Nothing was sent.";
+pub const CRASH_NOTICE_COPY: &str = "Copy report";
+pub const CRASH_NOTICE_DISMISS: &str = "Dismiss";
 pub const CLIENT_NAME_MAC: &str = "mac";
 pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
 pub const CLIENT_NAME_IPHONE: &str = "iphone";
