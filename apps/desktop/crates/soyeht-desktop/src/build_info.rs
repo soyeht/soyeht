@@ -17,7 +17,11 @@ pub(crate) fn id() -> String {
 /// installed app does not take one for the other; the production build is the product and says
 /// nothing of it.
 pub(crate) fn profile_note() -> Option<&'static str> {
-    note_for(soyeht_client::profile::selected().ok()?)
+    // The window resolved its profile before it opened and ended if it could not, so a profile
+    // that cannot be read here has nothing to say.
+    soyeht_client::profile::selected()
+        .into_iter()
+        .find_map(note_for)
 }
 
 fn note_for(profile: &Profile) -> Option<&'static str> {
