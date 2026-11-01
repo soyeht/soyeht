@@ -14,7 +14,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
     fs::{LockError, PTYD_LOCK, lock_singleton},
-    local::{BindError, Listener, Stream},
+    local::{BindError, Listener, Stream, same_user},
     log,
 };
 use soyeht_protocol::{
@@ -107,6 +107,11 @@ pub fn run(directory: &Path) -> Result<()> {
     );
     for incoming in listener.incoming() {
         let stream = incoming?;
+        // The socket's mode and directory keep other users out; this does not depend on them.
+        if !same_user(&stream) {
+            log::event("ptyd.connection_refused", &[("reason", "other_user")]);
+            continue;
+        }
         let state = Arc::clone(&state);
         thread::spawn(move || {
             if let Err(error) = connection(stream, state) {
