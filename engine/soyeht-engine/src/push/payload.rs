@@ -5,7 +5,7 @@
 //! servers and the lock screen would see it. The phone fetches the detail over its authenticated
 //! connection when the person opens the alert.
 
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
     client_policy::{PUSH_NEEDS_YOU_BODY, PUSH_NEEDS_YOU_TITLE},
@@ -61,6 +61,12 @@ pub fn alert(question: &Question<'_>) -> Option<Alert> {
         event::PANE_ELICITATION_REQUESTED => "question",
         _ => return None,
     };
+    let mut custom = Map::new();
+    custom.insert("engineId".into(), json!(question.engine_id));
+    custom.insert("workspaceId".into(), json!(question.workspace_id));
+    custom.insert("paneId".into(), json!(pane_id));
+    custom.insert("requestId".into(), json!(request_id));
+    custom.insert("kind".into(), json!(kind));
     let payload = json!({
         "aps": {
             "alert": {"title": PUSH_NEEDS_YOU_TITLE, "body": PUSH_NEEDS_YOU_BODY},
@@ -68,13 +74,7 @@ pub fn alert(question: &Question<'_>) -> Option<Alert> {
             "sound": "default",
             "thread-id": pane_id,
         },
-        "soyeht": {
-            "engineId": question.engine_id,
-            "workspaceId": question.workspace_id,
-            "paneId": pane_id,
-            "requestId": request_id,
-            "kind": kind,
-        },
+        "soyeht": custom,
     });
     if serde_json::to_vec(&payload).ok()?.len() > PAYLOAD_BYTES {
         return None;
