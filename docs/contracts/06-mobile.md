@@ -9,8 +9,9 @@ it has been confirmed to work”. Evidence of today's behavior is in
    (v4 and v6) and loopback. On the LAN only while the “Add iPhone” window is
    open. Never `0.0.0.0`. Bonjour advertisement on the LAN and tailnet.
 2. **Transport**: plaintext HTTP and WebSocket within the tailnet;
-   encryption is provided by Tailscale. The new iOS app carries the same ATS
-   exception (`NSAllowsArbitraryLoads`) with the same explanatory comment.
+   encryption is provided by Tailscale. The iOS app excepts only local network
+   addresses from ATS (`NSAllowsLocalNetworking`), with an explanatory comment, and
+   keeps ATS for everything else.
    Optional evolution without changing the rest: HTTPS/WSS through `tailscale serve`.
 3. **Pairing**: QR (or URI) with address + single-use code; the app opens the
    connection and answers an HMAC challenge; the Mac requests owner consent;
