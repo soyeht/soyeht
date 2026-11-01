@@ -54,14 +54,15 @@ pub fn create_private_dir(path: &Path) -> io::Result<()> {
     system::create_private_dir(path)
 }
 
-/// Whether nobody but the owner (and, on Windows, the system and administrators) can reach the
-/// directory at `path`. A link is judged as itself.
+/// Whether nobody but the current user (and, on Windows, the system and administrators) can reach
+/// the directory at `path`: on Unix it is owned by that user and has no mode bit for others. A
+/// link is judged as itself.
 pub fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
     system::dir_is_owner_only(path)
 }
 
-/// Whether nobody but the owner (and, on Windows, the system and administrators) can reach
-/// the open file.
+/// Whether nobody but the current user (and, on Windows, the system and administrators) can
+/// reach the open file; on Unix it is owned by that user as well as having no mode bit for others.
 pub fn file_is_owner_only(file: &File) -> io::Result<bool> {
     system::file_is_owner_only(file)
 }
