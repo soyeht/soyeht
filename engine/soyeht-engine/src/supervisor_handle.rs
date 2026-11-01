@@ -294,6 +294,19 @@ impl Core {
         }
     }
 
+    /// [`Core::settle_input`] for the end of an input job, whether or not its work gave an answer:
+    /// the sends the work did not take go back first, so a job that panicked before it took them
+    /// does not lose them.
+    fn settle_started_input(
+        &mut self,
+        used: &Supervisor,
+        carried: &Carried,
+        sent: Result<Option<(Result<()>, Result<Response>)>>,
+    ) -> Result<Option<usize>> {
+        self.requeue_later(carried);
+        self.settle_input(used, carried, sent?)
+    }
+
     /// Sends the input `request` to the process `instance_id` off the Core lock, as the job
     /// `job`, in the order of the sends to that process (the queued ones go in front of it), and
     /// gives `done` the bytes the supervisor accepted under the lock; `None` for a failure of a
@@ -318,7 +331,7 @@ impl Core {
             job,
             move || Ok(link.send_input(&turn, &taken, request)),
             move |core, sent| {
-                let accepted = sent.and_then(|sent| core.settle_input(&used, &carried, sent));
+                let accepted = core.settle_started_input(&used, &carried, sent);
                 done(core, accepted)
             },
             |_| true,

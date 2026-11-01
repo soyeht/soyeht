@@ -386,6 +386,11 @@ class SchemaTests(unittest.TestCase):
             self.assertNotIn("eventId", properties, name)
             self.assertNotIn("at", properties, name)
 
+    def test_a_diagnostic_message_is_bounded_by_the_named_limit(self):
+        """The longest message a language server diagnostic carries is a limit with a name."""
+        message = self.schema["$defs"]["FileDiagnostic"]["properties"]["message"]
+        self.assertEqual(message["maxLength"], self.schema["x-limits"]["diagnosticMessageChars"])
+
     def test_web_field_bounds_are_the_named_limits(self):
         """Each web string or extent is bounded by the limit that names it."""
         limits = self.schema["x-limits"]
