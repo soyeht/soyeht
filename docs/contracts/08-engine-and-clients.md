@@ -90,8 +90,11 @@ while the Mac's “Add iPhone” window is open:
    `consumed`, `bad_proof`, `denied`, `revoked`.
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
-Only the local human opens the window, decides a request or revokes a device; a paired
-device may revoke only itself (`forbidden_role` otherwise, ADR 0128).
+Only the local human opens the window. On macOS only the signed Soyeht app decides a request
+or revokes a device (a shell or script on the local socket, including a terminal a paired device
+opened, gets `forbidden_role`); on Windows and Linux there is no attestation yet, so any process
+of the same user on the local socket counts as the computer, until those apps can prove they are
+the official app. A paired device may revoke only itself (ADR 0128).
 
 **2.3 Push.** A paired device calls `push.register {platform: "apns",
 token, environment: "sandbox" | "production"}` and `push.unregister {}`; any

@@ -5,6 +5,7 @@ use crate::{
     model,
     network::TailnetUpdate,
     ports::{Clock, StorePort},
+    ui_attestation,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::SecondsFormat;
@@ -201,26 +202,26 @@ impl Core {
         Ok(())
     }
 
-    /// Who may change which devices can control this Mac. Consent is given on the Mac, so only
-    /// the local human opens a pairing window, decides a request or revokes a device (ADR 0128).
-    /// A paired device may still revoke itself.
+    /// Who may change which devices can control this Mac (ADR 0128). Any local human may open a
+    /// pairing window; deciding a request and revoking a device are the signed Mac app's alone
+    /// where the system can tell it from a shell or script (`ui_attestation::available`), and a
+    /// local human's elsewhere. A paired device may only revoke itself.
     fn authorize_device_management(
         &self,
         connection: &str,
         method: &str,
         params: &Value,
     ) -> Result<()> {
-        let actor = self
-            .clients
-            .get(connection)
-            .and_then(|client| client.actor.as_ref());
+        let client = self.clients.get(connection);
+        let actor = client.and_then(|client| client.actor.as_ref());
         let own_revocation = method == method::DEVICE_REVOKE
             && actor.is_some_and(|actor| {
                 actor.device_id.is_some()
                     && actor.device_id.as_deref() == params["deviceId"].as_str()
             });
+        let app = client.is_some_and(|client| client.signed_ui) || !ui_attestation::available();
         let allowed = match actor.map(|actor| &actor.role) {
-            Some(Role::HumanLocal) => true,
+            Some(Role::HumanLocal) => method == method::DEVICE_PAIR_START || app,
             Some(Role::HumanDevice) => own_revocation,
             _ => false,
         };
@@ -228,7 +229,7 @@ impl Core {
             return Ok(());
         }
         Err(errors::forbidden_role(
-            "Pairing and revoking other devices is decided on the Mac",
+            "Pairing is approved, and other devices are revoked, in the Soyeht app on this Mac",
         ))
     }
 
@@ -383,7 +384,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_paired_device_cannot_open_pairing_decide_it_or_revoke_another_device() {
+    async fn pairing_is_decided_by_the_mac_app_and_never_by_a_paired_device() {
         use crate::outbox;
         use soyeht_protocol::Actor;
         let directory =
@@ -391,10 +392,15 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         let mut core = Core::open(&directory).unwrap();
         let (local_outbox, _local) = outbox::channel();
+        // A shell or script on the local socket, and the signed app (a peer the system attests).
         let local = core.connect(true, false, local_outbox).unwrap();
-        let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
-            "client":"roles-test","clientVersion":"1","protocolVersion":1}});
-        core.dispatch(&local, hello).unwrap();
+        let (app_outbox, _app) = outbox::channel();
+        let app = core.connect(true, true, app_outbox).unwrap();
+        for connection in [&local, &app] {
+            let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
+                "client":"roles-test","clientVersion":"1","protocolVersion":1}});
+            core.dispatch(connection, hello).unwrap();
+        }
         let (device_outbox, _device) = outbox::channel();
         let phone = core.connect(false, false, device_outbox).unwrap();
         core.clients.get_mut(&phone).unwrap().actor = Some(Actor {
@@ -433,16 +439,25 @@ mod tests {
                 Some(ErrorKind::NotFound)
             ]
         );
-        // The Mac keeps all of them: the window opens, the rest find nothing to act on.
-        assert_eq!(
-            kinds(&local),
+        // The app keeps all of them: the window opens, the rest find nothing to act on.
+        let app_kinds = || {
             [
                 None,
                 Some(ErrorKind::Unauthorized),
                 Some(ErrorKind::NotFound),
-                Some(ErrorKind::NotFound)
+                Some(ErrorKind::NotFound),
             ]
-        );
+        };
+        assert_eq!(kinds(&app), app_kinds());
+        // A shell may start a request. Where the system can tell the app from it, it cannot
+        // decide one or revoke a device; elsewhere every local program counts as the app.
+        let shell_kinds = if ui_attestation::available() {
+            let refused = || Some(ErrorKind::ForbiddenRole);
+            [None, refused(), refused(), refused()]
+        } else {
+            app_kinds()
+        };
+        assert_eq!(kinds(&local), shell_kinds);
         drop(core);
         std::fs::remove_dir_all(directory).unwrap();
     }
