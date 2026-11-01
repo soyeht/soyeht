@@ -46,6 +46,11 @@ pub trait Hooks: Send + Sync {
         None
     }
 
+    /// Whether every local client counts as the signed Mac app, which a test program is not.
+    fn attests_local_ui(&self) -> bool {
+        false
+    }
+
     /// A host that replaces the machine's files, commands and network for the usage sources.
     /// The background usage schedule does not run over it: the test drives refreshes itself.
     fn usage_host(&self) -> Option<Arc<dyn Host>> {

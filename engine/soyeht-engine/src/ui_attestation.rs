@@ -270,3 +270,9 @@ pub fn peer_audit_token(
 pub fn signed_ui_peer(_: PeerAuditToken, _: &soyeht_protocol::profile::Profile) -> bool {
     false
 }
+
+/// Whether this system can tell the signed Soyeht app from any other program on the local
+/// endpoint. Where it cannot, any program of the same user counts as the app (ADR 0128).
+pub const fn available() -> bool {
+    cfg!(target_os = "macos")
+}
