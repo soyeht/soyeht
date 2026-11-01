@@ -48,6 +48,8 @@ public enum ClientPolicy {
     public static let diagnosticsCopied = "Diagnostics copied. Paste them into your message."
     public static let diagnosticsFailed = "Soyeht could not collect the diagnostics."
     public static let diagnosticsUnavailable = "This copy of Soyeht has no diagnostics program."
+    public static let pushNeedsYouTitle = "An agent needs you"
+    public static let pushNeedsYouBody = "Open Soyeht to see what it asks."
     public static let clientNameMac = "mac"
     public static let clientNameMacDev = "mac-dev"
     public static let clientNameIphone = "iphone"
