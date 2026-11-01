@@ -13,6 +13,7 @@ use super::{
     state::{HarnessSwitchCheckpoint, InternalContinuation, Phase, RetiredAgentProcess, State},
     transcript,
 };
+use crate::supervisor_handle::Supervisor;
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -64,6 +65,21 @@ struct Candidate {
     default_mode: Option<String>,
     /// The agent refused the sign-in remembered for its harness.
     sign_in_refused: bool,
+    /// The request to write to its process in the next step, once.
+    outgoing: Option<Message>,
+}
+
+/// A candidate whose process has not been started yet.
+struct Draft {
+    saved: crate::model::StoredPane,
+    state: State,
+    default_mode: Option<String>,
+    initialize: Message,
+}
+
+/// The job of the step of the switch of `pane`.
+fn step_job(pane: &str) -> String {
+    format!("switch:{pane}")
 }
 
 enum CandidatePhase {
@@ -167,74 +183,214 @@ impl Core {
         Ok(result)
     }
 
+    /// The tick's part for the switches: starts the next step of each, which waits for the
+    /// supervisor off the Core lock (ADR 0126) and is applied by a later tick. A switch whose step
+    /// is on its way waits for it. A step that fails ends the switch and restores the original.
     pub(crate) fn advance_harness_switches(&mut self) -> Result<()> {
         let panes = self.harness_switches.keys().cloned().collect::<Vec<_>>();
         for pane in panes {
-            let runtime = errors::invariant(
-                self.harness_switches.remove(&pane),
-                "Harness switch runtime disappeared",
-            )?;
-            match self.advance_harness_switch(&pane, runtime) {
-                Ok(Some(runtime)) => {
-                    self.harness_switches.insert(pane, runtime);
-                }
-                Ok(None) => {}
-                Err(failure) => {
-                    let (mut runtime, error) = *failure;
-                    let mut forget = None;
-                    if let Some(candidate) = runtime.candidate.take() {
-                        self.retire_failed_candidate(&pane, &candidate.instance)?;
-                        if candidate.sign_in_refused {
-                            forget = Some(SignInChange::forget(&candidate.state.launch.id));
-                        }
-                    }
-                    let reason = bounded_reason(&error.to_string());
-                    self.restore_failed_switch(&pane, &reason, forget)?;
-                }
+            if !self.background.accepts(&step_job(&pane)) {
+                continue;
+            }
+            if let Err(error) = self.begin_switch_step(&pane) {
+                self.fail_switch(&pane, error)?;
             }
         }
         Ok(())
     }
 
-    fn advance_harness_switch(
+    fn begin_switch_step(&mut self, pane: &str) -> Result<()> {
+        let runtime = errors::invariant(
+            self.harness_switches.get(pane),
+            "Harness switch runtime disappeared",
+        )?;
+        if Instant::now() >= runtime.deadline {
+            return Err(errors::harness_unavailable(
+                "The selected harness did not become ready in time",
+            ));
+        }
+        if runtime.candidate.is_some() {
+            return self.begin_candidate_read(pane);
+        }
+        if self.agent_state(pane)?.active.is_some() {
+            return Ok(());
+        }
+        let (launch, digest) = (runtime.launch.clone(), runtime.binary_digest.clone());
+        let (draft, spawn) = self.draft_switch_candidate(pane, &launch, &digest)?;
+        self.begin_candidate_spawn(pane, draft, spawn)
+    }
+
+    /// Starts the candidate's process and writes its `initialize`, off the lock.
+    fn begin_candidate_spawn(&mut self, pane: &str, draft: Draft, spawn: Spawn) -> Result<()> {
+        let supervisor = self.supervisor()?;
+        let used = supervisor.clone();
+        let (owner, initialize) = (pane.to_owned(), draft.initialize.clone());
+        self.spawn_prompt_background(
+            step_job(pane),
+            move || {
+                let Response::Instance(instance) = supervisor.call(Request::Spawn(spawn))? else {
+                    return Err(errors::ptyd_unavailable("Invalid candidate spawn response"));
+                };
+                let (keys, written) =
+                    candidate::write_candidate(&supervisor, &instance.instance_id, &initialize);
+                Ok((instance, keys, written))
+            },
+            move |core, started| {
+                let result = core.finish_candidate_spawn(&owner, &used, draft, started);
+                core.switch_step_ended(&owner, result)
+            },
+            |_| true,
+        )
+    }
+
+    fn finish_candidate_spawn(
         &mut self,
         pane: &str,
-        mut runtime: HarnessSwitchRuntime,
-    ) -> std::result::Result<Option<HarnessSwitchRuntime>, Box<(HarnessSwitchRuntime, errors::Error)>>
-    {
-        let result = (|| -> Result<bool> {
-            if Instant::now() >= runtime.deadline {
-                return Err(errors::harness_unavailable(
-                    "The selected harness did not become ready in time",
-                ));
+        used: &Supervisor,
+        draft: Draft,
+        started: Result<(Instance, Vec<String>, Result<()>)>,
+    ) -> Result<()> {
+        let Some((instance, keys, written)) = self.settle_if_current(used, started)? else {
+            return Ok(());
+        };
+        let Draft {
+            saved,
+            state,
+            default_mode,
+            ..
+        } = draft;
+        let candidate = Candidate {
+            instance,
+            saved,
+            state,
+            decoder: Decoder::new(0),
+            raw_output: Vec::new(),
+            phase: CandidatePhase::Initializing,
+            default_mode,
+            sign_in_refused: false,
+            outgoing: None,
+        };
+        // The candidate is recorded first: a failure from here on retires its process.
+        let runtime = errors::invariant(
+            self.harness_switches.get_mut(pane),
+            "Harness switch runtime disappeared",
+        )?;
+        runtime.candidate = Some(candidate);
+        self.confirm_candidate_writes(keys);
+        self.settle_supervisor(used, written)
+    }
+
+    /// Writes what the last step queued and reads the candidate's output, off the lock.
+    fn begin_candidate_read(&mut self, pane: &str) -> Result<()> {
+        let supervisor = self.supervisor()?;
+        let used = supervisor.clone();
+        let candidate = errors::invariant(
+            self.harness_switches
+                .get(pane)
+                .and_then(|runtime| runtime.candidate.as_ref()),
+            "Harness switch candidate disappeared",
+        )?;
+        let (instance_id, from) = (
+            candidate.instance.instance_id.clone(),
+            candidate.decoder.next_offset(),
+        );
+        let outgoing = candidate.outgoing.clone();
+        let owner = pane.to_owned();
+        self.spawn_prompt_background(
+            step_job(pane),
+            move || {
+                let (keys, written) = match &outgoing {
+                    Some(message) => candidate::write_candidate(&supervisor, &instance_id, message),
+                    None => (Vec::new(), Ok(())),
+                };
+                let output = written
+                    .and_then(|()| candidate::read_candidate(&supervisor, &instance_id, from));
+                Ok((keys, output))
+            },
+            move |core, read| {
+                let result = core.finish_candidate_read(&owner, &used, read);
+                core.switch_step_ended(&owner, result)
+            },
+            |_| true,
+        )
+    }
+
+    /// Takes the candidate's answer under the lock: decodes it and takes the next step of the
+    /// handshake, or commits the switch.
+    fn finish_candidate_read(
+        &mut self,
+        pane: &str,
+        used: &Supervisor,
+        read: Result<(Vec<String>, Result<soyeht_ptyd::wire::Output>)>,
+    ) -> Result<()> {
+        // A write that was started and then failed or timed out is not repeated: its pages may
+        // have reached the candidate, so the switch ends instead.
+        let (keys, output) = self.settle_supervisor(used, read)?;
+        self.confirm_candidate_writes(keys);
+        let output = self.settle_supervisor(used, output)?;
+        let Some(mut runtime) = self.harness_switches.remove(pane) else {
+            return Ok(());
+        };
+        let next_name = runtime.launch.name.clone();
+        let params = runtime.params.clone();
+        let advanced = match runtime.candidate.as_mut() {
+            Some(candidate) => {
+                candidate.outgoing = None;
+                self.decode_candidate_output(candidate, output).and_then(
+                    |response| match response {
+                        None => Ok(false),
+                        Some((call, response)) => self.advance_candidate_response(
+                            pane, &next_name, &params, candidate, call, response,
+                        ),
+                    },
+                )
             }
-            if runtime.candidate.is_none() {
-                if self.agent_state(pane)?.active.is_some() {
-                    return Ok(false);
-                }
-                let candidate = self.spawn_switch_candidate(pane, &runtime)?;
-                runtime.candidate = Some(candidate);
-                if let Some(candidate) = runtime.candidate.as_mut() {
-                    self.initialize_switch_candidate(candidate)?;
-                }
-                return Ok(false);
+            None => Err(errors::internal("Harness switch candidate disappeared")),
+        };
+        match advanced {
+            Ok(true) => Ok(()),
+            Ok(false) => {
+                self.harness_switches.insert(pane.into(), runtime);
+                Ok(())
             }
-            let next_name = runtime.launch.name.clone();
-            let params = runtime.params.clone();
-            let candidate = errors::invariant(
-                runtime.candidate.as_mut(),
-                "Harness switch candidate disappeared",
-            )?;
-            let Some((call, response)) = self.drain_candidate(candidate)? else {
-                return Ok(false);
-            };
-            self.advance_candidate_response(pane, &next_name, &params, candidate, call, response)
-        })();
-        match result {
-            Ok(true) => Ok(None),
-            Ok(false) => Ok(Some(runtime)),
-            Err(error) => Err(Box::new((runtime, error))),
+            Err(error) => {
+                self.harness_switches.insert(pane.into(), runtime);
+                Err(error)
+            }
         }
+    }
+
+    /// Ends the step of a switch: a step that failed ends the switch.
+    fn switch_step_ended(&mut self, pane: &str, result: Result<()>) -> Result<()> {
+        match result {
+            Ok(()) => Ok(()),
+            Err(error) => self.fail_switch(pane, error),
+        }
+    }
+
+    /// Confirms the receipts of the writes to the candidate. Nobody waits for it: an unconfirmed
+    /// receipt is reconciled when the supervisor returns.
+    fn confirm_candidate_writes(&mut self, keys: Vec<String>) {
+        for operation_key in keys {
+            self.send_later(Request::ConfirmInput { operation_key });
+        }
+    }
+
+    /// Ends the switch of `pane` because a step failed: its candidate is retired and the original
+    /// session is restored.
+    fn fail_switch(&mut self, pane: &str, error: errors::Error) -> Result<()> {
+        let Some(mut runtime) = self.harness_switches.remove(pane) else {
+            return Ok(());
+        };
+        let mut forget = None;
+        if let Some(candidate) = runtime.candidate.take() {
+            self.retire_failed_candidate(pane, &candidate.instance)?;
+            if candidate.sign_in_refused {
+                forget = Some(SignInChange::forget(&candidate.state.launch.id));
+            }
+        }
+        let reason = bounded_reason(&error.to_string());
+        self.restore_failed_switch(pane, &reason, forget)
     }
 
     pub(crate) fn recover_harness_switches(&mut self, instances: &[Instance]) -> Result<()> {
@@ -461,6 +617,7 @@ fn bounded_reason(reason: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::{pending::UserOperation, state::HarnessSwitchCheckpoint};
     use crate::{
         agents::{Running, state::State},
         model::{RunningPane, StoredPane},
@@ -468,6 +625,92 @@ mod tests {
     };
     use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState};
     use std::fs;
+
+    #[test]
+    fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
+        use crate::test_panes::{Answering, apply_until_done, core_with_agent, quiet_read};
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = std::sync::Arc::clone(&asked);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            Ok(match request {
+                Request::Spawn(spawn) => {
+                    record.lock().unwrap().push("spawn");
+                    // A supervisor that takes its time to start the candidate.
+                    std::thread::sleep(Duration::from_millis(400));
+                    Response::Instance(Instance {
+                        instance_id: "candidate".into(),
+                        supervisor_id: "answering".into(),
+                        spawn,
+                        pid: 7,
+                        closed: false,
+                        exit_code: None,
+                    })
+                }
+                Request::Input { bytes, .. } => {
+                    record.lock().unwrap().push("initialize");
+                    Response::Accepted {
+                        bytes: STANDARD.decode(bytes).unwrap().len(),
+                    }
+                }
+                Request::Drain { from_seq, .. } => quiet_read(from_seq),
+                _ => Response::Ok,
+            })
+        })));
+        let mut state = core.agents["agent"].state.clone();
+        state.harness_switch = Some(HarnessSwitchCheckpoint {
+            user: UserOperation {
+                scope: "scope".into(),
+                key: "key".into(),
+            },
+            from_harness: "test".into(),
+            to_harness: "other".into(),
+            to_name: "Other".into(),
+            candidate_instance_key: "candidate-key".into(),
+            previous_queue_paused: false,
+        });
+        core.agents.get_mut("agent").unwrap().state = state;
+        core.harness_switches.insert(
+            "agent".into(),
+            HarnessSwitchRuntime {
+                params: PaneHarnessSwitchParams {
+                    pane_id: "agent".into(),
+                    harness: "other".into(),
+                    model: None,
+                    effort: None,
+                    idempotency_key: "key".into(),
+                },
+                launch: HarnessLaunch {
+                    id: "other".into(),
+                    name: "Other".into(),
+                    command: "/other".into(),
+                    args: Vec::new(),
+                    version: "1".into(),
+                    environment: None,
+                },
+                binary_digest: "digest".into(),
+                candidate: None,
+                deadline: Instant::now() + SWITCH_TIMEOUT,
+            },
+        );
+
+        let began = Instant::now();
+        core.advance_harness_switches().unwrap();
+        // A step on its way is not started again.
+        core.advance_harness_switches().unwrap();
+        assert!(
+            began.elapsed() < Duration::from_millis(250),
+            "the switch waited for the supervisor: {:?}",
+            began.elapsed()
+        );
+        assert!(core.harness_switches["agent"].candidate.is_none());
+
+        apply_until_done(&mut core, "switch:agent");
+        let candidate = core.harness_switches["agent"].candidate.as_ref().unwrap();
+        assert_eq!(candidate.instance.instance_id, "candidate");
+        assert_eq!(*asked.lock().unwrap(), ["spawn", "initialize"]);
+    }
 
     #[test]
     fn closed_agent_does_not_abort_switch_recovery_or_retired_cleanup() {
