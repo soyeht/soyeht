@@ -624,7 +624,9 @@ impl From<soyeht_platform::fs::PrivateDirError> for Error {
         use soyeht_platform::fs::PrivateDirError;
         match error {
             PrivateDirError::Io(error) => Self::Io(error),
-            refused @ (PrivateDirError::Unsafe | PrivateDirError::NotPrivate) => {
+            refused @ (PrivateDirError::Unsafe
+            | PrivateDirError::NotPrivate
+            | PrivateDirError::OtherOwner) => {
                 internal(format!("A private directory was refused: {refused}"))
             }
         }

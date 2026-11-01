@@ -37,6 +37,28 @@ fn a_directory_others_can_reach_is_made_owner_only_by_ensure_and_refused_by_chec
     fs::remove_dir_all(&root).unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn a_directory_of_another_user_is_said_to_belong_to_them_not_refused_with_permission_denied() {
+    // The root of the file system belongs to the superuser. Nothing is changed: it is only read.
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    for result in [
+        check_private_dir(Path::new("/")),
+        ensure_private_dir(Path::new("/")),
+    ] {
+        let error = result.unwrap_err();
+        assert!(matches!(error, PrivateDirError::OtherOwner), "{error}");
+        assert_eq!(error.to_string(), "the directory belongs to another user");
+        assert_eq!(
+            io::Error::from(error).to_string(),
+            "the directory belongs to another user"
+        );
+    }
+}
+
 #[test]
 fn a_link_is_refused_whether_it_points_at_a_directory_or_nowhere() {
     let root = scratch("link");

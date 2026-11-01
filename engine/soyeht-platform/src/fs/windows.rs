@@ -241,6 +241,11 @@ pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     set_private(path, true)
 }
 
+/// Windows judges the owner with the access list, which names the user (`dir_is_owner_only`).
+pub(super) fn is_owned_by_current_user(_: &fs::Metadata) -> bool {
+    true
+}
+
 pub(super) fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
     // Reading the access list needs only READ_CONTROL; backup semantics let a folder be opened,
     // and the reparse flag judges a link as itself.
