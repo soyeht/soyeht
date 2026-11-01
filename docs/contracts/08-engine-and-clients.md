@@ -65,7 +65,8 @@ local socket; isolation is per OS user, not per process.
    `engineProof = Ed25519(engine private key, bytes = "soyeht-engine-v1" ||
    nonce || clientNonce || engineId || 0x00 || deviceId)`. The device holds the
    engine's public key from pairing (§2.2) and closes the connection when the
-   proof is absent or does not verify. The vectors of
+   proof is absent or does not verify (`not_your_mac` on the device, which keeps
+   trying with backoff: only an engine's own refusal stops it). The vectors of
    `contracts/vectors/engine-proof.json` hold the bytes for both languages.
 No other request is accepted before `welcome` (`unauthorized` response and
 connection closed). Without valid `hello` within 5 s, the engine closes.

@@ -225,7 +225,7 @@
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1450,
     "apps/mac/Sources/PreferencesPanel.swift": 832,
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 897,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 896,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-store/src/editor.rs": 839,
     "engine/soyeht-store/tests/agents.rs": 976,

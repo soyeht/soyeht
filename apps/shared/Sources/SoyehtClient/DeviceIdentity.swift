@@ -10,6 +10,14 @@ public struct PairingLink: Sendable {
   /// The engine's Ed25519 public key, 32 bytes, which the link carries so the device pins it.
   let engineKey: Data
   public init(_ text: String) throws {
+    // A Mac that has not been updated writes the three fields of the old link: say what to do.
+    if let old = URLComponents(string: text), old.scheme == "soyeht-next", old.host == "pair",
+      Set((old.queryItems ?? []).map(\.name)) == Set(["engineId", "address", "code"])
+    {
+      throw ClientFailure.remote(
+        ErrorKind.protocol_version_unsupported.rawValue,
+        "Update Soyeht on the Mac, then pair with its new QR code.")
+    }
     guard let parts = URLComponents(string: text), parts.scheme == "soyeht-next",
       parts.host == "pair", parts.path.isEmpty, parts.fragment == nil,
       let items = parts.queryItems, items.count == 4,
@@ -136,22 +144,35 @@ struct EngineVerification: Sendable {
 
   /// Fails with an explanation when `proof` is absent, or not the engine's signature of `signed`.
   static func verify(_ proof: String?, signed: Data, engineKey: Data, missing: String) throws {
-    guard let proof, let signature = Data(base64Encoded: proof) else {
+    guard let proof else {
       throw ClientFailure.remote(ErrorKind.protocol_version_unsupported.rawValue, missing)
     }
     let verified: Bool
     do {
       verified = try Curve25519.Signing.PublicKey(rawRepresentation: engineKey)
-        .isValidSignature(signature, for: signed)
+        .isValidSignature(Data(base64Encoded: proof) ?? Data(), for: signed)
     } catch {
       // A key that is not a key verifies nothing: the engine did not prove itself.
       verified = false
     }
     guard verified else {
-      throw ClientFailure.remote(
-        ErrorKind.engine_identity_changed.rawValue,
-        "The Mac could not prove its identity, so this device did not connect. Pair again.")
+      throw ClientFailure.remote(Self.notYourMac, Self.notYourMacText)
     }
+  }
+
+  /// The kind of a proof that does not verify. Unlike `engine_identity_changed` it does not stop
+  /// the reconnecting: a server at a stale or borrowed address must not disable a real phone.
+  static let notYourMac = "not_your_mac"
+  static let notYourMacText =
+    "This is not your Mac: the server at this address could not prove it holds the key this device "
+    + "trusts. Trying again."
+}
+
+extension ClientFailure {
+  /// Whether a refusal of `hello` means the saved access is no good, so reconnecting is pointless
+  /// until the person pairs again. A server that fails to prove itself is not such a refusal.
+  static func refusesCredential(kind: String) -> Bool {
+    [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue].contains(kind)
   }
 }
 

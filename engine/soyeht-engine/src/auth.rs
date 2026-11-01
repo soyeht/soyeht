@@ -111,7 +111,7 @@ pub fn engine_key(seed: &str) -> Result<SigningKey> {
         return Err(Error::InvalidEngineKey);
     }
     let mut raw = [0; 32];
-    for (byte, pair) in raw.iter_mut().zip(seed.as_bytes().chunks(2)) {
+    for (byte, pair) in raw.iter_mut().zip(seed.as_bytes().chunks_exact(2)) {
         let digit = |c: u8| char::from(c).to_digit(16).ok_or(Error::InvalidEngineKey);
         // Both digits are below 16, so the byte cannot overflow.
         *byte = (digit(pair[0])? << 4 | digit(pair[1])?) as u8;
