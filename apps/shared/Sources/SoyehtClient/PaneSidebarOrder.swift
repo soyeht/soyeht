@@ -38,9 +38,14 @@ public struct PaneSidebarOrder: Equatable, Sendable {
   /// list returns. Otherwise a closed pane hands over to its nearest surviving neighbor,
   /// first in its own workspace, then anywhere; an empty selection takes `preferred` (the
   /// pane focused on the Mac) or the first pane.
+  ///
+  /// While the device is not connected the replica is empty because it was cleared, not because
+  /// every pane closed, so the selection stays and the pane returns once the state does.
   public func reconciled(
-    _ selection: String?, previous: PaneSidebarOrder, preferred: String?, fillsDetail: Bool
+    _ selection: String?, previous: PaneSidebarOrder, preferred: String?, fillsDetail: Bool,
+    connected: Bool
   ) -> String? {
+    guard connected else { return selection }
     let current = Set(paneIds)
     if let selection, current.contains(selection) { return selection }
     guard fillsDetail else { return nil }
