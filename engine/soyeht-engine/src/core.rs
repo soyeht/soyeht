@@ -127,6 +127,23 @@ fn loopback_address(profile: &Profile) -> String {
     format!("127.0.0.1:{}", profile.tcp_port)
 }
 
+/// The generation of this start of the engine.
+fn next_generation(store: &mut Store) -> Result<u64> {
+    let generation = store.next_engine_generation().map_err(errors::storage)?;
+    if generation > u32::MAX as u64 {
+        return Err(errors::internal("Engine generation exhausted"));
+    }
+    Ok(generation)
+}
+
+/// The key that signs for this engine, made on the first start and kept with its database.
+fn engine_signing_key(store: &Store) -> Result<ed25519_dalek::SigningKey> {
+    let seed = store
+        .metadata_or_insert("engine_key", &crate::auth::new_engine_seed()?)
+        .map_err(errors::storage)?;
+    crate::auth::engine_key(&seed)
+}
+
 impl Core {
     /// Makes the address this engine shows for pairing follow the port of `profile`.
     pub fn use_port_of(&mut self, profile: &Profile) {
@@ -154,20 +171,14 @@ impl Core {
         ) {
             line.emit();
         }
-        let generation = store.next_engine_generation().map_err(errors::storage)?;
-        if generation > u32::MAX as u64 {
-            return Err(errors::internal("Engine generation exhausted"));
-        }
+        let generation = next_generation(&mut store)?;
         let usage_readings = store.usage_readings().map_err(errors::storage)?;
         let editor_files = store.editor_files().map_err(errors::storage)?;
         let language_servers = store
             .language_server_checkpoints()
             .map_err(errors::storage)?;
-        let engine_key = store
-            .metadata_or_insert("engine_key", &crate::auth::new_engine_seed()?)
-            .map_err(errors::storage)?;
         let mut core = Self {
-            engine_key: crate::auth::engine_key(&engine_key)?,
+            engine_key: engine_signing_key(&store)?,
             store,
             directory: directory.into(),
             generation,

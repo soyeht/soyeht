@@ -453,6 +453,51 @@ fn assert_paired_phone_acts_like_the_local_human(
     );
 }
 
+/// The engine key the pairing link of `window` names, which a phone pins.
+fn pinned_engine_key(window: &Value) -> ed25519_dalek::VerifyingKey {
+    let text = window["uri"]
+        .as_str()
+        .unwrap()
+        .split("engineKey=")
+        .nth(1)
+        .unwrap();
+    ed25519_dalek::VerifyingKey::from_bytes(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(text)
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+/// `pair.begin`'s answer must prove the engine the link named.
+fn assert_pairing_proved_by(
+    engine: &ed25519_dalek::VerifyingKey,
+    begin: &Value,
+    device: &ed25519_dalek::SigningKey,
+) {
+    let bytes = soyeht_engine::auth::engine_pair_bytes(
+        begin["requestId"].as_str().unwrap(),
+        &STANDARD
+            .decode(begin["challenge"].as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        device.verifying_key().as_bytes(),
+    );
+    let proof = ed25519_dalek::Signature::from_slice(
+        &STANDARD
+            .decode(begin["engineProof"].as_str().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        engine.verify_strict(&bytes, &proof).is_ok(),
+        "pair.begin must prove the engine the link named"
+    );
+}
+
 #[test]
 fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     use sha2::{Digest, Sha256};
@@ -469,46 +514,14 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
         .split('&')
         .next()
         .unwrap();
-    // The link names the engine's key; the phone pins it.
-    let engine_key = window["uri"]
-        .as_str()
-        .unwrap()
-        .split("engineKey=")
-        .nth(1)
-        .unwrap();
-    let engine = ed25519_dalek::VerifyingKey::from_bytes(
-        &base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(engine_key)
-            .unwrap()
-            .try_into()
-            .unwrap(),
-    )
-    .unwrap();
+    let engine = pinned_engine_key(&window);
     let mut phone = Phone::connect(address);
     assert_unpaired_phone_is_refused(&mut phone, &pane);
     let key = ed25519_dalek::SigningKey::from_bytes(&[17; 32]);
     let begin=phone.request("pair.begin",json!({"code":window["code"],"deviceName":"Test phone","devicePublicKey":STANDARD.encode(key.verifying_key().to_bytes()),"idempotencyKey":"begin"}));
     assert!(begin.get("error").is_none(), "{begin}");
     let begin = &begin["result"];
-    let pair_bytes = soyeht_engine::auth::engine_pair_bytes(
-        begin["requestId"].as_str().unwrap(),
-        &STANDARD
-            .decode(begin["challenge"].as_str().unwrap())
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        key.verifying_key().as_bytes(),
-    );
-    let pair_proof = ed25519_dalek::Signature::from_slice(
-        &STANDARD
-            .decode(begin["engineProof"].as_str().unwrap())
-            .unwrap(),
-    )
-    .unwrap();
-    assert!(
-        engine.verify_strict(&pair_bytes, &pair_proof).is_ok(),
-        "pair.begin must prove the engine the link named"
-    );
+    assert_pairing_proved_by(&engine, begin, &key);
     let derived = Sha256::digest(
         [
             window["code"].as_str().unwrap().as_bytes(),
