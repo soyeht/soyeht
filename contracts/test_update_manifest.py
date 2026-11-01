@@ -139,6 +139,34 @@ def available(version="0.2.0", required=False, index=0):
     }
 
 
+def expiry_cases(good):
+    """The cases of the manifest's expiry: read just before it, refused at it, and ordered after the
+    checks that come before it."""
+    return [
+        case("a manifest is read up to the second before it expires", good, available(), now=SEQUENCE + LIFETIME - 1),
+        case("a manifest is refused at its expiry", good, failed("expired"), now=SEQUENCE + LIFETIME),
+        case("a manifest long past its expiry is refused", good, failed("expired"), now=SEQUENCE + 10 * LIFETIME),
+        case("an expired manifest never reads as up to date", good, failed("expired"), running="0.2.0",
+             now=SEQUENCE + LIFETIME),
+        case("a stale sequence is reported before an expiry", good, failed("staleManifest"), floor=SEQUENCE + 1,
+             now=SEQUENCE + LIFETIME),
+        case("a wrong channel is reported before an expiry", good, failed("wrongChannel"), channel="beta",
+             now=SEQUENCE + LIFETIME),
+    ]
+
+
+def broken_expiry():
+    """Payloads whose `expiresAt` breaks a rule of the format."""
+    return {
+        "no expiry": json.dumps({k: v for k, v in json.loads(payload()).items() if k != "expiresAt"}).encode(),
+        "an expiry that is text": payload(expiresAt=str(SEQUENCE + LIFETIME)),
+        "a fractional expiry": json.dumps({**json.loads(payload()), "expiresAt": SEQUENCE + 5.5}).encode(),
+        "an expiry that is the time of signing": payload(expiresAt=SEQUENCE),
+        "an expiry before the time of signing": payload(expiresAt=SEQUENCE - 1),
+        "an expiry beyond the longest life": payload(expiresAt=SEQUENCE + LIFETIME + 1),
+    }
+
+
 def build_cases():
     good = signed(payload())
     unsigned_context = json.dumps(
@@ -186,15 +214,6 @@ def build_cases():
              running="0.2.0", floor=SEQUENCE + 1),
         case("a newer sequence is read", signed(payload(sequence=SEQUENCE + 5, expiresAt=SEQUENCE + 5 + LIFETIME)),
              {**available(), "sequence": SEQUENCE + 5}, floor=SEQUENCE),
-        case("a manifest is read up to the second before it expires", good, available(), now=SEQUENCE + LIFETIME - 1),
-        case("a manifest is refused at its expiry", good, failed("expired"), now=SEQUENCE + LIFETIME),
-        case("a manifest long past its expiry is refused", good, failed("expired"), now=SEQUENCE + 10 * LIFETIME),
-        case("an expired manifest never reads as up to date", good, failed("expired"), running="0.2.0",
-             now=SEQUENCE + LIFETIME),
-        case("a stale sequence is reported before an expiry", good, failed("staleManifest"), floor=SEQUENCE + 1,
-             now=SEQUENCE + LIFETIME),
-        case("a wrong channel is reported before an expiry", good, failed("wrongChannel"), channel="beta",
-             now=SEQUENCE + LIFETIME),
         case("another channel is refused before the sequence is compared", good, failed("wrongChannel"),
              channel="beta", floor=SEQUENCE + 1),
         case("text that is not JSON is not an envelope", "not json", failed("badEnvelope")),
@@ -220,12 +239,6 @@ def build_cases():
         "a sequence that is text": payload(sequence="1000"),
         "a fractional sequence": json.dumps({**json.loads(payload()), "sequence": 1000.5}).encode(),
         "a sequence above the limit": payload(sequence=manifest.POLICY["manifest"]["maxSequence"] + 1),
-        "no expiry": json.dumps({k: v for k, v in json.loads(payload()).items() if k != "expiresAt"}).encode(),
-        "an expiry that is text": payload(expiresAt=str(SEQUENCE + LIFETIME)),
-        "a fractional expiry": json.dumps({**json.loads(payload()), "expiresAt": SEQUENCE + 5.5}).encode(),
-        "an expiry that is the time of signing": payload(expiresAt=SEQUENCE),
-        "an expiry before the time of signing": payload(expiresAt=SEQUENCE - 1),
-        "an expiry beyond the longest life": payload(expiresAt=SEQUENCE + LIFETIME + 1),
         "a notes address with a dot segment": payload(releaseNotesUrl=BASE + "../../../evil/x"),
         "a package address going up a folder": payload(
             packages=[package("macos", "aarch64", "dmg", url=BASE + "../v0.1.0/soyeht.dmg")]),
@@ -257,6 +270,8 @@ def build_cases():
         "one system and architecture twice": payload(packages=[package("macos", "aarch64", "dmg")] * 2),
         "text that is not JSON": b"not json",
     }
+    broken.update(broken_expiry())
+    cases += expiry_cases(good)
     cases += [case(f"{name} is refused after the signature checks out", signed(body), failed("badManifest"))
               for name, body in broken.items()]
     return cases
