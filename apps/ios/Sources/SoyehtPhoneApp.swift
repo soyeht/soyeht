@@ -32,7 +32,7 @@ struct SoyehtPhoneApp: App {
           guard let open, model.client?.connected == true else { return }
           Task { await PhonePush.removeSettled(open: open) }
         }
-        .onOpenURL { model.pair($0.absoluteString) }
+        .onOpenURL { model.receive(link: $0.absoluteString) }
     }
     .commands { PhonePaneCommands() }
   }
