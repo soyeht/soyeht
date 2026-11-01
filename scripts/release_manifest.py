@@ -18,6 +18,17 @@ a day (`MAX_LEAD_SECONDS`) ahead of the clock or of the last one published, and 
 above the last one published when that is known (`--previous FILE`, or `--last-sequence N`).
 `docs/release.md` says how to recover when a manifest with a sequence too high was published.
 
+A manifest expires `manifest.maxLifetimeSeconds` (90 days) after it is signed, and a device refuses
+one past its expiry. Nothing is rebuilt to renew it:
+
+    SOYEHT_UPDATE_SIGNING_KEY=... uv run python scripts/release_manifest.py renew [--input FILE]
+    uv run python scripts/release_manifest.py check-expiry [--input FILE] [--warn-days 21]
+
+`renew` reads the manifest the clients read now (the published address, or `--input`), keeps its
+version, notes and packages exactly as they are, and signs them again with a new sequence and
+expiry. `check-expiry` fails when that manifest expires within `--warn-days` days or has expired.
+`docs/release.md` says when to run them.
+
 The manifest is published as an asset of the GitHub release of the same version, under the name
 `update-manifest.json`. This script does not upload, tag or build anything.
 """
@@ -170,6 +181,11 @@ def build(dist, environment, minimum, keys=None, sequence=None, last_sequence=No
     now = int(time.time()) if now is None else now
     sequence = now if sequence is None else sequence
     check_sequence(sequence, last_sequence, now)
+    life = POLICY["manifest"]["maxLifetimeSeconds"]
+    if sequence + life <= now:
+        raise Refused(f"sequence {sequence} is the time of signing, and a manifest signed then expired "
+                      f"{life // 86400} days later, already in the past: every device would refuse it. "
+                      "Leave --sequence out (the default is the clock)")
     payload = manifest.payload_text(version, minimum, templates["notesUrl"].format(version=version), packages, sequence)
     try:
         manifest.check_payload(payload)
@@ -203,6 +219,59 @@ def previous_sequence(text, keys):
         return manifest.check_payload(manifest.open_envelope(text, keys))["sequence"]
     except manifest.Failed as failed:
         raise Refused(f"the previous manifest is refused: {failed.failure}") from None
+
+
+def published(fetch=None):
+    """The text of the manifest the clients read now; None when nothing is published."""
+    from release_flow import fetch_text  # release_flow imports this module: look it up when needed
+
+    return (fetch or fetch_text)(POLICY["manifest"]["url"])
+
+
+def read_published(options, fetch=None):
+    """The manifest to renew or check: `--input`, else the one published."""
+    text = Path(options.input).read_text() if options.input else published(fetch)
+    if text is None:
+        raise Refused("no manifest is published yet; there is nothing to renew or check")
+    return text
+
+
+def current_payload(text, keys):
+    """The payload of a manifest, read for its content only: its expiry and sequence are not
+    judged here, because renewing is how an old one is replaced."""
+    try:
+        return manifest.check_payload(manifest.open_envelope(text, keys))
+    except manifest.Failed as failed:
+        raise Refused(f"the published manifest is refused: {failed.failure}") from None
+
+
+def renew(text, environment, keys=None, now=None):
+    """The published manifest signed again: the same version, notes and packages (so nothing is
+    rebuilt and no hash changes), a new sequence above the old one and a full life."""
+    keys = POLICY["signature"]["publicKeys"] if keys is None else keys
+    old = current_payload(text, keys)
+    seed = signing_seed(environment)
+    key_id = key_id_for(seed, keys)
+    now = int(time.time()) if now is None else now
+    sequence = max(now, old["sequence"] + 1)
+    check_sequence(sequence, old["sequence"], now)
+    payload = manifest.payload_text(old["version"], old["minimumSupportedVersion"], old["releaseNotesUrl"],
+                                    old["packages"], sequence, channel=old["channel"])
+    renewed = manifest.envelope(payload, seed, key_id)
+    manifest.open_envelope(renewed, keys)
+    return renewed
+
+
+def expiry_problem(text, keys, warn_days, now=None):
+    """Why the manifest needs renewing, or None. A manifest has `warn_days` days before it expires."""
+    now = int(time.time()) if now is None else now
+    expires = current_payload(text, keys)["expiresAt"]
+    days = (expires - now) // 86400
+    if expires <= now:
+        return f"the published manifest expired {(now - expires) // 86400} days ago: every device's update check fails"
+    if days < warn_days:
+        return f"the published manifest expires in {days} days (less than {warn_days}); renew it"
+    return None
 
 
 def repository():
@@ -242,6 +311,18 @@ def run(args, environment):
         output.write_text(text)
         print(f"wrote {output} with {len(packages)} packages")
         return
+    if args.command == "renew":
+        text = renew(read_published(args), environment)
+        output = Path(args.output)
+        output.write_text(text)
+        print(f"wrote {output}; upload it over the published asset (docs/release.md)")
+        return
+    if args.command == "check-expiry":
+        problem = expiry_problem(read_published(args), trusted_keys([]), args.warn_days)
+        if problem:
+            raise Refused(problem)
+        print("the published manifest is not near its expiry")
+        return
     keys = trusted_keys(args.trust_key)
     try:
         print(describe(Path(args.manifest).read_text(), keys, args.running, args.system, args.architecture, args.channel))
@@ -264,6 +345,13 @@ def main(argv=None, environment=None):
                       "before, when there is no file of it")
     made.add_argument("--minimum", default="0.0.0",
                       help="the oldest version that is still supported (default: every version is)")
+    renewed = commands.add_parser("renew", help="sign the published manifest again with a new sequence and expiry, "
+                                  "keeping its packages")
+    renewed.add_argument("--input", metavar="FILE", help="the manifest to renew (default: the published one)")
+    renewed.add_argument("--output", default=POLICY["manifest"]["asset"], help="where to write it")
+    expiring = commands.add_parser("check-expiry", help="fail when the published manifest expires soon")
+    expiring.add_argument("--input", metavar="FILE", help="the manifest to check (default: the published one)")
+    expiring.add_argument("--warn-days", type=int, default=21, help="days before the expiry to fail (default 21)")
     checked = commands.add_parser("verify", help="read a manifest as a client would")
     checked.add_argument("manifest")
     checked.add_argument("--trust-key", action="append", default=[], metavar="ID=BASE64")

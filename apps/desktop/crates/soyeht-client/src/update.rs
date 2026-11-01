@@ -197,6 +197,7 @@ impl Updates {
             (Status::UpToDate, true) => about(text::UP_TO_DATE, running),
             (Status::Available(offer), true) => about(text::AVAILABLE, &offer.version),
             (Status::Failed(Failure::NotConfigured), true) => text::NOT_CONFIGURED.to_owned(),
+            (Status::Failed(Failure::Expired), true) => text::EXPIRED.to_owned(),
             (Status::Failed(_), true) => text::FAILED.to_owned(),
         }
     }
@@ -419,6 +420,7 @@ mod tests {
                         Failure::NotConfigured,
                         Failure::Unreachable,
                         Failure::BadSignature,
+                        Failure::Expired,
                     ]
                     .into_iter()
                     .find(|failure| failure.as_str() == status["failure"].as_str().unwrap())

@@ -59,6 +59,7 @@
     "available": "Soyeht {version} is available.",
     "required": "This version is no longer supported. Update to keep using Soyeht.",
     "notConfigured": "Update checks are not set up in this build.",
+    "expired": "The update information is out of date. Check this computer's date and time, or get the newest Soyeht from the Soyeht website.",
     "failed": "Could not check for updates."
   },
   "failures": [
