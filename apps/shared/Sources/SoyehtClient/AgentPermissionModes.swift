@@ -90,12 +90,15 @@ extension EngineClient {
   }
 
   public func defaultPermissionMode(harness: String) -> String? {
-    harnessDefaultModes[harness]
+    harnessDefaultModes[harness] ?? nil
   }
 
-  public func refreshDefaultPermissionModes() {
+  /// Asks the engine for the default mode of each harness it has not been asked about. Opening
+  /// Preferences again asks nothing: the answers are kept, and `settings.changed` keeps them right.
+  @discardableResult
+  public func refreshDefaultPermissionModes() -> Task<Void, Never> {
     performBackground(.defaultPermissionModes) {
-      for harness in self.harnesses {
+      for harness in self.harnesses where !self.harnessDefaultModes.keys.contains(harness.id) {
         let result = try await self.request(
           .settingsGet,
           .encoded(
@@ -124,6 +127,7 @@ extension EngineClient {
   }
 
   private func recordDefaultPermissionMode(_ value: JsonValue, harness: String) {
-    harnessDefaultModes[harness] = value.string.flatMap { $0.isEmpty ? nil : $0 }
+    harnessDefaultModes.updateValue(
+      value.string.flatMap { $0.isEmpty ? nil : $0 }, forKey: harness)
   }
 }
