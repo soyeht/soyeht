@@ -181,7 +181,7 @@ private struct PreferencesSidebar: View {
       }
       Spacer()
       VStack(alignment: .leading, spacing: MacTheme.Space.x2) {
-        Text("Soyeht \(appVersion) · Dev profile")
+        Text(ActiveProfile.values.versionLine(appVersion))
         Text(client.connected ? "Engine connected · ACP v1" : "Engine reconnecting · ACP v1")
       }
       .font(MacTheme.mono(MacTheme.TypeScale.micro, weight: .medium))

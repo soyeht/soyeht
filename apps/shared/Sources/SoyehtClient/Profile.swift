@@ -50,3 +50,11 @@ extension ProfileValues {
     return .dev
   }
 }
+
+extension ProfileValues {
+  /// The line under the Preferences sidebar. Only the Dev profile says its profile, so the
+  /// production app does not call itself "Dev".
+  public func versionLine(_ version: String) -> String {
+    name == Self.dev.name ? "Soyeht \(version) · Dev profile" : "Soyeht \(version)"
+  }
+}

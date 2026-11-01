@@ -227,3 +227,8 @@ private func terminal(reference: UInt32 = 2, generation: UInt32 = 1, offset: UIn
     #expect(profile.appBundleId.contains(".next."))
   }
 }
+
+@Test func onlyTheDevProfileNamesItselfInTheVersionLine() {
+  #expect(ProfileValues.dev.versionLine("0.1.0") == "Soyeht 0.1.0 · Dev profile")
+  #expect(ProfileValues.prod.versionLine("0.1.0") == "Soyeht 0.1.0")
+}
