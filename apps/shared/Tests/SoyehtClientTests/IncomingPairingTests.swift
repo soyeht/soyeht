@@ -13,11 +13,11 @@ private func link(_ address: String, engine: String = incomingEngine) -> String 
 
 /// The access a device saved when it paired with `engine` at `address`.
 private func credential(engine: String, address: String) throws -> DeviceCredential {
-  let json = """
-    {"engineId":"\(engine)","deviceId":"d","address":"ws://\(address)","token":"t",\
-    "key":"\(Data(count: 32).base64EncodedString())"}
-    """
-  return try JSONDecoder().decode(DeviceCredential.self, from: Data(json.utf8))
+  let saved: [String: String] = [
+    "engineId": engine, "deviceId": "d", "address": "ws://" + address, "token": "t",
+    "key": Data(count: 32).base64EncodedString(),
+  ]
+  return try JSONDecoder().decode(DeviceCredential.self, from: JSONEncoder().encode(saved))
 }
 
 @Test func aLinkFromOutsideNamesWhereItWouldConnect() throws {
