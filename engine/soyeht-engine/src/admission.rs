@@ -222,7 +222,7 @@ mod tests {
             let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = tcp.local_addr().unwrap();
             tokio::spawn(server::serve_tcp(tcp, accept.clone()));
-            let socket = directory.join("engine.sock");
+            let socket = directory.join(soyeht_protocol::profile::ENGINE_SOCKET);
             let local = soyeht_platform::local::asynchronous::Listener::bind(&socket).unwrap();
             tokio::spawn(server::serve_local(local, accept));
 
