@@ -247,3 +247,31 @@ fn a_supervisor_that_stops_answering_does_not_stall_requests_while_a_pane_starts
         || !other.pane(&pane)["pid"].is_null(),
     );
 }
+
+/// A prompt is delivered to the agent's process page by page; each page waits for the
+/// supervisor off the lock too (ADR 0126).
+#[test]
+fn a_supervisor_that_stops_answering_does_not_stall_requests_while_a_prompt_is_delivered() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let mut other = rig.client();
+
+    let worst = worst_status_latency_while_the_supervisor_is_stopped(&rig, &mut other, || {
+        client.call(
+            "pane.prompt",
+            json!({"paneId":pane,"text":"while stopped","idempotencyKey":"prompt-while-stopped"}),
+        );
+    });
+
+    assert!(
+        worst < GAP_FLOOR,
+        "a request waited {worst:?} behind the delivery of a prompt"
+    );
+    // The prompt is delivered once the supervisor answers again, and the agent answers it.
+    client.wait_state(&pane, "idle");
+    wait_until("the prompt reached the agent", || {
+        support::transcript_items(&mut client, &pane)
+            .iter()
+            .any(|message| message["role"] == "user" && message["text"] == "while stopped")
+    });
+}

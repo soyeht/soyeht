@@ -45,7 +45,7 @@ impl Core {
                         self.now_ms() as u64,
                     )
                     .map_err(native_error)?;
-                self.write_candidate(&candidate.instance.instance_id, request)?;
+                candidate.queue(request);
                 candidate.phase = CandidatePhase::Authenticating;
                 Ok(false)
             }
@@ -137,16 +137,20 @@ impl Core {
                 self.now_ms() as u64,
             )
             .map_err(native_error)?;
-        self.write_candidate(&candidate.instance.instance_id, request)?;
+        candidate.queue(request);
         candidate.phase = CandidatePhase::Opening;
         Ok(())
     }
 
-    pub(super) fn spawn_switch_candidate(
+    /// Everything the candidate process needs, built under the lock: what it will be saved as,
+    /// its state, and the request that starts it. The process itself is started by the job
+    /// [`Core::begin_candidate_spawn`] sends, off the lock.
+    pub(super) fn draft_switch_candidate(
         &mut self,
         pane: &str,
-        runtime: &HarnessSwitchRuntime,
-    ) -> Result<Candidate> {
+        launch: &soyeht_protocol::HarnessLaunch,
+        binary_digest: &str,
+    ) -> Result<(Draft, Spawn)> {
         let original = self.agent_state(pane)?;
         let checkpoint = errors::invariant(
             original.harness_switch.clone(),
@@ -165,7 +169,7 @@ impl Core {
         saved.supervisor_id = None;
         saved.pane.pid = None;
         saved.sequence_base = self.panes[pane].screen.next_offset();
-        let mut state = State::new(runtime.launch.clone(), runtime.binary_digest.clone(), None)?;
+        let mut state = State::new(launch.clone(), binary_digest.to_owned(), None)?;
         state.mode = original.mode.clone();
         state.internal_continuation = Some(InternalContinuation::default());
         state.binding = original.binding.clone();
@@ -181,33 +185,14 @@ impl Core {
             generation: new_generation,
             kind: ProcessKind::PipesAcp,
             cwd: saved.pane.cwd.clone(),
-            argv: std::iter::once(runtime.launch.command.clone())
-                .chain(runtime.launch.args.clone())
+            argv: std::iter::once(launch.command.clone())
+                .chain(launch.args.clone())
                 .collect(),
-            env: crate::agents::environment::launch_environment_with(
-                runtime.launch.environment.as_deref(),
-            ),
+            env: crate::agents::environment::launch_environment_with(launch.environment.as_deref()),
             cols: saved.pane.cols as u16,
             rows: saved.pane.rows as u16,
         };
-        let Response::Instance(instance) = self.pty_request(Request::Spawn(spawn))? else {
-            return Err(errors::ptyd_unavailable("Invalid candidate spawn response"));
-        };
-        Ok(Candidate {
-            instance,
-            saved,
-            state,
-            decoder: Decoder::new(0),
-            raw_output: Vec::new(),
-            phase: CandidatePhase::Initializing,
-            default_mode: crate::settings::default_agent_mode(&self.store, &runtime.launch.id)?,
-            sign_in_refused: false,
-        })
-    }
-
-    pub(super) fn initialize_switch_candidate(&mut self, candidate: &mut Candidate) -> Result<()> {
-        let initialize = candidate
-            .state
+        let initialize = state
             .client
             .request(
                 "initialize",
@@ -216,7 +201,13 @@ impl Core {
                 self.now_ms() as u64,
             )
             .map_err(native_error)?;
-        self.write_candidate(&candidate.instance.instance_id, initialize)
+        let draft = Draft {
+            saved,
+            state,
+            default_mode: crate::settings::default_agent_mode(&self.store, &launch.id)?,
+            initialize,
+        };
+        Ok((draft, spawn))
     }
 
     fn send_next_candidate_option(
@@ -249,7 +240,7 @@ impl Core {
             .client
             .request(method, params, "switch:config", self.now_ms() as u64)
             .map_err(native_error)?;
-        self.write_candidate(&candidate.instance.instance_id, request)?;
+        candidate.queue(request);
         candidate.phase = CandidatePhase::Configuring {
             option_id: option.id,
             desired,
@@ -258,30 +249,18 @@ impl Core {
         Ok(())
     }
 
-    pub(super) fn drain_candidate(
+    /// Decodes what a read of the candidate's output found, under the lock: the response to the
+    /// request it answers, if the output holds one.
+    pub(super) fn decode_candidate_output(
         &mut self,
         candidate: &mut Candidate,
+        output: soyeht_ptyd::wire::Output,
     ) -> Result<
         Option<(
             soyeht_acp::client::Call,
             std::result::Result<Value, soyeht_acp::RpcError>,
         )>,
     > {
-        let from = candidate.decoder.next_offset();
-        let Response::Output(output) = self.pty_request(Request::Drain {
-            instance_id: candidate.instance.instance_id.clone(),
-            from_seq: from,
-        })?
-        else {
-            return Err(errors::ptyd_unavailable(
-                "Invalid candidate output response",
-            ));
-        };
-        if output.from_seq != from || output.gap.is_some() {
-            return Err(errors::ptyd_unavailable(
-                "Candidate output is discontinuous",
-            ));
-        }
         let bytes = STANDARD
             .decode(output.bytes)
             .map_err(|_| errors::ptyd_unavailable("Invalid candidate output encoding"))?;
@@ -322,32 +301,81 @@ impl Core {
         }
         Ok(response)
     }
+}
 
-    pub(super) fn write_candidate(&mut self, instance_id: &str, message: Message) -> Result<()> {
-        let encoded = message.encode().map_err(native_error)?;
-        let mut offset = 0;
-        while offset < encoded.len() {
-            let end = (offset + limits::TERMINAL_PAYLOAD_BYTES).min(encoded.len());
-            let bytes = &encoded[offset..end];
-            let operation_key = format!("switch-input:{}", Uuid::new_v4());
-            let Response::Accepted { bytes: accepted } = self.pty_request(Request::Input {
-                instance_id: instance_id.into(),
-                bytes: STANDARD.encode(bytes),
-                operation_key: operation_key.clone(),
-                fingerprint: format!("{:x}", Sha256::digest(bytes)),
-            })?
-            else {
-                return Err(errors::ptyd_unavailable("Invalid candidate input receipt"));
-            };
-            // Nobody waits for it: an unconfirmed receipt is reconciled when the supervisor returns.
-            self.send_later(Request::ConfirmInput { operation_key });
-            if accepted == 0 || accepted > bytes.len() {
-                return Err(errors::ptyd_unavailable(
-                    "Candidate did not accept its complete input",
-                ));
-            }
-            offset += accepted;
-        }
-        Ok(())
+impl Candidate {
+    /// Holds `message` for the next step's job to write to the candidate's process.
+    pub(super) fn queue(&mut self, message: Message) {
+        self.outgoing = Some(message);
     }
+}
+
+/// Writes `message` to the process `instance_id`, a page at a time, and reads nothing. It waits
+/// for the supervisor: it runs off the Core lock. The operation keys it used come back with the
+/// result, so the caller can confirm them under the lock.
+pub(super) fn write_candidate(
+    supervisor: &Supervisor,
+    instance_id: &str,
+    message: &Message,
+) -> (Vec<String>, Result<()>) {
+    let mut keys = Vec::new();
+    let encoded = match message.encode() {
+        Ok(encoded) => encoded,
+        Err(error) => return (keys, Err(native_error(error))),
+    };
+    let mut offset = 0;
+    while offset < encoded.len() {
+        let end = (offset + limits::TERMINAL_PAYLOAD_BYTES).min(encoded.len());
+        let bytes = &encoded[offset..end];
+        let operation_key = format!("switch-input:{}", Uuid::new_v4());
+        keys.push(operation_key.clone());
+        let accepted = match supervisor.call(Request::Input {
+            instance_id: instance_id.into(),
+            bytes: STANDARD.encode(bytes),
+            operation_key,
+            fingerprint: format!("{:x}", Sha256::digest(bytes)),
+        }) {
+            Ok(Response::Accepted { bytes }) => bytes,
+            Ok(_) => {
+                return (
+                    keys,
+                    Err(errors::ptyd_unavailable("Invalid candidate input receipt")),
+                );
+            }
+            Err(error) => return (keys, Err(error)),
+        };
+        if accepted == 0 || accepted > bytes.len() {
+            return (
+                keys,
+                Err(errors::ptyd_unavailable(
+                    "Candidate did not accept its complete input",
+                )),
+            );
+        }
+        offset += accepted;
+    }
+    (keys, Ok(()))
+}
+
+/// Reads the candidate's output from `from`: the first check of a read, off the Core lock.
+pub(super) fn read_candidate(
+    supervisor: &Supervisor,
+    instance_id: &str,
+    from: u64,
+) -> Result<soyeht_ptyd::wire::Output> {
+    let Response::Output(output) = supervisor.call(Request::Drain {
+        instance_id: instance_id.to_owned(),
+        from_seq: from,
+    })?
+    else {
+        return Err(errors::ptyd_unavailable(
+            "Invalid candidate output response",
+        ));
+    };
+    if output.from_seq != from || output.gap.is_some() {
+        return Err(errors::ptyd_unavailable(
+            "Candidate output is discontinuous",
+        ));
+    }
+    Ok(output)
 }

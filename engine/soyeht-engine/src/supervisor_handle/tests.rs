@@ -649,3 +649,70 @@ fn a_close_goes_after_the_sends_ahead_of_it_and_the_ones_queued_for_the_process_
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn an_input_job_waits_for_the_supervisor_off_the_lock_after_the_sends_ahead_of_it() {
+    let (mut core, root, _) = open_core();
+    core.background = crate::offload::Background::default();
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let record = Arc::clone(&asked);
+    core.link_supervisor(Box::new(crate::test_panes::Answering(move |request| {
+        Ok(match request {
+            Request::Resize { cols, .. } => {
+                record.lock().unwrap().push(format!("size:{cols}"));
+                Response::Ok
+            }
+            Request::Input { bytes, .. } => {
+                // A supervisor that takes its time to take the bytes.
+                thread::sleep(Duration::from_millis(400));
+                record.lock().unwrap().push(format!("input:{bytes}"));
+                Response::Accepted { bytes: 4 }
+            }
+            _ => Response::Ok,
+        })
+    })));
+    core.send_later(resize_of(INSTANCE, 90));
+    let accepted = Arc::new(Mutex::new(None));
+    let seen = Arc::clone(&accepted);
+
+    let started = Instant::now();
+    core.start_input(
+        "input-job".into(),
+        INSTANCE,
+        Request::Input {
+            instance_id: INSTANCE.into(),
+            bytes: "bHMK".into(),
+            operation_key: "operation".into(),
+            fingerprint: "fingerprint".into(),
+        },
+        move |_, bytes| {
+            *seen.lock().unwrap() = Some(bytes.unwrap());
+            Ok(())
+        },
+    )
+    .unwrap();
+    // The same job asked for again while it runs sends nothing.
+    core.start_input(
+        "input-job".into(),
+        INSTANCE,
+        Request::Input {
+            instance_id: INSTANCE.into(),
+            bytes: "again".into(),
+            operation_key: "operation".into(),
+            fingerprint: "fingerprint".into(),
+        },
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_millis(250),
+        "the input waited under the lock: {:?}",
+        started.elapsed()
+    );
+
+    crate::test_panes::apply_until_done(&mut core, "input-job");
+    assert_eq!(*accepted.lock().unwrap(), Some(Some(4)));
+    // The size queued for the process went in front of the bytes.
+    assert_eq!(*asked.lock().unwrap(), ["size:90", "input:bHMK"]);
+    std::fs::remove_dir_all(root).unwrap();
+}
