@@ -262,6 +262,17 @@ mod tests {
             Error::Io(io::ErrorKind::PermissionDenied.into()).failure_kind(),
             "io:PermissionDenied"
         );
-        assert_eq!(Error::PoisonedLock("core").failure_kind(), "PoisonedLock");
+        assert_eq!(Error::PoisonedLock("state").failure_kind(), "PoisonedLock");
+        let remote = Error::Remote {
+            kind: "kind".into(),
+            message: "secret detail".into(),
+        };
+        assert_eq!(remote.failure_kind(), "Remote");
+        assert_eq!(
+            Error::ConnectionSuperseded.failure_kind(),
+            "ConnectionSuperseded"
+        );
+        let broken = Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "/private/path"));
+        assert_eq!(broken.failure_kind(), "io:BrokenPipe");
     }
 }
