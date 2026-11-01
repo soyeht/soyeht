@@ -35,6 +35,7 @@ public enum ProtocolLimits {
     public static let usageAutoRefreshIntervalSec = 300
     public static let usageStaleAfterSec = 900
     public static let usageMaxBackoffSec = 1800
+    public static let usageActivityDays = 7
     public static let editorViewportLines = 2000
     public static let editorEditBytes = 262144
     /// The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.

@@ -48,8 +48,18 @@ public struct UsageDetailModel: Sendable {
     let presentation = UsagePresentation(reading)
     providerName = reading.provider.displayName
     isCurrent = reading.state == .ok
-    reset = UsageTimeText.reset(presentation.displayedWindow?.resetsAt)
     footer = "Source: \(reading.source.displayName) · \(UsageTimeText.age(of: reading))"
+    if let line = Self.activityLine(reading) {
+      // A count of what the device recorded: no window, so no percentage and no bar.
+      reset = "No plan limit"
+      content = .notice(
+        Notice(
+          message: "\(line). No plan limit is known, so there is no percentage."
+            + (presentation.staleHint.map { " \($0)" } ?? ""),
+          symbol: "chart.bar"))
+      return
+    }
+    reset = UsageTimeText.reset(presentation.displayedWindow?.resetsAt)
     let isStale = reading.state == .stale
     switch (reading.state, reading.primary) {
     case (.login_needed, _):
@@ -76,6 +86,14 @@ public struct UsageDetailModel: Sendable {
         }
       content = .notice(Notice(message: message, symbol: "exclamationmark.circle"))
     }
+  }
+
+  /// The line for a reading that holds an activity and no window, current or last known.
+  private static func activityLine(_ reading: UsageReading) -> String? {
+    guard reading.primary == nil, reading.state == .ok || reading.state == .stale,
+      let activity = reading.activity
+    else { return nil }
+    return UsageActivityText.line(activity)
   }
 }
 

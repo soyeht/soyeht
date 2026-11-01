@@ -64,6 +64,41 @@ private func reading(
     notice(reading(.unavailable, reason: .tool_not_found)) == "Codex not found on this Mac.")
 }
 
+@Test func anActivityWithoutAWindowIsOneNoticeAndNeverAPercentage() {
+  let activity = UsageActivity(
+    label: "Last 7 days on this device", tokens: 1_234_567, costUsd: 3.4)
+  func model(_ state: UsageState, reason: UsageUnavailableReason? = nil) -> UsageDetailModel {
+    UsageDetailModel(
+      UsageReading(
+        provider: .opencode, state: state, unavailableReason: reason, activity: activity,
+        source: .opencode_local_history, fetchedAt: "2026-09-12T12:00:00Z"),
+      onThisMac: true)
+  }
+  func message(_ model: UsageDetailModel) -> String? {
+    guard case .notice(let notice) = model.content else { return nil }
+    return notice.message
+  }
+  let line = "Last 7 days on this device: 1.2M tokens · $3.40. No plan limit is known"
+  #expect(
+    message(model(.ok)) == line + ", so there is no percentage.")
+  #expect(model(.ok).reset == "No plan limit")
+  #expect(
+    message(model(.stale, reason: .source_failed))
+      == line + ", so there is no percentage. Latest refresh: OpenCode could not provide usage.")
+}
+
+@Test func anExpiredPlanIsAClearNoticeWithNoWindows() {
+  let expired = UsageReading(
+    provider: .opencode, state: .unavailable, unavailableReason: .plan_expired,
+    source: .opencode_zai_plan, fetchedAt: "2026-09-12T12:00:00Z")
+  guard case .notice(let notice) = UsageDetailModel(expired, onThisMac: true).content else {
+    Issue.record("expected a notice")
+    return
+  }
+  #expect(notice.message == "OpenCode's plan has expired or is not active.")
+  #expect(UsagePresentation(expired).fraction == nil)
+}
+
 @Test func theStatusDotIsTheSameColourOnTheMacAndThePhone() {
   for state in [UsageState.ok, .stale, .login_needed, .no_access, .unavailable] {
     let colours = [true, false].map {

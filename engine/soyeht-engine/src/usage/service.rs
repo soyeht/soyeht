@@ -153,6 +153,7 @@ impl Service {
             unavailable_reason: Some(UsageUnavailableReason::NotChecked),
             primary: None,
             secondary: None,
+            activity: None,
             source: self
                 .planner
                 .sources(provider)
@@ -371,7 +372,7 @@ fn kept_or_failed(
     streak: u32,
     now_sec: u64,
 ) -> Reading {
-    match previous.filter(|reading| reading.has_windows()) {
+    match previous.filter(|reading| reading.has_data()) {
         Some(previous) if streak == 1 && previous.for_display(now_sec).state == UsageState::Ok => {
             previous.clone()
         }

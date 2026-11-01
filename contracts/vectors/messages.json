@@ -7505,6 +7505,15 @@
     }
   },
   {
+    "name": "UsageActivity",
+    "type": "UsageActivity",
+    "value": {
+      "label": "Last 7 days on this device",
+      "tokens": 1234567,
+      "costUsd": 3.4
+    }
+  },
+  {
     "name": "UsageReading",
     "type": "UsageReading",
     "value": {
@@ -7744,6 +7753,31 @@
       "state": "stale",
       "source": "cursor_current_period",
       "fetchedAt": "2026-09-12T16:00:00Z"
+    }
+  },
+  {
+    "name": "usage-activity-reading",
+    "type": "UsageReading",
+    "value": {
+      "provider": "opencode",
+      "state": "ok",
+      "activity": {
+        "label": "Last 7 days on this device",
+        "tokens": 42
+      },
+      "source": "opencode_local_history",
+      "fetchedAt": "2026-11-01T12:00:00Z"
+    }
+  },
+  {
+    "name": "usage-expired-plan",
+    "type": "UsageReading",
+    "value": {
+      "provider": "opencode",
+      "state": "unavailable",
+      "unavailableReason": "plan_expired",
+      "source": "opencode_zai_plan",
+      "fetchedAt": "2026-11-01T12:00:00Z"
     }
   },
   {

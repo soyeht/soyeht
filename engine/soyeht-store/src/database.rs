@@ -6,7 +6,7 @@ use soyeht_platform::fs::{set_private_dir, set_private_file, sync_directory};
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 31;
+pub const SCHEMA_VERSION: u32 = 32;
 
 #[derive(Debug)]
 pub enum Error {
@@ -295,6 +295,9 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
     if version < 31 {
         tx.execute_batch(include_str!("../migrations/031-harness-sign-in.sql"))?;
         crate::harness_sign_in::adopt_pane_choices(tx)?;
+    }
+    if version < 32 {
+        tx.execute_batch(include_str!("../migrations/032-usage-opencode.sql"))?;
     }
     Ok(())
 }

@@ -5,8 +5,8 @@
 
 use crate::timestamp;
 use soyeht_protocol::{
-    UsageProvider, UsageReading, UsageSource, UsageState, UsageUnavailableReason, UsageWindow,
-    client_policy,
+    UsageActivity, UsageProvider, UsageReading, UsageSource, UsageState, UsageUnavailableReason,
+    UsageWindow, client_policy,
 };
 
 /// The colour band of a used fraction.
@@ -65,23 +65,25 @@ impl Emphasis {
 pub struct Presentation<'a>(pub &'a UsageReading);
 
 impl Presentation<'_> {
-    /// The window the ring follows: the weekly one for Claude and Codex, the only one for
-    /// Cursor.
+    /// The window the ring follows: the weekly one for Claude, Codex and OpenCode, the only one
+    /// for Cursor.
     pub fn window(&self) -> Option<&UsageWindow> {
         let reading = self.0;
         match reading.provider {
             UsageProvider::Cursor => reading.primary.as_ref(),
-            UsageProvider::Claude | UsageProvider::Codex => [&reading.primary, &reading.secondary]
-                .into_iter()
-                .flatten()
-                .find(|window| {
-                    window
-                        .label
-                        .to_lowercase()
-                        .contains(client_policy::USAGE_WINDOW_WEEKLY_KEYWORD)
-                })
-                .or(reading.secondary.as_ref())
-                .or(reading.primary.as_ref()),
+            UsageProvider::Claude | UsageProvider::Codex | UsageProvider::Opencode => {
+                [&reading.primary, &reading.secondary]
+                    .into_iter()
+                    .flatten()
+                    .find(|window| {
+                        window
+                            .label
+                            .to_lowercase()
+                            .contains(client_policy::USAGE_WINDOW_WEEKLY_KEYWORD)
+                    })
+                    .or(reading.secondary.as_ref())
+                    .or(reading.primary.as_ref())
+            }
         }
     }
 
@@ -111,6 +113,25 @@ impl Presentation<'_> {
     pub fn unavailable_message(&self) -> String {
         self.reason_message()
             .unwrap_or_else(|| "Usage is unavailable.".to_owned())
+    }
+
+    /// The one line the detail shows for a reading that holds an activity and no window, current
+    /// or last known; `None` for any other reading.
+    pub fn activity_notice(&self) -> Option<String> {
+        let reading = self.0;
+        let activity = reading.activity.as_ref().filter(|_| {
+            reading.primary.is_none() && matches!(reading.state, UsageState::Ok | UsageState::Stale)
+        })?;
+        let mut text = format!(
+            "{}: {}. No plan limit is known, so there is no percentage.",
+            activity.label,
+            activity_summary(activity)
+        );
+        if let Some(hint) = self.stale_hint() {
+            text.push(' ');
+            text.push_str(&hint);
+        }
+        Some(text)
     }
 
     /// Why a last-known reading was not replaced: the latest refresh failed for this reason.
@@ -144,6 +165,9 @@ impl Presentation<'_> {
                 format!("Access to the {provider} login was declined.")
             }
             UsageUnavailableReason::SourceFailed => format!("{provider} could not provide usage."),
+            UsageUnavailableReason::PlanExpired => {
+                format!("{provider}'s plan has expired or is not active.")
+            }
         })
     }
 
@@ -168,7 +192,49 @@ pub fn source_name(source: &UsageSource) -> &'static str {
         UsageSource::CursorAppLogin => "Cursor app login",
         UsageSource::CursorBrowserCookies => "cursor.com browser session",
         UsageSource::CursorCurrentPeriod => "Cursor current period",
+        UsageSource::OpencodeGoAllowance => "OpenCode Go allowance",
+        UsageSource::OpencodeZaiPlan => "GLM Coding Plan quota",
+        UsageSource::OpencodeLocalHistory => "OpenCode history on this device",
     }
+}
+
+/// Tokens as an exact count under 1,000, then one decimal with K, M or B (a trailing ".0"
+/// dropped; a value that rounds to 1,000 moves up a unit).
+fn tokens_text(count: i64) -> String {
+    if count < 1_000 {
+        return count.max(0).to_string();
+    }
+    let mut text = String::new();
+    for (scale, suffix) in [(1e3, "K"), (1e6, "M"), (1e9, "B")] {
+        let value = (count as f64 / scale * 10.0).round() / 10.0;
+        text = if value == value.round() {
+            format!("{}{suffix}", value as i64)
+        } else {
+            format!("{value:.1}{suffix}")
+        };
+        if value < 1_000.0 {
+            break;
+        }
+    }
+    text
+}
+
+/// What a provider with no plan limit recorded: "1.2M tokens · $3.40". It is a count, so
+/// it has no percentage and no band (contract 10 section 4).
+pub fn activity_summary(activity: &UsageActivity) -> String {
+    let mut text = format!(
+        "{} {}",
+        tokens_text(activity.tokens),
+        if activity.tokens == 1 {
+            "token"
+        } else {
+            "tokens"
+        }
+    );
+    if let Some(cost) = activity.cost_usd {
+        text += &format!(" \u{b7} ${cost:.2}");
+    }
+    text
 }
 
 /// A span of time as the usage detail says it: "10m", "1h 30m", "1d 1h". Under a minute is a
@@ -292,6 +358,33 @@ mod tests {
         for pair in vectors["sources"].as_array().unwrap() {
             let source: UsageSource = serde_json::from_value(pair[0].clone()).unwrap();
             assert_eq!(source_name(&source), pair[1]);
+        }
+    }
+
+    #[test]
+    fn activities_follow_the_shared_vectors() {
+        let vectors = vectors();
+        for case in vectors["activities"]["cases"].as_array().unwrap() {
+            let activity: UsageActivity = serde_json::from_value(case["activity"].clone()).unwrap();
+            let name = &case["name"];
+            assert_eq!(activity_summary(&activity), case["summary"], "{name}");
+            assert_eq!(
+                format!("{}: {}", activity.label, activity_summary(&activity)),
+                case["line"],
+                "{name}"
+            );
+        }
+        for case in vectors["activities"]["notices"]["cases"]
+            .as_array()
+            .unwrap()
+        {
+            let reading: UsageReading = serde_json::from_value(case["reading"].clone()).unwrap();
+            assert_eq!(
+                Presentation(&reading).activity_notice().as_deref(),
+                case["notice"].as_str(),
+                "{}",
+                case["name"]
+            );
         }
     }
 

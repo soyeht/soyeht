@@ -60,7 +60,7 @@ fn parse_windows(document: &Value) -> Result<ParsedReading, Failure> {
     } else {
         window(object.get("seven_day"), WEEKLY_LABEL)?
     };
-    Ok(ParsedReading { primary, secondary })
+    Ok(ParsedReading::windows(primary, secondary))
 }
 
 fn window(value: Option<&Value>, label: &str) -> Result<Option<crate::Window>, Failure> {
@@ -91,9 +91,12 @@ mod tests {
             "seven_day_opus": null
         }))
         .unwrap();
-        assert_eq!(reading.primary.used, 0.125);
-        assert_eq!(reading.primary.label, SESSION_LABEL);
-        assert_eq!(reading.primary.resets_at, "2026-10-03T18:00:00Z");
+        assert_eq!(reading.primary.clone().unwrap().used, 0.125);
+        assert_eq!(reading.primary.clone().unwrap().label, SESSION_LABEL);
+        assert_eq!(
+            reading.primary.clone().unwrap().resets_at,
+            "2026-10-03T18:00:00Z"
+        );
         assert_eq!(reading.secondary.unwrap().used, 0.4);
     }
 
@@ -104,8 +107,8 @@ mod tests {
             "seven_day": {"utilization": 70, "resets_at": null}
         }))
         .unwrap();
-        assert_eq!(reading.primary.label, WEEKLY_LABEL);
-        assert_eq!(reading.primary.resets_at, "");
+        assert_eq!(reading.primary.clone().unwrap().label, WEEKLY_LABEL);
+        assert_eq!(reading.primary.clone().unwrap().resets_at, "");
         assert!(reading.secondary.is_none());
     }
 

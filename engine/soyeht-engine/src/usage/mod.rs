@@ -30,11 +30,11 @@ use serde_json::{Value, json};
 use service::{Committed, ManualRefusal, RefreshBatch};
 use soyeht_platform::log::{self, Failure as _};
 use soyeht_protocol::{
-    UsageListResult, UsageReading, UsageRefreshParams, UsageRefreshResult, UsageWindow, event,
-    method,
+    UsageActivity, UsageListResult, UsageReading, UsageRefreshParams, UsageRefreshResult,
+    UsageWindow, event, method,
 };
 use soyeht_store::usage::StoredUsageReading;
-use soyeht_usage::{Reading, Window, host::Host};
+use soyeht_usage::{Activity, Reading, Window, host::Host};
 use std::{sync::Arc, time::Duration};
 
 /// How often the background schedule looks for due providers.
@@ -322,6 +322,7 @@ fn restored_reading(stored: StoredUsageReading) -> Reading {
         unavailable_reason: stored.reading.unavailable_reason,
         primary: stored.reading.primary.map(domain_window),
         secondary: stored.reading.secondary.map(domain_window),
+        activity: stored.reading.activity.map(domain_activity),
         source: stored.reading.source,
         fetched_at: stored.reading.fetched_at,
         observed_at_sec: nonnegative_time(stored.observed_at_unix_sec),
@@ -336,6 +337,22 @@ fn domain_window(window: UsageWindow) -> Window {
     }
 }
 
+fn domain_activity(activity: UsageActivity) -> Activity {
+    Activity {
+        label: activity.label,
+        tokens: u64::try_from(activity.tokens).unwrap_or(0),
+        cost_usd: activity.cost_usd,
+    }
+}
+
+fn wire_activity(activity: &Activity) -> UsageActivity {
+    UsageActivity {
+        label: activity.label.clone(),
+        tokens: i64::try_from(activity.tokens).unwrap_or(i64::MAX),
+        cost_usd: activity.cost_usd,
+    }
+}
+
 fn wire_reading(reading: &Reading) -> UsageReading {
     UsageReading {
         provider: reading.provider.clone(),
@@ -343,6 +360,7 @@ fn wire_reading(reading: &Reading) -> UsageReading {
         unavailable_reason: reading.unavailable_reason.clone(),
         primary: reading.primary.as_ref().map(wire_window),
         secondary: reading.secondary.as_ref().map(wire_window),
+        activity: reading.activity.as_ref().map(wire_activity),
         source: reading.source.clone(),
         fetched_at: reading.fetched_at.clone(),
     }

@@ -180,6 +180,7 @@ impl UsageProvider {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
             Self::Cursor => "Cursor",
+            Self::Opencode => "OpenCode",
         }
     }
 }

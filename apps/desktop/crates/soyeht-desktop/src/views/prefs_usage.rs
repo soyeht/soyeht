@@ -149,7 +149,12 @@ fn balloon(reading: &UsageReading, palette: &Palette) -> Div {
             .text_color(rgb(palette.secondary))
             .child(SharedString::from(text))
     };
+    let activity = shown.activity_notice();
     let body: Vec<AnyElement> = match reading.state {
+        // What the device recorded, with no window: a line, never a percentage.
+        UsageState::Ok | UsageState::Stale if activity.is_some() => {
+            vec![message(activity.clone().unwrap_or_default()).into_any_element()]
+        }
         UsageState::LoginNeeded => {
             vec![message("Sign in in your terminal.".to_owned()).into_any_element()]
         }
@@ -182,10 +187,11 @@ fn balloon(reading: &UsageReading, palette: &Palette) -> Div {
             ],
         },
     };
-    let reset = shown.window().map_or_else(
-        || usage::reset_text(None, timestamp::now()),
-        |window| usage::reset_text(Some(&window.resets_at), timestamp::now()),
-    );
+    let reset = match (&activity, shown.window()) {
+        (Some(_), _) => "No plan limit".to_owned(),
+        (None, Some(window)) => usage::reset_text(Some(&window.resets_at), timestamp::now()),
+        (None, None) => usage::reset_text(None, timestamp::now()),
+    };
     neo::raised(palette, desktop::USAGE_BALLOON_RADIUS, elevation::BALLOON)
         .w(px(desktop::USAGE_DETAIL_WIDTH))
         .flex_none()

@@ -79,10 +79,17 @@ fn parse_usage(args: &[&str], key: &str) -> Result<Request> {
     match args {
         ["list"] => Ok(Request::UsageList(json!({}))),
         ["refresh"] => Ok(Request::UsageRefresh(json!({"idempotencyKey":key}))),
-        ["refresh", provider] if matches!(*provider, "claude" | "codex" | "cursor") => Ok(
-            Request::UsageRefresh(json!({"provider":provider,"idempotencyKey":key})),
-        ),
-        ["refresh", _] => Err(invalid("Provider must be claude, codex or cursor")),
+        ["refresh", provider]
+            if serde_json::from_value::<soyeht_protocol::UsageProvider>(json!(provider))
+                .is_ok() =>
+        {
+            Ok(Request::UsageRefresh(
+                json!({"provider":provider,"idempotencyKey":key}),
+            ))
+        }
+        ["refresh", _] => Err(invalid(
+            "Provider must be claude, codex, cursor or opencode",
+        )),
         _ => Err(invalid(crate::commands::USAGE)),
     }
 }
@@ -265,5 +272,10 @@ mod tests {
             value(parse_usage(&["refresh", "cursor"], "k").unwrap())["provider"],
             "cursor"
         );
+        assert_eq!(
+            value(parse_usage(&["refresh", "opencode"], "k").unwrap())["provider"],
+            "opencode"
+        );
+        assert!(parse_usage(&["refresh", "gemini"], "k").is_err());
     }
 }

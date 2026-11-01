@@ -70,16 +70,10 @@ pub(crate) fn parse(text: &str, now_sec: u64) -> ScreenOutcome {
     let weekly = labelled_window(&lines, "currentweek(allmodels)", WEEKLY_LABEL, now_sec);
     // CodexBar requires the session; an account without one shows the week alone.
     let reading = match (session, weekly) {
-        (Some(primary), secondary) => primary.and_then(|primary| {
-            Ok(ParsedReading {
-                primary,
-                secondary: secondary.transpose()?,
-            })
-        }),
-        (None, Some(primary)) => primary.map(|primary| ParsedReading {
-            primary,
-            secondary: None,
-        }),
+        (Some(primary), secondary) => {
+            primary.and_then(|primary| Ok(ParsedReading::windows(primary, secondary.transpose()?)))
+        }
+        (None, Some(primary)) => primary.map(|primary| ParsedReading::windows(primary, None)),
         (None, None) => Err(Failure::InvalidResponse),
     };
     match reading {
@@ -303,9 +297,9 @@ mod tests {
         let ScreenOutcome::Reading(reading) = parse(PANEL, 1_790_000_000) else {
             panic!("panel did not parse");
         };
-        assert_eq!(reading.primary.used, 0.15);
-        assert_eq!(reading.primary.label, SESSION_LABEL);
-        assert!(!reading.primary.resets_at.is_empty());
+        assert_eq!(reading.primary.clone().unwrap().used, 0.15);
+        assert_eq!(reading.primary.clone().unwrap().label, SESSION_LABEL);
+        assert!(!reading.primary.clone().unwrap().resets_at.is_empty());
         let weekly = reading.secondary.unwrap();
         assert_eq!(weekly.used, 0.29);
         assert_eq!(weekly.label, WEEKLY_LABEL);

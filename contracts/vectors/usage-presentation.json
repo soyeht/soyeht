@@ -1,5 +1,5 @@
 {
-  "description": "Usage presentation shared by the Mac (UsagePresentation, UsageTimeText) and the desktop client (soyeht_client::usage). Both pass every case.",
+  "description": "Usage presentation shared by the Mac (UsagePresentation, UsageActivityText, UsageTimeText) and the desktop client (soyeht_client::usage). Both pass every case.",
   "readings": [
     {
       "name": "claude follows the weekly window",
@@ -325,6 +325,159 @@
       "emphasis": "current",
       "unavailableMessage": "Usage is unavailable.",
       "staleHint": null
+    },
+    {
+      "name": "opencode follows its weekly window",
+      "reading": {
+        "provider": "opencode",
+        "state": "ok",
+        "source": "opencode_go_allowance",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.42,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "5-hour"
+        },
+        "secondary": {
+          "used": 0.18,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        }
+      },
+      "window": "Weekly",
+      "percentage": "18%",
+      "band": "success",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "opencode with the plan's only window",
+      "reading": {
+        "provider": "opencode",
+        "state": "ok",
+        "source": "opencode_zai_plan",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.9,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "5-hour"
+        }
+      },
+      "window": "5-hour",
+      "percentage": "90%",
+      "band": "danger",
+      "emphasis": "current",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "opencode plan expired",
+      "reading": {
+        "provider": "opencode",
+        "state": "unavailable",
+        "source": "opencode_zai_plan",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "plan_expired"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "OpenCode's plan has expired or is not active.",
+      "staleHint": null
+    },
+    {
+      "name": "opencode plan expired after a good reading is last known",
+      "reading": {
+        "provider": "opencode",
+        "state": "stale",
+        "source": "opencode_zai_plan",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "primary": {
+          "used": 0.3,
+          "resetsAt": "2026-10-12T00:00:00Z",
+          "label": "Weekly"
+        },
+        "unavailableReason": "plan_expired"
+      },
+      "window": "Weekly",
+      "percentage": "30%",
+      "band": "success",
+      "emphasis": "lastKnown",
+      "unavailableMessage": "OpenCode's plan has expired or is not active.",
+      "staleHint": "Latest refresh: OpenCode's plan has expired or is not active."
+    },
+    {
+      "name": "opencode not signed in to its plan",
+      "reading": {
+        "provider": "opencode",
+        "state": "login_needed",
+        "source": "opencode_zai_plan",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "login_needed"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Sign in to OpenCode in your terminal.",
+      "staleHint": null
+    },
+    {
+      "name": "opencode is not installed",
+      "reading": {
+        "provider": "opencode",
+        "state": "unavailable",
+        "source": "opencode_local_history",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "unavailableReason": "tool_not_found"
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "OpenCode not found on this Mac.",
+      "staleHint": null
+    },
+    {
+      "name": "activity without a window shows a dash and no band",
+      "reading": {
+        "provider": "opencode",
+        "state": "ok",
+        "source": "opencode_local_history",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 1234567,
+          "costUsd": 3.4
+        }
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
+    },
+    {
+      "name": "a last known activity still shows no percentage",
+      "reading": {
+        "provider": "opencode",
+        "state": "stale",
+        "source": "opencode_local_history",
+        "fetchedAt": "2026-10-11T09:00:00Z",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 12
+        }
+      },
+      "window": null,
+      "percentage": "—",
+      "band": null,
+      "emphasis": "none",
+      "unavailableMessage": "Usage is unavailable.",
+      "staleHint": null
     }
   ],
   "durations": [
@@ -401,6 +554,18 @@
     [
       "cursor_current_period",
       "Cursor current period"
+    ],
+    [
+      "opencode_go_allowance",
+      "OpenCode Go allowance"
+    ],
+    [
+      "opencode_zai_plan",
+      "GLM Coding Plan quota"
+    ],
+    [
+      "opencode_local_history",
+      "OpenCode history on this device"
     ]
   ],
   "resets": {
@@ -453,5 +618,177 @@
         "text": "Reset unavailable"
       }
     ]
+  },
+  "activities": {
+    "description": "What a provider with no plan limit recorded on this device, as the detail says it (contract 10 section 4): tokens as an exact count under 1,000, then one decimal with K, M or B (a trailing .0 dropped; a value that rounds to 1000 moves up a unit), the cost with two decimals and a dollar sign, joined by ' · '; the line is the span, a colon and the summary.",
+    "cases": [
+      {
+        "name": "nothing recorded",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 0
+        },
+        "summary": "0 tokens",
+        "line": "Last 7 days on this device: 0 tokens"
+      },
+      {
+        "name": "one token",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 1
+        },
+        "summary": "1 token",
+        "line": "Last 7 days on this device: 1 token"
+      },
+      {
+        "name": "an exact count under a thousand",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 999
+        },
+        "summary": "999 tokens",
+        "line": "Last 7 days on this device: 999 tokens"
+      },
+      {
+        "name": "a thousand drops the zero decimal",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 1000
+        },
+        "summary": "1K tokens",
+        "line": "Last 7 days on this device: 1K tokens"
+      },
+      {
+        "name": "thousands keep one decimal",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 12345
+        },
+        "summary": "12.3K tokens",
+        "line": "Last 7 days on this device: 12.3K tokens"
+      },
+      {
+        "name": "just under a million stays in thousands",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 999949
+        },
+        "summary": "999.9K tokens",
+        "line": "Last 7 days on this device: 999.9K tokens"
+      },
+      {
+        "name": "a count that rounds to a thousand thousands moves up",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 999951
+        },
+        "summary": "1M tokens",
+        "line": "Last 7 days on this device: 1M tokens"
+      },
+      {
+        "name": "millions with a cost",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 1234567,
+          "costUsd": 3.4
+        },
+        "summary": "1.2M tokens · $3.40",
+        "line": "Last 7 days on this device: 1.2M tokens · $3.40"
+      },
+      {
+        "name": "billions",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 2500000000
+        },
+        "summary": "2.5B tokens",
+        "line": "Last 7 days on this device: 2.5B tokens"
+      },
+      {
+        "name": "a cost of a fraction of a cent",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 5,
+          "costUsd": 0.004
+        },
+        "summary": "5 tokens · $0.00",
+        "line": "Last 7 days on this device: 5 tokens · $0.00"
+      },
+      {
+        "name": "a large cost has no separators",
+        "activity": {
+          "label": "Last 7 days on this device",
+          "tokens": 5,
+          "costUsd": 1234.5
+        },
+        "summary": "5 tokens · $1234.50",
+        "line": "Last 7 days on this device: 5 tokens · $1234.50"
+      }
+    ],
+    "notices": {
+      "description": "The one line a detail shows for a reading that holds an activity and no window, or null when the reading is not one. Both clients write it from the reading: the Mac and iPhone detail model (UsageDetailModel) and the desktop balloon.",
+      "cases": [
+        {
+          "name": "a current activity",
+          "reading": {
+            "fetchedAt": "2026-10-11T09:00:00Z",
+            "source": "opencode_local_history",
+            "provider": "opencode",
+            "state": "ok",
+            "activity": {
+              "label": "Last 7 days on this device",
+              "tokens": 1234567,
+              "costUsd": 3.4
+            }
+          },
+          "notice": "Last 7 days on this device: 1.2M tokens · $3.40. No plan limit is known, so there is no percentage."
+        },
+        {
+          "name": "a last known activity says why it was not replaced",
+          "reading": {
+            "fetchedAt": "2026-10-11T09:00:00Z",
+            "source": "opencode_local_history",
+            "provider": "opencode",
+            "state": "stale",
+            "unavailableReason": "source_failed",
+            "activity": {
+              "label": "Last 7 days on this device",
+              "tokens": 12
+            }
+          },
+          "notice": "Last 7 days on this device: 12 tokens. No plan limit is known, so there is no percentage. Latest refresh: OpenCode could not provide usage."
+        },
+        {
+          "name": "a reading with a window is not an activity",
+          "reading": {
+            "fetchedAt": "2026-10-11T09:00:00Z",
+            "source": "opencode_local_history",
+            "provider": "opencode",
+            "state": "ok",
+            "primary": {
+              "used": 0.2,
+              "resetsAt": "2026-10-12T00:00:00Z",
+              "label": "Weekly"
+            },
+            "activity": {
+              "label": "Last 7 days on this device",
+              "tokens": 5
+            }
+          },
+          "notice": null
+        },
+        {
+          "name": "a reading that failed shows no activity",
+          "reading": {
+            "fetchedAt": "2026-10-11T09:00:00Z",
+            "source": "opencode_local_history",
+            "provider": "opencode",
+            "state": "unavailable",
+            "unavailableReason": "no_data"
+          },
+          "notice": null
+        }
+      ]
+    }
   }
 }

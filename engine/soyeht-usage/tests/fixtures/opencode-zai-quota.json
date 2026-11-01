@@ -1,0 +1,13 @@
+{
+  "code": 200,
+  "msg": "OK",
+  "success": true,
+  "data": {
+    "planName": "Pro",
+    "limits": [
+      {"type": "TIME_LIMIT", "unit": 5, "number": 1, "usage": 1000, "currentValue": 12, "remaining": 988, "percentage": 1, "nextResetTime": 1792592000000, "usageDetails": []},
+      {"type": "TOKENS_LIMIT", "unit": 6, "number": 1, "percentage": 18, "nextResetTime": 1790259200000},
+      {"type": "TOKENS_LIMIT", "unit": 3, "number": 5, "percentage": 37, "nextResetTime": 1790007200000}
+    ]
+  }
+}
