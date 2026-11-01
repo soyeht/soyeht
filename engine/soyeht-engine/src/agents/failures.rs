@@ -20,6 +20,28 @@ use soyeht_protocol::{
 const CANCEL_RESEND_MS: i64 = 1000;
 
 impl Core {
+    /// Settles the result of a step of an agent's poll. A process the supervisor no longer has
+    /// is recovered; a failure of the pane alone stops the pane and spares the panes after it; a
+    /// failure every pane shares (storage, the supervisor) is returned and stops the cycle.
+    pub(crate) fn settle_agent_poll(&mut self, id: &str, polled: Result<()>) -> Result<()> {
+        let Err(error) = polled else {
+            return Ok(());
+        };
+        if errors::missing_supervisor_instance(&error) {
+            // A respawn that fails leaves the pane without a process: it is retried or
+            // stopped, not returned.
+            let recovered = self.recover_missing_agent(id);
+            self.spawn_begun(id, recovered);
+            Ok(())
+        } else if errors::agent_poll_failure_is_global(&error) {
+            Err(error)
+        } else {
+            // Failure publication and process retirement are durable; an error there still
+            // stops the cycle.
+            self.fail_agent(id, &error.to_string())
+        }
+    }
+
     pub fn close_agent_processes(&mut self, pane: &str) -> Result<()> {
         let saved = &self.panes[pane].stored;
         let current = self.ptyd.as_ref().map(|p| p.supervisor_id());

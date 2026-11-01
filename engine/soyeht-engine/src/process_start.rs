@@ -207,7 +207,13 @@ impl Core {
         let result = match started {
             Started::Process(instance) if wanted && same => self.adopt(id, &instance),
             Started::Process(instance) => {
-                self.close_process(&instance.instance_id);
+                // Unless the reconciliation of a new link already adopted this very process.
+                let adopted = self.panes.get(id).is_some_and(|pane| {
+                    pane.stored.instance_id.as_deref() == Some(instance.instance_id.as_str())
+                });
+                if !adopted {
+                    self.close_process(&instance.instance_id);
+                }
                 return self.start_again(id, wanted);
             }
             Started::Failed(error) if wanted && same => Err(error),
