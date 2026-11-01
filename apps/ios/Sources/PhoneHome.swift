@@ -29,6 +29,7 @@ struct PhoneHome: View {
         // The dictation shortcut found one engine installed: open the install step.
         if prompt != nil { showingSettings = true }
       }
+      .onChange(of: scanning || showingSettings) { _, up in model.sheetPresented = up }
       .sheet(isPresented: $showingSettings) {
         if let client = model.client {
           PhoneSettings(client: client)
