@@ -12,7 +12,7 @@ pub mod store;
 #[cfg(test)]
 mod tests;
 
-pub use capture::{Settings, install};
+pub use capture::{Settings, caught, install};
 pub use report::{
     LINE_CHARS, MAGIC, MAX_FRAMES, MAX_LOG_LINES, MAX_REPORT_BYTES, Program, Report, unix_seconds,
     utc,

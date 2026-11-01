@@ -3,8 +3,10 @@
 //! The hook runs inside a panic. A panic raised inside a panic hook aborts the process before any
 //! code of ours can see it, so nothing here can be guarded against it: the hook only does what
 //! cannot panic (no indexing, no arithmetic that can overflow, no `unwrap`) and returns every I/O
-//! failure as a value. It takes no lock the panicking thread may already hold (the log file's
-//! lock is only tried), so it can never keep a thread from unwinding.
+//! failure as a value. Its own log line only tries the log file's lock. The library calls it
+//! makes (publishing the file) may write an ordinary log line, which waits for that lock; the lock
+//! is held only while a line is written to the file, by code that does not panic, so a thread
+//! cannot be inside it when it panics.
 
 use super::{
     frames,
@@ -13,7 +15,8 @@ use super::{
 };
 use crate::{diagnostics::Redactor, log, process::detached::logs_directory};
 use std::{
-    panic::{self, PanicHookInfo},
+    cell::Cell,
+    panic::{self, AssertUnwindSafe, PanicHookInfo, catch_unwind},
     path::PathBuf,
     sync::{
         OnceLock,
@@ -22,8 +25,8 @@ use std::{
 };
 
 /// A program writes at most this many reports of panics that do not end it (a task, a worker
-/// thread), so a panic in a loop cannot push the older reports out. A panic that ends the program
-/// is always written: there is at most one.
+/// thread, a panic it caught), so a panic in a loop cannot push the older reports out. A panic that
+/// ends the program is always written: there is at most one.
 const MAX_NON_FATAL: usize = 3;
 /// The name of the thread a program ends with when it panics.
 const MAIN_THREAD: &str = "main";
@@ -47,6 +50,28 @@ struct State {
 }
 
 static STATE: OnceLock<State> = OnceLock::new();
+
+thread_local! {
+    /// How many [`caught`] calls this thread is inside.
+    static CAUGHT: Cell<usize> = const { Cell::new(0) };
+}
+
+/// Runs `work`, and gives a panic in it back as an `Err` instead of letting it go on. For code that
+/// catches panics on purpose and goes on (a parser fed by a program in a pane, work an engine
+/// task does): the hook reports such a panic as one that did not end the program, even on the
+/// thread named `main`, and counts it against the cap of three. A panic caught any other way
+/// on the main thread is taken for the end of the program.
+pub fn caught<R>(work: impl FnOnce() -> R) -> std::thread::Result<R> {
+    CAUGHT.with(|inside| inside.set(inside.get().saturating_add(1)));
+    let result = catch_unwind(AssertUnwindSafe(work));
+    CAUGHT.with(|inside| inside.set(inside.get().saturating_sub(1)));
+    result
+}
+
+fn inside_caught() -> bool {
+    // A thread that is being torn down has no cell; it is not inside a caught call.
+    CAUGHT.try_with(|inside| inside.get() > 0).unwrap_or(false)
+}
 
 /// Writes a report to `crashes/` of the data directory each time a thread of this program
 /// panics, then runs the hook that was there. The program keeps its behaviour: a panic unwinds,
@@ -74,7 +99,7 @@ impl State {
     fn on_panic(&self, info: &PanicHookInfo<'_>) {
         let thread = std::thread::current();
         let name = thread.name().unwrap_or("unnamed");
-        let fatal = name == MAIN_THREAD;
+        let fatal = name == MAIN_THREAD && !inside_caught();
         if fatal || self.non_fatal.fetch_add(1, Ordering::Relaxed) < MAX_NON_FATAL {
             self.write(&self.report(info, name, fatal));
         }

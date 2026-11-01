@@ -44,6 +44,10 @@ export const clientPolicy = {
   "usageWindow": {
     "weeklyKeyword": "week"
   },
+  "crashReports": {
+    "folder": "crashes",
+    "incomingPrefix": "incoming-"
+  },
   "editor": {
     "prefetchLines": 160,
     "pageLeadDivisor": 4,

@@ -26,15 +26,19 @@ supervisor at login starts them again (ADR 0114). `panic = "unwind"` stays (`Car
 
 The hook runs inside a panic, where a second panic aborts the process before anything can catch it.
 So it does only what cannot panic (no indexing, no arithmetic that can overflow, no `unwrap`; an I/O
-failure is a value), and it takes no lock the panicking thread might hold: the log file's lock is
-only tried, so the hook's own log line is written to standard error and, when the lock is free, to the
-file.
+failure is a value). Its own log line only tries the log file's lock: it goes to standard error and,
+when the lock is free, to the file. The library call that publishes the file may write an ordinary
+log line, which waits for that lock; the lock is held only while a line is written, by code that does
+not panic, so a thread is never inside it when it panics.
 
-`fatal` says whether the program ended: the panic was on the thread named `main`, or the system
-said the app crashed. A panic that only ends a task or a worker thread is written (`fatal: no`)
-and appears in the diagnostics, but it is not "closed unexpectedly" and does not raise the notice.
-A program writes at most 3 reports of such panics; a panic that ends the program is always written
-(there is at most one), so a loop of task panics cannot hide it.
+`fatal` says whether the program ended: the panic was not caught, on the thread named `main`, or the
+system said the app crashed. A panic that only ends a task or a worker thread, and a panic that
+code catches on purpose and goes on from, are written (`fatal: no`) and appear in the diagnostics, but
+they are not "closed unexpectedly" and do not raise the notice. Code that catches panics runs inside
+`soyeht_platform::crash::caught`, which tells the hook so even on the main thread (the Windows and
+Linux window's terminal parser, which the GPUI main thread drives, and the engine's background work).
+A program writes at most 3 reports of such panics; an uncaught panic on the main thread is always
+written, and since it ends the program there is one, so a loop of caught panics cannot hide it.
 
 Not covered, because a panic hook never runs for them: a stack overflow, an out-of-memory abort,
 `SIGKILL`, a fatal signal in native code, a power loss. The Mac app gets the signals from the
@@ -98,7 +102,7 @@ All limits are constants of `soyeht_platform::crash`; they bound a report whoeve
 | Limit | Value |
 |---|---|
 | reports kept | 8; the oldest is removed when a new one is written |
-| reports one program writes | 3 per process for panics that do not end it; the one that does is always written |
+| reports one program writes | 3 per process for panics that do not end it (tasks, workers, caught); the one that does is always written |
 | report size | 16 KiB; log lines are dropped first, then frames |
 | frames, log lines | 48, 20 |
 | a line | 240 characters; a header value 160 |

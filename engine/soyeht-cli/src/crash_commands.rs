@@ -15,6 +15,7 @@ use crate::args::invalid;
 use serde_json::{Value, json};
 use soyeht_cli::Result;
 use soyeht_platform::crash::{self, store};
+use soyeht_protocol::client_policy::CRASH_REPORTS_INCOMING_PREFIX;
 use std::{
     fs,
     io::Read as _,
@@ -23,8 +24,6 @@ use std::{
 
 /// The most of a system crash diagnostic that is read; a real one is a few kilobytes.
 const IMPORT_MAX_BYTES: u64 = 1024 * 1024;
-/// What the name of a file the app drops for `import` starts with.
-const INCOMING: &str = "incoming-";
 
 pub fn execute(directory: PathBuf, args: &[String]) -> Result<Value> {
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -62,7 +61,7 @@ fn dropped_file(directory: &Path, file: &Path) -> Result<PathBuf> {
     let named = found
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with(INCOMING));
+        .is_some_and(|name| name.starts_with(CRASH_REPORTS_INCOMING_PREFIX));
     if found.parent() != Some(folder.as_path()) || !named || !fs::symlink_metadata(file)?.is_file()
     {
         return Err(invalid(
