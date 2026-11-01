@@ -740,7 +740,7 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
 
 #[test]
 fn a_cancel_the_agent_dropped_is_sent_again_until_the_turn_ends() {
-    let mut rig = Rig::new();
+    let rig = Rig::new();
     let (mut client, pane) = rig.agent();
     let marker = rig.path.join("native/drop-first-cancel");
     fs::write(&marker, b"drop").unwrap();

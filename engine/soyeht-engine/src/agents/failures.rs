@@ -11,6 +11,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::json;
+use soyeht_platform::log;
 use soyeht_protocol::{
     AttentionItem, PaneState, StateSource, TranscriptKind, TranscriptRole, TurnStopReason, limits,
 };
@@ -126,16 +127,14 @@ impl Core {
             // An agent that was still starting the turn when the cancel reached it drops the
             // cancel and runs the turn to its end. The notification is idempotent, so it is sent
             // again until the turn answers or the deadline above passes.
+            if state.cancel_sent_ms == Some(at) {
+                // Once a turn, so the log shows an adapter that dropped a cancel and not each resend.
+                log::event("engine.agent_cancel_resent", &[("paneId", pane)]);
+            }
             state.cancel_sent_ms = Some(now);
             let mut changes = Changes::default();
             changes.outgoing.push(soyeht_acp::client::cancel(&session));
-            self.commit_agent(
-                self.panes[pane].stored.clone(),
-                state.clone(),
-                changes,
-                None,
-                json!({}),
-            )?;
+            self.commit_agent_state(pane, &state, changes)?;
         }
         if let Some(operation) = state.operation.clone()
             && !state.operation_timed_out
@@ -159,16 +158,22 @@ impl Core {
                     result: Err(errors::wire(errors::harness_unavailable(reason))),
                 });
             }
-            self.commit_agent(
-                self.panes[pane].stored.clone(),
-                state.clone(),
-                changes,
-                None,
-                json!({}),
-            )?;
+            self.commit_agent_state(pane, &state, changes)?;
         }
         self.warn_if_progress_is_unconfirmed(pane, state, now)?;
         Ok(true)
+    }
+
+    /// Stores `state` and `changes` for the pane as it is, with no user request behind them.
+    fn commit_agent_state(&mut self, pane: &str, state: &State, changes: Changes) -> Result<()> {
+        self.commit_agent(
+            self.panes[pane].stored.clone(),
+            state.clone(),
+            changes,
+            None,
+            json!({}),
+        )?;
+        Ok(())
     }
 
     fn warn_if_progress_is_unconfirmed(
