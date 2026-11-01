@@ -236,8 +236,8 @@ start the engine again. A window reads it when it begins and the window's start 
 4, step 2) does nothing when it is new or changed since, saying that Soyeht was uninstalled; a file
 that was already there is the baseline, so a window opened after an uninstall starts afresh. The
 start does nothing either when the engine's lock file it had an engine with is gone (`--delete-data`),
-unless the folder cannot be looked into. A window's successful start of an engine and `service
-install` remove the file.
+unless the folder cannot be looked into. Only `service
+install` removes the file; a window never does.
 
 **Data stays by default.** The programs, the data directory, the database and the logs are left
 alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,

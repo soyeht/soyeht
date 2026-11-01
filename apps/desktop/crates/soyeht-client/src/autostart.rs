@@ -385,13 +385,6 @@ fn record(directory: &Path) -> Option<String> {
     }
 }
 
-/// An engine answers: whatever an uninstall left before is over.
-pub(crate) fn engine_started(directory: &Path) {
-    if let Err(error) = fs::clear_uninstalled(directory) {
-        log::failure("desktop.uninstall_record_not_cleared", &error);
-    }
-}
-
 impl Host for Local<'_> {
     fn engine_reachable(&self) -> bool {
         crate::transport::connect(self.socket).is_ok()

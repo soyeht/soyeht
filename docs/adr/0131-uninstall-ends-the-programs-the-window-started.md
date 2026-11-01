@@ -61,9 +61,9 @@ with it. A window reads it when it begins (`autostart::Watch`) and takes an unin
 happened while it was open only if the file is new or its value changed since: a file that was
 already there (an old uninstall, a restored backup, a clock that went back) is the baseline, and
 the window starts afresh. `autostart::ensure` then starts nothing and says so in the window ("Soyeht
-was uninstalled, so this window does not start the engine again"). A window's successful start of
-an engine removes the file, as does `service install`, so a stale file does not outlive its
-meaning. `--delete-data` removes the file with the data, so a window that has had an engine also
+was uninstalled, so this window does not start the engine again"). Only `service install`
+removes the file; a window never does, since an uninstall that wrote it a moment before could
+be erased and a second open window would then start the engine. `--delete-data` removes the file with the data, so a window that has had an engine also
 takes the engine's lock file being gone (and known to be gone: an unreadable folder is not) as an
 uninstall; the folder itself can stay, with another profile's folder inside it, and a first run has
 no lock file yet. Whether the window has had an engine is noted when a connection was made

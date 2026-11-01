@@ -235,8 +235,11 @@ fn a_record_that_was_there_before_the_window_is_not_an_uninstall() {
     fs::mark_uninstalled(&directory).unwrap();
     let watch = watching(&directory);
     assert!(!watch.uninstalled());
-    engine_started(&directory);
-    assert_eq!(fs::uninstall_record(&directory).unwrap(), None);
+    // Nothing takes the record away: it is the baseline, and an uninstall that writes it again
+    // is a change.
+    assert!(fs::uninstall_record(&directory).unwrap().is_some());
+    fs::mark_uninstalled(&directory).unwrap();
+    assert!(watch.uninstalled());
     std::fs::remove_dir_all(&directory).unwrap();
 }
 

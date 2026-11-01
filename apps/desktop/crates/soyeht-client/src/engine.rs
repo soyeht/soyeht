@@ -256,8 +256,6 @@ fn start_engine(
     };
     match autostart::ensure(plan, &host) {
         Ok(()) => {
-            // An engine runs: an uninstall that was left behind has no meaning now.
-            autostart::engine_started(&plan.directory);
             soyeht_platform::log::event("desktop.engine_ready", &[]);
             Started::Up
         }
