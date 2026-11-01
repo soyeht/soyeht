@@ -10,7 +10,8 @@
     "maxAddressBytes": 2048,
     "sha256HexLength": 64,
     "versionPartLimit": 1000,
-    "maxSequence": 9007199254740991
+    "maxSequence": 9007199254740991,
+    "maxLifetimeSeconds": 7776000
   },
   "signature": {
     "algorithm": "ed25519",
@@ -100,6 +101,10 @@
     {
       "id": "staleManifest",
       "meaning": "The manifest is older than one this device has already seen."
+    },
+    {
+      "id": "expired",
+      "meaning": "The manifest's expiry has passed, so it may be an old one that someone keeps serving."
     },
     {
       "id": "unknownBuild",
