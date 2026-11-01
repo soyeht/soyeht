@@ -112,9 +112,14 @@
       }
     }
 
+    /// The folder of the profile's crash reports, where the program reads what the app drops.
+    static func folder(in dataDirectory: URL) -> URL {
+      dataDirectory.appending(path: ClientPolicy.crashReportsFolder, directoryHint: .isDirectory)
+    }
+
     /// Removes the `incoming-*` files in `crashes/`: diagnostics no run is waiting on.
     static func sweepIncoming(in dataDirectory: URL) {
-      let folder = dataDirectory.appending(path: "crashes", directoryHint: .isDirectory)
+      let folder = Self.folder(in: dataDirectory)
       let names: [String]
       do {
         names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
@@ -122,7 +127,7 @@
         // No folder yet holds nothing to sweep.
         return
       }
-      for name in names where name.hasPrefix("incoming-") {
+      for name in names where name.hasPrefix(ClientPolicy.crashReportsIncomingPrefix) {
         discard(folder.appending(path: name))
       }
     }
@@ -130,11 +135,12 @@
     /// Writes a diagnostic where the program reads it (`crashes/` of the data directory,
     /// owner-only); the program deletes it once imported.
     static func drop(_ diagnostic: Data, in dataDirectory: URL) throws -> URL {
-      let folder = dataDirectory.appending(path: "crashes", directoryHint: .isDirectory)
+      let folder = Self.folder(in: dataDirectory)
       try FileManager.default.createDirectory(
         at: folder, withIntermediateDirectories: true,
         attributes: [.posixPermissions: 0o700])
-      let file = folder.appending(path: "incoming-\(UUID().uuidString).json")
+      let file = folder.appending(
+        path: "\(ClientPolicy.crashReportsIncomingPrefix)\(UUID().uuidString).json")
       try diagnostic.write(to: file, options: .atomic)
       try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
       return file
