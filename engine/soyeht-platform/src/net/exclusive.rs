@@ -166,4 +166,20 @@ mod tests {
             assert!(!reuse_takes(listener.local_addr().unwrap()), "{address}");
         }
     }
+
+    #[test]
+    fn a_port_served_and_closed_binds_again_at_once() {
+        use std::io::Read;
+        let first = exclusive_listener("127.0.0.1:0".parse().unwrap()).unwrap();
+        let address = first.local_addr().unwrap();
+        let mut client = std::net::TcpStream::connect(address).unwrap();
+        let (server, _) = first.accept().unwrap();
+        // The server side closes first, so its connection is the one that waits in TIME_WAIT.
+        drop(server);
+        assert_eq!(client.read(&mut [0; 1]).unwrap(), 0);
+        drop(client);
+        drop(first);
+        // A restarted engine binds the same port again; the system must not refuse it.
+        crate::net::listen(address).unwrap();
+    }
 }
