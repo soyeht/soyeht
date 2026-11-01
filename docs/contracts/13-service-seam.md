@@ -230,8 +230,8 @@ be asked, or that holds the lock with no id (one of an older build) makes the co
 both were tried; the services are unregistered by then.
 
 **An open window does not start them again.** The window's start of the engine (section 4, step 2)
-does nothing when `uninstalled` is newer than the window, or when the data directory it had an
-engine in is gone (`--delete-data`); it says that Soyeht was uninstalled. A window opened after the
+does nothing when `uninstalled` is newer than the window, or when the engine's lock file it had an
+engine with is gone (`--delete-data`); it says that Soyeht was uninstalled. A window opened after the
 uninstall starts afresh, and `service install` removes the file.
 
 **Data stays by default.** The programs, the data directory, the database and the logs are left

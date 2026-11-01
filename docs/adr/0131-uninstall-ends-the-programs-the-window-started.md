@@ -58,9 +58,9 @@ with the same message, when they do not.
 `autostart::ensure` starts nothing when that file is newer than the window's own start
 (`fs::uninstalled_since`), saying so in the window ("Soyeht was uninstalled, so this window does not
 start the engine again"). A window opened after the uninstall began later than the file and starts
-afresh. `--delete-data` removes the file with the directory, so a window that has had an engine
-also treats a directory that is gone as an uninstall; a first run, which has no directory yet, does
-not. `service install` takes the file away, since a registration written again is a new start.
+afresh. `--delete-data` removes the file with the data, so a window that has had an engine also
+treats the engine's lock file being gone as an uninstall (the folder itself can stay, with another
+profile's folder inside it); a first run, which has no lock file yet, does not. `service install` takes the file away, since a registration written again is a new start.
 
 `service uninstall`, the low-level command, shares `Manager::uninstall` and so ends them too, and
 leaves the file; its contract line said "stops". `service stop` is unchanged: it stops what is

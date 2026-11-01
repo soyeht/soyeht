@@ -193,9 +193,10 @@ fn an_engine_that_answers_is_left_alone_even_after_an_uninstall_was_seen() {
 }
 
 #[test]
-fn an_uninstall_is_seen_by_the_record_or_by_the_directory_going() {
+fn an_uninstall_is_seen_by_the_record_or_by_the_data_going() {
     let directory = std::env::temp_dir().join(format!("next-autostart-{}", std::process::id()));
     std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join(fs::ENGINE_LOCK), "1").unwrap();
     let began = SystemTime::now() - Duration::from_secs(5);
     // Nothing happened, whether or not an engine ever answered.
     assert!(!uninstall_seen(&directory, began, false));
@@ -209,11 +210,14 @@ fn an_uninstall_is_seen_by_the_record_or_by_the_directory_going() {
         SystemTime::now() + Duration::from_secs(5),
         false
     ));
-    std::fs::remove_dir_all(&directory).unwrap();
-    // The directory gone counts only for a window that had an engine in it: a first run has
-    // no directory yet.
+    // The data deleted takes the engine's lock file with it, and the folder can stay. That counts
+    // only for a window that had an engine there: a first run has no lock file yet.
+    std::fs::remove_file(directory.join(fs::UNINSTALL_MARKER)).unwrap();
+    assert!(!uninstall_seen(&directory, began, true));
+    std::fs::remove_file(directory.join(fs::ENGINE_LOCK)).unwrap();
     assert!(uninstall_seen(&directory, began, true));
     assert!(!uninstall_seen(&directory, began, false));
+    std::fs::remove_dir_all(&directory).unwrap();
 }
 
 /// What each program started was told to restart, when the engine starts after `host` is set up.

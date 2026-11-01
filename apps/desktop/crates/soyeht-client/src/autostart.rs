@@ -326,10 +326,13 @@ pub(crate) struct Local<'a> {
 }
 
 /// Whether an uninstall ended the programs of `directory` while a window that began at `began`
-/// was open: it left its record there since, or it took the whole directory away (`--delete-data`)
-/// after the window had an engine in it. A window that begins after an uninstall is a new start.
+/// was open: it left its record there since, or it deleted the data (`--delete-data`), which takes
+/// the engine's lock file with it, after the window had an engine there. The directory itself can
+/// stay, when another profile's folder is inside it. A window that begins after an uninstall is a
+/// new start, and a first run has no lock file yet.
 fn uninstall_seen(directory: &Path, began: SystemTime, had_engine: bool) -> bool {
-    fs::uninstalled_since(directory, began) || (had_engine && !directory.exists())
+    fs::uninstalled_since(directory, began)
+        || (had_engine && !directory.join(fs::ENGINE_LOCK).exists())
 }
 
 impl Host for Local<'_> {
