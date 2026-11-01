@@ -125,6 +125,11 @@ impl WebSurface {
     }
 
     fn mouse_up(&mut self, event: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+        // A pane dragged over this page is dropped by the card of the pane, which is under this
+        // handler: stopping the event here would leave the drag unanswered.
+        if cx.has_active_drag() {
+            return;
+        }
         self.release(event);
         cx.stop_propagation();
     }
@@ -320,13 +325,15 @@ impl WebSurface {
             }
         };
         // A page is over the window and outside GPUI's clipping, so it is cut here to what the
-        // window shows of the pane, and it waits while a drag is over the panes.
+        // window shows of the pane, and it waits while a drag or a tooltip is over the panes.
         self.page.place(Placement {
             window: handle,
             page: rect(bounds),
             clip: rect(window.content_mask().bounds),
             scale: f64::from(window.scale_factor()),
-            visible: !self.covered && !cx.has_active_drag(),
+            visible: !self.covered
+                && !cx.has_active_drag()
+                && !crate::views::overlay::covers(bounds, cx),
         });
         self.sync_focus(window);
     }
