@@ -137,6 +137,7 @@ pub(crate) fn cancel(
         return Ok(result);
     }
     state.cancel_at_ms = Some(now_ms);
+    state.cancel_sent_ms = Some(now_ms);
     saved.pane.state = PaneState::Cancelling;
     saved.pane.phrase = "Cancelling agent turn".into();
     changes.outgoing.push(client::cancel(errors::invariant(

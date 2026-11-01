@@ -7,6 +7,8 @@ final class PhoneModel {
   var client: EngineClient?
   var pairing: PairingSession?
   var problem: String?
+  /// A tapped pairing link that waits for the person's answer.
+  var incomingPairing: IncomingPairing?
   /// A pane a tapped notification asked to show; cleared once it is on screen.
   var requestedPaneId: String?
   @ObservationIgnored let push = PhonePush()
@@ -23,6 +25,14 @@ final class PhoneModel {
       } catch { problem = error.localizedDescription }
     }
     client?.start()
+  }
+  /// A link another app or a web page opened: the person is asked before it pairs (ADR 0129).
+  /// The camera and the paste field pair at once through `pair`.
+  func receive(link: String) {
+    guard pairTask == nil else { return }
+    do {
+      incomingPairing = try IncomingPairing(link, replacingMac: client != nil)
+    } catch { problem = error.localizedDescription }
   }
   func pair(_ uri: String) {
     guard pairTask == nil else { return }

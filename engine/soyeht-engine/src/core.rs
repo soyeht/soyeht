@@ -423,15 +423,6 @@ impl Core {
         }
     }
 
-    /// Sends `request` to the supervisor and waits for the answer, with the Core lock held.
-    /// Only for what has not moved off the lock yet; `tests/blocking_io_rule.rs` counts the
-    /// callers (ADR 0117).
-    pub fn pty_request(&mut self, request: Request) -> Result<Response> {
-        let supervisor = self.supervisor()?;
-        let result = supervisor.call(request);
-        self.settle_supervisor(&supervisor, result)
-    }
-
     /// Drops the link to the supervisor and records `ptyd.lost`. A lost event that cannot be
     /// recorded must at least reach the log.
     pub(crate) fn lose_supervisor_link(&mut self) {
@@ -723,21 +714,8 @@ impl Core {
                 continue;
             }
             if self.agents.contains_key(&id) {
-                if let Err(error) = self.poll_agent(&id) {
-                    if errors::missing_supervisor_instance(&error) {
-                        // A respawn that fails leaves the pane without a process: it is
-                        // retried or stopped, not returned.
-                        let recovered = self.recover_missing_agent(&id);
-                        self.spawn_begun(&id, recovered);
-                    } else if errors::agent_poll_failure_is_global(&error) {
-                        return Err(error);
-                    } else {
-                        // A pane-owned failure must not starve panes that sort
-                        // after it. Failure publication and process retirement
-                        // are durable; an error there still stops the cycle.
-                        self.fail_agent(&id, &error.to_string())?;
-                    }
-                }
+                let polled = self.poll_agent(&id);
+                self.settle_agent_poll(&id, polled)?;
                 continue;
             }
             self.drain_terminal(&id)?;

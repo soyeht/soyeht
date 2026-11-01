@@ -530,6 +530,13 @@ fn main() -> Result<()> {
         match Message::parse(&line?)? {
             Message::Request { id, method, params } => runtime.request(id, method, params),
             Message::Notification { method, params } if method == "session/cancel" => {
+                // A cancel that reaches an agent before its turn has begun is dropped, as the
+                // real adapters do: the marker makes the first one that.
+                if std::fs::remove_file(runtime.settings.directory.join("drop-first-cancel"))
+                    .is_ok()
+                {
+                    continue;
+                }
                 if let Some(cancelled) = params["sessionId"]
                     .as_str()
                     .and_then(|id| runtime.active.lock().unwrap().get(id).cloned())

@@ -375,7 +375,10 @@ impl Core {
             .ok_or_else(|| errors::internal("Agent offset exhausted"))?;
         let first = self.panes[pane].screen.first_offset();
         if from < first {
-            self.agent_output_gap(pane, first - base)?;
+            // The requests the gap hides are read off the lock; the log is read again next poll.
+            if !self.agent_output_gap(pane, first - base)? {
+                return Ok(());
+            }
             from = first;
         }
         if from == end {
@@ -385,7 +388,9 @@ impl Core {
         for record in records {
             let (mut offset, mut bytes) = match record {
                 Record::Gap { to, .. } => {
-                    self.agent_output_gap(pane, to - base)?;
+                    if !self.agent_output_gap(pane, to - base)? {
+                        return Ok(());
+                    }
                     continue;
                 }
                 Record::Data { offset, bytes } => (offset, bytes),
@@ -393,11 +398,13 @@ impl Core {
             if self.agents[pane].state.discard_until_newline {
                 let newline = bytes.iter().position(|byte| *byte == b'\n');
                 let skipped = newline.map_or(bytes.len(), |at| at + 1);
-                self.skip_interrupted_agent_record(
+                if !self.skip_interrupted_agent_record(
                     pane,
                     offset - base + skipped as u64,
                     newline.is_some(),
-                )?;
+                )? {
+                    return Ok(());
+                }
                 offset += skipped as u64;
                 bytes.drain(..skipped);
                 if bytes.is_empty() {
