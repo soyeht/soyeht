@@ -6,6 +6,7 @@ import Testing
 
 private let code = String(repeating: "a", count: 43)
 private let engine = "00000000-0000-4000-8000-000000000001"
+private let linkKey = String(repeating: "A", count: 43)
 
 @MainActor @Test func reachabilityEventsReachTheClientAndThePairingSheet() throws {
   let client = EngineClient(socket: "/tmp/pairing-reachability.sock")
@@ -37,14 +38,17 @@ private let engine = "00000000-0000-4000-8000-000000000001"
 
 @Test func aLoopbackPairingLinkIsNotReachableFromAnotherDevice() throws {
   let loopback = try PairingLink(
-    "soyeht-next://pair?engineId=\(engine)&address=127.0.0.1:47321&code=\(code)")
+    "soyeht-next://pair?engineId=\(engine)&address=127.0.0.1:47321&code=\(code)&engineKey=\(linkKey)"
+  )
   #expect(loopback.reachability.remote == false)
   #expect(loopback.reachability.problemText?.contains("Tailscale address not found") == true)
   let tailnet = try PairingLink(
-    "soyeht-next://pair?engineId=\(engine)&address=100.64.0.9:47321&code=\(code)")
+    "soyeht-next://pair?engineId=\(engine)&address=100.64.0.9:47321&code=\(code)&engineKey=\(linkKey)"
+  )
   #expect(tailnet.reachability.remote)
   let tailnetV6 = try PairingLink(
-    "soyeht-next://pair?engineId=\(engine)&address=[fd7a:115c:a1e0::9]:47321&code=\(code)")
+    "soyeht-next://pair?engineId=\(engine)&address=[fd7a:115c:a1e0::9]:47321&code=\(code)&engineKey=\(linkKey)"
+  )
   #expect(tailnetV6.reachability.remote)
 }
 

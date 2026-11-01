@@ -48,6 +48,17 @@ public final class PairingSession {
           greeting["params"]["engineId"].string == link.engineId
         else { throw ClientFailure.invalidFrame }
         let result = try await request(.pairBegin, .encoded(begin)).decoded(PairBeginResult.self)
+        // Only the engine whose key the QR named can sign this; anything else is refused before
+        // the device proves the code (ADR 0132).
+        guard let challenge = Data(base64Encoded: result.challenge), challenge.count == 32 else {
+          throw ClientFailure.invalidFrame
+        }
+        try EngineVerification.verify(
+          result.engineProof,
+          signed: Data("soyeht-engine-pair-v1".utf8) + challenge
+            + identity.key.publicKey.rawRepresentation + Data(result.requestId.utf8),
+          engineKey: link.engineKey,
+          missing: "This Mac cannot prove who it is. Update Soyeht on the Mac, then pair again.")
         if prove == nil {
           prove = PairProveParams(
             requestId: result.requestId,
@@ -76,7 +87,7 @@ public final class PairingSession {
         }
         return DeviceCredential(
           engineId: link.engineId, deviceId: device, address: link.address,
-          token: token, key: identity.key.rawRepresentation)
+          token: token, key: identity.key.rawRepresentation, engineKey: link.engineKey)
       } catch let failure as ClientFailure where !failure.canRetry { throw failure } catch {
         wire.close()
         if Task.isCancelled { throw CancellationError() }

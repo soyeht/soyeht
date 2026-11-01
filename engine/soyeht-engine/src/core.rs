@@ -99,6 +99,8 @@ pub struct Core {
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
+    /// Signs what proves this engine to a paired device (ADR 0132); kept with the database.
+    pub(crate) engine_key: ed25519_dalek::SigningKey,
     /// Whether paired devices can reach this engine (tailnet listeners), ADR 0078.
     pub reachability: soyeht_protocol::EngineReachability,
     pub push: crate::push::Notifier,
@@ -161,7 +163,11 @@ impl Core {
         let language_servers = store
             .language_server_checkpoints()
             .map_err(errors::storage)?;
+        let engine_key = store
+            .metadata_or_insert("engine_key", &crate::auth::new_engine_seed()?)
+            .map_err(errors::storage)?;
         let mut core = Self {
+            engine_key: crate::auth::engine_key(&engine_key)?,
             store,
             directory: directory.into(),
             generation,

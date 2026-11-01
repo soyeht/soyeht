@@ -382,13 +382,15 @@ public struct Welcome: Codable, Sendable {
     public var `role`: Role
     public var `capabilities`: [String]
     public var `dbId`: Id
-    public init(`engineVersion`: String, `protocolVersion`: UInt32, `connectionId`: Id, `role`: Role, `capabilities`: [String], `dbId`: Id) {
+    public var `engineProof`: ByteString?
+    public init(`engineVersion`: String, `protocolVersion`: UInt32, `connectionId`: Id, `role`: Role, `capabilities`: [String], `dbId`: Id, `engineProof`: ByteString? = nil) {
         self.`engineVersion` = `engineVersion`
         self.`protocolVersion` = `protocolVersion`
         self.`connectionId` = `connectionId`
         self.`role` = `role`
         self.`capabilities` = `capabilities`
         self.`dbId` = `dbId`
+        self.`engineProof` = `engineProof`
     }
 }
 
@@ -405,14 +407,16 @@ public struct HelloParams: Codable, Sendable {
     public var `protocolVersion`: UInt32
     public var `deviceToken`: String?
     public var `proof`: ByteString?
+    public var `clientNonce`: ByteString?
     public var `binding`: String?
     public var `capabilities`: [ClientCapability]?
-    public init(`client`: String, `clientVersion`: String, `protocolVersion`: UInt32, `deviceToken`: String? = nil, `proof`: ByteString? = nil, `binding`: String? = nil, `capabilities`: [ClientCapability]? = nil) {
+    public init(`client`: String, `clientVersion`: String, `protocolVersion`: UInt32, `deviceToken`: String? = nil, `proof`: ByteString? = nil, `clientNonce`: ByteString? = nil, `binding`: String? = nil, `capabilities`: [ClientCapability]? = nil) {
         self.`client` = `client`
         self.`clientVersion` = `clientVersion`
         self.`protocolVersion` = `protocolVersion`
         self.`deviceToken` = `deviceToken`
         self.`proof` = `proof`
+        self.`clientNonce` = `clientNonce`
         self.`binding` = `binding`
         self.`capabilities` = `capabilities`
     }
@@ -949,9 +953,11 @@ public struct PairBeginParams: Codable, Sendable {
 public struct PairBeginResult: Codable, Sendable {
     public var `requestId`: Id
     public var `challenge`: ByteString
-    public init(`requestId`: Id, `challenge`: ByteString) {
+    public var `engineProof`: ByteString?
+    public init(`requestId`: Id, `challenge`: ByteString, `engineProof`: ByteString? = nil) {
         self.`requestId` = `requestId`
         self.`challenge` = `challenge`
+        self.`engineProof` = `engineProof`
     }
 }
 

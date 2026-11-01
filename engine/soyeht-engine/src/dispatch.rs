@@ -156,6 +156,7 @@ impl Core {
             ));
         }
         let nonce = client.nonce;
+        let mut engine_proof = None;
         let (role, device_id, pane_id, scope) = if let Some(binding) = hello.binding.as_deref() {
             if !local {
                 return Err(errors::unauthorized(
@@ -186,11 +187,32 @@ impl Core {
             let id = record.device_id;
             let key = auth::public_key(&STANDARD.encode(record.public_key))
                 .map_err(|error| errors::unauthorized(error.to_string()))?;
+            // A device that sends no nonce of its own cannot check the engine's answer.
+            let client_nonce = hello
+                .client_nonce
+                .as_deref()
+                .and_then(|text| STANDARD.decode(text).ok())
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+                .ok_or_else(|| {
+                    errors::protocol_version_unsupported(
+                        "This device cannot verify the Mac: update Soyeht on it",
+                    )
+                })?;
             if !hello.proof.as_ref().is_some_and(|proof| {
-                auth::hello_proof(&key, &nonce, &self.store.db_id, token, proof)
+                auth::hello_proof(
+                    &key,
+                    (&nonce, &client_nonce),
+                    &self.store.db_id,
+                    token,
+                    proof,
+                )
             }) {
                 return Err(errors::unauthorized("Invalid connection signature"));
             }
+            engine_proof = Some(auth::sign(
+                &self.engine_key,
+                &auth::engine_hello_bytes(&nonce, &client_nonce, &self.store.db_id, &id),
+            ));
             if self
                 .clients
                 .values()
@@ -230,6 +252,7 @@ impl Core {
             role,
             capabilities: capabilities(),
             db_id: self.store.db_id.clone(),
+            engine_proof,
         })
         .map_err(|_| errors::internal("Welcome response serialization failed"))
     }
