@@ -48,7 +48,7 @@ pub(crate) struct Slot {
 }
 
 impl Admission {
-    fn with_slots(local: usize, remote: usize) -> Self {
+    pub(crate) fn with_slots(local: usize, remote: usize) -> Self {
         Self {
             local: Arc::new(Semaphore::new(local)),
             remote: Arc::new(Semaphore::new(remote)),
@@ -156,5 +156,99 @@ mod tests {
             .filter_map(|n| admission.remote(if n % 2 == 0 { ip(1) } else { mapped }))
             .collect();
         assert_eq!(held.len(), SLOTS_PER_ADDRESS);
+    }
+
+    /// The wiring: the TCP listeners draw on the remote places, the local endpoint on its own.
+    mod wiring {
+        use super::*;
+        use crate::{core::Core, server};
+        use std::{io::Read, time::Duration};
+        use tokio::{net::TcpListener, sync::mpsc};
+
+        const LOOPBACK: IpAddr = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+
+        /// Whether a connection made now is let through: the engine speaks first on both.
+        async fn served_tcp(address: std::net::SocketAddr) -> bool {
+            tokio_tungstenite::connect_async(format!("ws://{address}"))
+                .await
+                .is_ok()
+        }
+
+        /// The place `take` gives once it is free, within five seconds.
+        async fn wait_for(take: impl Fn() -> Option<Slot>) -> Slot {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Some(slot) = take() {
+                        return slot;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap()
+        }
+
+        fn served_local(path: &std::path::Path) -> bool {
+            let mut stream = soyeht_platform::local::connect(path).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(30)))
+                .unwrap();
+            // The first thing the engine sends is the challenge, after it has looked at the peer's code
+            // signature (slow on a busy Mac); a refused connection is closed at once.
+            stream.read(&mut [0; 1]).is_ok_and(|read| read > 0)
+        }
+
+        // A blocking read of the local socket must not stop the tasks that serve it.
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn serve_tcp_takes_remote_places_and_serve_local_takes_local_ones() {
+            // A Unix socket's path is short: the system's temporary folder can be too long for one.
+            let base = if cfg!(unix) {
+                std::path::PathBuf::from("/tmp")
+            } else {
+                std::env::temp_dir()
+            };
+            let id = uuid::Uuid::new_v4().simple().to_string();
+            let directory = base.join(format!("sl-{}", &id[..8]));
+            std::fs::create_dir(&directory).unwrap();
+            let core = crate::push::share(Core::open(&directory).unwrap(), &directory);
+            let admission = Admission::with_slots(1, 1);
+            let (catalog_tx, _catalogs) = mpsc::channel(1);
+            let accept = server::Accept {
+                profile: &soyeht_protocol::profile::DEV,
+                core,
+                admission: admission.clone(),
+                catalog_tx,
+            };
+            let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = tcp.local_addr().unwrap();
+            tokio::spawn(server::serve_tcp(tcp, accept.clone()));
+            let socket = directory.join("engine.sock");
+            let local = soyeht_platform::local::asynchronous::Listener::bind(&socket).unwrap();
+            tokio::spawn(server::serve_local(local, accept));
+
+            // Nothing is held: both let a connection through.
+            assert!(served_tcp(address).await);
+            assert!(served_local(&socket));
+
+            // The only remote place is held: the listener refuses, the local endpoint does not.
+            // The connections above end on their own time: wait for their places to come back.
+            let remote = wait_for(|| admission.remote(LOOPBACK)).await;
+            assert!(
+                !served_tcp(address).await,
+                "serve_tcp must draw on the remote places"
+            );
+            assert!(served_local(&socket), "serve_local must not draw on them");
+            drop(remote);
+
+            // The only local place is held: the local endpoint refuses, the listener does not.
+            let local_place = wait_for(|| admission.local()).await;
+            assert!(
+                !served_local(&socket),
+                "serve_local must draw on the local places"
+            );
+            assert!(served_tcp(address).await, "serve_tcp must not draw on them");
+            drop(local_place);
+            std::fs::remove_dir_all(directory).unwrap();
+        }
     }
 }
