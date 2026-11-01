@@ -218,14 +218,21 @@ the supervisor of the profile, removes their registration and the definition fil
 supervisor ends the person's terminals.
 
 **It also ends a program that no registration covers**, the copy the Linux and Windows window
-started (section 4, step 2). After a component is unregistered, the engine first, a program that
-still holds its singleton lock is asked to end: it wrote its process id into the lock file when
-it took the lock, and the id is read only while the lock is held, twice, so that an id left by a
-program that ended is never used (ADR 0131). Unix sends the stop request that the programs
-already answer by stopping cleanly; Windows ends the process, and its children with it. The
-command waits up to ten seconds for the lock to be free before it asks the supervisor. A program
-that does not end, or that holds the lock with no id (one of an older build), makes the command
-fail with "still answers" once both were tried; the services are unregistered by then.
+started (section 4, step 2). Before anything is ended it leaves a file `uninstalled` in the data
+directory. After a component is unregistered, the engine first, a program that still holds its
+singleton lock is asked to end: it wrote its process id into the lock file when it took the lock,
+and the id is read only while the lock is held, twice, so that an id left by a program that ended
+is never used (ADR 0131). Unix sends the stop request: the engine stops cleanly, the supervisor
+(no handler) ends at once with its terminals. Windows ends the process, and its children with it.
+The command waits up to ten seconds for the lock to be free before it asks the supervisor, and
+tries every component whatever happens to the one before. A program that does not end, that cannot
+be asked, or that holds the lock with no id (one of an older build) makes the command fail once
+both were tried; the services are unregistered by then.
+
+**An open window does not start them again.** The window's start of the engine (section 4, step 2)
+does nothing when `uninstalled` is newer than the window, or when the data directory it had an
+engine in is gone (`--delete-data`); it says that Soyeht was uninstalled. A window opened after the
+uninstall starts afresh, and `service install` removes the file.
 
 **Data stays by default.** The programs, the data directory, the database and the logs are left
 alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,

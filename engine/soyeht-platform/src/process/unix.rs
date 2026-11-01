@@ -179,6 +179,7 @@ mod tests {
 
     #[test]
     fn kill_tree_ends_the_group_and_a_descendant_that_left_it() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         // The shell leads a group, starts one sleeper in it and one in a session of its own.
         let mut leader = Command::new("sh")
@@ -209,6 +210,7 @@ mod tests {
 
     #[test]
     fn the_descendants_of_a_process_are_found_by_parent_links() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let mut shell = Command::new("sh")
             .args(["-c", "sleep 60 & wait"])

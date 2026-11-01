@@ -130,6 +130,11 @@ impl<'a, C: Commands> Manager<'a, C> {
             texts.push((component, render(self.layout.system, &definition)?));
         }
         self.prepare_folders(texts.iter().map(|(component, _)| *component))?;
+        // A registration written again is a new start: a window opened before the last uninstall
+        // may start the programs again.
+        if let Err(error) = soyeht_platform::fs::clear_uninstalled(&self.layout.data) {
+            soyeht_platform::log::failure("service.uninstall_marker_failed", &error);
+        }
         for (component, text) in texts {
             let install = Install {
                 text: &text,
@@ -158,27 +163,34 @@ impl<'a, C: Commands> Manager<'a, C> {
     /// ends the program of a component that still runs: the one the window started, which no
     /// registration covers ([`Self::end_running`]). The data, the database and the logs stay.
     ///
+    /// An uninstall is first recorded in the data directory, so that a window that is open does
+    /// not start the programs again when it finds them gone.
+    ///
+    /// Every component is tried, whatever happens to the one before it, so that one program that
+    /// cannot be ended (a process of another account, one that is exiting) does not leave the
+    /// other registered.
+    ///
     /// # Errors
-    /// [`Error::StillRunning`] after every component was tried, when a program could not be
-    /// ended; the services are unregistered by then.
+    /// The first failure, after every component was tried: [`Error::StillRunning`] when a program
+    /// could not be ended, or what the system said. The services are unregistered by then.
     pub fn uninstall(&self, components: &[Component]) -> Result<()> {
-        let mut still_running = false;
+        if let Err(error) = soyeht_platform::fs::mark_uninstalled(&self.layout.data) {
+            // Not fatal: the programs are ended all the same, and an open window may start them
+            // again.
+            soyeht_platform::log::failure("service.uninstall_marker_failed", &error);
+        }
+        let mut deferred = None;
         for component in ordered(components).into_iter().rev() {
             match self.layout.system {
                 System::Macos => self.launchd_uninstall(component)?,
                 System::Linux => self.systemd_uninstall(component)?,
                 System::Windows => self.task_uninstall(component)?,
             }
-            match self.end_running(component) {
-                Ok(()) => {}
-                Err(Error::StillRunning) => still_running = true,
-                Err(error) => return Err(error),
+            if let Err(error) = self.end_running(component) {
+                deferred.get_or_insert(error);
             }
         }
-        if still_running {
-            return Err(Error::StillRunning);
-        }
-        Ok(())
+        deferred.map_or(Ok(()), Err)
     }
 
     /// Ends the program of `component` when one still runs, after its registration is gone: a
@@ -189,7 +201,8 @@ impl<'a, C: Commands> Manager<'a, C> {
     ///
     /// # Errors
     /// [`Error::StillRunning`] when the program still holds its lock after the wait, or holds it
-    /// without a process to ask (a program of an older build, which wrote none).
+    /// without a process to ask (a program of an older build, which wrote none); the system's
+    /// error when the process cannot be asked (another account's, or one that is exiting).
     fn end_running(&self, component: Component) -> Result<()> {
         if !self.program_runs(component)? {
             return Ok(());
@@ -210,6 +223,7 @@ impl<'a, C: Commands> Manager<'a, C> {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(error) => return Err(error.into()),
         }
+        soyeht_platform::log::event("service.program_ended", &[("component", component.name())]);
         let mut waited = Duration::ZERO;
         while self.program_runs(component)? {
             if waited >= END_WAIT {

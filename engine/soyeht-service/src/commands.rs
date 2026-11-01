@@ -90,6 +90,8 @@ pub(crate) mod fake {
         pub(crate) terminated: RefCell<Vec<u32>>,
         /// What a program that is asked to end does: a test drops the lock it holds.
         on_terminate: Option<Box<dyn Fn(u32)>>,
+        /// The first request to end a program is refused with this error.
+        refuse_first: std::cell::Cell<Option<io::ErrorKind>>,
     }
 
     pub(crate) fn ok(stdout: &str) -> CommandOutput {
@@ -113,7 +115,15 @@ pub(crate) mod fake {
                 too_large: Vec::new(),
                 terminated: RefCell::default(),
                 on_terminate: None,
+                refuse_first: std::cell::Cell::default(),
             }
+        }
+
+        /// The system refuses the first request to end a program, as it does for a process of
+        /// another account.
+        pub(crate) fn refusing_the_first_end(self, kind: io::ErrorKind) -> Self {
+            self.refuse_first.set(Some(kind));
+            self
         }
 
         /// A program that is asked to end runs `ending`, with its process id, as it would stop.
@@ -141,6 +151,9 @@ pub(crate) mod fake {
     impl Commands for Recorder {
         fn terminate(&self, pid: u32) -> io::Result<()> {
             self.terminated.borrow_mut().push(pid);
+            if let Some(kind) = self.refuse_first.take() {
+                return Err(kind.into());
+            }
             if let Some(ending) = &self.on_terminate {
                 ending(pid);
             }

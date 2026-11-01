@@ -24,7 +24,7 @@ use std::{
     ffi::{OsStr, OsString},
     fmt, io,
     path::{Path, PathBuf},
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 const ENGINE_PROGRAM: &str = "soyeht-engine";
@@ -107,6 +107,9 @@ pub enum StartError {
     Exited(&'static str),
     TimedOut,
     Stopped,
+    /// An uninstall ended the programs while this window was open, so it does not start them
+    /// again.
+    Uninstalled,
 }
 
 impl StartError {
@@ -119,6 +122,7 @@ impl StartError {
             Self::Exited(_) => "exited",
             Self::TimedOut => "timed_out",
             Self::Stopped => "stopped",
+            Self::Uninstalled => "uninstalled",
         }
     }
 }
@@ -144,6 +148,10 @@ impl fmt::Display for StartError {
             Self::Directory(_) | Self::Lock(_) => formatter
                 .write_str("The engine could not be started: its data folder cannot be used."),
             Self::Stopped => formatter.write_str("The engine start was cancelled."),
+            Self::Uninstalled => formatter.write_str(
+                "Soyeht was uninstalled, so this window does not start the engine again. \
+                 Close it and open Soyeht to start afresh.",
+            ),
         }
     }
 }
@@ -164,6 +172,8 @@ impl log::Failure for StartError {
 /// What a start touches outside this module, so the decisions can be tested.
 pub(crate) trait Host {
     fn engine_reachable(&self) -> bool;
+    /// Whether an uninstall ended the programs while this window was open.
+    fn uninstalled(&self) -> bool;
     fn supervisor_reachable(&self) -> bool;
     fn program_exists(&self, path: &Path) -> bool;
     /// Takes the lock that serialises starts: `None` when another start holds it. The lock
@@ -189,10 +199,14 @@ pub(crate) trait Started {
 
 /// Makes sure an engine answers: returns at once when one does, waits for a start that another
 /// window is making, and otherwise starts the supervisor (when it is not running) and the
-/// engine and waits until the engine answers.
+/// engine and waits until the engine answers. It starts nothing when an uninstall ended the
+/// programs while the window was open: the person asked for them to go.
 pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.engine_reachable() {
         return Ok(());
+    }
+    if host.uninstalled() {
+        return Err(StartError::Uninstalled);
     }
     let programs = plan
         .programs
@@ -305,11 +319,26 @@ pub(crate) struct Local<'a> {
     pub plan: &'a Plan,
     pub socket: &'a Path,
     pub stopped: &'a dyn Fn() -> bool,
+    /// When this window began.
+    pub began: SystemTime,
+    /// An engine answered this window at some point.
+    pub had_engine: bool,
+}
+
+/// Whether an uninstall ended the programs of `directory` while a window that began at `began`
+/// was open: it left its record there since, or it took the whole directory away (`--delete-data`)
+/// after the window had an engine in it. A window that begins after an uninstall is a new start.
+fn uninstall_seen(directory: &Path, began: SystemTime, had_engine: bool) -> bool {
+    fs::uninstalled_since(directory, began) || (had_engine && !directory.exists())
 }
 
 impl Host for Local<'_> {
     fn engine_reachable(&self) -> bool {
         crate::transport::connect(self.socket).is_ok()
+    }
+
+    fn uninstalled(&self) -> bool {
+        uninstall_seen(&self.plan.directory, self.began, self.had_engine)
     }
 
     fn supervisor_reachable(&self) -> bool {

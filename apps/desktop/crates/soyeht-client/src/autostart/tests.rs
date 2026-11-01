@@ -12,6 +12,8 @@ enum Lock {
 /// A host that records what is started and lets the test say what answers.
 struct Fake {
     engine_up: Cell<bool>,
+    /// An uninstall ended the programs while the window was open.
+    uninstalled: bool,
     supervisor_up: Cell<bool>,
     missing: Vec<&'static str>,
     lock: Lock,
@@ -36,6 +38,7 @@ impl Fake {
     fn new() -> Self {
         Self {
             engine_up: Cell::new(false),
+            uninstalled: false,
             supervisor_up: Cell::new(false),
             missing: Vec::new(),
             lock: Lock::Free,
@@ -66,6 +69,10 @@ impl Started for Child {
 }
 
 impl Host for Fake {
+    fn uninstalled(&self) -> bool {
+        self.uninstalled
+    }
+
     fn engine_reachable(&self) -> bool {
         self.engine_up.get()
             || (self.engine_after_lock && self.locked.get())
@@ -162,6 +169,51 @@ fn the_supervisor_then_the_engine_are_started_and_waited_for() {
     };
     assert_eq!(ensure(&plan(), &host), Ok(()));
     assert_eq!(host.started(), ["soyeht-ptyd", "soyeht-engine"]);
+}
+
+#[test]
+fn nothing_is_started_after_an_uninstall_ended_the_programs() {
+    let host = Fake {
+        uninstalled: true,
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::Uninstalled));
+    assert!(host.started().is_empty());
+    assert!(!host.locked.get());
+}
+
+#[test]
+fn an_engine_that_answers_is_left_alone_even_after_an_uninstall_was_seen() {
+    let host = Fake {
+        uninstalled: true,
+        engine_up: Cell::new(true),
+        ..Fake::new()
+    };
+    ensured_without_starting(&host);
+}
+
+#[test]
+fn an_uninstall_is_seen_by_the_record_or_by_the_directory_going() {
+    let directory = std::env::temp_dir().join(format!("next-autostart-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let began = SystemTime::now() - Duration::from_secs(5);
+    // Nothing happened, whether or not an engine ever answered.
+    assert!(!uninstall_seen(&directory, began, false));
+    assert!(!uninstall_seen(&directory, began, true));
+    // The record, left after the window began.
+    fs::mark_uninstalled(&directory).unwrap();
+    assert!(uninstall_seen(&directory, began, false));
+    // A window that began after it is a new start.
+    assert!(!uninstall_seen(
+        &directory,
+        SystemTime::now() + Duration::from_secs(5),
+        false
+    ));
+    std::fs::remove_dir_all(&directory).unwrap();
+    // The directory gone counts only for a window that had an engine in it: a first run has
+    // no directory yet.
+    assert!(uninstall_seen(&directory, began, true));
+    assert!(!uninstall_seen(&directory, began, false));
 }
 
 /// What each program started was told to restart, when the engine starts after `host` is set up.

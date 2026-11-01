@@ -449,6 +449,68 @@ fn uninstall_says_so_when_a_program_does_not_end_and_still_asks_the_other() {
 }
 
 #[test]
+fn uninstall_unregisters_the_other_service_when_one_program_cannot_be_asked() {
+    let (_scratch, layout) = installed(
+        System::Linux,
+        "uninstall-refused",
+        &Recorder::default(),
+        &BOTH,
+    );
+    let held = running_programs(&layout);
+    // The engine's process is another account's: the system refuses. The supervisor is asked
+    // all the same and ends.
+    let recorder = Recorder::default()
+        .refusing_the_first_end(io::ErrorKind::PermissionDenied)
+        .ending_programs_with({
+            let held = held.clone();
+            move |_| {
+                held.borrow_mut()
+                    .retain(|(component, _)| *component != Component::Ptyd)
+            }
+        });
+    let error = Manager::new(&layout, &recorder)
+        .uninstall(&BOTH)
+        .unwrap_err();
+    assert!(
+        matches!(&error, Error::Io(inner) if inner.kind() == io::ErrorKind::PermissionDenied),
+        "{error}"
+    );
+    assert_eq!(recorder.terminated.borrow().len(), 2);
+    assert!(!layout.definition_file(Component::Engine).exists());
+    assert!(!layout.definition_file(Component::Ptyd).exists());
+    drop(held);
+}
+
+#[test]
+fn uninstall_leaves_a_record_that_install_takes_away() {
+    let (_scratch, layout) = installed(
+        System::Linux,
+        "uninstall-record",
+        &Recorder::default(),
+        &BOTH,
+    );
+    let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+    assert!(!soyeht_platform::fs::uninstalled_since(
+        &layout.data,
+        long_ago
+    ));
+    Manager::new(&layout, &Recorder::default())
+        .uninstall(&BOTH)
+        .unwrap();
+    assert!(soyeht_platform::fs::uninstalled_since(
+        &layout.data,
+        long_ago
+    ));
+    Manager::new(&layout, &Recorder::default())
+        .install(&programs(), &BOTH)
+        .unwrap();
+    assert!(!soyeht_platform::fs::uninstalled_since(
+        &layout.data,
+        long_ago
+    ));
+}
+
+#[test]
 fn uninstall_does_not_ask_a_program_that_ended_between_the_lock_and_the_request() {
     let (_scratch, layout) =
         installed(System::Linux, "uninstall-gone", &Recorder::default(), &BOTH);

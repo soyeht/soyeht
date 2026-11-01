@@ -29,7 +29,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 /// The `client` name sent in `hello`: `desktop` in a release build, `desktop-dev` in a debug one,
@@ -171,11 +171,16 @@ fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &
     // the next start, so an engine that ends later is started again but a start that fails is
     // not repeated at every retry.
     let mut may_start = true;
+    // When this window began, and whether an engine ever answered it: an uninstall that ends
+    // the engine must not be answered by starting it again (`autostart::ensure`).
+    let began = SystemTime::now();
+    let mut had_engine = false;
     while !shared.stopped.load(Ordering::Relaxed) {
         let ended = run_connection(socket, events, shared);
         if shared.rpc().is_some() {
             backoff.reset();
             may_start = true;
+            had_engine = true;
         }
         shared.set(None);
         if events
@@ -189,7 +194,7 @@ fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &
             && engine_absent(&ended)
         {
             may_start = false;
-            match start_engine(plan, socket, events, shared) {
+            match start_engine(plan, socket, events, shared, (began, had_engine)) {
                 Started::Up => continue,
                 Started::Failed => {}
                 Started::Gone => return,
@@ -226,6 +231,7 @@ fn start_engine(
     socket: &Path,
     events: &EventSink,
     shared: &Shared,
+    (began, had_engine): (SystemTime, bool),
 ) -> Started {
     if events.send_blocking(Event::Starting).is_err() {
         return Started::Gone;
@@ -235,6 +241,8 @@ fn start_engine(
         plan,
         socket,
         stopped: &stopped,
+        began,
+        had_engine,
     };
     match autostart::ensure(plan, &host) {
         Ok(()) => {
