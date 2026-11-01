@@ -9,12 +9,8 @@
   /// views), also on a Mac whose mouse makes AppKit fall back to the legacy scroller, and again
   /// after the system scroller preference changes.
   @MainActor @Test func agentConversationScrollViewsUseOverlayScrollers() throws {
-    let (host, window) = overlayHost()
+    let (host, window, scrollViews) = settledOverlayHost()
     defer { withExtendedLifetime(window) {} }
-    settle(host) { overlaid(descendants(of: host)) }
-
-    let scrollViews = descendants(of: host)
-    #expect(!scrollViews.isEmpty)
     for scrollView in scrollViews {
       #expect(scrollView.scrollerStyle == .overlay)
       #expect(scrollView.autohidesScrollers)
@@ -37,17 +33,18 @@
   /// AppKit and SwiftUI may put the preferred style back on a scroll view at any time, not only
   /// when the system preference changes: the pane's scroll views go back to the overlay style.
   @MainActor @Test func aScrollViewPutBackToTheLegacyStyleBecomesOverlayAgain() throws {
-    let (host, window) = overlayHost()
+    let (host, window, scrollViews) = settledOverlayHost()
     defer { withExtendedLifetime(window) {} }
-    settle(host) { overlaid(descendants(of: host)) }
-    let scrollViews = descendants(of: host)
-    #expect(!scrollViews.isEmpty)
     for scrollView in scrollViews { scrollView.scrollerStyle = .legacy }
     settle(host) { overlaid(descendants(of: host)) }
     for scrollView in descendants(of: host) { #expect(scrollView.scrollerStyle == .overlay) }
   }
 
-  @MainActor private func overlayHost() -> (NSHostingView<some View>, NSWindow) {
+  /// The conversation in a window, once its scroll views have the overlay style: the host, the
+  /// window that must stay alive with it, and the scroll views.
+  @MainActor private func settledOverlayHost() -> (
+    NSHostingView<some View>, NSWindow, [NSScrollView]
+  ) {
     let host = NSHostingView(
       rootView: AgentConversationView(
         client: PaneInteriorFixture.client(), paneId: PaneInteriorFixture.paneId,
@@ -59,7 +56,10 @@
     let window = NSWindow(
       contentRect: host.frame, styleMask: .borderless, backing: .buffered, defer: false)
     window.contentView = host
-    return (host, window)
+    settle(host) { overlaid(descendants(of: host)) }
+    let scrollViews = descendants(of: host)
+    #expect(!scrollViews.isEmpty)
+    return (host, window, scrollViews)
   }
 
   /// Lays the view out and runs the main loop until `done` holds: at least 20 turns and up to 30
