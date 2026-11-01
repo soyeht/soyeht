@@ -23,12 +23,13 @@ impl Listener {
     }
 }
 
-/// Whether the peer of `stream` runs as the same user as this process.
+/// Whether the peer of `stream` runs as the same user as this process; a peer the kernel cannot
+/// name is not.
 pub fn same_user(stream: &Stream) -> bool {
+    use std::os::fd::AsRawFd;
     // SAFETY: geteuid has no arguments or memory preconditions.
-    stream
-        .peer_cred()
-        .is_ok_and(|credential| credential.uid() == unsafe { libc::geteuid() })
+    crate::local::unix::peer_user_of(stream.as_raw_fd())
+        .is_ok_and(|user| user == unsafe { libc::geteuid() })
 }
 
 /// Two connected streams, for tests and in-process wiring.

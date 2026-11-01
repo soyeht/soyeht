@@ -30,9 +30,9 @@ mod tcp;
 mod unix;
 
 #[cfg(windows)]
-pub use tcp::{Listener, Stream, connect, pair, same_user};
+pub use tcp::{Listener, Stream, connect, pair, peer_is_same_user};
 #[cfg(unix)]
-pub use unix::{Listener, Stream, connect, pair, same_user};
+pub use unix::{Listener, Stream, connect, pair, peer_is_same_user};
 
 /// Why an endpoint could not be created.
 #[derive(Debug)]
