@@ -91,7 +91,17 @@ pub fn run(directory: &Path) -> Result<()> {
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
         Err(BindError::Io(error)) => return Err(error.into()),
     };
+    let gone_endpoint = endpoint.clone();
     let _endpoint = EndpointFile(endpoint);
+    // The app that holds this program was deleted: end, with the terminals, as the registration
+    // of the program no longer restarts it (ADR 0130).
+    if let Err(error) = soyeht_platform::program::on_gone(move || {
+        log::event("ptyd.program_gone", &[]);
+        drop(EndpointFile(gone_endpoint));
+        std::process::exit(0);
+    }) {
+        log::failure("ptyd.program_watch_failed", &error);
+    }
     let registry = Registry::load(directory)?;
     let state = Arc::new(Mutex::new(State {
         directory: directory.to_owned(),
