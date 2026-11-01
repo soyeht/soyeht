@@ -134,6 +134,13 @@ mod macos {
             .as_deref()
     }
 
+    /// Whether this engine has looked at its own signature and found none of ours: an engine built
+    /// with `cargo build`, which cannot tell the signed app from any other program. False until
+    /// the first local connection has been looked at.
+    pub fn engine_cannot_attest() -> bool {
+        matches!(ENGINE_TEAM.get(), Some(None))
+    }
+
     pub fn signed_ui(token: PeerAuditToken, profile: &Profile) -> bool {
         let Some(team) = engine_team(profile) else {
             return false;
@@ -186,6 +193,8 @@ mod macos {
             assert_eq!(token.words[5], std::process::id());
             assert_ne!(token.words[7], 0, "audit token omitted the PID generation");
             assert!(!signed_ui(token, &DEV));
+            // The test program carries no signature of ours: the engine says it cannot attest.
+            assert!(engine_cannot_attest());
         }
 
         #[test]
@@ -245,7 +254,7 @@ mod macos {
 }
 
 #[cfg(target_os = "macos")]
-pub use macos::{PeerAuditToken, peer_audit_token};
+pub use macos::{PeerAuditToken, engine_cannot_attest, peer_audit_token};
 
 #[cfg(target_os = "macos")]
 pub fn signed_ui_peer(token: PeerAuditToken, profile: &soyeht_protocol::profile::Profile) -> bool {
@@ -268,6 +277,11 @@ pub fn peer_audit_token(
 
 #[cfg(not(target_os = "macos"))]
 pub fn signed_ui_peer(_: PeerAuditToken, _: &soyeht_protocol::profile::Profile) -> bool {
+    false
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn engine_cannot_attest() -> bool {
     false
 }
 

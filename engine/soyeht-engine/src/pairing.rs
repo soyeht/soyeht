@@ -11,7 +11,9 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use soyeht_platform::log;
 use soyeht_protocol::{Device, Role, event, method};
+use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -37,6 +39,27 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
         .active_pair_request(id, clock.now_unix())
         .map_err(errors::storage)?
         .ok_or_else(|| errors::unauthorized("Pairing request missing or expired"))
+}
+
+/// The refusal of a decision or a revocation. When a local human is refused because this engine is
+/// not signed, it cannot tell the signed app from any other program, so even the app is refused:
+/// say so, and log it once with its kind only (docs/dev-local.md says how to sign the engine).
+fn refusal(local_human: bool) -> errors::Error {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if local_human && ui_attestation::engine_cannot_attest() {
+        if !LOGGED.swap(true, Ordering::Relaxed) {
+            log::event(
+                "engine.attestation_unavailable",
+                &[("reason", "engine_not_signed")],
+            );
+        }
+        return errors::forbidden_role(
+            "This engine is not code-signed, so it cannot tell the Soyeht app from other programs and approves no pairing; install the signed engine (docs/dev-local.md)",
+        );
+    }
+    errors::forbidden_role(
+        "Pairing is approved, and other devices are revoked, in the Soyeht app on this Mac",
+    )
 }
 
 impl Core {
@@ -228,9 +251,10 @@ impl Core {
         if allowed {
             return Ok(());
         }
-        Err(errors::forbidden_role(
-            "Pairing is approved, and other devices are revoked, in the Soyeht app on this Mac",
-        ))
+        Err(refusal(matches!(
+            actor.map(|actor| &actor.role),
+            Some(Role::HumanLocal)
+        )))
     }
 
     pub fn device_request(
@@ -460,6 +484,21 @@ mod tests {
         assert_eq!(kinds(&local), shell_kinds);
         drop(core);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// An engine that is not signed refuses even the app, and says why.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn an_unsigned_engine_says_why_it_cannot_tell_the_app_from_a_shell() {
+        let (client, _server) = tokio::net::UnixStream::pair().unwrap();
+        let token = ui_attestation::peer_audit_token(&client).unwrap();
+        assert!(!ui_attestation::signed_ui_peer(
+            token,
+            &soyeht_protocol::profile::DEV
+        ));
+        assert!(ui_attestation::engine_cannot_attest());
+        assert!(refusal(true).to_string().contains("not code-signed"));
+        assert!(!refusal(false).to_string().contains("not code-signed"));
     }
 
     #[tokio::test]
