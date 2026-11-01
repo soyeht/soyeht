@@ -70,6 +70,7 @@ pub mod text {
     pub const AVAILABLE: &str = "Soyeht {version} is available.";
     pub const REQUIRED: &str = "This version is no longer supported. Update to keep using Soyeht.";
     pub const NOT_CONFIGURED: &str = "Update checks are not set up in this build.";
+    pub const EXPIRED: &str = "The update information is out of date. Check this computer's date and time, or get the newest Soyeht from the Soyeht website.";
     pub const FAILED: &str = "Could not check for updates.";
 }
 

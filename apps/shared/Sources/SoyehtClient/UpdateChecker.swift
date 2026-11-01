@@ -42,6 +42,7 @@ public struct UpdatePresentation: Equatable, Sendable {
     case .checking: return quiet(UpdateText.checking)
     case .upToDate: return quiet(about(UpdateText.upToDate, running))
     case .failed(.notConfigured): return quiet(UpdateText.notConfigured)
+    case .failed(.expired): return quiet(UpdateText.expired)
     case .failed: return quiet(UpdateText.failed)
     case .available(let offer):
       return UpdatePresentation(

@@ -73,6 +73,7 @@ public enum UpdateText {
   public static let available = "Soyeht {version} is available."
   public static let required = "This version is no longer supported. Update to keep using Soyeht."
   public static let notConfigured = "Update checks are not set up in this build."
+  public static let expired = "The update information is out of date. Check this computer's date and time, or get the newest Soyeht from the Soyeht website."
   public static let failed = "Could not check for updates."
 }
 

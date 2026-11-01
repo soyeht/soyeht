@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import release_manifest  # first: it puts the contracts directory on the path
 import ed25519  # noqa: E402
@@ -58,12 +59,13 @@ class ReleaseManifestTests(unittest.TestCase):
         text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS)
         sequence = manifest.check_payload(manifest.open_envelope(text, KEYS))["sequence"]
         self.assertTrue(before <= sequence <= int(time.time()))
-        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=77)
-        self.assertEqual(manifest.check_payload(manifest.open_envelope(text, KEYS))["sequence"], 77)
+        given = before - 5
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=given)
+        self.assertEqual(manifest.check_payload(manifest.open_envelope(text, KEYS))["sequence"], given)
         with self.assertRaises(release_manifest.Refused):
             release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=0)
-        # An older manifest is refused by a device that has read the one with sequence 77.
-        old = manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, floor=78, now=78)
+        # An older manifest is refused by a device that has read the one just above it.
+        old = manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, floor=given + 1, now=given + 1)
         self.assertEqual(old, {"status": "failed", "failure": "staleManifest"})
 
     def test_a_manifest_expires_the_longest_life_after_it_is_signed_and_a_client_refuses_it_then(self):
@@ -76,6 +78,93 @@ class ReleaseManifestTests(unittest.TestCase):
         read = lambda at: manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, now=at)  # noqa: E731
         self.assertEqual(read(now + life - 1)["status"], "available")
         self.assertEqual(read(now + life), {"status": "failed", "failure": "expired"})
+
+    def test_a_sequence_that_has_already_expired_is_refused(self):
+        self.packages()
+        now = 1_800_000_000
+        life = release_manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+        with self.assertRaises(release_manifest.Refused) as caught:
+            release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=now - life, now=now)
+        self.assertIn("already in the past", str(caught.exception))
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=now - life + 1, now=now)
+        self.assertEqual(manifest.check_payload(manifest.open_envelope(text, KEYS))["expiresAt"], now + 1)
+
+    def published(self, now):
+        self.packages()
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, now=now)
+        return text
+
+    def test_renewing_signs_the_published_packages_again_with_a_new_sequence_and_a_full_life(self):
+        life = release_manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+        signed_at = 1_800_000_000
+        old_text = self.published(signed_at)
+        for path in self.dist.iterdir():
+            path.unlink()  # dist/ is gone ninety days later: renewing needs only the manifest
+        later = signed_at + life - 10 * 86400
+        renewed = release_manifest.renew(old_text, ENVIRONMENT, KEYS, now=later)
+        old, new = (manifest.check_payload(manifest.open_envelope(t, KEYS)) for t in (old_text, renewed))
+        self.assertEqual(new["packages"], old["packages"])
+        for field in ("version", "minimumSupportedVersion", "releaseNotesUrl", "channel"):
+            self.assertEqual(new[field], old[field])
+        self.assertEqual((new["sequence"], new["expiresAt"]), (later, later + life))
+        self.assertGreater(new["sequence"], old["sequence"])
+        # A device that read the old one takes the renewed one and offers the same package.
+        floor = old["sequence"]
+        offer = manifest.evaluate(renewed, (0, 0, 1), "linux", "x86_64", "stable", KEYS, floor=floor, now=later)
+        listed = next(p for p in old["packages"] if (p["system"], p["architecture"]) == ("linux", "x86_64"))
+        self.assertEqual(offer["package"]["sha256"], listed["sha256"])
+        self.assertEqual(manifest.outcome(old_text, (0, 0, 1), "linux", "x86_64", "stable", KEYS,
+                                          floor=new["sequence"], now=later)["failure"], "staleManifest")
+
+    def test_a_manifest_that_has_expired_can_still_be_renewed_and_the_new_one_outranks_it(self):
+        life = release_manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+        old_text = self.published(1_800_000_000)
+        after = 1_800_000_000 + life + 5 * 86400
+        renewed = release_manifest.renew(old_text, ENVIRONMENT, KEYS, now=after)
+        self.assertEqual(manifest.outcome(old_text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, now=after)["failure"],
+                         "expired")
+        self.assertEqual(manifest.outcome(renewed, (0, 0, 1), "linux", "x86_64", "stable", KEYS, now=after)["status"],
+                         "available")
+
+    def test_a_clock_behind_the_last_signing_still_gives_a_sequence_above_it(self):
+        old_text = self.published(1_800_000_000)
+        renewed = release_manifest.renew(old_text, ENVIRONMENT, KEYS, now=1_799_999_000)
+        self.assertEqual(manifest.check_payload(manifest.open_envelope(renewed, KEYS))["sequence"], 1_800_000_001)
+
+    def test_renewing_needs_the_key_of_the_contract_and_a_manifest_that_verifies(self):
+        old_text = self.published(1_800_000_000)
+        with self.assertRaises(release_manifest.Refused):
+            release_manifest.renew(old_text, {release_manifest.KEY_ENVIRONMENT: base64.b64encode(b"x" * 32).decode()},
+                                   KEYS, now=1_800_000_100)
+        with self.assertRaises(release_manifest.Refused):
+            release_manifest.renew(old_text.replace('"payload": "', '"payload": "A'), ENVIRONMENT, KEYS)
+
+    def test_the_expiry_check_fails_within_twenty_one_days_and_after_the_expiry(self):
+        life = release_manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+        signed_at = 1_800_000_000
+        text = self.published(signed_at)
+        day = 86400
+        problem = lambda now: release_manifest.expiry_problem(text, KEYS, 21, now=now)  # noqa: E731
+        self.assertIsNone(problem(signed_at + life - 22 * day))
+        self.assertIn("expires in 20 days", problem(signed_at + life - 20 * day - 1))
+        self.assertIn("expires in 0 days", problem(signed_at + life - 1))
+        self.assertIn("expired 3 days ago", problem(signed_at + life + 3 * day))
+
+    def test_renew_and_check_expiry_work_from_the_command_line_on_a_file(self):
+        life = release_manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+        old_text = self.published(int(time.time()) - life + 5 * 86400)
+        source = self.dist / "published.json"
+        source.write_text(old_text)
+        output = self.dist / "renewed.json"
+        with mock.patch.dict(release_manifest.POLICY["signature"], {"publicKeys": KEYS}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaises(SystemExit) as caught:
+                release_manifest.main(["check-expiry", "--input", str(source)], environment=ENVIRONMENT)
+            self.assertIn("less than 21", str(caught.exception))
+            release_manifest.main(["renew", "--input", str(source), "--output", str(output)], environment=ENVIRONMENT)
+            release_manifest.main(["check-expiry", "--input", str(output)], environment=ENVIRONMENT)
+        self.assertGreater(manifest.check_payload(manifest.open_envelope(output.read_text(), KEYS))["sequence"],
+                           manifest.check_payload(manifest.open_envelope(old_text, KEYS))["sequence"])
 
     def test_a_sequence_more_than_a_day_ahead_is_refused_with_the_recovery(self):
         self.packages()
