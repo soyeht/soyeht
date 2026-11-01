@@ -167,7 +167,7 @@ the start fails once; after that nothing runs and nothing is retried. When the p
 (an app dragged back, or installed again) launchd starts it by itself. `soyeht service start` of
 an agent whose program is gone fails with "the program ... is missing", as on Linux, instead of
 loading an agent that cannot run. `soyeht uninstall` is still the way to remove the registration.
-A program that is already running when its file is deleted ends itself (ADR 0130): the engine and the
+On the Mac, a program that is already running when its file is deleted ends itself (ADR 0130): the engine and the
 supervisor look at the path they were started from every 10 seconds, and when it is missing three
 looks in a row they exit with code 0, so the agent stays loaded, idle and inert.
 An app update that replaces the bundle briefly removes the program. Whether launchd's `PathState`

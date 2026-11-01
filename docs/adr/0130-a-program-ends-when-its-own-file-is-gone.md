@@ -39,7 +39,7 @@ and is testable as plain code.
 
 ## Decision
 
-Option (b). `soyeht_platform::program::on_gone` reads the path the process was started from
+Option (b), **on macOS only**. `soyeht_platform::program::on_gone` reads the path the process was started from
 (`std::env::current_exe()`, once, at start) and starts a thread that looks at it every 10
 seconds. The program is **gone** when the system says there is nothing at the path three looks in
 a row (about 30 seconds); a look that finds the file resets the count, and a file that cannot be
@@ -59,8 +59,26 @@ from starting the program again while the file is missing. If the app comes back
 the Trash, installed again) launchd starts the program by itself, as ADR 0120 amended says, and
 the app's "Start Soyeht" offer is the recovery that does not depend on that.
 
-A copy that cannot read its own path (`current_exe` fails) runs as before; the watch is a
-safeguard and its failure is logged, never a reason to stop.
+A copy that cannot read its own path (`current_exe` fails), or whose watch thread cannot start,
+runs as before: the failure is logged as `program.watch_failed` with its kind, and the engine's
+stop future stays pending, as the supervisor's watch does. The watch is a safeguard, never a reason
+to stop.
+
+**Why only macOS.** `on_gone` has the same public shape on every system, and off macOS it returns
+`Ok(())` and spawns nothing. On the other systems the program's path is missing for a while during
+an upgrade, which a running program cannot tell from a deletion:
+
+- **Windows**: the installer renames each installed program of a running install to `.old` and
+  writes the new ones afterwards (ADR 0123). The old process's path is missing until the new file
+  is written, and a slow install (Defender, an Arm VM) can take longer than 30 seconds. Ending
+  then would lose the person's terminals, and a scheduled task restarts only a program that
+  failed, not one that exited with 0, so nothing would come back.
+- **Linux**: the user unit has `ConditionPathExists` on the program, so a start while the file is
+  missing is skipped and never retried; a package upgrade that ends the program in that window
+  would leave it stopped.
+
+Linux and Windows can follow once the length of that gap has been measured on each and the
+restart is shown to bring the program back.
 
 ## Consequences
 
@@ -71,19 +89,22 @@ safeguard and its failure is logged, never a reason to stop.
   gone) and the terminals with them. The app registers again from its new place at its next
   launch (ADR 0120, "A moved app does not leave a stale path"), so they start there. Before this,
   a moved app left programs running from the old place until the next logout.
-- Linux and Windows get the same behaviour from the same code. A systemd unit still restarts a
-  program whose file is gone (`Restart=always`) and the start fails each second; that was already
-  so, and is the business of the Linux package (ADR 0121), not of this record.
+- Linux and Windows keep their behaviour (see "Why only macOS"): a program of theirs whose file
+  is removed runs on until it stops. ADR 0121 says so for a removed `.deb`.
 - The same applies to a Dev build run from a build folder that is deleted while it runs.
 
 ## Not verified
 
-- **Nothing was run against launchd or an app in the Trash.** The check is unit-tested (the
-  counting, a real file deleted under a fast watch, a path that cannot be read) and the programs
-  were not run through a Trash. The Mac behaviour the decision rests on, that a running process
-  survives the removal of its file and that `current_exe` still names the old path afterwards, is
-  the documented behaviour of the system, not something this record observed.
-- The 30 seconds are a choice, not a measurement of how long an update takes to replace a bundle.
+- **launchd with the new programs inside an app moved to the Trash was not run.** The check is
+  unit-tested (the counting, a real file deleted under a fast watch, a path that cannot be read,
+  the engine's stop and the supervisor's end through their wiring). On a Mac VM the unmodified
+  package showed the gap (the programs kept running after the app was moved to the Trash), and the
+  new programs, started by hand from a folder that was then moved to the Trash, both ended about
+  25 seconds later with their `program_gone` log lines and no socket left.
+- **The 30 seconds were not measured against a Mac update.** They are a choice, not the length of
+  time an update (a drag over the old copy, an in-place replacement by the update check of ADR
+  0122) takes to replace a bundle. If an update takes longer, the supervisor and its terminals end
+  during it, and launchd starts the program when the file is back.
 
 ### Manual check (a Mac that is not the owner's working one)
 
