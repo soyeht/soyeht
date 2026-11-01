@@ -110,7 +110,7 @@ pub fn run(directory: &Path) -> Result<()> {
         let state = Arc::clone(&state);
         thread::spawn(move || {
             if let Err(error) = connection(stream, state) {
-                log::event("ptyd.connection_failed", &[("error", &error_label(&error))]);
+                log::failure("ptyd.connection_failed", &error);
             }
         });
     }
@@ -129,18 +129,6 @@ impl Drop for EndpointFile {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => log::failure("ptyd.endpoint_not_removed", &error),
         }
-    }
-}
-
-/// A bounded label for logs: the variant (and I/O kind), never message text or paths.
-fn error_label(error: &Error) -> String {
-    match error {
-        Error::Io(error) => format!("Io::{:?}", error.kind()),
-        other => format!("{other:?}")
-            .split(|c: char| !c.is_alphanumeric())
-            .next()
-            .unwrap_or("Unknown")
-            .to_string(),
     }
 }
 
@@ -639,21 +627,5 @@ mod tests {
         assert!(!path.exists());
         // Removing a file that is already gone is not an error.
         drop(EndpointFile(path));
-    }
-
-    #[test]
-    fn connection_failures_are_logged_by_variant_without_message_text() {
-        let io = Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "/private/path"));
-        assert_eq!(error_label(&io), "Io::BrokenPipe");
-        let remote = Error::Remote {
-            kind: "kind".into(),
-            message: "secret detail".into(),
-        };
-        assert_eq!(error_label(&remote), "Remote");
-        assert_eq!(error_label(&Error::PoisonedLock("state")), "PoisonedLock");
-        assert_eq!(
-            error_label(&Error::ConnectionSuperseded),
-            "ConnectionSuperseded"
-        );
     }
 }
