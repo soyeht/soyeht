@@ -10,13 +10,18 @@ use soyeht_platform::crash::{LINE_CHARS, MAX_FRAMES, Program, Report};
 /// A version or architecture name is at most this long, and only these characters.
 const NAME_CHARS: usize = 32;
 
-/// The report of a crash diagnostic, or `None` when `diagnostic` is not one (it has neither the
-/// metadata nor the call stack tree of `MXCrashDiagnostic`).
+/// The report of a crash diagnostic, or `None` when `diagnostic` is not one: it must say what
+/// happened (a signal or an exception type) or hold at least one frame of the stack, so that
+/// `{"diagnosticMetaData":{}}` is not a crash.
 pub fn report(diagnostic: &Value, time: u64) -> Option<Report> {
-    if !diagnostic["diagnosticMetaData"].is_object() && !diagnostic["callStackTree"].is_object() {
+    let meta = &diagnostic["diagnosticMetaData"];
+    let frames = frames(&diagnostic["callStackTree"]);
+    if meta["signal"].as_u64().is_none()
+        && meta["exceptionType"].as_u64().is_none()
+        && frames.is_empty()
+    {
         return None;
     }
-    let meta = &diagnostic["diagnosticMetaData"];
     Some(Report {
         version: name(&meta["appVersion"]).unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_owned()),
         system: format!(
@@ -31,7 +36,7 @@ pub fn report(diagnostic: &Value, time: u64) -> Option<Report> {
         fatal: true,
         kind: kind(meta),
         location: String::new(),
-        frames: frames(&diagnostic["callStackTree"]),
+        frames,
         log: Vec::new(),
     })
 }

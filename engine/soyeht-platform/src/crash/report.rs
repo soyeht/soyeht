@@ -62,8 +62,8 @@ pub struct Report {
     pub time: u64,
     pub pid: u32,
     pub thread: String,
-    /// Whether the program ended: the panic was on its main thread, or the system said it
-    /// crashed. A panic that only ended a task is not fatal.
+    /// Whether the program ended: the panic was not caught, on its main thread, or the system
+    /// said it crashed. A panic that only ended a task, or that code caught, is not fatal.
     pub fatal: bool,
     /// A bounded label for what went wrong, never the message text.
     pub kind: String,

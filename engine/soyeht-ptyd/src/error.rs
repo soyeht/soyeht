@@ -162,6 +162,21 @@ impl fmt::Display for Error {
     }
 }
 
+/// A failure of the supervisor logs as a bounded label, never as message text: the name of the
+/// variant (the payload of a few holds a path or a system message), and the `io::ErrorKind` of an
+/// I/O error.
+impl soyeht_platform::log::Failure for Error {
+    fn failure_kind(&self) -> String {
+        match self {
+            Self::Io(error) => format!("io:{:?}", error.kind()),
+            other => format!("{other:?}")
+                .chars()
+                .take_while(|character| character.is_alphanumeric() || *character == '_')
+                .collect(),
+        }
+    }
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -235,5 +250,18 @@ mod tests {
         assert!(!Error::guardian_setup(io::ErrorKind::PermissionDenied.into()).spawn_refused());
         assert!(!Error::MissingGuardianResponse.spawn_refused());
         assert!(!Error::GuardianFailed("x".into()).spawn_refused());
+    }
+
+    #[test]
+    fn a_failure_logs_its_kind_and_never_the_text_of_a_path() {
+        use soyeht_platform::log::Failure as _;
+        let refused = Error::GuardianRefused("/Users/dana/Projects/secret: not allowed".into());
+        assert_eq!(refused.failure_kind(), "GuardianRefused");
+        assert_eq!(Error::AlreadyRunning.failure_kind(), "AlreadyRunning");
+        assert_eq!(
+            Error::Io(io::ErrorKind::PermissionDenied.into()).failure_kind(),
+            "io:PermissionDenied"
+        );
+        assert_eq!(Error::PoisonedLock("core").failure_kind(), "PoisonedLock");
     }
 }

@@ -24,8 +24,9 @@ the notice are contract 16.
   exits on purpose and `panic = "unwind"` stays, so the programs crash and restart as they did
   (ADR 0114's service manager restarts the engine and the supervisor). It runs inside a panic, where
   a second panic aborts the process before anything can catch it, so there is no guard against one:
-  the hook does only what cannot panic and takes no lock its thread may hold (the log file's lock is
-  tried, not waited for).
+  the hook does only what cannot panic, and its own log line only tries the log file's lock. The
+  library call that publishes the file may write an ordinary log line that waits for it; the lock is
+  held only while a line is written, by code that does not panic.
 - **The message of the panic is never recorded**, only a label from the shapes the standard
   library gives its own (`unwrap_none`, `index_out_of_bounds`, ...) and the source location. A
   message can carry a file name or a fragment of what the person was doing, and ADR 0088 keeps
@@ -33,7 +34,10 @@ the notice are contract 16.
   own structured lines, redacted as in contract 14. The default hook writes the message to standard
   error, which the services' redirection and the engine's copy put into the same log file; so the log
   sections of the reports and of `soyeht diagnostics` keep only `{"event":...}` lines.
-  A panic that ends the program is always written; those that do not are limited to three per process.
+  A panic that ends the program (uncaught, on the thread named `main`) is always written; those that
+  do not, including a panic that code catches on purpose (`crash::caught`, used by the window's
+  terminal parser and the engine's background work, where the main thread catches and goes on), are
+  limited to three per process.
 - **The backtrace is `module+0xoffset`, not names.** A shipped program is stripped, and stripping
   is a decision (the engine hashes its own executable at start, and the profile says so in `Cargo.toml`). The
   hook captures the return addresses with the system's own call (`backtrace` and `dladdr` on Unix,

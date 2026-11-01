@@ -45,9 +45,15 @@ fn a_system_diagnostic_becomes_a_report_with_facts_and_no_free_text() {
 }
 
 #[test]
-fn a_diagnostic_with_nothing_in_it_is_still_a_report() {
-    let report = metrickit::report(&json!({"diagnosticMetaData": {}}), 5).unwrap();
-    assert_eq!(report.kind, "crash");
+fn a_diagnostic_that_says_what_happened_is_a_report_and_one_that_says_nothing_is_not() {
+    let report = metrickit::report(&json!({"diagnosticMetaData": {"exceptionCode": 0}}), 5);
+    assert!(
+        report.is_none(),
+        "metadata with no fact is not a crash diagnostic"
+    );
+    let report =
+        metrickit::report(&json!({"diagnosticMetaData": {"exceptionType": 1}}), 5).unwrap();
+    assert_eq!(report.kind, "exception_1");
     assert!(report.frames.is_empty());
     assert_eq!(report.version, env!("CARGO_PKG_VERSION"));
 }
@@ -135,6 +141,14 @@ fn import_deletes_only_what_the_app_dropped() {
     assert!(outside.exists() && misnamed.exists() && target.exists());
     assert_eq!(status(&data).unwrap()["pending"], 0);
     fs::remove_dir_all(data).ok();
+}
+
+#[test]
+fn the_folder_and_the_prefix_the_app_uses_are_the_ones_of_the_contract() {
+    use soyeht_protocol::client_policy::{CRASH_REPORTS_FOLDER, CRASH_REPORTS_INCOMING_PREFIX};
+    let folder = store::directory(Path::new("data"));
+    assert_eq!(folder.file_name().unwrap(), CRASH_REPORTS_FOLDER);
+    assert!(CRASH_REPORTS_INCOMING_PREFIX.starts_with("incoming"));
 }
 
 #[test]

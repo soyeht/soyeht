@@ -20,7 +20,6 @@ use crate::{
 use soyeht_platform::log::{self, Failure as _};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    panic::{AssertUnwindSafe, catch_unwind},
     sync::{Arc, Condvar, Mutex, PoisonError, mpsc},
     thread,
     time::{Duration, Instant},
@@ -389,7 +388,7 @@ fn subsystem(key: &str) -> &str {
 }
 
 fn run_caught<T>(work: impl FnOnce() -> Result<T>) -> Result<T> {
-    catch_unwind(AssertUnwindSafe(work))
+    soyeht_platform::crash::caught(work)
         .unwrap_or_else(|_| Err(errors::internal("Background work panicked")))
 }
 
