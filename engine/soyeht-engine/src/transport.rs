@@ -14,8 +14,13 @@ use tokio::{
     net::TcpStream,
 };
 use tokio_tungstenite::{
-    WebSocketStream, accept_async_with_config,
-    tungstenite::{Message, protocol::WebSocketConfig},
+    WebSocketStream, accept_hdr_async_with_config,
+    tungstenite::{
+        Message,
+        handshake::server::{ErrorResponse, Request, Response},
+        http::StatusCode,
+        protocol::WebSocketConfig,
+    },
 };
 
 type WebSocket = WebSocketStream<TcpStream>;
@@ -34,12 +39,31 @@ pub fn local(stream: Stream) -> (Reader, Writer) {
     (Reader::Local(read), Writer::Local(write))
 }
 
+/// Refuses a handshake that names an `Origin`. A browser puts the page's origin on every
+/// WebSocket it opens and no script can leave it out; none of the engine's clients is a page, so
+/// a connection that has one is a web page reaching for the listener (ADR 0129).
+#[expect(
+    clippy::result_large_err,
+    reason = "the signature is tungstenite's handshake callback"
+)]
+fn refuse_pages(
+    request: &Request,
+    response: Response,
+) -> std::result::Result<Response, ErrorResponse> {
+    if request.headers().contains_key("origin") {
+        let mut refusal = ErrorResponse::new(None);
+        *refusal.status_mut() = StatusCode::FORBIDDEN;
+        return Err(refusal);
+    }
+    Ok(response)
+}
+
 pub async fn websocket(stream: TcpStream) -> Result<(Reader, Writer)> {
     let mut config = WebSocketConfig::default();
     config.max_message_size = Some(limits::JSON_BYTES);
     config.max_frame_size = Some(limits::JSON_BYTES);
     config.max_write_buffer_size = limits::CONNECTION_QUEUE_BYTES;
-    let socket = accept_async_with_config(stream, Some(config)).await?;
+    let socket = accept_hdr_async_with_config(stream, refuse_pages, Some(config)).await?;
     let (write, read) = socket.split();
     Ok((Reader::Web(read), Writer::Web(write)))
 }
@@ -138,5 +162,39 @@ impl Writer {
                 let _ = writer.close().await;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::{connect_async, tungstenite::client::IntoClientRequest};
+
+    /// Whether a client that sends `origin` (if any) gets a WebSocket from `websocket`.
+    async fn connects_with(origin: Option<&str>) -> bool {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut request = format!("ws://{}", listener.local_addr().unwrap())
+            .into_client_request()
+            .unwrap();
+        if let Some(origin) = origin {
+            request
+                .headers_mut()
+                .insert("origin", origin.parse().unwrap());
+        }
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            websocket(stream).await.is_ok()
+        });
+        let connected = connect_async(request).await.is_ok();
+        assert_eq!(server.await.unwrap(), connected);
+        connected
+    }
+
+    #[tokio::test]
+    async fn a_web_page_cannot_open_the_websocket_and_a_native_client_can() {
+        assert!(connects_with(None).await);
+        assert!(!connects_with(Some("https://example.com")).await);
+        assert!(!connects_with(Some("null")).await);
     }
 }
