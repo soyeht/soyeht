@@ -579,6 +579,7 @@
     "referenceProsePointSize": 20,
     "referenceScreenplayCharacterWidth": 9.59375,
     "referenceScreenplayLineHeight": 27,
-    "referenceScreenplayPointSize": 16
+    "referenceScreenplayPointSize": 16,
+    "webAddressMinimumWidth": 160
   }
 }

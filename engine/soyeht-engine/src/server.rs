@@ -1,4 +1,5 @@
 use crate::{
+    admission::Admission,
     agents::catalog::prepare_catalog,
     core::Core,
     core_lock::{self, Shared},
@@ -73,10 +74,9 @@ fn coalesce_catalog_jobs(
 const CATALOG_QUEUE_CAPACITY: usize = 128;
 
 fn local_peer_audit_token(stream: &Stream) -> Option<ui_attestation::PeerAuditToken> {
-    if !same_user(stream) {
-        return None;
-    }
-    ui_attestation::peer_audit_token(stream)
+    same_user(stream)
+        .then(|| ui_attestation::peer_audit_token(stream))
+        .flatten()
 }
 
 pub struct Config {
@@ -134,7 +134,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     let accept = Accept {
         profile: config.profile,
         core: Arc::clone(&core),
-        permits: Arc::new(Semaphore::new(128)),
+        admission: Admission::default(),
         catalog_tx: catalog_tx.clone(),
     };
     for address in config.listen {
@@ -177,7 +177,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
 struct Accept {
     profile: &'static Profile,
     core: Shared,
-    permits: Arc<Semaphore>,
+    admission: Admission,
     catalog_tx: mpsc::Sender<CatalogJob>,
 }
 
@@ -186,7 +186,7 @@ async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Resu
     let Accept {
         profile,
         core,
-        permits,
+        admission,
         catalog_tx,
     } = accept;
     loop {
@@ -194,13 +194,13 @@ async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Resu
         let Some(peer_audit_token) = local_peer_audit_token(&stream) else {
             continue;
         };
-        let Ok(permit) = Arc::clone(&permits).try_acquire_owned() else {
+        let Some(slot) = admission.local() else {
             continue;
         };
         let core = Arc::clone(&core);
         let catalog_tx = catalog_tx.clone();
         tokio::spawn(async move {
-            let _permit = permit;
+            let _slot = slot;
             let signed_ui = tokio::task::spawn_blocking(move || {
                 ui_attestation::signed_ui_peer(peer_audit_token, profile)
             })
@@ -214,13 +214,13 @@ async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Resu
 
 async fn serve_tcp(listener: TcpListener, accept: Accept) -> io::Result<()> {
     loop {
-        let (stream, _) = listener.accept().await?;
-        let Ok(permit) = Arc::clone(&accept.permits).try_acquire_owned() else {
+        let (stream, peer) = listener.accept().await?;
+        let Some(slot) = accept.admission.remote(peer.ip()) else {
             continue;
         };
         let (core, catalog_tx) = (Arc::clone(&accept.core), accept.catalog_tx.clone());
         tokio::spawn(async move {
-            let _permit = permit;
+            let _slot = slot;
             let websocket = transport::websocket(stream);
             if let Ok(Ok((reader, writer))) =
                 tokio::time::timeout(Duration::from_secs(5), websocket).await

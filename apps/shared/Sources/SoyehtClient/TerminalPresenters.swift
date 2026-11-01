@@ -117,7 +117,7 @@ extension EngineClient: TerminalStreamControl {
   {
     connectionRevision &+= 1
     connected = true
-    connectionText = "Dev profile · connected"
+    connectionText = ActiveProfile.values.connectedText
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
     if followsEveryTerminal {
       // The tmux-style Mac surface keeps every terminal current, including hidden workspaces.

@@ -144,6 +144,10 @@ pub struct State {
     pub active_silent_since_ms: Option<i64>,
     pub draft_until_ms: i64,
     pub cancel_at_ms: Option<i64>,
+    /// When `session/cancel` was last sent for the turn being cancelled: it is sent again while the
+    /// turn goes on, since an agent drops a cancel that reaches it before the turn has begun.
+    #[serde(default)]
+    pub cancel_sent_ms: Option<i64>,
     pub last_update_ms: i64,
     pub acknowledged_offset: u64,
     #[serde(default)]
@@ -225,6 +229,7 @@ impl State {
             active_silent_since_ms: None,
             draft_until_ms: 0,
             cancel_at_ms: None,
+            cancel_sent_ms: None,
             last_update_ms: 0,
             acknowledged_offset: 0,
             discard_until_newline: false,

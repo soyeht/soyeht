@@ -31,7 +31,9 @@ or answering a question. Human questions keep their own thirty-minute deadline.
 Expiration atomically stores the cancellation, native reply, public answered
 event and persistent attention item. A new prompt clears the pane's attention.
 
-Cancellation waits ten seconds for the native prompt response. Read already
+Cancellation waits ten seconds for the native prompt response. The engine sends
+`session/cancel` again every second until the prompt answers or the deadline passes, since an
+agent drops a cancel that reaches it before its turn has begun. Read already
 buffered responses before evaluating that deadline, including after engine
 adoption. If no response confirms cancellation, stop the supervised process and
 its inline terminals, settle pending calls explicitly, and preserve waiting

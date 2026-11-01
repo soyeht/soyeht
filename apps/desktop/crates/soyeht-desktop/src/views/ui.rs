@@ -17,6 +17,7 @@ use gpui::{
     canvas, div, font, linear_color_stop, linear_gradient, prelude::FluentBuilder, px, relative,
     rgb, svg,
 };
+use std::rc::Rc;
 
 /// What the desktop client says of anything it does not serve yet, in the rail, in a pane and
 /// beside a composer button: one sentence, so the three never word it differently.
@@ -134,6 +135,8 @@ struct Hint {
 impl Render for Hint {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         neo::raised(self.palette, radius::COMPACT, elevation::CHIP)
+            .relative()
+            .child(super::overlay::footprint())
             .max_w(px(desktop::TOOLTIP_MAX_WIDTH))
             .px(px(space::X8))
             .py(px(space::X4))
@@ -544,11 +547,20 @@ pub fn keep_every_wheel(_: &ScrollWheelEvent, _: &mut Window, cx: &mut App) {
 }
 
 /// A canvas that takes no room of its own and tells `report` where its parent was laid out. Put
-/// it inside a `relative` parent.
+/// it inside a `relative` parent. The report is made once the frame is drawn: a view that
+/// notifies while the window draws is not drawn again (the window ignores it), so a report that
+/// changes what the next frame shows must be able to ask for that frame.
 pub fn bounds_probe(report: impl Fn(Bounds<Pixels>, &mut App) + 'static) -> impl IntoElement {
-    canvas(move |bounds, _, cx| report(bounds, cx), |_, (), _, _| {})
-        .absolute()
-        .size_full()
+    let report = Rc::new(report);
+    canvas(
+        move |bounds, _, cx| {
+            let report = Rc::clone(&report);
+            cx.defer(move |cx| report(bounds, cx));
+        },
+        |_, (), _, _| {},
+    )
+    .absolute()
+    .size_full()
 }
 
 /// Whether a sideways scroller hides more at its left end and at its right end. A scroller that

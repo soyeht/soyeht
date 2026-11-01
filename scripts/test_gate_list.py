@@ -326,6 +326,45 @@ class VocabularySkipTests(unittest.TestCase):
         self.assertIn("export SOYEHT_SKIP_FORBIDDEN_TERMS=1", text)
 
 
+SUITE_RUN = re.compile(r"\b(?:swift|cargo)\s+test\b|\bunittest\b|\bnpm\s+(?:run\s+)?test\b")
+BUILD_STEP_SCRIPT = re.compile(
+    r"^\s*step\s+\S+\s+\S+\s+\S+:build\s+bash\s+(scripts/\S+\.sh)\s*$", re.MULTILINE
+)
+
+
+def suite_runs(script: str) -> list[str]:
+    """The lines of a shell script, comments left out, that start a test suite."""
+    code = (line for line in script.splitlines() if not line.lstrip().startswith("#"))
+    return [line.strip() for line in code if SUITE_RUN.search(line)]
+
+
+class BuildStepTests(unittest.TestCase):
+    """A step that builds an app fails only when the build fails.
+
+    The Mac app step once ran the shared package's whole suite before `xcodebuild`, a second run
+    of `swift:test-shared`. On a loaded host a timing-sensitive test failed in it, and the watch
+    counted a flake of `mac-app:build` although the build never ran (three of its failures in a
+    row were test failures). A test suite is a step of its own, listed once.
+    """
+
+    def test_the_build_scripts_are_found(self):
+        scripts = BUILD_STEP_SCRIPT.findall((ROOT / "scripts/check_all.sh").read_text())
+        self.assertIn("scripts/check_mac.sh", scripts)
+        self.assertIn("scripts/check_ios.sh", scripts)
+
+    def test_a_build_step_runs_no_test_suite(self):
+        scripts = BUILD_STEP_SCRIPT.findall((ROOT / "scripts/check_all.sh").read_text())
+        for script in scripts:
+            self.assertEqual(
+                suite_runs((ROOT / script).read_text()), [],
+                f"{script} runs a test suite; make it a step of check_all.sh",
+            )
+
+    def test_a_script_that_runs_a_suite_is_recognised(self):
+        script = "# swift test is not run here\nswift test --package-path apps/shared\nxcodebuild build\n"
+        self.assertEqual(suite_runs(script), ["swift test --package-path apps/shared"])
+
+
 class GateListTests(unittest.TestCase):
     def test_every_workflow_delegates_to_check_all(self):
         problems = [
