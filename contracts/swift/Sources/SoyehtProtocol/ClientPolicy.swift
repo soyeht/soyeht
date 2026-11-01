@@ -65,6 +65,8 @@ public enum ClientPolicy {
     public static let usageRingLastKnownArcOpacity: Double = 0.45
     public static let usageRingUnavailableOpacity: Double = 0.46
     public static let usageWindowWeeklyKeyword = "week"
+    public static let crashReportsFolder = "crashes"
+    public static let crashReportsIncomingPrefix = "incoming-"
     public static let editorPrefetchLines = 160
     public static let editorPageLeadDivisor = 4
     public static let editorTabWidth = 4
