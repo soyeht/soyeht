@@ -123,6 +123,63 @@ impl Core {
         });
         web_result
     }
+    /// Checks a device's `hello` against its record and answers with its id and the engine's
+    /// proof for this connection (ADR 0132).
+    fn authenticate_device(
+        &self,
+        hello: &HelloParams,
+        nonce: &[u8; 32],
+    ) -> Result<(String, String)> {
+        let token = hello
+            .device_token
+            .as_deref()
+            .ok_or_else(|| errors::unauthorized("Device token required"))?;
+        let record = self
+            .store
+            .device_identity(&auth::token_hash(token))
+            .map_err(errors::storage)?;
+        let record = record.ok_or_else(|| errors::unauthorized("Unknown or revoked device"))?;
+        let id = record.device_id;
+        let key = auth::public_key(&STANDARD.encode(record.public_key))
+            .map_err(|error| errors::unauthorized(error.to_string()))?;
+        // A device that sends no nonce of its own cannot check the engine's answer.
+        let client_nonce = hello
+            .client_nonce
+            .as_deref()
+            .and_then(|text| STANDARD.decode(text).ok())
+            .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+            .ok_or_else(|| {
+                errors::protocol_version_unsupported(
+                    "This device cannot verify the Mac: update Soyeht on it",
+                )
+            })?;
+        if !hello.proof.as_ref().is_some_and(|proof| {
+            auth::hello_proof(
+                &key,
+                (nonce, &client_nonce),
+                &self.store.db_id,
+                token,
+                proof,
+            )
+        }) {
+            return Err(errors::unauthorized("Invalid connection signature"));
+        }
+        let engine_proof = auth::sign(
+            &self.engine_key,
+            &auth::engine_hello_bytes(nonce, &client_nonce, &self.store.db_id, &id),
+        );
+        if self
+            .clients
+            .values()
+            .filter(|c| c.actor.as_ref().and_then(|a| a.device_id.as_ref()) == Some(&id))
+            .count()
+            >= 8
+        {
+            return Err(errors::unauthorized("Device connection limit reached"));
+        }
+        Ok((id, engine_proof))
+    }
+
     fn hello(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let hello: HelloParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid hello parameters"))?;
@@ -175,53 +232,8 @@ impl Core {
                 format!("local:{uid}:{}", hello.client),
             )
         } else {
-            let token = hello
-                .device_token
-                .as_deref()
-                .ok_or_else(|| errors::unauthorized("Device token required"))?;
-            let record = self
-                .store
-                .device_identity(&auth::token_hash(token))
-                .map_err(errors::storage)?;
-            let record = record.ok_or_else(|| errors::unauthorized("Unknown or revoked device"))?;
-            let id = record.device_id;
-            let key = auth::public_key(&STANDARD.encode(record.public_key))
-                .map_err(|error| errors::unauthorized(error.to_string()))?;
-            // A device that sends no nonce of its own cannot check the engine's answer.
-            let client_nonce = hello
-                .client_nonce
-                .as_deref()
-                .and_then(|text| STANDARD.decode(text).ok())
-                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
-                .ok_or_else(|| {
-                    errors::protocol_version_unsupported(
-                        "This device cannot verify the Mac: update Soyeht on it",
-                    )
-                })?;
-            if !hello.proof.as_ref().is_some_and(|proof| {
-                auth::hello_proof(
-                    &key,
-                    (&nonce, &client_nonce),
-                    &self.store.db_id,
-                    token,
-                    proof,
-                )
-            }) {
-                return Err(errors::unauthorized("Invalid connection signature"));
-            }
-            engine_proof = Some(auth::sign(
-                &self.engine_key,
-                &auth::engine_hello_bytes(&nonce, &client_nonce, &self.store.db_id, &id),
-            ));
-            if self
-                .clients
-                .values()
-                .filter(|c| c.actor.as_ref().and_then(|a| a.device_id.as_ref()) == Some(&id))
-                .count()
-                >= 8
-            {
-                return Err(errors::unauthorized("Device connection limit reached"));
-            }
+            let (id, proof) = self.authenticate_device(&hello, &nonce)?;
+            engine_proof = Some(proof);
             (
                 Role::HumanDevice,
                 Some(id.clone()),
