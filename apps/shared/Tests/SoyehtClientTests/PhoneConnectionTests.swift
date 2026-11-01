@@ -13,18 +13,21 @@
       ?? root.appendingPathComponent("engine/target/debug")
     // The engine refuses to start an agent without `soyeht-mcp` next to it, and the pane then
     // waits for a session that never opens. Name the missing program before the 30 s wait.
-    let missing = ["soyeht-engine", "soyeht-ptyd", "soyeht", "soyeht-fake-acp", "soyeht-mcp"]
+    let missing = ["soyeht-engine-test", "soyeht-ptyd", "soyeht", "soyeht-fake-acp", "soyeht-mcp"]
       .filter {
         !FileManager.default.isExecutableFile(atPath: bins.appendingPathComponent($0).path)
       }
     guard missing.isEmpty else {
       throw ClientFailure.remote(
         "test_setup",
-        "missing \(missing.joined(separator: ", ")) in \(bins.path); build the whole workspace")
+        "missing \(missing.joined(separator: ", ")) in \(bins.path); build the whole workspace and the test engine"
+      )
     }
     let data = URL(fileURLWithPath: "/tmp/sn-phone-" + UUID().uuidString.prefix(8))
     try FileManager.default.createDirectory(
       at: data, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    // The test engine counts this client as the signed Mac app, which alone approves a pairing.
+    try Data().write(to: data.appendingPathComponent("test-attest-local-ui"))
     try "PROMPT='PHONE_READY> '\nHISTFILE=\nSAVEHIST=0\n".write(
       to: data.appendingPathComponent(".zshrc"), atomically: true, encoding: .utf8)
     let registry: [[String: Any]] = [
@@ -52,7 +55,7 @@
     let process = Process()
     process.executableURL = bins.appendingPathComponent(name)
     process.arguments = ["--data-dir", data.path]
-    if name == "soyeht-engine" { process.arguments! += ["--listen", "127.0.0.1:0"] }
+    if name == "soyeht-engine-test" { process.arguments! += ["--listen", "127.0.0.1:0"] }
     process.environment = ProcessInfo.processInfo.environment
     process.environment?["ZDOTDIR"] = data.path
     process.standardOutput = output
@@ -234,7 +237,7 @@
       FileManager.default.fileExists(atPath: fixture.data.appendingPathComponent("ptyd.sock").path)
     }
     engine = try launchPhoneProcess(
-      "soyeht-engine", bins: fixture.bins, data: fixture.data, output: fixture.output)
+      "soyeht-engine-test", bins: fixture.bins, data: fixture.data, output: fixture.output)
     local.start()
     try await phoneWait { local.connected }
     _ = try await local.createTerminalPane(directory: fixture.data)
