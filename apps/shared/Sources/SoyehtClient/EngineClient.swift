@@ -191,8 +191,7 @@ public final class EngineClient {
             // Another Mac app already hosts the browser: connect without claiming it.
             if kind == ErrorKind.web_host_unavailable.rawValue { self.webHostRefused = true }
             if self.pairedDevice
-              && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
-                .contains(kind)
+              && ClientFailure.refusesCredential(kind: kind)
             {
               self.credentialRejected = true
               self.disconnect()

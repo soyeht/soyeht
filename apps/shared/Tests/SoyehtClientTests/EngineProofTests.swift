@@ -62,10 +62,37 @@ private func welcome(proof: String?) throws -> Welcome {
   // pairing proof is not a hello proof; an engine that sends none is too old to be checked.
   let impostor = Curve25519.Signing.PrivateKey()
   let forged = try impostor.signature(for: signed).base64EncodedString()
-  #expect(refusal(forged) == ErrorKind.engine_identity_changed.rawValue)
-  #expect(refusal(proofs.text("enginePairProof")) == ErrorKind.engine_identity_changed.rawValue)
-  #expect(refusal("not base64 !") == ErrorKind.protocol_version_unsupported.rawValue)
+  #expect(refusal(forged) == EngineVerification.notYourMac)
+  #expect(refusal(proofs.text("enginePairProof")) == EngineVerification.notYourMac)
+  #expect(refusal("not base64 !") == EngineVerification.notYourMac)
   #expect(refusal(nil) == ErrorKind.protocol_version_unsupported.rawValue)
+}
+
+@Test func aServerThatCannotProveItselfDoesNotDisableTheSavedAccess() {
+  // The device keeps trying with backoff: only a refusal of the access itself stops it.
+  #expect(!ClientFailure.refusesCredential(kind: EngineVerification.notYourMac))
+  #expect(!ClientFailure.refusesCredential(kind: ErrorKind.protocol_version_unsupported.rawValue))
+  #expect(ClientFailure.refusesCredential(kind: ErrorKind.unauthorized.rawValue))
+  #expect(ClientFailure.refusesCredential(kind: ErrorKind.engine_identity_changed.rawValue))
+  #expect(EngineVerification.notYourMacText.hasPrefix("This is not your Mac"))
+}
+
+@Test func aLinkFromAMacThatHasNotBeenUpdatedSaysToUpdateIt() {
+  let engine = "6F1E2D3C-4B5A-4978-8A6B-5C4D3E2F1A0B"
+  let old =
+    "soyeht-next://pair?engineId=\(engine)&address=100.64.0.9:8291&code="
+    + String(repeating: "a", count: 43)
+  do {
+    _ = try PairingLink(old)
+    Issue.record("a link without the engine key must not pair")
+  } catch ClientFailure.remote(let kind, let message, _) {
+    #expect(kind == ErrorKind.protocol_version_unsupported.rawValue)
+    #expect(message.hasPrefix("Update Soyeht on the Mac"))
+  } catch {
+    Issue.record("\(error)")
+  }
+  // Anything else that is not a link stays the generic refusal.
+  #expect(throws: ClientFailure.self) { try PairingLink("https://example.com") }
 }
 
 @Test func theEnginesPairingProofBindsTheRequestTheChallengeAndTheDevice() throws {
