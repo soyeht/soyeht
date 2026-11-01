@@ -192,7 +192,8 @@ def describe(text, keys, running, system, architecture, channel):
         if version is None:
             raise Refused(f"--running must be MAJOR.MINOR.PATCH, not {running!r}")
         lines.append(f"for {running} on {system}-{architecture}: "
-                     + json.dumps(manifest.evaluate(text, version, system, architecture, channel, keys)))
+                     + json.dumps(manifest.evaluate(text, version, system, architecture, channel, keys,
+                                                     now=int(time.time()))))
     return "\n".join(lines)
 
 

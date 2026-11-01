@@ -46,10 +46,10 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(linux["size"], 5)
         self.assertTrue(linux["url"].endswith(f"/v{VERSION}/soyeht-{VERSION}-linux-x86_64.tar.gz"))
         older = (0, 0, 1)
-        offer = manifest.evaluate(text, older, "linux", "x86_64", "stable", KEYS)
+        offer = manifest.evaluate(text, older, "linux", "x86_64", "stable", KEYS, now=int(time.time()))
         self.assertEqual(offer["version"], str(VERSION))
         self.assertEqual(offer["package"]["sha256"], linux["sha256"])
-        same = manifest.evaluate(text, tuple(VERSION), "linux", "x86_64", "stable", KEYS)
+        same = manifest.evaluate(text, tuple(VERSION), "linux", "x86_64", "stable", KEYS, now=int(time.time()))
         self.assertEqual(same["status"], "upToDate")
 
     def test_the_sequence_is_the_signing_time_unless_given_and_must_be_a_valid_one(self):
@@ -63,8 +63,19 @@ class ReleaseManifestTests(unittest.TestCase):
         with self.assertRaises(release_manifest.Refused):
             release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, sequence=0)
         # An older manifest is refused by a device that has read the one with sequence 77.
-        old = manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, floor=78)
+        old = manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, floor=78, now=78)
         self.assertEqual(old, {"status": "failed", "failure": "staleManifest"})
+
+    def test_a_manifest_expires_the_longest_life_after_it_is_signed_and_a_client_refuses_it_then(self):
+        self.packages()
+        now = 1_800_000_000
+        life = release_manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+        text, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, now=now)
+        payload = manifest.check_payload(manifest.open_envelope(text, KEYS))
+        self.assertEqual(payload["expiresAt"], now + life)
+        read = lambda at: manifest.outcome(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, now=at)  # noqa: E731
+        self.assertEqual(read(now + life - 1)["status"], "available")
+        self.assertEqual(read(now + life), {"status": "failed", "failure": "expired"})
 
     def test_a_sequence_more_than_a_day_ahead_is_refused_with_the_recovery(self):
         self.packages()

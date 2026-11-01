@@ -145,6 +145,13 @@ them through VMPal"); an unsigned installer is fine for that and for `--allow-un
 
 ## When something goes wrong
 
+**The expiry.** Every manifest expires 90 days (`manifest.maxLifetimeSeconds`) after it is signed, and a
+device refuses one at or past its expiry (`expired`, contract 15 section 3), so an old manifest that
+someone keeps serving cannot hold a device on an old release. The same rule means that when no release is
+published for 90 days, every device's update check starts to fail. Publish the manifest again before that:
+`collect` signs a new one for the same version with a higher sequence (the signing time), and uploading it
+over the old asset is the whole renewal. Put it in the calendar when a release goes out.
+
 **The sequence.** A device remembers the highest `sequence` it has read and refuses every lower one
 (contract 15, section 3). So a manifest with a sequence far in the future would lock every later
 release out of the devices that read it, for ever. `release_manifest.py build` refuses a sequence more

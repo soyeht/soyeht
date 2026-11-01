@@ -29,6 +29,9 @@ KEYS = {
     "second": {"id": "test-2", "key": base64.b64encode(ed25519.public_key(SECOND)).decode()},
 }
 SEQUENCE = 1_000
+LIFETIME = manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+# The time a case reads the manifest at, unless it says: just after it was signed.
+NOW = SEQUENCE + 1
 UP_TO_DATE = {"status": "upToDate", "sequence": SEQUENCE}
 NOTES = "https://github.com/soyeht/soyeht/releases/tag/v0.2.0"
 BASE = "https://github.com/soyeht/soyeht/releases/download/v0.2.0/"
@@ -59,6 +62,7 @@ def payload(**changes):
         "format": 1,
         "channel": "stable",
         "sequence": SEQUENCE,
+        "expiresAt": SEQUENCE + LIFETIME,
         "version": "0.2.0",
         "minimumSupportedVersion": "0.1.0",
         "releaseNotesUrl": NOTES,
@@ -92,7 +96,7 @@ def malleable(encoded):
 
 
 def case(name, text, expected, running="0.1.0", system="macos", architecture="aarch64", channel="stable",
-         trust=("first",), floor=0):
+         trust=("first",), floor=0, now=NOW):
     return {
         "name": name,
         "running": running,
@@ -101,6 +105,7 @@ def case(name, text, expected, running="0.1.0", system="macos", architecture="aa
         "channel": channel,
         "trust": list(trust),
         "floor": floor,
+        "now": now,
         "manifest": text,
         "expected": expected,
     }
@@ -179,8 +184,17 @@ def build_cases():
         case("a manifest older than one already seen is refused", good, failed("staleManifest"), floor=SEQUENCE + 1),
         case("an older manifest is refused even when it offers nothing newer", good, failed("staleManifest"),
              running="0.2.0", floor=SEQUENCE + 1),
-        case("a newer sequence is read", signed(payload(sequence=SEQUENCE + 5)),
+        case("a newer sequence is read", signed(payload(sequence=SEQUENCE + 5, expiresAt=SEQUENCE + 5 + LIFETIME)),
              {**available(), "sequence": SEQUENCE + 5}, floor=SEQUENCE),
+        case("a manifest is read up to the second before it expires", good, available(), now=SEQUENCE + LIFETIME - 1),
+        case("a manifest is refused at its expiry", good, failed("expired"), now=SEQUENCE + LIFETIME),
+        case("a manifest long past its expiry is refused", good, failed("expired"), now=SEQUENCE + 10 * LIFETIME),
+        case("an expired manifest never reads as up to date", good, failed("expired"), running="0.2.0",
+             now=SEQUENCE + LIFETIME),
+        case("a stale sequence is reported before an expiry", good, failed("staleManifest"), floor=SEQUENCE + 1,
+             now=SEQUENCE + LIFETIME),
+        case("a wrong channel is reported before an expiry", good, failed("wrongChannel"), channel="beta",
+             now=SEQUENCE + LIFETIME),
         case("another channel is refused before the sequence is compared", good, failed("wrongChannel"),
              channel="beta", floor=SEQUENCE + 1),
         case("text that is not JSON is not an envelope", "not json", failed("badEnvelope")),
@@ -206,6 +220,12 @@ def build_cases():
         "a sequence that is text": payload(sequence="1000"),
         "a fractional sequence": json.dumps({**json.loads(payload()), "sequence": 1000.5}).encode(),
         "a sequence above the limit": payload(sequence=manifest.POLICY["manifest"]["maxSequence"] + 1),
+        "no expiry": json.dumps({k: v for k, v in json.loads(payload()).items() if k != "expiresAt"}).encode(),
+        "an expiry that is text": payload(expiresAt=str(SEQUENCE + LIFETIME)),
+        "a fractional expiry": json.dumps({**json.loads(payload()), "expiresAt": SEQUENCE + 5.5}).encode(),
+        "an expiry that is the time of signing": payload(expiresAt=SEQUENCE),
+        "an expiry before the time of signing": payload(expiresAt=SEQUENCE - 1),
+        "an expiry beyond the longest life": payload(expiresAt=SEQUENCE + LIFETIME + 1),
         "a notes address with a dot segment": payload(releaseNotesUrl=BASE + "../../../evil/x"),
         "a package address going up a folder": payload(
             packages=[package("macos", "aarch64", "dmg", url=BASE + "../v0.1.0/soyeht.dmg")]),
@@ -249,7 +269,7 @@ def build_vectors():
             "(UpdateCheck) and the release script (contracts/update_manifest.py). `trust` names the keys "
             "of `keys` a build carries; `expected` is the result of reading `manifest` as version "
             "`running` on `system` and `architecture` in `channel`, when the highest sequence this device has seen is "
-            "`floor`. The keys are throwaway test keys. "
+            "`floor`, at `now` (seconds since 1970). The keys are throwaway test keys. "
             "Regenerate with: uv run python contracts/test_update_manifest.py --write"
         ),
         "keys": KEYS,
@@ -260,7 +280,7 @@ def build_vectors():
 def read(case_):
     keys = [KEYS[name] for name in case_["trust"]]
     return manifest.outcome(case_["manifest"], manifest.parse_version(case_["running"]), case_["system"],
-                            case_["architecture"], case_["channel"], keys, case_["floor"])
+                            case_["architecture"], case_["channel"], keys, case_["floor"], now=case_["now"])
 
 
 class Ed25519Tests(unittest.TestCase):
@@ -353,7 +373,7 @@ class VectorTests(unittest.TestCase):
     def test_a_manifest_over_the_limit_is_refused_before_it_is_read(self):
         text = signed(payload()) + " " * manifest.POLICY["manifest"]["maxBytes"]
         with self.assertRaises(manifest.Failed) as caught:
-            manifest.evaluate(text, (0, 1, 0), "macos", "aarch64", "stable", [KEYS["first"]])
+            manifest.evaluate(text, (0, 1, 0), "macos", "aarch64", "stable", [KEYS["first"]], now=NOW)
         self.assertEqual(caught.exception.failure, "tooLarge")
 
 

@@ -122,6 +122,8 @@ public final class UpdateChecker {
   @ObservationIgnored private let preferences: any ClientPreferenceStore
   @ObservationIgnored private let fetch: UpdateFetch
   @ObservationIgnored private let interval: Duration
+  /// The clock a manifest's expiry is read against.
+  @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private var loop: Task<Void, Never>?
   /// A check is running, whatever the switch did meanwhile: one at a time.
   @ObservationIgnored private var inFlight = false
@@ -137,8 +139,10 @@ public final class UpdateChecker {
 
   public init(
     build: UpdateBuild?, keys: [UpdatePublicKey], preferences: any ClientPreferenceStore,
-    fetch: @escaping UpdateFetch, interval: Duration
+    fetch: @escaping UpdateFetch, interval: Duration,
+    now: @escaping @Sendable () -> Date = Date.init
   ) {
+    self.now = now
     self.build = build
     self.keys = keys
     self.preferences = preferences
@@ -190,7 +194,8 @@ public final class UpdateChecker {
     inFlight = true
     status = .checking
     let floor = UInt64(max(preferences.integer(forKey: Self.sequenceKey) ?? 0, 0))
-    let result = await Self.read(build: build, keys: keys, floor: floor, fetch: fetch)
+    let result = await Self.read(
+      build: build, keys: keys, floor: floor, now: UpdateCheck.seconds(now()), fetch: fetch)
     inFlight = false
     guard enabled else { return }
     switch result {
@@ -218,7 +223,7 @@ public final class UpdateChecker {
   }
 
   private nonisolated static func read(
-    build: UpdateBuild, keys: [UpdatePublicKey], floor: UInt64, fetch: UpdateFetch
+    build: UpdateBuild, keys: [UpdatePublicKey], floor: UInt64, now: UInt64, fetch: UpdateFetch
   ) async -> Result<UpdateChecked, UpdateFailure> {
     // A build with no key asks nobody: it could not trust the answer.
     guard !keys.isEmpty, let address = URL(string: UpdatePolicy.manifestURL) else {
@@ -226,7 +231,7 @@ public final class UpdateChecker {
     }
     switch await fetch(address) {
     case .success(let text):
-      return UpdateCheck.evaluate(text, build: build, keys: keys, floor: floor)
+      return UpdateCheck.evaluate(text, build: build, keys: keys, floor: floor, now: now)
     case .failure(let failure): return .failure(failure)
     }
   }

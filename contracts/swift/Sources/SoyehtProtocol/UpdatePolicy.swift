@@ -28,6 +28,8 @@ public enum UpdatePolicy {
   public static let versionPartLimit = 1000
   /// The largest sequence number a manifest may carry.
   public static let maxSequence: UInt64 = 9007199254740991
+  /// The longest a manifest may live after it is signed (its `sequence`), in seconds.
+  public static let maxLifetimeSeconds: UInt64 = 7776000
   /// Every 32-byte form (base64) of a point of order 8 or less: no such key may be trusted.
   /// CryptoKit does not refuse them as a strict verifier does.
   public static let smallOrderKeys: Set<String> = ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=", "JuiVj8KyJ7BFw/SJ8u+Y8NXfrAXTxjM5sTgCiG1T/AU=", "JuiVj8KyJ7BFw/SJ8u+Y8NXfrAXTxjM5sTgCiG1T/IU=", "xxdqcD1N2E+6PAt2DRBnDyogU/osOczGTsf9d5KsA3o=", "xxdqcD1N2E+6PAt2DRBnDyogU/osOczGTsf9d5KsA/o=", "7P///////////////////////////////////////38=", "7P////////////////////////////////////////8=", "7f///////////////////////////////////////38=", "7f////////////////////////////////////////8=", "7v///////////////////////////////////////38=", "7v////////////////////////////////////////8="]
@@ -96,6 +98,8 @@ public enum UpdateFailure: String, Error, Sendable, Equatable {
   case noPackage
   /// The manifest is older than one this device has already seen.
   case staleManifest
+  /// The manifest's expiry has passed, so it may be an old one that someone keeps serving.
+  case expired
   /// This build's own version is not one the rules can compare.
   case unknownBuild
 }

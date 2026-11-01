@@ -149,10 +149,11 @@ private actor Gate {
   let keys = [updateTestKey(vector, "first")]
   let sequence = try #require(item["expected"]["sequence"].int)
   let store = MemoryPreferenceStore()
-  func updates() -> UpdateChecker {
+  let at = Date(timeIntervalSince1970: TimeInterval(try #require(item["now"].int)))
+  func updates(now: @escaping @Sendable () -> Date = { at }) -> UpdateChecker {
     UpdateChecker(
       build: updateTestBuild("0.1.0"), keys: keys, preferences: store,
-      fetch: { _ in .success(text) }, interval: .seconds(86400))
+      fetch: { _ in .success(text) }, interval: .seconds(86400), now: now)
   }
   let first = updates()
   await first.checkNow()
@@ -164,6 +165,19 @@ private actor Gate {
   #expect(later.status == .failed(.staleManifest))
   #expect(later.offer == nil)
   #expect(store.integers[UpdateChecker.sequenceKey] == sequence + 1)
+}
+
+@Test @MainActor func aManifestPastItsExpiryIsRefusedWhateverItOffers() async throws {
+  let vector = try ContractVector.load("update")
+  let item = try #require(vector["cases"].array?.first)
+  let text = item["manifest"].string ?? ""
+  let updates = UpdateChecker(
+    build: updateTestBuild("0.1.0"), keys: [updateTestKey(vector, "first")],
+    preferences: MemoryPreferenceStore(), fetch: { _ in .success(text) },
+    interval: .seconds(86400))  // the real clock: the vector was signed in 1970
+  await updates.checkNow()
+  #expect(updates.status == .failed(.expired))
+  #expect(updates.offer == nil)
 }
 
 private actor AskedCounter {
