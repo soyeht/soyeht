@@ -192,31 +192,78 @@ fn an_engine_that_answers_is_left_alone_even_after_an_uninstall_was_seen() {
     ensured_without_starting(&host);
 }
 
-#[test]
-fn an_uninstall_is_seen_by_the_record_or_by_the_data_going() {
-    let directory = std::env::temp_dir().join(format!("next-autostart-{}", std::process::id()));
+/// A data folder with an engine's lock file in it, which is what a window that had an engine
+/// finds there until the data is deleted.
+fn data_folder(name: &str) -> PathBuf {
+    let directory = std::env::temp_dir().join(format!("next-watch-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir_all(&directory).unwrap();
     std::fs::write(directory.join(fs::ENGINE_LOCK), "1").unwrap();
-    let began = SystemTime::now() - Duration::from_secs(5);
-    // Nothing happened, whether or not an engine ever answered.
-    assert!(!uninstall_seen(&directory, began, false));
-    assert!(!uninstall_seen(&directory, began, true));
-    // The record, left after the window began.
+    directory
+}
+
+fn watching(directory: &Path) -> Watch {
+    Watch::begin(&Autostart::in_directory(directory.to_owned(), None))
+}
+
+#[test]
+fn an_uninstall_is_a_record_that_is_new_or_changed_since_the_window_began() {
+    let directory = data_folder("record");
+    let watch = watching(&directory);
+    assert!(!watch.uninstalled());
+    // New since the window began.
     fs::mark_uninstalled(&directory).unwrap();
-    assert!(uninstall_seen(&directory, began, false));
-    // A window that began after it is a new start.
-    assert!(!uninstall_seen(
-        &directory,
-        SystemTime::now() + Duration::from_secs(5),
-        false
-    ));
-    // The data deleted takes the engine's lock file with it, and the folder can stay. That counts
-    // only for a window that had an engine there: a first run has no lock file yet.
-    std::fs::remove_file(directory.join(fs::UNINSTALL_MARKER)).unwrap();
-    assert!(!uninstall_seen(&directory, began, true));
+    assert!(watch.uninstalled());
+    // A window that begins now is a new start: it takes the record as it finds it.
+    let later = watching(&directory);
+    assert!(!later.uninstalled());
+    // Another uninstall, with the same record left in the folder, is a change.
+    fs::mark_uninstalled(&directory).unwrap();
+    assert!(later.uninstalled());
+    // Taken away, there is nothing to take for an uninstall.
+    fs::clear_uninstalled(&directory).unwrap();
+    assert!(!watch.uninstalled());
+    assert!(!later.uninstalled());
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_record_that_was_there_before_the_window_is_not_an_uninstall() {
+    // A restored backup, a clock that went back, an old uninstall that left its record: the
+    // window starts its engine.
+    let directory = data_folder("before");
+    fs::mark_uninstalled(&directory).unwrap();
+    let watch = watching(&directory);
+    assert!(!watch.uninstalled());
+    engine_started(&directory);
+    assert_eq!(fs::uninstall_record(&directory).unwrap(), None);
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn deleted_data_is_an_uninstall_only_for_a_window_that_had_an_engine() {
+    let directory = data_folder("deleted");
+    let mut watch = watching(&directory);
     std::fs::remove_file(directory.join(fs::ENGINE_LOCK)).unwrap();
-    assert!(uninstall_seen(&directory, began, true));
-    assert!(!uninstall_seen(&directory, began, false));
+    // A first run has no lock file yet.
+    assert!(!watch.uninstalled());
+    watch.engine_answered();
+    assert!(watch.uninstalled());
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_cannot_be_looked_into_is_not_deleted_data() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = data_folder("denied");
+    let mut watch = watching(&directory);
+    watch.engine_answered();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Whether the lock file is there cannot be told, and that is not "gone". (A privileged
+    // account can look anyway, and then it is there.)
+    assert!(!watch.uninstalled());
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::remove_dir_all(&directory).unwrap();
 }
 

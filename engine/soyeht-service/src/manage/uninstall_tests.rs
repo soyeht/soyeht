@@ -5,7 +5,7 @@ use super::{
     tests::{BOTH, installed, programs},
     *,
 };
-use crate::commands::fake::{Recorder, ok};
+use crate::commands::fake::{Recorder, no, ok};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -38,6 +38,12 @@ fn uninstall_ends_the_programs_the_window_started_engine_first() {
     let recorder = Recorder::default().ending_programs_with({
         let (held, asked) = (held.clone(), asked.clone());
         move |_| {
+            // The record is written before any program is asked to end.
+            assert!(
+                soyeht_platform::fs::uninstall_record(&data)
+                    .unwrap()
+                    .is_some()
+            );
             asked.set(asked.get() + 1);
             let ended = if asked.get() == 1 {
                 Component::Engine
@@ -133,25 +139,51 @@ fn uninstall_leaves_a_record_that_install_takes_away() {
         &Recorder::default(),
         &BOTH,
     );
-    let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
-    assert!(!soyeht_platform::fs::uninstalled_since(
-        &layout.data,
-        long_ago
-    ));
+    let record = || soyeht_platform::fs::uninstall_record(&layout.data).unwrap();
+    assert_eq!(record(), None);
     Manager::new(&layout, &Recorder::default())
         .uninstall(&BOTH)
         .unwrap();
-    assert!(soyeht_platform::fs::uninstalled_since(
-        &layout.data,
-        long_ago
-    ));
+    let first = record().unwrap();
+    // Another uninstall leaves another value, which is how an open window tells them apart.
     Manager::new(&layout, &Recorder::default())
         .install(&programs(), &BOTH)
         .unwrap();
-    assert!(!soyeht_platform::fs::uninstalled_since(
-        &layout.data,
-        long_ago
-    ));
+    assert_eq!(record(), None);
+    Manager::new(&layout, &Recorder::default())
+        .uninstall(&[Component::Engine])
+        .unwrap();
+    // One component is enough: the window must not start the engine again.
+    assert_ne!(record().unwrap(), first);
+}
+
+#[test]
+fn uninstall_unregisters_the_other_service_when_one_registration_cannot_be_removed() {
+    let (_scratch, layout) = installed(
+        System::Linux,
+        "uninstall-unregister",
+        &Recorder::default(),
+        &BOTH,
+    );
+    let engine = layout.profile.engine_systemd_unit;
+    let recorder = Recorder::answering(move |line| {
+        if line.join(" ").contains(&format!("disable --now {engine}")) {
+            no()
+        } else {
+            ok("")
+        }
+    });
+    let error = Manager::new(&layout, &recorder)
+        .uninstall(&BOTH)
+        .unwrap_err();
+    assert!(matches!(error, Error::Failed { .. }), "{error}");
+    let ptyd = layout.profile.ptyd_systemd_unit;
+    assert!(
+        recorder
+            .lines()
+            .contains(&format!("systemctl --user disable --now {ptyd}"))
+    );
+    assert!(!layout.definition_file(Component::Ptyd).exists());
 }
 
 #[test]

@@ -166,9 +166,9 @@ impl<'a, C: Commands> Manager<'a, C> {
     /// An uninstall is first recorded in the data directory, so that a window that is open does
     /// not start the programs again when it finds them gone.
     ///
-    /// Every component is tried, whatever happens to the one before it, so that one program that
-    /// cannot be ended (a process of another account, one that is exiting) does not leave the
-    /// other registered.
+    /// Every component is tried, whatever happens to the one before it, both to unregister it and
+    /// to end its program, so that one that fails (a process of another account, one that is
+    /// exiting, a service manager that refuses) does not leave the other registered.
     ///
     /// # Errors
     /// The first failure, after every component was tried: [`Error::StillRunning`] when a program
@@ -181,13 +181,18 @@ impl<'a, C: Commands> Manager<'a, C> {
         }
         let mut deferred = None;
         for component in ordered(components).into_iter().rev() {
-            match self.layout.system {
-                System::Macos => self.launchd_uninstall(component)?,
-                System::Linux => self.systemd_uninstall(component)?,
-                System::Windows => self.task_uninstall(component)?,
-            }
-            if let Err(error) = self.end_running(component) {
-                deferred.get_or_insert(error);
+            let unregistered = match self.layout.system {
+                System::Macos => self.launchd_uninstall(component),
+                System::Linux => self.systemd_uninstall(component),
+                System::Windows => self.task_uninstall(component),
+            };
+            // A registration that cannot be removed still leaves the program to end, and the
+            // other component to unregister.
+            let ended = self.end_running(component);
+            for failure in [unregistered, ended] {
+                if let Err(error) = failure {
+                    deferred.get_or_insert(error);
+                }
             }
         }
         deferred.map_or(Ok(()), Err)

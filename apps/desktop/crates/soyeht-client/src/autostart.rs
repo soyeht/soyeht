@@ -24,7 +24,7 @@ use std::{
     ffi::{OsStr, OsString},
     fmt, io,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 const ENGINE_PROGRAM: &str = "soyeht-engine";
@@ -319,20 +319,77 @@ pub(crate) struct Local<'a> {
     pub plan: &'a Plan,
     pub socket: &'a Path,
     pub stopped: &'a dyn Fn() -> bool,
-    /// When this window began.
-    pub began: SystemTime,
-    /// An engine answered this window at some point.
-    pub had_engine: bool,
+    pub watch: &'a Watch,
 }
 
-/// Whether an uninstall ended the programs of `directory` while a window that began at `began`
-/// was open: it left its record there since, or it deleted the data (`--delete-data`), which takes
-/// the engine's lock file with it, after the window had an engine there. The directory itself can
-/// stay, when another profile's folder is inside it. A window that begins after an uninstall is a
-/// new start, and a first run has no lock file yet.
-fn uninstall_seen(directory: &Path, began: SystemTime, had_engine: bool) -> bool {
-    fs::uninstalled_since(directory, began)
-        || (had_engine && !directory.join(fs::ENGINE_LOCK).exists())
+/// What a window knows of the data it works in, to tell an uninstall that happened while it was
+/// open from a state that was there before it.
+pub(crate) struct Watch {
+    directory: Option<PathBuf>,
+    /// What an uninstall had left in the data directory when the window began, if anything.
+    baseline: Option<String>,
+    /// An engine answered this window at some point.
+    had_engine: bool,
+}
+
+impl Watch {
+    /// The window begins: the record an earlier uninstall left is what an uninstall now is
+    /// told from. Nothing is compared with a clock.
+    pub(crate) fn begin(autostart: &Autostart) -> Self {
+        let directory = match autostart {
+            Autostart::On(plan) => Some(plan.directory.clone()),
+            Autostart::Off => None,
+        };
+        let baseline = directory.as_deref().and_then(record);
+        Self {
+            directory,
+            baseline,
+            had_engine: false,
+        }
+    }
+
+    /// A connection was made: an engine answers this window.
+    pub(crate) fn engine_answered(&mut self) {
+        self.had_engine = true;
+    }
+
+    /// Whether an uninstall ended the programs while the window was open: it left a record
+    /// that is new or changed since the window began, or it deleted the data
+    /// (`--delete-data`), which takes the engine's lock file with it, after the window had an
+    /// engine there. The folder itself can stay, with another profile's folder inside it. A
+    /// first run has no lock file yet, and a window that begins after an uninstall takes the
+    /// record it finds as its baseline: it starts afresh.
+    pub(crate) fn uninstalled(&self) -> bool {
+        let Some(directory) = self.directory.as_deref() else {
+            return false;
+        };
+        let current = record(directory);
+        let left = current.is_some() && current != self.baseline;
+        // Only a lock file known to be gone counts: an error (no access, a failing disk) says
+        // nothing about the data.
+        let deleted =
+            self.had_engine && matches!(directory.join(fs::ENGINE_LOCK).try_exists(), Ok(false));
+        left || deleted
+    }
+}
+
+/// What an uninstall left in `directory`. A record that cannot be read is logged and counts as
+/// none.
+fn record(directory: &Path) -> Option<String> {
+    match fs::uninstall_record(directory) {
+        Ok(record) => record,
+        Err(error) => {
+            log::failure("desktop.uninstall_record_unreadable", &error);
+            None
+        }
+    }
+}
+
+/// An engine answers: whatever an uninstall left before is over.
+pub(crate) fn engine_started(directory: &Path) {
+    if let Err(error) = fs::clear_uninstalled(directory) {
+        log::failure("desktop.uninstall_record_not_cleared", &error);
+    }
 }
 
 impl Host for Local<'_> {
@@ -341,7 +398,7 @@ impl Host for Local<'_> {
     }
 
     fn uninstalled(&self) -> bool {
-        uninstall_seen(&self.plan.directory, self.began, self.had_engine)
+        self.watch.uninstalled()
     }
 
     fn supervisor_reachable(&self) -> bool {

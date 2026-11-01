@@ -45,25 +45,33 @@ says `NotFound` for a process that is gone.
 first), if that component's lock is still held it reads the process, asks it to end through the
 `Commands` seam (so a test ends nothing), logs `service.program_ended` with the component, and
 waits up to ten seconds for the lock to be free before it goes on to the supervisor. Every
-component is tried whatever happens to the one before: a program that cannot be asked (another
+component is tried whatever happens to the one before, both to unregister it and to end its
+program: a registration that cannot be removed, a program that cannot be asked (another
 account's process, one that is exiting) or that does not end, or that holds the lock with no id
 (a program of an older build, which wrote none), is reported once both were tried, as the system's
-error or `StillRunning`. The services are unregistered by then, and the message and the data
+error or `StillRunning`. The registrations that could be removed are gone by then, and the message and the data
 deletion behave as they did. So `--delete-data` works when the programs end, and still refuses,
 with the same message, when they do not.
 
 **An open window does not start them again.** The window starts an engine when it finds none
-(ADR 0102), and an engine ended by an uninstall is none. So the uninstall first leaves a file,
-`uninstalled`, in the data directory (`fs::mark_uninstalled`), before anything is ended, and
-`autostart::ensure` starts nothing when that file is newer than the window's own start
-(`fs::uninstalled_since`), saying so in the window ("Soyeht was uninstalled, so this window does not
-start the engine again"). A window opened after the uninstall began later than the file and starts
-afresh. `--delete-data` removes the file with the data, so a window that has had an engine also
-treats the engine's lock file being gone as an uninstall (the folder itself can stay, with another
-profile's folder inside it); a first run, which has no lock file yet, does not. `service install` takes the file away, since a registration written again is a new start.
+(ADR 0102), and an engine ended by an uninstall is none. So the uninstall first writes a file,
+`uninstalled`, in the data directory (`fs::mark_uninstalled`), before anything is ended. It holds
+a value no other uninstall writes (the process, the time and a count), and no clock is compared
+with it. A window reads it when it begins (`autostart::Watch`) and takes an uninstall to have
+happened while it was open only if the file is new or its value changed since: a file that was
+already there (an old uninstall, a restored backup, a clock that went back) is the baseline, and
+the window starts afresh. `autostart::ensure` then starts nothing and says so in the window ("Soyeht
+was uninstalled, so this window does not start the engine again"). A window's successful start of
+an engine removes the file, as does `service install`, so a stale file does not outlive its
+meaning. `--delete-data` removes the file with the data, so a window that has had an engine also
+takes the engine's lock file being gone (and known to be gone: an unreadable folder is not) as an
+uninstall; the folder itself can stay, with another profile's folder inside it, and a first run has
+no lock file yet. Whether the window has had an engine is noted when a connection was made
+(`note_connection`, tested).
 
 `service uninstall`, the low-level command, shares `Manager::uninstall` and so ends them too, and
-leaves the file; its contract line said "stops". `service stop` is unchanged: it stops what is
+writes the file, even for one component (`--component engine`): an open window must not start the
+engine again; its contract line said "stops". `service stop` is unchanged: it stops what is
 registered.
 
 ## Consequences

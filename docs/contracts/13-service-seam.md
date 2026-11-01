@@ -225,14 +225,19 @@ and the id is read only while the lock is held, twice, so that an id left by a p
 is never used (ADR 0131). Unix sends the stop request: the engine stops cleanly, the supervisor
 (no handler) ends at once with its terminals. Windows ends the process, and its children with it.
 The command waits up to ten seconds for the lock to be free before it asks the supervisor, and
-tries every component whatever happens to the one before. A program that does not end, that cannot
+tries every component, to unregister it and to end its program, whatever happens to the one before. A program that does not end, that cannot
 be asked, or that holds the lock with no id (one of an older build) makes the command fail once
-both were tried; the services are unregistered by then.
+both were tried; the registrations that could be removed are removed by then.
 
-**An open window does not start them again.** The window's start of the engine (section 4, step 2)
-does nothing when `uninstalled` is newer than the window, or when the engine's lock file it had an
-engine with is gone (`--delete-data`); it says that Soyeht was uninstalled. A window opened after the
-uninstall starts afresh, and `service install` removes the file.
+**An open window does not start them again.** Before anything is ended, the command writes a file
+`uninstalled` in the data directory, holding a value that no other uninstall writes. `service
+uninstall` writes it too, for one component as well (`--component engine`): an open window must not
+start the engine again. A window reads it when it begins and the window's start of the engine (section
+4, step 2) does nothing when it is new or changed since, saying that Soyeht was uninstalled; a file
+that was already there is the baseline, so a window opened after an uninstall starts afresh. The
+start does nothing either when the engine's lock file it had an engine with is gone (`--delete-data`),
+unless the folder cannot be looked into. A window's successful start of an engine and `service
+install` remove the file.
 
 **Data stays by default.** The programs, the data directory, the database and the logs are left
 alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,

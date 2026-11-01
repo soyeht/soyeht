@@ -191,35 +191,50 @@ pub fn singleton_process(directory: &Path, name: &str) -> io::Result<Option<u32>
 /// does not start the programs again ([`mark_uninstalled`]).
 pub const UNINSTALL_MARKER: &str = "uninstalled";
 
-/// Records that an uninstall is ending the programs of `directory` now. Does nothing when the
-/// directory does not exist (nothing was ever started there).
+/// Records that an uninstall is ending the programs of `directory` now: a file holding a value
+/// that no other uninstall writes. A window reads it when it begins ([`uninstall_record`]) and
+/// takes an uninstall to have happened when the value has changed since, so no clock is
+/// compared. Does nothing when the directory does not exist (nothing was ever started there).
 pub fn mark_uninstalled(directory: &Path) -> io::Result<()> {
+    static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if !directory.is_dir() {
         return Ok(());
     }
+    // Unique among uninstalls: this process, the time to the nanosecond and a count. The time is
+    // not compared with anything, only made part of the value.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let nonce = format!(
+        "{}-{nanos}-{}\n",
+        std::process::id(),
+        COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
     OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .owner_only()
         .open_no_follow(&directory.join(UNINSTALL_MARKER))?
-        .write_all(b"uninstalled\n")
+        .write_all(nonce.as_bytes())
 }
 
-/// Takes the record of an uninstall away: a registration written again starts afresh.
+/// The value an uninstall left in `directory`, or `None` when there is none.
+pub fn uninstall_record(directory: &Path) -> io::Result<Option<String>> {
+    match std::fs::read_to_string(directory.join(UNINSTALL_MARKER)) {
+        Ok(record) => Ok(Some(record)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Takes the record of an uninstall away: a registration written again, or an engine started
+/// again, is a new start.
 pub fn clear_uninstalled(directory: &Path) -> io::Result<()> {
     match std::fs::remove_file(directory.join(UNINSTALL_MARKER)) {
         Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
         _ => Ok(()),
     }
-}
-
-/// Whether an uninstall ran in `directory` at or after `since`: a window that began before it must
-/// not start the programs again, and one that began after it is a new start.
-pub fn uninstalled_since(directory: &Path, since: std::time::SystemTime) -> bool {
-    std::fs::metadata(directory.join(UNINSTALL_MARKER))
-        .and_then(|meta| meta.modified())
-        .is_ok_and(|modified| modified >= since)
 }
 
 /// How long [`singleton_process`] waits between its two reads: far longer than a program takes
@@ -428,17 +443,16 @@ mod tests {
     }
 
     #[test]
-    fn an_uninstall_is_remembered_by_the_window_that_was_open_for_it() {
+    fn each_uninstall_leaves_a_value_of_its_own() {
         let directory = scratch("uninstall-marker");
-        let before = std::time::SystemTime::now() - std::time::Duration::from_secs(5);
-        assert!(!uninstalled_since(&directory, before));
+        assert_eq!(uninstall_record(&directory).unwrap(), None);
         mark_uninstalled(&directory).unwrap();
-        assert!(uninstalled_since(&directory, before));
-        // A window that began after it is a new start.
-        let after = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
-        assert!(!uninstalled_since(&directory, after));
+        let first = uninstall_record(&directory).unwrap().unwrap();
+        mark_uninstalled(&directory).unwrap();
+        let second = uninstall_record(&directory).unwrap().unwrap();
+        assert_ne!(first, second);
         clear_uninstalled(&directory).unwrap();
-        assert!(!uninstalled_since(&directory, before));
+        assert_eq!(uninstall_record(&directory).unwrap(), None);
         // Clearing what is not there, and marking a folder that does not exist, change nothing.
         clear_uninstalled(&directory).unwrap();
         let missing = directory.join("missing");
