@@ -32,10 +32,12 @@
 	<string>Turn what you say into text in the agent composer, on this device when it can.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connect to your Mac over the tailnet to read pane screens.</string>
-	<!-- HTTP and WebSocket use tailnet encryption. The parser only accepts tailnet and loopback addresses. Contract 06. -->
+	<!-- The Mac is reached by a plain WebSocket to a tailnet or loopback address, which the pairing
+	     parser alone accepts (contract 06). Only local network addresses are excepted from App
+	     Transport Security; the rest of the app keeps it. -->
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
+		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>UIApplicationSceneManifest</key>
