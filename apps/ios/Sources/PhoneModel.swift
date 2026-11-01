@@ -5,10 +5,14 @@ import UIKit
 @MainActor @Observable
 final class PhoneModel {
   var client: EngineClient?
+  /// The access to the Mac this device is paired with, as the Keychain holds it.
+  private(set) var credential: DeviceCredential?
   var pairing: PairingSession?
   var problem: String?
   /// A tapped pairing link that waits for the person's answer.
   var incomingPairing: IncomingPairing?
+  /// The scanner or the settings are on screen.
+  var sheetPresented = false
   /// A pane a tapped notification asked to show; cleared once it is on screen.
   var requestedPaneId: String?
   @ObservationIgnored let push = PhonePush()
@@ -18,8 +22,9 @@ final class PhoneModel {
   func resume() {
     if !loaded {
       do {
-        if let credential = try CredentialVault.load() {
-          client = EngineClient(credential: credential)
+        if let saved = try CredentialVault.load() {
+          credential = saved
+          client = EngineClient(credential: saved)
         }
         loaded = true
       } catch { problem = error.localizedDescription }
@@ -28,10 +33,12 @@ final class PhoneModel {
   }
   /// A link another app or a web page opened: the person is asked before it pairs (ADR 0129).
   /// The camera and the paste field pair at once through `pair`.
+  /// A link that arrives while another question, a pairing or a sheet is up is ignored: it must not
+  /// change what the person is deciding.
   func receive(link: String) {
-    guard pairTask == nil else { return }
+    guard pairTask == nil, incomingPairing == nil, !sheetPresented else { return }
     do {
-      incomingPairing = try IncomingPairing(link, replacingMac: client != nil)
+      incomingPairing = try IncomingPairing(link, replacing: credential)
     } catch { problem = error.localizedDescription }
   }
   func pair(_ uri: String) {
@@ -56,10 +63,11 @@ final class PhoneModel {
     pairTask = Task {
       defer { pairTask = nil }
       do {
-        let credential = try await pairing.pair(uri, deviceName: UIDevice.current.name)
-        try CredentialVault.save(credential)
+        let paired = try await pairing.pair(uri, deviceName: UIDevice.current.name)
+        try CredentialVault.save(paired)
         client?.stop()
-        client = EngineClient(credential: credential)
+        credential = paired
+        client = EngineClient(credential: paired)
         self.pairing = nil
         client?.start()
       } catch is CancellationError { self.pairing = nil } catch {
@@ -89,6 +97,7 @@ final class PhoneModel {
   func forgetMac() {
     do {
       try CredentialVault.forget()
+      credential = nil
       // Best effort, silent by design: a Mac this device no longer knows should stop
       // sending alerts, and the forgotten Mac cannot be retried from here.
       if let forgotten = client {
