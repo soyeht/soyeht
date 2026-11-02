@@ -2,7 +2,7 @@
 
 use soyeht_protocol::{
     data_directory::{data_directory, selected_profile},
-    profile::SELECTION_ENV,
+    profile::{PTYD_LOG, SELECTION_ENV},
 };
 use soyeht_ptyd::{Error, Result};
 use std::{env, path::PathBuf, process::ExitCode};
@@ -11,6 +11,9 @@ fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
+            // Copy diagnostics keeps only structured lines, so the reason it will not start is one:
+            // its kind, never the text, which can carry a path (ADR 0088).
+            soyeht_platform::log::failure("ptyd.startup_failed", &error);
             // The text a person reads in the terminal or the log: not the `Debug` form.
             eprintln!("soyeht-ptyd: {error}");
             ExitCode::FAILURE
@@ -40,6 +43,13 @@ fn run() -> Result<()> {
         [flag, path] if flag == "--data-dir" => PathBuf::from(path),
         _ => return Err(Error::InvalidArguments),
     };
+    // A panic on the main thread ends the supervisor and the service manager starts it again; the
+    // report it leaves is what the next window tells the person about (ADR 0127).
+    soyeht_platform::crash::install(soyeht_platform::crash::Settings {
+        program: soyeht_platform::crash::Program::Supervisor,
+        data: directory.clone(),
+        log: PTYD_LOG,
+    });
     soyeht_ptyd::server::run(&directory)?;
     Ok(())
 }

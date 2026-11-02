@@ -44,6 +44,10 @@ export const clientPolicy = {
   "usageWindow": {
     "weeklyKeyword": "week"
   },
+  "crashReports": {
+    "folder": "crashes",
+    "incomingPrefix": "incoming-"
+  },
   "editor": {
     "prefetchLines": 160,
     "pageLeadDivisor": 4,
@@ -81,6 +85,10 @@ export const clientPolicy = {
     "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
     "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
     "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+    "crashNoticeTitle": "Soyeht closed unexpectedly",
+    "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
+    "crashNoticeCopy": "Copy report",
+    "crashNoticeDismiss": "Dismiss",
     "pushNeedsYouTitle": "An agent needs you",
     "pushNeedsYouBody": "Open Soyeht to see what it asks."
   },

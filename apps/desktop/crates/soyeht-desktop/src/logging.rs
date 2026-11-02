@@ -6,7 +6,11 @@
 //! directory (`soyeht_platform::log::to_file`).
 
 use soyeht_client::profile;
-use soyeht_platform::{dialog, log};
+use soyeht_platform::{
+    crash::{self, Program},
+    dialog, log,
+};
+use soyeht_protocol::profile::DESKTOP_LOG;
 use std::path::Path;
 
 /// Starts writing log lines to the profile's log file, and logs where it is. A client that
@@ -17,6 +21,15 @@ pub(crate) fn start() {
         return;
     };
     start_at(&path);
+    // A panic on the main thread ends the window; the report it leaves is what the next start
+    // tells the person about (ADR 0127). With no data directory there is nowhere to write it.
+    if let Ok(data) = profile::data_directory_of_profile() {
+        crash::install(crash::Settings {
+            program: Program::Desktop,
+            data,
+            log: DESKTOP_LOG,
+        });
+    }
 }
 
 fn start_at(path: &Path) {
@@ -56,7 +69,6 @@ fn log_fatal(kind: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soyeht_protocol::profile::DESKTOP_LOG;
     use std::fs;
 
     #[test]

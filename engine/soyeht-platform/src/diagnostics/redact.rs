@@ -93,6 +93,12 @@ impl Redactor {
         }
     }
 
+    /// `text` with the home folder taken out and nothing else: for text that is code, where the
+    /// other rules would cut names.
+    pub fn strip_home(&self, text: &str) -> String {
+        self.without_home(text)
+    }
+
     /// Every spelling of the home folder, so one that sits inside a longer word is also found.
     fn without_home(&self, text: &str) -> String {
         let Some(home) = &self.home else {

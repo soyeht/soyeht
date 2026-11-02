@@ -2,6 +2,7 @@
 
 mod args;
 mod commands;
+mod crash_commands;
 mod diagnostics_commands;
 mod editor_commands;
 mod service_commands;
@@ -54,6 +55,9 @@ fn run() -> Result<Output> {
         }
         Some("uninstall") => {
             return uninstall_commands::execute(profile, directory, &args[1..]).map(Output::Json);
+        }
+        Some("crash-reports") => {
+            return crash_commands::execute(directory, &args[1..]).map(Output::Json);
         }
         Some("diagnostics") => {
             return diagnostics_commands::execute(profile, directory, &args[1..]).map(Output::Text);
