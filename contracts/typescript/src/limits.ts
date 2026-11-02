@@ -31,6 +31,7 @@ export const limits = {
   "cancelTimeoutSec": 10,
   "probeTimeoutSec": 10,
   "noSignalSec": 90,
+  "harnessSwitchTimeoutSec": 90,
   "usageRefreshMinIntervalSec": 30,
   "usageAutoRefreshIntervalSec": 300,
   "usageStaleAfterSec": 900,
