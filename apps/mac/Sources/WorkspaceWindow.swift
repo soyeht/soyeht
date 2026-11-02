@@ -8,6 +8,7 @@ import SwiftUI
 struct WorkspaceWindow: View {
   @Environment(AgentAttentionNotifications.self) private var attentionNotifications
   @Environment(WebLinkPreferences.self) private var webLinkPreferences
+  @Environment(CrashNotice.self) private var crashNotice
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
@@ -48,6 +49,11 @@ struct WorkspaceWindow: View {
       Button("OK") { client.problem = nil }
     } message: {
       Text(client.problem ?? "")
+    }
+    .overlay(alignment: .bottomTrailing) {
+      if crashNotice.isShowing {
+        CrashNoticeView().padding(MacTheme.Space.x18)
+      }
     }
     .overlay(alignment: .bottom) {
       if let request = client.pairRequests.first {
