@@ -94,7 +94,7 @@ impl Core {
                 actor: None,
                 scope: String::new(),
                 local,
-                signed_ui,
+                signed_ui: local && (signed_ui || self.hooks.attests_local_ui()),
                 nonce,
                 events: false,
                 streams: BTreeMap::new(),

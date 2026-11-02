@@ -400,6 +400,15 @@ fn assert_paired_phone_acts_like_the_local_human(
         local.call("settings.get", json!({"key":key_name}))["value"],
         "phone-choice"
     );
+    // Consent is the Mac's: a paired device opens no pairing window and decides none (ADR 0128).
+    let window = phone.request(
+        "device.pair.start",
+        json!({"idempotencyKey":"phone-pair-window"}),
+    );
+    assert_eq!(
+        window["error"]["data"]["kind"], "forbidden_role",
+        "{window}"
+    );
     let listed = phone.request("device.list", json!({}));
     assert_eq!(
         listed["result"]["items"].as_array().unwrap().len(),
@@ -416,9 +425,44 @@ fn assert_paired_phone_acts_like_the_local_human(
 }
 
 #[test]
+fn a_local_shell_cannot_decide_a_pairing_where_the_app_can_be_told_apart() {
+    let rig = Rig::new();
+    let mut shell = rig.client();
+    let decide = |client: &mut Client| {
+        let answer = client.request(
+            "device.pair.decide",
+            json!({"requestId":"none","approve":true,"idempotencyKey":Uuid::new_v4().to_string()}),
+        );
+        answer["error"]["data"]["kind"].as_str().unwrap().to_owned()
+    };
+    // Starting a request is open to a shell; deciding one is the signed app's alone.
+    assert!(
+        shell
+            .request("device.pair.start", json!({"idempotencyKey":"shell-start"}))
+            .get("error")
+            .is_none()
+    );
+    let attested = soyeht_engine::ui_attestation::available();
+    assert_eq!(
+        decide(&mut shell),
+        if attested {
+            "forbidden_role"
+        } else {
+            "unauthorized"
+        }
+    );
+    // The app (here, the same client once the test program is trusted) reaches the lookup.
+    std::fs::write(rig.path.join("test-attest-local-ui"), "").unwrap();
+    let mut app = rig.client();
+    assert_eq!(decide(&mut app), "unauthorized");
+}
+
+#[test]
 fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     use sha2::{Digest, Sha256};
     let rig = Rig::new();
+    // The test program is not the signed Mac app: let its local client stand for it.
+    std::fs::write(rig.path.join("test-attest-local-ui"), "").unwrap();
     let mut local = rig.client();
     let (_, pane) = local.create(&rig);
     let window = local.call("device.pair.start", json!({"idempotencyKey":"pair-window"}));
