@@ -4,7 +4,7 @@
 use super::{
     Notifier,
     apns::{self, ApnsRequest, ApnsResponse, Credentials, ProviderToken, Transport},
-    payload::PERMISSION_CATEGORY,
+    payload::ATTENTION_CATEGORY,
     worker::Worker,
 };
 use crate::{
@@ -257,17 +257,17 @@ async fn a_question_reaches_each_registered_device_once_with_apns_headers() {
     .unwrap();
     assert_eq!(claims, json!({"iss":"TEAM123456","iat":NOW_MS / 1_000}));
     let payload: Value = serde_json::from_slice(&sent.body).unwrap();
-    assert_eq!(payload["aps"]["category"], PERMISSION_CATEGORY);
-    assert_eq!(payload["aps"]["alert"]["title"], "Agent needs approval");
+    assert_eq!(payload["aps"]["category"], ATTENTION_CATEGORY);
+    assert_eq!(payload["aps"]["alert"]["title"], "An agent needs you");
     assert_eq!(
         payload["aps"]["alert"]["body"],
-        "Run command · cargo publish"
+        "Open Soyeht to see what it asks."
     );
     assert_eq!(
         payload["soyeht"],
         json!({
             "engineId":rig.core.store.db_id,"workspaceId":WORKSPACE,"paneId":PANE,
-            "requestId":REQUEST,"kind":"permission","allowOptionId":"once","denyOptionId":"deny"
+            "requestId":REQUEST,"kind":"permission"
         })
     );
     rig.ask();

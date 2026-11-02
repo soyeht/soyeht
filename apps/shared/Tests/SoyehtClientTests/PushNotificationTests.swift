@@ -6,6 +6,7 @@ import UserNotifications
 @testable import SoyehtClient
 
 /// The payload the engine builds for a permission request (shared with its Rust test).
+/// It names no answer: an alert says nothing of what was asked.
 private func enginePayload() throws -> [AnyHashable: Any] {
   let vector = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -15,12 +16,22 @@ private func enginePayload() throws -> [AnyHashable: Any] {
   return try #require(object as? [AnyHashable: Any])
 }
 
+/// What an engine that offered Allow and Deny sent: the phone still honors those actions.
+private func payloadWithAnswers() throws -> [AnyHashable: Any] {
+  var payload = try enginePayload()
+  var info = try #require(payload["soyeht"] as? [String: Any])
+  info["allowOptionId"] = "allow"
+  info["denyOptionId"] = "reject"
+  payload["soyeht"] = info
+  return payload
+}
+
 private let engine = "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
 private let pane = "0b9f1e4c-5a6d-4c3b-8e2f-1a2b3c4d5e6f"
 private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
 
 @Test func notificationActionsAnswerWithTheEngineOptions() throws {
-  let payload = try enginePayload()
+  let payload = try payloadWithAnswers()
   #expect(
     PushNotificationRoute(
       userInfo: payload, actionIdentifier: PushCategory.allowAction, engineId: engine)
@@ -30,6 +41,20 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
       userInfo: payload, actionIdentifier: PushCategory.denyAction, engineId: engine)
       == .answer(paneId: pane, requestId: request, optionId: "reject"))
   #expect(PushNotificationRoute.requestId(payload) == request)
+}
+
+@Test func theEnginesAlertIsGenericAndGivesNoAnswerFromTheLockScreen() throws {
+  let payload = try enginePayload()
+  let aps = try #require(payload["aps"] as? [String: Any])
+  let alert = try #require(aps["alert"] as? [String: Any])
+  #expect(alert["title"] as? String == ClientPolicy.pushNeedsYouTitle)
+  #expect(alert["body"] as? String == ClientPolicy.pushNeedsYouBody)
+  #expect(aps["category"] as? String == PushCategory.attention)
+  let info = try #require(payload["soyeht"] as? [String: Any])
+  #expect(info["allowOptionId"] == nil && info["denyOptionId"] == nil)
+  #expect(
+    PushNotificationRoute(
+      userInfo: payload, actionIdentifier: PushCategory.allowAction, engineId: engine) == .ignore)
 }
 
 @Test func tappingTheNotificationOpensThePaneAndDismissingDoesNothing() throws {
@@ -66,10 +91,8 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
 }
 
 @Test func permissionCategoryNeedsAnUnlockedDeviceAndStaysInTheBackground() throws {
-  let payload = try enginePayload()
-  let aps = try #require(payload["aps"] as? [String: Any])
   let categories = PushCategory.categories()
-  let permission = try #require(categories.first { $0.identifier == aps["category"] as? String })
+  let permission = try #require(categories.first { $0.identifier == PushCategory.permission })
   #expect(
     permission.actions.map(\.identifier) == [PushCategory.allowAction, PushCategory.denyAction])
   #expect(permission.actions.map(\.title) == ["Allow", "Deny"])

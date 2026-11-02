@@ -1,32 +1,31 @@
 //! The APNs payload for a question an agent asks the person.
 //!
-//! The payload carries only what the notification shows and the identifiers
-//! the phone needs to answer through `pane.permission.answer` or open the
-//! pane. The phone registers the categories named here (contract 06 §1.6).
+//! The payload carries the same generic words for every question, and the identifiers the phone
+//! needs to open the pane. What was asked (a command, a path, a question) is not in it: Apple's
+//! servers and the lock screen would see it. The phone fetches the detail over its authenticated
+//! connection when the person opens the alert.
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_protocol::event;
+use soyeht_protocol::{
+    client_policy::{PUSH_NEEDS_YOU_BODY, PUSH_NEEDS_YOU_TITLE},
+    event,
+};
 
-/// Allow and Deny actions; the phone answers without opening the app.
-pub const PERMISSION_CATEGORY: &str = "soyeht.permission";
-/// No actions: a tap opens the pane. Used for forms and for permissions that
-/// offer no one-time allow and reject pair.
+/// No actions: a tap opens the pane. The alert says nothing of what is asked, so it offers no
+/// answer to give from the lock screen.
 pub const ATTENTION_CATEGORY: &str = "soyeht.attention";
 
 /// APNs refuses alert payloads larger than 4 KB.
 const PAYLOAD_BYTES: usize = 4 * 1024;
 /// APNs refuses an `apns-collapse-id` longer than 64 bytes.
 const COLLAPSE_ID_BYTES: usize = 64;
-const TITLE_CHARS: usize = 60;
-const BODY_CHARS: usize = 160;
 
 /// A durable question event and what the engine knows about its pane.
 pub struct Question<'a> {
     pub event: &'a str,
     pub request: &'a Value,
     pub workspace_id: &'a str,
-    pub harness: &'a str,
     pub engine_id: &'a str,
 }
 
@@ -37,44 +36,6 @@ pub struct Alert {
     /// The request's own deadline; APNs stops trying after it.
     pub expires_unix: i64,
     pub payload: Value,
-}
-
-/// Collapses whitespace and control characters and cuts at a character
-/// boundary, so a notification never shows raw newlines or a split glyph.
-fn short(text: &str, limit: usize) -> String {
-    let clean = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if clean.chars().count() <= limit {
-        return clean;
-    }
-    let mut cut: String = clean.chars().take(limit - 1).collect();
-    cut.truncate(cut.trim_end().len());
-    cut.push('…');
-    cut
-}
-
-fn option_id<'a>(request: &'a Value, kind: &str) -> Option<&'a str> {
-    request["options"]
-        .as_array()?
-        .iter()
-        .find(|option| option["kind"] == kind)?["optionId"]
-        .as_str()
-}
-
-/// The tool and its target: the command that would run, else the path.
-fn permission_body(request: &Value) -> String {
-    let title = request["title"].as_str().unwrap_or_default().trim();
-    let presentation = &request["presentation"];
-    let target = presentation["command"]
-        .as_str()
-        .or_else(|| presentation["targetPath"].as_str())
-        .or_else(|| request["domain"].as_str())
-        .map(str::trim)
-        .filter(|target| !target.is_empty() && *target != title);
-    match target {
-        Some(target) if !title.is_empty() => format!("{title} · {target}"),
-        Some(target) => target.to_owned(),
-        None => title.to_owned(),
-    }
 }
 
 fn collapse_id(request_id: &str) -> String {
@@ -95,44 +56,21 @@ pub fn alert(question: &Question<'_>) -> Option<Alert> {
         .as_str()
         .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
         .map_or(0, |at| at.timestamp());
-    let harness = short(question.harness, TITLE_CHARS);
+    let kind = match question.event {
+        event::PANE_PERMISSION_REQUESTED => "permission",
+        event::PANE_ELICITATION_REQUESTED => "question",
+        _ => return None,
+    };
     let mut custom = Map::new();
     custom.insert("engineId".into(), json!(question.engine_id));
     custom.insert("workspaceId".into(), json!(question.workspace_id));
     custom.insert("paneId".into(), json!(pane_id));
     custom.insert("requestId".into(), json!(request_id));
-    let (title, body, category) = match question.event {
-        event::PANE_PERMISSION_REQUESTED => {
-            custom.insert("kind".into(), json!("permission"));
-            let answers = option_id(request, "allow_once").zip(option_id(request, "reject_once"));
-            let category = match answers {
-                Some((allow, deny)) => {
-                    custom.insert("allowOptionId".into(), json!(allow));
-                    custom.insert("denyOptionId".into(), json!(deny));
-                    PERMISSION_CATEGORY
-                }
-                None => ATTENTION_CATEGORY,
-            };
-            (
-                format!("{harness} needs approval"),
-                permission_body(request),
-                category,
-            )
-        }
-        event::PANE_ELICITATION_REQUESTED => {
-            custom.insert("kind".into(), json!("question"));
-            (
-                format!("{harness} has a question"),
-                request["title"].as_str().unwrap_or_default().to_owned(),
-                ATTENTION_CATEGORY,
-            )
-        }
-        _ => return None,
-    };
+    custom.insert("kind".into(), json!(kind));
     let payload = json!({
         "aps": {
-            "alert": {"title": short(&title, TITLE_CHARS), "body": short(&body, BODY_CHARS)},
-            "category": category,
+            "alert": {"title": PUSH_NEEDS_YOU_TITLE, "body": PUSH_NEEDS_YOU_BODY},
+            "category": ATTENTION_CATEGORY,
             "sound": "default",
             "thread-id": pane_id,
         },
@@ -154,6 +92,7 @@ mod tests {
     use super::*;
 
     const VECTOR: &str = include_str!("../../../../contracts/vectors/push-permission.json");
+    const SECRET: &str = "curl -H 'Authorization: Bearer hunter2' https://example.test";
 
     fn permission(command: &str) -> Value {
         json!({
@@ -163,7 +102,6 @@ mod tests {
             "presentation":{"command":command,"fileChanges":[],"previewOmitted":false},
             "options":[
                 {"optionId":"allow","kind":"allow_once","name":"Allow"},
-                {"optionId":"always","kind":"allow_always","name":"Always allow"},
                 {"optionId":"reject","kind":"reject_once","name":"Reject"}
             ],
             "expiresAt":"2026-10-01T12:30:00.000Z"
@@ -175,7 +113,6 @@ mod tests {
             event,
             request,
             workspace_id: "3c2b1a0f-9e8d-4c7b-a6f5-e4d3c2b1a0f9",
-            harness: "Claude",
             engine_id: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
         }
     }
@@ -191,37 +128,42 @@ mod tests {
     }
 
     #[test]
-    fn body_is_one_line_and_truncated_at_a_character_boundary() {
-        let command = format!("echo {}\nrm -rf build", "é".repeat(300));
-        let request = permission(&command);
-        let alert = alert(&question("pane.permission_requested", &request)).unwrap();
-        let body = alert.payload["aps"]["alert"]["body"].as_str().unwrap();
-        assert_eq!(body.chars().count(), BODY_CHARS);
-        assert!(body.starts_with("Run command · echo éé"));
-        assert!(body.ends_with('…'));
-        assert!(!body.contains('\n'));
+    fn nothing_the_agent_asked_reaches_the_alert() {
+        let mut request = permission(SECRET);
+        request["title"] = json!("Edit /home/someone/.ssh/config");
+        request["detail"] = json!(SECRET);
+        request["domain"] = json!("internal.example.test");
+        request["presentation"]["targetPath"] = json!("/home/someone/.ssh/config");
+        let asked = alert(&question("pane.permission_requested", &request)).unwrap();
+        let form = json!({
+            "requestId":"r","paneId":"p","generation":1,"promptId":"x",
+            "title":SECRET,"schema":{},"expiresAt":"bad"
+        });
+        let formed = alert(&question("pane.elicitation_requested", &form)).unwrap();
+        for alert in [asked, formed] {
+            let text = alert.payload.to_string();
+            for leaked in [
+                "hunter2",
+                "curl",
+                ".ssh",
+                "internal.example.test",
+                "Run command",
+            ] {
+                assert!(!text.contains(leaked), "{leaked} in {text}");
+            }
+            assert_eq!(alert.payload["aps"]["alert"]["title"], PUSH_NEEDS_YOU_TITLE);
+            assert_eq!(alert.payload["aps"]["alert"]["body"], PUSH_NEEDS_YOU_BODY);
+        }
     }
 
     #[test]
-    fn a_path_is_the_target_when_nothing_runs() {
-        let mut request = permission("");
-        request["title"] = json!("Edit file");
-        request["presentation"] =
-            json!({"targetPath":"/repo/src/main.rs","fileChanges":[],"previewOmitted":false});
-        let alert = alert(&question("pane.permission_requested", &request)).unwrap();
-        assert_eq!(
-            alert.payload["aps"]["alert"]["body"],
-            "Edit file · /repo/src/main.rs"
-        );
-    }
-
-    #[test]
-    fn a_permission_without_one_time_answers_only_opens_the_pane() {
-        let mut request = permission("ls");
-        request["options"] = json!([{"optionId":"always","kind":"allow_always","name":"Always"}]);
+    fn an_alert_offers_no_answer_to_give_from_the_lock_screen() {
+        let request = permission("ls");
         let alert = alert(&question("pane.permission_requested", &request)).unwrap();
         assert_eq!(alert.payload["aps"]["category"], ATTENTION_CATEGORY);
         assert!(alert.payload["soyeht"].get("allowOptionId").is_none());
+        assert!(alert.payload["soyeht"].get("denyOptionId").is_none());
+        assert_eq!(alert.payload["soyeht"]["kind"], "permission");
     }
 
     #[test]
@@ -231,14 +173,6 @@ mod tests {
             "title":"Which branch\nshould I use?","schema":{},"expiresAt":"bad"
         });
         let alert = alert(&question("pane.elicitation_requested", &request)).unwrap();
-        assert_eq!(
-            alert.payload["aps"]["alert"]["title"],
-            "Claude has a question"
-        );
-        assert_eq!(
-            alert.payload["aps"]["alert"]["body"],
-            "Which branch should I use?"
-        );
         assert_eq!(alert.payload["aps"]["category"], ATTENTION_CATEGORY);
         assert_eq!(alert.payload["soyeht"]["kind"], "question");
         assert_eq!(alert.expires_unix, 0);
