@@ -30,9 +30,10 @@ extension HelloParams {
   }
 
   /// The `hello` of a paired iPhone, which proves it holds the device key.
-  static func iphone(deviceToken: String, proof: String) -> HelloParams {
+  static func iphone(deviceToken: String, proof: String, clientNonce: String) -> HelloParams {
     HelloParams(
       client: ClientName.iphone, clientVersion: ProductVersion.current,
-      protocolVersion: ProtocolVersion.current, deviceToken: deviceToken, proof: proof)
+      protocolVersion: ProtocolVersion.current, deviceToken: deviceToken, proof: proof,
+      clientNonce: clientNonce)
   }
 }

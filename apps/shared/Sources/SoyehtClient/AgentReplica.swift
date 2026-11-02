@@ -21,6 +21,15 @@ public enum AgentPaneStatusPresentation {
     if state == .starting && hasSession { return "ready" }
     return state.rawValue.replacingOccurrences(of: "_", with: " ")
   }
+
+  /// Why a dead agent pane ended, in the engine's own words (the pane phrase, such as "soyeht-mcp
+  /// is not installed next to the engine"). The status word alone only says "dead".
+  public static func endedNotice(state: PaneState, phrase: String) -> TerminalNotice? {
+    let reason = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard state == .dead, !reason.isEmpty else { return nil }
+    return TerminalNotice(
+      text: reason, systemImage: "exclamationmark.triangle.fill", severity: .warning)
+  }
 }
 
 /// A surface reports which layout leaves are presented; the shared client decides

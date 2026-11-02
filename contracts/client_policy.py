@@ -69,6 +69,7 @@ SCALAR_GROUPS = (
     "contextBand",
     "usageRing",
     "usageWindow",
+    "crashReports",
     "editor",
 )
 

@@ -366,6 +366,7 @@
     "rowVerticalPadding": 8,
     "separatorWidth": 1,
     "sendButtonSize": 28,
+    "touchTarget": 44,
     "pillHorizontalPadding": 16,
     "pillVerticalPadding": 8,
     "bodyPointSize": 14,

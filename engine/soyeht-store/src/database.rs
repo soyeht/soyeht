@@ -462,6 +462,19 @@ impl Store {
         &self.connection
     }
 
+    /// The metadata entry `key`; `value` is stored under it first when there is none.
+    pub fn metadata_or_insert(&self, key: &str, value: &str) -> Result<String> {
+        self.connection.execute(
+            "INSERT OR IGNORE INTO metadata(key,value) VALUES (?1,?2)",
+            [key, value],
+        )?;
+        Ok(self
+            .connection
+            .query_row("SELECT value FROM metadata WHERE key=?1", [key], |row| {
+                row.get(0)
+            })?)
+    }
+
     pub fn next_engine_generation(&mut self) -> Result<u64> {
         let tx = self
             .connection
