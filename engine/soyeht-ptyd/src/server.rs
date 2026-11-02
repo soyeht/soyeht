@@ -125,11 +125,9 @@ pub fn run(directory: &Path) -> Result<()> {
 /// Why a connection is dropped before it says anything, or `None` when it is let through. A peer
 /// the kernel could not name is a different reason from a peer that is another user.
 fn refusal_reason(peer: io::Result<bool>) -> Option<&'static str> {
-    match peer {
-        Ok(true) => None,
-        Ok(false) => Some("other_user"),
-        Err(_) => Some("credential_lookup_failed"),
-    }
+    peer.map_or(Some("credential_lookup_failed"), |same| {
+        (!same).then_some("other_user")
+    })
 }
 
 /// The endpoint this supervisor listens on; it is removed when the supervisor stops, as the

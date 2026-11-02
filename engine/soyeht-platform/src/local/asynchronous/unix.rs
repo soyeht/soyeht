@@ -36,3 +36,14 @@ pub fn same_user(stream: &Stream) -> bool {
 pub fn pair() -> io::Result<(Stream, Stream)> {
     UnixStream::pair()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_peer_of_an_asynchronous_socket_pair_is_this_user() {
+        let (left, _right) = pair().unwrap();
+        assert!(same_user(&left));
+    }
+}
