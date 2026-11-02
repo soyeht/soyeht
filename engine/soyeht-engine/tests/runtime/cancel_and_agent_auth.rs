@@ -737,3 +737,30 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
     assert_eq!(installed["setupState"], "not_checked");
     assert!(registry["nextCursor"].is_null());
 }
+
+#[test]
+fn a_cancel_the_agent_dropped_is_sent_again_until_the_turn_ends() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent();
+    let marker = rig.path.join("native/drop-first-cancel");
+    fs::write(&marker, b"drop").unwrap();
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"silent","idempotencyKey":"cancel-dropped"}),
+    );
+    client.wait_state(&pane, "working");
+    client.call(
+        "pane.cancel",
+        json!({"paneId":pane,"idempotencyKey":"cancel-once"}),
+    );
+    client.wait_state(&pane, "idle");
+    assert!(!marker.exists(), "the first cancel was not dropped");
+    let transcript = client.call("pane.transcript", json!({"paneId":pane}));
+    let texts: Vec<&str> = transcript["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|item| item["text"].as_str())
+        .collect();
+    assert!(texts.contains(&"Turn cancelled by the user."), "{texts:?}");
+}

@@ -276,8 +276,8 @@ is loaded at run time: `libxcb1`, `libxkbcommon0` and `libxkbcommon-x11-0` (link
 (`libvulkan1`, and `mesa-vulkan-drivers` on a machine without a vendor driver) and
 `libwayland-client0` (loaded), `libegl1` and `libwayland-egl1` for the OpenGL fallback, and for web
 panes GTK 3 and WebKitGTK 4.1 (`libgtk-3-0t64`, `libwebkit2gtk-4.1-0` on Ubuntu 24.04). The `.deb`
-declares the linked libraries and the first two loaded ones as `Depends` and the rest as
-`Recommends`.
+declares the linked libraries, the first two loaded ones and `curl` (the update check) as `Depends`,
+and the rest, with `git`, `nodejs` and `npm` (the Setup page's required tools), as `Recommends`.
 
 ## Windows packages
 

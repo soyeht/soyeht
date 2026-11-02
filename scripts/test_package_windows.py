@@ -198,6 +198,8 @@ class InstallerScriptTests(unittest.TestCase):
         self.assertEqual(values["Profile"], "prod")
         self.assertEqual(values["AppName"], package.PRODUCT_NAME)
         self.assertEqual(values["AppId"], "com.soyeht.next")
+        self.assertEqual(values["EngineTask"], "Soyeht.Next.Engine")
+        self.assertEqual(values["PtydTask"], "Soyeht.Next.Ptyd")
         self.assertEqual(values["OutputName"], "soyeht-0.1.0-windows-aarch64")
         self.assertEqual(self.arguments()[-1], str(package.SCRIPT))
 
@@ -230,6 +232,15 @@ class InstallerScriptTests(unittest.TestCase):
         self.assertEqual(self.script.count("--delete-data"), 1)
         self.assertIn("RunCli('uninstall')", self.script)
         self.assertIn("SwitchGiven('/DELETEDATA')", self.script)
+
+    def test_the_uninstall_removes_the_tasks_by_name_when_the_command_line_will_not_run(self):
+        # An unsigned command line can be quarantined by the system's antivirus: the tasks would
+        # stay and fail at every login. The names are the profile's, given by the script.
+        uninstall = self.script[self.script.index("procedure CurUninstallStepChanged") :]
+        self.assertRegex(uninstall, r"Code := RunCli\('uninstall'\);\s+if \(Code <> 0\) and RemoveLoginTasks\(\)")
+        self.assertIn("RemoveLoginTask(EngineTask)", self.script)
+        self.assertIn("RemoveLoginTask(PtydTask)", self.script)
+        self.assertIn("EngineTask = '{#EngineTask}'", self.script)
 
     def test_the_command_line_is_given_the_profile_it_was_built_for(self):
         self.assertIn("'--profile ' + Profile", self.script)

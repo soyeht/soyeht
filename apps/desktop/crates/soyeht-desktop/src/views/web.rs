@@ -7,7 +7,7 @@ use super::{
 };
 use crate::{
     composer_field::{ComposerEvent, new_field},
-    theme::{Palette, layout, radius, space, type_scale},
+    theme::{Palette, desktop, layout, radius, space, type_scale},
     web_surface::new_surface,
 };
 use soyeht_protocol::WebNavigationAction;
@@ -173,20 +173,31 @@ impl Workbench {
             )
         });
         let person_has_it = page.control().person_has_control();
+        // The address keeps a width it can be read in; the hand-back button goes under it when a
+        // narrow pane has no room for both.
         control_band(palette)
+            .flex_wrap()
             .children(steps)
             .child(
                 row()
                     .id(super::ui::id("web-address", &pane_id))
                     .flex_1()
-                    .min_w_0()
+                    .min_w(px(desktop::WEB_ADDRESS_MINIMUM_WIDTH))
                     .h(px(layout::SEARCH_FIELD_HEIGHT))
                     .text_size(px(type_scale::BODY))
                     .bg(rgb(palette.face))
                     .rounded(px(radius::COMPACT))
                     .px(px(space::X8))
                     .own_press()
-                    .child(div().flex_1().min_w_0().overflow_hidden().children(field)),
+                    // One line, cut at the field's edge: an address that wrapped was drawn in pieces.
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .children(field),
+                    ),
             )
             .children(person_has_it.then(|| {
                 let owner = pane_id.clone();

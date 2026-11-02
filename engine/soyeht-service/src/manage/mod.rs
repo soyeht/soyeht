@@ -23,7 +23,13 @@ use std::{
     fs::{self, OpenOptions},
     io,
     path::{Path, PathBuf},
+    time::Duration,
 };
+
+/// How long a program that was asked to end is given before it is reported as still running.
+const END_WAIT: Duration = Duration::from_secs(10);
+/// How often the lock of a program that was asked to end is looked at.
+const END_POLL: Duration = Duration::from_millis(100);
 
 /// What the system says about one component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +130,11 @@ impl<'a, C: Commands> Manager<'a, C> {
             texts.push((component, render(self.layout.system, &definition)?));
         }
         self.prepare_folders(texts.iter().map(|(component, _)| *component))?;
+        // A registration written again is a new start: a window opened before the last uninstall
+        // may start the programs again.
+        if let Err(error) = soyeht_platform::fs::clear_uninstalled(&self.layout.data) {
+            soyeht_platform::log::failure("service.uninstall_marker_failed", &error);
+        }
         for (component, text) in texts {
             let install = Install {
                 text: &text,
@@ -148,15 +159,83 @@ impl<'a, C: Commands> Manager<'a, C> {
         )?)
     }
 
-    /// Stops each component and removes its registration and definition, the engine first. The
-    /// data, the database and the logs stay.
+    /// Stops each component and removes its registration and definition, the engine first, then
+    /// ends the program of a component that still runs: the one the window started, which no
+    /// registration covers ([`Self::end_running`]). The data, the database and the logs stay.
+    ///
+    /// An uninstall is first recorded in the data directory, so that a window that is open does
+    /// not start the programs again when it finds them gone.
+    ///
+    /// Every component is tried, whatever happens to the one before it, both to unregister it and
+    /// to end its program, so that one that fails (a process of another account, one that is
+    /// exiting, a service manager that refuses) does not leave the other registered.
+    ///
+    /// # Errors
+    /// The first failure, after every component was tried: [`Error::StillRunning`] when a program
+    /// could not be ended, or what the system said. The services are unregistered by then.
     pub fn uninstall(&self, components: &[Component]) -> Result<()> {
+        if let Err(error) = soyeht_platform::fs::mark_uninstalled(&self.layout.data) {
+            // Not fatal: the programs are ended all the same, and an open window may start them
+            // again.
+            soyeht_platform::log::failure("service.uninstall_marker_failed", &error);
+        }
+        let mut deferred = None;
         for component in ordered(components).into_iter().rev() {
-            match self.layout.system {
-                System::Macos => self.launchd_uninstall(component)?,
-                System::Linux => self.systemd_uninstall(component)?,
-                System::Windows => self.task_uninstall(component)?,
+            let unregistered = match self.layout.system {
+                System::Macos => self.launchd_uninstall(component),
+                System::Linux => self.systemd_uninstall(component),
+                System::Windows => self.task_uninstall(component),
+            };
+            // A registration that cannot be removed still leaves the program to end, and the
+            // other component to unregister.
+            let ended = self.end_running(component);
+            for failure in [unregistered, ended] {
+                if let Err(error) = failure {
+                    deferred.get_or_insert(error);
+                }
             }
+        }
+        deferred.map_or(Ok(()), Err)
+    }
+
+    /// Ends the program of `component` when one still runs, after its registration is gone: a
+    /// copy the window started detached, which neither the service manager nor the registration
+    /// knows. The program is found by the singleton lock it holds, which names its process
+    /// (`soyeht_platform::fs::singleton_process`), asked to end, and waited for up to
+    /// [`END_WAIT`] so the engine has stopped before the supervisor is asked.
+    ///
+    /// # Errors
+    /// [`Error::StillRunning`] when the program still holds its lock after the wait, or holds it
+    /// without a process to ask (a program of an older build, which wrote none); the system's
+    /// error when the process cannot be asked (another account's, or one that is exiting).
+    fn end_running(&self, component: Component) -> Result<()> {
+        if !self.program_runs(component)? {
+            return Ok(());
+        }
+        let Some(process) =
+            soyeht_platform::fs::singleton_process(&self.layout.data, component.lock())?
+        else {
+            // Held, and no id to ask: it ended in between, or it never wrote one.
+            return if self.program_runs(component)? {
+                Err(Error::StillRunning)
+            } else {
+                Ok(())
+            };
+        };
+        match self.commands.terminate(process) {
+            Ok(()) => {}
+            // Ended between the lock and the request.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        }
+        soyeht_platform::log::event("service.program_ended", &[("component", component.name())]);
+        let mut waited = Duration::ZERO;
+        while self.program_runs(component)? {
+            if waited >= END_WAIT {
+                return Err(Error::StillRunning);
+            }
+            self.commands.pause(END_POLL);
+            waited += END_POLL;
         }
         Ok(())
     }
@@ -294,3 +373,5 @@ mod current_tests;
 mod program_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod uninstall_tests;

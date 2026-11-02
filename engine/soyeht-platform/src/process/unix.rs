@@ -34,6 +34,25 @@ pub fn signal_group(leader: u32, signal: GroupSignal) {
     }
 }
 
+/// Sends the stop request to the process `pid`, which [`super::terminate`] has checked is neither
+/// 0, 1 nor this process.
+pub(super) fn terminate(pid: u32) -> std::io::Result<()> {
+    let pid = libc::pid_t::try_from(pid)
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    // SAFETY: signalling only sends a signal; the caller got the pid from the lock the process
+    // holds, which proves it is alive.
+    if unsafe { libc::kill(pid, libc::SIGTERM) } == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    // The standard library has no kind for "no such process".
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+    } else {
+        Err(error)
+    }
+}
+
 /// Ends `leader`, everything in the process group it leads, and every descendant that left
 /// the group. This is the Unix form of `windows::Spawned::kill_tree`.
 ///
@@ -160,6 +179,7 @@ mod tests {
 
     #[test]
     fn kill_tree_ends_the_group_and_a_descendant_that_left_it() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         // The shell leads a group, starts one sleeper in it and one in a session of its own.
         let mut leader = Command::new("sh")
@@ -190,6 +210,7 @@ mod tests {
 
     #[test]
     fn the_descendants_of_a_process_are_found_by_parent_links() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let mut shell = Command::new("sh")
             .args(["-c", "sleep 60 & wait"])

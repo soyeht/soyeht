@@ -15,6 +15,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Held by a test that holds a file lock, and by a test that starts a process. A child that is
+/// being started shares every open file until it runs its program, so a lock released while one
+/// is starting stays held in the child for a moment, and a test that expects the lock free fails.
+#[cfg(test)]
+pub(crate) fn serialize_processes() -> std::sync::MutexGuard<'static, ()> {
+    static PROCESSES: Mutex<()> = Mutex::new(());
+    PROCESSES.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// A new, empty directory in the system's temporary folder for the test called `name`; it is
 /// unique to this process and call. The
 /// test removes it when it ends.
