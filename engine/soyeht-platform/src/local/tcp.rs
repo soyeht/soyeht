@@ -154,8 +154,8 @@ pub fn connect(path: &Path) -> io::Result<Stream> {
 
 /// Whether the peer runs as the same user as this process. Only a process that could read the
 /// owner-only endpoint file knows the secret, and [`Listener::accept`] checked it already.
-pub fn same_user(_: &Stream) -> bool {
-    true
+pub fn peer_is_same_user(_: &Stream) -> io::Result<bool> {
+    Ok(true)
 }
 
 /// Two connected streams, for tests and in-process wiring.
