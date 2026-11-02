@@ -53,9 +53,10 @@ SOYEHT_DEVELOPMENT_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
   uv run python scripts/install_dev.py
 ```
 
-An engine from `cargo build` that is run as it is (not through the installer) is not signed, so on
-macOS it cannot tell the Soyeht app from any other program: it refuses to approve a pairing or revoke
-a device even for the signed app, with `forbidden_role` ("This engine is not code-signed ...") and one
+An engine from `cargo build` that is run as it is (not through the installer), or signed ad hoc or
+with another identity, does not carry the Soyeht signature, so on macOS it cannot tell the Soyeht app
+from any other program: it refuses to approve a pairing or revoke a device even for the signed app,
+with `forbidden_role` ("This engine does not carry the Soyeht signature ...") and one
 `engine.attestation_unavailable` line in its log. Install the engine with `scripts/install_dev.py`,
 which signs it with the Apple Development identity above, to pair a phone.
 

@@ -46,10 +46,10 @@ signed app reads. Those are the powers of the user, which ADR 0013 gives the pho
 ADR decides who may approve a pairing through the engine, not what the user's own account can do.
 
 `device.pair.start` stays open to a shell on every system. That opens a request and shows a code, and
-nothing more: the person still has to see the request on the Mac and reject it, or not allow it.
+nothing more: the person still has to see the request on the Mac and reject it or leave it undecided.
 
-An engine that is not signed with a team of ours (built with `cargo build` and run as it is) cannot
-tell the signed app from any other program, so on macOS it refuses even the app. The refusal says
-the engine is not code-signed, and the engine logs one line with the kind `engine_not_signed`.
+An engine that does not carry the Soyeht signature (one built with `cargo build` and run as it is,
+or signed ad hoc or with another identity) cannot tell the signed app from any other program, so on
+macOS it refuses even the app. The refusal says the engine does not carry the Soyeht signature, and the
+engine logs one line, the event `engine.attestation_unavailable` with `reason=engine_not_signed`.
 `docs/dev-local.md` says how to install the signed engine.
-

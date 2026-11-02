@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_platform::log;
 use soyeht_protocol::{Device, Role, event, method};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Once;
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -42,19 +42,20 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
 }
 
 /// The refusal of a decision or a revocation. When a local human is refused because this engine is
-/// not signed, it cannot tell the signed app from any other program, so even the app is refused:
+/// does not carry our signature, it cannot tell the signed app from any other program, so even the
+/// app is refused:
 /// say so, and log it once with its kind only (docs/dev-local.md says how to sign the engine).
 fn refusal(local_human: bool) -> errors::Error {
-    static LOGGED: AtomicBool = AtomicBool::new(false);
+    static LOGGED: Once = Once::new();
     if local_human && ui_attestation::engine_cannot_attest() {
-        if !LOGGED.swap(true, Ordering::Relaxed) {
+        LOGGED.call_once(|| {
             log::event(
                 "engine.attestation_unavailable",
                 &[("reason", "engine_not_signed")],
             );
-        }
+        });
         return errors::forbidden_role(
-            "This engine is not code-signed, so it cannot tell the Soyeht app from other programs and approves no pairing; install the signed engine (docs/dev-local.md)",
+            "This engine does not carry the Soyeht signature, so it cannot tell the Soyeht app from other programs and approves no pairing; install the signed engine (docs/dev-local.md)",
         );
     }
     errors::forbidden_role(
@@ -497,8 +498,16 @@ mod tests {
             &soyeht_protocol::profile::DEV
         ));
         assert!(ui_attestation::engine_cannot_attest());
-        assert!(refusal(true).to_string().contains("not code-signed"));
-        assert!(!refusal(false).to_string().contains("not code-signed"));
+        assert!(
+            refusal(true)
+                .to_string()
+                .contains("does not carry the Soyeht signature")
+        );
+        assert!(
+            !refusal(false)
+                .to_string()
+                .contains("does not carry the Soyeht signature")
+        );
     }
 
     #[tokio::test]
