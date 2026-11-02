@@ -245,6 +245,7 @@ mod tests {
 
     #[test]
     fn output_and_error_go_to_the_log_and_the_child_is_not_ended_by_dropping_the_handle() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let directory = scratch("log");
         let log = directory.join("child.log");
@@ -262,6 +263,7 @@ mod tests {
 
     #[test]
     fn an_attached_child_writes_to_the_log_and_reports_its_exit_code() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let directory = scratch("attached");
         let log = directory.join("child.log");
@@ -275,6 +277,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_service_gets_the_data_directory_and_its_output_goes_to_the_logs_folder() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         use std::os::unix::fs::PermissionsExt as _;
         let directory = scratch("service");
@@ -302,6 +305,7 @@ mod tests {
 
     #[test]
     fn a_program_that_is_missing_is_an_error_of_the_start() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let directory = scratch("missing");
         let error = spawn_detached(
@@ -328,6 +332,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_descriptor_of_this_process_does_not_reach_the_child() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let directory = scratch("descriptors");
         let descriptor = inheritable_descriptor();
@@ -366,6 +371,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn ctrl_c_probe() {
+        let _serial = crate::testing::serialize_processes();
         use windows_sys::Win32::System::Console::{CTRL_C_EVENT, GenerateConsoleCtrlEvent};
         let words: Vec<String> = std::env::args().collect();
         if !words.iter().any(|word| word == PROBE) {
@@ -392,6 +398,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_detached_child_ends_on_ctrl_c() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let directory = scratch("ctrl-c");
         let program = std::env::current_exe().unwrap();
@@ -406,6 +413,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn a_process_group_of_its_own_ignores_ctrl_c_until_it_is_restored() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         use std::os::windows::process::CommandExt as _;
         use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW};
@@ -426,6 +434,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_child_leads_a_session_of_its_own() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let directory = scratch("session");
         let (program, arguments) = shell("sleep 30");

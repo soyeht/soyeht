@@ -9,7 +9,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::method::PANE_INPUT;
-use soyeht_ptyd::wire::{Request, Response};
+use soyeht_ptyd::wire::Request;
 use soyeht_store::domain::InputIntent;
 use uuid::Uuid;
 
@@ -110,24 +110,16 @@ impl Core {
             supervisor_handle::DEADLINE,
             {
                 let carried = carried.clone();
-                move || {
-                    turn.wait();
-                    // The request ran out of time before its turn came: nothing is sent.
-                    let earlier = carried
-                        .take()
-                        .ok_or_else(|| errors::internal("Input timed out before its turn"))?;
-                    let earlier = link.call_each(earlier);
-                    Ok((earlier, link.call(request)))
-                }
+                move || Ok(link.send_input(&turn, &carried, request))
             },
             move |core, sent| {
-                // Whatever the work did not take is sent after all, by the follow-up job.
+                // Whatever the work did not take is sent after all, by the follow-up job. A
+                // receipt of a link that was replaced is no receipt: the client is told.
                 core.requeue_later(&carried);
-                let (earlier, receipt) = sent?;
-                core.settle_follow_ups(&used, earlier);
-                let Response::Accepted { bytes } = core.settle_supervisor(&used, receipt)? else {
-                    return Err(errors::ptyd_unavailable("Invalid input receipt"));
-                };
+                let sent = sent?;
+                let bytes = core
+                    .settle_input(&used, &carried, sent)?
+                    .ok_or_else(|| errors::ptyd_unavailable("Supervisor link was replaced"))?;
                 let result = core
                     .mutate(&connection, PANE_INPUT, &params, |tx| {
                         tx.remove_input_intent(&scope, &key)?;
@@ -150,6 +142,7 @@ mod tests {
         testing::{FakeSupervisor, MemoryStore},
     };
     use soyeht_protocol::ErrorKind;
+    use soyeht_ptyd::wire::Response;
     use std::collections::VecDeque;
 
     #[test]

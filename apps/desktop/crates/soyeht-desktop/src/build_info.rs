@@ -1,5 +1,7 @@
 //! Which build this is: the package version and the short commit it was built from.
 
+use soyeht_protocol::profile::{DEV, Profile};
+
 /// The package version, the one number the Mac app and the engine share (`0.1.0`).
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The short commit `build.rs` found, `unknown` when the build has no git history, or the value of
@@ -11,9 +13,30 @@ pub(crate) fn id() -> String {
     format!("{VERSION}+{COMMIT}")
 }
 
+/// What Preferences says of the profile. A Dev build names it, so a person who runs it beside the
+/// installed app does not take one for the other; the production build is the product and says
+/// nothing of it.
+pub(crate) fn profile_note() -> Option<&'static str> {
+    // The window resolved its profile before it opened and ended if it could not, so a profile
+    // that cannot be read here has nothing to say.
+    soyeht_client::profile::selected()
+        .into_iter()
+        .find_map(note_for)
+}
+
+fn note_for(profile: &Profile) -> Option<&'static str> {
+    (profile.name == DEV.name).then_some("Dev profile")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_dev_build_names_its_profile() {
+        assert_eq!(note_for(&DEV), Some("Dev profile"));
+        assert_eq!(note_for(&soyeht_protocol::profile::PROD), None);
+    }
 
     #[test]
     fn the_id_is_the_version_then_the_commit() {

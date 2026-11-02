@@ -46,6 +46,9 @@ pub(crate) struct Reads {
     /// Set while the tick polls what a read woke: the polls take the reads that ended and start
     /// none, and leave the panes that are not agents to the regular tick.
     polling_woken: bool,
+    /// What the jobs that read the requests an agent had pending found, by pane, until its poll
+    /// takes it (`agents/recovery.rs`).
+    pub(crate) fetches: BTreeMap<String, crate::agents::recovery::Fetched>,
 }
 
 /// The owner of the reads of an agent's own process.
@@ -187,6 +190,7 @@ impl Core {
         self.reads.ready.retain(|owner, _| !owned(owner));
         self.reads.paused_until_ms.retain(|owner, _| !owned(owner));
         self.reads.live.retain(|owner| !owned(owner));
+        self.reads.fetches.retain(|owner, _| !owned(owner));
     }
 
     /// Forgets every read: the link they were made on is gone.
