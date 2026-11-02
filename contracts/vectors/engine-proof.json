@@ -1,0 +1,18 @@
+{
+  "description": "The bytes a device and an engine sign in hello and in pair.begin (ADR 0132), made from fixed seeds. The Rust engine and the Swift client both check these.",
+  "deviceSeed": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+  "devicePublicKey": "6kpsY+KcUgq+9VB7Ey7F+ZVHdq6+vnuSQh7qaRRG0iw=",
+  "engineSeedHex": "1111111111111111111111111111111111111111111111111111111111111111",
+  "enginePublicKey": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc=",
+  "engineKeyText": "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+  "nonce": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk=",
+  "clientNonce": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+  "challenge": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
+  "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b",
+  "deviceId": "0c9b6a52-1b2f-4f6e-9d3a-7a1e5f4b8c10",
+  "deviceToken": "device-token-0123",
+  "requestId": "5d0b1c7e-2f3a-4a8b-9c6d-1e2f3a4b5c6d",
+  "helloProof": "B9epPjnz3Amsvjhry6IJ3gzZKFBZqGnmQrNQU9BAeb0eBUTcIJsHmZIkdPCEI5qo2iM1vZZLSDGeHKit4kt1Aw==",
+  "engineHelloProof": "N/2tDBTIranNGRTEagC1SgWs6qQ2RtZFbVnFfycMqAzYNpYx8xvnr+NZsiOLRFgQSEcgDM+yLQhyLgXwIcaQDw==",
+  "enginePairProof": "bNTBhpQkDNiA4gwp7m6fJ6r3oC9ENk46r9EHqBBnNcbWB2kV/VjTn9/x3YsxYyuYMAoEaiDsLvI5EQ9aUxUaCw=="
+}

@@ -191,8 +191,7 @@ public final class EngineClient {
             // Another Mac app already hosts the browser: connect without claiming it.
             if kind == ErrorKind.web_host_unavailable.rawValue { self.webHostRefused = true }
             if self.pairedDevice
-              && [ErrorKind.unauthorized.rawValue, ErrorKind.engine_identity_changed.rawValue]
-                .contains(kind)
+              && ClientFailure.refusesCredential(kind: kind)
             {
               self.credentialRejected = true
               self.disconnect()
@@ -287,13 +286,12 @@ public final class EngineClient {
       reader.cancel()
       wire.close()
     }
-    let hello: HelloParams
-    if let credential {
-      hello = try credential.hello(challenge: first["params"].decoded(AuthChallengeEvent.self))
-    } else {
-      hello = .mac(capabilities: webHost == nil || webHostRefused ? nil : [.web_host])
-    }
+    let (hello, verification): (HelloParams, EngineVerification?) =
+      try credential.map {
+        try $0.hello(challenge: first["params"].decoded(AuthChallengeEvent.self))
+      } ?? (.mac(capabilities: webHost == nil || webHostRefused ? nil : [.web_host]), nil)
     let welcome = try await request(.hello, .encoded(hello)).decoded(Welcome.self)
+    try verification?.check(welcome)
     guard welcome.role == (pairedDevice ? .human_device : .human_local),
       welcome.protocolVersion == ProtocolVersion.current
     else {

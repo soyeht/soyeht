@@ -52,13 +52,22 @@ local socket; isolation is per OS user, not per process.
    {nonce (32 random bytes, base64, unique per connection), engineId}`
    before any other message.
 2. The client sends `hello {client, clientVersion, protocolVersion,
-   deviceToken?, proof?, binding?}`. For iPhone,
-   `proof = Ed25519(device private key, bytes = "soyeht-hello-v1"
-   || nonce || engineId || deviceToken)`. Local clients send no `proof`
-   (identity is the OS user); MCP sends `binding`.
+   deviceToken?, proof?, clientNonce?, binding?}`. For iPhone,
+   `clientNonce` is 32 random bytes of the device's own and
+   `proof = Ed25519(device private key, bytes = "soyeht-hello-v2"
+   || nonce || clientNonce || engineId || deviceToken)`. Local clients send no
+   `proof` (identity is the OS user); MCP sends `binding`. A device that sends
+   no `clientNonce` is answered `protocol_version_unsupported`, with the reason
+   in the message, because it could not check the engine's answer.
 3. The engine responds ONCE: `welcome {engineVersion, protocolVersion,
-   connectionId, role, capabilities, dbId}` or an error (`unauthorized`,
-   `protocol_version_unsupported`) and closes.
+   connectionId, role, capabilities, dbId, engineProof?}` or an error
+   (`unauthorized`, `protocol_version_unsupported`) and closes. To a device,
+   `engineProof = Ed25519(engine private key, bytes = "soyeht-engine-v1" ||
+   nonce || clientNonce || engineId || 0x00 || deviceId)`. The device holds the
+   engine's public key from pairing (§2.2) and closes the connection when the
+   proof is absent or does not verify (`not_your_mac` on the device, which keeps
+   trying with backoff: only an engine's own refusal stops it). The vectors of
+   `contracts/vectors/engine-proof.json` hold the bytes for both languages.
 No other request is accepted before `welcome` (`unauthorized` response and
 connection closed). Without valid `hello` within 5 s, the engine closes.
 `role` ∈ `human_local | human_device | agent | chief`. The pairing dialogue
@@ -70,10 +79,15 @@ address holds at most 16 of the listeners' (ADR 0129).
 Only on the WebSocket connection, before authenticated `hello`, and only
 while the Mac's “Add iPhone” window is open:
 1. Mac: `device.pair.start {}` → `{code, expiresAt (10 min), uri,
-   reachability?}`; the app displays a QR with `uri` (address + `code`) and,
+   reachability?}`; the app displays a QR with `uri` (engine id, address, `code` and
+   `engineKey`, the engine's Ed25519 public key in URL-safe base64) and,
    when `reachability.remote` is false, why devices cannot reach the Mac.
 2. iPhone: `pair.begin {code, deviceName, devicePublicKey (Ed25519, 32
-   bytes, base64)}` → `{requestId, challenge (32 random bytes, base64)}`.
+   bytes, base64)}` → `{requestId, challenge (32 random bytes, base64),
+   engineProof}`, where `engineProof = Ed25519(engine private key, bytes =
+   "soyeht-engine-pair-v1" || challenge || devicePublicKey || requestId)`. The
+   iPhone checks it against the `engineKey` of the QR before it proves the
+   code, and does not pair when it is absent or wrong.
 3. iPhone: `pair.prove {requestId, proof}` with `proof = HMAC-SHA-256(key,
    challenge || deviceName)`, `key = SHA-256(code || devicePublicKey)` →
    `{status: "pending"}`; Mac receives `device.pair_requested {requestId,

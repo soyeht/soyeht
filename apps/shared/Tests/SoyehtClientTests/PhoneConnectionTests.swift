@@ -283,16 +283,26 @@
   @Test func pairingLinkRejectsExternalTargetsAndDuplicateFields() throws {
     let prefix = "soyeht-next://pair?engineId=11111111-1111-4111-8111-111111111111&address="
     let code = String(repeating: "a", count: 43)
-    #expect(try PairingLink(prefix + "100.64.0.1:8291&code=" + code).address.host == "100.64.0.1")
-    #expect(try PairingLink(prefix + "[fd7a:115c:a1e0::1]:8291&code=" + code).address.port == 8291)
+    let key = "&engineKey=" + String(repeating: "A", count: 43)
+    #expect(
+      try PairingLink(prefix + "100.64.0.1:8291&code=" + code + key).address.host == "100.64.0.1")
+    #expect(
+      try PairingLink(prefix + "[fd7a:115c:a1e0::1]:8291&code=" + code + key).address.port == 8291)
     for address in [
       "example.com:8291", "192.168.1.2:8291", "0.0.0.0:8291", "100.64.0.1:8291/extra",
       "user@100.64.0.1:8291",
     ] {
-      #expect(throws: ClientFailure.self) { try PairingLink(prefix + address + "&code=" + code) }
+      #expect(throws: ClientFailure.self) {
+        try PairingLink(prefix + address + "&code=" + code + key)
+      }
     }
     #expect(throws: ClientFailure.self) {
-      try PairingLink(prefix + "100.64.0.1:8291&code=" + code + "&code=" + code)
+      try PairingLink(prefix + "100.64.0.1:8291&code=" + code + "&code=" + code + key)
     }
+    // The engine's key is part of the link: without it, with a wrong length or twice, it is refused.
+    let address = prefix + "100.64.0.1:8291&code=" + code
+    #expect(throws: ClientFailure.self) { try PairingLink(address) }
+    #expect(throws: ClientFailure.self) { try PairingLink(address + "&engineKey=AAAA") }
+    #expect(throws: ClientFailure.self) { try PairingLink(address + key + key) }
   }
 #endif

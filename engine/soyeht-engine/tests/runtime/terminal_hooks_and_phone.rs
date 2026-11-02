@@ -318,21 +318,59 @@ impl Phone {
         }
     }
     fn hello(&mut self, key: &ed25519_dalek::SigningKey, token: &str) -> Value {
-        use ed25519_dalek::Signer;
-        let nonce: [u8; 32] = STANDARD
+        self.hello_with(key, token, Some([5; 32]))
+    }
+    /// The engine's nonce of this connection.
+    fn nonce(&self) -> [u8; 32] {
+        STANDARD
             .decode(self.challenge["nonce"].as_str().unwrap())
             .unwrap()
             .try_into()
-            .unwrap();
+            .unwrap()
+    }
+    /// A `hello` that carries `client_nonce` (a phone that verifies the engine always does).
+    fn hello_with(
+        &mut self,
+        key: &ed25519_dalek::SigningKey,
+        token: &str,
+        client_nonce: Option<[u8; 32]>,
+    ) -> Value {
+        use ed25519_dalek::Signer;
+        let nonce = self.nonce();
         let proof = STANDARD.encode(
             key.sign(&soyeht_engine::auth::hello_bytes(
                 &nonce,
+                &client_nonce.unwrap_or([0; 32]),
                 self.challenge["engineId"].as_str().unwrap(),
                 token,
             ))
             .to_bytes(),
         );
-        self.request("hello",json!({"client":"phone-test","clientVersion":"1","protocolVersion":1,"deviceToken":token,"proof":proof}))
+        let mut params = json!({"client":"phone-test","clientVersion":"1","protocolVersion":1,"deviceToken":token,"proof":proof});
+        if let Some(client_nonce) = client_nonce {
+            params["clientNonce"] = json!(STANDARD.encode(client_nonce));
+        }
+        self.request("hello", params)
+    }
+    /// Whether `welcome` carries the proof of the engine whose key the pairing link named.
+    fn engine_proved(
+        &self,
+        engine: &ed25519_dalek::VerifyingKey,
+        welcome: &Value,
+        device: &str,
+    ) -> bool {
+        let nonce = self.nonce();
+        let bytes = soyeht_engine::auth::engine_hello_bytes(
+            &nonce,
+            &[5; 32],
+            self.challenge["engineId"].as_str().unwrap(),
+            device,
+        );
+        welcome["result"]["engineProof"]
+            .as_str()
+            .and_then(|text| STANDARD.decode(text).ok())
+            .and_then(|raw| ed25519_dalek::Signature::from_slice(&raw).ok())
+            .is_some_and(|signature| engine.verify_strict(&bytes, &signature).is_ok())
     }
 }
 
@@ -415,6 +453,51 @@ fn assert_paired_phone_acts_like_the_local_human(
     );
 }
 
+/// The engine key the pairing link of `window` names, which a phone pins.
+fn pinned_engine_key(window: &Value) -> ed25519_dalek::VerifyingKey {
+    let text = window["uri"]
+        .as_str()
+        .unwrap()
+        .split("engineKey=")
+        .nth(1)
+        .unwrap();
+    ed25519_dalek::VerifyingKey::from_bytes(
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(text)
+            .unwrap()
+            .try_into()
+            .unwrap(),
+    )
+    .unwrap()
+}
+
+/// `pair.begin`'s answer must prove the engine the link named.
+fn assert_pairing_proved_by(
+    engine: &ed25519_dalek::VerifyingKey,
+    begin: &Value,
+    device: &ed25519_dalek::SigningKey,
+) {
+    let bytes = soyeht_engine::auth::engine_pair_bytes(
+        begin["requestId"].as_str().unwrap(),
+        &STANDARD
+            .decode(begin["challenge"].as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        device.verifying_key().as_bytes(),
+    );
+    let proof = ed25519_dalek::Signature::from_slice(
+        &STANDARD
+            .decode(begin["engineProof"].as_str().unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(
+        engine.verify_strict(&bytes, &proof).is_ok(),
+        "pair.begin must prove the engine the link named"
+    );
+}
+
 #[test]
 fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     use sha2::{Digest, Sha256};
@@ -431,12 +514,14 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
         .split('&')
         .next()
         .unwrap();
+    let engine = pinned_engine_key(&window);
     let mut phone = Phone::connect(address);
     assert_unpaired_phone_is_refused(&mut phone, &pane);
     let key = ed25519_dalek::SigningKey::from_bytes(&[17; 32]);
     let begin=phone.request("pair.begin",json!({"code":window["code"],"deviceName":"Test phone","devicePublicKey":STANDARD.encode(key.verifying_key().to_bytes()),"idempotencyKey":"begin"}));
     assert!(begin.get("error").is_none(), "{begin}");
     let begin = &begin["result"];
+    assert_pairing_proved_by(&engine, begin, &key);
     let derived = Sha256::digest(
         [
             window["code"].as_str().unwrap().as_bytes(),
@@ -493,7 +578,19 @@ fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     drop(recover);
     drop(phone);
     let mut phone = Phone::connect(address);
-    assert_eq!(phone.hello(&key, token)["result"]["role"], "human_device");
+    let welcome = phone.hello(&key, token);
+    assert_eq!(welcome["result"]["role"], "human_device");
+    assert!(
+        phone.engine_proved(&engine, &welcome, device),
+        "welcome must carry the engine's proof bound to this connection: {welcome}"
+    );
+    // A phone that sends no nonce of its own cannot check the engine: it is refused and told why.
+    let mut old_phone = Phone::connect(address);
+    assert_eq!(
+        old_phone.hello_with(&key, token, None)["error"]["data"]["kind"],
+        "protocol_version_unsupported"
+    );
+    drop(old_phone);
     assert_paired_phone_acts_like_the_local_human(&mut phone, &mut local, &pane);
     local.call(
         "device.revoke",

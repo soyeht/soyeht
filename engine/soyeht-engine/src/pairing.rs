@@ -126,10 +126,15 @@ impl Core {
                 expires,
             };
             let now = self.now_unix();
+            // Signed here and kept in the receipt: a replay answers with the same proof.
+            let engine_proof = auth::sign(
+                &self.engine_key,
+                &auth::engine_pair_bytes(&pending.id, &pending.challenge, public.as_bytes()),
+            );
             let mutation = StorePort::mutate(&mut self.store, &scope, idem, &fingerprint, |tx| {
                 tx.insert_pair_request(&pending.id, &pending, expires, now)?;
                 Ok((
-                    json!({"requestId":pending.id,"challenge":STANDARD.encode(pending.challenge)}),
+                    json!({"requestId":pending.id,"challenge":STANDARD.encode(pending.challenge),"engineProof":engine_proof}),
                     vec![],
                 ))
             })
@@ -214,10 +219,11 @@ impl Core {
             let expires_at = chrono::DateTime::from_timestamp(expires, 0)
                 .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
             let uri = format!(
-                "soyeht-next://pair?engineId={}&address={}&code={}",
+                "soyeht-next://pair?engineId={}&address={}&code={}&engineKey={}",
                 self.store.store_id(),
                 self.pair_address,
-                code
+                code,
+                auth::engine_key_text(&self.engine_key)
             );
             let mut result = self.mutate(connection,method,params,|tx| {
                 tx.open_pair_window(&code, expires, now)?;
