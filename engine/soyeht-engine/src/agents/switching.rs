@@ -679,12 +679,19 @@ mod tests {
         core.background = crate::offload::Background::default();
         let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let record = std::sync::Arc::clone(&asked);
+        // The supervisor answers the spawn only once the test lets it. A step that waited for it
+        // under the lock would never see the release, which no load on the host can imitate.
+        let (release, gate) = std::sync::mpsc::channel::<()>();
+        let released = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let was_released = std::sync::Arc::clone(&released);
         core.link_supervisor(Box::new(Answering(move |request| {
             Ok(match request {
                 Request::Spawn(spawn) => {
                     record.lock().unwrap().push("spawn");
-                    // A supervisor that takes its time to start the candidate.
-                    std::thread::sleep(Duration::from_millis(400));
+                    was_released.store(
+                        gate.recv_timeout(Duration::from_secs(30)).is_ok(),
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
                     Response::Instance(Instance {
                         instance_id: "candidate".into(),
                         supervisor_id: "answering".into(),
@@ -706,18 +713,19 @@ mod tests {
         })));
         arm_switch(&mut core, Instant::now() + SWITCH_TIMEOUT);
 
-        let began = Instant::now();
         core.advance_harness_switches().unwrap();
         // A step on its way is not started again.
         core.advance_harness_switches().unwrap();
-        assert!(
-            began.elapsed() < Duration::from_millis(250),
-            "the switch waited for the supervisor: {:?}",
-            began.elapsed()
-        );
+        // Both ticks returned while the supervisor was still holding the spawn.
         assert!(core.harness_switches["agent"].candidate.is_none());
+        assert!(core.background.is_active("switch:agent"));
 
+        release.send(()).unwrap();
         apply_until_done(&mut core, "switch:agent");
+        assert!(
+            released.load(std::sync::atomic::Ordering::SeqCst),
+            "the switch waited for the supervisor"
+        );
         let candidate = core.harness_switches["agent"].candidate.as_ref().unwrap();
         assert_eq!(candidate.instance.instance_id, "candidate");
         assert_eq!(*asked.lock().unwrap(), ["spawn", "initialize"]);
