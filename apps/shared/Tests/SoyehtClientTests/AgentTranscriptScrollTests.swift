@@ -47,6 +47,8 @@ import Testing
     let leftAt = try #require(first.bottomRow(client))
     #expect(leftAt < 39, "scrolled up to row \(leftAt)")
     await first.unmount()
+    // A view that is gone is not restored: the next one must not record what it reports first.
+    #expect(first.isRestoring, "an unmounted view leaves the scroll waiting for a restoration")
 
     let again = await MountedTranscript.mount(client: client) { $0.offset > 0 }
     #expect(!again.isAtBottom, "scrolled up: not pushed to the bottom")
@@ -70,8 +72,8 @@ import Testing
     private let client: EngineClient
 
     /// Mounts the view and waits until it has been laid out, its restoration has ended and
-    /// `placed` holds: the place the test asserts next. The wait has a deadline, and the
-    /// assertion that follows says what is still wrong when it passes.
+    /// `placed` holds: the place the test asserts next. A scroll made before the restoration
+    /// ends is swallowed and then undone by it, so this never returns earlier.
     static func mount(
       client: EngineClient, placed: @MainActor (MountedTranscript) -> Bool = { _ in true }
     ) async -> MountedTranscript {
@@ -99,24 +101,41 @@ import Testing
 
     }
 
-    /// Lays the view out until the transcript has stopped moving (its height and offset the same
-    /// for 4 turns in a row) and `done` holds: at least 12 turns and up to 30 seconds. SwiftUI
-    /// builds the rows and scrolls to the place it restores on its own turns of the main loop,
-    /// which on a busy machine come late and are shared with the other tests' main-actor work,
-    /// so a count of turns says nothing about whether the layout is finished.
+    /// What a settle watches: it is finished when none of these moved for 4 turns in a row.
+    private struct Movement: Equatable {
+      var height: CGFloat
+      var offset: CGFloat
+      /// The viewport reports a place on a turn of SwiftUI's own, some turns after the scroll
+      /// that caused it, and a scroll in steps reports a row for each step.
+      var place: AgentTranscriptScroll.Place?
+    }
+
+    /// Past this, a wait that has not ended is a hang, not a slow machine.
+    private static let hangGuard: TimeInterval = 600
+
+    /// Lays the view out until the transcript has stopped moving (its height, offset and
+    /// reported place the same for 4 turns in a row) and `done` holds: at least 12 turns. SwiftUI
+    /// builds the rows, scrolls to the place it restores and reports where the viewport is on its
+    /// own turns of the main loop, which are shared with the other tests' main-actor work: with
+    /// the whole suite running, the 3 sleeps of one restoration took 12 seconds instead of 0.3.
+    /// A wait on what those turns produce therefore ends when it has happened, not at a time;
+    /// `hangGuard` only turns a wait that can never end into a failure.
     func settle(until done: @MainActor () -> Bool = { true }) async {
-      let deadline = Date().addingTimeInterval(30)
+      let giveUp = Date().addingTimeInterval(Self.hangGuard)
       var turns = 0
       var steady = 0
-      var last: [CGFloat] = []
+      var last: Movement?
       repeat {
         host.layoutSubtreeIfNeeded()
         try? await Task.sleep(for: .milliseconds(50))
-        let now = [transcript?.documentView?.frame.height ?? 0, offset]
+        let now = Movement(
+          height: transcript?.documentView?.frame.height ?? 0, offset: offset,
+          place: client.agentPanes[PaneInteriorFixture.paneId]?.scroll.place)
         steady = now == last ? steady + 1 : 0
         last = now
         turns += 1
-      } while (turns < 12 || steady < 4 || !done()) && Date() < deadline
+      } while (turns < 12 || steady < 4 || !done()) && Date() < giveUp
+      if !done() { Issue.record("the transcript never settled: \(String(describing: last))") }
     }
 
     func unmount() async {
@@ -143,6 +162,10 @@ import Testing
         return false
       }
       return scrollView.contentView.bounds.maxY >= document.frame.height - 24
+    }
+
+    var isRestoring: Bool {
+      client.agentPanes[PaneInteriorFixture.paneId]?.scroll.isRestoring != false
     }
 
     func bottomRow(_ client: EngineClient) -> Int? {
