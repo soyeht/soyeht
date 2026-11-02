@@ -276,3 +276,14 @@ import Testing
   // A paired device is a full remote control: no client-side refusal.
   #expect(client.problem != "Finish agent sign-in on the Mac.")
 }
+
+@Test func aDeadAgentPaneShowsTheReasonTheEngineGave() {
+  let reason = "soyeht-mcp is not installed next to the engine"
+  let notice = AgentPaneStatusPresentation.endedNotice(state: .dead, phrase: " \(reason)\n")
+  #expect(notice?.text == reason)
+  #expect(notice?.severity == .warning)
+  #expect(AgentPaneStatusPresentation.endedNotice(state: .dead, phrase: "  ") == nil)
+  for state in PaneState.allCases where state != .dead {
+    #expect(AgentPaneStatusPresentation.endedNotice(state: state, phrase: reason) == nil)
+  }
+}
