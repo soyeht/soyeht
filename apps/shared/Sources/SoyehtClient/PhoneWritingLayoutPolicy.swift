@@ -178,7 +178,7 @@ public struct PhoneWritingLayoutMetrics: Equatable, Sendable {
   }
 
   public static let standard = PhoneWritingLayoutMetrics(
-    minimumHitTarget: 44,
+    minimumHitTarget: Double(PaneInteriorMetrics.touchTarget),
     // Leaves 345 pt at the 375 pt ruler: every measured writing floor fits, including
     // the 344 pt screenplay page at its accepted 7.5 pt raster size.
     horizontalInset: 15,
