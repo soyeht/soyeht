@@ -39,6 +39,7 @@ pub const EDITOR_VIEWPORT_LINES: usize = 2000;
 pub const EDITOR_EDIT_BYTES: usize = 262144;
 /// The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.
 pub const EDITOR_PATH_BYTES: usize = 4096;
+pub const DIAGNOSTIC_MESSAGE_CHARS: usize = 4096;
 pub const EDITOR_SEARCH_RESULTS: usize = 500;
 pub const EDITOR_HISTORY_VERSIONS: usize = 200;
 pub const EDITOR_HISTORY_BYTES: usize = 52428800;

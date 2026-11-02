@@ -79,10 +79,10 @@ final class Wire {
     webSocket = task
   }
 
-  func open() async throws {
+  func open(greetingTimeout: Duration = greetingTimeout) async throws {
     greetingDeadline = Task { [weak self] in
       do { try await Task.sleep(for: greetingTimeout) } catch { return }
-      self?.close()
+      self?.close(ClientFailure.timeout)
     }
     if let webSocket {
       webSocket.resume()
@@ -111,14 +111,16 @@ final class Wire {
     }
   }
 
-  func close() {
+  /// Ends the connection. `reason` is what a pending or later read reports, so a deadline says
+  /// "no answer in time" instead of the transport's own "cancelled".
+  func close(_ reason: ClientFailure = .disconnected) {
     closed = true
+    fail(reason)
     connection?.cancel()
     webSocket?.cancel(with: .goingAway, reason: nil)
     session?.invalidateAndCancel()
     greetingDeadline?.cancel()
     greetingDeadline = nil
-    fail(ClientFailure.disconnected)
   }
 
   func send(_ value: JsonValue, attachments: [WebHostAttachment] = []) async throws {
@@ -132,13 +134,15 @@ final class Wire {
   private func write(_ frames: [Frame]) async throws {
     guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
     if let webSocket {
-      for frame in frames {
-        if frame.kind == FrameKind.json {
-          try await webSocket.send(.string(String(decoding: frame.payload, as: UTF8.self)))
-        } else {
-          try await webSocket.send(.data(try frame.encode()))
+      do {
+        for frame in frames {
+          if frame.kind == FrameKind.json {
+            try await webSocket.send(.string(String(decoding: frame.payload, as: UTF8.self)))
+          } else {
+            try await webSocket.send(.data(try frame.encode()))
+          }
         }
-      }
+      } catch { throw transportFailure(error) }
       return
     }
     guard let connection else { throw ClientFailure.disconnected }
@@ -201,6 +205,13 @@ final class Wire {
     }
   }
 
+  /// A socket this wire closed reports `URLError.cancelled`, which reads "cancelled" to the
+  /// person: say why it was closed instead.
+  private func transportFailure(_ error: Error) -> Error {
+    guard let url = error as? URLError, url.code == .cancelled else { return error }
+    return terminalFailure ?? ClientFailure.disconnected
+  }
+
   func next() async throws -> Frame {
     let frame = try await readFrame()
     greetingDeadline?.cancel()
@@ -210,7 +221,9 @@ final class Wire {
 
   private func readFrame() async throws -> Frame {
     if let webSocket {
-      switch try await webSocket.receive() {
+      let message: URLSessionWebSocketTask.Message
+      do { message = try await webSocket.receive() } catch { throw transportFailure(error) }
+      switch message {
       case .string(let text):
         guard !text.isEmpty, text.utf8.count <= ProtocolLimits.jsonBytes else {
           throw ClientFailure.invalidFrame

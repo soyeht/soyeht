@@ -14645,6 +14645,7 @@
     "editorViewportLines": 2000,
     "editorEditBytes": 262144,
     "editorPathBytes": 4096,
+    "diagnosticMessageChars": 4096,
     "editorSearchResults": 500,
     "editorHistoryVersions": 200,
     "editorHistoryBytes": 52428800,
@@ -14882,7 +14883,9 @@
       "crashNoticeTitle": "Soyeht closed unexpectedly",
       "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
       "crashNoticeCopy": "Copy report",
-      "crashNoticeDismiss": "Dismiss"
+      "crashNoticeDismiss": "Dismiss",
+      "pushNeedsYouTitle": "An agent needs you",
+      "pushNeedsYouBody": "Open Soyeht to see what it asks."
     },
     "inlineImageTypes": [
       "image/png",

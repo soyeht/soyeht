@@ -88,7 +88,9 @@ export const clientPolicy = {
     "crashNoticeTitle": "Soyeht closed unexpectedly",
     "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
     "crashNoticeCopy": "Copy report",
-    "crashNoticeDismiss": "Dismiss"
+    "crashNoticeDismiss": "Dismiss",
+    "pushNeedsYouTitle": "An agent needs you",
+    "pushNeedsYouBody": "Open Soyeht to see what it asks."
   },
   "inlineImageTypes": [
     "image/png",

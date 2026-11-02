@@ -50,6 +50,8 @@ pub const CRASH_NOTICE_SUMMARY: &str =
     "A crash report was saved on this computer. Nothing was sent.";
 pub const CRASH_NOTICE_COPY: &str = "Copy report";
 pub const CRASH_NOTICE_DISMISS: &str = "Dismiss";
+pub const PUSH_NEEDS_YOU_TITLE: &str = "An agent needs you";
+pub const PUSH_NEEDS_YOU_BODY: &str = "Open Soyeht to see what it asks.";
 pub const CLIENT_NAME_MAC: &str = "mac";
 pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
 pub const CLIENT_NAME_IPHONE: &str = "iphone";
