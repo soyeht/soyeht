@@ -1,3 +1,4 @@
+import SoyehtProtocol
 import Testing
 
 @testable import SoyehtClient
@@ -145,4 +146,35 @@ private final class LoadGate {
   #expect(
     HarnessPickerModel.modelContentState(catalogue: AgentCatalogue(), loading: false, failed: true)
       == .empty)
+}
+
+private func harnessInfo(_ id: String) -> HarnessInfo {
+  HarnessInfo(
+    id: id, name: id, available: true, capabilities: [], options: [], authMethods: [],
+    setupState: .ready)
+}
+
+@MainActor
+@Test func openingPreferencesAsksForEachDefaultModeOnceNotOnEveryOpen() async throws {
+  let client = EngineClient(socket: "/tmp/background-load-modes.sock")
+  client.harnesses = ["a", "b", "c"].map(harnessInfo)
+  var asked: [String] = []
+  client.requestStub = { method, params in
+    guard method == .settingsGet else { return .object([:]) }
+    let key = try params.decoded(SettingsGetParams.self).key
+    asked.append(key)
+    let value: JsonValue = key == Setting.harnessDefaultModeKey("b") ? .string("plan") : .string("")
+    return try .encoded(SettingsGetResult(key: key, value: value))
+  }
+  await client.refreshDefaultPermissionModes().value
+  #expect(asked.count == 3)
+  await client.refreshDefaultPermissionModes().value
+  await client.refreshDefaultPermissionModes().value
+  #expect(asked.count == 3)
+  #expect(client.defaultPermissionMode(harness: "b") == "plan")
+  #expect(client.defaultPermissionMode(harness: "a") == nil)
+  // A harness that appears later is the only one asked about.
+  client.harnesses.append(harnessInfo("d"))
+  await client.refreshDefaultPermissionModes().value
+  #expect(asked.count == 4)
 }
