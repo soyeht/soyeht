@@ -241,7 +241,8 @@ pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     set_private(path, true)
 }
 
-/// Windows judges the owner with the access list, which names the user (`dir_is_owner_only`).
+/// Windows does not check the owner's SID: `dir_is_owner_only` and `file_is_owner_only` read the access
+/// list alone, which names the user. A check of the owner is a follow-up.
 pub(super) fn is_owned_by_current_user(_: &fs::Metadata) -> bool {
     true
 }

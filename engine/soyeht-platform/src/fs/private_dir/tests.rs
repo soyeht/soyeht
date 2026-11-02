@@ -52,10 +52,9 @@ fn a_directory_of_another_user_is_said_to_belong_to_them_not_refused_with_permis
         let error = result.unwrap_err();
         assert!(matches!(error, PrivateDirError::OtherOwner), "{error}");
         assert_eq!(error.to_string(), "the directory belongs to another user");
-        assert_eq!(
-            io::Error::from(error).to_string(),
-            "the directory belongs to another user"
-        );
+        let refusal = io::Error::from(error);
+        assert_eq!(refusal.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(refusal.to_string(), "the directory belongs to another user");
     }
 }
 

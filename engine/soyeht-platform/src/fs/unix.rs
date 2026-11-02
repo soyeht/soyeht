@@ -69,28 +69,34 @@ pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     DirBuilder::new().mode(0o700).create(path)
 }
 
+/// The user this process runs as.
+fn current_user() -> u32 {
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    unsafe { libc::geteuid() }
+}
+
+/// Whether `metadata` is of something `user` owns.
+fn owned_by(metadata: &fs::Metadata, user: u32) -> bool {
+    metadata.uid() == user
+}
+
 /// Whether `metadata` is of something only `user` can reach: owned by `user`, and with no mode
 /// bit for the group or others. Someone else's directory with mode 0700 is theirs, not ours.
 fn private_to(metadata: &fs::Metadata, user: u32) -> bool {
-    metadata.uid() == user && metadata.permissions().mode() & 0o077 == 0
+    owned_by(metadata, user) && metadata.permissions().mode() & 0o077 == 0
 }
 
 /// Whether the current user owns what `metadata` describes.
 pub(super) fn is_owned_by_current_user(metadata: &fs::Metadata) -> bool {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    metadata.uid() == unsafe { libc::geteuid() }
+    owned_by(metadata, current_user())
 }
 
 pub(super) fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    Ok(private_to(&fs::symlink_metadata(path)?, unsafe {
-        libc::geteuid()
-    }))
+    Ok(private_to(&fs::symlink_metadata(path)?, current_user()))
 }
 
 pub(super) fn file_is_owner_only(file: &File) -> io::Result<bool> {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    Ok(private_to(&file.metadata()?, unsafe { libc::geteuid() }))
+    Ok(private_to(&file.metadata()?, current_user()))
 }
 
 pub(super) fn sync_directory(path: &Path) -> io::Result<()> {
