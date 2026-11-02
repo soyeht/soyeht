@@ -608,6 +608,9 @@
         },
         "dbId": {
           "$ref": "#/$defs/Id"
+        },
+        "engineProof": {
+          "$ref": "#/$defs/ByteString"
         }
       },
       "required": [
@@ -644,6 +647,9 @@
           "type": "string"
         },
         "proof": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "clientNonce": {
           "$ref": "#/$defs/ByteString"
         },
         "binding": {
@@ -1625,6 +1631,9 @@
           "$ref": "#/$defs/Id"
         },
         "challenge": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "engineProof": {
           "$ref": "#/$defs/ByteString"
         }
       },
