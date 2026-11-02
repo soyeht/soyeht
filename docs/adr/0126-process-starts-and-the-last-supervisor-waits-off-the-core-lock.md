@@ -158,7 +158,8 @@ the candidate. `advance_harness_switches` starts the next step of each switch as
 - **An agent's message, a gap's requests and a switch's steps wait for the tick that applies
   them.** Each is a round trip and a thread hop later than when it was a call under the lock
   (the first page of a message goes out on the tick after the poll that found it, the next pages
-  as their receipts come back). A switch has 30 seconds to complete either way.
+  as their receipts come back). A switch has `noSignalSec` (90 seconds), the wait the engine allows any harness to open its
+  session, to complete either way; a harness that starts cold needs more than 30.
 - **A write of a switch that fails is not repeated**, and a request recovery that finds that the
   engine recorded a request meanwhile reads it again.
 - **The jobs share the four workers of the background pool**, as the terminal's reads and the
