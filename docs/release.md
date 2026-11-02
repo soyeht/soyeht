@@ -145,6 +145,24 @@ them through VMPal"); an unsigned installer is fine for that and for `--allow-un
 
 ## When something goes wrong
 
+**The expiry.** Every manifest expires 90 days (`manifest.maxLifetimeSeconds`) after it is signed, and a
+device refuses one at or past its expiry (`expired`, contract 15 section 3), so an old manifest that
+someone keeps serving cannot hold a device on an old release. The same rule means that when no release is
+published for 90 days, every device's update check fails (the Mac and the desktop app say to check the
+date and time or to get Soyeht from the website). Renewing needs neither `dist/` nor a rebuild, and the
+packages and their hashes stay exactly as published:
+
+```sh
+uv run python scripts/release_manifest.py check-expiry            # fails within 21 days of the expiry
+SOYEHT_UPDATE_SIGNING_KEY=... uv run python scripts/release_manifest.py renew   # writes update-manifest.json
+gh release upload v<version> update-manifest.json --clobber       # over the asset of the latest release
+```
+
+`renew` reads the manifest the clients read now, keeps its version, minimum, notes and packages, and signs
+them with a new sequence (the clock, or one above the old if the clock is behind) and a full life.
+Run `check-expiry` on a schedule (every week from the calendar or from a CI job that fails the run), and
+renew when it fails. A manifest that has expired already can be renewed the same way.
+
 **The sequence.** A device remembers the highest `sequence` it has read and refuses every lower one
 (contract 15, section 3). So a manifest with a sequence far in the future would lock every later
 release out of the devices that read it, for ever. `release_manifest.py build` refuses a sequence more

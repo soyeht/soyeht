@@ -4,9 +4,9 @@
   import UIKit
 
   /// A paired device drives the terminal like the Mac does. SwiftTerm turns the software
-  /// keyboard, its Esc/Ctrl/Tab/arrow accessory row and hardware keys (Return, Backspace,
-  /// Tab, arrows, Ctrl combinations, Esc, function keys) into terminal bytes, and
-  /// `TerminalHost` sends them with the same `pane.input` path as the Mac terminal.
+  /// keyboard and hardware keys (Return, Backspace, Tab, arrows, Ctrl combinations, Esc,
+  /// function keys) into terminal bytes, `PhoneTerminalAccessory` adds the Esc/Ctrl/Tab/arrow
+  /// key row, and `TerminalHost` sends them with the same `pane.input` path as the Mac terminal.
   ///
   /// The text size comes from `TerminalFontSizeStore` (pinch, Command-plus and Command-minus,
   /// a menu), and `sizeMode` says whether the pane keeps the Mac's size or is fitted to this
@@ -91,6 +91,8 @@
       let colors = SoyehtThemeColorSet(palette: SoyehtThemeStore.shared.activeTheme.palette)
       view.nativeBackgroundColor = UIColor(colors.face)
       view.nativeForegroundColor = UIColor(colors.ink)
+      (view.inputAccessoryView as? PhoneTerminalAccessory)?.apply(
+        PhoneTerminalAccessoryColors(colors))
       view.setNeedsDisplay()
     }
     public static func dismantleUIView(_ view: PhoneTerminalSurface, coordinator: TerminalHost) {
@@ -117,12 +119,23 @@
       super.init(frame: frame, font: font)
       installPinch()
       installScrollInput()
+      installKeyRow()
     }
 
     public required init?(coder: NSCoder) {
       super.init(coder: coder)
       installPinch()
       installScrollInput()
+      installKeyRow()
+    }
+
+    /// The row above the keyboard replaces SwiftTerm's, whose keys are 20 points wide.
+    private func installKeyRow() {
+      let colors = PhoneTerminalAccessoryColors(
+        SoyehtThemeColorSet(palette: SoyehtThemeStore.shared.activeTheme.palette))
+      inputAssistantItem.leadingBarButtonGroups = []
+      inputAssistantItem.trailingBarButtonGroups = []
+      inputAccessoryView = PhoneTerminalAccessory(terminal: self, colors: colors)
     }
 
     public override func didMoveToWindow() {

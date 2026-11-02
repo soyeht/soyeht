@@ -461,6 +461,7 @@ pub mod pane_interior {
     pub const ROW_VERTICAL_PADDING: f32 = 8.0;
     pub const SEPARATOR_WIDTH: f32 = 1.0;
     pub const SEND_BUTTON_SIZE: f32 = 28.0;
+    pub const TOUCH_TARGET: f32 = 44.0;
     pub const PILL_HORIZONTAL_PADDING: f32 = 16.0;
     pub const PILL_VERTICAL_PADDING: f32 = 8.0;
     pub const BODY_POINT_SIZE: f32 = 14.0;

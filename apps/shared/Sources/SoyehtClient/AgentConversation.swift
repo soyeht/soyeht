@@ -202,6 +202,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
         if !view.scroll.isRestoring { view.scroll.record(bottomVisibleId: id) }
       }
       .task { await restoreScroll(proxy) }
+      .onDisappear { view.scroll.isRestoring = true }
       .onChange(of: view.messages.count) { _, _ in
         guard follow.messagesChanged(isVisible: isVisible) else { return }
         withAnimation(.easeOut(duration: 0.18)) {
