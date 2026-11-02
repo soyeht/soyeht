@@ -62,7 +62,9 @@ fn pair_mac(
     let mut derivation = Sha256::new();
     derivation.update(code.as_bytes());
     derivation.update(device_key);
-    let mut mac = Hmac::<Sha256>::new_from_slice(&derivation.finalize()).ok()?;
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(&derivation.finalize()) else {
+        return None;
+    };
     mac.update(challenge);
     mac.update(name.as_bytes());
     Some(mac)

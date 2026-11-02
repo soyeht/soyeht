@@ -29,7 +29,10 @@ fn send(socket: &mut WebSocket<std::net::TcpStream>, message: Value) {
 }
 
 /// The engine of a pairing: `signer` is the key it answers with, `approve` the person's decision.
-fn engine(signer: SigningKey, approve: bool) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
+fn engine(
+    signer: SigningKey,
+    approve: bool,
+) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let handle = std::thread::spawn(move || {
@@ -50,7 +53,11 @@ fn engine(signer: SigningKey, approve: bool) -> (std::net::SocketAddr, std::thre
             .try_into()
             .unwrap();
         let challenge = [3_u8; 32];
-        let proof = signer.sign(&device_auth::engine_pair_bytes(REQUEST, &challenge, &device_key));
+        let proof = signer.sign(&device_auth::engine_pair_bytes(
+            REQUEST,
+            &challenge,
+            &device_key,
+        ));
         send(
             &mut socket,
             json!({"jsonrpc":"2.0","id":begin["id"],"result":{
@@ -85,9 +92,7 @@ fn engine(signer: SigningKey, approve: bool) -> (std::net::SocketAddr, std::thre
 
 fn link(address: std::net::SocketAddr, engine_key: &VerifyingKey) -> String {
     let key = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(engine_key.as_bytes());
-    format!(
-        "soyeht-next://pair?engineId={ENGINE_ID}&address={address}&code={CODE}&engineKey={key}"
-    )
+    format!("soyeht-next://pair?engineId={ENGINE_ID}&address={address}&code={CODE}&engineKey={key}")
 }
 
 #[test]

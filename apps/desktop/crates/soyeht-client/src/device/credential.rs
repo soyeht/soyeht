@@ -50,12 +50,12 @@ impl Expected {
 /// Whether `proof` is the engine's signature of `signed`; a proof that is not one is the engine not
 /// proving itself.
 pub(super) fn verify(engine_key: &VerifyingKey, signed: &[u8], proof: &str) -> Result<()> {
-    STANDARD
-        .decode(proof)
-        .ok()
-        .and_then(|bytes| Signature::from_slice(&bytes).ok())
-        .and_then(|signature| engine_key.verify(signed, &signature).ok())
-        .ok_or(Error::Pairing(PairingFailure::NotYourMac))
+    let not_the_engine = || Error::Pairing(PairingFailure::NotYourMac);
+    let bytes = STANDARD.decode(proof).map_err(|_| not_the_engine())?;
+    let signature = Signature::from_slice(&bytes).map_err(|_| not_the_engine())?;
+    engine_key
+        .verify(signed, &signature)
+        .map_err(|_| not_the_engine())
 }
 
 impl Credential {
@@ -102,8 +102,8 @@ impl Credential {
             .engine_key
             .as_deref()
             .and_then(bytes32)
-            .and_then(|bytes| VerifyingKey::from_bytes(&bytes).ok());
-        let (Some(nonce), Some(engine_key)) = (nonce, engine_key) else {
+            .map(|bytes| VerifyingKey::from_bytes(&bytes));
+        let (Some(nonce), Some(Ok(engine_key))) = (nonce, engine_key) else {
             return Err(Error::Pairing(PairingFailure::PairAgain));
         };
         let key = bytes32(&self.key)

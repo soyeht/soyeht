@@ -74,6 +74,8 @@ pub(crate) fn connect(address: SocketAddr) -> Result<Link> {
                         error.kind(),
                         io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
                     ) => {}
+                // ignored: a connection that broke ends the reader with a clean end of stream, and the
+                // supervisor reconnects; the reason is in how the connection began or ended.
                 Err(_) => break,
             }
         }
@@ -115,6 +117,7 @@ impl Read for Inbox {
             }
             match self.inbox.recv() {
                 Ok(next) => self.current = Cursor::new(next),
+                // ignored: the socket thread ended, which is the end of the stream.
                 Err(_) => return Ok(0),
             }
         }
