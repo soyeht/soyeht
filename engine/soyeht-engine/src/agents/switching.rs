@@ -40,8 +40,16 @@ use uuid::Uuid;
 
 mod candidate;
 mod commit;
+#[cfg(test)]
+mod tests;
 
-const SWITCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a switch waits for the candidate to become ready (`harnessSwitchTimeoutSec`) before
+/// it is abandoned and the original session is restored. Until then the pane is locked: it
+/// accepts no prompt, configuration change or close, and the switch cannot be cancelled
+/// (ADR 0126). The value covers a harness that starts cold, which has taken 30 to 35 seconds. It
+/// is not the wait the engine gives an open, which has no deadline and only turns to `no_signal`
+/// after `noSignalSec`.
+const SWITCH_TIMEOUT: Duration = Duration::from_secs(limits::HARNESS_SWITCH_TIMEOUT_SEC as u64);
 const CONTINUATION_TEMPLATE: &str =
     include_str!("../../../../docs/contracts/prompts/harness-switch.en.md");
 
@@ -612,156 +620,4 @@ fn bounded_reason(reason: &str) -> String {
         end -= 1;
     }
     reason[..end].to_owned()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::agents::{pending::UserOperation, state::HarnessSwitchCheckpoint};
-    use crate::{
-        agents::{Running, state::State},
-        model::{RunningPane, StoredPane},
-        screen::Screen,
-    };
-    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState};
-    use std::fs;
-
-    #[test]
-    fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
-        use crate::test_panes::{Answering, apply_until_done, core_with_agent, quiet_read};
-        let (mut core, _directory) = core_with_agent(&[]);
-        core.background = crate::offload::Background::default();
-        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let record = std::sync::Arc::clone(&asked);
-        core.link_supervisor(Box::new(Answering(move |request| {
-            Ok(match request {
-                Request::Spawn(spawn) => {
-                    record.lock().unwrap().push("spawn");
-                    // A supervisor that takes its time to start the candidate.
-                    std::thread::sleep(Duration::from_millis(400));
-                    Response::Instance(Instance {
-                        instance_id: "candidate".into(),
-                        supervisor_id: "answering".into(),
-                        spawn,
-                        pid: 7,
-                        closed: false,
-                        exit_code: None,
-                    })
-                }
-                Request::Input { bytes, .. } => {
-                    record.lock().unwrap().push("initialize");
-                    Response::Accepted {
-                        bytes: STANDARD.decode(bytes).unwrap().len(),
-                    }
-                }
-                Request::Drain { from_seq, .. } => quiet_read(from_seq),
-                _ => Response::Ok,
-            })
-        })));
-        let mut state = core.agents["agent"].state.clone();
-        state.harness_switch = Some(HarnessSwitchCheckpoint {
-            user: UserOperation {
-                scope: "scope".into(),
-                key: "key".into(),
-            },
-            from_harness: "test".into(),
-            to_harness: "other".into(),
-            to_name: "Other".into(),
-            candidate_instance_key: "candidate-key".into(),
-            previous_queue_paused: false,
-        });
-        core.agents.get_mut("agent").unwrap().state = state;
-        core.harness_switches.insert(
-            "agent".into(),
-            HarnessSwitchRuntime {
-                params: PaneHarnessSwitchParams {
-                    pane_id: "agent".into(),
-                    harness: "other".into(),
-                    model: None,
-                    effort: None,
-                    idempotency_key: "key".into(),
-                },
-                launch: HarnessLaunch {
-                    id: "other".into(),
-                    name: "Other".into(),
-                    command: "/other".into(),
-                    args: Vec::new(),
-                    version: "1".into(),
-                    environment: None,
-                },
-                binary_digest: "digest".into(),
-                candidate: None,
-                deadline: Instant::now() + SWITCH_TIMEOUT,
-            },
-        );
-
-        let began = Instant::now();
-        core.advance_harness_switches().unwrap();
-        // A step on its way is not started again.
-        core.advance_harness_switches().unwrap();
-        assert!(
-            began.elapsed() < Duration::from_millis(250),
-            "the switch waited for the supervisor: {:?}",
-            began.elapsed()
-        );
-        assert!(core.harness_switches["agent"].candidate.is_none());
-
-        apply_until_done(&mut core, "switch:agent");
-        let candidate = core.harness_switches["agent"].candidate.as_ref().unwrap();
-        assert_eq!(candidate.instance.instance_id, "candidate");
-        assert_eq!(*asked.lock().unwrap(), ["spawn", "initialize"]);
-    }
-
-    #[test]
-    fn closed_agent_does_not_abort_switch_recovery_or_retired_cleanup() {
-        let root = std::env::temp_dir().join(format!("soyeht-closed-agent-{}", Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        let mut core = Core::open(&root).unwrap();
-        let pane_id = "closed-agent".to_owned();
-        let state = State::new(
-            HarnessLaunch {
-                id: "test".into(),
-                name: "Test".into(),
-                command: "/test".into(),
-                args: Vec::new(),
-                version: "1".into(),
-                environment: None,
-            },
-            "digest".into(),
-            None,
-        )
-        .unwrap();
-        let pane = Pane {
-            name: "Closed agent".into(),
-            state: PaneState::Dead,
-            phrase: "Agent pane closed".into(),
-            record: true,
-            ..crate::test_panes::pane(
-                &pane_id,
-                "workspace",
-                PaneMode::Agent,
-                &root.display().to_string(),
-            )
-        };
-        let screen = Screen::open(&root.join("sessions").join(&pane_id), true).unwrap();
-        core.panes.insert(
-            pane_id.clone(),
-            RunningPane {
-                stored: StoredPane {
-                    pane,
-                    closed: true,
-                    instance_key: "closed-instance".into(),
-                    instance_id: None,
-                    supervisor_id: None,
-                    sequence_base: 0,
-                },
-                screen,
-            },
-        );
-        core.agents.insert(pane_id, Running::new(state));
-
-        core.recover_harness_switches(&[]).unwrap();
-        core.cleanup_retired_agent_processes().unwrap();
-        crate::test_paths::remove_after(core, root);
-    }
 }

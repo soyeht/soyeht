@@ -49,19 +49,33 @@ impl log::Failure for Failure {
 /// The report for the profile this window runs as, from the `soyeht` program beside this
 /// executable. Blocks until the program ends: run it off the window's thread.
 pub fn collect() -> Result<String, Failure> {
+    ask(&["diagnostics"])
+}
+
+/// What the `soyeht` program beside this executable prints for `subcommand`, for the profile this
+/// window runs as. The crash notice (contract 16) asks it too. Blocks until the program ends.
+pub fn ask(subcommand: &[&str]) -> Result<String, Failure> {
     // A system that cannot say where this program is has no folder to look in.
     let executable = std::env::current_exe().map_err(|_| Failure::Unavailable)?;
     let profile = profile::selected().map_err(|_| Failure::Profile)?;
     // The profile's own data directory, also when the window was pointed at another engine with
     // `SOYEHT_ENGINE_SOCKET` (contract 14, section 4).
     let directory = profile::data_directory_of_profile().map_err(|_| Failure::Profile)?;
-    collect_with(&executable, profile.name, &directory)
+    ask_with(&executable, profile.name, &directory, subcommand)
 }
 
-/// The report of `profile`, whose data is in `directory`, from the `soyeht` program that sits in
-/// the folder of `executable`.
-fn collect_with(executable: &Path, profile: &str, directory: &Path) -> Result<String, Failure> {
-    run(&program_beside(executable)?, &arguments(profile, directory))
+/// What the `soyeht` program in the folder of `executable` prints for `subcommand`, for `profile`
+/// whose data is in `directory`.
+fn ask_with(
+    executable: &Path,
+    profile: &str,
+    directory: &Path,
+    subcommand: &[&str],
+) -> Result<String, Failure> {
+    run(
+        &program_beside(executable)?,
+        &arguments_for(profile, directory, subcommand),
+    )
 }
 
 /// The `soyeht` program in the folder of `executable`.
@@ -73,15 +87,16 @@ fn program_beside(executable: &Path) -> Result<PathBuf, Failure> {
         .ok_or(Failure::Unavailable)
 }
 
-/// The command line that asks for the report of a profile, the one the Mac app builds too.
-fn arguments(profile: &str, directory: &Path) -> Vec<OsString> {
-    vec![
+/// The command line that asks for `subcommand` for a profile, the one the Mac app builds too.
+fn arguments_for(profile: &str, directory: &Path, subcommand: &[&str]) -> Vec<OsString> {
+    let mut arguments: Vec<OsString> = vec![
         "--profile".into(),
         profile.into(),
         "--data-dir".into(),
         directory.as_os_str().to_owned(),
-        "diagnostics".into(),
-    ]
+    ];
+    arguments.extend(subcommand.iter().map(OsString::from));
+    arguments
 }
 
 fn run(program: &Path, arguments: &[OsString]) -> Result<String, Failure> {

@@ -151,6 +151,7 @@ export interface Welcome {
   "role": Role;
   "capabilities": Array<string>;
   "dbId": Id;
+  "engineProof"?: ByteString;
 }
 
 export interface Empty {
@@ -163,6 +164,7 @@ export interface HelloParams {
   "protocolVersion": number;
   "deviceToken"?: string;
   "proof"?: ByteString;
+  "clientNonce"?: ByteString;
   "binding"?: string;
   "capabilities"?: Array<ClientCapability>;
 }
@@ -460,6 +462,7 @@ export interface PairBeginParams {
 export interface PairBeginResult {
   "requestId": Id;
   "challenge": ByteString;
+  "engineProof"?: ByteString;
 }
 
 export interface PairProveParams {

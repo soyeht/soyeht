@@ -13,9 +13,8 @@ pub mod selection;
 pub mod settle;
 
 use lines::Lines;
-use soyeht_platform::log;
+use soyeht_platform::{crash, log};
 use soyeht_protocol::client_policy;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Lines of history kept per terminal on the client.
 const SCROLLBACK_LINES: usize = client_policy::TERMINAL_SCROLLBACK_LINES;
@@ -120,7 +119,9 @@ impl TerminalScreen {
         let parser = &mut self.parser;
         // The bytes come from whatever runs in the pane, and the parser is code of a dependency:
         // a panic in it must cost this one screen its text, not the window and every pane in it.
-        if catch_unwind(AssertUnwindSafe(|| parser.process(bytes))).is_err() {
+        // `caught` tells the crash report hook so: this runs on the main thread, and a panic
+        // there that is not caught would be taken for the window closing.
+        if crash::caught(|| parser.process(bytes)).is_err() {
             let (rows, cols) = self.size();
             self.recover(rows, cols);
             return;
@@ -153,7 +154,7 @@ impl TerminalScreen {
         }
         // Always by `refit`: the parser's own `set_size` can cut a wide character in two, which
         // makes its next write panic.
-        if catch_unwind(AssertUnwindSafe(|| self.refit(rows, cols))).is_err() {
+        if crash::caught(|| self.refit(rows, cols)).is_err() {
             self.recover(rows, cols);
             return;
         }

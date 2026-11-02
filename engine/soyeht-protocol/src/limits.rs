@@ -31,6 +31,7 @@ pub const PERMISSION_COMMAND_BYTES: usize = 65536;
 pub const CANCEL_TIMEOUT_SEC: usize = 10;
 pub const PROBE_TIMEOUT_SEC: usize = 10;
 pub const NO_SIGNAL_SEC: usize = 90;
+pub const HARNESS_SWITCH_TIMEOUT_SEC: usize = 90;
 pub const USAGE_REFRESH_MIN_INTERVAL_SEC: usize = 30;
 pub const USAGE_AUTO_REFRESH_INTERVAL_SEC: usize = 300;
 pub const USAGE_STALE_AFTER_SEC: usize = 900;

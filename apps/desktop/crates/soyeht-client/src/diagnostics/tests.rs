@@ -9,7 +9,7 @@ fn texts(items: &[&str]) -> Vec<OsString> {
 #[test]
 fn the_program_is_asked_for_the_profile_and_directory_the_window_resolved() {
     assert_eq!(
-        arguments("prod", Path::new("/data/Soyeht.next")),
+        arguments_for("prod", Path::new("/data/Soyeht.next"), &["diagnostics"]),
         texts(&[
             "--profile",
             "prod",
@@ -42,15 +42,35 @@ fn the_report_is_what_the_soyeht_program_beside_the_window_prints() {
         std::env::temp_dir().join(format!("next-diagnostics-collect-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
     write_printing_script(&program_file(&folder, PROGRAM));
-    let report = collect_with(
+    let report = ask_with(
         &folder.join("soyeht-desktop"),
         "prod",
         Path::new("/data/Soyeht.next"),
+        &["diagnostics"],
     );
     std::fs::remove_dir_all(&folder).unwrap();
     assert_eq!(
         report,
         Ok("--profile prod --data-dir /data/Soyeht.next diagnostics\n".to_owned())
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_crash_notice_asks_the_same_program_with_its_own_subcommand() {
+    let folder = std::env::temp_dir().join(format!("next-crash-ask-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    write_printing_script(&program_file(&folder, PROGRAM));
+    let answer = ask_with(
+        &folder.join("soyeht-desktop"),
+        "prod",
+        Path::new("/data/Soyeht.next"),
+        &["crash-reports", "status"],
+    );
+    std::fs::remove_dir_all(&folder).unwrap();
+    assert_eq!(
+        answer,
+        Ok("--profile prod --data-dir /data/Soyeht.next crash-reports status\n".to_owned())
     );
 }
 
@@ -67,7 +87,12 @@ fn write_printing_script(path: &Path) {
 fn a_window_with_no_soyeht_program_beside_it_has_no_report() {
     let folder = std::env::temp_dir().join(format!("next-diagnostics-none-{}", std::process::id()));
     std::fs::create_dir_all(&folder).unwrap();
-    let report = collect_with(&folder.join("soyeht-desktop"), "prod", Path::new("/data"));
+    let report = ask_with(
+        &folder.join("soyeht-desktop"),
+        "prod",
+        Path::new("/data"),
+        &["diagnostics"],
+    );
     std::fs::remove_dir_all(&folder).unwrap();
     assert_eq!(report, Err(Failure::Unavailable));
 }
@@ -91,7 +116,7 @@ mod running {
 
     #[test]
     fn the_arguments_reach_the_program_in_order() {
-        let given = arguments("dev", Path::new("/data/Soyeht.dev"));
+        let given = arguments_for("dev", Path::new("/data/Soyeht.dev"), &["diagnostics"]);
         let mut all = texts(&["-c", "echo \"$@\"", "sh"]);
         all.extend(given);
         assert_eq!(
