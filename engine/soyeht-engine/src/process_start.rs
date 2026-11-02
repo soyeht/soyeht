@@ -417,4 +417,32 @@ mod tests {
         );
         crate::test_paths::remove_after(core, directory);
     }
+
+    fn instance_named(id: &str) -> Instance {
+        Instance {
+            instance_id: id.into(),
+            supervisor_id: "answering".into(),
+            spawn: crate::test_panes::pty_spawn("p-key"),
+            pid: 7,
+            closed: false,
+            exit_code: None,
+        }
+    }
+
+    #[test]
+    fn a_process_the_pane_already_adopted_is_not_closed_as_an_orphan() {
+        let (mut core, directory, requests) = slow_core(Duration::ZERO);
+        // The reconciliation of a new link adopted this very process before the start ended.
+        core.panes.get_mut(PANE).unwrap().stored.instance_id = Some("adopted".into());
+
+        core.finish_pane_start(PANE, "p-key", Started::Process(instance_named("adopted")));
+        crate::test_panes::apply_until_idle(&mut core);
+        assert!(asked(&requests).is_empty());
+
+        // Another process than the one the pane holds is an orphan.
+        core.finish_pane_start(PANE, "p-key", Started::Process(instance_named("stray")));
+        crate::test_panes::apply_until_idle(&mut core);
+        assert_eq!(asked(&requests), ["close stray"]);
+        crate::test_paths::remove_after(core, directory);
+    }
 }

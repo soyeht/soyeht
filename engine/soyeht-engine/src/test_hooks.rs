@@ -35,6 +35,8 @@ const ADVANCE_SCREEN_BEFORE_SWITCH: &str = "test-advance-screen-before-harness-s
 const FAIL_OLD_CLOSE: &str = "test-fail-harness-switch-old-close";
 /// Holds the editor's autosaves.
 const PAUSE_EDITOR_AUTOSAVE: &str = "test-pause-editor-autosave";
+/// While this marker exists every local client counts as the signed Mac app.
+const ATTEST_LOCAL_UI: &str = "test-attest-local-ui";
 /// Names the directory of the usage fixtures (see [`FixtureHost`]).
 const USAGE_FIXTURES_VARIABLE: &str = "SOYEHT_TEST_USAGE_READER_DIR";
 /// Reads skill folders on the probe instead of by file events, which a loaded machine delivers
@@ -82,6 +84,10 @@ impl FileHooks {
 }
 
 impl Hooks for FileHooks {
+    fn attests_local_ui(&self) -> bool {
+        self.marker(ATTEST_LOCAL_UI).exists()
+    }
+
     fn before_agent_poll(&self, core: &mut Core, pane: &str) -> errors::Result<()> {
         if let Ok(target) = std::fs::read_to_string(self.marker(FAIL_AGENT_POLL))
             && target.trim() == pane

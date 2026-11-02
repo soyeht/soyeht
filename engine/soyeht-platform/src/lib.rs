@@ -17,6 +17,7 @@
 //!   Unix, a job object on Windows), the Windows launch of a child into one, and the start of a
 //!   program that outlives its parent (`process::detached`), and `process::end_child`, which kills a
 //!   `std::process::Child` that still runs and reaps it within a bound.
+//! - [`program`]: a program that ends itself when its own file is gone.
 //! - [`fs`]: owner-only files and directories and opens that never follow a link.
 //! - [`worktrunk`]: the name of the worktree program, which Windows spells `git-wt`.
 //! - [`git`]: whether `git` can run, decided without starting it (the macOS launcher opens
@@ -33,6 +34,7 @@ pub mod hostname;
 pub mod local;
 pub mod log;
 pub mod process;
+pub mod program;
 #[cfg(feature = "tokio")]
 pub mod shutdown;
 #[cfg(any(test, feature = "test-support"))]

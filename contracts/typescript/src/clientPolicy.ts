@@ -80,7 +80,9 @@ export const clientPolicy = {
     "diagnosticsWorking": "Collecting diagnostics",
     "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
     "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
-    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program."
+    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+    "pushNeedsYouTitle": "An agent needs you",
+    "pushNeedsYouBody": "Open Soyeht to see what it asks."
   },
   "inlineImageTypes": [
     "image/png",

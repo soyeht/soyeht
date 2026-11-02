@@ -14,7 +14,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
     fs::{LockError, PTYD_LOCK, lock_singleton},
-    local::{BindError, Listener, Stream},
+    local::{BindError, Listener, Stream, same_user},
     log,
 };
 use soyeht_protocol::{
@@ -91,7 +91,13 @@ pub fn run(directory: &Path) -> Result<()> {
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
         Err(BindError::Io(error)) => return Err(error.into()),
     };
+    let gone_endpoint = endpoint.clone();
     let _endpoint = EndpointFile(endpoint);
+    // The app that holds this program was deleted: end, with the terminals, as the registration
+    // of the program no longer restarts it (ADR 0130; macOS only, `program::on_gone`).
+    end_when_program_is_gone(soyeht_platform::program::on_gone, gone_endpoint, || {
+        std::process::exit(0)
+    });
     let registry = Registry::load(directory)?;
     let state = Arc::new(Mutex::new(State {
         directory: directory.to_owned(),
@@ -107,6 +113,11 @@ pub fn run(directory: &Path) -> Result<()> {
     );
     for incoming in listener.incoming() {
         let stream = incoming?;
+        // The socket's mode and directory keep other users out; this does not depend on them.
+        if !same_user(&stream) {
+            log::event("ptyd.connection_refused", &[("reason", "other_user")]);
+            continue;
+        }
         let state = Arc::clone(&state);
         thread::spawn(move || {
             if let Err(error) = connection(stream, state) {
@@ -115,6 +126,24 @@ pub fn run(directory: &Path) -> Result<()> {
         });
     }
     Ok(())
+}
+
+/// Starts the watch of the program's file with `start`; when it says the file is gone, removes
+/// the endpoint, as stopping does, and calls `exit`. A watch that cannot start is logged and the
+/// supervisor runs on.
+fn end_when_program_is_gone(
+    start: impl FnOnce(Box<dyn FnOnce() + Send>) -> io::Result<()>,
+    endpoint: PathBuf,
+    exit: impl FnOnce() + Send + 'static,
+) {
+    let action = Box::new(move || {
+        log::event("ptyd.program_gone", &[]);
+        drop(EndpointFile(endpoint));
+        exit();
+    });
+    if let Err(error) = start(action) {
+        log::failure("ptyd.program_watch_failed", &error);
+    }
 }
 
 /// The endpoint this supervisor listens on; it is removed when the supervisor stops, as the
@@ -639,6 +668,42 @@ mod tests {
         assert!(!path.exists());
         // Removing a file that is already gone is not an error.
         drop(EndpointFile(path));
+    }
+
+    #[test]
+    fn a_program_that_is_gone_ends_the_supervisor_and_removes_its_endpoint() {
+        let path =
+            std::env::temp_dir().join(format!("soyeht-gone-endpoint-{}", std::process::id()));
+        std::fs::write(&path, "endpoint").unwrap();
+        let (ended, waiting) = std::sync::mpsc::channel();
+        // The watch says "gone" at once, from its own thread, as the real one does.
+        end_when_program_is_gone(
+            |action| {
+                thread::spawn(action);
+                Ok(())
+            },
+            path.clone(),
+            move || ended.send(()).unwrap(),
+        );
+        waiting.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(
+            !path.exists(),
+            "the endpoint goes before the supervisor ends"
+        );
+    }
+
+    #[test]
+    fn a_watch_that_cannot_start_leaves_the_supervisor_running() {
+        let path =
+            std::env::temp_dir().join(format!("soyeht-nowatch-endpoint-{}", std::process::id()));
+        std::fs::write(&path, "endpoint").unwrap();
+        end_when_program_is_gone(
+            |_| Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            path.clone(),
+            || panic!("the supervisor must not end"),
+        );
+        assert!(path.exists());
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]
