@@ -63,6 +63,13 @@
       "expected": { "headline": "Update checks are not set up in this build.", "warning": null, "download": null, "badge": false }
     },
     {
+      "name": "a manifest past its expiry says to check the date or get Soyeht from the website",
+      "enabled": true,
+      "status": { "kind": "failed", "failure": "expired" },
+      "running": "0.1.0",
+      "expected": { "headline": "The update information is out of date. Check this computer's date and time, or get the newest Soyeht from the Soyeht website.", "warning": null, "download": null, "badge": false }
+    },
+    {
       "name": "no network",
       "enabled": true,
       "status": { "kind": "failed", "failure": "unreachable" },

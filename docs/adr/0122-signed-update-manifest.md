@@ -231,3 +231,14 @@ This is a decision for later and costs nothing now. Phase 1 adds no dependency t
   workspace's lockfile gains it with its small dependency tree. Both are reviewed changes.
 - The dot reuses the shape of the working-agent dot; if the two ever need to be told apart, that
   is a design decision, not a layer problem.
+
+## Amendment (2026-11-01): the manifest expires
+
+The sequence floor stops a device from being taken back to an older release by a replayed manifest;
+it does not stop a device from being held on the release it has, by a server that keeps answering
+with the newest manifest that device has already read. The payload therefore carries `expiresAt`, in
+seconds since 1970, above `sequence` and at most `manifest.maxLifetimeSeconds` (90 days) after it;
+`release_manifest.py` writes the signing time plus that life. A reader at or past `expiresAt`
+refuses the manifest (`expired`) before it compares versions. The price is a duty: a release has to
+be followed by a renewed manifest within 90 days (`docs/release.md`). All three readers pass the
+same vectors, which now carry a clock (`now`) per case.
