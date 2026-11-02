@@ -24,7 +24,7 @@ SWIFT_OUTPUT = "contracts/swift/Sources/SoyehtProtocol/UpdatePolicy.swift"
 FIELDS = ("version", "manifest", "signature", "channels", "defaultChannel", "systems",
           "architectures", "urlPrefixes", "release", "check", "texts", "failures")
 MANIFEST_FIELDS = ("asset", "url", "format", "maxBytes", "maxPackages", "maxPackageBytes", "maxAddressBytes",
-                   "sha256HexLength", "versionPartLimit", "maxSequence")
+                   "sha256HexLength", "versionPartLimit", "maxSequence", "maxLifetimeSeconds")
 CHECK_FIELDS = ("intervalSeconds", "timeoutSeconds", "connectSeconds", "maxRedirects", "userAgent")
 WORD = re.compile(r"[a-z][a-z0-9_]*")
 FAILURE_ID = re.compile(r"[a-z][A-Za-z0-9]*")
@@ -168,6 +168,9 @@ pub const SHA256_HEX_LENGTH: usize = {manifest["sha256HexLength"]};
 pub const VERSION_PART_LIMIT: u32 = {manifest["versionPartLimit"]};
 /// The largest sequence number a manifest may carry.
 pub const MAX_SEQUENCE: u64 = {manifest["maxSequence"]};
+/// The longest a manifest may live after it is signed: its `expiresAt` is at most this many seconds
+/// after its `sequence`, the time it was signed.
+pub const MAX_LIFETIME_SECONDS: u64 = {manifest["maxLifetimeSeconds"]};
 /// Put before the payload in the bytes that are signed.
 pub const SIGNING_CONTEXT: &[u8] = b"{context}";
 /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.
@@ -239,6 +242,7 @@ def render_swift(document, header):
         f"  /// The digits of a hexadecimal SHA-256.\n  public static let sha256HexLength = {manifest['sha256HexLength']}\n"
         f"  /// Each part of a version stays below this (ADR 0115).\n  public static let versionPartLimit = {manifest['versionPartLimit']}\n"
         f"  /// The largest sequence number a manifest may carry.\n  public static let maxSequence: UInt64 = {manifest['maxSequence']}\n"
+        f"  /// The longest a manifest may live after it is signed (its `sequence`), in seconds.\n  public static let maxLifetimeSeconds: UInt64 = {manifest['maxLifetimeSeconds']}\n"
         "  /// Every 32-byte form (base64) of a point of order 8 or less: no such key may be trusted.\n"
         "  /// CryptoKit does not refuse them as a strict verifier does.\n"
         f"  public static let smallOrderKeys: Set<String> = [{small_order}]\n"

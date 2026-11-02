@@ -114,6 +114,7 @@ public enum UpdateCheck {
     let format: Int
     let channel: String
     let sequence: UInt64
+    let expiresAt: UInt64
     let version: String
     let minimumSupportedVersion: String
     let releaseNotesUrl: String
@@ -123,16 +124,26 @@ public enum UpdateCheck {
   /// A path segment that moves up or stays, in any spelling a browser or a server may read as one.
   private static let dotSegments: Set<Substring> = [".", "..", "%2e", ".%2e", "%2e.", "%2e%2e"]
 
+  /// The clock in seconds since 1970. A clock before 1970 reads as the end of time, so every
+  /// manifest is past its expiry: a clock that cannot be trusted does not extend one.
+  public static func seconds(_ date: Date) -> UInt64 {
+    let elapsed = date.timeIntervalSince1970
+    return elapsed >= 0 ? UInt64(elapsed) : .max
+  }
+
   /// What `build` should do with the manifest `text`, trusting `keys`. `floor` is the highest
-  /// sequence this device has read: a manifest below it is refused (`staleManifest`).
+  /// sequence this device has read: a manifest below it is refused (`staleManifest`). `now` is the
+  /// time in seconds since 1970: a manifest at or past its expiry is refused (`expired`), so an
+  /// old one that someone keeps serving does not hold a device on an old release.
   public static func evaluate(
     _ text: String, build: UpdateBuild, keys: [UpdatePublicKey] = UpdatePolicy.publicKeys,
-    floor: UInt64 = 0
+    floor: UInt64 = 0, now: UInt64
   ) -> Result<UpdateChecked, UpdateFailure> {
     do {
       let payload = try checked(try open(text, keys: keys))
       guard payload.channel == build.channel else { return .failure(.wrongChannel) }
       guard payload.sequence >= floor else { return .failure(.staleManifest) }
+      guard now < payload.expiresAt else { return .failure(.expired) }
       guard let version = UpdateVersion(payload.version),
         let minimum = UpdateVersion(payload.minimumSupportedVersion)
       else { return .failure(.badManifest) }
@@ -223,6 +234,8 @@ public enum UpdateCheck {
       let minimum = UpdateVersion(payload.minimumSupportedVersion), minimum <= version,
       isAddress(payload.releaseNotesUrl),
       payload.sequence > 0, payload.sequence <= UpdatePolicy.maxSequence,
+      payload.expiresAt > payload.sequence,
+      payload.expiresAt <= payload.sequence + UpdatePolicy.maxLifetimeSeconds,
       !payload.packages.isEmpty, payload.packages.count <= UpdatePolicy.maxPackages
     else { throw UpdateFailure.badManifest }
     var seen = Set<String>()
