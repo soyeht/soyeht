@@ -86,14 +86,28 @@ impl Core {
     }
 
     pub(crate) fn send_language_value(&mut self, key: &str, value: &Value) -> Result<()> {
-        let bytes = soyeht_lsp::encode(value).map_err(errors::lsp)?;
-        let operation_key = Uuid::new_v4().to_string();
-        let encoded = STANDARD.encode(&bytes);
-        language_mut(&mut self.languages, key)?
+        self.queue_language_write(key, value, None)
+    }
+
+    /// Stores `value` as the server's next pending write (with the document it opens or changes,
+    /// if it does) and sends it.
+    fn queue_language_write(
+        &mut self,
+        key: &str,
+        value: &Value,
+        document: Option<(&str, super::state::OpenDocument)>,
+    ) -> Result<()> {
+        let encoded = STANDARD.encode(soyeht_lsp::encode(value).map_err(errors::lsp)?);
+        let server = language_mut(&mut self.languages, key)?;
+        let operation_key = server.next_write_key();
+        server
             .pending_writes
             .insert(operation_key.clone(), encoded.clone());
+        if let Some((uri, document)) = document {
+            server.documents.insert(uri.into(), document);
+        }
         self.persist_language_server(key, Vec::new())?;
-        self.deliver_language_write(key, operation_key, encoded, bytes.len())
+        self.deliver_language_write(key, operation_key, encoded)
     }
 
     pub(crate) fn poll_language_server(&mut self, key: &str) -> Result<()> {
@@ -396,16 +410,7 @@ impl Core {
         document: super::state::OpenDocument,
         value: &Value,
     ) -> Result<()> {
-        let bytes = soyeht_lsp::encode(value).map_err(errors::lsp)?;
-        let operation_key = Uuid::new_v4().to_string();
-        let encoded = STANDARD.encode(&bytes);
-        let server = language_mut(&mut self.languages, key)?;
-        server
-            .pending_writes
-            .insert(operation_key.clone(), encoded.clone());
-        server.documents.insert(uri.into(), document);
-        self.persist_language_server(key, Vec::new())?;
-        self.deliver_language_write(key, operation_key, encoded, bytes.len())
+        self.queue_language_write(key, value, Some((uri, document)))
     }
 
     pub(crate) fn persist_language_server(
@@ -435,10 +440,7 @@ impl Core {
             .map(|(operation, bytes)| (operation.clone(), bytes.clone()))
             .collect();
         for (operation_key, bytes) in writes {
-            let decoded = STANDARD
-                .decode(&bytes)
-                .map_err(|_| errors::internal("Stored language server write is invalid"))?;
-            self.deliver_language_write(key, operation_key, bytes, decoded.len())?;
+            self.deliver_language_write(key, operation_key, bytes)?;
         }
         Ok(())
     }
@@ -493,13 +495,17 @@ impl Core {
         key: &str,
         operation_key: String,
         bytes: String,
-        decoded_len: usize,
     ) -> Result<()> {
+        // The tick asks for every pending write: one on its way costs nothing here.
+        let job = format!("lsp-write:{key}:{operation_key}");
+        if !self.background.accepts(&job) {
+            return Ok(());
+        }
         let decoded = STANDARD
             .decode(&bytes)
             .map_err(|_| errors::internal("Stored language server write is invalid"))?;
+        let decoded_len = decoded.len();
         let instance_id = required_instance(language(&self.languages, key)?)?;
-        let job = format!("lsp-write:{key}:{operation_key}");
         let request = Request::Input {
             instance_id: instance_id.clone(),
             bytes,

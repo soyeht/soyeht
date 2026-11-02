@@ -38,6 +38,7 @@ export const limits = {
   "editorViewportLines": 2000,
   "editorEditBytes": 262144,
   "editorPathBytes": 4096,
+  "diagnosticMessageChars": 4096,
   "editorSearchResults": 500,
   "editorHistoryVersions": 200,
   "editorHistoryBytes": 52428800,

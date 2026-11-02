@@ -150,8 +150,18 @@ impl Core {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_panes::core_with_agent;
-    use soyeht_ptyd::{Error as PtydError, wire_kind};
+    use crate::{
+        ports::StorePort,
+        test_panes::{Answering, apply_until_idle, core_with_agent},
+    };
+    use serde_json::json;
+    use soyeht_ptyd::{
+        Error as PtydError,
+        wire::{Request, Response},
+        wire_kind,
+    };
+    use soyeht_store::agents::{self, Outgoing};
+    use std::time::Duration;
 
     fn missing_process() -> crate::errors::Error {
         crate::errors::Error::Supervisor(PtydError::Remote {
@@ -175,6 +185,49 @@ mod tests {
         // The same failure of the process the pane has is recovered, as the poll does.
         core.settle_page("agent", "instance-0", Err(missing_process()))
             .unwrap();
+        assert_eq!(
+            core.panes["agent"].stored.instance_id.as_deref(),
+            Some("instance-1")
+        );
+    }
+
+    #[test]
+    fn a_page_sent_to_a_process_that_is_replaced_meanwhile_does_not_recover_the_new_one() {
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        StorePort::mutate(&mut core.store, "test", "outbox", "seed", |change| {
+            agents::enqueue(
+                change,
+                &Outgoing {
+                    operation_key: "op".into(),
+                    pane_id: "agent".into(),
+                    generation: 1,
+                    instance_id: "instance-0".into(),
+                    supervisor_id: "spawning".into(),
+                    bytes: b"{\"jsonrpc\":\"2.0\"}\n".to_vec(),
+                    accepted_bytes: 0,
+                    attempt: 0,
+                },
+            )?;
+            Ok((json!({}), Vec::new()))
+        })
+        .unwrap();
+        core.link_supervisor(Box::new(Answering(|request| match request {
+            Request::Input { .. } => {
+                std::thread::sleep(Duration::from_millis(200));
+                Err(PtydError::Remote {
+                    kind: wire_kind::NOT_FOUND.into(),
+                    message: "gone".into(),
+                })
+            }
+            _ => Ok(Response::Ok),
+        })));
+
+        core.flush_agent_outbox("agent").unwrap();
+        // The process is replaced while the page is on its way to the old one.
+        core.panes.get_mut("agent").unwrap().stored.instance_id = Some("instance-1".into());
+        apply_until_idle(&mut core);
+
         assert_eq!(
             core.panes["agent"].stored.instance_id.as_deref(),
             Some("instance-1")
