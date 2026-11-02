@@ -31,6 +31,8 @@ ADDED_AFTER_GENERATION = {
     ("composer", "contextPercentageWidth"),
     ("glyph", "taskToolbarIcon"),
     ("glyph", "taskToolbarChevron"),
+    # The smallest side of a control a finger presses (the phone's terminal keys).
+    ("paneInterior", "touchTarget"),
     ("layout", "readinessWidth"),
     ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.
