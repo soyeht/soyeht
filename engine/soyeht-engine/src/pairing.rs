@@ -5,12 +5,13 @@ use crate::{
     model,
     network::TailnetUpdate,
     ports::{Clock, StorePort},
+    ui_attestation,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use soyeht_protocol::{Device, event, method};
+use soyeht_protocol::{Device, Role, event, method};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -201,12 +202,44 @@ impl Core {
         Ok(())
     }
 
+    /// Who may change which devices can control this Mac (ADR 0128). Any local human may open a
+    /// pairing window; deciding a request and revoking a device are the signed Mac app's alone
+    /// where the system can tell it from a shell or script (`ui_attestation::available`), and a
+    /// local human's elsewhere. A paired device may only revoke itself.
+    fn authorize_device_management(
+        &self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<()> {
+        let client = self.clients.get(connection);
+        let actor = client.and_then(|client| client.actor.as_ref());
+        let own_revocation = method == method::DEVICE_REVOKE
+            && actor.is_some_and(|actor| {
+                actor.device_id.is_some()
+                    && actor.device_id.as_deref() == params["deviceId"].as_str()
+            });
+        let app = client.is_some_and(|client| client.signed_ui) || !ui_attestation::available();
+        let allowed = match actor.map(|actor| &actor.role) {
+            Some(Role::HumanLocal) => method == method::DEVICE_PAIR_START || app,
+            Some(Role::HumanDevice) => own_revocation,
+            _ => false,
+        };
+        if allowed {
+            return Ok(());
+        }
+        Err(errors::forbidden_role(
+            "Pairing is approved, and other devices are revoked, in the Soyeht app on this Mac",
+        ))
+    }
+
     pub fn device_request(
         &mut self,
         connection: &str,
         method: &str,
         params: &Value,
     ) -> Result<Value> {
+        self.authorize_device_management(connection, method, params)?;
         if method == method::DEVICE_PAIR_START {
             let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
             let now = self.now_unix();
@@ -348,6 +381,85 @@ mod tests {
         );
         let error = active_pending(&store, &FixedClock(11_000), "request").unwrap_err();
         assert_eq!(errors::kind(&error), ErrorKind::Unauthorized);
+    }
+
+    #[tokio::test]
+    async fn pairing_is_decided_by_the_mac_app_and_never_by_a_paired_device() {
+        use crate::outbox;
+        use soyeht_protocol::Actor;
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-pairing-roles-{}", Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let mut core = Core::open(&directory).unwrap();
+        let (local_outbox, _local) = outbox::channel();
+        // A shell or script on the local socket, and the signed app (a peer the system attests).
+        let local = core.connect(true, false, local_outbox).unwrap();
+        let (app_outbox, _app) = outbox::channel();
+        let app = core.connect(true, true, app_outbox).unwrap();
+        for connection in [&local, &app] {
+            let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
+                "client":"roles-test","clientVersion":"1","protocolVersion":1}});
+            core.dispatch(connection, hello).unwrap();
+        }
+        let (device_outbox, _device) = outbox::channel();
+        let phone = core.connect(false, false, device_outbox).unwrap();
+        core.clients.get_mut(&phone).unwrap().actor = Some(Actor {
+            role: Role::HumanDevice,
+            client: "phone".into(),
+            device_id: Some("device-1".into()),
+            pane_id: None,
+        });
+        // The error kind of each call, or `None` when it went through.
+        let mut kinds = |connection: &str| {
+            let calls = [
+                ("device.pair.start", json!({})),
+                (
+                    "device.pair.decide",
+                    json!({"requestId":"r","approve":true}),
+                ),
+                ("device.revoke", json!({"deviceId":"device-2"})),
+                ("device.revoke", json!({"deviceId":"device-1"})),
+            ];
+            calls.map(|(method, mut params)| {
+                params["idempotencyKey"] = json!(Uuid::new_v4().to_string());
+                let request = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
+                core.dispatch(connection, request)
+                    .err()
+                    .map(|error| errors::kind(&error))
+            })
+        };
+
+        // A device is refused all but its own revocation, which gets as far as the lookup.
+        assert_eq!(
+            kinds(&phone),
+            [
+                Some(ErrorKind::ForbiddenRole),
+                Some(ErrorKind::ForbiddenRole),
+                Some(ErrorKind::ForbiddenRole),
+                Some(ErrorKind::NotFound)
+            ]
+        );
+        // The app keeps all of them: the window opens, the rest find nothing to act on.
+        let app_kinds = || {
+            [
+                None,
+                Some(ErrorKind::Unauthorized),
+                Some(ErrorKind::NotFound),
+                Some(ErrorKind::NotFound),
+            ]
+        };
+        assert_eq!(kinds(&app), app_kinds());
+        // A shell may start a request. Where the system can tell the app from it, it cannot
+        // decide one or revoke a device; elsewhere every local program counts as the app.
+        let shell_kinds = if ui_attestation::available() {
+            let refused = || Some(ErrorKind::ForbiddenRole);
+            [None, refused(), refused(), refused()]
+        } else {
+            app_kinds()
+        };
+        assert_eq!(kinds(&local), shell_kinds);
+        drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[tokio::test]

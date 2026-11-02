@@ -716,3 +716,58 @@ fn an_input_job_waits_for_the_supervisor_off_the_lock_after_the_sends_ahead_of_i
     assert_eq!(*asked.lock().unwrap(), ["size:90", "input:bHMK"]);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// A core with a size queued for the process while the follow-up job is busy, so the queue is
+/// what a step leaves of it.
+fn core_with_a_size_queued() -> (Core, std::path::PathBuf) {
+    let (mut core, root, _) = open_core();
+    let (stub, _, _) = Stub::new(Duration::ZERO);
+    core.link_supervisor(Box::new(stub));
+    core.background.busy("supervisor.later");
+    core.supervisor_later.push(resize_of(INSTANCE, 90));
+    (core, root)
+}
+
+fn assert_size_queued(core: &Core) {
+    assert!(matches!(
+        core.supervisor_later.as_slice(),
+        [Request::Resize { cols: 90, .. }]
+    ));
+}
+
+fn typed_bytes() -> Request {
+    Request::Input {
+        instance_id: INSTANCE.into(),
+        bytes: "bHMK".into(),
+        operation_key: "operation".into(),
+        fingerprint: "fingerprint".into(),
+    }
+}
+
+#[test]
+fn the_sends_an_input_took_go_back_when_its_job_cannot_start() {
+    let (mut core, root) = core_with_a_size_queued();
+    core.background = crate::offload::Background::unstartable();
+    core.background.busy("supervisor.later");
+
+    let started = core.start_input("input-job".into(), INSTANCE, typed_bytes(), |_, _| Ok(()));
+
+    assert!(started.is_err());
+    assert_size_queued(&core);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_job_that_ended_with_no_answer_still_returns_the_sends_it_took() {
+    let (mut core, root) = core_with_a_size_queued();
+    let carried = core.take_later_for(INSTANCE);
+    assert!(core.supervisor_later.is_empty());
+    let link = core.supervisor().unwrap();
+
+    // The work panicked before it took them: the apply gets an error and no answer.
+    let settled = core.settle_started_input(&link, &carried, Err(errors::internal("panicked")));
+
+    assert!(settled.is_err());
+    assert_size_queued(&core);
+    std::fs::remove_dir_all(root).unwrap();
+}

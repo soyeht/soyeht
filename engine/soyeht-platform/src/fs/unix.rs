@@ -1,7 +1,7 @@
 use std::{
     fs::{self, DirBuilder, File, OpenOptions},
     io,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::Path,
 };
 
@@ -69,12 +69,22 @@ pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     DirBuilder::new().mode(0o700).create(path)
 }
 
+/// Whether `metadata` is of something only `user` can reach: owned by `user`, and with no mode
+/// bit for the group or others. Someone else's directory with mode 0700 is theirs, not ours.
+fn private_to(metadata: &fs::Metadata, user: u32) -> bool {
+    metadata.uid() == user && metadata.permissions().mode() & 0o077 == 0
+}
+
 pub(super) fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
-    Ok(fs::symlink_metadata(path)?.permissions().mode() & 0o077 == 0)
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    Ok(private_to(&fs::symlink_metadata(path)?, unsafe {
+        libc::geteuid()
+    }))
 }
 
 pub(super) fn file_is_owner_only(file: &File) -> io::Result<bool> {
-    Ok(file.metadata()?.permissions().mode() & 0o077 == 0)
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    Ok(private_to(&file.metadata()?, unsafe { libc::geteuid() }))
 }
 
 pub(super) fn sync_directory(path: &Path) -> io::Result<()> {
@@ -113,5 +123,29 @@ pub(super) fn try_lock(file: &File) -> io::Result<bool> {
         Ok(()) => Ok(true),
         Err(std::fs::TryLockError::WouldBlock) => Ok(false),
         Err(std::fs::TryLockError::Error(error)) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::scratch_dir as scratch;
+
+    #[test]
+    fn a_directory_is_private_to_its_owner_with_no_mode_bit_for_others_and_to_no_one_else() {
+        let directory = scratch("private-to");
+        fs::create_dir_all(&directory).unwrap();
+        set_private(&directory, true).unwrap();
+        let metadata = fs::symlink_metadata(&directory).unwrap();
+        let me = metadata.uid();
+        assert!(private_to(&metadata, me));
+        assert!(
+            !private_to(&metadata, me.wrapping_add(1)),
+            "another user's is not ours"
+        );
+        assert!(dir_is_owner_only(&directory).unwrap());
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o750)).unwrap();
+        assert!(!dir_is_owner_only(&directory).unwrap());
+        fs::remove_dir_all(&directory).unwrap();
     }
 }
