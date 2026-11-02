@@ -40,7 +40,7 @@ import Testing
     // A pending request scrolls to the bottom by itself, which would hide the bug.
     client.agentPanes[PaneInteriorFixture.paneId]?.permission = nil
 
-    let first = await MountedTranscript.mount(client: client)
+    let first = await MountedTranscript.mount(client: client) { $0.isAtBottom }
     #expect(first.isAtBottom, "a pane never seen opens at the bottom")
     await first.scroll(toFraction: 0.4)
     #expect(!first.isAtBottom)
@@ -48,7 +48,7 @@ import Testing
     #expect(leftAt < 39, "scrolled up to row \(leftAt)")
     await first.unmount()
 
-    let again = await MountedTranscript.mount(client: client)
+    let again = await MountedTranscript.mount(client: client) { $0.offset > 0 }
     #expect(!again.isAtBottom, "scrolled up: not pushed to the bottom")
     #expect(again.offset > 0, "not at the first prompt")
     // One wheel tick makes the scroll view report the row now at the bottom edge.
@@ -59,7 +59,7 @@ import Testing
     #expect(again.isAtBottom)
     await again.unmount()
 
-    let following = await MountedTranscript.mount(client: client)
+    let following = await MountedTranscript.mount(client: client) { $0.isAtBottom }
     #expect(following.isAtBottom, "following the agent: back at the bottom")
     await following.unmount()
   }
@@ -67,14 +67,22 @@ import Testing
   @MainActor private final class MountedTranscript {
     let host: NSHostingView<AnyView>
     let window: NSWindow
+    private let client: EngineClient
 
-    static func mount(client: EngineClient) async -> MountedTranscript {
+    /// Mounts the view and waits until it has been laid out, its restoration has ended and
+    /// `placed` holds: the place the test asserts next. The wait has a deadline, and the
+    /// assertion that follows says what is still wrong when it passes.
+    static func mount(
+      client: EngineClient, placed: @MainActor (MountedTranscript) -> Bool = { _ in true }
+    ) async -> MountedTranscript {
       let mounted = MountedTranscript(client: client)
-      await mounted.settle()
+      let scroll = client.agentPanes[PaneInteriorFixture.paneId]?.scroll
+      await mounted.settle { scroll?.isRestoring != true && placed(mounted) }
       return mounted
     }
 
     private init(client: EngineClient) {
+      self.client = client
       host = NSHostingView(
         rootView: AnyView(
           AgentConversationView(
@@ -91,11 +99,24 @@ import Testing
 
     }
 
-    func settle() async {
-      for _ in 0..<12 {
+    /// Lays the view out until the transcript has stopped moving (its height and offset the same
+    /// for 4 turns in a row) and `done` holds: at least 12 turns and up to 30 seconds. SwiftUI
+    /// builds the rows and scrolls to the place it restores on its own turns of the main loop,
+    /// which on a busy machine come late and are shared with the other tests' main-actor work,
+    /// so a count of turns says nothing about whether the layout is finished.
+    func settle(until done: @MainActor () -> Bool = { true }) async {
+      let deadline = Date().addingTimeInterval(30)
+      var turns = 0
+      var steady = 0
+      var last: [CGFloat] = []
+      repeat {
         host.layoutSubtreeIfNeeded()
         try? await Task.sleep(for: .milliseconds(50))
-      }
+        let now = [transcript?.documentView?.frame.height ?? 0, offset]
+        steady = now == last ? steady + 1 : 0
+        last = now
+        turns += 1
+      } while (turns < 12 || steady < 4 || !done()) && Date() < deadline
     }
 
     func unmount() async {
@@ -160,7 +181,14 @@ import Testing
         scrollView.scrollWheel(with: event)
         try? await Task.sleep(for: .milliseconds(20))
       }
-      await settle()
+      // The scroll view reports where it stopped on a turn of its own; wait for the pane to
+      // hold that place, as the view records it, before the test reads it.
+      await settle {
+        let place = self.client.agentPanes[PaneInteriorFixture.paneId]?.scroll.place
+        if fraction == 1 { return place == .bottom }
+        if case .row = place { return true }
+        return false
+      }
     }
   }
 #endif

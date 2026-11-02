@@ -294,3 +294,13 @@ pub(crate) fn core_with_agent(failures: &[&'static str]) -> (Core, std::path::Pa
     }));
     (core, directory)
 }
+
+impl Core {
+    /// Sends `request` and waits for the answer with the Core lock held, for a test that scripts
+    /// the supervisor. No engine code does: `tests/blocking_io_rule.rs` fails on any caller.
+    pub(crate) fn pty_request(&mut self, request: Request) -> crate::errors::Result<Response> {
+        let supervisor = self.supervisor()?;
+        let result = supervisor.call(request);
+        self.settle_supervisor(&supervisor, result)
+    }
+}

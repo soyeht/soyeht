@@ -6,7 +6,7 @@
 
 use std::{
     fs::{File, OpenOptions},
-    io,
+    io::{self, Read as _, Write as _},
     path::Path,
 };
 
@@ -115,10 +115,22 @@ pub fn lock_singleton(directory: &Path, name: &str) -> Result<File, LockError> {
         .owner_only()
         .open_no_follow(&directory.join(name))?;
     if system::try_lock(&lock)? {
+        // The record only lets an uninstall find the program; a program that cannot write it
+        // still runs, and the uninstall then says it could not end it.
+        if let Err(error) = record_process(&lock) {
+            crate::log::failure("platform.lock_record_failed", &error);
+        }
         Ok(lock)
     } else {
         Err(LockError::Held)
     }
+}
+
+/// Writes the id of this process over the contents of a lock it holds, so that whoever must end
+/// the program (an uninstall) can find it from the lock alone ([`singleton_process`]).
+fn record_process(mut lock: &File) -> io::Result<()> {
+    lock.set_len(0)?;
+    lock.write_all(std::process::id().to_string().as_bytes())
 }
 
 /// The names of the locks the engine and the supervisor take with [`lock_singleton`] in their data
@@ -141,6 +153,94 @@ pub fn singleton_held(directory: &Path, name: &str) -> io::Result<bool> {
     };
     Ok(!system::try_lock(&lock)?)
 }
+
+/// The id of the process that holds the singleton lock `name` in `directory`, which that process
+/// wrote when it took the lock; `None` when nobody holds it or the id cannot be read. The lock
+/// is the proof that the process is alive and is the one that wrote its id, so a record left by
+/// a program that ended is never returned. A program that has taken the lock and not yet written
+/// its id would show the id of the one before it, so the id is read twice, a moment apart, and
+/// only an id that both reads agree on, with the lock held both times, is returned.
+pub fn singleton_process(directory: &Path, name: &str) -> io::Result<Option<u32>> {
+    let read = || -> io::Result<Option<u32>> {
+        if !singleton_held(directory, name)? {
+            return Ok(None);
+        }
+        // The file the lock is on, opened the way `singleton_held` opens it.
+        let mut record = String::new();
+        OpenOptions::new()
+            .read(true)
+            .open_no_follow(&directory.join(name))?
+            .read_to_string(&mut record)?;
+        let record = record.trim();
+        // A program of a build that wrote no record holds the lock over an empty file.
+        if record.is_empty() {
+            return Ok(None);
+        }
+        record
+            .parse()
+            .map(Some)
+            .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))
+    };
+    let Some(first) = read()? else {
+        return Ok(None);
+    };
+    std::thread::sleep(RECORD_SETTLE);
+    Ok((read()? == Some(first)).then_some(first))
+}
+
+/// The file an uninstall leaves in the data directory, so that a window that was open when it ran
+/// does not start the programs again ([`mark_uninstalled`]).
+pub const UNINSTALL_MARKER: &str = "uninstalled";
+
+/// Records that an uninstall is ending the programs of `directory` now: a file holding a value
+/// that no other uninstall writes. A window reads it when it begins ([`uninstall_record`]) and
+/// takes an uninstall to have happened when the value has changed since, so no clock is
+/// compared. Does nothing when the directory does not exist (nothing was ever started there).
+pub fn mark_uninstalled(directory: &Path) -> io::Result<()> {
+    static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    if !directory.is_dir() {
+        return Ok(());
+    }
+    // Unique among uninstalls: this process, the time to the nanosecond and a count. The time is
+    // not compared with anything, only made part of the value.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let nonce = format!(
+        "{}-{nanos}-{}\n",
+        std::process::id(),
+        COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .owner_only()
+        .open_no_follow(&directory.join(UNINSTALL_MARKER))?
+        .write_all(nonce.as_bytes())
+}
+
+/// The value an uninstall left in `directory`, or `None` when there is none.
+pub fn uninstall_record(directory: &Path) -> io::Result<Option<String>> {
+    match std::fs::read_to_string(directory.join(UNINSTALL_MARKER)) {
+        Ok(record) => Ok(Some(record)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Takes the record of an uninstall away: a registration written again, or an engine started
+/// again, is a new start.
+pub fn clear_uninstalled(directory: &Path) -> io::Result<()> {
+    match std::fs::remove_file(directory.join(UNINSTALL_MARKER)) {
+        Err(error) if error.kind() != io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
+    }
+}
+
+/// How long [`singleton_process`] waits between its two reads: far longer than a program takes
+/// to write its id after it takes the lock.
+const RECORD_SETTLE: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// Takes the exclusive lock `lock_singleton` takes, on a file that is already open; `false` when
 /// another holder has it. The lock lasts as long as `file` stays open and leaves the contents of
@@ -276,6 +376,7 @@ mod tests {
 
     #[test]
     fn a_singleton_lock_is_held_only_while_a_program_holds_it() {
+        let _serial = crate::testing::serialize_processes();
         let directory = scratch("singleton-held");
         std::fs::create_dir_all(&directory).unwrap();
         // No lock file: nothing runs, and asking creates nothing.
@@ -291,6 +392,73 @@ mod tests {
         assert!(!singleton_held(&directory, ENGINE_LOCK).unwrap());
         // Asking took no lock for good: a program can take it now.
         drop(lock_singleton(&directory, ENGINE_LOCK).unwrap());
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn the_holder_of_a_lock_is_found_by_the_id_it_wrote() {
+        let _serial = crate::testing::serialize_processes();
+        let directory = scratch("singleton-process");
+        std::fs::create_dir_all(&directory).unwrap();
+        // Nothing holds it yet: no file, then a record left by a program that ended.
+        assert_eq!(singleton_process(&directory, ENGINE_LOCK).unwrap(), None);
+        std::fs::write(directory.join(ENGINE_LOCK), "4242").unwrap();
+        assert_eq!(singleton_process(&directory, ENGINE_LOCK).unwrap(), None);
+        let lock = lock_singleton(&directory, ENGINE_LOCK).unwrap();
+        // Taking the lock replaced the old record, and a longer one leaves nothing of itself.
+        assert_eq!(
+            singleton_process(&directory, ENGINE_LOCK).unwrap(),
+            Some(std::process::id())
+        );
+        assert_eq!(singleton_process(&directory, PTYD_LOCK).unwrap(), None);
+        drop(lock);
+        assert_eq!(singleton_process(&directory, ENGINE_LOCK).unwrap(), None);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn a_lock_over_an_empty_or_unreadable_record_names_no_process() {
+        let _serial = crate::testing::serialize_processes();
+        let directory = scratch("singleton-record");
+        std::fs::create_dir_all(&directory).unwrap();
+        // A program of a build that wrote no record: held, and nothing to ask.
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(directory.join(ENGINE_LOCK))
+            .unwrap();
+        assert!(system::try_lock(&lock).unwrap());
+        assert_eq!(singleton_process(&directory, ENGINE_LOCK).unwrap(), None);
+        // Something that is not an id is an error, not a guess.
+        (&lock).write_all(b"not a number").unwrap();
+        assert_eq!(
+            singleton_process(&directory, ENGINE_LOCK)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+        drop(lock);
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn each_uninstall_leaves_a_value_of_its_own() {
+        let directory = scratch("uninstall-marker");
+        assert_eq!(uninstall_record(&directory).unwrap(), None);
+        mark_uninstalled(&directory).unwrap();
+        let first = uninstall_record(&directory).unwrap().unwrap();
+        mark_uninstalled(&directory).unwrap();
+        let second = uninstall_record(&directory).unwrap().unwrap();
+        assert_ne!(first, second);
+        clear_uninstalled(&directory).unwrap();
+        assert_eq!(uninstall_record(&directory).unwrap(), None);
+        // Clearing what is not there, and marking a folder that does not exist, change nothing.
+        clear_uninstalled(&directory).unwrap();
+        let missing = directory.join("missing");
+        mark_uninstalled(&missing).unwrap();
+        assert!(!missing.exists());
         std::fs::remove_dir_all(&directory).unwrap();
     }
 }

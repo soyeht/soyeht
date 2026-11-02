@@ -152,6 +152,12 @@ pub fn connect(path: &Path) -> io::Result<Stream> {
     endpoint::connect(path)
 }
 
+/// Whether the peer runs as the same user as this process. Only a process that could read the
+/// owner-only endpoint file knows the secret, and [`Listener::accept`] checked it already.
+pub fn same_user(_: &Stream) -> bool {
+    true
+}
+
 /// Two connected streams, for tests and in-process wiring.
 pub fn pair() -> io::Result<(Stream, Stream)> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
