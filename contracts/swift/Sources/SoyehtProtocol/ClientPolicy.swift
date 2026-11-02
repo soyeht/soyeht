@@ -4,6 +4,8 @@
 public enum ClientPolicy {
     public static let requestTimeoutMs = 12000
     public static let requestTimeoutSeconds: Double = 12.0
+    public static let engineDeadlineMarginMs = 5000
+    public static let engineDeadlineMarginSeconds: Double = 5.0
     public static let greetingTimeoutMs = 5000
     public static let greetingTimeoutSeconds: Double = 5.0
     public static let reconnectDelayMs = 1000

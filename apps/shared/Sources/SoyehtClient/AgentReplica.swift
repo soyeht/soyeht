@@ -739,7 +739,7 @@ extension EngineClient {
         PaneConfigSetParams(
           paneId: paneId, configId: configId, value: value,
           idempotencyKey: UUID().uuidString),
-        timeoutSeconds: 95)
+        timeoutSeconds: engineDeadlineTimeout(ProtocolLimits.noSignalSec))
     }
   }
 
@@ -751,7 +751,7 @@ extension EngineClient {
       PaneHarnessSwitchParams(
         paneId: paneId, harness: harness, model: model, effort: effort,
         idempotencyKey: UUID().uuidString),
-      timeoutSeconds: 95
+      timeoutSeconds: engineDeadlineTimeout(ProtocolLimits.harnessSwitchTimeoutSec)
     ).decoded(PaneHarnessSwitchResult.self)
     try await loadAgentPane(paneId, replacing: false)
     return result

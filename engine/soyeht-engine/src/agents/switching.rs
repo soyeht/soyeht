@@ -41,10 +41,13 @@ use uuid::Uuid;
 mod candidate;
 mod commit;
 
-/// How long a switch waits for the candidate to become ready. It is the wait the engine allows
-/// any harness to open its session (`noSignalSec`, contract 04 section 8), so a harness that
-/// starts cold, as Codex does on its first run, is not given less time to switch than to open.
-const SWITCH_TIMEOUT: Duration = Duration::from_secs(limits::NO_SIGNAL_SEC as u64);
+/// How long a switch waits for the candidate to become ready (`harnessSwitchTimeoutSec`) before
+/// it is abandoned and the original session is restored. Until then the pane is locked: it
+/// accepts no prompt, configuration change or close, and the switch cannot be cancelled
+/// (ADR 0126). The value covers a harness that starts cold, which has taken 30 to 35 seconds. It
+/// is not the wait the engine gives an open, which has no deadline and only turns to `no_signal`
+/// after `noSignalSec`.
+const SWITCH_TIMEOUT: Duration = Duration::from_secs(limits::HARNESS_SWITCH_TIMEOUT_SEC as u64);
 const CONTINUATION_TEMPLATE: &str =
     include_str!("../../../../docs/contracts/prompts/harness-switch.en.md");
 
@@ -619,14 +622,6 @@ fn bounded_reason(reason: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn switch_waits_as_long_as_opening_a_harness() {
-        use super::{SWITCH_TIMEOUT, limits};
-        assert_eq!(SWITCH_TIMEOUT.as_secs(), limits::NO_SIGNAL_SEC as u64);
-        // A cold first start of a harness took 30 to 35 seconds on a real machine.
-        assert!(SWITCH_TIMEOUT.as_secs() > 35);
-    }
-
     use super::*;
     use crate::agents::{pending::UserOperation, state::HarnessSwitchCheckpoint};
     use crate::{
@@ -637,38 +632,8 @@ mod tests {
     use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState};
     use std::fs;
 
-    #[test]
-    fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
-        use crate::test_panes::{Answering, apply_until_done, core_with_agent, quiet_read};
-        let (mut core, _directory) = core_with_agent(&[]);
-        core.background = crate::offload::Background::default();
-        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let record = std::sync::Arc::clone(&asked);
-        core.link_supervisor(Box::new(Answering(move |request| {
-            Ok(match request {
-                Request::Spawn(spawn) => {
-                    record.lock().unwrap().push("spawn");
-                    // A supervisor that takes its time to start the candidate.
-                    std::thread::sleep(Duration::from_millis(400));
-                    Response::Instance(Instance {
-                        instance_id: "candidate".into(),
-                        supervisor_id: "answering".into(),
-                        spawn,
-                        pid: 7,
-                        closed: false,
-                        exit_code: None,
-                    })
-                }
-                Request::Input { bytes, .. } => {
-                    record.lock().unwrap().push("initialize");
-                    Response::Accepted {
-                        bytes: STANDARD.decode(bytes).unwrap().len(),
-                    }
-                }
-                Request::Drain { from_seq, .. } => quiet_read(from_seq),
-                _ => Response::Ok,
-            })
-        })));
+    /// Records a switch of the test agent to "other" that must be ready by `deadline`.
+    fn arm_switch(core: &mut Core, deadline: Instant) {
         let mut state = core.agents["agent"].state.clone();
         state.harness_switch = Some(HarnessSwitchCheckpoint {
             user: UserOperation {
@@ -702,9 +667,44 @@ mod tests {
                 },
                 binary_digest: "digest".into(),
                 candidate: None,
-                deadline: Instant::now() + SWITCH_TIMEOUT,
+                deadline,
             },
         );
+    }
+
+    #[test]
+    fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
+        use crate::test_panes::{Answering, apply_until_done, core_with_agent, quiet_read};
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = std::sync::Arc::clone(&asked);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            Ok(match request {
+                Request::Spawn(spawn) => {
+                    record.lock().unwrap().push("spawn");
+                    // A supervisor that takes its time to start the candidate.
+                    std::thread::sleep(Duration::from_millis(400));
+                    Response::Instance(Instance {
+                        instance_id: "candidate".into(),
+                        supervisor_id: "answering".into(),
+                        spawn,
+                        pid: 7,
+                        closed: false,
+                        exit_code: None,
+                    })
+                }
+                Request::Input { bytes, .. } => {
+                    record.lock().unwrap().push("initialize");
+                    Response::Accepted {
+                        bytes: STANDARD.decode(bytes).unwrap().len(),
+                    }
+                }
+                Request::Drain { from_seq, .. } => quiet_read(from_seq),
+                _ => Response::Ok,
+            })
+        })));
+        arm_switch(&mut core, Instant::now() + SWITCH_TIMEOUT);
 
         let began = Instant::now();
         core.advance_harness_switches().unwrap();
@@ -721,6 +721,75 @@ mod tests {
         let candidate = core.harness_switches["agent"].candidate.as_ref().unwrap();
         assert_eq!(candidate.instance.instance_id, "candidate");
         assert_eq!(*asked.lock().unwrap(), ["spawn", "initialize"]);
+    }
+
+    #[test]
+    fn a_switch_past_its_deadline_restores_the_pane_and_retires_the_candidate() {
+        let (mut core, _directory) = crate::test_panes::core_with_agent(&[]);
+        let past = Instant::now()
+            .checked_sub(Duration::from_secs(1))
+            .expect("the clock has run for a second");
+        arm_switch(&mut core, past);
+        // The request that started the switch is waiting for its result.
+        StorePort::mutate(&mut core.store, "scope", "key", "switch", |_| {
+            Ok((json!({"_nativePending": "candidate-key"}), Vec::new()))
+        })
+        .unwrap();
+        core.harness_switches.get_mut("agent").unwrap().candidate = Some(Candidate {
+            instance: Instance {
+                instance_id: "candidate".into(),
+                supervisor_id: "answering".into(),
+                spawn: Spawn {
+                    instance_key: "candidate-key".into(),
+                    generation: 2,
+                    kind: ProcessKind::PipesAcp,
+                    cwd: String::new(),
+                    argv: Vec::new(),
+                    env: Default::default(),
+                    cols: 80,
+                    rows: 24,
+                },
+                pid: 7,
+                closed: false,
+                exit_code: None,
+            },
+            saved: core.panes["agent"].stored.clone(),
+            state: core.agents["agent"].state.clone(),
+            decoder: Decoder::new(0),
+            raw_output: Vec::new(),
+            phase: CandidatePhase::Initializing,
+            default_mode: None,
+            sign_in_refused: false,
+            outgoing: None,
+        });
+
+        core.advance_harness_switches().unwrap();
+
+        assert!(core.harness_switches.is_empty());
+        let state = &core.agents["agent"].state;
+        assert!(state.harness_switch.is_none());
+        let retired = &state.retired_processes;
+        assert_eq!(retired.len(), 1);
+        assert_eq!(retired[0].instance_id, "candidate");
+        let pane = &core.panes["agent"].stored.pane;
+        assert_eq!(pane.state, PaneState::Idle);
+        assert_eq!(pane.phrase, "Original agent session restored");
+        let failed = core
+            .store
+            .replay(0)
+            .unwrap()
+            .1
+            .into_iter()
+            .filter(|event| event.method == event::PANE_HARNESS_SWITCH_FAILED)
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].params["restored"], true);
+        assert_eq!(failed[0].params["toHarness"], "other");
+        assert!(
+            failed[0].params["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("did not become ready in time"))
+        );
     }
 
     #[test]

@@ -3,6 +3,7 @@
 use crate::{ConfigOption, HighlightKind, PaneState, UsageProvider};
 
 pub const REQUEST_TIMEOUT_MS: u64 = 12000;
+pub const ENGINE_DEADLINE_MARGIN_MS: u64 = 5000;
 pub const GREETING_TIMEOUT_MS: u64 = 5000;
 pub const RECONNECT_DELAY_MS: u64 = 1000;
 pub const RECONNECT_CEILING_MS: u64 = 30000;

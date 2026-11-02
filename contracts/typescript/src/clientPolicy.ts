@@ -2,6 +2,7 @@
 export const clientPolicy = {
   "timeouts": {
     "requestTimeoutMs": 12000,
+    "engineDeadlineMarginMs": 5000,
     "greetingTimeoutMs": 5000,
     "reconnectDelayMs": 1000,
     "reconnectCeilingMs": 30000,
