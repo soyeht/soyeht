@@ -42,7 +42,7 @@ pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let from = CString::new(from.as_os_str().as_bytes())?;
@@ -55,7 +55,7 @@ pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
             from.as_ptr(),
             libc::AT_FDCWD,
             to.as_ptr(),
-            libc::RENAME_NOREPLACE,
+            libc::RENAME_NOREPLACE as _,
         )
     };
     if status == 0 {

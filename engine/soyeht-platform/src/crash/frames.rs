@@ -5,7 +5,8 @@
 //! (ASLR moves the base, not the offset). Whoever has the unstripped build of that version turns
 //! it into a name (`atos -l`, `addr2line`). The folder of the module is never recorded.
 
-#[cfg(all(unix, not(target_env = "musl")))]
+// Android's C library has no `backtrace`, so a crash report there has no frames.
+#[cfg(all(unix, not(target_env = "musl"), not(target_os = "android")))]
 mod system {
     use std::{ffi::CStr, mem::MaybeUninit, os::raw::c_void};
 
@@ -93,7 +94,10 @@ mod system {
     }
 }
 
-#[cfg(not(any(windows, all(unix, not(target_env = "musl")))))]
+#[cfg(not(any(
+    windows,
+    all(unix, not(target_env = "musl"), not(target_os = "android"))
+)))]
 mod system {
     pub(super) fn capture(_limit: usize) -> Vec<String> {
         Vec::new()
