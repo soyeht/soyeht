@@ -184,6 +184,20 @@ class SigningCallTests(unittest.TestCase):
                 with self.assertRaisesRegex(PackagingError, "no arm64 slice"):
                     package_mac.thin_libraries(app)
 
+    def test_the_symbols_are_saved_before_the_app_executable_alone_is_stripped(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = fake_app(root)
+            calls = []
+            with patch.object(package_mac, "run", side_effect=lambda command, **_: calls.append([str(c) for c in command])):
+                package_mac.save_symbols(app, root / "dist/symbols/soyeht-0.1.0-macos-aarch64.dSYM.zip")
+                package_mac.strip_app(app)
+        self.assertEqual(calls[0][:2], ["dsymutil", str(app / "Contents/MacOS/Soyeht Next")])
+        self.assertEqual(calls[1][:3], ["ditto", "-c", "-k"])
+        self.assertEqual(calls[1][-1], str(root / "dist/symbols/soyeht-0.1.0-macos-aarch64.dSYM.zip"))
+        self.assertEqual(calls[2], ["strip", "-u", "-r", str(app / "Contents/MacOS/Soyeht Next")])
+        self.assertEqual(len(calls), 3, "the Rust programs are stripped by their profile, not here")
+
     def test_the_programs_are_signed_under_their_identifiers_then_the_bundle_with_its_entitlements(self):
         with tempfile.TemporaryDirectory() as temporary:
             app = fake_app(Path(temporary))

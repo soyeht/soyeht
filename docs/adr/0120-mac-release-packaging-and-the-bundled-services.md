@@ -89,6 +89,19 @@ script: it has the app and a link to `/Applications` and no custom layout, which
 GUI session. A zip may still be right for the update check (ADR 0122);
 this ADR does not decide that.
 
+### The app's executable is stripped, and its symbols are kept apart
+
+Xcode's `build` action does not strip, so the app's executable carried its whole symbol table:
+40 MB of a 66 MB file, because the dictation engine's C++ and the Swift packages export tens of
+thousands of long names. The script runs `dsymutil` on the built executable first, which writes
+`dist/symbols/soyeht-<version>-macos-aarch64.dSYM.zip` (the UUID is the executable's, so a crash
+report names its frames with it), then `strip -u -r`, the command of `STRIP_STYLE = all`, on the
+copy that ships, before the signing step. Nothing in the app looks a symbol up by name
+(`dlsym`, `NSClassFromString` and `callStackSymbols` are not used). The symbols file follows the
+rule of ADR 0127 for the programs: a release keeps the unstripped build of every version it ships.
+`DEAD_CODE_STRIPPING` stays off: it saved 0.5 MB of the stripped file, and the dictation engine's
+static registrations are not worth the risk for that.
+
 ### The app is called "Soyeht Next"
 
 The bundle is `Soyeht Next.app`. `Soyeht.app` is the legacy app's program on the owner's Mac, and
