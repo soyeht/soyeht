@@ -12,3 +12,10 @@ Security.
 
 ## [Unreleased]
 
+### Security
+
+- A paired iPhone or iPad now checks that the server it connects to is your Mac. The Mac signs each
+  connection with a key that the pairing code carries. **Every iPhone and iPad paired before this
+  version must be paired again**, and the Mac must be updated before the phone is: a phone that finds
+  an older Mac says to update it, and one paired before says to pair again.
+

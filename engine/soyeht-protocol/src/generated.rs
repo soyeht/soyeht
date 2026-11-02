@@ -418,6 +418,8 @@ pub struct Welcome {
     pub capabilities: Vec<String>,
     #[serde(rename = "dbId")]
     pub db_id: Id,
+    #[serde(rename = "engineProof", skip_serializing_if = "Option::is_none")]
+    pub engine_proof: Option<ByteString>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Empty {}
@@ -433,6 +435,8 @@ pub struct HelloParams {
     pub device_token: Option<String>,
     #[serde(rename = "proof", skip_serializing_if = "Option::is_none")]
     pub proof: Option<ByteString>,
+    #[serde(rename = "clientNonce", skip_serializing_if = "Option::is_none")]
+    pub client_nonce: Option<ByteString>,
     #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
     pub binding: Option<String>,
     #[serde(rename = "capabilities", skip_serializing_if = "Option::is_none")]
@@ -869,6 +873,8 @@ pub struct PairBeginResult {
     pub request_id: Id,
     #[serde(rename = "challenge")]
     pub challenge: ByteString,
+    #[serde(rename = "engineProof", skip_serializing_if = "Option::is_none")]
+    pub engine_proof: Option<ByteString>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PairProveParams {

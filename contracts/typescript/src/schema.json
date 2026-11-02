@@ -608,6 +608,9 @@
         },
         "dbId": {
           "$ref": "#/$defs/Id"
+        },
+        "engineProof": {
+          "$ref": "#/$defs/ByteString"
         }
       },
       "required": [
@@ -644,6 +647,9 @@
           "type": "string"
         },
         "proof": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "clientNonce": {
           "$ref": "#/$defs/ByteString"
         },
         "binding": {
@@ -1625,6 +1631,9 @@
           "$ref": "#/$defs/Id"
         },
         "challenge": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "engineProof": {
           "$ref": "#/$defs/ByteString"
         }
       },
@@ -14638,6 +14647,7 @@
     "cancelTimeoutSec": 10,
     "probeTimeoutSec": 10,
     "noSignalSec": 90,
+    "harnessSwitchTimeoutSec": 90,
     "usageRefreshMinIntervalSec": 30,
     "usageAutoRefreshIntervalSec": 300,
     "usageStaleAfterSec": 900,
@@ -14797,6 +14807,7 @@
   "x-clientPolicy": {
     "timeouts": {
       "requestTimeoutMs": 12000,
+      "engineDeadlineMarginMs": 5000,
       "greetingTimeoutMs": 5000,
       "reconnectDelayMs": 1000,
       "reconnectCeilingMs": 30000,

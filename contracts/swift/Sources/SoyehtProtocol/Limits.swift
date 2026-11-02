@@ -31,6 +31,7 @@ public enum ProtocolLimits {
     public static let cancelTimeoutSec = 10
     public static let probeTimeoutSec = 10
     public static let noSignalSec = 90
+    public static let harnessSwitchTimeoutSec = 90
     public static let usageRefreshMinIntervalSec = 30
     public static let usageAutoRefreshIntervalSec = 300
     public static let usageStaleAfterSec = 900

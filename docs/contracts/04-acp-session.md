@@ -249,7 +249,10 @@ request instead enters `waiting_for_you` and renders its question card, so a tur
 blocked on the person is never reported as merely quiet.
 Wall-clock sleep remains part of the elapsed wait because the prompt stayed active;
 a backward clock jump clamps the display to zero. The person may keep waiting or
-cancel; silence never cancels automatically. The same `noSignalSec` threshold has
+cancel; silence never cancels automatically. The one operation with a deadline of its own
+is a harness switch (`harnessSwitchTimeoutSec`, 90 seconds, a separate limit that happens to equal
+`noSignalSec`): it is abandoned and the original session restored, and until then the pane is
+locked and the switch cannot be cancelled. The same `noSignalSec` threshold has
 one meaning in both paths: the engine cannot confirm useful progress. Without an
 active prompt that means no protocol signal; during a prompt it means no parsed
 turn output, even when irrelevant protocol noise continues. “waiting for permission”
