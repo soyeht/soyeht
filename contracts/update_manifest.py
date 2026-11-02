@@ -80,12 +80,15 @@ def envelope(payload, seed, key_id, policy=POLICY):
     ) + "\n"
 
 
-def payload_text(version, minimum, notes_url, packages, sequence, channel=None, policy=POLICY):
-    """The payload for `packages` (dicts with the five package fields), as bytes."""
+def payload_text(version, minimum, notes_url, packages, sequence, channel=None, policy=POLICY,
+                 lifetime=None):
+    """The payload for `packages` (dicts with the five package fields), as bytes. It expires
+    `lifetime` seconds after `sequence`, the time of signing (at most `maxLifetimeSeconds`)."""
     document = {
         "format": policy["manifest"]["format"],
         "channel": channel or policy["defaultChannel"],
         "sequence": sequence,
+        "expiresAt": sequence + (lifetime or policy["manifest"]["maxLifetimeSeconds"]),
         "version": version,
         "minimumSupportedVersion": minimum,
         "releaseNotesUrl": notes_url,
@@ -122,10 +125,13 @@ def check_payload(payload, policy=POLICY):
     minimum = parse_version(document.get("minimumSupportedVersion"), policy)
     packages = document.get("packages")
     sequence = document.get("sequence")
+    expires = document.get("expiresAt")
     if (
         document.get("channel") not in policy["channels"]
         or type(sequence) is not int
         or not 0 < sequence <= manifest["maxSequence"]
+        or type(expires) is not int
+        or not sequence < expires <= sequence + manifest["maxLifetimeSeconds"]
         or version is None
         or minimum is None
         or minimum > version
@@ -188,16 +194,20 @@ def open_envelope(text, keys, policy=POLICY):
     return payload
 
 
-def evaluate(text, running, system, architecture, channel, keys, floor=0, policy=POLICY):
+def evaluate(text, running, system, architecture, channel, keys, floor=0, policy=POLICY, *, now):
     """What a build at version `running` (a tuple) should do with the manifest `text`.
 
     `floor` is the highest sequence this device has seen: a manifest below it is refused, and the
-    sequence of one that is read is part of the answer, for the caller to remember."""
+    sequence of one that is read is part of the answer, for the caller to remember. `now` is the
+    time in seconds since 1970: a manifest at or past its `expiresAt` is refused, so an old one
+    that someone keeps serving does not hold a device on an old release."""
     document = check_payload(open_envelope(text, keys, policy), policy)
     if document["channel"] != channel:
         raise Failed("wrongChannel")
     if document["sequence"] < floor:
         raise Failed("staleManifest")
+    if now >= document["expiresAt"]:
+        raise Failed("expired")
     version = parse_version(document["version"], policy)
     if version <= running:
         return {"status": "upToDate", "sequence": document["sequence"]}
@@ -216,9 +226,9 @@ def evaluate(text, running, system, architecture, channel, keys, floor=0, policy
     }
 
 
-def outcome(text, running, system, architecture, channel, keys, floor=0, policy=POLICY):
+def outcome(text, running, system, architecture, channel, keys, floor=0, policy=POLICY, *, now):
     """`evaluate`, with a failure as a result: what the vectors record."""
     try:
-        return evaluate(text, running, system, architecture, channel, keys, floor, policy)
+        return evaluate(text, running, system, architecture, channel, keys, floor, policy, now=now)
     except Failed as failed:
         return {"status": "failed", "failure": failed.failure}

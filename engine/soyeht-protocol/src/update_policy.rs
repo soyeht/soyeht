@@ -24,6 +24,9 @@ pub const SHA256_HEX_LENGTH: usize = 64;
 pub const VERSION_PART_LIMIT: u32 = 1000;
 /// The largest sequence number a manifest may carry.
 pub const MAX_SEQUENCE: u64 = 9007199254740991;
+/// The longest a manifest may live after it is signed: its `expiresAt` is at most this many seconds
+/// after its `sequence`, the time it was signed.
+pub const MAX_LIFETIME_SECONDS: u64 = 7776000;
 /// Put before the payload in the bytes that are signed.
 pub const SIGNING_CONTEXT: &[u8] = b"soyeht-update-manifest-v1\n";
 /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.
@@ -67,6 +70,7 @@ pub mod text {
     pub const AVAILABLE: &str = "Soyeht {version} is available.";
     pub const REQUIRED: &str = "This version is no longer supported. Update to keep using Soyeht.";
     pub const NOT_CONFIGURED: &str = "Update checks are not set up in this build.";
+    pub const EXPIRED: &str = "The update information is out of date. Check this computer's date and time, or get the newest Soyeht from the Soyeht website.";
     pub const FAILED: &str = "Could not check for updates.";
 }
 
@@ -93,6 +97,8 @@ pub enum Failure {
     NoPackage,
     /// The manifest is older than one this device has already seen.
     StaleManifest,
+    /// The manifest's expiry has passed, so it may be an old one that someone keeps serving.
+    Expired,
     /// This build's own version is not one the rules can compare.
     UnknownBuild,
 }
@@ -111,6 +117,7 @@ impl Failure {
             Self::WrongChannel => "wrongChannel",
             Self::NoPackage => "noPackage",
             Self::StaleManifest => "staleManifest",
+            Self::Expired => "expired",
             Self::UnknownBuild => "unknownBuild",
         }
     }

@@ -135,9 +135,9 @@ class CollectTests(FlowCase):
         self.assertEqual(release_checks.checksum_problems(self.dist, assets), [])
         self.assertEqual((self.dist / release_checks.NOTES).read_text(), NOTES.split("\n", 1)[1].strip() + "\n")
         text = (self.dist / "update-manifest.json").read_text()
-        offer = manifest.evaluate(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS)
+        offer = manifest.evaluate(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, now=int(time.time()))
         self.assertTrue(offer["package"]["url"].endswith(".AppImage"))
-        self.assertEqual(manifest.evaluate(text, (0, 0, 1), "windows", "aarch64", "stable", KEYS)["status"], "available")
+        self.assertEqual(manifest.evaluate(text, (0, 0, 1), "windows", "aarch64", "stable", KEYS, now=int(time.time()))["status"], "available")
 
     def test_a_package_changed_after_collect_no_longer_matches_the_checksums(self):
         self.all_packages()

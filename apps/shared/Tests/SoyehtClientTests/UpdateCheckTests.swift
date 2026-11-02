@@ -32,7 +32,7 @@ func updateTestBuild(_ version: String) -> UpdateBuild? {
       channel: item["channel"].string ?? "")
     let result = UpdateCheck.evaluate(
       item["manifest"].string ?? "", build: build, keys: keys,
-      floor: UInt64(item["floor"].int ?? 0))
+      floor: UInt64(item["floor"].int ?? 0), now: UInt64(item["now"].int ?? 0))
     let expected = item["expected"]
     switch result {
     case .failure(let failure):
@@ -55,11 +55,16 @@ func updateTestBuild(_ version: String) -> UpdateBuild? {
   }
 }
 
+@Test func aClockBeforeNineteenSeventyReadsEveryManifestAsExpired() {
+  #expect(UpdateCheck.seconds(Date(timeIntervalSince1970: -1)) == .max)
+  #expect(UpdateCheck.seconds(Date(timeIntervalSince1970: 1_800_000_000)) == 1_800_000_000)
+}
+
 @Test func aBuildThatCarriesTheContractsKeysTrustsNoTestKey() throws {
   let vector = try ContractVector.load("update")
   let item = try #require(vector["cases"].array?.first)
   let build = try #require(UpdateBuild.current)
-  let result = UpdateCheck.evaluate(item["manifest"].string ?? "", build: build)
+  let result = UpdateCheck.evaluate(item["manifest"].string ?? "", build: build, now: 0)
   guard case .failure(let failure) = result else {
     Issue.record("a test key must not be trusted")
     return
@@ -75,7 +80,7 @@ func updateTestBuild(_ version: String) -> UpdateBuild? {
   let build = try #require(UpdateBuild.current)
   let result = UpdateCheck.evaluate(
     text, build: build,
-    keys: [updateTestKey(vector, "first")])
+    keys: [updateTestKey(vector, "first")], now: 0)
   #expect(result == .failure(.tooLarge))
 }
 
