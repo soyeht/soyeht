@@ -44,7 +44,7 @@ SWIFT_ROOTS = (
     "apps/mac/Sources",
     "apps/ios/Sources",
 )
-RUST_ROOTS = ("engine", "apps/desktop")
+RUST_ROOTS = ("engine", "apps/desktop", "apps/android")
 # Files that must keep the names as they were written: a migration rewrites stored history, so
 # renaming an event in the contract must not change what it matches.
 FROZEN_NAMES = {

@@ -2,7 +2,7 @@
 """Fail when a Rust crate depends on a layer above it (AGENTS.md, "Architecture layers").
 
 `LAYERS` lists, for every Soyeht crate, the Soyeht crates it may depend on. The check reads
-every `Cargo.toml` of `engine/` and `apps/desktop/` and compares the dependency tables
+every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and compares the dependency tables
 (`dependencies`, `dev-dependencies`, `build-dependencies`, and the same tables under
 `target.*`) with it. Crates outside the Soyeht workspace are not limited. A crate that is not
 in the table fails too: adding a crate means placing it in a layer here and in AGENTS.md.
@@ -15,7 +15,7 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_ROOTS = ("engine", "apps/desktop")
+MANIFEST_ROOTS = ("engine", "apps/desktop", "apps/android")
 TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 
 FOUNDATION = {"soyeht-protocol", "soyeht-platform", "soyeht-process"}
@@ -58,6 +58,9 @@ LAYERS: dict[str, set[str]] = {
     # other crate of Soyeht.
     "soyeht-webview": set(),
     "soyeht-desktop": {"soyeht-client", "soyeht-webview", "soyeht-protocol", "soyeht-platform"},
+    # Layer 7: the Android app's core (ADR 0134), its own workspace. It reuses the desktop client's
+    # connection and replica and holds no rule of its own.
+    "soyeht-android": {"soyeht-client", "soyeht-protocol", "soyeht-platform"},
 }
 
 
