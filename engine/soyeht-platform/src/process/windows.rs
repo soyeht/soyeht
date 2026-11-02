@@ -18,8 +18,8 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{
-        DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED, HANDLE, WAIT_OBJECT_0,
-        WAIT_TIMEOUT,
+        DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER,
+        HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT,
     },
     System::{
         Console::{
@@ -37,12 +37,29 @@ use windows_sys::Win32::{
             CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT, CreateProcessW,
             DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
             GetExitCodeProcess, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
-            PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
-            PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION, STARTF_USESTDHANDLES,
-            STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+            OpenProcess, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROC_THREAD_ATTRIBUTE_JOB_LIST,
+            PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION, PROCESS_TERMINATE,
+            STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute,
+            WaitForSingleObject,
         },
     },
 };
+
+/// Ends the process `pid` at once, which [`super::terminate`] has checked is neither 0, 1 nor this
+/// process. A process that does not exist is `NotFound`.
+pub(super) fn terminate(pid: u32) -> io::Result<()> {
+    // SAFETY: the call returns an owned handle or null; `owned` takes it over.
+    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+    let process = match owned(handle) {
+        Ok(process) => process,
+        Err(error) if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER.cast_signed()) => {
+            return Err(io::Error::from(io::ErrorKind::NotFound));
+        }
+        Err(error) => return Err(error),
+    };
+    // SAFETY: the handle stays open for the call.
+    check(unsafe { TerminateProcess(process.as_raw_handle() as HANDLE, 1) })
+}
 
 /// How often an ending job is asked whether it is empty.
 const EMPTY_POLL: Duration = Duration::from_millis(5);

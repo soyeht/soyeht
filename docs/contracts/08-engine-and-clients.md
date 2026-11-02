@@ -90,6 +90,11 @@ while the Mac's “Add iPhone” window is open:
    `consumed`, `bad_proof`, `denied`, `revoked`.
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
+Only the local human opens the window. On macOS only the signed Soyeht app decides a request
+or revokes a device (a shell or script on the local socket, including a terminal a paired device
+opened, gets `forbidden_role`); on Windows and Linux there is no attestation yet, so any process
+of the same user on the local socket counts as the computer, until those apps can prove they are
+the official app. A paired device may revoke only itself (ADR 0128).
 
 **2.3 Push.** A paired device calls `push.register {platform: "apns",
 token, environment: "sandbox" | "production"}` and `push.unregister {}`; any
@@ -100,11 +105,11 @@ Revocation deletes the registration in the same transaction.
 
 Implemented triggers: `pane.permission_requested` and
 `pane.elicitation_requested` on agent panes, sent to every registered device.
-The alert payload carries `soyeht {engineId, workspaceId, paneId, requestId,
-kind}` and, for a permission with one-time allow and reject options,
-`allowOptionId` and `denyOptionId` under category `soyeht.permission`;
-otherwise category `soyeht.attention` (tap opens the pane). The notification
-action answers through `pane.permission.answer`, with the same rules as the
+The alert payload carries the same title and body for every question (`pushNeedsYouTitle` and
+`pushNeedsYouBody`), category `soyeht.attention` (a tap opens the pane) and `soyeht {engineId,
+workspaceId, paneId, requestId, kind}`. It carries nothing of what was asked, and no answer to give
+from the lock screen: the app shows the question over its authenticated connection and answers
+through `pane.permission.answer`, with the same rules as the
 Mac. `apns-collapse-id` is the request id, `apns-expiration` its deadline; a
 request is pushed once per device, and pending retries stop when
 `pane.permission_answered` or `pane.elicitation_answered` is published.

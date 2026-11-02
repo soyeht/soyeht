@@ -1,9 +1,12 @@
 use super::BindError;
 use std::{
     fs, io,
-    os::unix::{
-        fs::{FileTypeExt, PermissionsExt},
-        net::{UnixListener, UnixStream},
+    os::{
+        fd::AsRawFd,
+        unix::{
+            fs::{FileTypeExt, PermissionsExt},
+            net::{UnixListener, UnixStream},
+        },
     },
     path::Path,
 };
@@ -44,4 +47,61 @@ pub fn connect(path: &Path) -> io::Result<Stream> {
 /// Two connected streams, for tests and in-process wiring.
 pub fn pair() -> io::Result<(Stream, Stream)> {
     UnixStream::pair()
+}
+
+/// The user id of the process at the other end of `stream`, which the kernel reports.
+#[cfg(target_os = "macos")]
+fn peer_user(stream: &Stream) -> Option<u32> {
+    let (mut user, mut group) = (0, 0);
+    // SAFETY: both out pointers are valid for the call; the descriptor is open.
+    let status = unsafe { libc::getpeereid(stream.as_raw_fd(), &raw mut user, &raw mut group) };
+    (status == 0).then_some(user)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn peer_user(stream: &Stream) -> Option<u32> {
+    let mut credential = libc::ucred {
+        pid: 0,
+        uid: 0,
+        gid: 0,
+    };
+    let mut length = size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: `credential` has the size passed in `length`; the descriptor is open.
+    let status = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&raw mut credential).cast(),
+            &raw mut length,
+        )
+    };
+    (status == 0).then_some(credential.uid)
+}
+
+/// Whether the peer of `stream` runs as the same user as this process. The socket's mode and
+/// its private directory already keep other users out; this is the check that does not depend on
+/// them.
+pub fn same_user(stream: &Stream) -> bool {
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    peer_runs_as(stream, unsafe { libc::geteuid() })
+}
+
+fn peer_runs_as(stream: &Stream, user: u32) -> bool {
+    peer_user(stream) == Some(user)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_peer_of_a_socket_pair_runs_as_this_user_and_as_no_other() {
+        let (left, _right) = pair().unwrap();
+        // SAFETY: geteuid has no arguments or memory preconditions.
+        let me = unsafe { libc::geteuid() };
+        assert!(same_user(&left));
+        assert!(peer_runs_as(&left, me));
+        assert!(!peer_runs_as(&left, me.wrapping_add(1)));
+    }
 }

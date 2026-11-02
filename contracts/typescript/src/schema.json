@@ -14679,6 +14679,7 @@
     "editorViewportLines": 2000,
     "editorEditBytes": 262144,
     "editorPathBytes": 4096,
+    "diagnosticMessageChars": 4096,
     "editorSearchResults": 500,
     "editorHistoryVersions": 200,
     "editorHistoryBytes": 52428800,
@@ -14908,7 +14909,9 @@
       "diagnosticsWorking": "Collecting diagnostics",
       "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
       "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
-      "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program."
+      "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+      "pushNeedsYouTitle": "An agent needs you",
+      "pushNeedsYouBody": "Open Soyeht to see what it asks."
     },
     "inlineImageTypes": [
       "image/png",

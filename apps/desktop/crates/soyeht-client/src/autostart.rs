@@ -107,6 +107,9 @@ pub enum StartError {
     Exited(&'static str),
     TimedOut,
     Stopped,
+    /// An uninstall ended the programs while this window was open, so it does not start them
+    /// again.
+    Uninstalled,
 }
 
 impl StartError {
@@ -119,6 +122,7 @@ impl StartError {
             Self::Exited(_) => "exited",
             Self::TimedOut => "timed_out",
             Self::Stopped => "stopped",
+            Self::Uninstalled => "uninstalled",
         }
     }
 }
@@ -144,6 +148,10 @@ impl fmt::Display for StartError {
             Self::Directory(_) | Self::Lock(_) => formatter
                 .write_str("The engine could not be started: its data folder cannot be used."),
             Self::Stopped => formatter.write_str("The engine start was cancelled."),
+            Self::Uninstalled => formatter.write_str(
+                "Soyeht was uninstalled, so this window does not start the engine again. \
+                 Close it and open Soyeht to start afresh.",
+            ),
         }
     }
 }
@@ -164,6 +172,8 @@ impl log::Failure for StartError {
 /// What a start touches outside this module, so the decisions can be tested.
 pub(crate) trait Host {
     fn engine_reachable(&self) -> bool;
+    /// Whether an uninstall ended the programs while this window was open.
+    fn uninstalled(&self) -> bool;
     fn supervisor_reachable(&self) -> bool;
     fn program_exists(&self, path: &Path) -> bool;
     /// Takes the lock that serialises starts: `None` when another start holds it. The lock
@@ -189,10 +199,14 @@ pub(crate) trait Started {
 
 /// Makes sure an engine answers: returns at once when one does, waits for a start that another
 /// window is making, and otherwise starts the supervisor (when it is not running) and the
-/// engine and waits until the engine answers.
+/// engine and waits until the engine answers. It starts nothing when an uninstall ended the
+/// programs while the window was open: the person asked for them to go.
 pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.engine_reachable() {
         return Ok(());
+    }
+    if host.uninstalled() {
+        return Err(StartError::Uninstalled);
     }
     let programs = plan
         .programs
@@ -305,11 +319,79 @@ pub(crate) struct Local<'a> {
     pub plan: &'a Plan,
     pub socket: &'a Path,
     pub stopped: &'a dyn Fn() -> bool,
+    pub watch: &'a Watch,
+}
+
+/// What a window knows of the data it works in, to tell an uninstall that happened while it was
+/// open from a state that was there before it.
+pub(crate) struct Watch {
+    directory: Option<PathBuf>,
+    /// What an uninstall had left in the data directory when the window began, if anything.
+    baseline: Option<String>,
+    /// An engine answered this window at some point.
+    had_engine: bool,
+}
+
+impl Watch {
+    /// The window begins: the record an earlier uninstall left is what an uninstall now is
+    /// told from. Nothing is compared with a clock.
+    pub(crate) fn begin(autostart: &Autostart) -> Self {
+        let directory = match autostart {
+            Autostart::On(plan) => Some(plan.directory.clone()),
+            Autostart::Off => None,
+        };
+        let baseline = directory.as_deref().and_then(record);
+        Self {
+            directory,
+            baseline,
+            had_engine: false,
+        }
+    }
+
+    /// A connection was made: an engine answers this window.
+    pub(crate) fn engine_answered(&mut self) {
+        self.had_engine = true;
+    }
+
+    /// Whether an uninstall ended the programs while the window was open: it left a record
+    /// that is new or changed since the window began, or it deleted the data
+    /// (`--delete-data`), which takes the engine's lock file with it, after the window had an
+    /// engine there. The folder itself can stay, with another profile's folder inside it. A
+    /// first run has no lock file yet, and a window that begins after an uninstall takes the
+    /// record it finds as its baseline: it starts afresh.
+    pub(crate) fn uninstalled(&self) -> bool {
+        let Some(directory) = self.directory.as_deref() else {
+            return false;
+        };
+        let current = record(directory);
+        let left = current.is_some() && current != self.baseline;
+        // Only a lock file known to be gone counts: an error (no access, a failing disk) says
+        // nothing about the data.
+        let deleted =
+            self.had_engine && matches!(directory.join(fs::ENGINE_LOCK).try_exists(), Ok(false));
+        left || deleted
+    }
+}
+
+/// What an uninstall left in `directory`. A record that cannot be read is logged and counts as
+/// none.
+fn record(directory: &Path) -> Option<String> {
+    match fs::uninstall_record(directory) {
+        Ok(record) => record,
+        Err(error) => {
+            log::failure("desktop.uninstall_record_unreadable", &error);
+            None
+        }
+    }
 }
 
 impl Host for Local<'_> {
     fn engine_reachable(&self) -> bool {
         crate::transport::connect(self.socket).is_ok()
+    }
+
+    fn uninstalled(&self) -> bool {
+        self.watch.uninstalled()
     }
 
     fn supervisor_reachable(&self) -> bool {

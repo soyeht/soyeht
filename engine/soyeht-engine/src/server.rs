@@ -46,7 +46,7 @@ use tokio::{
 /// A connection with this many waits for one to finish before it reads the next request.
 const CONCURRENT_OFFLOADS: usize = 8;
 
-struct CatalogJob {
+pub(crate) struct CatalogJob {
     method: String,
     params: Value,
     request_id: Value,
@@ -174,15 +174,15 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
 
 /// What every accepted connection shares.
 #[derive(Clone)]
-struct Accept {
-    profile: &'static Profile,
-    core: Shared,
-    admission: Admission,
-    catalog_tx: mpsc::Sender<CatalogJob>,
+pub(crate) struct Accept {
+    pub(crate) profile: &'static Profile,
+    pub(crate) core: Shared,
+    pub(crate) admission: Admission,
+    pub(crate) catalog_tx: mpsc::Sender<CatalogJob>,
 }
 
 /// Accepts the connections of this user on the local endpoint, for as long as the engine runs.
-async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Result<()> {
+pub(crate) async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Result<()> {
     let Accept {
         profile,
         core,
@@ -212,7 +212,7 @@ async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Resu
     }
 }
 
-async fn serve_tcp(listener: TcpListener, accept: Accept) -> io::Result<()> {
+pub(crate) async fn serve_tcp(listener: TcpListener, accept: Accept) -> io::Result<()> {
     loop {
         let (stream, peer) = listener.accept().await?;
         let Some(slot) = accept.admission.remote(peer.ip()) else {
