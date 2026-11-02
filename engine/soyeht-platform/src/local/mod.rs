@@ -22,8 +22,6 @@ use std::{fmt, fs, io, path::Path};
 pub mod asynchronous;
 #[cfg(any(windows, test))]
 mod endpoint;
-#[cfg(windows)]
-mod exclusive;
 #[cfg(any(windows, test))]
 mod tcp;
 #[cfg(unix)]

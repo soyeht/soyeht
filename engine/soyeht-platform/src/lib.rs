@@ -5,6 +5,7 @@
 //!
 //! - [`local`]: the endpoint other processes of the same user connect to. A Unix socket on
 //!   macOS and Linux; an authenticated loopback connection on Windows.
+//! - [`net`]: TCP listeners that no other program can take the port from (Windows).
 //! - [`dirs`]: the native folder for a user's application data (Application Support,
 //!   `%LOCALAPPDATA%`, XDG).
 //! - [`dialog`]: a native message box for a program with no terminal (Windows; no-op elsewhere).
@@ -33,6 +34,7 @@ pub mod git;
 pub mod hostname;
 pub mod local;
 pub mod log;
+pub mod net;
 pub mod process;
 pub mod program;
 #[cfg(feature = "tokio")]
