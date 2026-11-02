@@ -135,7 +135,13 @@ impl Core {
             job,
             move || fetch_pending(&supervisor, &asked, before, &known),
             move |core, requests| {
-                let requests = core.settle_supervisor(&used, requests);
+                // A failure of a link that was replaced meanwhile says nothing about the new one:
+                // it is dropped, as an unfinished read is.
+                let requests = match core.settle_if_current(&used, requests) {
+                    Ok(Some(requests)) => Ok(requests),
+                    Ok(None) => return Ok(()),
+                    Err(error) => Err(error),
+                };
                 // A pane that closed meanwhile has nobody to take it.
                 if core.panes.get(&owner).is_none_or(|pane| pane.stored.closed) {
                     return Ok(());
@@ -356,5 +362,78 @@ mod tests {
         apply_until_done(&mut core, "recover:agent");
         assert!(core.agent_output_gap("agent", 5).unwrap());
         assert_eq!(core.agents["agent"].decoder.next_offset(), 5);
+    }
+
+    /// A supervisor that takes `delay` to list the requests it holds, and then answers with `then`.
+    fn listing(
+        delay: Duration,
+        then: fn() -> soyeht_ptyd::Result<Response>,
+    ) -> Box<dyn crate::ports::SupervisorPort> {
+        Box::new(Answering(move |request| match request {
+            Request::PendingRequests { .. } => {
+                std::thread::sleep(delay);
+                then()
+            }
+            _ => Ok(Response::Ok),
+        }))
+    }
+
+    fn nothing_pending() -> soyeht_ptyd::Result<Response> {
+        Ok(Response::PendingRequests {
+            items: Vec::new(),
+            recovery_gap: false,
+        })
+    }
+
+    fn refused() -> soyeht_ptyd::Result<Response> {
+        Err(soyeht_ptyd::Error::Remote {
+            kind: soyeht_ptyd::wire_kind::OPERATION_FAILED.into(),
+            message: "no".into(),
+        })
+    }
+
+    #[test]
+    fn what_a_job_read_for_a_pane_that_closed_meanwhile_is_dropped() {
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        core.link_supervisor(listing(Duration::from_millis(200), nothing_pending));
+
+        assert!(!core.agent_output_gap("agent", 5).unwrap());
+        core.panes.get_mut("agent").unwrap().stored.closed = true;
+        apply_until_done(&mut core, "recover:agent");
+        assert!(core.reads.fetches.is_empty());
+    }
+
+    #[test]
+    fn what_a_job_read_is_forgotten_with_the_reads_of_its_pane() {
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        core.link_supervisor(listing(Duration::ZERO, nothing_pending));
+
+        assert!(!core.agent_output_gap("agent", 5).unwrap());
+        apply_until_done(&mut core, "recover:agent");
+        assert_eq!(core.reads.fetches.len(), 1);
+
+        core.forget_reads(&crate::read_ahead::agent("agent"));
+        assert!(core.reads.fetches.is_empty());
+    }
+
+    #[test]
+    fn a_failure_of_a_link_that_was_replaced_is_not_kept_for_the_poll() {
+        let (mut core, _directory) = core_with_agent(&[]);
+        core.background = crate::offload::Background::default();
+        core.link_supervisor(listing(Duration::from_millis(200), refused));
+        assert!(!core.agent_output_gap("agent", 5).unwrap());
+        // The link is replaced before the old one answers.
+        core.link_supervisor(listing(Duration::ZERO, nothing_pending));
+        apply_until_done(&mut core, "recover:agent");
+        assert!(core.reads.fetches.is_empty());
+
+        // The same failure on the link the engine has is kept, and the poll meets it.
+        core.link_supervisor(listing(Duration::ZERO, refused));
+        assert!(!core.agent_output_gap("agent", 5).unwrap());
+        apply_until_done(&mut core, "recover:agent");
+        assert_eq!(core.reads.fetches.len(), 1);
+        assert!(core.agent_output_gap("agent", 5).is_err());
     }
 }

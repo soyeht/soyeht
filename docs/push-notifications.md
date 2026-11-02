@@ -2,11 +2,9 @@
 
 When an agent pane (Claude Code, Codex or any ACP harness) stops to ask for
 permission or asks a question, the engine on the Mac sends an alert straight
-to APNs for every paired iPhone or iPad. A long press on a permission alert
-shows **Allow** and **Deny**. Both require an unlocked device and answer in the
-background through the same `pane.permission.answer` request as the Mac, with
-the same rules. A tap opens the app on that pane. A question (a form) only
-opens the pane. The protocol is in contract 08 §2.3.
+to APNs for every paired iPhone or iPad. The alert is generic, a tap opens the app on that pane, and the
+person reads what is asked and answers there, through the same `pane.permission.answer` request as
+the Mac, with the same rules. The protocol is in contract 08 §2.3.
 
 The app asks for notification permission the first time it connects to the
 Mac after pairing, never at launch. Each later connection registers the
@@ -83,10 +81,12 @@ engine never logs them.
   longer open. If an action cannot reach the Mac, the app posts the alert
   again so the person can retry.
 
-The payload (at most 4 KB) shows only a short title such as
-“Claude needs approval” and the tool and its target, truncated to 160
-characters. The shared example is `contracts/vectors/push-permission.json`.
-Both the engine and the app tests read it.
+The payload (at most 4 KB) says the same thing for every question: “An agent needs you. Open
+Soyeht to see what it asks.” (`pushNeedsYouTitle` and `pushNeedsYouBody` of the contract's texts).
+What was asked (a command, a path, a question) is not in it, because Apple's servers and the lock
+screen would see it; the app shows it from its authenticated connection when the person opens the
+alert, and the alert offers no Allow or Deny to give without seeing it. The shared example is
+`contracts/vectors/push-permission.json`. Both the engine and the app tests read it.
 
 ## Test with a real device
 
@@ -104,8 +104,8 @@ Both the engine and the app tests read it.
    ```
 
 4. Open a Claude Code or Codex agent pane in “ask” mode and give it something
-   that needs approval. Lock the phone. The alert arrives; long press, choose
-   Allow, unlock, and the agent continues on the Mac.
+   that needs approval. Lock the phone. The alert arrives; tap it, unlock, read what the agent asks
+   and answer in the pane, and the agent continues on the Mac.
 5. If nothing arrives, look for `engine.push_failed` lines in the engine log.
    The `status` and `reason` fields are APNs's (for example
    `BadDeviceToken` when a sandbox token is sent to production). Apple's Push
@@ -114,6 +114,6 @@ Both the engine and the app tests read it.
 ## Test in the Simulator
 
 The Simulator cannot reach APNs with this engine's key, but it shows the
-same alert and actions: `xcrun simctl push <device> com.soyeht.next.dev.ios
+same alert: `xcrun simctl push <device> com.soyeht.next.dev.ios
 payload.json` with a payload shaped like the shared vector, using a real
 `engineId`, `paneId`, `requestId` and option ids from the engine's snapshot.

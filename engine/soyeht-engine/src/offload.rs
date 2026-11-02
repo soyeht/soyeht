@@ -253,6 +253,23 @@ impl Background {
         }
     }
 
+    /// Background work that cannot start: its workers are gone, so every job fails to submit.
+    #[cfg(test)]
+    pub(crate) fn unstartable() -> Self {
+        let (sender, receiver) = mpsc::channel::<Task>();
+        drop(receiver);
+        Self {
+            pool: Some(sender),
+            ..Self::default()
+        }
+    }
+
+    /// Marks `key` as running, for a test that needs a job on its way without one.
+    #[cfg(test)]
+    pub(crate) fn busy(&mut self, key: &str) {
+        self.active.insert(key.to_owned());
+    }
+
     pub(crate) fn is_active(&self, key: &str) -> bool {
         self.active.contains(key)
     }

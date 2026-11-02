@@ -52,6 +52,8 @@ public enum ClientPolicy {
     public static let crashNoticeSummary = "A crash report was saved on this computer. Nothing was sent."
     public static let crashNoticeCopy = "Copy report"
     public static let crashNoticeDismiss = "Dismiss"
+    public static let pushNeedsYouTitle = "An agent needs you"
+    public static let pushNeedsYouBody = "Open Soyeht to see what it asks."
     public static let clientNameMac = "mac"
     public static let clientNameMacDev = "mac-dev"
     public static let clientNameIphone = "iphone"

@@ -135,14 +135,10 @@ impl Core {
         if pane.mode != soyeht_protocol::PaneMode::Agent {
             return None;
         }
-        let harness = self.agents.get(pane_id).map_or("Agent", |running| {
-            crate::agents::naming::harness_label(&running.state.launch)
-        });
         let alert = payload::alert(&payload::Question {
             event: &event.method,
             request: &event.params,
             workspace_id: &pane.workspace_id,
-            harness,
             engine_id: &self.store.db_id,
         })?;
         let targets = match self.store.push_registrations() {

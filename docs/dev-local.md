@@ -79,8 +79,9 @@ engine/target/debug/soyeht --profile dev device pair-start
 engine/target/debug/soyeht --profile dev device list
 ```
 
-Pairing still requires consent in the Mac client. Displaying the code through
-the CLI does not authorize a device by itself.
+Pairing is approved in the Mac app: on macOS the engine accepts the decision only from the signed
+app, so the CLI can start a request and show its code but cannot approve it. Displaying the code
+authorizes nothing by itself.
 
 To replace the new profile's binaries, stop those two services first.
 This terminates that profile's shells. The installer refuses to replace

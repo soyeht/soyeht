@@ -41,6 +41,9 @@ pub struct Server {
     pub completed: BTreeMap<String, Completed>,
     #[serde(default)]
     pub completed_order: VecDeque<String>,
+    /// The writes made so far, which orders `pending_writes` by creation (see `next_write_key`).
+    #[serde(default)]
+    pub writes_made: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -108,6 +111,7 @@ impl Server {
             requests: BTreeMap::new(),
             completed: BTreeMap::new(),
             completed_order: VecDeque::new(),
+            writes_made: 0,
         })
     }
 
@@ -137,6 +141,14 @@ impl Server {
         self.instance_id = Some(instance.instance_id.clone());
         self.supervisor_id = Some(instance.supervisor_id.clone());
         Ok(())
+    }
+
+    /// The operation key of the next write to the server. Keys sort in the order they were made,
+    /// so the writes that are pending (`initialized`, `didOpen`, `didChange`) go out again in
+    /// that order after a new link; the identifier after the count keeps the key unique.
+    pub fn next_write_key(&mut self) -> String {
+        self.writes_made = self.writes_made.saturating_add(1);
+        format!("{:020}-{}", self.writes_made, Uuid::new_v4())
     }
 
     pub fn restart(&mut self, detail: &str) -> Result<()> {

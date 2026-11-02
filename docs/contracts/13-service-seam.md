@@ -167,6 +167,9 @@ the start fails once; after that nothing runs and nothing is retried. When the p
 (an app dragged back, or installed again) launchd starts it by itself. `soyeht service start` of
 an agent whose program is gone fails with "the program ... is missing", as on Linux, instead of
 loading an agent that cannot run. `soyeht uninstall` is still the way to remove the registration.
+On the Mac, a program that is already running when its file is deleted ends itself (ADR 0130): the engine and the
+supervisor look at the path they were started from every 10 seconds, and when it is missing three
+looks in a row they exit with code 0, so the agent stays loaded, idle and inert.
 An app update that replaces the bundle briefly removes the program. Whether launchd's `PathState`
 watch re-arms and starts the program again when the bundle is replaced by a rename (how an update
 or a drag over the old copy does it) is **untested**: it was not run, and this contract does not
@@ -177,9 +180,8 @@ whenever the services are registered and right but the engine does not answer, w
 *Manual check (not run: it needs a real login session and registers services, which was not done
 on the machine where this was written).* Install the production app, say yes to the background
 start, then `launchctl print gui/$(id -u)/com.soyeht.next.engine` shows `state = running` and a
-`keepalive` with the program path. Move the app out of Applications: the engine keeps running (it
-is already running) but after `launchctl kill TERM gui/$(id -u)/com.soyeht.next.engine` it does not
-come back, and `soyeht service start --component engine` from the moved app's folder reports the
+`keepalive` with the program path. Move the app out of Applications: within about a minute the engine
+and the supervisor exit by themselves (ADR 0130) and do not come back, and `soyeht service start --component engine` from the moved app's folder reports the
 program missing for the old path. Move the app back: the engine starts without any command.
 
 A program started by hand while its service is registered fails on its lock and the system

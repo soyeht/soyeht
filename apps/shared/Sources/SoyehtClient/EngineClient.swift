@@ -37,8 +37,8 @@ public final class EngineClient {
   public internal(set) var customHarnesses: [HarnessLaunch] = []
   public internal(set) var harnessEnvironmentIssue: HarnessEnvironmentIssue?
   public internal(set) var preferredHarnessId: String?
-  /// Preferred permission mode for new panes, per harness, as the harness names it.
-  public internal(set) var harnessDefaultModes: [String: String] = [:]
+  /// Default permission mode of new panes per harness; a key means asked (`nil`: no preference).
+  public internal(set) var harnessDefaultModes: [String: String?] = [:]
   public internal(set) var agentCatalogues: [String: AgentCatalogue] = [:]
   public internal(set) var agentCatalogueLoadCounts: [String: Int] = [:]
   public internal(set) var tasks: [TaskRecord] = []

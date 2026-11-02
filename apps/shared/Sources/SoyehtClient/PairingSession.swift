@@ -93,7 +93,7 @@ public final class PairingSession {
     let id = UUID().uuidString
     let timeout = Task { @MainActor in
       do { try await Task.sleep(for: .seconds(12)) } catch { return }
-      wire.close()
+      wire.close(ClientFailure.timeout)
     }
     defer { timeout.cancel() }
     try await wire.send(
