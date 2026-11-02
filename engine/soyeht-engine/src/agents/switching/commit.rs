@@ -33,7 +33,7 @@ impl Core {
                 self.now_ms() as u64,
             )
             .map_err(native_error)?;
-        self.write_candidate(&candidate.instance.instance_id, request)?;
+        candidate.queue(request);
         let incorporated_pending = original
             .queue
             .iter()

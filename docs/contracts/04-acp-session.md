@@ -100,7 +100,9 @@ Raw terminal panes continue to exist and do not use this path.
    to do, and options (`allow_once`, `allow_always`, `reject_once`, `reject_always`).
    The engine responds according to §4.
 9. **`session/cancel`.** Notification. The engine waits for `idle` with
-   `cancelled`; if it does not arrive within 10 s, kill the process and mark the pane.
+   `cancelled`; if it does not arrive within 10 s, kill the process and mark the pane. The engine
+   sends `session/cancel` again every second until the prompt answers or the 10 s deadline passes,
+   since an agent drops a cancel that reaches it before its turn has begun.
 10. **Resume** (§6) and **close** (`session/close`, then terminate the process).
 
 ## 3. Prompt while the agent is busy
@@ -289,7 +291,7 @@ Raw terminal (another contract); `session/fork` (unstable); HTTP transport
 | permission mode | `session/set_mode` OR configuration option | configuration option only |
 | agent-requested files and terminal | `fs/*`, `terminal/*` exist | removed from the core (become extensions) |
 | login | `authenticate` | `auth/login` |
-Rule: the engine has ONE internal lifecycle (prompt accepted → working → ended with reason) and one adapter per version. In v1, “ended” = prompt response; never wait for `idle`. On v1 cancellation, wait up to 10 s for the prompt response before killing. The first delivery implements v1 fully; v2 only when a real harness responds 2 to `initialize`.
+Rule: the engine has ONE internal lifecycle (prompt accepted → working → ended with reason) and one adapter per version. In v1, “ended” = prompt response; never wait for `idle`. On v1 cancellation, wait up to 10 s for the prompt response before killing, sending `session/cancel` again every second meanwhile. The first delivery implements v1 fully; v2 only when a real harness responds 2 to `initialize`.
 
 **R04 · reconnecting to a live harness is not resuming a session.** After engine restart (contract 07), the engine↔ptyd channel delivers: harness instance ID, generation and unanswered harness requests (permission, `fs/*`, `terminal/*`) with sequence numbers. The engine answers those pending requests from persisted state; a request with an ambiguous effect (e.g. write completed, response not sent) is marked for reconciliation and never blindly repeated. On this path the engine does NOT call `session/new` or `session/resume`. `session/resume` is only for a dead process (ptyd or machine restarted).
 
