@@ -40,6 +40,7 @@ private struct PhonePane: View {
           PhoneWebPane(client: client, pane: pane)
         } else if pane.mode == .agent {
           PhoneAgentTicker(client: client, pane: pane)
+          PhoneAgentEndedNotice(pane: pane)
           AgentConversationView(
             client: client, paneId: paneId,
             harnessControl: { PhoneHarnessMenu(client: client, paneId: paneId) })
@@ -139,6 +140,25 @@ struct PhoneAgentTicker: View {
     }
     .padding(.horizontal, PaneInteriorMetrics.phoneInset)
     .padding(.vertical, PaneInteriorMetrics.tightSpacing)
+  }
+}
+
+/// Why a dead agent pane ended, in the pane itself and not only in the sidebar row.
+struct PhoneAgentEndedNotice: View {
+  let pane: Pane
+
+  var body: some View {
+    if let notice = AgentPaneStatusPresentation.endedNotice(
+      state: pane.state, phrase: pane.phrase)
+    {
+      Label(notice.text, systemImage: notice.systemImage)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(PhonePalette.warning)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, PaneInteriorMetrics.phoneInset)
+        .padding(.vertical, PaneInteriorMetrics.tightSpacing)
+        .accessibilityIdentifier("agent-ended-\(pane.paneId)")
+    }
   }
 }
 
