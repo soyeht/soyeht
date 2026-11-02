@@ -122,8 +122,10 @@ same number, and the fourth from the revision. The script does not tag, push, bu
 
 A release made by `package_mac.py`, `package_linux.py` or `package_windows.py` is built with `--remap-path-prefix` for the builder's source, home, cargo and rustup folders (`package_common.release_environment`), so no path of the build machine ends up in a program (the C libraries get `-ffile-prefix-map` too, and a Windows release compiles its C with clang, so LLVM is needed for x64 as well as Arm).
 
-Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.release]`:
-`opt-level = 3`, `lto = "thin"`, `codegen-units = 1` and `strip = "symbols"`. `panic` stays
+Both cargo workspaces (`engine/` and `apps/desktop/`) have a `[profile.release]` with
+`opt-level = 3`, `codegen-units = 1` and `strip = "symbols"`; the window's has `lto = "fat"` and
+the engine's `lto = "thin"` (fat LTO made the window 7% smaller and 4% faster on the terminal
+reflow, and the engine 4% smaller but 1% slower on the editor, which is not worth the size). `panic` stays
 `"unwind"`, written out so nobody changes it by accident: the engine recovers a poisoned lock,
 joins a panicked thread and reports a panicked task as a failure of that task, and `abort` would
 turn each of those into the death of the whole process (and of every terminal the supervisor
