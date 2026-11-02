@@ -84,8 +84,9 @@ A `.dmg` is what a person expects ("drag to Applications"), it can be signed, no
 **stapled itself** (a zip cannot carry a ticket), and it keeps the app's extended attributes and
 links exactly. The app inside is notarized and stapled first, so the ticket also travels with the
 app when it is copied out and the Mac is offline. The image is made with `hdiutil create
--srcfolder` and no Finder script: it has the app and a link to `/Applications` and no custom
-layout, which would need a GUI session. A zip may still be right for the update check (ADR 0122);
+-srcfolder` in the LZMA format (`ULMO`, read since macOS 10.15; the app needs 15) and no Finder
+script: it has the app and a link to `/Applications` and no custom layout, which would need a
+GUI session. A zip may still be right for the update check (ADR 0122);
 this ADR does not decide that.
 
 ### The app is called "Soyeht Next"

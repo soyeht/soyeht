@@ -341,7 +341,8 @@ def notarize_and_staple_image(image, signing):
 
 def make_image(app, destination, scratch):
     """A compressed image holding the app and a link to /Applications, made without Finder (so
-    no window opens and no layout is scripted)."""
+    no window opens and no layout is scripted). The format is `ULMO` (LZMA), which macOS has read
+    since 10.15: about a third smaller than `UDZO` (zlib) for this app, and the app needs macOS 15."""
     folder = scratch / "image"
     if folder.exists():
         shutil.rmtree(folder)
@@ -351,7 +352,7 @@ def make_image(app, destination, scratch):
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.unlink(missing_ok=True)
     run(["hdiutil", "create", "-volname", VOLUME_NAME, "-srcfolder", folder, "-fs", "APFS",
-         "-format", "UDZO", "-ov", destination])
+         "-format", "ULMO", "-ov", destination])
 
 
 # --- checking the result ----------------------------------------------------------------------
