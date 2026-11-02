@@ -2239,18 +2239,24 @@ export interface PaneRoleSetResult {
   "role": AgentPaneRole;
 }
 
-export type UsageProvider = "claude" | "codex" | "cursor";
+export type UsageProvider = "claude" | "codex" | "cursor" | "opencode";
 
 export type UsageState = "ok" | "stale" | "login_needed" | "no_access" | "unavailable";
 
-export type UsageUnavailableReason = "not_checked" | "no_data" | "tool_not_found" | "app_server_failed" | "invalid_response" | "rate_limited" | "network_error" | "login_needed" | "no_access" | "source_failed";
+export type UsageUnavailableReason = "not_checked" | "no_data" | "tool_not_found" | "app_server_failed" | "invalid_response" | "rate_limited" | "network_error" | "login_needed" | "no_access" | "source_failed" | "plan_expired";
 
-export type UsageSource = "claude_cli_usage" | "claude_oauth_endpoint" | "claude_desktop_cache" | "claude_web" | "codex_app_server" | "codex_account_endpoint" | "codex_access_token" | "cursor_current_period" | "cursor_app_login" | "cursor_browser_cookies";
+export type UsageSource = "claude_cli_usage" | "claude_oauth_endpoint" | "claude_desktop_cache" | "claude_web" | "codex_app_server" | "codex_account_endpoint" | "codex_access_token" | "cursor_current_period" | "cursor_app_login" | "cursor_browser_cookies" | "opencode_go_allowance" | "opencode_zai_plan" | "opencode_local_history";
 
 export interface UsageWindow {
   "used": number;
   "resetsAt": string;
   "label": string;
+}
+
+export interface UsageActivity {
+  "label": string;
+  "tokens": number;
+  "costUsd"?: number;
 }
 
 export interface UsageReading {
@@ -2259,6 +2265,7 @@ export interface UsageReading {
   "unavailableReason"?: UsageUnavailableReason;
   "primary"?: UsageWindow;
   "secondary"?: UsageWindow;
+  "activity"?: UsageActivity;
   "source": UsageSource;
   "fetchedAt": string;
 }
@@ -2289,6 +2296,7 @@ export interface UsageChangedEvent {
   "unavailableReason"?: UsageUnavailableReason;
   "primary"?: UsageWindow;
   "secondary"?: UsageWindow;
+  "activity"?: UsageActivity;
   "source": UsageSource;
   "fetchedAt": string;
 }

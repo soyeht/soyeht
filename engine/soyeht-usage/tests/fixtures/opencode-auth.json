@@ -1,0 +1,5 @@
+{
+  "zai-coding-plan": {"type": "api", "key": "zai-fixture-plan-token"},
+  "opencode": {"type": "api", "key": "oc-fixture-legacy-key"},
+  "openai": {"type": "oauth", "access": "openai-fixture-access", "refresh": "openai-fixture-refresh", "expires": 1893456000000}
+}

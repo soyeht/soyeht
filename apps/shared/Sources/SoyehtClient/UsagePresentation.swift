@@ -73,7 +73,7 @@ public struct UsagePresentation: Sendable {
 
   public var displayedWindow: UsageWindow? {
     switch reading.provider {
-    case .claude, .codex:
+    case .claude, .codex, .opencode:
       weeklyWindow ?? reading.secondary ?? reading.primary
     case .cursor:
       reading.primary
@@ -130,6 +130,7 @@ public struct UsagePresentation: Sendable {
     case .login_needed: "Sign in to \(provider.displayName) in your terminal."
     case .no_access: "Access to the \(provider.displayName) login was declined."
     case .source_failed: "\(provider.displayName) could not provide usage."
+    case .plan_expired: "\(provider.displayName)'s plan has expired or is not active."
     case nil: nil
     }
   }
@@ -137,6 +138,38 @@ public struct UsagePresentation: Sendable {
   public var percentage: String {
     guard let fraction else { return "—" }
     return "\(Int((fraction * 100).rounded()))%"
+  }
+}
+
+/// How a provider with no plan limit shows what this device recorded (contract 10 §4). The
+/// activity is a count, so it has no percentage and no band; the clients write it the same way
+/// (the `activities` cases of `contracts/vectors/usage-presentation.json`).
+public enum UsageActivityText {
+  /// An exact count under 1,000, then one decimal with K, M or B (a trailing ".0" dropped).
+  static func tokens(_ count: Int64) -> String {
+    guard count >= 1_000 else { return "\(max(count, 0))" }
+    let units: [(scale: Double, suffix: String)] = [(1e3, "K"), (1e6, "M"), (1e9, "B")]
+    var text = ""
+    for unit in units {
+      let value = (Double(count) / unit.scale * 10).rounded() / 10
+      text =
+        (value == value.rounded() ? "\(Int64(value))" : String(format: "%.1f", value))
+        + unit.suffix
+      if value < 1_000 { break }
+    }
+    return text
+  }
+
+  /// "1.2M tokens · $3.40": the tokens and, when the provider bills per token, the cost.
+  public static func summary(_ activity: UsageActivity) -> String {
+    var text = "\(tokens(activity.tokens)) \(activity.tokens == 1 ? "token" : "tokens")"
+    if let cost = activity.costUsd { text += " · " + String(format: "$%.2f", cost) }
+    return text
+  }
+
+  /// The whole line the detail shows: the span, then the summary.
+  public static func line(_ activity: UsageActivity) -> String {
+    "\(activity.label): \(summary(activity))"
   }
 }
 
@@ -161,6 +194,7 @@ extension UsageProvider {
     case .claude: "claude"
     case .codex: "codex"
     case .cursor: "cursor"
+    case .opencode: "opencode"
     }
   }
 }

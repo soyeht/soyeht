@@ -129,6 +129,7 @@ private final class RateLimitRetryProbe {
   let sources: [UsageSource] = [
     .claude_oauth_endpoint, .claude_cli_usage, .claude_web, .codex_access_token,
     .codex_account_endpoint, .codex_app_server, .cursor_app_login, .cursor_browser_cookies,
+    .opencode_go_allowance, .opencode_zai_plan, .opencode_local_history,
   ]
   #expect(Set(sources.map(\.displayName)).count == sources.count)
 }
@@ -150,12 +151,13 @@ private final class RateLimitRetryProbe {
 }
 
 @Test func usageDetailsClickRefreshesOnlyUncheckedOrStaleForEveryProvider() {
-  for provider in [UsageProvider.claude, .codex, .cursor] {
+  for provider in [UsageProvider.claude, .codex, .cursor, .opencode] {
     let source: UsageSource =
       switch provider {
       case .claude: .claude_desktop_cache
       case .codex: .codex_app_server
       case .cursor: .cursor_current_period
+      case .opencode: .opencode_local_history
       }
     let unchecked = UsageReading(
       provider: provider, state: .unavailable, unavailableReason: .not_checked,
@@ -211,6 +213,23 @@ private final class RateLimitRetryProbe {
 
   #expect(client.usageReadings.map(\.provider) == [.claude, .codex, .cursor])
   #expect(client.usageReadings[1].primary?.used == 0.7)
+}
+
+@MainActor @Test func anActivityEventReachesTheReplicaAndSortsOpenCodeLast() throws {
+  let client = EngineClient(socket: "/tmp/sn-usage-activity/engine.sock")
+  client.usageReadings = [reading(.cursor, used: 0.2)]
+  try client.applyUsageEvent(
+    .encoded(
+      UsageChangedEvent(
+        eventId: "3", at: "2026-11-01T12:00:01Z", provider: .opencode, state: .ok,
+        activity: UsageActivity(
+          label: "Last 7 days on this device", tokens: 1_234_567, costUsd: 3.4),
+        source: .opencode_local_history, fetchedAt: "2026-11-01T12:00:01Z")))
+  #expect(client.usageReadings.map(\.provider) == [.cursor, .opencode])
+  let opencode = try #require(client.usageReadings.last)
+  #expect(opencode.activity?.tokens == 1_234_567)
+  #expect(UsagePresentation(opencode).fraction == nil)
+  #expect(UsagePresentation(opencode).emphasis == .none)
 }
 
 @MainActor @Test func usageEventPreservesUnavailableReasonWithoutFreeFormDetails() throws {

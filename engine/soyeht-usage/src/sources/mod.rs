@@ -7,9 +7,10 @@ pub(crate) mod claude;
 pub(crate) mod codex;
 pub(crate) mod cursor;
 mod jwt;
+pub(crate) mod opencode;
 
 use crate::{
-    Window,
+    Activity, Window,
     host::{CookieJar, CookieRead, FileRead, Host, HttpResult, Platform, SecretRead},
 };
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
@@ -59,8 +60,20 @@ impl ReadContext {
 /// A normalized reading before the planner stamps provider and source on it.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParsedReading {
-    pub primary: Window,
+    pub primary: Option<Window>,
     pub secondary: Option<Window>,
+    /// What a provider with no plan limit recorded; it has no window.
+    pub activity: Option<Activity>,
+}
+
+impl ParsedReading {
+    pub(crate) fn windows(primary: Window, secondary: Option<Window>) -> Self {
+        Self {
+            primary: Some(primary),
+            secondary,
+            activity: None,
+        }
+    }
 }
 
 /// Why one source produced no reading.
@@ -82,6 +95,8 @@ pub enum Failure {
     InvalidResponse,
     /// A well-formed answer that carries no reading yet: every window is absent or null.
     NoData,
+    /// The provider answered that the account has no active plan: it expired or never started.
+    PlanExpired,
     /// A tool that ran but could not produce usage (failed app server, incomplete screen).
     Failed,
 }
@@ -138,6 +153,7 @@ pub(crate) fn chain(provider: &UsageProvider) -> Vec<Box<dyn Source>> {
         UsageProvider::Claude => claude::chain(),
         UsageProvider::Codex => codex::chain(),
         UsageProvider::Cursor => cursor::chain(),
+        UsageProvider::Opencode => opencode::chain(),
     }
 }
 

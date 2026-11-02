@@ -210,6 +210,22 @@ fn usage_readings_arrive_by_list_and_change_by_event() {
     assert_eq!(state.usage()[0].primary.as_ref().unwrap().used, 0.2);
 }
 
+#[test]
+fn an_activity_without_a_window_arrives_by_event() {
+    let (mut state, _) = connected(&[]);
+    state.apply(notification(
+        EventName::UsageChanged,
+        json!({"eventId": "12", "at": "now", "provider": "opencode", "state": "ok",
+               "source": "opencode_local_history", "fetchedAt": "now",
+               "activity": {"label": "Last 7 days on this device", "tokens": 1234567,
+                            "costUsd": 3.4}}),
+    ));
+    let reading = &state.usage()[0];
+    assert!(reading.primary.is_none());
+    let activity = reading.activity.as_ref().unwrap();
+    assert_eq!((activity.tokens, activity.cost_usd), (1_234_567, Some(3.4)));
+}
+
 fn created(id: &str) -> Event {
     notification(
         EventName::PaneCreated,

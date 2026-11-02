@@ -11,6 +11,7 @@ use soyeht_usage::host::{
     CookieRead, FileRead, Host, HttpRequest, HttpResult, Platform, RpcRequest, RpcRun, SecretRead,
     TerminalDriver, TerminalRequest, TerminalRun,
 };
+use soyeht_usage::host::{LocalUsageRead, StoredCredential};
 use std::{
     fs,
     io::Read,
@@ -20,6 +21,9 @@ use std::{
 
 /// A state database that cannot be read, counted across refreshes: it is read on each one.
 static STATE_DB: Mutex<Streak> = Mutex::new(Streak::once());
+
+/// OpenCode's database when it cannot be read, counted across refreshes: it is read on each one.
+static OPENCODE_DB: Mutex<Streak> = Mutex::new(Streak::once());
 
 /// The real host: the machine's files, keychain, HTTPS, browser cookies and pseudo terminal.
 pub struct SystemHost;
@@ -113,6 +117,29 @@ impl Host for SystemHost {
         }
     }
 
+    fn program_found(&self, program: &str) -> bool {
+        executable(program).is_some()
+    }
+
+    fn opencode_credential(&self, database: &Path, integration: &str) -> StoredCredential {
+        opencode_read(
+            soyeht_usage::foreign_db::opencode_credential(database, integration),
+            StoredCredential::Unreadable,
+        )
+    }
+
+    fn opencode_usage(
+        &self,
+        database: &Path,
+        since_ms: i64,
+        provider: Option<&str>,
+    ) -> LocalUsageRead {
+        opencode_read(
+            soyeht_usage::foreign_db::opencode_usage(database, since_ms, provider),
+            LocalUsageRead::Unreadable,
+        )
+    }
+
     fn json_rpc(&self, request: &RpcRequest) -> RpcRun {
         let Some(program) = executable(&request.program) else {
             return RpcRun::ToolNotFound;
@@ -133,6 +160,25 @@ impl Host for SystemHost {
             return TerminalRun::Incomplete;
         }
         terminal::run(&program, &launch_path(), request, driver)
+    }
+}
+
+/// An OpenCode database read: its value, or `unreadable` after logging why, once per streak.
+fn opencode_read<T>(read: Result<T, soyeht_usage::foreign_db::Unreadable>, unreadable: T) -> T {
+    match read {
+        Ok(value) => {
+            recovered(&OPENCODE_DB);
+            value
+        }
+        Err(failure) => {
+            if first_failure(&OPENCODE_DB, &failure.0) {
+                log::event(
+                    "engine.usage_opencode_db_unreadable",
+                    &[("kind", &failure.0)],
+                );
+            }
+            unreadable
+        }
     }
 }
 

@@ -34,6 +34,9 @@ struct ScriptedHost {
     temp: PathBuf,
     /// Makes the HTTP call panic, as a provider's reader that has a bug does.
     panic_http: AtomicBool,
+    /// Whether OpenCode is installed, and what its database records.
+    opencode_installed: AtomicBool,
+    opencode_usage: Mutex<LocalUsageRead>,
 }
 
 impl ScriptedHost {
@@ -45,7 +48,14 @@ impl ScriptedHost {
             stopped_in: Mutex::new(None),
             temp: std::env::temp_dir().join(format!("sn-engine-usage-host-{}", Uuid::new_v4())),
             panic_http: AtomicBool::new(false),
+            opencode_installed: AtomicBool::new(false),
+            opencode_usage: Mutex::new(LocalUsageRead::NoDatabase),
         }
+    }
+
+    fn record_opencode(&self, read: LocalUsageRead) {
+        self.opencode_installed.store(true, Ordering::Relaxed);
+        *self.opencode_usage.lock().unwrap() = read;
     }
 
     fn sign_in_claude(&self, expires_ms: u64) {
@@ -118,6 +128,20 @@ impl Host for ScriptedHost {
     fn state_db_value(&self, _path: &Path, _key: &str) -> SecretRead {
         SecretRead::Missing
     }
+    fn program_found(&self, program: &str) -> bool {
+        program == "opencode" && self.opencode_installed.load(Ordering::Relaxed)
+    }
+    fn opencode_credential(&self, _database: &Path, _integration: &str) -> StoredCredential {
+        StoredCredential::NoTable
+    }
+    fn opencode_usage(
+        &self,
+        _database: &Path,
+        _since_ms: i64,
+        _provider: Option<&str>,
+    ) -> LocalUsageRead {
+        self.opencode_usage.lock().unwrap().clone()
+    }
     fn json_rpc(&self, _request: &RpcRequest) -> RpcRun {
         RpcRun::ToolNotFound
     }
@@ -159,6 +183,10 @@ fn service(answers: Vec<HttpResult>) -> Service {
     Service::restore(Vec::new(), Arc::new(ScriptedHost::new(answers)), true)
 }
 
+fn activity(tokens: u64, cost_usd: f64) -> LocalUsageRead {
+    LocalUsageRead::Totals(LocalUsage { tokens, cost_usd })
+}
+
 struct Engine {
     core: Core,
     connection: String,
@@ -167,11 +195,15 @@ struct Engine {
 
 impl Engine {
     fn open(answers: Vec<HttpResult>, now: i64) -> Self {
+        Self::open_over(Arc::new(ScriptedHost::new(answers)), now)
+    }
+
+    fn open_over(host: Arc<ScriptedHost>, now: i64) -> Self {
         let directory = std::env::temp_dir().join(format!("sn-engine-usage-{}", Uuid::new_v4()));
         fs::create_dir(&directory).unwrap();
         let mut core = Core::open(&directory).unwrap();
         core.clock = Arc::new(FixedClock(now));
-        core.usage = service(answers);
+        core.usage = Service::restore(Vec::new(), host, true);
         let (outbox, _receiver) = crate::outbox::channel();
         let connection = core.connect(true, false, outbox).unwrap();
         core.dispatch(
@@ -196,6 +228,23 @@ impl Engine {
         self.core.usage_refresh_finish(finish, batch).unwrap()
     }
 
+    fn stored(&self, provider: &UsageProvider) -> soyeht_store::usage::StoredUsageReading {
+        self.core.store.usage_reading(provider).unwrap().unwrap()
+    }
+
+    /// Two clicks that fail at 31 s and 62 s: the first is not shown, and the second is what
+    /// the ring then shows.
+    fn fail_twice(&mut self, provider: &str) -> Value {
+        self.core.clock = Arc::new(FixedClock(100_031_000));
+        let first = self.click(provider, "first-failure");
+        assert_eq!(
+            first["providers"][0]["state"], "ok",
+            "a first failure is not shown"
+        );
+        self.core.clock = Arc::new(FixedClock(100_062_000));
+        self.click(provider, "second-failure")["providers"][0].clone()
+    }
+
     fn background(&mut self) {
         if let Some(prepared) = self.core.usage_automatic_prepare() {
             let batch = prepared.read();
@@ -214,16 +263,20 @@ impl Engine {
 }
 
 #[test]
-fn list_is_closed_to_the_three_providers_and_starts_unchecked() {
+fn list_is_closed_to_the_four_providers_and_starts_unchecked() {
     let listed = service(Vec::new()).providers();
     assert_eq!(
         listed,
         vec![
             UsageProvider::Claude,
             UsageProvider::Codex,
-            UsageProvider::Cursor
+            UsageProvider::Cursor,
+            UsageProvider::Opencode
         ]
     );
+    let opencode = service(Vec::new()).shown(&UsageProvider::Opencode, 100);
+    assert_eq!(opencode.state, UsageState::Unavailable);
+    assert_eq!(opencode.source, UsageSource::OpencodeGoAllowance);
     let shown = service(Vec::new()).shown(&UsageProvider::Codex, 100);
     assert_eq!(shown.state, UsageState::Unavailable);
     assert_eq!(
@@ -239,12 +292,7 @@ fn a_click_is_read_outside_the_lock_stored_published_and_limited() {
     let result = engine.click("codex", "refresh-once");
     assert_eq!(result["providers"][0]["primary"]["used"], 0.25);
     assert_eq!(result["providers"][0]["source"], "codex_account_endpoint");
-    let stored = engine
-        .core
-        .store
-        .usage_reading(&UsageProvider::Codex)
-        .unwrap()
-        .unwrap();
+    let stored = engine.stored(&UsageProvider::Codex);
     assert_eq!(stored.reading.primary.unwrap().used, 0.25);
     let params = json!({"provider": "codex", "idempotencyKey": "too-soon"});
     let Err(error) = engine
@@ -291,27 +339,63 @@ fn failures_keep_the_last_good_reading_with_its_age_and_reason() {
         ],
         100_000_000,
     );
-    engine.click("codex", "good");
-    engine.core.clock = Arc::new(FixedClock(100_031_000));
-    let first = engine.click("codex", "first-failure");
-    assert_eq!(
-        first["providers"][0]["state"], "ok",
-        "a first failure is not shown"
-    );
-    engine.core.clock = Arc::new(FixedClock(100_062_000));
-    let second = engine.click("codex", "second-failure");
-    let kept = &second["providers"][0];
+    let good = engine.click("codex", "good");
+    let kept = &engine.fail_twice("codex");
     assert_eq!(kept["state"], "stale");
     assert_eq!(kept["primary"]["used"], 0.4);
     assert_eq!(kept["unavailableReason"], "network_error");
-    assert_eq!(kept["fetchedAt"], first["providers"][0]["fetchedAt"]);
-    let stored = engine
-        .core
-        .store
-        .usage_reading(&UsageProvider::Codex)
-        .unwrap()
-        .unwrap();
+    assert_eq!(kept["fetchedAt"], good["providers"][0]["fetchedAt"]);
+    let stored = engine.stored(&UsageProvider::Codex);
     assert_eq!(stored.reading.primary.unwrap().used, 0.4);
+    engine.close();
+}
+
+#[test]
+fn an_activity_without_a_window_is_published_stored_restored_and_kept_after_a_failure() {
+    let host = Arc::new(ScriptedHost::new(Vec::new()));
+    host.record_opencode(activity(1_200_000, 3.4));
+    let mut engine = Engine::open_over(host.clone(), 100_000_000);
+    let result = engine.click("opencode", "activity");
+    let reading = &result["providers"][0];
+    assert_eq!(reading["provider"], "opencode");
+    assert_eq!(reading["state"], "ok");
+    assert_eq!(reading["source"], "opencode_local_history");
+    assert_eq!(reading["activity"]["tokens"], 1_200_000);
+    assert_eq!(reading["activity"]["costUsd"], 3.4);
+    assert!(reading.get("primary").is_none());
+    let stored = engine.stored(&UsageProvider::Opencode);
+    assert_eq!(stored.reading.activity.unwrap().tokens, 1_200_000);
+    let events = engine.core.store.replay(0).unwrap().1;
+    let event = events
+        .iter()
+        .find(|event| event.method == "usage.changed")
+        .unwrap();
+    assert_eq!(event.params["activity"]["tokens"], 1_200_000);
+
+    // A refresh that fails keeps the activity, marked last known, with the reason.
+    host.record_opencode(LocalUsageRead::Unreadable);
+    let kept = &engine.fail_twice("opencode");
+    assert_eq!(kept["state"], "stale");
+    assert_eq!(kept["unavailableReason"], "source_failed");
+    assert_eq!(kept["activity"]["tokens"], 1_200_000);
+
+    let directory = engine.directory.clone();
+    drop(engine.core);
+    let restored = Core::open(&directory).unwrap();
+    let reading = &restored.usage_list().unwrap()["providers"][3];
+    assert_eq!(reading["state"], "stale");
+    assert_eq!(reading["activity"]["tokens"], 1_200_000);
+    drop(restored);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn opencode_not_installed_is_tool_not_found_on_the_wire() {
+    let mut engine = Engine::open(Vec::new(), 100_000_000);
+    let result = engine.click("opencode", "absent");
+    let reading = &result["providers"][0];
+    assert_eq!(reading["state"], "unavailable");
+    assert_eq!(reading["unavailableReason"], "tool_not_found");
     engine.close();
 }
 

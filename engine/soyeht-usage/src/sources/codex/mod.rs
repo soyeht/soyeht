@@ -53,10 +53,10 @@ fn place(first: Option<Lane>, second: Option<Lane>) -> Result<ParsedReading, Fai
         pair => pair,
     };
     let primary = first.ok_or(Failure::InvalidResponse)?.window;
-    Ok(ParsedReading {
+    Ok(ParsedReading::windows(
         primary,
-        secondary: second.map(|lane| lane.window),
-    })
+        second.map(|lane| lane.window),
+    ))
 }
 
 /// The field names of one response shape.
@@ -136,8 +136,8 @@ mod tests {
             "secondary_window": {"used_percent": 7, "reset_at": 1790000000, "limit_window_seconds": 18000}
         }}))
         .unwrap();
-        assert_eq!(reading.primary.label, "5-hour window");
-        assert_eq!(reading.primary.used, 0.07);
+        assert_eq!(reading.primary.clone().unwrap().label, "5-hour window");
+        assert_eq!(reading.primary.clone().unwrap().used, 0.07);
         let weekly = reading.secondary.unwrap();
         assert_eq!(weekly.label, "Weekly");
         assert_eq!(weekly.resets_at, "2027-01-15T08:00:00Z");
@@ -150,7 +150,7 @@ mod tests {
                 "usedPercent": 10, "windowDurationMins": 10080, "resetsAt": reset
             }}}))
             .unwrap();
-            reading.primary.resets_at
+            reading.primary.clone().unwrap().resets_at
         };
         assert_eq!(window(json!(1800000000)), "2027-01-15T08:00:00Z");
         assert_eq!(window(json!("1800000000")), "2027-01-15T08:00:00Z");
@@ -174,7 +174,7 @@ mod tests {
             "secondary": {"usedPercent": 40, "windowDurationMins": 10080, "resetsAt": 1800000000}
         }}))
         .unwrap();
-        assert_eq!(reading.primary.used, 0.125);
+        assert_eq!(reading.primary.clone().unwrap().used, 0.125);
         assert_eq!(reading.secondary.unwrap().label, "Weekly");
         assert_eq!(
             parse_rate_limits(&json!({"rateLimits": {}})),

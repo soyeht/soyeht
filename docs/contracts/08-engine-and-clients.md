@@ -345,7 +345,7 @@ sends against them (ADR 0090).
 - `file.changed_on_disk`, `file.saved {by}`, `file.save_failed {fileId, reason}`
   (non-durable), `file.conflict`
 - `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`
-- `usage.changed {provider, state, primary?, secondary?, source, fetchedAt}`
+- `usage.changed {provider, state, primary?, secondary?, activity?, source, fetchedAt}`
 - `pane.commands_changed {paneId}` (read the list with `pane.commands.list`),
   `skills.changed {scope, workspaceId?}` (non-durable; list again)
 - `device.pair_requested`, `device.paired`, `device.revoked`

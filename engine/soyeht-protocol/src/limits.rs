@@ -35,6 +35,7 @@ pub const USAGE_REFRESH_MIN_INTERVAL_SEC: usize = 30;
 pub const USAGE_AUTO_REFRESH_INTERVAL_SEC: usize = 300;
 pub const USAGE_STALE_AFTER_SEC: usize = 900;
 pub const USAGE_MAX_BACKOFF_SEC: usize = 1800;
+pub const USAGE_ACTIVITY_DAYS: usize = 7;
 pub const EDITOR_VIEWPORT_LINES: usize = 2000;
 pub const EDITOR_EDIT_BYTES: usize = 262144;
 /// The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.

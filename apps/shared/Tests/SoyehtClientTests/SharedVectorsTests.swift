@@ -141,6 +141,23 @@ private func catalogue(_ vector: [String: Any], _ keys: Any?) throws -> [Harness
       UsageTimeText.reset(entry["resetsAt"] as? String, now: now) == entry["text"] as? String,
       "\(entry["name"] ?? "")")
   }
+  let activities = try #require(vector["activities"] as? [String: Any])
+  for entry in try cases(activities, "cases") {
+    let activity = try decode(UsageActivity.self, try #require(entry["activity"]))
+    let name = "\(entry["name"] ?? "")"
+    #expect(UsageActivityText.summary(activity) == entry["summary"] as? String, "\(name)")
+    #expect(UsageActivityText.line(activity) == entry["line"] as? String, "\(name)")
+  }
+  let notices = try #require(activities["notices"] as? [String: Any])
+  for entry in try cases(notices, "cases") {
+    let reading = try decode(UsageReading.self, try #require(entry["reading"]))
+    let model = UsageDetailModel(reading, onThisMac: true)
+    var shown: String?
+    if case .notice(let notice) = model.content, model.reset == "No plan limit" {
+      shown = notice.message
+    }
+    #expect(shown == entry["notice"] as? String, "\(entry["name"] ?? "")")
+  }
   for pair in try #require(vector["sources"] as? [[String]]) {
     let source = try decode(UsageSource.self, pair[0])
     #expect(source.displayName == pair[1])

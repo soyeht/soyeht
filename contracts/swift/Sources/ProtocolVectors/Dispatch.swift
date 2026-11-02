@@ -371,6 +371,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "UsageUnavailableReason": return try codec(SoyehtProtocol.UsageUnavailableReason.self, data)
         case "UsageSource": return try codec(SoyehtProtocol.UsageSource.self, data)
         case "UsageWindow": return try codec(SoyehtProtocol.UsageWindow.self, data)
+        case "UsageActivity": return try codec(SoyehtProtocol.UsageActivity.self, data)
         case "UsageReading": return try codec(SoyehtProtocol.UsageReading.self, data)
         case "UsageListParams": return try codec(SoyehtProtocol.UsageListParams.self, data)
         case "UsageListResult": return try codec(SoyehtProtocol.UsageListResult.self, data)
