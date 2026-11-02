@@ -34,9 +34,11 @@ the engine, because the engine's proof answers that `hello`. The token alone is 
 server that is not the engine does see the token.
 
 A proof that does not verify ends the connection as `not_your_mac`, not as a refusal of the saved
-access: the device says "this is not your Mac" and keeps trying with backoff, so a server at a stale
-or borrowed address cannot switch a real phone off. Only a refusal by the engine itself (`unauthorized`,
-`engine_identity_changed`) stops the reconnecting and asks the person to pair again.
+access: the device says "this is not your Mac" and keeps trying with backoff. Only `unauthorized` and
+`engine_identity_changed` stop the reconnecting and ask the person to pair again, and neither is
+authenticated: both arrive before the engine's proof (an `unauthorized` error answering `hello`, or a
+different `engineId` in the greeting), so a server at a stale or borrowed address can still send one.
+What it gains is a phone that asks to be paired again, never a connection or the saved access.
 
 **Old and new meet with a reason.** A device that sends no client nonce is answered
 `protocol_version_unsupported` with "update Soyeht on this device"; its reconnect loop shows that
