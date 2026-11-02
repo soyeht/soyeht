@@ -41,7 +41,10 @@ use uuid::Uuid;
 mod candidate;
 mod commit;
 
-const SWITCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a switch waits for the candidate to become ready. It is the wait the engine allows
+/// any harness to open its session (`noSignalSec`, contract 04 section 8), so a harness that
+/// starts cold, as Codex does on its first run, is not given less time to switch than to open.
+const SWITCH_TIMEOUT: Duration = Duration::from_secs(limits::NO_SIGNAL_SEC as u64);
 const CONTINUATION_TEMPLATE: &str =
     include_str!("../../../../docs/contracts/prompts/harness-switch.en.md");
 
@@ -616,6 +619,14 @@ fn bounded_reason(reason: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn switch_waits_as_long_as_opening_a_harness() {
+        use super::{SWITCH_TIMEOUT, limits};
+        assert_eq!(SWITCH_TIMEOUT.as_secs(), limits::NO_SIGNAL_SEC as u64);
+        // A cold first start of a harness took 30 to 35 seconds on a real machine.
+        assert!(SWITCH_TIMEOUT.as_secs() > 35);
+    }
+
     use super::*;
     use crate::agents::{pending::UserOperation, state::HarnessSwitchCheckpoint};
     use crate::{
