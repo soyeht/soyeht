@@ -112,17 +112,21 @@
     private(set) var isPinching = false
     private var pinchBaseSize = TerminalFontSizePolicy.defaultSize
     private var wheel = TerminalWheelAccumulator()
+    /// Writing on the terminal with the Pencil types into it (Scribble).
+    private var handwriting: HandwritingArea?
 
     public override init(frame: CGRect, font: UIFont?) {
       super.init(frame: frame, font: font)
       installPinch()
       installScrollInput()
+      handwriting = HandwritingArea.install(on: self)
     }
 
     public required init?(coder: NSCoder) {
       super.init(coder: coder)
       installPinch()
       installScrollInput()
+      handwriting = HandwritingArea.install(on: self)
     }
 
     public override func didMoveToWindow() {

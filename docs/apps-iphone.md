@@ -100,6 +100,16 @@ combinations go to the terminal through SwiftTerm. Two-finger scrolling on a tra
 moves the scrollback; a full-screen program that asks for the mouse gets wheel events, and
 one on the alternate screen gets arrow keys.
 
+## Apple Pencil
+
+Handwriting (Scribble) works wherever the person types. The agent prompt, the text fields of
+the sheets and the writing editor are system text inputs, which take Scribble themselves. The
+terminal is a custom text input, so `HandwritingArea` (`apps/shared`) makes its whole area a
+writable element: writing on a terminal gives it the keyboard focus (and, on a board, the
+pane's focus) and the recognised text goes to the terminal like typed text. A Pencil also taps,
+scrolls and focuses like a finger. The simulator cannot write with a Pencil, so Scribble is
+checked on an iPad with one.
+
 ## Terminal text and size
 
 The terminal menu (top right of a terminal pane) and a pinch change the text size, one
