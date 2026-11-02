@@ -223,6 +223,7 @@ fn open_window(cx: &mut App, setup: Setup, notice: Notice) {
             workbench.theme = setup.theme;
             workbench.preferences = setup.preferences;
             workbench.start_update_checks(cx);
+            workbench.check_crash_reports(cx);
             workbench.prefs.section = setup.panel;
             for (pane_id, staged) in setup.staged {
                 workbench.panes.of(&pane_id).staged = Some(staged);
