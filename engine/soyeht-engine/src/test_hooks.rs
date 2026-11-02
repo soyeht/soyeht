@@ -96,7 +96,10 @@ impl Hooks for FileHooks {
                 .instance_id
                 .clone()
                 .ok_or_else(|| errors::internal("Agent process has no adopted instance"))?;
-            core.pty_request(Request::Close { instance_id })?;
+            // A hook of a test engine: it closes the process under the lock on purpose.
+            let link = core.supervisor()?;
+            let closed = link.call(Request::Close { instance_id });
+            core.settle_supervisor(&link, closed)?;
         }
         Ok(())
     }

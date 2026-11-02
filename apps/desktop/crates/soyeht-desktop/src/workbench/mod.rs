@@ -199,11 +199,14 @@ impl Workbench {
         // A frame costs the same however little changed in it, and on a machine without a GPU that
         // is long: output of terminals the window does not show asks for none.
         let mut repaint = false;
-        self.sync_web(&events);
+        let web_panes_may_change = Self::may_change_web_panes(&events);
         for event in events {
             repaint |= self.state.changes_view(&event);
             let effects = self.state.apply(event);
             self.run_effects(effects);
+        }
+        if web_panes_may_change {
+            self.sync_web();
         }
         self.forget_closed_panes();
         self.raise_alerts(cx);

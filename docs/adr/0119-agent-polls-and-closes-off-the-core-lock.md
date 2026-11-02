@@ -110,19 +110,19 @@ link.
 
 ## What did not move, and why
 
-Thirteen callers of `pty_request` remained, counted in `tests/blocking_io_rule.rs`. Each is a step
+Thirteen callers of `pty_request` remained when this was written, counted in `tests/blocking_io_rule.rs`. Each is a step
 whose next step needs its answer and whose state has to be settled in order, which is a decision
-and not a move. ADR 0126 moved the four spawns and the two lookups of the registry (the rows that
-begin with "Moved"); the others are as they were:
+and not a move. ADR 0126 moved all of them, and the table is kept as the record of why each
+waited:
 
 | Caller | Calls | Why it waits |
 | --- | --- | --- |
-| `Spawn` of a pane (`core.rs`), of an agent (`agents/lifecycle.rs`), of an inline terminal (`agents/terminals.rs`), of a language server (`languages/runtime.rs`) | 4 | Moved (ADR 0126). The process must exist before the pane, the agent, the terminal or the server is adopted, and the caller returns the error to a recovery, a retry (`spawn_retry`) or an agent request. Moving it means a pane that is "starting" between the reservation of its identity and its process, with the retry, the recovery and each request that reads the pane's process written for that state. It follows in its own change. |
+| `Spawn` of a pane (`core.rs`), of an agent (`agents/lifecycle.rs`), of an inline terminal (`agents/terminals.rs`), of a language server (`languages/runtime.rs`) | 4 | The process must exist before the pane, the agent, the terminal or the server is adopted, and the caller returns the error to a recovery, a retry (`spawn_retry`) or an agent request. Moving it means a pane that is "starting" between the reservation of its identity and its process, with the retry, the recovery and each request that reads the pane's process written for that state. It follows in its own change. |
 | `Input` to an agent (`agents/delivery.rs`), to a language server (`languages/runtime.rs`), to a candidate harness (`agents/switching/candidate.rs`) | 3 | The bytes the supervisor accepted decide the durable advance of the outbox, of the pending write or of the switch, and the caller loops over the pages of a message. `pane.input` has the shape (the intent before, the receipt after, off the lock); the outbox needs it per page and in the order the tick delivers them. |
 | `Spawn` and `Drain` of a candidate harness (`agents/switching/candidate.rs`) | 2 | A harness switch is a handshake of several steps with the candidate (spawn, read its answers, write, read again) inside a tick, each step deciding the next. It needs a state of its own, kept between ticks, before it can wait off the lock. |
 | `PendingRequests` and `PendingRequestChunk` (`agents/recovery.rs`) | 2 | Recovery of the requests an agent had pending when its output has a gap, a loop of pages inside the decoding of the output. It runs after a gap, not on a tick. |
-| `List` for the exit status of a sign-in terminal (`agents/authentication.rs`) | 1 | Moved (ADR 0126). One request inside the step that finishes a sign-in, after the person closed the terminal. |
-| `List` to find the process of a closing pane that never recorded one (`panes.rs`) | 1 | Moved (ADR 0126). One request in the handler of `pane.close`, for a pane that closed before its process was recorded. |
+| `List` for the exit status of a sign-in terminal (`agents/authentication.rs`) | 1 | One request inside the step that finishes a sign-in, after the person closed the terminal. |
+| `List` to find the process of a closing pane that never recorded one (`panes.rs`) | 1 | One request in the handler of `pane.close`, for a pane that closed before its process was recorded. |
 
 ## Trade-offs
 
@@ -153,5 +153,4 @@ begin with "Moved"); the others are as they were:
 - Nothing a tick does on behalf of an agent, a language server or a close waits for the
   supervisor with the lock held, except the callers in the table above. `tests/core_lock.rs` stops
   the real supervisor with an agent running and measures a status request on another connection.
-- The callers left are the table above, less what ADR 0126 moved. `pty_request` is removed with
-  the last.
+- No caller is left (ADR 0126), and `pty_request` is removed.

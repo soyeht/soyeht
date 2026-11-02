@@ -22,6 +22,7 @@ mod loop_panel;
 mod markdown;
 pub(crate) use markdown::Replies;
 pub(crate) mod menus;
+pub(crate) mod overlay;
 mod pane;
 mod pane_drag;
 mod permission;
@@ -77,6 +78,7 @@ impl Render for Workbench {
         self.window.width = f32::from(window.viewport_size().width);
         self.web_shown.clear();
         menus::window_measured(self.window.height, cx);
+        overlay::begin_frame(cx);
         let palette = self.theme.palette();
         let screen = div()
             .id("workbench")

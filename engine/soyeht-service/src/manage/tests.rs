@@ -209,6 +209,21 @@ fn macos_uses_the_background_domain_when_there_is_no_graphical_one() {
 }
 
 #[test]
+fn a_graphical_domain_that_prints_more_than_the_budget_is_still_the_graphical_domain() {
+    // `launchctl print gui/<uid>` lists every job of the domain; on a busy Mac that is more than
+    // the runner allows and it ends the command.
+    let scratch = Scratch::new("mac-large-domain");
+    let layout = test_layout(System::Macos, &scratch.0);
+    let recorder = launchd(true, false).printing_too_much("launchctl print gui/501");
+    let manager = Manager::new(&layout, &recorder);
+    manager.install(&programs(), &[Component::Ptyd]).unwrap();
+    assert!(mentions(&recorder, "launchctl bootstrap gui/501 "));
+    assert!(!mentions(&recorder, "user/501"));
+    let state = manager.status(Component::Ptyd).unwrap();
+    assert!(state.registered && !state.running);
+}
+
+#[test]
 fn macos_uninstall_unloads_the_engine_first_and_removes_the_files() {
     let (_scratch, layout) =
         installed(System::Macos, "mac-uninstall", &launchd(true, false), &BOTH);

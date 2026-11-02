@@ -50,3 +50,25 @@ extension ProfileValues {
     return .dev
   }
 }
+
+extension ProfileValues {
+  /// What a screen says of the profile. A Dev build names itself, so a person who runs it beside
+  /// the installed app does not take one for the other; the production build is the product and
+  /// says nothing of its profile.
+  public var note: String? { name == ProfileValues.dev.name ? "Dev profile" : nil }
+
+  /// The line under Preferences' panels: the product version, then the profile when it has a note.
+  public func versionLine(version: String) -> String {
+    note.map { "Soyeht \(version) · \($0)" } ?? "Soyeht \(version)"
+  }
+
+  /// The connection text of a client that is still connecting.
+  public var connectingText: String {
+    note.map { "Connecting to the \($0)…" } ?? "Connecting to the engine…"
+  }
+
+  /// The connection text of a client that is connected.
+  public var connectedText: String {
+    note.map { "\($0) · connected" } ?? "Connected"
+  }
+}

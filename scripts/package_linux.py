@@ -115,6 +115,10 @@ LOADED_RECOMMENDED = (
     "libgtk-3-0t64 | libgtk-3-0",
     "libwebkit2gtk-4.1-0",
 )
+# The tools the Setup page lists as required (`engine/soyeht-protocol/src/readiness.rs`, with the
+# Debian package names of its hints): the window opens without them, and a machine that has them
+# in another form (a version manager, a newer Node) need not take these, so they are `Recommends`.
+TOOLS_RECOMMENDED = ("git", "nodejs", "npm")
 
 ICON_SIZES = (16, 32, 64, 128, 256, 512)
 
@@ -268,7 +272,7 @@ def dependencies(floor, sonames):
     linked = {LINKED_PACKAGES[name] for name in sonames} - {"libc6"}
     depends = [f"libc6 (>= {version_text(floor)})"] if floor else ["libc6"]
     depends += sorted(linked) + list(LOADED_REQUIRED) + list(STARTED_REQUIRED)
-    return ", ".join(depends), ", ".join(LOADED_RECOMMENDED)
+    return ", ".join(depends), ", ".join(LOADED_RECOMMENDED + TOOLS_RECOMMENDED)
 
 
 def control_text(plan, floor, sonames, size):

@@ -42,18 +42,19 @@ impl Workbench {
         }
     }
 
-    /// Makes the page of each web pane that has none and drops the pages of closed panes, when
-    /// the engine's events say a pane may have come or gone.
-    pub(super) fn sync_web(&mut self, events: &[Event]) {
+    /// Whether the events say a pane may have come or gone: everything but terminal output does.
+    pub(super) fn may_change_web_panes(events: &[Event]) -> bool {
+        events
+            .iter()
+            .any(|event| !matches!(event, Event::Terminal(_)))
+    }
+
+    /// Makes the page of each web pane that has none and drops the pages of closed panes. It runs
+    /// after the events are applied: a pane the batch brought is in the state only by then.
+    pub(super) fn sync_web(&mut self) {
         let Some(registry) = &self.web else {
             return;
         };
-        if events
-            .iter()
-            .all(|event| matches!(event, Event::Terminal(_)))
-        {
-            return;
-        }
         registry.sync(
             self.state
                 .panes()

@@ -3,7 +3,7 @@
 
 use crate::{
     Error, Result,
-    autostart::{self, Autostart},
+    autostart::{self, Autostart, Watch},
     catalogue,
     commands::{self, Command, INPUT_CHUNK_BYTES},
     editor,
@@ -171,12 +171,18 @@ fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &
     // the next start, so an engine that ends later is started again but a start that fails is
     // not repeated at every retry.
     let mut may_start = true;
+    // What an uninstall left before this window began, and whether an engine ever answered it: an
+    // uninstall that ends the engine must not be answered by starting it again
+    // (`autostart::ensure`).
+    let mut watch = Watch::begin(autostart);
     while !shared.stopped.load(Ordering::Relaxed) {
         let ended = run_connection(socket, events, shared);
-        if shared.rpc().is_some() {
-            backoff.reset();
-            may_start = true;
-        }
+        note_connection(
+            shared.rpc().is_some(),
+            &mut backoff,
+            &mut may_start,
+            &mut watch,
+        );
         shared.set(None);
         if events
             .send_blocking(Event::Disconnected(ended.to_string()))
@@ -189,13 +195,23 @@ fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &
             && engine_absent(&ended)
         {
             may_start = false;
-            match start_engine(plan, socket, events, shared) {
+            match start_engine(plan, socket, events, shared, &watch) {
                 Started::Up => continue,
                 Started::Failed => {}
                 Started::Gone => return,
             }
         }
         wait(shared, backoff.next());
+    }
+}
+
+/// What a finished connection changes: one that was made resets the wait, allows the next start
+/// of an engine and is an engine that answered this window.
+fn note_connection(made: bool, backoff: &mut Backoff, may_start: &mut bool, watch: &mut Watch) {
+    if made {
+        backoff.reset();
+        *may_start = true;
+        watch.engine_answered();
     }
 }
 
@@ -226,6 +242,7 @@ fn start_engine(
     socket: &Path,
     events: &EventSink,
     shared: &Shared,
+    watch: &Watch,
 ) -> Started {
     if events.send_blocking(Event::Starting).is_err() {
         return Started::Gone;
@@ -235,6 +252,7 @@ fn start_engine(
         plan,
         socket,
         stopped: &stopped,
+        watch,
     };
     match autostart::ensure(plan, &host) {
         Ok(()) => {
@@ -422,6 +440,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();
         (directory.join("engine.sock"), directory)
+    }
+
+    #[test]
+    fn a_connection_that_was_made_allows_the_next_start_and_counts_as_an_engine() {
+        let (_, directory) = absent_socket("wiring");
+        std::fs::write(directory.join(soyeht_platform::fs::ENGINE_LOCK), "1").unwrap();
+        let mut watch = Watch::begin(&Autostart::in_directory(directory.clone(), None));
+        let mut backoff = Backoff::default();
+        let first = backoff.next();
+        backoff.next();
+        let mut may_start = false;
+        // Nothing connected: nothing changes, and the data deleted is not an uninstall yet.
+        note_connection(false, &mut backoff, &mut may_start, &mut watch);
+        std::fs::remove_file(directory.join(soyeht_platform::fs::ENGINE_LOCK)).unwrap();
+        assert!(!may_start);
+        assert!(!watch.uninstalled());
+        // A connection that was made.
+        note_connection(true, &mut backoff, &mut may_start, &mut watch);
+        assert!(may_start);
+        assert_eq!(backoff.next(), first);
+        assert!(watch.uninstalled(), "the window had an engine");
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     fn next(inbox: &async_channel::Receiver<Event>) -> Event {
