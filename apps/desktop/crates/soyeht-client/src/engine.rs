@@ -6,6 +6,7 @@ use crate::{
     autostart::{self, Autostart, Watch},
     catalogue,
     commands::{self, Command, INPUT_CHUNK_BYTES},
+    device::{self, Credential},
     editor,
     event::Event,
     paging, preferences,
@@ -48,6 +49,12 @@ const EVENT_QUEUE: usize = 1024;
 /// Commands waiting for the worker. Keystrokes are merged, so reaching this means the engine
 /// has stopped answering.
 const COMMAND_QUEUE: usize = 1024;
+
+/// Where the connection goes: the engine on this computer, or the one a paired device dials.
+enum Target {
+    Local(PathBuf),
+    Device(Credential),
+}
 
 #[derive(Default)]
 struct Shared {
@@ -103,6 +110,25 @@ impl Engine {
         autostart: Autostart,
         host: Option<Arc<Host>>,
     ) -> (Self, async_channel::Receiver<Event>) {
+        Self::spawn(Target::Local(socket), autostart, host, CLIENT_NAME)
+    }
+
+    /// Starts connecting as a paired device (ADR 0134) to the engine the credential names, as the
+    /// client `client`. Access the engine refuses ends the reconnecting: the application is told
+    /// (`Event::Problem`, with the engine's kind as its cause) and pairs again.
+    pub fn start_device(
+        credential: Credential,
+        client: &'static str,
+    ) -> (Self, async_channel::Receiver<Event>) {
+        Self::spawn(Target::Device(credential), Autostart::Off, None, client)
+    }
+
+    fn spawn(
+        target: Target,
+        autostart: Autostart,
+        host: Option<Arc<Host>>,
+        client: &'static str,
+    ) -> (Self, async_channel::Receiver<Event>) {
         let (events, inbox) = async_channel::bounded(EVENT_QUEUE);
         let (commands, queue) = mpsc::sync_channel(COMMAND_QUEUE);
         let (fetches, fetch_queue) = mpsc::sync_channel(COMMAND_QUEUE);
@@ -112,7 +138,7 @@ impl Engine {
         });
         {
             let (shared, events) = (Arc::clone(&shared), events.clone());
-            std::thread::spawn(move || supervise(&socket, &autostart, &events, &shared));
+            std::thread::spawn(move || supervise(&target, client, &autostart, &events, &shared));
         }
         // One worker for what the person does, one for fetching: a transcript per pane, usage and
         // the harness list queue up at every connection and must not delay a keystroke.
@@ -165,7 +191,13 @@ impl Drop for Engine {
     }
 }
 
-fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &Shared) {
+fn supervise(
+    target: &Target,
+    client: &str,
+    autostart: &Autostart,
+    events: &EventSink,
+    shared: &Shared,
+) {
     let mut backoff = Backoff::default();
     // An engine is started once for each time none answers; a connection that was made allows
     // the next start, so an engine that ends later is started again but a start that fails is
@@ -176,7 +208,7 @@ fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &
     // (`autostart::ensure`).
     let mut watch = Watch::begin(autostart);
     while !shared.stopped.load(Ordering::Relaxed) {
-        let ended = run_connection(socket, events, shared);
+        let ended = run_connection(target, client, events, shared);
         note_connection(
             shared.rpc().is_some(),
             &mut backoff,
@@ -190,7 +222,12 @@ fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &
         {
             return;
         }
-        if let Autostart::On(plan) = autostart
+        // Access the engine refuses is not retried: the person has to pair again.
+        if Credential::refused_by(&ended) {
+            report(events, &ended);
+            return;
+        }
+        if let (Autostart::On(plan), Target::Local(socket)) = (autostart, target)
             && may_start
             && engine_absent(&ended)
         {
@@ -284,8 +321,12 @@ fn wait(shared: &Shared, delay: Duration) {
 }
 
 /// Connects, hands the application its state, and returns why the connection ended.
-fn run_connection(socket: &Path, events: &EventSink, shared: &Shared) -> Error {
-    let link = match transport::connect(socket) {
+fn run_connection(target: &Target, client: &str, events: &EventSink, shared: &Shared) -> Error {
+    let link = match target {
+        Target::Local(socket) => transport::connect(socket),
+        Target::Device(credential) => credential.socket_address().and_then(device::connect),
+    };
+    let link = match link {
         Ok(link) => link,
         Err(error) => return error,
     };
@@ -299,7 +340,11 @@ fn run_connection(socket: &Path, events: &EventSink, shared: &Shared) -> Error {
         Ok(session) => session,
         Err(error) => return error,
     };
-    let started = session.handshake(CLIENT_NAME).and_then(|snapshot| {
+    let handshake = match target {
+        Target::Local(_) => session.handshake(client),
+        Target::Device(credential) => session.handshake_device(client, credential),
+    };
+    let started = handshake.and_then(|snapshot| {
         shared.set(Some(Arc::clone(&session.rpc)));
         let since = snapshot.cursor;
         events

@@ -414,3 +414,26 @@ fn a_web_pane_follows_its_page_and_other_panes_do_not() {
     assert!(state.pane("t1").unwrap().url.is_none());
     assert!(state.problem.is_none());
 }
+
+#[test]
+fn an_effect_that_only_asks_the_engine_is_its_requests_and_the_others_are_not() {
+    assert_eq!(
+        Effect::LoadTranscript("p".to_owned()).commands(),
+        vec![
+            Command::LoadQueue {
+                pane_id: "p".to_owned()
+            },
+            Command::LoadTranscript {
+                pane_id: "p".to_owned()
+            },
+        ]
+    );
+    assert_eq!(
+        Effect::SubscribeTerminal("p".to_owned()).commands(),
+        vec![Command::Subscribe {
+            pane_id: "p".to_owned()
+        }]
+    );
+    assert!(Effect::Resync.commands().is_empty());
+    assert!(Effect::FocusPane("p".to_owned()).commands().is_empty());
+}

@@ -62,6 +62,8 @@ public enum ClientPolicy {
     public static let clientNameIphoneDev = "iphone-dev"
     public static let clientNameDesktop = "desktop"
     public static let clientNameDesktopDev = "desktop-dev"
+    public static let clientNameAndroid = "android"
+    public static let clientNameAndroidDev = "android-dev"
     public static let usageBandWarningFrom: Double = 0.5
     public static let usageBandDangerAbove: Double = 0.8
     public static let contextBandWarningAbove: Double = 0.75

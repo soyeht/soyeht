@@ -3,6 +3,7 @@
 
 use crate::{
     Error, Result,
+    device::Credential,
     event::Event,
     rpc::{Kind, Rpc},
     snapshot::Snapshot,
@@ -12,9 +13,10 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    ClientCapability, EventName, EventsSubscribeParams, PaneClosedEvent, Request, RpcError,
-    StateSnapshotParams, StateSnapshotResult, StreamInfo, WebCommandParams, Welcome, client_policy,
-    frame::Frame, handshake, method, snapshot::SnapshotAssembler,
+    AuthChallengeEvent, ClientCapability, EventName, EventsSubscribeParams, HelloParams,
+    PaneClosedEvent, Request, RpcError, StateSnapshotParams, StateSnapshotResult, StreamInfo,
+    WebCommandParams, Welcome, client_policy, frame::Frame, handshake, method,
+    snapshot::SnapshotAssembler,
 };
 use std::{
     io::Read,
@@ -39,6 +41,8 @@ pub struct Session {
     reader: JoinHandle<Error>,
     /// This connection answers `web.command`, and says so in `hello`.
     hosting: bool,
+    /// The engine's greeting, which a device signs in `hello`.
+    challenge: AuthChallengeEvent,
 }
 
 impl Session {
@@ -60,7 +64,7 @@ impl Session {
         let greeting = read_greeting(&mut reader);
         // Dropping the sender ends the watchdog, greeted or not.
         drop(greeted);
-        greeting?;
+        let challenge = greeting?;
 
         let hosting = host.is_some();
         let rpc = Arc::new(Rpc::new(writer, close, 1));
@@ -81,6 +85,7 @@ impl Session {
             cursor,
             reader: thread,
             hosting,
+            challenge,
         })
     }
 
@@ -90,10 +95,31 @@ impl Session {
         if self.hosting {
             hello.capabilities = Some(vec![ClientCapability::WebHost]);
         }
-        let hello = Request::Hello(hello);
-        let welcome: Welcome = serde_json::from_value(self.rpc.call(&hello)?)?;
+        let welcome = self.hello(hello)?;
         handshake::expect_welcome(&welcome, false)?;
         self.rpc.identify(welcome.role.clone(), client);
+        self.snapshot()
+    }
+
+    /// As [`Session::handshake`] for a paired device: it proves itself with its key, and the engine
+    /// has to prove itself with the key the pairing link named (ADR 0132).
+    pub fn handshake_device(&self, client: &str, credential: &Credential) -> Result<Snapshot> {
+        let (hello, expected) =
+            credential.hello(client, env!("CARGO_PKG_VERSION"), &self.challenge)?;
+        let welcome = self.hello(hello)?;
+        expected.check(&welcome)?;
+        handshake::expect_device_welcome(&welcome)?;
+        self.rpc.identify(welcome.role.clone(), client);
+        self.snapshot()
+    }
+
+    fn hello(&self, hello: HelloParams) -> Result<Welcome> {
+        Ok(serde_json::from_value(
+            self.rpc.call(&Request::Hello(hello))?,
+        )?)
+    }
+
+    fn snapshot(&self) -> Result<Snapshot> {
         let result: StateSnapshotResult = serde_json::from_value(
             self.rpc
                 .call(&Request::StateSnapshot(StateSnapshotParams {}))?,
@@ -118,12 +144,13 @@ impl Session {
     }
 }
 
-fn read_greeting(reader: &mut impl Read) -> Result<()> {
+fn read_greeting(reader: &mut impl Read) -> Result<AuthChallengeEvent> {
     let Some(Frame::Json(bytes)) = Frame::read_from(reader)? else {
         return Err(Error::Invalid("the engine did not greet"));
     };
-    handshake::expect_challenge(&serde_json::from_slice(&bytes)?)?;
-    Ok(())
+    Ok(handshake::expect_challenge(&serde_json::from_slice(
+        &bytes,
+    )?)?)
 }
 
 struct Router {

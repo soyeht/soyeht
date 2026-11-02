@@ -9,6 +9,7 @@ pub mod limits;
 pub use generated::*;
 pub mod attachment;
 pub mod data_directory;
+pub mod device_auth;
 mod error;
 pub use error::{Error, Result, SUPERVISOR_DISCONNECTED};
 pub mod frame;

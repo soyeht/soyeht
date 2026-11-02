@@ -72,6 +72,48 @@ pub enum Effect {
     Send(Command),
 }
 
+impl Effect {
+    /// The requests this effect is, when it is nothing but a request to the engine: what every
+    /// application does for it. The rest (`Resync`, `FocusPane`, `StoreLayout`, `Send`) differ
+    /// from one application to the next.
+    pub fn commands(&self) -> Vec<Command> {
+        match self {
+            Self::SubscribeTerminal(pane_id) => vec![Command::Subscribe {
+                pane_id: pane_id.clone(),
+            }],
+            // A pane's queue of waiting messages is loaded with its transcript.
+            Self::LoadTranscript(pane_id) => vec![
+                Command::LoadQueue {
+                    pane_id: pane_id.clone(),
+                },
+                Command::LoadTranscript {
+                    pane_id: pane_id.clone(),
+                },
+            ],
+            Self::LoadUsage => vec![Command::LoadUsage],
+            Self::LoadHarnesses => vec![Command::LoadHarnesses { rescan: false }],
+            Self::LoadSkills(workspace_id) => vec![Command::LoadSkills {
+                workspace_id: workspace_id.clone(),
+            }],
+            Self::LoadCommands(pane_id) => vec![Command::LoadCommands {
+                pane_id: pane_id.clone(),
+            }],
+            Self::LoadReadiness => vec![Command::LoadReadiness],
+            Self::LoadSupervisor => vec![Command::LoadSupervisor],
+            Self::LoadTask {
+                workspace_id,
+                task_id,
+            } => vec![Command::LoadTask {
+                workspace_id: workspace_id.clone(),
+                task_id: task_id.clone(),
+            }],
+            Self::Resync | Self::FocusPane(_) | Self::StoreLayout { .. } | Self::Send(_) => {
+                Vec::new()
+            }
+        }
+    }
+}
+
 /// A pane the person asked to open, until it arrives: named by the ticket of the request, so a
 /// pane that someone else opens is never mistaken for it. A split also says which pane the new
 /// one goes beside.
