@@ -228,7 +228,7 @@ fn tokens_text(count: i64) -> String {
 pub fn activity_summary(activity: &UsageActivity) -> String {
     let mut text = format!(
         "{} {}",
-        tokens_text(i64::from(activity.tokens)),
+        tokens_text(activity.tokens),
         if activity.tokens == 1 {
             "token"
         } else {

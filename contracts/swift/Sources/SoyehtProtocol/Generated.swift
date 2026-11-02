@@ -4497,9 +4497,9 @@ public struct UsageWindow: Codable, Sendable {
 
 public struct UsageActivity: Codable, Sendable {
     public var `label`: String
-    public var `tokens`: UInt32
+    public var `tokens`: Int64
     public var `costUsd`: Double?
-    public init(`label`: String, `tokens`: UInt32, `costUsd`: Double? = nil) {
+    public init(`label`: String, `tokens`: Int64, `costUsd`: Double? = nil) {
         self.`label` = `label`
         self.`tokens` = `tokens`
         self.`costUsd` = `costUsd`

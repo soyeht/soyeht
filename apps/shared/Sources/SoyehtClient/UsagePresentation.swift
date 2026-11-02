@@ -165,7 +165,7 @@ public enum UsageActivityText {
 
   /// "1.2M tokens · $3.40": the tokens and, when the provider bills per token, the cost.
   public static func summary(_ activity: UsageActivity) -> String {
-    var text = "\(tokens(Int64(activity.tokens))) \(activity.tokens == 1 ? "token" : "tokens")"
+    var text = "\(tokens(activity.tokens)) \(activity.tokens == 1 ? "token" : "tokens")"
     if let cost = activity.costUsd { text += " · " + String(format: "$%.2f", cost) }
     return text
   }

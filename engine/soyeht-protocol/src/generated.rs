@@ -4075,7 +4075,7 @@ pub struct UsageActivity {
     #[serde(rename = "label")]
     pub label: String,
     #[serde(rename = "tokens")]
-    pub tokens: u32,
+    pub tokens: i64,
     #[serde(rename = "costUsd", skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
 }

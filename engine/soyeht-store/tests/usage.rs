@@ -27,7 +27,7 @@ fn reading(provider: UsageProvider, source: UsageSource, used: f64) -> UsageRead
 }
 
 /// What a provider with no plan limit recorded: no window, only a count.
-fn activity_only(tokens: u32, cost_usd: Option<f64>) -> UsageReading {
+fn activity_only(tokens: i64, cost_usd: Option<f64>) -> UsageReading {
     UsageReading {
         primary: None,
         activity: Some(UsageActivity {
@@ -202,6 +202,7 @@ fn opencode_sources_belong_to_opencode_and_an_activity_must_be_a_count() {
     let profile = Profile::new();
     let mut store = profile.store();
     let wrong_provider = reading(UsageProvider::Cursor, UsageSource::OpencodeZaiPlan, 0.2);
+    let negative = activity_only(-1, None);
     let negative_cost = activity_only(5, Some(-0.01));
     let mut unnamed = activity_only(5, None);
     if let Some(activity) = unnamed.activity.as_mut() {
@@ -209,7 +210,7 @@ fn opencode_sources_belong_to_opencode_and_an_activity_must_be_a_count() {
     }
     let mut nothing = activity_only(5, None);
     nothing.activity = None;
-    for (index, item) in [wrong_provider, negative_cost, unnamed, nothing]
+    for (index, item) in [wrong_provider, negative, negative_cost, unnamed, nothing]
         .into_iter()
         .enumerate()
     {

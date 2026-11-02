@@ -136,9 +136,10 @@ fn validate(reading: &UsageReading, observed_at_unix_sec: i64) -> Result<()> {
 }
 
 fn valid_activity(activity: &UsageActivity) -> bool {
-    activity
-        .cost_usd
-        .is_none_or(|cost| cost.is_finite() && cost >= 0.0)
+    activity.tokens >= 0
+        && activity
+            .cost_usd
+            .is_none_or(|cost| cost.is_finite() && cost >= 0.0)
         && !activity.label.is_empty()
         && activity.label.len() <= 128
 }

@@ -340,7 +340,7 @@ fn domain_window(window: UsageWindow) -> Window {
 fn domain_activity(activity: UsageActivity) -> Activity {
     Activity {
         label: activity.label,
-        tokens: u64::from(activity.tokens),
+        tokens: u64::try_from(activity.tokens).unwrap_or(0),
         cost_usd: activity.cost_usd,
     }
 }
@@ -348,7 +348,7 @@ fn domain_activity(activity: UsageActivity) -> Activity {
 fn wire_activity(activity: &Activity) -> UsageActivity {
     UsageActivity {
         label: activity.label.clone(),
-        tokens: u32::try_from(activity.tokens).unwrap_or(u32::MAX),
+        tokens: i64::try_from(activity.tokens).unwrap_or(i64::MAX),
         cost_usd: activity.cost_usd,
     }
 }

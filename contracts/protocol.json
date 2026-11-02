@@ -7958,8 +7958,7 @@
           "maxLength": 128
         },
         "tokens": {
-          "type": "integer",
-          "minimum": 0
+          "type": "integer"
         },
         "costUsd": {
           "type": "number",
