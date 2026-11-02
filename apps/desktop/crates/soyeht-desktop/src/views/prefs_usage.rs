@@ -188,7 +188,7 @@ fn balloon(reading: &UsageReading, palette: &Palette) -> Div {
         },
     };
     let reset = match (&activity, shown.window()) {
-        (Some(_), _) => "No plan limit".to_owned(),
+        (Some(_), _) => usage::ACTIVITY_RESET.to_owned(),
         (None, Some(window)) => usage::reset_text(Some(&window.resets_at), timestamp::now()),
         (None, None) => usage::reset_text(None, timestamp::now()),
     };

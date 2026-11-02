@@ -51,7 +51,7 @@ public struct UsageDetailModel: Sendable {
     footer = "Source: \(reading.source.displayName) · \(UsageTimeText.age(of: reading))"
     if let line = Self.activityLine(reading) {
       // A count of what the device recorded: no window, so no percentage and no bar.
-      reset = "No plan limit"
+      reset = UsageActivityText.reset
       content = .notice(
         Notice(
           message: "\(line). No plan limit is known, so there is no percentage."

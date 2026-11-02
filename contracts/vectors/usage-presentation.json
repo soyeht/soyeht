@@ -726,7 +726,8 @@
       }
     ],
     "notices": {
-      "description": "The one line a detail shows for a reading that holds an activity and no window, or null when the reading is not one. Both clients write it from the reading: the Mac and iPhone detail model (UsageDetailModel) and the desktop balloon.",
+      "description": "The one line a detail shows for a reading that holds an activity and no window, or null when the reading is not one. Both clients write it from the reading: the Mac and iPhone detail model (UsageDetailModel) and the desktop balloon. `reset` is the text the detail shows where a window's reset time would be.",
+      "reset": "No plan limit",
       "cases": [
         {
           "name": "a current activity",

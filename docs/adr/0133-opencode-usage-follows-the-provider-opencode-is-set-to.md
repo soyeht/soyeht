@@ -1,4 +1,4 @@
-# ADR 0130 · The OpenCode meter follows the provider OpenCode is set to
+# ADR 0133 · The OpenCode meter follows the provider OpenCode is set to
 
 Date: 2026-11-01
 Status: accepted. Extends ADR 0077 (usage source chains) with a fourth provider.
@@ -41,6 +41,14 @@ rewritten or stored. The Go login goes only to a host of opencode.ai, whatever t
 and the Z.ai token only to `api.z.ai` or `open.bigmodel.cn`. OpenCode's database is opened
 read-only (`foreign_db.rs`, the one SQLite use outside the store, ADR 0077) and through the session
 index, because the `message` table of a heavy user is large.
+
+**A read has a deadline, and a malformed row is skipped.** The usage refresh joins every provider
+before it commits, so one stalled read would hold back the others. Each read of OpenCode's
+database runs on its own thread and the refresh waits at most five seconds for it; SQLite also
+interrupts a query that outlives that deadline. A read stuck in the file system cannot be
+cancelled, so at most four such threads are allowed at once, and a further read is refused as
+unreadable until one ends. The `data` of a `message` row is read only where `json_valid(data)`,
+so one truncated write does not make the whole meter unreadable.
 
 **A changed reply is "invalid data".** Both HTTP sources read an exact shape. Anything else is
 `invalid_response`, never a number. The Go endpoint is read from OpenCode's source and is marked

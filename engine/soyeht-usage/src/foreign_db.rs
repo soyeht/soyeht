@@ -8,10 +8,80 @@
 
 use crate::host::{Cookie, LocalUsage, LocalUsageRead, Secret, SecretRead, StoredCredential};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, types::ValueRef};
-use std::{path::Path, time::Duration};
+use std::{
+    path::Path,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc,
+    },
+    thread,
+    time::{Duration, Instant},
+};
 
 /// How long a state-database read waits for the owning application's write lock.
 const BUSY_WAIT: Duration = Duration::from_millis(250);
+
+/// The longest a read of another application's database may keep its caller: the usage refresh
+/// joins every provider before it commits, so one stalled read would hold back the others.
+const READ_DEADLINE: Duration = Duration::from_secs(5);
+
+/// How many virtual-machine instructions SQLite runs between two looks at the deadline.
+const DEADLINE_CHECK_EVERY: i32 = 1_000;
+
+/// Reads that may be stuck in the file system at once. A stalled read cannot be cancelled (SQLite
+/// looks at its deadline between instructions, not inside a blocked system call), so its thread
+/// ends only when the file system answers; past this count a new read is refused instead of
+/// piling up another thread behind the stall.
+const MAX_STUCK_READS: usize = 4;
+
+static READS_IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// Counts a read as in flight until it ends, on whichever thread it ends.
+struct InFlight(&'static AtomicUsize);
+
+impl InFlight {
+    fn enter(count: &'static AtomicUsize) -> Option<Self> {
+        (count.fetch_add(1, Ordering::AcqRel) < MAX_STUCK_READS)
+            .then_some(Self(count))
+            .or_else(|| {
+                count.fetch_sub(1, Ordering::AcqRel);
+                None
+            })
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Runs `read` on its own thread and gives up on it after `limit`, so a file system that stops
+/// answering costs the caller `limit` and no more. The read gets the instant its queries must
+/// end by (`open_live` hands it to SQLite) so a slow query ends itself on that thread.
+fn bounded<T: Send + 'static>(
+    limit: Duration,
+    count: &'static AtomicUsize,
+    read: impl FnOnce(Instant) -> Result<T, Unreadable> + Send + 'static,
+) -> Result<T, Unreadable> {
+    let Some(slot) = InFlight::enter(count) else {
+        return Err(Unreadable("stalled".to_owned()));
+    };
+    let deadline = Instant::now() + limit;
+    let (sender, receiver) = mpsc::channel();
+    thread::Builder::new()
+        .name("foreign-db-read".to_owned())
+        .spawn(move || {
+            let outcome = read(deadline);
+            drop(slot);
+            // ignored: the caller stopped waiting, and the outcome is of no use to anyone
+            let _ = sender.send(outcome);
+        })
+        .map_err(|_| Unreadable("other".to_owned()))?;
+    receiver
+        .recv_timeout(limit)
+        .unwrap_or_else(|_| Err(Unreadable("timeout".to_owned())))
+}
 
 /// A Chromium cookie as stored: still encrypted, with the database's schema version.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,11 +103,16 @@ fn open_immutable(path: &Path) -> rusqlite::Result<Connection> {
 /// Opens a database another application may hold open for writing, read-only. A database in
 /// write-ahead mode is read with its log, so a recent write is seen; one that cannot be opened
 /// that way (a read-only directory without the shared-memory file) is opened `immutable=1`.
-fn open_live(path: &Path) -> rusqlite::Result<Connection> {
+/// No query outlives `deadline`: SQLite interrupts it and the read reports `OperationInterrupted`.
+fn open_live(path: &Path, deadline: Instant) -> rusqlite::Result<Connection> {
     let connection =
         Connection::open_with_flags(path, flags()).or_else(|_| open_immutable(path))?;
     // ignored: a connection that cannot set its wait fails fast, and the read reports it
     let _ = connection.busy_timeout(BUSY_WAIT);
+    connection.progress_handler(
+        DEADLINE_CHECK_EVERY,
+        Some(move || Instant::now() >= deadline),
+    )?;
     Ok(connection)
 }
 
@@ -96,12 +171,23 @@ pub fn item_table_value(path: &Path, key: &str) -> Result<SecretRead, Unreadable
 
 /// The active credential of `integration` in OpenCode's `credential` table (the newest one when
 /// no row is marked active). The value is the JSON text OpenCode stored; the caller reads the
-/// secret out of it.
+/// secret out of it. The read ends after `READ_DEADLINE` as an `Unreadable`.
 pub fn opencode_credential(path: &Path, integration: &str) -> Result<StoredCredential, Unreadable> {
+    let (path, integration) = (path.to_path_buf(), integration.to_owned());
+    bounded(READ_DEADLINE, &READS_IN_FLIGHT, move |deadline| {
+        read_opencode_credential(&path, &integration, deadline)
+    })
+}
+
+fn read_opencode_credential(
+    path: &Path,
+    integration: &str,
+    deadline: Instant,
+) -> Result<StoredCredential, Unreadable> {
     if !path.is_file() {
         return Ok(StoredCredential::NoTable);
     }
-    let connection = open_live(path).map_err(|error| Unreadable::of(&error))?;
+    let connection = open_live(path, deadline).map_err(|error| Unreadable::of(&error))?;
     let read = || -> rusqlite::Result<StoredCredential> {
         if !has_table(&connection, "credential")? {
             return Ok(StoredCredential::NoTable);
@@ -129,16 +215,29 @@ pub fn opencode_credential(path: &Path, integration: &str) -> Result<StoredCrede
 
 /// The tokens and cost OpenCode recorded on assistant messages created at or after `since_ms`.
 /// The sessions touched in the window are chosen first, so the large `message` table is read
-/// through its session index and not scanned.
+/// through its session index and not scanned. A message whose `data` is not JSON is skipped, not
+/// a reason to give up on the rest. The read ends after `READ_DEADLINE` as an `Unreadable`.
 pub fn opencode_usage(
     path: &Path,
     since_ms: i64,
     provider: Option<&str>,
 ) -> Result<LocalUsageRead, Unreadable> {
+    let (path, provider) = (path.to_path_buf(), provider.map(str::to_owned));
+    bounded(READ_DEADLINE, &READS_IN_FLIGHT, move |deadline| {
+        read_opencode_usage(&path, since_ms, provider.as_deref(), deadline)
+    })
+}
+
+fn read_opencode_usage(
+    path: &Path,
+    since_ms: i64,
+    provider: Option<&str>,
+    deadline: Instant,
+) -> Result<LocalUsageRead, Unreadable> {
     if !path.is_file() {
         return Ok(LocalUsageRead::NoDatabase);
     }
-    let connection = open_live(path).map_err(|error| Unreadable::of(&error))?;
+    let connection = open_live(path, deadline).map_err(|error| Unreadable::of(&error))?;
     let read = || -> rusqlite::Result<LocalUsageRead> {
         if !has_table(&connection, "message")? || !has_table(&connection, "session")? {
             return Ok(LocalUsageRead::NoHistory);
@@ -152,6 +251,7 @@ pub fn opencode_usage(
              FROM message \
              WHERE session_id IN (SELECT id FROM session WHERE time_updated >= ?1) \
                AND time_created >= ?1 \
+               AND json_valid(data) \
                AND json_extract(data, '$.role') = 'assistant' \
                AND (?2 IS NULL OR json_extract(data, '$.providerID') = ?2)",
             rusqlite::params![since_ms, provider],
@@ -381,6 +481,109 @@ mod tests {
             Ok(LocalUsageRead::NoHistory)
         );
         fs::remove_file(other).unwrap();
+    }
+
+    #[test]
+    fn a_message_that_is_not_json_does_not_make_the_whole_meter_unreadable() {
+        let valid = r#"{"role":"assistant","providerID":"zai","cost":0.5,"tokens":{"input":100,"output":10,"reasoning":5}}"#;
+        let rows = [
+            message("m1", "s1", 2_000, valid),
+            // a truncated write and a plain word, both inside the window and the session
+            message(
+                "m2",
+                "s1",
+                2_000,
+                r#"{"role":"assistant","tokens":{"input":9"#,
+            ),
+            message("m3", "s1", 2_000, "not json at all"),
+            message("m4", "s1", 3_000, valid),
+        ]
+        .concat();
+        let path = database(
+            "malformed.db",
+            &format!(
+                "{OPENCODE_SCHEMA}
+                 INSERT INTO session VALUES ('s1', 3000);
+                 {rows}"
+            ),
+        );
+        assert_eq!(
+            opencode_usage(&path, 1_000, Some("zai")),
+            Ok(LocalUsageRead::Totals(LocalUsage {
+                tokens: 230,
+                cost_usd: 1.0
+            }))
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    /// A query that would run for minutes: every row of a million, each joined to a million.
+    const ENDLESS_QUERY: &str = "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 1000000) \
+         SELECT count(*) FROM n a, n b";
+
+    #[test]
+    fn a_query_past_the_deadline_is_interrupted_by_sqlite() {
+        let path = database("slow.db", "CREATE TABLE t (x);");
+        let connection = open_live(&path, Instant::now() + Duration::from_millis(50)).unwrap();
+        let started = Instant::now();
+        let error = connection
+            .query_row(ENDLESS_QUERY, [], |row| row.get::<_, i64>(0))
+            .unwrap_err();
+        assert_eq!(Unreadable::of(&error).0, "OperationInterrupted");
+        assert!(started.elapsed() < Duration::from_secs(10));
+        // a deadline still ahead leaves an ordinary query alone
+        let connection = open_live(&path, Instant::now() + Duration::from_secs(60)).unwrap();
+        assert_eq!(
+            connection.query_row("SELECT 7", [], |row| row.get::<_, i64>(0)),
+            Ok(7)
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn a_read_that_never_answers_gives_the_caller_back_after_the_limit() {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        let (release, held) = mpsc::channel::<()>();
+        let started = Instant::now();
+        let outcome = bounded(Duration::from_millis(100), &COUNT, move |_| {
+            // stands for a system call that does not return
+            let _ = held.recv();
+            Ok(())
+        });
+        assert_eq!(outcome, Err(Unreadable("timeout".to_owned())));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // the stuck read still counts until it ends
+        assert_eq!(COUNT.load(Ordering::Acquire), 1);
+        drop(release);
+        let ended = Instant::now();
+        while COUNT.load(Ordering::Acquire) != 0 {
+            assert!(
+                ended.elapsed() < Duration::from_secs(5),
+                "the read never ended"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn reads_stuck_in_the_file_system_do_not_pile_up_threads() {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        let (release, held) = mpsc::channel::<()>();
+        let held = std::sync::Arc::new(std::sync::Mutex::new(held));
+        for _ in 0..MAX_STUCK_READS {
+            let held = held.clone();
+            let outcome = bounded(Duration::from_millis(20), &COUNT, move |_| {
+                // ignored: the sender dropping is the signal to end
+                let _ = held.lock().map(|held| held.recv());
+                Ok(())
+            });
+            assert_eq!(outcome, Err(Unreadable("timeout".to_owned())));
+        }
+        assert_eq!(
+            bounded(Duration::from_secs(5), &COUNT, |_| Ok(())),
+            Err(Unreadable("stalled".to_owned()))
+        );
+        drop(release);
     }
 
     #[test]

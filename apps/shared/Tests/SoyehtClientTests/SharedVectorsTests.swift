@@ -153,11 +153,12 @@ private func catalogue(_ vector: [String: Any], _ keys: Any?) throws -> [Harness
     let reading = try decode(UsageReading.self, try #require(entry["reading"]))
     let model = UsageDetailModel(reading, onThisMac: true)
     var shown: String?
-    if case .notice(let notice) = model.content, model.reset == "No plan limit" {
+    if case .notice(let notice) = model.content, model.reset == notices["reset"] as? String {
       shown = notice.message
     }
     #expect(shown == entry["notice"] as? String, "\(entry["name"] ?? "")")
   }
+  #expect(UsageActivityText.reset == notices["reset"] as? String)
   for pair in try #require(vector["sources"] as? [[String]]) {
     let source = try decode(UsageSource.self, pair[0])
     #expect(source.displayName == pair[1])

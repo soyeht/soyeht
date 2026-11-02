@@ -9,6 +9,10 @@ use soyeht_protocol::{
     UsageWindow, client_policy,
 };
 
+/// What the detail shows where a window's reset time would be, for a reading that holds an
+/// activity and no window (`activities.notices.reset` of the shared vector).
+pub const ACTIVITY_RESET: &str = "No plan limit";
+
 /// The colour band of a used fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Band {
@@ -224,7 +228,7 @@ fn tokens_text(count: i64) -> String {
 pub fn activity_summary(activity: &UsageActivity) -> String {
     let mut text = format!(
         "{} {}",
-        tokens_text(activity.tokens),
+        tokens_text(i64::from(activity.tokens)),
         if activity.tokens == 1 {
             "token"
         } else {
@@ -374,6 +378,10 @@ mod tests {
                 "{name}"
             );
         }
+        assert_eq!(
+            Some(ACTIVITY_RESET),
+            vectors["activities"]["notices"]["reset"].as_str()
+        );
         for case in vectors["activities"]["notices"]["cases"]
             .as_array()
             .unwrap()

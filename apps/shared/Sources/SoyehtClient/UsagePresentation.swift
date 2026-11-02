@@ -145,6 +145,9 @@ public struct UsagePresentation: Sendable {
 /// activity is a count, so it has no percentage and no band; the clients write it the same way
 /// (the `activities` cases of `contracts/vectors/usage-presentation.json`).
 public enum UsageActivityText {
+  /// What the detail shows where a window's reset time would be (`activities.notices.reset`).
+  static let reset = "No plan limit"
+
   /// An exact count under 1,000, then one decimal with K, M or B (a trailing ".0" dropped).
   static func tokens(_ count: Int64) -> String {
     guard count >= 1_000 else { return "\(max(count, 0))" }
@@ -162,7 +165,7 @@ public enum UsageActivityText {
 
   /// "1.2M tokens · $3.40": the tokens and, when the provider bills per token, the cost.
   public static func summary(_ activity: UsageActivity) -> String {
-    var text = "\(tokens(activity.tokens)) \(activity.tokens == 1 ? "token" : "tokens")"
+    var text = "\(tokens(Int64(activity.tokens))) \(activity.tokens == 1 ? "token" : "tokens")"
     if let cost = activity.costUsd { text += " · " + String(format: "$%.2f", cost) }
     return text
   }
