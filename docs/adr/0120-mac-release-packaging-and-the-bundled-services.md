@@ -334,3 +334,6 @@ no agent was loaded to see launchd obey them, because that registers services on
 The manual check is in contract 13, section 5. An agent already loaded with the old `<true/>`
 keeps it until it is installed again, which the app does the first time it finds the definition
 stale (the new text differs from the file on disk, so `current` is false).
+
+**Superseded in part: the running programs.** Dragging the app to the Trash left the engine and the
+supervisor running; ADR 0130 makes them end themselves when their file is gone.

@@ -9,8 +9,8 @@
 
 use crate::update_policy::{
     ARCHITECTURES, CHANNELS, Failure, MANIFEST_FORMAT, MANIFEST_MAX_BYTES, MAX_ADDRESS_BYTES,
-    MAX_PACKAGE_BYTES, MAX_PACKAGES, MAX_SEQUENCE, PublicKey, SHA256_HEX_LENGTH, SIGNING_CONTEXT,
-    SYSTEMS, URL_PREFIXES, VERSION_PART_LIMIT,
+    MAX_LIFETIME_SECONDS, MAX_PACKAGE_BYTES, MAX_PACKAGES, MAX_SEQUENCE, PublicKey,
+    SHA256_HEX_LENGTH, SIGNING_CONTEXT, SYSTEMS, URL_PREFIXES, VERSION_PART_LIMIT,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signature, VerifyingKey};
@@ -102,6 +102,9 @@ struct Payload {
     format: serde_json::Value,
     channel: String,
     sequence: u64,
+    /// Seconds since 1970 at which the manifest stops being read.
+    #[serde(rename = "expiresAt")]
+    expires_at: u64,
     version: String,
     #[serde(rename = "minimumSupportedVersion")]
     minimum: String,
@@ -221,6 +224,8 @@ fn check_payload(bytes: &[u8]) -> Result<(Payload, Version, Version), Failure> {
         || minimum > version
         || payload.sequence == 0
         || payload.sequence > MAX_SEQUENCE
+        || payload.expires_at <= payload.sequence
+        || payload.expires_at > payload.sequence + MAX_LIFETIME_SECONDS
         || !is_address(&payload.notes_url)
         || payload.packages.is_empty()
         || payload.packages.len() > MAX_PACKAGES
@@ -245,12 +250,15 @@ fn check_payload(bytes: &[u8]) -> Result<(Payload, Version, Version), Failure> {
 }
 
 /// What `build` should do with the manifest `text`, trusting `keys`. `floor` is the highest
-/// sequence this device has read: a manifest below it is refused (`StaleManifest`).
+/// sequence this device has read: a manifest below it is refused (`StaleManifest`). `now` is the
+/// time in seconds since 1970: a manifest at or past its expiry is refused (`Expired`), so an old
+/// one that someone keeps serving does not hold a device on an old release.
 pub fn evaluate(
     text: &str,
     build: &Build<'_>,
     keys: &[PublicKey],
     floor: u64,
+    now: u64,
 ) -> Result<Checked, Failure> {
     let (payload, version, minimum) = check_payload(&open_envelope(text, keys)?)?;
     if payload.channel != build.channel {
@@ -258,6 +266,9 @@ pub fn evaluate(
     }
     if payload.sequence < floor {
         return Err(Failure::StaleManifest);
+    }
+    if now >= payload.expires_at {
+        return Err(Failure::Expired);
     }
     let sequence = payload.sequence;
     if version <= build.version {
@@ -348,7 +359,14 @@ mod tests {
             };
             let keys = trusted(&vectors, &case["trust"]);
             let floor = case["floor"].as_u64().unwrap();
-            let result = evaluate(case["manifest"].as_str().unwrap(), &build, &keys, floor);
+            let now = case["now"].as_u64().unwrap();
+            let result = evaluate(
+                case["manifest"].as_str().unwrap(),
+                &build,
+                &keys,
+                floor,
+                now,
+            );
             assert_eq!(recorded(&result), case["expected"], "{}", case["name"]);
         }
     }
@@ -367,6 +385,7 @@ mod tests {
             case["manifest"].as_str().unwrap(),
             &build,
             crate::update_policy::PUBLIC_KEYS,
+            0,
             0,
         );
         assert!(matches!(
@@ -390,7 +409,7 @@ mod tests {
             vectors["cases"][0]["manifest"].as_str().unwrap(),
             " ".repeat(MANIFEST_MAX_BYTES)
         );
-        assert_eq!(evaluate(&text, &build, &keys, 0), Err(Failure::TooLarge));
+        assert_eq!(evaluate(&text, &build, &keys, 0, 0), Err(Failure::TooLarge));
     }
 
     #[test]
@@ -434,6 +453,7 @@ mod tests {
             WrongChannel,
             NoPackage,
             StaleManifest,
+            Expired,
             UnknownBuild,
         ];
         let contract: Value =

@@ -105,6 +105,7 @@ mod tests {
 
     #[test]
     fn a_running_child_is_killed_and_reaped() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let mut child = long_running();
         assert_eq!(ended(&mut child), ChildEnd::Killed);
@@ -114,6 +115,7 @@ mod tests {
 
     #[test]
     fn a_child_that_already_exited_is_reported_as_such() {
+        let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
         let mut child = command("exit 0").spawn().unwrap();
         child.wait().unwrap();

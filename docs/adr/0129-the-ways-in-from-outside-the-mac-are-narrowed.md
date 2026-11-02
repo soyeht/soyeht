@@ -20,7 +20,11 @@ so enough idle connections to a listener left none for the Mac app, the command 
 `Admission` (`soyeht-engine/src/admission.rs`) gives the local endpoint a pool of its own (128) and
 the listeners a second one (128), and one source address holds at most 16 places of it (a paired
 device keeps at most 8 connections, and each may be mid-handshake while an older one closes). An
-address is compared in its canonical form, so an IPv4 address and its IPv6-mapped spelling are one.
+address is compared in its canonical form, so an IPv4 address and its IPv6-mapped spelling are one;
+an IPv6 address is counted as the one address it is (a /128), not as the /64 it belongs to. The cap
+is a fairness rule among peers that each have one address, not a defence against a flood from many
+addresses (a tailnet gives a node one address, but a peer on a larger prefix could spread over it):
+that is the work of the pool, which no flood from the listeners can empty for the local endpoint.
 A place is freed when the connection ends. The limits are constants, not settings.
 
 **2. The WebSocket listener refuses web pages.** A handshake that carries an `Origin` header is

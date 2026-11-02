@@ -31,6 +31,7 @@ public enum ProtocolLimits {
     public static let cancelTimeoutSec = 10
     public static let probeTimeoutSec = 10
     public static let noSignalSec = 90
+    public static let harnessSwitchTimeoutSec = 90
     public static let usageRefreshMinIntervalSec = 30
     public static let usageAutoRefreshIntervalSec = 300
     public static let usageStaleAfterSec = 900
@@ -39,6 +40,7 @@ public enum ProtocolLimits {
     public static let editorEditBytes = 262144
     /// The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.
     public static let editorPathBytes = 4096
+    public static let diagnosticMessageChars = 4096
     public static let editorSearchResults = 500
     public static let editorHistoryVersions = 200
     public static let editorHistoryBytes = 52428800

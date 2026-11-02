@@ -2,6 +2,7 @@
 export const clientPolicy = {
   "timeouts": {
     "requestTimeoutMs": 12000,
+    "engineDeadlineMarginMs": 5000,
     "greetingTimeoutMs": 5000,
     "reconnectDelayMs": 1000,
     "reconnectCeilingMs": 30000,
@@ -44,6 +45,10 @@ export const clientPolicy = {
   "usageWindow": {
     "weeklyKeyword": "week"
   },
+  "crashReports": {
+    "folder": "crashes",
+    "incomingPrefix": "incoming-"
+  },
   "editor": {
     "prefetchLines": 160,
     "pageLeadDivisor": 4,
@@ -80,7 +85,13 @@ export const clientPolicy = {
     "diagnosticsWorking": "Collecting diagnostics",
     "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
     "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
-    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program."
+    "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+    "crashNoticeTitle": "Soyeht closed unexpectedly",
+    "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
+    "crashNoticeCopy": "Copy report",
+    "crashNoticeDismiss": "Dismiss",
+    "pushNeedsYouTitle": "An agent needs you",
+    "pushNeedsYouBody": "Open Soyeht to see what it asks."
   },
   "inlineImageTypes": [
     "image/png",

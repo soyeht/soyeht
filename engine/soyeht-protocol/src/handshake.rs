@@ -24,6 +24,7 @@ pub fn hello(client: &str, client_version: &str, binding: Option<&str>) -> Hello
         protocol_version: PROTOCOL_VERSION,
         device_token: None,
         proof: None,
+        client_nonce: None,
         binding: binding.map(str::to_owned),
         capabilities: None,
     }

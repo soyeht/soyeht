@@ -150,6 +150,12 @@ the candidate. `advance_harness_switches` starts the next step of each switch as
 - **A repeated `idempotencyKey` during a create that is still starting returns the stored reply
   at once**, before the process exists, as the first request's reply would have been if it had
   not waited. The pane is in the state a pane waiting for its retry has, which clients tolerate.
+- **A server's pending writes keep their order.** Their operation keys begin with a count
+  (`Server::next_write_key`), so the pending writes go out again in the order they were made
+  after a new link (`initialized` before `didOpen` before `didChange`), not in the order of a
+  random identifier. A pending write that has a job is not decoded or hashed again by the tick.
+  What a gap's request read finds on a link that was replaced meanwhile, if it is a failure,
+  is dropped like an unfinished read.
 - **A write that lost its link is sent again by the tick.** A language server's write whose job
   ended on a replaced link stays pending, and the tick sends the pending writes that have no job
   (the operation key is the same, so the supervisor answers once). A result that arrives for a
@@ -158,7 +164,14 @@ the candidate. `advance_harness_switches` starts the next step of each switch as
 - **An agent's message, a gap's requests and a switch's steps wait for the tick that applies
   them.** Each is a round trip and a thread hop later than when it was a call under the lock
   (the first page of a message goes out on the tick after the poll that found it, the next pages
-  as their receipts come back). A switch has 30 seconds to complete either way.
+  as their receipts come back). A switch has `harnessSwitchTimeoutSec` (90 seconds) to
+  complete either way; a harness that starts cold needs more than the 30 seconds it had. The
+  figure equals `noSignalSec` today but is its own limit: an open has no deadline and only
+  turns to `no_signal` after `noSignalSec`, while the switch is abandoned and the original
+  session restored at `harnessSwitchTimeoutSec`. For that long the pane is locked (no prompt,
+  configuration change or close), the switch cannot be cancelled, and the pane reads
+  "Switching to X" with no progress. A phrase that says the harness is still starting after a
+  delay, and a way to cancel, are follow-ups.
 - **A write of a switch that fails is not repeated**, and a request recovery that finds that the
   engine recorded a request meanwhile reads it again.
 - **The jobs share the four workers of the background pool**, as the terminal's reads and the
