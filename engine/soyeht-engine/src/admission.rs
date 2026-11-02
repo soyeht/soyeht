@@ -190,9 +190,14 @@ mod tests {
 
         fn served_local(path: &std::path::Path) -> bool {
             let mut stream = soyeht_platform::local::connect(path).unwrap();
-            stream
+            // macOS refuses to set the timeout of a socket whose peer has already closed it, which is
+            // how a refused connection can look by now: that is a connection not served.
+            if stream
                 .set_read_timeout(Some(Duration::from_secs(30)))
-                .unwrap();
+                .is_err()
+            {
+                return false;
+            }
             // The first thing the engine sends is the challenge, after it has looked at the peer's code
             // signature (slow on a busy Mac); a refused connection is closed at once.
             stream.read(&mut [0; 1]).is_ok_and(|read| read > 0)
@@ -245,8 +250,10 @@ mod tests {
             assert!(served_local(&socket));
 
             // The only remote place is held: the listener refuses, the local endpoint does not.
-            // The connections above end on their own time: wait for their places to come back.
+            // The connections above end on their own time: wait for their places to come back, the
+            // local one too, or the check below would find it still held and be refused.
             let remote = wait_for(|| admission.remote(LOOPBACK)).await;
+            drop(wait_for(|| admission.local()).await);
             assert!(
                 !served_tcp(address).await,
                 "serve_tcp must draw on the remote places"
