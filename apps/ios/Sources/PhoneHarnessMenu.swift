@@ -55,11 +55,9 @@ struct PhoneHarnessMenu: View {
     }
   }
 
+  /// A menu cuts a long line, so the handover is explained where the choice is confirmed.
   @ViewBuilder private func menuContent(current: String) -> some View {
     let layout = HarnessSwitchModel.layout(client.harnesses, current: current)
-    Section(HarnessSwitchModel.title) {
-      Text(HarnessSwitchModel.handoverExplanation)
-    }
     if layout.isEmpty {
       if client.harnessListStalled {
         Text(BackgroundLoad.harnesses.failureText)
