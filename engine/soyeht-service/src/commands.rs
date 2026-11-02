@@ -1,7 +1,7 @@
 //! The commands the seam asks the system to run, behind a trait so a test runs none.
 
 use crate::error::{Error, Result};
-use std::{process::Command, time::Duration};
+use std::{io, process::Command, time::Duration};
 
 /// How long a service-manager command may run. `launchctl bootstrap` and `systemctl enable
 /// --now` wait for a program to start, which on a loaded host takes a while.
@@ -20,6 +20,12 @@ pub struct CommandOutput {
 pub trait Commands {
     /// Runs `program` with `arguments` and waits for it, within a deadline.
     fn run(&self, program: &str, arguments: &[&str]) -> Result<CommandOutput>;
+
+    /// Asks the program that runs as process `pid` to end (a stop request, or at once on
+    /// Windows). A test records the id and ends nothing.
+    fn terminate(&self, pid: u32) -> io::Result<()> {
+        soyeht_platform::process::terminate(pid)
+    }
 
     /// Waits before a command is tried again. A test waits for nothing.
     fn pause(&self, duration: Duration) {
@@ -80,6 +86,12 @@ pub(crate) mod fake {
         answer: Option<Answer>,
         /// Commands (as one line) that print more than the budget allows.
         too_large: Vec<String>,
+        /// The process ids asked to end, in order.
+        pub(crate) terminated: RefCell<Vec<u32>>,
+        /// What a program that is asked to end does: a test drops the lock it holds.
+        on_terminate: Option<Box<dyn Fn(u32)>>,
+        /// The first request to end a program is refused with this error.
+        refuse_first: std::cell::Cell<Option<io::ErrorKind>>,
     }
 
     pub(crate) fn ok(stdout: &str) -> CommandOutput {
@@ -101,7 +113,23 @@ pub(crate) mod fake {
                 pauses: RefCell::default(),
                 answer: Some(Box::new(answer)),
                 too_large: Vec::new(),
+                terminated: RefCell::default(),
+                on_terminate: None,
+                refuse_first: std::cell::Cell::default(),
             }
+        }
+
+        /// The system refuses the first request to end a program, as it does for a process of
+        /// another account.
+        pub(crate) fn refusing_the_first_end(self, kind: io::ErrorKind) -> Self {
+            self.refuse_first.set(Some(kind));
+            self
+        }
+
+        /// A program that is asked to end runs `ending`, with its process id, as it would stop.
+        pub(crate) fn ending_programs_with(mut self, ending: impl Fn(u32) + 'static) -> Self {
+            self.on_terminate = Some(Box::new(ending));
+            self
         }
 
         /// The command that reads exactly `line` is ended by the runner for printing too much.
@@ -121,6 +149,17 @@ pub(crate) mod fake {
     }
 
     impl Commands for Recorder {
+        fn terminate(&self, pid: u32) -> io::Result<()> {
+            self.terminated.borrow_mut().push(pid);
+            if let Some(kind) = self.refuse_first.take() {
+                return Err(kind.into());
+            }
+            if let Some(ending) = &self.on_terminate {
+                ending(pid);
+            }
+            Ok(())
+        }
+
         fn pause(&self, duration: Duration) {
             self.pauses.borrow_mut().push(duration);
         }

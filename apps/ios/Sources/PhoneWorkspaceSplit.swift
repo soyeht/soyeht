@@ -56,6 +56,9 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
     }
     .onChange(of: requestedPaneId) { showRequestedPane() }
     .onChange(of: fillsDetail) { reconcile(order, previous: order) }
+    // The state arrives before the connection is declared up: a pane that closed while the
+    // device was away is dropped here, once the list can be trusted again.
+    .onChange(of: client.connected) { reconcile(order, previous: order) }
     .focusedSceneValue(\.phonePaneNavigation, navigation(order, sections: sections))
     .phoneWorkspaceActions(client: client, action: $action, show: $requestedPaneId)
   }
@@ -155,7 +158,8 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
 
   private func reconcile(_ order: PaneSidebarOrder, previous: PaneSidebarOrder) {
     selection = order.reconciled(
-      selection, previous: previous, preferred: client.selectedPaneId, fillsDetail: fillsDetail)
+      selection, previous: previous, preferred: client.selectedPaneId, fillsDetail: fillsDetail,
+      connected: client.connected)
   }
 
   private func navigation(_ order: PaneSidebarOrder, sections: [PaneSidebarSection])

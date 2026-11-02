@@ -167,6 +167,9 @@ the start fails once; after that nothing runs and nothing is retried. When the p
 (an app dragged back, or installed again) launchd starts it by itself. `soyeht service start` of
 an agent whose program is gone fails with "the program ... is missing", as on Linux, instead of
 loading an agent that cannot run. `soyeht uninstall` is still the way to remove the registration.
+On the Mac, a program that is already running when its file is deleted ends itself (ADR 0130): the engine and the
+supervisor look at the path they were started from every 10 seconds, and when it is missing three
+looks in a row they exit with code 0, so the agent stays loaded, idle and inert.
 An app update that replaces the bundle briefly removes the program. Whether launchd's `PathState`
 watch re-arms and starts the program again when the bundle is replaced by a rename (how an update
 or a drag over the old copy does it) is **untested**: it was not run, and this contract does not
@@ -177,9 +180,8 @@ whenever the services are registered and right but the engine does not answer, w
 *Manual check (not run: it needs a real login session and registers services, which was not done
 on the machine where this was written).* Install the production app, say yes to the background
 start, then `launchctl print gui/$(id -u)/com.soyeht.next.engine` shows `state = running` and a
-`keepalive` with the program path. Move the app out of Applications: the engine keeps running (it
-is already running) but after `launchctl kill TERM gui/$(id -u)/com.soyeht.next.engine` it does not
-come back, and `soyeht service start --component engine` from the moved app's folder reports the
+`keepalive` with the program path. Move the app out of Applications: within about a minute the engine
+and the supervisor exit by themselves (ADR 0130) and do not come back, and `soyeht service start --component engine` from the moved app's folder reports the
 program missing for the old path. Move the app back: the engine starts without any command.
 
 A program started by hand while its service is registered fails on its lock and the system
@@ -217,6 +219,28 @@ the supervisor of the profile, removes their registration and the definition fil
 `"dataDeleted"`. It works on all three systems and never connects to the engine. Stopping the
 supervisor ends the person's terminals.
 
+**It also ends a program that no registration covers**, the copy the Linux and Windows window
+started (section 4, step 2). Before anything is ended it leaves a file `uninstalled` in the data
+directory. After a component is unregistered, the engine first, a program that still holds its
+singleton lock is asked to end: it wrote its process id into the lock file when it took the lock,
+and the id is read only while the lock is held, twice, so that an id left by a program that ended
+is never used (ADR 0131). Unix sends the stop request: the engine stops cleanly, the supervisor
+(no handler) ends at once with its terminals. Windows ends the process, and its children with it.
+The command waits up to ten seconds for the lock to be free before it asks the supervisor, and
+tries every component, to unregister it and to end its program, whatever happens to the one before. A program that does not end, that cannot
+be asked, or that holds the lock with no id (one of an older build) makes the command fail once
+both were tried; the registrations that could be removed are removed by then.
+
+**An open window does not start them again.** Before anything is ended, the command writes a file
+`uninstalled` in the data directory, holding a value that no other uninstall writes. `service
+uninstall` writes it too, for one component as well (`--component engine`): an open window must not
+start the engine again. A window reads it when it begins and the window's start of the engine (section
+4, step 2) does nothing when it is new or changed since, saying that Soyeht was uninstalled; a file
+that was already there is the baseline, so a window opened after an uninstall starts afresh. The
+start does nothing either when the engine's lock file it had an engine with is gone (`--delete-data`),
+unless the folder cannot be looked into. Only `service
+install` removes the file; a window never does.
+
 **Data stays by default.** The programs, the data directory, the database and the logs are left
 alone. `soyeht uninstall --delete-data` also deletes the profile's data directory (workspaces,
 transcripts, settings, logs), and only after the person types the profile's name at the prompt;
@@ -226,8 +250,8 @@ transcripts, settings, logs), and only after the person types the profile's name
 nothing and runs first, before the prompt and before any service is touched, so a deletion that
 would be refused leaves the services registered. After the services are unregistered the command
 waits up to 15 seconds for the engine and the supervisor to stop answering on their endpoints; if
-one still does (a copy the app started itself), it deletes nothing and says so, and the command can
-be run again.
+one still does (it does not end when asked, above), it deletes nothing and says so, and the command
+can be run again.
 
 **Only the profile's own folder is deleted.** Every check reads canonical paths
 (`soyeht_platform::fs::canonicalize`), and the directory must be the folder `contracts/profiles.json`
