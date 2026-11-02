@@ -4,24 +4,10 @@
 //! strips that prefix, so every other crate calls it by its full name.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+mod common;
 
-fn rust_files(directory: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            rust_files(&path, found);
-        } else if path.extension().is_some_and(|extension| extension == "rs") {
-            found.push(path);
-        }
-    }
-}
+use common::rust_files;
+use std::{fs, path::Path};
 
 /// The ways of calling the standard canonicalization found on `line`. The method of a path
 /// takes no argument; a `.canonicalize(argument)` is a port method of the caller's own, and the
@@ -49,7 +35,7 @@ fn no_crate_but_the_platform_one_uses_the_standard_canonicalize() {
         }
         let mut files = Vec::new();
         for folder in ["src", "tests", "benches", "examples"] {
-            rust_files(&krate.join(folder), &mut files);
+            rust_files(&krate.join(folder), &mut files, false);
         }
         for file in files {
             for (number, line) in fs::read_to_string(&file).unwrap().lines().enumerate() {

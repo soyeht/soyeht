@@ -3,6 +3,9 @@
 //! listen, and no production code of the engine or the desktop client binds a `TcpListener` itself.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+mod common;
+
+use common::rust_files;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -10,25 +13,6 @@ use std::{
 
 /// The one file that may bind: the seam itself.
 const SEAM: &str = "soyeht-platform/src/net.rs";
-
-fn rust_files(directory: &Path, found: &mut Vec<PathBuf>) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            // A folder of tests is test code.
-            if path.file_name().is_some_and(|name| name != "tests") {
-                rust_files(&path, found);
-            }
-        } else if path.extension().is_some_and(|extension| extension == "rs")
-            && path.file_name().is_some_and(|name| name != "tests.rs")
-        {
-            found.push(path);
-        }
-    }
-}
 
 /// The lines of `text` that bind a listener, up to its first test module: tests may bind what they
 /// like, and this repository puts them after the code they test.
@@ -66,7 +50,7 @@ fn no_production_code_binds_a_tcp_listener_but_the_platform_seam() {
         .filter(|krate| krate.join("Cargo.toml").is_file())
     {
         let mut files = Vec::new();
-        rust_files(&krate.join("src"), &mut files);
+        rust_files(&krate.join("src"), &mut files, true);
         for file in files {
             let relative = file
                 .strip_prefix(engine)
