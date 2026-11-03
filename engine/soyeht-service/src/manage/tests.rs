@@ -56,7 +56,7 @@ pub(super) const BOTH: [Component; 2] = [Component::Engine, Component::Ptyd];
 /// A launchd that has a graphical domain or not, and loads a job when it is bootstrapped and
 /// forgets it when it is booted out. `loaded` says whether every job is loaded before anything
 /// runs.
-fn launchd(graphical: bool, loaded: bool) -> Recorder {
+pub(super) fn launchd(graphical: bool, loaded: bool) -> Recorder {
     let changed: Rc<RefCell<HashMap<String, bool>>> = Rc::default();
     let label = |text: &str| {
         text.rsplit('/')
@@ -98,7 +98,7 @@ fn launchd(graphical: bool, loaded: bool) -> Recorder {
     })
 }
 
-fn mentions(recorder: &Recorder, text: &str) -> bool {
+pub(super) fn mentions(recorder: &Recorder, text: &str) -> bool {
     recorder.lines().iter().any(|line| line.contains(text))
 }
 
@@ -404,50 +404,6 @@ fn linux_stop_goes_engine_first_and_start_leaves_an_active_unit_alone() {
     let running = Recorder::answering(|_| ok("active"));
     Manager::new(&layout, &running).start(&BOTH).unwrap();
     assert!(!mentions(&running, " start "));
-}
-
-/// A service manager that has the units or agents registered and none of them running.
-fn idle_services(system: System) -> Recorder {
-    if system == System::Linux {
-        Recorder::answering(|arguments| {
-            if arguments.contains(&"is-active") {
-                no()
-            } else {
-                ok("")
-            }
-        })
-    } else {
-        launchd(true, false)
-    }
-}
-
-#[test]
-fn start_leaves_alone_a_component_whose_program_runs_though_the_service_manager_says_idle() {
-    // The window started the supervisor itself, and then the person registered the units: the
-    // unit is idle but the program holds the lock.
-    for (system, label) in [
-        (System::Linux, "linux-start-held"),
-        (System::Macos, "mac-start-held"),
-    ] {
-        let (_scratch, layout) =
-            installed(system, label, &idle_services(system), &[Component::Ptyd]);
-        let started =
-            |recorder: &Recorder| mentions(recorder, " start ") || mentions(recorder, "bootstrap");
-        let lock =
-            soyeht_platform::fs::lock_singleton(&layout.data, Component::Ptyd.lock()).unwrap();
-        let held = idle_services(system);
-        Manager::new(&layout, &held)
-            .start(&[Component::Ptyd])
-            .unwrap();
-        assert!(!started(&held), "{system:?}: {:?}", held.lines());
-        // With nothing holding the lock the same call starts it.
-        drop(lock);
-        let free = idle_services(system);
-        Manager::new(&layout, &free)
-            .start(&[Component::Ptyd])
-            .unwrap();
-        assert!(started(&free), "{system:?}: {:?}", free.lines());
-    }
 }
 
 /// PowerShell answers the question about the task's state; every other command succeeds.
