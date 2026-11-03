@@ -515,6 +515,36 @@ mod tests {
         );
     }
 
+    /// An engine started at login has the user manager's `PATH`, which lacks the folder a login
+    /// shell adds. `wt` is found on the launch `PATH` alone (ADR 0135).
+    #[cfg(unix)]
+    #[test]
+    fn wt_is_found_on_the_launch_path_when_the_process_path_lacks_it() {
+        let folder = TestDirectory::new();
+        let wt = folder.path().join("wt");
+        fs::write(&wt, "#!/bin/sh\necho '{\"schema\":2,\"items\":[]}'\n").unwrap();
+        let mut permissions = fs::metadata(&wt).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&wt, permissions).unwrap();
+        let process_path = std::env::var_os("PATH").unwrap_or_default();
+        assert!(
+            !std::env::split_paths(&process_path).any(|entry| entry == folder.path()),
+            "the process PATH does not name the folder"
+        );
+        let adapter = CommandWorktree::using(soyeht_platform::worktrunk::PROGRAM.into());
+        let repository = TestDirectory::new();
+        let launch_path = std::env::join_paths(
+            std::iter::once(folder.path().to_owned()).chain(std::env::split_paths(&process_path)),
+        )
+        .unwrap();
+        let found = adapter.wt_on(&launch_path, repository.path(), &["list"], LIST_TIMEOUT);
+        assert!(found.unwrap().status.success());
+        // On a search path that lacks the folder the program cannot start.
+        let without = std::env::join_paths([repository.path()]).unwrap();
+        let missing = adapter.wt_on(&without, repository.path(), &["list"], LIST_TIMEOUT);
+        assert!(missing.is_err(), "no `wt` on a path without the folder");
+    }
+
     #[test]
     fn cleanup_refuses_dirty_and_unreachable_worktrees_before_removal() {
         let path = "/tmp/task-ws-9";

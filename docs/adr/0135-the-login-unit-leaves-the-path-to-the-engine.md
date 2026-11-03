@@ -74,8 +74,11 @@ manager remembered the same launch `PATH` (`launch-path`, byte for byte), with t
 in it. The old fixed `PATH`, put back by a drop-in, left out the system folders the user manager has
 (`/usr/local/sbin`, `/usr/sbin`, `/sbin`, `/usr/games`, `/usr/local/games`, `/snap/bin`).
 
-A test starts a fake `wt` that is only in a folder on the launch `PATH`, with a process `PATH`
-that lacks it: it is found with the launch `PATH` and is not without.
+Two tests put a fake `wt` (and `npx`) in a folder that only the launch `PATH` names, with a process
+`PATH` that lacks it: `tasks::worktree::tests::wt_is_found_on_the_launch_path_when_the_process_path_lacks_it`
+runs it through `wt_on`, and `readiness::tests::wt_and_npx_are_found_on_the_launch_path_when_the_process_path_lacks_them`
+asks `tool_found_on`; both find it with the launch `PATH` and not without. The port scanner finds
+`lsof` at its first scan, not when the Core opens (finding it can wait for the login shell).
 
 ## Not verified
 

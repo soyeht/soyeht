@@ -80,9 +80,9 @@ impl From<PrivateDirError> for Error {
     fn from(error: PrivateDirError) -> Self {
         match error {
             PrivateDirError::Unsafe => Self::Unsafe("a folder"),
-            other @ (PrivateDirError::NotPrivate | PrivateDirError::Io(_)) => {
-                Self::Io(other.into())
-            }
+            other @ (PrivateDirError::NotPrivate
+            | PrivateDirError::OtherOwner
+            | PrivateDirError::Io(_)) => Self::Io(other.into()),
         }
     }
 }
