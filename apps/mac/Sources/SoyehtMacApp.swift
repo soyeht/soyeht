@@ -17,6 +17,7 @@ struct SoyehtMacApp: App {
   @State private var engineService = EngineServiceSetup()
   @State private var updateChecker = UpdateChecker()
   @State private var diagnosticsCopy = DiagnosticsCopy()
+  @State private var crashNotice = CrashNotice()
   private let webHost: MacWebHost
 
   init() {
@@ -123,10 +124,12 @@ struct SoyehtMacApp: App {
       .environment(engineService)
       .environment(updateChecker)
       .environment(diagnosticsCopy)
+      .environment(crashNotice)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
       .task { updateChecker.start() }
       .task { await engineService.refresh() }
+      .task { await crashNotice.start() }
       .alert(
         "Keep Soyeht running in the background?",
         isPresented: Binding(

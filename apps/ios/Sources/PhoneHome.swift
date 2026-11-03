@@ -20,7 +20,8 @@ struct PhoneHome: View {
   @Bindable var model: PhoneModel
   @State private var scanning = false
   @State private var uri = ""
-  @State private var forget = false
+  @State private var forgetFromStatus = false
+  @State private var forgetFromMenu = false
   @State private var showingSettings = false
   var body: some View {
     root
@@ -29,6 +30,7 @@ struct PhoneHome: View {
         // The dictation shortcut found one engine installed: open the install step.
         if prompt != nil { showingSettings = true }
       }
+      .onChange(of: scanning || showingSettings) { _, up in model.sheetPresented = up }
       .sheet(isPresented: $showingSettings) {
         if let client = model.client {
           PhoneSettings(client: client)
@@ -65,14 +67,20 @@ struct PhoneHome: View {
       } message: { incoming in
         Text(incoming.message)
       }
-      .confirmationDialog("Forget this Mac?", isPresented: $forget, titleVisibility: .visible) {
-        Button("Forget", role: .destructive) { model.forgetMac() }
-        Button("Cancel", role: .cancel) {}
-      } message: {
-        Text(
-          "The credential will be removed from this device. To revoke access at the engine, use the Mac."
-        )
-      }
+  }
+  /// The question before the credential goes. It hangs on the control that asks it: on an iPad a
+  /// confirmation is a popover, and one attached to the whole screen never showed.
+  private func confirmsForget(_ control: some View, isPresented: Binding<Bool>) -> some View {
+    control.confirmationDialog(
+      "Forget this Mac?", isPresented: isPresented, titleVisibility: .visible
+    ) {
+      Button("Forget", role: .destructive) { model.forgetMac() }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(
+        "The credential will be removed from this device. To revoke access at the engine, use the Mac."
+      )
+    }
   }
   /// Once a Mac is paired, its workspaces own the screen; before that, onboarding or the
   /// pending pairing does.
@@ -105,17 +113,21 @@ struct PhoneHome: View {
         .foregroundStyle(PhonePalette.secondary)
       Text("Keep Tailscale connected on both devices.")
         .font(.footnote).multilineTextAlignment(.center)
-      Button("Forget this Mac") { forget = true }
+      confirmsForget(
+        Button("Forget this Mac") { forgetFromStatus = true }, isPresented: $forgetFromStatus)
     }.padding(28)
   }
   private var macOptions: some View {
+    confirmsForget(macOptionsMenu, isPresented: $forgetFromMenu)
+  }
+  private var macOptionsMenu: some View {
     Menu {
       Button {
         showingSettings = true
       } label: {
         Label("Settings", systemImage: "gearshape")
       }
-      Button("Forget this Mac", role: .destructive) { forget = true }
+      Button("Forget this Mac", role: .destructive) { forgetFromMenu = true }
     } label: {
       Image(systemName: "ellipsis.circle")
     }

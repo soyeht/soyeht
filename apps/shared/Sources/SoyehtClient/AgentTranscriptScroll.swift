@@ -17,8 +17,10 @@ public final class AgentTranscriptScroll: @unchecked Sendable {
   static let restorePassMs = 100
 
   public private(set) var place: Place = .bottom
-  /// True from the moment a view is mounted until its restoration ends; what the viewport
-  /// reports meanwhile is the restoration's own doing, not the person's, and is not recorded.
+  /// True from the moment a view is mounted until its restoration ends, and again once the view
+  /// is gone: the next one starts restoring before its first report, which would otherwise be
+  /// recorded as the person's and lose the place. What the viewport reports meanwhile is the
+  /// restoration's own doing, not the person's, and is not recorded.
   var isRestoring = true
 
   public init() {}
