@@ -28,42 +28,44 @@ pub(super) fn is_link_or_not_directory(error: &io::Error) -> bool {
     matches!(error.raw_os_error(), Some(libc::ELOOP | libc::ENOTDIR))
 }
 
+pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    let from = CString::new(from.as_os_str().as_bytes())?;
+    let to = CString::new(to.as_os_str().as_bytes())?;
+    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
+    let status = unsafe { kernel_rename_no_replace(from.as_ptr(), to.as_ptr()) };
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+/// The system's rename that fails instead of replacing.
+///
+/// # Safety
+///
+/// Both pointers are NUL-terminated strings that outlive the call.
 #[cfg(target_os = "macos")]
-pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-    let from = CString::new(from.as_os_str().as_bytes())?;
-    let to = CString::new(to.as_os_str().as_bytes())?;
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
-    let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+unsafe fn kernel_rename_no_replace(
+    from: *const libc::c_char,
+    to: *const libc::c_char,
+) -> libc::c_int {
+    // SAFETY: the caller's guarantee.
+    unsafe { libc::renamex_np(from, to, libc::RENAME_EXCL) }
 }
 
-#[cfg(any(target_os = "linux", target_os = "android"))]
-pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-    let from = CString::new(from.as_os_str().as_bytes())?;
-    let to = CString::new(to.as_os_str().as_bytes())?;
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
-    let status = unsafe { renameat2_no_replace(from.as_ptr(), to.as_ptr()) };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
-}
-
-/// Android's C library exports `renameat2` only from API 30 and the phone's `minSdk` is 26, so there
-/// the kernel call is made directly (ADR 0134).
+/// The system's rename that fails instead of replacing. Android's C library exports `renameat2` only
+/// from API 30 and the phone's `minSdk` is 26, so there the kernel call is made directly (ADR 0134).
 ///
 /// # Safety
 ///
 /// Both pointers are NUL-terminated strings that outlive the call.
 #[cfg(any(target_os = "linux", target_os = "android"))]
-unsafe fn renameat2_no_replace(from: *const libc::c_char, to: *const libc::c_char) -> libc::c_int {
+unsafe fn kernel_rename_no_replace(
+    from: *const libc::c_char,
+    to: *const libc::c_char,
+) -> libc::c_int {
     // SAFETY: the caller's guarantee, and AT_FDCWD resolves the paths as ordinary ones.
     #[cfg(target_os = "linux")]
     let status = unsafe {
