@@ -530,7 +530,8 @@ def package(options, environment):
     app = assemble(built, programs, WORK / "stage" / f"{PRODUCT_NAME}.app")
     thin_libraries(app)
     folder = output_directory(signing, options.dist)
-    save_symbols(built, artifact_path(folder / "symbols", made.version, OPERATING_SYSTEM, ARTIFACT_ARCHITECTURE, "dSYM.zip"))
+    symbols = artifact_path(folder / "symbols", made.version, OPERATING_SYSTEM, ARTIFACT_ARCHITECTURE, "dSYM.zip")
+    save_symbols(built, symbols)
     strip_app(app)
     sign_bundle(app, signing)
     if signing.notarizes:
@@ -543,15 +544,16 @@ def package(options, environment):
         notarize_and_staple_image(image, signing)
     problems += verify_image(image, signing, made)
     checksum = write_checksum(image)
-    report(image, checksum, app, signing, problems)
+    report(image, checksum, app, signing, problems, symbols)
     check_sizes([image])
     return 1 if problems else 0
 
 
-def report(image, checksum, app, signing, problems):
+def report(image, checksum, app, signing, problems, symbols):
     accepted, text = assess(app, "app")
     image_accepted, image_text = assess(image, "image")
     print(f"\nImage     {image}\nChecksum  {checksum}")
+    print(f"Symbols   {symbols}  (keep it with the release; it is not part of the package)")
     print(f"Signing   {'ad hoc' if signing.ad_hoc else 'Developer ID, team ' + str(signing.team)}")
     print(f"Gatekeeper, app    {'accepted' if accepted else 'rejected'}: {text}")
     print(f"Gatekeeper, image  {'accepted' if image_accepted else 'rejected'}: {image_text}")
