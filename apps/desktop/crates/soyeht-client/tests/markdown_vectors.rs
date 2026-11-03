@@ -105,7 +105,10 @@ fn a_code_block_copies_its_text_alone() {
         (format!("```sh\n{command}\n```"), command),
         (format!("```\n{command}\n```"), command),
         (format!("~~~bash title=x\n{command}\n~~~"), command),
-        ("```sh\n  indented  \n\tnext\n```".to_owned(), "  indented  \n\tnext"),
+        (
+            "```sh\n  indented  \n\tnext\n```".to_owned(),
+            "  indented  \n\tnext",
+        ),
         ("before\n\n```\ncode\n```\n\nafter".to_owned(), "code"),
     ];
     for (markdown, copied) in cases {
