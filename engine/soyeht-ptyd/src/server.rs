@@ -128,11 +128,17 @@ pub fn run(directory: &Path) -> Result<()> {
     Ok(())
 }
 
+/// The `reason` of `ptyd.connection_refused` for a peer that runs as another user. These are log
+/// reasons, not wire kinds (`wire_kind` is what `Response::Error` carries).
+const REFUSED_OTHER_USER: &str = "other_user";
+/// The `reason` of `ptyd.connection_refused` for a peer the kernel could not name.
+const REFUSED_CREDENTIAL_LOOKUP_FAILED: &str = "credential_lookup_failed";
+
 /// Why a connection is dropped before it says anything, or `None` when it is let through. A peer
 /// the kernel could not name is a different reason from a peer that is another user.
 fn refusal_reason(peer: io::Result<bool>) -> Option<&'static str> {
-    peer.map_or(Some("credential_lookup_failed"), |same| {
-        (!same).then_some("other_user")
+    peer.map_or(Some(REFUSED_CREDENTIAL_LOOKUP_FAILED), |same| {
+        (!same).then_some(REFUSED_OTHER_USER)
     })
 }
 
@@ -659,11 +665,11 @@ mod tests {
     #[test]
     fn a_peer_that_cannot_be_named_is_refused_for_its_own_reason() {
         assert_eq!(refusal_reason(Ok(true)), None);
-        assert_eq!(refusal_reason(Ok(false)), Some("other_user"));
+        assert_eq!(refusal_reason(Ok(false)), Some(REFUSED_OTHER_USER));
         let failed = io::Error::from(io::ErrorKind::InvalidInput);
         assert_eq!(
             refusal_reason(Err(failed)),
-            Some("credential_lookup_failed")
+            Some(REFUSED_CREDENTIAL_LOOKUP_FAILED)
         );
     }
 

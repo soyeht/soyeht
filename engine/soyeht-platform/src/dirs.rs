@@ -81,13 +81,13 @@ mod tests {
         assert_eq!(base(System::MacOs, None, None, None), None);
     }
 
-    // Written with Unix paths: on Windows "/data" has no drive and is not absolute.
-    #[cfg(unix)]
     #[test]
     fn linux_follows_xdg_data_home_and_ignores_a_relative_one() {
+        // On Windows "/data" has no drive and is not absolute.
+        let data = if cfg!(windows) { r"C:\data" } else { "/data" };
         assert_eq!(
-            base(System::Linux, home(), None, Some("/data".into())),
-            Some(PathBuf::from("/data"))
+            base(System::Linux, home(), None, Some(data.into())),
+            Some(PathBuf::from(data))
         );
         for unusable in [OsString::new(), "relative/dir".into()] {
             assert_eq!(
