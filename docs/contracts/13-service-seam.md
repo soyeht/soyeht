@@ -63,7 +63,7 @@ the person's interactive login shell has (`launch_path`, asked at start, remembe
 directory), so a harness under `nvm`, `~/.npm-global` or `~/.local/bin` is found however the
 engine was started. That shell starts from the `PATH` the engine was started with, so the unit
 leaves it alone: it names no `PATH`, and the engine starts with the one the user's manager has,
-which is the one the person's session gave it, as the window's own start does (ADR 0135). A Windows
+which is the one the person's session gave it, as the window's own start does (ADR 0135). The engine's own lookups of `wt`, `git` and `lsof` use that same launch `PATH`, not the process one. A Windows
 task names none either; the engine there reads its own process `PATH` (there is no login shell),
 which is the account's at logon. launchd starts a program with almost none, so the Mac agent names
 the system and user tool folders, under the shell's answer.

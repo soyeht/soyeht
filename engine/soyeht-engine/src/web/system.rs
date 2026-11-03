@@ -64,11 +64,14 @@ impl Default for SystemPortScan {
 #[cfg(unix)]
 const LSOF_FALLBACKS: [&str; 2] = ["/usr/sbin/lsof", "/usr/bin/lsof"];
 
-/// The `lsof` to run: the first on `PATH`, else the first standard place that has one, else
+/// The `lsof` to run: the first on the launch `PATH`, else the first standard place that has one, else
 /// the bare name, which the run then reports as a program that cannot start.
 #[cfg(unix)]
 pub(crate) fn lsof_program() -> PathBuf {
-    find_lsof(std::env::var_os("PATH").as_deref(), &LSOF_FALLBACKS)
+    find_lsof(
+        Some(&crate::agents::environment::launch_search_path()),
+        &LSOF_FALLBACKS,
+    )
 }
 
 #[cfg(unix)]

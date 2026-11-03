@@ -7,7 +7,7 @@
 //! can wait for the login shell's `PATH`), so they run off the Core lock (ADR 0079).
 
 use crate::{
-    agents::registry,
+    agents::{environment, registry},
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
@@ -125,25 +125,26 @@ fn applies(tool: &Tool, system: &ReadinessSystem) -> bool {
     tool.systems.contains(system)
 }
 
-/// Where each tool is looked up is where the engine looks when it runs it: `git` and `wt`
-/// start from the engine's own `PATH`, `lsof` also from the standard places, and the harness
-/// adapters through `npx` start from the login shell's `PATH`. `None` for a tool this file does
-/// not know how to look up.
+/// Where each tool is looked up is where the engine looks when it runs it: `git`, `wt` and `lsof`
+/// start from the launch `PATH` the login shell gave (ADR 0135), `lsof` also from the standard
+/// places, and the harness adapters through `npx` start from the same. `None` for a tool this file
+/// does not know how to look up.
 fn tool_found(id: &str) -> Option<bool> {
     Some(match id {
         "git" => {
-            on_process_path("git") && Probe::system().availability() == Availability::Available
+            registry::executable("git").is_some()
+                && Probe {
+                    path: environment::launch_search_path(),
+                    ..Probe::system()
+                }
+                .availability()
+                    == Availability::Available
         }
         "node" => registry::executable("npx").is_some(),
-        "wt" => on_process_path(soyeht_platform::worktrunk::PROGRAM),
+        "wt" => registry::executable(soyeht_platform::worktrunk::PROGRAM).is_some(),
         "lsof" => lsof_found(),
         _ => return None,
     })
-}
-
-fn on_process_path(command: &str) -> bool {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    registry::resolve_executable(command, std::env::split_paths(&path)).is_some()
 }
 
 #[cfg(unix)]

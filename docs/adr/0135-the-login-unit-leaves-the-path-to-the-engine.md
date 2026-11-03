@@ -7,8 +7,8 @@
 
 A clean `.deb` install on Ubuntu 26.04 arm64 showed that the engine a systemd user unit starts at
 login can see different tools than the engine the window starts. The unit written by `soyeht
-service install` fixed `PATH` to `/usr/local/bin:/usr/bin:/bin:~/.local/bin:~/.cargo/bin` (ADR
-0114), a stand-in for the login shell that systemd does not run.
+service install` fixed `PATH` to `/usr/local/bin:/usr/bin:/bin:~/.local/bin:~/.cargo/bin` (contract 13
+section 2, written by the renderer of ADR 0114), a stand-in for the login shell that systemd does not run.
 
 The engine does not need a stand-in. It asks the person's interactive login shell for the `PATH`
 its agents get (`agents::environment`: `bash -l -i -c 'printf "$PATH"'`, remembered in the data
@@ -28,6 +28,16 @@ of the user's manager, which a desktop session fills from the login environment,
 probe starts from is the one the window has. The shell adds what the person's startup files add,
 as it does for the window. Nothing in the unit has to know where `nvm`, `~/.npm-global`, `volta`
 or `mise` put a program.
+
+**The engine's own lookups use the launch `PATH` too.** The agents already got it, but four callers
+looked at the engine's own process `PATH`: `wt` for task worktrees (`tasks/worktree.rs`), the
+availability of `git` (`readiness.rs`, and the `git` that `wt` starts), the readiness rows for `git`
+and `wt`, and `lsof` (`web/system.rs`). With the fixed list gone, an engine started at login would
+have lost `wt` in `~/.local/bin` or `~/.cargo/bin`, which the manager's `PATH` does not name. They
+now search `agents::environment::launch_search_path()`, the same answer, and `wt` is started with
+it as its `PATH`. `soyeht-vcs` and `soyeht-process` run `git` from the process `PATH`; `git` sits
+in a system folder on every system the engine supports, and those crates cannot see the engine's
+probe (ADR 0079 keeps them below it).
 
 **The Mac keeps its list.** launchd starts a program with almost no environment and no session to
 import one from, so the agent still names the system and user tool folders under the shell's
@@ -63,6 +73,9 @@ does: the engine the units started at login and the engine a window started thro
 manager remembered the same launch `PATH` (`launch-path`, byte for byte), with the `~/.nvm` folder
 in it. The old fixed `PATH`, put back by a drop-in, left out the system folders the user manager has
 (`/usr/local/sbin`, `/usr/sbin`, `/sbin`, `/usr/games`, `/usr/local/games`, `/snap/bin`).
+
+A test starts a fake `wt` that is only in a folder on the launch `PATH`, with a process `PATH`
+that lacks it: it is found with the launch `PATH` and is not without.
 
 ## Not verified
 
