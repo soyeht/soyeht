@@ -52,7 +52,7 @@ renderer. A name or a place of the legacy app is refused before anything is writ
 | Start | `RunAtLoad` | `WantedBy=default.target`, enabled | `LogonTrigger` for this user (its SID) |
 | Restart | `KeepAlive` (however it ended, while the program exists: `PathState`), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
 | Program gone | `KeepAlive` `PathState` on the program: launchd stops restarting it (see section 5) | `ConditionPathExists=` the program: the unit is skipped, not failed, so no restart loop (ADR 0121) | none |
-| Order | none: the engine reconnects | engine `After=` the supervisor (never `Requires=` or `Wants=`, ADR 0136) | none: the engine reconnects |
+| Order | none: the engine reconnects | engine `After=` the supervisor (never `Requires=` or `Wants=`, ADR 0136); `soyeht service start` and `install` of the engine alone start the supervisor first when it is registered, idle and its lock is free, and a hand-run `systemctl --user start` of the engine unit does not | none: the engine reconnects |
 | Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | none: the user manager's own environment (ADR 0135) | the user's own environment (ADR 0135) |
 | Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | the host appends the program's output to the same file (section 6) |
 | Limits | `ProcessType` Interactive | none | no time limit; one instance; runs on battery; normal priority |
@@ -156,6 +156,7 @@ because nothing listens, and no uninstall left its record since the window opene
 1. Under that lock, if all of the profile's services are **registered** (`service status`), the app asks for it to be
    started (`service start`) and waits for the endpoint as ADR 0102 does. It starts no program of
    its own. A window that cannot ask (no `soyeht` beside it) counts the service as not registered.
+   If only **some** of the services are registered, the app starts nothing of its own, since its programs would run beside a unit that starts at the next login and fails on their lock; it says so and how to repair it (turn on Start Soyeht at login, or `service install`).
 2. If it is **not registered**, the app falls back to ADR 0102: it starts the supervisor and the
    engine detached from the folder of its own executable.
 3. If the request in step 1 is **refused** (`service start` fails: the programs are gone, the
@@ -168,7 +169,8 @@ because nothing listens, and no uninstall left its record since the window opene
    manager does not.
 
 One window at a time makes this decision (the `desktop-start.lock` of ADR 0102); another waits for
-the endpoint. An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
+the endpoint, as long as the winner can hold the lock: its own 30 seconds and two service commands of
+`serviceCommandMs` each (`service status`, then `service start`), which the loser's wait is derived from. An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
 
 ## 5. Restart policy
 

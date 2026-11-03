@@ -27,6 +27,7 @@ use soyeht_platform::{
     process::detached::{Service, create_logs_directory, spawn_service},
 };
 use soyeht_protocol::{
+    client_policy::SERVICE_COMMAND_MS,
     data_directory::RESTART_SUPERVISOR_FLAG,
     profile::{ENGINE_LOG, PTYD_LOG, PTYD_SOCKET},
 };
@@ -46,8 +47,13 @@ const SUPERVISOR_PROGRAM: &str = "soyeht-ptyd";
 const LOCK_NAME: &str = "desktop-start.lock";
 /// How often a start looks at whether the engine answers, and how many looks it takes before it
 /// gives up: 30 seconds, which a release engine on a busy host does not use.
-const POLL: Duration = Duration::from_millis(100);
+const POLL_MS: u64 = 100;
+const POLL: Duration = Duration::from_millis(POLL_MS);
 const POLLS: u32 = 300;
+/// How many looks a window that lost the race for the lock takes. The winner can hold the lock for
+/// as long as `service status` and `service start` take (each within `serviceCommandMs`) and
+/// then for its own wait, so the loser waits for all of that, not for the winner's wait alone.
+const FOLLOWER_POLLS: u32 = POLLS + (2 * SERVICE_COMMAND_MS / POLL_MS) as u32;
 
 /// Whether this window starts an engine when it finds none.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,6 +128,9 @@ pub enum StartError {
     /// An uninstall ended the programs while this window was open, so it does not start them
     /// again.
     Uninstalled,
+    /// Only some of the profile's services are registered: the window starts none of its own
+    /// programs beside them, and says how to repair the registration.
+    PartialService,
 }
 
 impl StartError {
@@ -135,6 +144,7 @@ impl StartError {
             Self::TimedOut => "timed_out",
             Self::Stopped => "stopped",
             Self::Uninstalled => "uninstalled",
+            Self::PartialService => "partial_service",
         }
     }
 }
@@ -164,6 +174,11 @@ impl fmt::Display for StartError {
                 "Soyeht was uninstalled, so this window does not start the engine again. \
                  Close it and open Soyeht to start afresh.",
             ),
+            Self::PartialService => formatter.write_str(
+                "Soyeht's start at login is only partly set up, so this window does not start \
+                 the engine beside it. Open Preferences, Setup, and turn on Start Soyeht at \
+                 login to repair it.",
+            ),
         }
     }
 }
@@ -187,9 +202,9 @@ pub(crate) trait Host {
     /// Whether an uninstall ended the programs while this window was open.
     fn uninstalled(&self) -> bool;
     fn supervisor_reachable(&self) -> bool;
-    /// Whether the profile's services are registered to start at login. A window that cannot
-    /// tell (no `soyeht` program beside it) says no.
-    fn service_registered(&self) -> bool;
+    /// How much of the login start the profile's services have. A window that cannot tell (no
+    /// `soyeht` program beside it) says none.
+    fn service_registration(&self) -> Registration;
     /// Asks the service manager to start what is registered. False when it did not accept the
     /// request.
     fn start_service(&self) -> bool;
@@ -234,7 +249,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
         .map_err(|error| StartError::Lock(error.kind()))?
     else {
         // Another window is starting the engine.
-        return wait_for_engine(host);
+        return wait_for_engine(host, FOLLOWER_POLLS);
     };
     // The engine may have come up while this window waited for the lock.
     if host.engine_reachable() {
@@ -242,19 +257,24 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     }
     // The service started, so the engine is its to bring up; a start that failed leaves the
     // window to start its own. A service starts the programs from the folder it was registered
-    // with, so the folder of this window needs to hold them only for a start of its own.
-    if host.service_registered() && host.start_service() {
-        return wait_for_engine(host);
+    // with, so the folder of this window needs to hold them only for a start of its own. With
+    // only part of the services registered the window starts nothing: its own programs would
+    // run beside a unit that starts at the next login and fails on their lock.
+    match host.service_registration() {
+        Registration::Full if host.start_service() => return wait_for_engine(host, POLLS),
+        Registration::Partial => return Err(StartError::PartialService),
+        Registration::Full | Registration::None => {}
     }
     let (programs, engine) = programs_of(plan, host)?;
     start_programs(host, &programs, &engine)
 }
 
 /// Waits until the engine answers, for one that something else is starting.
-fn wait_for_engine(host: &impl Host) -> Result<(), StartError> {
+fn wait_for_engine(host: &impl Host, polls: u32) -> Result<(), StartError> {
     wait_until(
         host,
         ENGINE_PROGRAM,
+        polls,
         || host.engine_reachable(),
         &mut || false,
     )
@@ -286,6 +306,7 @@ fn start_programs(host: &impl Host, programs: &Path, engine: &Path) -> Result<()
         wait_until(
             host,
             SUPERVISOR_PROGRAM,
+            POLLS,
             || host.supervisor_reachable(),
             &mut || started.exited(),
         )?;
@@ -297,6 +318,7 @@ fn start_programs(host: &impl Host, programs: &Path, engine: &Path) -> Result<()
     wait_until(
         host,
         ENGINE_PROGRAM,
+        POLLS,
         || host.engine_reachable(),
         &mut || started.exited(),
     )
@@ -335,10 +357,11 @@ fn launch(
 fn wait_until(
     host: &impl Host,
     name: &'static str,
+    polls: u32,
     ready: impl Fn() -> bool,
     exited: &mut dyn FnMut() -> bool,
 ) -> Result<(), StartError> {
-    for _ in 0..POLLS {
+    for _ in 0..polls {
         if ready() {
             return Ok(());
         }
@@ -443,17 +466,16 @@ impl Host for Local<'_> {
         soyeht_platform::local::connect(&self.plan.directory.join(PTYD_SOCKET)).is_ok()
     }
 
-    fn service_registered(&self) -> bool {
+    fn service_registration(&self) -> Registration {
         match login_start::status() {
-            // Part of a registration is not one to start from: the window starts its own.
-            Ok(registration) => registration == Registration::Full,
+            Ok(registration) => registration,
             // No `soyeht` program beside the window: a copy with no service to ask.
-            Err(Failure::Unavailable) => false,
+            Err(Failure::Unavailable) => Registration::None,
             Err(failure) => {
-                // Not registered is the safe answer: the window starts its own programs, as it
-                // did before a service could be registered.
+                // None is the safe answer: the window starts its own programs, as it did before
+                // a service could be registered.
                 log::failure("desktop.service_status_failed", &failure);
-                false
+                Registration::None
             }
         }
     }

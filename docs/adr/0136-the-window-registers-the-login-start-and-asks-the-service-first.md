@@ -75,6 +75,14 @@ copy is worse than the small risk of a refused request that the manager honours 
 - `service start` leaves a component alone when its program holds the singleton lock, as `install`
   does: a supervisor the window started and the person then registered is not started a second time
   by its idle unit (which would fail on the lock and restart every second).
+- A registration with only some of its services makes the window start nothing of its own and say how
+  to repair it, instead of starting programs beside a unit that starts at the next login and fails on
+  their lock.
+- A window that loses the race for the start lock waits for the winner's worst case (its 30 seconds
+  and two `serviceCommandMs`), derived from the policy, not for 30 seconds.
+- With `Wants=` gone, `soyeht service start` or `install` of the engine alone (Linux) starts the
+  supervisor first when it is registered, idle and its lock is free; a hand-run `systemctl --user
+  start` of the engine unit does not.
 - The engine's unit no longer `Wants=` the supervisor's (only `After=`): starting the engine unit
   pulled in the supervisor's, which failed on the lock of a supervisor the window had started. Both
   units are still `WantedBy` the default target. A unit written before this change keeps its

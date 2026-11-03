@@ -29,11 +29,16 @@ struct Fake {
     stop_after: Option<u32>,
     /// The profile's services are registered to start at login.
     registered: bool,
+    /// Only some of the services are registered (`registered` is then not set).
+    partial: bool,
     /// The service manager refuses to start them.
     service_refuses: bool,
     /// The engine answers once the service has been asked to start.
     engine_after_service: bool,
     service_asked: Cell<u32>,
+    /// How many times `service status` was asked, and whether it ever was before the start lock.
+    status_asked: Cell<u32>,
+    status_asked_without_lock: Cell<bool>,
     pauses: Cell<u32>,
     locked: Cell<bool>,
     started: RefCell<Vec<String>>,
@@ -56,6 +61,9 @@ impl Fake {
             engine_after_lock: false,
             stop_after: None,
             registered: false,
+            partial: false,
+            status_asked: Cell::new(0),
+            status_asked_without_lock: Cell::new(false),
             service_refuses: false,
             engine_after_service: false,
             service_asked: Cell::new(0),
@@ -98,8 +106,18 @@ impl Host for Fake {
             || (!self.exits && self.started().iter().any(|name| name == "soyeht-ptyd"))
     }
 
-    fn service_registered(&self) -> bool {
-        self.registered
+    fn service_registration(&self) -> Registration {
+        self.status_asked.set(self.status_asked.get() + 1);
+        if !self.locked.get() {
+            self.status_asked_without_lock.set(true);
+        }
+        if self.registered {
+            Registration::Full
+        } else if self.partial {
+            Registration::Partial
+        } else {
+            Registration::None
+        }
     }
 
     fn start_service(&self) -> bool {
@@ -318,6 +336,60 @@ fn a_window_stopped_while_the_service_starts_ends_the_wait() {
         ..registered()
     };
     assert_eq!(ensure(&plan(), &host), Err(StartError::Stopped));
+}
+
+#[test]
+fn the_service_manager_is_asked_only_by_the_window_that_holds_the_start_lock() {
+    let winner = Fake {
+        engine_after: Some(3),
+        ..registered()
+    };
+    assert_eq!(ensure(&plan(), &winner), Ok(()));
+    assert_eq!(winner.status_asked.get(), 1);
+    assert!(
+        !winner.status_asked_without_lock.get(),
+        "`service status` can take a minute: it is asked under the lock"
+    );
+    let loser = Fake {
+        lock: Lock::Held,
+        engine_after: Some(3),
+        ..registered()
+    };
+    ensured_without_starting(&loser);
+    assert_eq!(loser.status_asked.get(), 0);
+    let engine_up = Fake {
+        engine_up: Cell::new(true),
+        ..registered()
+    };
+    ensured_without_starting(&engine_up);
+    assert_eq!(engine_up.status_asked.get(), 0);
+}
+
+#[test]
+fn a_window_that_loses_the_race_waits_as_long_as_the_winner_can_hold_the_lock() {
+    let host = Fake {
+        lock: Lock::Held,
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::TimedOut));
+    assert_eq!(host.pauses.get(), FOLLOWER_POLLS);
+    // `service status`, then `service start`, each within the policy's deadline, then the
+    // winner's own wait for the engine.
+    let winner_worst = 2 * SERVICE_COMMAND_MS + u64::from(POLLS) * POLL_MS;
+    assert!(u64::from(FOLLOWER_POLLS) * POLL_MS >= winner_worst);
+}
+
+#[test]
+fn part_of_a_registration_starts_nothing_and_says_how_to_repair_it() {
+    let host = Fake {
+        partial: true,
+        ..Fake::new()
+    };
+    let error = ensure(&plan(), &host).unwrap_err();
+    assert_eq!(error, StartError::PartialService);
+    assert!(error.to_string().contains("Start Soyeht at login"));
+    assert_eq!(host.service_asked.get(), 0);
+    assert!(host.started().is_empty());
 }
 
 /// A data folder with an engine's lock file in it, which is what a window that had an engine
