@@ -25,22 +25,47 @@ struct PhonePaneBoardView: View {
   @Binding var action: PhoneWorkspaceAction?
   @State private var shownTab: String?
 
+  /// The height the board has above the on-screen keyboard; the area itself keeps its height.
+  @State private var visibleHeight: Double?
+
   var body: some View {
-    GeometryReader { proxy in
-      let viewport = PaneBoardPolicy.viewport(
-        in: PaneLayoutSize(width: proxy.size.width, height: proxy.size.height))
-      Group {
-        if let board = client.paneBoard(
-          workspaceId: workspaceId, viewport: viewport, sizing: PhonePaneBoardMetrics.sizing)
-        {
-          content(board, viewport: viewport)
-        } else {
-          ContentUnavailableView(
-            "No open panes", systemImage: "rectangle.split.2x1",
-            description: Text("Open a pane on the Mac to continue here."))
-        }
+    ZStack {
+      // This one gives way to the keyboard, so it measures what is left above it.
+      Color.clear.onGeometryChange(for: Double.self, of: { Double($0.size.height) }) {
+        visibleHeight = $0
       }
-      .frame(width: proxy.size.width, height: proxy.size.height)
+      // The board is laid out on the whole area, keyboard or not: a keyboard must not turn the
+      // person's layout into stacks or tabs. The focused pane is moved above it instead.
+      GeometryReader { proxy in
+        let viewport = PaneBoardPolicy.viewport(
+          in: PaneLayoutSize(width: proxy.size.width, height: proxy.size.height))
+        let visible = visibleHeight ?? proxy.size.height
+        let inset = PaneBoardPolicy.keyboardInset(
+          areaHeight: proxy.size.height, visibleHeight: visible)
+        Group {
+          if let board = client.paneBoard(
+            workspaceId: workspaceId, viewport: viewport, sizing: PhonePaneBoardMetrics.sizing)
+          {
+            let fit = PaneBoardPolicy.keyboardFit(
+              board: board, focused: focusedPaneId, visibleHeight: visible, inset: inset)
+            content(
+              fit.height.flatMap { height in
+                focusedPaneId.map { board.resizingPane($0, toHeight: height) }
+              } ?? board, viewport: viewport
+            )
+            .offset(y: -fit.shift)
+            .animation(.easeOut(duration: 0.25), value: inset)
+          } else {
+            ContentUnavailableView(
+              "No open panes", systemImage: "rectangle.split.2x1",
+              description: Text("Open a pane on the Mac to continue here."))
+          }
+        }
+        .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+        .frame(height: visible, alignment: .top)
+        .clipped()
+      }
+      .ignoresSafeArea(.keyboard, edges: .bottom)
     }
     .background(PhonePalette.canvas)
     .overlay(alignment: .bottom) {

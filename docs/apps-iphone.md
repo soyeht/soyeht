@@ -29,7 +29,7 @@ Open `apps/ios/SoyehtPhone.xcodeproj`, scheme `SoyehtPhone`, select your iPhone
 or iPad and run with the team's development account. The bundle is
 `com.soyeht.next.dev.ios`. The current app does not participate in this build.
 
-On the new Mac app, choose “Pair iPhone”; the same QR pairs an iPad. On the
+On the new Mac app, choose “Pair iPhone or iPad”. On the
 device, choose “Scan Mac QR”. Compare fingerprints and allow access on the Mac.
 Open a pane from the list.
 A paired iPhone or iPad is a full remote control of the Mac (owner decision,
