@@ -1,4 +1,5 @@
 //! A device pairs with a scripted engine that signs what the real one signs, over a real WebSocket.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
@@ -33,11 +34,10 @@ fn engine(
     signer: SigningKey,
     approve: bool,
 ) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let address = listener.local_addr().unwrap();
     let handle = std::thread::spawn(move || {
-        let (stream, _) = listener.accept().unwrap();
-        let mut socket = accept(stream).unwrap();
+        let mut socket = accept(listener.accept().unwrap().0).unwrap();
         send(
             &mut socket,
             json!({"jsonrpc":"2.0","method":"auth.challenge",

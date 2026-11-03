@@ -1,4 +1,5 @@
 use super::*;
+use crate::commands::Command;
 use crate::screen::TerminalScreen;
 use crate::testing::{pane, pane_json, workspace, workspace_json};
 use serde_json::json;
