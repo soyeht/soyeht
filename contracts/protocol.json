@@ -7885,7 +7885,8 @@
       "enum": [
         "claude",
         "codex",
-        "cursor"
+        "cursor",
+        "opencode"
       ]
     },
     "UsageState": {
@@ -7910,7 +7911,8 @@
         "network_error",
         "login_needed",
         "no_access",
-        "source_failed"
+        "source_failed",
+        "plan_expired"
       ]
     },
     "UsageSource": {
@@ -7925,7 +7927,10 @@
         "codex_access_token",
         "cursor_current_period",
         "cursor_app_login",
-        "cursor_browser_cookies"
+        "cursor_browser_cookies",
+        "opencode_go_allowance",
+        "opencode_zai_plan",
+        "opencode_local_history"
       ]
     },
     "UsageWindow": {
@@ -7953,6 +7958,28 @@
       ],
       "additionalProperties": true
     },
+    "UsageActivity": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "tokens": {
+          "type": "integer"
+        },
+        "costUsd": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "label",
+        "tokens"
+      ],
+      "additionalProperties": true
+    },
     "UsageReading": {
       "type": "object",
       "properties": {
@@ -7970,6 +7997,9 @@
         },
         "secondary": {
           "$ref": "#/$defs/UsageWindow"
+        },
+        "activity": {
+          "$ref": "#/$defs/UsageActivity"
         },
         "source": {
           "$ref": "#/$defs/UsageSource"
@@ -8064,6 +8094,9 @@
         },
         "secondary": {
           "$ref": "#/$defs/UsageWindow"
+        },
+        "activity": {
+          "$ref": "#/$defs/UsageActivity"
         },
         "source": {
           "$ref": "#/$defs/UsageSource"
@@ -14570,6 +14603,7 @@
     "usageAutoRefreshIntervalSec": 300,
     "usageStaleAfterSec": 900,
     "usageMaxBackoffSec": 1800,
+    "usageActivityDays": 7,
     "editorViewportLines": 2000,
     "editorEditBytes": 262144,
     "editorPathBytes": 4096,
@@ -14828,7 +14862,8 @@
     "usageProviderNames": {
       "claude": "Claude",
       "codex": "Codex",
-      "cursor": "Cursor"
+      "cursor": "Cursor",
+      "opencode": "OpenCode"
     },
     "configRoles": {
       "model": { "category": "model" },
