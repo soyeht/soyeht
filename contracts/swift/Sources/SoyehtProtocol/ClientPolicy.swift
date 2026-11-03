@@ -4,6 +4,8 @@
 public enum ClientPolicy {
     public static let requestTimeoutMs = 12000
     public static let requestTimeoutSeconds: Double = 12.0
+    public static let engineDeadlineMarginMs = 5000
+    public static let engineDeadlineMarginSeconds: Double = 5.0
     public static let greetingTimeoutMs = 5000
     public static let greetingTimeoutSeconds: Double = 5.0
     public static let reconnectDelayMs = 1000
@@ -48,6 +50,10 @@ public enum ClientPolicy {
     public static let diagnosticsCopied = "Diagnostics copied. Paste them into your message."
     public static let diagnosticsFailed = "Soyeht could not collect the diagnostics."
     public static let diagnosticsUnavailable = "This copy of Soyeht has no diagnostics program."
+    public static let crashNoticeTitle = "Soyeht closed unexpectedly"
+    public static let crashNoticeSummary = "A crash report was saved on this computer. Nothing was sent."
+    public static let crashNoticeCopy = "Copy report"
+    public static let crashNoticeDismiss = "Dismiss"
     public static let pushNeedsYouTitle = "An agent needs you"
     public static let pushNeedsYouBody = "Open Soyeht to see what it asks."
     public static let clientNameMac = "mac"
@@ -63,6 +69,8 @@ public enum ClientPolicy {
     public static let usageRingLastKnownArcOpacity: Double = 0.45
     public static let usageRingUnavailableOpacity: Double = 0.46
     public static let usageWindowWeeklyKeyword = "week"
+    public static let crashReportsFolder = "crashes"
+    public static let crashReportsIncomingPrefix = "incoming-"
     public static let editorPrefetchLines = 160
     public static let editorPageLeadDivisor = 4
     public static let editorTabWidth = 4

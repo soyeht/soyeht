@@ -26,6 +26,7 @@ use soyeht_client::{
 };
 use soyeht_platform::log::Failure;
 
+mod crash_notice;
 mod effects;
 mod focus;
 mod input;
@@ -103,6 +104,9 @@ pub struct Workbench {
     pub(crate) update_loop: Option<Task<()>>,
     /// How the last "Copy diagnostics" went (contract 14, section 4).
     pub(crate) diagnostics: diagnostics::Phase,
+    /// The crash reports the notice "Soyeht closed unexpectedly" shows, none when it is not on
+    /// screen (contract 16).
+    pub(crate) crash_notice: Vec<String>,
     _web_signals: Option<Task<()>>,
     _events: Task<()>,
     /// Repaints once a second while an agent runs a turn, so the time in its header counts.
@@ -180,6 +184,7 @@ impl Workbench {
             updates: Updates::new(true, 0),
             update_loop: None,
             diagnostics: diagnostics::Phase::default(),
+            crash_notice: Vec::new(),
             _web_signals: None,
             _events: events,
             _clock: clock,

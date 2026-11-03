@@ -21,8 +21,10 @@ base64. Header integers are big-endian. `eventId` identifies durable
 events; challenges and snapshot parts are ephemeral notifications,
 without database sequence numbers. `hello` receives one welcome result response.
 
-The text signed in hello concatenates UTF-8 `soyeht-hello-v1`, the decoded
-32-byte nonce, canonical UTF-8 engineId UUID (36 bytes), and the UTF-8 token.
+The text signed in hello concatenates UTF-8 `soyeht-hello-v2`, the decoded
+32-byte nonce, the device's decoded 32-byte client nonce, canonical UTF-8
+engineId UUID (36 bytes), and the UTF-8 token (ADR 0132 added the client nonce
+and the engine's answer).
 The pairing code is a random 32-byte base64url secret;
 the HMAC uses that code's UTF-8 bytes followed by the raw public key to
 derive the SHA-256 key, and the raw nonce + UTF-8 deviceName as its message.

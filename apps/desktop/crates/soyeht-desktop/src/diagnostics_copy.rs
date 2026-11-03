@@ -25,6 +25,9 @@ impl Workbench {
                 });
                 if let Err(failure) = &result {
                     log::failure("desktop.diagnostics_failed", failure);
+                } else {
+                    // The report is in what was copied (contract 16): the person has it.
+                    this.acknowledge_crash_notice(cx);
                 }
                 this.diagnostics.finish(result);
                 cx.notify();
