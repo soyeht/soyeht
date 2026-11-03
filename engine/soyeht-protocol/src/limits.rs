@@ -31,14 +31,17 @@ pub const PERMISSION_COMMAND_BYTES: usize = 65536;
 pub const CANCEL_TIMEOUT_SEC: usize = 10;
 pub const PROBE_TIMEOUT_SEC: usize = 10;
 pub const NO_SIGNAL_SEC: usize = 90;
+pub const HARNESS_SWITCH_TIMEOUT_SEC: usize = 90;
 pub const USAGE_REFRESH_MIN_INTERVAL_SEC: usize = 30;
 pub const USAGE_AUTO_REFRESH_INTERVAL_SEC: usize = 300;
 pub const USAGE_STALE_AFTER_SEC: usize = 900;
 pub const USAGE_MAX_BACKOFF_SEC: usize = 1800;
+pub const USAGE_ACTIVITY_DAYS: usize = 7;
 pub const EDITOR_VIEWPORT_LINES: usize = 2000;
 pub const EDITOR_EDIT_BYTES: usize = 262144;
 /// The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.
 pub const EDITOR_PATH_BYTES: usize = 4096;
+pub const DIAGNOSTIC_MESSAGE_CHARS: usize = 4096;
 pub const EDITOR_SEARCH_RESULTS: usize = 500;
 pub const EDITOR_HISTORY_VERSIONS: usize = 200;
 pub const EDITOR_HISTORY_BYTES: usize = 52428800;

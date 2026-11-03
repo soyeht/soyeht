@@ -5,9 +5,11 @@
 //!
 //! - [`local`]: the endpoint other processes of the same user connect to. A Unix socket on
 //!   macOS and Linux; an authenticated loopback connection on Windows.
+//! - [`net`]: TCP listeners that no other program can take the port from (Windows).
 //! - [`dirs`]: the native folder for a user's application data (Application Support,
 //!   `%LOCALAPPDATA%`, XDG).
 //! - [`dialog`]: a native message box for a program with no terminal (Windows; no-op elsewhere).
+//! - [`crash`]: the report a program writes when it panics, kept locally until a person sends it.
 //! - [`diagnostics`]: the report a person pastes into an issue, and the redaction that takes
 //!   paths, names and tokens out of it.
 //! - [`user`]: who is running the process.
@@ -17,6 +19,7 @@
 //!   Unix, a job object on Windows), the Windows launch of a child into one, and the start of a
 //!   program that outlives its parent (`process::detached`), and `process::end_child`, which kills a
 //!   `std::process::Child` that still runs and reaps it within a bound.
+//! - [`program`]: a program that ends itself when its own file is gone.
 //! - [`fs`]: owner-only files and directories and opens that never follow a link.
 //! - [`worktrunk`]: the name of the worktree program, which Windows spells `git-wt`.
 //! - [`git`]: whether `git` can run, decided without starting it (the macOS launcher opens
@@ -24,6 +27,7 @@
 //!
 //! The crate has no Soyeht dependencies.
 
+pub mod crash;
 pub mod diagnostics;
 pub mod dialog;
 pub mod dirs;
@@ -32,7 +36,9 @@ pub mod git;
 pub mod hostname;
 pub mod local;
 pub mod log;
+pub mod net;
 pub mod process;
+pub mod program;
 #[cfg(feature = "tokio")]
 pub mod shutdown;
 #[cfg(any(test, feature = "test-support"))]

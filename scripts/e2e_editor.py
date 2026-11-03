@@ -48,6 +48,14 @@ class EditorServices(AgentServices):
             db.execute("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB)")
             db.execute("INSERT INTO ItemTable VALUES (?, ?)",
                              ("cursorAuth/accessToken", fake_jwt({"sub": "auth0|e2e", "exp": 4102444800})))
+        # OpenCode set to the GLM Coding Plan and signed in to it (usage/sources/opencode).
+        opencode_config = home / ".config/opencode"
+        opencode_config.mkdir(parents=True)
+        (opencode_config / "opencode.json").write_text(json.dumps({"model": "zai-coding-plan/glm-5.3"}))
+        opencode_data = home / ".local/share/opencode"
+        opencode_data.mkdir(parents=True)
+        (opencode_data / "auth.json").write_text(
+            json.dumps({"zai-coding-plan": {"type": "api", "key": "e2e-plan-token"}}))
         self.usage_mode = readers / "mode.json"
         self.set_usage_modes(first="ok", second="ok", third="ok")
         self._write_reader(readers / "second-source", SECOND_SOURCE)
@@ -125,6 +133,9 @@ if url == "https://api.anthropic.com/api/oauth/usage":
 if url == "https://cursor.com/api/usage-summary":
  status = {"ok": 200, "login_needed": 401, "no_access": 403}[modes["third"]]
  body = {"billingCycleEnd":"2026-10-20T00:00:00.000Z","individualUsage":{"plan":{"totalPercentUsed":40}}}
+if url == "https://api.z.ai/api/monitor/usage/quota/limit":
+ status = 200
+ body = {"code":200,"success":True,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":25}]}}
 print(json.dumps(body))
 print("SOYEHT_STATUS:%d" % status)
 print("SOYEHT_RETRY:")
@@ -254,7 +265,7 @@ def refresh_provider(client, provider, key):
 
 def acceptance_usage(services, client, results):
     refreshed = client.mutate("usage.refresh", idempotencyKey="usage-all")["providers"]
-    require(set(states(refreshed).values()) == {"ok"} and len(refreshed) == 3,
+    require(set(states(refreshed).values()) == {"ok"} and len(refreshed) == 4,
             "fake usage readers did not all return ok")
     limited = request(client, "usage.refresh", {"provider": "claude", "idempotencyKey": "limited"})
     require(limited["error"]["data"]["kind"] == "rate_limited", "manual refresh was not limited")

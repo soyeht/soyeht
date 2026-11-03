@@ -92,13 +92,23 @@ fn the_report_names_the_facts_and_keeps_no_path_name_or_token() {
 fn only_the_last_lines_are_taken_and_the_rotated_file_fills_a_short_log() {
     let data = scratch_dir("diagnostics-tail");
     let logs = logs(&data);
-    fs::write(logs.join("engine.log.1"), "old-1\nold-2\nold-3\n").unwrap();
-    fs::write(logs.join("engine.log"), "new-1\nnew-2\n").unwrap();
+    let line = |name: &str| format!("{{\"event\":\"{name}\"}}");
+    let lines = |names: &[&str]| names.iter().map(|name| line(name)).collect::<Vec<_>>();
+    let file = |names: &[&str]| lines(names).join("\n") + "\n";
+    fs::write(
+        logs.join("engine.log.1"),
+        file(&["old-1", "old-2", "old-3"]),
+    )
+    .unwrap();
+    fs::write(logs.join("engine.log"), file(&["new-1", "new-2"])).unwrap();
     assert_eq!(
         tail(&logs.join("engine.log"), 4).unwrap(),
-        ["old-2", "old-3", "new-1", "new-2"]
+        lines(&["old-2", "old-3", "new-1", "new-2"])
     );
-    assert_eq!(tail(&logs.join("engine.log"), 1).unwrap(), ["new-2"]);
+    assert_eq!(
+        tail(&logs.join("engine.log"), 1).unwrap(),
+        lines(&["new-2"])
+    );
 }
 
 #[test]
@@ -107,11 +117,14 @@ fn a_long_log_is_read_from_its_end_and_a_long_line_is_cut() {
     let logs = logs(&data);
     let mut big = String::new();
     for index in 0..40_000 {
-        big.push_str(&format!("line {index}\n"));
+        big.push_str(&format!("{{\"event\":\"line {index}\"}}\n"));
     }
     fs::write(logs.join("engine.log"), &big).unwrap();
     let lines = tail(&logs.join("engine.log"), 3).unwrap();
-    assert_eq!(lines, ["line 39997", "line 39998", "line 39999"]);
+    assert_eq!(
+        lines,
+        [39997, 39998, 39999].map(|index| format!("{{\"event\":\"line {index}\"}}"))
+    );
     assert_eq!(
         clip(&"x".repeat(LINE_CHARS + 50)).chars().count(),
         LINE_CHARS + 3
@@ -172,4 +185,32 @@ fn a_log_of_huge_lines_makes_a_report_in_well_under_a_second() {
         started.elapsed()
     );
     assert!(report.contains("#### engine.log"));
+}
+
+#[test]
+fn only_structured_log_lines_are_pasted_so_a_panic_message_never_is() {
+    let data = scratch_dir("diagnostics-structured");
+    let logs = logs(&data);
+    fs::write(
+        logs.join("engine.log"),
+        "{\"event\":\"engine.ready\"}\n\
+         thread 'main' (7) panicked at soyeht-engine/src/core.rs:12:5:\n\
+         the title of the document the person was writing\n\
+         note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\
+         soyeht-engine: could not start: a message\n\
+         {\"event\":\"engine.after\"}\n",
+    )
+    .unwrap();
+    let redactor = Redactor::new(None, None, None);
+    let text = report(&input(&data, &redactor, 40));
+    assert!(text.contains("engine.ready") && text.contains("engine.after"));
+    for leaked in [
+        "panicked",
+        "the title of the document",
+        "RUST_BACKTRACE",
+        "could not start",
+    ] {
+        assert!(!text.contains(leaked), "{leaked} leaked:\n{text}");
+    }
+    fs::remove_dir_all(data).ok();
 }

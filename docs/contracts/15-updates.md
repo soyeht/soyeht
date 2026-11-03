@@ -32,6 +32,7 @@ and a newline.
 | `format` | The same whole number, 1. |
 | `channel` | One of `channels` (today `stable`). |
 | `sequence` | A whole number from 1 to `manifest.maxSequence` (2^53 - 1) that rises with every manifest published. `release_manifest.py` writes the signing time in seconds. Devices refuse a manifest below the highest one they have read (section 3). |
+| `expiresAt` | A whole number of seconds since 1970, above `sequence` and at most `manifest.maxLifetimeSeconds` (7,776,000, 90 days) above it. A reader at or past this time refuses the manifest (section 3), so an old manifest that someone keeps serving does not hold a device on an old release. `release_manifest.py` writes the signing time plus that life. |
 | `version` | `MAJOR.MINOR.PATCH`: three plain numbers, none with a leading zero, each below 1,000 (ADR 0115). |
 | `minimumSupportedVersion` | The same form, not above `version`. |
 | `releaseNotesUrl` | An address below one of `urlPrefixes`. |
@@ -73,10 +74,16 @@ The order is fixed, because the vectors fix the failure each broken manifest end
     this device has read a newer one. A device that reads a manifest of any outcome (up to date or available) remembers its sequence if it is the highest.
     A re-published manifest keeps its sequence and is read again. A release that must be rolled
     back is published again with a higher `sequence`.
-10. `version` is not above the running version: up to date. A manifest that is older or equal never
+10. The clock is at or past `expiresAt`: `expired`. This comes before the comparison of versions, so
+    an expired manifest never reads as "up to date". The reader's clock is the only one it has: a
+    device whose clock is far ahead sees the check fail until it is corrected, and a clock before
+    1970 reads as the end of time (every manifest expired). A release that is not followed by
+    another for 90 days must be published again (a new manifest with a higher `sequence`) before
+    the last one expires, or every device's check fails with `expired`.
+11. `version` is not above the running version: up to date. A manifest that is older or equal never
    offers anything, whatever else it holds.
-11. No package for the build's system and architecture: `noPackage`.
-12. Otherwise a newer version is **available**, with that package. It is **required** when the
+12. No package for the build's system and architecture: `noPackage`.
+13. Otherwise a newer version is **available**, with that package. It is **required** when the
     running version is below `minimumSupportedVersion`.
 
 A build whose own version is not three plain numbers ends the check as `unknownBuild`. A fetch

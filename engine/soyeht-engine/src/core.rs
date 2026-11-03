@@ -99,6 +99,8 @@ pub struct Core {
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
+    /// Signs what proves this engine to a paired device (ADR 0132); kept with the database.
+    pub(crate) engine_key: ed25519_dalek::SigningKey,
     /// Whether paired devices can reach this engine (tailnet listeners), ADR 0078.
     pub reachability: soyeht_protocol::EngineReachability,
     pub push: crate::push::Notifier,
@@ -123,6 +125,23 @@ fn log_stale_export_cleanup(directory: &Path) {
 /// The address a paired device reaches the engine at before the listeners say otherwise.
 fn loopback_address(profile: &Profile) -> String {
     format!("127.0.0.1:{}", profile.tcp_port)
+}
+
+/// The generation of this start of the engine.
+fn next_generation(store: &mut Store) -> Result<u64> {
+    let generation = store.next_engine_generation().map_err(errors::storage)?;
+    if generation > u32::MAX as u64 {
+        return Err(errors::internal("Engine generation exhausted"));
+    }
+    Ok(generation)
+}
+
+/// The key that signs for this engine, made on the first start and kept with its database.
+fn engine_signing_key(store: &Store) -> Result<ed25519_dalek::SigningKey> {
+    let seed = store
+        .metadata_or_insert("engine_key", &crate::auth::new_engine_seed()?)
+        .map_err(errors::storage)?;
+    crate::auth::engine_key(&seed)
 }
 
 impl Core {
@@ -152,16 +171,14 @@ impl Core {
         ) {
             line.emit();
         }
-        let generation = store.next_engine_generation().map_err(errors::storage)?;
-        if generation > u32::MAX as u64 {
-            return Err(errors::internal("Engine generation exhausted"));
-        }
+        let generation = next_generation(&mut store)?;
         let usage_readings = store.usage_readings().map_err(errors::storage)?;
         let editor_files = store.editor_files().map_err(errors::storage)?;
         let language_servers = store
             .language_server_checkpoints()
             .map_err(errors::storage)?;
         let mut core = Self {
+            engine_key: engine_signing_key(&store)?,
             store,
             directory: directory.into(),
             generation,

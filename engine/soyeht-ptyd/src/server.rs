@@ -91,7 +91,13 @@ pub fn run(directory: &Path) -> Result<()> {
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
         Err(BindError::Io(error)) => return Err(error.into()),
     };
+    let gone_endpoint = endpoint.clone();
     let _endpoint = EndpointFile(endpoint);
+    // The app that holds this program was deleted: end, with the terminals, as the registration
+    // of the program no longer restarts it (ADR 0130; macOS only, `program::on_gone`).
+    end_when_program_is_gone(soyeht_platform::program::on_gone, gone_endpoint, || {
+        std::process::exit(0)
+    });
     let registry = Registry::load(directory)?;
     let state = Arc::new(Mutex::new(State {
         directory: directory.to_owned(),
@@ -115,7 +121,7 @@ pub fn run(directory: &Path) -> Result<()> {
         let state = Arc::clone(&state);
         thread::spawn(move || {
             if let Err(error) = connection(stream, state) {
-                log::event("ptyd.connection_failed", &[("error", &error_label(&error))]);
+                log::failure("ptyd.connection_failed", &error);
             }
         });
     }
@@ -130,6 +136,24 @@ fn refusal_reason(peer: io::Result<bool>) -> Option<&'static str> {
     })
 }
 
+/// Starts the watch of the program's file with `start`; when it says the file is gone, removes
+/// the endpoint, as stopping does, and calls `exit`. A watch that cannot start is logged and the
+/// supervisor runs on.
+fn end_when_program_is_gone(
+    start: impl FnOnce(Box<dyn FnOnce() + Send>) -> io::Result<()>,
+    endpoint: PathBuf,
+    exit: impl FnOnce() + Send + 'static,
+) {
+    let action = Box::new(move || {
+        log::event("ptyd.program_gone", &[]);
+        drop(EndpointFile(endpoint));
+        exit();
+    });
+    if let Err(error) = start(action) {
+        log::failure("ptyd.program_watch_failed", &error);
+    }
+}
+
 /// The endpoint this supervisor listens on; it is removed when the supervisor stops, as the
 /// engine removes its own. A supervisor that is killed cannot run this, and the next one
 /// replaces the file it left.
@@ -142,18 +166,6 @@ impl Drop for EndpointFile {
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => log::failure("ptyd.endpoint_not_removed", &error),
         }
-    }
-}
-
-/// A bounded label for logs: the variant (and I/O kind), never message text or paths.
-fn error_label(error: &Error) -> String {
-    match error {
-        Error::Io(error) => format!("Io::{:?}", error.kind()),
-        other => format!("{other:?}")
-            .split(|c: char| !c.is_alphanumeric())
-            .next()
-            .unwrap_or("Unknown")
-            .to_string(),
     }
 }
 
@@ -666,18 +678,38 @@ mod tests {
     }
 
     #[test]
-    fn connection_failures_are_logged_by_variant_without_message_text() {
-        let io = Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, "/private/path"));
-        assert_eq!(error_label(&io), "Io::BrokenPipe");
-        let remote = Error::Remote {
-            kind: "kind".into(),
-            message: "secret detail".into(),
-        };
-        assert_eq!(error_label(&remote), "Remote");
-        assert_eq!(error_label(&Error::PoisonedLock("state")), "PoisonedLock");
-        assert_eq!(
-            error_label(&Error::ConnectionSuperseded),
-            "ConnectionSuperseded"
+    fn a_program_that_is_gone_ends_the_supervisor_and_removes_its_endpoint() {
+        let path =
+            std::env::temp_dir().join(format!("soyeht-gone-endpoint-{}", std::process::id()));
+        std::fs::write(&path, "endpoint").unwrap();
+        let (ended, waiting) = std::sync::mpsc::channel();
+        // The watch says "gone" at once, from its own thread, as the real one does.
+        end_when_program_is_gone(
+            |action| {
+                thread::spawn(action);
+                Ok(())
+            },
+            path.clone(),
+            move || ended.send(()).unwrap(),
         );
+        waiting.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(
+            !path.exists(),
+            "the endpoint goes before the supervisor ends"
+        );
+    }
+
+    #[test]
+    fn a_watch_that_cannot_start_leaves_the_supervisor_running() {
+        let path =
+            std::env::temp_dir().join(format!("soyeht-nowatch-endpoint-{}", std::process::id()));
+        std::fs::write(&path, "endpoint").unwrap();
+        end_when_program_is_gone(
+            |_| Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+            path.clone(),
+            || panic!("the supervisor must not end"),
+        );
+        assert!(path.exists());
+        std::fs::remove_file(&path).unwrap();
     }
 }
