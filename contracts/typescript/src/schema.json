@@ -608,6 +608,9 @@
         },
         "dbId": {
           "$ref": "#/$defs/Id"
+        },
+        "engineProof": {
+          "$ref": "#/$defs/ByteString"
         }
       },
       "required": [
@@ -644,6 +647,9 @@
           "type": "string"
         },
         "proof": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "clientNonce": {
           "$ref": "#/$defs/ByteString"
         },
         "binding": {
@@ -1625,6 +1631,9 @@
           "$ref": "#/$defs/Id"
         },
         "challenge": {
+          "$ref": "#/$defs/ByteString"
+        },
+        "engineProof": {
           "$ref": "#/$defs/ByteString"
         }
       },
@@ -7950,7 +7959,8 @@
       "enum": [
         "claude",
         "codex",
-        "cursor"
+        "cursor",
+        "opencode"
       ]
     },
     "UsageState": {
@@ -7975,7 +7985,8 @@
         "network_error",
         "login_needed",
         "no_access",
-        "source_failed"
+        "source_failed",
+        "plan_expired"
       ]
     },
     "UsageSource": {
@@ -7990,7 +8001,10 @@
         "codex_access_token",
         "cursor_current_period",
         "cursor_app_login",
-        "cursor_browser_cookies"
+        "cursor_browser_cookies",
+        "opencode_go_allowance",
+        "opencode_zai_plan",
+        "opencode_local_history"
       ]
     },
     "UsageWindow": {
@@ -8018,6 +8032,28 @@
       ],
       "additionalProperties": true
     },
+    "UsageActivity": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "tokens": {
+          "type": "integer"
+        },
+        "costUsd": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "label",
+        "tokens"
+      ],
+      "additionalProperties": true
+    },
     "UsageReading": {
       "type": "object",
       "properties": {
@@ -8035,6 +8071,9 @@
         },
         "secondary": {
           "$ref": "#/$defs/UsageWindow"
+        },
+        "activity": {
+          "$ref": "#/$defs/UsageActivity"
         },
         "source": {
           "$ref": "#/$defs/UsageSource"
@@ -8129,6 +8168,9 @@
         },
         "secondary": {
           "$ref": "#/$defs/UsageWindow"
+        },
+        "activity": {
+          "$ref": "#/$defs/UsageActivity"
         },
         "source": {
           "$ref": "#/$defs/UsageSource"
@@ -14638,10 +14680,12 @@
     "cancelTimeoutSec": 10,
     "probeTimeoutSec": 10,
     "noSignalSec": 90,
+    "harnessSwitchTimeoutSec": 90,
     "usageRefreshMinIntervalSec": 30,
     "usageAutoRefreshIntervalSec": 300,
     "usageStaleAfterSec": 900,
     "usageMaxBackoffSec": 1800,
+    "usageActivityDays": 7,
     "editorViewportLines": 2000,
     "editorEditBytes": 262144,
     "editorPathBytes": 4096,
@@ -14797,6 +14841,7 @@
   "x-clientPolicy": {
     "timeouts": {
       "requestTimeoutMs": 12000,
+      "engineDeadlineMarginMs": 5000,
       "greetingTimeoutMs": 5000,
       "reconnectDelayMs": 1000,
       "reconnectCeilingMs": 30000,
@@ -14839,6 +14884,10 @@
     "usageWindow": {
       "weeklyKeyword": "week"
     },
+    "crashReports": {
+      "folder": "crashes",
+      "incomingPrefix": "incoming-"
+    },
     "editor": {
       "prefetchLines": 160,
       "pageLeadDivisor": 4,
@@ -14876,6 +14925,10 @@
       "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
       "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
       "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+      "crashNoticeTitle": "Soyeht closed unexpectedly",
+      "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
+      "crashNoticeCopy": "Copy report",
+      "crashNoticeDismiss": "Dismiss",
       "pushNeedsYouTitle": "An agent needs you",
       "pushNeedsYouBody": "Open Soyeht to see what it asks."
     },
@@ -14926,7 +14979,8 @@
     "usageProviderNames": {
       "claude": "Claude",
       "codex": "Codex",
-      "cursor": "Cursor"
+      "cursor": "Cursor",
+      "opencode": "OpenCode"
     },
     "configRoles": {
       "model": {

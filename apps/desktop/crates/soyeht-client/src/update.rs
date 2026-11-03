@@ -12,7 +12,11 @@ use soyeht_protocol::update_policy::{
     CHECK_TIMEOUT_SECONDS, CONNECT_SECONDS, DEFAULT_CHANNEL, Failure, MANIFEST_MAX_BYTES,
     MANIFEST_URL, MAX_REDIRECTS, PUBLIC_KEYS, PublicKey, USER_AGENT, text,
 };
-use std::{ffi::OsStr, process::Command, time::Duration};
+use std::{
+    ffi::OsStr,
+    process::Command,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 /// Windows ships `curl.exe` in its system folder, which is on the search path.
 #[cfg(windows)]
@@ -91,25 +95,35 @@ fn fetch_with(program: &OsStr, url: &str) -> Result<String, Failure> {
     }
 }
 
-/// The verdict of `fetch` read against `keys`, refusing a manifest below `floor`. A build with
-/// no key fetches nothing: it could not trust the answer.
+/// The verdict of `fetch` read against `keys` at `now` (seconds since 1970), refusing a manifest
+/// below `floor` or past its expiry. A build with no key fetches nothing: it could not trust the
+/// answer.
 fn check_with(
     build: &Build<'_>,
     keys: &[PublicKey],
     floor: u64,
+    now: u64,
     fetch: impl FnOnce() -> Result<String, Failure>,
 ) -> Result<Checked, Failure> {
     if keys.is_empty() {
         return Err(Failure::NotConfigured);
     }
-    evaluate(&fetch()?, build, keys, floor)
+    evaluate(&fetch()?, build, keys, floor, now)
+}
+
+/// The clock in seconds since 1970. A clock before 1970 reads as the end of time, so every
+/// manifest is past its expiry: a clock that cannot be trusted does not extend one.
+fn now_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(u64::MAX, |elapsed| elapsed.as_secs())
 }
 
 /// Asks for the manifest and reads it; `floor` is the highest sequence this device has read. It
 /// blocks for up to the check's time: run it off the window's thread.
 pub fn check(floor: u64) -> Result<Checked, Failure> {
     let build = running().ok_or(Failure::UnknownBuild)?;
-    check_with(&build, PUBLIC_KEYS, floor, || {
+    check_with(&build, PUBLIC_KEYS, floor, now_seconds(), || {
         fetch_with(OsStr::new(CURL), MANIFEST_URL)
     })
 }
@@ -183,6 +197,7 @@ impl Updates {
             (Status::UpToDate, true) => about(text::UP_TO_DATE, running),
             (Status::Available(offer), true) => about(text::AVAILABLE, &offer.version),
             (Status::Failed(Failure::NotConfigured), true) => text::NOT_CONFIGURED.to_owned(),
+            (Status::Failed(Failure::Expired), true) => text::EXPIRED.to_owned(),
             (Status::Failed(_), true) => text::FAILED.to_owned(),
         }
     }
@@ -302,16 +317,23 @@ mod tests {
     }
 
     #[test]
+    fn the_clock_is_read_in_seconds_since_1970() {
+        // A date well after the contract was written, and well before the end of time that a
+        // clock before 1970 reads as.
+        assert!((1_790_000_000..u64::MAX / 2).contains(&now_seconds()));
+    }
+
+    #[test]
     fn a_build_with_no_key_asks_nobody() {
-        let result = check_with(&build(), &[], 0, || panic!("fetched without a key"));
+        let result = check_with(&build(), &[], 0, 0, || panic!("fetched without a key"));
         assert_eq!(result, Err(Failure::NotConfigured));
     }
 
     #[test]
     fn a_fetch_that_fails_is_its_own_failure_and_text_that_is_no_manifest_is_refused() {
-        let unreachable = check_with(&build(), &[KEY], 0, || Err(Failure::Unreachable));
+        let unreachable = check_with(&build(), &[KEY], 0, 0, || Err(Failure::Unreachable));
         assert_eq!(unreachable, Err(Failure::Unreachable));
-        let garbage = check_with(&build(), &[KEY], 0, || {
+        let garbage = check_with(&build(), &[KEY], 0, 0, || {
             Ok("<html>captive portal</html>".into())
         });
         assert_eq!(garbage, Err(Failure::BadEnvelope));
@@ -398,6 +420,7 @@ mod tests {
                         Failure::NotConfigured,
                         Failure::Unreachable,
                         Failure::BadSignature,
+                        Failure::Expired,
                     ]
                     .into_iter()
                     .find(|failure| failure.as_str() == status["failure"].as_str().unwrap())

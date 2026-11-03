@@ -12,7 +12,7 @@ mod planner;
 mod policy;
 mod sources;
 
-pub use model::{Reading, Window};
+pub use model::{Activity, Reading, Window};
 pub use planner::{PROVIDERS, Planner, RefreshOutcome, TransientFailure};
 pub use policy::{ManualRefresh, RefreshPolicy};
 pub use sources::{Failure, Trigger};

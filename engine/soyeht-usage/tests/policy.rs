@@ -16,6 +16,7 @@ fn reading(resets_at: &str) -> Reading {
             label: "5-hour window".into(),
         }),
         secondary: None,
+        activity: None,
         source: UsageSource::CodexAppServer,
         fetched_at: "then".into(),
         observed_at_sec: 1_000,

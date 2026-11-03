@@ -62,7 +62,8 @@ debug = 0
 # (`PoisonError`), a panicked thread is joined and reported, and a panicked task ends only itself,
 # so `panic = "abort"` would turn each of those into the death of the whole process. The symbols
 # are stripped from the binary: a release is smaller and the engine hashes its whole executable at
-# start. `docs/platforms.md` describes the profile.
+# start. `docs/platforms.md` describes the profile. Thin LTO stays: fat is 4% smaller here and
+# 1% slower on the editor (open and search), and the window, which gains from fat, is built apart.
 [profile.release]
 opt-level = 3
 lto = "thin"
