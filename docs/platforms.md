@@ -122,8 +122,10 @@ same number, and the fourth from the revision. The script does not tag, push, bu
 
 A release made by `package_mac.py`, `package_linux.py` or `package_windows.py` is built with `--remap-path-prefix` for the builder's source, home, cargo and rustup folders (`package_common.release_environment`), so no path of the build machine ends up in a program (the C libraries get `-ffile-prefix-map` too, and a Windows release compiles its C with clang, so LLVM is needed for x64 as well as Arm).
 
-Both cargo workspaces (`engine/` and `apps/desktop/`) have the same `[profile.release]`:
-`opt-level = 3`, `lto = "thin"`, `codegen-units = 1` and `strip = "symbols"`. `panic` stays
+Both cargo workspaces (`engine/` and `apps/desktop/`) have a `[profile.release]` with
+`opt-level = 3`, `codegen-units = 1` and `strip = "symbols"`; the window's has `lto = "fat"` and
+the engine's `lto = "thin"` (fat LTO made the window 7% smaller and 4% faster on the terminal
+reflow, and the engine 4% smaller but 1% slower on the editor, which is not worth the size). `panic` stays
 `"unwind"`, written out so nobody changes it by accident: the engine recovers a poisoned lock,
 joins a panicked thread and reports a panicked task as a failure of that task, and `abort` would
 turn each of those into the death of the whole process (and of every terminal the supervisor
@@ -175,6 +177,19 @@ notarized and stapled, and `dist/soyeht-<version>-macos-aarch64.dmg` with its `.
 notarized and stapled. The version is `contracts/release.json`; `dist/` is ignored. The bundle is
 `Soyeht Next.app` (`displayNames` in `contracts/profiles.json`; `Soyeht.app` is the older app's name) with the identifier `com.soyeht.next.mac`.
 It is Apple silicon only (the dictation engines are built on MLX).
+The app's executable is stripped, as Xcode does for an archive, before it is signed (the Rust
+programs are stripped by their profile): 38 MB of names that nothing reads at run time, a fifth of
+the image. Its debug symbols are saved first, with the same UUID, as
+`dist/symbols/soyeht-<version>-macos-aarch64.dSYM.zip` (`dist/ad-hoc/symbols/` for an ad hoc
+build): keep it with the release, since it is the only way to name the frames of a crash. It is
+not part of the package, and the release flow does not collect it.
+
+A finished package has a size ceiling in `scripts/package_sizes.json` (bytes, about 3% over what was
+measured; see `docs/reports/package-sizes-2026-11-02.md`). The three packaging scripts fail when a
+package is over its ceiling, or has a name that is not a kind of the file, so a growth is a
+decision written in that file with its reason. A package more than 10% under its ceiling only
+prints a warning to lower the number. A kind with `null` has not been built yet and is not
+checked.
 
 | Variable | Holds |
 | --- | --- |

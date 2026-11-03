@@ -42,6 +42,7 @@ from package_common import (
     ROOT,
     PackagingError,
     artifact_path,
+    check_sizes,
     release_environment,
     run,
     stream,
@@ -63,6 +64,7 @@ WORK = ROOT / ".cache/package-mac"
 PACKAGES = ROOT / ".cache/apple-packages"
 DIST = ROOT / "dist"
 HELPERS_FOLDER = "Contents/MacOS"
+SYMBOLS_BUNDLE = "app.dSYM"  # the scratch name of the symbols before they are zipped
 
 IDENTITY_VARIABLE = "SOYEHT_MAC_SIGNING_IDENTITY"
 TEAM_VARIABLE = "SOYEHT_DEVELOPMENT_TEAM"
@@ -231,7 +233,7 @@ def is_macho(path):
 def nested_code(app):
     """Every bundle and program inside `app` except its own executable, the deepest first, so
     a bundle is signed after the code it holds."""
-    main = app / "Contents/MacOS" / plistlib.loads((app / "Contents/Info.plist").read_bytes())["CFBundleExecutable"]
+    main = app_executable(app)
     found = []
     for folder, directories, files in os.walk(app):
         base = Path(folder)
@@ -266,6 +268,35 @@ def thin_libraries(app):
             thin = path.with_name(path.name + ".thin")
             run(["lipo", "-thin", ARCHITECTURE, path, "-output", thin])
             thin.replace(path)
+
+
+def app_executable(app):
+    """The app's own executable, the one `CFBundleExecutable` names."""
+    name = plistlib.loads((app / "Contents/Info.plist").read_bytes())["CFBundleExecutable"]
+    return app / "Contents/MacOS" / name
+
+
+def save_symbols(built, destination):
+    """The debug symbols of the built app, zipped, before `strip_app` takes them out of the
+    shipped copy. A crash of the app names its frames only with them (the UUID of the executable
+    is the same), so a release keeps this file, as ADR 0127 asks for the programs. It is not
+    part of the package."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    bundle = destination.parent / SYMBOLS_BUNDLE
+    if bundle.exists():
+        shutil.rmtree(bundle)
+    run(["dsymutil", app_executable(built), "-o", bundle])
+    destination.unlink(missing_ok=True)
+    run(["ditto", "-c", "-k", "--norsrc", "--keepParent", bundle, destination])
+    if bundle.exists():  # dsymutil made it; a test that runs nothing did not
+        shutil.rmtree(bundle)
+
+
+def strip_app(app):
+    """Take the symbol table out of the app's executable, as Xcode does for an archive
+    (`STRIP_STYLE = all`): a third of the file is names that nothing reads at run time. The
+    signature goes first and the signing step makes a new one."""
+    run(["strip", "-u", "-r", app_executable(app)])
 
 
 def codesign_command(path, signing, *, identifier=None, entitlements=None):
@@ -341,7 +372,8 @@ def notarize_and_staple_image(image, signing):
 
 def make_image(app, destination, scratch):
     """A compressed image holding the app and a link to /Applications, made without Finder (so
-    no window opens and no layout is scripted)."""
+    no window opens and no layout is scripted). The format is `ULMO` (LZMA), which macOS has read
+    since 10.15: about a third smaller than `UDZO` (zlib) for this app, and the app needs macOS 15."""
     folder = scratch / "image"
     if folder.exists():
         shutil.rmtree(folder)
@@ -351,7 +383,7 @@ def make_image(app, destination, scratch):
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.unlink(missing_ok=True)
     run(["hdiutil", "create", "-volname", VOLUME_NAME, "-srcfolder", folder, "-fs", "APFS",
-         "-format", "UDZO", "-ov", destination])
+         "-format", "ULMO", "-ov", destination])
 
 
 # --- checking the result ----------------------------------------------------------------------
@@ -497,11 +529,14 @@ def package(options, environment):
     WORK.mkdir(parents=True, exist_ok=True)
     app = assemble(built, programs, WORK / "stage" / f"{PRODUCT_NAME}.app")
     thin_libraries(app)
+    folder = output_directory(signing, options.dist)
+    symbols = artifact_path(folder / "symbols", made.version, OPERATING_SYSTEM, ARTIFACT_ARCHITECTURE, "dSYM.zip")
+    save_symbols(built, symbols)
+    strip_app(app)
     sign_bundle(app, signing)
     if signing.notarizes:
         notarize_and_staple_app(app, signing, WORK)
     problems = verify_bundle(app, signing, made)
-    folder = output_directory(signing, options.dist)
     image = artifact_path(folder, made.version, OPERATING_SYSTEM, ARTIFACT_ARCHITECTURE, "dmg")
     make_image(app, image, WORK)
     sign_file(image, signing)
@@ -509,14 +544,16 @@ def package(options, environment):
         notarize_and_staple_image(image, signing)
     problems += verify_image(image, signing, made)
     checksum = write_checksum(image)
-    report(image, checksum, app, signing, problems)
+    report(image, checksum, app, signing, problems, symbols)
+    check_sizes([image])
     return 1 if problems else 0
 
 
-def report(image, checksum, app, signing, problems):
+def report(image, checksum, app, signing, problems, symbols):
     accepted, text = assess(app, "app")
     image_accepted, image_text = assess(image, "image")
     print(f"\nImage     {image}\nChecksum  {checksum}")
+    print(f"Symbols   {symbols}  (keep it with the release; it is not part of the package)")
     print(f"Signing   {'ad hoc' if signing.ad_hoc else 'Developer ID, team ' + str(signing.team)}")
     print(f"Gatekeeper, app    {'accepted' if accepted else 'rejected'}: {text}")
     print(f"Gatekeeper, image  {'accepted' if image_accepted else 'rejected'}: {image_text}")
