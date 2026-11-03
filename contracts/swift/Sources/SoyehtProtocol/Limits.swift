@@ -13,6 +13,12 @@ public enum ProtocolLimits {
     public static let eventCount = 10000
     public static let eventDays = 7
     public static let deviceConnections = 8
+    /// The characters of a pairing code, and of an engine's public key, in a pairing link: 32 bytes as URL-safe base64 without padding.
+    public static let pairingCodeChars = 43
+    /// How long a pairing code stays valid, and the longest a device waits for the person to allow access.
+    public static let pairingWindowSeconds = 600
+    /// The longest name (in UTF-8 bytes) a device gives itself when it pairs. The engine shows it to the person who allows access.
+    public static let deviceNameBytes = 128
     public static let promptBytes = 65536
     public static let promptQueueCount = 64
     public static let agentMessagesPerWindow = 6

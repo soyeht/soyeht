@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use soyeht_protocol::{Device, Role, event, method};
+use soyeht_protocol::{Device, Role, event, limits, method, pairing_link};
 use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -248,15 +248,14 @@ impl Core {
         if method == method::DEVICE_PAIR_START {
             let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
             let now = self.now_unix();
-            let expires = now + chrono::Duration::minutes(10).num_seconds();
+            let expires = now + limits::PAIRING_WINDOW_SECONDS as i64;
             let expires_at = chrono::DateTime::from_timestamp(expires, 0)
                 .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
-            let uri = format!(
-                "soyeht-next://pair?engineId={}&address={}&code={}&engineKey={}",
-                self.store.store_id(),
-                self.pair_address,
-                code,
-                auth::engine_key_text(&self.engine_key)
+            let uri = pairing_link::uri(
+                &self.store.store_id(),
+                &self.pair_address,
+                &code,
+                &auth::engine_key_text(&self.engine_key),
             );
             let mut result = self.mutate(connection,method,params,|tx| {
                 tx.open_pair_window(&code, expires, now)?;

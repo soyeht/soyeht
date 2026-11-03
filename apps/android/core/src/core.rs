@@ -12,7 +12,10 @@ use soyeht_client::{
     device::{self, Credential},
     keys,
 };
-use soyeht_protocol::client_policy::{CLIENT_NAME_ANDROID, CLIENT_NAME_ANDROID_DEV};
+use soyeht_protocol::{
+    client_policy::{CLIENT_NAME_ANDROID, CLIENT_NAME_ANDROID_DEV},
+    limits,
+};
 use std::sync::{
     Arc, Mutex, PoisonError,
     atomic::{AtomicBool, Ordering},
@@ -35,6 +38,17 @@ pub trait Listener: Send + Sync {
     fn fingerprint(&self, fingerprint: String);
     /// The computer has the proof and waits for the person to allow access.
     fn waiting_for_approval(&self);
+}
+
+/// The name this phone gives itself when it pairs, which the person reads on the computer: its maker
+/// and model, cut to the longest name the engine takes (`limits::DEVICE_NAME_BYTES`) at a character.
+#[uniffi::export]
+pub fn device_name(maker: String, model: String) -> String {
+    let mut name = format!("{maker} {model}").trim().to_owned();
+    while name.len() > limits::DEVICE_NAME_BYTES {
+        name.pop();
+    }
+    name
 }
 
 #[derive(Default)]
@@ -109,7 +123,7 @@ impl Core {
                 let effects = {
                     let mut replica = lock(&replica);
                     if let Event::Problem { cause, message } = &event
-                        && matches!(cause.as_str(), "unauthorized" | "engine_identity_changed")
+                        && Credential::refused_cause(cause)
                     {
                         replica.refused = Some(message.clone());
                     }
@@ -245,6 +259,20 @@ mod tests {
         assert!(overview.workspaces.is_empty());
         assert!(core.terminal("pane".to_owned()).is_none());
         assert!(core.conversation("pane".to_owned()).is_none());
+    }
+
+    #[test]
+    fn a_device_name_is_the_maker_and_model_cut_to_what_the_engine_takes() {
+        assert_eq!(
+            device_name("Google".to_owned(), "Pixel 8".to_owned()),
+            "Google Pixel 8"
+        );
+        assert_eq!(device_name(String::new(), "Pixel".to_owned()), "Pixel");
+        let long = device_name("é".repeat(100), "é".repeat(100));
+        assert!(
+            long.len() <= limits::DEVICE_NAME_BYTES && long.len() > limits::DEVICE_NAME_BYTES - 2
+        );
+        assert!(long.is_char_boundary(long.len()));
     }
 
     #[test]

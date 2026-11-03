@@ -25,7 +25,7 @@ public struct PairingLink: Sendable {
       let engine = items.first(where: { $0.name == "engineId" })?.value,
       UUID(uuidString: engine) != nil,
       let code = items.first(where: { $0.name == "code" })?.value,
-      code.utf8.count == 43,
+      code.utf8.count == ProtocolLimits.pairingCodeChars,
       code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }),
       let keyText = items.first(where: { $0.name == "engineKey" })?.value,
       let engineKey = Self.keyBytes(keyText),
@@ -46,7 +46,7 @@ public struct PairingLink: Sendable {
   }
   /// The 32 bytes of a key written as URL-safe base64 without padding (43 characters).
   static func keyBytes(_ text: String) -> Data? {
-    guard text.utf8.count == 43,
+    guard text.utf8.count == ProtocolLimits.pairingCodeChars,
       text.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") })
     else { return nil }
     let standard = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(

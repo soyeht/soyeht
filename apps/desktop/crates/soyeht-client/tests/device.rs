@@ -3,47 +3,32 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
-use serde_json::{Value, json};
+use serde_json::json;
 use soyeht_client::{
     Error,
     device::{Credential, PairingFailure, Progress, pair},
 };
 use soyeht_protocol::device_auth;
-use std::net::TcpListener;
-use tungstenite::{Message, WebSocket, accept};
+use support::{read, send, serve};
+
+mod support;
 
 const ENGINE_ID: &str = "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b";
 const CODE: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const REQUEST: &str = "5d0b1c7e-2f3a-4a8b-9c6d-1e2f3a4b5c6d";
-
-fn read(socket: &mut WebSocket<std::net::TcpStream>) -> Value {
-    loop {
-        match socket.read().unwrap() {
-            Message::Text(text) => return serde_json::from_str(text.as_str()).unwrap(),
-            _ => continue,
-        }
-    }
-}
-
-fn send(socket: &mut WebSocket<std::net::TcpStream>, message: Value) {
-    socket.send(Message::text(message.to_string())).unwrap();
-}
 
 /// The engine of a pairing: `signer` is the key it answers with, `approve` the person's decision.
 fn engine(
     signer: SigningKey,
     approve: bool,
 ) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
-    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-    let address = listener.local_addr().unwrap();
-    let handle = std::thread::spawn(move || {
-        let mut socket = accept(listener.accept().unwrap().0).unwrap();
+    serve(move |mut socket| {
         send(
             &mut socket,
-            json!({"jsonrpc":"2.0","method":"auth.challenge",
+            &json!({"jsonrpc":"2.0","method":"auth.challenge",
                    "params":{"nonce":STANDARD.encode([9_u8; 32]),"engineId":ENGINE_ID}}),
         );
-        let begin = read(&mut socket);
+        let begin = read(&mut socket).unwrap();
         assert_eq!(begin["method"], "pair.begin");
         let params = &begin["params"];
         assert_eq!(params["code"], CODE);
@@ -60,11 +45,11 @@ fn engine(
         ));
         send(
             &mut socket,
-            json!({"jsonrpc":"2.0","id":begin["id"],"result":{
+            &json!({"jsonrpc":"2.0","id":begin["id"],"result":{
                 "requestId":REQUEST,"challenge":STANDARD.encode(challenge),
                 "engineProof":STANDARD.encode(proof.to_bytes())}}),
         );
-        let prove = read(&mut socket);
+        let prove = read(&mut socket).unwrap();
         assert_eq!(prove["method"], "pair.prove");
         assert!(device_auth::pair_proof_matches(
             CODE,
@@ -75,7 +60,7 @@ fn engine(
         ));
         send(
             &mut socket,
-            json!({"jsonrpc":"2.0","id":prove["id"],"result":{"status":"pending"}}),
+            &json!({"jsonrpc":"2.0","id":prove["id"],"result":{"status":"pending"}}),
         );
         let result = if approve {
             json!({"requestId":REQUEST,"approved":true,"deviceToken":"token-1","deviceId":"device-1"})
@@ -84,10 +69,9 @@ fn engine(
         };
         send(
             &mut socket,
-            json!({"jsonrpc":"2.0","method":"pair.result","params":result}),
+            &json!({"jsonrpc":"2.0","method":"pair.result","params":result}),
         );
-    });
-    (address, handle)
+    })
 }
 
 fn link(address: std::net::SocketAddr, engine_key: &VerifyingKey) -> String {

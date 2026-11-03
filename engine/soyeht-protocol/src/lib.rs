@@ -16,6 +16,7 @@ pub mod frame;
 pub mod handshake;
 pub mod legacy;
 pub mod ndjson;
+pub mod pairing_link;
 pub mod profile;
 pub mod readiness;
 pub mod setting;

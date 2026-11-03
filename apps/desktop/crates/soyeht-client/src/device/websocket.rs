@@ -96,7 +96,7 @@ pub(crate) fn connect(address: SocketAddr) -> Result<Link> {
             if let Err(error) = shutdown.shutdown(std::net::Shutdown::Both)
                 && error.kind() != io::ErrorKind::NotConnected
             {
-                soyeht_platform::log::failure("android.engine_close_failed", &error);
+                soyeht_platform::log::failure("device.engine_close_failed", &error);
             }
         }),
     })
