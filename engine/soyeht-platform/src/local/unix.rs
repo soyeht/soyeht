@@ -49,46 +49,51 @@ pub fn pair() -> io::Result<(Stream, Stream)> {
     UnixStream::pair()
 }
 
-/// The user id of the process at the other end of `stream`, which the kernel reports.
+/// The user id of the process at the other end of the socket `descriptor`, which the kernel
+/// reports. One implementation for the standard and the asynchronous stream.
 #[cfg(target_os = "macos")]
-fn peer_user(stream: &Stream) -> Option<u32> {
+pub(super) fn peer_user_of(descriptor: std::os::fd::RawFd) -> io::Result<u32> {
     let (mut user, mut group) = (0, 0);
-    // SAFETY: both out pointers are valid for the call; the descriptor is open.
-    let status = unsafe { libc::getpeereid(stream.as_raw_fd(), &raw mut user, &raw mut group) };
-    (status == 0).then_some(user)
+    // SAFETY: both out pointers are valid for the call.
+    let status = unsafe { libc::getpeereid(descriptor, &raw mut user, &raw mut group) };
+    if status == 0 {
+        Ok(user)
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
-fn peer_user(stream: &Stream) -> Option<u32> {
+pub(super) fn peer_user_of(descriptor: std::os::fd::RawFd) -> io::Result<u32> {
     let mut credential = libc::ucred {
         pid: 0,
         uid: 0,
         gid: 0,
     };
     let mut length = size_of::<libc::ucred>() as libc::socklen_t;
-    // SAFETY: `credential` has the size passed in `length`; the descriptor is open.
+    // SAFETY: `credential` has the size passed in `length`.
     let status = unsafe {
         libc::getsockopt(
-            stream.as_raw_fd(),
+            descriptor,
             libc::SOL_SOCKET,
             libc::SO_PEERCRED,
             (&raw mut credential).cast(),
             &raw mut length,
         )
     };
-    (status == 0).then_some(credential.uid)
+    if status == 0 {
+        Ok(credential.uid)
+    } else {
+        Err(io::Error::last_os_error())
+    }
 }
 
-/// Whether the peer of `stream` runs as the same user as this process. The socket's mode and
-/// its private directory already keep other users out; this is the check that does not depend on
-/// them.
-pub fn same_user(stream: &Stream) -> bool {
+/// Whether the peer of `stream` runs as the same user as this process, or why the kernel could not
+/// say. The socket's mode and its private directory already keep other users out; this is the check
+/// that does not depend on them.
+pub fn peer_is_same_user(stream: &Stream) -> io::Result<bool> {
     // SAFETY: geteuid has no arguments or memory preconditions.
-    peer_runs_as(stream, unsafe { libc::geteuid() })
-}
-
-fn peer_runs_as(stream: &Stream, user: u32) -> bool {
-    peer_user(stream) == Some(user)
+    Ok(peer_user_of(stream.as_raw_fd())? == unsafe { libc::geteuid() })
 }
 
 #[cfg(test)]
@@ -96,12 +101,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_peer_of_a_socket_pair_runs_as_this_user_and_as_no_other() {
+    fn the_peer_of_a_socket_pair_runs_as_this_user_and_a_lookup_that_fails_is_an_error() {
         let (left, _right) = pair().unwrap();
         // SAFETY: geteuid has no arguments or memory preconditions.
         let me = unsafe { libc::geteuid() };
-        assert!(same_user(&left));
-        assert!(peer_runs_as(&left, me));
-        assert!(!peer_runs_as(&left, me.wrapping_add(1)));
+        assert!(peer_is_same_user(&left).unwrap());
+        assert_eq!(peer_user_of(left.as_raw_fd()).unwrap(), me);
+        // A descriptor that is no socket is not "another user": the lookup itself failed.
+        assert!(peer_user_of(-1).is_err());
     }
 }
