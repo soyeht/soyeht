@@ -3,8 +3,9 @@
 #![allow(dead_code)]
 
 use soyeht_usage::host::{
-    CookieJar, CookieRead, FileRead, Host, HttpRequest, HttpResult, Platform, RpcCall, RpcRequest,
-    RpcRun, SecretRead, TerminalDriver, TerminalRequest, TerminalRun, TerminalStep,
+    CookieJar, CookieRead, FileRead, Host, HttpRequest, HttpResult, LocalUsageRead, Platform,
+    RpcCall, RpcRequest, RpcRun, SecretRead, StoredCredential, TerminalDriver, TerminalRequest,
+    TerminalRun, TerminalStep,
 };
 use std::{
     collections::VecDeque,
@@ -27,6 +28,15 @@ pub enum Call {
     },
     Keychain(String),
     Cookies(String),
+    OpencodeCredential {
+        database: PathBuf,
+        integration: String,
+    },
+    OpencodeUsage {
+        database: PathBuf,
+        since_ms: i64,
+        provider: Option<String>,
+    },
     StateDb(PathBuf),
     Rpc {
         program: String,
@@ -51,6 +61,12 @@ pub struct FakeHost {
     pub cookies: Vec<(String, CookieJar)>,
     pub cookies_denied: bool,
     pub state_db: SecretRead,
+    /// Programs found on the interactive `PATH`.
+    pub programs: Vec<String>,
+    /// OpenCode's credential table: the answer for an integration, else `NoTable`.
+    pub credentials: Vec<(String, StoredCredential)>,
+    /// What OpenCode's database records.
+    pub local_usage: LocalUsageRead,
     pub http: Mutex<VecDeque<(String, HttpResult)>>,
     pub rpc: Mutex<VecDeque<RpcRun>>,
     /// Screens shown to the terminal driver, one per half second; `None` means no `claude`.
@@ -68,6 +84,9 @@ impl FakeHost {
             cookies: Vec::new(),
             cookies_denied: false,
             state_db: SecretRead::Missing,
+            programs: Vec::new(),
+            credentials: Vec::new(),
+            local_usage: LocalUsageRead::NoDatabase,
             http: Mutex::new(VecDeque::new()),
             rpc: Mutex::new(VecDeque::new()),
             screens: None,
@@ -216,6 +235,35 @@ impl Host for FakeHost {
     fn state_db_value(&self, path: &Path, _key: &str) -> SecretRead {
         self.record(Call::StateDb(path.to_owned()));
         self.state_db.clone()
+    }
+
+    fn program_found(&self, program: &str) -> bool {
+        self.programs.iter().any(|found| found == program)
+    }
+
+    fn opencode_credential(&self, database: &Path, integration: &str) -> StoredCredential {
+        self.record(Call::OpencodeCredential {
+            database: database.to_owned(),
+            integration: integration.to_owned(),
+        });
+        self.credentials
+            .iter()
+            .find(|(name, _)| name == integration)
+            .map_or(StoredCredential::NoTable, |(_, stored)| stored.clone())
+    }
+
+    fn opencode_usage(
+        &self,
+        database: &Path,
+        since_ms: i64,
+        provider: Option<&str>,
+    ) -> LocalUsageRead {
+        self.record(Call::OpencodeUsage {
+            database: database.to_owned(),
+            since_ms,
+            provider: provider.map(str::to_owned),
+        });
+        self.local_usage.clone()
     }
 
     fn json_rpc(&self, request: &RpcRequest) -> RpcRun {

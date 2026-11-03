@@ -7,3 +7,4 @@ Included files:
 - claudecode.svg, stored as claude.svg
 - codex.svg
 - cursor.svg
+- opencode.svg (taken from the package repository's main branch in 2026-11)
