@@ -247,6 +247,12 @@ pub(super) fn is_owned_by_current_user(_: &fs::Metadata) -> bool {
     true
 }
 
+/// [`dir_is_owner_only`] for a caller that holds the `metadata` of `path`. The access list is not
+/// in the metadata, so Windows reads it from `path`, as `dir_is_owner_only` does.
+pub(super) fn dir_metadata_is_owner_only(path: &Path, _: &fs::Metadata) -> io::Result<bool> {
+    dir_is_owner_only(path)
+}
+
 pub(super) fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
     // Reading the access list needs only READ_CONTROL; backup semantics let a folder be opened,
     // and the reparse flag judges a link as itself.

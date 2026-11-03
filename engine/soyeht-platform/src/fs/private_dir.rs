@@ -2,7 +2,7 @@
 
 use std::{fmt, fs, io, path::Path};
 
-use super::{create_private_dir, dir_is_owner_only, sync_directory, system};
+use super::{create_private_dir, sync_directory, system};
 
 /// Why a directory is not a private one.
 #[derive(Debug)]
@@ -57,7 +57,8 @@ impl From<PrivateDirError> for io::Error {
 }
 
 /// Fails unless `path` is a directory, not a link, that nobody but the owner can reach.
-/// It changes nothing.
+/// It changes nothing. On Unix the kind, the owner and the mode are judged from one read of the
+/// entry, so nothing can change between the checks.
 ///
 /// # Errors
 /// [`PrivateDirError::Unsafe`] for a link or a non-directory, [`PrivateDirError::OtherOwner`] for a
@@ -71,7 +72,7 @@ pub fn check_private_dir(path: &Path) -> Result<(), PrivateDirError> {
     if !system::is_owned_by_current_user(&metadata) {
         return Err(PrivateDirError::OtherOwner);
     }
-    if !dir_is_owner_only(path)? {
+    if !system::dir_metadata_is_owner_only(path, &metadata)? {
         return Err(PrivateDirError::NotPrivate);
     }
     Ok(())

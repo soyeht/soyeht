@@ -69,12 +69,6 @@ pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     DirBuilder::new().mode(0o700).create(path)
 }
 
-/// The user this process runs as.
-fn current_user() -> u32 {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    unsafe { libc::geteuid() }
-}
-
 /// Whether `metadata` is of something `user` owns.
 fn owned_by(metadata: &fs::Metadata, user: u32) -> bool {
     metadata.uid() == user
@@ -88,15 +82,25 @@ fn private_to(metadata: &fs::Metadata, user: u32) -> bool {
 
 /// Whether the current user owns what `metadata` describes.
 pub(super) fn is_owned_by_current_user(metadata: &fs::Metadata) -> bool {
-    owned_by(metadata, current_user())
+    owned_by(metadata, crate::user::effective_id())
 }
 
 pub(super) fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
-    Ok(private_to(&fs::symlink_metadata(path)?, current_user()))
+    dir_metadata_is_owner_only(path, &fs::symlink_metadata(path)?)
+}
+
+/// [`dir_is_owner_only`] judged from `metadata`, which the caller read from `path` already, so a
+/// caller that checked the owner of the same `metadata` reads the directory once. The mode is
+/// all there is to read, so `path` is not touched.
+pub(super) fn dir_metadata_is_owner_only(
+    _path: &Path,
+    metadata: &fs::Metadata,
+) -> io::Result<bool> {
+    Ok(private_to(metadata, crate::user::effective_id()))
 }
 
 pub(super) fn file_is_owner_only(file: &File) -> io::Result<bool> {
-    Ok(private_to(&file.metadata()?, current_user()))
+    Ok(private_to(&file.metadata()?, crate::user::effective_id()))
 }
 
 pub(super) fn sync_directory(path: &Path) -> io::Result<()> {

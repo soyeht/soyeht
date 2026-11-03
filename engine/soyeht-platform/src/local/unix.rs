@@ -92,8 +92,13 @@ pub(super) fn peer_user_of(descriptor: std::os::fd::RawFd) -> io::Result<u32> {
 /// say. The socket's mode and its private directory already keep other users out; this is the check
 /// that does not depend on them.
 pub fn peer_is_same_user(stream: &Stream) -> io::Result<bool> {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    Ok(peer_user_of(stream.as_raw_fd())? == unsafe { libc::geteuid() })
+    descriptor_peer_is_same_user(stream.as_raw_fd())
+}
+
+/// [`peer_is_same_user`] for the socket `descriptor`: the one comparison of the peer's user with
+/// this process's, for the standard and the asynchronous stream.
+pub(super) fn descriptor_peer_is_same_user(descriptor: std::os::fd::RawFd) -> io::Result<bool> {
+    Ok(peer_user_of(descriptor)? == crate::user::effective_id())
 }
 
 #[cfg(test)]
@@ -103,8 +108,7 @@ mod tests {
     #[test]
     fn the_peer_of_a_socket_pair_runs_as_this_user_and_a_lookup_that_fails_is_an_error() {
         let (left, _right) = pair().unwrap();
-        // SAFETY: geteuid has no arguments or memory preconditions.
-        let me = unsafe { libc::geteuid() };
+        let me = crate::user::effective_id();
         assert!(peer_is_same_user(&left).unwrap());
         assert_eq!(peer_user_of(left.as_raw_fd()).unwrap(), me);
         // A descriptor that is no socket is not "another user": the lookup itself failed.

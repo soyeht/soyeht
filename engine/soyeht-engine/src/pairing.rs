@@ -41,10 +41,10 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
         .ok_or_else(|| errors::unauthorized("Pairing request missing or expired"))
 }
 
-/// The refusal of a decision or a revocation. When a local human is refused because this engine is
+/// The refusal of a decision or a revocation. When a local human is refused because this engine
 /// does not carry our signature, it cannot tell the signed app from any other program, so even the
-/// app is refused:
-/// say so, and log it once with its kind only (docs/dev-local.md says how to sign the engine).
+/// app is refused: say so, and log it once with its kind only (docs/dev-local.md says how to sign
+/// the engine).
 fn refusal(local_human: bool) -> errors::Error {
     static LOGGED: Once = Once::new();
     if local_human && ui_attestation::engine_cannot_attest() {
@@ -55,7 +55,7 @@ fn refusal(local_human: bool) -> errors::Error {
             );
         });
         return errors::forbidden_role(
-            "This engine does not carry the Soyeht signature, so it cannot tell the Soyeht app from other programs and approves no pairing; install the signed engine (docs/dev-local.md)",
+            "This engine does not carry the Soyeht signature, so it cannot tell the Soyeht app from other programs and approves no pairing and revokes no device; install the signed engine (docs/dev-local.md)",
         );
     }
     errors::forbidden_role(
