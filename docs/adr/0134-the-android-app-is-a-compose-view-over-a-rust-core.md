@@ -78,7 +78,7 @@ state; `soyeht-protocol` is the only definition of the wire.
 - **Identity.** The application id of the Dev profile is `com.soyeht.next.dev.android`; every machine
   identifier of the Android app contains "next" (ADR 0112). `minSdk` 26, `targetSdk` 35, ABIs
   `arm64-v8a` and `x86_64`.
-- **Layers.** `apps/android/core` is layer 7, beside `apps/desktop`: it may depend on `soyeht-client`,
+- **Layers.** `apps/android/core` is layer 8, above `apps/desktop` whose client it reuses: it may depend on `soyeht-client`,
   `soyeht-protocol` and `soyeht-platform` and on no other Soyeht crate. The Kotlin app (`apps/android/app`)
   is the thin layer above it, as `apps/ios/Sources` is above `apps/shared`.
 - **Gate.** A Gradle build, an NDK build of the core for two ABIs and an emulator are not cheap. The

@@ -62,6 +62,9 @@ does nothing silently.
   `aarch64-linux-android` and `x86_64-linux-android`. `soyeht-platform` therefore compiles there:
   the kernel is Linux, so the process tree and the no-replace rename are the Linux ones, and a
   crash report carries no stack frames because Android's C library has no `backtrace`.
+- Android's C library exports `renameat2` only from API 30 and the phone's `minSdk` is 26, so the no-replace
+  rename calls the kernel directly (`syscall`) there. The phone's core never reaches it: only the engine's
+  editor uses `rename_no_replace`.
 - The local endpoint, the service seam and the detached start are never used by the phone; they
   keep the Unix code they have on Linux.
 

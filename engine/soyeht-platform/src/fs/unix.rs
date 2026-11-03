@@ -47,22 +47,52 @@ pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let from = CString::new(from.as_os_str().as_bytes())?;
     let to = CString::new(to.as_os_str().as_bytes())?;
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call,
-    // and AT_FDCWD resolves them as ordinary paths.
-    let status = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            from.as_ptr(),
-            libc::AT_FDCWD,
-            to.as_ptr(),
-            libc::RENAME_NOREPLACE as _,
-        )
-    };
+    // SAFETY: both pointers are NUL-terminated strings that outlive the call.
+    let status = unsafe { renameat2_no_replace(from.as_ptr(), to.as_ptr()) };
     if status == 0 {
         Ok(())
     } else {
         Err(io::Error::last_os_error())
     }
+}
+
+/// # Safety
+///
+/// Both pointers are NUL-terminated strings that outlive the call.
+#[cfg(target_os = "linux")]
+unsafe fn renameat2_no_replace(from: *const libc::c_char, to: *const libc::c_char) -> libc::c_int {
+    // SAFETY: the caller's guarantee, and AT_FDCWD resolves the paths as ordinary ones.
+    unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from,
+            libc::AT_FDCWD,
+            to,
+            libc::RENAME_NOREPLACE,
+        )
+    }
+}
+
+/// Android's C library exports `renameat2` only from API 30 and the phone's `minSdk` is 26, so the
+/// kernel call is made directly (ADR 0134).
+///
+/// # Safety
+///
+/// Both pointers are NUL-terminated strings that outlive the call.
+#[cfg(target_os = "android")]
+unsafe fn renameat2_no_replace(from: *const libc::c_char, to: *const libc::c_char) -> libc::c_int {
+    // SAFETY: the caller's guarantee, and AT_FDCWD resolves the paths as ordinary ones.
+    let status = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            from,
+            libc::AT_FDCWD,
+            to,
+            libc::RENAME_NOREPLACE as libc::c_uint,
+        )
+    };
+    libc::c_int::try_from(status).unwrap_or(-1)
 }
 
 pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {

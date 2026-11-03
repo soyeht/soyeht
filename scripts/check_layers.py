@@ -58,7 +58,7 @@ LAYERS: dict[str, set[str]] = {
     # other crate of Soyeht.
     "soyeht-webview": set(),
     "soyeht-desktop": {"soyeht-client", "soyeht-webview", "soyeht-protocol", "soyeht-platform"},
-    # Layer 7: the Android app's core (ADR 0134), its own workspace. It reuses the desktop client's
+    # Layer 8: the Android app's core (ADR 0134), its own workspace. It reuses the desktop client's
     # connection and replica and holds no rule of its own.
     "soyeht-android": {"soyeht-client", "soyeht-protocol", "soyeht-platform"},
 }
