@@ -103,7 +103,7 @@ struct PhoneHome: View {
   private func connectionStatus(_ client: EngineClient) -> some View {
     VStack(spacing: 20) {
       if client.credentialRejected {
-        Image(systemName: "lock.iphone").font(.largeTitle)
+        Image(systemName: "lock").font(.largeTitle)
         Text("Pair again on the Mac").font(.headline)
       } else {
         ProgressView()
@@ -139,10 +139,8 @@ struct PhoneHome: View {
         SoyehtMark().padding(.top, 38)
         Text("Your work, with you").font(.system(size: 28, weight: .bold, design: .rounded))
           .multilineTextAlignment(.center)
-        Text(
-          "On your Mac, open Soyeht Dev and choose “Pair iPhone”; the same QR pairs an iPad. Then scan it and confirm access on the Mac."
-        )
-        .multilineTextAlignment(.center).foregroundStyle(PhonePalette.secondary)
+        Text(PairingCopy.onboarding(on: DictationPlatform.current.title))
+          .multilineTextAlignment(.center).foregroundStyle(PhonePalette.secondary)
         Button {
           scan()
         } label: {
