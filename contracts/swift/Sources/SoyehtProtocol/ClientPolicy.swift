@@ -18,6 +18,8 @@ public enum ClientPolicy {
     public static let agentPartialFlushSeconds: Double = 0.016
     public static let diagnosticsMs = 30000
     public static let diagnosticsSeconds: Double = 30.0
+    public static let copiedFeedbackMs = 1500
+    public static let copiedFeedbackSeconds: Double = 1.5
     public static let terminalInputChunkBytes = 16384
     public static let terminalScrollbackLines = 10000
     public static let capsWaitingMessages = 1000
@@ -50,6 +52,8 @@ public enum ClientPolicy {
     public static let diagnosticsCopied = "Diagnostics copied. Paste them into your message."
     public static let diagnosticsFailed = "Soyeht could not collect the diagnostics."
     public static let diagnosticsUnavailable = "This copy of Soyeht has no diagnostics program."
+    public static let copyCode = "Copy code"
+    public static let copiedCode = "Copied"
     public static let crashNoticeTitle = "Soyeht closed unexpectedly"
     public static let crashNoticeSummary = "A crash report was saved on this computer. Nothing was sent."
     public static let crashNoticeCopy = "Copy report"

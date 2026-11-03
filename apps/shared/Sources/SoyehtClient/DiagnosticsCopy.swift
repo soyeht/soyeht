@@ -1,5 +1,4 @@
 #if os(macOS)
-  import AppKit
   import Foundation
   import Observation
   import SoyehtProtocol
@@ -49,10 +48,7 @@
     public convenience init() {
       self.init(
         command: BundledEngineService.forDiagnostics(),
-        write: { text in
-          NSPasteboard.general.clearContents()
-          NSPasteboard.general.setString(text, forType: .string)
-        })
+        write: SystemClipboard.copy)
     }
 
     public init(command: BundledEngineService?, write: @escaping @MainActor (String) -> Void) {
