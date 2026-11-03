@@ -8,7 +8,7 @@ mod error;
 mod overview;
 mod terminal;
 
-pub use core::{Core, Listener};
+pub use core::{Core, Listener, device_name};
 pub use error::CoreError;
 
 uniffi::setup_scaffolding!();

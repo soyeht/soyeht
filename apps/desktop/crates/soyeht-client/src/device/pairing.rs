@@ -1,7 +1,10 @@
 //! Pairing a device with an engine (ADR 0013, 0132): begin, check that the engine holds the key the
 //! link named, prove the code, and wait for the person to allow access on the computer.
 
-use super::{Credential, PairingFailure, PairingLink, bytes32, credential::verify};
+use super::{
+    Credential, PairingFailure, PairingLink, bytes32,
+    credential::{engine_verifying_key, verify},
+};
 use crate::{Error, Result, transport::Link};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -9,7 +12,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
     EventName, PairBeginParams, PairBeginResult, PairProveParams, PairResultEvent, Request,
-    client_policy, device_auth, frame::Frame, handshake,
+    client_policy, device_auth, frame::Frame, handshake, limits,
 };
 use std::{
     io::{Read, Write},
@@ -18,13 +21,12 @@ use std::{
 };
 use uuid::Uuid;
 
-/// The engine's pairing window (the code expires in ten minutes).
-const WINDOW: Duration = Duration::from_secs(600);
+/// The engine's pairing window.
+const WINDOW: Duration = Duration::from_secs(limits::PAIRING_WINDOW_SECONDS as u64);
 /// A request the engine does not answer in this time ends the attempt.
 const REQUEST_DEADLINE: Duration = Duration::from_millis(client_policy::REQUEST_TIMEOUT_MS);
 /// Connections tried before the pairing is given up: the tailnet can take a moment to carry a packet.
 const ATTEMPTS: usize = 3;
-const NAME_BYTES: usize = 128;
 
 /// What the person should see while the pairing waits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,8 +45,8 @@ pub fn pair(
     progress: &mut dyn FnMut(Progress),
     stopped: &dyn Fn() -> bool,
 ) -> Result<Credential> {
-    let link = PairingLink::parse(text).map_err(Error::Pairing)?;
-    if name.is_empty() || name.len() > NAME_BYTES {
+    let link = super::parse_link(text).map_err(Error::Pairing)?;
+    if name.is_empty() || name.len() > limits::DEVICE_NAME_BYTES {
         return Err(Error::Pairing(PairingFailure::InvalidName));
     }
     let mut seed = [0_u8; 32];
@@ -123,8 +125,8 @@ impl Pairing<'_> {
             serde_json::from_value(wire.call(&Request::PairBegin(self.begin.clone()))?)?;
         let challenge =
             bytes32(&answer.challenge).ok_or(Error::Pairing(PairingFailure::Unexpected))?;
-        let engine_key = VerifyingKey::from_bytes(&self.link.engine_key)
-            .map_err(|_| Error::Pairing(PairingFailure::InvalidLink))?;
+        let engine_key = engine_verifying_key(&self.link.engine_key)
+            .ok_or(Error::Pairing(PairingFailure::InvalidLink))?;
         let device_key = self.key.verifying_key();
         // Only the engine whose key the link named can sign this, and the device proves the code
         // only after it has (ADR 0132).

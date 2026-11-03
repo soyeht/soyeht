@@ -1,9 +1,12 @@
 use super::{PairingFailure, bytes32};
 use crate::{Error, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use ed25519_dalek::{Signature, Signer as _, SigningKey, Verifier as _, VerifyingKey};
+use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
-use soyeht_protocol::{AuthChallengeEvent, HelloParams, Welcome, device_auth, handshake};
+use soyeht_platform::log::Failure as _;
+use soyeht_protocol::{
+    AuthChallengeEvent, ErrorKind, HelloParams, Welcome, device_auth, handshake,
+};
 
 /// What a paired device keeps: who the computer is, how to reach it, the token the engine gave and the
 /// device's own key. The person's phone is the only place it exists; it is never logged, never sent
@@ -53,9 +56,18 @@ pub(super) fn verify(engine_key: &VerifyingKey, signed: &[u8], proof: &str) -> R
     let not_the_engine = || Error::Pairing(PairingFailure::NotYourMac);
     let bytes = STANDARD.decode(proof).map_err(|_| not_the_engine())?;
     let signature = Signature::from_slice(&bytes).map_err(|_| not_the_engine())?;
+    // Strict, as the engine checks a device: a signature that only a malleable encoding passes is not one.
     engine_key
-        .verify(signed, &signature)
+        .verify_strict(signed, &signature)
         .map_err(|_| not_the_engine())
+}
+
+/// The engine's key from its 32 bytes. A key of small order (one that signs for anyone) is not a key.
+pub(super) fn engine_verifying_key(bytes: &[u8; 32]) -> Option<VerifyingKey> {
+    match VerifyingKey::from_bytes(bytes) {
+        Ok(key) if !key.is_weak() => Some(key),
+        _ => None,
+    }
 }
 
 impl Credential {
@@ -102,8 +114,8 @@ impl Credential {
             .engine_key
             .as_deref()
             .and_then(bytes32)
-            .map(|bytes| VerifyingKey::from_bytes(&bytes));
-        let (Some(nonce), Some(Ok(engine_key))) = (nonce, engine_key) else {
+            .and_then(|bytes| engine_verifying_key(&bytes));
+        let (Some(nonce), Some(engine_key)) = (nonce, engine_key) else {
             return Err(Error::Pairing(PairingFailure::PairAgain));
         };
         let key = bytes32(&self.key)
@@ -133,14 +145,18 @@ impl Credential {
     /// pointless until the person pairs again. A server that fails to prove itself is not such a
     /// refusal.
     pub fn refused_by(error: &Error) -> bool {
-        matches!(
-            error,
-            Error::Remote(refusal) if matches!(
-                refusal.data.kind,
-                soyeht_protocol::ErrorKind::Unauthorized
-                    | soyeht_protocol::ErrorKind::EngineIdentityChanged
-            )
-        ) || matches!(error, Error::Pairing(PairingFailure::PairAgain))
+        Self::refused_cause(&error.failure_kind())
+    }
+
+    /// The same rule for the cause an [`Event::Problem`](crate::Event::Problem) carries, which is the
+    /// failure's kind: the engine's `unauthorized` or `engine_identity_changed`, or this device's own
+    /// "pair again".
+    pub fn refused_cause(cause: &str) -> bool {
+        let refusing = [ErrorKind::Unauthorized, ErrorKind::EngineIdentityChanged];
+        refusing
+            .iter()
+            .any(|kind| serde_json::to_value(kind).is_ok_and(|text| text == cause))
+            || cause == PairingFailure::PairAgain.failure_kind()
     }
 }
 
@@ -243,6 +259,22 @@ mod tests {
         assert!(Credential::refused_by(
             &credential().hello("android", "1", &other).err().unwrap()
         ));
+    }
+
+    #[test]
+    fn only_the_engines_refusal_of_the_access_and_the_need_to_pair_again_are_a_refusal() {
+        for cause in ["unauthorized", "engine_identity_changed", "pair_again"] {
+            assert!(Credential::refused_cause(cause), "{cause}");
+        }
+        for cause in [
+            "not_your_mac",
+            "timeout",
+            "disconnected",
+            "io:ConnectionRefused",
+            "",
+        ] {
+            assert!(!Credential::refused_cause(cause), "{cause}");
+        }
     }
 
     #[test]

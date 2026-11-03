@@ -1,0 +1,127 @@
+{
+  "description": "What a pairing link must carry and which addresses it may name (ADR 0134). The Rust protocol crate and the Swift client both pass these cases; `result` is valid, invalid, or old (the three-field link of an engine that does not prove itself).",
+  "cases": [
+    {
+      "name": "tailnet IPv4",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "loopback IPv4",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "127.0.0.1:9",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "loopback IPv6 in brackets",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=%5B::1%5D:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "[::1]:9",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "tailnet IPv6 in brackets",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=%5Bfd7a:115c:a1e0::1%5D:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "[fd7a:115c:a1e0::1]:9",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "an encoded colon in the address",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2%3A8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "the top of the tailnet range",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.127.255.255:1&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "100.127.255.255:1",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "a LAN address",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=192.168.1.2:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "a public address",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=8.8.8.8:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "just under the tailnet range",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.63.255.255:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "just over the tailnet range",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.128.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "a host name",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=example.com:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "port zero",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:0&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "no port",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "the wildcard",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=0.0.0.0:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "the three-field link of an old engine",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "result": "old"
+    },
+    {
+      "name": "an extra field",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc&extra=1",
+      "result": "invalid"
+    },
+    {
+      "name": "another scheme",
+      "link": "https://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "an engine id that is not a UUID",
+      "link": "soyeht-next://pair?engineId=not-a-uuid&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "a code that is too short",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=short&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "a code with a character outside the alphabet",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "an engine key that is too short",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=short",
+      "result": "invalid"
+    },
+    {
+      "name": "nothing",
+      "link": "",
+      "result": "invalid"
+    }
+  ]
+}
