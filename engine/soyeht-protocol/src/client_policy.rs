@@ -10,6 +10,7 @@ pub const RECONNECT_CEILING_MS: u64 = 30000;
 pub const DRAFT_BEAT_MS: u64 = 8000;
 pub const AGENT_PARTIAL_FLUSH_MS: u64 = 16;
 pub const DIAGNOSTICS_MS: u64 = 30000;
+pub const COPIED_FEEDBACK_MS: u64 = 1500;
 pub const TERMINAL_INPUT_CHUNK_BYTES: usize = 16384;
 pub const TERMINAL_SCROLLBACK_LINES: usize = 10000;
 pub const CAPS_WAITING_MESSAGES: usize = 1000;
@@ -46,6 +47,8 @@ pub const DIAGNOSTICS_WORKING: &str = "Collecting diagnostics";
 pub const DIAGNOSTICS_COPIED: &str = "Diagnostics copied. Paste them into your message.";
 pub const DIAGNOSTICS_FAILED: &str = "Soyeht could not collect the diagnostics.";
 pub const DIAGNOSTICS_UNAVAILABLE: &str = "This copy of Soyeht has no diagnostics program.";
+pub const COPY_CODE: &str = "Copy code";
+pub const COPIED_CODE: &str = "Copied";
 pub const CRASH_NOTICE_TITLE: &str = "Soyeht closed unexpectedly";
 pub const CRASH_NOTICE_SUMMARY: &str =
     "A crash report was saved on this computer. Nothing was sent.";
