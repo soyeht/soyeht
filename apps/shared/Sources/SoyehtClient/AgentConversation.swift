@@ -90,7 +90,6 @@ extension AgentConversationView where HarnessControl == EmptyView {
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
   private let harnessControl: HarnessControl
-  @State private var attachments: AgentComposerAttachments
   @State private var follow = AgentConversationFollow()
   @State private var bottomVisibleId: String?
   @State private var subagents = AgentSubagentDisclosure()
@@ -105,8 +104,6 @@ extension AgentConversationView where HarnessControl == EmptyView {
   ) {
     self.client = client
     self.paneId = paneId
-    _attachments = State(
-      initialValue: AgentComposerAttachments(linkHostFiles: !client.pairedDevice))
     self.isVisible = isVisible
     self.showsConfiguration = showsConfiguration
     self.style = style
@@ -119,6 +116,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
   private var prompt: String {
     get { AgentPromptDrafts.shared.text(for: paneId) }
     nonmutating set { AgentPromptDrafts.shared.set(newValue, for: paneId) }
+  }
+  /// The files attached and not sent; they outlive this view with the typed text.
+  private var attachments: AgentComposerAttachments {
+    AgentPromptDrafts.shared.attachments(for: paneId, linkHostFiles: !client.pairedDevice)
   }
   private var promptBinding: Binding<String> { Binding(get: { prompt }, set: { prompt = $0 }) }
   private var view: AgentPaneView { client.agentPanes[paneId] ?? AgentPaneView() }
