@@ -73,6 +73,7 @@ pub enum Error {
     RandomUnavailable,
     InvalidPublicKey,
     InvalidPublicKeyLength,
+    InvalidEngineKey,
     WeakPublicKey,
     ConnectionClosed,
     RecordedRpc(RpcError),
@@ -392,6 +393,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::AlreadyRunning
         | Error::SocketPathNotSocket
         | Error::RandomUnavailable
+        | Error::InvalidEngineKey
         | Error::ConnectionClosed => ErrorKind::InternalError,
         Error::ListenerAddressNotPermitted
         | Error::MissingDataDirectoryArgument
@@ -537,6 +539,7 @@ fn message(error: &Error) -> String {
         Error::RandomUnavailable => "Random source unavailable".into(),
         Error::InvalidPublicKey => "Invalid public key".into(),
         Error::InvalidPublicKeyLength => "Invalid public key length".into(),
+        Error::InvalidEngineKey => "Invalid engine key".into(),
         Error::WeakPublicKey => "Weak public key".into(),
         Error::ConnectionClosed => "Connection closed".into(),
         Error::RecordedRpc(error) => error.message.clone(),

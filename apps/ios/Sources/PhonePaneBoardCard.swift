@@ -59,6 +59,7 @@ struct PhonePaneBoardCard: View {
     switch pane.mode {
     case .agent:
       PhoneAgentTicker(client: client, pane: pane)
+      PhoneAgentEndedNotice(pane: pane)
       AgentConversationView(
         client: client, paneId: pane.paneId,
         harnessControl: { PhoneHarnessMenu(client: client, paneId: pane.paneId) })

@@ -97,6 +97,11 @@
       return text
     }
 
+    /// What `soyeht crash-reports ACTION` printed (ADR 0127, contract 16).
+    func crashReports(_ action: [String]) async throws -> Data {
+      try await runner.run(command, arguments: profileArguments + ["crash-reports"] + action)
+    }
+
     private func services(_ action: [String]) async throws -> [ServiceState] {
       let output = try await runner.run(command, arguments: arguments(action))
       do {

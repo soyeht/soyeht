@@ -183,7 +183,7 @@ struct AgentComposer<HarnessControl: View>: View {
 
   @ViewBuilder func textField(text: Binding<String>) -> some View {
     if #available(macOS 15, iOS 18, *) {
-      TextField("", text: text, selection: binding, axis: .vertical)
+      TextField("", text: text, selection: binding(for: text), axis: .vertical)
     } else {
       TextField("", text: text, axis: .vertical)
     }
@@ -202,10 +202,22 @@ struct AgentComposer<HarnessControl: View>: View {
     selection = TextSelection(insertionPoint: text.index(text.startIndex, offsetBy: offset))
   }
 
+  /// The stored selection, or none once the text is empty. Sending clears the prompt while the
+  /// field still holds the caret of the sent text, and SwiftUI stops the app when it is handed
+  /// an index past the end of the new text.
   @available(macOS 15, iOS 18, *)
-  private var binding: Binding<TextSelection?> {
+  func selection(in text: String) -> TextSelection? {
+    guard !text.isEmpty else {
+      selection = nil
+      return nil
+    }
+    return selection as? TextSelection
+  }
+
+  @available(macOS 15, iOS 18, *)
+  private func binding(for text: Binding<String>) -> Binding<TextSelection?> {
     Binding(
-      get: { self.selection as? TextSelection },
+      get: { self.selection(in: text.wrappedValue) },
       set: { self.selection = $0 })
   }
 }

@@ -11,7 +11,7 @@ mod redact;
 
 pub use redact::Redactor;
 
-use crate::{fs::OpenOptionsPrivateExt as _, process::detached::logs_directory};
+use crate::{crash, fs::OpenOptionsPrivateExt as _, process::detached::logs_directory};
 use std::{
     fs::OpenOptions,
     io::{self, Read, Seek, SeekFrom},
@@ -24,6 +24,8 @@ pub const DEFAULT_LOG_LINES: usize = 40;
 pub const MAX_LOG_LINES: usize = 400;
 /// How much of the end of a log file is read to find its last lines.
 const TAIL_BYTES: u64 = 256 * 1024;
+/// What every structured log line starts with (`log::record`).
+const STRUCTURED: &str = "{\"event\":";
 /// A log line is cut here, so one long record cannot swamp an issue.
 const LINE_CHARS: usize = 600;
 
@@ -130,6 +132,16 @@ pub fn report(input: &Input<'_>) -> String {
         lines.push("```".to_owned());
     }
     lines.push(String::new());
+    lines.push("### Crash reports".to_owned());
+    match crash::store::list(input.data) {
+        Ok(reports) if reports.is_empty() => {
+            lines.extend([String::new(), "(none)".to_owned()]);
+        }
+        Ok(reports) => lines.extend(crash::markdown(&reports, input.redactor)),
+        // The kind only: an I/O message can carry a path.
+        Err(error) => lines.extend([String::new(), format!("(unreadable: {:?})", error.kind())]),
+    }
+    lines.push(String::new());
     lines.join("\n")
 }
 
@@ -144,7 +156,7 @@ fn clip(line: &str) -> String {
 
 /// The last `count` lines of the log at `path`, then of the file rotation made of it before
 /// (`<path>.1`) when the live file holds fewer. Reads only the end of each file.
-fn tail(path: &Path, count: usize) -> io::Result<Vec<String>> {
+pub(crate) fn tail(path: &Path, count: usize) -> io::Result<Vec<String>> {
     let mut lines = last_lines(path, count)?;
     if lines.len() < count {
         let mut rotated = path.as_os_str().to_owned();
@@ -171,7 +183,9 @@ fn last_lines(path: &Path, count: usize) -> io::Result<Vec<String>> {
         // The first line of a cut read is the end of a longer one.
         lines.next();
     }
-    let all: Vec<&str> = lines.collect();
+    // Only structured lines (`{"event":...}`, ADR 0088): what the default panic hook and a
+    // program's `eprintln!` write has no such shape, and can carry a panic's message.
+    let all: Vec<&str> = lines.filter(|line| line.starts_with(STRUCTURED)).collect();
     let from = all.len().saturating_sub(count);
     Ok(all[from..].iter().map(|line| (*line).to_owned()).collect())
 }
