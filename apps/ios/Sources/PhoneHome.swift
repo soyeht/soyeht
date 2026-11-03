@@ -204,6 +204,17 @@ extension View {
   func phoneHomeColumn() -> some View {
     frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(PhonePalette.canvas).foregroundStyle(PhonePalette.ink)
-      .navigationTitle("Soyeht · Dev")
+      .modifier(HomeTitleStyle())
+  }
+}
+
+/// A title does not wrap, so at an accessibility text size the sidebar's would end in an
+/// ellipsis: it goes inline there and drops the build's name.
+private struct HomeTitleStyle: ViewModifier {
+  @Environment(\.dynamicTypeSize) private var typeSize
+
+  func body(content: Content) -> some View {
+    content.navigationTitle(typeSize.isAccessibilitySize ? "Soyeht" : "Soyeht · Dev")
+      .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .inline : .automatic)
   }
 }

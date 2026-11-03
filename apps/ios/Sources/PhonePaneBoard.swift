@@ -130,6 +130,9 @@ private struct PhonePaneTabStrip: View {
         }
       }
     }
+    // The strip's height comes from the board's layout, so its text stops growing where it
+    // would no longer fit; the tab names stay readable and a tab is still a full-size target.
+    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("pane-board-tabs")
   }
