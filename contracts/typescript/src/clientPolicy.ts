@@ -8,7 +8,8 @@ export const clientPolicy = {
     "reconnectCeilingMs": 30000,
     "draftBeatMs": 8000,
     "agentPartialFlushMs": 16,
-    "diagnosticsMs": 30000
+    "diagnosticsMs": 30000,
+    "copiedFeedbackMs": 1500
   },
   "terminal": {
     "inputChunkBytes": 16384,
@@ -86,6 +87,8 @@ export const clientPolicy = {
     "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
     "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
     "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+    "copyCode": "Copy code",
+    "copiedCode": "Copied",
     "crashNoticeTitle": "Soyeht closed unexpectedly",
     "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
     "crashNoticeCopy": "Copy report",

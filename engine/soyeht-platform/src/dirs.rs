@@ -81,6 +81,8 @@ mod tests {
         assert_eq!(base(System::MacOs, None, None, None), None);
     }
 
+    // Written with Unix paths: on Windows "/data" has no drive and is not absolute.
+    #[cfg(unix)]
     #[test]
     fn linux_follows_xdg_data_home_and_ignores_a_relative_one() {
         assert_eq!(
