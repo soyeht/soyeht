@@ -48,10 +48,24 @@ on Windows.
   `PATH`, which can lack `~/.local/bin` where the old fixed list had it. The engine logs the
   failure by kind (`engine.launch_path_probe_failed`), and a rescan asks the shell again. The
   window-started engine falls back to the window's `PATH` in the same case.
+- A window started from a terminal inherits that terminal's `PATH`, which can hold a folder that no
+  startup file and no session names (an `export` typed there). The engine that window starts finds
+  it and the one started at login cannot: nothing the unit can say would tell it. A window opened
+  from the desktop (or started through the user manager) has the manager's `PATH`, and then the
+  two engines are the same.
 - A start at boot with lingering, before any session, has the manager's default `PATH`; the probe
   supplies the rest.
 
+## Verified
+
+On Ubuntu 26.04 (arm64), with a harness folder under a fake `~/.nvm` added by `~/.bashrc` as `nvm`
+does: the engine the units started at login and the engine a window started through the user
+manager remembered the same launch `PATH` (`launch-path`, byte for byte), with the `~/.nvm` folder
+in it. The old fixed `PATH`, put back by a drop-in, left out the system folders the user manager has
+(`/usr/local/sbin`, `/usr/sbin`, `/sbin`, `/usr/games`, `/usr/local/games`, `/snap/bin`).
+
 ## Not verified
 
-Windows. The Linux behaviour is checked on Ubuntu 26.04 (arm64): the launch `PATH` the engine
-remembers after a login start and after a window start, with a harness under a fake `~/.nvm`.
+Windows (the task's environment was read in the code, not run), and a real `nvm`: a slow
+initialisation that makes the probe miss its five seconds is covered by the remembered `PATH`
+only from the second start on.
