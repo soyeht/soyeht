@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
 use serde_json::json;
 use soyeht_client::{Engine, Event, device::Credential};
 use soyeht_protocol::device_auth;
@@ -55,10 +55,7 @@ fn engine(
         let signed = device_auth::hello_bytes(&nonce, &client_nonce, ENGINE_ID, TOKEN);
         let proof = STANDARD.decode(params["proof"].as_str().unwrap()).unwrap();
         device
-            .verify_strict(
-                &signed,
-                &ed25519_dalek::Signature::from_slice(&proof).unwrap(),
-            )
+            .verify_strict(&signed, &Signature::from_slice(&proof).unwrap())
             .unwrap();
         let answer = device_auth::engine_hello_bytes(&nonce, &client_nonce, ENGINE_ID, DEVICE_ID);
         let mut result = json!({"engineVersion":"0","protocolVersion":1,"connectionId":"c1",
