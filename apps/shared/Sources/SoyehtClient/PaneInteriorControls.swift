@@ -20,6 +20,8 @@ public enum PaneInteriorMetrics {
   public static let sendButtonSize: CGFloat = DesignTokens.PaneInterior.sendButtonSize
   /// The smallest side of a control a finger presses.
   public static let touchTarget: CGFloat = DesignTokens.PaneInterior.touchTarget
+  /// The side of a small icon-only control where a pointer, not a finger, presses it.
+  public static let iconButtonSize: CGFloat = DesignTokens.PaneInterior.iconButtonSize
   public static let pillHorizontalPadding: CGFloat = DesignTokens.PaneInterior.pillHorizontalPadding
   public static let pillVerticalPadding: CGFloat = DesignTokens.PaneInterior.pillVerticalPadding
   /// Type sizes of the approved interior: Inter for prose and controls, mono for code.

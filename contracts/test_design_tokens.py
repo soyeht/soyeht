@@ -33,6 +33,8 @@ ADDED_AFTER_GENERATION = {
     ("glyph", "taskToolbarChevron"),
     # The smallest side of a control a finger presses (the phone's terminal keys).
     ("paneInterior", "touchTarget"),
+    # The side of a small icon-only control on the Mac and iPad pointer (the code block's Copy).
+    ("paneInterior", "iconButtonSize"),
     ("layout", "readinessWidth"),
     ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.

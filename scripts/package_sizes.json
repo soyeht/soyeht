@@ -1,0 +1,12 @@
+{
+  "ceilings": {
+    "macos-aarch64.dmg": 18000000,
+    "linux-x86_64.deb": 17700000,
+    "linux-aarch64.deb": null,
+    "linux-x86_64.AppImage": null,
+    "linux-aarch64.AppImage": null,
+    "windows-x86_64.exe": null,
+    "windows-aarch64.exe": null
+  },
+  "notes": "Bytes. Measured on 2026-11-02 (docs/reports/package-sizes-2026-11-02.md) and rounded up by about 3%. null: not measured yet, so not checked. A finished package over its ceiling fails the packaging script: change the number in the same change and say why. One more than 10% under it only prints a warning to lower the number. A name that is not one of these kinds is an error."
+}
