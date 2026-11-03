@@ -69,8 +69,22 @@ copy is worse than the small risk of a refused request that the manager honours 
   section 3): a unit whose program is gone is skipped by systemd (ADR 0121), `service start`
   reports it, and the window falls back to its own start. Turning the switch off and on repairs it.
 
+## Verified
+
+On Ubuntu 26.04 (arm64) with the `.deb` built by `scripts/package_linux_rootless.sh`: the first
+run asks the question and "Turn on" registers both units (the programs the window had started kept
+running, the units were enabled and left idle); the Setup panel shows the switch on, turning it off
+removes the units, ends the engine and has the window start one of its own with no "uninstalled"
+message, and turning it on registers them again; with the units registered and no engine, a new
+window starts the two units and no program of its own (one engine, in the unit's cgroup); a unit
+whose program is missing is refused by `service start` and the window starts its own engine and
+logs `desktop.service_start_failed`; `soyeht uninstall` with a window open ends everything and the
+window says it was uninstalled and starts nothing; `apt remove` follows.
+
 ## Not verified
 
 The Windows path (a scheduled task: `schtasks`, the host program, the first-run question in a
 Windows window). The code is shared and compiled for the Windows target by the gate; nothing of it
-ran on Windows. The Linux path was run on Ubuntu 26.04 arm64 (see the pull request).
+ran on Windows. The Mac was not run either: only the one-line change of `commandSeconds` to the
+generated policy value was compiled (`swift build` of `apps/shared`). "Not now" was exercised by the
+tests and by the switch's own "off" (which keeps the same choice), not by a click on the button.
