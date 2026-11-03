@@ -176,18 +176,14 @@ class StepListTests(unittest.TestCase):
 
     def test_the_swift_tests_build_every_engine_program_they_start(self):
         # The e2e steps can run on another host, so the Swift steps build what their tests start.
+        swift_tests = "".join(
+            path.read_text() for path in (ROOT / "apps/shared/Tests").rglob("*ConnectionTests.swift"))
+        self.assertIn('"soyeht-engine-test"', swift_tests)
         text = (ROOT / "scripts/check_all.sh").read_text()
-        started = set(re.findall(r'"(soyeht-engine-test|soyeht-engine|soyeht-ptyd)"', "".join(
-            path.read_text() for path in (ROOT / "apps/shared/Tests").rglob("*ConnectionTests.swift"))))
-        self.assertIn("soyeht-engine-test", started)
-        command = re.search(r"^step swift full swift:engine-binaries (\S+)$", text, re.MULTILINE)
-        self.assertIsNotNone(command)
-        body = re.search(rf"^{command.group(1)}\(\) {{\n(.*?)^}}", text, re.MULTILINE | re.DOTALL)
-        self.assertIsNotNone(body)
-        self.assertIn("build_test_engine", body.group(1))
-        self.assertIn("build_product_programs", body.group(1))
-        self.assertIn("--bin soyeht-engine-test", re.search(
-            r"^build_test_engine\(\) {\n(.*?)^}", text, re.MULTILINE | re.DOTALL).group(1))
+        self.assertRegex(text, r"(?m)^step swift full swift:engine-binaries build_engine_programs$")
+        self.assertRegex(
+            text, r"(?m)^build_engine_programs\(\) {\n    build_product_programs && build_test_engine\n}$")
+        self.assertRegex(text, r"(?m)^build_test_engine\(\) {\n.*--bin soyeht-engine-test\n}$")
 
     def test_the_end_to_end_set_runs_on_the_remote_host_in_file_order(self):
         # remote_gate.sh runs the remote steps of one `check_all.sh --only`, which keeps file order,

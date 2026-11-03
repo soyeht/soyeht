@@ -300,8 +300,18 @@ step engine both engine:clippy in_dir engine cargo clippy --locked --workspace -
 # A shipping build checks nothing against the contract; lint it and the checked one.
 step engine both engine:clippy-contract-checks in_dir engine cargo clippy --locked --workspace --all-targets --features soyeht-engine/contract-checks -- -D warnings
 # The engine is built with the checks on (ADR 0090), so the tests that start it and the
-# end-to-end runs also check its events and results against the contract.
-step engine both engine:build in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
+# end-to-end runs also check its events and results against the contract. The engine with the
+# test hooks (ADR 0091) is its own program, which only the suites and the Swift tests start.
+build_product_programs() {
+    in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
+}
+build_test_engine() {
+    in_dir engine cargo build --locked -p soyeht-engine --features test-hooks,contract-checks --bin soyeht-engine-test
+}
+build_engine_programs() {
+    build_product_programs && build_test_engine
+}
+step engine both engine:build build_product_programs
 # Integration tests (the crates' tests/ directories, which start sibling binaries) run here only.
 step engine full engine:test in_dir engine cargo test --locked --workspace --features soyeht-engine/contract-checks
 # Unit tests (src/ of libraries and binaries) of the changed crates and their reverse dependencies.
@@ -333,15 +343,6 @@ step always both tcc-guard:unit uv run python -m unittest discover -s scripts -p
 # one of them and just before the suites: the product programs without the hooks (the contract
 # checks stay on, ADR 0090), then the engine with the test hooks (ADR 0091), which the editor
 # acceptance starts. No product build has it.
-build_product_programs() {
-    in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
-}
-build_test_engine() {
-    in_dir engine cargo build --locked -p soyeht-engine --features test-hooks,contract-checks --bin soyeht-engine-test
-}
-build_engine_programs() {
-    build_product_programs && build_test_engine
-}
 step e2e both engine:build-product build_product_programs
 step e2e both engine:build-test-engine build_test_engine
 step e2e both e2e:tcc-snapshot uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
