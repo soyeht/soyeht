@@ -12,35 +12,40 @@
 //! [`Ask`] so the decisions are tested without starting a program.
 
 use crate::diagnostics::{Failure, ask_within};
-use serde::Deserialize;
 use soyeht_process::Limits;
-use soyeht_protocol::client_policy::SERVICE_COMMAND_MS;
+use soyeht_protocol::{
+    client_policy::{CAPS_SERVICE_REPORT_BYTES, SERVICE_COMMAND_MS},
+    service_report::ServiceReport,
+};
 use std::time::Duration;
 
 /// The setting's name and what it does, as the Preferences panel and the first-run question say
-/// them (the Mac's question, "Keep Soyeht running in the background?", is the same one).
+/// them. The question and its answers are `x-clientPolicy.texts`, which the Mac asks with too.
 pub mod text {
+    pub use soyeht_protocol::client_policy::{
+        LOGIN_START_LATER as LATER, LOGIN_START_NOT_NOW as NOT_NOW,
+        LOGIN_START_QUESTION as QUESTION, LOGIN_START_SUMMARY as SUMMARY,
+        LOGIN_START_TURN_ON as TURN_ON,
+    };
+
     pub const TITLE: &str = "Start at login";
     pub const SETTING: &str = "Start Soyeht at login";
-    pub const SUMMARY: &str = "Soyeht's engine keeps your terminals and agents running when this window is closed, \
-         and starts when you log in.";
-    pub const QUESTION: &str = "Keep Soyeht running in the background?";
-    pub const TURN_ON: &str = "Turn on";
-    pub const NOT_NOW: &str = "Not now";
-    pub const LATER: &str = "You can turn it on later from Preferences.";
     pub const TURN_OFF_WARNING: &str =
         "Turning it off stops the engine once, which ends the terminals running now.";
+    pub const PARTIAL: &str =
+        "Only part of the login start is set up. Turn it on to set up the rest.";
     pub const WORKING: &str = "Working\u{2026}";
     pub const FAILED: &str = "Soyeht could not change this. The log has the reason.";
     pub const UNAVAILABLE: &str =
         "This copy has no soyeht program beside it, so it cannot start Soyeht at login.";
 }
 
-/// How long one `soyeht service` call may take. `systemctl enable --now` and the scheduled task's
-/// start wait for a program to start, and the seam tries a busy service manager again.
+/// How long one `soyeht service` call may take, and how much it may print: `systemctl enable
+/// --now` and the scheduled task's start wait for a program to start, and the seam tries a busy
+/// service manager again; the report is a few lines.
 const LIMITS: Limits = Limits::new(
     Duration::from_millis(SERVICE_COMMAND_MS),
-    soyeht_protocol::limits::JSON_BYTES,
+    CAPS_SERVICE_REPORT_BYTES,
 );
 
 /// Runs `soyeht` with the arguments after the profile's own and returns what it printed.
@@ -51,25 +56,30 @@ pub(crate) fn real(arguments: &[&str]) -> Result<String, Failure> {
     ask_within(arguments, LIMITS)
 }
 
-#[derive(Deserialize)]
-struct Report {
-    services: Vec<Service>,
+/// How much of the login start is in place: every service of the profile registered, none, or
+/// some (a deleted file, an install that stopped half way).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Registration {
+    None,
+    Partial,
+    Full,
 }
 
-#[derive(Deserialize)]
-struct Service {
-    registered: bool,
+/// What `soyeht service ...` printed, as how much is registered. A report that lists no service
+/// is not a report.
+fn registration(printed: &str) -> Result<Registration, Failure> {
+    let report: ServiceReport = serde_json::from_str(printed).map_err(|_| Failure::Unreadable)?;
+    Ok(match report.registered() {
+        (_, 0) => return Err(Failure::Unreadable),
+        (0, _) => Registration::None,
+        (registered, total) if registered == total => Registration::Full,
+        _ => Registration::Partial,
+    })
 }
 
-/// What `soyeht service ...` printed, as whether any service of the profile is registered.
-fn registered(printed: &str) -> Result<bool, Failure> {
-    let report: Report = serde_json::from_str(printed).map_err(|_| Failure::Unreadable)?;
-    Ok(report.services.iter().any(|service| service.registered))
-}
-
-/// Whether the profile's services are registered to start at login.
-pub(crate) fn is_registered(ask: Ask<'_>) -> Result<bool, Failure> {
-    registered(&ask(&["service", "status"])?)
+/// How much of the login start the profile's services have.
+pub(crate) fn is_registered(ask: Ask<'_>) -> Result<Registration, Failure> {
+    registration(&ask(&["service", "status"])?)
 }
 
 /// Asks the service manager to start what is registered, the supervisor first. An error means the
@@ -80,27 +90,25 @@ pub(crate) fn start(ask: Ask<'_>) -> Result<(), Failure> {
 }
 
 /// Registers the services and starts those that do not run. A program the window started stays
-/// as it is (contract 13, section 3).
+/// as it is (contract 13, section 3). It repairs a registration that was only partly there.
 pub(crate) fn turn_on(ask: Ask<'_>) -> Result<(), Failure> {
-    if registered(&ask(&["service", "install"])?)? {
-        Ok(())
-    } else {
-        Err(Failure::Run("not_registered".to_owned()))
+    match registration(&ask(&["service", "install"])?)? {
+        Registration::Full => Ok(()),
+        _ => Err(Failure::Run("not_registered".to_owned())),
     }
 }
 
 /// Unregisters the services. It stops them first (`service uninstall`), so the terminals end.
 pub(crate) fn turn_off(ask: Ask<'_>) -> Result<(), Failure> {
-    if registered(&ask(&["service", "uninstall"])?)? {
-        Err(Failure::Run("still_registered".to_owned()))
-    } else {
-        Ok(())
+    match registration(&ask(&["service", "uninstall"])?)? {
+        Registration::None => Ok(()),
+        _ => Err(Failure::Run("still_registered".to_owned())),
     }
 }
 
-/// Whether the services are registered, asked of the `soyeht` program beside this window. Blocks
-/// until it answers: run it off the window's thread.
-pub fn status() -> Result<bool, Failure> {
+/// How much of the login start is in place, asked of the `soyeht` program beside this window.
+/// Blocks until it answers: run it off the window's thread.
+pub fn status() -> Result<Registration, Failure> {
     is_registered(&real)
 }
 
@@ -124,6 +132,9 @@ pub enum Phase {
     /// The first question is out.
     Checking,
     Off,
+    /// Some of the services are registered and not all: the switch is off and says so, and
+    /// turning it on repairs it.
+    Partial,
     On,
     /// A change to this state is under way.
     Changing(bool),
@@ -158,10 +169,11 @@ impl LoginStart {
 
     /// The question was answered. A copy with no `soyeht` program beside it cannot register and
     /// asks nothing; any other failure leaves the setting off, with the reason said.
-    pub fn checked(&mut self, answer: Result<bool, Failure>) {
+    pub fn checked(&mut self, answer: Result<Registration, Failure>) {
         self.phase = match answer {
-            Ok(true) => Phase::On,
-            Ok(false) => Phase::Off,
+            Ok(Registration::Full) => Phase::On,
+            Ok(Registration::None) => Phase::Off,
+            Ok(Registration::Partial) => Phase::Partial,
             Err(Failure::Unavailable) => Phase::Unavailable,
             Err(failure) => Phase::Failed(false, failure),
         };
@@ -173,7 +185,7 @@ impl LoginStart {
         if matches!(
             self.phase,
             Phase::Unavailable | Phase::Checking | Phase::Changing(_)
-        ) || self.is_on() == on && !matches!(self.phase, Phase::Failed(..))
+        ) || self.is_on() == on && !matches!(self.phase, Phase::Failed(..) | Phase::Partial)
         {
             return false;
         }
@@ -215,13 +227,16 @@ impl LoginStart {
             Phase::On => true,
             Phase::Changing(on) => on,
             Phase::Failed(was_on, _) => was_on,
-            Phase::Unavailable | Phase::Checking | Phase::Off => false,
+            Phase::Unavailable | Phase::Checking | Phase::Off | Phase::Partial => false,
         }
     }
 
     /// Whether the switch answers a click now.
     pub fn can_change(&self) -> bool {
-        matches!(self.phase, Phase::On | Phase::Off | Phase::Failed(..))
+        matches!(
+            self.phase,
+            Phase::On | Phase::Off | Phase::Partial | Phase::Failed(..)
+        )
     }
 
     /// Whether the setting is in a state that has something to show.
@@ -235,6 +250,7 @@ impl LoginStart {
         match self.phase {
             Phase::Changing(_) | Phase::Checking => Some((text::WORKING, false)),
             Phase::Failed(..) => Some((text::FAILED, true)),
+            Phase::Partial => Some((text::PARTIAL, true)),
             Phase::Unavailable | Phase::Off | Phase::On => None,
         }
     }

@@ -4,7 +4,10 @@
 use crate::args::{Flags, invalid};
 use serde_json::{Value, json};
 use soyeht_cli::Result;
-use soyeht_protocol::profile::Profile;
+use soyeht_protocol::{
+    profile::Profile,
+    service_report::{ServiceReport, ServiceState},
+};
 use soyeht_service::{Commands, Component, Definition, Layout, Manager, Real, System, render};
 use std::{
     collections::BTreeMap,
@@ -84,15 +87,18 @@ pub(crate) fn report(
     for component in Component::START_ORDER {
         if components.contains(&component) {
             let status = manager.status(component)?;
-            services.push(json!({
-                "component": status.component.name(),
-                "name": status.name,
-                "registered": status.registered,
-                "running": status.running,
-            }));
+            services.push(ServiceState {
+                component: status.component.name().to_owned(),
+                name: status.name.to_owned(),
+                registered: status.registered,
+                running: status.running,
+                current: None,
+            });
         }
     }
-    Ok(json!({ "services": services }))
+    // The window of the Linux and Windows app reads this with the same type.
+    serde_json::to_value(ServiceReport { services })
+        .map_err(|_| invalid("The report of the services could not be written"))
 }
 
 /// Adds `"current"` to each service of a status report: whether its definition is exactly what

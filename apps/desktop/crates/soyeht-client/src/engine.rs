@@ -178,9 +178,20 @@ impl Engine {
 /// A change of the login service under way ([`Engine::service_change`]).
 pub struct ServiceChange(Arc<Shared>);
 
+impl ServiceChange {
+    /// The change is over. `uninstalled` says that it ended the services with an uninstall (turning
+    /// the setting off did): the record that left is then the person's own doing, which the window
+    /// takes as its baseline. A change that did not (turning on, or a failure) leaves the flag as
+    /// it was, so an uninstall by someone else later is not taken for this one.
+    pub fn finish(self, uninstalled: bool) {
+        if uninstalled {
+            self.0.service_changed.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
 impl Drop for ServiceChange {
     fn drop(&mut self) {
-        self.0.service_changed.store(true, Ordering::Relaxed);
         self.0.service_changing.store(false, Ordering::Relaxed);
     }
 }
@@ -232,6 +243,13 @@ fn supervise(socket: &Path, autostart: &Autostart, events: &EventSink, shared: &
         }
         wait(shared, backoff.next());
     }
+}
+
+/// An engine answers: an uninstall that was flagged as the person's own and not yet looked at (the
+/// engine was not connected when it ended) is behind this connection, and the next one ending is
+/// not it.
+fn connection_opened(shared: &Shared) {
+    shared.service_changed.store(false, Ordering::Relaxed);
 }
 
 /// Waits while the person is changing the login service, or until the application stops, and
@@ -328,6 +346,7 @@ fn run_connection(socket: &Path, events: &EventSink, shared: &Shared) -> Error {
         Ok(link) => link,
         Err(error) => return error,
     };
+    connection_opened(shared);
     // The role is claimed unless the engine refused it to the last connection, and the claim is
     // tried again once that connection is over: the window that held the role may have gone.
     let host = shared
@@ -519,12 +538,43 @@ mod tests {
         };
         std::thread::sleep(WAIT_SLICE * 3);
         assert!(!waiting.is_finished(), "the start waits for the change");
-        drop(change);
+        change.finish(true);
         assert!(
             waiting.join().unwrap(),
             "and then takes its record as its own"
         );
         assert!(!settle_service_change(&shared), "once");
+    }
+
+    #[test]
+    fn a_change_that_is_not_an_uninstall_leaves_nothing_to_accept() {
+        let shared = Arc::new(Shared::default());
+        shared.service_changing.store(true, Ordering::Relaxed);
+        ServiceChange(Arc::clone(&shared)).finish(false);
+        assert!(!settle_service_change(&shared));
+        // Dropped with no word, as a failed change is: the same.
+        shared.service_changing.store(true, Ordering::Relaxed);
+        drop(ServiceChange(Arc::clone(&shared)));
+        assert!(!settle_service_change(&shared));
+    }
+
+    #[test]
+    fn an_uninstall_by_someone_else_after_a_change_and_a_connection_is_not_taken_for_the_persons() {
+        let (_, directory) = absent_socket("stale");
+        let autostart = Autostart::in_directory(directory.clone(), None);
+        let mut watch = Watch::begin(&autostart);
+        let shared = Arc::new(Shared::default());
+        // The person turned the setting off while no engine was connected.
+        shared.service_changing.store(true, Ordering::Relaxed);
+        ServiceChange(Arc::clone(&shared)).finish(true);
+        // Then an engine answered, and later a terminal's `soyeht uninstall` ended it.
+        connection_opened(&shared);
+        soyeht_platform::fs::mark_uninstalled(&directory).unwrap();
+        if settle_service_change(&shared) {
+            watch.accept_current();
+        }
+        assert!(watch.uninstalled(), "the window does not start an engine");
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

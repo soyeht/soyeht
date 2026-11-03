@@ -40,20 +40,43 @@ fn run_failure() -> Failure {
     Failure::Run("status:1".into())
 }
 
+const HALF: &str = r#"{"services":[{"component":"ptyd","name":"a","registered":false,"running":false},
+    {"component":"engine","name":"b","registered":true,"running":false}]}"#;
+
 #[test]
-fn the_services_are_registered_when_any_of_them_is() {
-    let one = r#"{"services":[{"registered":false},{"registered":true}]}"#;
-    assert_eq!(registered(ON), Ok(true));
-    assert_eq!(registered(one), Ok(true));
-    assert_eq!(registered(OFF), Ok(false));
-    assert_eq!(registered(r#"{"services":[]}"#), Ok(false));
-    assert_eq!(registered("not json"), Err(Failure::Unreadable));
+fn the_registration_is_all_none_or_part_of_the_services() {
+    assert_eq!(registration(ON), Ok(Registration::Full));
+    assert_eq!(registration(OFF), Ok(Registration::None));
+    assert_eq!(registration(HALF), Ok(Registration::Partial));
+    // A report with no service is not a report; neither is text that is not one.
+    assert_eq!(registration(r#"{"services":[]}"#), Err(Failure::Unreadable));
+    assert_eq!(registration("not json"), Err(Failure::Unreadable));
+}
+
+#[test]
+fn what_the_command_line_prints_is_what_the_window_reads() {
+    // The command line serializes `ServiceReport`; the window parses the same type, so a field
+    // renamed on one side fails to compile on the other. This pins the JSON between them too.
+    let printed = serde_json::to_string(&ServiceReport {
+        services: vec![soyeht_protocol::service_report::ServiceState {
+            component: "engine".into(),
+            name: "soyeht-next-engine.service".into(),
+            registered: true,
+            running: false,
+            current: None,
+        }],
+    })
+    .unwrap();
+    assert_eq!(registration(&printed), Ok(Registration::Full));
 }
 
 #[test]
 fn the_status_asks_the_services_of_the_profile_and_changes_nothing() {
     let script = Script::new(vec![Ok(ON.into())]);
-    assert_eq!(is_registered(&|call| script.ask(call)), Ok(true));
+    assert_eq!(
+        is_registered(&|call| script.ask(call)),
+        Ok(Registration::Full)
+    );
     assert_eq!(script.calls(), ["service status"]);
 }
 
@@ -105,7 +128,7 @@ fn the_first_question_is_asked_once() {
     assert!(setting.begin_check());
     assert!(!setting.begin_check(), "one question at a time");
     assert_eq!(setting.message(), Some((text::WORKING, false)));
-    setting.checked(Ok(false));
+    setting.checked(Ok(Registration::None));
     assert!(
         !setting.begin_check(),
         "and not again once it has an answer"
@@ -116,7 +139,7 @@ fn the_first_question_is_asked_once() {
 fn a_copy_that_is_not_registered_asks_the_person_until_they_decline() {
     let mut setting = LoginStart::new(false);
     assert!(setting.begin_check());
-    setting.checked(Ok(false));
+    setting.checked(Ok(Registration::None));
     assert!(setting.should_ask());
     assert!(!setting.is_on());
     setting.decline();
@@ -132,11 +155,11 @@ fn a_copy_that_is_not_registered_asks_the_person_until_they_decline() {
 fn a_person_who_declined_before_is_not_asked_and_one_who_registered_is_not_asked() {
     let mut declined = LoginStart::new(true);
     declined.begin_check();
-    declined.checked(Ok(false));
+    declined.checked(Ok(Registration::None));
     assert!(!declined.should_ask());
     let mut registered = LoginStart::new(false);
     registered.begin_check();
-    registered.checked(Ok(true));
+    registered.checked(Ok(Registration::Full));
     assert!(registered.is_on());
     assert!(!registered.should_ask());
 }
@@ -169,7 +192,7 @@ fn a_question_that_fails_leaves_the_setting_off_with_the_reason_said() {
 fn turning_the_setting_on_registers_and_then_shows_it_on() {
     let mut setting = LoginStart::new(true);
     setting.begin_check();
-    setting.checked(Ok(false));
+    setting.checked(Ok(Registration::None));
     assert!(setting.begin_change(true));
     assert!(setting.is_on(), "the switch moves at once");
     assert!(
@@ -188,7 +211,7 @@ fn turning_the_setting_on_registers_and_then_shows_it_on() {
 fn turning_the_setting_off_unregisters_and_then_shows_it_off() {
     let mut setting = LoginStart::new(false);
     setting.begin_check();
-    setting.checked(Ok(true));
+    setting.checked(Ok(Registration::Full));
     assert!(!setting.begin_change(true), "it is on already");
     assert!(setting.begin_change(false));
     assert!(!setting.is_on());
@@ -205,7 +228,7 @@ fn turning_the_setting_off_unregisters_and_then_shows_it_off() {
 fn a_change_that_fails_puts_the_switch_back_and_can_be_tried_again() {
     let mut setting = LoginStart::new(false);
     setting.begin_check();
-    setting.checked(Ok(false));
+    setting.checked(Ok(Registration::None));
     setting.begin_change(true);
     setting.changed(true, Err(run_failure()));
     assert!(!setting.is_on());
@@ -226,4 +249,31 @@ fn nothing_changes_before_the_setting_has_an_answer() {
     assert!(!setting.begin_change(true));
     setting.begin_check();
     assert!(!setting.begin_change(true));
+}
+
+#[test]
+fn a_half_registered_login_start_is_said_and_turning_it_on_repairs_it() {
+    let mut setting = LoginStart::new(false);
+    setting.begin_check();
+    setting.checked(Ok(Registration::Partial));
+    assert!(!setting.is_on(), "the switch does not claim it is on");
+    assert!(
+        !setting.should_ask(),
+        "and the window does not ask over a registration"
+    );
+    assert_eq!(setting.message(), Some((text::PARTIAL, true)));
+    assert!(setting.can_change());
+    assert!(setting.begin_change(true), "turning it on is the repair");
+    setting.changed(true, Ok(()));
+    assert!(setting.is_on());
+    assert_eq!(setting.message(), None);
+}
+
+#[test]
+fn turning_on_a_half_registration_that_stays_half_is_a_failure() {
+    let script = Script::new(vec![Ok(HALF.into())]);
+    assert_eq!(
+        turn_on(&|call| script.ask(call)),
+        Err(Failure::Run("not_registered".into()))
+    );
 }

@@ -59,7 +59,8 @@ impl Workbench {
                     } else {
                         login_start::unregister()
                     };
-                    drop(change);
+                    // Only a successful turn-off ended the services with an uninstall.
+                    change.finish(!on && result.is_ok());
                     result
                 })
                 .await;

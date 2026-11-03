@@ -21,32 +21,43 @@ problem by running the command line of its own bundle (ADR 0120).
 **The window runs the `soyeht` beside it, as the Mac app does.** `soyeht_client::login_start`
 asks `soyeht --profile P --data-dir D service status|install|uninstall|start` through the same
 runner as "Copy diagnostics" (`diagnostics::ask_within`, ADR 0118), within `serviceCommandMs`
-(`x-clientPolicy.timeouts`, 60 s, which the Mac's `BundledEngineService` now reads too). It
+(`x-clientPolicy.timeouts`, 60 s, which the Mac's `BundledEngineService` now reads too) and
+`serviceReportBytes` (`caps`). What it prints is `soyeht_protocol::service_report::ServiceReport`,
+the type the command line serializes, so the two cannot drift. It
 writes no service file. A window with no `soyeht` beside it (a copy that is not a release) has
 no setting and asks nothing.
 
 **It asks once, and keeps a setting.** When the window can start an engine itself (no
 `SOYEHT_ENGINE_SOCKET`) and `service status` says nothing is registered, it shows, under the top
-bar, "Keep Soyeht running in the background?" with "Turn on" and "Not now", the Mac's words.
+bar, "Keep Soyeht running in the background?" with "Turn on" and "Not now". The Mac asks the same: the
+words are `x-clientPolicy.texts` (`loginStart...`) and both clients read them.
 "Turn on" runs `service install`. "Not now", and turning the setting off later, are kept in the
 device's own choices (`login_start_declined` in `client-preferences.json`), so the question is
 not asked again. The Setup panel of Preferences has the switch "Start Soyeht at login" for good.
 Nothing is registered unasked (contract 13 section 3): a Windows task is listed and a systemd
 unit is a background program the person did not choose.
 
+**A registration is all of it or part of it.** `service status` lists both services. All registered
+is on, none is off, and some (a deleted file, an install that stopped half way) is shown as such:
+the switch is off, a line says only part is set up, and turning it on (`service install`) repairs it.
+The start asks a service only when all of them are registered.
+
 **Turning it off is `service uninstall`.** The seam has no "unregister and leave running". So the
 switch ends the engine and the supervisor and the terminals with them, and says so beside it. The
 uninstall leaves the `uninstalled` record of ADR 0131, which an open window takes for an
 uninstall by someone else. The window therefore holds `Engine::service_change` while the command
-runs: the supervisor starts no engine meanwhile, and when the change ends it takes the record
-as its baseline (`Watch::accept_current`), then starts an engine of its own, since nothing is
-registered. The record still stops the window from starting an engine after a real uninstall.
+runs: the supervisor starts no engine meanwhile, and when a **successful turn-off** ends it takes
+the record as its baseline (`Watch::accept_current`), then starts an engine of its own, since
+nothing is registered. A turn-on or a failure sets no such flag, and a flag left when no engine was
+connected is cleared when one connects, so an uninstall by someone else later is not taken for
+the person's own. The record still stops the window from starting an engine after a real uninstall.
 A seam command that unregisters without stopping is a follow-up; it was not designed here because
 it cannot be checked on the Mac and Windows from this change.
 
 **The start asks the service first.** `autostart::ensure` runs, in order: the engine answers
-(done); an uninstall record is new (stop, ADR 0131); the window's `desktop-start.lock`; the engine
-answers (done); if `service status` says registered, `service start` and wait for the endpoint;
+(done); an uninstall record is new (stop, ADR 0131); the window's `desktop-start.lock` (a window
+that does not get it waits); the engine answers (done); if `service status` says registered,
+`service start` and wait for the endpoint;
 otherwise, or if `service start` failed, the detached start of ADR 0102.
 
 The contract says the app must not fall back when the service start fails. This keeps that for a
@@ -61,6 +72,9 @@ copy is worse than the small risk of a refused request that the manager honours 
 
 - A person who installs the package gets the question at first run and the switch afterwards; the
   `.deb` still registers nothing by itself (ADR 0121).
+- `service start` leaves a component alone when its program holds the singleton lock, as `install`
+  does: a supervisor the window started and the person then registered is not started a second time
+  by its idle unit (which would fail on the lock and restart every second).
 - With the services registered, the window's start no longer leaves a detached engine beside a
   unit. Two windows still make one decision (the lock).
 - A first run costs one `soyeht service status` (a few `systemctl` calls) when the engine is not

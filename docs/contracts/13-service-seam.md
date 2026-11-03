@@ -94,7 +94,7 @@ switch registers with `service install` and unregisters with `service uninstall`
 the engine and the supervisor like any uninstall (section 7), which ends the terminals running
 then, and the window says so beside the switch. The window then starts an engine of its own, since
 nothing is registered, and does not take the uninstall record the switch left for an uninstall by
-someone else. The window does not repair a registration whose programs moved: a start the service
+someone else. A registration with only some of its services (a deleted file) shows the switch off with a line that says so, and turning it on repairs it. The words of the question are `x-clientPolicy.texts`, which the Mac reads too. The window does not repair a registration whose programs moved: a start the service
 manager refuses falls back to the window's own (section 4). All of them run the same command, which is idempotent: a registration
 that is already in place is rewritten; a program that runs is left running with the definition it
 started with, and the new text applies when it is next loaded (`service stop` then `service start`,
@@ -125,7 +125,7 @@ The commands, all printing the state of the services after they ran as JSON
 | `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). A component whose program already runs, which the window starts when nothing is registered, is registered and not started: the program holds a singleton lock in the data directory (`engine.lock`, `ptyd.lock`), and a second copy would fail on it and be restarted for ever, so the logon trigger starts it next time. Ask the lock, never the service manager. |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
 | `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
-| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux and the Mac with "the program ... does not exist" when the program is gone (systemd would skip the unit, and launchd would not run the agent, and both would report success). |
+| `soyeht service start [--component C]` | Starts what is registered and not running (a component whose program holds its singleton lock counts as running, as for `install`). Fails with "not registered" otherwise, and on Linux and the Mac with "the program ... does not exist" when the program is gone (systemd would skip the unit, and launchd would not run the agent, and both would report success). |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
 | `soyeht service status [--component C] [--programs DIR]` | Reports. Changes nothing. With `--programs`, each service also says whether its definition is current for that folder. |
 | `soyeht service render --system S --name N [...] -- PROGRAM ARGS` | Prints the file for explicit values without touching the system. For scripts that start disposable services. |
@@ -143,7 +143,7 @@ The endpoint is the truth: the socket of the data directory (Windows: the endpoi
 0108). The app never asks a service manager whether an engine runs. When a connection fails
 because nothing listens, and no uninstall left its record since the window opened (section 7):
 
-1. If the profile's service is **registered** (`service status`), the app asks for it to be
+1. Under that lock, if all of the profile's services are **registered** (`service status`), the app asks for it to be
    started (`service start`) and waits for the endpoint as ADR 0102 does. It starts no program of
    its own. A window that cannot ask (no `soyeht` beside it) counts the service as not registered.
 2. If it is **not registered**, the app falls back to ADR 0102: it starts the supervisor and the

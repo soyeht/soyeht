@@ -241,10 +241,12 @@ impl<'a, C: Commands> Manager<'a, C> {
     }
 
     /// Starts each registered component, the supervisor first. A component that already runs is
-    /// left alone.
+    /// left alone: the service manager says so, or its program holds the singleton lock, as the
+    /// one the window started does (`install` asks the lock for the same reason). A second copy
+    /// would fail on the lock and be restarted every second.
     pub fn start(&self, components: &[Component]) -> Result<()> {
         for component in ordered(components) {
-            if self.status(component)?.running {
+            if self.status(component)?.running || self.program_runs(component)? {
                 continue;
             }
             match self.layout.system {

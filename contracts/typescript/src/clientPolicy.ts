@@ -22,7 +22,8 @@ export const clientPolicy = {
     "webLinks": 128,
     "modelPages": 32,
     "tickerHistory": 3,
-    "diagnosticsReportBytes": 4194304
+    "diagnosticsReportBytes": 4194304,
+    "serviceReportBytes": 65536
   },
   "pageSize": {
     "queue": 64,
@@ -94,6 +95,11 @@ export const clientPolicy = {
     "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
     "crashNoticeCopy": "Copy report",
     "crashNoticeDismiss": "Dismiss",
+    "loginStartQuestion": "Keep Soyeht running in the background?",
+    "loginStartSummary": "Soyeht's engine keeps your terminals and agents running when this window is closed, and starts when you log in.",
+    "loginStartLater": "You can turn it on later from Preferences.",
+    "loginStartTurnOn": "Turn on",
+    "loginStartNotNow": "Not now",
     "pushNeedsYouTitle": "An agent needs you",
     "pushNeedsYouBody": "Open Soyeht to see what it asks."
   },

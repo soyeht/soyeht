@@ -19,7 +19,7 @@
 
 use crate::{
     diagnostics::Failure,
-    login_start,
+    login_start::{self, Registration},
     profile::{SOCKET_ENV, data_directory_of_profile, socket_override},
 };
 use soyeht_platform::{
@@ -227,40 +227,37 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.uninstalled() {
         return Err(StartError::Uninstalled);
     }
-    let registered = host.service_registered();
-    // A service starts the programs from the folder it was registered with, so the folder of this
-    // window needs to hold them only for a start of its own.
-    if !registered {
-        programs_of(plan, host)?;
-    }
+    // One window decides at a time (ADR 0102), and only the one that holds the lock asks the
+    // service manager, which can take a while to answer.
     let Some(_lock) = host
         .lock()
         .map_err(|error| StartError::Lock(error.kind()))?
     else {
         // Another window is starting the engine.
-        return wait_until(
-            host,
-            ENGINE_PROGRAM,
-            || host.engine_reachable(),
-            &mut || false,
-        );
+        return wait_for_engine(host);
     };
     // The engine may have come up while this window waited for the lock.
     if host.engine_reachable() {
         return Ok(());
     }
     // The service started, so the engine is its to bring up; a start that failed leaves the
-    // window to start its own.
-    if registered && host.start_service() {
-        return wait_until(
-            host,
-            ENGINE_PROGRAM,
-            || host.engine_reachable(),
-            &mut || false,
-        );
+    // window to start its own. A service starts the programs from the folder it was registered
+    // with, so the folder of this window needs to hold them only for a start of its own.
+    if host.service_registered() && host.start_service() {
+        return wait_for_engine(host);
     }
     let (programs, engine) = programs_of(plan, host)?;
     start_programs(host, &programs, &engine)
+}
+
+/// Waits until the engine answers, for one that something else is starting.
+fn wait_for_engine(host: &impl Host) -> Result<(), StartError> {
+    wait_until(
+        host,
+        ENGINE_PROGRAM,
+        || host.engine_reachable(),
+        &mut || false,
+    )
 }
 
 /// The folder of this window's programs and the engine in it.
@@ -448,7 +445,8 @@ impl Host for Local<'_> {
 
     fn service_registered(&self) -> bool {
         match login_start::status() {
-            Ok(registered) => registered,
+            // Part of a registration is not one to start from: the window starts its own.
+            Ok(registration) => registration == Registration::Full,
             // No `soyeht` program beside the window: a copy with no service to ask.
             Err(Failure::Unavailable) => false,
             Err(failure) => {
