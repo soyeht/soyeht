@@ -6,7 +6,7 @@ use serde_json::Value;
 use soyeht_process::{Limits, Output};
 use soyeht_protocol::{Comment, Subitem, Task, TaskExecutor};
 use soyeht_store::tasks::DispatchCheckpoint;
-use std::{path::Path, process::Command, time::Duration};
+use std::{ffi::OsStr, path::Path, process::Command, time::Duration};
 
 const OUTPUT_LIMIT: usize = 1_048_576;
 /// `wt list` reads every worktree's status.
@@ -60,10 +60,31 @@ impl CommandWorktree {
     }
 
     fn wt(&self, repository: &Path, args: &[&str], timeout: Duration) -> Result<Output> {
+        let path = crate::agents::environment::launch_search_path();
+        self.wt_on(&path, repository, args, timeout)
+    }
+
+    /// Runs `wt` and the git it starts with `path` as their search path: the launch `PATH`, so an
+    /// engine started at login finds the `wt` the person's shell finds (ADR 0135).
+    fn wt_on(
+        &self,
+        path: &OsStr,
+        repository: &Path,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<Output> {
         // `wt` starts git itself, so the check comes before `wt` does.
-        soyeht_process::require_git().map_err(errors::worktree_process)?;
+        let probe = soyeht_platform::git::Probe {
+            path: path.to_owned(),
+            ..soyeht_platform::git::Probe::system()
+        };
+        soyeht_process::require_git_with(&probe).map_err(errors::worktree_process)?;
         let mut command = Command::new(&self.executable);
-        command.arg("-C").arg(repository).args(args);
+        command
+            .env("PATH", path)
+            .arg("-C")
+            .arg(repository)
+            .args(args);
         bounded_command(command, timeout)
     }
 
