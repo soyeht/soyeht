@@ -1,5 +1,5 @@
 use crate::ports::{PortScanError, PortScanObservation, PortScanPort};
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::OnceLock, time::Duration};
 #[cfg(unix)]
 use {
     soyeht_protocol::limits,
@@ -16,7 +16,7 @@ pub(super) const SCAN_PATIENCE: u32 = 3;
 pub struct SystemPortScan {
     // Windows has no program to run: its scan reports that listing is unavailable.
     #[cfg_attr(windows, allow(dead_code))]
-    program: PathBuf,
+    program: OnceLock<PathBuf>,
     /// What each run is given while the host keeps up.
     #[cfg_attr(windows, allow(dead_code))]
     timeout: Duration,
@@ -28,9 +28,10 @@ pub struct SystemPortScan {
 }
 
 impl SystemPortScan {
+    #[cfg(any(test, windows))]
     fn with(program: PathBuf, timeout: Duration) -> Self {
         Self {
-            program,
+            program: OnceLock::from(program),
             timeout,
             allowance: timeout,
         }
@@ -50,12 +51,19 @@ impl SystemPortScan {
 }
 
 impl Default for SystemPortScan {
+    /// The scanner finds `lsof` on its first scan, not here: the launch `PATH` it searches waits
+    /// for the login shell when none is remembered yet, and this runs while the Core opens.
     fn default() -> Self {
         #[cfg(unix)]
-        let program = lsof_program();
+        {
+            Self {
+                program: OnceLock::new(),
+                timeout: SCAN_TIMEOUT,
+                allowance: SCAN_TIMEOUT,
+            }
+        }
         #[cfg(windows)]
-        let program = PathBuf::new();
-        Self::with(program, SCAN_TIMEOUT)
+        Self::with(PathBuf::new(), SCAN_TIMEOUT)
     }
 }
 
@@ -121,7 +129,8 @@ impl PortScanPort for SystemPortScan {
 #[cfg(unix)]
 impl SystemPortScan {
     fn observe(&self) -> Result<PortScanObservation, PortScanError> {
-        observe_with(|arguments| run_lsof(&self.program, self.allowance, arguments))
+        let program = self.program.get_or_init(lsof_program);
+        observe_with(|arguments| run_lsof(program, self.allowance, arguments))
     }
 }
 
@@ -346,6 +355,14 @@ mod tests {
             matches!(signalled, PortScanError::Failed { code: None, .. }),
             "{signalled}"
         );
+    }
+
+    /// The scanner is made while the Core opens, and finding `lsof` can wait for the login shell:
+    /// it is found at the first scan.
+    #[cfg(unix)]
+    #[test]
+    fn the_default_scanner_finds_lsof_at_its_first_scan_not_when_it_is_made() {
+        assert!(SystemPortScan::default().program.get().is_none());
     }
 
     #[test]

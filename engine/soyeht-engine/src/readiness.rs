@@ -130,18 +130,26 @@ fn applies(tool: &Tool, system: &ReadinessSystem) -> bool {
 /// places, and the harness adapters through `npx` start from the same. `None` for a tool this file
 /// does not know how to look up.
 fn tool_found(id: &str) -> Option<bool> {
+    tool_found_on(id, &environment::launch_search_path())
+}
+
+/// [`tool_found`] with `path` as the search path of `git`, `wt` and `npx`.
+fn tool_found_on(id: &str, path: &std::ffi::OsStr) -> Option<bool> {
+    let on_path = |command: &str| {
+        registry::resolve_executable(command, std::env::split_paths(path)).is_some()
+    };
     Some(match id {
         "git" => {
-            registry::executable("git").is_some()
+            on_path("git")
                 && Probe {
-                    path: environment::launch_search_path(),
+                    path: path.to_owned(),
                     ..Probe::system()
                 }
                 .availability()
                     == Availability::Available
         }
-        "node" => registry::executable("npx").is_some(),
-        "wt" => registry::executable(soyeht_platform::worktrunk::PROGRAM).is_some(),
+        "node" => on_path("npx"),
+        "wt" => on_path(soyeht_platform::worktrunk::PROGRAM),
         "lsof" => lsof_found(),
         _ => return None,
     })
@@ -199,6 +207,42 @@ mod tests {
 
     fn all_tools(id: &str) -> Option<bool> {
         Some(id != "wt")
+    }
+
+    /// A folder of the launch `PATH` holding executable fake `wt` and `npx` programs, which the
+    /// process `PATH` does not name.
+    #[cfg(unix)]
+    fn folder_with_tools() -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let folder = std::env::temp_dir().join(format!("sn-launch-path-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&folder).unwrap();
+        for name in [soyeht_platform::worktrunk::PROGRAM, "npx"] {
+            let tool = folder.join(name);
+            std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        folder
+    }
+
+    /// An engine started at login has the user manager's `PATH`, which lacks the folder a login
+    /// shell adds (ADR 0135): `wt` and `npx` are found on the launch `PATH` alone.
+    #[cfg(unix)]
+    #[test]
+    fn wt_and_npx_are_found_on_the_launch_path_when_the_process_path_lacks_them() {
+        let folder = folder_with_tools();
+        let process_path = std::env::var_os("PATH").unwrap_or_default();
+        assert!(
+            !std::env::split_paths(&process_path).any(|entry| entry == folder),
+            "the process PATH does not name the folder"
+        );
+        let launch_path = std::env::join_paths([&folder]).unwrap();
+        assert_eq!(tool_found_on("wt", &launch_path), Some(true));
+        assert_eq!(tool_found_on("node", &launch_path), Some(true));
+        // Without the folder on the search path neither is there.
+        let empty = std::env::join_paths([std::env::temp_dir().join("sn-no-tools")]).unwrap();
+        assert_eq!(tool_found_on("wt", &empty), Some(false));
+        assert_eq!(tool_found_on("node", &empty), Some(false));
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]
