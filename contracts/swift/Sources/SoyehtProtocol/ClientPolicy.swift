@@ -172,6 +172,7 @@ extension UsageProvider {
             case .claude: "Claude"
             case .codex: "Codex"
             case .cursor: "Cursor"
+            case .opencode: "OpenCode"
         }
     }
 }

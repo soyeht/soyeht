@@ -16,10 +16,11 @@ use chrono::DateTime;
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 use std::sync::{Arc, Mutex, PoisonError};
 
-pub const PROVIDERS: [UsageProvider; 3] = [
+pub const PROVIDERS: [UsageProvider; 4] = [
     UsageProvider::Claude,
     UsageProvider::Codex,
     UsageProvider::Cursor,
+    UsageProvider::Opencode,
 ];
 
 /// A refresh failure that should make the provider's schedule retry sooner or later.
@@ -224,7 +225,7 @@ enum Held {
 
 /// A reused reading is stale as soon as one of its windows has reset.
 fn reset_passed(reading: &ParsedReading, now_sec: u64) -> bool {
-    [Some(&reading.primary), reading.secondary.as_ref()]
+    [reading.primary.as_ref(), reading.secondary.as_ref()]
         .into_iter()
         .flatten()
         .filter_map(|window| DateTime::parse_from_rfc3339(&window.resets_at).ok())
@@ -242,8 +243,9 @@ fn stamped(
         provider: provider.clone(),
         state: UsageState::Ok,
         unavailable_reason: None,
-        primary: Some(reading.primary),
+        primary: reading.primary,
         secondary: reading.secondary,
+        activity: reading.activity,
         source,
         fetched_at: fetched_at.to_owned(),
         observed_at_sec,
@@ -279,6 +281,7 @@ fn failed(
             unavailable_reason: reason,
             primary: None,
             secondary: None,
+            activity: None,
             source,
             fetched_at: fetched_at.to_owned(),
             observed_at_sec,
@@ -316,6 +319,7 @@ fn public_failure(
         ),
         Failure::InvalidResponse => (UsageState::Unavailable, Some(Reason::InvalidResponse), None),
         Failure::NoData => (UsageState::Unavailable, Some(Reason::NoData), None),
+        Failure::PlanExpired => (UsageState::Unavailable, Some(Reason::PlanExpired), None),
         Failure::Failed if *source == UsageSource::CodexAppServer => {
             (UsageState::Unavailable, Some(Reason::AppServerFailed), None)
         }

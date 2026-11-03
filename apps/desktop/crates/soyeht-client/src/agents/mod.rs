@@ -516,6 +516,7 @@ impl State {
             unavailable_reason: event.unavailable_reason,
             primary: event.primary,
             secondary: event.secondary,
+            activity: event.activity,
             source: event.source,
             fetched_at: event.fetched_at,
         };

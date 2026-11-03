@@ -319,7 +319,7 @@ fn cli_opens_edits_searches_and_reads_history_from_a_real_editor_pane() {
             .as_array()
             .unwrap()
             .len(),
-        3
+        4
     );
 }
 

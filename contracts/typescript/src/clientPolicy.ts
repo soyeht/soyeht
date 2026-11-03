@@ -140,7 +140,8 @@ export const clientPolicy = {
   "usageProviderNames": {
     "claude": "Claude",
     "codex": "Codex",
-    "cursor": "Cursor"
+    "cursor": "Cursor",
+    "opencode": "OpenCode"
   },
   "configRoles": {
     "model": {

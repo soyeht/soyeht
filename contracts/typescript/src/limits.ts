@@ -36,6 +36,7 @@ export const limits = {
   "usageAutoRefreshIntervalSec": 300,
   "usageStaleAfterSec": 900,
   "usageMaxBackoffSec": 1800,
+  "usageActivityDays": 7,
   "editorViewportLines": 2000,
   "editorEditBytes": 262144,
   "editorPathBytes": 4096,
