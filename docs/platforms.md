@@ -175,6 +175,12 @@ notarized and stapled, and `dist/soyeht-<version>-macos-aarch64.dmg` with its `.
 notarized and stapled. The version is `contracts/release.json`; `dist/` is ignored. The bundle is
 `Soyeht Next.app` (`displayNames` in `contracts/profiles.json`; `Soyeht.app` is the older app's name) with the identifier `com.soyeht.next.mac`.
 It is Apple silicon only (the dictation engines are built on MLX).
+The app's executable is stripped, as Xcode does for an archive, before it is signed (the Rust
+programs are stripped by their profile): 38 MB of names that nothing reads at run time, a fifth of
+the image. Its debug symbols are saved first, with the same UUID, as
+`dist/symbols/soyeht-<version>-macos-aarch64.dSYM.zip` (`dist/ad-hoc/symbols/` for an ad hoc
+build): keep it with the release, since it is the only way to name the frames of a crash. It is
+not part of the package, and the release flow does not collect it.
 
 | Variable | Holds |
 | --- | --- |
