@@ -27,9 +27,7 @@ impl Listener {
 /// name is not.
 pub fn same_user(stream: &Stream) -> bool {
     use std::os::fd::AsRawFd;
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    crate::local::unix::peer_user_of(stream.as_raw_fd())
-        .is_ok_and(|user| user == unsafe { libc::geteuid() })
+    crate::local::unix::descriptor_peer_is_same_user(stream.as_raw_fd()).is_ok_and(|same| same)
 }
 
 /// Two connected streams, for tests and in-process wiring.

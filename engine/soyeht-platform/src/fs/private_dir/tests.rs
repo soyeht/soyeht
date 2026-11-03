@@ -1,5 +1,5 @@
 use super::*;
-use crate::fs::{set_private_dir, symlink};
+use crate::fs::{dir_is_owner_only, set_private_dir, symlink};
 
 use crate::testing::scratch_dir as scratch;
 
@@ -44,8 +44,7 @@ fn a_directory_of_another_user_is_said_to_belong_to_them_not_refused_with_permis
     // A system directory belongs to the superuser. Inside a user namespace (the Linux gate's FHS
     // root) `/` can be the test's own, so the first one owned by someone else is used. Nothing is
     // changed: it is only read.
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    let me = unsafe { libc::geteuid() };
+    let me = crate::user::effective_id();
     let Some(theirs) = ["/", "/usr", "/etc", "/nix/store"]
         .into_iter()
         .map(Path::new)

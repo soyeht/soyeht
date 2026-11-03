@@ -8,6 +8,14 @@ pub fn id() -> io::Result<String> {
     system::id()
 }
 
+/// The numeric user id this process runs as (the effective one), the single place that asks the
+/// kernel for it.
+#[cfg(unix)]
+pub(crate) fn effective_id() -> u32 {
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    unsafe { libc::geteuid() }
+}
+
 /// The shell a person's terminals and shell probes start, chosen by one rule on every caller.
 ///
 /// On Unix: `$SHELL` when it names an existing absolute file (the login sets it; a program a
@@ -108,8 +116,7 @@ mod system {
             Ok(size) if size > 0 => size,
             _ => 1024,
         };
-        // SAFETY: geteuid has no arguments or memory preconditions.
-        let user = unsafe { libc::geteuid() };
+        let user = super::effective_id();
         loop {
             let mut buffer = vec![0_u8; size];
             // SAFETY: an all-zero passwd is a valid value to be overwritten (null pointers).
@@ -144,8 +151,7 @@ mod system {
     }
 
     pub(super) fn id() -> io::Result<String> {
-        // SAFETY: geteuid has no arguments or memory preconditions.
-        Ok(unsafe { libc::geteuid() }.to_string())
+        Ok(super::effective_id().to_string())
     }
 
     #[cfg(test)]
