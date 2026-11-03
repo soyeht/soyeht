@@ -158,6 +158,8 @@ impl Core {
         // The user's interactive launch path, remembered from the last start: asking the login
         // shell takes seconds on a busy machine and the engine must not wait for it to listen.
         crate::agents::environment::warm_launch_path(directory);
+        // The version of the person's own Claude Code, asked once here and not by the first pane.
+        crate::agents::user_cli::warm();
         // The account's shell, which a terminal may need when `$SHELL` is unset, is read here and
         // not by the first terminal under the lock.
         soyeht_ptyd::shell::warm_default_login_shell();

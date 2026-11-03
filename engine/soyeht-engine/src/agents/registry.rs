@@ -15,7 +15,7 @@ const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
 const BUILTIN_AGENT_COUNT: usize = 41;
 const SOURCE_DIGEST: &str = "2e0ddd7be13f676b48158f266ba8d64a29da7c80e971b493664ed993dd99e295";
-const SNAPSHOT_DIGEST: &str = "d41c4079f196bd29be2ae0f631f673950e8baa22da2e38e331a2d7e3a7a34240";
+const SNAPSHOT_DIGEST: &str = "44982b3852dd673a1de03709ca09483937a3f8ce3ba71b0f9748f1dce16f5cd6";
 
 #[derive(Clone)]
 pub(crate) struct RegistryEntry {

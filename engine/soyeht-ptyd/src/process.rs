@@ -89,6 +89,18 @@ fn inherited() -> impl Iterator<Item = &'static str> {
         .chain(["PATH", "LANG", "LC_ALL"])
 }
 
+/// The variable that names the Claude Code executable the Claude adapter drives. An adapter
+/// process may be given it (ADR 0134); a terminal has no use for it.
+pub const CLAUDE_CODE_EXECUTABLE: &str = "CLAUDE_CODE_EXECUTABLE";
+
+/// Whether the engine may set `name` for a process of `kind`.
+fn engine_may_set(name: &str, kind: &ProcessKind) -> bool {
+    matches!(
+        name,
+        "PATH" | "LANG" | "LC_ALL" | "TERM" | "COLORTERM" | "SHELL" | "PS1"
+    ) || (name == CLAUDE_CODE_EXECUTABLE && *kind == ProcessKind::PipesAcp)
+}
+
 pub fn command(config: &Spawn) -> Result<Command> {
     let mut command = Command::new(&config.argv[0]);
     command
@@ -102,20 +114,56 @@ pub fn command(config: &Spawn) -> Result<Command> {
     }
     command.env("TERM", "xterm-256color");
     for (name, value) in &config.env {
-        if ![
-            "PATH",
-            "LANG",
-            "LC_ALL",
-            "TERM",
-            "COLORTERM",
-            "SHELL",
-            "PS1",
-        ]
-        .contains(&name.as_str())
-        {
+        if !engine_may_set(name, &config.kind) {
             return Err(Error::EnvironmentVariableNotAllowed);
         }
         command.env(name, value);
     }
     Ok(command)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spawn_of(kind: ProcessKind, name: &str) -> Spawn {
+        Spawn {
+            instance_key: "key".into(),
+            generation: 1,
+            kind,
+            cwd: "/".into(),
+            argv: vec!["/bin/true".into()],
+            env: [(name.to_owned(), "/home/person/bin/claude".to_owned())].into(),
+            cols: 80,
+            rows: 24,
+        }
+    }
+
+    #[test]
+    fn only_an_adapter_may_be_told_which_claude_code_to_drive() {
+        let claude = |kind| command(&spawn_of(kind, CLAUDE_CODE_EXECUTABLE)).map(|_| ());
+        assert!(claude(ProcessKind::PipesAcp).is_ok());
+        for kind in [ProcessKind::Pty, ProcessKind::PipesLsp] {
+            assert!(matches!(
+                claude(kind),
+                Err(Error::EnvironmentVariableNotAllowed)
+            ));
+        }
+    }
+
+    #[test]
+    fn no_other_variable_is_taken_from_the_engine() {
+        for name in [
+            "CLAUDE_CODE_EXECUTABLE_2",
+            "CODEX_PATH",
+            "HOME",
+            "LD_PRELOAD",
+        ] {
+            assert!(matches!(
+                command(&spawn_of(ProcessKind::PipesAcp, name)),
+                Err(Error::EnvironmentVariableNotAllowed)
+            ));
+        }
+        assert!(command(&spawn_of(ProcessKind::Pty, "LANG")).is_ok());
+    }
 }

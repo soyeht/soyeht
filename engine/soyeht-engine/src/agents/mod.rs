@@ -38,6 +38,7 @@ pub mod switching;
 pub mod terminals;
 pub mod transcript;
 pub mod updates;
+pub(crate) mod user_cli;
 
 use crate::{
     core::{Core, persist_pane},
