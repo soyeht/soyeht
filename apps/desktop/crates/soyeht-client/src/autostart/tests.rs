@@ -12,6 +12,8 @@ enum Lock {
 /// A host that records what is started and lets the test say what answers.
 struct Fake {
     engine_up: Cell<bool>,
+    /// An uninstall ended the programs while the window was open.
+    uninstalled: bool,
     supervisor_up: Cell<bool>,
     missing: Vec<&'static str>,
     lock: Lock,
@@ -36,6 +38,7 @@ impl Fake {
     fn new() -> Self {
         Self {
             engine_up: Cell::new(false),
+            uninstalled: false,
             supervisor_up: Cell::new(false),
             missing: Vec::new(),
             lock: Lock::Free,
@@ -66,6 +69,10 @@ impl Started for Child {
 }
 
 impl Host for Fake {
+    fn uninstalled(&self) -> bool {
+        self.uninstalled
+    }
+
     fn engine_reachable(&self) -> bool {
         self.engine_up.get()
             || (self.engine_after_lock && self.locked.get())
@@ -162,6 +169,105 @@ fn the_supervisor_then_the_engine_are_started_and_waited_for() {
     };
     assert_eq!(ensure(&plan(), &host), Ok(()));
     assert_eq!(host.started(), ["soyeht-ptyd", "soyeht-engine"]);
+}
+
+#[test]
+fn nothing_is_started_after_an_uninstall_ended_the_programs() {
+    let host = Fake {
+        uninstalled: true,
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::Uninstalled));
+    assert!(host.started().is_empty());
+    assert!(!host.locked.get());
+}
+
+#[test]
+fn an_engine_that_answers_is_left_alone_even_after_an_uninstall_was_seen() {
+    let host = Fake {
+        uninstalled: true,
+        engine_up: Cell::new(true),
+        ..Fake::new()
+    };
+    ensured_without_starting(&host);
+}
+
+/// A data folder with an engine's lock file in it, which is what a window that had an engine
+/// finds there until the data is deleted.
+fn data_folder(name: &str) -> PathBuf {
+    let directory = std::env::temp_dir().join(format!("next-watch-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join(fs::ENGINE_LOCK), "1").unwrap();
+    directory
+}
+
+fn watching(directory: &Path) -> Watch {
+    Watch::begin(&Autostart::in_directory(directory.to_owned(), None))
+}
+
+#[test]
+fn an_uninstall_is_a_record_that_is_new_or_changed_since_the_window_began() {
+    let directory = data_folder("record");
+    let watch = watching(&directory);
+    assert!(!watch.uninstalled());
+    // New since the window began.
+    fs::mark_uninstalled(&directory).unwrap();
+    assert!(watch.uninstalled());
+    // A window that begins now is a new start: it takes the record as it finds it.
+    let later = watching(&directory);
+    assert!(!later.uninstalled());
+    // Another uninstall, with the same record left in the folder, is a change.
+    fs::mark_uninstalled(&directory).unwrap();
+    assert!(later.uninstalled());
+    // Taken away, there is nothing to take for an uninstall.
+    fs::clear_uninstalled(&directory).unwrap();
+    assert!(!watch.uninstalled());
+    assert!(!later.uninstalled());
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_record_that_was_there_before_the_window_is_not_an_uninstall() {
+    // A restored backup, a clock that went back, an old uninstall that left its record: the
+    // window starts its engine.
+    let directory = data_folder("before");
+    fs::mark_uninstalled(&directory).unwrap();
+    let watch = watching(&directory);
+    assert!(!watch.uninstalled());
+    // Nothing takes the record away: it is the baseline, and an uninstall that writes it again
+    // is a change.
+    assert!(fs::uninstall_record(&directory).unwrap().is_some());
+    fs::mark_uninstalled(&directory).unwrap();
+    assert!(watch.uninstalled());
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn deleted_data_is_an_uninstall_only_for_a_window_that_had_an_engine() {
+    let directory = data_folder("deleted");
+    let mut watch = watching(&directory);
+    std::fs::remove_file(directory.join(fs::ENGINE_LOCK)).unwrap();
+    // A first run has no lock file yet.
+    assert!(!watch.uninstalled());
+    watch.engine_answered();
+    assert!(watch.uninstalled());
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_that_cannot_be_looked_into_is_not_deleted_data() {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = data_folder("denied");
+    let mut watch = watching(&directory);
+    watch.engine_answered();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o000)).unwrap();
+    // Whether the lock file is there cannot be told, and that is not "gone". (A privileged
+    // account can look anyway, and then it is there.)
+    assert!(!watch.uninstalled());
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
 }
 
 /// What each program started was told to restart, when the engine starts after `host` is set up.

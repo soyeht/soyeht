@@ -33,14 +33,7 @@ pub struct Listener {
 
 /// A loopback socket on a free port that no other process can bind, whatever it asks for.
 pub(super) fn bind_loopback() -> io::Result<TcpListener> {
-    #[cfg(windows)]
-    {
-        super::exclusive::bind_loopback()
-    }
-    #[cfg(not(windows))]
-    {
-        TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
-    }
+    crate::net::listen(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
 }
 
 impl Listener {
@@ -152,9 +145,15 @@ pub fn connect(path: &Path) -> io::Result<Stream> {
     endpoint::connect(path)
 }
 
+/// Whether the peer runs as the same user as this process. Only a process that could read the
+/// owner-only endpoint file knows the secret, and [`Listener::accept`] checked it already.
+pub fn same_user(_: &Stream) -> bool {
+    true
+}
+
 /// Two connected streams, for tests and in-process wiring.
 pub fn pair() -> io::Result<(Stream, Stream)> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+    let listener = crate::net::listen(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;
     let client = TcpStream::connect(listener.local_addr()?)?;
     let (server, _) = listener.accept()?;
     Ok((client, server))

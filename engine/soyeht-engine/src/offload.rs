@@ -20,7 +20,6 @@ use crate::{
 use soyeht_platform::log::{self, Failure as _};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    panic::{AssertUnwindSafe, catch_unwind},
     sync::{Arc, Condvar, Mutex, PoisonError, mpsc},
     thread,
     time::{Duration, Instant},
@@ -254,6 +253,23 @@ impl Background {
         }
     }
 
+    /// Background work that cannot start: its workers are gone, so every job fails to submit.
+    #[cfg(test)]
+    pub(crate) fn unstartable() -> Self {
+        let (sender, receiver) = mpsc::channel::<Task>();
+        drop(receiver);
+        Self {
+            pool: Some(sender),
+            ..Self::default()
+        }
+    }
+
+    /// Marks `key` as running, for a test that needs a job on its way without one.
+    #[cfg(test)]
+    pub(crate) fn busy(&mut self, key: &str) {
+        self.active.insert(key.to_owned());
+    }
+
     pub(crate) fn is_active(&self, key: &str) -> bool {
         self.active.contains(key)
     }
@@ -389,7 +405,7 @@ fn subsystem(key: &str) -> &str {
 }
 
 fn run_caught<T>(work: impl FnOnce() -> Result<T>) -> Result<T> {
-    catch_unwind(AssertUnwindSafe(work))
+    soyeht_platform::crash::caught(work)
         .unwrap_or_else(|_| Err(errors::internal("Background work panicked")))
 }
 

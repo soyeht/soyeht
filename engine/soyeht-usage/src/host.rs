@@ -73,6 +73,40 @@ pub enum SecretRead {
     Unsupported,
 }
 
+/// A credential row read from OpenCode's own database.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StoredCredential {
+    /// The active row of the integration: the JSON text of its value, which holds the secret.
+    Found(Secret),
+    /// The database has no credential table, or the table holds no row at all: OpenCode keeps
+    /// its logins in `auth.json`.
+    NoTable,
+    /// The table holds credentials, but none for this integration: the login is not there, and
+    /// a leftover `auth.json` is not used in its place.
+    NotInTable,
+    /// The database could not be opened or read.
+    Unreadable,
+}
+
+/// What OpenCode recorded on this device for assistant messages since a time.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LocalUsage {
+    /// Input, output and reasoning tokens. Cache reads and writes are not counted.
+    pub tokens: u64,
+    /// The cost OpenCode recorded, in US dollars; zero for a plan that bills nothing per token.
+    pub cost_usd: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LocalUsageRead {
+    Totals(LocalUsage),
+    /// The database file does not exist.
+    NoDatabase,
+    /// The database has no `message` table (a layout this reader does not know).
+    NoHistory,
+    Unreadable,
+}
+
 /// An HTTPS GET.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpRequest {
@@ -262,6 +296,18 @@ pub trait Host: Send + Sync {
     fn browser_cookies(&self, domain: &str) -> CookieRead;
     /// A value from the `ItemTable` of an Electron state database, opened read-only.
     fn state_db_value(&self, path: &Path, key: &str) -> SecretRead;
+    /// Whether `program` is installed: found on the interactive `PATH`.
+    fn program_found(&self, program: &str) -> bool;
+    /// The active credential of `integration` in OpenCode's database, opened read-only.
+    fn opencode_credential(&self, database: &Path, integration: &str) -> StoredCredential;
+    /// What OpenCode's database records for assistant messages created at or after `since_ms`
+    /// (Unix milliseconds), of `provider` when given, opened read-only.
+    fn opencode_usage(
+        &self,
+        database: &Path,
+        since_ms: i64,
+        provider: Option<&str>,
+    ) -> LocalUsageRead;
     fn json_rpc(&self, request: &RpcRequest) -> RpcRun;
     fn run_terminal(
         &self,

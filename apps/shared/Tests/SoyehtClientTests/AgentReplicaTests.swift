@@ -267,7 +267,7 @@ import Testing
   let credential = DeviceCredential(
     engineId: "engine", deviceId: "device",
     address: try #require(URL(string: "ws://100.64.0.1:8291")),
-    token: "token", key: Data(repeating: 0, count: 32))
+    token: "token", key: Data(repeating: 0, count: 32), engineKey: Data(repeating: 1, count: 32))
   let client = EngineClient(credential: credential)
 
   #expect(client.pairedDevice)
@@ -275,4 +275,15 @@ import Testing
 
   // A paired device is a full remote control: no client-side refusal.
   #expect(client.problem != "Finish agent sign-in on the Mac.")
+}
+
+@Test func aDeadAgentPaneShowsTheReasonTheEngineGave() {
+  let reason = "soyeht-mcp is not installed next to the engine"
+  let notice = AgentPaneStatusPresentation.endedNotice(state: .dead, phrase: " \(reason)\n")
+  #expect(notice?.text == reason)
+  #expect(notice?.severity == .warning)
+  #expect(AgentPaneStatusPresentation.endedNotice(state: .dead, phrase: "  ") == nil)
+  for state in PaneState.allCases where state != .dead {
+    #expect(AgentPaneStatusPresentation.endedNotice(state: state, phrase: reason) == nil)
+  }
 }

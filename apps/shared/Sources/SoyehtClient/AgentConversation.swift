@@ -90,11 +90,9 @@ extension AgentConversationView where HarnessControl == EmptyView {
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
   private let harnessControl: HarnessControl
-  @State private var prompt = ""
   @State private var attachments: AgentComposerAttachments
   @State private var follow = AgentConversationFollow()
   @State private var bottomVisibleId: String?
-  @State private var scrollRestored = false
   @State private var subagents = AgentSubagentDisclosure()
   @FocusState private var promptFocused: Bool
 
@@ -117,6 +115,12 @@ extension AgentConversationView where HarnessControl == EmptyView {
   }
 
   private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
+  /// What is typed and not sent; it outlives this view (see `AgentPromptDrafts`).
+  private var prompt: String {
+    get { AgentPromptDrafts.shared.text(for: paneId) }
+    nonmutating set { AgentPromptDrafts.shared.set(newValue, for: paneId) }
+  }
+  private var promptBinding: Binding<String> { Binding(get: { prompt }, set: { prompt = $0 }) }
   private var view: AgentPaneView { client.agentPanes[paneId] ?? AgentPaneView() }
   private var signIn: AgentSignInState {
     AgentSignInState(
@@ -197,11 +201,13 @@ extension AgentConversationView where HarnessControl == EmptyView {
           .padding(.horizontal, inset)
           .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
       }
+      .defaultScrollAnchor(view.scroll.place == .bottom ? .bottom : nil)
       .scrollPosition(id: $bottomVisibleId, anchor: .bottom)
       .onChange(of: bottomVisibleId) { _, id in
-        if scrollRestored { view.scroll.record(bottomVisibleId: id) }
+        if !view.scroll.isRestoring { view.scroll.record(bottomVisibleId: id) }
       }
       .task { await restoreScroll(proxy) }
+      .onDisappear { view.scroll.isRestoring = true }
       .onChange(of: view.messages.count) { _, _ in
         guard follow.messagesChanged(isVisible: isVisible) else { return }
         withAnimation(.easeOut(duration: 0.18)) {
@@ -223,6 +229,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
   /// Rows not laid out yet have estimated heights, so one jump only gets near a row; the
   /// next ones, once rows have been laid out, land closer.
   private func restoreScroll(_ proxy: ScrollViewProxy) async {
+    view.scroll.isRestoring = true
     for _ in 0..<AgentTranscriptScroll.restorePasses {
       // Sleep throws only when the view goes away, which ends the restore.
       do { try await Task.sleep(for: .milliseconds(AgentTranscriptScroll.restorePassMs)) } catch {
@@ -234,7 +241,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
       case .row(let id): proxy.scrollTo(id, anchor: .bottom)
       }
     }
-    scrollRestored = true
+    view.scroll.isRestoring = false
   }
 
   /// Type-erased so subagent rows can hold nested subagent rows.
@@ -342,7 +349,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
 
   private var composer: some View {
     AgentComposer(
-      client: client, paneId: paneId, style: style, prompt: $prompt, attachments: attachments,
+      client: client, paneId: paneId, style: style, prompt: promptBinding, attachments: attachments,
       focus: $promptFocused, harnessControl: harnessControl, connected: client.connected,
       submit: submit
     )

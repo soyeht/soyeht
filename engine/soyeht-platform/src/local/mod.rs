@@ -22,17 +22,15 @@ use std::{fmt, fs, io, path::Path};
 pub mod asynchronous;
 #[cfg(any(windows, test))]
 mod endpoint;
-#[cfg(windows)]
-mod exclusive;
 #[cfg(any(windows, test))]
 mod tcp;
 #[cfg(unix)]
 mod unix;
 
 #[cfg(windows)]
-pub use tcp::{Listener, Stream, connect, pair};
+pub use tcp::{Listener, Stream, connect, pair, same_user};
 #[cfg(unix)]
-pub use unix::{Listener, Stream, connect, pair};
+pub use unix::{Listener, Stream, connect, pair, same_user};
 
 /// Why an endpoint could not be created.
 #[derive(Debug)]

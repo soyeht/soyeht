@@ -120,7 +120,8 @@ not covered.
 - Upgrading a package or an AppImage replaces the programs on disk but not a running engine or
   supervisor; `soyeht service stop` and `start` (or the next login) pick up the new build.
 - A `.deb` removed without `soyeht uninstall` leaves the engine running until it stops or the
-  person logs out, and leaves inert unit files that `soyeht uninstall` (reinstalling the package
+  person logs out (the Mac programs end themselves when their file is gone, ADR 0130; Linux and
+  Windows do not yet, because their upgrades remove the file for a while), and leaves inert unit files that `soyeht uninstall` (reinstalling the package
   first, or `systemctl --user disable`) can remove.
 - The `.deb` copyright file names the project licence only; the licences of the statically linked
   Rust dependencies are not listed yet.

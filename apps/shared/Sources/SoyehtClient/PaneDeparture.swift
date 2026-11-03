@@ -72,6 +72,7 @@ extension EngineClient {
     {
       editorWorkspace.refusals[closing.workspaceId] = nil
     }
+    AgentPromptDrafts.shared.discard(paneId)
     discardTerminalPane(paneId)
     discardAgentPane(paneId)
     agentTranscriptRevisions.removeValue(forKey: paneId)

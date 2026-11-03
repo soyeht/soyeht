@@ -52,13 +52,22 @@ local socket; isolation is per OS user, not per process.
    {nonce (32 random bytes, base64, unique per connection), engineId}`
    before any other message.
 2. The client sends `hello {client, clientVersion, protocolVersion,
-   deviceToken?, proof?, binding?}`. For iPhone,
-   `proof = Ed25519(device private key, bytes = "soyeht-hello-v1"
-   || nonce || engineId || deviceToken)`. Local clients send no `proof`
-   (identity is the OS user); MCP sends `binding`.
+   deviceToken?, proof?, clientNonce?, binding?}`. For iPhone,
+   `clientNonce` is 32 random bytes of the device's own and
+   `proof = Ed25519(device private key, bytes = "soyeht-hello-v2"
+   || nonce || clientNonce || engineId || deviceToken)`. Local clients send no
+   `proof` (identity is the OS user); MCP sends `binding`. A device that sends
+   no `clientNonce` is answered `protocol_version_unsupported`, with the reason
+   in the message, because it could not check the engine's answer.
 3. The engine responds ONCE: `welcome {engineVersion, protocolVersion,
-   connectionId, role, capabilities, dbId}` or an error (`unauthorized`,
-   `protocol_version_unsupported`) and closes.
+   connectionId, role, capabilities, dbId, engineProof?}` or an error
+   (`unauthorized`, `protocol_version_unsupported`) and closes. To a device,
+   `engineProof = Ed25519(engine private key, bytes = "soyeht-engine-v1" ||
+   nonce || clientNonce || engineId || 0x00 || deviceId)`. The device holds the
+   engine's public key from pairing (§2.2) and closes the connection when the
+   proof is absent or does not verify (`not_your_mac` on the device, which keeps
+   trying with backoff: only an engine's own refusal stops it). The vectors of
+   `contracts/vectors/engine-proof.json` hold the bytes for both languages.
 No other request is accepted before `welcome` (`unauthorized` response and
 connection closed). Without valid `hello` within 5 s, the engine closes.
 `role` ∈ `human_local | human_device | agent | chief`. The pairing dialogue
@@ -70,10 +79,15 @@ address holds at most 16 of the listeners' (ADR 0129).
 Only on the WebSocket connection, before authenticated `hello`, and only
 while the Mac's “Add iPhone” window is open:
 1. Mac: `device.pair.start {}` → `{code, expiresAt (10 min), uri,
-   reachability?}`; the app displays a QR with `uri` (address + `code`) and,
+   reachability?}`; the app displays a QR with `uri` (engine id, address, `code` and
+   `engineKey`, the engine's Ed25519 public key in URL-safe base64) and,
    when `reachability.remote` is false, why devices cannot reach the Mac.
 2. iPhone: `pair.begin {code, deviceName, devicePublicKey (Ed25519, 32
-   bytes, base64)}` → `{requestId, challenge (32 random bytes, base64)}`.
+   bytes, base64)}` → `{requestId, challenge (32 random bytes, base64),
+   engineProof}`, where `engineProof = Ed25519(engine private key, bytes =
+   "soyeht-engine-pair-v1" || challenge || devicePublicKey || requestId)`. The
+   iPhone checks it against the `engineKey` of the QR before it proves the
+   code, and does not pair when it is absent or wrong.
 3. iPhone: `pair.prove {requestId, proof}` with `proof = HMAC-SHA-256(key,
    challenge || deviceName)`, `key = SHA-256(code || devicePublicKey)` →
    `{status: "pending"}`; Mac receives `device.pair_requested {requestId,
@@ -90,6 +104,11 @@ while the Mac's “Add iPhone” window is open:
    `consumed`, `bad_proof`, `denied`, `revoked`.
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
+Only the local human opens the window. On macOS only the signed Soyeht app decides a request
+or revokes a device (a shell or script on the local socket, including a terminal a paired device
+opened, gets `forbidden_role`); on Windows and Linux there is no attestation yet, so any process
+of the same user on the local socket counts as the computer, until those apps can prove they are
+the official app. A paired device may revoke only itself (ADR 0128).
 
 **2.3 Push.** A paired device calls `push.register {platform: "apns",
 token, environment: "sandbox" | "production"}` and `push.unregister {}`; any
@@ -100,11 +119,11 @@ Revocation deletes the registration in the same transaction.
 
 Implemented triggers: `pane.permission_requested` and
 `pane.elicitation_requested` on agent panes, sent to every registered device.
-The alert payload carries `soyeht {engineId, workspaceId, paneId, requestId,
-kind}` and, for a permission with one-time allow and reject options,
-`allowOptionId` and `denyOptionId` under category `soyeht.permission`;
-otherwise category `soyeht.attention` (tap opens the pane). The notification
-action answers through `pane.permission.answer`, with the same rules as the
+The alert payload carries the same title and body for every question (`pushNeedsYouTitle` and
+`pushNeedsYouBody`), category `soyeht.attention` (a tap opens the pane) and `soyeht {engineId,
+workspaceId, paneId, requestId, kind}`. It carries nothing of what was asked, and no answer to give
+from the lock screen: the app shows the question over its authenticated connection and answers
+through `pane.permission.answer`, with the same rules as the
 Mac. `apns-collapse-id` is the request id, `apns-expiration` its deadline; a
 request is pushed once per device, and pending retries stop when
 `pane.permission_answered` or `pane.elicitation_answered` is published.
@@ -345,7 +364,7 @@ sends against them (ADR 0090).
 - `file.changed_on_disk`, `file.saved {by}`, `file.save_failed {fileId, reason}`
   (non-durable), `file.conflict`
 - `lsp.diagnostics`, `editor.agent_cursor`, `editor.review_requested`
-- `usage.changed {provider, state, primary?, secondary?, source, fetchedAt}`
+- `usage.changed {provider, state, primary?, secondary?, activity?, source, fetchedAt}`
 - `pane.commands_changed {paneId}` (read the list with `pane.commands.list`),
   `skills.changed {scope, workspaceId?}` (non-durable; list again)
 - `device.pair_requested`, `device.paired`, `device.revoked`

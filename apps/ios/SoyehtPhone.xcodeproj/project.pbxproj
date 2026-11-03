@@ -85,7 +85,7 @@
 		"AD936FCBED631FA67E05C3EA" = {
 			"isa" = "PBXGroup";
 			"sourceTree" = "<group>";
-			"children" = ( "41CF6794BA4200B839C53531", "D20000000000000000000011", "D90000000000000000000011", "DB0000000000000000000011", "0A3E27B8CA818264D75C8D81", );
+			"children" = ( "41CF6794BA4200B839C53531", "F30000000000000000000100", "D90000000000000000000011", "DB0000000000000000000011", "0A3E27B8CA818264D75C8D81", );
 		};
 		"4C9A8D7A2C3C670C889D63E4" = {
 			"isa" = "XCBuildConfiguration";
@@ -125,7 +125,7 @@
 		"41D311A605520FC7B8B9A980" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ( "D20000000000000000000001", "DB0000000000000000000001", );
+			"files" = ( "DB0000000000000000000001", );
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
 		"DB0000000000000000000001" = {
@@ -138,15 +138,120 @@
 			"lastKnownFileType" = "folder.assetcatalog";
 			"sourceTree" = "<group>";
 		};
-		"D20000000000000000000001" = {
-			"isa" = "PBXBuildFile";
-			"fileRef" = "D20000000000000000000011";
-		};
-		"D20000000000000000000011" = {
-			"path" = "../mac/Resources/Fonts";
+		"F30000000000000000000001" = {
+			"path" = "Newsreader.ttf";
 			"isa" = "PBXFileReference";
-			"lastKnownFileType" = "folder";
+			"lastKnownFileType" = "file";
 			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000001";
+		};
+		"F30000000000000000000002" = {
+			"path" = "Newsreader-Italic.ttf";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000002";
+		};
+		"F30000000000000000000003" = {
+			"path" = "Nunito-Regular.ttf";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001003" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000003";
+		};
+		"F30000000000000000000004" = {
+			"path" = "Nunito-SemiBold.ttf";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001004" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000004";
+		};
+		"F30000000000000000000005" = {
+			"path" = "Nunito-Bold.ttf";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001005" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000005";
+		};
+		"F30000000000000000000006" = {
+			"path" = "CourierPrime-Regular.ttf";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001006" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000006";
+		};
+		"F30000000000000000000007" = {
+			"path" = "CourierPrime-Bold.ttf";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001007" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000007";
+		};
+		"F30000000000000000000008" = {
+			"path" = "OFL-Newsreader.txt";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001008" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000008";
+		};
+		"F30000000000000000000009" = {
+			"path" = "OFL-Nunito.txt";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F30000000000000000001009" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F30000000000000000000009";
+		};
+		"F3000000000000000000000A" = {
+			"path" = "OFL-CourierPrime.txt";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "file";
+			"sourceTree" = "<group>";
+		};
+		"F3000000000000000000100A" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F3000000000000000000000A";
+		};
+		"F30000000000000000000100" = {
+			"isa" = "PBXGroup";
+			"path" = "../mac/Resources/Fonts";
+			"sourceTree" = "<group>";
+			"children" = ( "F30000000000000000000001", "F30000000000000000000002", "F30000000000000000000003", "F30000000000000000000004", "F30000000000000000000005", "F30000000000000000000006", "F30000000000000000000007", "F30000000000000000000008", "F30000000000000000000009", "F3000000000000000000000A", );
+		};
+		"F30000000000000000000200" = {
+			"isa" = "PBXCopyFilesBuildPhase";
+			"buildActionMask" = "2147483647";
+			"dstPath" = "Fonts";
+			"dstSubfolderSpec" = "7";
+			"files" = ( "F30000000000000000001001", "F30000000000000000001002", "F30000000000000000001003", "F30000000000000000001004", "F30000000000000000001005", "F30000000000000000001006", "F30000000000000000001007", "F30000000000000000001008", "F30000000000000000001009", "F3000000000000000000100A", );
+			"name" = "Fonts";
+			"runOnlyForDeploymentPostprocessing" = "0";
 		};
 		"DB0000000000000000000A01" = {
 			"isa" = "XCLocalSwiftPackageReference";
@@ -197,7 +302,7 @@
 			"packageProductDependencies" = ( "F26350DAFE3F19AABFD69AC4", "DB0000000000000000000A02", );
 			"productName" = "Soyeht Dev";
 			"isa" = "PBXNativeTarget";
-			"buildPhases" = ( "878A52FC5FF6A57D50B7B870", "E2AA269EB967A8853A258BFA", "41D311A605520FC7B8B9A980", "CC1D3B0234846714B0AEDA6C", );
+			"buildPhases" = ( "878A52FC5FF6A57D50B7B870", "E2AA269EB967A8853A258BFA", "41D311A605520FC7B8B9A980", "F30000000000000000000200", "CC1D3B0234846714B0AEDA6C", );
 			"dependencies" = ();
 			"name" = "SoyehtPhone";
 			"buildRules" = ();
