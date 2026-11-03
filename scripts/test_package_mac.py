@@ -42,6 +42,33 @@ def fake_app(root):
     return app
 
 
+class SizeCeilingTests(unittest.TestCase):
+    CEILINGS = {"macos-aarch64.dmg": 1000, "linux-x86_64.deb": None}
+
+    def check(self, name, size):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / name
+            path.write_bytes(b"x" * size)
+            return package_common.size_problem(path, self.CEILINGS)
+
+    def test_a_package_near_its_ceiling_passes(self):
+        self.assertIsNone(self.check("soyeht-0.1.0-macos-aarch64.dmg", 1000))
+        self.assertIsNone(self.check("soyeht-1.20.3-macos-aarch64.dmg", 950))
+
+    def test_a_package_over_its_ceiling_or_far_under_it_is_a_problem(self):
+        self.assertIn("over its ceiling", self.check("soyeht-0.1.0-macos-aarch64.dmg", 1001))
+        self.assertIn("lower it", self.check("soyeht-0.1.0-macos-aarch64.dmg", 899))
+
+    def test_a_package_with_no_ceiling_is_not_checked(self):
+        self.assertIsNone(self.check("soyeht-0.1.0-linux-x86_64.deb", 10**6))
+        self.assertIsNone(self.check("soyeht-0.1.0-windows-x86_64.exe", 10**6))
+
+    def test_every_package_the_scripts_make_has_a_line_in_the_file(self):
+        recorded = json.loads(package_common.SIZE_CEILINGS.read_text())["ceilings"]
+        for kind in ("macos-aarch64.dmg", "linux-x86_64.deb", "linux-aarch64.AppImage", "windows-aarch64.exe"):
+            self.assertIn(kind, recorded)
+
+
 class SigningChoiceTests(unittest.TestCase):
     def test_the_environment_alone_makes_a_developer_id_signing(self):
         signing = package_mac.resolve_signing(FULL)

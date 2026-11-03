@@ -44,6 +44,7 @@ from package_common import (
     artifact_path,
     release_environment,
     run,
+    size_problem,
     stream,
     write_checksum,
 )
@@ -508,6 +509,7 @@ def package(options, environment):
     if signing.notarizes:
         notarize_and_staple_image(image, signing)
     problems += verify_image(image, signing, made)
+    problems += [found for found in [size_problem(image)] if found]
     checksum = write_checksum(image)
     report(image, checksum, app, signing, problems)
     return 1 if problems else 0

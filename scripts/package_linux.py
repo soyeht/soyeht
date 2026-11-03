@@ -48,6 +48,7 @@ from package_common import (  # noqa: E402
     host_arch,
     make_plan,
     sha256_of,
+    check_sizes,
 )
 from package_common import Plan as BasePlan  # noqa: E402
 from package_common import built_programs as find_programs  # noqa: E402
@@ -444,6 +445,7 @@ def main(argv=None):
         written.append(build_appimage(plan, runtime, out))
     for path in written:
         print(f"{path} ({path.stat().st_size} bytes, needs glibc {version_text(floor) or 'none'})")
+    check_sizes(written)
 
 
 if __name__ == "__main__":

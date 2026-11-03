@@ -6,8 +6,10 @@ command runners, the product version and the name of a package file (`contracts/
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import platform
+import re
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -24,6 +26,8 @@ PACKAGE = "soyeht"
 HOMEPAGE = "https://github.com/soyeht/soyeht"
 # The programs of `engine/` that a package ships, by cargo package.
 ENGINE_PACKAGES = ("soyeht-engine", "soyeht-ptyd", "soyeht-cli", "soyeht-mcp", "soyeht-service")
+# The biggest a package may be, by `<system>-<arch>.<extension>`, in bytes (`package_sizes.json`).
+SIZE_CEILINGS = Path(__file__).with_name("package_sizes.json")
 
 
 class PackagingError(Exception):
@@ -89,6 +93,30 @@ def make_plan(plan_class, arch, programs):
     """The plan of this commit's release: the version and revision come from the contract only."""
     made = release.current(ROOT)
     return plan_class(str(made.version), made.revision, arch, source_epoch(), programs)
+
+
+def size_problem(path, ceilings=None):
+    """Why `path`, a finished package, is bigger than the ceiling recorded for it, or None. A
+    package grows past its ceiling only on purpose: raise the number in `package_sizes.json` in
+    the same change and say why. A package with no ceiling (a system this host cannot build) is
+    not checked; a size far under its ceiling asks for the ceiling to come down."""
+    ceilings = json.loads(SIZE_CEILINGS.read_text())["ceilings"] if ceilings is None else ceilings
+    kind = re.sub(r"^" + re.escape(PACKAGE) + r"-[^-]+-", "", Path(path).name)
+    ceiling = ceilings.get(kind)
+    size = Path(path).stat().st_size
+    if ceiling is None:
+        return None
+    if size > ceiling:
+        return f"{Path(path).name} is {size} bytes, over its ceiling of {ceiling} (scripts/package_sizes.json)"
+    if size < ceiling * 0.9:
+        return f"{Path(path).name} is {size} bytes, 10% under its ceiling of {ceiling}: lower it (scripts/package_sizes.json)"
+    return None
+
+
+def check_sizes(paths):
+    """Stops the script when any finished package is outside its ceiling (`size_problem`)."""
+    if problems := [found for found in map(size_problem, paths) if found]:
+        raise PackagingError("; ".join(problems))
 
 
 def host_arch():

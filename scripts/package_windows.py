@@ -42,6 +42,7 @@ from package_common import (
     host_arch,
     make_plan,
     run,
+    check_sizes,
     stream,
 )
 from package_common import Plan as BasePlan
@@ -370,6 +371,7 @@ def main(argv=None):
         written.append(build_installer(plan, out, inno, signing, signtool))
     for path in written:
         print(f"{path} ({path.stat().st_size} bytes, {'signed' if signing else 'UNSIGNED'})")
+    check_sizes(written)
 
 
 if __name__ == "__main__":

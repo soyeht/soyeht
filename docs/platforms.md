@@ -176,6 +176,12 @@ notarized and stapled. The version is `contracts/release.json`; `dist/` is ignor
 `Soyeht Next.app` (`displayNames` in `contracts/profiles.json`; `Soyeht.app` is the older app's name) with the identifier `com.soyeht.next.mac`.
 It is Apple silicon only (the dictation engines are built on MLX).
 
+A finished package has a size ceiling in `scripts/package_sizes.json` (bytes, about 3% over what was
+measured; see `docs/reports/package-sizes-2026-11-02.md`). The three packaging scripts fail when a
+package is over its ceiling or more than 10% under it, so a growth is a decision written in that
+file with its reason, and an improvement lowers the number. A kind with `null` has not been built
+yet and is not checked.
+
 | Variable | Holds |
 | --- | --- |
 | `SOYEHT_MAC_SIGNING_IDENTITY` | The name or SHA-1 of a "Developer ID Application" certificate. The script never looks one up in the keychain. |
