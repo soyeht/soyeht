@@ -69,22 +69,34 @@ pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     DirBuilder::new().mode(0o700).create(path)
 }
 
+/// The user this process runs as.
+fn current_user() -> u32 {
+    // SAFETY: geteuid has no arguments or memory preconditions.
+    unsafe { libc::geteuid() }
+}
+
+/// Whether `metadata` is of something `user` owns.
+fn owned_by(metadata: &fs::Metadata, user: u32) -> bool {
+    metadata.uid() == user
+}
+
 /// Whether `metadata` is of something only `user` can reach: owned by `user`, and with no mode
 /// bit for the group or others. Someone else's directory with mode 0700 is theirs, not ours.
 fn private_to(metadata: &fs::Metadata, user: u32) -> bool {
-    metadata.uid() == user && metadata.permissions().mode() & 0o077 == 0
+    owned_by(metadata, user) && metadata.permissions().mode() & 0o077 == 0
+}
+
+/// Whether the current user owns what `metadata` describes.
+pub(super) fn is_owned_by_current_user(metadata: &fs::Metadata) -> bool {
+    owned_by(metadata, current_user())
 }
 
 pub(super) fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    Ok(private_to(&fs::symlink_metadata(path)?, unsafe {
-        libc::geteuid()
-    }))
+    Ok(private_to(&fs::symlink_metadata(path)?, current_user()))
 }
 
 pub(super) fn file_is_owner_only(file: &File) -> io::Result<bool> {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    Ok(private_to(&file.metadata()?, unsafe { libc::geteuid() }))
+    Ok(private_to(&file.metadata()?, current_user()))
 }
 
 pub(super) fn sync_directory(path: &Path) -> io::Result<()> {
@@ -130,6 +142,23 @@ pub(super) fn try_lock(file: &File) -> io::Result<bool> {
 mod tests {
     use super::*;
     use crate::testing::scratch_dir as scratch;
+
+    #[test]
+    fn a_file_is_private_to_its_owner_with_no_mode_bit_for_others_and_to_no_one_else() {
+        let directory = scratch("file-private-to");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("key");
+        fs::write(&path, "x").unwrap();
+        set_private(&path, false).unwrap();
+        let file = File::open(&path).unwrap();
+        let metadata = file.metadata().unwrap();
+        assert!(file_is_owner_only(&file).unwrap());
+        assert!(is_owned_by_current_user(&metadata));
+        assert!(!private_to(&metadata, metadata.uid().wrapping_add(1)));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(!file_is_owner_only(&File::open(&path).unwrap()).unwrap());
+        fs::remove_dir_all(&directory).unwrap();
+    }
 
     #[test]
     fn a_directory_is_private_to_its_owner_with_no_mode_bit_for_others_and_to_no_one_else() {

@@ -31,7 +31,7 @@ Windows the protected ACL). On Unix the repair opens the directory with `O_NOFOL
 O_DIRECTORY` and sets the mode on that handle, so a link swapped in after the check is never
 followed and its target never changed; on Windows it goes by path, so the parent of the directory
 must be one only the owner can change. A link, or an entry that is not a directory, in its
-place is refused with `PrivateDirError::Unsafe`, never followed and never replaced. `check_private_dir(path)` is
+place is refused with `PrivateDirError::Unsafe`, never followed and never replaced. On Unix a directory that belongs to another user is refused with `PrivateDirError::OtherOwner` ("the directory belongs to another user"), whatever its mode, and is not repaired; Windows does not check the owner's SID, only the access list. `check_private_dir(path)` is
 the same judgment without changing anything, for the readers that must not create. The error is
 typed so a caller can tell a link from an I/O failure; the engine maps it to `internal_error` and
 the service to `Error::Unsafe`.
