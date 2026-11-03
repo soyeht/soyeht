@@ -20,6 +20,8 @@ public enum ClientPolicy {
     public static let diagnosticsSeconds: Double = 30.0
     public static let copiedFeedbackMs = 1500
     public static let copiedFeedbackSeconds: Double = 1.5
+    public static let serviceCommandMs = 60000
+    public static let serviceCommandSeconds: Double = 60.0
     public static let terminalInputChunkBytes = 16384
     public static let terminalScrollbackLines = 10000
     public static let capsWaitingMessages = 1000

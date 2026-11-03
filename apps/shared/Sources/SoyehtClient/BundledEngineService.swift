@@ -33,7 +33,7 @@
   public struct BundledEngineService: Sendable {
     public static let commandName = "soyeht"
     /// How long one `soyeht service` call may take before it is ended.
-    public static let commandSeconds = 60.0
+    public static let commandSeconds = ClientPolicy.serviceCommandSeconds
 
     let command: URL
     let profile: ProfileValues

@@ -6,10 +6,22 @@
 //! window), use the same data directory the window resolved, and are started once: a lock in
 //! that directory serialises two windows, and the endpoint is checked again under it.
 //!
-//! The window leaves an engine alone when `SOYEHT_ENGINE_SOCKET` names one. The decisions are
-//! here, behind [`Host`], so they are tested without starting a process.
+//! When the profile's services are registered to start at login (contract 13, section 3), the
+//! window asks the service manager to start them (`soyeht service start`) before it starts a
+//! program of its own, and starts none when that request is accepted: an engine of its own beside
+//! a registered service would make the service fail on the engine's lock and restart every second
+//! (ADR 0114). It starts its own programs only when no service is registered or the service
+//! manager refused the request.
+//!
+//! The window leaves an engine alone when `SOYEHT_ENGINE_SOCKET` names one, and starts nothing
+//! after an uninstall (ADR 0131). The decisions are here, behind [`Host`], so they are tested
+//! without starting a process.
 
-use crate::profile::{SOCKET_ENV, data_directory_of_profile, socket_override};
+use crate::{
+    diagnostics::Failure,
+    login_start,
+    profile::{SOCKET_ENV, data_directory_of_profile, socket_override},
+};
 use soyeht_platform::{
     fs, log,
     process::detached::{Service, create_logs_directory, spawn_service},
@@ -175,6 +187,12 @@ pub(crate) trait Host {
     /// Whether an uninstall ended the programs while this window was open.
     fn uninstalled(&self) -> bool;
     fn supervisor_reachable(&self) -> bool;
+    /// Whether the profile's services are registered to start at login. A window that cannot
+    /// tell (no `soyeht` program beside it) says no.
+    fn service_registered(&self) -> bool;
+    /// Asks the service manager to start what is registered. False when it did not accept the
+    /// request.
+    fn start_service(&self) -> bool;
     fn program_exists(&self, path: &Path) -> bool;
     /// Takes the lock that serialises starts: `None` when another start holds it. The lock
     /// ends when the returned value is dropped.
@@ -198,9 +216,10 @@ pub(crate) trait Started {
 }
 
 /// Makes sure an engine answers: returns at once when one does, waits for a start that another
-/// window is making, and otherwise starts the supervisor (when it is not running) and the
-/// engine and waits until the engine answers. It starts nothing when an uninstall ended the
-/// programs while the window was open: the person asked for them to go.
+/// window is making, and otherwise asks a registered service to start or, when there is none (or
+/// it refused), starts the supervisor (when it is not running) and the engine itself and waits
+/// until the engine answers. It starts nothing when an uninstall ended the programs while the
+/// window was open: the person asked for them to go.
 pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.engine_reachable() {
         return Ok(());
@@ -208,11 +227,12 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.uninstalled() {
         return Err(StartError::Uninstalled);
     }
-    let programs = plan
-        .programs
-        .as_deref()
-        .ok_or(StartError::MissingProgram(ENGINE_PROGRAM))?;
-    let engine = program_path(host, programs, ENGINE_PROGRAM)?;
+    let registered = host.service_registered();
+    // A service starts the programs from the folder it was registered with, so the folder of this
+    // window needs to hold them only for a start of its own.
+    if !registered {
+        programs_of(plan, host)?;
+    }
     let Some(_lock) = host
         .lock()
         .map_err(|error| StartError::Lock(error.kind()))?
@@ -229,6 +249,33 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.engine_reachable() {
         return Ok(());
     }
+    // The service started, so the engine is its to bring up; a start that failed leaves the
+    // window to start its own.
+    if registered && host.start_service() {
+        return wait_until(
+            host,
+            ENGINE_PROGRAM,
+            || host.engine_reachable(),
+            &mut || false,
+        );
+    }
+    let (programs, engine) = programs_of(plan, host)?;
+    start_programs(host, &programs, &engine)
+}
+
+/// The folder of this window's programs and the engine in it.
+fn programs_of(plan: &Plan, host: &impl Host) -> Result<(PathBuf, PathBuf), StartError> {
+    let programs = plan
+        .programs
+        .clone()
+        .ok_or(StartError::MissingProgram(ENGINE_PROGRAM))?;
+    let engine = program_path(host, &programs, ENGINE_PROGRAM)?;
+    Ok((programs, engine))
+}
+
+/// Starts the supervisor, when it does not answer, and the engine, from `programs`, and waits
+/// until the engine answers.
+fn start_programs(host: &impl Host, programs: &Path, engine: &Path) -> Result<(), StartError> {
     // A supervisor that answers needs no program next to the window.
     let supervisor = if host.supervisor_reachable() {
         None
@@ -249,13 +296,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     // The engine keeps the supervisor it was given up, when the supervisor can be found.
     let restart = program_file(programs, SUPERVISOR_PROGRAM);
     let restart = host.program_exists(&restart).then_some(restart);
-    let mut started = launch(
-        host,
-        &engine,
-        ENGINE_PROGRAM,
-        ENGINE_LOG,
-        restart.as_deref(),
-    )?;
+    let mut started = launch(host, engine, ENGINE_PROGRAM, ENGINE_LOG, restart.as_deref())?;
     wait_until(
         host,
         ENGINE_PROGRAM,
@@ -348,6 +389,13 @@ impl Watch {
         }
     }
 
+    /// The record in the data directory is the person's own doing (they turned the login start
+    /// off in this window, which ends the services with an uninstall): the window takes it as
+    /// its baseline and starts afresh.
+    pub(crate) fn accept_current(&mut self) {
+        self.baseline = self.directory.as_deref().and_then(record);
+    }
+
     /// A connection was made: an engine answers this window.
     pub(crate) fn engine_answered(&mut self) {
         self.had_engine = true;
@@ -396,6 +444,30 @@ impl Host for Local<'_> {
 
     fn supervisor_reachable(&self) -> bool {
         soyeht_platform::local::connect(&self.plan.directory.join(PTYD_SOCKET)).is_ok()
+    }
+
+    fn service_registered(&self) -> bool {
+        match login_start::status() {
+            Ok(registered) => registered,
+            // No `soyeht` program beside the window: a copy with no service to ask.
+            Err(Failure::Unavailable) => false,
+            Err(failure) => {
+                // Not registered is the safe answer: the window starts its own programs, as it
+                // did before a service could be registered.
+                log::failure("desktop.service_status_failed", &failure);
+                false
+            }
+        }
+    }
+
+    fn start_service(&self) -> bool {
+        match login_start::start(&login_start::real) {
+            Ok(()) => true,
+            Err(failure) => {
+                log::failure("desktop.service_start_failed", &failure);
+                false
+            }
+        }
     }
 
     fn program_exists(&self, path: &Path) -> bool {

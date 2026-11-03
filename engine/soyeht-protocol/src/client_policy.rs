@@ -11,6 +11,7 @@ pub const DRAFT_BEAT_MS: u64 = 8000;
 pub const AGENT_PARTIAL_FLUSH_MS: u64 = 16;
 pub const DIAGNOSTICS_MS: u64 = 30000;
 pub const COPIED_FEEDBACK_MS: u64 = 1500;
+pub const SERVICE_COMMAND_MS: u64 = 60000;
 pub const TERMINAL_INPUT_CHUNK_BYTES: usize = 16384;
 pub const TERMINAL_SCROLLBACK_LINES: usize = 10000;
 pub const CAPS_WAITING_MESSAGES: usize = 1000;

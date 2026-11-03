@@ -127,7 +127,7 @@ not covered.
   Rust dependencies are not listed yet.
 - Not done: signing of packages or a repository, an update check (ADR 0122), RPM, Flatpak, a menu
   entry for an AppImage (a tool such as AppImageLauncher adds it), and a prompt in the window to
-  register the login services.
+  register the login services (done by ADR 0136).
 
 ## Verification
 

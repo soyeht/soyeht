@@ -9,7 +9,8 @@ export const clientPolicy = {
     "draftBeatMs": 8000,
     "agentPartialFlushMs": 16,
     "diagnosticsMs": 30000,
-    "copiedFeedbackMs": 1500
+    "copiedFeedbackMs": 1500,
+    "serviceCommandMs": 60000
   },
   "terminal": {
     "inputChunkBytes": 16384,

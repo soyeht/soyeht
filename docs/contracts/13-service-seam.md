@@ -72,9 +72,9 @@ terminals (ADR 0108).
 
 ## 3. Who registers
 
-Today the seam is called by the `soyeht service` command, by `scripts/install_dev.py` and by the
-Mac app (ADR 0120) and the Windows installer (ADR 0123). The Linux packages leave the registration to the
-person (ADR 0121); the Linux and Windows desktop apps do not call it yet. The rest of this section is what they are to do.
+Today the seam is called by the `soyeht service` command, by `scripts/install_dev.py`, by the
+Mac app (ADR 0120), by the Linux and Windows desktop app (ADR 0136) and by the Windows installer
+(ADR 0123). The Linux packages leave the registration to the person or to the app (ADR 0121).
 
 **The installer** is to register, with the person's consent to install: it copies the programs and
 runs `soyeht service install --programs DIR`. The Windows installer asks with a box, unchecked by
@@ -85,7 +85,17 @@ installed by an installer (an unpacked archive, a package manager that runs no s
 app). It never registers silently, since macOS tells the person about every new background item
 and Windows lists the task. The Mac app asks once at first launch and keeps a "Start Soyeht"
 button in its setup list; it runs the `soyeht` of its own bundle with `--programs` set to the
-folder of its own programs. All of them run the same command, which is idempotent: a registration
+folder of its own programs. The Linux and Windows window does the same with the `soyeht` beside
+its own executable (ADR 0136): when the engine is one it may start itself and the services are not
+registered, it asks once, under the top bar, "Keep Soyeht running in the background?" with "Turn on"
+(`service install`) and "Not now" (remembered in the device's own choices, so it is not asked
+again), and the Setup panel of Preferences keeps the switch "Start Soyeht at login" for good. The
+switch registers with `service install` and unregisters with `service uninstall`; the second stops
+the engine and the supervisor like any uninstall (section 7), which ends the terminals running
+then, and the window says so beside the switch. The window then starts an engine of its own, since
+nothing is registered, and does not take the uninstall record the switch left for an uninstall by
+someone else. The window does not repair a registration whose programs moved: a start the service
+manager refuses falls back to the window's own (section 4). All of them run the same command, which is idempotent: a registration
 that is already in place is rewritten; a program that runs is left running with the definition it
 started with, and the new text applies when it is next loaded (`service stop` then `service start`,
 or the next login). A launch agent that is loaded but idle is loaded again at once.
@@ -125,26 +135,30 @@ unit is enabled (Linux), the task exists (Windows). `running` means it runs now.
 
 ## 4. How the app finds an engine
 
-Planned for the Linux and Windows app: it does only what step 2 describes (ADR 0102) and no app
-there asks the seam to start anything yet. The Mac app has no start of its own (section 9): it
-runs `soyeht service install` when the person says so (section 3), and connects with its backoff
-once the engine listens. The steps below are the behaviour to build for the others.
+The Linux and Windows app does this (ADR 0102, ADR 0136). The Mac app has no start of its own
+(section 9): it runs `soyeht service install` when the person says so (section 3), and connects
+with its backoff once the engine listens.
 
 The endpoint is the truth: the socket of the data directory (Windows: the endpoint file, ADR
 0108). The app never asks a service manager whether an engine runs. When a connection fails
-because nothing listens:
+because nothing listens, and no uninstall left its record since the window opened (section 7):
 
-1. If the profile's service is **registered**, the app is to ask for it to be started (`service
-   start`) and wait for the endpoint as ADR 0102 does. It starts no program of its own.
-2. If it is **not registered**, the Linux and Windows app falls back to ADR 0102 (this is the
-   behaviour of today): it starts the engine and the supervisor detached from the folder of its
-   own executable, and may offer to register them. The Mac app starts nothing and says the engine
-   is not running.
-3. If the start in step 1 fails, the app is to show the failure and the log path. It must not fall
-   back to step 2: an engine the app started beside a registered service would make the service
-   fail on the engine's lock and be restarted for ever.
+1. If the profile's service is **registered** (`service status`), the app asks for it to be
+   started (`service start`) and waits for the endpoint as ADR 0102 does. It starts no program of
+   its own. A window that cannot ask (no `soyeht` beside it) counts the service as not registered.
+2. If it is **not registered**, the app falls back to ADR 0102: it starts the supervisor and the
+   engine detached from the folder of its own executable.
+3. If the request in step 1 is **refused** (`service start` fails: the programs are gone, the
+   service manager does not answer), the app falls back to step 2, logging
+   `desktop.service_start_failed`. If the request is **accepted** and the engine does not answer
+   in time, the app shows that and does not fall back: an engine of its own beside a service that
+   is starting would make the service fail on the engine's lock and be restarted every second.
+   A refused request that leaves the unit enabled and loaded for the service manager to start
+   later has the same risk; it is accepted for the sake of an app that works when the service
+   manager does not.
 
-An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
+One window at a time makes this decision (the `desktop-start.lock` of ADR 0102); another waits for
+the endpoint. An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
 
 ## 5. Restart policy
 
@@ -280,6 +294,6 @@ installed over a prod install replaces nothing of it.
 
 ## 9. Not covered
 
-The desktop app (Linux and Windows) does not call the seam yet, and of the release installers only the Windows one
-does (section 3); the Mac app does through the section 3 command. Signing and notarization of the Mac package are ADR
+Of the release installers only the Windows one calls the seam (section 3); the Mac app and the
+Linux and Windows app do through the section 3 command. Signing and notarization of the Mac package are ADR
 0120. Auto-update, a machine-wide (all users) service, and starting at boot rather than at login are out of scope.

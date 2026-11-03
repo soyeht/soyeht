@@ -18,6 +18,7 @@ mod editor_preview;
 mod editor_tabs;
 mod editor_tree;
 mod harness_menu;
+mod login_start;
 mod loop_panel;
 mod markdown;
 pub(crate) use markdown::Replies;
@@ -109,6 +110,7 @@ impl Render for Workbench {
             .child(self.top_bar(palette, window, cx))
             .children(self.banner(palette, cx))
             .children(self.crash_notice_row(palette, cx))
+            .children(self.login_start_question(cx))
             .children(self.workspace_close_question(cx))
             .child(
                 div()
