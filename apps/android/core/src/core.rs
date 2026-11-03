@@ -94,7 +94,7 @@ impl Core {
     pub fn connect(&self, credential: String) -> Result<(), CoreError> {
         let credential = Credential::from_json(&credential).map_err(|error| match error {
             Error::Json(_) => CoreError::PairAgain {
-                message: "This device cannot check your computer. Pair again.".to_owned(),
+                reason: "This device cannot check your computer. Pair again.".to_owned(),
             },
             other => other.into(),
         })?;
@@ -253,7 +253,7 @@ mod tests {
         let refused = core.pair("https://example.com".to_owned(), "Phone".to_owned());
         assert!(matches!(
             refused,
-            Err(CoreError::Failed { message }) if message.contains("pairing link")
+            Err(CoreError::Failed { reason }) if reason.contains("pairing link")
         ));
     }
 

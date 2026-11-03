@@ -105,6 +105,15 @@ class AreaTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).areas, ("always", "swift"))
 
+    def test_the_android_app_is_built_by_the_full_tier_only(self):
+        # A Gradle build, two NDK builds and a first download are too much for the fast tier
+        # (ADR 0134): the path selects an area that only the full tier has steps for.
+        for path in ("apps/android/app/src/main/kotlin/A.kt", "apps/android/core/src/lib.rs",
+                     "apps/android/Cargo.lock"):
+            with self.subTest(path=path):
+                self.assertEqual(plan(path).areas, ("always", "android_app"))
+        self.assertIn("android_app", gate_plan.FULL_ONLY_AREAS)
+
     def test_typescript(self):
         self.assertEqual(plan("contracts/typescript/src/x.ts").areas, ("always", "typescript"))
 
@@ -347,7 +356,7 @@ class RenderTests(unittest.TestCase):
 
     def test_text_names_the_deferred_areas(self):
         text = gate_plan.render_text(plan("docs/a.md"), "fast")
-        self.assertIn("after the merge only: dictation mac_app ios_app editor_perf timing", text)
+        self.assertIn("after the merge only: dictation mac_app ios_app android_app editor_perf timing", text)
         self.assertNotIn("e2e", text.split("after the merge only:")[1])
 
     def test_cargo_metadata_is_turned_into_packages(self):

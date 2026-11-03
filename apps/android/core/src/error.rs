@@ -6,15 +6,15 @@ use soyeht_platform::log::Failure;
 #[derive(Debug, uniffi::Error)]
 pub enum CoreError {
     /// The pairing link or the saved access is not usable; the person has to pair again.
-    PairAgain { message: String },
+    PairAgain { reason: String },
     /// The pairing was refused, expired, or could not reach the computer.
-    Failed { message: String },
+    Failed { reason: String },
 }
 
 impl std::fmt::Display for CoreError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PairAgain { message } | Self::Failed { message } => formatter.write_str(message),
+            Self::PairAgain { reason } | Self::Failed { reason } => formatter.write_str(reason),
         }
     }
 }
@@ -26,9 +26,9 @@ impl From<Error> for CoreError {
         soyeht_platform::log::failure("android.core_call_failed", &error);
         let message = error.to_string();
         if soyeht_client::device::Credential::refused_by(&error) {
-            Self::PairAgain { message }
+            Self::PairAgain { reason: message }
         } else {
-            Self::Failed { message }
+            Self::Failed { reason: message }
         }
     }
 }

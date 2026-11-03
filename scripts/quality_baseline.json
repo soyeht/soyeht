@@ -1,5 +1,9 @@
 {
   "duplication": {
+    "android": {
+      "clones": 4,
+      "duplicated_lines": 23
+    },
     "desktop": {
       "clones": 0,
       "duplicated_lines": 0

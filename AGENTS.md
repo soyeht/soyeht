@@ -77,7 +77,8 @@ Each layer depends only on the layers listed above it.
    through UniFFI), depends on `soyeht-client`, `soyeht-protocol` and `soyeht-platform`; it holds
    no rule of its own. The Kotlin app (`apps/android/app`, Jetpack Compose) is a thin view over it,
    like `apps/ios/Sources`: it renders and forwards input, and every colour, radius and size comes
-   from the Kotlin output of `contracts/design-tokens.json`.
+   from the Kotlin output of `contracts/design-tokens.json`. `scripts/check_android.sh` builds it
+   (the full tier; `docs/apps-android.md`).
 
 `scripts/check_layers.py` reads every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and
 fails when a crate depends on a Soyeht crate outside its layer, or when a new crate is not

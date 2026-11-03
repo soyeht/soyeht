@@ -5,7 +5,8 @@ A public function that only tests call is dead code the compiler cannot see, bec
 `pub` hides it from the unused-code lint. The check lists every `pub fn` in the
 production code of `engine/` and `apps/desktop` whose name appears in no other production Rust file or
 line of the repository (`engine/`, `apps/desktop`, and the Rust that
-`contracts/generate.py` writes). Test code (`tests/`, `#[cfg(test)]` items, test-support
+`contracts/generate.py` writes), or by name in the Kotlin app of `apps/android/app`, which calls the
+core's exported methods in lower camel case (ADR 0134). Test code (`tests/`, `#[cfg(test)]` items, test-support
 files) neither defines nor references a name. The match is by name, so a name shared
 with another item or a trait method counts as used: the check misses some dead code
 and never reports live code, apart from the reviewed entries of
@@ -39,6 +40,8 @@ DEFINITION_ROOTS = ("engine", "apps/desktop", "apps/android")
 REFERENCE_ROOTS = DEFINITION_ROOTS
 PUB_FN = re.compile(r"^[ \t]*pub(?:[ \t]+(?:const|async|unsafe))*[ \t]+fn[ \t]+(\w+)", re.M)
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
+# The Kotlin app calls the methods the core exports through UniFFI, which names them in lower camel case.
+KOTLIN_ROOT = "apps/android/app/src/main/kotlin"
 # `#[serde(with = "module")]` calls these two by name.
 CALLED_BY_SERDE = {"serialize", "deserialize"}
 
@@ -68,9 +71,24 @@ def referenced_names(root: Path) -> Counter[str]:
     return counts
 
 
+def kotlin_names(root: Path) -> set[str]:
+    """Every identifier the Kotlin app writes."""
+    return {
+        name
+        for path in sorted((root / KOTLIN_ROOT).rglob("*.kt"))
+        for name in IDENTIFIER.findall(path.read_text(encoding="utf-8"))
+    }
+
+
+def lower_camel(name: str) -> str:
+    head, *rest = name.split("_")
+    return head + "".join(part.capitalize() for part in rest)
+
+
 def candidates(root: Path) -> list[tuple[str, int, str]]:
     """Return (path, line, name) for every unreferenced `pub fn`."""
     counts = referenced_names(root)
+    kotlin = kotlin_names(root)
     found: list[tuple[str, int, str]] = []
     for path in (
         path
@@ -81,7 +99,7 @@ def candidates(root: Path) -> list[tuple[str, int, str]]:
         relative = path.relative_to(root).as_posix()
         for match in PUB_FN.finditer(code):
             name = match.group(1)
-            if counts[name] == 0 and name not in CALLED_BY_SERDE:
+            if counts[name] == 0 and name not in CALLED_BY_SERDE and lower_camel(name) not in kotlin:
                 found.append((relative, code.count("\n", 0, match.start()) + 1, name))
     return found
 

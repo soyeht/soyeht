@@ -39,6 +39,7 @@ AREAS = {
     "dictation": ("apps/dictation", "swift", ".swift"),
     "mac": ("apps/mac/Sources", "swift", ".swift"),
     "ios": ("apps/ios/Sources", "swift", ".swift"),
+    "android": ("apps/android/app/src", "kotlin", ".kt"),
 }
 DUPLICATION_SCANS = {
     **{

@@ -7,7 +7,7 @@ whether the change needs a reviewer. The fast tier is cheap on purpose: format, 
 and the unit tests (`--lib --bins`) of the selected engine, Swift and TypeScript areas, the whole
 `cargo test` of the desktop (its `tests/` directories are scripted-engine tests of a few
 seconds), and the end-to-end suites when the change reaches the engine's programs. The Swift
-tests, the engine integration tests, the Mac and iOS app builds, the editor measurement and the
+tests, the engine integration tests, the Mac, iOS and Android app builds, the editor measurement and the
 timing tests run only in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match
 wins:
 
@@ -55,9 +55,9 @@ from gate_base import BaseError, main_health_dir, resolve_base
 ROOT = Path(__file__).resolve().parents[1]
 CODE_AREAS = ("engine", "desktop", "swift", "typescript")
 # Areas that only the full tier (the run after the merge) covers: the dictation tests, the
-# Mac and iOS app builds, the editor measurement and the timing tests. The Swift packages and
+# Mac, iOS and Android app builds, the editor measurement and the timing tests. The Swift packages and
 # the engine workspace also have steps that are full-only.
-FULL_ONLY_AREAS = ("dictation", "mac_app", "ios_app", "editor_perf", "timing")
+FULL_ONLY_AREAS = ("dictation", "mac_app", "ios_app", "android_app", "editor_perf", "timing")
 # Selected from the engine selection (see `make_plan`) and not from a path.
 E2E_AREA = "e2e"
 # The engine programs that the end-to-end suites start: a change that reaches one of them
@@ -254,6 +254,11 @@ def make_plan(
                     areas.add("desktop")
         elif path.startswith("apps/desktop/"):
             areas.add("desktop")
+        elif path.startswith("apps/android/"):
+            # The Gradle build, the NDK builds and the emulator are too much for the fast tier
+            # (ADR 0134): only the full tier builds the app, and the core's crates are covered by
+            # the engine and desktop areas of the crates it shares.
+            areas.add("android_app")
         elif path.startswith(("apps/dictation/", "apps/shared/", "contracts/swift/", "apps/mac/", "apps/ios/")):
             areas.add("swift")
         elif path.startswith("contracts/typescript/"):
