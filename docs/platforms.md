@@ -184,6 +184,13 @@ the image. Its debug symbols are saved first, with the same UUID, as
 build): keep it with the release, since it is the only way to name the frames of a crash. It is
 not part of the package, and the release flow does not collect it.
 
+A finished package has a size ceiling in `scripts/package_sizes.json` (bytes, about 3% over what was
+measured; see `docs/reports/package-sizes-2026-11-02.md`). The three packaging scripts fail when a
+package is over its ceiling, or has a name that is not a kind of the file, so a growth is a
+decision written in that file with its reason. A package more than 10% under its ceiling only
+prints a warning to lower the number. A kind with `null` has not been built yet and is not
+checked.
+
 | Variable | Holds |
 | --- | --- |
 | `SOYEHT_MAC_SIGNING_IDENTITY` | The name or SHA-1 of a "Developer ID Application" certificate. The script never looks one up in the keychain. |

@@ -75,6 +75,13 @@ accent. Headings are bold at body size. The Mac draws in `MarkdownViews.swift`, 
 desktop in `views/markdown.rs`. The desktop opens a link in the system browser; the Mac routes
 it to its web pane.
 
+A code block has a flat Copy button at its top right corner (`MarkdownCodeBlock.swift`; on the
+desktop, `copy_button.rs` shows it while the pointer is over the block). It copies the block's
+text as the parser kept it, which is the vector's `text`: no fence, no language tag, the
+closing newline dropped, the whitespace inside kept. After a press it shows a check for
+`copiedFeedbackMs` of `x-clientPolicy`, then the copy icon again. On iOS the button is a
+`touchTarget` square.
+
 ## Consequences
 
 - The Markdown subset is defined once. Adding a construct means adding vectors and making both
