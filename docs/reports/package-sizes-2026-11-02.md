@@ -108,9 +108,10 @@ build).
 
 A packaging script is the one place that sees the finished file, so the check is there:
 `scripts/package_sizes.json` records a ceiling per package kind (`macos-aarch64.dmg`,
-`linux-x86_64.deb`, ...), about 3% over what was measured, and `package_common.size_problem`
-fails the Mac, Linux and Windows scripts when a package is over its ceiling, or more than 10%
-under it (the same "lower the number when it improves" ratchet as `quality_baseline.json`). A
+`linux-x86_64.deb`, ...), about 3% over what was measured, and `package_common.check_sizes`
+(one helper, called last by the Mac, Linux and Windows scripts) fails when a package is over its
+ceiling or is not one of the kinds in the file, and prints a warning when it is more than 10%
+under, asking for the number to come down (a release must not fail because a package shrank). A
 kind with `null` is not checked yet: the AppImage, the Linux arm64 `.deb` and the Windows
 installers, which this host could not build; whoever builds the first one records its size. It is
 not a `check_all.sh` step, because a release build is minutes and the fast tier is not; the fast

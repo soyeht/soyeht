@@ -178,9 +178,10 @@ It is Apple silicon only (the dictation engines are built on MLX).
 
 A finished package has a size ceiling in `scripts/package_sizes.json` (bytes, about 3% over what was
 measured; see `docs/reports/package-sizes-2026-11-02.md`). The three packaging scripts fail when a
-package is over its ceiling or more than 10% under it, so a growth is a decision written in that
-file with its reason, and an improvement lowers the number. A kind with `null` has not been built
-yet and is not checked.
+package is over its ceiling, or has a name that is not a kind of the file, so a growth is a
+decision written in that file with its reason. A package more than 10% under its ceiling only
+prints a warning to lower the number. A kind with `null` has not been built yet and is not
+checked.
 
 | Variable | Holds |
 | --- | --- |

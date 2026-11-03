@@ -9,9 +9,9 @@ import hashlib
 import json
 import os
 import platform
-import re
 import shlex
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -95,27 +95,47 @@ def make_plan(plan_class, arch, programs):
     return plan_class(str(made.version), made.revision, arch, source_epoch(), programs)
 
 
+def size_ceiling(path, ceilings):
+    """`(kind, ceiling)` of a finished package: the kind is the key of `package_sizes.json` that
+    ends the file name (`soyeht-<version>-<system>-<arch>.<extension>`, the version may have
+    hyphens), the ceiling `None` for a kind that is not checked yet. A name that no key ends is
+    an error, not a package to skip: a typo here would switch the check off."""
+    name = Path(path).name
+    head = PACKAGE + "-"
+    kinds = [kind for kind in ceilings if name.startswith(head) and name.endswith("-" + kind)]
+    if not kinds:
+        raise PackagingError(f"{name} is not a package kind of scripts/package_sizes.json: add its line")
+    kind = max(kinds, key=len)
+    return kind, ceilings[kind]
+
+
 def size_problem(path, ceilings=None):
-    """Why `path`, a finished package, is bigger than the ceiling recorded for it, or None. A
-    package grows past its ceiling only on purpose: raise the number in `package_sizes.json` in
-    the same change and say why. A package with no ceiling (a system this host cannot build) is
-    not checked; a size far under its ceiling asks for the ceiling to come down."""
+    """`(problem, warning)` for a finished package, each a message or None. The problem is a size
+    over the ceiling recorded for it: a package grows past its ceiling only on purpose, so raise
+    the number in `package_sizes.json` in the same change and say why. The warning is a size
+    more than 10% under it, which asks for the ceiling to come down but never stops a release.
+    A kind whose ceiling is `null` (a system this host cannot build) is not checked."""
     ceilings = json.loads(SIZE_CEILINGS.read_text())["ceilings"] if ceilings is None else ceilings
-    kind = re.sub(r"^" + re.escape(PACKAGE) + r"-[^-]+-", "", Path(path).name)
-    ceiling = ceilings.get(kind)
+    _, ceiling = size_ceiling(path, ceilings)
     size = Path(path).stat().st_size
+    name = Path(path).name
     if ceiling is None:
-        return None
+        return None, None
     if size > ceiling:
-        return f"{Path(path).name} is {size} bytes, over its ceiling of {ceiling} (scripts/package_sizes.json)"
+        return f"{name} is {size} bytes, over its ceiling of {ceiling} (scripts/package_sizes.json)", None
     if size < ceiling * 0.9:
-        return f"{Path(path).name} is {size} bytes, 10% under its ceiling of {ceiling}: lower it (scripts/package_sizes.json)"
-    return None
+        return None, f"{name} is {size} bytes, 10% under its ceiling of {ceiling}: lower it in scripts/package_sizes.json"
+    return None, None
 
 
 def check_sizes(paths):
-    """Stops the script when any finished package is outside its ceiling (`size_problem`)."""
-    if problems := [found for found in map(size_problem, paths) if found]:
+    """Stops the script when a finished package is over its ceiling or has no kind in the file,
+    and prints the warning of one far under it. Every packaging script ends with this."""
+    results = [size_problem(path) for path in paths]
+    for _, warning in results:
+        if warning:
+            print(f"size: {warning}", file=sys.stderr)
+    if problems := [problem for problem, _ in results if problem]:
         raise PackagingError("; ".join(problems))
 
 

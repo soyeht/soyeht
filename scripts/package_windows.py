@@ -39,10 +39,10 @@ from package_common import (
     add_build_arguments,
     built_programs,
     cargo_build,
+    check_sizes,
     host_arch,
     make_plan,
     run,
-    check_sizes,
     stream,
 )
 from package_common import Plan as BasePlan

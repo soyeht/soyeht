@@ -52,16 +52,42 @@ class SizeCeilingTests(unittest.TestCase):
             return package_common.size_problem(path, self.CEILINGS)
 
     def test_a_package_near_its_ceiling_passes(self):
-        self.assertIsNone(self.check("soyeht-0.1.0-macos-aarch64.dmg", 1000))
-        self.assertIsNone(self.check("soyeht-1.20.3-macos-aarch64.dmg", 950))
+        self.assertEqual(self.check("soyeht-0.1.0-macos-aarch64.dmg", 1000), (None, None))
+        self.assertEqual(self.check("soyeht-1.20.3-macos-aarch64.dmg", 950), (None, None))
 
-    def test_a_package_over_its_ceiling_or_far_under_it_is_a_problem(self):
-        self.assertIn("over its ceiling", self.check("soyeht-0.1.0-macos-aarch64.dmg", 1001))
-        self.assertIn("lower it", self.check("soyeht-0.1.0-macos-aarch64.dmg", 899))
+    def test_a_version_with_hyphens_still_finds_its_kind(self):
+        self.assertEqual(self.check("soyeht-0.2.0-rc.1-macos-aarch64.dmg", 1000), (None, None))
+        problem, _ = self.check("soyeht-0.2.0-rc.1-macos-aarch64.dmg", 1001)
+        self.assertIn("over its ceiling", problem)
 
-    def test_a_package_with_no_ceiling_is_not_checked(self):
-        self.assertIsNone(self.check("soyeht-0.1.0-linux-x86_64.deb", 10**6))
-        self.assertIsNone(self.check("soyeht-0.1.0-windows-x86_64.exe", 10**6))
+    def test_a_package_over_its_ceiling_is_a_problem(self):
+        problem, warning = self.check("soyeht-0.1.0-macos-aarch64.dmg", 1001)
+        self.assertIn("over its ceiling", problem)
+        self.assertIsNone(warning)
+
+    def test_a_package_far_under_its_ceiling_is_only_a_warning(self):
+        problem, warning = self.check("soyeht-0.1.0-macos-aarch64.dmg", 899)
+        self.assertIsNone(problem)
+        self.assertIn("lower it in scripts/package_sizes.json", warning)
+
+    def test_check_sizes_stops_on_a_problem_and_only_prints_a_warning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            small = Path(temporary) / "soyeht-0.1.0-macos-aarch64.dmg"
+            small.write_bytes(b"x" * 10)
+            with patch.object(package_common, "SIZE_CEILINGS", Path(temporary) / "sizes.json"):
+                package_common.SIZE_CEILINGS.write_text(json.dumps({"ceilings": self.CEILINGS}))
+                package_common.check_sizes([small])
+                small.write_bytes(b"x" * 1001)
+                with self.assertRaisesRegex(PackagingError, "over its ceiling"):
+                    package_common.check_sizes([small])
+
+    def test_a_package_with_a_null_ceiling_is_not_checked(self):
+        self.assertEqual(self.check("soyeht-0.1.0-linux-x86_64.deb", 10**6), (None, None))
+
+    def test_a_name_that_is_no_kind_of_the_file_is_an_error_not_a_skip(self):
+        for name in ("soyeht-0.1.0-macos-arm64.dmg", "soyeht-0.1.0-windows-x86_64.exe", "other-0.1.0-macos-aarch64.dmg"):
+            with self.assertRaisesRegex(PackagingError, "not a package kind"):
+                self.check(name, 10)
 
     def test_every_package_the_scripts_make_has_a_line_in_the_file(self):
         recorded = json.loads(package_common.SIZE_CEILINGS.read_text())["ceilings"]

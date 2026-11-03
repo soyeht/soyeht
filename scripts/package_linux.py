@@ -45,10 +45,10 @@ from package_common import (  # noqa: E402
     absolute,
     add_build_arguments,
     cargo_build,
+    check_sizes,
     host_arch,
     make_plan,
     sha256_of,
-    check_sizes,
 )
 from package_common import Plan as BasePlan  # noqa: E402
 from package_common import built_programs as find_programs  # noqa: E402
