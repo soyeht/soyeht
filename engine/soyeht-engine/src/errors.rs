@@ -624,12 +624,10 @@ impl From<io::Error> for Error {
 
 impl From<soyeht_platform::fs::PrivateDirError> for Error {
     fn from(error: soyeht_platform::fs::PrivateDirError) -> Self {
-        use soyeht_platform::fs::PrivateDirError;
+        use soyeht_platform::fs::PrivateDirError as DirError;
         match error {
-            PrivateDirError::Io(error) => Self::Io(error),
-            refused @ (PrivateDirError::Unsafe
-            | PrivateDirError::NotPrivate
-            | PrivateDirError::OtherOwner) => {
+            DirError::Io(error) => Self::Io(error),
+            refused @ (DirError::Unsafe | DirError::NotPrivate | DirError::OtherOwner) => {
                 internal(format!("A private directory was refused: {refused}"))
             }
         }
