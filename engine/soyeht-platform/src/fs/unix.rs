@@ -56,13 +56,17 @@ pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
+/// Android's C library exports `renameat2` only from API 30 and the phone's `minSdk` is 26, so there
+/// the kernel call is made directly (ADR 0134).
+///
 /// # Safety
 ///
 /// Both pointers are NUL-terminated strings that outlive the call.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 unsafe fn renameat2_no_replace(from: *const libc::c_char, to: *const libc::c_char) -> libc::c_int {
     // SAFETY: the caller's guarantee, and AT_FDCWD resolves the paths as ordinary ones.
-    unsafe {
+    #[cfg(target_os = "linux")]
+    let status = unsafe {
         libc::renameat2(
             libc::AT_FDCWD,
             from,
@@ -70,18 +74,9 @@ unsafe fn renameat2_no_replace(from: *const libc::c_char, to: *const libc::c_cha
             to,
             libc::RENAME_NOREPLACE,
         )
-    }
-}
-
-/// Android's C library exports `renameat2` only from API 30 and the phone's `minSdk` is 26, so the
-/// kernel call is made directly (ADR 0134).
-///
-/// # Safety
-///
-/// Both pointers are NUL-terminated strings that outlive the call.
-#[cfg(target_os = "android")]
-unsafe fn renameat2_no_replace(from: *const libc::c_char, to: *const libc::c_char) -> libc::c_int {
-    // SAFETY: the caller's guarantee, and AT_FDCWD resolves the paths as ordinary ones.
+    };
+    // SAFETY: as above; the system call has the arguments of `renameat2`.
+    #[cfg(target_os = "android")]
     let status = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
