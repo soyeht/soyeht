@@ -52,7 +52,7 @@ renderer. A name or a place of the legacy app is refused before anything is writ
 | Start | `RunAtLoad` | `WantedBy=default.target`, enabled | `LogonTrigger` for this user (its SID) |
 | Restart | `KeepAlive` (however it ended, while the program exists: `PathState`), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
 | Program gone | `KeepAlive` `PathState` on the program: launchd stops restarting it (see section 5) | `ConditionPathExists=` the program: the unit is skipped, not failed, so no restart loop (ADR 0121) | none |
-| Order | none: the engine reconnects | engine `Wants=` and `After=` the supervisor (never `Requires=`) | none: the engine reconnects |
+| Order | none: the engine reconnects | engine `After=` the supervisor (never `Requires=` or `Wants=`, ADR 0136) | none: the engine reconnects |
 | Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | none: the user manager's own environment (ADR 0135) | the user's own environment (ADR 0135) |
 | Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | the host appends the program's output to the same file (section 6) |
 | Limits | `ProcessType` Interactive | none | no time limit; one instance; runs on battery; normal priority |

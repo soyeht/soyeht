@@ -75,6 +75,10 @@ copy is worse than the small risk of a refused request that the manager honours 
 - `service start` leaves a component alone when its program holds the singleton lock, as `install`
   does: a supervisor the window started and the person then registered is not started a second time
   by its idle unit (which would fail on the lock and restart every second).
+- The engine's unit no longer `Wants=` the supervisor's (only `After=`): starting the engine unit
+  pulled in the supervisor's, which failed on the lock of a supervisor the window had started. Both
+  units are still `WantedBy` the default target. A unit written before this change keeps its
+  `Wants=` until `soyeht service install` writes it again.
 - With the services registered, the window's start no longer leaves a detached engine beside a
   unit. Two windows still make one decision (the lock).
 - A first run costs one `soyeht service status` (a few `systemctl` calls) when the engine is not
