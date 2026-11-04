@@ -149,6 +149,17 @@ public enum HarnessPickerModel {
     return .not_checked
   }
 
+  /// The state a picker shows for a harness. A harness the engine found on this machine and has
+  /// not started yet is shown as ready, as the setup checklist shows it (`found`): "not checked"
+  /// is the engine's word for a session nobody has opened, and a person reads it as a missing
+  /// check. Only a session that opened makes the default choice (`defaultHarness`), so that
+  /// choice keeps using `setupState(for:)`.
+  public static func shownState(for harness: HarnessInfo) -> HarnessSetupState {
+    let state = setupState(for: harness)
+    return state == .not_checked && harness.available && harness.installed != false
+      ? .ready : state
+  }
+
   /// Whether a picker shows the "More harnesses" entries: on request, while searching, when
   /// nothing installed is left to show, or when the chosen harness lives there.
   public static func moreExpanded(
@@ -170,7 +181,7 @@ public enum HarnessPickerModel {
   }
 
   public static func pickerGroup(for harness: HarnessInfo) -> HarnessPickerGroup {
-    switch setupState(for: harness) {
+    switch shownState(for: harness) {
     case .ready: return .ready
     case .not_checked: return .notChecked
     case .sign_in: return .signIn
@@ -185,7 +196,7 @@ public enum HarnessPickerModel {
   }
 
   public static func statusLabel(for harness: HarnessInfo) -> String {
-    switch setupState(for: harness) {
+    switch shownState(for: harness) {
     case .ready: "Ready"
     case .not_checked: "Not checked"
     case .sign_in: "Sign in"

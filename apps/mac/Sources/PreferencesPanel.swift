@@ -617,7 +617,7 @@ private struct HarnessPreferenceRow: View {
   private var permissionModes: AgentPermissionModes? { AgentPermissionModes(options: options) }
 
   private var statusColor: Color {
-    switch HarnessPickerModel.setupState(for: harness) {
+    switch HarnessPickerModel.shownState(for: harness) {
     case .ready: MacTheme.success
     case .sign_in, .check_setup: MacTheme.warning
     case .not_checked, .not_installed: MacTheme.muted

@@ -31,9 +31,12 @@ import Testing
 
   let layout = HarnessPickerModel.layout(catalogue)
 
-  #expect(layout.sections.map(\.group) == [.ready, .notChecked, .signIn])
+  #expect(layout.sections.map(\.group) == [.ready, .signIn])
   #expect(
     layout.sections.flatMap(\.items).map(\.id) == [ready.id, notChecked.id, legacyInstalled.id])
+  // Found on this machine and not started yet reads as ready, as in the setup checklist.
+  #expect(HarnessPickerModel.statusLabel(for: notChecked) == "Ready")
+  #expect(HarnessPickerModel.statusLabel(for: runner) == "Not checked")
   // Not-installed entries follow the readiness groups, then case-insensitive name.
   #expect(layout.more.map(\.id) == [runner.id, missingA.id, missingB.id])
   #expect(HarnessPickerModel.layout(catalogue.reversed()).more.map(\.id) == layout.more.map(\.id))
@@ -102,12 +105,14 @@ import Testing
 
   #expect(
     HarnessPickerModel.sections([missing, failed, login, unknown, newer, older])
-      .map(\.group) == [.ready, .notChecked, .signIn, .checkSetup, .unavailable])
+      .map(\.group) == [.ready, .signIn, .checkSetup, .unavailable])
   #expect(HarnessPickerModel.defaultHarness(in: [older, newer])?.id == newer.id)
   #expect(
     HarnessPickerModel.defaultHarness(in: [older, newer], preferredId: older.id)?.id == older.id)
-  #expect(HarnessPickerModel.statusLabel(for: unknown) == "Not checked")
+  #expect(HarnessPickerModel.statusLabel(for: unknown) == "Ready")
   #expect(HarnessPickerModel.statusReason(for: unknown).contains("not been started"))
+  // A session nobody opened never makes the default choice, whatever the row says.
+  #expect(HarnessPickerModel.defaultHarness(in: [unknown])?.id == nil)
 }
 
 @MainActor @Test func engineSettingEventUpdatesSharedPreferenceForMacAndPhonePickers() {

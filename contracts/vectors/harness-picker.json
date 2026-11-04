@@ -127,12 +127,7 @@
           "Ready",
           [
             "registry.claude-acp",
-            "registry.codex-acp"
-          ]
-        ],
-        [
-          "Not checked",
-          [
+            "registry.codex-acp",
             "local.tool"
           ]
         ],
@@ -178,12 +173,7 @@
           "Ready",
           [
             "registry.claude-acp",
-            "registry.codex-acp"
-          ]
-        ],
-        [
-          "Not checked",
-          [
+            "registry.codex-acp",
             "local.tool"
           ]
         ],
@@ -275,12 +265,7 @@
         [
           "Ready",
           [
-            "registry.codex-acp"
-          ]
-        ],
-        [
-          "Not checked",
-          [
+            "registry.codex-acp",
             "local.tool"
           ]
         ],
@@ -388,7 +373,7 @@
     },
     {
       "harness": "tool",
-      "label": "Not checked",
+      "label": "Ready",
       "reason": "Installed; this agent has not been started yet. You can start it now.",
       "installed": true,
       "notice": "Installed; this agent has not been started yet. You can start it now."

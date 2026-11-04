@@ -57,9 +57,22 @@ fn setup_state(harness: &HarnessInfo) -> HarnessSetupState {
     HarnessSetupState::NotChecked
 }
 
+/// The state a picker shows for `harness`. One the engine found on this machine and has not
+/// started yet shows as ready, as the setup checklist shows it (`found`): "not checked" is the
+/// engine's word for a session nobody has opened. Only a session that opened makes the default
+/// choice (`default_harness`), which reads `setup_state` itself.
+fn shown_state(harness: &HarnessInfo) -> HarnessSetupState {
+    match setup_state(harness) {
+        HarnessSetupState::NotChecked if harness.available && harness.installed != Some(false) => {
+            HarnessSetupState::Ready
+        }
+        state => state,
+    }
+}
+
 /// How ready `harness` is: the group its row belongs to.
 pub fn group_of(harness: &HarnessInfo) -> Group {
-    match setup_state(harness) {
+    match shown_state(harness) {
         HarnessSetupState::Ready => Group::Ready,
         HarnessSetupState::NotChecked => Group::NotChecked,
         HarnessSetupState::SignIn => Group::SignIn,
