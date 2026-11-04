@@ -35,6 +35,7 @@ GENERATED_PYTHON_HEADER = "# " + generated_prefix()
 AREAS = {
     "engine": ("engine", "rust", ".rs"),
     "desktop": ("apps/desktop", "rust", ".rs"),
+    "android_core": ("apps/android/core", "rust", ".rs"),
     "shared": ("apps/shared", "swift", ".swift"),
     "dictation": ("apps/dictation", "swift", ".swift"),
     "mac": ("apps/mac/Sources", "swift", ".swift"),

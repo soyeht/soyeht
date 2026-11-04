@@ -6,7 +6,7 @@ import Testing
 
 private let code = String(repeating: "a", count: 43)
 private let engine = "00000000-0000-4000-8000-000000000001"
-private let linkKey = String(repeating: "A", count: 43)
+private let linkKey = "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc"
 
 @MainActor @Test func reachabilityEventsReachTheClientAndThePairingSheet() throws {
   let client = EngineClient(socket: "/tmp/pairing-reachability.sock")

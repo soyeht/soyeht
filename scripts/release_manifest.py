@@ -7,8 +7,10 @@
 
 `build` lists `dist/soyeht-<version>-<system>-<architecture>.<extension>`, hashes each package,
 writes the manifest the clients read and signs it with the Ed25519 key in
-`SOYEHT_UPDATE_SIGNING_KEY` (the 32-byte seed in base64, as `keygen` prints it). The key never
-comes from a file of this repository. The version is `productVersion` of `contracts/release.json`.
+`SOYEHT_UPDATE_SIGNING_KEY` (the 32-byte seed in base64, as `keygen` prints it) or, when that is
+not set, from the file `SOYEHT_UPDATE_SIGNING_KEY_FILE` names (the same text; the file must be
+readable by its owner only). The key never comes from a file of this repository. The version is
+`productVersion` of `contracts/release.json`.
 `verify` reads a manifest the way a client does, against the keys of `contracts/update.json`
 (or `--trust-key ID=BASE64`), so a release can be checked before it is uploaded.
 
@@ -50,8 +52,10 @@ sys.path.insert(0, str(ROOT / "contracts"))
 import ed25519  # noqa: E402  (the contracts directory is on the path just above)
 import product_version  # noqa: E402
 import update_manifest as manifest  # noqa: E402
+from package_common import readable_by_others  # noqa: E402
 
 KEY_ENVIRONMENT = "SOYEHT_UPDATE_SIGNING_KEY"
+KEY_FILE_ENVIRONMENT = "SOYEHT_UPDATE_SIGNING_KEY_FILE"
 PACKAGE = re.compile(
     r"soyeht-(?P<version>[0-9]+\.[0-9]+\.[0-9]+)-(?P<system>[a-z]+)-(?P<architecture>[a-z0-9_]+)"
     r"\.(?P<extension>[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)"
@@ -73,11 +77,35 @@ class Refused(Exception):
     """A problem the person running the script can fix; its message says how."""
 
 
+def has_signing_key(environment):
+    """Whether the environment names a signing key, by value or by file; it is not read here."""
+    return bool(environment.get(KEY_ENVIRONMENT) or environment.get(KEY_FILE_ENVIRONMENT))
+
+
+def key_text(environment):
+    """The key as written: the variable's value, else the content of the file the other names."""
+    if environment.get(KEY_ENVIRONMENT):
+        return environment[KEY_ENVIRONMENT]
+    named = environment.get(KEY_FILE_ENVIRONMENT)
+    if not named:
+        return ""
+    path = Path(named)
+    try:
+        if readable_by_others(path):
+            raise Refused(f"{KEY_FILE_ENVIRONMENT} names a file that other users can read: chmod 600 it")
+        return path.read_text()
+    except OSError as failure:
+        raise Refused(f"{KEY_FILE_ENVIRONMENT} names a file that cannot be read ({failure.strerror})") from None
+
+
 def signing_seed(environment):
-    text = environment.get(KEY_ENVIRONMENT, "")
+    text = key_text(environment)
     seed = manifest.canonical_base64(text.strip()) if text else None
     if seed is None or len(seed) != 32:
-        raise Refused(f"{KEY_ENVIRONMENT} must hold the 32-byte signing seed in base64 (`keygen` makes one)")
+        raise Refused(
+            f"{KEY_ENVIRONMENT} (or the file {KEY_FILE_ENVIRONMENT} names) must hold the 32-byte signing seed "
+            "in base64 (`keygen` makes one)"
+        )
     return seed
 
 

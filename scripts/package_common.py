@@ -34,6 +34,12 @@ class PackagingError(Exception):
     """A step failed; the message says which and why."""
 
 
+def readable_by_others(path):
+    """Whether group or others have any access to `path`: a private key (a notary `.p8`, the update
+    signing seed) must not be. Raises `OSError` when the file cannot be inspected."""
+    return bool(Path(path).stat().st_mode & 0o077)
+
+
 def sha256_of(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 

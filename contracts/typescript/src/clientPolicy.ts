@@ -68,7 +68,9 @@ export const clientPolicy = {
     "iphone": "iphone",
     "iphoneDev": "iphone-dev",
     "desktop": "desktop",
-    "desktopDev": "desktop-dev"
+    "desktopDev": "desktop-dev",
+    "android": "android",
+    "androidDev": "android-dev"
   },
   "texts": {
     "harnessSwitchTitle": "Switch agent",

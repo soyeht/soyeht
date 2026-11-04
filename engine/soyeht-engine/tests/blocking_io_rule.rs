@@ -339,3 +339,115 @@ fn the_supervisor_wait_rule_counts_every_way_to_wait() {
         0
     );
 }
+
+// The usage readers touch no place macOS guards with a privacy question (ADR 0111): another
+// app's container or group container, the user's media, or Safari's data. A reader that opened
+// one would make macOS ask the person, on behalf of the engine, in the middle of a background
+// refresh. The readers are `soyeht-usage` and the engine's `usage` module, which holds the macOS
+// side (browser cookies, the keychain, the hidden command sessions). The third-party data they do
+// read lives under `Library/Application Support` of apps that are not sandboxed, which the system
+// does not guard that way: that list is `READ_UNDER_APPLICATION_SUPPORT`.
+
+/// Names of places macOS asks the person about. A path that names one is a prompt.
+const GUARDED: &[&str] = &[
+    "Group Containers",
+    "Library/Containers",
+    "Library/Cookies",
+    "Library/Safari",
+    "Safari",
+    "/Music",
+    "Movies",
+    "Pictures",
+    "Photos",
+    "Library/Mail",
+    "Library/Messages",
+    "Documents",
+    "Desktop",
+    "Downloads",
+];
+
+/// What the readers open under `Library/Application Support`: the profile folders of the
+/// Chromium browsers and Firefox, whose cookies the browser source reads, and Cursor's state.
+const READ_UNDER_APPLICATION_SUPPORT: &[&str] = &[
+    "Google/Chrome",
+    "Arc/User Data",
+    "BraveSoftware/Brave-Browser",
+    "Microsoft Edge",
+    "Vivaldi",
+    "Chromium",
+    "Firefox/Profiles",
+    "Cursor/User/globalStorage/state.vscdb",
+];
+
+/// The production lines of the readers: no comment, nothing from a test module or a fixture
+/// host, which exists only with the `test-hooks` feature.
+fn reader_lines() -> Vec<(String, usize, String)> {
+    let mut files = Vec::new();
+    rust_files(&engine_root().join("soyeht-usage/src"), &mut files);
+    rust_files(&engine_root().join("soyeht-engine/src/usage"), &mut files);
+    let mut lines = Vec::new();
+    for file in files {
+        let name = file.file_name().unwrap().to_string_lossy().into_owned();
+        if name == "tests.rs" || name == "fixture_host.rs" {
+            continue;
+        }
+        let text = fs::read_to_string(&file).unwrap();
+        let production = shipped(&text);
+        let shown = file
+            .strip_prefix(engine_root())
+            .unwrap()
+            .display()
+            .to_string();
+        for (index, line) in production.lines().enumerate() {
+            if !line.trim_start().starts_with("//") {
+                lines.push((shown.clone(), index + 1, line.to_owned()));
+            }
+        }
+    }
+    lines
+}
+
+#[test]
+fn the_usage_readers_name_no_place_macos_guards() {
+    let mut found = Vec::new();
+    for (file, number, line) in reader_lines() {
+        for guarded in GUARDED {
+            if line.contains(guarded) {
+                found.push(format!("{file}:{number} names `{guarded}`"));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "a usage reader names a place macOS asks the person about: {found:#?}"
+    );
+}
+
+#[test]
+fn the_usage_readers_open_only_the_known_third_party_data() {
+    // The files that name the root of another app's data, and nothing else may.
+    let mut roots = std::collections::BTreeSet::new();
+    for (file, _, line) in reader_lines() {
+        if line.contains("Library/Application Support") {
+            roots.insert(file);
+        }
+    }
+    assert_eq!(
+        roots.iter().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "soyeht-engine/src/usage/browser.rs",
+            "soyeht-usage/src/sources/cursor.rs"
+        ],
+        "a reader opens a folder of another app under Application Support"
+    );
+    // The list is kept true: a folder that no reader opens any more comes off it.
+    let source = |path: &str| fs::read_to_string(engine_root().join(path)).unwrap();
+    let text = source("soyeht-engine/src/usage/browser.rs")
+        + &source("soyeht-usage/src/sources/cursor.rs");
+    for name in READ_UNDER_APPLICATION_SUPPORT {
+        assert!(
+            text.contains(name),
+            "{name} is listed but no reader opens it"
+        );
+    }
+}

@@ -20,15 +20,9 @@ mod system;
 #[path = "network/windows.rs"]
 mod system;
 
-/// Listeners may bind loopback and tailnet ranges only: never LAN, public or wildcard.
-pub fn permitted_address(address: IpAddr) -> bool {
-    match address {
-        IpAddr::V4(ip) => {
-            ip.is_loopback() || ip.octets()[0] == 100 && (64..128).contains(&ip.octets()[1])
-        }
-        IpAddr::V6(ip) => ip.is_loopback() || ip.segments()[..3] == [0xfd7a, 0x115c, 0xa1e0],
-    }
-}
+/// Listeners may bind loopback and tailnet ranges only: never LAN, public or wildcard. The rule is
+/// the one a pairing link follows (`soyeht_protocol::pairing_link`).
+pub use soyeht_protocol::pairing_link::permitted_address;
 
 fn is_tailnet_interface(name: &str, address: IpAddr) -> bool {
     // macOS names the tailnet tunnel `utunN`, Linux's tailscaled names it `tailscale0`, and the

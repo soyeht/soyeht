@@ -45,9 +45,13 @@ state; `soyeht-protocol` is the only definition of the wire.
   (the engine maps a text message to a JSON frame and a binary one to the other frames, as
   `transport.rs` of the engine does), and the device's `hello`. The bytes both sides sign
   (`soyeht-hello-v2`, `soyeht-engine-v1`, `soyeht-engine-pair-v1`, the pairing proof) are written once
-  in `soyeht-protocol` and pass `contracts/vectors/engine-proof.json`, which the engine and the Swift
-  client already pass. The engine's own copy in `auth.rs` and the Swift copy remain until a later change
-  moves them to the shared functions; the vectors hold the three together meanwhile.
+  in `soyeht-protocol` (`device_auth`) and pass `contracts/vectors/engine-proof.json`, which the engine
+  and the shared Swift client already pass. The engine now takes the bytes from there (its own copy in
+  `auth.rs` is gone); the Swift copy remains, held to them by the same vectors. The pairing link's grammar
+  and the addresses it may name (loopback and the tailnet, the rule the engine's listeners follow too) are
+  `soyeht-protocol::pairing_link`, with the code length, the pairing window and the longest device name
+  among the `x-limits` of the contract; `contracts/vectors/pairing-link.json` is passed by that module and
+  by the Swift client.
 - **Platform seam.** `soyeht-client` reaches the system only through `soyeht-platform`. That crate
   now builds for Android (the kernel is Linux): the process tree and the no-replace rename are the Linux
   ones, and a crash report has no stack frames because Android's C library has no `backtrace`. The
@@ -92,4 +96,4 @@ state; `soyeht-protocol` is the only definition of the wire.
   (`soyeht-next://pair?...`, an intent filter of the app).
 - It has no push notification, no editor, writing or web pane (they show "Open on the computer", as the
   iPad does), and no board layout for tablets. They follow when the rest has been used.
-- It does not move the engine's or Swift's copy of the signed bytes to the shared functions.
+- It does not move Swift's copy of the signed bytes to the shared functions.

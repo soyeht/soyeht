@@ -137,6 +137,34 @@ public final class AgentAttentionNotificationSettings {
   public func shouldPost(appIsActive: Bool) -> Bool {
     enabled && !appIsActive
   }
+
+  /// What the person told the system about this app's notifications.
+  public enum Permission: Equatable, Sendable {
+    case notDetermined
+    case granted
+    case denied
+  }
+
+  /// What a new request that needs the person does.
+  public enum Delivery: Equatable, Sendable {
+    case post
+    /// The system has not been asked yet: it is asked now, when the first notification is about
+    /// to be delivered, and the notification is posted if the answer is yes.
+    case askThenPost
+    case skip
+  }
+
+  /// The one place that decides when the system's permission question is asked: never at
+  /// launch (the first run already asks about starting at login), only when a notification is
+  /// about to be delivered or when the person turns notifications on.
+  public func delivery(appIsActive: Bool, permission: Permission) -> Delivery {
+    guard shouldPost(appIsActive: appIsActive) else { return .skip }
+    return switch permission {
+    case .granted: .post
+    case .notDetermined: .askThenPost
+    case .denied: .skip
+    }
+  }
 }
 
 extension EngineClient {

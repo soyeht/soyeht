@@ -9,7 +9,7 @@ private let incomingCode = String(repeating: "a", count: 43)
 
 private func link(_ address: String, engine: String = incomingEngine) -> String {
   "soyeht-next://pair?engineId=\(engine)&address=\(address)&code=\(incomingCode)"
-    + "&engineKey=" + String(repeating: "A", count: 43)
+    + "&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc"
 }
 
 /// The access a device saved when it paired with `engine` at `address`.

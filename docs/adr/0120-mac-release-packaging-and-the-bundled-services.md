@@ -51,7 +51,10 @@ ad hoc goes to `dist/ad-hoc/` instead, so it can never be mistaken for the relea
 `SOYEHT_MAC_SIGNING_IDENTITY` (the name or SHA-1 of a "Developer ID Application" certificate),
 `SOYEHT_DEVELOPMENT_TEAM` (its ten-character team, the variable the Dev builds already use) and
 `SOYEHT_NOTARY_PROFILE` (a keychain profile made once with `xcrun notarytool store-credentials`,
-so no password, key or Apple ID is ever in an environment or a file). The script never searches
+so no password, key or Apple ID is ever in an environment or a file) or, instead, an App Store
+Connect API key given as `SOYEHT_NOTARY_KEY_FILE` (the path of the `.p8`, outside the repository),
+`SOYEHT_NOTARY_KEY_ID` and `SOYEHT_NOTARY_ISSUER` (amended 2026-11-04: the key is read from where it
+is kept, nothing is stored in the keychain, and the profile wins when both are set). The script never searches
 the keychain for an identity: choosing a certificate by looking is how a package gets signed by
 the wrong one. An identity without its team is an error, since the engine attests the app by
 team (below).
