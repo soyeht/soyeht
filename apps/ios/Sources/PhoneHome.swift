@@ -207,12 +207,12 @@ extension View {
 }
 
 /// A title does not wrap, so at an accessibility text size the sidebar's would end in an
-/// ellipsis: it goes inline there and drops the build's name.
+/// ellipsis: it goes inline there and shows the product name alone.
 private struct HomeTitleStyle: ViewModifier {
   @Environment(\.dynamicTypeSize) private var typeSize
 
   func body(content: Content) -> some View {
-    content.navigationTitle(typeSize.isAccessibilitySize ? "Soyeht" : "Soyeht · Dev")
+    content.navigationTitle(typeSize.isAccessibilitySize ? AppName.fallback : AppName.display())
       .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .inline : .automatic)
   }
 }
