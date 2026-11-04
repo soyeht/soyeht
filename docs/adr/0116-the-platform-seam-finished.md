@@ -27,14 +27,16 @@ Three rules were still written more than once above the seam:
 
 `soyeht_platform::fs::ensure_private_dir(path)` creates the directory with its parents when it is
 missing and makes it owner-only when it exists and others can reach it (`set_private_dir`: on
-Windows the protected ACL). On Unix the repair opens the directory with `O_NOFOLLOW |
-O_DIRECTORY` and sets the mode on that handle, so a link swapped in after the check is never
-followed and its target never changed; on Windows it goes by path, so the parent of the directory
-must be one only the owner can change. A link, or an entry that is not a directory, in its
-place is refused with `PrivateDirError::Unsafe`, never followed and never replaced. `check_private_dir(path)` is
-the same judgment without changing anything, for the readers that must not create. The error is
-typed so a caller can tell a link from an I/O failure; the engine maps it to `internal_error` and
-the service to `Error::Unsafe`.
+Windows the protected ACL). On Unix the repair opens the directory with `O_NOFOLLOW | O_DIRECTORY`
+and sets the mode on that handle, so a link swapped in after the check is never followed and its
+target never changed; on Windows it goes by path, so the parent of the directory must be one only
+the owner can change. A link, or an entry that is not a directory, in its place is refused with
+`PrivateDirError::Unsafe`, never followed and never replaced. On Unix a directory that belongs to
+another user is refused with `PrivateDirError::OtherOwner` ("the directory belongs to another
+user"), whatever its mode, and is not repaired; Windows does not check the owner's SID, only the
+access list. `check_private_dir(path)` is the same judgment without changing anything, for the
+readers that must not create. The error is typed so a caller can tell a link from an I/O failure;
+the engine maps it to `internal_error` and the service to `Error::Unsafe`.
 
 `soyeht_platform::fs::publish_new(target, bytes, mode)` is the one way to publish a file that
 must not replace anything. A regular file already at the target with the same bytes is accepted

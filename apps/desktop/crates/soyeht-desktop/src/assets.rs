@@ -118,6 +118,7 @@ const LOGOS: &[(&str, &str, &[u8])] = &[
     ("claude", "logos/claude.svg", logo!("claude")),
     ("codex", "logos/codex.svg", logo!("codex")),
     ("cursor", "logos/cursor.svg", logo!("cursor")),
+    ("opencode", "logos/opencode.svg", logo!("opencode")),
 ];
 
 /// The SVG that carries a logo's PNG.
@@ -192,6 +193,7 @@ mod tests {
     fn a_harness_id_names_its_provider_logo() {
         assert_eq!(logo_path("registry.claude-acp"), Some("logos/claude.svg"));
         assert_eq!(logo_path("codex"), Some("logos/codex.svg"));
+        assert_eq!(logo_path("registry.opencode"), Some("logos/opencode.svg"));
         assert_eq!(logo_path("custom-agent"), None);
     }
 

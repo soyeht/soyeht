@@ -7,8 +7,8 @@ import SwiftUI
 ///
 /// The row is `AgentComposerControls`, built from the pane's ACP options, so a harness shows
 /// only the menus it advertises. The chips sit in one horizontal scroll view: when they do not
-/// fit (an iPhone, a narrow pane) they scroll sideways, and "+", the ring, the mic and send stay
-/// put. The row never switches between two layouts while a menu is open.
+/// fit (an iPhone, a narrow pane) they scroll sideways, a fading edge shows which side has more,
+/// and "+", the ring, the mic and send stay put. The row never switches between two layouts while a menu is open.
 struct AgentComposer<HarnessControl: View>: View {
   @Bindable var client: EngineClient
   let paneId: String
@@ -25,6 +25,9 @@ struct AgentComposer<HarnessControl: View>: View {
   })
   @State private var caret = AgentComposerCaret()
   @State private var slash = SlashCompletionState()
+  /// The control row is as tall as its text: at an accessibility text size it grows instead of
+  /// clipping the chips.
+  @ScaledMetric(relativeTo: .body) private var controlHeight = AgentComposerMetrics.controlHeight
 
   private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
 
@@ -53,7 +56,7 @@ struct AgentComposer<HarnessControl: View>: View {
         controlRow(
           controls, plan: .plan(rowWidth: row.size.width, hasContext: controls.showsContext))
       }
-      .frame(height: AgentComposerMetrics.controlHeight)
+      .frame(height: controlHeight)
     }
     .padding(.horizontal, PaneInteriorMetrics.cardPadding)
     .padding(.vertical, PaneInteriorMetrics.cardVerticalPadding)
@@ -72,8 +75,9 @@ struct AgentComposer<HarnessControl: View>: View {
     HStack(spacing: AgentComposerMetrics.controlSpacing) {
       AgentAttachButton(attachments: attachments, style: style)
       ScrollView(.horizontal) { chips(controls).fixedSize() }.scrollIndicators(.hidden)
+        .fadesCutOffEdges()
         .frame(minWidth: AgentComposerMetrics.chipsMinimumWidth)
-        .frame(height: AgentComposerMetrics.controlHeight)
+        .frame(height: controlHeight)
       if plan.showsContext {
         AgentContextGauge(
           fraction: controls.contextFraction, percentage: controls.contextPercentage,
@@ -183,7 +187,7 @@ struct AgentComposer<HarnessControl: View>: View {
 
   @ViewBuilder func textField(text: Binding<String>) -> some View {
     if #available(macOS 15, iOS 18, *) {
-      TextField("", text: text, selection: binding, axis: .vertical)
+      TextField("", text: text, selection: binding(for: text), axis: .vertical)
     } else {
       TextField("", text: text, axis: .vertical)
     }
@@ -202,10 +206,22 @@ struct AgentComposer<HarnessControl: View>: View {
     selection = TextSelection(insertionPoint: text.index(text.startIndex, offsetBy: offset))
   }
 
+  /// The stored selection, or none once the text is empty. Sending clears the prompt while the
+  /// field still holds the caret of the sent text, and SwiftUI stops the app when it is handed
+  /// an index past the end of the new text.
   @available(macOS 15, iOS 18, *)
-  private var binding: Binding<TextSelection?> {
+  func selection(in text: String) -> TextSelection? {
+    guard !text.isEmpty else {
+      selection = nil
+      return nil
+    }
+    return selection as? TextSelection
+  }
+
+  @available(macOS 15, iOS 18, *)
+  private func binding(for text: Binding<String>) -> Binding<TextSelection?> {
     Binding(
-      get: { self.selection as? TextSelection },
+      get: { self.selection(in: text.wrappedValue) },
       set: { self.selection = $0 })
   }
 }

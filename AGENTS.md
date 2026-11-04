@@ -68,7 +68,8 @@ Each layer depends only on the layers listed above it.
    `contracts/design-tokens.json`, the same source the Swift side is generated from.
    Three seams belong to the window, each the same on every system: the log also goes to a
    rotating file (`soyeht_platform::log::to_file`, ADR 0101); a window that finds no engine
-   starts `soyeht-ptyd` and `soyeht-engine` detached (`soyeht-client`'s `autostart` through
+   asks a registered login service to start (`soyeht service start`, ADR 0136) or else starts
+   `soyeht-ptyd` and `soyeht-engine` detached (`soyeht-client`'s `autostart` through
    `soyeht_platform::process::detached`, ADR 0102); and `os_notify` raises the system
    notification when an agent needs the person (ADR 0103).
 

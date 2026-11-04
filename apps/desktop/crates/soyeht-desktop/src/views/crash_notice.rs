@@ -1,8 +1,8 @@
 //! The notice "Soyeht closed unexpectedly" (ADR 0127, contract 16): one quiet row under the top
 //! bar with "Copy report", which is Copy diagnostics (the report is part of it), and "Dismiss".
 
-use super::{preferences::pill_button, prelude::*};
-use crate::theme::{Palette, pane_layout, space, type_scale};
+use super::{preferences::pill_button, prelude::*, ui::notice_row};
+use crate::theme::{Palette, type_scale};
 use soyeht_protocol::client_policy::{
     CRASH_NOTICE_COPY, CRASH_NOTICE_DISMISS, CRASH_NOTICE_SUMMARY, CRASH_NOTICE_TITLE,
 };
@@ -26,13 +26,8 @@ impl Workbench {
         )
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.acknowledge_crash_notice(cx)));
         Some(
-            row()
+            notice_row()
                 .id("crash-notice")
-                .flex_none()
-                .items_center()
-                .gap(px(space::X10))
-                .px(px(pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING))
-                .py(px(space::X8))
                 .child(
                     // The title gives way to the buttons at a narrow window.
                     chrome_text(FontWeight::BOLD, type_scale::CONTROL)

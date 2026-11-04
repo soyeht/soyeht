@@ -4449,6 +4449,7 @@ public enum UsageProvider: String, Codable, Sendable, CaseIterable {
     case `claude` = "claude"
     case `codex` = "codex"
     case `cursor` = "cursor"
+    case `opencode` = "opencode"
 }
 
 public enum UsageState: String, Codable, Sendable, CaseIterable {
@@ -4470,6 +4471,7 @@ public enum UsageUnavailableReason: String, Codable, Sendable, CaseIterable {
     case `login_needed` = "login_needed"
     case `no_access` = "no_access"
     case `source_failed` = "source_failed"
+    case `plan_expired` = "plan_expired"
 }
 
 public enum UsageSource: String, Codable, Sendable, CaseIterable {
@@ -4483,6 +4485,9 @@ public enum UsageSource: String, Codable, Sendable, CaseIterable {
     case `cursor_current_period` = "cursor_current_period"
     case `cursor_app_login` = "cursor_app_login"
     case `cursor_browser_cookies` = "cursor_browser_cookies"
+    case `opencode_go_allowance` = "opencode_go_allowance"
+    case `opencode_zai_plan` = "opencode_zai_plan"
+    case `opencode_local_history` = "opencode_local_history"
 }
 
 public struct UsageWindow: Codable, Sendable {
@@ -4496,20 +4501,33 @@ public struct UsageWindow: Codable, Sendable {
     }
 }
 
+public struct UsageActivity: Codable, Sendable {
+    public var `label`: String
+    public var `tokens`: Int64
+    public var `costUsd`: Double?
+    public init(`label`: String, `tokens`: Int64, `costUsd`: Double? = nil) {
+        self.`label` = `label`
+        self.`tokens` = `tokens`
+        self.`costUsd` = `costUsd`
+    }
+}
+
 public struct UsageReading: Codable, Sendable {
     public var `provider`: UsageProvider
     public var `state`: UsageState
     public var `unavailableReason`: UsageUnavailableReason?
     public var `primary`: UsageWindow?
     public var `secondary`: UsageWindow?
+    public var `activity`: UsageActivity?
     public var `source`: UsageSource
     public var `fetchedAt`: String
-    public init(`provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+    public init(`provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `activity`: UsageActivity? = nil, `source`: UsageSource, `fetchedAt`: String) {
         self.`provider` = `provider`
         self.`state` = `state`
         self.`unavailableReason` = `unavailableReason`
         self.`primary` = `primary`
         self.`secondary` = `secondary`
+        self.`activity` = `activity`
         self.`source` = `source`
         self.`fetchedAt` = `fetchedAt`
     }
@@ -4554,9 +4572,10 @@ public struct UsageChangedEvent: Codable, Sendable {
     public var `unavailableReason`: UsageUnavailableReason?
     public var `primary`: UsageWindow?
     public var `secondary`: UsageWindow?
+    public var `activity`: UsageActivity?
     public var `source`: UsageSource
     public var `fetchedAt`: String
-    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `source`: UsageSource, `fetchedAt`: String) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `provider`: UsageProvider, `state`: UsageState, `unavailableReason`: UsageUnavailableReason? = nil, `primary`: UsageWindow? = nil, `secondary`: UsageWindow? = nil, `activity`: UsageActivity? = nil, `source`: UsageSource, `fetchedAt`: String) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`actor` = `actor`
@@ -4565,6 +4584,7 @@ public struct UsageChangedEvent: Codable, Sendable {
         self.`unavailableReason` = `unavailableReason`
         self.`primary` = `primary`
         self.`secondary` = `secondary`
+        self.`activity` = `activity`
         self.`source` = `source`
         self.`fetchedAt` = `fetchedAt`
     }

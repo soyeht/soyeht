@@ -11,7 +11,7 @@ use super::{
     naming, native_error,
     pending::{Completion, UserOperation},
     state::{HarnessSwitchCheckpoint, InternalContinuation, Phase, RetiredAgentProcess, State},
-    transcript,
+    transcript, user_cli,
 };
 use crate::supervisor_handle::Supervisor;
 use crate::{
@@ -236,7 +236,9 @@ impl Core {
         self.spawn_prompt_background(
             step_job(pane),
             move || {
-                let Response::Instance(instance) = supervisor.call(Request::Spawn(spawn))? else {
+                // The candidate is an adapter like a pane's: it drives the person's own CLI too.
+                let Response::Instance(instance) = user_cli::prepare(spawn).send(&supervisor)?
+                else {
                     return Err(errors::ptyd_unavailable("Invalid candidate spawn response"));
                 };
                 let (keys, written) =

@@ -31,6 +31,33 @@ impl Window {
     }
 }
 
+/// What a provider without a plan limit records on this device: tokens and, when the provider
+/// bills per token, the cost. It is a count, never a fraction of anything.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Activity {
+    pub label: String,
+    pub tokens: u64,
+    pub cost_usd: Option<f64>,
+}
+
+impl Activity {
+    pub(crate) fn checked(
+        label: impl Into<String>,
+        tokens: u64,
+        cost_usd: Option<f64>,
+    ) -> Option<Self> {
+        let label = label.into();
+        (!label.is_empty()
+            && label.len() <= MAX_TEXT
+            && cost_usd.is_none_or(|cost| cost.is_finite() && cost >= 0.0))
+        .then_some(Self {
+            label,
+            tokens,
+            cost_usd,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reading {
     pub provider: UsageProvider,
@@ -39,14 +66,17 @@ pub struct Reading {
     pub unavailable_reason: Option<UsageUnavailableReason>,
     pub primary: Option<Window>,
     pub secondary: Option<Window>,
+    pub activity: Option<Activity>,
     pub source: UsageSource,
     pub fetched_at: String,
     pub observed_at_sec: u64,
 }
 
 impl Reading {
-    pub fn has_windows(&self) -> bool {
-        self.primary.is_some()
+    /// Whether the reading carries something to show: a window or, for a provider with no plan
+    /// limit, the activity it recorded.
+    pub fn has_data(&self) -> bool {
+        self.primary.is_some() || self.activity.is_some()
     }
 
     /// A reading older than the freshness window shows as last known.
@@ -64,7 +94,7 @@ impl Reading {
     /// A reading restored after a restart is last known until it is read again.
     pub fn restored_from_store(&self) -> Self {
         let mut reading = self.clone();
-        if reading.has_windows() {
+        if reading.has_data() {
             reading.state = UsageState::Stale;
         }
         reading

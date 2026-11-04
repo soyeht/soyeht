@@ -1,5 +1,9 @@
 use std::{fmt, io};
 
+/// What the supervisor says when it refuses an environment variable of a spawn. An engine that
+/// sent a variable an older supervisor does not know reads it to start the process without it.
+pub const ENVIRONMENT_NOT_ALLOWED: &str = "environment variable is not allowed";
+
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
@@ -126,9 +130,7 @@ impl fmt::Display for Error {
             Self::RegistryInstanceMissing => formatter.write_str("registry instance disappeared"),
             Self::InvalidBase64Input => formatter.write_str("invalid base64 input"),
             Self::InvalidSpawnParameters => formatter.write_str("invalid spawn parameters"),
-            Self::EnvironmentVariableNotAllowed => {
-                formatter.write_str("environment variable is not allowed")
-            }
+            Self::EnvironmentVariableNotAllowed => formatter.write_str(ENVIRONMENT_NOT_ALLOWED),
             Self::InvalidTerminalSize => formatter.write_str("invalid terminal size"),
             Self::MissingGuardianResponse => formatter.write_str("missing pipe guardian response"),
             Self::GuardianFailed(message) | Self::GuardianRefused(message) => {

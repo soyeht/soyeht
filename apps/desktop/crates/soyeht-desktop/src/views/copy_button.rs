@@ -12,16 +12,19 @@ use gpui::{
     App, ClickEvent, ClipboardItem, Div, InteractiveElement, IntoElement, ParentElement,
     RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window,
 };
+use soyeht_protocol::client_policy::{COPIED_CODE, COPIED_FEEDBACK_MS};
 use std::time::Duration;
 
-/// How long the check shows after a copy.
-const COPIED_FOR: Duration = Duration::from_millis(1500);
+/// How long the check shows after a copy, the same on every client.
+const COPIED_FOR: Duration = Duration::from_millis(COPIED_FEEDBACK_MS);
 
 /// The button for `text`. `key` names it among the buttons of the window.
 #[derive(IntoElement)]
 struct CopyButton {
     key: SharedString,
     text: SharedString,
+    /// What the tooltip says before the copy.
+    tip: &'static str,
     palette: &'static Palette,
 }
 
@@ -30,9 +33,9 @@ impl RenderOnce for CopyButton {
         let copied = window.use_keyed_state(self.key.clone(), cx, |_, _| false);
         let done = *copied.read(cx);
         let (glyph, tip, color) = if done {
-            (Icon::Check, "Copied", self.palette.success())
+            (Icon::Check, COPIED_CODE, self.palette.success())
         } else {
-            (Icon::Copy, "Copy", self.palette.secondary)
+            (Icon::Copy, self.tip, self.palette.secondary)
         };
         let text = self.text;
         icon_button(id("copy", &self.key), glyph, color, tip, self.palette).on_click(
@@ -58,11 +61,12 @@ impl RenderOnce for CopyButton {
 }
 
 /// `block` with a Copy button of `text` in its top right corner, shown while the pointer is over
-/// the block. `inset` is how far the button sits from the corner.
+/// the block, with `tip` as its tooltip. `inset` is how far the button sits from the corner.
 pub(super) fn copyable(
     block: Div,
     key: &str,
     text: impl Into<SharedString>,
+    tip: &'static str,
     inset: f32,
     palette: &'static Palette,
 ) -> Div {
@@ -70,6 +74,7 @@ pub(super) fn copyable(
     let button = CopyButton {
         key: SharedString::from(key.to_owned()),
         text: text.into(),
+        tip,
         palette,
     };
     block.relative().group(group.clone()).child(

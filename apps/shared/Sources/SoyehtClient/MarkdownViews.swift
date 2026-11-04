@@ -142,12 +142,7 @@ private struct MarkdownBlockView: View, Equatable {
     switch block {
     case .paragraph(let runs): paragraph(runs)
     case .heading(_, let runs): line(runs, bold: true)
-    case .code(_, let text):
-      look.drawn(AttributedString(text))
-        .font(style.monoFont).foregroundStyle(look.ink).tint(style.accent)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(PaneInteriorMetrics.rowSpacing)
-        .paneInteriorFill(style.well, radius: PaneInteriorMetrics.wellRadius)
+    case .code(_, let text): MarkdownCodeBlockView(text: text, look: look)
     case .quote(let blocks):
       HStack(alignment: .top, spacing: PaneInteriorMetrics.rowSpacing) {
         Rectangle().fill(style.well).frame(width: PaneInteriorMetrics.tightSpacing)

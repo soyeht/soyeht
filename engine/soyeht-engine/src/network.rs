@@ -41,6 +41,13 @@ fn is_tailnet_interface(name: &str, address: IpAddr) -> bool {
     tunnel && !address.is_loopback() && permitted_address(address)
 }
 
+/// Listens on `address`; on Windows no other program can bind the same address and port.
+pub(crate) fn listen(address: SocketAddr) -> io::Result<TcpListener> {
+    let listener = soyeht_platform::net::listen(address)?;
+    listener.set_nonblocking(true)?;
+    TcpListener::from_std(listener)
+}
+
 pub fn tailnet_addresses() -> io::Result<Vec<IpAddr>> {
     Ok(system::interface_addresses()?
         .into_iter()
@@ -210,7 +217,7 @@ impl TailnetListeners {
             if self.active.contains_key(&ip) {
                 continue;
             }
-            let bound = match TcpListener::bind(SocketAddr::new(ip, self.port)).await {
+            let bound = match listen(SocketAddr::new(ip, self.port)) {
                 Ok(listener) => listener.local_addr().map(|address| (address, listener)),
                 Err(error) => Err(error),
             };

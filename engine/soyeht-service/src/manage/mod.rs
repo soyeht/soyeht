@@ -146,7 +146,7 @@ impl<'a, C: Commands> Manager<'a, C> {
                 System::Windows => self.task_install(component, &install)?,
             }
         }
-        Ok(())
+        self.start_implied_supervisor(components)
     }
 
     /// Whether a program of `component` runs now, found by the singleton lock it holds in the
@@ -241,10 +241,17 @@ impl<'a, C: Commands> Manager<'a, C> {
     }
 
     /// Starts each registered component, the supervisor first. A component that already runs is
-    /// left alone.
+    /// left alone: the service manager says so, or its program holds the singleton lock, as the
+    /// one the window started does (`install` asks the lock for the same reason). A second copy
+    /// would fail on the lock and be restarted every second.
+    ///
+    /// On Linux the engine's unit only starts `After=` the supervisor's and does not pull it in
+    /// (`Wants=` would start it beside one the window started, ADR 0136), so a start of the engine
+    /// alone starts the supervisor first when it is registered, idle and its lock is free.
     pub fn start(&self, components: &[Component]) -> Result<()> {
+        self.start_implied_supervisor(components)?;
         for component in ordered(components) {
-            if self.status(component)?.running {
+            if self.status(component)?.running || self.program_runs(component)? {
                 continue;
             }
             match self.layout.system {
@@ -254,6 +261,23 @@ impl<'a, C: Commands> Manager<'a, C> {
             }
         }
         Ok(())
+    }
+
+    /// The supervisor an engine-only start or install needs on Linux, where the engine's unit does
+    /// not pull it in: started when it is registered, not running and its lock is free. A
+    /// supervisor that is not registered is not an error: the engine reconnects when one appears.
+    fn start_implied_supervisor(&self, components: &[Component]) -> Result<()> {
+        if self.layout.system != System::Linux
+            || !components.contains(&Component::Engine)
+            || components.contains(&Component::Ptyd)
+        {
+            return Ok(());
+        }
+        let status = self.status(Component::Ptyd)?;
+        if !status.registered || status.running || self.program_runs(Component::Ptyd)? {
+            return Ok(());
+        }
+        self.systemd_start(Component::Ptyd)
     }
 
     /// Stops each component that runs, the engine first, and leaves it registered where the
@@ -371,6 +395,8 @@ pub(crate) fn path_text(path: &Path) -> Result<&str> {
 mod current_tests;
 #[cfg(test)]
 mod program_tests;
+#[cfg(test)]
+mod start_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

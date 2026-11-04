@@ -114,12 +114,15 @@
     private(set) var isPinching = false
     private var pinchBaseSize = TerminalFontSizePolicy.defaultSize
     private var wheel = TerminalWheelAccumulator()
+    /// Writing on the terminal with the Pencil types into it (Scribble).
+    private var handwriting: HandwritingArea?
 
     public override init(frame: CGRect, font: UIFont?) {
       super.init(frame: frame, font: font)
       installPinch()
       installScrollInput()
       installKeyRow()
+      handwriting = HandwritingArea.install(on: self)
     }
 
     public required init?(coder: NSCoder) {
@@ -127,6 +130,7 @@
       installPinch()
       installScrollInput()
       installKeyRow()
+      handwriting = HandwritingArea.install(on: self)
     }
 
     /// The row above the keyboard replaces SwiftTerm's, whose keys are 20 points wide.

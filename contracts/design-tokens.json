@@ -367,6 +367,7 @@
     "separatorWidth": 1,
     "sendButtonSize": 28,
     "touchTarget": 44,
+    "iconButtonSize": 28,
     "pillHorizontalPadding": 16,
     "pillVerticalPadding": 8,
     "bodyPointSize": 14,

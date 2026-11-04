@@ -22,15 +22,15 @@ accepted only text in replayed user messages.
 The pinned adapters (`acp_registry_snapshot.json`) accept this, read from their
 published `dist` code:
 
-| | claude-agent-acp 0.77.0 (`dist/acp-agent.js`) | codex-acp 1.11.0 (`dist/index.js`) |
+| | claude-agent-acp 0.100.0 (`dist/acp-agent.js`) | codex-acp 1.11.0 (`dist/index.js`) |
 |---|---|---|
-| `promptCapabilities` | `image`, `embeddedContext` (initialize, line 926) | `image`, `embeddedContext` (initialize, line 32318) |
-| `image` | base64 `data` becomes an Anthropic image; a `uri` is used only when it is `http` (`promptToClaude`, line 6981) | becomes a `data:` URL unless `uri` is http, https or data (`buildPromptItems`, line 29015) |
+| `promptCapabilities` | `image`, `embeddedContext` (initialize, line 1456) | `image`, `embeddedContext` (initialize, line 32318) |
+| `image` | base64 `data` becomes an Anthropic image; a `uri` is used only when it is `http` (`promptToClaude`, line 10665) | becomes a `data:` URL unless `uri` is http, https or data (`buildPromptItems`, line 29015) |
 | `resource` with `text` | a link plus `<context ref=…>` text | a link plus `<context ref=…>` text |
-| `resource` with `blob` | ignored | image types become an image; any other blob is pasted into the text as base64 |
+| `resource` with `blob` | an image or a PDF becomes a block, text is decoded, any other type is skipped | image types become an image; any other blob is pasted into the text as base64 |
 | `resource_link` | text `[@name](file://…)` | text `[@name](file://…)` |
 | `audio` | ignored | dropped |
-| replay of a user image | `user_message_chunk` with an `image` block (line 7346) | images from history as image blocks |
+| replay of a user image | `user_message_chunk` with an `image` block (line 10926) | images from history as image blocks |
 
 Both providers take PNG, JPEG, GIF and WebP images.
 
