@@ -22,12 +22,12 @@
 				<string>CA92.1</string>
 			</array>
 		</dict>
-		<!-- File timestamps: SwiftTerm's inline images (Kitty graphics) call stat() and fstat() to
-		     read a file's type and size, and mlx-swift's fmt calls fstat() on stdio files. The only
-		     files those calls can reach on iOS are inside the app's sandbox (SwiftTerm accepts
-		     only the temporary directory and shared memory), so C617.1 (files inside the app
-		     container) is the reason that matches. 3B52.1 (files the person granted access to) does
-		     not apply: the app has no document picker for these calls. -->
+		<!-- File timestamps: SwiftTerm's inline images (Kitty graphics) call stat() and fstat() on a
+		     path the terminal program sends, and mlx-swift's fmt calls fstat() on stdio files. The
+		     paths those calls can reach are limited by the app's sandbox, and they read only the
+		     file's type and size (st_mode, st_size), never a timestamp. C617.1 (files inside the
+		     app container) is the reason that matches; 3B52.1 (files the person granted access
+		     to) does not, because the app has no document picker for these calls. -->
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
 			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>

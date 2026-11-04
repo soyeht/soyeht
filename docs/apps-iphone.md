@@ -33,7 +33,8 @@ or iPad and run with the team's development account. The bundle is
 
 The project builds the Dev app by default. A store build changes two build settings and nothing
 else, as the Mac packager does (ADR 0120): `SOYEHT_APP_BUNDLE_ID=com.soyeht.next.ios` (the
-production identifier, ADR 0112) and `SOYEHT_PRODUCT_NAME=Soyeht`. The version is
+production identifier, ADR 0112) and `SOYEHT_PRODUCT_NAME="Soyeht Next"`, the production Mac app's name (`displayNames.macApp` in
+`contracts/profiles.json`). The version is
 `MARKETING_VERSION` and the build number is `CURRENT_PROJECT_VERSION`, both written by
 `uv run python scripts/release.py bump ...` from `contracts/release.json` (ADR 0115); never type
 them. Signing credentials come from the environment, never from the repository.
@@ -60,8 +61,9 @@ The app declares the answers the store asks for in the repository:
   CryptoKit only for signatures and hashes that authenticate the device and the Mac.
 - `apps/ios/Resources/PrivacyInfo.xcprivacy` says the app does not track and collects no data. It
   declares the required-reason APIs the built app imports: `UserDefaults` (`CA92.1`, the app's own
-  settings), file timestamps (`C617.1`: SwiftTerm's inline images call `stat()` and `fstat()`
-  on files in the app's own temporary directory, and mlx-swift's `fmt` calls `fstat()`) and
+  settings), file timestamps (`C617.1`: SwiftTerm's inline images call `stat()` and `fstat()` on a
+  path the terminal program sends, and mlx-swift's `fmt` calls `fstat()`; the app's sandbox limits
+  the paths they can reach, and they read only the type and size, never a timestamp) and
   system boot time (`35F9.1`, `DispatchTime` uptime for the request timer). The app talks to the
   person's own Mac. When new code or a new dependency uses another API of Apple's list (file
   timestamps, system boot time, disk space, active keyboards, user defaults), check `nm -u` of an
@@ -70,9 +72,10 @@ The app declares the answers the store asks for in the repository:
 `scripts/check_ios.sh` fails when the built app has no manifest, when the manifest lacks the
 file-timestamp category, or when Info.plist has no encryption answer.
 
-The store record is named “Soyeht Next” (the name “Soyeht” belongs to an older record); the
-name under the icon of a store build is `SOYEHT_PRODUCT_NAME`. Text that tells the person to open
-the app reads that name (`AppName`), so no string names a build.
+The store record and the name under the icon of a store build are both “Soyeht Next”, as the
+production Mac app is (the name “Soyeht” belongs to an older record). Text that tells the person
+to open the app reads the display name (`AppName`), so the iPhone names the Mac app correctly and
+no string names a build.
 
 On the new Mac app, choose “Pair iPhone or iPad”. On the
 device, choose “Scan Mac QR”. Compare fingerprints and allow access on the Mac.
