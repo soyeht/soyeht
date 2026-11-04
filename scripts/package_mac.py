@@ -14,6 +14,14 @@ the environment:
     SOYEHT_DEVELOPMENT_TEAM      its ten-character team identifier
     SOYEHT_NOTARY_PROFILE        a keychain profile made with `xcrun notarytool store-credentials`
 
+or, instead of the profile, an App Store Connect API key (nothing is stored in the keychain):
+
+    SOYEHT_NOTARY_KEY_FILE       the path of the `.p8` private key (kept outside the repository)
+    SOYEHT_NOTARY_KEY_ID         its key identifier
+    SOYEHT_NOTARY_ISSUER         the issuer identifier of the team's keys
+
+The profile wins when both are set.
+
 The steps: the engine programs in release for Apple silicon, the app in Release for the
 production profile, the programs inside the bundle (`Contents/MacOS`, beside the app's own
 executable), every nested program signed and then the app (hardened runtime, secure timestamp),
@@ -69,6 +77,10 @@ SYMBOLS_BUNDLE = "app.dSYM"  # the scratch name of the symbols before they are z
 IDENTITY_VARIABLE = "SOYEHT_MAC_SIGNING_IDENTITY"
 TEAM_VARIABLE = "SOYEHT_DEVELOPMENT_TEAM"
 NOTARY_VARIABLE = "SOYEHT_NOTARY_PROFILE"
+NOTARY_KEY_FILE_VARIABLE = "SOYEHT_NOTARY_KEY_FILE"
+NOTARY_KEY_ID_VARIABLE = "SOYEHT_NOTARY_KEY_ID"
+NOTARY_ISSUER_VARIABLE = "SOYEHT_NOTARY_ISSUER"
+NOTARY_KEY_VARIABLES = (NOTARY_KEY_FILE_VARIABLE, NOTARY_KEY_ID_VARIABLE, NOTARY_ISSUER_VARIABLE)
 
 # The programs inside the bundle: the cargo binary, the key of `binary_identifiers`.
 PROGRAMS = (
@@ -92,7 +104,8 @@ class Signing:
 
     identity: str | None = None
     team: str | None = None
-    notary_profile: str | None = None
+    # The credential arguments of every `xcrun notarytool` call: a keychain profile or an API key.
+    notary: tuple[str, ...] | None = None
 
     @property
     def ad_hoc(self):
@@ -100,7 +113,24 @@ class Signing:
 
     @property
     def notarizes(self):
-        return self.notary_profile is not None
+        return self.notary is not None
+
+
+def notary_credentials(environment):
+    """The `notarytool` credential arguments the environment holds, or None; a half-set API key is an error."""
+    profile = environment.get(NOTARY_VARIABLE) or None
+    if profile:
+        return ("--keychain-profile", profile)
+    values = [environment.get(name) or None for name in NOTARY_KEY_VARIABLES]
+    if not any(values):
+        return None
+    missing = [name for name, value in zip(NOTARY_KEY_VARIABLES, values) if not value]
+    if missing:
+        raise PackagingError(f"an App Store Connect API key needs {', '.join(missing)} in the environment too")
+    key_file, key_id, issuer = values
+    if not Path(key_file).is_file():
+        raise PackagingError(f"{NOTARY_KEY_FILE_VARIABLE} does not name a file")
+    return ("--key", key_file, "--key-id", key_id, "--issuer", issuer)
 
 
 def resolve_signing(environment, ad_hoc=False, strict=False):
@@ -116,13 +146,11 @@ def resolve_signing(environment, ad_hoc=False, strict=False):
         return Signing()
     identity = environment.get(IDENTITY_VARIABLE) or None
     team = environment.get(TEAM_VARIABLE) or None
-    notary = environment.get(NOTARY_VARIABLE) or None
+    notary = notary_credentials(environment)
     if strict:
-        missing = [
-            name
-            for name, value in ((IDENTITY_VARIABLE, identity), (TEAM_VARIABLE, team), (NOTARY_VARIABLE, notary))
-            if not value
-        ]
+        missing = [name for name, value in ((IDENTITY_VARIABLE, identity), (TEAM_VARIABLE, team)) if not value]
+        if not notary:
+            missing.append(f"{NOTARY_VARIABLE} (or {', '.join(NOTARY_KEY_VARIABLES)})")
         if missing:
             raise PackagingError(f"--release needs {', '.join(missing)} in the environment")
     if identity is None:
@@ -145,7 +173,7 @@ def banner(signing):
         lines = [f"Signing with the Developer ID identity of {IDENTITY_VARIABLE}, team {signing.team}."]
         if not signing.notarizes:
             lines += [
-                f"{NOTARY_VARIABLE} is not set: the build is NOT NOTARIZED and Gatekeeper will "
+                f"No notary credentials are set ({NOTARY_VARIABLE} or an API key): the build is NOT NOTARIZED and Gatekeeper will "
                 "warn on every other Mac.",
             ]
         return lines
@@ -333,14 +361,14 @@ def sign_file(path, signing):
 def notarize(path, signing):
     """Submit `path`, wait for the verdict, print the log when it is not `Accepted`."""
     submitted = run(
-        ["xcrun", "notarytool", "submit", path, "--keychain-profile", signing.notary_profile,
+        ["xcrun", "notarytool", "submit", path, *signing.notary,
          "--wait", "--timeout", NOTARY_TIMEOUT, "--output-format", "json"],
         check=False, timeout=3700,
     )
     verdict = parse_verdict(submitted.stdout)
     if verdict.get("status") != "Accepted":
         if verdict.get("id"):
-            log = run(["xcrun", "notarytool", "log", verdict["id"], "--keychain-profile", signing.notary_profile], check=False)
+            log = run(["xcrun", "notarytool", "log", verdict["id"], *signing.notary], check=False)
             print(log.stdout or log.stderr)
         raise PackagingError(f"Notarization of {path.name} was not accepted: {verdict.get('status', 'no answer')}")
 
@@ -507,7 +535,7 @@ def verify_image(image, signing, made):
 def parser():
     argument = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     argument.add_argument("--ad-hoc", action="store_true", help="sign ad hoc and skip notarization")
-    argument.add_argument("--release", action="store_true", help="require the identity, the team and the notary profile")
+    argument.add_argument("--release", action="store_true", help="require the identity, the team and the notary credentials")
     argument.add_argument("--reuse-build", action="store_true", help="reuse the programs and the app of an earlier run")
     argument.add_argument("--dist", type=Path, default=DIST, help="the output folder (default: dist/)")
     return argument

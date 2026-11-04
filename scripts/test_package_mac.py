@@ -144,6 +144,73 @@ class SigningChoiceTests(unittest.TestCase):
         self.assertIn("NOT NOTARIZED", text)
 
 
+class NotaryCredentialTests(unittest.TestCase):
+    def api_key(self, **changes):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        key = Path(folder.name) / "AuthKey_EXAMPLE.p8"
+        key.write_text("not a real key")
+        environment = {key_name: value for key_name, value in FULL.items() if key_name != package_mac.NOTARY_VARIABLE}
+        environment.update({
+            package_mac.NOTARY_KEY_FILE_VARIABLE: str(key),
+            package_mac.NOTARY_KEY_ID_VARIABLE: "EXAMPLEKEY1",
+            package_mac.NOTARY_ISSUER_VARIABLE: "00000000-0000-0000-0000-000000000000",
+        })
+        environment.update(changes)
+        return environment
+
+    def test_an_api_key_from_the_environment_notarizes_without_a_keychain_profile(self):
+        environment = self.api_key()
+        signing = package_mac.resolve_signing(environment, strict=True)
+        self.assertTrue(signing.notarizes)
+        self.assertEqual(
+            signing.notary,
+            ("--key", environment[package_mac.NOTARY_KEY_FILE_VARIABLE], "--key-id", "EXAMPLEKEY1",
+             "--issuer", "00000000-0000-0000-0000-000000000000"),
+        )
+
+    def test_the_profile_wins_when_both_are_set(self):
+        signing = package_mac.resolve_signing({**self.api_key(), package_mac.NOTARY_VARIABLE: "example-profile"})
+        self.assertEqual(signing.notary, ("--keychain-profile", "example-profile"))
+
+    def test_a_half_set_api_key_names_what_is_missing(self):
+        environment = self.api_key()
+        del environment[package_mac.NOTARY_ISSUER_VARIABLE]
+        with self.assertRaisesRegex(PackagingError, package_mac.NOTARY_ISSUER_VARIABLE):
+            package_mac.resolve_signing(environment)
+        with self.assertRaisesRegex(PackagingError, "does not name a file"):
+            package_mac.resolve_signing(self.api_key(**{package_mac.NOTARY_KEY_FILE_VARIABLE: "/nonexistent/key.p8"}))
+
+    def test_a_release_without_any_notary_credential_is_refused(self):
+        environment = {key: value for key, value in FULL.items() if key != package_mac.NOTARY_VARIABLE}
+        with self.assertRaisesRegex(PackagingError, package_mac.NOTARY_KEY_FILE_VARIABLE):
+            package_mac.resolve_signing(environment, strict=True)
+
+    def test_notarytool_gets_the_credentials_of_the_signing(self):
+        signing = package_mac.resolve_signing(self.api_key())
+        calls = []
+
+        def fake_run(command, **_):
+            calls.append(command)
+            return mock_result('{"status": "Accepted", "id": "x"}')
+
+        with patch.object(package_mac, "run", fake_run):
+            package_mac.notarize(Path("a.dmg"), signing)
+        self.assertEqual(calls[0][:3], ["xcrun", "notarytool", "submit"])
+        self.assertIn("--key-id", calls[0])
+        self.assertNotIn("--keychain-profile", calls[0])
+
+
+def mock_result(stdout):
+    class Result:
+        returncode = 0
+        stderr = ""
+
+    result = Result()
+    result.stdout = stdout
+    return result
+
+
 class NamesAndOutputTests(unittest.TestCase):
     def test_the_image_is_named_from_the_version_the_way_every_platform_is(self):
         self.assertEqual(package_mac.artifact_path(".", "1.2.3", package_mac.OPERATING_SYSTEM, package_mac.ARTIFACT_ARCHITECTURE, "dmg").name, "soyeht-1.2.3-macos-aarch64.dmg")

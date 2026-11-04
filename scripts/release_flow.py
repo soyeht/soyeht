@@ -388,9 +388,9 @@ def collect(options, environment=os.environ, fetch=fetch_text, tool=release_chec
     found += signing_problems(folder, names, options, tool)
     found += changelog_problems(version)
     asset = release_manifest.POLICY["manifest"]["asset"]
-    signed = bool(environment.get(release_manifest.KEY_ENVIRONMENT))
+    signed = release_manifest.has_signing_key(environment)
     if not signed and not options.allow_unsigned:
-        found.append(f"{release_manifest.KEY_ENVIRONMENT} is not set: the update manifest cannot be signed")
+        found.append(f"{release_manifest.KEY_ENVIRONMENT} or {release_manifest.KEY_FILE_ENVIRONMENT} is not set: the update manifest cannot be signed")
     if found:
         raise Refused("the release is not ready:\n  " + "\n  ".join(found))
     (folder / release_checks.NOTES).write_text(changelog.notes_of(changelog.CHANGELOG.read_text(), version))
@@ -468,7 +468,7 @@ def publish_problems(options, files, probe=probe, fetch=fetch_text, tool=release
     if asset in names:
         found += manifest_problems(folder, version, fetch, options)
     elif not options.allow_unsigned:
-        found.append(f"{asset} is missing: set {release_manifest.KEY_ENVIRONMENT} and run collect")
+        found.append(f"{asset} is missing: set {release_manifest.KEY_ENVIRONMENT} or {release_manifest.KEY_FILE_ENVIRONMENT} and run collect")
     found += existing_release_problems(release_manifest.release_tag(version), probe)
     return found
 
