@@ -49,6 +49,15 @@ scroll indicator over the rings.
 
 An activity-only ring never shows a percentage: there is no plan limit to be a fraction of.
 
+**A pane's ring.** The header of an agent pane on the Android app (and the composer's harness mark on
+the Mac and the iPhone) names the provider whose meter reads the pane's harness. The rule is data:
+`usageHarnesses` of `x-clientPolicy` maps a provider to the text its harness id holds, ignoring case
+(`UsageProvider::for_harness`, `UsageProvider(harnessId:)`, the cases `harnessProviders` of
+`contracts/vectors/usage.json`). The app may also give a harness a provider while it runs
+(`soyeht_client::usage::HarnessProviders`), which wins over the rule; the OpenCode meter follows the provider
+OpenCode is set to (ADR 0133), and this is where a client that learns it says so. A harness no provider reads
+has no ring.
+
 A last-known ring never turns gray: it keeps the color band of its value so a
 glance still tells green from red, and the muting tells it is old.
 

@@ -19,6 +19,8 @@ TS_OUTPUT = "contracts/typescript/src/clientPolicy.ts"
 
 # The section's entries that are rules rather than numbers.
 PROVIDER_NAMES = "usageProviderNames"
+# Which usage provider's meter reads a harness: the provider, and the text its harness id holds.
+PROVIDER_HARNESSES = "usageHarnesses"
 CONFIG_ROLES = "configRoles"
 # The roles a configuration selector can have, and the Rust method, Rust category constant and
 # Swift property of each.
@@ -103,6 +105,7 @@ def validate(policy, schema):
     expected = {
         *SCALAR_GROUPS,
         PROVIDER_NAMES,
+        PROVIDER_HARNESSES,
         CONFIG_ROLES,
         INLINE_IMAGE_TYPES,
         EDITOR_PAIRS,
@@ -167,6 +170,11 @@ def validate(policy, schema):
     providers = schema["$defs"]["UsageProvider"]["enum"]
     if list(policy[PROVIDER_NAMES]) != providers:
         raise ValueError("usageProviderNames must name every UsageProvider, in order")
+    for provider, fragment in policy[PROVIDER_HARNESSES].items():
+        if provider not in providers:
+            raise ValueError(f"usageHarnesses.{provider} is not a UsageProvider")
+        if not isinstance(fragment, str) or fragment != fragment.lower() or not fragment.strip():
+            raise ValueError(f"usageHarnesses.{provider} must be lower-case, non-empty text")
     if set(policy[CONFIG_ROLES]) != set(ROLES):
         raise ValueError(f"configRoles must be exactly {sorted(ROLES)}")
     for role, rule in policy[CONFIG_ROLES].items():
@@ -224,6 +232,10 @@ def render_rust(policy, header):
     )
     lines += render_pane_states_rust(policy[PANE_STATES])
     lines += render_editor_rust(policy)
+    harness_rules_rust = "\n".join(
+        f"            ({json.dumps(fragment)}, Self::{variant(provider)}),"
+        for provider, fragment in policy[PROVIDER_HARNESSES].items()
+    )
     lines += [
         "",
         "impl UsageProvider {",
@@ -232,6 +244,18 @@ def render_rust(policy, header):
         "        match self {",
         arms,
         "        }",
+        "    }",
+        "",
+        "    /// The provider whose meter reads a harness: the first rule of `usageHarnesses` whose text the",
+        "    /// harness id holds, whatever the case.",
+        "    pub fn for_harness(harness_id: &str) -> Option<Self> {",
+        "        let id = harness_id.to_lowercase();",
+        "        [",
+        harness_rules_rust,
+        "        ]",
+        "        .into_iter()",
+        "        .find(|(fragment, _)| id.contains(fragment))",
+        "        .map(|(_, provider)| provider)",
         "    }",
         "}",
         "",
@@ -432,6 +456,10 @@ def render_swift(policy, header):
         f"            case .{provider}: {json.dumps(name)}"
         for provider, name in policy[PROVIDER_NAMES].items()
     )
+    harness_rules_swift = "\n".join(
+        f"            ({json.dumps(fragment)}, .{provider}),"
+        for provider, fragment in policy[PROVIDER_HARNESSES].items()
+    )
     roles = "\n\n".join(
         f"    /// Whether this option is the agent's {role} selector.\n"
         f"    public var {ROLES[role][2]}: Bool {{ {role_rule_swift(policy[CONFIG_ROLES][role])} }}"
@@ -456,6 +484,16 @@ def render_swift(policy, header):
         "        switch self {\n"
         f"{arms}\n"
         "        }\n"
+        "    }\n\n"
+        "    /// The provider whose meter reads a harness: the first rule of `usageHarnesses` whose text the\n"
+        "    /// harness id holds, whatever the case.\n"
+        "    public init?(harnessId: String) {\n"
+        "        let id = harnessId.lowercased()\n"
+        "        let rules: [(String, UsageProvider)] = [\n"
+        f"{harness_rules_swift}\n"
+        "        ]\n"
+        "        guard let rule = rules.first(where: { id.contains($0.0) }) else { return nil }\n"
+        "        self = rule.1\n"
         "    }\n"
         "}\n\n"
         "extension ConfigOption {\n"

@@ -24,6 +24,7 @@ import uniffi.soyeht_android.PaneKind
 import uniffi.soyeht_android.PaneRow
 import uniffi.soyeht_android.TerminalFrame
 import uniffi.soyeht_android.TerminalKey
+import uniffi.soyeht_android.UsageGauge
 import uniffi.soyeht_android.deviceName
 
 /** What the core says went wrong, in words for the person. */
@@ -67,6 +68,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var terminal: TerminalFrame? by mutableStateOf(null)
         private set
     var conversation: Conversation? by mutableStateOf(null)
+        private set
+
+    /** The usage ring of the open agent pane's header, when a meter reads its harness. */
+    var usage: UsageGauge? by mutableStateOf(null)
         private set
 
     /** "Forget this computer" waits for the person to say yes: it cannot be undone from the phone. */
@@ -125,7 +130,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         }
         when (pane.kind) {
             PaneKind.TERMINAL -> terminal = core.terminal(pane.paneId)
-            PaneKind.AGENT -> conversation = core.conversation(pane.paneId)
+            PaneKind.AGENT -> {
+                conversation = core.conversation(pane.paneId)
+                usage = core.usageGauge(pane.paneId)
+            }
             else -> Unit
         }
     }
@@ -193,7 +201,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         openPane = pane
         terminal = null
         conversation = null
+        usage = null
         core.focus(pane.paneId)
+        // The ring reads the meters of the providers, which the engine keeps: ask for them as the pane opens.
+        if (pane.kind == PaneKind.AGENT) core.loadUsage()
         refresh()
     }
 
@@ -201,6 +212,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         openPane = null
         terminal = null
         conversation = null
+        usage = null
     }
 
     fun type(text: String) = openPane?.let { core.typeText(it.paneId, text) }

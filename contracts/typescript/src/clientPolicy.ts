@@ -155,6 +155,12 @@ export const clientPolicy = {
     "cursor": "Cursor",
     "opencode": "OpenCode"
   },
+  "usageHarnesses": {
+    "claude": "claude",
+    "codex": "codex",
+    "cursor": "cursor",
+    "opencode": "opencode"
+  },
   "configRoles": {
     "model": {
       "category": "model"

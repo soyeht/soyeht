@@ -189,6 +189,20 @@ extension UsageProvider {
             case .opencode: "OpenCode"
         }
     }
+
+    /// The provider whose meter reads a harness: the first rule of `usageHarnesses` whose text the
+    /// harness id holds, whatever the case.
+    public init?(harnessId: String) {
+        let id = harnessId.lowercased()
+        let rules: [(String, UsageProvider)] = [
+            ("claude", .claude),
+            ("codex", .codex),
+            ("cursor", .cursor),
+            ("opencode", .opencode),
+        ]
+        guard let rule = rules.first(where: { id.contains($0.0) }) else { return nil }
+        self = rule.1
+    }
 }
 
 extension ConfigOption {

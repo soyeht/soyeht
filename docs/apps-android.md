@@ -19,7 +19,8 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   than the phone scrolls sideways. Typing goes through the soft keyboard; a row has Esc, Tab, Ctrl,
   the arrows, Backspace and Enter. A hardware keyboard sends Enter, Backspace, Tab, Esc and the arrows.
 - **Agent pane.** The conversation, the prompt, and the question the agent waits on (a permission), with
-  the options the agent gave.
+  the options the agent gave. The header carries the usage ring of the provider that reads the pane's harness
+  (ADR 0141).
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.

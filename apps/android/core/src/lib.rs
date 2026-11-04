@@ -9,8 +9,10 @@ mod core;
 mod error;
 mod overview;
 mod terminal;
+mod usage;
 
 pub use core::{Core, Listener, device_name};
 pub use error::CoreError;
+pub use usage::{GaugeBand, UsageGauge};
 
 uniffi::setup_scaffolding!();

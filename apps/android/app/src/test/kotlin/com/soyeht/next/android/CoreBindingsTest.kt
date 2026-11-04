@@ -31,6 +31,7 @@ class CoreBindingsTest {
         assertTrue(core.overview().workspaces.isEmpty())
         assertNull(core.terminal("pane"))
         assertNull(core.conversation("pane"))
+        assertNull(core.usageGauge("pane"))
     }
 
     @Test
@@ -44,5 +45,14 @@ class CoreBindingsTest {
     fun accessThatIsNotAccessAsksToPairAgain() {
         val failure = runCatching { core().connect("not json") }.exceptionOrNull()
         assertTrue(failure is CoreException.PairAgain)
+    }
+
+    @Test
+    fun aProviderChosenForAHarnessIsAcceptedByNameAndAnUnknownNameIsIgnored() {
+        val core = core()
+        core.loadUsage()
+        core.chooseUsageProvider("registry.opencode", "codex")
+        core.chooseUsageProvider("registry.opencode", "nobody")
+        assertNull(core.usageGauge("pane"))
     }
 }

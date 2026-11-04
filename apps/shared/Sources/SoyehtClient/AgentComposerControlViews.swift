@@ -122,19 +122,6 @@ public struct AgentHarnessChipLabel: View {
   }
 }
 
-extension UsageProvider {
-  /// The provider whose logo marks a harness: "registry.claude-acp" → Claude.
-  init?(harnessId: String) {
-    let id = harnessId.lowercased()
-    guard
-      let provider = [UsageProvider.claude, .codex, .cursor].first(where: {
-        id.contains($0.rawValue)
-      })
-    else { return nil }
-    self = provider
-  }
-}
-
 /// A model or effort menu, listing the harness's own choices.
 struct AgentConfigMenuChip: View {
   let menu: AgentConfigMenu
