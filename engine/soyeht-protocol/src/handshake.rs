@@ -44,6 +44,15 @@ pub fn expect_welcome(welcome: &Welcome, bound: bool) -> Result<()> {
     }
 }
 
+/// A paired device is a device, not the computer's own human (ADR 0013).
+pub fn expect_device_welcome(welcome: &Welcome) -> Result<()> {
+    if welcome.protocol_version == PROTOCOL_VERSION && welcome.role == Role::HumanDevice {
+        Ok(())
+    } else {
+        Err(Error::UnexpectedHandshake)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +95,12 @@ mod tests {
         assert!(expect_welcome(&welcome("agent", 1), false).is_err());
         assert!(expect_welcome(&welcome("human_local", 1), true).is_err());
         assert!(expect_welcome(&welcome("human_local", PROTOCOL_VERSION + 1), false).is_err());
+    }
+
+    #[test]
+    fn a_device_is_welcomed_as_a_device_only() {
+        assert!(expect_device_welcome(&welcome("human_device", 1)).is_ok());
+        assert!(expect_device_welcome(&welcome("human_local", 1)).is_err());
+        assert!(expect_device_welcome(&welcome("human_device", PROTOCOL_VERSION + 1)).is_err());
     }
 }
