@@ -55,7 +55,7 @@ fn panel() -> Vec<String> {
 }
 
 fn refresh(host: &Arc<FakeHost>, trigger: Trigger, now: u64) -> RefreshOutcome {
-    support::read_once(&host, UsageProvider::Claude, trigger, now, "fetched")
+    support::read_once(host, UsageProvider::Claude, trigger, now, "fetched")
 }
 
 /// Another refresh of Claude by a planner that has read before, with no hint from the engine.
