@@ -10,7 +10,9 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
 - **Pairs by link or by camera.** On the computer choose the pairing window; scan its QR code (the
   camera permission is asked for when you tap Scan, and ZXing reads the code on the phone, ADR 0138),
   paste the link (`soyeht-next://pair?...`) into the app, or open it on the phone. All three go through
-  the core's one parser; a code that is not a pairing link is refused in words and the camera keeps looking. A link that reaches the app from
+  the core's one parser; a code that is not a pairing link is refused in words and the camera keeps looking. A phone that is
+  already paired scans from "Pair another computer" on the list of panes; the new computer replaces the old
+  one only after the person confirms, as for a tapped link. A link that reaches the app from
   outside asks first, naming the address it would connect to (ADR 0129). The app shows the fingerprint
   of the phone's key to compare with the one on the computer, and the person allows access there. The
   phone checks that the engine holds the key the link named before it proves the code (ADR 0132). Both

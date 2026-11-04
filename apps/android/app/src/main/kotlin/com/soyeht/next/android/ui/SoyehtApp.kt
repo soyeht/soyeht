@@ -19,7 +19,7 @@ fun SoyehtApp(model: AppModel) {
         BackHandler(enabled = model.scanning) { model.stopScanning() }
         Column(Modifier.fillMaxSize()) {
             when {
-                !model.paired && model.scanning -> ScanScreen(model)
+                model.scanning -> ScanScreen(model)
                 !model.paired -> PairScreen(model)
                 pane == null -> HomeScreen(model)
                 pane.kind == PaneKind.TERMINAL -> TerminalScreen(model, pane)

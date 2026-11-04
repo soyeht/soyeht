@@ -1,6 +1,10 @@
 package com.soyeht.next.android.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.util.Size
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -14,7 +18,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -51,9 +54,10 @@ private fun CameraPreview(onText: (String) -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val latest by rememberUpdatedState(onText)
-    val analysis = remember { Executors.newSingleThreadExecutor() }
     val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
     DisposableEffect(lifecycle) {
+        // Made here and ended with the effect: a restart of the effect starts a fresh one, never a dead one.
+        val analysis = Executors.newSingleThreadExecutor()
         val decoder = QrDecoder()
         val repeats = RepeatFilter()
         val providerFuture = ProcessCameraProvider.getInstance(context)
@@ -96,12 +100,29 @@ private fun read(decoder: QrDecoder, frame: ImageProxy): String? = frame.use {
     decoder.decode(bytes, it.width, it.height, plane.rowStride)
 }
 
+/**
+ * What the Scan button does: starts the camera when it is allowed, else asks for it, now and not before. The
+ * pair screen and the list of panes (to pair another computer) share it.
+ */
+@Composable
+fun rememberStartScan(model: AppModel): () -> Unit {
+    val context = LocalContext.current
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) model.startScanning() else model.cameraRefused()
+    }
+    return {
+        val allowed = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        if (allowed) model.startScanning() else permission.launch(Manifest.permission.CAMERA)
+    }
+}
+
 /** What the pair screen says when the camera cannot be used, and where else to pair. */
 @Composable
 fun CameraDenied() {
     val roles = LocalRoles.current
     Text(
-        "The camera is off for Soyeht. Allow it in the phone’s settings to scan, or paste the link above.",
+        "The camera is off for Soyeht. Allow it in the phone’s settings to scan, or open the pairing link on this phone.",
         color = roles.secondary,
         fontSize = TypeScale.caption.sp,
         modifier = Modifier
