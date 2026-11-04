@@ -16,7 +16,7 @@
 //! an adapter process goes through [`prepare`] and [`Given::send`]: a pane's process
 //! (`Launch::send`) and the candidate of a harness switch.
 
-use super::{environment, registry};
+use super::{environment, pinned_adapter, registry};
 use crate::{
     errors::Error,
     streak::{self, Streak},
@@ -289,7 +289,7 @@ fn settle(cli: &UserCli) -> Choice {
 /// snapshot, is an argument followed by `@version`.
 fn cli_of(argv: &[String]) -> Option<&'static UserCli> {
     CLIS.iter().find(|cli| {
-        registry::pinned_adapter(cli.harness).is_some_and(|adapter| {
+        pinned_adapter::pinned_adapter(cli.harness).is_some_and(|adapter| {
             argv.iter().any(|argument| {
                 argument
                     .strip_prefix(adapter.package.as_str())
@@ -370,7 +370,9 @@ impl Given {
     }
 }
 
-/// Asks for the version in the background, so the first agent pane does not wait for it.
+/// Asks for the version in the background, so the first agent pane does not wait for it. The
+/// running engine calls it at start, after it has begun to ask for the launch `PATH`; a unit test
+/// that opens a Core never does, so it never runs the machine's programs.
 pub(crate) fn warm() {
     let started = thread::Builder::new().name("user-cli".into()).spawn(|| {
         for cli in CLIS {
@@ -457,7 +459,7 @@ mod tests {
     #[test]
     fn the_minimum_was_decided_against_the_adapter_the_snapshot_pins() {
         for cli in CLIS {
-            let pinned = registry::pinned_adapter(cli.harness)
+            let pinned = pinned_adapter::pinned_adapter(cli.harness)
                 .unwrap_or_else(|| panic!("{} pins no adapter package", cli.harness));
             assert_eq!(
                 pinned.version, cli.decided_for,
@@ -575,7 +577,7 @@ mod tests {
     }
 
     fn pinned_claude_package() -> String {
-        let pinned = registry::pinned_adapter(CLAUDE.harness).unwrap();
+        let pinned = pinned_adapter::pinned_adapter(CLAUDE.harness).unwrap();
         format!("{}@{}", pinned.package, pinned.version)
     }
 
@@ -587,7 +589,9 @@ mod tests {
             "{package}"
         );
         assert!(cli_of(&adapter(&package, ProcessKind::PipesAcp).argv).is_some());
-        let name = &registry::pinned_adapter(CLAUDE.harness).unwrap().package;
+        let name = &pinned_adapter::pinned_adapter(CLAUDE.harness)
+            .unwrap()
+            .package;
         for other in [
             "@agentclientprotocol/codex-acp@1.11.0".to_owned(),
             format!("{name}-extra@1.0.0"),

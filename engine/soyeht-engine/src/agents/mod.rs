@@ -25,6 +25,7 @@ pub mod opening;
 pub mod orphans;
 pub mod peer;
 pub mod pending;
+mod pinned_adapter;
 mod prompt_errors;
 pub mod purpose;
 pub mod questions;
