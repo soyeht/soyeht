@@ -39,8 +39,17 @@ fn wait(session: &str, id: &str, update: &str, status: &str) -> Value {
         "_meta":{"codex":{"collaboration":collaboration}}})
 }
 
-/// Claude Code: children are tagged with the spawning Agent call, whose
-/// completion reports the subagent ID and the model it resolved.
+/// The configuration a Claude Code subagent session reports: its model, and nothing to choose.
+fn child_model() -> Value {
+    json!({"sessionUpdate":"config_option_update","configOptions":[
+        {"id":"model","name":"Model","category":"model","type":"select",
+         "currentValue":"fake-claude-model",
+         "options":[{"value":"fake-claude-model","name":"Fake Claude"}]}]})
+}
+
+/// Claude Code: children are tagged with the spawning Agent call, whose completion reports the
+/// subagent ID. The child reports the model it runs as the `model` option of its own session
+/// (claude-agent-acp 0.100); older adapters put it on that call as `resolvedModel`.
 fn claude(session: &str, turn: usize) -> Script {
     let child = format!("{session}-claude-{turn}");
     let agent_call = format!("toolu-agent-{turn}");
@@ -55,6 +64,7 @@ fn claude(session: &str, turn: usize) -> Script {
                 "Search the repository for the config file",
             ),
         ),
+        (child.clone(), child_model()),
         (
             child.clone(),
             tool("toolu-child-ls", "ls config", "pending"),
@@ -71,7 +81,7 @@ fn claude(session: &str, turn: usize) -> Script {
                 &agent_call,
                 "completed",
                 json!({"claudeCode":{"toolName":"Agent","toolResponse":{"status":"completed",
-                    "agentId":child,"resolvedModel":"fake-claude-model"}}}),
+                    "agentId":child}}}),
             ),
         ),
         (session.into(), message("The config is in config/app.toml.")),
