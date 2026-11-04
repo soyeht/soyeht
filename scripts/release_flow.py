@@ -165,9 +165,14 @@ def linux_script(version, sha):
     return "\n".join(
         [
             "set -euo pipefail",
+            # A login shell of the host has no git, and the packager's userland would default to
+            # a folder outside CI_FOLDER; the release touches nothing but CI_FOLDER.
+            f'export PATH="$HOME/{CI_FOLDER}/git/bin:$PATH"',
+            f'export SOYEHT_PACKAGE_BASE="$HOME/{CI_FOLDER}/package-base"',
             f'tree="$HOME/{TREES}/{sha}"',
             f'cd "$HOME/{CLONE}"',
-            "git fetch origin",
+            # From the mirror the commit was pushed to, whatever the clone's own origin is.
+            f'git fetch "$HOME/{MIRROR}" refs/heads/release-{version}',
             f'if [ ! -d "$tree" ]; then git worktree add --detach "$tree" {sha}; fi',
             'cd "$tree"',
             f'test "$(git rev-parse HEAD)" = "{sha}"',

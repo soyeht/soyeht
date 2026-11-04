@@ -424,6 +424,9 @@ class BuildTests(FlowCase):
         script = recorder.inputs[1]
         self.assertIn(f'"$HOME/soyeht-ci/release/{SHA}"', script)
         self.assertIn("package_linux_rootless.sh --format all", script)
+        self.assertIn(f'git fetch "$HOME/soyeht-ci/mirror.git" refs/heads/release-{VERSION}', script)
+        self.assertIn('export PATH="$HOME/soyeht-ci/git/bin:$PATH"', script)
+        self.assertIn('export SOYEHT_PACKAGE_BASE="$HOME/soyeht-ci/package-base"', script)
         for line in script.splitlines():
             for place in ("cd ", "worktree add"):
                 if place in line:

@@ -22,7 +22,7 @@ Before the first release, once:
 | A code-signing certificate for Windows | signing the installers and their programs | on the Windows host: `SOYEHT_WINDOWS_SIGN_THUMBPRINT` (a certificate in the store), or `SOYEHT_WINDOWS_SIGN_AZURE_DLIB` with `SOYEHT_WINDOWS_SIGN_AZURE_METADATA` (Azure Artifact Signing). `docs/platforms.md`, "Windows packages", has the rest |
 | The update signing key | signing `update-manifest.json` | `SOYEHT_UPDATE_SIGNING_KEY` in the environment of the Mac that collects; the key itself in a password manager, never in a file of this repository |
 | `gh` logged in with write access to `soyeht/soyeht` | the draft release | `gh auth login`, or `GH_TOKEN` in the environment |
-| The Linux CI host | the `.deb` and the AppImage | `bignix`: a clone at `~/soyeht-ci/repo` whose `origin` is the mirror `~/soyeht-ci/mirror.git`, Nix, and the settings of `docs/platforms.md`, "A Linux gate host". The release uses only `~/soyeht-ci` |
+| The Linux CI host | the `.deb` and the AppImage | `bignix`: a clone at `~/soyeht-ci/repo`, the mirror `~/soyeht-ci/mirror.git` (the release commit is fetched from it, whatever the clone's `origin` is), a git at `~/soyeht-ci/git/bin` when the login shell has none, Nix, and the settings of `docs/platforms.md`, "A Linux gate host". The release uses only `~/soyeht-ci` |
 | A Windows host | the installers | Windows with the build tools of `docs/platforms.md`, "Windows packages", Inno Setup 6 and `uv`. A VM through VMPal does for a dry run (below) |
 
 ### The update key, before anything is built
