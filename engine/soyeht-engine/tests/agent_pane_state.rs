@@ -57,6 +57,17 @@ fn an_update_before_the_session_identity_does_not_stop_the_pane() {
     let (mut client, pane) = rig.agent_with(&["--updates-around-results"]);
     let view = client.pane(&pane);
     assert_eq!(view["state"], "idle", "{view}");
+    // The fake announces its commands only before the answer to `session/new`, so they are in
+    // the pane because the engine held that update and applied it once the session was named.
+    let commands = client.call("pane.commands.list", json!({"paneId":pane}));
+    assert!(
+        commands["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|command| command["name"] == "fake-status"),
+        "{commands}"
+    );
     // The first run of an agent version restarts the process after its probe; an update that
     // arrives between the probe's end and the restart has no session to belong to either.
     thread::sleep(Duration::from_millis(500));

@@ -160,8 +160,13 @@ pub struct State {
     pub replay_role: Option<String>,
     /// `session/update` notifications that arrived before the answer to `session/new`, which is
     /// what names the session they belong to. They are applied once it arrives (contract 04 §7).
-    #[serde(default)]
+    /// Never persisted: they belong to the process that sent them.
+    #[serde(skip)]
     pub(crate) held_updates: Vec<serde_json::Value>,
+    /// An update was dropped for want of room in `held_updates` since they were last released,
+    /// which is logged once.
+    #[serde(skip)]
+    pub(crate) held_overflowed: bool,
     pub probe_session_id: Option<String>,
     pub probe_started_ms: Option<i64>,
     pub login_pane_id: Option<String>,
@@ -193,6 +198,13 @@ pub struct State {
 }
 
 impl State {
+    /// Forgets the updates held for a session that was never named: the open ended in an error, a
+    /// sign-in, a fault or a restart, or a new open begins.
+    pub(crate) fn release_held_updates(&mut self) {
+        self.held_updates.clear();
+        self.held_overflowed = false;
+    }
+
     pub fn new(launch: HarnessLaunch, binary_digest: String, mode: Option<String>) -> Result<Self> {
         Ok(Self {
             binding: Binding::generate()?,
@@ -242,6 +254,7 @@ impl State {
             subagents: BTreeMap::new(),
             replay_role: None,
             held_updates: Vec::new(),
+            held_overflowed: false,
             probe_session_id: None,
             probe_started_ms: None,
             login_pane_id: None,

@@ -23,6 +23,7 @@ pub(super) fn needs_login(
     changes: &mut Changes,
 ) -> Result<()> {
     state.phase = Phase::NeedsLogin;
+    state.release_held_updates();
     state.auth_required = true;
     state.probe_started_ms = None;
     saved.pane.state = soyeht_protocol::PaneState::Starting;

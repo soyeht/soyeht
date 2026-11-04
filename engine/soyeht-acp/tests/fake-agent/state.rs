@@ -48,7 +48,8 @@ pub struct Settings {
     pub prompt_capabilities: Vec<String>,
     /// Like an adapter that announces its slash commands without waiting for the request's
     /// answer: `session/new` sends its first update before the result, and
-    /// `session/set_config_option` sends one after it.
+    /// `session/set_config_option` sends one after it. The commands of a session are announced
+    /// only by that first update.
     pub updates_around_results: bool,
 }
 impl Settings {
