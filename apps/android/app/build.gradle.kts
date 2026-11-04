@@ -11,7 +11,7 @@ android {
     defaultConfig {
         // Every machine identifier of the rewrite contains "next" (ADR 0112); this is the Dev profile.
         applicationId = "com.soyeht.next.dev.android"
-        minSdk = 26
+        minSdk = providers.gradleProperty("soyeht.minSdk").get().toInt()
         targetSdk = 35
         versionCode = 1
         versionName = providers.gradleProperty("soyehtVersion").getOrElse("0.0.0")

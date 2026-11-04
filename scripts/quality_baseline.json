@@ -1,8 +1,8 @@
 {
   "duplication": {
     "android": {
-      "clones": 4,
-      "duplicated_lines": 23
+      "clones": 0,
+      "duplicated_lines": 0
     },
     "android_core": {
       "clones": 0,

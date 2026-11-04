@@ -54,7 +54,9 @@ done
 
 TOOLCHAIN=$(echo "$NDK"/toolchains/llvm/prebuilt/*/bin)
 [[ -d "$TOOLCHAIN" ]] || fail "no NDK toolchain in $NDK"
-API=24
+# The libraries target the app's `minSdk`, which `apps/android/gradle.properties` holds once.
+API=$(sed -n 's/^soyeht.minSdk=//p' "$APP/gradle.properties")
+[[ "$API" =~ ^[0-9]+$ ]] || fail 'apps/android/gradle.properties has no soyeht.minSdk'
 for pair in "${ABIS[@]}"; do
     triple=${pair%%:*}
     underscored=${triple//-/_}

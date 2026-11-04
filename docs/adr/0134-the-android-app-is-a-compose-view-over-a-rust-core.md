@@ -85,12 +85,13 @@ state; `soyeht-protocol` is the only definition of the wire.
 - **Layers.** `apps/android/core` is layer 8, above `apps/desktop` whose client it reuses: it may depend on `soyeht-client`,
   `soyeht-protocol` and `soyeht-platform` and on no other Soyeht crate. The Kotlin app (`apps/android/app`)
   is the thin layer above it, as `apps/ios/Sources` is above `apps/shared`.
-- **Gate.** A Gradle build, an NDK build of the core for two ABIs and an emulator are not cheap. The
-  `android_app` area is full-tier only, like `mac_app` and `ios_app`: `android-core:fmt`, `:clippy` and
-  `:test` (the Rust core), `android-app:build` and `android-app:test` (`scripts/check_android.sh`, the
-  libraries, the bindings, the debug APK and the unit tests of the app). The fast tier keeps what is cheap and
-  always runs (layers, generated outputs); a change to a crate the core shares is covered by that crate's
-  own area. The emulator run is manual (`docs/apps-android.md`).
+- **Gate.** The core is cheap enough for the fast tier: `android-core:fmt`, `:clippy` and `:test` (area
+  `android_core`) run on the host whenever the core, the desktop client or an engine crate the desktop
+  builds on changes, so breakage of the shared client shows before the merge. A Gradle build, an NDK build of
+  the core for two ABIs and an emulator are not cheap: `android-app:build` and `android-app:test`
+  (`scripts/check_android.sh`, the libraries, the bindings, the debug APK and the unit tests of the app) are
+  the `android_app` area, full tier only, like `mac_app` and `ios_app`. The emulator run is manual
+  (`docs/apps-android.md`).
 
 ## What this does not do
 

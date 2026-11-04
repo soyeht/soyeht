@@ -30,6 +30,27 @@ pub const MIN_COLUMNS: u16 = 2;
 /// The bytes that move the cursor to the next line: line feed, vertical tab and form feed.
 const LINE_FEEDS: [u8; 3] = [b'\n', 0x0b, 0x0c];
 
+/// How much of its opacity dim text loses: it keeps its hue (every client paints it so).
+pub const DIM_OPACITY: f32 = 0.7;
+
+/// The color of an indexed cell color beyond the sixteen ANSI slots, which a theme sets: xterm's
+/// 6x6x6 cube and its grayscale ramp, which every program expects and no theme changes. `None` for
+/// one of the sixteen. The result is `0xRRGGBB`.
+pub fn xterm_color(index: u8) -> Option<u32> {
+    match index {
+        0..=15 => None,
+        16..=231 => {
+            let cube = u32::from(index - 16);
+            let level = |step: u32| if step == 0 { 0 } else { 55 + 40 * step };
+            Some(level(cube / 36) << 16 | level(cube / 6 % 6) << 8 | level(cube % 6))
+        }
+        232..=255 => {
+            let gray = 8 + 10 * u32::from(index - 232);
+            Some(gray << 16 | gray << 8 | gray)
+        }
+    }
+}
+
 /// A cell color before a theme gives it a value. `DefaultFg` and `DefaultBg` stay distinct so
 /// reverse video can swap them without the view guessing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -463,5 +484,22 @@ mod tests {
         let screen = screen(2, 10, "\x1b[?1h\x1b[?2004h");
         assert!(screen.application_cursor());
         assert!(screen.bracketed_paste());
+    }
+}
+
+#[cfg(test)]
+mod xterm_tests {
+    use super::xterm_color;
+
+    #[test]
+    fn the_sixteen_ansi_slots_are_the_themes_and_the_rest_are_xterms() {
+        assert_eq!(xterm_color(0), None);
+        assert_eq!(xterm_color(15), None);
+        assert_eq!(xterm_color(16), Some(0x000000));
+        assert_eq!(xterm_color(17), Some(0x00005F));
+        assert_eq!(xterm_color(196), Some(0xFF0000));
+        assert_eq!(xterm_color(231), Some(0xFFFFFF));
+        assert_eq!(xterm_color(232), Some(0x080808));
+        assert_eq!(xterm_color(255), Some(0xEEEEEE));
     }
 }

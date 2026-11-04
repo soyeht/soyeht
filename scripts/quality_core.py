@@ -210,7 +210,7 @@ def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int |
             "--output",
             output,
             "--ignore",
-            "**/generated.rs,**/Generated.swift,**/target/**,**/.build/**",
+            "**/generated.rs,**/Generated.swift,**/DesignTokens.kt,**/target/**,**/.build/**",
             "--silent",
             "--noTips",
             *paths,

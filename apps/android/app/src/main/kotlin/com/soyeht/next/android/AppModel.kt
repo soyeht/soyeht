@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -22,6 +23,8 @@ import uniffi.soyeht_android.Overview
 import uniffi.soyeht_android.PaneKind
 import uniffi.soyeht_android.PaneRow
 import uniffi.soyeht_android.TerminalFrame
+import uniffi.soyeht_android.TerminalKey
+import uniffi.soyeht_android.deviceName
 
 /** What the core says went wrong, in words for the person. */
 private fun CoreException.reason(): String = when (this) {
@@ -61,6 +64,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var terminal: TerminalFrame? by mutableStateOf(null)
         private set
     var conversation: Conversation? by mutableStateOf(null)
+        private set
+
+    /** "Forget this computer" waits for the person to say yes: it cannot be undone from the phone. */
+    var confirmingForget by mutableStateOf(false)
         private set
 
     private val core = Core(
@@ -129,10 +136,16 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     fun pair(link: String) {
         pairing = Pairing.Working(null, waiting = false)
         viewModelScope.launch(Dispatchers.IO) {
-            val name = "${Build.MANUFACTURER} ${Build.MODEL}".take(NAME_LIMIT)
+            val name = deviceName(Build.MANUFACTURER, Build.MODEL)
             try {
                 val credential = core.pair(link.trim(), name)
-                credentials.save(credential)
+                try {
+                    credentials.save(credential)
+                } catch (failure: IOException) {
+                    // The computer allowed this phone but it cannot keep the access: say so.
+                    main.post { pairing = Pairing.Failed("This phone could not save the access. Pair again.") }
+                    return@launch
+                }
                 main.post {
                     paired = true
                     pairing = Pairing.Idle
@@ -153,8 +166,17 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         pairing = Pairing.Idle
     }
 
+    fun askToForget() {
+        confirmingForget = true
+    }
+
+    fun keepComputer() {
+        confirmingForget = false
+    }
+
     /** "Forget this computer": the credential goes, and so does the connection. */
     fun forget() {
+        confirmingForget = false
         core.disconnect()
         credentials.forget()
         paired = false
@@ -180,7 +202,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 
     fun paste(text: String) = openPane?.let { core.paste(it.paneId, text) }
 
-    fun press(key: String, control: Boolean = false, alt: Boolean = false, shift: Boolean = false) {
+    fun press(key: TerminalKey, control: Boolean = false, alt: Boolean = false, shift: Boolean = false) {
         openPane?.let { core.pressKey(it.paneId, KeyPress(key, control, alt, shift)) }
     }
 
@@ -193,8 +215,12 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         openPane?.let { core.answerPermission(it.paneId, requestId, optionId) }
     }
 
+    /** The phone stops being a client of the computer when the app's state goes. */
+    override fun onCleared() {
+        core.disconnect()
+    }
+
     private companion object {
         const val REDRAW_MS = 16L
-        const val NAME_LIMIT = 64
     }
 }

@@ -28,9 +28,11 @@ PACKAGES = [
     Package("soyeht-cli", "engine/soyeht-cli", ("soyeht-protocol", "soyeht-platform")),
 ]
 DESKTOP_DEPS = {"soyeht-protocol", "soyeht-platform"}
-EVERYTHING = ("always", "engine", "desktop", "swift", "typescript", "e2e")
+EVERYTHING = ("always", "engine", "desktop", "android_core", "swift", "typescript", "e2e")
 # A change under scripts/ also selects the unit tests of the gate scripts.
-EVERYTHING_AND_SCRIPTS = ("always", "gate_scripts", "engine", "desktop", "swift", "typescript", "e2e")
+EVERYTHING_AND_SCRIPTS = (
+    "always", "gate_scripts", "engine", "desktop", "android_core", "swift", "typescript", "e2e",
+)
 
 
 def plan(*files: str):
@@ -79,7 +81,7 @@ class AreaTests(unittest.TestCase):
 
     def test_a_crate_the_desktop_uses_selects_desktop_too(self):
         self.assertEqual(plan("engine/soyeht-platform/src/fs.rs").areas,
-                         ("always", "engine", "desktop", "e2e"))
+                         ("always", "engine", "desktop", "android_core", "e2e"))
         self.assertIsNotNone(plan("engine/soyeht-platform/src/fs.rs").engine_crates)
 
     def test_an_engine_file_outside_every_crate_tests_the_workspace(self):
@@ -105,14 +107,22 @@ class AreaTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).areas, ("always", "swift"))
 
-    def test_the_android_app_is_built_by_the_full_tier_only(self):
+    def test_the_android_core_is_in_the_fast_tier_and_the_app_build_only_in_the_full_one(self):
         # A Gradle build, two NDK builds and a first download are too much for the fast tier
         # (ADR 0134): the path selects an area that only the full tier has steps for.
         for path in ("apps/android/app/src/main/kotlin/A.kt", "apps/android/core/src/lib.rs",
                      "apps/android/Cargo.lock"):
             with self.subTest(path=path):
-                self.assertEqual(plan(path).areas, ("always", "android_app"))
+                self.assertEqual(plan(path).areas, ("always", "android_core", "android_app"))
         self.assertIn("android_app", gate_plan.FULL_ONLY_AREAS)
+        self.assertNotIn("android_core", gate_plan.FULL_ONLY_AREAS)
+        # What the core reuses selects it: the client, and the engine crates the desktop builds on.
+        for path in ("apps/desktop/crates/soyeht-client/src/engine.rs", "engine/soyeht-protocol/src/lib.rs",
+                     "engine/soyeht-platform/src/fs.rs"):
+            with self.subTest(path=path):
+                self.assertIn("android_core", plan(path).areas)
+        self.assertNotIn("android_core", plan("apps/desktop/crates/soyeht-desktop/src/app.rs").areas)
+        self.assertNotIn("android_core", plan("engine/soyeht-vcs/src/lib.rs").areas)
 
     def test_typescript(self):
         self.assertEqual(plan("contracts/typescript/src/x.ts").areas, ("always", "typescript"))
@@ -208,11 +218,13 @@ class DesktopTestSelectionTests(unittest.TestCase):
     """The desktop runs its whole `cargo test` (check_all.sh `desktop:test`) whenever it is selected."""
 
     def test_a_desktop_only_change_selects_the_desktop_and_nothing_that_needs_the_engine(self):
-        for path in ("apps/desktop/crates/soyeht-client/tests/engine.rs",
-                     "apps/desktop/crates/soyeht-desktop/src/app.rs"):
+        # The window's own code; the client is what the Android core reuses, so it selects that too.
+        for path, areas in (("apps/desktop/crates/soyeht-client/tests/engine.rs",
+                             ("always", "desktop", "android_core")),
+                            ("apps/desktop/crates/soyeht-desktop/src/app.rs", ("always", "desktop"))):
             with self.subTest(path=path):
                 result = plan(path)
-                self.assertEqual(result.areas, ("always", "desktop"))
+                self.assertEqual(result.areas, areas)
                 self.assertNotIn("e2e", result.areas)
                 self.assertNotIn("gate_scripts", result.areas)
 

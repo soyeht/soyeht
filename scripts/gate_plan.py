@@ -18,6 +18,8 @@ wins:
 - a path under one engine crate selects `engine` and that crate plus its reverse
   dependencies in the engine workspace (`cargo metadata`); a crate that the desktop
   workspace depends on also selects `desktop`;
+- the Android core is also selected by a change to the desktop client or to an engine crate the
+  desktop workspace depends on, which it reuses (ADR 0134);
 - the other code directories select their own area;
 - documentation selects only `always`;
 - an unknown path selects every code area.
@@ -53,7 +55,7 @@ from pathlib import Path, PurePosixPath
 from gate_base import BaseError, main_health_dir, resolve_base
 
 ROOT = Path(__file__).resolve().parents[1]
-CODE_AREAS = ("engine", "desktop", "swift", "typescript")
+CODE_AREAS = ("engine", "desktop", "android_core", "swift", "typescript")
 # Areas that only the full tier (the run after the merge) covers: the dictation tests, the
 # Mac, iOS and Android app builds, the editor measurement and the timing tests. The Swift packages and
 # the engine workspace also have steps that are full-only.
@@ -251,14 +253,17 @@ def make_plan(
             else:
                 crates.add(package.name)
                 if package.name in desktop_engine_deps:
-                    areas.add("desktop")
+                    # The Android core reuses the desktop client, so what the client builds on is
+                    # what the core builds on (ADR 0134).
+                    areas.update(("desktop", "android_core"))
         elif path.startswith("apps/desktop/"):
             areas.add("desktop")
+            if path.startswith("apps/desktop/crates/soyeht-client/"):
+                areas.add("android_core")
         elif path.startswith("apps/android/"):
-            # The Gradle build, the NDK builds and the emulator are too much for the fast tier
-            # (ADR 0134): only the full tier builds the app, and the core's crates are covered by
-            # the engine and desktop areas of the crates it shares.
-            areas.add("android_app")
+            # The core is built and tested on the host in the fast tier; the Gradle build, the NDK
+            # builds and the emulator are too much for it (ADR 0134): only the full tier builds the app.
+            areas.update(("android_core", "android_app"))
         elif path.startswith(("apps/dictation/", "apps/shared/", "contracts/swift/", "apps/mac/", "apps/ios/")):
             areas.add("swift")
         elif path.startswith("contracts/typescript/"):

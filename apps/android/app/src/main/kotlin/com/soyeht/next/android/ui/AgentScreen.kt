@@ -1,40 +1,23 @@
 package com.soyeht.next.android.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import com.soyeht.next.android.AppModel
-import com.soyeht.next.android.theme.LocalRoles
-import com.soyeht.next.android.theme.PaneInterior
-import com.soyeht.next.android.theme.Radius
-import com.soyeht.next.android.theme.TypeScale
-import uniffi.soyeht_android.ConversationItem
-import uniffi.soyeht_android.ItemKind
-import uniffi.soyeht_android.PaneRow
-import uniffi.soyeht_android.PermissionQuestion
-import uniffi.soyeht_android.Speaker
+import com.soyeht.next.android.theme.*
+import uniffi.soyeht_android.*
 
 @Composable
 fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {

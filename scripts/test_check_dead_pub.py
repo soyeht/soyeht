@@ -109,6 +109,19 @@ class DeadPubTests(unittest.TestCase):
         found = [name for path, _, name in candidates(root) if "apps/android" in path]
         self.assertEqual(found, ["forgotten_method"])
 
+    def test_a_dead_function_elsewhere_is_still_listed_when_a_kotlin_file_has_its_name(self):
+        root = self.fixture()
+        crate = root / "apps/desktop/crates/client/src"
+        crate.mkdir(parents=True)
+        (crate / "lib.rs").write_text("pub fn send_prompt() {}\n")
+        engine = root / "engine/crate/src"
+        (engine / "extra.rs").write_text("pub fn open_pane() {}\n")
+        app = root / "apps/android/app/src/main/kotlin/app"
+        app.mkdir(parents=True)
+        (app / "Model.kt").write_text("fun send(core: Core) { core.sendPrompt(); core.openPane() }\n")
+        found = {name for _, _, name in candidates(root)}
+        self.assertLessEqual({"send_prompt", "open_pane"}, found)
+
     def test_reports_the_line_of_the_definition(self):
         found = {name: line for _, line, name in candidates(self.fixture())}
         self.assertEqual(found["dead"], 3)

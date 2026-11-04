@@ -1,27 +1,17 @@
 package com.soyeht.next.android.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.*
 import com.soyeht.next.android.AppModel
-import com.soyeht.next.android.theme.LocalRoles
-import com.soyeht.next.android.theme.PaneInterior
-import com.soyeht.next.android.theme.TypeScale
-import uniffi.soyeht_android.Link
-import uniffi.soyeht_android.PaneKind
-import uniffi.soyeht_android.PaneRow
+import com.soyeht.next.android.theme.*
+import uniffi.soyeht_android.*
 
 private fun kindLabel(kind: PaneKind) = when (kind) {
     PaneKind.TERMINAL -> "Terminal"
@@ -44,7 +34,7 @@ fun HomeScreen(model: AppModel) {
             is Link.Disconnected -> "Reconnecting… ${link.reason}"
             is Link.AccessRefused -> link.reason
         },
-        actions = { Pill("Forget", model::forget, description = "Forget this computer") },
+        actions = { Pill("Forget", model::askToForget, description = "Forget this computer") },
     )
     if (link is Link.AccessRefused) {
         Text(
