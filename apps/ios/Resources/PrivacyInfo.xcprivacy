@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The app talks only to the person's own Mac and sends nothing to the developer or to a tracker. -->
+	<!-- The app talks only to the person's own Mac and sends nothing to the developer or to a tracker.
+	     It declares the required-reason APIs below; scripts/check_ios.sh checks that the built app
+	     carries this file, and the list was checked against `nm -u` of the iphoneos build. -->
 	<key>NSPrivacyTracking</key>
 	<false/>
 	<key>NSPrivacyTrackingDomains</key>
@@ -18,6 +20,30 @@
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
 				<string>CA92.1</string>
+			</array>
+		</dict>
+		<!-- File timestamps: SwiftTerm's inline images (Kitty graphics) call stat() and fstat() to
+		     read a file's type and size, and mlx-swift's fmt calls fstat() on stdio files. The only
+		     files those calls can reach on iOS are inside the app's sandbox (SwiftTerm accepts
+		     only the temporary directory and shared memory), so C617.1 (files inside the app
+		     container) is the reason that matches. 3B52.1 (files the person granted access to) does
+		     not apply: the app has no document picker for these calls. -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+		<!-- System boot time: the request timer reads DispatchTime uptimeNanoseconds to measure
+		     elapsed time inside the app (35F9.1). -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>35F9.1</string>
 			</array>
 		</dict>
 	</array>

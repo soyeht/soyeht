@@ -43,6 +43,12 @@ APP=$(dirname "$INFO")
     echo 'check_ios: the app must carry PrivacyInfo.xcprivacy' >&2
     exit 1
 }
+# SwiftTerm calls stat() and fstat(), so the manifest must declare the file-timestamp category.
+plutil -extract NSPrivacyAccessedAPITypes json -o - "$APP/PrivacyInfo.xcprivacy" |
+    grep -q NSPrivacyAccessedAPICategoryFileTimestamp || {
+    echo 'check_ios: PrivacyInfo.xcprivacy must declare NSPrivacyAccessedAPICategoryFileTimestamp' >&2
+    exit 1
+}
 [[ "$(plutil -extract ITSAppUsesNonExemptEncryption raw -o - "$INFO")" == false ]] || {
     echo 'check_ios: Info.plist must answer ITSAppUsesNonExemptEncryption with false' >&2
     exit 1

@@ -40,15 +40,25 @@ them. Signing credentials come from the environment, never from the repository.
 
 The app declares the answers the store asks for in the repository:
 
-- `ITSAppUsesNonExemptEncryption` is `false` in `apps/ios/Info.plist`. The app uses only the
-  system's TLS, the tailnet's encryption and CryptoKit signatures and hashes for authentication,
-  which are exempt.
-- `apps/ios/Resources/PrivacyInfo.xcprivacy` says the app does not track, collects no data and
-  uses one required-reason API, `UserDefaults` (`CA92.1`, the app's own settings). The app talks to
-  the person's own Mac. Add a reason there when new code uses another API of Apple's list
-  (file timestamps, system boot time, disk space, active keyboards).
+- `ITSAppUsesNonExemptEncryption` is `false` in `apps/ios/Info.plist`. The app has no encryption of
+  its own. The wire to the Mac is `ws://` over the tailnet, which Tailscale encrypts; the app
+  uses the system's TLS only for the `https` downloads of the optional dictation models, and
+  CryptoKit only for signatures and hashes that authenticate the device and the Mac.
+- `apps/ios/Resources/PrivacyInfo.xcprivacy` says the app does not track and collects no data. It
+  declares the required-reason APIs the built app imports: `UserDefaults` (`CA92.1`, the app's own
+  settings), file timestamps (`C617.1`: SwiftTerm's inline images call `stat()` and `fstat()`
+  on files in the app's own temporary directory, and mlx-swift's `fmt` calls `fstat()`) and
+  system boot time (`35F9.1`, `DispatchTime` uptime for the request timer). The app talks to the
+  person's own Mac. When new code or a new dependency uses another API of Apple's list (file
+  timestamps, system boot time, disk space, active keyboards, user defaults), check `nm -u` of an
+  `iphoneos` build and add its category and reason there.
 
-`scripts/check_ios.sh` fails when the built app has no manifest or no encryption answer.
+`scripts/check_ios.sh` fails when the built app has no manifest, when the manifest lacks the
+file-timestamp category, or when Info.plist has no encryption answer.
+
+The store record is named “Soyeht Next” (the name “Soyeht” belongs to an older record); the
+name under the icon of a store build is `SOYEHT_PRODUCT_NAME`. Text that tells the person to open
+the app reads that name (`AppName`), so no string names a build.
 
 On the new Mac app, choose “Pair iPhone or iPad”. On the
 device, choose “Scan Mac QR”. Compare fingerprints and allow access on the Mac.
