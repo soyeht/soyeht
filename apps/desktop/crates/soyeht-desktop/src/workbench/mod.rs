@@ -21,8 +21,8 @@ use crate::{
 };
 use gpui::{Context, FocusHandle, Task, actions};
 use soyeht_client::{
-    Command, Engine, Event, State, diagnostics, loops, screen::TerminalScreen,
-    state::problem::kind, update::Updates,
+    Command, Engine, Event, State, diagnostics, login_start::LoginStart, loops,
+    screen::TerminalScreen, state::problem::kind, update::Updates,
 };
 use soyeht_platform::log::Failure;
 
@@ -31,6 +31,7 @@ mod effects;
 mod focus;
 mod input;
 mod lifecycle;
+mod login_start;
 mod menus;
 mod text_input;
 mod web;
@@ -102,6 +103,8 @@ pub struct Workbench {
     pub(crate) updates: Updates,
     /// The daily check, for as long as the window lives.
     pub(crate) update_loop: Option<Task<()>>,
+    /// Whether Soyeht starts at login, and the question the window asks once (ADR 0136).
+    pub(crate) login_start: LoginStart,
     /// How the last "Copy diagnostics" went (contract 14, section 4).
     pub(crate) diagnostics: diagnostics::Phase,
     /// The crash reports the notice "Soyeht closed unexpectedly" shows, none when it is not on
@@ -183,6 +186,7 @@ impl Workbench {
             web_shown: std::collections::HashSet::new(),
             updates: Updates::new(true, 0),
             update_loop: None,
+            login_start: LoginStart::default(),
             diagnostics: diagnostics::Phase::default(),
             crash_notice: Vec::new(),
             _web_signals: None,

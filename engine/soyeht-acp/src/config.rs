@@ -142,6 +142,14 @@ fn option(value: &Value) -> Result<ConfigOption, Error> {
     Ok(option)
 }
 
+/// The native identifier a select option has chosen.
+fn selected(option: Option<&ConfigOption>) -> Option<&str> {
+    option.and_then(|option| match &option.current_value {
+        ConfigValue::V0(value) => Some(value.as_str()),
+        ConfigValue::V1(_) => None,
+    })
+}
+
 impl Options {
     pub fn from_response(response: &Value) -> Result<Self, Error> {
         let mut result = Self::default();
@@ -192,12 +200,14 @@ impl Options {
             .find(|option| option.is_permission_mode())
     }
 
+    /// The selected model's native identifier.
+    pub fn current_model(&self) -> Option<&str> {
+        selected(self.values.iter().find(|option| option.is_model()))
+    }
+
     /// The selected permission mode's native identifier.
     pub fn current_mode(&self) -> Option<&str> {
-        self.mode().and_then(|option| match &option.current_value {
-            ConfigValue::V0(value) => Some(value.as_str()),
-            ConfigValue::V1(_) => None,
-        })
+        selected(self.mode())
     }
 
     /// Whether `value` is one of the announced permission modes.

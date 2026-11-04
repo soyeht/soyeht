@@ -472,11 +472,16 @@ fn update_in_subagent(
             lifecycle,
             changes,
         )?,
-        Update::UserMessage { .. }
-        | Update::Usage(_)
-        | Update::Configuration(_)
-        | Update::Mode(_)
-        | Update::Commands(_) => return Ok(false),
+        // A subagent's configuration is not the pane's, but its model is the row's.
+        Update::Configuration(options) => {
+            match soyeht_acp::subagents::configured_model(subagent, &options) {
+                Some(report) => subagents::reported(store, pane, state, report, changes)?,
+                None => return Ok(false),
+            };
+        }
+        Update::UserMessage { .. } | Update::Usage(_) | Update::Mode(_) | Update::Commands(_) => {
+            return Ok(false);
+        }
     }
     Ok(true)
 }

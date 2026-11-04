@@ -33,7 +33,7 @@
   public struct BundledEngineService: Sendable {
     public static let commandName = "soyeht"
     /// How long one `soyeht service` call may take before it is ended.
-    public static let commandSeconds = 60.0
+    public static let commandSeconds = ClientPolicy.serviceCommandSeconds
 
     let command: URL
     let profile: ProfileValues
@@ -95,6 +95,11 @@
         throw ServiceCommandError.unreadable
       }
       return text
+    }
+
+    /// What `soyeht crash-reports ACTION` printed (ADR 0127, contract 16).
+    func crashReports(_ action: [String]) async throws -> Data {
+      try await runner.run(command, arguments: profileArguments + ["crash-reports"] + action)
     }
 
     private func services(_ action: [String]) async throws -> [ServiceState] {

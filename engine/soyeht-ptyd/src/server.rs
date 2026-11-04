@@ -14,7 +14,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
     fs::{LockError, PTYD_LOCK, lock_singleton},
-    local::{BindError, Listener, Stream, same_user},
+    local::{BindError, Listener, Stream, peer_is_same_user},
     log,
 };
 use soyeht_protocol::{
@@ -114,8 +114,8 @@ pub fn run(directory: &Path) -> Result<()> {
     for incoming in listener.incoming() {
         let stream = incoming?;
         // The socket's mode and directory keep other users out; this does not depend on them.
-        if !same_user(&stream) {
-            log::event("ptyd.connection_refused", &[("reason", "other_user")]);
+        if let Some(reason) = refusal_reason(peer_is_same_user(&stream)) {
+            log::event("ptyd.connection_refused", &[("reason", reason)]);
             continue;
         }
         let state = Arc::clone(&state);
@@ -126,6 +126,20 @@ pub fn run(directory: &Path) -> Result<()> {
         });
     }
     Ok(())
+}
+
+/// The `reason` of `ptyd.connection_refused` for a peer that runs as another user. These are log
+/// reasons, not wire kinds (`wire_kind` is what `Response::Error` carries).
+const REFUSED_OTHER_USER: &str = "other_user";
+/// The `reason` of `ptyd.connection_refused` for a peer the kernel could not name.
+const REFUSED_CREDENTIAL_LOOKUP_FAILED: &str = "credential_lookup_failed";
+
+/// Why a connection is dropped before it says anything, or `None` when it is let through. A peer
+/// the kernel could not name is a different reason from a peer that is another user.
+fn refusal_reason(peer: io::Result<bool>) -> Option<&'static str> {
+    peer.map_or(Some(REFUSED_CREDENTIAL_LOOKUP_FAILED), |same| {
+        (!same).then_some(REFUSED_OTHER_USER)
+    })
 }
 
 /// Starts the watch of the program's file with `start`; when it says the file is gone, removes
@@ -647,6 +661,17 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_peer_that_cannot_be_named_is_refused_for_its_own_reason() {
+        assert_eq!(refusal_reason(Ok(true)), None);
+        assert_eq!(refusal_reason(Ok(false)), Some(REFUSED_OTHER_USER));
+        let failed = io::Error::from(io::ErrorKind::InvalidInput);
+        assert_eq!(
+            refusal_reason(Err(failed)),
+            Some(REFUSED_CREDENTIAL_LOOKUP_FAILED)
+        );
+    }
 
     #[test]
     fn the_endpoint_file_is_removed_when_the_supervisor_stops() {

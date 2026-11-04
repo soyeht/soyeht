@@ -28,6 +28,10 @@ pub struct LocalPreferences {
     /// is refused (ADR 0122).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub update_sequence: Option<u64>,
+    /// Whether the person said "Not now" to the question about keeping Soyeht running at login
+    /// (ADR 0136). The window asks once; the setting in Preferences stays.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_start_declined: Option<bool>,
 }
 
 /// The directory the file lives in: the one `socket` is in, so a disposable engine
@@ -40,6 +44,12 @@ impl LocalPreferences {
     /// Whether the window checks for a newer version: it does until the person says it should not.
     pub fn checks_for_updates(&self) -> bool {
         self.check_for_updates.unwrap_or(true)
+    }
+
+    /// Whether the person declined the first-run question and has not turned the setting on
+    /// since.
+    pub fn declined_login_start(&self) -> bool {
+        self.login_start_declined.unwrap_or(false)
     }
 
     /// Whether the person dismissed the note `id` for good.
@@ -159,6 +169,21 @@ mod tests {
         assert_eq!(loaded, saved);
         assert_eq!(loaded.update_floor(), 1_793_000_000);
         assert_eq!(LocalPreferences::default().update_floor(), 0);
+        let _ = fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn declining_the_login_question_is_kept_with_the_other_choices_and_can_be_undone() {
+        let directory = scratch("login");
+        assert!(!LocalPreferences::load(&directory).declined_login_start());
+        LocalPreferences::change(&directory, |saved| saved.theme = Some("neoMilk".into())).unwrap();
+        LocalPreferences::change(&directory, |saved| saved.login_start_declined = Some(true))
+            .unwrap();
+        let loaded = LocalPreferences::load(&directory);
+        assert!(loaded.declined_login_start());
+        assert_eq!(loaded.theme.as_deref(), Some("neoMilk"));
+        LocalPreferences::change(&directory, |saved| saved.login_start_declined = None).unwrap();
+        assert!(!LocalPreferences::load(&directory).declined_login_start());
         let _ = fs::remove_dir_all(&directory);
     }
 

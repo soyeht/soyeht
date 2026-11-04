@@ -133,7 +133,8 @@ extension EngineClient {
       UsageReading(
         provider: event.provider, state: event.state,
         unavailableReason: event.unavailableReason, primary: event.primary,
-        secondary: event.secondary, source: event.source, fetchedAt: event.fetchedAt))
+        secondary: event.secondary, activity: event.activity, source: event.source,
+        fetchedAt: event.fetchedAt))
   }
 
   private func replaceUsage(_ reading: UsageReading) {
@@ -149,6 +150,7 @@ extension UsageProvider {
     case .claude: 0
     case .codex: 1
     case .cursor: 2
+    case .opencode: 3
     }
   }
 }
@@ -166,6 +168,9 @@ extension UsageSource {
     case .cursor_app_login: "Cursor app login"
     case .cursor_browser_cookies: "cursor.com browser session"
     case .cursor_current_period: "Cursor current period"
+    case .opencode_go_allowance: "OpenCode Go allowance"
+    case .opencode_zai_plan: "GLM Coding Plan quota"
+    case .opencode_local_history: "OpenCode history on this device"
     }
   }
 }

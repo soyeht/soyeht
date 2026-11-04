@@ -56,7 +56,7 @@ pub(super) const BOTH: [Component; 2] = [Component::Engine, Component::Ptyd];
 /// A launchd that has a graphical domain or not, and loads a job when it is bootstrapped and
 /// forgets it when it is booted out. `loaded` says whether every job is loaded before anything
 /// runs.
-fn launchd(graphical: bool, loaded: bool) -> Recorder {
+pub(super) fn launchd(graphical: bool, loaded: bool) -> Recorder {
     let changed: Rc<RefCell<HashMap<String, bool>>> = Rc::default();
     let label = |text: &str| {
         text.rsplit('/')
@@ -98,7 +98,7 @@ fn launchd(graphical: bool, loaded: bool) -> Recorder {
     })
 }
 
-fn mentions(recorder: &Recorder, text: &str) -> bool {
+pub(super) fn mentions(recorder: &Recorder, text: &str) -> bool {
     recorder.lines().iter().any(|line| line.contains(text))
 }
 

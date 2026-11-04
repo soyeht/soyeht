@@ -21,8 +21,11 @@ from gate_base import BASE_BRANCH, resolve_base
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED_PARTS = {"generated.rs", "Generated.swift", "generated.ts", "schema.json"}
 SOURCE_SUFFIXES = {".rs", ".swift", ".py", ".ts"}
-# The one SQLite use outside soyeht-store: reading other applications' databases (the Cursor
-# app's state, browser cookie stores) read-only and immutable, never Soyeht's own data (ADR 0077).
+# The one SQLite use outside soyeht-store: reading other applications' databases read-only, never
+# Soyeht's own data (ADR 0077, ADR 0133): the Cursor app's state, browser cookie stores, OpenCode's
+# credential table (the login the allowance request carries) and, with `json_extract`, the JSON
+# of the `message` table's `data` column (the tokens and cost its sessions recorded). A read
+# of OpenCode ends after a deadline, so a stalled file system cannot hold back the other providers.
 FOREIGN_DATABASE_READERS = frozenset({
     "engine/soyeht-usage/Cargo.toml",
     "engine/soyeht-usage/src/foreign_db.rs",

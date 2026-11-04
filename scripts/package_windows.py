@@ -39,6 +39,7 @@ from package_common import (
     add_build_arguments,
     built_programs,
     cargo_build,
+    check_sizes,
     host_arch,
     make_plan,
     run,
@@ -370,6 +371,7 @@ def main(argv=None):
         written.append(build_installer(plan, out, inno, signing, signtool))
     for path in written:
         print(f"{path} ({path.stat().st_size} bytes, {'signed' if signing else 'UNSIGNED'})")
+    check_sizes(written)
 
 
 if __name__ == "__main__":

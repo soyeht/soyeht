@@ -19,6 +19,7 @@ pub mod ndjson;
 pub mod pairing_link;
 pub mod profile;
 pub mod readiness;
+pub mod service_report;
 pub mod setting;
 pub mod snapshot;
 pub mod update;

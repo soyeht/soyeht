@@ -10,6 +10,8 @@ pub const RECONNECT_CEILING_MS: u64 = 30000;
 pub const DRAFT_BEAT_MS: u64 = 8000;
 pub const AGENT_PARTIAL_FLUSH_MS: u64 = 16;
 pub const DIAGNOSTICS_MS: u64 = 30000;
+pub const COPIED_FEEDBACK_MS: u64 = 1500;
+pub const SERVICE_COMMAND_MS: u64 = 60000;
 pub const TERMINAL_INPUT_CHUNK_BYTES: usize = 16384;
 pub const TERMINAL_SCROLLBACK_LINES: usize = 10000;
 pub const CAPS_WAITING_MESSAGES: usize = 1000;
@@ -18,6 +20,7 @@ pub const CAPS_WEB_LINKS: usize = 128;
 pub const CAPS_MODEL_PAGES: usize = 32;
 pub const CAPS_TICKER_HISTORY: usize = 3;
 pub const CAPS_DIAGNOSTICS_REPORT_BYTES: usize = 4194304;
+pub const CAPS_SERVICE_REPORT_BYTES: usize = 65536;
 pub const PAGE_SIZE_QUEUE: u32 = 64;
 pub const PAGE_SIZE_HARNESSES: u32 = 64;
 pub const PAGE_SIZE_MODELS: u32 = 64;
@@ -46,11 +49,18 @@ pub const DIAGNOSTICS_WORKING: &str = "Collecting diagnostics";
 pub const DIAGNOSTICS_COPIED: &str = "Diagnostics copied. Paste them into your message.";
 pub const DIAGNOSTICS_FAILED: &str = "Soyeht could not collect the diagnostics.";
 pub const DIAGNOSTICS_UNAVAILABLE: &str = "This copy of Soyeht has no diagnostics program.";
+pub const COPY_CODE: &str = "Copy code";
+pub const COPIED_CODE: &str = "Copied";
 pub const CRASH_NOTICE_TITLE: &str = "Soyeht closed unexpectedly";
 pub const CRASH_NOTICE_SUMMARY: &str =
     "A crash report was saved on this computer. Nothing was sent.";
 pub const CRASH_NOTICE_COPY: &str = "Copy report";
 pub const CRASH_NOTICE_DISMISS: &str = "Dismiss";
+pub const LOGIN_START_QUESTION: &str = "Keep Soyeht running in the background?";
+pub const LOGIN_START_SUMMARY: &str = "Soyeht's engine keeps your terminals and agents running when this window is closed, and starts when you log in.";
+pub const LOGIN_START_LATER: &str = "You can turn it on later from Preferences.";
+pub const LOGIN_START_TURN_ON: &str = "Turn on";
+pub const LOGIN_START_NOT_NOW: &str = "Not now";
 pub const PUSH_NEEDS_YOU_TITLE: &str = "An agent needs you";
 pub const PUSH_NEEDS_YOU_BODY: &str = "Open Soyeht to see what it asks.";
 pub const CLIENT_NAME_MAC: &str = "mac";
@@ -192,6 +202,7 @@ impl UsageProvider {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
             Self::Cursor => "Cursor",
+            Self::Opencode => "OpenCode",
         }
     }
 }

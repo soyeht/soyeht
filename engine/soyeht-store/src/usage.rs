@@ -2,7 +2,9 @@
 
 use crate::database::{Change, Error, Result, Store};
 use rusqlite::{OptionalExtension, params};
-use soyeht_protocol::{UsageProvider, UsageReading, UsageSource, UsageState, UsageWindow};
+use soyeht_protocol::{
+    UsageActivity, UsageProvider, UsageReading, UsageSource, UsageState, UsageWindow,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StoredUsageReading {
@@ -28,7 +30,7 @@ impl Store {
 
     pub fn usage_readings(&self) -> Result<Vec<StoredUsageReading>> {
         let mut statement = self.connection.prepare(
-            "SELECT provider,observed_at_unix_sec,payload FROM usage_readings ORDER BY CASE provider WHEN 'claude' THEN 0 WHEN 'codex' THEN 1 WHEN 'cursor' THEN 2 END",
+            "SELECT provider,observed_at_unix_sec,payload FROM usage_readings ORDER BY CASE provider WHEN 'claude' THEN 0 WHEN 'codex' THEN 1 WHEN 'cursor' THEN 2 WHEN 'opencode' THEN 3 END",
         )?;
         let rows = statement.query_map([], |row| {
             Ok((
@@ -103,9 +105,17 @@ fn validate(reading: &UsageReading, observed_at_unix_sec: i64) -> Result<()> {
                 | UsageSource::CursorBrowserCookies
                 | UsageSource::CursorCurrentPeriod
         ),
+        UsageProvider::Opencode => matches!(
+            reading.source,
+            UsageSource::OpencodeGoAllowance
+                | UsageSource::OpencodeZaiPlan
+                | UsageSource::OpencodeLocalHistory
+        ),
     };
     let state_matches = match reading.state {
-        UsageState::Ok | UsageState::Stale => reading.primary.is_some(),
+        UsageState::Ok | UsageState::Stale => {
+            reading.primary.is_some() || reading.activity.is_some()
+        }
         UsageState::LoginNeeded | UsageState::NoAccess | UsageState::Unavailable => true,
     };
     let windows_match = reading
@@ -114,6 +124,7 @@ fn validate(reading: &UsageReading, observed_at_unix_sec: i64) -> Result<()> {
         .chain(&reading.secondary)
         .all(valid_window);
     if observed_at_unix_sec < 0
+        || !reading.activity.iter().all(valid_activity)
         || reading.fetched_at.len() > 128
         || !source_matches
         || !state_matches
@@ -122,6 +133,15 @@ fn validate(reading: &UsageReading, observed_at_unix_sec: i64) -> Result<()> {
         return Err(Error::InvalidUsageReading);
     }
     Ok(())
+}
+
+fn valid_activity(activity: &UsageActivity) -> bool {
+    activity.tokens >= 0
+        && activity
+            .cost_usd
+            .is_none_or(|cost| cost.is_finite() && cost >= 0.0)
+        && !activity.label.is_empty()
+        && activity.label.len() <= 128
 }
 
 fn valid_window(window: &UsageWindow) -> bool {
@@ -138,6 +158,7 @@ fn provider_name(provider: &UsageProvider) -> &'static str {
         UsageProvider::Claude => "claude",
         UsageProvider::Codex => "codex",
         UsageProvider::Cursor => "cursor",
+        UsageProvider::Opencode => "opencode",
     }
 }
 
@@ -146,6 +167,7 @@ fn provider_from_name(name: &str) -> Option<UsageProvider> {
         "claude" => Some(UsageProvider::Claude),
         "codex" => Some(UsageProvider::Codex),
         "cursor" => Some(UsageProvider::Cursor),
+        "opencode" => Some(UsageProvider::Opencode),
         _ => None,
     }
 }

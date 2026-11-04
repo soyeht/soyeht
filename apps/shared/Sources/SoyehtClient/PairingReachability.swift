@@ -31,10 +31,7 @@ extension EngineClient {
   /// The pairing sheet's instruction, or why paired devices cannot reach this Mac.
   public var pairingGuidance: (text: String, isProblem: Bool) {
     if let problem = reachability?.problemText { return (problem, true) }
-    return (
-      "Open Soyeht Dev on iPhone and scan this code.\nBoth devices must be on the same tailnet.",
-      false
-    )
+    return (PairingCopy.scanInstruction, false)
   }
 
   public func beginPairing() {

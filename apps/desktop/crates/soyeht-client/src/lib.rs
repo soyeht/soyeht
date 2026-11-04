@@ -29,6 +29,7 @@ pub mod harness_picker;
 pub mod keys;
 pub mod layout;
 pub mod local_preferences;
+pub mod login_start;
 pub mod loops;
 pub mod markdown;
 pub mod new_agent;
@@ -62,7 +63,7 @@ pub mod web_host;
 pub mod writing;
 
 pub use commands::Command;
-pub use engine::{CLIENT_NAME, Engine};
+pub use engine::{CLIENT_NAME, Engine, ServiceChange};
 pub use error::{Error, Result};
 pub use event::Event;
 pub use session::Session;

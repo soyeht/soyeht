@@ -382,6 +382,7 @@ pub fn run(
             tasks,
             destination,
             web: None,
+            login_start: false,
         }
     });
     Ok(())

@@ -411,6 +411,29 @@ pub fn row() -> Div {
     div().flex().flex_row().items_center()
 }
 
+/// A block of a panel: its title and the sentence that says what it is for, with the room the
+/// rows under them take.
+pub fn section(palette: &Palette, title: &'static str, summary: &'static str) -> Div {
+    column()
+        .gap(px(space::X8))
+        .child(chrome_text(FontWeight::BOLD, type_scale::SUBHEADING).child(title))
+        .child(
+            chrome_text(FontWeight::NORMAL, type_scale::CAPTION)
+                .text_color(rgb(palette.secondary))
+                .child(summary),
+        )
+}
+
+/// A line under the top bar that a standing question or notice sits in, aligned with the panes:
+/// the crash notice, and the question about starting at login.
+pub fn notice_row() -> Div {
+    row()
+        .flex_none()
+        .gap(px(space::X10))
+        .px(px(pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING))
+        .py(px(space::X8))
+}
+
 /// Text in a mono well: command output and code, as the Mac shows them.
 pub fn code_well(content: impl IntoElement, palette: &Palette) -> Div {
     div()
