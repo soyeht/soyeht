@@ -441,6 +441,22 @@
     ]
   },
   {
+    "name": "code copies its inner whitespace and no fence",
+    "markdown": "```sh\n  cd /Users/me && codex  \n\tnext\n```",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": "sh", "text": "  cd /Users/me && codex  \n\tnext"}
+    ]
+  },
+  {
+    "name": "code drops only the closing newline",
+    "markdown": "```\nrun\n\n```",
+    "streaming": false,
+    "blocks": [
+      {"type": "code", "language": null, "text": "run\n"}
+    ]
+  },
+  {
     "name": "indented code",
     "markdown": "para\n\n    indented\n    code",
     "streaming": false,

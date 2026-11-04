@@ -384,6 +384,7 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "UsageUnavailableReason" => decode_encode::<UsageUnavailableReason>(name, value),
         "UsageSource" => decode_encode::<UsageSource>(name, value),
         "UsageWindow" => decode_encode::<UsageWindow>(name, value),
+        "UsageActivity" => decode_encode::<UsageActivity>(name, value),
         "UsageReading" => decode_encode::<UsageReading>(name, value),
         "UsageListParams" => decode_encode::<UsageListParams>(name, value),
         "UsageListResult" => decode_encode::<UsageListResult>(name, value),

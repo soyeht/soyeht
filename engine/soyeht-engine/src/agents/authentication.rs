@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn npx_authentication_keeps_the_launch_package_before_untrusted_method_args() {
-        let package = "@agentclientprotocol/claude-agent-acp@0.77.0";
+        let package = "@agentclientprotocol/claude-agent-acp@0.100.0";
         let argv = terminal_auth_argv(
             &launch("/node/bin/npx-cli.js", &["--yes", package, "--acp"]),
             "npx",

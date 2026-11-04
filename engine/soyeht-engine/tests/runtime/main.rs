@@ -32,6 +32,7 @@ use uuid::Uuid;
 mod support;
 use support::*;
 
+mod agent_cli_choice;
 mod beat_board_and_messages;
 mod cancel_and_agent_auth;
 mod editor_agent_writes;

@@ -94,3 +94,31 @@ fn every_prefix_of_a_reply_parses_while_streaming() {
     }
     assert_eq!(parse(reply, true), parse(reply, false));
 }
+
+/// What the Copy button of a code block puts on the clipboard is the block's text: no fence, no
+/// language tag, the closing newline dropped and the whitespace inside kept. The Swift client
+/// has the same cases.
+#[test]
+fn a_code_block_copies_its_text_alone() {
+    let command = "cd /Users/me/project && codex";
+    let cases = [
+        (format!("```sh\n{command}\n```"), command),
+        (format!("```\n{command}\n```"), command),
+        (format!("~~~bash title=x\n{command}\n~~~"), command),
+        (
+            "```sh\n  indented  \n\tnext\n```".to_owned(),
+            "  indented  \n\tnext",
+        ),
+        ("before\n\n```\ncode\n```\n\nafter".to_owned(), "code"),
+    ];
+    for (markdown, copied) in cases {
+        let texts: Vec<_> = parse(&markdown, false)
+            .into_iter()
+            .filter_map(|block| match block {
+                Block::Code { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts, [copied], "{markdown}");
+    }
+}

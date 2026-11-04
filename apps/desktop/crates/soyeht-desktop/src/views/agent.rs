@@ -321,6 +321,7 @@ fn text_row(
             card,
             &format!("message-{owner}"),
             message.text.clone(),
+            "Copy",
             pane_interior::TIGHT_SPACING,
             palette,
         )
@@ -492,6 +493,7 @@ fn terminal_block(owner: &str, output: &TerminalOutput, palette: &'static Palett
         .w_full(),
         &format!("terminal-{owner}"),
         text,
+        "Copy",
         pane_interior::CARD_PADDING,
         palette,
     )

@@ -2,6 +2,11 @@ use super::*;
 use soyeht_platform::log::Failure as _;
 use std::path::PathBuf;
 
+/// The deadline and budget the report is collected with.
+fn limits() -> Limits {
+    Limits::new(Duration::from_secs(30), CAPS_DIAGNOSTICS_REPORT_BYTES)
+}
+
 fn texts(items: &[&str]) -> Vec<OsString> {
     items.iter().map(OsString::from).collect()
 }
@@ -47,6 +52,7 @@ fn the_report_is_what_the_soyeht_program_beside_the_window_prints() {
         "prod",
         Path::new("/data/Soyeht.next"),
         &["diagnostics"],
+        limits(),
     );
     std::fs::remove_dir_all(&folder).unwrap();
     assert_eq!(
@@ -66,6 +72,7 @@ fn the_crash_notice_asks_the_same_program_with_its_own_subcommand() {
         "prod",
         Path::new("/data/Soyeht.next"),
         &["crash-reports", "status"],
+        limits(),
     );
     std::fs::remove_dir_all(&folder).unwrap();
     assert_eq!(
@@ -92,6 +99,7 @@ fn a_window_with_no_soyeht_program_beside_it_has_no_report() {
         "prod",
         Path::new("/data"),
         &["diagnostics"],
+        limits(),
     );
     std::fs::remove_dir_all(&folder).unwrap();
     assert_eq!(report, Err(Failure::Unavailable));
@@ -102,7 +110,7 @@ mod running {
     use super::*;
 
     fn shell(script: &str) -> Result<String, super::super::Failure> {
-        run(Path::new("/bin/sh"), &texts(&["-c", script]))
+        run(Path::new("/bin/sh"), &texts(&["-c", script]), limits())
     }
 
     #[test]
@@ -120,7 +128,7 @@ mod running {
         let mut all = texts(&["-c", "echo \"$@\"", "sh"]);
         all.extend(given);
         assert_eq!(
-            run(Path::new("/bin/sh"), &all),
+            run(Path::new("/bin/sh"), &all, limits()),
             Ok("--profile dev --data-dir /data/Soyeht.dev diagnostics\n".to_owned())
         );
     }
@@ -144,7 +152,7 @@ mod running {
     fn a_program_that_cannot_start_is_a_failure() {
         let missing = PathBuf::from("/nonexistent/soyeht");
         assert!(matches!(
-            run(&missing, &[]),
+            run(&missing, &[], limits()),
             Err(super::super::Failure::Run(kind)) if kind.starts_with("spawn:")
         ));
     }

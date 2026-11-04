@@ -10,6 +10,7 @@ use soyeht_usage::host::{
     CookieRead, FileRead, Host, HttpRequest, HttpResult, Platform, RpcRequest, RpcRun, SecretRead,
     TerminalDriver, TerminalRequest, TerminalRun,
 };
+use soyeht_usage::host::{LocalUsageRead, StoredCredential};
 use std::path::{Path, PathBuf};
 
 /// What it does not replace it asks of the real host.
@@ -71,6 +72,24 @@ impl Host for FixtureHost {
 
     fn state_db_value(&self, path: &Path, key: &str) -> SecretRead {
         self.system.state_db_value(path, key)
+    }
+
+    /// The fixture machine has no program installed except through its `home`.
+    fn program_found(&self, _program: &str) -> bool {
+        false
+    }
+
+    fn opencode_credential(&self, database: &Path, integration: &str) -> StoredCredential {
+        self.system.opencode_credential(database, integration)
+    }
+
+    fn opencode_usage(
+        &self,
+        database: &Path,
+        since_ms: i64,
+        provider: Option<&str>,
+    ) -> LocalUsageRead {
+        self.system.opencode_usage(database, since_ms, provider)
     }
 
     fn json_rpc(&self, request: &RpcRequest) -> RpcRun {

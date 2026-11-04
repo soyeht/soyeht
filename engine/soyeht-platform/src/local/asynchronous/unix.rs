@@ -23,15 +23,25 @@ impl Listener {
     }
 }
 
-/// Whether the peer of `stream` runs as the same user as this process.
+/// Whether the peer of `stream` runs as the same user as this process; a peer the kernel cannot
+/// name is not.
 pub fn same_user(stream: &Stream) -> bool {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    stream
-        .peer_cred()
-        .is_ok_and(|credential| credential.uid() == unsafe { libc::geteuid() })
+    use std::os::fd::AsRawFd;
+    crate::local::unix::descriptor_peer_is_same_user(stream.as_raw_fd()).is_ok_and(|same| same)
 }
 
 /// Two connected streams, for tests and in-process wiring.
 pub fn pair() -> io::Result<(Stream, Stream)> {
     UnixStream::pair()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_peer_of_an_asynchronous_socket_pair_is_this_user() {
+        let (left, _right) = pair().unwrap();
+        assert!(same_user(&left));
+    }
 }

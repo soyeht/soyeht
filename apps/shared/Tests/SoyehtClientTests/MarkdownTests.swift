@@ -86,3 +86,23 @@ private func vectors() throws -> [Vector] {
   #expect(
     MarkdownReply.parse(reply, streaming: true) == MarkdownReply.parse(reply, streaming: false))
 }
+
+/// What the Copy button of a code block puts on the pasteboard is the block's text: no fence, no
+/// language tag, the closing newline dropped and the whitespace inside kept.
+@Test func aCodeBlockCopiesItsTextAlone() {
+  let command = "cd /Users/me/project && codex"
+  let cases: [(markdown: String, copied: String)] = [
+    ("```sh\n\(command)\n```", command),
+    ("```\n\(command)\n```", command),
+    ("~~~bash title=x\n\(command)\n~~~", command),
+    ("```sh\n  indented  \n\tnext\n```", "  indented  \n\tnext"),
+    ("before\n\n```\ncode\n```\n\nafter", "code"),
+  ]
+  for (markdown, copied) in cases {
+    let texts = MarkdownReply.parse(markdown, streaming: false).compactMap { block -> String? in
+      if case .code(_, let text) = block { return text }
+      return nil
+    }
+    #expect(texts == [copied], "\(markdown)")
+  }
+}

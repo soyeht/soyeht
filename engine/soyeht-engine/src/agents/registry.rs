@@ -15,7 +15,7 @@ const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
 const BUILTIN_AGENT_COUNT: usize = 41;
 const SOURCE_DIGEST: &str = "2e0ddd7be13f676b48158f266ba8d64a29da7c80e971b493664ed993dd99e295";
-const SNAPSHOT_DIGEST: &str = "d41c4079f196bd29be2ae0f631f673950e8baa22da2e38e331a2d7e3a7a34240";
+const SNAPSHOT_DIGEST: &str = "44982b3852dd673a1de03709ca09483937a3f8ce3ba71b0f9748f1dce16f5cd6";
 
 #[derive(Clone)]
 pub(crate) struct RegistryEntry {
@@ -373,10 +373,19 @@ pub fn entries(directory: &Path) -> Result<Vec<HarnessLaunch>> {
         .collect())
 }
 
-pub(crate) fn resolve_executable(
+/// A program found on a search path: the file as the path names it, and the file it resolves to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Found {
+    /// The directory's entry, which stays valid when an update replaces the file it links to.
+    pub entry: PathBuf,
+    /// The canonical path (`soyeht_platform::fs::canonicalize`), which names one version.
+    pub canonical: PathBuf,
+}
+
+pub(crate) fn find_executable(
     command: &str,
     directories: impl IntoIterator<Item = PathBuf>,
-) -> Option<PathBuf> {
+) -> Option<Found> {
     let path = Path::new(command);
     let candidates = if path.is_absolute() {
         vec![path.to_owned()]
@@ -390,9 +399,19 @@ pub(crate) fn resolve_executable(
     };
     candidates
         .into_iter()
-        // ignored: a search-path entry that does not exist is not a candidate
-        .filter_map(|path| soyeht_platform::fs::canonicalize(&path).ok())
-        .find(|path| is_executable(path))
+        .filter_map(|entry| {
+            // ignored: a search-path entry that does not exist is not a candidate
+            let canonical = soyeht_platform::fs::canonicalize(&entry).ok()?;
+            Some(Found { entry, canonical })
+        })
+        .find(|found| is_executable(&found.canonical))
+}
+
+pub(crate) fn resolve_executable(
+    command: &str,
+    directories: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
+    find_executable(command, directories).map(|found| found.canonical)
 }
 
 /// The file names a command can have in a directory: as typed on Unix, and with the extensions

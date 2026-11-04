@@ -75,6 +75,7 @@ struct AgentComposerChip<Leading: View>: View {
   let emphasized: Bool
   let style: AgentConversationStyle
   @ViewBuilder let leading: Leading
+  @ScaledMetric(relativeTo: .body) private var height = AgentComposerMetrics.controlHeight
 
   var body: some View {
     HStack(spacing: AgentComposerMetrics.chipSpacing) {
@@ -89,7 +90,7 @@ struct AgentComposerChip<Leading: View>: View {
         .frame(width: AgentComposerMetrics.chevronSize, height: AgentComposerMetrics.chevronSize)
     }
     .padding(.horizontal, AgentComposerMetrics.chipHorizontalPadding)
-    .frame(height: AgentComposerMetrics.controlHeight)
+    .frame(height: height)
     .contentShape(Capsule())
   }
 }

@@ -8,6 +8,7 @@ import SwiftUI
 struct WorkspaceWindow: View {
   @Environment(AgentAttentionNotifications.self) private var attentionNotifications
   @Environment(WebLinkPreferences.self) private var webLinkPreferences
+  @Environment(CrashNotice.self) private var crashNotice
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   @State private var navigation = WorkspaceNavigation()
@@ -48,6 +49,11 @@ struct WorkspaceWindow: View {
       Button("OK") { client.problem = nil }
     } message: {
       Text(client.problem ?? "")
+    }
+    .overlay(alignment: .bottomTrailing) {
+      if crashNotice.isShowing {
+        CrashNoticeView().padding(MacTheme.Space.x18)
+      }
     }
     .overlay(alignment: .bottom) {
       if let request = client.pairRequests.first {
@@ -490,7 +496,7 @@ struct WorkspaceWindow: View {
   }
   private var pairingContent: some View {
     VStack(spacing: 20) {
-      Text("Continue on iPhone").font(MacTheme.chrome(24, weight: .semibold))
+      Text(PairingCopy.continueTitle).font(MacTheme.chrome(24, weight: .semibold))
       let guidance = client.pairingGuidance
       Text(guidance.text)
         .multilineTextAlignment(.center)
@@ -522,7 +528,7 @@ struct WorkspaceWindow: View {
       }
       if !client.devices.isEmpty {
         VStack(alignment: .leading, spacing: 12) {
-          Text("Paired iPhones")
+          Text(PairingCopy.pairedDevicesTitle)
             .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
           ForEach(client.devices, id: \.deviceId) { device in
             HStack {
@@ -538,7 +544,7 @@ struct WorkspaceWindow: View {
       MacTheme.ink
     )
     .confirmationDialog(
-      "Revoke this iPhone's access?",
+      PairingCopy.revokeQuestion,
       isPresented: Binding(
         get: { deviceToRevoke != nil }, set: { if !$0 { deviceToRevoke = nil } })
     ) {
@@ -556,19 +562,19 @@ struct WorkspaceWindow: View {
     VStack(alignment: .leading, spacing: MacTheme.Space.x18) {
       HStack {
         VStack(alignment: .leading, spacing: MacTheme.Space.x4) {
-          Text("iPhone")
+          Text(PairingCopy.devices)
             .font(MacTheme.chrome(MacTheme.TypeScale.heading, weight: .bold))
           Text("Paired devices can continue every workspace.")
             .font(MacTheme.chrome(MacTheme.TypeScale.caption))
             .foregroundStyle(MacTheme.secondary)
         }
         Spacer()
-        Button("Pair iPhone", action: beginPairing)
+        Button(PairingCopy.pairButton, action: beginPairing)
           .buttonStyle(NeoPillButtonStyle(accent: true))
       }
       .frame(maxWidth: 760, alignment: .leading)
       if client.devices.isEmpty {
-        EmptyWorkspaceView(icon: "iphone", title: "No paired iPhone")
+        EmptyWorkspaceView(icon: "iphone", title: PairingCopy.noPairedDevice)
       } else {
         VStack(spacing: MacTheme.Space.x10) {
           ForEach(client.devices, id: \.deviceId) { device in

@@ -42,6 +42,59 @@ def fake_app(root):
     return app
 
 
+class SizeCeilingTests(unittest.TestCase):
+    CEILINGS = {"macos-aarch64.dmg": 1000, "linux-x86_64.deb": None}
+
+    def check(self, name, size):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / name
+            path.write_bytes(b"x" * size)
+            return package_common.size_problem(path, self.CEILINGS)
+
+    def test_a_package_near_its_ceiling_passes(self):
+        self.assertEqual(self.check("soyeht-0.1.0-macos-aarch64.dmg", 1000), (None, None))
+        self.assertEqual(self.check("soyeht-1.20.3-macos-aarch64.dmg", 950), (None, None))
+
+    def test_a_version_with_hyphens_still_finds_its_kind(self):
+        self.assertEqual(self.check("soyeht-0.2.0-rc.1-macos-aarch64.dmg", 1000), (None, None))
+        problem, _ = self.check("soyeht-0.2.0-rc.1-macos-aarch64.dmg", 1001)
+        self.assertIn("over its ceiling", problem)
+
+    def test_a_package_over_its_ceiling_is_a_problem(self):
+        problem, warning = self.check("soyeht-0.1.0-macos-aarch64.dmg", 1001)
+        self.assertIn("over its ceiling", problem)
+        self.assertIsNone(warning)
+
+    def test_a_package_far_under_its_ceiling_is_only_a_warning(self):
+        problem, warning = self.check("soyeht-0.1.0-macos-aarch64.dmg", 899)
+        self.assertIsNone(problem)
+        self.assertIn("lower it in scripts/package_sizes.json", warning)
+
+    def test_check_sizes_stops_on_a_problem_and_only_prints_a_warning(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            small = Path(temporary) / "soyeht-0.1.0-macos-aarch64.dmg"
+            small.write_bytes(b"x" * 10)
+            with patch.object(package_common, "SIZE_CEILINGS", Path(temporary) / "sizes.json"):
+                package_common.SIZE_CEILINGS.write_text(json.dumps({"ceilings": self.CEILINGS}))
+                package_common.check_sizes([small])
+                small.write_bytes(b"x" * 1001)
+                with self.assertRaisesRegex(PackagingError, "over its ceiling"):
+                    package_common.check_sizes([small])
+
+    def test_a_package_with_a_null_ceiling_is_not_checked(self):
+        self.assertEqual(self.check("soyeht-0.1.0-linux-x86_64.deb", 10**6), (None, None))
+
+    def test_a_name_that_is_no_kind_of_the_file_is_an_error_not_a_skip(self):
+        for name in ("soyeht-0.1.0-macos-arm64.dmg", "soyeht-0.1.0-windows-x86_64.exe", "other-0.1.0-macos-aarch64.dmg"):
+            with self.assertRaisesRegex(PackagingError, "not a package kind"):
+                self.check(name, 10)
+
+    def test_every_package_the_scripts_make_has_a_line_in_the_file(self):
+        recorded = json.loads(package_common.SIZE_CEILINGS.read_text())["ceilings"]
+        for kind in ("macos-aarch64.dmg", "linux-x86_64.deb", "linux-aarch64.AppImage", "windows-aarch64.exe"):
+            self.assertIn(kind, recorded)
+
+
 class SigningChoiceTests(unittest.TestCase):
     def test_the_environment_alone_makes_a_developer_id_signing(self):
         signing = package_mac.resolve_signing(FULL)
@@ -183,6 +236,20 @@ class SigningCallTests(unittest.TestCase):
             with patch.object(package_mac, "run", return_value=only_intel):
                 with self.assertRaisesRegex(PackagingError, "no arm64 slice"):
                     package_mac.thin_libraries(app)
+
+    def test_the_symbols_are_saved_before_the_app_executable_alone_is_stripped(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = fake_app(root)
+            calls = []
+            with patch.object(package_mac, "run", side_effect=lambda command, **_: calls.append([str(c) for c in command])):
+                package_mac.save_symbols(app, root / "dist/symbols/soyeht-0.1.0-macos-aarch64.dSYM.zip")
+                package_mac.strip_app(app)
+        self.assertEqual(calls[0][:2], ["dsymutil", str(app / "Contents/MacOS/Soyeht Next")])
+        self.assertEqual(calls[1][:3], ["ditto", "-c", "-k"])
+        self.assertEqual(calls[1][-1], str(root / "dist/symbols/soyeht-0.1.0-macos-aarch64.dSYM.zip"))
+        self.assertEqual(calls[2], ["strip", "-u", "-r", str(app / "Contents/MacOS/Soyeht Next")])
+        self.assertEqual(len(calls), 3, "the Rust programs are stripped by their profile, not here")
 
     def test_the_programs_are_signed_under_their_identifiers_then_the_bundle_with_its_entitlements(self):
         with tempfile.TemporaryDirectory() as temporary:
