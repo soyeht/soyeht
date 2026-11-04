@@ -150,6 +150,7 @@ class NotaryCredentialTests(unittest.TestCase):
         self.addCleanup(folder.cleanup)
         key = Path(folder.name) / "AuthKey_EXAMPLE.p8"
         key.write_text("not a real key")
+        key.chmod(0o600)
         environment = {key_name: value for key_name, value in FULL.items() if key_name != package_mac.NOTARY_VARIABLE}
         environment.update({
             package_mac.NOTARY_KEY_FILE_VARIABLE: str(key),
@@ -180,6 +181,15 @@ class NotaryCredentialTests(unittest.TestCase):
             package_mac.resolve_signing(environment)
         with self.assertRaisesRegex(PackagingError, "does not name a file"):
             package_mac.resolve_signing(self.api_key(**{package_mac.NOTARY_KEY_FILE_VARIABLE: "/nonexistent/key.p8"}))
+
+    def test_a_notary_key_that_other_users_can_read_is_refused(self):
+        environment = self.api_key()
+        key = Path(environment[package_mac.NOTARY_KEY_FILE_VARIABLE])
+        key.chmod(0o640)
+        with self.assertRaisesRegex(PackagingError, "chmod 600"):
+            package_mac.resolve_signing(environment)
+        key.chmod(0o600)
+        self.assertTrue(package_mac.resolve_signing(environment).notarizes)
 
     def test_a_release_without_any_notary_credential_is_refused(self):
         environment = {key: value for key, value in FULL.items() if key != package_mac.NOTARY_VARIABLE}

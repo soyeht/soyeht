@@ -51,6 +51,7 @@ from package_common import (
     PackagingError,
     artifact_path,
     check_sizes,
+    readable_by_others,
     release_environment,
     run,
     stream,
@@ -130,6 +131,8 @@ def notary_credentials(environment):
     key_file, key_id, issuer = values
     if not Path(key_file).is_file():
         raise PackagingError(f"{NOTARY_KEY_FILE_VARIABLE} does not name a file")
+    if readable_by_others(key_file):
+        raise PackagingError(f"{NOTARY_KEY_FILE_VARIABLE} names a file that other users can read: chmod 600 it")
     return ("--key", key_file, "--key-id", key_id, "--issuer", issuer)
 
 

@@ -18,7 +18,7 @@ Before the first release, once:
 |---|---|---|
 | A "Developer ID Application" certificate and its private key | signing the Mac app and image | the login keychain of the Mac that builds |
 | `SOYEHT_MAC_SIGNING_IDENTITY`, `SOYEHT_DEVELOPMENT_TEAM` | `package_mac.py --release` | the environment (the identity is the certificate's name or SHA-1; the team is its ten-character id) |
-| `SOYEHT_NOTARY_KEY_FILE`, `SOYEHT_NOTARY_KEY_ID`, `SOYEHT_NOTARY_ISSUER` | notarizing the app and the image | an App Store Connect API key: the path of its `.p8` file (outside the repository, owner-only), its key identifier and the team's issuer identifier, all in the environment. Alternatively `SOYEHT_NOTARY_PROFILE`, the name of a keychain profile made once with `xcrun notarytool store-credentials`; the profile wins when both are set |
+| `SOYEHT_NOTARY_KEY_FILE`, `SOYEHT_NOTARY_KEY_ID`, `SOYEHT_NOTARY_ISSUER` | notarizing the app and the image | an App Store Connect API key: the path of its `.p8` file (outside the repository; `package_mac.py` refuses one that other users can read), its key identifier and the team's issuer identifier, all in the environment. Alternatively `SOYEHT_NOTARY_PROFILE`, the name of a keychain profile made once with `xcrun notarytool store-credentials`; the profile wins when both are set |
 | A code-signing certificate for Windows | signing the installers and their programs | on the Windows host: `SOYEHT_WINDOWS_SIGN_THUMBPRINT` (a certificate in the store), or `SOYEHT_WINDOWS_SIGN_AZURE_DLIB` with `SOYEHT_WINDOWS_SIGN_AZURE_METADATA` (Azure Artifact Signing). `docs/platforms.md`, "Windows packages", has the rest |
 | The update signing key | signing `update-manifest.json` | `SOYEHT_UPDATE_SIGNING_KEY_FILE` (a path) or `SOYEHT_UPDATE_SIGNING_KEY` (the value) in the environment of the Mac that collects; see "The update key" below. Never a file of this repository |
 | `gh` logged in with write access to `soyeht/soyeht` | the draft release | `gh auth login`, or `GH_TOKEN` in the environment |
@@ -70,6 +70,10 @@ It prints `release-1` when the backup is the key the clients trust.
   A leaked key is the reverse: ship a build that drops it and sign with the new one. A copy that never
   updates stays exposed.
 - *Keep it on the release Mac only.* Collecting a release is the one task that reads it.
+
+**Before the first release is public.** A build that carries the key asks GitHub for the manifest once
+a day, and until a release is published there is none (404), so it honestly says "Could not check for
+updates"; that is the expected state, not a fault, and it ends when the first release is made public.
 
 If the key has to be made again before the first public release (nothing has shipped, so nothing
 trusts it yet), run `keygen`, replace the entry in `contracts/update.json`, run `uv run python

@@ -9,7 +9,8 @@
 writes the manifest the clients read and signs it with the Ed25519 key in
 `SOYEHT_UPDATE_SIGNING_KEY` (the 32-byte seed in base64, as `keygen` prints it) or, when that is
 not set, from the file `SOYEHT_UPDATE_SIGNING_KEY_FILE` names (the same text; the file must be
-readable by its owner only). The key never comes from a file of this repository. The version is `productVersion` of `contracts/release.json`.
+readable by its owner only). The key never comes from a file of this repository. The version is
+`productVersion` of `contracts/release.json`.
 `verify` reads a manifest the way a client does, against the keys of `contracts/update.json`
 (or `--trust-key ID=BASE64`), so a release can be checked before it is uploaded.
 
@@ -51,6 +52,7 @@ sys.path.insert(0, str(ROOT / "contracts"))
 import ed25519  # noqa: E402  (the contracts directory is on the path just above)
 import product_version  # noqa: E402
 import update_manifest as manifest  # noqa: E402
+from package_common import readable_by_others  # noqa: E402
 
 KEY_ENVIRONMENT = "SOYEHT_UPDATE_SIGNING_KEY"
 KEY_FILE_ENVIRONMENT = "SOYEHT_UPDATE_SIGNING_KEY_FILE"
@@ -89,7 +91,7 @@ def key_text(environment):
         return ""
     path = Path(named)
     try:
-        if path.stat().st_mode & 0o077:
+        if readable_by_others(path):
             raise Refused(f"{KEY_FILE_ENVIRONMENT} names a file that other users can read: chmod 600 it")
         return path.read_text()
     except OSError as failure:
