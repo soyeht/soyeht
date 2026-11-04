@@ -45,7 +45,10 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
       } else {
         ContentUnavailableView(
           "Choose a pane", systemImage: "sidebar.left",
-          description: Text("Pick a pane in the sidebar to drive it here."))
+          description: Text("Pick a pane in the sidebar to drive it here.")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PhonePalette.canvas.ignoresSafeArea())
       }
     }
     // Keep the pane beside the sidebar in portrait too, instead of dimmed under an overlay.
