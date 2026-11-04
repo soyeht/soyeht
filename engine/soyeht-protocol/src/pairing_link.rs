@@ -3,7 +3,7 @@
 //! reads it, and `contracts/vectors/pairing-link.json` holds the cases that this module and the Swift
 //! client both pass.
 
-use crate::limits::PAIRING_CODE_CHARS;
+use crate::{device_auth, limits::PAIRING_CODE_CHARS};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::net::{IpAddr, SocketAddr};
 
@@ -89,11 +89,13 @@ impl PairingLink {
             return Err(LinkError::Invalid);
         }
         let key_text = get("engineKey")?;
-        let engine_key = is_key_text(key_text)
+        let engine_key: [u8; 32] = is_key_text(key_text)
             .then(|| URL_SAFE_NO_PAD.decode(key_text).ok())
             .flatten()
             .and_then(|bytes| bytes.try_into().ok())
             .ok_or(LinkError::Invalid)?;
+        // A key that signs for anyone is refused before any code is sent to its server.
+        device_auth::verifying_key(&engine_key).ok_or(LinkError::Invalid)?;
         Ok(Self {
             engine_id: engine_id.to_owned(),
             address: address(get("address")?)?,
@@ -173,7 +175,9 @@ mod tests {
 
     #[test]
     fn the_link_the_engine_writes_is_a_link_a_device_reads() {
-        let key = [7_u8; 32];
+        let key = ed25519_dalek::SigningKey::from_bytes(&[7; 32])
+            .verifying_key()
+            .to_bytes();
         let link = uri(
             "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b",
             "100.64.1.2:8443",

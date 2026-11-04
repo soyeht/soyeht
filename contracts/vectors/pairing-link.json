@@ -1,5 +1,5 @@
 {
-  "description": "What a pairing link must carry and which addresses it may name (ADR 0134). The Rust protocol crate and the Swift client both pass these cases; `result` is valid, invalid, or old (the three-field link of an engine that does not prove itself).",
+  "description": "What a pairing link must carry and which addresses it may name (ADR 0134). The Rust protocol crate and the Swift client both pass these cases; `result` is valid, invalid, or old (the three-field link of an engine that does not prove itself). `weakEngineKeys` are the encodings of the eight points of small order (as hex): a link that carries one as its engine key is invalid, since such a key would sign for anyone.",
   "cases": [
     {
       "name": "tailnet IPv4",
@@ -122,6 +122,76 @@
       "name": "nothing",
       "link": "",
       "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (1 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (2 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=7P_______________________________________38",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (3 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (4 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (5 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA3o",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (6 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=xxdqcD1N2E-6PAt2DRBnDyogU_osOczGTsf9d5KsA_o",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (7 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_AU",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine key is a point of small order (8 of 8)",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=JuiVj8KyJ7BFw_SJ8u-Y8NXfrAXTxjM5sTgCiG1T_IU",
+      "result": "invalid"
+    },
+    {
+      "name": "an IPv4-mapped IPv6 loopback address",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=%5B::ffff:127.0.0.1%5D:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "an IPv4-mapped IPv6 tailnet address",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=%5B::ffff:100.64.0.1%5D:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "the engine id twice",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc&engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b",
+      "result": "invalid"
+    },
+    {
+      "name": "the code twice",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "result": "invalid"
     }
+  ],
+  "weakEngineKeys": [
+    "0100000000000000000000000000000000000000000000000000000000000000",
+    "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000000000000000000000000000000000080",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+    "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+    "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85"
   ]
 }

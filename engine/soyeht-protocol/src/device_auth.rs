@@ -4,6 +4,7 @@
 //! module and the Swift client all pass it.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use ed25519_dalek::VerifyingKey;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
@@ -49,6 +50,15 @@ pub fn engine_pair_bytes(request_id: &str, challenge: &[u8; 32], device_key: &[u
     bytes.extend_from_slice(device_key);
     bytes.extend_from_slice(request_id.as_bytes());
     bytes
+}
+
+/// A public key from its 32 bytes, as every side checks one (ADR 0132): it must be a point of the curve
+/// and not of small order, which would sign for anyone.
+pub fn verifying_key(bytes: &[u8; 32]) -> Option<VerifyingKey> {
+    match VerifyingKey::from_bytes(bytes) {
+        Ok(key) if !key.is_weak() => Some(key),
+        _ => None,
+    }
 }
 
 /// The MAC that proves a device knows the pairing code without sending it: keyed by the hash of the
@@ -163,6 +173,28 @@ mod tests {
             key.verify_strict(&welcome, &signature(&vectors, "engineHelloProof"))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn a_key_of_small_order_or_off_the_curve_is_not_a_key() {
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../../../contracts/vectors/pairing-link.json"))
+                .unwrap();
+        let weak = vectors["weakEngineKeys"].as_array().unwrap();
+        assert_eq!(weak.len(), 8);
+        for hex in weak {
+            let hex = hex.as_str().unwrap();
+            let bytes: [u8; 32] = (0..32)
+                .map(|index| u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            assert!(verifying_key(&bytes).is_none(), "{hex}");
+        }
+        let real = SigningKey::from_bytes(&[3; 32]).verifying_key();
+        assert!(verifying_key(real.as_bytes()).is_some());
+        // Not a point of the curve: no square root for this y.
+        assert!(verifying_key(&[2; 32]).is_none());
     }
 
     #[test]

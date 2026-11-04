@@ -62,14 +62,6 @@ pub(super) fn verify(engine_key: &VerifyingKey, signed: &[u8], proof: &str) -> R
         .map_err(|_| not_the_engine())
 }
 
-/// The engine's key from its 32 bytes. A key of small order (one that signs for anyone) is not a key.
-pub(super) fn engine_verifying_key(bytes: &[u8; 32]) -> Option<VerifyingKey> {
-    match VerifyingKey::from_bytes(bytes) {
-        Ok(key) if !key.is_weak() => Some(key),
-        _ => None,
-    }
-}
-
 impl Credential {
     pub(super) fn made(
         link: &super::PairingLink,
@@ -114,7 +106,7 @@ impl Credential {
             .engine_key
             .as_deref()
             .and_then(bytes32)
-            .and_then(|bytes| engine_verifying_key(&bytes));
+            .and_then(|bytes| device_auth::verifying_key(&bytes));
         let (Some(nonce), Some(engine_key)) = (nonce, engine_key) else {
             return Err(Error::Pairing(PairingFailure::PairAgain));
         };

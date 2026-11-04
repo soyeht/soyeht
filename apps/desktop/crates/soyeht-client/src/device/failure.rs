@@ -23,6 +23,8 @@ pub enum PairingFailure {
     PairAgain,
     /// The pairing window ran out.
     Expired,
+    /// The person stopped the pairing.
+    Cancelled,
 }
 
 impl fmt::Display for PairingFailure {
@@ -41,6 +43,7 @@ impl fmt::Display for PairingFailure {
             Self::Refused(reason) => return formatter.write_str(reason),
             Self::PairAgain => "This device cannot check your computer. Pair again.",
             Self::Expired => "The pairing link expired. Make a new one on the computer.",
+            Self::Cancelled => "Pairing was cancelled.",
         })
     }
 }
@@ -59,6 +62,7 @@ impl Failure for PairingFailure {
             Self::Refused(_) => "pairing_refused",
             Self::PairAgain => "pair_again",
             Self::Expired => "pairing_expired",
+            Self::Cancelled => "pairing_cancelled",
         }
         .to_owned()
     }
