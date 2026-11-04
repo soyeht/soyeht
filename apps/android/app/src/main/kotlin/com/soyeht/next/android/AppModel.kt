@@ -14,9 +14,11 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import uniffi.soyeht_android.ComposerControls
 import uniffi.soyeht_android.Conversation
 import uniffi.soyeht_android.Core
 import uniffi.soyeht_android.CoreException
+import uniffi.soyeht_android.HarnessChoices
 import uniffi.soyeht_android.KeyPress
 import uniffi.soyeht_android.Listener
 import uniffi.soyeht_android.Overview
@@ -69,6 +71,15 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var conversation: Conversation? by mutableStateOf(null)
         private set
 
+    /** The harness chip and the model, effort and permission menus of the open agent pane. */
+    var composer: ComposerControls? by mutableStateOf(null)
+        private set
+
+    /** The harnesses the harness menu lists, kept current while the menu is open. */
+    var harnessChoices: HarnessChoices? by mutableStateOf(null)
+        private set
+    private var choosingHarness = false
+
     /** "Forget this computer" waits for the person to say yes: it cannot be undone from the phone. */
     var confirmingForget by mutableStateOf(false)
         private set
@@ -118,14 +129,21 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         val current = core.overview()
         overview = current
         val pane = openPane ?: return
-        if (current.workspaces.none { workspace -> workspace.panes.any { it.paneId == pane.paneId } }) {
+        val row = current.workspaces.firstNotNullOfOrNull { workspace -> workspace.panes.firstOrNull { it.paneId == pane.paneId } }
+        if (row == null) {
             // The pane closed on the computer: the list is where the person goes.
             close()
             return
         }
+        // Its name and state follow the computer: a switch of harness renames the pane.
+        openPane = row
         when (pane.kind) {
             PaneKind.TERMINAL -> terminal = core.terminal(pane.paneId)
-            PaneKind.AGENT -> conversation = core.conversation(pane.paneId)
+            PaneKind.AGENT -> {
+                conversation = core.conversation(pane.paneId)
+                composer = core.composer(pane.paneId)
+                if (choosingHarness) harnessChoices = core.harnessChoices(pane.paneId)
+            }
             else -> Unit
         }
     }
@@ -192,15 +210,49 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     fun open(pane: PaneRow) {
         openPane = pane
         terminal = null
-        conversation = null
+        resetAgent()
         core.focus(pane.paneId)
+        // The chip names the harness by the engine's catalogue, so it is asked for as the pane opens.
+        if (pane.kind == PaneKind.AGENT) core.loadHarnesses(false)
         refresh()
     }
 
     fun close() {
         openPane = null
         terminal = null
+        resetAgent()
+    }
+
+    private fun resetAgent() {
         conversation = null
+        composer = null
+        harnessChoices = null
+        choosingHarness = false
+    }
+
+    /** The harness menu opens: it lists what the engine has now and is kept current while it is open. */
+    fun openHarnessMenu() {
+        val pane = openPane ?: return
+        choosingHarness = true
+        core.loadHarnesses(false)
+        harnessChoices = core.harnessChoices(pane.paneId)
+    }
+
+    fun closeHarnessMenu() {
+        choosingHarness = false
+    }
+
+    /** "Check agents again": the engine reads the machine's environment afresh. */
+    fun rescanHarnesses() = core.loadHarnesses(true)
+
+    /** Chooses a value of the model, effort or permission menu. */
+    fun choose(configId: String, value: String) {
+        openPane?.let { core.chooseOption(it.paneId, configId, value) }
+    }
+
+    /** Restarts the pane on another harness, handing the conversation over. The core refuses a switch that may not start. */
+    fun switchHarness(harnessId: String) {
+        openPane?.let { core.switchHarness(it.paneId, harnessId) }
     }
 
     fun type(text: String) = openPane?.let { core.typeText(it.paneId, text) }

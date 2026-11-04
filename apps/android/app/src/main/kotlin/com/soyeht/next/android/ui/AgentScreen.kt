@@ -42,7 +42,8 @@ fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {
         }
     }
     conversation?.question?.let { Question(it) { option -> model.answer(it.requestId, option) } }
-    Composer(model, working = conversation?.working == true)
+    model.composer?.let { AgentControls(model, it) }
+    MessageField(model, working = conversation?.working == true)
 }
 
 @Composable
@@ -89,7 +90,7 @@ private fun Question(question: PermissionQuestion, answer: (String) -> Unit) {
 }
 
 @Composable
-private fun Composer(model: AppModel, working: Boolean) {
+private fun MessageField(model: AppModel, working: Boolean) {
     val roles = LocalRoles.current
     var text by rememberSaveable { mutableStateOf("") }
     Row(
