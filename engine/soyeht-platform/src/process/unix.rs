@@ -131,7 +131,7 @@ fn parent_links() -> Vec<(u32, u32)> {
         .collect()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn parent_links() -> Vec<(u32, u32)> {
     let Ok(entries) = std::fs::read_dir("/proc") else {
         return Vec::new();
@@ -228,5 +228,5 @@ mod tests {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-compile_error!("the process tree is read on macOS and Linux only");
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
+compile_error!("the process tree is read on macOS, Linux and Android only");

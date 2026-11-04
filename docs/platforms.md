@@ -55,6 +55,19 @@ does nothing silently.
 - The default shell is `%COMSPEC%`. The engine does not ask a login shell for `PATH`, so it
   keeps no remembered launch `PATH` (`launch-path`) either.
 
+**Android** (ADR 0134)
+
+- The engine does not run on Android. The phone is a paired device (`apps/android`), and its Rust
+  core (`soyeht-android`) builds the same crates the desktop client uses, for
+  `aarch64-linux-android` and `x86_64-linux-android`. `soyeht-platform` therefore compiles there:
+  the kernel is Linux, so the process tree and the no-replace rename are the Linux ones, and a
+  crash report carries no stack frames because Android's C library has no `backtrace`.
+- Android's C library exports `renameat2` only from API 30 and the phone's `minSdk` is 26, so the no-replace
+  rename calls the kernel directly (`syscall`) there. The phone's core never reaches it: only the engine's
+  editor uses `rename_no_replace`.
+- The local endpoint, the service seam and the detached start are never used by the phone; they
+  keep the Unix code they have on Linux.
+
 ## Starting the engine
 
 The engine listens before it waits for anything the system or the person's environment
