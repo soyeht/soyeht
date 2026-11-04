@@ -112,9 +112,11 @@ one place.
 
 - **The person's own CLI.** The Claude adapter drives a Claude Code it bundles unless
   `CLAUDE_CODE_EXECUTABLE` names another. The engine names the person's `claude` when it is new
-  enough, so a pane has their version and models (ADR 0134). The rule, the minimum version and the
-  adapter package it applies to are one constant in `engine/soyeht-engine/src/agents/user_cli.rs`;
-  another adapter that honours such a variable is a second constant there.
+  enough, so a pane has their version and models (ADR 0134). The rule is a table in
+  `engine/soyeht-engine/src/agents/user_cli.rs`: another adapter that honours such a variable adds
+  an entry (its built-in harness, program, variable and minimum version). The adapter package is
+  read from the registry snapshot, and `soyeht-ptyd` must allow the variable
+  (`soyeht_ptyd::CLAUDE_CODE_EXECUTABLE` is the first).
 - **Display name.** Panes are named after the harness, not its adapter (the adapter named
   "Claude Agent" gives panes named "Claude"). The rule is `harness_label` in
   `engine/soyeht-engine/src/agents/naming.rs`.

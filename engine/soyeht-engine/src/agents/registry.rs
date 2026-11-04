@@ -373,10 +373,19 @@ pub fn entries(directory: &Path) -> Result<Vec<HarnessLaunch>> {
         .collect())
 }
 
-pub(crate) fn resolve_executable(
+/// A program found on a search path: the file as the path names it, and the file it resolves to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Found {
+    /// The directory's entry, which stays valid when an update replaces the file it links to.
+    pub entry: PathBuf,
+    /// The canonical path (`soyeht_platform::fs::canonicalize`), which names one version.
+    pub canonical: PathBuf,
+}
+
+pub(crate) fn find_executable(
     command: &str,
     directories: impl IntoIterator<Item = PathBuf>,
-) -> Option<PathBuf> {
+) -> Option<Found> {
     let path = Path::new(command);
     let candidates = if path.is_absolute() {
         vec![path.to_owned()]
@@ -390,9 +399,57 @@ pub(crate) fn resolve_executable(
     };
     candidates
         .into_iter()
-        // ignored: a search-path entry that does not exist is not a candidate
-        .filter_map(|path| soyeht_platform::fs::canonicalize(&path).ok())
-        .find(|path| is_executable(path))
+        .filter_map(|entry| {
+            // ignored: a search-path entry that does not exist is not a candidate
+            let canonical = soyeht_platform::fs::canonicalize(&entry).ok()?;
+            Some(Found { entry, canonical })
+        })
+        .find(|found| is_executable(&found.canonical))
+}
+
+pub(crate) fn resolve_executable(
+    command: &str,
+    directories: impl IntoIterator<Item = PathBuf>,
+) -> Option<PathBuf> {
+    find_executable(command, directories).map(|found| found.canonical)
+}
+
+/// The adapter package a built-in harness launches, and the version the snapshot pins.
+#[derive(Debug)]
+pub(crate) struct PinnedAdapter {
+    pub id: String,
+    pub package: String,
+    #[cfg(test)]
+    pub version: String,
+}
+
+/// Every built-in entry's pinned package: the one place a package name is read from.
+pub(crate) fn pinned_adapter(id: &str) -> Option<&'static PinnedAdapter> {
+    static PINNED: std::sync::OnceLock<Vec<PinnedAdapter>> = std::sync::OnceLock::new();
+    PINNED
+        .get_or_init(|| {
+            // An invalid snapshot fails every catalogue read with its own error.
+            builtin_entries()
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|entry| {
+                    let (package, _version) = entry
+                        .launch
+                        .args
+                        .iter()
+                        .find(|argument| argument.starts_with('@') && pinned_package(argument))
+                        .and_then(|argument| argument.rsplit_once('@'))?;
+                    Some(PinnedAdapter {
+                        id: entry.launch.id.clone(),
+                        package: package.into(),
+                        #[cfg(test)]
+                        version: _version.into(),
+                    })
+                })
+                .collect()
+        })
+        .iter()
+        .find(|adapter| adapter.id == id)
 }
 
 /// The file names a command can have in a directory: as typed on Unix, and with the extensions

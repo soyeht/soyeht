@@ -18,7 +18,7 @@ Raw terminal panes continue to exist and do not use this path.
    npx, uvx or binary, with a hash when available) or user configuration, and
    opens the process with stdin/stdout pipes in the pane worktree's `cwd`.
    **The Claude adapter drives the person's Claude Code** (ADR 0134): when a `claude` is on the
-   launch `PATH` and reports 2.1.280 or newer, the engine sets `CLAUDE_CODE_EXECUTABLE` to it in
+   launch `PATH` and reports 2.1.283 or newer, the engine sets `CLAUDE_CODE_EXECUTABLE` to it in
    the adapter's environment, so the pane has the person's version, models and automatic
    subagents. Without one, or with an older one, the adapter keeps the Claude Code it bundles
    (the pinned adapter's is newer than the minimum). A launch that sets the variable itself keeps

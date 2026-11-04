@@ -189,8 +189,8 @@ const SUPERVISOR_WAITS: &[(&str, usize, &str)] = &[
     ),
     (
         "soyeht-engine/src/agents/switching.rs",
-        2,
-        "jobs: a switch step, the retired closes",
+        1,
+        "jobs: the retired closes",
     ),
     (
         "soyeht-engine/src/agents/switching/candidate.rs",
@@ -198,16 +198,16 @@ const SUPERVISOR_WAITS: &[(&str, usize, &str)] = &[
         "work of the switch step jobs",
     ),
     (
+        "soyeht-engine/src/agents/user_cli.rs",
+        1,
+        "the spawn of an adapter process: Launch::send (job or offload) and the switch candidate job",
+    ),
+    (
         "soyeht-engine/src/core.rs",
         2,
         "the connect job and Core::open, before the Core is shared",
     ),
     ("soyeht-engine/src/input.rs", 1, "offload: pane.input"),
-    (
-        "soyeht-engine/src/process_start.rs",
-        1,
-        "launch: job or offload",
-    ),
     ("soyeht-engine/src/spawn_retry.rs", 3, "jobs: closes"),
     (
         "soyeht-engine/src/supervisor_handle.rs",

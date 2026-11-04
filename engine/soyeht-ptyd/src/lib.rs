@@ -3,7 +3,7 @@
 pub mod child;
 pub mod client;
 mod error;
-pub use error::{Error, Result};
+pub use error::{ENVIRONMENT_NOT_ALLOWED, Error, Result};
 pub mod io;
 mod pending;
 pub mod pipe_guard;

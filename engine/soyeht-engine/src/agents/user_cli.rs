@@ -11,15 +11,23 @@
 //! Otherwise the adapter keeps its bundled binary, and the choice is logged either way.
 //!
 //! The version is asked of the program, which is an external command. It runs where a process
-//! is sent to the supervisor (`Launch::send`), never under the Core lock (ADR 0079), and the
-//! answer is remembered for the file it came from, so a program that did not change is not
-//! asked again.
+//! is sent to the supervisor, never under the Core lock (ADR 0079), and the answer is remembered
+//! for the file it came from, so a program that did not change is not asked again. Every send of
+//! an adapter process goes through [`prepare`] and [`Given::send`]: a pane's process
+//! (`Launch::send`) and the candidate of a harness switch.
 
 use super::{environment, registry};
-use crate::streak::{self, Streak};
+use crate::{
+    errors::Error,
+    streak::{self, Streak},
+    supervisor_handle::Supervisor,
+};
 use soyeht_platform::log::{self, Failure, Line};
 use soyeht_process::Limits;
-use soyeht_ptyd::wire::{ProcessKind, Spawn};
+use soyeht_ptyd::{
+    wire::{ProcessKind, Request, Response, Spawn},
+    wire_kind,
+};
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
@@ -44,9 +52,15 @@ pub(crate) struct Version(u32, u32, u32);
 
 impl Version {
     /// The version a program prints for `--version`: it leads the output (`2.1.312 (Claude
-    /// Code)`).
+    /// Code)`). A pre-release or build suffix (`2.1.313-beta.1`, `2.1.3+build`) counts as the
+    /// release it precedes or builds: a person on a pre-release channel is the one who wants
+    /// their own CLI, and the numbers are what the models need. Anything else is no version.
     fn parse(output: &str) -> Option<Self> {
-        let mut parts = output.split_whitespace().next()?.split('.');
+        let word = output.split_whitespace().next()?;
+        let numbers = word
+            .split_once(['-', '+'])
+            .map_or(word, |(numbers, _)| numbers);
+        let mut parts = numbers.split('.');
         let version = Self(
             parts.next()?.parse().ok()?,
             parts.next()?.parse().ok()?,
@@ -58,25 +72,39 @@ impl Version {
 
 /// A CLI that an adapter can be told to drive instead of the one it bundles.
 pub(crate) struct UserCli {
-    /// The adapter package that honours `variable`, by the name that precedes `@version` in its
-    /// launch arguments.
-    package: &'static str,
+    /// The built-in harness whose adapter honours `variable`. Its pinned package, in the registry
+    /// snapshot, is what identifies the adapter in a launch.
+    harness: &'static str,
     /// The program name searched on the launch `PATH`.
     program: &'static str,
     /// The variable of the adapter's environment that names the program to run.
     variable: &'static str,
-    /// The oldest version worth running: the first Claude Code that accepts the current models.
-    /// 2.1.270 answers `400 ... does not support this model; version 2.1.280 or newer is
-    /// required`. The CLI bundled with the pinned adapter is newer, so a program below this is
-    /// the worse of the two.
+    /// The oldest version worth running. It is decided against one adapter release (below) and
+    /// holds only for that one.
     minimum: Version,
+    /// The pinned adapter version `minimum` was decided against. A test fails when the snapshot
+    /// pins another, so a bump of the pin makes someone read the adapter again.
+    #[cfg(test)]
+    decided_for: &'static str,
 }
 
-pub(crate) const CLAUDE: UserCli = UserCli {
-    package: "@agentclientprotocol/claude-agent-acp",
+/// The CLIs the engine can give an adapter.
+static CLIS: &[UserCli] = &[CLAUDE];
+
+/// Claude Code. The adapter 0.100.0 ships with SDK 0.3.316, whose bundled CLI is 2.1.316, and is
+/// written against CLIs from 2.1.206 on. 2.1.280 is the first CLI that accepts the current models
+/// (2.1.270 answers `400 ... version 2.1.280 or newer is required`), but the adapter's own
+/// baseline for them is 2.1.283: from it `opus` and `default` are the natively 1M-token models its
+/// context handling expects, and its model switch takes ~0.5 s where older CLIs take ~15 s. A
+/// person's CLI below 2.1.283 runs worse under this adapter than the bundled 2.1.316, so it is
+/// not used. Newer than the bundle is fine: the person's CLI is the one they run in a terminal.
+const CLAUDE: UserCli = UserCli {
+    harness: "registry.claude-acp",
     program: program_name(cfg!(windows)),
     variable: soyeht_ptyd::CLAUDE_CODE_EXECUTABLE,
-    minimum: Version(2, 1, 280),
+    minimum: Version(2, 1, 283),
+    #[cfg(test)]
+    decided_for: "0.100.0",
 };
 
 /// Windows runs a `.cmd` shim through a shell, which Node cannot start without one, so the
@@ -108,22 +136,24 @@ impl Why {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Choice {
-    /// The person's program, by its canonical path.
+    /// The person's program, by the path of their search path: a link that follows an update
+    /// stays right where the file it points to goes away.
     Own(PathBuf),
     Bundled(Why),
 }
 
-/// The CLI to run: the person's `found` program when `version` says it is new enough.
+/// The CLI to run: the person's `found` program when `version` says it is new enough. `version`
+/// is asked of the file the program resolves to.
 fn decide(
     minimum: Version,
-    found: Option<PathBuf>,
+    found: Option<registry::Found>,
     version: impl FnOnce(&Path) -> Option<Version>,
 ) -> Choice {
-    let Some(path) = found else {
+    let Some(found) = found else {
         return Choice::Bundled(Why::NotInstalled);
     };
-    match version(&path) {
-        Some(version) if version >= minimum => Choice::Own(path),
+    match version(&found.canonical) {
+        Some(version) if version >= minimum => Choice::Own(found.entry),
         Some(_) => Choice::Bundled(Why::TooOld),
         None => Choice::Bundled(Why::VersionUnknown),
     }
@@ -202,7 +232,11 @@ fn memory() -> MutexGuard<'static, BTreeMap<&'static str, Memory>> {
 /// Runs `path --version`. Off the Core lock only: `soyeht_process::run` refuses otherwise.
 fn ask_version(cli: &UserCli, path: &Path) -> Option<Version> {
     let mut command = Command::new(path);
-    command.arg("--version");
+    // The person's `PATH`, not the engine's: a program started by `env node` (an npm install)
+    // finds its interpreter only there when a launch agent gave the engine a minimal one.
+    command
+        .arg("--version")
+        .env("PATH", environment::launch_path());
     match soyeht_process::run(command, Limits::new(VERSION_TIMEOUT, VERSION_OUTPUT_BYTES)) {
         Ok(output) if output.success() => Version::parse(&String::from_utf8_lossy(&output.stdout)),
         Ok(_) => {
@@ -224,10 +258,11 @@ fn ask_version(cli: &UserCli, path: &Path) -> Option<Version> {
 }
 
 /// The CLI a process of `cli`'s adapter should run now. Off the Core lock.
-pub(crate) fn settle(cli: &UserCli) -> Choice {
-    let found = registry::resolve_executable(cli.program, environment::candidate_directories(&[]))
-        // The variable is a string of the child's environment.
-        .filter(|path| path.to_str().is_some());
+fn settle(cli: &UserCli) -> Choice {
+    let found = registry::find_executable(cli.program, environment::candidate_directories(&[]))
+        // The variable is a string of the child's environment, and a path a process starts by
+        // must not depend on the directory it starts in.
+        .filter(|found| found.entry.to_str().is_some() && found.entry.is_absolute());
     let (choice, announce) = {
         let mut all = memory();
         let memory = all.entry(cli.variable).or_default();
@@ -250,66 +285,97 @@ pub(crate) fn settle(cli: &UserCli) -> Choice {
     choice
 }
 
-/// The CLI whose adapter `argv` launches, if one is declared above.
+/// The CLI whose adapter `argv` launches: the one whose pinned package, in the registry
+/// snapshot, is an argument followed by `@version`.
 fn cli_of(argv: &[String]) -> Option<&'static UserCli> {
-    argv.iter()
-        .any(|argument| {
-            argument
-                .strip_prefix(CLAUDE.package)
-                .is_some_and(|rest| rest.starts_with('@'))
+    CLIS.iter().find(|cli| {
+        registry::pinned_adapter(cli.harness).is_some_and(|adapter| {
+            argv.iter().any(|argument| {
+                argument
+                    .strip_prefix(adapter.package.as_str())
+                    .is_some_and(|rest| rest.starts_with('@'))
+            })
         })
-        .then_some(&CLAUDE)
+    })
 }
 
-/// Gives the adapter in `spawn` the person's CLI to drive, when it has one, and says whether it
-/// did. A launch that sets the variable itself (a custom entry's environment) keeps its own
-/// choice. Off the Core lock.
-pub(crate) fn complete(spawn: &mut Spawn) -> bool {
-    if spawn.kind != ProcessKind::PipesAcp {
-        return false;
-    }
-    let Some(cli) = cli_of(&spawn.argv) else {
-        return false;
-    };
-    if spawn.env.contains_key(cli.variable) {
-        return false;
-    }
-    if let Choice::Own(path) = settle(cli)
+/// An adapter process ready to be sent: its spawn, as given the person's CLI when it has one, and
+/// the same spawn without it for a supervisor that refuses the variable.
+pub(crate) struct Given {
+    config: Spawn,
+    plain: Option<Spawn>,
+}
+
+/// Gives the adapter in `config` the person's CLI to drive, when it has one. A launch that sets
+/// the variable itself (a custom entry's environment) keeps its own choice; a process that is not
+/// an adapter is left alone. May run `--version`, so off the Core lock.
+pub(crate) fn prepare(mut config: Spawn) -> Given {
+    let cli = (config.kind == ProcessKind::PipesAcp)
+        .then(|| cli_of(&config.argv))
+        .flatten()
+        .filter(|cli| !config.env.contains_key(cli.variable));
+    let mut plain = None;
+    if let Some(cli) = cli
+        && let Choice::Own(path) = settle(cli)
         && let Some(path) = path.to_str()
     {
-        spawn.env.insert(cli.variable.into(), path.into());
-        return true;
+        let without = config.clone();
+        config.env.insert(cli.variable.into(), path.into());
+        plain = Some(without);
     }
-    false
+    Given { config, plain }
 }
 
-/// `spawn` as it was before [`complete`] gave it a CLI.
-pub(crate) fn without_cli(spawn: &Spawn) -> Spawn {
-    let mut plain = spawn.clone();
-    plain.env.remove(CLAUDE.variable);
-    plain
+/// Whether `error` is a supervisor that does not know the variable, as one that outlived an
+/// update does: it answers the spawn with this refusal and nothing else is wrong with it.
+fn environment_refused(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Supervisor(soyeht_ptyd::Error::Remote { kind, message })
+            if kind == wire_kind::OPERATION_FAILED
+                && message == soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED
+    )
 }
 
 static REFUSALS: Mutex<Streak> = Mutex::new(Streak::once());
 
-/// The supervisor refused a process that [`complete`] gave a CLI, as a supervisor that outlived
-/// an update and does not know the variable does: the process starts without it. Logged at the
-/// first refusal of a streak.
-pub(crate) fn refused(error: &crate::errors::Error) {
-    if streak::first_failure(&REFUSALS, &error.failure_kind()) {
-        log::failure("engine.agent_cli_refused", error);
+impl Given {
+    /// Asks the supervisor to start the process; if it refuses the variable, to start it
+    /// without. Off the Core lock: it waits for the supervisor.
+    pub(crate) fn send(self, supervisor: &Supervisor) -> Result<Response, Error> {
+        self.send_with(|config| supervisor.call(Request::Spawn(config)))
     }
-}
 
-/// The supervisor took a process that [`complete`] gave a CLI.
-pub(crate) fn accepted() {
-    streak::recovered(&REFUSALS);
+    fn send_with(
+        self,
+        mut call: impl FnMut(Spawn) -> Result<Response, Error>,
+    ) -> Result<Response, Error> {
+        let Some(plain) = self.plain else {
+            return call(self.config);
+        };
+        match call(self.config) {
+            Err(error) if environment_refused(&error) => {
+                if streak::first_failure(&REFUSALS, &error.failure_kind()) {
+                    log::failure("engine.agent_cli_refused", &error);
+                }
+                call(plain)
+            }
+            result => {
+                if result.is_ok() {
+                    streak::recovered(&REFUSALS);
+                }
+                result
+            }
+        }
+    }
 }
 
 /// Asks for the version in the background, so the first agent pane does not wait for it.
 pub(crate) fn warm() {
     let started = thread::Builder::new().name("user-cli".into()).spawn(|| {
-        settle(&CLAUDE);
+        for cli in CLIS {
+            settle(cli);
+        }
     });
     if let Err(error) = started {
         log::failure("engine.agent_cli_warm_failed", &error);
@@ -319,29 +385,51 @@ pub(crate) fn warm() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
+    use std::{cell::Cell, sync::Mutex};
 
-    const MINIMUM: Version = Version(2, 1, 280);
+    const MINIMUM: Version = Version(2, 1, 283);
+
+    fn found() -> registry::Found {
+        registry::Found {
+            entry: PathBuf::from("/home/person/bin/claude"),
+            canonical: PathBuf::from("/home/person/.share/claude/versions/2.1.312"),
+        }
+    }
 
     fn path() -> PathBuf {
-        PathBuf::from("/home/person/bin/claude")
+        found().entry
     }
 
     #[test]
     fn a_program_that_is_new_enough_is_the_one_the_adapter_drives() {
-        for version in [Version(2, 1, 280), Version(2, 1, 312), Version(3, 0, 0)] {
+        for version in [Version(2, 1, 283), Version(2, 1, 312), Version(3, 0, 0)] {
             assert_eq!(
-                decide(MINIMUM, Some(path()), |_| Some(version)),
+                decide(MINIMUM, Some(found()), |_| Some(version)),
                 Choice::Own(path())
             );
         }
     }
 
     #[test]
+    fn the_adapter_is_given_the_path_the_person_has_and_the_version_is_asked_of_its_file() {
+        let asked = Mutex::new(None);
+        let choice = decide(MINIMUM, Some(found()), |file| {
+            *asked.lock().unwrap() = Some(file.to_owned());
+            Some(Version(2, 1, 312))
+        });
+        // The entry of the search path follows an update; the versioned file does not.
+        assert_eq!(
+            choice,
+            Choice::Own(PathBuf::from("/home/person/bin/claude"))
+        );
+        assert_eq!(asked.into_inner().unwrap(), Some(found().canonical));
+    }
+
+    #[test]
     fn a_program_that_is_too_old_leaves_the_adapter_its_own() {
-        for version in [Version(2, 1, 270), Version(2, 1, 279), Version(1, 99, 999)] {
+        for version in [Version(2, 1, 270), Version(2, 1, 282), Version(1, 99, 999)] {
             assert_eq!(
-                decide(MINIMUM, Some(path()), |_| Some(version)),
+                decide(MINIMUM, Some(found()), |_| Some(version)),
                 Choice::Bundled(Why::TooOld)
             );
         }
@@ -361,9 +449,24 @@ mod tests {
     #[test]
     fn a_program_that_does_not_say_its_version_is_not_trusted() {
         assert_eq!(
-            decide(MINIMUM, Some(path()), |_| None),
+            decide(MINIMUM, Some(found()), |_| None),
             Choice::Bundled(Why::VersionUnknown)
         );
+    }
+
+    #[test]
+    fn the_minimum_was_decided_against_the_adapter_the_snapshot_pins() {
+        for cli in CLIS {
+            let pinned = registry::pinned_adapter(cli.harness)
+                .unwrap_or_else(|| panic!("{} pins no adapter package", cli.harness));
+            assert_eq!(
+                pinned.version, cli.decided_for,
+                "the snapshot pins {} {} but the minimum of {} was decided against {}: read the \
+                 new adapter's SDK and its CLI version checks, decide the minimum again and set \
+                 `decided_for`",
+                pinned.package, pinned.version, cli.program, cli.decided_for
+            );
+        }
     }
 
     #[test]
@@ -378,6 +481,20 @@ mod tests {
         }
         assert!(Version(2, 1, 312) > Version(2, 1, 99));
         assert!(Version(10, 0, 0) > Version(9, 9, 9));
+    }
+
+    #[test]
+    fn a_pre_release_or_build_suffix_counts_as_its_release() {
+        for (output, version) in [
+            ("2.1.313-beta.1 (Claude Code)", Version(2, 1, 313)),
+            ("2.1.3+build", Version(2, 1, 3)),
+            ("2.1.313-rc.1+build.5", Version(2, 1, 313)),
+        ] {
+            assert_eq!(Version::parse(output), Some(version), "{output:?}");
+        }
+        for refused in ["2.1-beta.1", "2.1.x-beta", "+1.2.3", "2.1.3.4-beta"] {
+            assert_eq!(Version::parse(refused), None, "{refused:?}");
+        }
     }
 
     #[test]
@@ -444,19 +561,6 @@ mod tests {
         assert_eq!(asked.get(), 3);
     }
 
-    #[test]
-    fn the_spawn_without_the_cli_is_the_one_before_it_was_given() {
-        let plain = adapter(
-            "@agentclientprotocol/claude-agent-acp@0.100.0",
-            ProcessKind::PipesAcp,
-        );
-        let mut given = plain.clone();
-        given
-            .env
-            .insert(CLAUDE.variable.into(), "/home/person/bin/claude".into());
-        assert_eq!(without_cli(&given), plain);
-    }
-
     fn adapter(package: &str, kind: ProcessKind) -> Spawn {
         Spawn {
             instance_key: "key".into(),
@@ -470,25 +574,27 @@ mod tests {
         }
     }
 
+    fn pinned_claude_package() -> String {
+        let pinned = registry::pinned_adapter(CLAUDE.harness).unwrap();
+        format!("{}@{}", pinned.package, pinned.version)
+    }
+
     #[test]
-    fn only_the_claude_adapter_is_given_the_variable() {
+    fn the_adapter_is_known_by_the_package_the_snapshot_pins() {
+        let package = pinned_claude_package();
         assert!(
-            cli_of(
-                &adapter(
-                    "@agentclientprotocol/claude-agent-acp@0.100.0",
-                    ProcessKind::PipesAcp
-                )
-                .argv
-            )
-            .is_some()
+            package.starts_with("@") && package.contains("claude"),
+            "{package}"
         );
+        assert!(cli_of(&adapter(&package, ProcessKind::PipesAcp).argv).is_some());
+        let name = &registry::pinned_adapter(CLAUDE.harness).unwrap().package;
         for other in [
-            "@agentclientprotocol/codex-acp@1.11.0",
-            "@agentclientprotocol/claude-agent-acp-extra@1.0.0",
-            "@agentclientprotocol/claude-agent-acp",
+            "@agentclientprotocol/codex-acp@1.11.0".to_owned(),
+            format!("{name}-extra@1.0.0"),
+            name.clone(),
         ] {
             assert!(
-                cli_of(&adapter(other, ProcessKind::PipesAcp).argv).is_none(),
+                cli_of(&adapter(&other, ProcessKind::PipesAcp).argv).is_none(),
                 "{other}"
             );
         }
@@ -496,16 +602,115 @@ mod tests {
 
     #[test]
     fn a_process_that_is_not_an_adapter_or_names_its_own_cli_is_left_alone() {
-        let package = "@agentclientprotocol/claude-agent-acp@0.100.0";
-        let mut terminal = adapter(package, ProcessKind::Pty);
-        assert!(!complete(&mut terminal));
-        assert!(terminal.env.is_empty());
+        let package = pinned_claude_package();
+        let terminal = adapter(&package, ProcessKind::Pty);
+        let given = prepare(terminal.clone());
+        assert_eq!((given.config, given.plain), (terminal, None));
 
-        let mut recipe = adapter(package, ProcessKind::PipesAcp);
+        let mut recipe = adapter(&package, ProcessKind::PipesAcp);
         recipe
             .env
             .insert(CLAUDE.variable.into(), "/recipe/claude".into());
-        assert!(!complete(&mut recipe));
-        assert_eq!(recipe.env[CLAUDE.variable], "/recipe/claude");
+        let given = prepare(recipe.clone());
+        assert_eq!((given.config, given.plain), (recipe, None));
+    }
+
+    fn instance_of(config: Spawn) -> Response {
+        Response::Instance(soyeht_ptyd::wire::Instance {
+            instance_id: "process".into(),
+            supervisor_id: "answering".into(),
+            spawn: config,
+            pid: 7,
+            closed: false,
+            exit_code: None,
+        })
+    }
+
+    fn refusal(kind: &str, message: &str) -> Error {
+        Error::Supervisor(soyeht_ptyd::Error::Remote {
+            kind: kind.into(),
+            message: message.into(),
+        })
+    }
+
+    fn given_with_cli() -> (Given, Spawn) {
+        let plain = adapter(&pinned_claude_package(), ProcessKind::PipesAcp);
+        let mut config = plain.clone();
+        config
+            .env
+            .insert(CLAUDE.variable.into(), "/home/person/bin/claude".into());
+        (
+            Given {
+                config,
+                plain: Some(plain.clone()),
+            },
+            plain,
+        )
+    }
+
+    #[test]
+    fn a_supervisor_that_does_not_know_the_variable_starts_the_process_without_it() {
+        let (given, plain) = given_with_cli();
+        let sent = Mutex::new(Vec::new());
+        let response = given
+            .send_with(|config| {
+                let with = config.env.contains_key(CLAUDE.variable);
+                sent.lock().unwrap().push(with);
+                if with {
+                    Err(refusal(
+                        wire_kind::OPERATION_FAILED,
+                        soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED,
+                    ))
+                } else {
+                    Ok(instance_of(config))
+                }
+            })
+            .unwrap();
+        assert_eq!(*sent.lock().unwrap(), [true, false]);
+        assert!(matches!(response, Response::Instance(instance) if instance.spawn == plain));
+    }
+
+    #[test]
+    fn only_the_refusal_of_the_variable_is_retried_without_it() {
+        let ptyd_says = [
+            (wire_kind::SPAWN_REFUSED, "no such directory"),
+            (
+                wire_kind::SPAWN_FAILED,
+                soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED,
+            ),
+            (wire_kind::IDEMPOTENCY_CONFLICT, "instance key reused"),
+            (wire_kind::OPERATION_FAILED, "invalid spawn parameters"),
+        ];
+        for (kind, message) in ptyd_says {
+            let (given, _) = given_with_cli();
+            let calls = Cell::new(0);
+            let failed = given.send_with(|_| {
+                calls.set(calls.get() + 1);
+                Err(refusal(kind, message))
+            });
+            assert!(failed.is_err());
+            assert_eq!(calls.get(), 1, "{kind}: {message} was sent again");
+        }
+    }
+
+    #[test]
+    fn a_spawn_given_no_cli_is_sent_once_as_it_is() {
+        let config = adapter(&pinned_claude_package(), ProcessKind::PipesAcp);
+        let calls = Cell::new(0);
+        let given = Given {
+            config: config.clone(),
+            plain: None,
+        };
+        given
+            .send_with(|sent| {
+                calls.set(calls.get() + 1);
+                assert_eq!(sent, config);
+                Err(refusal(
+                    wire_kind::OPERATION_FAILED,
+                    soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED,
+                ))
+            })
+            .unwrap_err();
+        assert_eq!(calls.get(), 1);
     }
 }

@@ -26,7 +26,7 @@ use crate::{
     supervisor_handle::{DEADLINE, Supervisor, Turn},
 };
 use serde_json::Value;
-use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
+use soyeht_ptyd::wire::{Instance, ProcessKind, Response, Spawn};
 
 /// How a start ended, as the code that asked for it sees it under the lock.
 pub(crate) enum Started {
@@ -54,36 +54,12 @@ impl Launch {
     }
 
     /// Waits for the sends ahead of it, then asks the supervisor.
-    pub(crate) fn send(mut self) -> Result<Instance> {
-        // Asks the person's CLI for its version (ADR 0134), which only an off-lock thread may do.
-        let plain = crate::agents::user_cli::complete(&mut self.config)
-            .then(|| crate::agents::user_cli::without_cli(&self.config));
-        self.send_with(plain)
-    }
-
-    /// [`Launch::send`] for a config that may have been given a CLI: `plain` is the same without
-    /// it.
-    fn send_with(self, plain: Option<Spawn>) -> Result<Instance> {
+    pub(crate) fn send(self) -> Result<Instance> {
+        // An adapter is given the person's own CLI (ADR 0134), which takes a command; that waits
+        // for nobody's turn.
+        let process = crate::agents::user_cli::prepare(self.config);
         self.turn.wait();
-        let given = plain.is_some();
-        let mut refused = false;
-        // The config as it is, then, if the supervisor refuses what `complete` gave it, the same
-        // without it. A supervisor that outlived an update does not know the variable.
-        let mut result = Err(errors::ptyd_unavailable("No spawn was sent"));
-        for config in std::iter::once(self.config).chain(plain) {
-            result = self.supervisor.call(Request::Spawn(config));
-            match &result {
-                Err(error) if given && !refused && !errors::supervisor_link_lost(error) => {
-                    refused = true;
-                    crate::agents::user_cli::refused(error);
-                }
-                _ => break,
-            }
-        }
-        if given && !refused && result.is_ok() {
-            crate::agents::user_cli::accepted();
-        }
-        match result? {
+        match process.send(&self.supervisor)? {
             Response::Instance(instance) => Ok(instance),
             _ => Err(errors::ptyd_unavailable("Invalid spawn response")),
         }
@@ -275,6 +251,7 @@ mod tests {
         supervisor_link::tests::core_with_unstarted_pane,
         test_panes::{Answering, apply_until_done},
     };
+    use soyeht_ptyd::wire::Request;
     use std::{
         sync::{Arc, Mutex},
         time::{Duration, Instant},
@@ -324,46 +301,6 @@ mod tests {
         let asked = Asked::default();
         core.link_supervisor(slow_supervisor(delay, &asked));
         (core, directory, asked)
-    }
-
-    #[test]
-    fn a_supervisor_that_refuses_the_claude_code_variable_starts_the_process_without_it() {
-        let (mut core, directory, _, _) = core_with_unstarted_pane(Vec::new());
-        let asked = Asked::default();
-        let log = Arc::clone(&asked);
-        core.link_supervisor(Box::new(Answering(move |request| match request {
-            Request::Spawn(config)
-                if config.env.contains_key(soyeht_ptyd::CLAUDE_CODE_EXECUTABLE) =>
-            {
-                log.lock().unwrap().push("spawn with the variable".into());
-                Err(soyeht_ptyd::Error::Remote {
-                    kind: soyeht_ptyd::wire_kind::OPERATION_FAILED.into(),
-                    message: "environment variable is not allowed".into(),
-                })
-            }
-            Request::Spawn(config) => {
-                log.lock().unwrap().push("spawn without it".into());
-                Ok(Response::Instance(instance_of(config)))
-            }
-            _ => Ok(Response::Ok),
-        })));
-        let plain = core.pane_spawn_config(PANE).unwrap();
-        let mut given = plain.clone();
-        given.env.insert(
-            soyeht_ptyd::CLAUDE_CODE_EXECUTABLE.into(),
-            "/home/person/bin/claude".into(),
-        );
-        let instance = core
-            .launch(given, &[])
-            .unwrap()
-            .send_with(Some(plain.clone()))
-            .unwrap();
-        assert_eq!(instance.spawn, plain);
-        assert_eq!(
-            asked.lock().unwrap().clone(),
-            ["spawn with the variable", "spawn without it"]
-        );
-        crate::test_paths::remove_after(core, directory);
     }
 
     const PANE: &str = "p-pane";

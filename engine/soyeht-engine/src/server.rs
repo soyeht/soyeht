@@ -111,6 +111,9 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     let _lock = singleton(&config.directory)?;
     let mut core = Core::open_with(&config.directory, config.hooks)?;
+    // The version of the person's own Claude Code, asked now and not by the first pane. Only the
+    // running engine does: a unit test that opens a Core never runs the machine's programs.
+    crate::agents::user_cli::warm();
     core.use_port_of(config.profile);
     if let Some(program) = config.supervisor_program {
         core.restart_supervisor_with(program);
