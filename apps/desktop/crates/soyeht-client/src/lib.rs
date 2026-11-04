@@ -18,6 +18,7 @@ pub mod cards;
 pub mod catalogue;
 pub mod commands;
 pub mod crash_notice;
+pub mod device;
 pub mod diagnostics;
 pub mod editor;
 mod engine;

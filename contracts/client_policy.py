@@ -122,7 +122,7 @@ def validate(policy, schema):
         if not isinstance(value, str) or not value:
             raise ValueError(f"x-clientPolicy.texts.{key} must be a non-empty string")
     names = policy[CLIENT_NAMES]
-    clients = {"mac", "iphone", "desktop"}
+    clients = {"mac", "iphone", "desktop", "android"}
     if set(names) != clients | {client + "Dev" for client in clients}:
         raise ValueError("clientName names each client and its debug build")
     for key, name in names.items():

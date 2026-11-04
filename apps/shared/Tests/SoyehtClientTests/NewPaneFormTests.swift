@@ -160,3 +160,9 @@ private func vectorHarnesses(_ vector: JsonValue, _ item: JsonValue) throws -> [
     #expect(form.harness == item["expected"].string, "\(item["name"].string ?? "")")
   }
 }
+
+@Test func onlyAnAgentFormTakesTheKeyboardBackWhenItsPickerCloses() {
+  #expect(NewPaneKind.agent.returnsFocusToPromptAfterPopover)
+  #expect(!NewPaneKind.terminal.returnsFocusToPromptAfterPopover)
+  #expect(!NewPaneKind.writing(.texts).returnsFocusToPromptAfterPopover)
+}
