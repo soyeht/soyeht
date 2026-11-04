@@ -34,7 +34,8 @@
 			"buildSettings" = {
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"MARKETING_VERSION" = "0.1.0";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.soyeht.next.dev.ios";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(SOYEHT_APP_BUNDLE_ID)";
+				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.ios";
 				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
 				"CURRENT_PROJECT_VERSION" = "100000";
 				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
@@ -45,7 +46,8 @@
 				"LD_RUNPATH_SEARCH_PATHS" = ( "$(inherited)", "@executable_path/Frameworks", );
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"PRODUCT_NAME" = "Soyeht Dev";
+				"PRODUCT_NAME" = "$(SOYEHT_PRODUCT_NAME)";
+				"SOYEHT_PRODUCT_NAME" = "Soyeht Dev";
 				"IPHONEOS_DEPLOYMENT_TARGET" = "18.0";
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"INFOPLIST_FILE" = "Info.plist";
@@ -85,14 +87,15 @@
 		"AD936FCBED631FA67E05C3EA" = {
 			"isa" = "PBXGroup";
 			"sourceTree" = "<group>";
-			"children" = ( "41CF6794BA4200B839C53531", "F30000000000000000000100", "D90000000000000000000011", "DB0000000000000000000011", "0A3E27B8CA818264D75C8D81", );
+			"children" = ( "41CF6794BA4200B839C53531", "F30000000000000000000100", "D90000000000000000000011", "DB0000000000000000000011", "DB0000000000000000000012", "0A3E27B8CA818264D75C8D81", );
 		};
 		"4C9A8D7A2C3C670C889D63E4" = {
 			"isa" = "XCBuildConfiguration";
 			"buildSettings" = {
 				"GENERATE_INFOPLIST_FILE" = "NO";
 				"MARKETING_VERSION" = "0.1.0";
-				"PRODUCT_BUNDLE_IDENTIFIER" = "com.soyeht.next.dev.ios";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(SOYEHT_APP_BUNDLE_ID)";
+				"SOYEHT_APP_BUNDLE_ID" = "com.soyeht.next.dev.ios";
 				"SWIFT_TREAT_WARNINGS_AS_ERRORS" = "YES";
 				"CURRENT_PROJECT_VERSION" = "100000";
 				"ENABLE_USER_SCRIPT_SANDBOXING" = "NO";
@@ -104,7 +107,8 @@
 				"LD_RUNPATH_SEARCH_PATHS" = ( "$(inherited)", "@executable_path/Frameworks", );
 				"SWIFT_VERSION" = "6.0";
 				"SWIFT_STRICT_CONCURRENCY" = "complete";
-				"PRODUCT_NAME" = "Soyeht Dev";
+				"PRODUCT_NAME" = "$(SOYEHT_PRODUCT_NAME)";
+				"SOYEHT_PRODUCT_NAME" = "Soyeht Dev";
 				"IPHONEOS_DEPLOYMENT_TARGET" = "18.0";
 				"TARGETED_DEVICE_FAMILY" = "1,2";
 				"INFOPLIST_FILE" = "Info.plist";
@@ -125,8 +129,18 @@
 		"41D311A605520FC7B8B9A980" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ( "DB0000000000000000000001", );
+			"files" = ( "DB0000000000000000000001", "DB0000000000000000000002", );
 			"runOnlyForDeploymentPostprocessing" = "0";
+		};
+		"DB0000000000000000000002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "DB0000000000000000000012";
+		};
+		"DB0000000000000000000012" = {
+			"path" = "Resources/PrivacyInfo.xcprivacy";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text.xml";
+			"sourceTree" = "<group>";
 		};
 		"DB0000000000000000000001" = {
 			"isa" = "PBXBuildFile";

@@ -29,6 +29,27 @@ Open `apps/ios/SoyehtPhone.xcodeproj`, scheme `SoyehtPhone`, select your iPhone
 or iPad and run with the team's development account. The bundle is
 `com.soyeht.next.dev.ios`. The current app does not participate in this build.
 
+## Store build
+
+The project builds the Dev app by default. A store build changes two build settings and nothing
+else, as the Mac packager does (ADR 0120): `SOYEHT_APP_BUNDLE_ID=com.soyeht.next.ios` (the
+production identifier, ADR 0112) and `SOYEHT_PRODUCT_NAME=Soyeht`. The version is
+`MARKETING_VERSION` and the build number is `CURRENT_PROJECT_VERSION`, both written by
+`uv run python scripts/release.py bump ...` from `contracts/release.json` (ADR 0115); never type
+them. Signing credentials come from the environment, never from the repository.
+
+The app declares the answers the store asks for in the repository:
+
+- `ITSAppUsesNonExemptEncryption` is `false` in `apps/ios/Info.plist`. The app uses only the
+  system's TLS, the tailnet's encryption and CryptoKit signatures and hashes for authentication,
+  which are exempt.
+- `apps/ios/Resources/PrivacyInfo.xcprivacy` says the app does not track, collects no data and
+  uses one required-reason API, `UserDefaults` (`CA92.1`, the app's own settings). The app talks to
+  the person's own Mac. Add a reason there when new code uses another API of Apple's list
+  (file timestamps, system boot time, disk space, active keyboards).
+
+`scripts/check_ios.sh` fails when the built app has no manifest or no encryption answer.
+
 On the new Mac app, choose “Pair iPhone or iPad”. On the
 device, choose “Scan Mac QR”. Compare fingerprints and allow access on the Mac.
 Open a pane from the list.
