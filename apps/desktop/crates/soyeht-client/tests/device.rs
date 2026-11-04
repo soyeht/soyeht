@@ -17,11 +17,13 @@ const ENGINE_ID: &str = "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b";
 const CODE: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const REQUEST: &str = "5d0b1c7e-2f3a-4a8b-9c6d-1e2f3a4b5c6d";
 
-/// The engine of a pairing: `signer` is the key it answers with, `approve` the person's decision.
+/// The engine of a pairing: `signer` is the key it answers with, `decision` the person's, which comes
+/// at once; none means the person never decides, and the engine returns whether the phone's side of
+/// the connection ended.
 fn engine(
     signer: SigningKey,
-    approve: bool,
-) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
+    decision: Option<bool>,
+) -> (std::net::SocketAddr, std::thread::JoinHandle<bool>) {
     serve(move |mut socket| {
         send(
             &mut socket,
@@ -62,15 +64,18 @@ fn engine(
             &mut socket,
             &json!({"jsonrpc":"2.0","id":prove["id"],"result":{"status":"pending"}}),
         );
-        let result = if approve {
-            json!({"requestId":REQUEST,"approved":true,"deviceToken":"token-1","deviceId":"device-1"})
-        } else {
-            json!({"requestId":REQUEST,"approved":false,"reason":"Not now."})
+        let result = match decision {
+            Some(true) => {
+                json!({"requestId":REQUEST,"approved":true,"deviceToken":"token-1","deviceId":"device-1"})
+            }
+            Some(false) => json!({"requestId":REQUEST,"approved":false,"reason":"Not now."}),
+            None => return read(&mut socket).is_none(),
         };
         send(
             &mut socket,
             &json!({"jsonrpc":"2.0","method":"pair.result","params":result}),
         );
+        true
     })
 }
 
@@ -82,7 +87,7 @@ fn link(address: std::net::SocketAddr, engine_key: &VerifyingKey) -> String {
 #[test]
 fn a_device_pairs_with_the_engine_whose_key_the_link_names() {
     let engine_key = SigningKey::from_bytes(&[0x11; 32]);
-    let (address, server) = engine(engine_key.clone(), true);
+    let (address, server) = engine(engine_key.clone(), Some(true));
     let mut seen = Vec::new();
     let credential = pair(
         &link(address, &engine_key.verifying_key()),
@@ -103,7 +108,7 @@ fn a_device_pairs_with_the_engine_whose_key_the_link_names() {
 fn an_engine_that_does_not_hold_the_key_of_the_link_is_not_paired_with() {
     let impostor = SigningKey::from_bytes(&[0x22; 32]);
     let named = SigningKey::from_bytes(&[0x11; 32]);
-    let (address, server) = engine(impostor, true);
+    let (address, server) = engine(impostor, Some(true));
     let result = pair(
         &link(address, &named.verifying_key()),
         "Phone",
@@ -121,7 +126,7 @@ fn an_engine_that_does_not_hold_the_key_of_the_link_is_not_paired_with() {
 #[test]
 fn a_refusal_on_the_computer_is_told_in_the_computers_words() {
     let engine_key = SigningKey::from_bytes(&[0x11; 32]);
-    let (address, server) = engine(engine_key.clone(), false);
+    let (address, server) = engine(engine_key.clone(), Some(false));
     let result = pair(
         &link(address, &engine_key.verifying_key()),
         "Phone",
@@ -138,39 +143,8 @@ fn a_refusal_on_the_computer_is_told_in_the_computers_words() {
 #[test]
 fn a_pairing_that_is_cancelled_ends_at_once_and_never_returns_the_access_the_computer_then_gives() {
     let engine_key = SigningKey::from_bytes(&[0x11; 32]);
-    // The computer allows access, but only once the phone has gone: it waits for the connection to end.
-    let signer = engine_key.clone();
-    let (address, server) = serve(move |mut socket| {
-        send(
-            &mut socket,
-            &json!({"jsonrpc":"2.0","method":"auth.challenge",
-                    "params":{"nonce":STANDARD.encode([9_u8; 32]),"engineId":ENGINE_ID}}),
-        );
-        let begin = read(&mut socket).unwrap();
-        let device_key: [u8; 32] = STANDARD
-            .decode(begin["params"]["devicePublicKey"].as_str().unwrap())
-            .unwrap()
-            .try_into()
-            .unwrap();
-        let proof = signer.sign(&device_auth::engine_pair_bytes(
-            REQUEST,
-            &[3; 32],
-            &device_key,
-        ));
-        send(
-            &mut socket,
-            &json!({"jsonrpc":"2.0","id":begin["id"],"result":{
-                "requestId":REQUEST,"challenge":STANDARD.encode([3_u8; 32]),
-                "engineProof":STANDARD.encode(proof.to_bytes())}}),
-        );
-        let prove = read(&mut socket).unwrap();
-        send(
-            &mut socket,
-            &json!({"jsonrpc":"2.0","id":prove["id"],"result":{"status":"pending"}}),
-        );
-        // The phone cancels: its side of the connection ends, which is all this side sees.
-        read(&mut socket).is_none()
-    });
+    // The computer would allow access, but only after the phone has gone.
+    let (address, server) = engine(engine_key.clone(), None);
     let cancel = std::sync::Arc::new(Cancel::default());
     let stopper = std::sync::Arc::clone(&cancel);
     let link = link(address, &engine_key.verifying_key());

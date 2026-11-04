@@ -120,13 +120,10 @@ pub fn pair(
     let mut attempt = 0;
     loop {
         attempt += 1;
+        let outcome = pairing.once();
         // A stopped pairing never returns a credential, however it ended.
-        let outcome = pairing.once().and_then(|credential| {
-            cancel.cancelled()?;
-            Ok(credential)
-        });
+        cancel.cancelled()?;
         match outcome {
-            Err(_) if cancel.is_stopped() => return Err(Error::Pairing(PairingFailure::Cancelled)),
             Ok(credential) => return Ok(credential),
             Err(Error::Io(_) | Error::Disconnected) if attempt < ATTEMPTS => {
                 std::thread::sleep(Duration::from_secs(1));
