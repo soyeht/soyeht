@@ -38,6 +38,20 @@ production identifier, ADR 0112) and `SOYEHT_PRODUCT_NAME=Soyeht`. The version i
 `uv run python scripts/release.py bump ...` from `contracts/release.json` (ADR 0115); never type
 them. Signing credentials come from the environment, never from the repository.
 
+Archive and export, with a distribution certificate in the keychain and an App Store profile for
+the identifier (both made in the developer account, never kept here):
+
+1. `xcodebuild archive -configuration Release -destination generic/platform=iOS` with
+   `SOYEHT_APP_BUNDLE_ID`, `SOYEHT_PRODUCT_NAME` and `CODE_SIGNING_ALLOWED=NO`. Signing the whole
+   archive by hand fails: a manual profile specifier reaches the Swift package targets, which
+   take none (“does not support provisioning profiles”).
+2. Sign the archived app yourself with the distribution identity and an entitlements file that
+   holds `application-identifier`, `com.apple.developer.team-identifier`, `get-task-allow` false
+   and `aps-environment` `production`. An unsigned archive carries no entitlements, so without
+   this step the exported app has no push entitlement.
+3. `xcodebuild -exportArchive` with `method` `app-store-connect`, manual signing and the profile
+   name for the identifier, then `xcrun altool --validate-app` and `--upload-app`.
+
 The app declares the answers the store asks for in the repository:
 
 - `ITSAppUsesNonExemptEncryption` is `false` in `apps/ios/Info.plist`. The app has no encryption of
