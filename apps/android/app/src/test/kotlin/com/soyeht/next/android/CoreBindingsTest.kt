@@ -57,6 +57,7 @@ class CoreBindingsTest {
         val list = blocks[0] as MarkdownBlock.ItemList
         assertEquals(1UL, list.start)
         assertEquals(2, list.items.size)
+        assertEquals(listOf("1.", "2."), list.items.map { it.marker })
         assertTrue(list.items[0].blocks.single().let { it is MarkdownBlock.Paragraph && it.runs.any { run -> run.bold } })
         assertTrue(list.items[1].blocks.any { it is MarkdownBlock.ItemList })
         val quote = blocks[1] as MarkdownBlock.Quote

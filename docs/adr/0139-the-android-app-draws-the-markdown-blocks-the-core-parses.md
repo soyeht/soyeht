@@ -18,7 +18,8 @@ avoid exactly that.
   `soyeht_client::markdown::parse` (pulldown-cmark, with the closing of the spans a reply still arriving has
   left open) and then `link_blocks`, which links a bare web address by the rule of
   `contracts/vectors/web-links.json`. The blocks cross the boundary as plain UniFFI records and enums
-  (`MarkdownBlock`, `MarkdownRun`), nested the way the vector's blocks are.
+  (`MarkdownBlock`, `MarkdownRun`), nested the way the vector's blocks are. A list item arrives with its
+  marker (its number, or the bullet), so the view counts nothing.
 - **The vectors are passed through the boundary.** `markdown::tests::every_shared_vector_reaches_the_views_as_its_blocks`
   in the core turns what the exported function returns back into the vector's JSON shape and compares it with
   every case of `contracts/vectors/markdown.json`, so a change to the projection that drops a style, a

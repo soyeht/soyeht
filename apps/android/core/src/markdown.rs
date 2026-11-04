@@ -32,6 +32,8 @@ pub struct MarkdownRow {
 /// The blocks of one list item.
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
 pub struct MarkdownItem {
+    /// What stands before the item: its number ("3.") in an ordered list, a bullet in the other.
+    pub marker: String,
     pub blocks: Vec<MarkdownBlock>,
 }
 
@@ -87,6 +89,17 @@ fn row(cells: Vec<Vec<Run>>) -> MarkdownRow {
     }
 }
 
+/// The bullet of an unordered list, as the other clients draw it.
+const BULLET: &str = "\u{2022}";
+
+/// What stands before the `index`th item of a list that starts at `start` (none for a bullet list).
+fn marker(start: Option<u64>, index: usize) -> String {
+    start.map_or_else(
+        || BULLET.to_owned(),
+        |first| format!("{}.", first.saturating_add(index as u64)),
+    )
+}
+
 /// The parser's blocks as the views get them, nothing added and nothing left out.
 fn project(blocks: Vec<Block>) -> Vec<MarkdownBlock> {
     blocks
@@ -110,7 +123,9 @@ fn project(blocks: Vec<Block>) -> Vec<MarkdownBlock> {
                 start,
                 items: items
                     .into_iter()
-                    .map(|item| MarkdownItem {
+                    .enumerate()
+                    .map(|(index, item)| MarkdownItem {
+                        marker: marker(start, index),
                         blocks: project(item),
                     })
                     .collect(),
@@ -259,6 +274,21 @@ mod tests {
         let linked: Vec<_> = runs.iter().filter_map(|run| run.link.as_deref()).collect();
         assert_eq!(linked, ["https://example.com/a"]);
         assert!(runs.iter().any(|run| run.code && run.link.is_none()));
+    }
+
+    #[test]
+    fn a_list_item_comes_with_its_marker() {
+        let blocks = markdown_blocks("3. a\n4. b\n\n- c\n- d".to_owned(), false);
+        fn markers(block: &MarkdownBlock) -> Vec<&str> {
+            match block {
+                MarkdownBlock::ItemList { items, .. } => {
+                    items.iter().map(|item| item.marker.as_str()).collect()
+                }
+                _ => Vec::new(),
+            }
+        }
+        assert_eq!(markers(&blocks[0]), ["3.", "4."]);
+        assert_eq!(markers(&blocks[1]), ["\u{2022}", "\u{2022}"]);
     }
 
     #[test]

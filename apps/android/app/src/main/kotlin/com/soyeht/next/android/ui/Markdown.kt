@@ -90,10 +90,9 @@ private fun Block(block: MarkdownBlock, copy: CodeCopy, ink: Color) {
             MarkdownView(block.blocks, copy, ink, Modifier.weight(1f))
         }
         is MarkdownBlock.ItemList -> Column(verticalArrangement = Arrangement.spacedBy(PaneInterior.tightSpacing.dp)) {
-            block.items.forEachIndexed { index, item ->
+            block.items.forEach { item ->
                 Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.tightSpacing.dp)) {
-                    val marker = block.start?.let { "${it.toLong() + index}." } ?: "•"
-                    Text(marker, color = roles.secondary, fontSize = TypeScale.body.sp, modifier = Modifier.widthIn(min = Space.x18.dp))
+                    Text(item.marker, color = roles.secondary, fontSize = TypeScale.body.sp, modifier = Modifier.widthIn(min = Space.x18.dp))
                     MarkdownView(item.blocks, copy, ink, Modifier.weight(1f))
                 }
             }
