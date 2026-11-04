@@ -118,7 +118,8 @@ pub enum TerminalKey {
     Down,
     Left,
     Right,
-    /// A character with Control or Alt held (Control-C): the text it types.
+    /// A character with Control or Alt held (Control-C): the one character it types. Text of any other
+    /// length is no key, so that the text "enter" can never be the Enter key.
     Character {
         text: String,
     },
@@ -156,6 +157,9 @@ pub(crate) fn encode(press: &KeyPress, screen: &TerminalScreen) -> Option<Vec<u8
         alt: press.alt,
         shift: press.shift,
     };
+    if matches!(&press.key, TerminalKey::Character { text } if text.chars().count() != 1) {
+        return None;
+    }
     soyeht_client::keys::encode(
         press.key.name(),
         None,
@@ -192,6 +196,15 @@ mod tests {
             encode(&press(TerminalKey::Up, false), &screen),
             Some(b"\x1b[A".to_vec())
         );
+        for text in ["enter", "tab", "up", ""] {
+            let spelled = press(
+                TerminalKey::Character {
+                    text: text.to_owned(),
+                },
+                false,
+            );
+            assert_eq!(encode(&spelled, &screen), None, "{text:?}");
+        }
         let control_c = press(
             TerminalKey::Character {
                 text: "c".to_owned(),
