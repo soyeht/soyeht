@@ -191,8 +191,8 @@ impl Workbench {
     }
 }
 
-/// One warning line under the top bar; a click dismisses it through `dismiss`, and `tip` says
-/// what the dismissal does.
+/// One warning under the top bar, wrapped to as many lines as its text needs; a click dismisses
+/// it through `dismiss`, and `tip` says what the dismissal does.
 fn banner_line(
     id: &'static str,
     text: String,
@@ -204,6 +204,8 @@ fn banner_line(
     ui::row()
         .id(id)
         .flex_none()
+        // The close glyph stays at the first line when the text wraps to several.
+        .items_start()
         .gap(px(space::X8))
         .px(px(pane_layout::SCREEN_PADDING + pane_layout::GRID_PADDING))
         .text_size(px(type_scale::CONTROL))
@@ -211,13 +213,9 @@ fn banner_line(
         .cursor_pointer()
         .tooltip(ui::hint(tip, palette))
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| dismiss(this, cx)))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .child(SharedString::from(text)),
-        )
+        // The whole text, wrapped: a notice such as the software renderer's names the packages to
+        // install at its end, and a line cut at the window's width loses them.
+        .child(div().flex_1().min_w_0().child(SharedString::from(text)))
         .child(ui::icon(Icon::Close, glyph::TAB_CLOSE, palette.warning()))
         .into_any_element()
 }

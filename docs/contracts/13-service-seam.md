@@ -53,10 +53,20 @@ renderer. A name or a place of the legacy app is refused before anything is writ
 | Restart | `KeepAlive` (however it ended, while the program exists: `PathState`), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
 | Program gone | `KeepAlive` `PathState` on the program: launchd stops restarting it (see section 5) | `ConditionPathExists=` the program: the unit is skipped, not failed, so no restart loop (ADR 0121) | none |
 | Order | none: the engine reconnects | engine `Wants=` and `After=` the supervisor (never `Requires=`) | none: the engine reconnects |
-| Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | `PATH` as on the Mac | the user's own environment |
+| Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | none: the user manager's own environment (ADR 0135) | the user's own environment (ADR 0135) |
 | Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | the host appends the program's output to the same file (section 6) |
 | Limits | `ProcessType` Interactive | none | no time limit; one instance; runs on battery; normal priority |
 | Account | the user's launchd domain: `gui/<uid>` if it exists, else `user/<uid>` | the user's manager | interactive token, least privilege |
+
+**The `PATH` of a program that no window started.** The engine gives its agents the `PATH` that
+the person's interactive login shell has (`launch_path`, asked at start, remembered in the data
+directory), so a harness under `nvm`, `~/.npm-global` or `~/.local/bin` is found however the
+engine was started. That shell starts from the `PATH` the engine was started with, so the unit
+leaves it alone: it names no `PATH`, and the engine starts with the one the user's manager has,
+which is the one the person's session gave it, as the window's own start does (ADR 0135). The engine's own lookups of `wt`, `git` and `lsof` use that same launch `PATH`, not the process one. A Windows
+task names none either; the engine there reads its own process `PATH` (there is no login shell),
+which is the account's at logon. launchd starts a program with almost none, so the Mac agent names
+the system and user tool folders, under the shell's answer.
 
 `StandardOutput=append:` needs systemd 240 or later (Ubuntu 20.04 and later, Debian 10 and later,
 Fedora 30 and later). An older systemd ignores the line and the output goes to the journal
