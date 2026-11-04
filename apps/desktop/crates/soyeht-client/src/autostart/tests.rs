@@ -17,6 +17,8 @@ struct Fake {
     supervisor_up: Cell<bool>,
     missing: Vec<&'static str>,
     lock: Lock,
+    /// The lock is let go after this many pauses: the window that held it has failed and left.
+    lock_freed_after: Option<u32>,
     spawn_fails: bool,
     /// The folder for the logs cannot be made.
     logs_fail: bool,
@@ -27,6 +29,18 @@ struct Fake {
     /// The engine answers once the lock has been tried, as when another window won the race.
     engine_after_lock: bool,
     stop_after: Option<u32>,
+    /// The profile's services are registered to start at login.
+    registered: bool,
+    /// Only some of the services are registered (`registered` is then not set).
+    partial: bool,
+    /// The service manager refuses to start them.
+    service_refuses: bool,
+    /// The engine answers once the service has been asked to start.
+    engine_after_service: bool,
+    service_asked: Cell<u32>,
+    /// How many times `service status` was asked, and whether it ever was before the start lock.
+    status_asked: Cell<u32>,
+    status_asked_without_lock: Cell<bool>,
     pauses: Cell<u32>,
     locked: Cell<bool>,
     started: RefCell<Vec<String>>,
@@ -42,12 +56,20 @@ impl Fake {
             supervisor_up: Cell::new(false),
             missing: Vec::new(),
             lock: Lock::Free,
+            lock_freed_after: None,
             spawn_fails: false,
             logs_fail: false,
             exits: false,
             engine_after: None,
             engine_after_lock: false,
             stop_after: None,
+            registered: false,
+            partial: false,
+            status_asked: Cell::new(0),
+            status_asked_without_lock: Cell::new(false),
+            service_refuses: false,
+            engine_after_service: false,
+            service_asked: Cell::new(0),
             pauses: Cell::new(0),
             locked: Cell::new(false),
             started: RefCell::new(Vec::new()),
@@ -75,6 +97,7 @@ impl Host for Fake {
 
     fn engine_reachable(&self) -> bool {
         self.engine_up.get()
+            || (self.engine_after_service && self.service_asked.get() > 0)
             || (self.engine_after_lock && self.locked.get())
             || self
                 .engine_after
@@ -84,6 +107,25 @@ impl Host for Fake {
     fn supervisor_reachable(&self) -> bool {
         self.supervisor_up.get()
             || (!self.exits && self.started().iter().any(|name| name == "soyeht-ptyd"))
+    }
+
+    fn service_registration(&self) -> Registration {
+        self.status_asked.set(self.status_asked.get() + 1);
+        if !self.locked.get() {
+            self.status_asked_without_lock.set(true);
+        }
+        if self.registered {
+            Registration::Full
+        } else if self.partial {
+            Registration::Partial
+        } else {
+            Registration::None
+        }
+    }
+
+    fn start_service(&self) -> bool {
+        self.service_asked.set(self.service_asked.get() + 1);
+        !self.service_refuses
     }
 
     fn program_exists(&self, path: &Path) -> bool {
@@ -97,7 +139,10 @@ impl Host for Fake {
 
     fn lock(&self) -> io::Result<Option<Box<dyn Any>>> {
         self.locked.set(true);
-        match self.lock {
+        let freed = self
+            .lock_freed_after
+            .is_some_and(|after| self.pauses.get() >= after);
+        match if freed { Lock::Free } else { self.lock } {
             Lock::Free => Ok(Some(Box::new(()))),
             Lock::Held => Ok(None),
             Lock::Broken => Err(io::ErrorKind::PermissionDenied.into()),
@@ -137,6 +182,14 @@ impl Host for Fake {
     }
 }
 
+/// A host whose services are registered to start at login.
+fn registered() -> Fake {
+    Fake {
+        registered: true,
+        ..Fake::new()
+    }
+}
+
 /// The start succeeds and no program was started.
 fn ensured_without_starting(host: &Fake) {
     assert_eq!(ensure(&plan(), host), Ok(()));
@@ -169,6 +222,7 @@ fn the_supervisor_then_the_engine_are_started_and_waited_for() {
     };
     assert_eq!(ensure(&plan(), &host), Ok(()));
     assert_eq!(host.started(), ["soyeht-ptyd", "soyeht-engine"]);
+    assert_eq!(host.service_asked.get(), 0, "no service is registered");
 }
 
 #[test]
@@ -190,6 +244,187 @@ fn an_engine_that_answers_is_left_alone_even_after_an_uninstall_was_seen() {
         ..Fake::new()
     };
     ensured_without_starting(&host);
+}
+
+#[test]
+fn a_registered_service_is_asked_to_start_and_no_program_is_started() {
+    let host = Fake {
+        engine_after_service: true,
+        // The window's folder holds nothing: a service has its own programs.
+        missing: vec!["soyeht-engine", "soyeht-ptyd"],
+        ..registered()
+    };
+    ensured_without_starting(&host);
+    assert_eq!(host.service_asked.get(), 1);
+}
+
+#[test]
+fn a_service_that_was_started_and_does_not_bring_the_engine_up_is_not_replaced_by_one_of_ours() {
+    let host = registered();
+    assert_eq!(ensure(&plan(), &host), Err(StartError::TimedOut));
+    assert_eq!(host.service_asked.get(), 1);
+    // An engine of ours beside the service would make the service fail on the lock for ever.
+    assert!(host.started().is_empty());
+}
+
+#[test]
+fn a_service_manager_that_refuses_leaves_the_window_to_start_its_own_programs() {
+    let host = Fake {
+        service_refuses: true,
+        engine_after: Some(3),
+        ..registered()
+    };
+    assert_eq!(ensure(&plan(), &host), Ok(()));
+    assert_eq!(host.service_asked.get(), 1);
+    assert_eq!(host.started(), ["soyeht-ptyd", "soyeht-engine"]);
+}
+
+#[test]
+fn a_refused_service_and_no_programs_beside_the_window_is_the_missing_program() {
+    let host = Fake {
+        service_refuses: true,
+        missing: vec!["soyeht-engine"],
+        ..registered()
+    };
+    assert_eq!(
+        ensure(&plan(), &host),
+        Err(StartError::MissingProgram("soyeht-engine"))
+    );
+    assert_eq!(host.service_asked.get(), 1);
+}
+
+#[test]
+fn an_engine_that_answers_is_not_started_again_by_a_service_or_a_program() {
+    let host = Fake {
+        engine_up: Cell::new(true),
+        ..registered()
+    };
+    ensured_without_starting(&host);
+    assert_eq!(host.service_asked.get(), 0);
+}
+
+#[test]
+fn an_uninstall_stops_a_registered_service_from_being_asked() {
+    let host = Fake {
+        uninstalled: true,
+        ..registered()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::Uninstalled));
+    assert_eq!(host.service_asked.get(), 0);
+    assert!(host.started().is_empty());
+}
+
+#[test]
+fn a_window_that_loses_the_race_waits_and_asks_no_service() {
+    let host = Fake {
+        lock: Lock::Held,
+        engine_after: Some(2),
+        ..registered()
+    };
+    ensured_without_starting(&host);
+    assert_eq!(host.service_asked.get(), 0);
+}
+
+#[test]
+fn a_service_started_while_the_window_waited_for_the_lock_is_not_asked_again() {
+    let host = Fake {
+        engine_after_lock: true,
+        ..registered()
+    };
+    ensured_without_starting(&host);
+    assert_eq!(host.service_asked.get(), 0);
+}
+
+#[test]
+fn a_window_stopped_while_the_service_starts_ends_the_wait() {
+    let host = Fake {
+        stop_after: Some(2),
+        ..registered()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::Stopped));
+}
+
+#[test]
+fn the_service_manager_is_asked_only_by_the_window_that_holds_the_start_lock() {
+    let winner = Fake {
+        engine_after: Some(3),
+        ..registered()
+    };
+    assert_eq!(ensure(&plan(), &winner), Ok(()));
+    assert_eq!(winner.status_asked.get(), 1);
+    assert!(
+        !winner.status_asked_without_lock.get(),
+        "`service status` can take a minute: it is asked under the lock"
+    );
+    let loser = Fake {
+        lock: Lock::Held,
+        engine_after: Some(3),
+        ..registered()
+    };
+    ensured_without_starting(&loser);
+    assert_eq!(loser.status_asked.get(), 0);
+    let engine_up = Fake {
+        engine_up: Cell::new(true),
+        ..registered()
+    };
+    ensured_without_starting(&engine_up);
+    assert_eq!(engine_up.status_asked.get(), 0);
+}
+
+#[test]
+fn a_window_that_loses_the_race_waits_at_most_as_long_as_the_winner_can_hold_the_lock() {
+    let host = Fake {
+        lock: Lock::Held,
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::TimedOut));
+    assert_eq!(host.pauses.get(), FOLLOWER_POLLS);
+    // `service status` and a refused `service start`, each within the policy's deadline, then
+    // the two waits of the winner's own start.
+    let winner_worst = 2 * SERVICE_COMMAND_MS + 2 * u64::from(POLLS) * POLL_MS;
+    assert!(u64::from(FOLLOWER_POLLS) * POLL_MS >= winner_worst);
+}
+
+#[test]
+fn a_window_that_loses_the_race_takes_the_lock_the_moment_the_winner_fails_and_leaves() {
+    // The winner's start failed early and it let go: the loser decides for itself at once, here
+    // by starting the programs, not after the cap.
+    let host = Fake {
+        lock: Lock::Held,
+        lock_freed_after: Some(3),
+        engine_after: Some(10),
+        ..Fake::new()
+    };
+    let outcome = ensure(&plan(), &host);
+    let (started, pauses) = (host.started(), host.pauses.get());
+    assert_eq!(outcome, Ok(()));
+    assert_eq!(started.len(), 2, "{started:?}");
+    assert!(pauses < 20, "{pauses} pauses");
+}
+
+#[test]
+fn a_loser_whose_winner_failed_on_a_partial_registration_says_so_at_once() {
+    let host = Fake {
+        lock: Lock::Held,
+        lock_freed_after: Some(2),
+        partial: true,
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::PartialService));
+    assert_eq!(host.pauses.get(), 2);
+}
+
+#[test]
+fn part_of_a_registration_starts_nothing_and_says_how_to_repair_it() {
+    let host = Fake {
+        partial: true,
+        ..Fake::new()
+    };
+    let error = ensure(&plan(), &host).unwrap_err();
+    assert_eq!(error, StartError::PartialService);
+    assert!(error.to_string().contains("Start Soyeht at login"));
+    assert_eq!(host.service_asked.get(), 0);
+    assert!(host.started().is_empty());
 }
 
 /// A data folder with an engine's lock file in it, which is what a window that had an engine
@@ -225,6 +460,21 @@ fn an_uninstall_is_a_record_that_is_new_or_changed_since_the_window_began() {
     assert!(!watch.uninstalled());
     assert!(!later.uninstalled());
     std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_record_the_person_left_by_turning_the_login_start_off_is_taken_as_the_baseline() {
+    // Turning the setting off in this window runs `service uninstall`, which leaves a record.
+    let directory = data_folder("own");
+    let mut watch = watching(&directory);
+    fs::mark_uninstalled(&directory).unwrap();
+    watch.accept_current();
+    let after_its_own = watch.uninstalled();
+    // An uninstall by someone else after that still stops the window.
+    fs::mark_uninstalled(&directory).unwrap();
+    let after_another = watch.uninstalled();
+    std::fs::remove_dir_all(&directory).unwrap();
+    assert_eq!((after_its_own, after_another), (false, true));
 }
 
 #[test]

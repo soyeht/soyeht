@@ -23,7 +23,7 @@ from check_swallowed_errors import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-RUST_ROOTS = ("engine", "apps/desktop")
+RUST_ROOTS = ("engine", "apps/desktop", "apps/android")
 LOG_MODULE = "engine/soyeht-platform/src/log.rs"
 # `eprintln!` and `eprint!`. A handle on standard error is not a write: the log rotation
 # redirects it.

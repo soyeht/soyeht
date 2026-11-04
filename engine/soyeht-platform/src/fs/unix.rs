@@ -28,13 +28,12 @@ pub(super) fn is_link_or_not_directory(error: &io::Error) -> bool {
     matches!(error.raw_os_error(), Some(libc::ELOOP | libc::ENOTDIR))
 }
 
-#[cfg(target_os = "macos")]
 pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     use std::{ffi::CString, os::unix::ffi::OsStrExt};
     let from = CString::new(from.as_os_str().as_bytes())?;
     let to = CString::new(to.as_os_str().as_bytes())?;
     // SAFETY: both pointers are NUL-terminated strings that outlive the call.
-    let status = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    let status = unsafe { kernel_rename_no_replace(from.as_ptr(), to.as_ptr()) };
     if status == 0 {
         Ok(())
     } else {
@@ -42,49 +41,93 @@ pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
-#[cfg(target_os = "linux")]
-pub(super) fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-    let from = CString::new(from.as_os_str().as_bytes())?;
-    let to = CString::new(to.as_os_str().as_bytes())?;
-    // SAFETY: both pointers are NUL-terminated strings that outlive the call,
-    // and AT_FDCWD resolves them as ordinary paths.
+/// The system's rename that fails instead of replacing.
+///
+/// # Safety
+///
+/// Both pointers are NUL-terminated strings that outlive the call.
+#[cfg(target_os = "macos")]
+unsafe fn kernel_rename_no_replace(
+    from: *const libc::c_char,
+    to: *const libc::c_char,
+) -> libc::c_int {
+    // SAFETY: the caller's guarantee.
+    unsafe { libc::renamex_np(from, to, libc::RENAME_EXCL) }
+}
+
+/// The system's rename that fails instead of replacing. Android's C library exports `renameat2` only
+/// from API 30 and the phone's `minSdk` is 26, so there the kernel call is made directly (ADR 0134).
+///
+/// # Safety
+///
+/// Both pointers are NUL-terminated strings that outlive the call.
+#[cfg(any(target_os = "linux", target_os = "android"))]
+unsafe fn kernel_rename_no_replace(
+    from: *const libc::c_char,
+    to: *const libc::c_char,
+) -> libc::c_int {
+    // SAFETY: the caller's guarantee, and AT_FDCWD resolves the paths as ordinary ones.
+    #[cfg(target_os = "linux")]
     let status = unsafe {
         libc::renameat2(
             libc::AT_FDCWD,
-            from.as_ptr(),
+            from,
             libc::AT_FDCWD,
-            to.as_ptr(),
+            to,
             libc::RENAME_NOREPLACE,
         )
     };
-    if status == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::last_os_error())
-    }
+    // SAFETY: as above; the system call has the arguments of `renameat2`.
+    #[cfg(target_os = "android")]
+    let status = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            from,
+            libc::AT_FDCWD,
+            to,
+            libc::RENAME_NOREPLACE as libc::c_uint,
+        )
+    };
+    libc::c_int::try_from(status).unwrap_or(-1)
 }
 
 pub(super) fn create_private_dir(path: &Path) -> io::Result<()> {
     DirBuilder::new().mode(0o700).create(path)
 }
 
+/// Whether `metadata` is of something `user` owns.
+fn owned_by(metadata: &fs::Metadata, user: u32) -> bool {
+    metadata.uid() == user
+}
+
 /// Whether `metadata` is of something only `user` can reach: owned by `user`, and with no mode
 /// bit for the group or others. Someone else's directory with mode 0700 is theirs, not ours.
 fn private_to(metadata: &fs::Metadata, user: u32) -> bool {
-    metadata.uid() == user && metadata.permissions().mode() & 0o077 == 0
+    owned_by(metadata, user) && metadata.permissions().mode() & 0o077 == 0
+}
+
+/// Whether the current user owns what `metadata` describes.
+pub(super) fn is_owned_by_current_user(metadata: &fs::Metadata) -> bool {
+    owned_by(metadata, crate::user::effective_id())
 }
 
 pub(super) fn dir_is_owner_only(path: &Path) -> io::Result<bool> {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    Ok(private_to(&fs::symlink_metadata(path)?, unsafe {
-        libc::geteuid()
-    }))
+    dir_metadata_is_owner_only(path, &fs::symlink_metadata(path)?)
+}
+
+/// [`dir_is_owner_only`] judged from `metadata`, which the caller read from `path` already, so a
+/// caller that checked the owner of the same `metadata` reads the directory once. The mode is
+/// all there is to read, so `path` is not touched.
+pub(super) fn dir_metadata_is_owner_only(
+    _path: &Path,
+    metadata: &fs::Metadata,
+) -> io::Result<bool> {
+    Ok(private_to(metadata, crate::user::effective_id()))
 }
 
 pub(super) fn file_is_owner_only(file: &File) -> io::Result<bool> {
-    // SAFETY: geteuid has no arguments or memory preconditions.
-    Ok(private_to(&file.metadata()?, unsafe { libc::geteuid() }))
+    Ok(private_to(&file.metadata()?, crate::user::effective_id()))
 }
 
 pub(super) fn sync_directory(path: &Path) -> io::Result<()> {
@@ -130,6 +173,23 @@ pub(super) fn try_lock(file: &File) -> io::Result<bool> {
 mod tests {
     use super::*;
     use crate::testing::scratch_dir as scratch;
+
+    #[test]
+    fn a_file_is_private_to_its_owner_with_no_mode_bit_for_others_and_to_no_one_else() {
+        let directory = scratch("file-private-to");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("key");
+        fs::write(&path, "x").unwrap();
+        set_private(&path, false).unwrap();
+        let file = File::open(&path).unwrap();
+        let metadata = file.metadata().unwrap();
+        assert!(file_is_owner_only(&file).unwrap());
+        assert!(is_owned_by_current_user(&metadata));
+        assert!(!private_to(&metadata, metadata.uid().wrapping_add(1)));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(!file_is_owner_only(&File::open(&path).unwrap()).unwrap());
+        fs::remove_dir_all(&directory).unwrap();
+    }
 
     #[test]
     fn a_directory_is_private_to_its_owner_with_no_mode_bit_for_others_and_to_no_one_else() {

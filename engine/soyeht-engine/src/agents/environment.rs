@@ -1,6 +1,7 @@
 use soyeht_protocol::HarnessEnvironmentVariable;
 use std::{
     collections::{BTreeMap, BTreeSet},
+    ffi::OsString,
     path::{Path, PathBuf},
 };
 
@@ -83,6 +84,14 @@ pub fn launch_path() -> String {
 /// lock; every other reader keeps the previous answer meanwhile.
 pub fn refresh_launch_path() -> LaunchPath {
     LAUNCH_PATH.refresh(resolve_launch_path)
+}
+
+/// The launch `PATH` as the search path of a program the engine starts itself (`wt`, `git`,
+/// `lsof`). Those looked at the engine's own process `PATH`, which for an engine started at login
+/// is the user manager's and lacks the folders a login shell adds (`~/.local/bin`, `~/.cargo/bin`).
+/// Waits for the shell when no answer is known yet, so it never runs under the Core lock.
+pub fn launch_search_path() -> OsString {
+    launch_path().into()
 }
 
 pub fn launch_environment() -> BTreeMap<String, String> {

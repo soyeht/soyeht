@@ -30,6 +30,40 @@ public struct PaneBoard: Equatable, Sendable {
   /// False when `PaneLayoutFit` rearranged or tabbed the stored layout for this viewport.
   public let keepsArrangement: Bool
 
+  /// Where `paneId` is drawn: its own cell, or the area of the tab group when it is a tab.
+  public func rect(of paneId: String) -> PaneLayoutRect? {
+    if let placement = placements.first(where: { $0.paneId == paneId }) { return placement.rect }
+    return tabs.flatMap { $0.paneIds.contains(paneId) ? $0.area : nil }
+  }
+
+  /// The top of what `paneId` is shown with: its tab strip when it is a tab.
+  public func topEdge(of paneId: String) -> Double? {
+    if let tabs, tabs.paneIds.contains(paneId) { return tabs.strip.origin.y }
+    return rect(of: paneId)?.origin.y
+  }
+
+  /// This board with `paneId` drawn `height` tall.
+  public func resizingPane(_ paneId: String, toHeight height: Double) -> PaneBoard {
+    var board = self
+    var placements = self.placements
+    if let index = placements.firstIndex(where: { $0.paneId == paneId }) {
+      var rect = placements[index].rect
+      rect.size.height = height
+      placements[index] = PaneBoardPlacement(paneId: paneId, rect: rect)
+      board = PaneBoard(
+        placements: placements, tabs: tabs, paneIds: paneIds, contentSize: contentSize,
+        keepsArrangement: keepsArrangement)
+    } else if let tabs, tabs.paneIds.contains(paneId) {
+      var area = tabs.area
+      area.size.height = height
+      board = PaneBoard(
+        placements: placements,
+        tabs: PaneBoardTabs(paneIds: tabs.paneIds, strip: tabs.strip, area: area),
+        paneIds: paneIds, contentSize: contentSize, keepsArrangement: keepsArrangement)
+    }
+    return board
+  }
+
   public func overflowAxes(in viewport: PaneLayoutSize) -> Set<PaneLayoutAxis> {
     var axes: Set<PaneLayoutAxis> = []
     if contentSize.width > viewport.width { axes.insert(.horizontal) }
@@ -54,6 +88,39 @@ public enum PaneBoardPolicy {
   public static func viewport(in area: PaneLayoutSize) -> PaneLayoutSize {
     PaneLayoutSize(
       width: max(0, area.width - 2 * margin), height: max(0, area.height - 2 * margin))
+  }
+
+  /// How much of the area the on-screen keyboard covers, from the area's height without the
+  /// keyboard and the height that is left above it. The board is laid out in the first, so that
+  /// the keyboard never changes how the panes are arranged (side by side, stacked or tabbed).
+  public static func keyboardInset(areaHeight: Double, visibleHeight: Double) -> Double {
+    max(0, areaHeight - visibleHeight)
+  }
+
+  /// Where the focused pane goes while the keyboard is up: the board moves up by `shift`, and
+  /// the pane is cut down to `height` when it is taller than what is left above the keyboard.
+  public struct KeyboardFit: Equatable, Sendable {
+    public let shift: Double
+    /// The focused pane's height above the keyboard, or nil when it keeps its own.
+    public let height: Double?
+    public static let none = KeyboardFit(shift: 0, height: nil)
+  }
+
+  /// Keeps the bottom of the focused pane, where the prompt or the cursor is, a margin above the
+  /// keyboard without touching the arrangement: a pane that fits above the keyboard moves up
+  /// just far enough, and a taller one is cut down to the room above the keyboard with its top
+  /// (and the tab strip over it) in view. Nothing moves while the pane ends above the keyboard.
+  public static func keyboardFit(
+    board: PaneBoard, focused: String?, visibleHeight: Double, inset: Double
+  ) -> KeyboardFit {
+    guard inset > 0, let focused, let rect = board.rect(of: focused) else { return .none }
+    // The board sits one margin inside the area, and leaves one margin below the pane.
+    let room = visibleHeight - 2 * margin
+    let bottom = rect.origin.y + rect.size.height
+    guard bottom > room else { return .none }
+    let top = board.topEdge(of: focused) ?? rect.origin.y
+    if bottom - top <= room { return KeyboardFit(shift: bottom - room, height: nil) }
+    return KeyboardFit(shift: top, height: max(0, room - (rect.origin.y - top)))
   }
 
   /// `tree` without the panes `livePaneIds` does not hold, or nil when none is left.

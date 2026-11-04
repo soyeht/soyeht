@@ -34,7 +34,7 @@ SWIFT_AREAS = {
     "mac": "apps/mac/Sources",
     "ios": "apps/ios/Sources",
 }
-RUST_ROOTS = ("engine", "apps/desktop")
+RUST_ROOTS = ("engine", "apps/desktop", "apps/android")
 IGNORED_PARTS = {"target", ".build", ".cache", "node_modules", "tests", "Tests"}
 # Test-only helper modules compiled under `#[cfg(test)]` or a test-support feature.
 IGNORED_FILES = {

@@ -35,7 +35,7 @@ UNLISTED = (
     "{path}:{line}: pub fn {name} is never called by production code; delete it "
     "(and the tests that only use it), or allowlist it with a reason"
 )
-DEFINITION_ROOTS = ("engine", "apps/desktop")
+DEFINITION_ROOTS = ("engine", "apps/desktop", "apps/android")
 REFERENCE_ROOTS = DEFINITION_ROOTS
 PUB_FN = re.compile(r"^[ \t]*pub(?:[ \t]+(?:const|async|unsafe))*[ \t]+fn[ \t]+(\w+)", re.M)
 IDENTIFIER = re.compile(r"[A-Za-z_]\w*")

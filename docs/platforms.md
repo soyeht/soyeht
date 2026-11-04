@@ -55,6 +55,19 @@ does nothing silently.
 - The default shell is `%COMSPEC%`. The engine does not ask a login shell for `PATH`, so it
   keeps no remembered launch `PATH` (`launch-path`) either.
 
+**Android** (ADR 0134)
+
+- The engine does not run on Android. The phone is a paired device (`apps/android`), and its Rust
+  core (`soyeht-android`) builds the same crates the desktop client uses, for
+  `aarch64-linux-android` and `x86_64-linux-android`. `soyeht-platform` therefore compiles there:
+  the kernel is Linux, so the process tree and the no-replace rename are the Linux ones, and a
+  crash report carries no stack frames because Android's C library has no `backtrace`.
+- Android's C library exports `renameat2` only from API 30 and the phone's `minSdk` is 26, so the no-replace
+  rename calls the kernel directly (`syscall`) there. The phone's core never reaches it: only the engine's
+  editor uses `rename_no_replace`.
+- The local endpoint, the service seam and the detached start are never used by the phone; they
+  keep the Unix code they have on Linux.
+
 ## Starting the engine
 
 The engine listens before it waits for anything the system or the person's environment
@@ -183,6 +196,13 @@ the image. Its debug symbols are saved first, with the same UUID, as
 `dist/symbols/soyeht-<version>-macos-aarch64.dSYM.zip` (`dist/ad-hoc/symbols/` for an ad hoc
 build): keep it with the release, since it is the only way to name the frames of a crash. It is
 not part of the package, and the release flow does not collect it.
+
+A finished package has a size ceiling in `scripts/package_sizes.json` (bytes, about 3% over what was
+measured; see `docs/reports/package-sizes-2026-11-02.md`). The three packaging scripts fail when a
+package is over its ceiling, or has a name that is not a kind of the file, so a growth is a
+decision written in that file with its reason. A package more than 10% under its ceiling only
+prints a warning to lower the number. A kind with `null` has not been built yet and is not
+checked.
 
 | Variable | Holds |
 | --- | --- |

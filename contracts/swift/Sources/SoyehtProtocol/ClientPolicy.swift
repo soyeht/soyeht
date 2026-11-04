@@ -18,6 +18,10 @@ public enum ClientPolicy {
     public static let agentPartialFlushSeconds: Double = 0.016
     public static let diagnosticsMs = 30000
     public static let diagnosticsSeconds: Double = 30.0
+    public static let copiedFeedbackMs = 1500
+    public static let copiedFeedbackSeconds: Double = 1.5
+    public static let serviceCommandMs = 60000
+    public static let serviceCommandSeconds: Double = 60.0
     public static let terminalInputChunkBytes = 16384
     public static let terminalScrollbackLines = 10000
     public static let capsWaitingMessages = 1000
@@ -26,6 +30,7 @@ public enum ClientPolicy {
     public static let capsModelPages = 32
     public static let capsTickerHistory = 3
     public static let capsDiagnosticsReportBytes = 4194304
+    public static let capsServiceReportBytes = 65536
     public static let pageSizeQueue: UInt32 = 64
     public static let pageSizeHarnesses: UInt32 = 64
     public static let pageSizeModels: UInt32 = 64
@@ -50,10 +55,17 @@ public enum ClientPolicy {
     public static let diagnosticsCopied = "Diagnostics copied. Paste them into your message."
     public static let diagnosticsFailed = "Soyeht could not collect the diagnostics."
     public static let diagnosticsUnavailable = "This copy of Soyeht has no diagnostics program."
+    public static let copyCode = "Copy code"
+    public static let copiedCode = "Copied"
     public static let crashNoticeTitle = "Soyeht closed unexpectedly"
     public static let crashNoticeSummary = "A crash report was saved on this computer. Nothing was sent."
     public static let crashNoticeCopy = "Copy report"
     public static let crashNoticeDismiss = "Dismiss"
+    public static let loginStartQuestion = "Keep Soyeht running in the background?"
+    public static let loginStartSummary = "Soyeht's engine keeps your terminals and agents running when this window is closed, and starts when you log in."
+    public static let loginStartLater = "You can turn it on later from Preferences."
+    public static let loginStartTurnOn = "Turn on"
+    public static let loginStartNotNow = "Not now"
     public static let pushNeedsYouTitle = "An agent needs you"
     public static let pushNeedsYouBody = "Open Soyeht to see what it asks."
     public static let clientNameMac = "mac"

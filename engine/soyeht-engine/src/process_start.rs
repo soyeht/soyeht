@@ -26,7 +26,7 @@ use crate::{
     supervisor_handle::{DEADLINE, Supervisor, Turn},
 };
 use serde_json::Value;
-use soyeht_ptyd::wire::{Instance, ProcessKind, Request, Response, Spawn};
+use soyeht_ptyd::wire::{Instance, ProcessKind, Response, Spawn};
 
 /// How a start ended, as the code that asked for it sees it under the lock.
 pub(crate) enum Started {
@@ -55,8 +55,11 @@ impl Launch {
 
     /// Waits for the sends ahead of it, then asks the supervisor.
     pub(crate) fn send(self) -> Result<Instance> {
+        // An adapter is given the person's own CLI (ADR 0137), which takes a command; that waits
+        // for nobody's turn.
+        let process = crate::agents::user_cli::prepare(self.config);
         self.turn.wait();
-        match self.supervisor.call(Request::Spawn(self.config))? {
+        match process.send(&self.supervisor)? {
             Response::Instance(instance) => Ok(instance),
             _ => Err(errors::ptyd_unavailable("Invalid spawn response")),
         }
@@ -248,6 +251,7 @@ mod tests {
         supervisor_link::tests::core_with_unstarted_pane,
         test_panes::{Answering, apply_until_done},
     };
+    use soyeht_ptyd::wire::Request;
     use std::{
         sync::{Arc, Mutex},
         time::{Duration, Instant},
@@ -255,6 +259,18 @@ mod tests {
 
     /// What the supervisor was asked, in order.
     type Asked = Arc<Mutex<Vec<String>>>;
+
+    /// The process a supervisor made for `config`.
+    fn instance_of(config: Spawn) -> Instance {
+        Instance {
+            instance_id: format!("process-of-{}", config.instance_key),
+            supervisor_id: "answering".into(),
+            spawn: config,
+            pid: 7,
+            closed: false,
+            exit_code: None,
+        }
+    }
 
     /// A supervisor that takes `delay` to answer a start or a close, and records both.
     fn slow_supervisor(delay: Duration, asked: &Asked) -> Box<dyn SupervisorPort> {
@@ -266,14 +282,7 @@ mod tests {
                     .unwrap()
                     .push(format!("spawn {}", config.instance_key));
                 std::thread::sleep(delay);
-                Ok(Response::Instance(Instance {
-                    instance_id: format!("process-of-{}", config.instance_key),
-                    supervisor_id: "answering".into(),
-                    spawn: config,
-                    pid: 7,
-                    closed: false,
-                    exit_code: None,
-                }))
+                Ok(Response::Instance(instance_of(config)))
             }
             Request::Close { instance_id } => {
                 asked.lock().unwrap().push(format!("close {instance_id}"));

@@ -17,6 +17,12 @@ Raw terminal panes continue to exist and do not use this path.
 1. **Launch.** The engine reads the harness registry entry (command through
    npx, uvx or binary, with a hash when available) or user configuration, and
    opens the process with stdin/stdout pipes in the pane worktree's `cwd`.
+   **The Claude adapter drives the person's Claude Code** (ADR 0137): when a `claude` is on the
+   launch `PATH` and reports 2.1.283 or newer, the engine sets `CLAUDE_CODE_EXECUTABLE` to it in
+   the adapter's environment, so the pane has the person's version, models and automatic
+   subagents. Without one, or with an older one, the adapter keeps the Claude Code it bundles
+   (the pinned adapter's is newer than the minimum). A launch that sets the variable itself keeps
+   its choice. The engine logs `engine.agent_cli_chosen` with the choice and its kind of reason.
 2. **`initialize`.** The engine sends `protocolVersion: 1` first (what the
    ecosystem answers today); if the agent responds 2, the engine speaks 2.
    It sends client capabilities (see §5) and the name “Soyeht”.
@@ -74,12 +80,15 @@ Raw terminal panes continue to exist and do not use this path.
    `cancelled`, `disconnected`). The subagent's messages, thoughts, tool calls
    and plans are stored with `subagentId` and are never presented as the parent
    agent's own; a subagent that spawns another nests the same way. A subagent's
-   usage, mode, configuration and prompt echo are not the pane's and are
-   dropped. `summary` previews the subagent's last message when it finishes.
-   `model` is set only when the harness reports it: Claude Code reports it as
-   `_meta.claudeCode.toolResponse.resolvedModel` on the spawning Agent call,
-   whose `agentId` names the subagent session; that call updates the row and
-   never becomes a tool row. Codex reports no model. Codex's collaboration
+   usage, mode, configuration (but for its model, below) and prompt echo are not the
+   pane's and are dropped. `summary` previews the subagent's last message when it finishes.
+   `model` is set only when the harness reports it: the Claude adapter (0.100)
+   reports it as the `model` option of the subagent's own session
+   (`config_option_update`, the one part of a subagent's configuration the engine
+   reads); older adapters put it on the spawning Agent call as
+   `_meta.claudeCode.toolResponse.resolvedModel`, whose `agentId` names the
+   subagent session. That call updates the row and never becomes a tool row.
+   Codex reports no model. Codex's collaboration
    `wait` calls (`_meta.codex.collaboration.tool: "wait"`) on subagents the
    pane tracks never become tool rows either: an empty `receiverThreadIds`
    counts as tied only while the pane tracks a subagent, and a wait naming a
@@ -90,12 +99,23 @@ Raw terminal panes continue to exist and do not use this path.
    like the parent's; a subagent's permission request is presented from the
    tool call that subagent reported, and a persistent grant made for a
    subagent's request never covers the parent's requests, nor the reverse.
+   **Background subagents.** A subagent the harness runs in the background
+   (`run_in_background`) outlives the parent turn, and the adapter keeps
+   reporting it after `pane.turn_ended`. The harness's notification of its end
+   is handled as a further generation of the same subagent: a second row with
+   the same name, whose task is the notification, announced and finished after
+   the turn. Measured with the 0.100 adapter on Claude Code 2.1.312, for a
+   command of 25 s: the first row completed 13 s after the prompt, the turn
+   ended at 17 s, and the second row ran from 34 s to 39 s. A client shows a
+   waiting status while any row is running (above).
    When the harness process ends, subagents still running
    are marked `disconnected`. An engine restart keeps the stored rows; a native
    `session/load` replaces them with what the adapter replays. Codex replays
-   its subagents; Claude Code (pinned 0.77) replays neither the subagents nor
-   their Agent calls, so after its process restarts only the parent's
-   messages return.
+   its subagents. Claude Code replayed neither the subagents nor their Agent
+   calls up to the 0.77 adapter, so after its process restarted only the
+   parent's messages returned; the 0.100 adapter announces replayed subagents
+   too, and the engine's handling of that replay has not been measured against
+   a real session.
 8. **`session/request_permission`.** The agent asks with a title, what it wants
    to do, and options (`allow_once`, `allow_always`, `reject_once`, `reject_always`).
    The engine responds according to §4.

@@ -106,9 +106,13 @@ while the Mac's “Add iPhone” window is open:
 removes that device's push tokens.
 Only the local human opens the window. On macOS only the signed Soyeht app decides a request
 or revokes a device (a shell or script on the local socket, including a terminal a paired device
-opened, gets `forbidden_role`); on Windows and Linux there is no attestation yet, so any process
-of the same user on the local socket counts as the computer, until those apps can prove they are
-the official app. A paired device may revoke only itself (ADR 0128).
+opened, gets `forbidden_role`); on Windows and Linux there is no attestation yet, so any process of
+the same user on the local socket counts as the computer, until those apps can prove they are the
+official app. A paired device may revoke only itself (ADR 0128). Attestation does not stop a program
+of the same operating-system user that writes the database or adds a LaunchAgent, such as a phone's
+terminal. An engine that does not carry the Soyeht signature refuses even the app on macOS
+(`forbidden_role`, see `docs/dev-local.md`). `device.pair.start` stays open to a shell, but the
+person still has to see the request on the Mac and reject it or leave it undecided.
 
 **2.3 Push.** A paired device calls `push.register {platform: "apns",
 token, environment: "sandbox" | "production"}` and `push.unregister {}`; any

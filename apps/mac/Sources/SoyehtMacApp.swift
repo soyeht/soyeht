@@ -131,17 +131,15 @@ struct SoyehtMacApp: App {
       .task { await engineService.refresh() }
       .task { await crashNotice.start() }
       .alert(
-        "Keep Soyeht running in the background?",
+        ClientPolicy.loginStartQuestion,
         isPresented: Binding(
           get: { engineService.shouldAsk && !client.connected },
           set: { _ in })
       ) {
-        Button("Turn on") { Task { await engineService.enable() } }
-        Button("Not now", role: .cancel) { engineService.decline() }
+        Button(ClientPolicy.loginStartTurnOn) { Task { await engineService.enable() } }
+        Button(ClientPolicy.loginStartNotNow, role: .cancel) { engineService.decline() }
       } message: {
-        Text(
-          "Soyeht's engine keeps your terminals and agents running when this window is closed, "
-            + "and starts when you log in. You can turn it on later from Preferences.")
+        Text(verbatim: ClientPolicy.loginStartSummary + " " + ClientPolicy.loginStartLater)
       }
   }
 

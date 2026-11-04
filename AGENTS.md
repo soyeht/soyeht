@@ -68,11 +68,19 @@ Each layer depends only on the layers listed above it.
    `contracts/design-tokens.json`, the same source the Swift side is generated from.
    Three seams belong to the window, each the same on every system: the log also goes to a
    rotating file (`soyeht_platform::log::to_file`, ADR 0101); a window that finds no engine
-   starts `soyeht-ptyd` and `soyeht-engine` detached (`soyeht-client`'s `autostart` through
+   asks a registered login service to start (`soyeht service start`, ADR 0136) or else starts
+   `soyeht-ptyd` and `soyeht-engine` detached (`soyeht-client`'s `autostart` through
    `soyeht_platform::process::detached`, ADR 0102); and `os_notify` raises the system
    notification when an agent needs the person (ADR 0103).
 
-`scripts/check_layers.py` reads every `Cargo.toml` of `engine/` and `apps/desktop/` and
+8. `apps/android`: the Android app, a companion of the engine like the iPhone (ADR 0134). Its
+   Rust core, `soyeht-android` (`apps/android/core`, its own cargo workspace, exposed to Kotlin
+   through UniFFI), depends on `soyeht-client`, `soyeht-protocol` and `soyeht-platform`; it holds
+   no rule of its own. The Kotlin app (`apps/android/app`, Jetpack Compose) is a thin view over it,
+   like `apps/ios/Sources`: it renders and forwards input, and every colour, radius and size comes
+   from the Kotlin output of `contracts/design-tokens.json`.
+
+`scripts/check_layers.py` reads every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and
 fails when a crate depends on a Soyeht crate outside its layer, or when a new crate is not
 in its `LAYERS` table. Place a new crate there and in the list above.
 

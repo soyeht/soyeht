@@ -3,8 +3,11 @@
 //! `Restart=always` restarts the program however it ended, `RestartSec` waits the policy's
 //! delay, and `StartLimitIntervalSec=0` removes the rate limit that would otherwise leave a
 //! unit "failed" for good after a few quick restarts. `WantedBy=default.target` starts it when
-//! the user's manager starts, which is at login. The engine `Wants=` and starts `After=` the
-//! supervisor, but does not `Require` it: restarting the supervisor must not restart the engine.
+//! the user's manager starts, which is at login. The engine starts `After=` the supervisor, but
+//! neither `Require`s nor `Wants=` it: restarting the supervisor must not restart the engine, and
+//! `Wants=` would start the supervisor's unit beside a supervisor the window started, which fails
+//! on its lock and is restarted every second (both units are `WantedBy` the default target, so
+//! both start at login without it).
 //! `ConditionPathExists=` the program skips the start, without a failure and so without the
 //! one-second restart, when the program has been removed or moved (a package removed, a folder
 //! deleted) while the unit file stays in the person's home (ADR 0121).
@@ -34,7 +37,7 @@ pub(super) fn render(definition: &Definition) -> String {
         definition.program.replace('%', "%%")
     ));
     if let Some(after) = &definition.after {
-        text.push_str(&format!("Wants={after}\nAfter={after}\n"));
+        text.push_str(&format!("After={after}\n"));
     }
     text.push_str("StartLimitIntervalSec=0\n\n[Service]\nType=simple\n");
     let words: Vec<String> = std::iter::once(&definition.program)
@@ -75,7 +78,7 @@ mod tests {
             render(&definition),
             "[Unit]\nDescription=Soyeht engine\n\
 ConditionPathExists=/opt/next/soyeht-engine\n\
-Wants=soyeht-next-test-ptyd.service\nAfter=soyeht-next-test-ptyd.service\n\
+After=soyeht-next-test-ptyd.service\n\
 StartLimitIntervalSec=0\n\n\
 [Service]\nType=simple\n\
 ExecStart=\"/opt/next/soyeht-engine\" \"--data-dir\" \"/data/next\"\n\

@@ -8,7 +8,9 @@ export const clientPolicy = {
     "reconnectCeilingMs": 30000,
     "draftBeatMs": 8000,
     "agentPartialFlushMs": 16,
-    "diagnosticsMs": 30000
+    "diagnosticsMs": 30000,
+    "copiedFeedbackMs": 1500,
+    "serviceCommandMs": 60000
   },
   "terminal": {
     "inputChunkBytes": 16384,
@@ -20,7 +22,8 @@ export const clientPolicy = {
     "webLinks": 128,
     "modelPages": 32,
     "tickerHistory": 3,
-    "diagnosticsReportBytes": 4194304
+    "diagnosticsReportBytes": 4194304,
+    "serviceReportBytes": 65536
   },
   "pageSize": {
     "queue": 64,
@@ -86,10 +89,17 @@ export const clientPolicy = {
     "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
     "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
     "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+    "copyCode": "Copy code",
+    "copiedCode": "Copied",
     "crashNoticeTitle": "Soyeht closed unexpectedly",
     "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
     "crashNoticeCopy": "Copy report",
     "crashNoticeDismiss": "Dismiss",
+    "loginStartQuestion": "Keep Soyeht running in the background?",
+    "loginStartSummary": "Soyeht's engine keeps your terminals and agents running when this window is closed, and starts when you log in.",
+    "loginStartLater": "You can turn it on later from Preferences.",
+    "loginStartTurnOn": "Turn on",
+    "loginStartNotNow": "Not now",
     "pushNeedsYouTitle": "An agent needs you",
     "pushNeedsYouBody": "Open Soyeht to see what it asks."
   },

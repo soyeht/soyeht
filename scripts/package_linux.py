@@ -45,6 +45,7 @@ from package_common import (  # noqa: E402
     absolute,
     add_build_arguments,
     cargo_build,
+    check_sizes,
     host_arch,
     make_plan,
     sha256_of,
@@ -444,6 +445,7 @@ def main(argv=None):
         written.append(build_appimage(plan, runtime, out))
     for path in written:
         print(f"{path} ({path.stat().st_size} bytes, needs glibc {version_text(floor) or 'none'})")
+    check_sizes(written)
 
 
 if __name__ == "__main__":

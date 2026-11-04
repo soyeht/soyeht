@@ -3,7 +3,7 @@
 //! shows it with its explanation, and the stage shows the button alone while the engine is not
 //! running, which is when a person needs the report most. The Mac shows the same sentences.
 
-use super::{preferences::pill_button, prelude::*};
+use super::{preferences::pill_button, prelude::*, ui::section};
 use crate::theme::{Palette, pane_interior, space, type_scale};
 use soyeht_protocol::client_policy::{DIAGNOSTICS_ACTION, DIAGNOSTICS_SUMMARY, DIAGNOSTICS_TITLE};
 
@@ -14,14 +14,7 @@ impl Workbench {
         palette: &'static Palette,
         cx: &mut Context<Self>,
     ) -> Div {
-        column()
-            .gap(px(space::X8))
-            .child(chrome_text(FontWeight::BOLD, type_scale::SUBHEADING).child(DIAGNOSTICS_TITLE))
-            .child(
-                chrome_text(FontWeight::NORMAL, type_scale::CAPTION)
-                    .text_color(rgb(palette.secondary))
-                    .child(DIAGNOSTICS_SUMMARY),
-            )
+        section(palette, DIAGNOSTICS_TITLE, DIAGNOSTICS_SUMMARY)
             .child(self.diagnostics_action(palette, "setup", cx))
     }
 

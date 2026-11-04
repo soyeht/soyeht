@@ -17,6 +17,7 @@ pub mod legacy;
 pub mod ndjson;
 pub mod profile;
 pub mod readiness;
+pub mod service_report;
 pub mod setting;
 pub mod snapshot;
 pub mod update;
