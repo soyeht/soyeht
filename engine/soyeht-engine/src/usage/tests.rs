@@ -4,7 +4,7 @@ use super::*;
 use crate::{dispatch::Outcome, ports::testing::FixedClock};
 use serde_json::json;
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
-use soyeht_usage::host::*;
+use soyeht_usage::{ReadHints, host::*};
 use std::{
     collections::VecDeque,
     fs,
@@ -431,7 +431,7 @@ const FAR: u64 = 99_999_999_999_999;
 
 /// Reads whatever the background schedule wants at `now_sec` and says whether Claude was in it.
 fn automatic_round(service: &mut Service, now_sec: u64) -> Option<bool> {
-    let prepared = service.prepare_automatic(now_sec, "t")?;
+    let prepared = service.prepare_automatic(now_sec, "t", ReadHints::default())?;
     let claude = prepared.providers().contains(&UsageProvider::Claude);
     let committed = service.commit(prepared.read());
     if claude {
@@ -449,7 +449,7 @@ fn claude_due(service: &mut Service, now_sec: u64) -> bool {
 
 fn provider_due(service: &mut Service, provider: &UsageProvider, now_sec: u64) -> bool {
     service
-        .prepare_automatic(now_sec, "t")
+        .prepare_automatic(now_sec, "t", ReadHints::default())
         .is_some_and(|prepared| {
             let due = prepared.providers().contains(provider);
             service.abandon(prepared.providers());
@@ -499,7 +499,12 @@ fn a_click_reads_a_signed_out_provider_at_once() {
     assert_eq!(automatic_round(&mut service, 1_000_000), Some(true));
     host.sign_in_claude(FAR);
     let prepared = service
-        .prepare_manual(Some(UsageProvider::Claude), 1_000_010, "t")
+        .prepare_manual(
+            Some(UsageProvider::Claude),
+            1_000_010,
+            "t",
+            ReadHints::default(),
+        )
         .ok()
         .unwrap();
     service.commit(prepared.read());
@@ -593,6 +598,7 @@ fn read_claude(host: &Arc<ScriptedHost>) -> soyeht_usage::RefreshOutcome {
         soyeht_usage::Trigger::Manual,
         NOW,
         "t",
+        &ReadHints::default(),
     )
 }
 
@@ -655,7 +661,7 @@ fn a_click_that_finds_the_provider_still_signed_out_does_not_lengthen_the_hold()
     for click in 1..=3 {
         let at = start + click * 40;
         let prepared = service
-            .prepare_manual(Some(UsageProvider::Claude), at, "t")
+            .prepare_manual(Some(UsageProvider::Claude), at, "t", ReadHints::default())
             .ok()
             .unwrap();
         let committed = service.commit(prepared.read());
@@ -675,7 +681,9 @@ fn a_provider_whose_reader_panics_is_released_logged_once_and_read_again() {
     let start = 1_000_000;
     let codex = UsageProvider::Codex;
     let round = |service: &mut Service, at: u64| {
-        let prepared = service.prepare_automatic(at, "t").unwrap();
+        let prepared = service
+            .prepare_automatic(at, "t", ReadHints::default())
+            .unwrap();
         assert!(prepared.providers().contains(&codex));
         let committed = service.commit(prepared.read());
         committed
@@ -690,7 +698,7 @@ fn a_provider_whose_reader_panics_is_released_logged_once_and_read_again() {
     // were read.
     assert!(
         service
-            .prepare_manual(Some(codex.clone()), start + 1, "t")
+            .prepare_manual(Some(codex.clone()), start + 1, "t", ReadHints::default())
             .is_ok()
     );
     service.abandon(std::slice::from_ref(&codex));

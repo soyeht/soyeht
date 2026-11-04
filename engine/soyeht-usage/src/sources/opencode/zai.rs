@@ -40,7 +40,7 @@ impl Source for ZaiPlanSource {
     }
 
     fn read(&self, host: &dyn Host, context: ReadContext) -> Attempt {
-        let Some(provider) = super::active_provider(host) else {
+        let Some(provider) = super::active_provider(host, &context) else {
             return Err(Failure::NotConfigured);
         };
         let Some((_, base)) = HOSTS.iter().find(|(id, _)| *id == provider) else {

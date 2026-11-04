@@ -399,11 +399,21 @@ impl Core {
             "Agent pane disappeared before commit publication",
         )?
         .stored = saved;
+        let model_before = self
+            .agents
+            .get(id)
+            .and_then(|running| crate::usage::opencode_model(&running.state))
+            .map(str::to_owned);
+        // A pane moved to another provider changes what the OpenCode meter follows.
+        let model_changed = model_before.as_deref() != crate::usage::opencode_model(&state);
         if let Some(running) = self.agents.get_mut(id) {
             running.state = state;
             running.idle.touch();
         } else {
             self.agents.insert(id.to_owned(), Running::new(state));
+        }
+        if model_changed {
+            self.usage.wake();
         }
         Ok(())
     }
@@ -554,5 +564,53 @@ mod readiness_tests {
             readiness_after_changes(&state, &authenticated),
             Some((HarnessSetupState::Ready, None))
         );
+    }
+}
+
+#[cfg(test)]
+mod usage_follow_tests {
+    use crate::test_panes;
+    use soyeht_protocol::{ConfigOption, ConfigType, ConfigValue};
+    use std::time::Duration;
+
+    fn model_option(model: &str) -> ConfigOption {
+        ConfigOption {
+            id: "model".into(),
+            name: "Model".into(),
+            description: None,
+            category: Some("model".into()),
+            r#type: ConfigType::Select,
+            current_value: ConfigValue::V0(model.into()),
+            options: Vec::new(),
+        }
+    }
+
+    async fn woke(core: &crate::core::Core) -> bool {
+        let signal = core.usage.woken();
+        tokio::time::timeout(Duration::from_millis(100), signal.notified())
+            .await
+            .is_ok()
+    }
+
+    #[tokio::test]
+    async fn committing_a_new_opencode_model_wakes_the_usage_schedule_and_nothing_else_does() {
+        let (mut core, directory) = test_panes::core_with_agent(&[]);
+        let saved = core.panes["agent"].stored.clone();
+        let mut state = core.agents["agent"].state.clone();
+        state.launch.id = "registry.opencode".into();
+        state.options.values = vec![model_option("zai-coding-plan/glm-5.3")];
+        // The harness changes first: the pane now has a model the meter can follow.
+        core.install_committed_agent("agent", saved.clone(), state.clone())
+            .unwrap();
+        assert!(woke(&core).await);
+        // The same model again leaves the schedule alone.
+        core.install_committed_agent("agent", saved.clone(), state.clone())
+            .unwrap();
+        assert!(!woke(&core).await);
+        // The pane is moved to another provider.
+        state.options.values = vec![model_option("opencode-go/glm-5.3-flash")];
+        core.install_committed_agent("agent", saved, state).unwrap();
+        assert!(woke(&core).await);
+        crate::test_paths::remove_after(core, directory);
     }
 }

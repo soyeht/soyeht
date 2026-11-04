@@ -5,7 +5,7 @@ mod support;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
 use soyeht_usage::{
-    Planner, Trigger,
+    Planner, ReadHints, Trigger,
     host::{Cookie, CookieJar, Platform, Secret, SecretRead},
 };
 use std::{path::Path, sync::Arc};
@@ -39,7 +39,13 @@ fn app_login_is_sent_as_the_session_cookie() {
     host.state_db = SecretRead::Found(Secret::new(app_token()));
     let host = Arc::new(host);
     let reading = Planner::new(host.clone())
-        .refresh(&UsageProvider::Cursor, Trigger::Automatic, NOW, "now")
+        .refresh(
+            &UsageProvider::Cursor,
+            Trigger::Automatic,
+            NOW,
+            "now",
+            &ReadHints::default(),
+        )
         .reading;
     assert_eq!(reading.source, UsageSource::CursorAppLogin);
     let primary = reading.primary.unwrap();
@@ -78,7 +84,13 @@ fn rejected_app_login_falls_back_to_browser_cookies_on_macos() {
     )];
     let host = Arc::new(host);
     let reading = Planner::new(host.clone())
-        .refresh(&UsageProvider::Cursor, Trigger::Automatic, NOW, "now")
+        .refresh(
+            &UsageProvider::Cursor,
+            Trigger::Automatic,
+            NOW,
+            "now",
+            &ReadHints::default(),
+        )
         .reading;
     assert_eq!(reading.source, UsageSource::CursorBrowserCookies);
     assert_eq!(
@@ -94,7 +106,13 @@ fn linux_uses_the_xdg_app_login_and_never_a_browser() {
     host.env = vec![("XDG_CONFIG_HOME".into(), config.to_str().unwrap().into())];
     let host = Arc::new(host);
     let reading = Planner::new(host.clone())
-        .refresh(&UsageProvider::Cursor, Trigger::Automatic, NOW, "now")
+        .refresh(
+            &UsageProvider::Cursor,
+            Trigger::Automatic,
+            NOW,
+            "now",
+            &ReadHints::default(),
+        )
         .reading;
     assert_eq!(reading.state, UsageState::LoginNeeded);
     assert_eq!(

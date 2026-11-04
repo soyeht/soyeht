@@ -5,7 +5,10 @@
 mod browser;
 #[cfg(feature = "test-hooks")]
 mod fixture_host;
+#[cfg(test)]
+mod follow_tests;
 mod host;
+mod pane_model;
 mod process;
 mod service;
 mod terminal;
@@ -15,6 +18,7 @@ mod tests;
 #[cfg(feature = "test-hooks")]
 pub use fixture_host::FixtureHost;
 pub use host::SystemHost;
+pub(crate) use pane_model::opencode_model;
 pub use service::{PreparedRefresh, Service};
 
 use crate::{
@@ -113,7 +117,7 @@ impl Core {
         let timestamp = self.clock.timestamp();
         match self
             .usage
-            .prepare_manual(request.provider, now_sec, &timestamp)
+            .prepare_manual(request.provider, now_sec, &timestamp, self.usage_hints())
         {
             Ok(refresh) => Ok(PreparedUsageRefresh {
                 connection: connection.to_owned(),
@@ -164,7 +168,8 @@ impl Core {
     pub(crate) fn usage_automatic_prepare(&mut self) -> Option<PreparedRefresh> {
         let now_sec = nonnegative_time(self.clock.now_unix());
         let timestamp = self.clock.timestamp();
-        self.usage.prepare_automatic(now_sec, &timestamp)
+        let hints = self.usage_hints();
+        self.usage.prepare_automatic(now_sec, &timestamp, hints)
     }
 
     /// Commits a background refresh; only readings that changed are published.
@@ -207,8 +212,13 @@ pub async fn schedule(core: Shared) -> Result<()> {
     // A source that stays broken is logged when it starts and when its kind changes, not on
     // every tick.
     let mut failures = Streak::once();
+    // A pane moved to another provider wakes the schedule before its next tick.
+    let woken = core_lock::with(&core, "usage_schedule", |core| Ok(core.usage.woken())).await?;
     loop {
-        ticks.tick().await;
+        tokio::select! {
+            _ = ticks.tick() => {}
+            () = woken.notified() => {}
+        }
         let prepared = core_lock::with(&core, "usage_schedule", |core| {
             Ok(core
                 .usage

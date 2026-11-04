@@ -10,7 +10,7 @@ mod jwt;
 pub(crate) mod opencode;
 
 use crate::{
-    Activity, Window,
+    Activity, ReadHints, Window,
     host::{CookieJar, CookieRead, FileRead, Host, HttpResult, Platform, SecretRead},
 };
 use chrono::{DateTime, SecondsFormat, TimeZone, Utc};
@@ -33,13 +33,15 @@ pub enum Trigger {
 #[derive(Clone)]
 pub(crate) struct ReadContext {
     pub now_sec: u64,
+    pub hints: ReadHints,
     keychain: Arc<Mutex<Vec<(String, SecretRead)>>>,
 }
 
 impl ReadContext {
-    pub(crate) fn new(now_sec: u64) -> Self {
+    pub(crate) fn new(now_sec: u64, hints: ReadHints) -> Self {
         Self {
             now_sec,
+            hints,
             keychain: Arc::default(),
         }
     }

@@ -78,6 +78,15 @@ impl RefreshPolicy {
             || reading.is_some_and(|reading| reset_since(reading, last, now_sec))
     }
 
+    /// Whether the background schedule may read `provider` ahead of its interval because what its
+    /// reader follows has changed (the model of a pane). The reading is not hurried past the
+    /// limit of a click: at least 30 seconds after the last attempt.
+    pub fn changed_due(&self, provider: &UsageProvider, now_sec: u64) -> bool {
+        self.find(provider)
+            .and_then(|schedule| schedule.last_attempt_sec)
+            .is_none_or(|last| now_sec.saturating_sub(last) >= MIN_INTERVAL)
+    }
+
     pub fn record_manual(&mut self, provider: &UsageProvider, now_sec: u64) {
         self.schedule_mut(provider).last_manual_sec = Some(now_sec);
     }

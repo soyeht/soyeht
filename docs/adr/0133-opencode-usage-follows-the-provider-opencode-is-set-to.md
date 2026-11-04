@@ -1,7 +1,8 @@
 # ADR 0133 · The OpenCode meter follows the provider OpenCode is set to
 
 Date: 2026-11-01
-Status: accepted. Extends ADR 0077 (usage source chains) with a fourth provider.
+Status: accepted. Extends ADR 0077 (usage source chains) with a fourth provider. ADR 0138 puts the
+model of the pane in use before the files described here.
 
 ## Context
 
