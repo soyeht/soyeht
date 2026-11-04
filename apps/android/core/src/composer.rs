@@ -81,6 +81,12 @@ pub struct HarnessChoices {
     pub more: Vec<HarnessChoice>,
     /// The engine has answered the request for the harnesses at least once.
     pub loaded: bool,
+    /// What the menu says while the harnesses have not arrived, when there are none, and on its rescan
+    /// entry; and the cancel of the confirmation (`x-clientPolicy`).
+    pub loading_text: String,
+    pub none_text: String,
+    pub rescan_text: String,
+    pub cancel_text: String,
 }
 
 fn menu(menu: Menu) -> ChoiceMenu {
@@ -154,6 +160,10 @@ pub(crate) fn harness_choices(state: &State, pane_id: &str) -> Option<HarnessCho
         more_title: harness_picker::MORE_TITLE.to_owned(),
         more: layout.more.into_iter().map(choice).collect(),
         loaded: state.harnesses_loaded(),
+        loading_text: client_policy::HARNESSES_LOADING.to_owned(),
+        none_text: client_policy::HARNESSES_NONE.to_owned(),
+        rescan_text: client_policy::HARNESSES_RESCAN.to_owned(),
+        cancel_text: client_policy::CANCEL.to_owned(),
     })
 }
 
@@ -165,10 +175,7 @@ pub(crate) fn switch_command(state: &State, pane_id: &str, harness: &str) -> Opt
     let agent = pane.agent.as_ref()?;
     let connected = state.connection == Connection::Connected;
     let view = state.agent(pane_id)?;
-    let startable = state
-        .harnesses()
-        .iter()
-        .any(|known| known.id == harness && known.available && known.id != agent.harness);
+    let startable = switch::startable(state.harnesses(), Some(&agent.harness), harness);
     (startable && switch::can_switch(connected, Some(agent), view.harness_switch.as_ref())).then(
         || Command::SwitchHarness {
             pane_id: pane_id.to_owned(),
@@ -305,6 +312,14 @@ mod tests {
                 .starts_with("This starts a new agent session")
         );
         assert!(choices.loaded);
+        assert_eq!(
+            (&choices.loading_text[..], &choices.none_text[..]),
+            ("Loading agents…", "No other agents")
+        );
+        assert_eq!(
+            (&choices.rescan_text[..], &choices.cancel_text[..]),
+            ("Check agents again", "Cancel")
+        );
     }
 
     #[test]

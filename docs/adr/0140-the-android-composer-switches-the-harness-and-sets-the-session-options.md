@@ -20,8 +20,14 @@ harnesses are grouped and when a switch may start are `contracts/vectors/harness
   the model, effort and permission menus, each with its choices and its current one. `harness_choices(pane_id)`
   lays the other harnesses out as the new-agent picker does: groups by how ready they are, those not installed
   under one "More harnesses" entry, the running harness left out. Nothing is typed in Kotlin: not a method name,
-  not a selector id, not a group title, not the sentence that says what a switch does to the conversation
-  (`x-clientPolicy`).
+  not a selector id, not a group title, not the sentence that says what a switch does to the conversation, and not "Loading agents…",
+  "No other agents", "Check agents again" or "Cancel": those are `x-clientPolicy` texts (`harnessesLoading`,
+  `harnessesNone`, `harnessesRescan`, `cancel`), which the core hands over with the choices. The desktop's
+  harness menu reads the first of them too; the Mac and the iPhone still hold their own copies of these
+  strings, which they may drop for `ClientPolicy` when next touched.
+- **When a switch may go to a harness is one function.** `switch::startable(harnesses, running, target)` in
+  `soyeht-client`: the engine lists the harness as able to start and it is not the one the pane runs. The core
+  and the desktop's switch popover (`switch_flow.rs`) both call it.
 - **Commands are the client's.** `load_harnesses`, `choose_option` and `switch_harness` send the
   `soyeht_client::Command`s the desktop sends. A switch the view lets through by mistake is not sent:
   `switch_harness` asks the same `switch::can_switch` (connected, no configuration change in flight, no switch

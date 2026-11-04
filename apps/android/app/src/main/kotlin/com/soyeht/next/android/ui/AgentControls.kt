@@ -100,7 +100,7 @@ private fun HarnessMenu(model: AppModel, controls: ComposerControls, onChoose: (
         content = { close ->
             if (choices == null || (choices.sections.isEmpty() && choices.more.isEmpty())) {
                 Text(
-                    if (choices?.loaded == true) "No other agents" else "Loading agents…",
+                    if (choices?.loaded == true) choices.noneText else choices?.loadingText.orEmpty(),
                     color = roles.secondary,
                     fontSize = TypeScale.caption.sp,
                     modifier = Modifier.padding(PaneInterior.cardPadding.dp),
@@ -123,7 +123,7 @@ private fun HarnessMenu(model: AppModel, controls: ComposerControls, onChoose: (
                 if (showMore) choices.more.forEach { HarnessItem(it) { close(); onChoose(it) } }
             }
             DropdownMenuItem(
-                text = { Text("Check agents again", color = roles.accent, fontSize = TypeScale.body.sp) },
+                text = { Text(choices?.rescanText.orEmpty(), color = roles.accent, fontSize = TypeScale.body.sp) },
                 onClick = { model.rescanHarnesses() },
             )
         },
@@ -155,6 +155,6 @@ private fun RestartDialog(model: AppModel, target: HarnessChoice, dismiss: () ->
         title = { Text(target.action + "?", color = roles.ink) },
         text = { Text(model.harnessChoices?.handover.orEmpty(), color = roles.secondary) },
         confirmButton = { TextButton({ dismiss(); model.switchHarness(target.id) }) { Text(target.action, color = roles.accent) } },
-        dismissButton = { TextButton(dismiss) { Text("Cancel", color = roles.secondary) } },
+        dismissButton = { TextButton(dismiss) { Text(model.harnessChoices?.cancelText.orEmpty(), color = roles.secondary) } },
     )
 }
