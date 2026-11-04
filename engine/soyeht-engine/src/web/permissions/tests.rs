@@ -1,5 +1,5 @@
 use super::*;
-use crate::web::test_support::{next_json, reply, request, temp_root, welcome};
+use crate::web::test_support::{connect_local, next_json, reply, request, temp_root};
 use crate::{
     dispatch::Outcome, model::RunningPane, outbox, ports::testing::FixedClock, screen::Screen,
 };
@@ -8,22 +8,8 @@ use soyeht_protocol::{Actor, ErrorKind, WebCommandKind};
 use std::{path::PathBuf, sync::Arc};
 
 async fn connect(core: &mut Core, host: bool) -> (String, outbox::Receiver) {
-    let (sender, mut receiver) = outbox::channel();
-    let connection = core.connect(true, false, sender).unwrap();
-    let _ = next_json(&mut receiver).await;
-    welcome(
-        core,
-        &connection,
-        request(
-            1,
-            "hello",
-            json!({"client":"web-permission-test","clientVersion":"1",
-                "protocolVersion":1,"capabilities":if host { json!(["web_host"]) } else { json!([]) }}),
-        ),
-        &mut receiver,
-    )
-    .await;
-    (connection, receiver)
+    let capabilities = if host { json!(["web_host"]) } else { json!([]) };
+    connect_local(core, "web-permission-test", capabilities).await
 }
 
 async fn setup() -> (

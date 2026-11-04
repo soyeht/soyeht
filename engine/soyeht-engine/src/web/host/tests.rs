@@ -1,5 +1,5 @@
 use super::*;
-use crate::web::test_support::{create_web_pane, next_json, reply, request, temp_root, welcome};
+use crate::web::test_support::{connect_local, create_web_pane, next_json, request, temp_root};
 use crate::{dispatch::Outcome, outbox, ports::testing::FixedClock};
 use serde_json::json;
 use soyeht_protocol::frame::Frame;
@@ -31,66 +31,7 @@ fn assert_human_args(command: &Value, args: Value) {
 }
 
 async fn connect(core: &mut Core, capabilities: Value) -> (String, outbox::Receiver) {
-    let (sender, mut receiver) = outbox::channel();
-    let connection = core.connect(true, false, sender).unwrap();
-    let challenge = next_json(&mut receiver).await;
-    assert_eq!(challenge["method"], "auth.challenge");
-    let welcome = welcome(
-        core,
-        &connection,
-        request(
-            1,
-            "hello",
-            json!({
-                "client":"web-host-test","clientVersion":"1","protocolVersion":1,
-                "capabilities":capabilities
-            }),
-        ),
-        &mut receiver,
-    )
-    .await;
-    assert_eq!(welcome["role"], "human_local");
-    (connection, receiver)
-}
-
-#[tokio::test]
-async fn the_web_host_receives_its_welcome_before_any_web_command() {
-    let root = temp_root();
-    let mut core = Core::open(&root).unwrap();
-    core.clock = Arc::new(FixedClock(10));
-    let (caller, _caller_receiver) = connect(&mut core, json!([])).await;
-    let pane = create_web_pane(&mut core, &caller, &root);
-    // The host's `hello`, and a command for it the moment it is the host: nothing here waits for the
-    // reply to reach the connection (the server sends replies after it has left the Core lock).
-    let (sender, mut host_receiver) = outbox::channel();
-    let host = core.connect(true, false, sender).unwrap();
-    assert_eq!(
-        next_json(&mut host_receiver).await["method"],
-        "auth.challenge"
-    );
-    let hello = request(
-        1,
-        "hello",
-        json!({"client":"web-host-test","clientVersion":"1","protocolVersion":1,
-            "capabilities":["web_host"]}),
-    );
-    assert!(
-        matches!(core.dispatch(&host, hello), Ok(Outcome::Queued)),
-        "the host's welcome is queued by the engine itself"
-    );
-    core.queue_web_command(
-        &caller,
-        json!(44),
-        "web.navigate",
-        &navigate_params(&pane, "operation"),
-        command_params(&pane, "operation"),
-    )
-    .unwrap();
-    let first = next_json(&mut host_receiver).await;
-    assert_eq!(first["id"], 1, "{first}");
-    assert_eq!(first["result"]["role"], "human_local");
-    let second = next_json(&mut host_receiver).await;
-    assert_eq!(second["method"], "web.command");
+    connect_local(core, "web-host-test", capabilities).await
 }
 
 #[tokio::test]

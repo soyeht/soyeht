@@ -269,32 +269,6 @@ impl Core {
         .map_err(|_| errors::internal("Welcome response serialization failed"))
     }
 
-    /// The answer to `hello`. The web host is asked for pages as soon as it is the host, which is under
-    /// this lock hold; its welcome is queued under the same hold, so that the engine never sends a
-    /// `web.command` to a connection before its welcome (a client ignores what comes first). Any other
-    /// connection's welcome is sent as every reply is.
-    fn welcome(&mut self, connection: &str, id: &Value, welcome: Value) -> Result<Outcome> {
-        let hosts = self
-            .clients
-            .get(connection)
-            .is_some_and(|client| client.web_host);
-        if !hosts {
-            return Ok(Outcome::Reply(welcome));
-        }
-        let frame = model::response(method::HELLO, id.clone(), welcome)?;
-        let client = errors::invariant(
-            self.clients.get(connection),
-            "Handshake connection disappeared",
-        )?;
-        if client.outbox.send(frame) {
-            Ok(Outcome::Queued)
-        } else {
-            Err(errors::internal(
-                "The web host's connection closed during its handshake",
-            ))
-        }
-    }
-
     /// Only a local human connection may host the browser, and only one at a time.
     fn claim_web_host(&self, connection: &str, role: &Role) -> Result<()> {
         if *role != Role::HumanLocal {

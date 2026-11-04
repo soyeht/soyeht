@@ -111,29 +111,15 @@ mod tests {
     use super::*;
     use crate::outbox;
     use crate::web::test_support::{
-        create_workspace, next_json, reply, request, temp_root, welcome,
+        connect_local, create_workspace, next_json, reply, request, temp_root,
     };
     use serde_json::json;
     use soyeht_protocol::ErrorKind;
     use std::path::Path;
 
     async fn connect(core: &mut Core, name: &str, host: bool) -> (String, outbox::Receiver) {
-        let (sender, mut receiver) = outbox::channel();
-        let connection = core.connect(true, false, sender).unwrap();
-        let _ = next_json(&mut receiver).await;
-        welcome(
-            core,
-            &connection,
-            request(
-                1,
-                "hello",
-                json!({"client":name,"clientVersion":"1","protocolVersion":1,
-                    "capabilities": if host { json!(["web_host"]) } else { json!([]) }}),
-            ),
-            &mut receiver,
-        )
-        .await;
-        (connection, receiver)
+        let capabilities = if host { json!(["web_host"]) } else { json!([]) };
+        connect_local(core, name, capabilities).await
     }
 
     fn workspace_and_pane(core: &mut Core, connection: &str, root: &Path) -> String {
@@ -151,6 +137,38 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned()
+    }
+
+    #[tokio::test]
+    async fn the_web_host_receives_its_welcome_before_any_web_command() {
+        let root = temp_root();
+        let mut core = Core::open(&root).unwrap();
+        let (caller, _) = connect(&mut core, "caller", false).await;
+        let pane = workspace_and_pane(&mut core, &caller, &root);
+        // The host's `hello`, then a page asked of it the moment it is the host. Nothing waits for the
+        // reply to reach the connection: the server sends replies after it has left the Core lock.
+        let (sender, mut host) = outbox::channel();
+        let connection = core.connect(true, false, sender).unwrap();
+        assert_eq!(next_json(&mut host).await["method"], "auth.challenge");
+        let hello = request(
+            1,
+            "hello",
+            json!({"client":"host","clientVersion":"1","protocolVersion":1,
+                "capabilities":["web_host"]}),
+        );
+        assert!(matches!(
+            core.dispatch(&connection, hello),
+            Ok(crate::dispatch::Outcome::Queued)
+        ));
+        let navigate = json!({"paneId":pane,"url":"localhost:5173","idempotencyKey":"n"});
+        assert!(matches!(
+            core.dispatch(&caller, request(4, "web.navigate", navigate)),
+            Ok(crate::dispatch::Outcome::Queued)
+        ));
+        let welcome = next_json(&mut host).await;
+        assert_eq!(welcome["id"], 1);
+        assert_eq!(welcome["result"]["role"], "human_local");
+        assert_eq!(next_json(&mut host).await["method"], "web.command");
     }
 
     #[tokio::test]
