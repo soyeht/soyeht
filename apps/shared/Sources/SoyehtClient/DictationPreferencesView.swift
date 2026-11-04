@@ -184,27 +184,44 @@ struct DictationLanguagePicker: View {
   let store: DictationEngineStore
   let style: AgentConversationStyle
 
+  /// The label and the menu share a line while they fit; at an accessibility text size the
+  /// menu goes under the label, which then keeps its whole word.
   var body: some View {
-    HStack {
-      Text("Language").font(style.bodyFont).foregroundStyle(style.ink)
-      Spacer()
-      Menu {
-        ForEach(store.selected.languages) { language in
-          Button(language.title) { store.selectLanguage(language) }
-        }
-      } label: {
-        HStack(spacing: AgentComposerMetrics.chipSpacing) {
-          Text(store.language.title).font(style.bodyFont).foregroundStyle(style.ink)
-          Image(systemName: "chevron.up.chevron.down")
-            .font(.system(size: AgentComposerMetrics.chevronSize))
-            .foregroundStyle(style.secondary)
-        }
+    ViewThatFits(in: .horizontal) {
+      HStack {
+        label.fixedSize()
+        Spacer()
+        menu.fixedSize()
       }
-      .composerMenuStyle()
-      .accessibilityLabel("Language")
-      .accessibilityValue(store.language.title)
-      .accessibilityIdentifier("dictation-language")
+      VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
+        label
+        menu
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
     .padding(.horizontal, PaneInteriorMetrics.cardPadding)
+  }
+
+  private var label: some View {
+    Text("Language").font(style.bodyFont).foregroundStyle(style.ink)
+  }
+
+  private var menu: some View {
+    Menu {
+      ForEach(store.selected.languages) { language in
+        Button(language.title) { store.selectLanguage(language) }
+      }
+    } label: {
+      HStack(spacing: AgentComposerMetrics.chipSpacing) {
+        Text(store.language.title).font(style.bodyFont).foregroundStyle(style.ink)
+        Image(systemName: "chevron.up.chevron.down")
+          .font(.system(size: AgentComposerMetrics.chevronSize))
+          .foregroundStyle(style.secondary)
+      }
+    }
+    .composerMenuStyle()
+    .accessibilityLabel("Language")
+    .accessibilityValue(store.language.title)
+    .accessibilityIdentifier("dictation-language")
   }
 }

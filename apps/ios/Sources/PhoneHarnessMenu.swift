@@ -11,6 +11,8 @@ struct PhoneHarnessMenu: View {
   @State private var target: HarnessInfo?
   @State private var requested: String?
   @State private var failure: String?
+  /// The account switch the person chose, asked about with the note a menu would cut short.
+  @State private var accountSwitch: AgentAccountItem?
 
   private var current: String? { client.panes.first { $0.paneId == paneId }?.agent?.harness }
   private var switchState: AgentHarnessSwitchView? { client.agentPanes[paneId]?.harnessSwitch }
@@ -43,6 +45,18 @@ struct PhoneHarnessMenu: View {
         Button("Cancel", role: .cancel) {}
       } message: { _ in
         Text(HarnessSwitchModel.handoverExplanation)
+      }
+      .confirmationDialog(
+        AgentAccountActions.switchTitle + "?",
+        isPresented: Binding(
+          get: { accountSwitch != nil }, set: { if !$0 { accountSwitch = nil } }),
+        titleVisibility: .visible, presenting: accountSwitch
+      ) { item in
+        Button(item.title) { client.run(item, paneId: paneId) }
+          .accessibilityIdentifier(item.accessibilityIdentifier)
+        Button("Cancel", role: .cancel) {}
+      } message: { _ in
+        Text(AgentAccountActions.explanation)
       }
       .alert(
         "Could not switch agent",
@@ -95,14 +109,14 @@ struct PhoneHarnessMenu: View {
     }
   }
 
-  /// The shared account items in a native menu; the Mac shows the same items in a popover.
-  /// The sign-in itself finishes in the browser on the Mac.
+  /// The shared account items in a native menu; the Mac shows the same items in a popover. A menu
+  /// cuts a long line, so the note on switching is read where the switch is confirmed. The sign-in
+  /// itself finishes in the browser on the Mac.
   @ViewBuilder private func accountSection(_ actions: AgentAccountActions) -> some View {
     Section(AgentAccountActions.sectionTitle) {
-      Text(AgentAccountActions.explanation)
       ForEach(actions.items) { item in
         Button(role: item.isDestructive ? .destructive : nil) {
-          client.run(item, paneId: paneId)
+          if item.isDestructive { client.run(item, paneId: paneId) } else { accountSwitch = item }
         } label: {
           Label(item.title, systemImage: item.systemImage)
         }

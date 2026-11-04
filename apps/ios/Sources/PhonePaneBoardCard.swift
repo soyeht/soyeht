@@ -43,7 +43,7 @@ struct PhonePaneBoardCard: View {
       Text(pane.name)
         .font(PaneInteriorFont.ui(PaneInteriorMetrics.bodyPointSize, weight: .heavy))
         .foregroundStyle(PhonePalette.ink)
-        .lineLimit(1)
+        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
       if pane.mode == .terminal {
         PhoneTerminalMenu(
@@ -51,7 +51,9 @@ struct PhonePaneBoardCard: View {
       }
     }
     .padding(.horizontal, PaneInteriorMetrics.cardPadding)
-    .frame(height: PaneLayoutContentMetrics.genericPaneHeaderHeight)
+    // The header is as tall as its name at an accessibility text size, and never shorter than
+    // the board's own header.
+    .frame(minHeight: PaneLayoutContentMetrics.genericPaneHeaderHeight)
     .paneInteriorSeparator(SoyehtThemeColors.border)
   }
 

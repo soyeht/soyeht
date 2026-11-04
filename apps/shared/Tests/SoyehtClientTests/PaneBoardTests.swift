@@ -328,3 +328,85 @@ private func terminalPane(_ id: String, cols: UInt32, rows: UInt32) -> Pane {
   // The following terminal went back to the size the client holds for its pane (the Mac's).
   #expect(followingView.getTerminal().cols == 80)
 }
+
+@Test func theKeyboardCoversTheAreaBelowTheVisibleHeightAndNothingElse() {
+  #expect(PaneBoardPolicy.keyboardInset(areaHeight: 1_000, visibleHeight: 650) == 350)
+  #expect(PaneBoardPolicy.keyboardInset(areaHeight: 1_000, visibleHeight: 1_000) == 0)
+  // A taller visible area than the one measured (a rotation in flight) is no keyboard.
+  #expect(PaneBoardPolicy.keyboardInset(areaHeight: 1_000, visibleHeight: 1_040) == 0)
+}
+
+@Test func theFocusedPaneStaysAboveTheKeyboardWithItsTopInView() throws {
+  let inner = PaneBoardPolicy.viewport(in: viewport(1_100, 800))
+  let board = try boardOf([.agent, .terminal], in: inner)
+  #expect(board.keepsArrangement)
+  let focused = board.paneIds[0]
+  let rect = try #require(board.rect(of: focused))
+  let bottom = rect.origin.y + rect.size.height
+  let margin = PaneBoardPolicy.margin
+  func fit(visible: Double, inset: Double = 400, focus: String? = nil)
+    -> PaneBoardPolicy
+    .KeyboardFit
+  {
+    PaneBoardPolicy.keyboardFit(
+      board: board, focused: focus ?? focused, visibleHeight: visible, inset: inset)
+  }
+
+  // No keyboard, or a pane that ends above it: nothing moves.
+  #expect(fit(visible: 800, inset: 0) == .none)
+  #expect(fit(visible: bottom + 2 * margin + 10) == .none)
+  // The keyboard covers the bottom of a pane that has room above it (the second of a stack):
+  // the board rises by what is covered and the pane keeps its size.
+  let stacked = try boardOf([.agent, .terminal], in: viewport(500, 700))
+  let lower = try #require(stacked.paneIds.last)
+  let lowerRect = try #require(stacked.rect(of: lower))
+  #expect(lowerRect.origin.y > 0)
+  let covered = 40.0
+  let rising = PaneBoardPolicy.keyboardFit(
+    board: stacked, focused: lower,
+    visibleHeight: lowerRect.origin.y + lowerRect.size.height + 2 * margin - covered, inset: 400)
+  #expect(rising == .init(shift: covered, height: nil))
+  // A pane taller than the room above the keyboard is cut down to it, top in view.
+  let room = 120.0
+  let cut = fit(visible: room + 2 * margin)
+  #expect(cut.shift == rect.origin.y)
+  #expect(cut.height == room)
+  // Nothing focused, or a pane the board does not have, means no move.
+  #expect(
+    PaneBoardPolicy.keyboardFit(board: board, focused: nil, visibleHeight: 100, inset: 300)
+      == .none)
+  #expect(fit(visible: 100, focus: "not-a-pane") == .none)
+}
+
+@Test func aPaneCutDownAboveTheKeyboardKeepsItsPlaceAndTheRest() throws {
+  let board = try boardOf(
+    [.agent, .terminal], in: PaneBoardPolicy.viewport(in: viewport(1_100, 800)))
+  let focused = board.paneIds[0]
+  let other = board.paneIds[1]
+  let cut = board.resizingPane(focused, toHeight: 100)
+  #expect(cut.rect(of: focused)?.size.height == 100)
+  #expect(cut.rect(of: focused)?.origin == board.rect(of: focused)?.origin)
+  #expect(cut.rect(of: other) == board.rect(of: other))
+  #expect(cut.contentSize == board.contentSize)
+  #expect(cut.paneIds == board.paneIds)
+}
+
+@Test func aTabbedPaneIsFoundByItsTabGroupAreaAndTheKeyboardDoesNotRetabTheBoard() throws {
+  let kinds: [PaneLayoutKind] = [.agent, .terminal]
+  // The same panes on the whole area keep the person's arrangement; fitted above a keyboard
+  // that takes most of the height they would be folded into tabs. The board is laid out on
+  // the whole area for that reason.
+  let whole = try boardOf(kinds, in: viewport(1_100, 800))
+  let above = try boardOf(kinds, in: viewport(1_100, 300))
+  #expect(whole.keepsArrangement)
+  #expect(!above.keepsArrangement)
+
+  let tabs = try #require(above.tabs)
+  let tabbed = try #require(tabs.paneIds.first)
+  #expect(above.rect(of: tabbed) == tabs.area)
+  // A tab is brought up with its strip, and cut down below it.
+  #expect(above.topEdge(of: tabbed) == tabs.strip.origin.y)
+  let cut = above.resizingPane(tabbed, toHeight: 90)
+  #expect(cut.tabs?.area.size.height == 90)
+  #expect(cut.tabs?.strip == tabs.strip)
+}
