@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::json;
+use std::{thread, time::Duration};
 
 mod support;
 use support::*;
@@ -41,6 +42,29 @@ fn cancelling_an_idle_pane_does_not_pause_its_queue() {
     client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":"hello","idempotencyKey":"after-idle-cancel"}),
+    );
+    wait_until("the prompt did not run", || {
+        client.pane(&pane)["phrase"] == "Agent turn ended"
+    });
+}
+
+/// An adapter can announce its commands before the answer to `session/new` and after the
+/// answer to the probe's `session/set_config_option`. The pane has no session identity to match
+/// such an update against, and the update is no reason to stop the agent.
+#[test]
+fn an_update_before_the_session_identity_does_not_stop_the_pane() {
+    let rig = Rig::new();
+    let (mut client, pane) = rig.agent_with(&["--updates-around-results"]);
+    let view = client.pane(&pane);
+    assert_eq!(view["state"], "idle", "{view}");
+    // The first run of an agent version restarts the process after its probe; an update that
+    // arrives between the probe's end and the restart has no session to belong to either.
+    thread::sleep(Duration::from_millis(500));
+    let view = client.pane(&pane);
+    assert_eq!(view["state"], "idle", "{view}");
+    client.call(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"hello","idempotencyKey":"after-early-update"}),
     );
     wait_until("the prompt did not run", || {
         client.pane(&pane)["phrase"] == "Agent turn ended"

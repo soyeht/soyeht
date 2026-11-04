@@ -158,6 +158,10 @@ pub struct State {
     #[serde(default)]
     pub(crate) subagents: BTreeMap<String, super::subagents::Tracked>,
     pub replay_role: Option<String>,
+    /// `session/update` notifications that arrived before the answer to `session/new`, which is
+    /// what names the session they belong to. They are applied once it arrives (contract 04 §7).
+    #[serde(default)]
+    pub(crate) held_updates: Vec<serde_json::Value>,
     pub probe_session_id: Option<String>,
     pub probe_started_ms: Option<i64>,
     pub login_pane_id: Option<String>,
@@ -237,6 +241,7 @@ impl State {
             open_messages: BTreeMap::new(),
             subagents: BTreeMap::new(),
             replay_role: None,
+            held_updates: Vec::new(),
             probe_session_id: None,
             probe_started_ms: None,
             login_pane_id: None,

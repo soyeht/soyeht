@@ -46,6 +46,10 @@ pub struct Settings {
     /// The `promptCapabilities` flags the agent advertises. The default
     /// matches the pinned Claude and Codex adapters: image and embeddedContext.
     pub prompt_capabilities: Vec<String>,
+    /// Like an adapter that announces its slash commands without waiting for the request's
+    /// answer: `session/new` sends its first update before the result, and
+    /// `session/set_config_option` sends one after it.
+    pub updates_around_results: bool,
 }
 impl Settings {
     pub fn parse() -> Result<Self> {
@@ -56,6 +60,7 @@ impl Settings {
         let mut login = false;
         let mut session_auth = false;
         let mut logout = false;
+        let mut updates_around_results = false;
         let mut initialize_padding_bytes = 0;
         let mut replay_user_chunk_bytes = None;
         let mut modes = "config".to_owned();
@@ -70,6 +75,7 @@ impl Settings {
                 "--login" => login = true,
                 "--session-auth" => session_auth = true,
                 "--logout" => logout = true,
+                "--updates-around-results" => updates_around_results = true,
                 "--modes" => {
                     modes = args
                         .next()
@@ -140,6 +146,7 @@ impl Settings {
             replay_user_chunk_bytes,
             modes,
             prompt_capabilities,
+            updates_around_results,
         })
     }
     pub fn announces_mode_option(&self) -> bool {

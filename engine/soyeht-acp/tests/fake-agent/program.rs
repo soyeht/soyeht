@@ -110,6 +110,9 @@ impl Runtime {
         if !self.attach(&id, &mut session, params) {
             return;
         }
+        if self.settings.updates_around_results {
+            skills::advertise(self, &session);
+        }
         self.answer(id, session.response(&self.settings));
         skills::advertise(self, &session);
     }
@@ -275,6 +278,9 @@ impl Runtime {
             });
         } else {
             self.answer(id, response);
+            if self.settings.updates_around_results {
+                skills::advertise(self, session);
+            }
         }
     }
 

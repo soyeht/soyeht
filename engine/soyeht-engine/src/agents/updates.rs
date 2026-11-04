@@ -514,7 +514,7 @@ pub fn update(
         state.session_id.as_deref()
     };
     let Some(expected) = expected else {
-        return Err(errors::invalid("Update arrived before a session identity"));
+        return without_session(state, params);
     };
     let update = session::update(
         |session| session == expected || (!probing && state.subagents.contains_key(session)),
@@ -543,6 +543,52 @@ pub fn update(
             update_in_subagent(store, &context, state, subagent, update, changes)
         }
     }
+}
+
+/// How many updates the engine holds for a session that `session/new` has not named yet. An
+/// agent announces its commands and options, a handful of updates, before it answers.
+const HELD_UPDATES_MAX: usize = 32;
+
+/// An update with no session to match it against. Adapters announce their commands without
+/// waiting for the answer to a request, so it is not a fault of the agent:
+///
+/// - while the pane's own `session/new` is open, the update is held until the answer names the
+///   session (`apply_held`);
+/// - before the probe's session exists, and after the probe, when the process is about to be
+///   replaced, it belongs to a session the pane never shows, so it is ignored;
+/// - in any other phase a session must exist, and its absence is an engine fault.
+fn without_session(state: &mut State, params: &Value) -> Result<bool> {
+    match state.phase {
+        Phase::Opening => {
+            if state.held_updates.len() < HELD_UPDATES_MAX {
+                state.held_updates.push(params.clone());
+            }
+            Ok(false)
+        }
+        Phase::Initializing | Phase::ProbeNew | Phase::RestartAfterProbe | Phase::NeedsLogin => {
+            Ok(false)
+        }
+        _ => Err(errors::invalid("Update arrived before a session identity")),
+    }
+}
+
+/// Applies the updates held while the session was opening, now that the answer has named it. An
+/// update for another session than the one opened is dropped.
+pub(crate) fn apply_held(
+    store: &impl StorePort,
+    pane: &str,
+    generation: u32,
+    state: &mut State,
+    timestamp: &str,
+    changes: &mut Changes,
+) -> Result<()> {
+    let held = std::mem::take(&mut state.held_updates);
+    for params in held {
+        if params["sessionId"].as_str() == state.session_id.as_deref() {
+            update(store, pane, generation, state, &params, timestamp, changes)?;
+        }
+    }
+    Ok(())
 }
 
 /// Native replay: each change of speaker ends the previous one's open items.
@@ -671,4 +717,50 @@ fn update_in_parent(
         }
     };
     Ok(observed_turn_output)
+}
+
+#[cfg(test)]
+mod held_tests {
+    use super::*;
+
+    fn state(phase: Phase) -> State {
+        let mut state = super::super::idle::tests::ready_state();
+        state.phase = phase;
+        state.session_id = None;
+        state
+    }
+
+    fn announcement() -> Value {
+        json!({"sessionId":"new-session","update":{
+            "sessionUpdate":"available_commands_update","availableCommands":[]}})
+    }
+
+    #[test]
+    fn an_update_while_the_session_opens_is_held_up_to_a_bound() {
+        let mut opening = state(Phase::Opening);
+        for _ in 0..HELD_UPDATES_MAX + 8 {
+            assert!(!without_session(&mut opening, &announcement()).unwrap());
+        }
+        assert_eq!(opening.held_updates.len(), HELD_UPDATES_MAX);
+    }
+
+    #[test]
+    fn an_update_of_a_session_nobody_shows_is_ignored() {
+        for phase in [
+            Phase::Initializing,
+            Phase::ProbeNew,
+            Phase::RestartAfterProbe,
+            Phase::NeedsLogin,
+        ] {
+            let mut other = state(phase);
+            assert!(!without_session(&mut other, &announcement()).unwrap());
+            assert!(other.held_updates.is_empty());
+        }
+    }
+
+    #[test]
+    fn an_update_with_no_session_in_a_phase_that_has_one_is_a_fault() {
+        let mut ready = state(Phase::Ready);
+        assert!(without_session(&mut ready, &announcement()).is_err());
+    }
 }
