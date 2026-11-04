@@ -21,7 +21,7 @@ const CODEX_LOGIN: &[u8] = br#"{"OPENAI_API_KEY":"sk-recorded-fixture"}"#;
 
 /// Codex reads its API key and gets the scripted HTTP answers; Cursor finds nothing. Claude finds
 /// no login until `claude_login` is set, and then reads the same usage whatever its endpoint is asked.
-struct ScriptedHost {
+pub(super) struct ScriptedHost {
     http: Mutex<VecDeque<HttpResult>>,
     /// When Claude Code's credentials file exists: the expiry of its login, in milliseconds.
     claude_login: Mutex<Option<u64>>,
@@ -37,10 +37,12 @@ struct ScriptedHost {
     /// Whether OpenCode is installed, and what its database records.
     opencode_installed: AtomicBool,
     opencode_usage: Mutex<LocalUsageRead>,
+    /// The provider each read of the OpenCode activity was for.
+    pub(super) opencode_asked: Mutex<Vec<Option<String>>>,
 }
 
 impl ScriptedHost {
-    fn new(answers: Vec<HttpResult>) -> Self {
+    pub(super) fn new(answers: Vec<HttpResult>) -> Self {
         Self {
             http: Mutex::new(answers.into()),
             claude_login: Mutex::new(None),
@@ -50,10 +52,11 @@ impl ScriptedHost {
             panic_http: AtomicBool::new(false),
             opencode_installed: AtomicBool::new(false),
             opencode_usage: Mutex::new(LocalUsageRead::NoDatabase),
+            opencode_asked: Mutex::default(),
         }
     }
 
-    fn record_opencode(&self, read: LocalUsageRead) {
+    pub(super) fn record_opencode(&self, read: LocalUsageRead) {
         self.opencode_installed.store(true, Ordering::Relaxed);
         *self.opencode_usage.lock().unwrap() = read;
     }
@@ -66,7 +69,7 @@ impl ScriptedHost {
 const CLAUDE_USAGE: &[u8] =
     br#"{"five_hour":{"utilization":10,"resets_at":"2030-01-01T00:00:00Z"}}"#;
 
-fn usage_answer(percent: u32) -> HttpResult {
+pub(super) fn usage_answer(percent: u32) -> HttpResult {
     HttpResult::Response {
         status: 200,
         retry_after_sec: None,
@@ -138,8 +141,11 @@ impl Host for ScriptedHost {
         &self,
         _database: &Path,
         _since_ms: i64,
-        _provider: Option<&str>,
+        provider: Option<&str>,
     ) -> LocalUsageRead {
+        let mut asked = self.opencode_asked.lock().unwrap();
+        asked.push(provider.map(str::to_owned));
+        drop(asked);
         self.opencode_usage.lock().unwrap().clone()
     }
     fn json_rpc(&self, _request: &RpcRequest) -> RpcRun {

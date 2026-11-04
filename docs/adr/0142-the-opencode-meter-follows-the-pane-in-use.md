@@ -1,4 +1,4 @@
-# ADR 0138: The OpenCode meter follows the pane in use
+# ADR 0142: The OpenCode meter follows the pane in use
 
 - Status: accepted. Extends ADR 0133 (the OpenCode meter follows the provider OpenCode is set to).
 - Date: 2026-11-04

@@ -6,7 +6,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 use soyeht_usage::{
-    Planner, ReadHints, TransientFailure, Trigger,
+    Planner, ReadHints, RefreshOutcome, TransientFailure, Trigger,
     host::{HttpResult, Platform, RpcRun},
 };
 use std::sync::Arc;
@@ -44,6 +44,17 @@ fn header<'a>(call: &'a Call, name: &str) -> Option<&'a str> {
         .map(|(_, value)| value.as_str())
 }
 
+/// Another refresh of Codex by a planner that has read before, with no hint from the engine.
+fn again(planner: &Planner, trigger: Trigger, now_sec: u64, fetched_at: &str) -> RefreshOutcome {
+    planner.refresh(
+        &UsageProvider::Codex,
+        trigger,
+        now_sec,
+        fetched_at,
+        &ReadHints::default(),
+    )
+}
+
 #[test]
 fn chain_order_is_access_token_then_login_then_app_server() {
     let planner = Planner::new(Arc::new(FakeHost::new(Platform::Linux)));
@@ -64,15 +75,8 @@ fn login_file_reads_the_chatgpt_usage_endpoint_with_the_account_header() {
             .file(".codex/auth.json", &login(NOW + 86_400))
             .respond(USAGE, 200, include_bytes!("fixtures/codex-wham-usage.json")),
     );
-    let reading = Planner::new(host.clone())
-        .refresh(
-            &UsageProvider::Codex,
-            Trigger::Automatic,
-            NOW,
-            "now",
-            &ReadHints::default(),
-        )
-        .reading;
+    let reading =
+        support::read_once(&host, UsageProvider::Codex, Trigger::Automatic, NOW, "now").reading;
     assert_eq!(reading.source, UsageSource::CodexAccountEndpoint);
     let primary = reading.primary.unwrap();
     assert_eq!(
@@ -105,15 +109,8 @@ fn personal_access_token_asks_whoami_first() {
             )
             .respond(USAGE, 200, include_bytes!("fixtures/codex-wham-usage.json")),
     );
-    let reading = Planner::new(host.clone())
-        .refresh(
-            &UsageProvider::Codex,
-            Trigger::Automatic,
-            NOW,
-            "now",
-            &ReadHints::default(),
-        )
-        .reading;
+    let reading =
+        support::read_once(&host, UsageProvider::Codex, Trigger::Automatic, NOW, "now").reading;
     assert_eq!(reading.source, UsageSource::CodexAccessToken);
     let calls = host.calls();
     assert_eq!(host.http_urls(), vec![WHOAMI.to_owned(), USAGE.to_owned()]);
@@ -159,15 +156,8 @@ fn app_server_reading(results: Vec<serde_json::Value>) -> (Arc<FakeHost>, soyeht
     let host = FakeHost::new(Platform::Linux).file(".codex/auth.json", &login(NOW + 60));
     host.rpc.lock().unwrap().push_back(RpcRun::Results(results));
     let host = Arc::new(host);
-    let reading = Planner::new(host.clone())
-        .refresh(
-            &UsageProvider::Codex,
-            Trigger::Automatic,
-            NOW,
-            "now",
-            &ReadHints::default(),
-        )
-        .reading;
+    let reading =
+        support::read_once(&host, UsageProvider::Codex, Trigger::Automatic, NOW, "now").reading;
     (host, reading)
 }
 
@@ -225,13 +215,7 @@ fn a_network_error_does_not_start_an_app_server() {
             .file(".codex/auth.json", &login(NOW + 86_400))
             .respond_with(USAGE, HttpResult::TransportFailed),
     );
-    let outcome = Planner::new(host.clone()).refresh(
-        &UsageProvider::Codex,
-        Trigger::Automatic,
-        NOW,
-        "now",
-        &ReadHints::default(),
-    );
+    let outcome = support::read_once(&host, UsageProvider::Codex, Trigger::Automatic, NOW, "now");
     assert_eq!(outcome.reading.state, UsageState::Unavailable);
     assert_eq!(
         outcome.reading.unavailable_reason,
@@ -250,31 +234,13 @@ fn a_failed_app_server_is_not_restarted_by_the_background_for_thirty_minutes() {
         .extend([RpcRun::Failed, RpcRun::Failed]);
     let host = Arc::new(host);
     let planner = Planner::new(host.clone());
-    let first = planner.refresh(
-        &UsageProvider::Codex,
-        Trigger::Automatic,
-        NOW,
-        "a",
-        &ReadHints::default(),
-    );
+    let first = again(&planner, Trigger::Automatic, NOW, "a");
     assert_eq!(
         first.reading.unavailable_reason,
         Some(UsageUnavailableReason::AppServerFailed)
     );
-    planner.refresh(
-        &UsageProvider::Codex,
-        Trigger::Automatic,
-        NOW + 1_799,
-        "b",
-        &ReadHints::default(),
-    );
+    again(&planner, Trigger::Automatic, NOW + 1_799, "b");
     assert_eq!(host.rpc_runs(), 1);
-    planner.refresh(
-        &UsageProvider::Codex,
-        Trigger::Manual,
-        NOW + 1_800,
-        "c",
-        &ReadHints::default(),
-    );
+    again(&planner, Trigger::Manual, NOW + 1_800, "c");
     assert_eq!(host.rpc_runs(), 2);
 }

@@ -55,11 +55,16 @@ fn panel() -> Vec<String> {
 }
 
 fn refresh(host: &Arc<FakeHost>, trigger: Trigger, now: u64) -> RefreshOutcome {
-    Planner::new(host.clone()).refresh(
+    support::read_once(&host, UsageProvider::Claude, trigger, now, "fetched")
+}
+
+/// Another refresh of Claude by a planner that has read before, with no hint from the engine.
+fn again(planner: &Planner, trigger: Trigger, now_sec: u64, fetched_at: &str) -> RefreshOutcome {
+    planner.refresh(
         &UsageProvider::Claude,
         trigger,
-        now,
-        "fetched",
+        now_sec,
+        fetched_at,
         &ReadHints::default(),
     )
 }
@@ -303,13 +308,7 @@ fn a_session_that_meets_the_login_menu_presses_no_key_and_is_not_started_again_s
     host.screens = Some(vec![LOGIN_MENU.into()]);
     let host = Arc::new(host);
     let planner = Planner::new(host.clone());
-    let first = planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Automatic,
-        NOW,
-        "a",
-        &ReadHints::default(),
-    );
+    let first = again(&planner, Trigger::Automatic, NOW, "a");
     assert_eq!(first.reading.state, UsageState::LoginNeeded);
     assert_eq!(first.reading.source, UsageSource::ClaudeCliUsage);
     let sent: Vec<Vec<Vec<u8>>> = host
@@ -323,32 +322,14 @@ fn a_session_that_meets_the_login_menu_presses_no_key_and_is_not_started_again_s
     assert_eq!(sent, vec![Vec::<Vec<u8>>::new()], "a key reached the menu");
     // Inside the cooldown the session is not started, from the cooldown's own answer.
     for later in [60, 29 * 60] {
-        let again = planner.refresh(
-            &UsageProvider::Claude,
-            Trigger::Automatic,
-            NOW + later,
-            "b",
-            &ReadHints::default(),
-        );
+        let again = again(&planner, Trigger::Automatic, NOW + later, "b");
         assert_eq!(again.reading.state, UsageState::LoginNeeded);
     }
     assert_eq!(host.terminal_runs(), 1, "the session came back too soon");
-    planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Automatic,
-        NOW + 30 * 60,
-        "c",
-        &ReadHints::default(),
-    );
+    again(&planner, Trigger::Automatic, NOW + 30 * 60, "c");
     assert_eq!(host.terminal_runs(), 2);
     // A click always tries again.
-    planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Manual,
-        NOW + 30 * 60 + 1,
-        "d",
-        &ReadHints::default(),
-    );
+    again(&planner, Trigger::Manual, NOW + 30 * 60 + 1, "d");
     assert_eq!(host.terminal_runs(), 3);
 }
 
@@ -390,13 +371,7 @@ fn a_screen_that_stays_unknown_is_not_tried_again_by_the_background_for_the_long
     let host = Arc::new(host);
     let planner = Planner::new(host.clone());
     let at = |now: u64, trigger: Trigger| {
-        planner.refresh(
-            &UsageProvider::Claude,
-            trigger,
-            now,
-            "t",
-            &ReadHints::default(),
-        );
+        again(&planner, trigger, now, "t");
         host.terminal_runs()
     };
     assert_eq!(at(NOW, Trigger::Automatic), 1);
@@ -477,21 +452,9 @@ fn rate_limit_cools_the_oauth_source_and_reuses_the_cli_reading_until_a_click() 
     host.screens = Some(panel());
     let host = Arc::new(host);
     let planner = Planner::new(host.clone());
-    let first = planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Automatic,
-        NOW,
-        "a",
-        &ReadHints::default(),
-    );
+    let first = again(&planner, Trigger::Automatic, NOW, "a");
     assert_eq!(first.reading.source, UsageSource::ClaudeCliUsage);
-    let second = planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Automatic,
-        NOW + 60,
-        "b",
-        &ReadHints::default(),
-    );
+    let second = again(&planner, Trigger::Automatic, NOW + 60, "b");
     assert_eq!(second.reading.source, UsageSource::ClaudeCliUsage);
     assert_eq!(
         host.http_urls().len(),
@@ -503,13 +466,7 @@ fn rate_limit_cools_the_oauth_source_and_reuses_the_cli_reading_until_a_click() 
         1,
         "the CLI started again inside its reuse window"
     );
-    let clicked = planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Manual,
-        NOW + 61,
-        "c",
-        &ReadHints::default(),
-    );
+    let clicked = again(&planner, Trigger::Manual, NOW + 61, "c");
     assert_eq!(clicked.reading.source, UsageSource::ClaudeOauthEndpoint);
     assert_eq!(host.http_urls().len(), 2);
 }
@@ -533,13 +490,7 @@ fn a_declined_browser_key_is_no_access_and_not_asked_again_for_six_hours() {
     host.cookies_denied = true;
     let host = Arc::new(host);
     let planner = Planner::new(host.clone());
-    let first = planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Automatic,
-        NOW,
-        "a",
-        &ReadHints::default(),
-    );
+    let first = again(&planner, Trigger::Automatic, NOW, "a");
     assert_eq!(first.reading.state, UsageState::NoAccess);
     assert_eq!(first.reading.source, UsageSource::ClaudeWeb);
     let asked = |host: &FakeHost| {
@@ -548,21 +499,9 @@ fn a_declined_browser_key_is_no_access_and_not_asked_again_for_six_hours() {
             .filter(|call| matches!(call, Call::Cookies(_)))
             .count()
     };
-    planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Automatic,
-        NOW + 6 * 3600 - 1,
-        "b",
-        &ReadHints::default(),
-    );
+    again(&planner, Trigger::Automatic, NOW + 6 * 3600 - 1, "b");
     assert_eq!(asked(&host), 1);
-    planner.refresh(
-        &UsageProvider::Claude,
-        Trigger::Automatic,
-        NOW + 6 * 3600,
-        "c",
-        &ReadHints::default(),
-    );
+    again(&planner, Trigger::Automatic, NOW + 6 * 3600, "c");
     assert_eq!(asked(&host), 2);
 }
 
