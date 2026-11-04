@@ -31,9 +31,13 @@ import Testing
 
   let layout = HarnessPickerModel.layout(catalogue)
 
-  #expect(layout.sections.map(\.group) == [.ready, .notChecked, .signIn])
+  #expect(layout.sections.map(\.group) == [.ready, .signIn])
   #expect(
     layout.sections.flatMap(\.items).map(\.id) == [ready.id, notChecked.id, legacyInstalled.id])
+  // Found on this machine and not started yet reads as ready, as in the setup checklist.
+  #expect(HarnessPickerModel.statusLabel(for: notChecked) == "Installed")
+  #expect(HarnessPickerModel.statusLabel(for: ready) == "Ready")
+  #expect(HarnessPickerModel.statusLabel(for: runner) == "Not checked")
   // Not-installed entries follow the readiness groups, then case-insensitive name.
   #expect(layout.more.map(\.id) == [runner.id, missingA.id, missingB.id])
   #expect(HarnessPickerModel.layout(catalogue.reversed()).more.map(\.id) == layout.more.map(\.id))
@@ -102,12 +106,19 @@ import Testing
 
   #expect(
     HarnessPickerModel.sections([missing, failed, login, unknown, newer, older])
-      .map(\.group) == [.ready, .notChecked, .signIn, .checkSetup, .unavailable])
+      .map(\.group) == [.ready, .signIn, .checkSetup, .unavailable])
   #expect(HarnessPickerModel.defaultHarness(in: [older, newer])?.id == newer.id)
   #expect(
     HarnessPickerModel.defaultHarness(in: [older, newer], preferredId: older.id)?.id == older.id)
-  #expect(HarnessPickerModel.statusLabel(for: unknown) == "Not checked")
+  #expect(HarnessPickerModel.statusLabel(for: unknown) == "Installed")
   #expect(HarnessPickerModel.statusReason(for: unknown).contains("not been started"))
+  // Without a choice, a session that opened outranks one nobody opened; one found harness alone
+  // is preselected, and two that never started are left to the person.
+  #expect(HarnessPickerModel.defaultHarness(in: [unknown])?.id == unknown.id)
+  #expect(HarnessPickerModel.defaultHarness(in: [unknown, login, missing])?.id == unknown.id)
+  let other = harness(id: "other", name: "G", state: .not_checked)
+  #expect(HarnessPickerModel.defaultHarness(in: [unknown, other, missing]) == nil)
+  #expect(HarnessPickerModel.defaultHarness(in: [unknown, newer])?.id == newer.id)
 }
 
 @MainActor @Test func engineSettingEventUpdatesSharedPreferenceForMacAndPhonePickers() {

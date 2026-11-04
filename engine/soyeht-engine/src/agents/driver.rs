@@ -551,6 +551,7 @@ impl Core {
         state.discard_until_newline = false;
         state.open_messages.clear();
         state.replay_role = None;
+        state.release_held_updates();
         state.phase = Phase::Initializing;
         self.commit_agent(
             saved,

@@ -15,6 +15,7 @@ pub mod failures;
 pub mod filesystem;
 pub mod forms;
 mod harness_sign_in;
+mod held_updates;
 pub mod hooks;
 pub mod idle;
 pub mod lifecycle;
