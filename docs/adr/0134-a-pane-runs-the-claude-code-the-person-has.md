@@ -44,7 +44,7 @@ process. Otherwise it sets nothing, and the adapter starts the CLI of its packag
   `user_cli::prepare` and `Given::send`, so every spawn of an adapter process is covered by one
   rule. The answer is kept for the program's file (canonical path, size, modification time), so a
   program that did not change is not asked again and one that updated in place is asked once more.
-  A program that did not answer (a timeout on a busy host) is asked again after 30 s. A suffix
+  A program that did not answer (a timeout on a busy host) is asked again after 30 s, and at once by the first pane when it was the start-up probe that went unanswered. A suffix
   such as `-beta.1` or `+build` counts as its release; anything that is not
   `major.minor.patch` is no version. The running engine also asks once at start, in the
   background, so the first pane does not wait; a unit test that opens a Core never does.

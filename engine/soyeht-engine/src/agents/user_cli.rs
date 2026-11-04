@@ -222,6 +222,19 @@ impl Memory {
     }
 }
 
+impl Memory {
+    /// Drops an `asked` that holds no answer, so the next spawn asks again at once.
+    fn forget_unanswered(&mut self) {
+        if self
+            .asked
+            .as_ref()
+            .is_some_and(|asked| asked.version.is_none())
+        {
+            self.asked = None;
+        }
+    }
+}
+
 static MEMORY: Mutex<BTreeMap<&'static str, Memory>> = Mutex::new(BTreeMap::new());
 
 fn memory() -> MutexGuard<'static, BTreeMap<&'static str, Memory>> {
@@ -377,6 +390,12 @@ pub(crate) fn warm() {
     let started = thread::Builder::new().name("user-cli".into()).spawn(|| {
         for cli in CLIS {
             settle(cli);
+            // A start on a busy host can outlast the deadline of a probe nobody waits for. The
+            // first pane asks again with a deadline of its own, instead of running the bundled
+            // CLI for the next 30 s because of it.
+            if let Some(memory) = memory().get_mut(cli.variable) {
+                memory.forget_unanswered();
+            }
         }
     });
     if let Err(error) = started {
@@ -561,6 +580,25 @@ mod tests {
             Some(Version(2, 1, 400))
         );
         assert_eq!(asked.get(), 3);
+    }
+
+    #[test]
+    fn a_probe_that_got_no_answer_is_forgotten_and_an_answer_is_kept() {
+        let (stamp, now) = (Stamp(None, 10), Instant::now());
+        let mut memory = Memory::default();
+        memory.version_of(&path(), stamp.clone(), now, || None);
+        memory.forget_unanswered();
+        let asked = Cell::new(false);
+        let version = memory.version_of(&path(), stamp.clone(), now, || {
+            asked.set(true);
+            Some(Version(2, 1, 312))
+        });
+        assert_eq!((version, asked.get()), (Some(Version(2, 1, 312)), true));
+        memory.forget_unanswered();
+        assert_eq!(
+            memory.version_of(&path(), stamp, now, || None),
+            Some(Version(2, 1, 312))
+        );
     }
 
     fn adapter(package: &str, kind: ProcessKind) -> Spawn {
