@@ -365,6 +365,15 @@ mod tests {
         assert!(SystemPortScan::default().program.get().is_none());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn the_first_scan_finds_lsof_and_keeps_it() {
+        let mut scan = SystemPortScan::default();
+        // The outcome depends on the host's `lsof`; what is checked is that the scan looked.
+        let _ = scan.scan();
+        assert_eq!(scan.program.get(), Some(&lsof_program()));
+    }
+
     #[test]
     fn a_program_that_runs_is_read_by_its_status() {
         // The one test that starts a program on the success path. Its deadline is far longer

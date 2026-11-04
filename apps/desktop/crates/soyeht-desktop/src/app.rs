@@ -66,6 +66,9 @@ pub(crate) struct Setup {
     /// The web view of the window and the signals its pages raise; none where the system has
     /// no web view (a replay has none either).
     pub web: Option<(std::sync::Arc<WebRegistry>, async_channel::Receiver<Signal>)>,
+    /// Whether the window asks about starting Soyeht at login: it does when it starts an engine
+    /// of its own, and a replay or an engine chosen by the environment has none to register.
+    pub login_start: bool,
 }
 
 /// Where the application prints what it tells the person (the program's `main` owns the
@@ -102,7 +105,9 @@ pub fn run(notice: Notice) {
         let host = web.as_ref().map(|(registry, _)| {
             std::sync::Arc::new(soyeht_client::web_host::Host::new(registry.clone()))
         });
-        let (engine, inbox) = Engine::start_hosted(socket.clone(), Autostart::resolve(), host);
+        let autostart = Autostart::resolve();
+        let login_start = matches!(autostart, Autostart::On(_));
+        let (engine, inbox) = Engine::start_hosted(socket.clone(), autostart, host);
         Setup {
             app_id,
             engine,
@@ -117,6 +122,7 @@ pub fn run(notice: Notice) {
             tasks: None,
             destination: None,
             web,
+            login_start,
         }
     });
 }
@@ -224,6 +230,9 @@ fn open_window(cx: &mut App, setup: Setup, notice: Notice) {
             workbench.preferences = setup.preferences;
             workbench.start_update_checks(cx);
             workbench.check_crash_reports(cx);
+            if setup.login_start {
+                workbench.check_login_start(cx);
+            }
             workbench.prefs.section = setup.panel;
             for (pane_id, staged) in setup.staged {
                 workbench.panes.of(&pane_id).staged = Some(staged);

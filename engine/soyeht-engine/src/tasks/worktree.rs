@@ -533,16 +533,29 @@ mod tests {
         );
         let adapter = CommandWorktree::using(soyeht_platform::worktrunk::PROGRAM.into());
         let repository = TestDirectory::new();
-        let launch_path = std::env::join_paths(
-            std::iter::once(folder.path().to_owned()).chain(std::env::split_paths(&process_path)),
-        )
-        .unwrap();
-        let found = adapter.wt_on(&launch_path, repository.path(), &["list"], LIST_TIMEOUT);
+        // A folder that holds git and nothing else, so the only thing a search path can lack is
+        // `wt`: git is on both paths below, and only one of them has the fake `wt`.
+        let git = std::env::split_paths(&process_path)
+            .map(|directory| directory.join("git"))
+            .find(|candidate| candidate.is_file())
+            .unwrap();
+        let git_only = TestDirectory::new();
+        std::os::unix::fs::symlink(&git, git_only.path().join("git")).unwrap();
+        let without = std::env::join_paths([git_only.path()]).unwrap();
+        let with = std::env::join_paths([folder.path(), git_only.path()]).unwrap();
+        let probe = soyeht_platform::git::Probe {
+            path: without.clone(),
+            ..soyeht_platform::git::Probe::system()
+        };
+        soyeht_process::require_git_with(&probe).expect("git is found on the path without `wt`");
+        let found = adapter.wt_on(&with, repository.path(), &["list"], LIST_TIMEOUT);
         assert!(found.unwrap().status.success());
-        // On a search path that lacks the folder the program cannot start.
-        let without = std::env::join_paths([repository.path()]).unwrap();
+        // The git check before it passed (above), so it is `wt` that cannot start.
         let missing = adapter.wt_on(&without, repository.path(), &["list"], LIST_TIMEOUT);
-        assert!(missing.is_err(), "no `wt` on a path without the folder");
+        assert!(
+            missing.is_err(),
+            "no `wt` on a path that has git and not the folder"
+        );
     }
 
     #[test]
