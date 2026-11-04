@@ -113,6 +113,8 @@ PLACES = (
     _cargo_lock("engine/Cargo.lock"),
     _cargo_workspace("apps/desktop/Cargo.toml"),
     _cargo_lock("apps/desktop/Cargo.lock"),
+    _cargo_workspace("apps/android/Cargo.toml"),
+    _cargo_lock("apps/android/Cargo.lock"),
     _npm("contracts/typescript/package.json"),
     _npm("contracts/typescript/package-lock.json"),
     _npm_lock_root("contracts/typescript/package-lock.json"),
@@ -125,8 +127,12 @@ PLACES = (
 )
 
 
-# The crates of both workspaces; each takes its version from `[workspace.package]`.
-MEMBER_MANIFESTS = ("engine/*/Cargo.toml", "apps/desktop/crates/*/Cargo.toml")
+# The crates of the three workspaces; each takes its version from `[workspace.package]`.
+MEMBER_MANIFESTS = (
+    "engine/*/Cargo.toml",
+    "apps/desktop/crates/*/Cargo.toml",
+    "apps/android/core/Cargo.toml",
+)
 INHERITS = re.compile(r"^version\.workspace\s*=\s*true\s*$", re.MULTILINE)
 
 

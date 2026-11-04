@@ -17,3 +17,9 @@ benchmark/
 
 # Release packages (scripts/package_linux.py, package_mac.py, package_windows.py)
 dist/
+# Android app (ADR 0134)
+.gradle/
+apps/android/local.properties
+apps/android/app/build/
+apps/android/build/
+apps/android/core/generated/

@@ -73,7 +73,14 @@ Each layer depends only on the layers listed above it.
    `soyeht_platform::process::detached`, ADR 0102); and `os_notify` raises the system
    notification when an agent needs the person (ADR 0103).
 
-`scripts/check_layers.py` reads every `Cargo.toml` of `engine/` and `apps/desktop/` and
+8. `apps/android`: the Android app, a companion of the engine like the iPhone (ADR 0134). Its
+   Rust core, `soyeht-android` (`apps/android/core`, its own cargo workspace, exposed to Kotlin
+   through UniFFI), depends on `soyeht-client`, `soyeht-protocol` and `soyeht-platform`; it holds
+   no rule of its own. The Kotlin app (`apps/android/app`, Jetpack Compose) is a thin view over it,
+   like `apps/ios/Sources`: it renders and forwards input, and every colour, radius and size comes
+   from the Kotlin output of `contracts/design-tokens.json`.
+
+`scripts/check_layers.py` reads every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and
 fails when a crate depends on a Soyeht crate outside its layer, or when a new crate is not
 in its `LAYERS` table. Place a new crate there and in the list above.
 
