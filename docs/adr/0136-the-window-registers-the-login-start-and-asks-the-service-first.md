@@ -78,8 +78,13 @@ copy is worse than the small risk of a refused request that the manager honours 
 - A registration with only some of its services makes the window start nothing of its own and say how
   to repair it, instead of starting programs beside a unit that starts at the next login and fails on
   their lock.
-- A window that loses the race for the start lock waits for the winner's worst case (its 30 seconds
-  and two `serviceCommandMs`), derived from the policy, not for 30 seconds.
+- A window that loses the race for the start lock looks for it again at every poll: it takes the lock
+  when the winner lets go (and then decides for itself, or says at once what stopped the winner), and
+  waits at most 180 s (two `serviceCommandMs` and two start waits, derived from the policy) only for a
+  winner that holds it that long.
+- The problem line offers "Repair" (`service install`, the switch's own change) while the registration is
+  partial. Preferences and its Setup panel open with no engine connected (checked on Ubuntu 26.04),
+  so the switch is reachable too; the button saves the person finding it.
 - With `Wants=` gone, `soyeht service start` or `install` of the engine alone (Linux) starts the
   supervisor first when it is registered, idle and its lock is free; a hand-run `systemctl --user
   start` of the engine unit does not.

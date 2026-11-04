@@ -168,9 +168,7 @@ because nothing listens, and no uninstall left its record since the window opene
    later has the same risk; it is accepted for the sake of an app that works when the service
    manager does not.
 
-One window at a time makes this decision (the `desktop-start.lock` of ADR 0102); another waits for
-the endpoint, as long as the winner can hold the lock: its own 30 seconds and two service commands of
-`serviceCommandMs` each (`service status`, then `service start`), which the loser's wait is derived from. An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
+One window at a time makes this decision (the `desktop-start.lock` of ADR 0102); another looks for the lock at every poll and takes it when the winner lets go, and waits for the endpoint at most 180 seconds (two `serviceCommandMs` and two start waits, derived from the policy) for a winner that holds it that long. An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
 
 ## 5. Restart policy
 
