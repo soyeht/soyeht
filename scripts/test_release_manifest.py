@@ -246,6 +246,27 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaises(release_manifest.Refused):
                 release_manifest.build(self.dist, environment, "0.0.0", KEYS)
 
+    def test_the_signing_key_may_be_a_file_that_only_its_owner_reads(self):
+        self.packages()
+        with tempfile.TemporaryDirectory() as folder:
+            key = Path(folder) / "update-signing-key"
+            key.write_text(base64.b64encode(SEED).decode() + "\n")
+            key.chmod(0o600)
+            environment = {release_manifest.KEY_FILE_ENVIRONMENT: str(key)}
+            self.assertTrue(release_manifest.has_signing_key(environment))
+            from_file, _ = release_manifest.build(self.dist, environment, "0.0.0", KEYS, now=1_000)
+            from_value, _ = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS, now=1_000)
+            self.assertEqual(from_file, from_value)
+            key.chmod(0o644)
+            with self.assertRaisesRegex(release_manifest.Refused, "chmod 600"):
+                release_manifest.build(self.dist, environment, "0.0.0", KEYS)
+            with self.assertRaisesRegex(release_manifest.Refused, "cannot be read"):
+                release_manifest.build(self.dist, {release_manifest.KEY_FILE_ENVIRONMENT: str(key) + ".gone"}, "0.0.0", KEYS)
+
+    def test_the_value_wins_over_the_file(self):
+        environment = {**ENVIRONMENT, release_manifest.KEY_FILE_ENVIRONMENT: "/nonexistent/key"}
+        self.assertEqual(release_manifest.signing_seed(environment), SEED)
+
     def test_a_key_the_contract_does_not_carry_is_refused_with_the_line_to_add(self):
         self.packages()
         with self.assertRaises(release_manifest.Refused) as caught:
