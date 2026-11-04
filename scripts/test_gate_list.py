@@ -72,6 +72,9 @@ ENGINE_CORE = ["engine/soyeht-engine/src/core.rs"]
 EDITOR_CRATE = ["engine/soyeht-editor/src/lib.rs"]
 DOCS_ONLY = ["docs/adr/0089-fast-gate-before-merge-full-gate-after.md", "AGENTS.md"]
 SCRIPTS_ONLY = ["scripts/check_quality.py"]
+ANDROID_APP = ["apps/android/app/src/main/kotlin/com/soyeht/next/android/AppModel.kt"]
+ANDROID_CORE_STEPS = ("android-core:fmt", "android-core:clippy", "android-core:test")
+ANDROID_APP_STEPS = ("android-app:build", "android-app:test")
 
 
 def listed_steps(tier: str, files: list[str]) -> list[str]:
@@ -252,6 +255,24 @@ class SelectionByChangeTests(unittest.TestCase):
         listed = listed_steps("fast", EDITOR_CRATE)
         self.assertEqual([i for i in listed if i in E2E_SET], list(E2E_SET))
         self.assertNotIn("desktop:test", listed)
+
+    def test_an_android_change_lists_the_core_steps_and_not_the_app_build(self):
+        # The core is built on the host in the fast tier; Gradle, the NDK and the APK only after the merge.
+        listed = listed_steps("fast", ANDROID_APP)
+        for step_id in ANDROID_CORE_STEPS:
+            self.assertIn(step_id, listed)
+        for step_id in ANDROID_APP_STEPS:
+            self.assertNotIn(step_id, listed)
+        full = listed_steps("full", ANDROID_APP)
+        for step_id in (*ANDROID_CORE_STEPS, *ANDROID_APP_STEPS):
+            self.assertIn(step_id, full)
+
+    def test_what_the_android_core_reuses_lists_its_steps_and_a_docs_change_does_not(self):
+        for files in (DESKTOP_ONLY, ["engine/soyeht-protocol/src/lib.rs"]):
+            for step_id in ANDROID_CORE_STEPS:
+                self.assertIn(step_id, listed_steps("fast", files), files)
+        for step_id in (*ANDROID_CORE_STEPS, *ANDROID_APP_STEPS):
+            self.assertNotIn(step_id, listed_steps("fast", DOCS_ONLY))
 
     def test_a_docs_only_change_runs_neither_e2e_nor_the_gate_script_unit_tests(self):
         listed = listed_steps("fast", DOCS_ONLY)

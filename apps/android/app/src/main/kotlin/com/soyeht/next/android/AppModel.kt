@@ -30,6 +30,7 @@ import uniffi.soyeht_android.deviceName
 private fun CoreException.reason(): String = when (this) {
     is CoreException.PairAgain -> reason
     is CoreException.Failed -> reason
+    is CoreException.Cancelled -> "Pairing was cancelled."
 }
 
 /** Where the person is in a pairing. */
@@ -53,7 +54,9 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private val main = Handler(Looper.getMainLooper())
     private val pending = AtomicBoolean(false)
 
-    var paired by mutableStateOf(credentials.load() != null)
+    private val saved = credentials.load()
+
+    var paired by mutableStateOf(saved != null)
         private set
     var pairing: Pairing by mutableStateOf(Pairing.Idle)
         private set
@@ -88,7 +91,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     )
 
     init {
-        credentials.load()?.let { connect(it) }
+        saved?.let { connect(it) }
     }
 
     private fun connect(credential: String) {
@@ -151,6 +154,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
                     pairing = Pairing.Idle
                     connect(credential)
                 }
+            } catch (failure: CoreException.Cancelled) {
+                // The person stopped it: nothing to tell.
             } catch (failure: CoreException) {
                 main.post { pairing = Pairing.Failed(failure.reason()) }
             }
