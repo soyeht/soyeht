@@ -573,7 +573,7 @@ impl Core {
         if method == method::HELLO {
             return self
                 .hello(connection, &params)
-                .map(Outcome::Reply)
+                .and_then(|welcome| self.welcome(connection, &request["id"], welcome))
                 .inspect_err(|error| log_refused_handshake(connection, &params, error));
         }
         if method.starts_with("pair.") {

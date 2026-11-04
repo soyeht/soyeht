@@ -3,9 +3,9 @@
 //! without a window or a connection.
 
 use crate::{
-    Command, agent::AgentView, catalogue::Catalogue, editor::Editors, event::Event,
-    new_agent::NewAgent, preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot,
-    streams::StreamOutput, writing::Writings,
+    agent::AgentView, catalogue::Catalogue, editor::Editors, event::Event, new_agent::NewAgent,
+    preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput,
+    writing::Writings,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -13,7 +13,7 @@ use soyeht_protocol::{
     PaneClosedEvent, PaneCreatedEvent, PaneMode, PaneStateChangedEvent, PaneUpdatedEvent,
     SkillsListResult, Task, TaskShowResult, UsageReading, WebNavigatedEvent, Workspace,
     WorkspaceClosedEvent, WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent,
-    WorkspacePaneLayoutAxis, WorkspacePaneLayoutEnvelope, WorkspaceRenamedEvent,
+    WorkspacePaneLayoutAxis, WorkspaceRenamedEvent,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -31,45 +31,6 @@ impl Connection {
     pub fn engine_down(&self) -> bool {
         matches!(self, Self::Disconnected(_))
     }
-}
-
-/// Work the application must do because the state changed.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Effect {
-    /// Ask the engine for this terminal's output.
-    SubscribeTerminal(String),
-    /// The replica can no longer be trusted: reconnect and start again from a fresh snapshot.
-    Resync,
-    /// Fetch an agent pane's transcript.
-    LoadTranscript(String),
-    /// Fetch the usage of every provider.
-    LoadUsage,
-    /// Fetch the agent harnesses the engine can start.
-    LoadHarnesses,
-    /// Fetch the skills again: they changed on the engine, or a pane that lists them arrived.
-    /// `None` is the user's alone.
-    LoadSkills(Option<String>),
-    /// Fetch the commands an agent pane's harness advertised.
-    LoadCommands(String),
-    /// Ask what this machine has of what the app needs.
-    LoadReadiness,
-    /// Ask whether the engine has its link to the supervisor of the terminals: a window that
-    /// connects while the supervisor is down was not there to hear `ptyd.lost`.
-    LoadSupervisor,
-    /// Fetch one task again, with its detail.
-    LoadTask {
-        workspace_id: String,
-        task_id: String,
-    },
-    /// The pane the person asked to open has arrived: it takes the keyboard.
-    FocusPane(String),
-    /// Store this arrangement for a workspace: a pane was split or a divider moved.
-    StoreLayout {
-        workspace_id: String,
-        layout: WorkspacePaneLayoutEnvelope,
-    },
-    /// Send this command to the engine.
-    Send(Command),
 }
 
 /// A pane the person asked to open, until it arrives: named by the ticket of the request, so a
@@ -773,6 +734,8 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
 }
 
 mod editor;
+mod effect;
+pub use effect::Effect;
 mod layout_draft;
 pub mod problem;
 mod writing;

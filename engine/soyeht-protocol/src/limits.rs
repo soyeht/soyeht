@@ -13,6 +13,12 @@ pub const TAIL_BYTES: usize = 2097152;
 pub const EVENT_COUNT: usize = 10000;
 pub const EVENT_DAYS: usize = 7;
 pub const DEVICE_CONNECTIONS: usize = 8;
+/// The characters of a pairing code, and of an engine's public key, in a pairing link: 32 bytes as URL-safe base64 without padding.
+pub const PAIRING_CODE_CHARS: usize = 43;
+/// How long a pairing code stays valid, and the longest a device waits for the person to allow access.
+pub const PAIRING_WINDOW_SECONDS: usize = 600;
+/// The longest name (in UTF-8 bytes) a device gives itself when it pairs. The engine shows it to the person who allows access.
+pub const DEVICE_NAME_BYTES: usize = 128;
 pub const PROMPT_BYTES: usize = 65536;
 pub const PROMPT_QUEUE_COUNT: usize = 64;
 pub const AGENT_MESSAGES_PER_WINDOW: usize = 6;
