@@ -1,11 +1,11 @@
 //! Pairing a device with an engine (ADR 0013, 0132): begin, check that the engine holds the key the
 //! link named, prove the code, and wait for the person to allow access on the computer.
 
-use super::{
-    Credential, PairingFailure, PairingLink, bytes32,
-    credential::{engine_verifying_key, verify},
+use super::{Credential, PairingFailure, PairingLink, bytes32, credential::verify};
+use crate::{
+    Error, Result,
+    transport::{Closer, Link},
 };
-use crate::{Error, Result, transport::Link};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde_json::{Value, json};
@@ -16,7 +16,11 @@ use soyeht_protocol::{
 };
 use std::{
     io::{Read, Write},
-    sync::{Arc, mpsc},
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     time::{Duration, Instant},
 };
 use uuid::Uuid;
@@ -37,13 +41,56 @@ pub enum Progress {
     WaitingForApproval,
 }
 
+/// Ends a pairing that waits for the person. `stop` closes the connection the pairing is using, so the
+/// wait ends at once; a pairing that was stopped never returns a credential, whatever the computer
+/// answers afterwards.
+#[derive(Default)]
+pub struct Cancel {
+    stopped: AtomicBool,
+    close: Mutex<Option<Closer>>,
+}
+
+impl Cancel {
+    pub fn stop(&self) {
+        self.stopped.store(true, Ordering::Release);
+        let close = self
+            .close
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(close) = close {
+            close();
+        }
+    }
+
+    fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::Acquire)
+    }
+
+    /// The connection a stop must close. One that is stopped already is closed now.
+    fn arm(&self, close: &Closer) {
+        *self.close.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(close));
+        if self.is_stopped() {
+            close();
+        }
+    }
+
+    fn cancelled(&self) -> Result<()> {
+        if self.is_stopped() {
+            Err(Error::Pairing(PairingFailure::Cancelled))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Pairs with the engine `text` names, calling the device `name`. Blocks until the person decides on
-/// the computer, the window expires, or the attempt fails. `stop` is polled and ends the wait early.
+/// the computer, the window expires, the attempt fails, or `cancel` stops it.
 pub fn pair(
     text: &str,
     name: &str,
     progress: &mut dyn FnMut(Progress),
-    stopped: &dyn Fn() -> bool,
+    cancel: &Cancel,
 ) -> Result<Credential> {
     let link = super::parse_link(text).map_err(Error::Pairing)?;
     if name.is_empty() || name.len() > limits::DEVICE_NAME_BYTES {
@@ -67,15 +114,21 @@ pub fn pair(
         begin,
         prove: None,
         progress,
-        stopped,
+        cancel,
         deadline: Instant::now() + WINDOW,
     };
     let mut attempt = 0;
     loop {
         attempt += 1;
-        match pairing.once() {
+        // A stopped pairing never returns a credential, however it ended.
+        let outcome = pairing.once().and_then(|credential| {
+            cancel.cancelled()?;
+            Ok(credential)
+        });
+        match outcome {
+            Err(_) if cancel.is_stopped() => return Err(Error::Pairing(PairingFailure::Cancelled)),
             Ok(credential) => return Ok(credential),
-            Err(Error::Io(_) | Error::Disconnected) if attempt < ATTEMPTS && !stopped() => {
+            Err(Error::Io(_) | Error::Disconnected) if attempt < ATTEMPTS => {
                 std::thread::sleep(Duration::from_secs(1));
             }
             Err(error) => return Err(error),
@@ -100,7 +153,7 @@ struct Pairing<'a> {
     begin: PairBeginParams,
     prove: Option<PairProveParams>,
     progress: &'a mut dyn FnMut(Progress),
-    stopped: &'a dyn Fn() -> bool,
+    cancel: &'a Cancel,
     deadline: Instant,
 }
 
@@ -112,6 +165,8 @@ impl Pairing<'_> {
             close,
         } = super::connect(self.link.address)?;
         let _closing = Closing(Arc::clone(&close));
+        self.cancel.arm(&close);
+        self.cancel.cancelled()?;
         let _window = Watch::over(&close, self.deadline);
         let mut wire = Wire {
             reader: &mut reader,
@@ -125,7 +180,7 @@ impl Pairing<'_> {
             serde_json::from_value(wire.call(&Request::PairBegin(self.begin.clone()))?)?;
         let challenge =
             bytes32(&answer.challenge).ok_or(Error::Pairing(PairingFailure::Unexpected))?;
-        let engine_key = engine_verifying_key(&self.link.engine_key)
+        let engine_key = device_auth::verifying_key(&self.link.engine_key)
             .ok_or(Error::Pairing(PairingFailure::InvalidLink))?;
         let device_key = self.key.verifying_key();
         // Only the engine whose key the link named can sign this, and the device proves the code
@@ -158,7 +213,7 @@ impl Pairing<'_> {
             .ok_or(Error::Pairing(PairingFailure::Unexpected))?;
         wire.call(&Request::PairProve(prove))?;
         (self.progress)(Progress::WaitingForApproval);
-        let result = wire.result(&answer.request_id, self.stopped, self.deadline)?;
+        let result = wire.result(&answer.request_id, self.cancel, self.deadline)?;
         match (result.approved, result.device_token, result.device_id) {
             (true, Some(token), Some(device)) => {
                 Ok(Credential::made(self.link, device, token, self.key))
@@ -272,7 +327,7 @@ impl Wire<'_> {
     fn result(
         &mut self,
         request_id: &str,
-        stopped: &dyn Fn() -> bool,
+        cancel: &Cancel,
         deadline: Instant,
     ) -> Result<PairResultEvent> {
         loop {
@@ -282,9 +337,7 @@ impl Wire<'_> {
             if Instant::now() >= deadline {
                 return Err(Error::Pairing(PairingFailure::Expired));
             }
-            if stopped() {
-                return Err(Error::Disconnected);
-            }
+            cancel.cancelled()?;
             let message = self.frame()?;
             self.push_result(&message)?;
         }

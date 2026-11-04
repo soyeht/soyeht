@@ -12,7 +12,7 @@ mod websocket;
 pub use credential::{Credential, Expected};
 pub use failure::PairingFailure;
 pub use link::{PairingLink, parse as parse_link};
-pub use pairing::{Progress, pair};
+pub use pairing::{Cancel, Progress, pair};
 pub(crate) use websocket::connect;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};

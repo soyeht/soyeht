@@ -2,6 +2,8 @@
 //! that is a paired device of the person's computer. The views are Kotlin and call what this crate
 //! exports through UniFFI; every rule is `soyeht-client`'s, which the desktop client uses too.
 
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
+
 mod conversation;
 mod core;
 mod error;

@@ -9,7 +9,7 @@ use crate::{
 };
 use soyeht_client::{
     Command, Engine, Error, Event, State,
-    device::{self, Credential},
+    device::{self, Cancel, Credential, PairingFailure},
     keys,
 };
 use soyeht_protocol::{
@@ -18,7 +18,7 @@ use soyeht_protocol::{
 };
 use std::sync::{
     Arc, Mutex, PoisonError,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicU64, Ordering},
 };
 
 /// The client name in `hello`: `android-dev` in a debug build, so the engine's log tells a person's
@@ -63,7 +63,10 @@ pub struct Core {
     listener: Arc<dyn Listener>,
     replica: Arc<Mutex<Replica>>,
     engine: Mutex<Option<Arc<Engine>>>,
-    pairing_stopped: Arc<AtomicBool>,
+    /// Ends the pairing that is waiting, if there is one.
+    pairing: Mutex<Arc<Cancel>>,
+    /// Which connection the replica belongs to: the events of an earlier one are dropped, not applied.
+    epoch: Arc<AtomicU64>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -78,14 +81,16 @@ impl Core {
             listener,
             replica: Arc::default(),
             engine: Mutex::default(),
-            pairing_stopped: Arc::default(),
+            pairing: Mutex::default(),
+            epoch: Arc::default(),
         })
     }
 
     /// Pairs with the computer a pairing link names, calling this device `device_name`. Blocks until
     /// the person allows access there; returns the access to keep, which `connect` takes back.
     pub fn pair(&self, link: String, device_name: String) -> Result<String, CoreError> {
-        self.pairing_stopped.store(false, Ordering::Relaxed);
+        let cancel = Arc::new(Cancel::default());
+        *lock(&self.pairing) = Arc::clone(&cancel);
         let listener = &self.listener;
         let credential = device::pair(
             &link,
@@ -94,40 +99,59 @@ impl Core {
                 device::Progress::Fingerprint(fingerprint) => listener.fingerprint(fingerprint),
                 device::Progress::WaitingForApproval => listener.waiting_for_approval(),
             },
-            &|| self.pairing_stopped.load(Ordering::Relaxed),
+            &cancel,
         )?;
         Ok(credential.to_json()?)
     }
 
-    /// Gives up a pairing that is waiting for the person.
+    /// Gives up a pairing that is waiting for the person: it ends at once, and never returns access.
     pub fn cancel_pairing(&self) {
-        self.pairing_stopped.store(true, Ordering::Relaxed);
+        lock(&self.pairing).stop();
     }
 
     /// Connects with saved access and keeps connecting until `disconnect`.
     pub fn connect(&self, credential: String) -> Result<(), CoreError> {
         let credential = Credential::from_json(&credential).map_err(|error| match error {
             Error::Json(_) => CoreError::PairAgain {
-                message: "This device cannot check your computer. Pair again.".to_owned(),
+                reason: PairingFailure::PairAgain.to_string(),
             },
             other => other.into(),
         })?;
         self.disconnect();
+        let mine = self.epoch.fetch_add(1, Ordering::AcqRel) + 1;
         *lock(&self.replica) = Replica::default();
         let (engine, inbox) = Engine::start_device(credential, CLIENT);
         let engine = Arc::new(engine);
-        *lock(&self.engine) = Some(Arc::clone(&engine));
+        // The thread below holds the engine weakly: the engine's workers hold the other end of its
+        // queue, so a strong hold would keep both alive for ever.
+        let weak = Arc::downgrade(&engine);
+        *lock(&self.engine) = Some(engine);
         let (replica, listener) = (Arc::clone(&self.replica), Arc::clone(&self.listener));
+        let epoch = Arc::clone(&self.epoch);
         std::thread::spawn(move || {
             while let Ok(event) = inbox.recv_blocking() {
                 let effects = {
                     let mut replica = lock(&replica);
-                    if let Event::Problem { cause, message } = &event
-                        && Credential::refused_cause(cause)
-                    {
-                        replica.refused = Some(message.clone());
+                    if epoch.load(Ordering::Acquire) != mine {
+                        break;
+                    }
+                    // A server that is gone, or that refused this device, leaves nothing to show.
+                    let refusal = match &event {
+                        Event::Problem { cause, message } if Credential::refused_cause(cause) => {
+                            Some(message.clone())
+                        }
+                        _ => None,
+                    };
+                    if refusal.is_some() || matches!(event, Event::Disconnected(_)) {
+                        replica.state = State::default();
+                    }
+                    if refusal.is_some() {
+                        replica.refused = refusal;
                     }
                     replica.state.apply(event)
+                };
+                let Some(engine) = weak.upgrade() else {
+                    break;
                 };
                 for effect in effects {
                     for command in effect.commands() {
@@ -149,6 +173,8 @@ impl Core {
 
     /// Ends the connection and forgets what it held.
     pub fn disconnect(&self) {
+        // The epoch moves on, so what the old connection still says is not applied.
+        self.epoch.fetch_add(1, Ordering::AcqRel);
         if let Some(engine) = lock(&self.engine).take() {
             engine.stop();
         }
@@ -275,13 +301,73 @@ mod tests {
         assert!(long.is_char_boundary(long.len()));
     }
 
+    /// Access for an engine that nothing listens for: the engine keeps trying to connect.
+    const UNREACHABLE: &str = r#"{"engine_id":"6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b",
+        "device_id":"0c9b6a52-1b2f-4f6e-9d3a-7a1e5f4b8c10","address":"127.0.0.1:1","token":"t",
+        "key":"BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+        "engine_key":"0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc="}"#;
+
+    fn until(what: &str, ready: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !ready() {
+            assert!(std::time::Instant::now() < deadline, "{what}");
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+
+    #[test]
+    fn a_connection_that_ends_leaves_no_thread_and_no_listener_behind_and_shows_nothing() {
+        let listener = Arc::new(Silent);
+        let core = Core::new(Arc::clone(&listener) as Arc<dyn Listener>);
+        // The test, the core, and nothing else.
+        assert_eq!(Arc::strong_count(&listener), 2);
+        for _ in 0..3 {
+            core.connect(UNREACHABLE.to_owned()).unwrap();
+            until("the core never said the engine was unreachable", || {
+                matches!(core.overview().link, Link::Disconnected { .. })
+            });
+            assert!(core.overview().workspaces.is_empty());
+            core.disconnect();
+            // The event thread, which holds a clone of the listener, has ended and let go of the engine.
+            until(
+                "the event thread of the connection is still running",
+                || Arc::strong_count(&listener) == 2,
+            );
+        }
+        // A core that is dropped with a connection open lets go of everything too.
+        core.connect(UNREACHABLE.to_owned()).unwrap();
+        drop(core);
+        until("a dropped core left its event thread running", || {
+            Arc::strong_count(&listener) == 1
+        });
+    }
+
+    #[test]
+    fn a_cancelled_pairing_is_told_as_cancelled() {
+        let core = Core::new(Arc::new(Silent));
+        core.cancel_pairing();
+        // Nothing waits: the next pairing starts afresh and a bad link is still a bad link.
+        assert!(matches!(
+            core.pair("not a link".to_owned(), "Phone".to_owned()),
+            Err(CoreError::Failed { .. })
+        ));
+        assert_eq!(
+            CoreError::from(Error::Pairing(PairingFailure::Cancelled)).to_string(),
+            "Pairing was cancelled."
+        );
+        assert!(matches!(
+            CoreError::from(Error::Pairing(PairingFailure::Cancelled)),
+            CoreError::Cancelled
+        ));
+    }
+
     #[test]
     fn a_text_that_is_not_a_pairing_link_is_refused_in_words() {
         let core = Core::new(Arc::new(Silent));
         let refused = core.pair("https://example.com".to_owned(), "Phone".to_owned());
         assert!(matches!(
             refused,
-            Err(CoreError::Failed { message }) if message.contains("pairing link")
+            Err(CoreError::Failed { reason }) if reason.contains("pairing link")
         ));
     }
 

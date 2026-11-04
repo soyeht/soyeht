@@ -6,7 +6,7 @@ use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
 use serde_json::json;
 use soyeht_client::{
     Error,
-    device::{Credential, PairingFailure, Progress, pair},
+    device::{Cancel, Credential, PairingFailure, Progress, pair},
 };
 use soyeht_protocol::device_auth;
 use support::{read, send, serve};
@@ -88,7 +88,7 @@ fn a_device_pairs_with_the_engine_whose_key_the_link_names() {
         &link(address, &engine_key.verifying_key()),
         "Phone",
         &mut |progress| seen.push(progress),
-        &|| false,
+        &Cancel::default(),
     )
     .unwrap();
     server.join().unwrap();
@@ -108,7 +108,7 @@ fn an_engine_that_does_not_hold_the_key_of_the_link_is_not_paired_with() {
         &link(address, &named.verifying_key()),
         "Phone",
         &mut |_| {},
-        &|| false,
+        &Cancel::default(),
     );
     // The device stopped before it proved the code, so the scripted engine's later reads fail.
     assert!(server.join().is_err());
@@ -126,11 +126,85 @@ fn a_refusal_on_the_computer_is_told_in_the_computers_words() {
         &link(address, &engine_key.verifying_key()),
         "Phone",
         &mut |_| {},
-        &|| false,
+        &Cancel::default(),
     );
     server.join().unwrap();
     assert!(matches!(
         result,
         Err(Error::Pairing(PairingFailure::Refused(reason))) if reason == "Not now."
     ));
+}
+
+#[test]
+fn a_pairing_that_is_cancelled_ends_at_once_and_never_returns_the_access_the_computer_then_gives() {
+    let engine_key = SigningKey::from_bytes(&[0x11; 32]);
+    // The computer allows access, but only once the phone has gone: it waits for the connection to end.
+    let signer = engine_key.clone();
+    let (address, server) = serve(move |mut socket| {
+        send(
+            &mut socket,
+            &json!({"jsonrpc":"2.0","method":"auth.challenge",
+                    "params":{"nonce":STANDARD.encode([9_u8; 32]),"engineId":ENGINE_ID}}),
+        );
+        let begin = read(&mut socket).unwrap();
+        let device_key: [u8; 32] = STANDARD
+            .decode(begin["params"]["devicePublicKey"].as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let proof = signer.sign(&device_auth::engine_pair_bytes(
+            REQUEST,
+            &[3; 32],
+            &device_key,
+        ));
+        send(
+            &mut socket,
+            &json!({"jsonrpc":"2.0","id":begin["id"],"result":{
+                "requestId":REQUEST,"challenge":STANDARD.encode([3_u8; 32]),
+                "engineProof":STANDARD.encode(proof.to_bytes())}}),
+        );
+        let prove = read(&mut socket).unwrap();
+        send(
+            &mut socket,
+            &json!({"jsonrpc":"2.0","id":prove["id"],"result":{"status":"pending"}}),
+        );
+        // The phone cancels: its side of the connection ends, which is all this side sees.
+        read(&mut socket).is_none()
+    });
+    let cancel = std::sync::Arc::new(Cancel::default());
+    let stopper = std::sync::Arc::clone(&cancel);
+    let link = link(address, &engine_key.verifying_key());
+    let started = std::time::Instant::now();
+    let result = pair(
+        &link,
+        "Phone",
+        &mut |progress| {
+            if progress == Progress::WaitingForApproval {
+                // From another thread, as a person's tap is: the pairing is blocked reading.
+                let stopper = std::sync::Arc::clone(&stopper);
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    stopper.stop();
+                });
+            }
+        },
+        &cancel,
+    );
+    assert!(
+        matches!(result, Err(Error::Pairing(PairingFailure::Cancelled))),
+        "{result:?}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "the cancel waited for a frame"
+    );
+    assert!(server.join().unwrap(), "the connection was not closed");
+    // A pairing that is stopped before it starts connects to nothing.
+    let stopped = Cancel::default();
+    stopped.stop();
+    let result = pair(&link, "Phone", &mut |_| {}, &stopped);
+    assert!(
+        matches!(result, Err(Error::Pairing(PairingFailure::Cancelled))),
+        "{result:?}"
+    );
 }

@@ -6,7 +6,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
 use serde_json::json;
-use soyeht_client::{Engine, Event, device::Credential};
+use soyeht_client::{Engine, Event, State, device::Credential};
 use soyeht_protocol::device_auth;
 use std::{
     net::SocketAddr,
@@ -58,6 +58,15 @@ fn engine(
             .verify_strict(&signed, &Signature::from_slice(&proof).unwrap())
             .unwrap();
         let answer = device_auth::engine_hello_bytes(&nonce, &client_nonce, ENGINE_ID, DEVICE_ID);
+        if !matches!(welcome, Welcome::Good) {
+            // An impostor pushes state before its welcome, hoping the replica takes it.
+            send(
+                &mut socket,
+                &json!({"jsonrpc":"2.0","method":"workspace.created","params":{
+                    "eventId":"3","at":"now",
+                    "workspace":{"workspaceId":"forged","name":"FORGED BY IMPOSTOR","path":"/","layout":{}}}}),
+            );
+        }
         let mut result = json!({"engineVersion":"0","protocolVersion":1,"connectionId":"c1",
             "role":"human_device","capabilities":[],"dbId":"db"});
         match welcome {
@@ -120,13 +129,18 @@ fn credential(address: SocketAddr, engine_key: &VerifyingKey, device: &SigningKe
     .unwrap()
 }
 
-/// Every event until the first that ends the attempt: `Connected`, or the connection ending.
-fn first_outcome(inbox: &async_channel::Receiver<Event>) -> Event {
+/// Every event, applied to a replica as an application does, until the first that ends the attempt:
+/// `Connected`, or the connection ending.
+fn first_outcome(inbox: &async_channel::Receiver<Event>, state: &mut State) -> Event {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         match inbox.try_recv() {
-            Ok(event @ (Event::Connected(_) | Event::Disconnected(_))) => return event,
-            Ok(_) => {}
+            Ok(event) => {
+                state.apply(event.clone());
+                if matches!(event, Event::Connected(_) | Event::Disconnected(_)) {
+                    return event;
+                }
+            }
             Err(_) => {
                 assert!(
                     Instant::now() < deadline,
@@ -138,7 +152,7 @@ fn first_outcome(inbox: &async_channel::Receiver<Event>) -> Event {
     }
 }
 
-fn run(welcome: Welcome) -> (Event, Vec<String>) {
+fn run(welcome: Welcome) -> (Event, Vec<String>, State) {
     let (signer, device) = (
         SigningKey::from_bytes(&[0x11; 32]),
         SigningKey::from_bytes(&[7; 32]),
@@ -148,24 +162,25 @@ fn run(welcome: Welcome) -> (Event, Vec<String>) {
         credential(address, &signer.verifying_key(), &device),
         "android-dev",
     );
-    let outcome = first_outcome(&inbox);
+    let mut state = State::default();
+    let outcome = first_outcome(&inbox, &mut state);
     // A refused connection is closed by the device, which ends the server's reading; a good one ends
     // when the server has seen its two requests.
     let asked = server.join().unwrap();
     engine.stop();
-    // Nothing else the device says leaks: every event until the engine stopped is a disconnection or a problem.
     while let Ok(event) = inbox.try_recv() {
         assert!(
             !matches!(event, Event::Connected(_)),
             "a refused engine exposed state"
         );
+        state.apply(event);
     }
-    (outcome, asked)
+    (outcome, asked, state)
 }
 
 #[test]
 fn an_engine_with_a_good_proof_is_connected_and_the_state_is_asked_for() {
-    let (outcome, asked) = run(Welcome::Good);
+    let (outcome, asked, _) = run(Welcome::Good);
     let Event::Connected(snapshot) = outcome else {
         panic!("not connected: {outcome:?}");
     };
@@ -174,7 +189,7 @@ fn an_engine_with_a_good_proof_is_connected_and_the_state_is_asked_for() {
 }
 
 fn refused(welcome: Welcome, words: &str) {
-    let (outcome, asked) = run(welcome);
+    let (outcome, asked, state) = run(welcome);
     let Event::Disconnected(reason) = outcome else {
         panic!("a refused engine connected: {outcome:?}");
     };
@@ -182,6 +197,12 @@ fn refused(welcome: Welcome, words: &str) {
     assert!(
         asked.is_empty(),
         "the device asked a refused engine for {asked:?}"
+    );
+    // What the impostor pushed before its welcome is in no replica.
+    assert!(
+        state.workspaces().is_empty(),
+        "the replica took {:?}",
+        state.workspaces()
     );
 }
 
