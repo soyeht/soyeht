@@ -7,10 +7,12 @@
 mod conversation;
 mod core;
 mod error;
+mod link;
 mod overview;
 mod terminal;
 
 pub use core::{Core, Listener, device_name};
 pub use error::CoreError;
+pub use link::{PairingOffer, pairing_offer};
 
 uniffi::setup_scaffolding!();

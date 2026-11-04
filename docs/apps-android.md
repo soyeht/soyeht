@@ -7,8 +7,10 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
 
 ## What it does
 
-- **Pairs by link.** On the computer choose the pairing window; paste the link
-  (`soyeht-next://pair?...`) into the app, or open it on the phone. A link that reaches the app from
+- **Pairs by link or by camera.** On the computer choose the pairing window; scan its QR code (the
+  camera permission is asked for when you tap Scan, and ZXing reads the code on the phone, ADR 0138),
+  paste the link (`soyeht-next://pair?...`) into the app, or open it on the phone. All three go through
+  the core's one parser; a code that is not a pairing link is refused in words and the camera keeps looking. A link that reaches the app from
   outside asks first, naming the address it would connect to (ADR 0129). The app shows the fingerprint
   of the phone's key to compare with the one on the computer, and the person allows access there. The
   phone checks that the engine holds the key the link named before it proves the code (ADR 0132). Both
@@ -25,7 +27,7 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   another phone.
 - "Forget" asks first. A web, editor or writing pane says it is shown on the computer.
 
-Not yet: the camera scanner, push notifications, Markdown in agent replies, the harness switch, new panes
+Not yet: push notifications, Markdown in agent replies, the harness switch, new panes
 and workspaces, the board layout of a tablet, the Fira/JetBrains fonts (the terminal uses the system
 monospace font), terminal text size and selection.
 

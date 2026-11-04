@@ -1,5 +1,9 @@
 package com.soyeht.next.android.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -8,8 +12,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.*
+import androidx.core.content.ContextCompat
 import com.soyeht.next.android.*
 import com.soyeht.next.android.theme.*
 
@@ -18,14 +24,19 @@ fun PairScreen(model: AppModel) {
     val roles = LocalRoles.current
     // Not saved with the state of the screen: the link is the pairing code.
     var link by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    // The camera is asked for when the person taps Scan, never before.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed ->
+        if (allowed) model.startScanning() else model.cameraRefused()
+    }
     Column(
         Modifier.padding(PaneInterior.phoneInset.dp),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.stackSpacing.dp),
     ) {
         Text("Soyeht", color = roles.ink, fontSize = TypeScale.title.sp)
         Text(
-            "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then paste " +
-                "the link here or open it on this phone. Both must be on the same tailnet.",
+            "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then scan the code, " +
+                "paste the link here or open it on this phone. Both must be on the same tailnet.",
             color = roles.secondary,
             fontSize = TypeScale.body.sp,
         )
@@ -43,7 +54,15 @@ fun PairScreen(model: AppModel) {
                 inner()
             },
         )
-        Pill("Pair", { model.pair(link) }, primary = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
+            Pill("Pair", { model.pair(link) }, primary = true)
+            Pill("Scan QR code", {
+                val allowed = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                    PackageManager.PERMISSION_GRANTED
+                if (allowed) model.startScanning() else permission.launch(Manifest.permission.CAMERA)
+            })
+        }
+        if (model.cameraDenied) CameraDenied()
     }
 }
 

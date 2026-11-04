@@ -1,7 +1,6 @@
 package com.soyeht.next.android
 
 import android.app.Application
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -25,6 +24,7 @@ import uniffi.soyeht_android.PaneRow
 import uniffi.soyeht_android.TerminalFrame
 import uniffi.soyeht_android.TerminalKey
 import uniffi.soyeht_android.deviceName
+import uniffi.soyeht_android.pairingOffer
 
 /** What the core says went wrong, in words for the person. */
 private fun CoreException.reason(): String = when (this) {
@@ -67,6 +67,18 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var terminal: TerminalFrame? by mutableStateOf(null)
         private set
     var conversation: Conversation? by mutableStateOf(null)
+        private set
+
+    /** The camera is looking for the pairing code. */
+    var scanning by mutableStateOf(false)
+        private set
+
+    /** Why the last thing the camera read is not a pairing link, in words for the person. */
+    var scanProblem: String? by mutableStateOf(null)
+        private set
+
+    /** The person did not allow the camera: the pair screen says where else to pair. */
+    var cameraDenied by mutableStateOf(false)
         private set
 
     /** "Forget this computer" waits for the person to say yes: it cannot be undone from the phone. */
@@ -130,10 +142,44 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Asks the person whether to pair with the computer a link names. The core's parser reads it, the
+     * one every way in uses; null is a link it took, else the words for what it refused.
+     */
+    private fun ask(link: String): String? = try {
+        val text = link.trim()
+        pairing = Pairing.Confirm(text, pairingOffer(text).address, replaces = paired)
+        null
+    } catch (failure: CoreException) {
+        failure.reason()
+    }
+
     /** A pairing link reached the app (a tapped link). */
     fun offer(link: String) {
-        val address = Uri.parse(link).getQueryParameter("address") ?: "an unknown address"
-        pairing = Pairing.Confirm(link, address, replaces = paired)
+        ask(link)?.let { pairing = Pairing.Failed(it) }
+    }
+
+    /** The person asked to scan, and the camera is allowed. */
+    fun startScanning() {
+        cameraDenied = false
+        scanProblem = null
+        scanning = true
+    }
+
+    fun stopScanning() {
+        scanning = false
+        scanProblem = null
+    }
+
+    fun cameraRefused() {
+        cameraDenied = true
+    }
+
+    /** The camera read a code: a pairing link is asked about as a tapped one is, anything else is said and the camera keeps looking. */
+    fun scanned(text: String) {
+        val refusal = ask(text)
+        scanProblem = refusal
+        if (refusal == null) scanning = false
     }
 
     fun pair(link: String) {
