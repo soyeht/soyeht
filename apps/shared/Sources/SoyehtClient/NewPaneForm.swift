@@ -10,6 +10,12 @@ public enum NewPaneKind: Equatable, Sendable {
   public init(mode: PaneMode) {
     self = mode == .agent ? .agent : .terminal
   }
+
+  /// Whether the form's message field takes the keyboard back when a popover of the form (the
+  /// agent choice) closes. Closing a popover leaves nothing focused, and the window then hands
+  /// the keyboard to its first focusable control, a workspace tab, so the next typed text would
+  /// land in a pane instead of the message. Only an agent form has a message field.
+  public var returnsFocusToPromptAfterPopover: Bool { self == .agent }
 }
 
 /// Why the "create" button of the new-pane form is off. One rule for every client, so the
