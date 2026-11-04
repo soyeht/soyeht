@@ -81,11 +81,6 @@ impl HarnessProviders {
         self.chosen.insert(harness_id.to_owned(), provider);
     }
 
-    /// Goes back to the contract's rule for `harness_id`.
-    pub fn forget(&mut self, harness_id: &str) {
-        self.chosen.remove(harness_id);
-    }
-
     /// The provider whose meter reads the harness, when there is one.
     pub fn provider_of(&self, harness_id: &str) -> Option<UsageProvider> {
         self.chosen
@@ -505,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn a_provider_chosen_while_running_wins_over_the_rule_until_forgotten() {
+    fn a_provider_chosen_while_running_wins_over_the_rule_for_that_harness_only() {
         let mut providers = HarnessProviders::default();
         assert_eq!(
             providers.provider_of("registry.opencode"),
@@ -520,11 +515,6 @@ mod tests {
             providers.provider_of("registry.claude-acp"),
             Some(UsageProvider::Claude),
             "other harnesses keep the rule"
-        );
-        providers.forget("registry.opencode");
-        assert_eq!(
-            providers.provider_of("registry.opencode"),
-            Some(UsageProvider::Opencode)
         );
     }
 }
