@@ -16,7 +16,9 @@ Each layer depends only on the layers listed above it.
    This is the only place where wire values and design tokens are defined.
 2. `engine/soyeht-protocol`: generated wire models, limits and framing, plus the
    transport-agnostic rules every client shares: the greeting and `hello`
-   validation (`handshake`), snapshot page assembly (`snapshot`) and the reading of the signed
+   validation (`handshake`), snapshot page assembly (`snapshot`), the bytes a paired device and the
+   engine sign and prove to each other (`device_auth`, ADR 0132), the pairing link and the addresses
+   it may name (`pairing_link`, ADR 0134) and the reading of the signed
    update manifest (`update`). It has no
    Soyeht dependencies and no IO or async runtime.
    `engine/soyeht-platform` sits at the same level: the operating-system seams
@@ -61,7 +63,9 @@ Each layer depends only on the layers listed above it.
    its own cargo workspace and depends on `engine/soyeht-protocol` and, for the local endpoint
    (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`, and,
    for the update check's `curl` (ADR 0122), `engine/soyeht-process`. Its
-   `soyeht-client` crate holds the connection and state (and the web host the engine's agents
+   `soyeht-client` crate holds the connection and state (the local socket and, for a paired device,
+   the WebSocket, the pairing and the check of the engine's proof: its `device` module, which the
+   Android core uses; and the web host the engine's agents
    read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
    run time, ADR 0110; WebView2 on Windows, ADR 0124; no Soyeht dependency), `soyeht-desktop` the
    views, and its `theme` module holds the palettes and tokens generated from

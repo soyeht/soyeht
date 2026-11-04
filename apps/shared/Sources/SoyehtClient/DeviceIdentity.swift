@@ -25,7 +25,7 @@ public struct PairingLink: Sendable {
       let engine = items.first(where: { $0.name == "engineId" })?.value,
       UUID(uuidString: engine) != nil,
       let code = items.first(where: { $0.name == "code" })?.value,
-      code.utf8.count == 43,
+      code.utf8.count == ProtocolLimits.pairingCodeChars,
       code.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }),
       let keyText = items.first(where: { $0.name == "engineKey" })?.value,
       let engineKey = Self.keyBytes(keyText),
@@ -46,14 +46,45 @@ public struct PairingLink: Sendable {
   }
   /// The 32 bytes of a key written as URL-safe base64 without padding (43 characters).
   static func keyBytes(_ text: String) -> Data? {
-    guard text.utf8.count == 43,
+    guard text.utf8.count == ProtocolLimits.pairingCodeChars,
       text.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") })
     else { return nil }
     let standard = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(
       of: "_", with: "/")
     guard let bytes = Data(base64Encoded: standard + "="), bytes.count == 32 else { return nil }
+    // A key of small order would sign for anyone: it is no key (the engine and the Android core refuse it too).
+    guard !Self.smallOrderPoints.contains(bytes), Self.isCanonical(bytes) else { return nil }
     return bytes
   }
+  /// Whether the `y` of an encoded point (its low 255 bits) is below p = 2^255 - 19. A larger one is a
+  /// second way to write a point, and the only way to write some of small order (`nonCanonicalWeakEngineKeys`).
+  /// A point's being on the curve is not checked here: that needs a decompression (the vector marks
+  /// such cases `rustOnly`).
+  private static func isCanonical(_ bytes: Data) -> Bool {
+    let end = bytes.endIndex - 1
+    let top = bytes[end] & 0x7f
+    let middle = bytes[(bytes.startIndex + 1)..<end].allSatisfy { $0 == 0xff }
+    return !(top == 0x7f && middle && bytes[bytes.startIndex] >= 0xed)
+  }
+  /// The canonical encodings of the eight points of small order of Curve25519
+  /// (`contracts/vectors/pairing-link.json` lists them as `weakEngineKeys`).
+  private static let smallOrderPoints: Set<Data> = Set(
+    [
+      "0100000000000000000000000000000000000000000000000000000000000000",
+      "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+      "0000000000000000000000000000000000000000000000000000000000000000",
+      "0000000000000000000000000000000000000000000000000000000000000080",
+      "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+      "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+      "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+    ].map { hex in
+      Data(
+        stride(from: 0, to: hex.count, by: 2).map { offset in
+          let start = hex.index(hex.startIndex, offsetBy: offset)
+          return UInt8(hex[start..<hex.index(start, offsetBy: 2)], radix: 16) ?? 0
+        })
+    })
   static func permittedHost(_ source: String) -> Bool {
     let host = source.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
     if let ip = IPv4Address(host) {

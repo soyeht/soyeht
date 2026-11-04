@@ -264,7 +264,7 @@ def parse_python(source: str) -> ast.Module | None:
 
 
 # Where Rust crates live: `<root>/<crate>/src/...`.
-RUST_CRATE_ROOTS = (("engine",), ("apps", "desktop", "crates"))
+RUST_CRATE_ROOTS = (("engine",), ("apps", "desktop", "crates"), ("apps", "android"))
 
 
 def is_rust_production_source(path: str) -> bool:
@@ -324,7 +324,7 @@ def test_module_files(masked: dict[str, str]) -> set[str]:
 
 
 def engine_production_panics(sources: dict[str, str]) -> int:
-    """The one panic counter: unwrap, expect and panic! in engine and desktop production code.
+    """The one panic counter: unwrap, expect and panic! in engine, desktop and Android core production code.
 
     `sources` maps repository paths to text. Crate `tests/` and `benches/`,
     inline `#[cfg(test)]` items and test modules kept in their own files are
