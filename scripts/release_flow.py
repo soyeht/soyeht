@@ -57,7 +57,6 @@ SYSTEMS = ("macos", "linux", "windows")
 # clone of it. Everything the release does there stays below CI_FOLDER of the account's home.
 LINUX_HOST_VARIABLE = "SOYEHT_RELEASE_LINUX_HOST"
 RECEIVE_PACK_VARIABLE = "SOYEHT_RELEASE_RECEIVE_PACK"
-DEFAULT_LINUX_HOST = "bignix"
 CI_FOLDER = "soyeht-ci"
 MIRROR = f"{CI_FOLDER}/mirror.git"
 CLONE = f"{CI_FOLDER}/repo"
@@ -171,8 +170,8 @@ def linux_script(version, sha):
             f'export SOYEHT_PACKAGE_BASE="$HOME/{CI_FOLDER}/package-base"',
             f'tree="$HOME/{TREES}/{sha}"',
             f'cd "$HOME/{CLONE}"',
-            # From the mirror the commit was pushed to, whatever the clone's own origin is.
-            f'git fetch "$HOME/{MIRROR}" refs/heads/release-{version}',
+            # The exact commit, from the mirror it was pushed to, whatever the clone's own origin is.
+            f'git fetch "$HOME/{MIRROR}" {sha}',
             f'if [ ! -d "$tree" ]; then git worktree add --detach "$tree" {sha}; fi',
             'cd "$tree"',
             f'test "$(git rev-parse HEAD)" = "{sha}"',
@@ -269,7 +268,9 @@ def build(options, runner=None, probe=probe, environment=os.environ):
         command = ["nice", "-n", "15", "uv", "run", "python", "scripts/package_mac.py", "--dist", str(options.dist)]
         runner.must(command if options.allow_unsigned else [*command, "--release"])
     if "linux" in chosen:
-        host = options.linux_host or environment.get(LINUX_HOST_VARIABLE) or DEFAULT_LINUX_HOST
+        host = options.linux_host or environment.get(LINUX_HOST_VARIABLE)
+        if not host:
+            raise Refused(f"no Linux build host: pass --linux-host or set {LINUX_HOST_VARIABLE} (an ssh host name)")
         build_linux(runner, host, version, sha, options.dist, environment)
     if "windows" in chosen:
         print(windows_instructions(version, sha))
@@ -558,7 +559,7 @@ def parser():
     common(built, True)
     for name, text in (("mac", "the Mac package"), ("linux", "the Linux packages"), ("windows", "show the Windows command")):
         built.add_argument(f"--{name}", action="store_true", help=f"only {text}")
-    built.add_argument("--linux-host", help=f"the Linux CI host (default: ${LINUX_HOST_VARIABLE}, else {DEFAULT_LINUX_HOST})")
+    built.add_argument("--linux-host", help=f"the Linux CI host, an ssh host name (default: ${LINUX_HOST_VARIABLE}; there is no built-in host)")
     collected = commands.add_parser("collect", help="gather, check and checksum the packages and sign the update manifest")
     common(collected)
     sequence(collected)
