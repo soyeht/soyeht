@@ -415,6 +415,7 @@ object PaneInterior {
     const val separatorWidth: Float = 1.0f
     const val sendButtonSize: Float = 28.0f
     const val touchTarget: Float = 44.0f
+    const val iconButtonSize: Float = 28.0f
     const val pillHorizontalPadding: Float = 16.0f
     const val pillVerticalPadding: Float = 8.0f
     const val bodyPointSize: Float = 14.0f
