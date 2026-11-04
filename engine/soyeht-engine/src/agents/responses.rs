@@ -105,6 +105,7 @@ fn open(
         // session/new makes the prior session's command unusable immediately,
         // including the recovery path after session/load reports it missing.
         state.rotate_hook_binding()?;
+        state.release_held_updates();
         state.phase = Phase::Opening;
         call(
             state,
@@ -455,8 +456,24 @@ fn session_response(
     changes: &mut Changes,
     result: NativeResult,
 ) -> Result<()> {
+    if result.is_err() {
+        state.release_held_updates();
+    }
     match result {
-        Ok(value) => session_opened(store, state, saved, purpose, changes, &value),
+        Ok(value) => {
+            session_opened(store, state, saved, purpose, changes, &value)?;
+            if *purpose == Purpose::Open {
+                super::held_updates::apply_held(
+                    store,
+                    &saved.pane.pane_id,
+                    saved.pane.generation,
+                    state,
+                    runtime.timestamp,
+                    changes,
+                )?;
+            }
+            Ok(())
+        }
         Err(error) if soyeht_acp::rpc::is_auth_required(&error) => {
             needs_login(state, saved, changes)
         }

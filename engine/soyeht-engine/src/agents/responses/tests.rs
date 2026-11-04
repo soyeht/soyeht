@@ -51,3 +51,62 @@ fn a_refused_authenticate_forgets_the_harness_sign_in_and_an_accepted_one_keeps_
         Some(SignInChange::forget(&state.launch.id))
     );
 }
+
+/// An agent whose `session/new` is open and has held an update, over a store of its own.
+fn opening_with_a_held_update() -> (soyeht_store::database::Store, std::path::PathBuf, State) {
+    let (store, directory) = crate::agents::state::tests::scratch_store();
+    let mut state = offering(json!([]));
+    state.mcp_enabled = false;
+    state.held_updates.push(json!({"sessionId":"old"}));
+    state.held_overflowed = true;
+    (store, directory, state)
+}
+
+#[test]
+fn a_new_open_forgets_the_updates_held_for_the_last_one() {
+    let (store, directory, mut state) = opening_with_a_held_update();
+    let runtime = Runtime {
+        data_directory: &directory,
+        now_ms: 0,
+        timestamp: "now",
+    };
+    open(
+        &store,
+        &runtime,
+        &mut state,
+        &pane(),
+        &mut Changes::default(),
+    )
+    .unwrap();
+    assert_eq!(state.phase, Phase::Opening);
+    assert!(state.held_updates.is_empty() && !state.held_overflowed);
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn an_error_to_session_new_forgets_the_updates_held_for_it() {
+    let (store, directory, mut state) = opening_with_a_held_update();
+    state.phase = Phase::Opening;
+    let runtime = Runtime {
+        data_directory: &directory,
+        now_ms: 0,
+        timestamp: "now",
+    };
+    let refused = soyeht_acp::RpcError {
+        code: -32603,
+        message: "Could not start".into(),
+        data: None,
+    };
+    let result = session_response(
+        &store,
+        &runtime,
+        &mut state,
+        &mut pane(),
+        &Purpose::Open,
+        &mut Changes::default(),
+        Err(refused),
+    );
+    assert!(result.is_err());
+    assert!(state.held_updates.is_empty());
+    std::fs::remove_dir_all(&directory).unwrap();
+}

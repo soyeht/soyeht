@@ -514,7 +514,7 @@ pub fn update(
         state.session_id.as_deref()
     };
     let Some(expected) = expected else {
-        return Err(errors::invalid("Update arrived before a session identity"));
+        return super::held_updates::without_session(state, params);
     };
     let update = session::update(
         |session| session == expected || (!probing && state.subagents.contains_key(session)),
