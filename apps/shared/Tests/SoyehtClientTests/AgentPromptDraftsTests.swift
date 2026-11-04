@@ -1,3 +1,4 @@
+import Foundation
 import SoyehtProtocol
 import Testing
 
@@ -25,4 +26,34 @@ import Testing
   try client.applyPaneEvent(.paneClosed, .object(["paneId": .string("draft-pane")]))
 
   #expect(AgentPromptDrafts.shared.text(for: "draft-pane").isEmpty)
+}
+
+@MainActor @Test func attachedFilesSurviveARebuiltComposerAndLeaveWithTheirPane() async throws {
+  let drafts = AgentPromptDrafts()
+  let first = drafts.attachments(for: "a", linkHostFiles: false)
+  first.attach(data: Data("notes".utf8), type: .plainText, name: "notes.txt")
+  var polls = 0
+  while first.items.isEmpty && polls < 1_000 {
+    polls += 1
+    try await Task.sleep(for: .milliseconds(10))
+  }
+  #expect(first.items.count == 1)
+
+  // A rotation or a keyboard builds the pane's view again and asks for its attachments again.
+  let again = drafts.attachments(for: "a", linkHostFiles: false)
+  #expect(again === first)
+  #expect(again.items.map(\.name) == ["notes.txt"])
+  #expect(drafts.attachments(for: "b", linkHostFiles: false).items.isEmpty)
+
+  // Sending takes them; the next composer starts empty.
+  #expect(again.take().count == 1)
+  #expect(drafts.attachments(for: "a", linkHostFiles: false).items.isEmpty)
+
+  first.attach(data: Data("more".utf8), type: .plainText, name: "more.txt")
+  while first.items.isEmpty && polls < 2_000 {
+    polls += 1
+    try await Task.sleep(for: .milliseconds(10))
+  }
+  drafts.discard("a")
+  #expect(drafts.attachments(for: "a", linkHostFiles: false) !== first)
 }

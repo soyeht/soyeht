@@ -2,7 +2,7 @@
 
 use std::{fmt, fs, io, path::Path};
 
-use super::{create_private_dir, dir_is_owner_only, sync_directory, system};
+use super::{create_private_dir, sync_directory, system};
 
 /// Why a directory is not a private one.
 #[derive(Debug)]
@@ -12,6 +12,9 @@ pub enum PrivateDirError {
     Unsafe,
     /// A directory that others can reach.
     NotPrivate,
+    /// A directory that belongs to another user, whatever its mode: it is theirs to change, not
+    /// ours, so it is not repaired.
+    OtherOwner,
     Io(io::Error),
 }
 
@@ -20,6 +23,7 @@ impl fmt::Display for PrivateDirError {
         match self {
             Self::Unsafe => formatter.write_str("a link or a file is where the directory belongs"),
             Self::NotPrivate => formatter.write_str("the directory is not owner-only"),
+            Self::OtherOwner => formatter.write_str("the directory belongs to another user"),
             Self::Io(error) => error.fmt(formatter),
         }
     }
@@ -29,7 +33,7 @@ impl std::error::Error for PrivateDirError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(error) => Some(error),
-            Self::Unsafe | Self::NotPrivate => None,
+            Self::Unsafe | Self::NotPrivate | Self::OtherOwner => None,
         }
     }
 }
@@ -45,7 +49,7 @@ impl From<PrivateDirError> for io::Error {
         match error {
             PrivateDirError::Io(error) => error,
             PrivateDirError::Unsafe => Self::new(io::ErrorKind::InvalidInput, error.to_string()),
-            PrivateDirError::NotPrivate => {
+            PrivateDirError::NotPrivate | PrivateDirError::OtherOwner => {
                 Self::new(io::ErrorKind::PermissionDenied, error.to_string())
             }
         }
@@ -53,17 +57,22 @@ impl From<PrivateDirError> for io::Error {
 }
 
 /// Fails unless `path` is a directory, not a link, that nobody but the owner can reach.
-/// It changes nothing.
+/// It changes nothing. On Unix the kind, the owner and the mode are judged from one read of the
+/// entry, so nothing can change between the checks.
 ///
 /// # Errors
-/// [`PrivateDirError::Unsafe`] for a link or a non-directory, [`PrivateDirError::NotPrivate`] for
-/// a directory others can reach, [`PrivateDirError::Io`] when `path` cannot be read.
+/// [`PrivateDirError::Unsafe`] for a link or a non-directory, [`PrivateDirError::OtherOwner`] for a
+/// directory of another user, [`PrivateDirError::NotPrivate`] for a directory others can reach,
+/// [`PrivateDirError::Io`] when `path` cannot be read.
 pub fn check_private_dir(path: &Path) -> Result<(), PrivateDirError> {
     let metadata = fs::symlink_metadata(path)?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(PrivateDirError::Unsafe);
     }
-    if !dir_is_owner_only(path)? {
+    if !system::is_owned_by_current_user(&metadata) {
+        return Err(PrivateDirError::OtherOwner);
+    }
+    if !system::dir_metadata_is_owner_only(path, &metadata)? {
         return Err(PrivateDirError::NotPrivate);
     }
     Ok(())
@@ -80,7 +89,8 @@ pub fn check_private_dir(path: &Path) -> Result<(), PrivateDirError> {
 ///
 /// # Errors
 /// [`PrivateDirError::Unsafe`] for a link or a non-directory; [`PrivateDirError::Io`] when the
-/// directory cannot be created or made private (it belongs to someone else, say).
+/// directory cannot be created or made private; [`PrivateDirError::OtherOwner`] when it belongs to
+/// someone else.
 pub fn ensure_private_dir(path: &Path) -> Result<(), PrivateDirError> {
     match fs::symlink_metadata(path) {
         Ok(_) => {}

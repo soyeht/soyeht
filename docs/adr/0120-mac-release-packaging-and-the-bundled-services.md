@@ -97,7 +97,10 @@ thousands of long names. The script runs `dsymutil` on the built executable firs
 `dist/symbols/soyeht-<version>-macos-aarch64.dSYM.zip` (the UUID is the executable's, so a crash
 report names its frames with it), then `strip -u -r`, the command of `STRIP_STYLE = all`, on the
 copy that ships, before the signing step. Nothing in the app looks a symbol up by name
-(`dlsym`, `NSClassFromString` and `callStackSymbols` are not used). The symbols file follows the
+(`dlsym`, `NSClassFromString` and `callStackSymbols` are not used). The dependencies were looked
+at too: `NSClassFromString` in mlx-swift-lm, and `dlsym` in swift-nio and MLX, look up type
+metadata or symbols of other images (system libraries, the Metal kernels), not the symbol table of
+the app's own executable that `strip` removes. The symbols file follows the
 rule of ADR 0127 for the programs: a release keeps the unstripped build of every version it ships.
 `DEAD_CODE_STRIPPING` stays off: it saved 0.5 MB of the stripped file, and the dictation engine's
 static registrations are not worth the risk for that.

@@ -17,6 +17,7 @@ use gpui::{
     SharedString, StrikethroughStyle, Styled, UnderlineStyle, div, px, rgb,
 };
 use soyeht_client::markdown::{self, Block, Run, Style, Surface};
+use soyeht_protocol::client_policy::COPY_CODE;
 use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 
 /// The Markdown of the replies on screen, parsed once per change, and the files that the pane
@@ -140,6 +141,7 @@ fn block(block: &Block, draw: &mut Draw) -> AnyElement {
                 code_well(selectable, palette).text_color(rgb(draw.ink)),
                 &key,
                 text.clone(),
+                COPY_CODE,
                 pane_interior::CARD_PADDING,
                 palette,
             )

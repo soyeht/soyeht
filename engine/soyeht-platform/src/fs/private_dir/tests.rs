@@ -1,5 +1,5 @@
 use super::*;
-use crate::fs::{set_private_dir, symlink};
+use crate::fs::{dir_is_owner_only, set_private_dir, symlink};
 
 use crate::testing::scratch_dir as scratch;
 
@@ -35,6 +35,31 @@ fn a_directory_others_can_reach_is_made_owner_only_by_ensure_and_refused_by_chec
         0o700
     );
     fs::remove_dir_all(&root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_directory_of_another_user_is_said_to_belong_to_them_not_refused_with_permission_denied() {
+    use std::os::unix::fs::MetadataExt;
+    // A system directory belongs to the superuser. Inside a user namespace (the Linux gate's FHS
+    // root) `/` can be the test's own, so the first one owned by someone else is used. Nothing is
+    // changed: it is only read.
+    let me = crate::user::effective_id();
+    let Some(theirs) = ["/", "/usr", "/etc", "/nix/store"]
+        .into_iter()
+        .map(Path::new)
+        .find(|path| fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && m.uid() != me))
+    else {
+        return;
+    };
+    for result in [check_private_dir(theirs), ensure_private_dir(theirs)] {
+        let error = result.unwrap_err();
+        assert!(matches!(error, PrivateDirError::OtherOwner), "{error}");
+        assert_eq!(error.to_string(), "the directory belongs to another user");
+        let refusal = io::Error::from(error);
+        assert_eq!(refusal.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(refusal.to_string(), "the directory belongs to another user");
+    }
 }
 
 #[test]

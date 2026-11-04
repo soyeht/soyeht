@@ -316,6 +316,7 @@ public enum DesignTokens {
     public static let separatorWidth: CGFloat = 1
     public static let sendButtonSize: CGFloat = 28
     public static let touchTarget: CGFloat = 44
+    public static let iconButtonSize: CGFloat = 28
     public static let pillHorizontalPadding: CGFloat = 16
     public static let pillVerticalPadding: CGFloat = 8
     public static let bodyPointSize: CGFloat = 14

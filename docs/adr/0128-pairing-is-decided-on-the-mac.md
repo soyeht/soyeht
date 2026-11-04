@@ -36,3 +36,20 @@ that terminal reaches the engine's local socket as the local human.
 Every other power of ADR 0013 is unchanged. A refused call answers `forbidden_role`. The Mac app
 approves through its own connection, so the person can still pair a phone; an unsigned build of the
 app (an ad-hoc signature) cannot approve a pairing, as it cannot change the experiment consent.
+
+## What attestation does not stop
+
+Attestation closes the engine's socket to a shell. It does not make the Mac safe from a program that
+runs as the same operating-system user: a paired phone with a terminal is such a program, and it can
+write the engine's database directly, add a LaunchAgent that starts later, or change the files the
+signed app reads. Those are the powers of the user, which ADR 0013 gives the phone on purpose; this
+ADR decides who may approve a pairing through the engine, not what the user's own account can do.
+
+`device.pair.start` stays open to a shell on every system. That opens a request and shows a code, and
+nothing more: the person still has to see the request on the Mac and reject it or leave it undecided.
+
+An engine that does not carry the Soyeht signature (one built with `cargo build` and run as it is,
+or signed ad hoc or with another identity) cannot tell the signed app from any other program, so on
+macOS it refuses even the app. The refusal says the engine does not carry the Soyeht signature, and the
+engine logs one line, the event `engine.attestation_unavailable` with `reason=engine_not_signed`.
+`docs/dev-local.md` says how to install the signed engine.
