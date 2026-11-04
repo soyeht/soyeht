@@ -334,6 +334,17 @@ class PrePushTests(unittest.TestCase):
                          [("rev-list", self.TIP, "--not", self.OLD),
                           ("rev-list", self.TIP, "--not", "--remotes=origin")])
 
+    def test_a_push_to_another_place_does_not_scan_what_the_public_repository_holds(self):
+        # The Linux build host's mirror is a URL: nothing in the clone tracks it, and its first
+        # branch used to send the whole history through the scan.
+        calls = []
+        with self.git_with([], {}, calls):
+            self.push([f"refs/heads/new {self.TIP} refs/heads/new {ZERO}"], remote="bignix:ci/mirror.git")
+            self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"], remote="bignix:ci/mirror.git")
+        self.assertEqual([call for call in calls if call[0] == "rev-list"],
+                         [("rev-list", self.TIP, "--not", "--remotes=bignix:ci/mirror.git", "--remotes=origin"),
+                          ("rev-list", self.TIP, "--not", self.OLD, "--remotes=origin")])
+
     def test_a_force_push_over_a_commit_this_clone_lacks_falls_back_to_the_remote_refs(self):
         calls = []
         with self.git_with([], {}, calls, missing={self.OLD}):
