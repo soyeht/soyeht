@@ -28,6 +28,9 @@ finished. Initial model, effort and permission mode selections are applied befor
 queued prompt can run. A selection the native session cannot confirm produces
 a visible configuration failure and holds the queue.
 
+`soyeht --version` and `soyeht version` print the product version of the program as JSON,
+`{"version":"X.Y.Z"}`, and exit 0. They need no profile and no running engine.
+
 Results are JSON. A mutation accepts a final `--idempotency-key KEY` suffix.
 Reuse the same key and exactly the same arguments after an uncertain connection
 failure; changing the request under that key is an error. Without this suffix,

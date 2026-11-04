@@ -22,7 +22,7 @@ Before the first release, once:
 | A code-signing certificate for Windows | signing the installers and their programs | on the Windows host: `SOYEHT_WINDOWS_SIGN_THUMBPRINT` (a certificate in the store), or `SOYEHT_WINDOWS_SIGN_AZURE_DLIB` with `SOYEHT_WINDOWS_SIGN_AZURE_METADATA` (Azure Artifact Signing). `docs/platforms.md`, "Windows packages", has the rest |
 | The update signing key | signing `update-manifest.json` | `SOYEHT_UPDATE_SIGNING_KEY_FILE` (a path) or `SOYEHT_UPDATE_SIGNING_KEY` (the value) in the environment of the Mac that collects; see "The update key" below. Never a file of this repository |
 | `gh` logged in with write access to `soyeht/soyeht` | the draft release | `gh auth login`, or `GH_TOKEN` in the environment |
-| The Linux CI host | the `.deb` and the AppImage | `bignix`: a clone at `~/soyeht-ci/repo` whose `origin` is the mirror `~/soyeht-ci/mirror.git`, Nix, and the settings of `docs/platforms.md`, "A Linux gate host". The release uses only `~/soyeht-ci` |
+| The Linux CI host | the `.deb` and the AppImage | an ssh host you name (`--linux-host`, or `SOYEHT_RELEASE_LINUX_HOST`; the repository has no default): a clone at `~/soyeht-ci/repo`, the mirror `~/soyeht-ci/mirror.git` (the release commit is fetched from it, whatever the clone's `origin` is), a git at `~/soyeht-ci/git/bin` when the login shell has none, Nix, and the settings of `docs/platforms.md`, "A Linux gate host". The release uses only `~/soyeht-ci` |
 | A Windows host | the installers | Windows with the build tools of `docs/platforms.md`, "Windows packages", Inno Setup 6 and `uv`. A VM through VMPal does for a dry run (below) |
 
 ### The update key
@@ -106,7 +106,7 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    variables above). The Linux packages are built on the CI host: the commit is pushed to the mirror
    (`SOYEHT_RELEASE_RECEIVE_PACK` names the host's `git-receive-pack` when its ssh sessions have no
    `git`), checked out in `~/soyeht-ci/release/<commit>`, built by `package_linux_rootless.sh` and
-   copied back to `dist/`. The host is `bignix`, or `--linux-host`, or `SOYEHT_RELEASE_LINUX_HOST`.
+   copied back to `dist/`. The host is `--linux-host` or `SOYEHT_RELEASE_LINUX_HOST`; there is no default.
 
 3. **Windows.** `build --windows` prints the command; run it on the Windows host with the
    `SOYEHT_WINDOWS_SIGN_*` variables set:
