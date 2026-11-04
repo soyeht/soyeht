@@ -17,6 +17,8 @@ pub enum Error {
     Disconnected,
     /// The engine broke a handshake or stream rule.
     Invalid(&'static str),
+    /// A device could not pair with, or trust, the engine it dials (ADR 0134).
+    Pairing(crate::device::PairingFailure),
     /// The command queue is full: the engine answers more slowly than the user acts.
     Busy,
 }
@@ -35,6 +37,7 @@ impl fmt::Display for Error {
             Self::Invalid(reason) => {
                 write!(formatter, "The engine sent an invalid message: {reason}.")
             }
+            Self::Pairing(failure) => failure.fmt(formatter),
             Self::Busy => formatter.write_str("The engine is busy. The last action was not sent."),
         }
     }
@@ -57,6 +60,7 @@ impl soyeht_platform::log::Failure for Error {
             Self::Timeout(_) => "timeout".to_owned(),
             Self::Disconnected => "disconnected".to_owned(),
             Self::Invalid(_) => "invalid".to_owned(),
+            Self::Pairing(failure) => failure.failure_kind(),
             Self::Busy => "busy".to_owned(),
         }
     }

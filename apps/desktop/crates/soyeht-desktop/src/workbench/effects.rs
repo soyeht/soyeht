@@ -15,45 +15,16 @@ use std::time::Instant;
 impl Workbench {
     /// Carries out one thing the replica asks for.
     pub(crate) fn run_effect(&mut self, effect: Effect) {
+        // What only asks the engine for something is the same in every application.
+        let requests = effect.commands();
+        if !requests.is_empty() {
+            for command in requests {
+                self.send(command);
+            }
+            return;
+        }
         match effect {
-            Effect::SubscribeTerminal(pane_id) => {
-                self.send(Command::Subscribe { pane_id });
-            }
             Effect::Resync => self.engine.resync(),
-            // A pane's queue of waiting messages is loaded with its transcript.
-            Effect::LoadTranscript(pane_id) => {
-                self.send(Command::LoadQueue {
-                    pane_id: pane_id.clone(),
-                });
-                self.send(Command::LoadTranscript { pane_id });
-            }
-            Effect::LoadUsage => {
-                self.send(Command::LoadUsage);
-            }
-            Effect::LoadCommands(pane_id) => {
-                self.send(Command::LoadCommands { pane_id });
-            }
-            Effect::LoadSkills(workspace_id) => {
-                self.send(Command::LoadSkills { workspace_id });
-            }
-            Effect::LoadHarnesses => {
-                self.send(Command::LoadHarnesses { rescan: false });
-            }
-            Effect::LoadReadiness => {
-                self.send(Command::LoadReadiness);
-            }
-            Effect::LoadSupervisor => {
-                self.send(Command::LoadSupervisor);
-            }
-            Effect::LoadTask {
-                workspace_id,
-                task_id,
-            } => {
-                self.send(Command::LoadTask {
-                    workspace_id,
-                    task_id,
-                });
-            }
             Effect::StoreLayout {
                 workspace_id,
                 layout,
@@ -86,6 +57,8 @@ impl Workbench {
                     self.run_effects(effects);
                 }
             }
+            // Answered above.
+            _ => {}
         }
     }
 

@@ -286,7 +286,7 @@
   @Test func pairingLinkRejectsExternalTargetsAndDuplicateFields() throws {
     let prefix = "soyeht-next://pair?engineId=11111111-1111-4111-8111-111111111111&address="
     let code = String(repeating: "a", count: 43)
-    let key = "&engineKey=" + String(repeating: "A", count: 43)
+    let key = "&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc"
     #expect(
       try PairingLink(prefix + "100.64.0.1:8291&code=" + code + key).address.host == "100.64.0.1")
     #expect(
