@@ -53,6 +53,11 @@ fn rig_with_own_search_path() -> Rig {
         ),
     );
     rig.kill_engine();
+    // The first engine may have logged its own choice before it was stopped; the test counts only
+    // the choices of the engine that searches the rig's path.
+    if let Err(error) = fs::remove_file(rig.path.join("engine.log")) {
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound, "{error}");
+    }
     rig.login_shell = Some(shell_directory.join("bash"));
     rig.start();
     rig
