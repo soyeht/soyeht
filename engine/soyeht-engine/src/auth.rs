@@ -4,8 +4,10 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
-use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
+use soyeht_protocol::device_auth;
+// The bytes both sides sign are written once, in the protocol crate (ADR 0134).
+pub use device_auth::{engine_hello_bytes, engine_pair_bytes, hello_bytes};
 
 pub fn random_bytes() -> Result<[u8; 32]> {
     let mut bytes = [0; 32];
@@ -57,35 +59,7 @@ pub fn pair_proof(
     name: &str,
     proof: &str,
 ) -> bool {
-    let mut derivation = Sha256::new();
-    derivation.update(code.as_bytes());
-    derivation.update(key.as_bytes());
-    let derived = derivation.finalize();
-    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(&derived) else {
-        return false;
-    };
-    mac.update(challenge);
-    mac.update(name.as_bytes());
-    let Ok(proof) = STANDARD.decode(proof) else {
-        return false;
-    };
-    mac.verify_slice(&proof).is_ok()
-}
-
-/// What a device signs in `hello`: both nonces, so neither side's freshness rests on the other,
-/// the engine it means to reach, and its token (ADR 0132).
-pub fn hello_bytes(
-    nonce: &[u8; 32],
-    client_nonce: &[u8; 32],
-    engine_id: &str,
-    device_token: &str,
-) -> Vec<u8> {
-    let mut bytes = b"soyeht-hello-v2".to_vec();
-    bytes.extend_from_slice(nonce);
-    bytes.extend_from_slice(client_nonce);
-    bytes.extend_from_slice(engine_id.as_bytes());
-    bytes.extend_from_slice(device_token.as_bytes());
-    bytes
+    device_auth::pair_proof_matches(code, key.as_bytes(), challenge, name, proof)
 }
 
 pub fn hello_proof(
@@ -132,34 +106,6 @@ pub fn engine_key_text(key: &SigningKey) -> String {
     URL_SAFE_NO_PAD.encode(key.verifying_key().as_bytes())
 }
 
-/// What the engine signs in `welcome` for a device: the two nonces of this connection, itself and
-/// the device. A phone that holds the engine's key from pairing checks it, so an impostor, which
-/// cannot sign, is refused (ADR 0132).
-pub fn engine_hello_bytes(
-    nonce: &[u8; 32],
-    client_nonce: &[u8; 32],
-    engine_id: &str,
-    device_id: &str,
-) -> Vec<u8> {
-    let mut bytes = b"soyeht-engine-v1".to_vec();
-    bytes.extend_from_slice(nonce);
-    bytes.extend_from_slice(client_nonce);
-    bytes.extend_from_slice(engine_id.as_bytes());
-    bytes.push(0);
-    bytes.extend_from_slice(device_id.as_bytes());
-    bytes
-}
-
-/// What the engine signs in `pair.begin`'s answer: the request, the challenge and the key of the
-/// device that began, so the phone pairs only with the engine its QR named.
-pub fn engine_pair_bytes(request_id: &str, challenge: &[u8; 32], device_key: &[u8; 32]) -> Vec<u8> {
-    let mut bytes = b"soyeht-engine-pair-v1".to_vec();
-    bytes.extend_from_slice(challenge);
-    bytes.extend_from_slice(device_key);
-    bytes.extend_from_slice(request_id.as_bytes());
-    bytes
-}
-
 pub fn sign(key: &SigningKey, bytes: &[u8]) -> String {
     STANDARD.encode(key.sign(bytes).to_bytes())
 }
@@ -167,6 +113,7 @@ pub fn sign(key: &SigningKey, bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hmac::{Hmac, Mac};
 
     #[test]
     fn hello_signature_is_bound_to_both_nonces_the_engine_and_the_token() {

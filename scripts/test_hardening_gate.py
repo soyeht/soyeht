@@ -237,6 +237,14 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
         }))
         self.assertEqual(result.panic_calls, 1)
 
+    def test_panic_inventory_covers_the_android_core_but_not_its_tests(self):
+        result = gate.metrics(MemoryTree({
+            "apps/android/core/src/core.rs": "fn c() { None.unwrap(); }",
+            "apps/android/core/src/bin/uniffi-bindgen.rs": "fn main() { None::<u8>.unwrap(); }",
+            "apps/android/core/tests/core.rs": "fn t() { None.unwrap(); }",
+        }))
+        self.assertEqual(result.panic_calls, 2)
+
     def test_verification_drop_requires_an_explicit_reason_line(self):
         base = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 5, 16, 12, 1)
         head = gate.Metrics(frozenset(), frozenset(), 0, 0, (), 4, 16, 12, 1)

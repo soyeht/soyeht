@@ -17,7 +17,7 @@ public final class PairingSession {
 
   public func pair(_ text: String, deviceName: String) async throws -> DeviceCredential {
     let link = try PairingLink(text)
-    guard !deviceName.isEmpty, deviceName.utf8.count <= 128 else {
+    guard !deviceName.isEmpty, deviceName.utf8.count <= ProtocolLimits.deviceNameBytes else {
       throw ClientFailure.invalidFrame
     }
     let identity = PairingIdentity()
@@ -26,9 +26,11 @@ public final class PairingSession {
       code: link.code, deviceName: deviceName,
       devicePublicKey: identity.publicKey, idempotencyKey: UUID().uuidString)
     var prove: PairProveParams?
-    let deadline = Date().addingTimeInterval(600)
+    let deadline = Date().addingTimeInterval(TimeInterval(ProtocolLimits.pairingWindowSeconds))
     let watchdog = Task { [weak self] in
-      do { try await Task.sleep(for: .seconds(600)) } catch { return }
+      do { try await Task.sleep(for: .seconds(ProtocolLimits.pairingWindowSeconds)) } catch {
+        return
+      }
       self?.cancel()
     }
     defer {

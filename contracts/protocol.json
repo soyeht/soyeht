@@ -14564,6 +14564,9 @@
     }
   },
   "x-limitNotes": {
+    "pairingCodeChars": "The characters of a pairing code, and of an engine's public key, in a pairing link: 32 bytes as URL-safe base64 without padding.",
+    "pairingWindowSeconds": "How long a pairing code stays valid, and the longest a device waits for the person to allow access.",
+    "deviceNameBytes": "The longest name (in UTF-8 bytes) a device gives itself when it pairs. The engine shows it to the person who allows access.",
     "editorPathBytes": "The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows."
   },
   "x-limits": {
@@ -14580,6 +14583,9 @@
     "eventCount": 10000,
     "eventDays": 7,
     "deviceConnections": 8,
+    "pairingCodeChars": 43,
+    "pairingWindowSeconds": 600,
+    "deviceNameBytes": 128,
     "promptBytes": 65536,
     "promptQueueCount": 64,
     "agentMessagesPerWindow": 6,
@@ -14822,7 +14828,9 @@
       "iphone": "iphone",
       "iphoneDev": "iphone-dev",
       "desktop": "desktop",
-      "desktopDev": "desktop-dev"
+      "desktopDev": "desktop-dev",
+      "android": "android",
+      "androidDev": "android-dev"
     },
     "texts": {
       "harnessSwitchTitle": "Switch agent",

@@ -30,7 +30,10 @@ pub const MAX_LIFETIME_SECONDS: u64 = 7776000;
 /// Put before the payload in the bytes that are signed.
 pub const SIGNING_CONTEXT: &[u8] = b"soyeht-update-manifest-v1\n";
 /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.
-pub const PUBLIC_KEYS: &[PublicKey] = &[];
+pub const PUBLIC_KEYS: &[PublicKey] = &[PublicKey {
+    id: "release-1",
+    key: "/VOs3RYfrORMEVgvTs0NCHrk9NgdK9ShxMw8Xqrvo1E=",
+}];
 /// The channels a manifest can be for.
 pub const CHANNELS: [&str; 1] = ["stable"];
 

@@ -21,6 +21,12 @@ soyeht-process = { path = "../../engine/soyeht-process" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 base64 = "0.22"
+# A device's connection to an engine on another machine (ADR 0134): the keys it proves itself with,
+# and the WebSocket the engine accepts from a paired device. No TLS: the path is the tailnet.
+ed25519-dalek = "2"
+sha2 = "0.10"
+getrandom = "0.4"
+tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 vt100 = "0.16.2"
 async-channel = "2"
