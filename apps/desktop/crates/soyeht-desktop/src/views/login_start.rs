@@ -48,6 +48,25 @@ impl Workbench {
         )
     }
 
+    /// "Repair" for the problem line while the login start is only partly set up (the window then
+    /// starts nothing of its own): it runs `service install`, the same as the switch. The line is
+    /// not a dead end for a person who cannot find Preferences.
+    pub(super) fn repair_button(
+        &self,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        self.login_start.needs_repair().then(|| {
+            ui::pressable(
+                pill_button(palette, "login-start-repair".into(), None, text::REPAIR),
+                true,
+                cx,
+                |this, cx| this.set_login_start(true, cx),
+            )
+            .into_any_element()
+        })
+    }
+
     /// The Start at login block of the Setup panel: the switch, and what it does.
     pub(super) fn login_start_section(
         &self,

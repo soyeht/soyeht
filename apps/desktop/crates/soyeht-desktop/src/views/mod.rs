@@ -151,7 +151,8 @@ impl Workbench {
         Some(match self.state.banner()? {
             Banner::Problem(text) => {
                 let text = text.to_owned();
-                banner_line("problem", text, "Dismiss", palette, cx, |this, cx| {
+                let repair = self.repair_button(palette, cx);
+                banner_line("problem", text, "Dismiss", repair, palette, cx, |this, cx| {
                     this.state.dismiss_problem();
                     cx.notify();
                 })
@@ -162,6 +163,7 @@ impl Workbench {
                     "notice",
                     text,
                     "Dismiss for good",
+                    None,
                     palette,
                     cx,
                     |this, cx| this.dismiss_notice(cx),
@@ -194,11 +196,13 @@ impl Workbench {
 }
 
 /// One warning under the top bar, wrapped to as many lines as its text needs; a click dismisses
-/// it through `dismiss`, and `tip` says what the dismissal does.
+/// it through `dismiss`, and `tip` says what the dismissal does. `action` is a button of its own
+/// beside the close glyph, when the line has something to offer.
 fn banner_line(
     id: &'static str,
     text: String,
     tip: &'static str,
+    action: Option<AnyElement>,
     palette: &'static crate::theme::Palette,
     cx: &mut Context<Workbench>,
     dismiss: fn(&mut Workbench, &mut Context<Workbench>),
@@ -218,6 +222,7 @@ fn banner_line(
         // The whole text, wrapped: a notice such as the software renderer's names the packages to
         // install at its end, and a line cut at the window's width loses them.
         .child(div().flex_1().min_w_0().child(SharedString::from(text)))
+        .children(action)
         .child(ui::icon(Icon::Close, glyph::TAB_CLOSE, palette.warning()))
         .into_any_element()
 }

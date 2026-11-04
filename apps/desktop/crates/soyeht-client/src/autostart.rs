@@ -50,10 +50,12 @@ const LOCK_NAME: &str = "desktop-start.lock";
 const POLL_MS: u64 = 100;
 const POLL: Duration = Duration::from_millis(POLL_MS);
 const POLLS: u32 = 300;
-/// How many looks a window that lost the race for the lock takes. The winner can hold the lock for
-/// as long as `service status` and `service start` take (each within `serviceCommandMs`) and
-/// then for its own wait, so the loser waits for all of that, not for the winner's wait alone.
-const FOLLOWER_POLLS: u32 = POLLS + (2 * SERVICE_COMMAND_MS / POLL_MS) as u32;
+/// The longest a window that lost the race for the lock keeps looking, as a cap: it takes the
+/// lock itself as soon as the winner lets it go, so it waits this long only for a winner that
+/// holds it for as long as it can. That is `service status` and a refused `service start`, each
+/// within `serviceCommandMs`, then the two waits of `start_programs` (the supervisor, then the
+/// engine); a start that succeeds takes less (a status, a start, one wait).
+const FOLLOWER_POLLS: u32 = 2 * POLLS + (2 * SERVICE_COMMAND_MS / POLL_MS) as u32;
 
 /// Whether this window starts an engine when it finds none.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,13 +245,22 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
         return Err(StartError::Uninstalled);
     }
     // One window decides at a time (ADR 0102), and only the one that holds the lock asks the
-    // service manager, which can take a while to answer.
-    let Some(_lock) = host
-        .lock()
-        .map_err(|error| StartError::Lock(error.kind()))?
-    else {
-        // Another window is starting the engine.
-        return wait_for_engine(host, FOLLOWER_POLLS);
+    // service manager, which can take a while to answer. A window that does not get it looks again
+    // at every poll: the winner ends by bringing the engine up, or by letting go of the lock when
+    // its start failed, and then this window decides for itself (and says at once what stopped
+    // the winner, if the same thing stops it).
+    let mut looks = 0;
+    let _lock = loop {
+        match host
+            .lock()
+            .map_err(|error| StartError::Lock(error.kind()))?
+        {
+            Some(lock) => break lock,
+            None if host.engine_reachable() => return Ok(()),
+            None if looks >= FOLLOWER_POLLS => return Err(StartError::TimedOut),
+            None if !host.pause() => return Err(StartError::Stopped),
+            None => looks += 1,
+        }
     };
     // The engine may have come up while this window waited for the lock.
     if host.engine_reachable() {
@@ -261,7 +272,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     // only part of the services registered the window starts nothing: its own programs would
     // run beside a unit that starts at the next login and fails on their lock.
     match host.service_registration() {
-        Registration::Full if host.start_service() => return wait_for_engine(host, POLLS),
+        Registration::Full if host.start_service() => return wait_for_engine(host),
         Registration::Partial => return Err(StartError::PartialService),
         Registration::Full | Registration::None => {}
     }
@@ -269,12 +280,12 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     start_programs(host, &programs, &engine)
 }
 
-/// Waits until the engine answers, for one that something else is starting.
-fn wait_for_engine(host: &impl Host, polls: u32) -> Result<(), StartError> {
+/// Waits until the engine answers, for one the service manager is starting.
+fn wait_for_engine(host: &impl Host) -> Result<(), StartError> {
     wait_until(
         host,
         ENGINE_PROGRAM,
-        polls,
+        POLLS,
         || host.engine_reachable(),
         &mut || false,
     )

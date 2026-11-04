@@ -277,3 +277,25 @@ fn turning_on_a_half_registration_that_stays_half_is_a_failure() {
         Err(Failure::Run("not_registered".into()))
     );
 }
+
+#[test]
+fn the_repair_is_offered_only_while_the_registration_is_partial() {
+    let mut setting = LoginStart::new(false);
+    assert!(!setting.needs_repair());
+    setting.begin_check();
+    setting.checked(Ok(Registration::Partial));
+    assert!(setting.needs_repair());
+    // The button is the switch's own repair: it runs the same change and goes while it runs.
+    assert!(setting.begin_change(true));
+    assert!(!setting.needs_repair());
+    setting.changed(true, Ok(()));
+    assert!(!setting.needs_repair());
+    // A repair that fails does not offer itself again as if nothing had been tried.
+    let mut failed = LoginStart::new(false);
+    failed.begin_check();
+    failed.checked(Ok(Registration::Partial));
+    failed.begin_change(true);
+    failed.changed(true, Err(Failure::Run("status:1".into())));
+    assert!(!failed.needs_repair());
+    assert_eq!(failed.message(), Some((text::FAILED, true)));
+}

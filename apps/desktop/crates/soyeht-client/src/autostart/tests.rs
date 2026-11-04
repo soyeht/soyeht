@@ -17,6 +17,8 @@ struct Fake {
     supervisor_up: Cell<bool>,
     missing: Vec<&'static str>,
     lock: Lock,
+    /// The lock is let go after this many pauses: the window that held it has failed and left.
+    lock_freed_after: Option<u32>,
     spawn_fails: bool,
     /// The folder for the logs cannot be made.
     logs_fail: bool,
@@ -54,6 +56,7 @@ impl Fake {
             supervisor_up: Cell::new(false),
             missing: Vec::new(),
             lock: Lock::Free,
+            lock_freed_after: None,
             spawn_fails: false,
             logs_fail: false,
             exits: false,
@@ -136,7 +139,10 @@ impl Host for Fake {
 
     fn lock(&self) -> io::Result<Option<Box<dyn Any>>> {
         self.locked.set(true);
-        match self.lock {
+        let freed = self
+            .lock_freed_after
+            .is_some_and(|after| self.pauses.get() >= after);
+        match if freed { Lock::Free } else { self.lock } {
             Lock::Free => Ok(Some(Box::new(()))),
             Lock::Held => Ok(None),
             Lock::Broken => Err(io::ErrorKind::PermissionDenied.into()),
@@ -366,17 +372,44 @@ fn the_service_manager_is_asked_only_by_the_window_that_holds_the_start_lock() {
 }
 
 #[test]
-fn a_window_that_loses_the_race_waits_as_long_as_the_winner_can_hold_the_lock() {
+fn a_window_that_loses_the_race_waits_at_most_as_long_as_the_winner_can_hold_the_lock() {
     let host = Fake {
         lock: Lock::Held,
         ..Fake::new()
     };
     assert_eq!(ensure(&plan(), &host), Err(StartError::TimedOut));
     assert_eq!(host.pauses.get(), FOLLOWER_POLLS);
-    // `service status`, then `service start`, each within the policy's deadline, then the
-    // winner's own wait for the engine.
-    let winner_worst = 2 * SERVICE_COMMAND_MS + u64::from(POLLS) * POLL_MS;
+    // `service status` and a refused `service start`, each within the policy's deadline, then
+    // the two waits of the winner's own start.
+    let winner_worst = 2 * SERVICE_COMMAND_MS + 2 * u64::from(POLLS) * POLL_MS;
     assert!(u64::from(FOLLOWER_POLLS) * POLL_MS >= winner_worst);
+}
+
+#[test]
+fn a_window_that_loses_the_race_takes_the_lock_the_moment_the_winner_fails_and_leaves() {
+    // The winner's start failed early and it let go: the loser decides for itself at once, here
+    // by starting the programs, not after the cap.
+    let host = Fake {
+        lock: Lock::Held,
+        lock_freed_after: Some(3),
+        engine_after: Some(10),
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Ok(()));
+    assert_eq!(host.started(), ["soyeht-ptyd", "soyeht-engine"]);
+    assert!(host.pauses.get() < 20, "{} pauses", host.pauses.get());
+}
+
+#[test]
+fn a_loser_whose_winner_failed_on_a_partial_registration_says_so_at_once() {
+    let host = Fake {
+        lock: Lock::Held,
+        lock_freed_after: Some(2),
+        partial: true,
+        ..Fake::new()
+    };
+    assert_eq!(ensure(&plan(), &host), Err(StartError::PartialService));
+    assert_eq!(host.pauses.get(), 2);
 }
 
 #[test]

@@ -32,6 +32,7 @@ pub mod text {
     pub const SETTING: &str = "Start Soyeht at login";
     pub const TURN_OFF_WARNING: &str =
         "Turning it off stops the engine once, which ends the terminals running now.";
+    pub const REPAIR: &str = "Repair";
     pub const PARTIAL: &str =
         "Only part of the login start is set up. Turn it on to set up the rest.";
     pub const WORKING: &str = "Working\u{2026}";
@@ -229,6 +230,12 @@ impl LoginStart {
             Phase::Failed(was_on, _) => was_on,
             Phase::Unavailable | Phase::Checking | Phase::Off | Phase::Partial => false,
         }
+    }
+
+    /// Whether the login start is only partly set up: the problem line then offers to repair it
+    /// (`service install`), the same as turning the switch on.
+    pub fn needs_repair(&self) -> bool {
+        self.phase == Phase::Partial
     }
 
     /// Whether the switch answers a click now.
