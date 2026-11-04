@@ -55,7 +55,7 @@ impl Launch {
 
     /// Waits for the sends ahead of it, then asks the supervisor.
     pub(crate) fn send(self) -> Result<Instance> {
-        // An adapter is given the person's own CLI (ADR 0134), which takes a command; that waits
+        // An adapter is given the person's own CLI (ADR 0137), which takes a command; that waits
         // for nobody's turn.
         let process = crate::agents::user_cli::prepare(self.config);
         self.turn.wait();

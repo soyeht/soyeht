@@ -1,4 +1,4 @@
-//! The harness's own CLI, run from the person's installation (ADR 0134).
+//! The harness's own CLI, run from the person's installation (ADR 0137).
 //!
 //! The Claude adapter drives a Claude Code binary that ships inside its package. That binary is
 //! only as new as the adapter: it refuses a model released after it, and it behaves as the

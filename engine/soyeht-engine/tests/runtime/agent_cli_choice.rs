@@ -1,4 +1,4 @@
-//! The Claude adapter drives the person's own Claude Code when it is new enough (ADR 0134).
+//! The Claude adapter drives the person's own Claude Code when it is new enough (ADR 0137).
 
 use super::*;
 

@@ -90,7 +90,7 @@ fn inherited() -> impl Iterator<Item = &'static str> {
 }
 
 /// The variable that names the Claude Code executable the Claude adapter drives. An adapter
-/// process may be given it (ADR 0134); a terminal has no use for it.
+/// process may be given it (ADR 0137); a terminal has no use for it.
 pub const CLAUDE_CODE_EXECUTABLE: &str = "CLAUDE_CODE_EXECUTABLE";
 
 /// Whether the engine may set `name` for a process of `kind`.

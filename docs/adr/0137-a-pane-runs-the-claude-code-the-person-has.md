@@ -1,4 +1,4 @@
-# ADR 0134: A Claude pane runs the Claude Code the person has
+# ADR 0137: A Claude pane runs the Claude Code the person has
 
 - Status: accepted. Extends ADR 0079 (external commands off the Core lock), ADR 0102 (the launch
   path) and ADR 0126 (process starts off the Core lock).
