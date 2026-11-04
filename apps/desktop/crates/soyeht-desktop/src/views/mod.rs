@@ -152,10 +152,18 @@ impl Workbench {
             Banner::Problem(text) => {
                 let text = text.to_owned();
                 let repair = self.repair_button(palette, cx);
-                banner_line("problem", text, "Dismiss", repair, palette, cx, |this, cx| {
-                    this.state.dismiss_problem();
-                    cx.notify();
-                })
+                banner_line(
+                    "problem",
+                    text,
+                    "Dismiss",
+                    repair,
+                    palette,
+                    cx,
+                    |this, cx| {
+                        this.state.dismiss_problem();
+                        cx.notify();
+                    },
+                )
             }
             Banner::Notice(text) => {
                 let text = text.to_owned();

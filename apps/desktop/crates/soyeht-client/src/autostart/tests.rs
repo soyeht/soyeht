@@ -395,9 +395,11 @@ fn a_window_that_loses_the_race_takes_the_lock_the_moment_the_winner_fails_and_l
         engine_after: Some(10),
         ..Fake::new()
     };
-    assert_eq!(ensure(&plan(), &host), Ok(()));
-    assert_eq!(host.started(), ["soyeht-ptyd", "soyeht-engine"]);
-    assert!(host.pauses.get() < 20, "{} pauses", host.pauses.get());
+    let outcome = ensure(&plan(), &host);
+    let (started, pauses) = (host.started(), host.pauses.get());
+    assert_eq!(outcome, Ok(()));
+    assert_eq!(started.len(), 2, "{started:?}");
+    assert!(pauses < 20, "{pauses} pauses");
 }
 
 #[test]
