@@ -103,6 +103,17 @@
       "authMethods": [],
       "installed": false,
       "setupState": "sign_in"
+    },
+    "unstarted": {
+      "id": "local.unstarted",
+      "name": "Unstarted",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": true,
+      "setupState": "not_checked",
+      "setupReason": "never_started"
     }
   },
   "layouts": [
@@ -332,9 +343,8 @@
       "expected": "registry.claude-acp"
     },
     {
-      "name": "only a ready harness is picked without a choice",
+      "name": "a harness that needs sign-in is not preselected",
       "harnesses": [
-        "tool",
         "gemini",
         "alpha"
       ],
@@ -361,6 +371,48 @@
       "excluding": null,
       "preferred": "registry.a",
       "expected": "registry.codex-acp"
+    },
+    {
+      "name": "exactly one found harness is preselected on a fresh machine",
+      "harnesses": [
+        "tool",
+        "alpha",
+        "runner"
+      ],
+      "excluding": null,
+      "preferred": null,
+      "expected": "local.tool"
+    },
+    {
+      "name": "two found harnesses, neither opened a session, are left to the person",
+      "harnesses": [
+        "tool",
+        "unstarted",
+        "alpha"
+      ],
+      "excluding": null,
+      "preferred": null,
+      "expected": null
+    },
+    {
+      "name": "the one found harness is not the one the pane runs",
+      "harnesses": [
+        "tool",
+        "alpha"
+      ],
+      "excluding": "local.tool",
+      "preferred": null,
+      "expected": null
+    },
+    {
+      "name": "none found leaves the choice to the person",
+      "harnesses": [
+        "alpha",
+        "runner"
+      ],
+      "excluding": null,
+      "preferred": null,
+      "expected": null
     }
   ],
   "statuses": [
@@ -373,7 +425,7 @@
     },
     {
       "harness": "tool",
-      "label": "Ready",
+      "label": "Installed",
       "reason": "Installed; this agent has not been started yet. You can start it now.",
       "installed": true,
       "notice": "Installed; this agent has not been started yet. You can start it now."

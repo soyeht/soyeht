@@ -58,9 +58,10 @@ fn setup_state(harness: &HarnessInfo) -> HarnessSetupState {
 }
 
 /// The state a picker shows for `harness`. One the engine found on this machine and has not
-/// started yet shows as ready, as the setup checklist shows it (`found`): "not checked" is the
-/// engine's word for a session nobody has opened. Only a session that opened makes the default
-/// choice (`default_harness`), which reads `setup_state` itself.
+/// started yet groups with the usable ones, as the setup checklist shows it (`found`), and its
+/// label says "Installed" (`status_label`), not "Ready": "not checked" is the engine's word for a
+/// session nobody has opened. The default choice prefers a session that opened (`setup_state`),
+/// and takes the one harness found when there is only one.
 fn shown_state(harness: &HarnessInfo) -> HarnessSetupState {
     match setup_state(harness) {
         HarnessSetupState::NotChecked if harness.available && harness.installed != Some(false) => {
@@ -103,6 +104,11 @@ pub fn default_harness<'a>(
             .as_deref()
             .map_or(0, |at| at.parse::<i64>().unwrap_or(0))
     };
+    // A fresh machine with one harness found: the person has nothing to choose from.
+    let mut found = candidates().filter(|harness| shown_state(harness) == HarnessSetupState::Ready);
+    if let (Some(only), None) = (found.next(), found.next()) {
+        return Some(only);
+    }
     candidates()
         .filter(|harness| setup_state(harness) == HarnessSetupState::Ready)
         .min_by(|left, right| {
@@ -230,6 +236,12 @@ pub fn model_label(model: &ModelInfo) -> String {
 /// The second line of a harness row: how ready it is, which tells apart two harnesses that
 /// share a name.
 pub fn status_label(harness: &HarnessInfo) -> &'static str {
+    // Found and never started is not "Ready": no session has opened yet.
+    if setup_state(harness) == HarnessSetupState::NotChecked
+        && shown_state(harness) == HarnessSetupState::Ready
+    {
+        return "Installed";
+    }
     group_of(harness).title()
 }
 

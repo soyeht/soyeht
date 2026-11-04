@@ -133,6 +133,9 @@ public enum HarnessPickerModel {
     if let preferredId, let preferred = candidates.first(where: { $0.id == preferredId }) {
       return preferred
     }
+    // A fresh machine with one harness found: the person has nothing to choose from.
+    let found = candidates.filter { shownState(for: $0) == .ready }
+    if found.count == 1, let only = found.first { return only }
     return candidates.filter { setupState(for: $0) == .ready }.sorted {
       let left = Int64($0.lastReadyAtMs ?? "") ?? 0
       let right = Int64($1.lastReadyAtMs ?? "") ?? 0
@@ -150,10 +153,11 @@ public enum HarnessPickerModel {
   }
 
   /// The state a picker shows for a harness. A harness the engine found on this machine and has
-  /// not started yet is shown as ready, as the setup checklist shows it (`found`): "not checked"
-  /// is the engine's word for a session nobody has opened, and a person reads it as a missing
-  /// check. Only a session that opened makes the default choice (`defaultHarness`), so that
-  /// choice keeps using `setupState(for:)`.
+  /// not started yet groups with the usable ones, as the setup checklist shows it (`found`), and
+  /// reads "Installed" (`statusLabel`), not "Ready": "not checked" is the engine's word for a
+  /// session nobody has opened, and a person reads it as a missing check. The default choice
+  /// prefers a session that opened (`setupState(for:)`), and takes the one harness found when
+  /// there is only one.
   public static func shownState(for harness: HarnessInfo) -> HarnessSetupState {
     let state = setupState(for: harness)
     return state == .not_checked && harness.available && harness.installed != false
@@ -196,7 +200,11 @@ public enum HarnessPickerModel {
   }
 
   public static func statusLabel(for harness: HarnessInfo) -> String {
-    switch shownState(for: harness) {
+    // Found and never started is not "Ready": no session has opened yet.
+    if setupState(for: harness) == .not_checked && shownState(for: harness) == .ready {
+      return "Installed"
+    }
+    return switch shownState(for: harness) {
     case .ready: "Ready"
     case .not_checked: "Not checked"
     case .sign_in: "Sign in"
