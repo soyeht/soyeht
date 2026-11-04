@@ -1,5 +1,5 @@
 use super::*;
-use crate::web::test_support::{next_json, reply, request, temp_root};
+use crate::web::test_support::{next_json, reply, request, temp_root, welcome};
 use crate::{
     dispatch::Outcome, model::RunningPane, outbox, ports::testing::FixedClock, screen::Screen,
 };
@@ -11,7 +11,7 @@ async fn connect(core: &mut Core, host: bool) -> (String, outbox::Receiver) {
     let (sender, mut receiver) = outbox::channel();
     let connection = core.connect(true, false, sender).unwrap();
     let _ = next_json(&mut receiver).await;
-    reply(
+    welcome(
         core,
         &connection,
         request(
@@ -20,7 +20,9 @@ async fn connect(core: &mut Core, host: bool) -> (String, outbox::Receiver) {
             json!({"client":"web-permission-test","clientVersion":"1",
                 "protocolVersion":1,"capabilities":if host { json!(["web_host"]) } else { json!([]) }}),
         ),
-    );
+        &mut receiver,
+    )
+    .await;
     (connection, receiver)
 }
 

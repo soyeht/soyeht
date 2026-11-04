@@ -53,8 +53,18 @@ public struct PairingLink: Sendable {
       of: "_", with: "/")
     guard let bytes = Data(base64Encoded: standard + "="), bytes.count == 32 else { return nil }
     // A key of small order would sign for anyone: it is no key (the engine and the Android core refuse it too).
-    guard !Self.smallOrderPoints.contains(bytes) else { return nil }
+    guard !Self.smallOrderPoints.contains(bytes), Self.isCanonical(bytes) else { return nil }
     return bytes
+  }
+  /// Whether the `y` of an encoded point (its low 255 bits) is below p = 2^255 - 19. A larger one is a
+  /// second way to write a point, and the only way to write some of small order (`nonCanonicalWeakEngineKeys`).
+  /// A point's being on the curve is not checked here: that needs a decompression (the vector marks
+  /// such cases `rustOnly`).
+  private static func isCanonical(_ bytes: Data) -> Bool {
+    let end = bytes.endIndex - 1
+    let top = bytes[end] & 0x7f
+    let middle = bytes[(bytes.startIndex + 1)..<end].allSatisfy { $0 == 0xff }
+    return !(top == 0x7f && middle && bytes[bytes.startIndex] >= 0xed)
   }
   /// The canonical encodings of the eight points of small order of Curve25519
   /// (`contracts/vectors/pairing-link.json` lists them as `weakEngineKeys`).

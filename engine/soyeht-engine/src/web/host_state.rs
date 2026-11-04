@@ -110,7 +110,9 @@ impl Core {
 mod tests {
     use super::*;
     use crate::outbox;
-    use crate::web::test_support::{create_workspace, next_json, reply, request, temp_root};
+    use crate::web::test_support::{
+        create_workspace, next_json, reply, request, temp_root, welcome,
+    };
     use serde_json::json;
     use soyeht_protocol::ErrorKind;
     use std::path::Path;
@@ -119,7 +121,7 @@ mod tests {
         let (sender, mut receiver) = outbox::channel();
         let connection = core.connect(true, false, sender).unwrap();
         let _ = next_json(&mut receiver).await;
-        reply(
+        welcome(
             core,
             &connection,
             request(
@@ -128,7 +130,9 @@ mod tests {
                 json!({"client":name,"clientVersion":"1","protocolVersion":1,
                     "capabilities": if host { json!(["web_host"]) } else { json!([]) }}),
             ),
-        );
+            &mut receiver,
+        )
+        .await;
         (connection, receiver)
     }
 

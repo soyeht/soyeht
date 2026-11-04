@@ -21,6 +21,21 @@ pub(super) fn reply(core: &mut Core, connection: &str, request: Value) -> Value 
     value
 }
 
+/// The welcome to a `hello`. A web host's is queued under the lock that made it the host, and is the
+/// first thing its connection receives; any other is the reply.
+pub(super) async fn welcome(
+    core: &mut Core,
+    connection: &str,
+    request: Value,
+    receiver: &mut outbox::Receiver,
+) -> Value {
+    match core.dispatch(connection, request).unwrap() {
+        Outcome::Reply(value) => value,
+        Outcome::Queued => next_json(receiver).await["result"].clone(),
+        _ => panic!("expected a welcome"),
+    }
+}
+
 pub(super) async fn next_json(receiver: &mut outbox::Receiver) -> Value {
     let Frame::Json(bytes) = receiver.next().await.unwrap().unwrap().frame else {
         panic!("expected JSON frame")

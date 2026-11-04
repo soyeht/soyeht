@@ -52,9 +52,20 @@ pub fn engine_pair_bytes(request_id: &str, challenge: &[u8; 32], device_key: &[u
     bytes
 }
 
-/// A public key from its 32 bytes, as every side checks one (ADR 0132): it must be a point of the curve
-/// and not of small order, which would sign for anyone.
+/// Whether the `y` of an encoded point (the low 255 bits) is below p = 2^255 - 19: a larger one is another
+/// way to write a point that has a canonical encoding, and the only way to write some points of small
+/// order (y = p is y = 0, y = p + 1 is y = 1).
+fn canonical(bytes: &[u8; 32]) -> bool {
+    let top = bytes[31] & 0x7f;
+    !(top == 0x7f && bytes[1..31].iter().all(|byte| *byte == 0xff) && bytes[0] >= 0xed)
+}
+
+/// A public key from its 32 bytes, as every side checks one (ADR 0132): it is written canonically, it
+/// is a point of the curve, and it is not of small order, which would sign for anyone.
 pub fn verifying_key(bytes: &[u8; 32]) -> Option<VerifyingKey> {
+    if !canonical(bytes) {
+        return None;
+    }
     match VerifyingKey::from_bytes(bytes) {
         Ok(key) if !key.is_weak() => Some(key),
         _ => None,
@@ -183,6 +194,17 @@ mod tests {
         let weak = vectors["weakEngineKeys"].as_array().unwrap();
         assert_eq!(weak.len(), 8);
         for hex in weak {
+            let hex = hex.as_str().unwrap();
+            let bytes: [u8; 32] = (0..32)
+                .map(|index| u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap())
+                .collect::<Vec<_>>()
+                .try_into()
+                .unwrap();
+            assert!(verifying_key(&bytes).is_none(), "{hex}");
+        }
+        let non_canonical = vectors["nonCanonicalWeakEngineKeys"].as_array().unwrap();
+        assert_eq!(non_canonical.len(), 4);
+        for hex in non_canonical {
             let hex = hex.as_str().unwrap();
             let bytes: [u8; 32] = (0..32)
                 .map(|index| u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap())

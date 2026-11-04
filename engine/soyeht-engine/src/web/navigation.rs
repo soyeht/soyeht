@@ -158,7 +158,9 @@ impl Core {
 mod tests {
     use super::*;
     use crate::outbox;
-    use crate::web::test_support::{create_workspace, next_json, reply, request, temp_root};
+    use crate::web::test_support::{
+        create_workspace, next_json, reply, request, temp_root, welcome,
+    };
     use serde_json::json;
     use soyeht_protocol::ErrorKind;
 
@@ -170,7 +172,7 @@ mod tests {
         let (sender, mut receiver) = outbox::channel();
         let connection = core.connect(true, false, sender).unwrap();
         let _ = next_json(&mut receiver).await;
-        let welcome = reply(
+        let welcome = welcome(
             core,
             &connection,
             request(
@@ -179,7 +181,9 @@ mod tests {
                 json!({"client":client,"clientVersion":"1",
                     "protocolVersion":1,"capabilities":capabilities}),
             ),
-        );
+            &mut receiver,
+        )
+        .await;
         assert_eq!(welcome["role"], "human_local");
         (connection, receiver)
     }
