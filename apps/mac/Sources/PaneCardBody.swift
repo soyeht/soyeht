@@ -42,6 +42,12 @@ struct PaneCardBody: View {
         .frame(height: PaneLayoutContentMetrics.agentTaskHeight)
         .paneCard()
       }
+      // A dead agent says why, in the engine's words, as the phone does.
+      if let notice = AgentPaneStatusPresentation.endedNotice(
+        state: pane.state, phrase: pane.phrase)
+      {
+        stateBanner(notice, identifier: "agent-ended-\(pane.paneId)")
+      }
       AgentConversationView(
         client: client, paneId: pane.paneId, isVisible: isVisible,
         showsConfiguration: false,
@@ -60,14 +66,7 @@ struct PaneCardBody: View {
   private var terminalBody: some View {
     VStack(spacing: 0) {
       if let notice = TerminalStatePresentation.notice(for: pane.state, exitCode: pane.exitCode) {
-        Label(notice.text, systemImage: notice.systemImage)
-          .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .semibold))
-          .foregroundStyle(noticeColor(notice))
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, MacTheme.Space.x10)
-          .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
-          .background(noticeBackground(notice))
-          .accessibilityIdentifier("terminal-state-\(pane.paneId)")
+        stateBanner(notice, identifier: "terminal-state-\(pane.paneId)")
       }
       MacTerminal(client: client, paneId: pane.paneId)
         .environment(
@@ -80,6 +79,18 @@ struct PaneCardBody: View {
           .padding(MacTheme.Space.x10)
       }
     }
+  }
+
+  /// The line a pane shows under its header when its state needs a word.
+  private func stateBanner(_ notice: TerminalNotice, identifier: String) -> some View {
+    Label(notice.text, systemImage: notice.systemImage)
+      .font(MacTheme.ui(MacTheme.TypeScale.control, weight: .semibold))
+      .foregroundStyle(noticeColor(notice))
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, MacTheme.Space.x10)
+      .padding(.vertical, PaneLayoutContentMetrics.terminalStateVerticalInset)
+      .background(noticeBackground(notice))
+      .accessibilityIdentifier(identifier)
   }
 
   private func noticeColor(_ notice: TerminalNotice) -> Color {

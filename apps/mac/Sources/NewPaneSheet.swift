@@ -165,6 +165,10 @@ struct NewPaneSheet: View {
     .onChange(of: HarnessPickerModel.availabilityKeys(client.harnesses)) { _, _ in
       selectFirstHarness()
     }
+    .onChange(of: showsAgentPicker) { _, shown in
+      // Closing the picker (Escape or a click away) must not leave the keyboard to the tab strip.
+      if !shown, current.kind.returnsFocusToPromptAfterPopover { promptFocused = true }
+    }
     .onChange(of: form.harness) { _, value in
       if client.harness(id: value)?.available == true { client.refreshCatalogue(harness: value) }
     }

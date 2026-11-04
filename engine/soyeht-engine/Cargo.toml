@@ -52,7 +52,6 @@ tokio-tungstenite.workspace = true
 futures-util.workspace = true
 getrandom.workspace = true
 sha2.workspace = true
-hmac.workspace = true
 ignore = "0.4"
 notify = { version = "8.2", default-features = false, features = ["macos_fsevent"] }
 vt100.workspace = true
@@ -67,6 +66,7 @@ tokio-rustls.workspace = true
 webpki-roots.workspace = true
 
 [dev-dependencies]
+hmac.workspace = true
 # Enables the hooks for this package's own tests (and so builds `soyeht-engine-test`).
 soyeht-engine = { path = ".", features = ["test-hooks"] }
 soyeht-platform = { path = "../soyeht-platform", features = ["tokio", "test-support"] }
