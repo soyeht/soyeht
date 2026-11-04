@@ -328,6 +328,15 @@ class ContractTests(unittest.TestCase):
         self.assertIn("pub enum Failure", outputs[update.RUST_OUTPUT])
         self.assertIn("public enum UpdateFailure", outputs[update.SWIFT_OUTPUT])
 
+    def test_the_contract_carries_a_release_key_and_no_test_key(self):
+        # An empty list makes every build "not set up" (ADR 0122): a release cannot ship that way.
+        keys = manifest.POLICY["signature"]["publicKeys"]
+        self.assertTrue(keys, "contracts/update.json has no public key: run `release_manifest.py keygen` (docs/release.md)")
+        test_keys = {key["key"] for key in KEYS.values()}
+        for key in keys:
+            self.assertNotIn(key["key"], test_keys, f"{key['id']} is a throwaway test key")
+            self.assertFalse(ed25519.is_weak(update.public_key_bytes(key["key"])))
+
     def test_a_key_is_32_bytes_of_canonical_base64(self):
         for bad in ("", "AAAA", base64.b64encode(b"x" * 31).decode(), base64.b64encode(b"x" * 33).decode()):
             self.document["signature"]["publicKeys"] = [{"id": "k1", "key": bad}]

@@ -277,7 +277,7 @@ impl Core {
             let expires_at = chrono::DateTime::from_timestamp(expires, 0)
                 .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
             let uri = pairing_link::uri(
-                &self.store.store_id(),
+                self.store.store_id(),
                 &self.pair_address,
                 &code,
                 &auth::engine_key_text(&self.engine_key),
