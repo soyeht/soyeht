@@ -36,7 +36,7 @@ public enum UpdatePolicy {
   /// Put before the payload in the bytes that are signed.
   public static let signingContext = "soyeht-update-manifest-v1\n"
   /// The keys that may sign a manifest. Empty until the release key exists: no check is trusted.
-  public static let publicKeys: [UpdatePublicKey] = []
+  public static let publicKeys: [UpdatePublicKey] = [UpdatePublicKey(id: "release-1", key: "/VOs3RYfrORMEVgvTs0NCHrk9NgdK9ShxMw8Xqrvo1E=")]
   /// The channels a manifest can be for.
   public static let channels: [String] = ["stable"]
   public static let defaultChannel = "stable"
