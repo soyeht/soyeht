@@ -247,6 +247,70 @@ diff --git a/two.txt b/two.txt
 """
 
 
+class PublishedHistoryTests(unittest.TestCase):
+    """Real repositories: an upstream, a clone and a commit on top of the published history."""
+
+    MIRROR = "builder:ci/mirror.git"
+
+    def run_git(self, folder, *arguments):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "-c", "commit.gpgsign=false", *arguments], cwd=folder, check=True,
+                       capture_output=True, env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull})
+
+    def commit(self, folder, name):
+        (Path(folder) / name).write_text(name)
+        self.run_git(folder, "add", name)
+        self.run_git(folder, "commit", "-m", name)
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=folder, text=True).strip()
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        upstream, self.clone = root / "upstream", root / "clone"
+        upstream.mkdir()
+        self.run_git(upstream, "init", "-q", "-b", "main")
+        self.first = self.commit(upstream, "first")
+        self.published = self.commit(upstream, "published")
+        self.run_git(root, "clone", "-q", str(upstream), "clone")
+        self.run_git(self.clone, "remote", "set-url", "origin", "https://github.com/soyeht/soyeht.git")
+        self.new = self.commit(self.clone, "new")
+
+    def scanned(self, remote=MIRROR):
+        update = f"refs/heads/x {self.new} refs/heads/x {ZERO}"
+        with mock.patch.object(forbidden_terms, "ROOT", self.clone):
+            return forbidden_terms.pushed_revisions([update], remote)
+
+    def test_a_commit_on_top_of_the_published_history_is_scanned_and_the_published_one_is_not(self):
+        self.assertEqual(self.scanned(), [self.new])
+
+    def test_the_ssh_form_of_the_public_address_counts_too(self):
+        self.run_git(self.clone, "remote", "set-url", "origin", "git@github.com:soyeht/soyeht.git")
+        self.assertEqual(self.scanned(), [self.new])
+
+    def test_without_origin_main_everything_is_scanned(self):
+        self.run_git(self.clone, "update-ref", "-d", "refs/remotes/origin/main")
+        self.assertEqual(self.scanned(), [self.new, self.published, self.first])
+
+    def test_a_stale_origin_main_excludes_only_what_it_reaches(self):
+        self.run_git(self.clone, "update-ref", "refs/remotes/origin/main", self.first)
+        self.assertEqual(self.scanned(), [self.new, self.published])
+
+    def test_another_branch_of_origin_does_not_count(self):
+        self.run_git(self.clone, "update-ref", "-d", "refs/remotes/origin/main")
+        self.run_git(self.clone, "update-ref", "refs/remotes/origin/other", self.published)
+        self.assertEqual(self.scanned(), [self.new, self.published, self.first])
+
+    def test_an_origin_that_is_not_the_public_repository_excludes_nothing(self):
+        for address in ("https://github.com/someone/soyeht.git", "https://example.invalid/soyeht/soyeht.git",
+                        "https://github.com/soyeht/soyeht-archive.git"):
+            self.run_git(self.clone, "remote", "set-url", "origin", address)
+            self.assertEqual(self.scanned(), [self.new, self.published, self.first], address)
+
+    def test_a_push_with_no_remote_name_keeps_the_full_scan(self):
+        self.assertEqual(self.scanned(remote=""), [self.new, self.published, self.first])
+
+
 class PrePushTests(unittest.TestCase):
     TIP, OLD = "1" * 40, "2" * 40
 
@@ -333,17 +397,6 @@ class PrePushTests(unittest.TestCase):
         self.assertEqual([call for call in calls if call[0] == "rev-list"],
                          [("rev-list", self.TIP, "--not", self.OLD),
                           ("rev-list", self.TIP, "--not", "--remotes=origin")])
-
-    def test_a_push_to_another_place_does_not_scan_what_the_public_repository_holds(self):
-        # The Linux build host's mirror is a URL: nothing in the clone tracks it, and its first
-        # branch used to send the whole history through the scan.
-        calls = []
-        with self.git_with([], {}, calls):
-            self.push([f"refs/heads/new {self.TIP} refs/heads/new {ZERO}"], remote="bignix:ci/mirror.git")
-            self.push([f"refs/heads/x {self.TIP} refs/heads/x {self.OLD}"], remote="bignix:ci/mirror.git")
-        self.assertEqual([call for call in calls if call[0] == "rev-list"],
-                         [("rev-list", self.TIP, "--not", "--remotes=bignix:ci/mirror.git", "--remotes=origin"),
-                          ("rev-list", self.TIP, "--not", self.OLD, "--remotes=origin")])
 
     def test_a_force_push_over_a_commit_this_clone_lacks_falls_back_to_the_remote_refs(self):
         calls = []
