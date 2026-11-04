@@ -16,7 +16,12 @@
   "signature": {
     "algorithm": "ed25519",
     "context": "soyeht-update-manifest-v1\n",
-    "publicKeys": []
+    "publicKeys": [
+      {
+        "id": "release-1",
+        "key": "/VOs3RYfrORMEVgvTs0NCHrk9NgdK9ShxMw8Xqrvo1E="
+      }
+    ]
   },
   "channels": [
     "stable"

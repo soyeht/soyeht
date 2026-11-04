@@ -1,5 +1,5 @@
 use super::*;
-use crate::web::test_support::{create_web_pane, next_json, reply, request, temp_root};
+use crate::web::test_support::{connect_local, create_web_pane, next_json, request, temp_root};
 use crate::{dispatch::Outcome, outbox, ports::testing::FixedClock};
 use serde_json::json;
 use soyeht_protocol::frame::Frame;
@@ -31,24 +31,7 @@ fn assert_human_args(command: &Value, args: Value) {
 }
 
 async fn connect(core: &mut Core, capabilities: Value) -> (String, outbox::Receiver) {
-    let (sender, mut receiver) = outbox::channel();
-    let connection = core.connect(true, false, sender).unwrap();
-    let challenge = next_json(&mut receiver).await;
-    assert_eq!(challenge["method"], "auth.challenge");
-    let welcome = reply(
-        core,
-        &connection,
-        request(
-            1,
-            "hello",
-            json!({
-                "client":"web-host-test","clientVersion":"1","protocolVersion":1,
-                "capabilities":capabilities
-            }),
-        ),
-    );
-    assert_eq!(welcome["role"], "human_local");
-    (connection, receiver)
+    connect_local(core, "web-host-test", capabilities).await
 }
 
 #[tokio::test]

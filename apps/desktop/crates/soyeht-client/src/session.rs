@@ -3,6 +3,7 @@
 
 use crate::{
     Error, Result,
+    device::Credential,
     event::Event,
     rpc::{Kind, Rpc},
     snapshot::Snapshot,
@@ -12,15 +13,16 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    ClientCapability, EventName, EventsSubscribeParams, PaneClosedEvent, Request, RpcError,
-    StateSnapshotParams, StateSnapshotResult, StreamInfo, WebCommandParams, Welcome, client_policy,
-    frame::Frame, handshake, method, snapshot::SnapshotAssembler,
+    AuthChallengeEvent, ClientCapability, EventName, EventsSubscribeParams, HelloParams,
+    PaneClosedEvent, Request, RpcError, StateSnapshotParams, StateSnapshotResult, StreamInfo,
+    WebCommandParams, Welcome, client_policy, frame::Frame, handshake, method,
+    snapshot::SnapshotAssembler,
 };
 use std::{
     io::Read,
     sync::{
         Arc, Mutex, PoisonError,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread::JoinHandle,
@@ -39,6 +41,12 @@ pub struct Session {
     reader: JoinHandle<Error>,
     /// This connection answers `web.command`, and says so in `hello`.
     hosting: bool,
+    /// The engine's greeting, which a device signs in `hello`.
+    challenge: AuthChallengeEvent,
+    /// The welcome was accepted (for a device, its proof and role too). Until then the reader answers
+    /// the requests and drops everything else the other end sends, so a server that has not proved
+    /// itself cannot put state in the replica.
+    accepted: Arc<AtomicBool>,
 }
 
 impl Session {
@@ -60,13 +68,15 @@ impl Session {
         let greeting = read_greeting(&mut reader);
         // Dropping the sender ends the watchdog, greeted or not.
         drop(greeted);
-        greeting?;
+        let challenge = greeting?;
 
         let hosting = host.is_some();
         let rpc = Arc::new(Rpc::new(writer, close, 1));
         let assembly = Arc::new(Mutex::new(SnapshotAssembler::default()));
         let cursor = Arc::new(AtomicU64::new(0));
+        let accepted = Arc::new(AtomicBool::new(false));
         let routing = Router {
+            accepted: Arc::clone(&accepted),
             rpc: Arc::clone(&rpc),
             assembly: Arc::clone(&assembly),
             cursor: Arc::clone(&cursor),
@@ -81,6 +91,8 @@ impl Session {
             cursor,
             reader: thread,
             hosting,
+            challenge,
+            accepted,
         })
     }
 
@@ -90,10 +102,37 @@ impl Session {
         if self.hosting {
             hello.capabilities = Some(vec![ClientCapability::WebHost]);
         }
-        let hello = Request::Hello(hello);
-        let welcome: Welcome = serde_json::from_value(self.rpc.call(&hello)?)?;
+        let welcome = self.hello(hello)?;
         handshake::expect_welcome(&welcome, false)?;
+        self.accept(&welcome, client);
+        self.snapshot()
+    }
+
+    /// As [`Session::handshake`] for a paired device: it proves itself with its key, and the engine
+    /// has to prove itself with the key the pairing link named (ADR 0132).
+    pub fn handshake_device(&self, client: &str, credential: &Credential) -> Result<Snapshot> {
+        let (hello, expected) =
+            credential.hello(client, env!("CARGO_PKG_VERSION"), &self.challenge)?;
+        let welcome = self.hello(hello)?;
+        expected.check(&welcome)?;
+        handshake::expect_device_welcome(&welcome)?;
+        self.accept(&welcome, client);
+        self.snapshot()
+    }
+
+    /// The welcome passed every check: the engine may now push events.
+    fn accept(&self, welcome: &Welcome, client: &str) {
         self.rpc.identify(welcome.role.clone(), client);
+        self.accepted.store(true, Ordering::Release);
+    }
+
+    fn hello(&self, hello: HelloParams) -> Result<Welcome> {
+        Ok(serde_json::from_value(
+            self.rpc.call(&Request::Hello(hello))?,
+        )?)
+    }
+
+    fn snapshot(&self) -> Result<Snapshot> {
         let result: StateSnapshotResult = serde_json::from_value(
             self.rpc
                 .call(&Request::StateSnapshot(StateSnapshotParams {}))?,
@@ -118,15 +157,18 @@ impl Session {
     }
 }
 
-fn read_greeting(reader: &mut impl Read) -> Result<()> {
+fn read_greeting(reader: &mut impl Read) -> Result<AuthChallengeEvent> {
     let Some(Frame::Json(bytes)) = Frame::read_from(reader)? else {
         return Err(Error::Invalid("the engine did not greet"));
     };
-    handshake::expect_challenge(&serde_json::from_slice(&bytes)?)?;
-    Ok(())
+    Ok(handshake::expect_challenge(&serde_json::from_slice(
+        &bytes,
+    )?)?)
 }
 
 struct Router {
+    /// See [`Session::accepted`].
+    accepted: Arc<AtomicBool>,
     rpc: Arc<Rpc>,
     assembly: Arc<Mutex<SnapshotAssembler>>,
     cursor: Arc<AtomicU64>,
@@ -156,6 +198,8 @@ impl Router {
     fn route(&mut self, frame: Frame) -> Result<()> {
         match frame {
             Frame::Json(bytes) => self.message(serde_json::from_slice(&bytes)?),
+            // Output of a terminal belongs to a subscription, which only an accepted engine has.
+            Frame::Terminal { .. } if !self.accepted.load(Ordering::Acquire) => Ok(()),
             Frame::Terminal {
                 pane_ref,
                 generation,
@@ -172,6 +216,11 @@ impl Router {
 
     fn message(&mut self, message: Value) -> Result<()> {
         if let Some(name) = message.get("method").and_then(Value::as_str) {
+            // Before the welcome is accepted the other end is not known to be the engine: its
+            // notifications and requests are ignored, only the answers to ours are read.
+            if !self.accepted.load(Ordering::Acquire) {
+                return Ok(());
+            }
             match message.get("id") {
                 None => {
                     self.notification(name, message.get("params").cloned().unwrap_or(Value::Null))?
