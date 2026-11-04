@@ -6,7 +6,7 @@ use serde_json::Value;
 use soyeht_process::{Limits, Output};
 use soyeht_protocol::{Comment, Subitem, Task, TaskExecutor};
 use soyeht_store::tasks::DispatchCheckpoint;
-use std::{path::Path, process::Command, time::Duration};
+use std::{ffi::OsStr, path::Path, process::Command, time::Duration};
 
 const OUTPUT_LIMIT: usize = 1_048_576;
 /// `wt list` reads every worktree's status.
@@ -60,10 +60,31 @@ impl CommandWorktree {
     }
 
     fn wt(&self, repository: &Path, args: &[&str], timeout: Duration) -> Result<Output> {
+        let path = crate::agents::environment::launch_search_path();
+        self.wt_on(&path, repository, args, timeout)
+    }
+
+    /// Runs `wt` and the git it starts with `path` as their search path: the launch `PATH`, so an
+    /// engine started at login finds the `wt` the person's shell finds (ADR 0135).
+    fn wt_on(
+        &self,
+        path: &OsStr,
+        repository: &Path,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<Output> {
         // `wt` starts git itself, so the check comes before `wt` does.
-        soyeht_process::require_git().map_err(errors::worktree_process)?;
+        let probe = soyeht_platform::git::Probe {
+            path: path.to_owned(),
+            ..soyeht_platform::git::Probe::system()
+        };
+        soyeht_process::require_git_with(&probe).map_err(errors::worktree_process)?;
         let mut command = Command::new(&self.executable);
-        command.arg("-C").arg(repository).args(args);
+        command
+            .env("PATH", path)
+            .arg("-C")
+            .arg(repository)
+            .args(args);
         bounded_command(command, timeout)
     }
 
@@ -492,6 +513,36 @@ mod tests {
                 "remove --no-delete-branch --no-hooks --foreground --format=json task/ws-9"
             )
         );
+    }
+
+    /// An engine started at login has the user manager's `PATH`, which lacks the folder a login
+    /// shell adds. `wt` is found on the launch `PATH` alone (ADR 0135).
+    #[cfg(unix)]
+    #[test]
+    fn wt_is_found_on_the_launch_path_when_the_process_path_lacks_it() {
+        let folder = TestDirectory::new();
+        let wt = folder.path().join("wt");
+        fs::write(&wt, "#!/bin/sh\necho '{\"schema\":2,\"items\":[]}'\n").unwrap();
+        let mut permissions = fs::metadata(&wt).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
+        fs::set_permissions(&wt, permissions).unwrap();
+        let process_path = std::env::var_os("PATH").unwrap_or_default();
+        assert!(
+            !std::env::split_paths(&process_path).any(|entry| entry == folder.path()),
+            "the process PATH does not name the folder"
+        );
+        let adapter = CommandWorktree::using(soyeht_platform::worktrunk::PROGRAM.into());
+        let repository = TestDirectory::new();
+        let launch_path = std::env::join_paths(
+            std::iter::once(folder.path().to_owned()).chain(std::env::split_paths(&process_path)),
+        )
+        .unwrap();
+        let found = adapter.wt_on(&launch_path, repository.path(), &["list"], LIST_TIMEOUT);
+        assert!(found.unwrap().status.success());
+        // On a search path that lacks the folder the program cannot start.
+        let without = std::env::join_paths([repository.path()]).unwrap();
+        let missing = adapter.wt_on(&without, repository.path(), &["list"], LIST_TIMEOUT);
+        assert!(missing.is_err(), "no `wt` on a path without the folder");
     }
 
     #[test]
