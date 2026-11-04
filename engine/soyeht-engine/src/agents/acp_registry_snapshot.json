@@ -67,11 +67,11 @@
     {
       "id": "registry.claude-acp",
       "name": "Claude Agent",
-      "version": "0.77.0",
+      "version": "0.100.0",
       "command": "npx",
       "args": [
         "--yes",
-        "@agentclientprotocol/claude-agent-acp@0.77.0"
+        "@agentclientprotocol/claude-agent-acp@0.100.0"
       ],
       "environment": [],
       "userDirectories": [],
