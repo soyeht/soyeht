@@ -17,6 +17,7 @@ struct SoyehtMacApp: App {
   @State private var engineService = EngineServiceSetup()
   @State private var updateChecker = UpdateChecker()
   @State private var diagnosticsCopy = DiagnosticsCopy()
+  @State private var crashNotice = CrashNotice()
   private let webHost: MacWebHost
 
   init() {
@@ -123,22 +124,22 @@ struct SoyehtMacApp: App {
       .environment(engineService)
       .environment(updateChecker)
       .environment(diagnosticsCopy)
+      .environment(crashNotice)
       .preferredColorScheme(themeStore.activeTheme.palette.isDark ? .dark : .light)
       .task { client.start() }
       .task { updateChecker.start() }
       .task { await engineService.refresh() }
+      .task { await crashNotice.start() }
       .alert(
-        "Keep Soyeht running in the background?",
+        ClientPolicy.loginStartQuestion,
         isPresented: Binding(
           get: { engineService.shouldAsk && !client.connected },
           set: { _ in })
       ) {
-        Button("Turn on") { Task { await engineService.enable() } }
-        Button("Not now", role: .cancel) { engineService.decline() }
+        Button(ClientPolicy.loginStartTurnOn) { Task { await engineService.enable() } }
+        Button(ClientPolicy.loginStartNotNow, role: .cancel) { engineService.decline() }
       } message: {
-        Text(
-          "Soyeht's engine keeps your terminals and agents running when this window is closed, "
-            + "and starts when you log in. You can turn it on later from Preferences.")
+        Text(verbatim: ClientPolicy.loginStartSummary + " " + ClientPolicy.loginStartLater)
       }
   }
 

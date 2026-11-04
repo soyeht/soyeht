@@ -177,6 +177,17 @@ class StepListTests(unittest.TestCase):
         fast = listed_steps("fast", ENGINE_CORE)
         self.assertLess(fast.index("engine:test-changed"), fast.index("engine:build-product"))
 
+    def test_the_swift_tests_build_every_engine_program_they_start(self):
+        # The e2e steps can run on another host, so the Swift steps build what their tests start.
+        swift_tests = "".join(
+            path.read_text() for path in (ROOT / "apps/shared/Tests").rglob("*ConnectionTests.swift"))
+        self.assertIn('"soyeht-engine-test"', swift_tests)
+        text = (ROOT / "scripts/check_all.sh").read_text()
+        self.assertRegex(text, r"(?m)^step swift full swift:engine-binaries build_engine_programs$")
+        self.assertRegex(
+            text, r"(?m)^build_engine_programs\(\) {\n    build_product_programs && build_test_engine\n}$")
+        self.assertRegex(text, r"(?m)^build_test_engine\(\) {\n.*--bin soyeht-engine-test\n}$")
+
     def test_the_end_to_end_set_runs_on_the_remote_host_in_file_order(self):
         # remote_gate.sh runs the remote steps of one `check_all.sh --only`, which keeps file order,
         # so the builds follow the engine tests there only while both sit in a remote area.

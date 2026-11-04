@@ -39,6 +39,37 @@ pub(super) struct WebMutation {
 }
 
 impl Core {
+    /// The answer to `hello`. The web host is asked for pages as soon as it is the host, which is under
+    /// this lock hold; its welcome is queued under the same hold, so that the engine never sends a
+    /// `web.command` to a connection before its welcome (a client ignores what comes first). Any other
+    /// connection's welcome is sent as every reply is.
+    pub(crate) fn welcome(
+        &mut self,
+        connection: &str,
+        id: &Value,
+        welcome: Value,
+    ) -> Result<crate::dispatch::Outcome> {
+        let hosts = self
+            .clients
+            .get(connection)
+            .is_some_and(|client| client.web_host);
+        if !hosts {
+            return Ok(crate::dispatch::Outcome::Reply(welcome));
+        }
+        let frame = model::response(soyeht_protocol::method::HELLO, id.clone(), welcome)?;
+        let client = errors::invariant(
+            self.clients.get(connection),
+            "Handshake connection disappeared",
+        )?;
+        if client.outbox.send(frame) {
+            Ok(crate::dispatch::Outcome::Queued)
+        } else {
+            Err(errors::internal(
+                "The web host's connection closed during its handshake",
+            ))
+        }
+    }
+
     pub(crate) fn attachment_chunk(
         &mut self,
         connection: &str,

@@ -84,9 +84,26 @@ A `.dmg` is what a person expects ("drag to Applications"), it can be signed, no
 **stapled itself** (a zip cannot carry a ticket), and it keeps the app's extended attributes and
 links exactly. The app inside is notarized and stapled first, so the ticket also travels with the
 app when it is copied out and the Mac is offline. The image is made with `hdiutil create
--srcfolder` and no Finder script: it has the app and a link to `/Applications` and no custom
-layout, which would need a GUI session. A zip may still be right for the update check (ADR 0122);
+-srcfolder` in the LZMA format (`ULMO`, read since macOS 10.15; the app needs 15) and no Finder
+script: it has the app and a link to `/Applications` and no custom layout, which would need a
+GUI session. A zip may still be right for the update check (ADR 0122);
 this ADR does not decide that.
+
+### The app's executable is stripped, and its symbols are kept apart
+
+Xcode's `build` action does not strip, so the app's executable carried its whole symbol table:
+40 MB of a 66 MB file, because the dictation engine's C++ and the Swift packages export tens of
+thousands of long names. The script runs `dsymutil` on the built executable first, which writes
+`dist/symbols/soyeht-<version>-macos-aarch64.dSYM.zip` (the UUID is the executable's, so a crash
+report names its frames with it), then `strip -u -r`, the command of `STRIP_STYLE = all`, on the
+copy that ships, before the signing step. Nothing in the app looks a symbol up by name
+(`dlsym`, `NSClassFromString` and `callStackSymbols` are not used). The dependencies were looked
+at too: `NSClassFromString` in mlx-swift-lm, and `dlsym` in swift-nio and MLX, look up type
+metadata or symbols of other images (system libraries, the Metal kernels), not the symbol table of
+the app's own executable that `strip` removes. The symbols file follows the
+rule of ADR 0127 for the programs: a release keeps the unstripped build of every version it ships.
+`DEAD_CODE_STRIPPING` stays off: it saved 0.5 MB of the stripped file, and the dictation engine's
+static registrations are not worth the risk for that.
 
 ### The app is called "Soyeht Next"
 

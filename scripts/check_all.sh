@@ -300,8 +300,18 @@ step engine both engine:clippy in_dir engine cargo clippy --locked --workspace -
 # A shipping build checks nothing against the contract; lint it and the checked one.
 step engine both engine:clippy-contract-checks in_dir engine cargo clippy --locked --workspace --all-targets --features soyeht-engine/contract-checks -- -D warnings
 # The engine is built with the checks on (ADR 0090), so the tests that start it and the
-# end-to-end runs also check its events and results against the contract.
-step engine both engine:build in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
+# end-to-end runs also check its events and results against the contract. The engine with the
+# test hooks (ADR 0091) is its own program, which only the suites and the Swift tests start.
+build_product_programs() {
+    in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
+}
+build_test_engine() {
+    in_dir engine cargo build --locked -p soyeht-engine --features test-hooks,contract-checks --bin soyeht-engine-test
+}
+build_engine_programs() {
+    build_product_programs && build_test_engine
+}
+step engine both engine:build build_product_programs
 # Integration tests (the crates' tests/ directories, which start sibling binaries) run here only.
 step engine full engine:test in_dir engine cargo test --locked --workspace --features soyeht-engine/contract-checks
 # Unit tests (src/ of libraries and binaries) of the changed crates and their reverse dependencies.
@@ -333,8 +343,8 @@ step always both tcc-guard:unit uv run python -m unittest discover -s scripts -p
 # one of them and just before the suites: the product programs without the hooks (the contract
 # checks stay on, ADR 0090), then the engine with the test hooks (ADR 0091), which the editor
 # acceptance starts. No product build has it.
-step e2e both engine:build-product in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
-step e2e both engine:build-test-engine in_dir engine cargo build --locked -p soyeht-engine --features test-hooks,contract-checks --bin soyeht-engine-test
+step e2e both engine:build-product build_product_programs
+step e2e both engine:build-test-engine build_test_engine
 step e2e both e2e:tcc-snapshot uv run python scripts/tcc_guard.py snapshot .cache/tcc-guard.json
 step e2e both e2e:core uv run python scripts/e2e.py --report .cache/e2e.json
 step e2e both e2e:agents uv run python scripts/e2e_agents.py --report .cache/e2e-agents.json
@@ -360,8 +370,10 @@ step always both mac-view-colors:unit uv run python -m unittest discover -s scri
 step always both mac-view-colors:check uv run python scripts/check_mac_view_colors.py
 step swift both swift:format-lint swift format lint --strict --recursive apps/shared/Sources apps/shared/Tests apps/dictation/Sources apps/dictation/Tests apps/mac/Sources apps/ios/Sources
 # EngineConnectionTests and PhoneConnectionTests launch the engine binaries from engine/target,
-# so the Swift tests need them built (with the contract checks on, like every engine build).
-step swift full swift:engine-binaries in_dir engine cargo build --locked --workspace --features soyeht-engine/contract-checks
+# so the Swift tests need them built (with the contract checks on, like every engine build), the
+# engine with the test hooks included: PhoneConnectionTests starts it. When the e2e steps run on
+# another host, nothing else here rebuilds it, and an old one fails a protocol change.
+step swift full swift:engine-binaries build_engine_programs
 step swift full swift:test-shared swift test --package-path apps/shared
 # The fast stand-in compiles the shared package without running its tests.
 step swift fast swift:test-shared-build swift build --package-path apps/shared

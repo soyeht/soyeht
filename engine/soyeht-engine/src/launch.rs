@@ -47,6 +47,11 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
         log: ENGINE_LOG,
     });
     let hooks = hooks(&directory);
+    // The launch `PATH` remembered from the last start, then the person's own CLI found on it:
+    // the first agent pane does not wait for either. Here and not in `Core::open`, so that a
+    // unit test that opens a Core never runs the machine's programs.
+    crate::agents::environment::warm_launch_path(&directory);
+    crate::agents::user_cli::warm();
     if !listen.is_empty() {
         return server::run(Config {
             directory,

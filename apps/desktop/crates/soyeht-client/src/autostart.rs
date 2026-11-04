@@ -6,15 +6,28 @@
 //! window), use the same data directory the window resolved, and are started once: a lock in
 //! that directory serialises two windows, and the endpoint is checked again under it.
 //!
-//! The window leaves an engine alone when `SOYEHT_ENGINE_SOCKET` names one. The decisions are
-//! here, behind [`Host`], so they are tested without starting a process.
+//! When the profile's services are registered to start at login (contract 13, section 3), the
+//! window asks the service manager to start them (`soyeht service start`) before it starts a
+//! program of its own, and starts none when that request is accepted: an engine of its own beside
+//! a registered service would make the service fail on the engine's lock and restart every second
+//! (ADR 0114). It starts its own programs only when no service is registered or the service
+//! manager refused the request.
+//!
+//! The window leaves an engine alone when `SOYEHT_ENGINE_SOCKET` names one, and starts nothing
+//! after an uninstall (ADR 0131). The decisions are here, behind [`Host`], so they are tested
+//! without starting a process.
 
-use crate::profile::{SOCKET_ENV, data_directory_of_profile, socket_override};
+use crate::{
+    diagnostics::Failure,
+    login_start::{self, Registration},
+    profile::{SOCKET_ENV, data_directory_of_profile, socket_override},
+};
 use soyeht_platform::{
     fs, log,
     process::detached::{Service, create_logs_directory, spawn_service},
 };
 use soyeht_protocol::{
+    client_policy::SERVICE_COMMAND_MS,
     data_directory::RESTART_SUPERVISOR_FLAG,
     profile::{ENGINE_LOG, PTYD_LOG, PTYD_SOCKET},
 };
@@ -34,8 +47,15 @@ const SUPERVISOR_PROGRAM: &str = "soyeht-ptyd";
 const LOCK_NAME: &str = "desktop-start.lock";
 /// How often a start looks at whether the engine answers, and how many looks it takes before it
 /// gives up: 30 seconds, which a release engine on a busy host does not use.
-const POLL: Duration = Duration::from_millis(100);
+const POLL_MS: u64 = 100;
+const POLL: Duration = Duration::from_millis(POLL_MS);
 const POLLS: u32 = 300;
+/// The longest a window that lost the race for the lock keeps looking, as a cap: it takes the
+/// lock itself as soon as the winner lets it go, so it waits this long only for a winner that
+/// holds it for as long as it can. That is `service status` and a refused `service start`, each
+/// within `serviceCommandMs`, then the two waits of `start_programs` (the supervisor, then the
+/// engine); a start that succeeds takes less (a status, a start, one wait).
+const FOLLOWER_POLLS: u32 = 2 * POLLS + (2 * SERVICE_COMMAND_MS / POLL_MS) as u32;
 
 /// Whether this window starts an engine when it finds none.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,6 +130,9 @@ pub enum StartError {
     /// An uninstall ended the programs while this window was open, so it does not start them
     /// again.
     Uninstalled,
+    /// Only some of the profile's services are registered: the window starts none of its own
+    /// programs beside them, and says how to repair the registration.
+    PartialService,
 }
 
 impl StartError {
@@ -123,6 +146,7 @@ impl StartError {
             Self::TimedOut => "timed_out",
             Self::Stopped => "stopped",
             Self::Uninstalled => "uninstalled",
+            Self::PartialService => "partial_service",
         }
     }
 }
@@ -152,6 +176,11 @@ impl fmt::Display for StartError {
                 "Soyeht was uninstalled, so this window does not start the engine again. \
                  Close it and open Soyeht to start afresh.",
             ),
+            Self::PartialService => formatter.write_str(
+                "Soyeht's start at login is only partly set up, so this window does not start \
+                 the engine beside it. Open Preferences, Setup, and turn on Start Soyeht at \
+                 login to repair it.",
+            ),
         }
     }
 }
@@ -175,6 +204,12 @@ pub(crate) trait Host {
     /// Whether an uninstall ended the programs while this window was open.
     fn uninstalled(&self) -> bool;
     fn supervisor_reachable(&self) -> bool;
+    /// How much of the login start the profile's services have. A window that cannot tell (no
+    /// `soyeht` program beside it) says none.
+    fn service_registration(&self) -> Registration;
+    /// Asks the service manager to start what is registered. False when it did not accept the
+    /// request.
+    fn start_service(&self) -> bool;
     fn program_exists(&self, path: &Path) -> bool;
     /// Takes the lock that serialises starts: `None` when another start holds it. The lock
     /// ends when the returned value is dropped.
@@ -198,9 +233,10 @@ pub(crate) trait Started {
 }
 
 /// Makes sure an engine answers: returns at once when one does, waits for a start that another
-/// window is making, and otherwise starts the supervisor (when it is not running) and the
-/// engine and waits until the engine answers. It starts nothing when an uninstall ended the
-/// programs while the window was open: the person asked for them to go.
+/// window is making, and otherwise asks a registered service to start or, when there is none (or
+/// it refused), starts the supervisor (when it is not running) and the engine itself and waits
+/// until the engine answers. It starts nothing when an uninstall ended the programs while the
+/// window was open: the person asked for them to go.
 pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.engine_reachable() {
         return Ok(());
@@ -208,27 +244,66 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     if host.uninstalled() {
         return Err(StartError::Uninstalled);
     }
-    let programs = plan
-        .programs
-        .as_deref()
-        .ok_or(StartError::MissingProgram(ENGINE_PROGRAM))?;
-    let engine = program_path(host, programs, ENGINE_PROGRAM)?;
-    let Some(_lock) = host
-        .lock()
-        .map_err(|error| StartError::Lock(error.kind()))?
-    else {
-        // Another window is starting the engine.
-        return wait_until(
-            host,
-            ENGINE_PROGRAM,
-            || host.engine_reachable(),
-            &mut || false,
-        );
+    // One window decides at a time (ADR 0102), and only the one that holds the lock asks the
+    // service manager, which can take a while to answer. A window that does not get it looks again
+    // at every poll: the winner ends by bringing the engine up, or by letting go of the lock when
+    // its start failed, and then this window decides for itself (and says at once what stopped
+    // the winner, if the same thing stops it).
+    let mut looks = 0;
+    let _lock = loop {
+        match host
+            .lock()
+            .map_err(|error| StartError::Lock(error.kind()))?
+        {
+            Some(lock) => break lock,
+            None if host.engine_reachable() => return Ok(()),
+            None if looks >= FOLLOWER_POLLS => return Err(StartError::TimedOut),
+            None if !host.pause() => return Err(StartError::Stopped),
+            None => looks += 1,
+        }
     };
     // The engine may have come up while this window waited for the lock.
     if host.engine_reachable() {
         return Ok(());
     }
+    // The service started, so the engine is its to bring up; a start that failed leaves the
+    // window to start its own. A service starts the programs from the folder it was registered
+    // with, so the folder of this window needs to hold them only for a start of its own. With
+    // only part of the services registered the window starts nothing: its own programs would
+    // run beside a unit that starts at the next login and fails on their lock.
+    match host.service_registration() {
+        Registration::Full if host.start_service() => return wait_for_engine(host),
+        Registration::Partial => return Err(StartError::PartialService),
+        Registration::Full | Registration::None => {}
+    }
+    let (programs, engine) = programs_of(plan, host)?;
+    start_programs(host, &programs, &engine)
+}
+
+/// Waits until the engine answers, for one the service manager is starting.
+fn wait_for_engine(host: &impl Host) -> Result<(), StartError> {
+    wait_until(
+        host,
+        ENGINE_PROGRAM,
+        POLLS,
+        || host.engine_reachable(),
+        &mut || false,
+    )
+}
+
+/// The folder of this window's programs and the engine in it.
+fn programs_of(plan: &Plan, host: &impl Host) -> Result<(PathBuf, PathBuf), StartError> {
+    let programs = plan
+        .programs
+        .clone()
+        .ok_or(StartError::MissingProgram(ENGINE_PROGRAM))?;
+    let engine = program_path(host, &programs, ENGINE_PROGRAM)?;
+    Ok((programs, engine))
+}
+
+/// Starts the supervisor, when it does not answer, and the engine, from `programs`, and waits
+/// until the engine answers.
+fn start_programs(host: &impl Host, programs: &Path, engine: &Path) -> Result<(), StartError> {
     // A supervisor that answers needs no program next to the window.
     let supervisor = if host.supervisor_reachable() {
         None
@@ -242,6 +317,7 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
         wait_until(
             host,
             SUPERVISOR_PROGRAM,
+            POLLS,
             || host.supervisor_reachable(),
             &mut || started.exited(),
         )?;
@@ -249,16 +325,11 @@ pub(crate) fn ensure(plan: &Plan, host: &impl Host) -> Result<(), StartError> {
     // The engine keeps the supervisor it was given up, when the supervisor can be found.
     let restart = program_file(programs, SUPERVISOR_PROGRAM);
     let restart = host.program_exists(&restart).then_some(restart);
-    let mut started = launch(
-        host,
-        &engine,
-        ENGINE_PROGRAM,
-        ENGINE_LOG,
-        restart.as_deref(),
-    )?;
+    let mut started = launch(host, engine, ENGINE_PROGRAM, ENGINE_LOG, restart.as_deref())?;
     wait_until(
         host,
         ENGINE_PROGRAM,
+        POLLS,
         || host.engine_reachable(),
         &mut || started.exited(),
     )
@@ -297,10 +368,11 @@ fn launch(
 fn wait_until(
     host: &impl Host,
     name: &'static str,
+    polls: u32,
     ready: impl Fn() -> bool,
     exited: &mut dyn FnMut() -> bool,
 ) -> Result<(), StartError> {
-    for _ in 0..POLLS {
+    for _ in 0..polls {
         if ready() {
             return Ok(());
         }
@@ -346,6 +418,13 @@ impl Watch {
             baseline,
             had_engine: false,
         }
+    }
+
+    /// The record in the data directory is the person's own doing (they turned the login start
+    /// off in this window, which ends the services with an uninstall): the window takes it as
+    /// its baseline and starts afresh.
+    pub(crate) fn accept_current(&mut self) {
+        self.baseline = self.directory.as_deref().and_then(record);
     }
 
     /// A connection was made: an engine answers this window.
@@ -396,6 +475,30 @@ impl Host for Local<'_> {
 
     fn supervisor_reachable(&self) -> bool {
         soyeht_platform::local::connect(&self.plan.directory.join(PTYD_SOCKET)).is_ok()
+    }
+
+    fn service_registration(&self) -> Registration {
+        match login_start::status() {
+            Ok(registration) => registration,
+            // No `soyeht` program beside the window: a copy with no service to ask.
+            Err(Failure::Unavailable) => Registration::None,
+            Err(failure) => {
+                // None is the safe answer: the window starts its own programs, as it did before
+                // a service could be registered.
+                log::failure("desktop.service_status_failed", &failure);
+                Registration::None
+            }
+        }
+    }
+
+    fn start_service(&self) -> bool {
+        match login_start::start(&login_start::real) {
+            Ok(()) => true,
+            Err(failure) => {
+                log::failure("desktop.service_start_failed", &failure);
+                false
+            }
+        }
     }
 
     fn program_exists(&self, path: &Path) -> bool {

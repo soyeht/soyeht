@@ -7,7 +7,7 @@
 //! published TypeScript SDK strips the draft `subagents` client capability, so
 //! the adapters also accept the JetBrains AIR `nativeSubagentSessions`
 //! capability, which travels in `_meta`. `client::initialize_params` advertises both.
-use crate::Error;
+use crate::{Error, config::Options};
 use serde_json::Value;
 
 const NAME_CHARS: usize = 256;
@@ -41,6 +41,17 @@ pub enum Lifecycle {
 pub struct Report {
     pub session_id: String,
     pub model: Option<String>,
+}
+
+/// The model a subagent session reports as its own configuration. Claude adapters from 0.100 on
+/// report it so, as the `model` option of the subagent's session, and no longer on the spawning
+/// tool call ([`report`]).
+pub fn configured_model(session_id: &str, options: &Options) -> Option<Report> {
+    let model = options.current_model()?.trim();
+    (!model.is_empty()).then(|| Report {
+        session_id: session_id.into(),
+        model: Some(bounded(model, MODEL_CHARS)),
+    })
 }
 
 fn bounded(value: &str, limit: usize) -> String {
@@ -150,6 +161,30 @@ mod tests {
             })
         );
         assert_eq!(report(&json!({"toolCallId":"toolu_2"})), None);
+    }
+
+    #[test]
+    fn a_subagent_reports_its_model_as_the_model_option_of_its_session() {
+        let options = |model: &str| {
+            Options::from_response(&json!({"configOptions":[
+                {"id":"mode","name":"Mode","category":"mode","type":"select","currentValue":"auto",
+                 "options":[{"value":"auto","name":"Auto"}]},
+                {"id":"model","name":"Model","category":"model","type":"select","currentValue":model,
+                 "options":[{"value":model,"name":"Named"}]}]}))
+            .unwrap()
+        };
+        assert_eq!(
+            configured_model("child", &options("claude-model")),
+            Some(Report {
+                session_id: "child".into(),
+                model: Some("claude-model".into())
+            })
+        );
+        let none = Options::from_response(&json!({"configOptions":[
+            {"id":"mode","name":"Mode","category":"mode","type":"select","currentValue":"auto",
+             "options":[{"value":"auto","name":"Auto"}]}]}))
+        .unwrap();
+        assert_eq!(configured_model("child", &none), None);
     }
 
     #[test]

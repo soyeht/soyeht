@@ -155,10 +155,10 @@ fn parse_summary(document: &Value) -> Result<ParsedReading, Failure> {
         .or_else(|| ratio(&document["teamUsage"]["pooled"]))
         .unwrap_or(0.0);
     let resets_at = document["billingCycleEnd"].as_str().and_then(iso_text);
-    Ok(ParsedReading {
-        primary: percent_window(percent, resets_at, "Billing cycle")?,
-        secondary: None,
-    })
+    Ok(ParsedReading::windows(
+        percent_window(percent, resets_at, "Billing cycle")?,
+        None,
+    ))
 }
 
 #[cfg(test)]
@@ -187,14 +187,28 @@ mod tests {
         let total = json!({"billingCycleEnd": "2026-10-20T00:00:00.000Z",
             "individualUsage": {"plan": {"totalPercentUsed": 36.5, "autoPercentUsed": 10, "apiPercentUsed": 90}}});
         let reading = parse_summary(&total).unwrap();
-        assert_eq!(reading.primary.used, 0.365);
-        assert_eq!(reading.primary.resets_at, "2026-10-20T00:00:00Z");
+        assert_eq!(reading.primary.clone().unwrap().used, 0.365);
+        assert_eq!(
+            reading.primary.clone().unwrap().resets_at,
+            "2026-10-20T00:00:00Z"
+        );
         let mean =
             json!({"individualUsage": {"plan": {"autoPercentUsed": 10, "apiPercentUsed": 30}}});
-        assert!((parse_summary(&mean).unwrap().primary.used - 0.2).abs() < 1e-9);
+        assert!((parse_summary(&mean).unwrap().primary.clone().unwrap().used - 0.2).abs() < 1e-9);
         let cents = json!({"individualUsage": {"plan": {"used": 500, "limit": 2000}}});
-        assert_eq!(parse_summary(&cents).unwrap().primary.used, 0.25);
+        assert_eq!(
+            parse_summary(&cents).unwrap().primary.clone().unwrap().used,
+            0.25
+        );
         let pooled = json!({"teamUsage": {"pooled": {"used": 1, "limit": 4}}});
-        assert_eq!(parse_summary(&pooled).unwrap().primary.used, 0.25);
+        assert_eq!(
+            parse_summary(&pooled)
+                .unwrap()
+                .primary
+                .clone()
+                .unwrap()
+                .used,
+            0.25
+        );
     }
 }

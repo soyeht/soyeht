@@ -3997,6 +3997,8 @@ pub enum UsageProvider {
     Codex,
     #[serde(rename = "cursor")]
     Cursor,
+    #[serde(rename = "opencode")]
+    Opencode,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageState {
@@ -4033,6 +4035,8 @@ pub enum UsageUnavailableReason {
     NoAccess,
     #[serde(rename = "source_failed")]
     SourceFailed,
+    #[serde(rename = "plan_expired")]
+    PlanExpired,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageSource {
@@ -4056,6 +4060,12 @@ pub enum UsageSource {
     CursorAppLogin,
     #[serde(rename = "cursor_browser_cookies")]
     CursorBrowserCookies,
+    #[serde(rename = "opencode_go_allowance")]
+    OpencodeGoAllowance,
+    #[serde(rename = "opencode_zai_plan")]
+    OpencodeZaiPlan,
+    #[serde(rename = "opencode_local_history")]
+    OpencodeLocalHistory,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UsageWindow {
@@ -4065,6 +4075,15 @@ pub struct UsageWindow {
     pub resets_at: String,
     #[serde(rename = "label")]
     pub label: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct UsageActivity {
+    #[serde(rename = "label")]
+    pub label: String,
+    #[serde(rename = "tokens")]
+    pub tokens: i64,
+    #[serde(rename = "costUsd", skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UsageReading {
@@ -4078,6 +4097,8 @@ pub struct UsageReading {
     pub primary: Option<UsageWindow>,
     #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
     pub secondary: Option<UsageWindow>,
+    #[serde(rename = "activity", skip_serializing_if = "Option::is_none")]
+    pub activity: Option<UsageActivity>,
     #[serde(rename = "source")]
     pub source: UsageSource,
     #[serde(rename = "fetchedAt")]
@@ -4120,6 +4141,8 @@ pub struct UsageChangedEvent {
     pub primary: Option<UsageWindow>,
     #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
     pub secondary: Option<UsageWindow>,
+    #[serde(rename = "activity", skip_serializing_if = "Option::is_none")]
+    pub activity: Option<UsageActivity>,
     #[serde(rename = "source")]
     pub source: UsageSource,
     #[serde(rename = "fetchedAt")]
@@ -8538,6 +8561,8 @@ pub struct UsageChangedDraft {
     pub primary: Option<UsageWindow>,
     #[serde(rename = "secondary", skip_serializing_if = "Option::is_none")]
     pub secondary: Option<UsageWindow>,
+    #[serde(rename = "activity", skip_serializing_if = "Option::is_none")]
+    pub activity: Option<UsageActivity>,
     #[serde(rename = "source")]
     pub source: UsageSource,
     #[serde(rename = "fetchedAt")]

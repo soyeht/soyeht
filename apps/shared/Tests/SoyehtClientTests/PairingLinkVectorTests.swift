@@ -11,6 +11,8 @@ import Testing
   let cases = try #require(vector["cases"].array)
   #expect(cases.count >= 10)
   for item in cases {
+    // A point that is not on the curve is found out by decompressing it, which only the Rust client does.
+    if item["rustOnly"] == .bool(true) { continue }
     let name = item["name"].string ?? ""
     let text = item["link"].string ?? ""
     switch item["result"].string {
@@ -38,7 +40,9 @@ import Testing
   let vector = try ContractVector.load("pairing-link")
   let keys = try #require(vector["weakEngineKeys"].array)
   #expect(keys.count == 8)
-  for key in keys {
+  let nonCanonical = try #require(vector["nonCanonicalWeakEngineKeys"].array)
+  #expect(nonCanonical.count == 4)
+  for key in keys + nonCanonical {
     let hex = key.string ?? ""
     let bytes = stride(from: 0, to: hex.count, by: 2).map { offset -> UInt8 in
       let start = hex.index(hex.startIndex, offsetBy: offset)

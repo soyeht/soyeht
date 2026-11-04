@@ -52,11 +52,21 @@ renderer. A name or a place of the legacy app is refused before anything is writ
 | Start | `RunAtLoad` | `WantedBy=default.target`, enabled | `LogonTrigger` for this user (its SID) |
 | Restart | `KeepAlive` (however it ended, while the program exists: `PathState`), `ThrottleInterval` 1 s | `Restart=always`, `RestartSec=1`, `StartLimitIntervalSec=0` | `RestartOnFailure`, every minute, up to 999 times |
 | Program gone | `KeepAlive` `PathState` on the program: launchd stops restarting it (see section 5) | `ConditionPathExists=` the program: the unit is skipped, not failed, so no restart loop (ADR 0121) | none |
-| Order | none: the engine reconnects | engine `Wants=` and `After=` the supervisor (never `Requires=`) | none: the engine reconnects |
-| Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | `PATH` as on the Mac | the user's own environment |
+| Order | none: the engine reconnects | engine `After=` the supervisor (never `Requires=` or `Wants=`, ADR 0136); `soyeht service start` and `install` of the engine alone start the supervisor first when it is registered, idle and its lock is free, and a hand-run `systemctl --user start` of the engine unit does not | none: the engine reconnects |
+| Stand-in for a login shell | `PATH` with the system and user tool folders, `HOME`, `USER` | none: the user manager's own environment (ADR 0135) | the user's own environment (ADR 0135) |
 | Log | `StandardOutPath`/`StandardErrorPath` = `logs/<component>.log` | `StandardOutput=append:` the same file | the host appends the program's output to the same file (section 6) |
 | Limits | `ProcessType` Interactive | none | no time limit; one instance; runs on battery; normal priority |
 | Account | the user's launchd domain: `gui/<uid>` if it exists, else `user/<uid>` | the user's manager | interactive token, least privilege |
+
+**The `PATH` of a program that no window started.** The engine gives its agents the `PATH` that
+the person's interactive login shell has (`launch_path`, asked at start, remembered in the data
+directory), so a harness under `nvm`, `~/.npm-global` or `~/.local/bin` is found however the
+engine was started. That shell starts from the `PATH` the engine was started with, so the unit
+leaves it alone: it names no `PATH`, and the engine starts with the one the user's manager has,
+which is the one the person's session gave it, as the window's own start does (ADR 0135). The engine's own lookups of `wt`, `git` and `lsof` use that same launch `PATH`, not the process one. A Windows
+task names none either; the engine there reads its own process `PATH` (there is no login shell),
+which is the account's at logon. launchd starts a program with almost none, so the Mac agent names
+the system and user tool folders, under the shell's answer.
 
 `StandardOutput=append:` needs systemd 240 or later (Ubuntu 20.04 and later, Debian 10 and later,
 Fedora 30 and later). An older systemd ignores the line and the output goes to the journal
@@ -72,9 +82,9 @@ terminals (ADR 0108).
 
 ## 3. Who registers
 
-Today the seam is called by the `soyeht service` command, by `scripts/install_dev.py` and by the
-Mac app (ADR 0120) and the Windows installer (ADR 0123). The Linux packages leave the registration to the
-person (ADR 0121); the Linux and Windows desktop apps do not call it yet. The rest of this section is what they are to do.
+Today the seam is called by the `soyeht service` command, by `scripts/install_dev.py`, by the
+Mac app (ADR 0120), by the Linux and Windows desktop app (ADR 0136) and by the Windows installer
+(ADR 0123). The Linux packages leave the registration to the person or to the app (ADR 0121).
 
 **The installer** is to register, with the person's consent to install: it copies the programs and
 runs `soyeht service install --programs DIR`. The Windows installer asks with a box, unchecked by
@@ -85,7 +95,17 @@ installed by an installer (an unpacked archive, a package manager that runs no s
 app). It never registers silently, since macOS tells the person about every new background item
 and Windows lists the task. The Mac app asks once at first launch and keeps a "Start Soyeht"
 button in its setup list; it runs the `soyeht` of its own bundle with `--programs` set to the
-folder of its own programs. All of them run the same command, which is idempotent: a registration
+folder of its own programs. The Linux and Windows window does the same with the `soyeht` beside
+its own executable (ADR 0136): when the engine is one it may start itself and the services are not
+registered, it asks once, under the top bar, "Keep Soyeht running in the background?" with "Turn on"
+(`service install`) and "Not now" (remembered in the device's own choices, so it is not asked
+again), and the Setup panel of Preferences keeps the switch "Start Soyeht at login" for good. The
+switch registers with `service install` and unregisters with `service uninstall`; the second stops
+the engine and the supervisor like any uninstall (section 7), which ends the terminals running
+then, and the window says so beside the switch. The window then starts an engine of its own, since
+nothing is registered, and does not take the uninstall record the switch left for an uninstall by
+someone else. A registration with only some of its services (a deleted file) shows the switch off with a line that says so, and turning it on repairs it. The words of the question are `x-clientPolicy.texts`, which the Mac reads too. The window does not repair a registration whose programs moved: a start the service
+manager refuses falls back to the window's own (section 4). All of them run the same command, which is idempotent: a registration
 that is already in place is rewritten; a program that runs is left running with the definition it
 started with, and the new text applies when it is next loaded (`service stop` then `service start`,
 or the next login). A launch agent that is loaded but idle is loaded again at once.
@@ -115,7 +135,7 @@ The commands, all printing the state of the services after they ran as JSON
 | `soyeht [--profile P] service install [--component C] [--programs DIR]` | Writes the definitions, registers and starts them (supervisor first). A component whose program already runs, which the window starts when nothing is registered, is registered and not started: the program holds a singleton lock in the data directory (`engine.lock`, `ptyd.lock`), and a second copy would fail on it and be restarted for ever, so the logon trigger starts it next time. Ask the lock, never the service manager. |
 | `soyeht service uninstall [--component C]` | Stops (engine first), unregisters, deletes the definitions. Data and logs stay. |
 | `soyeht uninstall [--delete-data [--yes]]` | `service uninstall` of both components, and with `--delete-data` the profile's data directory too (section 7). |
-| `soyeht service start [--component C]` | Starts what is registered and not running. Fails with "not registered" otherwise, and on Linux and the Mac with "the program ... does not exist" when the program is gone (systemd would skip the unit, and launchd would not run the agent, and both would report success). |
+| `soyeht service start [--component C]` | Starts what is registered and not running (a component whose program holds its singleton lock counts as running, as for `install`). Fails with "not registered" otherwise, and on Linux and the Mac with "the program ... does not exist" when the program is gone (systemd would skip the unit, and launchd would not run the agent, and both would report success). |
 | `soyeht service stop [--component C]` | Stops what runs (engine first). Stays registered. |
 | `soyeht service status [--component C] [--programs DIR]` | Reports. Changes nothing. With `--programs`, each service also says whether its definition is current for that folder. |
 | `soyeht service render --system S --name N [...] -- PROGRAM ARGS` | Prints the file for explicit values without touching the system. For scripts that start disposable services. |
@@ -125,26 +145,30 @@ unit is enabled (Linux), the task exists (Windows). `running` means it runs now.
 
 ## 4. How the app finds an engine
 
-Planned for the Linux and Windows app: it does only what step 2 describes (ADR 0102) and no app
-there asks the seam to start anything yet. The Mac app has no start of its own (section 9): it
-runs `soyeht service install` when the person says so (section 3), and connects with its backoff
-once the engine listens. The steps below are the behaviour to build for the others.
+The Linux and Windows app does this (ADR 0102, ADR 0136). The Mac app has no start of its own
+(section 9): it runs `soyeht service install` when the person says so (section 3), and connects
+with its backoff once the engine listens.
 
 The endpoint is the truth: the socket of the data directory (Windows: the endpoint file, ADR
 0108). The app never asks a service manager whether an engine runs. When a connection fails
-because nothing listens:
+because nothing listens, and no uninstall left its record since the window opened (section 7):
 
-1. If the profile's service is **registered**, the app is to ask for it to be started (`service
-   start`) and wait for the endpoint as ADR 0102 does. It starts no program of its own.
-2. If it is **not registered**, the Linux and Windows app falls back to ADR 0102 (this is the
-   behaviour of today): it starts the engine and the supervisor detached from the folder of its
-   own executable, and may offer to register them. The Mac app starts nothing and says the engine
-   is not running.
-3. If the start in step 1 fails, the app is to show the failure and the log path. It must not fall
-   back to step 2: an engine the app started beside a registered service would make the service
-   fail on the engine's lock and be restarted for ever.
+1. Under that lock, if all of the profile's services are **registered** (`service status`), the app asks for it to be
+   started (`service start`) and waits for the endpoint as ADR 0102 does. It starts no program of
+   its own. A window that cannot ask (no `soyeht` beside it) counts the service as not registered.
+   If only **some** of the services are registered, the app starts nothing of its own, since its programs would run beside a unit that starts at the next login and fails on their lock; it says so and how to repair it (turn on Start Soyeht at login, or `service install`).
+2. If it is **not registered**, the app falls back to ADR 0102: it starts the supervisor and the
+   engine detached from the folder of its own executable.
+3. If the request in step 1 is **refused** (`service start` fails: the programs are gone, the
+   service manager does not answer), the app falls back to step 2, logging
+   `desktop.service_start_failed`. If the request is **accepted** and the engine does not answer
+   in time, the app shows that and does not fall back: an engine of its own beside a service that
+   is starting would make the service fail on the engine's lock and be restarted every second.
+   A refused request that leaves the unit enabled and loaded for the service manager to start
+   later has the same risk; it is accepted for the sake of an app that works when the service
+   manager does not.
 
-An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
+One window at a time makes this decision (the `desktop-start.lock` of ADR 0102); another looks for the lock at every poll and takes it when the winner lets go, and waits for the endpoint at most 180 seconds (two `serviceCommandMs` and two start waits, derived from the policy) for a winner that holds it that long. An explicit endpoint (`SOYEHT_ENGINE_SOCKET`) is left alone, as before.
 
 ## 5. Restart policy
 
@@ -280,6 +304,6 @@ installed over a prod install replaces nothing of it.
 
 ## 9. Not covered
 
-The desktop app (Linux and Windows) does not call the seam yet, and of the release installers only the Windows one
-does (section 3); the Mac app does through the section 3 command. Signing and notarization of the Mac package are ADR
+Of the release installers only the Windows one calls the seam (section 3); the Mac app and the
+Linux and Windows app do through the section 3 command. Signing and notarization of the Mac package are ADR
 0120. Auto-update, a machine-wide (all users) service, and starting at boot rather than at login are out of scope.

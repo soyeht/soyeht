@@ -22,8 +22,7 @@ const MACOS_SYSTEM_PATH: [&str; 6] = [
     "/usr/sbin",
     "/sbin",
 ];
-const LINUX_SYSTEM_PATH: [&str; 3] = ["/usr/local/bin", "/usr/bin", "/bin"];
-/// The user's own tool folders, below the home folder, searched after the system's.
+/// The user's own tool folders, below the home folder, searched after the system's (launchd).
 const USER_TOOL_FOLDERS: [&str; 2] = [".local/bin", ".cargo/bin"];
 
 /// A profile's service on one system: the facts about the machine that the definitions and the
@@ -148,14 +147,17 @@ impl Layout {
         })
     }
 
-    /// The variables the programs start with. launchd and systemd start a program with a
-    /// minimal environment, so the tools the harnesses call (`git`, `node`, the user's own) are
-    /// named here; a Windows task inherits the user's.
+    /// The variables the programs start with. launchd starts a program with a minimal
+    /// environment, so the tools the harnesses call (`git`, `node`, the user's own) are named
+    /// here. A systemd user unit and a Windows task name none: the program starts with the
+    /// user's manager's or account's own environment, and the engine asks the person's login
+    /// shell for the `PATH` its agents get (`launch_path`), as it does when the window starts it.
+    /// A `PATH` written into the unit would be the base that shell starts from, and would hide
+    /// what the person's session has (ADR 0135).
     fn environment(&self) -> Result<BTreeMap<String, String>> {
         let system_path: &[&str] = match self.system {
             System::Macos => &MACOS_SYSTEM_PATH,
-            System::Linux => &LINUX_SYSTEM_PATH,
-            System::Windows => return Ok(BTreeMap::new()),
+            System::Linux | System::Windows => return Ok(BTreeMap::new()),
         };
         let mut folders: Vec<PathBuf> = system_path.iter().map(PathBuf::from).collect();
         folders.extend(
@@ -258,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn launchd_and_systemd_get_a_path_to_the_tools_and_a_windows_task_gets_nothing() {
+    fn only_launchd_is_given_a_path_and_a_unit_or_task_inherits_the_users_own() {
         let mac = test_layout(System::Macos, Path::new(ROOT))
             .definition(Component::Engine, &programs())
             .unwrap();
@@ -272,15 +274,31 @@ mod tests {
         let linux = test_layout(System::Linux, Path::new(ROOT))
             .definition(Component::Engine, &programs())
             .unwrap();
-        assert_eq!(
-            linux.environment.keys().collect::<Vec<_>>(),
-            ["PATH"],
-            "systemd sets HOME and USER itself"
-        );
+        // A `PATH` here would be the base the engine's login-shell probe starts from, and would
+        // hide what the person's session has (ADR 0135); systemd sets HOME and USER itself.
+        assert!(linux.environment.is_empty());
         let windows = test_layout(System::Windows, Path::new(ROOT))
             .definition(Component::Engine, &programs())
             .unwrap();
         assert!(windows.environment.is_empty());
+    }
+
+    #[test]
+    fn the_rendered_files_carry_a_path_only_on_the_mac() {
+        let text = |system, component| {
+            let definition = test_layout(system, Path::new(ROOT))
+                .definition(component, &programs())
+                .unwrap();
+            crate::render::render(system, &definition).unwrap()
+        };
+        for component in [Component::Engine, Component::Ptyd] {
+            let unit = text(System::Linux, component);
+            assert!(
+                !unit.contains("Environment=") && !unit.contains("PATH"),
+                "the unit leaves the PATH to the user's manager and the engine's probe:\n{unit}"
+            );
+            assert!(text(System::Macos, component).contains("<key>PATH</key>"));
+        }
     }
 
     #[test]

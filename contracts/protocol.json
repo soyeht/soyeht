@@ -7885,7 +7885,8 @@
       "enum": [
         "claude",
         "codex",
-        "cursor"
+        "cursor",
+        "opencode"
       ]
     },
     "UsageState": {
@@ -7910,7 +7911,8 @@
         "network_error",
         "login_needed",
         "no_access",
-        "source_failed"
+        "source_failed",
+        "plan_expired"
       ]
     },
     "UsageSource": {
@@ -7925,7 +7927,10 @@
         "codex_access_token",
         "cursor_current_period",
         "cursor_app_login",
-        "cursor_browser_cookies"
+        "cursor_browser_cookies",
+        "opencode_go_allowance",
+        "opencode_zai_plan",
+        "opencode_local_history"
       ]
     },
     "UsageWindow": {
@@ -7953,6 +7958,28 @@
       ],
       "additionalProperties": true
     },
+    "UsageActivity": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "tokens": {
+          "type": "integer"
+        },
+        "costUsd": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "label",
+        "tokens"
+      ],
+      "additionalProperties": true
+    },
     "UsageReading": {
       "type": "object",
       "properties": {
@@ -7970,6 +7997,9 @@
         },
         "secondary": {
           "$ref": "#/$defs/UsageWindow"
+        },
+        "activity": {
+          "$ref": "#/$defs/UsageActivity"
         },
         "source": {
           "$ref": "#/$defs/UsageSource"
@@ -8064,6 +8094,9 @@
         },
         "secondary": {
           "$ref": "#/$defs/UsageWindow"
+        },
+        "activity": {
+          "$ref": "#/$defs/UsageActivity"
         },
         "source": {
           "$ref": "#/$defs/UsageSource"
@@ -14576,6 +14609,7 @@
     "usageAutoRefreshIntervalSec": 300,
     "usageStaleAfterSec": 900,
     "usageMaxBackoffSec": 1800,
+    "usageActivityDays": 7,
     "editorViewportLines": 2000,
     "editorEditBytes": 262144,
     "editorPathBytes": 4096,
@@ -14734,7 +14768,9 @@
       "reconnectCeilingMs": 30000,
       "draftBeatMs": 8000,
       "agentPartialFlushMs": 16,
-      "diagnosticsMs": 30000
+      "diagnosticsMs": 30000,
+      "copiedFeedbackMs": 1500,
+      "serviceCommandMs": 60000
     },
     "terminal": {
       "inputChunkBytes": 16384,
@@ -14746,7 +14782,8 @@
       "webLinks": 128,
       "modelPages": 32,
       "tickerHistory": 3,
-      "diagnosticsReportBytes": 4194304
+      "diagnosticsReportBytes": 4194304,
+      "serviceReportBytes": 65536
     },
     "pageSize": {
       "queue": "maximum",
@@ -14814,10 +14851,17 @@
       "diagnosticsCopied": "Diagnostics copied. Paste them into your message.",
       "diagnosticsFailed": "Soyeht could not collect the diagnostics.",
       "diagnosticsUnavailable": "This copy of Soyeht has no diagnostics program.",
+      "copyCode": "Copy code",
+      "copiedCode": "Copied",
       "crashNoticeTitle": "Soyeht closed unexpectedly",
       "crashNoticeSummary": "A crash report was saved on this computer. Nothing was sent.",
       "crashNoticeCopy": "Copy report",
       "crashNoticeDismiss": "Dismiss",
+      "loginStartQuestion": "Keep Soyeht running in the background?",
+      "loginStartSummary": "Soyeht's engine keeps your terminals and agents running when this window is closed, and starts when you log in.",
+      "loginStartLater": "You can turn it on later from Preferences.",
+      "loginStartTurnOn": "Turn on",
+      "loginStartNotNow": "Not now",
       "pushNeedsYouTitle": "An agent needs you",
       "pushNeedsYouBody": "Open Soyeht to see what it asks."
     },
@@ -14836,7 +14880,8 @@
     "usageProviderNames": {
       "claude": "Claude",
       "codex": "Codex",
-      "cursor": "Cursor"
+      "cursor": "Cursor",
+      "opencode": "OpenCode"
     },
     "configRoles": {
       "model": { "category": "model" },

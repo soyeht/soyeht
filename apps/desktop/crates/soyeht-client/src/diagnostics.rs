@@ -33,6 +33,9 @@ pub enum Failure {
     Run(String),
     /// The program printed something that is not text.
     NotText,
+    /// The program printed text that is not the report asked for (`soyeht service ...` prints
+    /// JSON).
+    Unreadable,
 }
 
 impl log::Failure for Failure {
@@ -42,6 +45,7 @@ impl log::Failure for Failure {
             Self::Profile => "profile".to_owned(),
             Self::Run(kind) => format!("run:{kind}"),
             Self::NotText => "not_text".to_owned(),
+            Self::Unreadable => "unreadable".to_owned(),
         }
     }
 }
@@ -55,13 +59,25 @@ pub fn collect() -> Result<String, Failure> {
 /// What the `soyeht` program beside this executable prints for `subcommand`, for the profile this
 /// window runs as. The crash notice (contract 16) asks it too. Blocks until the program ends.
 pub fn ask(subcommand: &[&str]) -> Result<String, Failure> {
+    ask_within(
+        subcommand,
+        Limits::new(
+            Duration::from_millis(DIAGNOSTICS_MS),
+            CAPS_DIAGNOSTICS_REPORT_BYTES,
+        ),
+    )
+}
+
+/// [`ask`] with the deadline and the output budget of the caller: `soyeht service ...` waits for
+/// a service manager and prints a few lines.
+pub(crate) fn ask_within(subcommand: &[&str], limits: Limits) -> Result<String, Failure> {
     // A system that cannot say where this program is has no folder to look in.
     let executable = std::env::current_exe().map_err(|_| Failure::Unavailable)?;
     let profile = profile::selected().map_err(|_| Failure::Profile)?;
     // The profile's own data directory, also when the window was pointed at another engine with
     // `SOYEHT_ENGINE_SOCKET` (contract 14, section 4).
     let directory = profile::data_directory_of_profile().map_err(|_| Failure::Profile)?;
-    ask_with(&executable, profile.name, &directory, subcommand)
+    ask_with(&executable, profile.name, &directory, subcommand, limits)
 }
 
 /// What the `soyeht` program in the folder of `executable` prints for `subcommand`, for `profile`
@@ -71,10 +87,12 @@ fn ask_with(
     profile: &str,
     directory: &Path,
     subcommand: &[&str],
+    limits: Limits,
 ) -> Result<String, Failure> {
     run(
         &program_beside(executable)?,
         &arguments_for(profile, directory, subcommand),
+        limits,
     )
 }
 
@@ -99,17 +117,11 @@ fn arguments_for(profile: &str, directory: &Path, subcommand: &[&str]) -> Vec<Os
     arguments
 }
 
-fn run(program: &Path, arguments: &[OsString]) -> Result<String, Failure> {
+fn run(program: &Path, arguments: &[OsString], limits: Limits) -> Result<String, Failure> {
     let mut command = std::process::Command::new(program);
     command.args(arguments);
-    let output = soyeht_process::run(
-        command,
-        Limits::new(
-            Duration::from_millis(DIAGNOSTICS_MS),
-            CAPS_DIAGNOSTICS_REPORT_BYTES,
-        ),
-    )
-    .map_err(|error| Failure::Run(log::Failure::failure_kind(&error)))?;
+    let output = soyeht_process::run(command, limits)
+        .map_err(|error| Failure::Run(log::Failure::failure_kind(&error)))?;
     if !output.success() {
         return Err(Failure::Run(output.status.code().map_or_else(
             || "signal".to_owned(),

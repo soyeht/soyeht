@@ -58,7 +58,9 @@ fn rust_files(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
-/// The source before its first `#[cfg(test)]` module.
+/// The source before its first inline `#[cfg(test)]` module. A `#[cfg(test)] mod tests;` that
+/// names a file of its own is no cut: the code after it ships, and the scan reads the module's
+/// file on its own.
 fn shipped(source: &str) -> &str {
     let lines = source.lines().collect::<Vec<_>>();
     let mut offset = 0;
@@ -66,13 +68,21 @@ fn shipped(source: &str) -> &str {
         if *line == "#[cfg(test)]"
             && lines
                 .get(index + 1)
-                .is_some_and(|next| next.contains("mod "))
+                .is_some_and(|next| next.contains("mod ") && !next.trim_end().ends_with(';'))
         {
             return &source[..offset];
         }
         offset += line.len() + 1;
     }
     source
+}
+
+#[test]
+fn a_test_module_in_a_file_of_its_own_does_not_hide_the_code_after_it() {
+    let source = "#[cfg(test)]\nmod tests;\n\nfn ships() { supervisor.call(request); }\n";
+    assert_eq!(shipped(source), source);
+    let inline = "fn ships() {}\n#[cfg(test)]\nmod tests {\n    fn hidden() {}\n}\n";
+    assert_eq!(shipped(inline), "fn ships() {}\n");
 }
 
 /// A std `Command` run without the bounded runner.
@@ -179,8 +189,8 @@ const SUPERVISOR_WAITS: &[(&str, usize, &str)] = &[
     ),
     (
         "soyeht-engine/src/agents/switching.rs",
-        2,
-        "jobs: a switch step, the retired closes",
+        1,
+        "jobs: the retired closes",
     ),
     (
         "soyeht-engine/src/agents/switching/candidate.rs",
@@ -188,16 +198,16 @@ const SUPERVISOR_WAITS: &[(&str, usize, &str)] = &[
         "work of the switch step jobs",
     ),
     (
+        "soyeht-engine/src/agents/user_cli.rs",
+        1,
+        "the spawn of an adapter process: Launch::send (job or offload) and the switch candidate job",
+    ),
+    (
         "soyeht-engine/src/core.rs",
         2,
         "the connect job and Core::open, before the Core is shared",
     ),
     ("soyeht-engine/src/input.rs", 1, "offload: pane.input"),
-    (
-        "soyeht-engine/src/process_start.rs",
-        1,
-        "launch: job or offload",
-    ),
     ("soyeht-engine/src/spawn_retry.rs", 3, "jobs: closes"),
     (
         "soyeht-engine/src/supervisor_handle.rs",

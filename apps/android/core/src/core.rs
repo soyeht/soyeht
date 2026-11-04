@@ -178,6 +178,7 @@ impl Core {
         if let Some(engine) = lock(&self.engine).take() {
             engine.stop();
         }
+        *lock(&self.replica) = Replica::default();
     }
 
     pub fn overview(&self) -> Overview {
@@ -340,6 +341,21 @@ mod tests {
         until("a dropped core left its event thread running", || {
             Arc::strong_count(&listener) == 1
         });
+    }
+
+    #[test]
+    fn disconnecting_forgets_what_the_replica_held() {
+        let core = Core::new(Arc::new(Silent));
+        let created = Event::Notification {
+            name: soyeht_protocol::EventName::WorkspaceCreated,
+            params: serde_json::json!({"eventId":"1","at":"now","workspace":{
+                "workspaceId":"w1","name":"api","path":"/work","layout":{}}}),
+        };
+        lock(&core.replica).state.apply(created);
+        assert_eq!(core.overview().workspaces.len(), 1);
+        core.disconnect();
+        assert!(core.overview().workspaces.is_empty());
+        assert!(matches!(core.overview().link, Link::Connecting));
     }
 
     #[test]

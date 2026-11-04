@@ -17,12 +17,22 @@ const ENGINE_ID: &str = "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b";
 const CODE: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const REQUEST: &str = "5d0b1c7e-2f3a-4a8b-9c6d-1e2f3a4b5c6d";
 
+/// What the person on the computer does.
+#[derive(Clone, Copy, PartialEq)]
+enum Decision {
+    Allows,
+    /// Allows, and the computer's `pair.result` reaches the phone before the answer to its proof.
+    AllowsFirst,
+    Refuses,
+    /// Never decides: the engine returns whether the phone's side of the connection ended.
+    Never,
+}
+
 /// The engine of a pairing: `signer` is the key it answers with, `decision` the person's, which comes
-/// at once; none means the person never decides, and the engine returns whether the phone's side of
-/// the connection ended.
+/// at once unless it is `Never`.
 fn engine(
     signer: SigningKey,
-    decision: Option<bool>,
+    decision: Decision,
 ) -> (std::net::SocketAddr, std::thread::JoinHandle<bool>) {
     serve(move |mut socket| {
         send(
@@ -60,21 +70,25 @@ fn engine(
             params["deviceName"].as_str().unwrap(),
             prove["params"]["proof"].as_str().unwrap(),
         ));
-        send(
-            &mut socket,
-            &json!({"jsonrpc":"2.0","id":prove["id"],"result":{"status":"pending"}}),
-        );
+        let answer = json!({"jsonrpc":"2.0","id":prove["id"],"result":{"status":"pending"}});
         let result = match decision {
-            Some(true) => {
+            Decision::Allows | Decision::AllowsFirst => {
                 json!({"requestId":REQUEST,"approved":true,"deviceToken":"token-1","deviceId":"device-1"})
             }
-            Some(false) => json!({"requestId":REQUEST,"approved":false,"reason":"Not now."}),
-            None => return read(&mut socket).is_none(),
+            Decision::Refuses => json!({"requestId":REQUEST,"approved":false,"reason":"Not now."}),
+            Decision::Never => {
+                send(&mut socket, &answer);
+                return read(&mut socket).is_none();
+            }
         };
-        send(
-            &mut socket,
-            &json!({"jsonrpc":"2.0","method":"pair.result","params":result}),
-        );
+        let event = json!({"jsonrpc":"2.0","method":"pair.result","params":result});
+        if decision == Decision::AllowsFirst {
+            send(&mut socket, &event);
+        }
+        send(&mut socket, &answer);
+        if decision != Decision::AllowsFirst {
+            send(&mut socket, &event);
+        }
         true
     })
 }
@@ -87,7 +101,7 @@ fn link(address: std::net::SocketAddr, engine_key: &VerifyingKey) -> String {
 #[test]
 fn a_device_pairs_with_the_engine_whose_key_the_link_names() {
     let engine_key = SigningKey::from_bytes(&[0x11; 32]);
-    let (address, server) = engine(engine_key.clone(), Some(true));
+    let (address, server) = engine(engine_key.clone(), Decision::Allows);
     let mut seen = Vec::new();
     let credential = pair(
         &link(address, &engine_key.verifying_key()),
@@ -108,7 +122,7 @@ fn a_device_pairs_with_the_engine_whose_key_the_link_names() {
 fn an_engine_that_does_not_hold_the_key_of_the_link_is_not_paired_with() {
     let impostor = SigningKey::from_bytes(&[0x22; 32]);
     let named = SigningKey::from_bytes(&[0x11; 32]);
-    let (address, server) = engine(impostor, Some(true));
+    let (address, server) = engine(impostor, Decision::Allows);
     let result = pair(
         &link(address, &named.verifying_key()),
         "Phone",
@@ -126,7 +140,7 @@ fn an_engine_that_does_not_hold_the_key_of_the_link_is_not_paired_with() {
 #[test]
 fn a_refusal_on_the_computer_is_told_in_the_computers_words() {
     let engine_key = SigningKey::from_bytes(&[0x11; 32]);
-    let (address, server) = engine(engine_key.clone(), Some(false));
+    let (address, server) = engine(engine_key.clone(), Decision::Refuses);
     let result = pair(
         &link(address, &engine_key.verifying_key()),
         "Phone",
@@ -144,7 +158,7 @@ fn a_refusal_on_the_computer_is_told_in_the_computers_words() {
 fn a_pairing_that_is_cancelled_ends_at_once_and_never_returns_the_access_the_computer_then_gives() {
     let engine_key = SigningKey::from_bytes(&[0x11; 32]);
     // The computer would allow access, but only after the phone has gone.
-    let (address, server) = engine(engine_key.clone(), None);
+    let (address, server) = engine(engine_key.clone(), Decision::Never);
     let cancel = std::sync::Arc::new(Cancel::default());
     let stopper = std::sync::Arc::clone(&cancel);
     let link = link(address, &engine_key.verifying_key());
@@ -181,4 +195,28 @@ fn a_pairing_that_is_cancelled_ends_at_once_and_never_returns_the_access_the_com
         matches!(result, Err(Error::Pairing(PairingFailure::Cancelled))),
         "{result:?}"
     );
+}
+
+#[test]
+fn a_pairing_stopped_after_the_computer_already_allowed_access_returns_no_credential() {
+    let engine_key = SigningKey::from_bytes(&[0x11; 32]);
+    // The allowance is in the phone's hands before the phone asks for it: stopping then is the one
+    // thing between it and a credential.
+    let (address, server) = engine(engine_key.clone(), Decision::AllowsFirst);
+    let cancel = Cancel::default();
+    let result = pair(
+        &link(address, &engine_key.verifying_key()),
+        "Phone",
+        &mut |progress| {
+            if progress == Progress::WaitingForApproval {
+                cancel.stop();
+            }
+        },
+        &cancel,
+    );
+    assert!(
+        matches!(result, Err(Error::Pairing(PairingFailure::Cancelled))),
+        "{result:?}"
+    );
+    server.join().unwrap();
 }
