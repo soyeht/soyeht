@@ -432,6 +432,22 @@ mod tests {
     }
 
     #[test]
+    fn closing_a_pane_releases_the_output_its_screen_held() {
+        let (mut core, acknowledged, root, id) = core_with_output(true);
+        drain_and_apply(&mut core, &id);
+        wait_for_acknowledgements(&mut core, &id, &acknowledged, 1);
+        assert_eq!(core.panes[&id].screen.held_bytes(), 5);
+
+        core.panes.get_mut(&id).unwrap().stored.closed = true;
+        core.finish_close(&id).unwrap();
+
+        let screen = &core.panes[&id].screen;
+        assert_eq!(screen.held_bytes(), 0);
+        assert_eq!(screen.first_offset(), screen.next_offset());
+        crate::test_paths::remove_after(core, root);
+    }
+
+    #[test]
     fn output_nobody_records_is_acknowledged_at_once() {
         let (mut core, acknowledged, root, id) = core_with_output(false);
 
