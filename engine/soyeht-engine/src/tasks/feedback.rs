@@ -461,7 +461,8 @@ fn bounded_owned(text: &str, limit: usize) -> String {
     bounded(text, limit).to_owned()
 }
 
-fn bounded(text: &str, limit: usize) -> &str {
+/// `text` cut on a character boundary to at most `limit` bytes.
+pub(super) fn bounded(text: &str, limit: usize) -> &str {
     if text.len() <= limit {
         return text;
     }
