@@ -52,7 +52,7 @@
         })
     }
     public func makeUIView(context: Context) -> PhoneTerminalSurface {
-      let view = PhoneTerminalSurface(frame: .zero, font: Self.font(fontStore.size))
+      let view = PhoneTerminalSurface(font: Self.font(fontStore.size))
       view.onActivate = onActivate
       view.claimsKeyboardFocus = claimsKeyboardFocus
       view.linkReporting = .implicit
@@ -117,8 +117,13 @@
     /// Writing on the terminal with the Pencil types into it (Scribble).
     private var handwriting: HandwritingArea?
 
-    public override init(frame: CGRect, font: UIFont?) {
-      super.init(frame: frame, font: font)
+    /// A surface with the clients' shared startup options (`TerminalOptions.soyehtStartup`).
+    convenience init(font: UIFont) {
+      self.init(frame: .zero, font: font, options: .soyehtStartup)
+    }
+
+    public override init(frame: CGRect, font: UIFont?, options: TerminalOptions) {
+      super.init(frame: frame, font: font, options: options)
       installPinch()
       installScrollInput()
       installKeyRow()

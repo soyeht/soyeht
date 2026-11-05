@@ -52,6 +52,11 @@ public enum PaneInteriorFont {
 
     private lazy var scrollerFade = TerminalScrollerFade(terminal: self)
 
+    /// A surface with the clients' shared startup options (`TerminalOptions.soyehtStartup`).
+    convenience init(font: NSFont) {
+      self.init(frame: .zero, font: font, options: .soyehtStartup)
+    }
+
     func updateActivation(_ action: @escaping () -> Void) { onActivate = action }
 
     override func viewDidMoveToWindow() {
@@ -152,9 +157,7 @@ public enum PaneInteriorFont {
     }
     public func makeNSView(context: Context) -> TerminalView {
       let registered = client.terminalViewRegistry.surface(for: paneId) {
-        TerminalSurface(
-          frame: .zero,
-          font: MacTerminalFont.active())
+        TerminalSurface(font: MacTerminalFont.active())
       }
       let view = registered.view
       applyTheme(to: view)
