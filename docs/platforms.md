@@ -209,6 +209,7 @@ checked.
 | `SOYEHT_MAC_SIGNING_IDENTITY` | The name or SHA-1 of a "Developer ID Application" certificate. The script never looks one up in the keychain. |
 | `SOYEHT_DEVELOPMENT_TEAM` | Its ten-character team identifier (the same variable the Dev builds use). The engine attests the app by team. |
 | `SOYEHT_NOTARY_PROFILE` | A keychain profile made once with `xcrun notarytool store-credentials`. No password is ever in a variable. |
+| `SOYEHT_NOTARY_KEY_FILE`, `SOYEHT_NOTARY_KEY_ID`, `SOYEHT_NOTARY_ISSUER` | Instead of the profile: the path of an App Store Connect API key (`.p8`, kept outside the repository), its key identifier and the issuer identifier. The profile wins when both are set. |
 
 `--ad-hoc`, or no identity in the environment, runs the whole pipeline signed ad hoc, skips
 notarization with a banner, and writes to `dist/ad-hoc/` so it cannot be taken for the release;

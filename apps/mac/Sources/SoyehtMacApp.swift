@@ -215,8 +215,8 @@ final class AgentAttentionNotifications {
   init() {
     delegate.onOpen = { [weak self] route in self?.pendingRoute = route }
     center.delegate = delegate
-    // On by default, so the first run asks macOS for permission; the answer is the system's.
-    if settings.enabled { Task { _ = await requestAuthorization() } }
+    // Nothing is asked here. macOS is asked when the first notification is about to be
+    // delivered (`observe`) or when the person turns notifications on (`setEnabled`).
   }
 
   func clearPendingRoute() { pendingRoute = nil }
@@ -240,7 +240,8 @@ final class AgentAttentionNotifications {
       ? nil : String(summary.totalWaitingCount)
     NSApp.dockTile.display()
     let newRequests = cursor.newRequests(in: summary, connected: connected)
-    guard settings.shouldPost(appIsActive: NSApp.isActive) else { return }
+    guard settings.shouldPost(appIsActive: NSApp.isActive), !newRequests.isEmpty else { return }
+    var notifications: [UNNotificationRequest] = []
     for request in newRequests {
       let content = UNMutableNotificationContent()
       content.title = AgentAttentionPolicy.notificationTitle
@@ -252,12 +253,33 @@ final class AgentAttentionNotifications {
         "paneId": request.paneId,
         "requestIdentity": request.identity,
       ]
-      let notification = UNNotificationRequest(
-        identifier: request.identity, content: content, trigger: nil)
-      Task {
-        do { try await center.add(notification) } catch {
-          Self.logger.error("Could not post agent-attention notification")
-        }
+      notifications.append(
+        UNNotificationRequest(identifier: request.identity, content: content, trigger: nil))
+    }
+    Task { await deliver(notifications) }
+  }
+
+  private func permission() async -> AgentAttentionNotificationSettings.Permission {
+    switch await center.notificationSettings().authorizationStatus {
+    case .notDetermined: .notDetermined
+    case .denied: .denied
+    default: .granted
+    }
+  }
+
+  private func deliver(_ notifications: [UNNotificationRequest]) async {
+    switch settings.delivery(appIsActive: NSApp.isActive, permission: await permission()) {
+    case .skip: return
+    case .askThenPost:
+      // The answer is the system's; a refusal turns the setting off, as the toggle does.
+      let granted = await requestAuthorization()
+      settings.setEnabled(granted)
+      if !granted { return }
+    case .post: break
+    }
+    for notification in notifications {
+      do { try await center.add(notification) } catch {
+        Self.logger.error("Could not post agent-attention notification")
       }
     }
   }

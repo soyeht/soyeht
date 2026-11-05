@@ -112,6 +112,17 @@ private func agentPane(
   #expect(settings.shouldPost(appIsActive: false))
 }
 
+@Test @MainActor func theSystemPermissionIsAskedOnlyWhenANotificationIsAboutToBeDelivered() {
+  let settings = AgentAttentionNotificationSettings(preferences: MemoryPreferenceStore())
+  #expect(settings.delivery(appIsActive: false, permission: .notDetermined) == .askThenPost)
+  #expect(settings.delivery(appIsActive: false, permission: .granted) == .post)
+  #expect(settings.delivery(appIsActive: false, permission: .denied) == .skip)
+  // A window the person is looking at needs no notification, so nothing is asked either.
+  #expect(settings.delivery(appIsActive: true, permission: .notDetermined) == .skip)
+  settings.setEnabled(false)
+  #expect(settings.delivery(appIsActive: false, permission: .notDetermined) == .skip)
+}
+
 // MARK: - contracts/vectors/agent-attention.json
 
 private func vectorSummary(_ panes: [JsonValue]) -> AgentAttentionSummary {
