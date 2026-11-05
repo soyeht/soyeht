@@ -69,11 +69,18 @@ cannot get the turn is unrun and reads as a failed source.
 
 The scratch directory is made while holding the turn, exclusively and
 owner-only (mode 0700): whatever is at the path then (an earlier session's
-leftover, or on Linux something another user put at the predictable path of the
-shared temporary directory, even a link) is removed, never used, and a
+leftover) is removed, never used, and a
 directory or link that appears between the removal and the creation makes the
 session unrun instead of running in it. A failure to make or remove the
 directory is logged by kind, once per streak.
+
+The scratch directory and its lock are not in the temporary directory, which on Linux is
+shared by every user and lets another user make the fixed name first. They are in
+`usage-scratch`, a directory of the engine's own data directory that only the user reaches
+(`ensure_private_dir`): it is made owner-only when missing, made owner-only again when its
+mode was widened, and refused (the session is unrun and the failure logged by kind, once per
+streak) when a link, a file or another user's directory is in its place. A terminal run whose
+working directory is outside it is refused.
 
 A session that fails (a screen it does not know, a program that never answers)
 is not started again by the background for the longest usage backoff, like a

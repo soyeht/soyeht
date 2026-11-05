@@ -69,8 +69,9 @@ it follows the app order.
 
 **The hidden CLI session.**
 
-- It runs `claude` in a pseudo terminal in a scratch directory under the
-  temporary directory, with tools disabled and MCP servers off.
+- It runs `claude` in a pseudo terminal in a scratch directory inside the
+  engine's data directory (`usage-scratch`, owner-only, ADR 0111), with tools
+  disabled and MCP servers off.
 - It has a 24-second deadline.
 - Afterwards the process group is stopped, the scratch directory removed and
   the session transcript under `~/.claude/projects/` deleted.
