@@ -260,6 +260,25 @@ FORBIDDEN_TERMS=... uv run python scripts/main_watch.py --apply \
   --worktree ~/.cache/soyeht-post-merge --editor-meter /path/to/editor-performance-vm.json
 ```
 
+## Measuring memory
+
+`scripts/measure_memory.py` starts a disposable supervisor and engine (plain child processes, its own
+data directory, never the service manager) and drives them through the real socket: an idle engine,
+idle shells, panes that print `--lines` lines each, a client replaying every pane, `--cycles` rounds
+of closing and opening panes again, conversations with a scripted agent, large files opened in the
+editor, and an outage of the engine while shells print. After each phase it records the resident
+set and, on macOS, the physical footprint of both programs. Memory that keeps growing across the
+cycles is a leak; the figure after the restart is what the same state costs when nothing was
+retained.
+
+```sh
+(cd engine && cargo build --release -p soyeht-cli -p soyeht-engine -p soyeht-ptyd -p soyeht-mcp -p soyeht-acp)
+uv run python scripts/measure_memory.py --cycles 10 --report /tmp/memory.json
+```
+
+Run it on the base and on the change with the same arguments, on a quiet host, and compare the two
+reports.
+
 ## Local quality ratchet
 
 Once per machine, with network access, install the pinned copy/paste detector
