@@ -2,7 +2,12 @@
 
 use crate::{Error, Limits, Output, Result, run};
 use soyeht_platform::git::{Availability, Probe};
-use std::{collections::BTreeSet, io, path::Path, process::Command};
+use std::{
+    collections::BTreeSet,
+    io,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 /// What a person is told when `git` is not started. It names the cause and the way out, and
 /// says Soyeht did not open the installer.
@@ -36,61 +41,83 @@ pub fn run_git_with(probe: &Probe, command: Command, limits: Limits) -> Result<O
 /// the driver's conversions and its long-running process.
 const FILTER_PROGRAMS: [&str; 3] = ["clean", "smudge", "process"];
 
-/// A `git` command for `repository` that reads it and runs nothing the repository configures.
-/// The caller adds the arguments and runs it with [`run_git_with`].
+/// What it takes to run `git` on one repository so that it reads it and starts nothing the
+/// repository configures. Prepare it once for a series of commands on the same repository, and
+/// take a [`command`](Self::command) from it for each; the caller adds the arguments and runs the
+/// command with [`run_git_with`].
 ///
 /// A repository carries its own configuration, and some of it names programs that git starts
 /// while it only reads: the file system monitor (`core.fsmonitor`) and every filter driver that
-/// `.gitattributes` assigns to a path (`filter.<name>.clean`, `.smudge`, `.process`). The command
+/// `.gitattributes` assigns to a path (`filter.<name>.clean`, `.smudge`, `.process`). A command
 /// turns the monitor off and clears the programs of each driver the configuration names (the
 /// names are listed first, with a command that starts nothing). Textconv and external diff
 /// programs are not in this list: they are off with `--no-textconv` and `--no-ext-diff` on the
-/// commands that have them, which the caller passes.
+/// commands that have them, which the caller passes. A submodule is a repository with its own
+/// configuration, which a command that looks inside it (`diff` and `status` do) reads with its
+/// own filters: the caller passes `--ignore-submodules=dirty` so that it does not look.
 ///
 /// It also never pages, takes no optional lock and reads paths literally. A configuration whose
-/// driver names cannot be listed or cannot be written as `-c` settings is an error: the command
-/// is not built.
-pub fn read_only_command_with(probe: &Probe, repository: &Path, limits: Limits) -> Result<Command> {
-    let mut list = Command::new("git");
-    list.arg("--no-pager")
-        .arg("-C")
-        .arg(repository)
-        .args(["config", "-z", "--name-only", "--get-regexp", "^filter\\."])
-        .env("GIT_OPTIONAL_LOCKS", "0");
-    let listed = run_git_with(probe, list, limits)?;
-    // 1 is "no such key": the repository has no filter drivers.
-    let names = match listed.status.code() {
-        Some(0) => filter_names(&listed.stdout),
-        Some(1) => Some(BTreeSet::new()),
-        _ => None,
-    };
-    let Some(names) = names else {
-        return Err(unreadable_configuration());
-    };
-    let mut command = Command::new("git");
-    command
-        .arg("--no-pager")
-        .arg("-C")
-        .arg(repository)
-        .args(["-c", "core.fsmonitor=false"]);
-    for name in &names {
-        for setting in FILTER_PROGRAMS {
-            command.arg("-c").arg(format!("filter.{name}.{setting}="));
-        }
-        command
-            .arg("-c")
-            .arg(format!("filter.{name}.required=false"));
-    }
-    command
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("GIT_LITERAL_PATHSPECS", "1")
-        .env("GIT_PAGER", "cat");
-    Ok(command)
+/// driver names cannot be listed or cannot be written as `-c` settings is an error: nothing is
+/// prepared.
+///
+/// The drivers are listed once, when this is prepared. A configuration that changes after that, by
+/// another process that writes the repository's config, is not seen by the commands taken from it:
+/// the check and the use are not one step, and what is ruled out is the configuration the
+/// repository already had.
+pub struct ReadOnlyGit {
+    repository: PathBuf,
+    settings: Vec<String>,
 }
 
-/// [`read_only_command_with`] for this machine's `git`.
-pub fn read_only_command(repository: &Path, limits: Limits) -> Result<Command> {
-    read_only_command_with(&Probe::system(), repository, limits)
+impl ReadOnlyGit {
+    pub fn prepare_with(probe: &Probe, repository: &Path, limits: Limits) -> Result<Self> {
+        let mut list = Command::new("git");
+        list.arg("--no-pager")
+            .arg("-C")
+            .arg(repository)
+            .args(["config", "-z", "--name-only", "--get-regexp", "^filter\\."])
+            .env("GIT_OPTIONAL_LOCKS", "0");
+        let listed = run_git_with(probe, list, limits)?;
+        // 1 is "no such key": the repository has no filter drivers.
+        let names = match listed.status.code() {
+            Some(0) => filter_names(&listed.stdout),
+            Some(1) => Some(BTreeSet::new()),
+            _ => None,
+        };
+        let Some(names) = names else {
+            return Err(unreadable_configuration());
+        };
+        let mut settings = vec!["core.fsmonitor=false".to_owned()];
+        for name in &names {
+            for setting in FILTER_PROGRAMS {
+                settings.push(format!("filter.{name}.{setting}="));
+            }
+            settings.push(format!("filter.{name}.required=false"));
+        }
+        Ok(Self {
+            repository: repository.to_owned(),
+            settings,
+        })
+    }
+
+    /// [`prepare_with`](Self::prepare_with) for this machine's `git`.
+    pub fn prepare(repository: &Path, limits: Limits) -> Result<Self> {
+        Self::prepare_with(&Probe::system(), repository, limits)
+    }
+
+    /// A `git` command for the repository, with no arguments yet.
+    pub fn command(&self) -> Command {
+        let mut command = Command::new("git");
+        command.arg("--no-pager").arg("-C").arg(&self.repository);
+        for setting in &self.settings {
+            command.arg("-c").arg(setting);
+        }
+        command
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .env("GIT_LITERAL_PATHSPECS", "1")
+            .env("GIT_PAGER", "cat");
+        command
+    }
 }
 
 fn unreadable_configuration() -> Error {
@@ -316,7 +343,7 @@ mod tests {
         }
 
         for arguments in commands {
-            let mut command = read_only_command(&root, limits).unwrap();
+            let mut command = ReadOnlyGit::prepare(&root, limits).unwrap().command();
             command.args(arguments);
             let output = run_git(command, limits).unwrap();
             assert!(output.success(), "{arguments:?}: {}", output.stderr_text());

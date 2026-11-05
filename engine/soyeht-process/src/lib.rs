@@ -38,8 +38,7 @@ use std::{
 };
 
 pub use git::{
-    GIT_UNAVAILABLE_MESSAGE, read_only_command, read_only_command_with, require_git,
-    require_git_with, run_git, run_git_with,
+    GIT_UNAVAILABLE_MESSAGE, ReadOnlyGit, require_git, require_git_with, run_git, run_git_with,
 };
 use system::Running;
 

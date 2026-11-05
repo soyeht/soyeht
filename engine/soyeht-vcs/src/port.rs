@@ -145,8 +145,9 @@ where
 {
     let probe = Probe::system();
     let limits = soyeht_process::Limits::new(COMMAND_TIMEOUT, COMMAND_OUTPUT_BYTES);
-    let mut command = soyeht_process::read_only_command_with(&probe, repository, limits)
-        .map_err(process_error)?;
+    let mut command = soyeht_process::ReadOnlyGit::prepare_with(&probe, repository, limits)
+        .map_err(process_error)?
+        .command();
     command.args(arguments);
     run_git(&probe, command)
 }
