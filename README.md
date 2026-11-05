@@ -34,6 +34,10 @@ Early. macOS is the supported platform. The engine and the desktop client build 
 
 Every feature starts in `docs/contracts/`; if it is not in a contract, it is not in scope yet. Open an issue before a large change. `CONTRIBUTING.md` explains how to build Soyeht on macOS, Linux and Windows, run it, test it and prepare a pull request; `docs/add-a-pane-type.md` and `docs/add-a-harness.md` are the guides for the two most common extensions. Report security problems as `SECURITY.md` says.
 
+## Privacy and support
+
+Soyeht collects no data and has no account or server of its own. `PRIVACY.md` lists everything that leaves your devices and why. For help, open an issue at <https://github.com/soyeht/soyeht/issues>; report security problems as `SECURITY.md` says.
+
 ## License
 
 Apache-2.0. See `LICENSE` and `NOTICE`. The third-party provider logos are from Lobe Icons

@@ -151,7 +151,7 @@ struct AgentHarnessPicker: View {
   }
 
   private func harnessRow(_ item: HarnessInfo) -> some View {
-    let status = HarnessPickerModel.setupState(for: item)
+    let status = HarnessPickerModel.shownState(for: item)
     return Button {
       harness = item.id
     } label: {
