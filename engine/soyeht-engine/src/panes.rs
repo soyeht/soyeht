@@ -464,7 +464,9 @@ impl Core {
         for client in self.clients.values_mut() {
             client.streams.remove(id);
         }
-        let saved = &errors::invariant(self.panes.get(id), "Closing pane disappeared")?.stored;
+        let closing = errors::invariant(self.panes.get_mut(id), "Closing pane disappeared")?;
+        closing.screen.release();
+        let saved = &closing.stored;
         if matches!(
             saved.pane.mode,
             PaneMode::Editor | PaneMode::Web | PaneMode::Writing
