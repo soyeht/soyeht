@@ -200,6 +200,7 @@ impl Core {
             ));
         }
         let mut attachment = None;
+        let refused = response.get("error").is_some();
         let result = if response.get("result").is_some() {
             let result: WebCommandResult = serde_json::from_value(response["result"].clone())
                 .map_err(|_| errors::invalid("Invalid web command result"))?;
@@ -267,7 +268,35 @@ impl Core {
                 send_web_response(&client.outbox, attachment.as_ref(), frame)?;
             }
         }
+        if refused {
+            self.abandon_open(&waiter.method, &waiter.pane_id)?;
+        }
         Ok(())
+    }
+
+    /// Closes the empty pane of an agent's `web.open` whose navigation did not happen (the host
+    /// refused it, the person denied the session, the host went away, or it timed out): the pane
+    /// has nothing to show, and each such open would otherwise take one of the workspace's panes.
+    pub(super) fn abandon_open(&mut self, method: &str, pane_id: &str) -> Result<()> {
+        if method == WEB_OPEN {
+            self.abandon_web_pane(pane_id)?;
+        }
+        Ok(())
+    }
+
+    /// The pane of the call that is still waiting for the host under idempotency key `key`.
+    pub(super) fn pending_web_open(&self, connection: &str, key: &str) -> Option<String> {
+        let scope = &self.clients.get(connection)?.scope;
+        self.web_waiters
+            .values()
+            .find(|waiter| {
+                waiter.method == WEB_OPEN
+                    && waiter
+                        .mutation
+                        .as_ref()
+                        .is_some_and(|mutation| mutation.scope == *scope && mutation.key == key)
+            })
+            .map(|waiter| waiter.pane_id.clone())
     }
 
     fn commit_web_attachment(
@@ -333,7 +362,7 @@ impl Core {
                 client.outbox.send(model::failure(request, error.clone())?);
             }
         }
-        Ok(())
+        self.abandon_open(&waiter.method, &waiter.pane_id)
     }
 
     /// The connection that hosts the web panes, or `WEB_HOST_UNAVAILABLE` when there is none.

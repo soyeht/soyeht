@@ -484,7 +484,7 @@ impl Core {
                     .send(crate::model::failure(request, error.clone())?);
             }
         }
-        Ok(())
+        self.abandon_open(&waiter.method, &waiter.pane_id)
     }
 
     pub(crate) fn advance_web_permissions(&mut self) -> Result<()> {

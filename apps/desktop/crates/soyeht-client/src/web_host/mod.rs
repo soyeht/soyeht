@@ -20,7 +20,10 @@ use soyeht_protocol::{
     AttachmentRef, ErrorData, ErrorKind, RpcError, WebCommandKind, WebCommandParams,
     WebCommandResult, error_code,
 };
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
 
 pub use handoff::Handoff;
@@ -34,6 +37,12 @@ const ACCESS_KEY: &str = "_soyehtAccess";
 const WAIT_POLL: Duration = Duration::from_millis(250);
 /// A page that has not changed for this long is idle.
 const IDLE_FOR: Duration = Duration::from_millis(500);
+/// How long a command waits for the page of a pane the engine has just announced: the engine sends
+/// a navigation in the same breath as the pane's creation, and the window makes the page when it
+/// applies that event, on its own thread.
+const PAGE_WAIT: Duration = Duration::from_secs(5);
+/// How often the wait for a page looks for it.
+const PAGE_POLL: Duration = Duration::from_millis(25);
 
 /// What a host refuses with. The engine accepts these four kinds from a host and no other.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,6 +146,7 @@ impl Outcome {
 /// Answers `web.command`.
 pub struct Host {
     pages: Arc<dyn Pages>,
+    page_wait: Duration,
 }
 
 /// Who may do what in the session, from the engine's own note in the arguments.
@@ -155,7 +165,25 @@ enum Session {
 
 impl Host {
     pub fn new(pages: Arc<dyn Pages>) -> Self {
-        Self { pages }
+        Self {
+            pages,
+            page_wait: PAGE_WAIT,
+        }
+    }
+
+    /// The page of a pane, waiting for the window to make it when the engine has only just
+    /// announced the pane.
+    fn page_of(&self, pane_id: &str) -> Result<Arc<dyn Page>, HostError> {
+        let deadline = Instant::now() + self.page_wait;
+        loop {
+            if let Some(page) = self.pages.page(pane_id) {
+                return Ok(page);
+            }
+            if Instant::now() >= deadline {
+                return Err(HostError::Internal("The web pane is unavailable."));
+            }
+            std::thread::sleep(PAGE_POLL);
+        }
     }
 
     /// What the host answers a request it cannot read.
@@ -171,10 +199,7 @@ impl Host {
     }
 
     fn run(&self, params: &WebCommandParams) -> Result<Outcome, HostError> {
-        let page = self
-            .pages
-            .page(&params.pane_id)
-            .ok_or(HostError::Internal("The web pane is unavailable."))?;
+        let page = self.page_of(&params.pane_id)?;
         let session = session(&params.args, page.incognito())?;
         // An agent drives only a pane the person has not taken.
         if session != Session::Human {

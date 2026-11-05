@@ -594,3 +594,112 @@ async fn a_navigation_asks_about_the_site_it_goes_to_not_the_one_the_pane_is_on(
     assert!(is_silent(&mut host_rx).await);
     crate::test_paths::remove_after(core, root);
 }
+
+/// The session question an agent's open of a signed-in site raised, once the host has said the
+/// site has cookies.
+async fn session_question(
+    core: &mut Core,
+    host: &str,
+    host_rx: &mut outbox::Receiver,
+    viewer_rx: &mut outbox::Receiver,
+    pane: &str,
+) -> Value {
+    let probe = next_json(host_rx).await;
+    assert_eq!(probe["params"]["paneId"], pane);
+    core.web_host_response(
+        host,
+        json!({"jsonrpc":"2.0","id":probe["id"],"result":{"paneId":pane,"cookiesPresent":true}}),
+    )
+    .unwrap();
+    loop {
+        let event = next_json(viewer_rx).await;
+        if event["method"] == "pane.permission_requested" {
+            return event["params"].clone();
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_denied_open_closes_its_empty_pane_and_a_retry_asks_again() {
+    let (mut core, host, mut host_rx, caller, mut caller_rx, known, root) = setup().await;
+    let (viewer, mut viewer_rx) = connect(&mut core, false).await;
+    core.clients.get_mut(&viewer).unwrap().events = true;
+    assert!(matches!(
+        core.dispatch(&caller, open_request(70, "denied-open")),
+        Ok(Outcome::Queued)
+    ));
+    let first = opened_pane(&core, &known);
+    let asked = session_question(&mut core, &host, &mut host_rx, &mut viewer_rx, &first).await;
+    reply(
+        &mut core,
+        &host,
+        request(
+            71,
+            "pane.permission.answer",
+            json!({"paneId":first,"requestId":asked["requestId"],
+                "optionId":"deny","idempotencyKey":"deny-open"}),
+        ),
+    );
+    let refused = next_json(&mut caller_rx).await;
+    assert_eq!(refused["id"], 70);
+    assert_eq!(refused["error"]["data"]["kind"], "unauthorized");
+    assert!(core.panes[&first].stored.closed);
+    assert!(is_silent(&mut host_rx).await);
+
+    // The refusal left no receipt: the same call is asked again, in a pane of its own.
+    assert!(matches!(
+        core.dispatch(&caller, open_request(72, "denied-open")),
+        Ok(Outcome::Queued)
+    ));
+    let probe = next_json(&mut host_rx).await;
+    let second = probe["params"]["paneId"].as_str().unwrap();
+    assert_ne!(second, first);
+    assert!(!core.panes[second].stored.closed);
+    crate::test_paths::remove_after(core, root);
+}
+
+#[tokio::test]
+async fn a_host_refusal_closes_the_empty_pane_and_a_retry_joins_a_call_still_waiting() {
+    let (mut core, host, mut host_rx, caller, mut caller_rx, known, root) = setup().await;
+    assert!(matches!(
+        core.dispatch(&caller, open_request(73, "joined-open")),
+        Ok(Outcome::Queued)
+    ));
+    let pane = opened_pane(&core, &known);
+    let command = next_json(&mut host_rx).await;
+    // The same call again, while the host is still working: one pane, one command, two answers.
+    assert!(matches!(
+        core.dispatch(&caller, open_request(74, "joined-open")),
+        Ok(Outcome::Queued)
+    ));
+    assert_eq!(opened_pane(&core, &known), pane);
+    assert!(is_silent(&mut host_rx).await);
+    host_answers(&mut core, &host, &command, json!({"accepted":true}));
+    let mut answered = vec![
+        next_json(&mut caller_rx).await["id"].clone(),
+        next_json(&mut caller_rx).await["id"].clone(),
+    ];
+    answered.sort_by_key(|id| id.as_u64());
+    assert_eq!(answered, [json!(73), json!(74)]);
+
+    // A refusal by the host closes the pane the call made.
+    assert!(matches!(
+        core.dispatch(&caller, open_request(75, "refused-open")),
+        Ok(Outcome::Queued)
+    ));
+    let refused = next_json(&mut host_rx).await;
+    let refused_pane = refused["params"]["paneId"].as_str().unwrap().to_owned();
+    let kind = ErrorKind::NavigationRefused;
+    core.web_host_response(
+        &host,
+        json!({"jsonrpc":"2.0","id":refused["id"],"error":{
+            "code":soyeht_protocol::error_code(&kind),"message":"refused","data":{"kind":kind}}}),
+    )
+    .unwrap();
+    assert_eq!(
+        next_json(&mut caller_rx).await["error"]["data"]["kind"],
+        "navigation_refused"
+    );
+    assert!(core.panes[&refused_pane].stored.closed);
+    crate::test_paths::remove_after(core, root);
+}

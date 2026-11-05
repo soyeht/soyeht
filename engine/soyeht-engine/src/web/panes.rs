@@ -1,8 +1,9 @@
 use crate::{
-    core::Core,
+    core::{Core, persist_pane},
     errors::{self, Result},
     model::{self, RunningPane, StoredPane},
     panes::{pane_created, persist_new_pane},
+    ports::StorePort,
     screen::Screen,
 };
 use serde_json::{Value, json};
@@ -58,7 +59,7 @@ impl Core {
             .as_deref()
             .map(NormalizedUrl::parse)
             .transpose()?;
-        let (result, _) = self.persist_web_pane(
+        self.persist_web_pane(
             connection,
             method::PANE_CREATE,
             params,
@@ -68,18 +69,16 @@ impl Core {
                 url: url.as_ref(),
                 incognito: request.incognito.unwrap_or(false),
             },
-        )?;
-        Ok(result)
+        )
     }
 
-    /// The result of the request and whether it was a repeat of one already committed.
     pub(crate) fn persist_web_pane(
         &mut self,
         connection: &str,
         method: &str,
         raw_params: &Value,
         intent: NewWebPane<'_>,
-    ) -> Result<(Value, bool)> {
+    ) -> Result<Value> {
         self.ensure_web_pane_capacity(&intent.workspace.workspace_id)?;
         let pane = web_pane(intent.workspace, intent.name, intent.url, intent.incognito)?;
         let saved = StoredPane {
@@ -115,7 +114,39 @@ impl Core {
                 },
             );
         }
-        Ok((mutation.result, mutation.repeated))
+        Ok(mutation.result)
+    }
+
+    /// Closes a web pane that never got a page. A pane that has an address, because the host
+    /// reported one, is left to the person.
+    pub(super) fn abandon_web_pane(&mut self, pane_id: &str) -> Result<()> {
+        let Some(running) = self.panes.get(pane_id).filter(|running| {
+            !running.stored.closed
+                && running.stored.pane.mode == PaneMode::Web
+                && running.stored.pane.url.is_none()
+        }) else {
+            return Ok(());
+        };
+        let mut saved = running.stored.clone();
+        let mut events = Vec::new();
+        let layout = self.prepare_pane_close(&mut saved, &mut events)?;
+        let mutation = StorePort::mutate(
+            &mut self.store,
+            "engine",
+            &format!("web-open-abandon:{pane_id}"),
+            "web.open.abandon",
+            |change| {
+                persist_pane(change, &saved)?;
+                if let Some(workspace) = &layout {
+                    change.update_workspace(workspace)?;
+                }
+                Ok((json!({"paneId":pane_id}), events))
+            },
+        )
+        .map_err(errors::storage)?;
+        errors::invariant(self.panes.get_mut(pane_id), "Web pane disappeared")?.stored = saved;
+        self.finish_close(pane_id)?;
+        self.publish(&mutation.events)
     }
 
     fn ensure_web_pane_capacity(&self, workspace_id: &str) -> Result<()> {

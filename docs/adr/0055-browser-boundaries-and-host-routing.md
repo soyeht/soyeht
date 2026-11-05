@@ -104,6 +104,20 @@ the host accepts the navigation, so the MCP server waits for it as it does for `
 pane carries its URL and the host opens it. When no web host is connected the call fails with
 `WEB_HOST_UNAVAILABLE` before a pane is made.
 
+The pane is made under a key of its own, and the call's idempotency key belongs to the
+navigation's waiter like `web.navigate`'s: its receipt is committed when the host accepts the
+navigation. A call made again while the first still waits joins that waiter, and one made
+again after a refusal asks again. When the navigation fails (the host refused it, the person
+denied the session, the host went away, the wait expired) the engine closes the empty pane, so
+that denied opens do not fill the workspace's web pane limit; a pane that has already reported
+an address is left to the person. A second `web.open` of the same address before the host has
+reported the first pane's address does not find that pane and opens another.
+
+Not covered yet: the probe runs when a command names an address. A page that a main-frame
+redirect or a link takes to another site loads with no new probe of that site. A host could probe
+again on a main-frame navigation to another registrable domain and hold it until the person
+answers; that is a follow-up of its own.
+
 ### Mac WebKit boundary
 
 `apps/mac/Sources/Web/` is the only module that imports WebKit. It is split

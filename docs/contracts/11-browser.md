@@ -140,9 +140,15 @@ address bar) pauses agent driving and the next tool call returns
   `navigate` command, so the host says whether the address's site has cookies
   before the page loads, and the permission request is the same one
   `web_navigate` raises. The answer to `web_open` is `{paneId}` once the host
-  accepts the navigation, or the error that stopped it (a denied session
-  leaves the empty pane). A pane a person opens loads the address at once,
-  and so does an incognito pane, which has no session to protect.
+  accepts the navigation, or the error that stopped it, which can take as long
+  as the person needs to answer (the MCP server waits about 70 s). When the
+  open fails (a denied session, a host error, a timeout) the empty pane is
+  closed and nothing is recorded under the call's idempotency key, so the same
+  call made again asks again; made again while the first is still waiting, it
+  joins it. A second `web_open` of the same address before the host has
+  reported the first pane's address opens a second pane. A pane a person
+  opens loads the address at once, and so does an incognito pane, which has no
+  session to protect.
 - No cookie import from other browsers in v1. Only `http` and `https`
   navigations; everything else is refused with an explicit message.
 - Console and network readings are kept in memory only (rings of 500 and
