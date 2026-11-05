@@ -12,13 +12,15 @@ size of both after each phase:
   cycles    every pane is closed and new ones print again, `--cycles` times: growth is a leak
   closed    every pane closed
   restart   the engine restarted with the closed panes still in its database
+  agents    `--agents` agent panes (a scripted test agent) answer `--turns` prompts of `--prompt-kb` KB
+            each, then close
   editor    `--files` text files of `--file-megabytes` MB each opened in editor panes, then closed
   outage    the engine is down while `--outage` shells print `--outage-megabytes` MB each (the
             supervisor holds it), then the engine comes back and takes it in
 
 Run it twice, on the base and on the change, with the same arguments, and compare the reports:
 
-    cargo build --release -p soyeht-cli -p soyeht-engine -p soyeht-ptyd -p soyeht-mcp
+    cargo build --release -p soyeht-cli -p soyeht-engine -p soyeht-ptyd -p soyeht-mcp -p soyeht-acp
     uv run python scripts/measure_memory.py --report /tmp/after.json
 
 The numbers are the process's resident set (`ps`) and, on macOS, its physical footprint
@@ -140,6 +142,45 @@ def outage(services, client, args):
     return client, panes, held
 
 
+def finished_turn(client, pane_id, prompt_id):
+    """Whether the agent of `pane_id` has answered the prompt `prompt_id`."""
+    page = client.call("pane.transcript", {"paneId": pane_id, "limit": 3})
+    return any(item.get("promptId") == prompt_id and item.get("role") == "assistant"
+               and item.get("kind") == "message" and item.get("complete")
+               for item in page["items"])
+
+
+def agents(services, client, binaries, args):
+    """Runs conversations with a scripted agent; returns the memory with the panes open."""
+    services.install_fake_acp(binaries)
+    (services.data / "harnesses.json").write_text(json.dumps([{
+        "id": "test-agent", "name": "Test agent", "version": "test",
+        "command": str(services.binaries / "soyeht-fake-acp"),
+        "args": ["--state-dir", str(services.data / "agent-state")]}]))
+    panes = []
+    for index in range(args.agents):
+        created = services.cli("pane", "create", "--agent", "test-agent",
+                               "--idempotency-key", f"agent-{time.monotonic_ns()}-{index}")
+        panes.append(created["paneId"])
+    deadline = time.monotonic() + 60
+    while any((client.pane(pane_id) or {}).get("state") != "idle" for pane_id in panes):
+        require(time.monotonic() < deadline, "the agents did not start")
+        time.sleep(0.2)
+    text = "x" * (args.prompt_kb * 1024)
+    for turn in range(args.turns):
+        sent = {pane_id: client.mutate("pane.prompt", paneId=pane_id, text=f"{turn} {text}")
+                ["promptId"] for pane_id in panes}
+        deadline = time.monotonic() + 60
+        while not all(finished_turn(client, pane_id, prompt) for pane_id, prompt in sent.items()):
+            require(time.monotonic() < deadline, "the agents did not answer")
+            time.sleep(0.05)
+    time.sleep(SETTLE_SECONDS)
+    busy = sample(services)
+    close_panes(client, panes)
+    time.sleep(SETTLE_SECONDS)
+    return busy
+
+
 def text_file(path, megabytes):
     line = ("The quick brown fox jumps over the lazy dog; " * 2).rstrip() + "\n"
     with open(path, "w") as output:
@@ -203,6 +244,10 @@ def run(services, args):
     time.sleep(SETTLE_SECONDS)
     phases["restart"] = sample(services)
 
+    if args.agents:
+        phases["agents open"] = agents(services, client, args.bin_dir.resolve(), args)
+        phases["agents closed"] = sample(services)
+
     if args.files:
         phases["editor open"] = editor(services, client, args)
         phases["editor closed"] = sample(services)
@@ -225,6 +270,9 @@ def main():
     parser.add_argument("--heavy", type=int, default=4)
     parser.add_argument("--lines", type=int, default=200000)
     parser.add_argument("--cycles", type=int, default=3)
+    parser.add_argument("--agents", type=int, default=3, help="agent panes (0 skips the phase)")
+    parser.add_argument("--turns", type=int, default=100)
+    parser.add_argument("--prompt-kb", type=int, default=8)
     parser.add_argument("--files", type=int, default=3,
                         help="large files opened in the editor (0 skips the phase)")
     parser.add_argument("--file-megabytes", type=int, default=20)
