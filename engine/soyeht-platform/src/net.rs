@@ -28,8 +28,10 @@ pub fn listen(address: SocketAddr) -> io::Result<TcpListener> {
 }
 
 /// Whether an error of `accept` concerns the one connection it took from the queue (the peer reset
-/// or aborted it while it waited, the call was interrupted or timed out), not the listener or the
-/// process. The next `accept` has an answer at once; any other error needs a pause before it.
+/// or aborted it while it waited, the call was interrupted or timed out; on macOS a connection
+/// the peer reset before it was accepted comes back with no address, which the runtime reports as
+/// invalid input), not the listener or the process. The next `accept` has an answer at once; any
+/// other error needs a pause before it.
 pub fn accept_error_concerns_one_connection(error: &io::Error) -> bool {
     matches!(
         error.kind(),
@@ -37,6 +39,7 @@ pub fn accept_error_concerns_one_connection(error: &io::Error) -> bool {
             | io::ErrorKind::ConnectionReset
             | io::ErrorKind::Interrupted
             | io::ErrorKind::TimedOut
+            | io::ErrorKind::InvalidInput
     )
 }
 
@@ -52,6 +55,7 @@ mod tests {
             io::ErrorKind::ConnectionReset,
             io::ErrorKind::Interrupted,
             io::ErrorKind::TimedOut,
+            io::ErrorKind::InvalidInput,
         ] {
             assert!(accept_error_concerns_one_connection(&io::Error::from(kind)));
         }
@@ -59,7 +63,7 @@ mod tests {
             io::ErrorKind::Other,
             io::ErrorKind::OutOfMemory,
             io::ErrorKind::PermissionDenied,
-            io::ErrorKind::InvalidInput,
+            io::ErrorKind::NotFound,
         ] {
             assert!(!accept_error_concerns_one_connection(&io::Error::from(
                 kind

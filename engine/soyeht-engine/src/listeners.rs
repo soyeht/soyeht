@@ -38,7 +38,7 @@ pub(crate) async fn serve_local(mut local: Listener, accept: Accept) -> crate::e
     } = accept;
     let mut failures = Failures::new("local");
     loop {
-        let stream = failures.next(&mut local).await;
+        let stream = failures.next(&mut local).await?;
         let Some(peer_audit_token) = local_peer_audit_token(&stream) else {
             continue;
         };
@@ -61,11 +61,15 @@ pub(crate) async fn serve_local(mut local: Listener, accept: Accept) -> crate::e
 }
 
 /// Accepts the connections of a TCP listener for as long as the engine runs. A failed `accept` is
-/// logged and waited out, never the end of the listener (`accept_loop`).
+/// logged and waited out; a listener that cannot recover ends with its error (`accept_loop`).
 pub(crate) async fn serve_tcp(mut listener: TcpListener, accept: Accept) -> io::Result<()> {
-    let mut failures = Failures::new("tcp");
+    let mut failures = Failures::new(
+        listener
+            .local_addr()
+            .map_or_else(|_| "tcp".to_owned(), |address| address.to_string()),
+    );
     loop {
-        let (stream, peer) = failures.next(&mut listener).await;
+        let (stream, peer) = failures.next(&mut listener).await?;
         let Some(slot) = accept.admission.remote(peer.ip()) else {
             continue;
         };
