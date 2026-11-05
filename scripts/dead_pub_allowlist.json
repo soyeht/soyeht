@@ -5,6 +5,5 @@
   "engine/soyeht-store/src/editor.rs::active_file_replacements": "Read-back of persisted replacements, used by the store and engine integration tests to check durability; no production reader.",
   "engine/soyeht-store/src/usage.rs::usage_reading": "Read-back of one persisted usage reading, used by the store and engine tests; production reads them all through usage_readings.",
   "engine/soyeht-store/src/web.rs::web_session_grants": "Read-back of persisted session grants, used by the store tests to check durability; no production reader.",
-  "engine/soyeht-store/src/writing.rs::writing_sidecar_versions": "Read-back of persisted sidecar versions, used by the store tests to check retention; no production reader.",
-  "apps/android/core/src/core.rs::choose_usage_provider": "The hook for choosing, while the app runs, the provider whose meter reads a harness (ADR 0141). Its first caller is the OpenCode meter that follows the provider OpenCode is set to (ADR 0133); until then the contract's rule answers."
+  "engine/soyeht-store/src/writing.rs::writing_sidecar_versions": "Read-back of persisted sidecar versions, used by the store tests to check retention; no production reader."
 }

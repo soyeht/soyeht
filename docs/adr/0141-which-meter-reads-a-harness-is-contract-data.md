@@ -18,10 +18,6 @@ meter is about to follow the provider OpenCode is set to (ADR 0133), so the rule
   holds. The generated forms are `UsageProvider::for_harness` (Rust) and `UsageProvider(harnessId:)` (Swift),
   which replaces the hand-written initializer; `contracts/vectors/usage.json` has the cases (`harnessProviders`)
   and both clients pass them. OpenCode is in the table, so its harness now has a mark and a ring.
-- **A provider can be chosen at run time.** `soyeht_client::usage::HarnessProviders` answers `provider_of(harness)`:
-  a provider given to that exact harness id while the app runs, else the contract's rule. The Android core
-  keeps one and exports `choose_usage_provider`; a client that learns which provider OpenCode is set to gives it
-  there, and no table is edited.
 - **The ring is the core's, the drawing Kotlin's.** The core exports `usage_gauge(pane_id)`: the reading of the
   chosen provider through `usage::Presentation` (the window the ring follows, the band from the thresholds of
   `x-clientPolicy`, the opacities of a last-known or missing reading, the percentage). `load_usage` asks the

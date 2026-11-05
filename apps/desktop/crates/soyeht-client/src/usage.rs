@@ -66,30 +66,6 @@ impl Emphasis {
     }
 }
 
-/// Which provider's meter reads each harness. The contract holds the rule (`usageHarnesses` of
-/// `x-clientPolicy`, `UsageProvider::for_harness`, the cases of `contracts/vectors/usage.json`);
-/// a harness can also be given a provider while the app runs, which wins over the rule: OpenCode,
-/// for one, is read by the provider it is set to (ADR 0133).
-#[derive(Debug, Clone, Default)]
-pub struct HarnessProviders {
-    chosen: std::collections::HashMap<String, UsageProvider>,
-}
-
-impl HarnessProviders {
-    /// Reads `harness_id` by `provider` from now on.
-    pub fn choose(&mut self, harness_id: &str, provider: UsageProvider) {
-        self.chosen.insert(harness_id.to_owned(), provider);
-    }
-
-    /// The provider whose meter reads the harness, when there is one.
-    pub fn provider_of(&self, harness_id: &str) -> Option<UsageProvider> {
-        self.chosen
-            .get(harness_id)
-            .cloned()
-            .or_else(|| UsageProvider::for_harness(harness_id))
-    }
-}
-
 pub struct Presentation<'a>(pub &'a UsageReading);
 
 impl Presentation<'_> {
@@ -481,14 +457,12 @@ mod tests {
 
     #[test]
     fn a_harness_is_read_by_the_provider_the_vector_says() {
-        let providers = HarnessProviders::default();
         let cases = cases("usage", "harnessProviders");
         assert!(cases.len() >= 6, "the vector file lost its cases");
         for case in cases {
             let harness = case["harness"].as_str().unwrap();
             let expected = case["provider"].as_str();
-            let found = providers
-                .provider_of(harness)
+            let found = UsageProvider::for_harness(harness)
                 .map(|provider| serde_json::to_value(provider).unwrap());
             assert_eq!(
                 found.as_ref().and_then(|value| value.as_str()),
@@ -497,24 +471,5 @@ mod tests {
                 case["name"]
             );
         }
-    }
-
-    #[test]
-    fn a_provider_chosen_while_running_wins_over_the_rule_for_that_harness_only() {
-        let mut providers = HarnessProviders::default();
-        assert_eq!(
-            providers.provider_of("registry.opencode"),
-            Some(UsageProvider::Opencode)
-        );
-        providers.choose("registry.opencode", UsageProvider::Codex);
-        assert_eq!(
-            providers.provider_of("registry.opencode"),
-            Some(UsageProvider::Codex)
-        );
-        assert_eq!(
-            providers.provider_of("registry.claude-acp"),
-            Some(UsageProvider::Claude),
-            "other harnesses keep the rule"
-        );
     }
 }

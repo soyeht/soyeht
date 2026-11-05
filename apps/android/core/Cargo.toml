@@ -18,6 +18,8 @@ soyeht-protocol.workspace = true
 soyeht-platform.workspace = true
 soyeht-client.workspace = true
 uniffi.workspace = true
+
+[dev-dependencies]
 serde_json.workspace = true
 
 [lints]

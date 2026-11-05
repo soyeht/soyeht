@@ -1,12 +1,12 @@
 //! The usage ring of an agent pane's header: the meter of the provider that reads the pane's harness, as
 //! the Mac and the iPhone draw it. Which provider reads which harness is the contract's rule
-//! (`UsageProvider::for_harness`, `contracts/vectors/usage.json`) unless the app was told otherwise while
-//! it ran (`HarnessProviders`); the window the ring follows, its band, its opacities and its percentage are
-//! `soyeht_client::usage::Presentation`'s, which the thresholds of `x-clientPolicy` drive.
+//! (`UsageProvider::for_harness`, `contracts/vectors/usage.json`); the window the ring follows, its band, its
+//! opacities and its percentage are `soyeht_client::usage::Presentation`'s, which the thresholds of
+//! `x-clientPolicy` drive.
 
 use soyeht_client::{
     State,
-    usage::{Band, HarnessProviders, Presentation},
+    usage::{Band, Presentation},
 };
 use soyeht_protocol::UsageProvider;
 
@@ -32,18 +32,9 @@ pub struct UsageGauge {
     pub percentage: String,
 }
 
-/// The provider named as the contract names it ("claude", "opencode"), when it is one.
-pub(crate) fn provider_named(name: &str) -> Option<UsageProvider> {
-    serde_json::from_value(serde_json::Value::String(name.to_owned())).ok()
-}
-
-pub(crate) fn gauge(
-    state: &State,
-    providers: &HarnessProviders,
-    pane_id: &str,
-) -> Option<UsageGauge> {
+pub(crate) fn gauge(state: &State, pane_id: &str) -> Option<UsageGauge> {
     let harness = &state.pane(pane_id)?.agent.as_ref()?.harness;
-    let provider = providers.provider_of(harness)?;
+    let provider = UsageProvider::for_harness(harness)?;
     let reading = state
         .usage()
         .iter()
@@ -107,7 +98,7 @@ mod tests {
             "registry.codex-acp",
             vec![reading("claude", "ok", 0.1), reading("codex", "ok", 0.6)],
         );
-        let gauge = gauge(&state, &HarnessProviders::default(), "a").unwrap();
+        let gauge = gauge(&state, "a").unwrap();
         assert_eq!(gauge.provider, "Codex");
         assert_eq!(gauge.fraction, Some(0.6));
         assert_eq!(gauge.band, Some(GaugeBand::Warning));
@@ -124,7 +115,7 @@ mod tests {
             (0.95, GaugeBand::Danger),
         ] {
             let state = state("registry.claude-acp", vec![reading("claude", "ok", used)]);
-            let shown = gauge(&state, &HarnessProviders::default(), "a").unwrap();
+            let shown = gauge(&state, "a").unwrap();
             assert_eq!(shown.band, Some(band), "{used}");
         }
     }
@@ -132,7 +123,7 @@ mod tests {
     #[test]
     fn a_stale_reading_keeps_its_percentage_and_mutes_the_arc() {
         let state = state("registry.claude-acp", vec![reading("claude", "stale", 0.3)]);
-        let shown = gauge(&state, &HarnessProviders::default(), "a").unwrap();
+        let shown = gauge(&state, "a").unwrap();
         assert_eq!(shown.percentage, "30%");
         assert!(shown.arc_opacity < 1.0 && shown.arc_opacity > 0.0);
     }
@@ -144,7 +135,7 @@ mod tests {
             "source": "claude_cli_usage", "fetchedAt": "2026-11-04T12:00:00Z",
         });
         let state = state("registry.claude-acp", vec![unavailable]);
-        let shown = gauge(&state, &HarnessProviders::default(), "a").unwrap();
+        let shown = gauge(&state, "a").unwrap();
         assert_eq!((shown.fraction, shown.band), (None, None));
         assert_eq!(shown.percentage, "\u{2014}");
         assert!(shown.ring_opacity < 1.0);
@@ -153,36 +144,14 @@ mod tests {
     #[test]
     fn a_harness_no_meter_reads_and_a_reading_not_yet_here_show_no_ring() {
         let state_of = |harness: &str, readings| state(harness, readings);
-        let providers = HarnessProviders::default();
         assert!(
             gauge(
                 &state_of("local.my-tool", vec![reading("claude", "ok", 0.1)]),
-                &providers,
                 "a"
             )
             .is_none()
         );
-        assert!(
-            gauge(
-                &state_of("registry.claude-acp", Vec::new()),
-                &providers,
-                "a"
-            )
-            .is_none()
-        );
-        assert!(gauge(&State::default(), &providers, "missing").is_none());
-    }
-
-    #[test]
-    fn a_provider_chosen_while_running_decides_which_meter_a_harness_shows() {
-        let state = state(
-            "registry.opencode",
-            vec![reading("opencode", "ok", 0.2), reading("codex", "ok", 0.6)],
-        );
-        let mut providers = HarnessProviders::default();
-        assert_eq!(gauge(&state, &providers, "a").unwrap().provider, "OpenCode");
-        providers.choose("registry.opencode", provider_named("codex").unwrap());
-        assert_eq!(gauge(&state, &providers, "a").unwrap().provider, "Codex");
-        assert!(provider_named("nobody").is_none());
+        assert!(gauge(&state_of("registry.claude-acp", Vec::new()), "a").is_none());
+        assert!(gauge(&State::default(), "missing").is_none());
     }
 }

@@ -12,7 +12,6 @@ use soyeht_client::{
     Command, Engine, Error, Event, State,
     device::{self, Cancel, Credential, PairingFailure},
     keys,
-    usage::HarnessProviders,
 };
 use soyeht_protocol::{
     client_policy::{CLIENT_NAME_ANDROID, CLIENT_NAME_ANDROID_DEV},
@@ -68,7 +67,6 @@ pub struct Core {
     /// Ends the pairing that is waiting, if there is one.
     pairing: Mutex<Arc<Cancel>>,
     /// Which provider's meter reads each harness; the contract's rule unless the app chose otherwise.
-    providers: Mutex<HarnessProviders>,
     /// Which connection the replica belongs to: the events of an earlier one are dropped, not applied.
     epoch: Arc<AtomicU64>,
 }
@@ -86,7 +84,6 @@ impl Core {
             replica: Arc::default(),
             engine: Mutex::default(),
             pairing: Mutex::default(),
-            providers: Mutex::default(),
             epoch: Arc::default(),
         })
     }
@@ -242,16 +239,7 @@ impl Core {
 
     /// The usage ring of an agent pane: the meter of the provider that reads its harness.
     pub fn usage_gauge(&self, pane_id: String) -> Option<UsageGauge> {
-        let providers = lock(&self.providers).clone();
-        usage::gauge(&lock(&self.replica).state, &providers, &pane_id)
-    }
-
-    /// Reads `harness_id` by the named provider ("claude", "opencode") from now on, in place of the
-    /// contract's rule. A name that is no provider changes nothing.
-    pub fn choose_usage_provider(&self, harness_id: String, provider: String) {
-        if let Some(provider) = usage::provider_named(&provider) {
-            lock(&self.providers).choose(&harness_id, provider);
-        }
+        usage::gauge(&lock(&self.replica).state, &pane_id)
     }
 
     pub fn send_prompt(&self, pane_id: String, text: String) {
