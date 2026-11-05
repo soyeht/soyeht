@@ -20,7 +20,9 @@ use super::{
 };
 use crate::{core::Core, errors, errors::Result, model, offload::Done};
 use soyeht_platform::log::Line;
-use soyeht_protocol::{EditorSaveFailure, FileAuthor, FileSaveFailedEvent, event};
+use soyeht_protocol::{
+    EditorSaveFailure, FileAuthor, FileSaveFailedEvent, event, shared_text::SharedText,
+};
 use soyeht_store::editor::EditorFile;
 use std::{
     path::{Path, PathBuf},
@@ -35,9 +37,9 @@ pub(super) const SETTLE_WAIT: Duration = Duration::from_millis(1500);
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum DiskResult {
     /// This draft is on the disk.
-    Written(String),
+    Written(SharedText),
     /// The disk holds this text, which the editor did not know.
-    Changed(String),
+    Changed(SharedText),
     /// The disk holds what the editor knew, and there was nothing to write.
     Unchanged,
 }
@@ -76,9 +78,9 @@ pub(super) struct DiskJob {
     workspace_root: PathBuf,
     relative_path: String,
     /// The text the editor believes the disk holds.
-    known: String,
+    known: SharedText,
     /// The text to write once the disk still holds `known`; a watch has none.
-    draft: Option<String>,
+    draft: Option<SharedText>,
     /// The person asked to save: a file gone from the disk is created again, empty, and
     /// then written.
     recreate: bool,
@@ -119,7 +121,15 @@ impl DiskJob {
     pub(super) fn run(self) -> Result<DiskResult> {
         let found =
             resolve_in(&*self.files, &self.workspace_root, &self.relative_path).and_then(|path| {
-                read_disk_from(&*self.files, &path.canonical).map(|disk| (path, disk))
+                // The usual answer is that nothing changed, and it is given without reading the
+                // file into memory. Any other answer, an error included, comes from reading it.
+                if matches!(
+                    self.files.text_matches(&path.canonical, &self.known),
+                    Ok(true)
+                ) {
+                    return Ok((path, None));
+                }
+                read_disk_from(&*self.files, &path.canonical).map(|disk| (path, Some(disk)))
             });
         let (path, disk) = match found {
             Ok(found) => found,
@@ -131,7 +141,7 @@ impl DiskJob {
             }
             Err(error) => return Err(error),
         };
-        if disk != self.known {
+        if let Some(disk) = disk.filter(|disk| *disk != self.known) {
             return Ok(DiskResult::Changed(disk));
         }
         let Some(draft) = self.draft else {
@@ -482,7 +492,7 @@ impl Core {
                     // at the new place, never marked as saved.
                     return Ok(());
                 }
-                self.record_written(snapshot, &text, current, now)
+                self.record_written(snapshot, text, current, now)
             }
             DiskResult::Changed(disk) => {
                 if snapshot.basis != Basis::of(&current) {
@@ -500,7 +510,7 @@ impl Core {
     fn record_written(
         &mut self,
         snapshot: &Snapshot,
-        written: &str,
+        written: SharedText,
         mut file: EditorFile,
         now: i64,
     ) -> Result<()> {
@@ -509,13 +519,13 @@ impl Core {
             .clone()
             .ok_or_else(|| errors::internal("Written editor save has no author"))?;
         let current_revision = std::mem::replace(&mut file.revision, snapshot.revision);
-        let version = stored_version(&file, written.into(), author.clone(), self.timestamp());
+        let version = stored_version(&file, written.clone(), author.clone(), self.timestamp());
         file.revision = current_revision;
         file.disk_revision = next_revision(file.disk_revision)?;
-        file.disk_text = written.into();
+        file.disk_text = written.clone();
         file.conflict_text = None;
         file.updated_ms = now;
-        if file.draft_text.as_deref() == Some(written) {
+        if file.draft_text.as_deref() == Some(&*written) {
             file.draft_text = None;
             file.draft_author = None;
         }

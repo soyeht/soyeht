@@ -156,7 +156,7 @@ impl Core {
         let file = self.current_language_file(&file_id, revision)?;
         if let Some(position) = &position {
             let text = file.draft_text.as_ref().unwrap_or(&file.disk_text);
-            TextBuffer::new(text).byte_at(position)?;
+            TextBuffer::new(text.clone()).byte_at(position)?;
         }
         let workspace = crate::model::workspace(&self.store, &file.workspace_id)?;
         let uri = super::runtime::file_uri(Path::new(&workspace.path), &file.relative_path)?;

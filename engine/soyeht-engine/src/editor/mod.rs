@@ -35,6 +35,7 @@ mod tabs;
 pub(crate) mod test_fixture;
 #[cfg(test)]
 mod test_support;
+mod text_compare;
 mod text_refusal;
 mod trash;
 mod undo;

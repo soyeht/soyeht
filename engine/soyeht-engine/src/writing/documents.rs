@@ -11,6 +11,7 @@ use soyeht_protocol::{
     Pane, PaneMode, PaneState, StateSource, WritingDocument, WritingDocumentCreateParams,
     WritingDocumentCreateResult, WritingDocumentOpenParams, WritingDocumentOpenResult, WritingFont,
     WritingKind, WritingPreferencesParams, WritingPreferencesResult, WritingSection, event, method,
+    shared_text::SharedText,
 };
 use soyeht_store::{
     editor::{EditorFile, StoredFileVersion, document},
@@ -148,7 +149,7 @@ impl Core {
             workspace,
             &pane,
             intent.relative_path.clone(),
-            String::new(),
+            SharedText::default(),
             canonical,
             self.now_ms(),
             intent.file_id.clone(),
@@ -595,7 +596,7 @@ fn new_file(
     workspace: &soyeht_protocol::Workspace,
     pane: &Pane,
     relative: String,
-    text: String,
+    text: SharedText,
     canonical: &Path,
     now_ms: i64,
 ) -> EditorFile {
@@ -614,7 +615,7 @@ fn new_file_with_id(
     workspace: &soyeht_protocol::Workspace,
     pane: &Pane,
     relative: String,
-    text: String,
+    text: SharedText,
     canonical: &Path,
     now_ms: i64,
     file_id: String,

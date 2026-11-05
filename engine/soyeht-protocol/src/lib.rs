@@ -21,6 +21,7 @@ pub mod profile;
 pub mod readiness;
 pub mod service_report;
 pub mod setting;
+pub mod shared_text;
 pub mod snapshot;
 pub mod update;
 pub mod update_policy;

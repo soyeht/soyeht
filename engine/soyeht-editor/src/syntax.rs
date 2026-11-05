@@ -1,5 +1,5 @@
 use crate::{AppliedEdit, Error, Result, TextBuffer};
-use soyeht_protocol::{EditorLanguage, HighlightKind, HighlightSpan};
+use soyeht_protocol::{EditorLanguage, HighlightKind, HighlightSpan, shared_text::SharedText};
 use tree_sitter::{InputEdit, Parser, Point, Tree};
 
 pub struct SyntaxDocument {
@@ -15,7 +15,7 @@ struct SyntaxTree {
 }
 
 impl SyntaxDocument {
-    pub fn new(text: impl Into<String>, language: EditorLanguage) -> Result<Self> {
+    pub fn new(text: impl Into<SharedText>, language: EditorLanguage) -> Result<Self> {
         let buffer = TextBuffer::new(text);
         let syntax = parser(language)?
             .map(|mut parser| {

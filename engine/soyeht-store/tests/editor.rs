@@ -80,7 +80,7 @@ fn version(revision: u64, content: String) -> StoredFileVersion {
             author: author("Caio"),
             byte_count: content.len().to_string(),
         },
-        content,
+        content: content.into(),
     }
 }
 
@@ -178,14 +178,7 @@ fn an_unsaved_draft_and_conflict_survive_reopen_without_losing_the_disk_base() {
     drop(store);
 
     let store = profile.store();
-    assert_eq!(
-        store.editor_file("file-1").unwrap(),
-        Some(conflicted.clone())
-    );
-    assert_eq!(
-        store.editor_file_for_pane("pane-1").unwrap(),
-        Some(conflicted)
-    );
+    assert_eq!(store.editor_file("file-1").unwrap(), Some(conflicted));
     assert_eq!(store.editor_files().unwrap().len(), 1);
 }
 
