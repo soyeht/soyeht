@@ -67,6 +67,9 @@ impl CommandPort for SystemGit {
             repository,
             [
                 OsString::from("blame"),
+                // The folder's own configuration may name a filter program for a path; blame
+                // reads the file as it is stored.
+                OsString::from("--no-textconv"),
                 OsString::from("--line-porcelain"),
                 OsString::from("HEAD"),
                 OsString::from("--"),
@@ -232,5 +235,37 @@ mod tests {
         let result = SystemGit.repository_root(&directory);
         fs::remove_dir_all(&directory).unwrap();
         assert_eq!(result, Err(Error::InvalidRepository));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn blame_does_not_run_a_filter_program_the_repository_names() {
+        let root = std::env::temp_dir().join(format!("soyeht-vcs-textconv-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let marker = root.join("filter-ran");
+        let git = |arguments: &[&str]| {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+                .args(arguments)
+                .status()
+                .unwrap();
+            assert!(status.success(), "{arguments:?}");
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join(".gitattributes"), "*.bin diff=probe\n").unwrap();
+        fs::write(root.join("a.bin"), "one\ntwo\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "baseline"]);
+        let filter = format!("sh -c 'touch \"{}\"; cat \"$1\"' --", marker.display());
+        git(&["config", "diff.probe.textconv", &filter]);
+
+        let blame = SystemGit.blame(&root, Path::new("a.bin"));
+        let ran = marker.exists();
+        fs::remove_dir_all(&root).unwrap();
+        assert!(blame.unwrap().contains("\tone\n"));
+        assert!(!ran, "the filter program must not run");
     }
 }

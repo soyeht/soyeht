@@ -140,7 +140,15 @@ fn base_commit(repository: &Path) -> Result<String> {
 fn changed_paths(repository: &Path, base: &str) -> Result<Vec<String>> {
     let mut paths = nul_paths(&bytes(git(
         repository,
-        &["diff", "--name-only", "-z", base, "--", "."],
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--name-only",
+            "-z",
+            base,
+            "--",
+            ".",
+        ],
     )?)?)?;
     paths.extend(nul_paths(&bytes(git(
         repository,
@@ -196,7 +204,15 @@ fn path_patch(repository: &Path, base: &str, path: &str) -> Result<String> {
     }
     String::from_utf8(bytes(git(
         repository,
-        &["diff", "--no-ext-diff", "--unified=200", base, "--", path],
+        &[
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--unified=200",
+            base,
+            "--",
+            path,
+        ],
     )?)?)
     .map_err(|_| errors::worktree_unavailable("Revision patch is not UTF-8"))
 }
@@ -540,6 +556,26 @@ pub(crate) mod testing {
                 && surface.name == "save"
                 && surface.kind == SurfaceKind::Handler
         }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_adapter_does_not_run_filter_programs_the_repository_names() {
+        let repository = Repository::new();
+        let marker = repository.0.join("filter-ran");
+        fs::write(repository.0.join(".gitattributes"), "*.bin diff=probe\n").unwrap();
+        fs::write(repository.0.join("a.bin"), "one\n").unwrap();
+        run(&repository.0, &["add", "."]);
+        run(&repository.0, &["commit", "-m", "binary"]);
+        let filter = format!("sh -c 'touch \"{}\"; cat \"$1\"' --", marker.display());
+        run(&repository.0, &["config", "diff.probe.textconv", &filter]);
+        run(&repository.0, &["config", "diff.probe.command", &filter]);
+        fs::write(repository.0.join("a.bin"), "two\n").unwrap();
+
+        let snapshot = GitRevision.inspect(&repository.0).unwrap();
+
+        assert!(snapshot.changed_paths.contains(&"a.bin".to_owned()));
+        assert!(!marker.exists(), "the filter program must not run");
     }
 
     #[test]
