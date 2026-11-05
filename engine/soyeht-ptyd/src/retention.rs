@@ -5,12 +5,12 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::VecDeque;
 
-/// What a buffer keeps allocated for the next output once the engine has taken the rest in. A
-/// burst that filled the buffer (up to the limit) would otherwise leave that much memory held for
-/// as long as the process lives.
+/// What a buffer keeps allocated for the next output once the engine has taken the rest in is
+/// twice this (`SHRINK_ABOVE`). A burst that filled the buffer (up to the limit) would otherwise
+/// leave that much memory held for as long as the process lives.
 const KEPT_CAPACITY: usize = 64 * 1024;
-/// The buffer is shrunk only when it has grown past this, so a burst a little over what is kept
-/// does not grow it and shrink it again on every acknowledgement.
+/// The buffer is shrunk, to this, only when it has grown past it, so a burst a little over what
+/// is kept does not grow it and shrink it again on every acknowledgement.
 const SHRINK_ABOVE: usize = 2 * KEPT_CAPACITY;
 
 /// All positions are exclusive byte offsets in one process generation.
@@ -63,7 +63,7 @@ impl Retention {
         self.bytes.drain(..drop);
         self.first += drop as u64;
         if self.bytes.capacity() > SHRINK_ABOVE && self.bytes.len() * 4 <= self.bytes.capacity() {
-            self.bytes.shrink_to(self.bytes.len().max(KEPT_CAPACITY));
+            self.bytes.shrink_to(self.bytes.len().max(SHRINK_ABOVE));
         }
         Ok(())
     }
@@ -134,7 +134,7 @@ mod tests {
 
         buffer.acknowledge((1 << 20) - 100).unwrap();
 
-        assert!(buffer.bytes.capacity() <= KEPT_CAPACITY);
+        assert!(buffer.bytes.capacity() <= SHRINK_ABOVE);
         let output = buffer.read((1 << 20) - 100, 1 << 20, false).unwrap();
         assert_eq!(STANDARD.decode(output.bytes).unwrap(), vec![b'x'; 100]);
         // What is still unacknowledged is kept, and so is the room for more.
