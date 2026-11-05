@@ -44,6 +44,10 @@ from e2e_platform import MACOS, require  # noqa: E402
 FOOTPRINT = re.compile(r"phys_footprint:\s*([\d.]+)\s*(\w+)")
 UNITS = {"B": 1, "KB": 1024, "MB": 1024 ** 2, "GB": 1024 ** 3}
 SETTLE_SECONDS = 1.0
+SETTLE_POLL_SECONDS = 0.5
+SETTLE_LIMIT_SECONDS = 60
+SETTLED_MB = 0.5
+SETTLED_READS = 4
 
 
 def resident_mb(pid):
@@ -63,13 +67,35 @@ def footprint_mb(pid):
     return round(float(match.group(1)) * UNITS[match.group(2).upper()] / 1024 ** 2, 1)
 
 
-def sample(services):
-    """The memory of the engine and the supervisor, in MB."""
+def measure(services):
+    """The memory of the engine and the supervisor right now, in MB."""
     result = {}
     for component in ("engine", "ptyd"):
-        pid = services.launcher.processes[component].pid
-        result[component] = {"rss": resident_mb(pid), "footprint": footprint_mb(pid)}
+        process = services.launcher.processes.get(component)
+        if process is None or process.poll() is not None:
+            result[component] = {"rss": 0.0, "footprint": None}
+            continue
+        result[component] = {"rss": resident_mb(process.pid), "footprint": footprint_mb(process.pid)}
     return result
+
+
+def sample(services):
+    """The memory of the engine and the supervisor, in MB, once it has settled.
+
+    What a program gives back after a burst (a shrunk buffer, a closed pane) happens a little
+    after the work that caused it, and on a loaded host that is more than a second later, so the
+    figure is read again until it stops moving by more than `SETTLED_MB` for `SETTLED_READS` reads
+    in a row, or `SETTLE_LIMIT_SECONDS` pass.
+    """
+    deadline = time.monotonic() + SETTLE_LIMIT_SECONDS
+    latest, still = measure(services), 0
+    while still < SETTLED_READS and time.monotonic() < deadline:
+        time.sleep(SETTLE_POLL_SECONDS)
+        reading = measure(services)
+        moved = max(abs(reading[name]["rss"] - latest[name]["rss"]) for name in latest)
+        still = still + 1 if moved <= SETTLED_MB else 0
+        latest = reading
+    return latest
 
 
 def line_bytes(lines):
