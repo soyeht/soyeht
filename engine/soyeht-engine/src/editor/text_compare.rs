@@ -26,6 +26,8 @@ pub(super) fn require_regular_file(metadata: &fs::Metadata) -> io::Result<()> {
 /// length is answered from its metadata; otherwise it is compared a chunk at a time and the
 /// comparison ends at the first difference.
 pub(super) fn file_holds(path: &Path, expected: &str) -> io::Result<bool> {
+    // The type is checked before the file is opened: opening a named pipe waits for a writer.
+    require_regular_file(&fs::metadata(path)?)?;
     let mut file = fs::File::open(path)?;
     let metadata = file.metadata()?;
     require_regular_file(&metadata)?;
@@ -36,7 +38,11 @@ pub(super) fn file_holds(path: &Path, expected: &str) -> io::Result<bool> {
     let mut chunk = vec![0; CHUNK_BYTES.min(rest.len().max(1))];
     while !rest.is_empty() {
         let wanted = chunk.len().min(rest.len());
-        let read = file.read(&mut chunk[..wanted])?;
+        let read = match file.read(&mut chunk[..wanted]) {
+            Ok(read) => read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
         if read == 0 || chunk[..read] != rest[..read] {
             // A file that ended early is a file that changed while it was read.
             return Ok(false);
@@ -44,7 +50,13 @@ pub(super) fn file_holds(path: &Path, expected: &str) -> io::Result<bool> {
         rest = &rest[read..];
     }
     // The file grew while it was read.
-    Ok(file.read(&mut chunk[..1])? == 0)
+    loop {
+        match file.read(&mut chunk[..1]) {
+            Ok(read) => return Ok(read == 0),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -72,6 +84,28 @@ mod tests {
         // A longer or shorter text is another file.
         assert!(!file_holds(&path, &format!("{long}!")).unwrap());
         assert!(!file_holds(&path, &long[1..]).unwrap());
+        fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_named_pipe_is_refused_and_not_waited_for() {
+        use std::{sync::mpsc, thread, time::Duration};
+        let path = std::env::temp_dir().join(format!("soyeht-compare-{}", Uuid::new_v4()));
+        let made = std::process::Command::new("mkfifo")
+            .arg(&path)
+            .status()
+            .unwrap();
+        assert!(made.success());
+        let (sender, receiver) = mpsc::channel();
+        let asked = path.clone();
+        // Opening a pipe nobody writes to never returns, so the question is asked off this
+        // thread and given a deadline.
+        thread::spawn(move || {
+            let _ = sender.send(file_holds(&asked, "text"));
+        });
+        let answer = receiver.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert_eq!(answer.unwrap_err().kind(), io::ErrorKind::InvalidData);
         fs::remove_file(path).unwrap();
     }
 

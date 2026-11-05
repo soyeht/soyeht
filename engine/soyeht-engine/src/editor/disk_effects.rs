@@ -282,6 +282,21 @@ impl Core {
         ))
     }
 
+    /// Starts the save of a pending draft for a tab that is about to close, so closing keeps the
+    /// autosave promise without the request waiting for the disk (the Core lock is held). The
+    /// draft is also in the database, and the job's result finishes the file whether or not its
+    /// tab is still open (`finish_disk_job`). A file whose job is running is left to that job.
+    pub(super) fn save_editor_before_close(&mut self, file_id: &str) {
+        let pending = self
+            .editor
+            .stored(file_id)
+            .is_ok_and(|file| file.draft_text.is_some() && file.conflict_text.is_none());
+        if pending && !self.hooks.pause_editor_autosave() {
+            let now = self.now_ms();
+            self.start_disk_job(file_id, Effect::Save, now);
+        }
+    }
+
     /// Runs a pending autosave now instead of waiting for its debounce; used before a file is
     /// deleted. A conflict is left untouched. This is a person's request that must know the
     /// outcome, so it waits for the disk. A file whose job is running is left to that job: its

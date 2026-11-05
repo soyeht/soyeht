@@ -117,6 +117,8 @@ impl FileSystemPort for SystemFiles {
         // One writer per file between the comparison and the rename (see `write_lock`).
         super::write_lock::exclusive(path, || {
             if !self.text_matches(path, expected)? {
+                // A file that is no longer text, or too large, says so, as a read does.
+                self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)?;
                 return Ok(false);
             }
             let permissions = fs::metadata(path)?.permissions();
