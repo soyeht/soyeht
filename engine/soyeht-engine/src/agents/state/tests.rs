@@ -1,5 +1,15 @@
 use super::*;
 use soyeht_protocol::ErrorKind;
+/// A store in a directory of its own; the test removes the directory when it is done.
+pub(crate) fn scratch_store() -> (soyeht_store::database::Store, std::path::PathBuf) {
+    let directory = std::env::temp_dir().join(format!("soyeht-agent-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&directory).unwrap();
+    (
+        soyeht_store::database::Store::open(&directory).unwrap(),
+        directory,
+    )
+}
+
 pub(crate) fn state() -> State {
     State::new(
         HarnessLaunch {
