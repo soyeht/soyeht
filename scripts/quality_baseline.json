@@ -1,5 +1,9 @@
 {
   "duplication": {
+    "android": {
+      "clones": 0,
+      "duplicated_lines": 0
+    },
     "android_core": {
       "clones": 0,
       "duplicated_lines": 0

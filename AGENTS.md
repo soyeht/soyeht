@@ -82,7 +82,13 @@ Each layer depends only on the layers listed above it.
    through UniFFI), depends on `soyeht-client`, `soyeht-protocol` and `soyeht-platform`; it holds
    no rule of its own. The Kotlin app (`apps/android/app`, Jetpack Compose) is a thin view over it,
    like `apps/ios/Sources`: it renders and forwards input, and every colour, radius and size comes
-   from the Kotlin output of `contracts/design-tokens.json`.
+   from the Kotlin output of `contracts/design-tokens.json`. The core is held to the engine's
+   rules below (no `unwrap`/`expect`/`panic!`, `check_logging`, `check_swallowed_errors`,
+   `check_wire_names`, `check_dead_pub`, the 800-line rule and the `4096`/`512` literals), and the
+   Kotlin to the 800-line rule and jscpd. The core is formatted, linted and tested on the host in the
+   fast tier (`android-core:*`, area `android_core`) when it, the desktop client or an engine crate
+   the desktop builds on changes; `scripts/check_android.sh` builds the app (`android-app:*`, the
+   full tier only; `docs/apps-android.md`).
 
 `scripts/check_layers.py` reads every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and
 fails when a crate depends on a Soyeht crate outside its layer, or when a new crate is not
@@ -158,18 +164,19 @@ ADR when you change a boundary.
 `scripts/check_quality.py` must match `scripts/quality_baseline.json` exactly:
 
 - jscpd clones and duplicated lines per area may not grow. The areas are the engine, the
-  desktop (and its views at a smaller window), each Swift package, and the Python of
-  `scripts/` and `contracts/`.
+  desktop (and its views at a smaller window), the Android core and the Kotlin of the Android app
+  (`android_core`, `android`; the generated `DesignTokens.kt` is not scanned), each Swift package,
+  and the Python of `scripts/` and `contracts/`.
 - A new Rust, Swift or Python file may not exceed 800 lines, tests included. A file already
   above 800 lines may not grow past its recorded cap. Split it instead. The Python measured
   is that of `scripts/` and `contracts/` (a generated output, whose first line starts with
   `# Generated from contracts/`, is exempt). The check does not measure TypeScript yet: the
   rule still applies to it, but nothing enforces it.
 - Loose Swift padding, corner-radius, system font-size and font-name literals, and the
-  numbers `4096` and `512` anywhere in a Rust line of the engine or `apps/desktop` (code, test
+  numbers `4096` and `512` anywhere in a Rust line of the engine, `apps/desktop` or `apps/android/core` (code, test
   or comment; `limits.rs` and generated files are exempt), may not grow per file. Use a
   token, a policy or the generated limits.
-- Engine and `apps/desktop` production code has no `unwrap`/`expect`/`panic!`
+- Engine, `apps/desktop` and `apps/android/core` production code has no `unwrap`/`expect`/`panic!`
   calls. The limit is 0, and no baseline edit or written reason can raise it.
   Test code is exempt:
   crate `tests/` and `benches/`, inline `#[cfg(test)]` and
@@ -195,10 +202,12 @@ ADR when you change a boundary.
   A repeating condition that is not a failure follows the same idea: a slow Core lock hold
   logs the first, a hold twice as long, and a summary each minute with the count and the
   worst (`slow_holds.rs`).
-  `scripts/check_logging.py` rejects `eprintln!` in `engine` and `apps/desktop` `src`
+  `scripts/check_logging.py` rejects `eprintln!` in `engine`, `apps/desktop` and `apps/android` `src`
   outside `soyeht-platform/src/log.rs` and a binary's `main.rs` (ADR 0088).
-- Dead code: `scripts/check_dead_pub.py` fails on a `pub fn` of an engine or `apps/desktop` crate
-  that no production code references (`pub` hides it from the compiler's unused-code lint). Delete
+- Dead code: `scripts/check_dead_pub.py` fails on a `pub fn` of an engine, `apps/desktop` or
+  `apps/android/core` crate that no production code references (`pub` hides it from the compiler's
+  unused-code lint). A method the Android core exports is referenced by the Kotlin app, which calls it
+  in lower camel case; that excuse covers only functions defined under `apps/android/core`. Delete
   it and the tests that only exercise it. An entry of `scripts/dead_pub_allowlist.json`
   needs a reason, and fails once it is no longer needed.
   `scripts/check_dead_public_swift.py` does the same for a `public` declaration of `apps/shared`

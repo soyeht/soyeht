@@ -1,4 +1,4 @@
-"""Renders contracts/design-tokens.json into the Swift and Rust token files.
+"""Renders contracts/design-tokens.json into the Swift, Rust and Kotlin token files.
 
 The palettes and the numeric tokens (radii, spacing, type scale, elevation, layout metrics,
 fonts) are defined once in the JSON. The Mac client and the desktop client consume the
@@ -14,6 +14,7 @@ from generated_header import header_text
 TOKENS_PATH = "contracts/design-tokens.json"
 SWIFT_OUTPUT = "apps/shared/Sources/SoyehtClient/Generated.swift"
 RUST_OUTPUT = "apps/desktop/crates/soyeht-desktop/src/theme/generated.rs"
+KOTLIN_OUTPUT = "apps/android/app/src/main/kotlin/com/soyeht/next/android/theme/DesignTokens.kt"
 
 HEX = re.compile(r"^#[0-9A-F]{6}$")
 COLOR_ROLES = (
@@ -344,6 +345,54 @@ def render_rust(document, header):
     ).stdout
 
 
+def kotlin_color(value):
+    """An opaque ARGB colour as a Kotlin `Long` literal."""
+    return "0xFF" + value.removeprefix("#")
+
+
+def kotlin_palette(name, palette):
+    ansi = palette["ansi"]
+    fields = [f"{role} = {kotlin_color(palette[role])}," for role in COLOR_ROLES]
+    fields += [
+        f"selection = {kotlin_color(palette['selection'])},",
+        f"presentationLetterbox = {kotlin_color(palette['presentationLetterbox'])},",
+        "wellLip = " + ("null" if palette["wellLip"] is None else kotlin_color(palette["wellLip"])) + ",",
+        "agents = listOf(" + ", ".join(kotlin_color(c) for c in palette["agents"]) + "),",
+        "ansi = listOf(" + ", ".join(kotlin_color(c) for c in ansi) + "),",
+    ]
+    for role, slot in FALLBACKS.items():
+        fields.append(f"{role} = {kotlin_color(palette.get(role, ansi[slot]))},")
+    body = "\n".join(f"        {field}" for field in fields)
+    return f"    val {name} = Palette(\n        displayName = {json.dumps(palette['displayName'], ensure_ascii=False)},\n{body}\n    )"
+
+
+def kotlin_section(title, values):
+    consts = "\n".join(f"    const val {key}: Float = {float(v)!r}f" for key, v in values.items())
+    return f"object {title} {{\n{consts}\n}}"
+
+
+def render_kotlin(document, header):
+    """The palettes and numeric tokens the Android app draws with (ADR 0134). Colours are ARGB
+    `Long`s so that this file needs no Android library; the theme turns them into `Color`."""
+    roles = (*COLOR_ROLES, "selection", "presentationLetterbox")
+    fields = "".join(f"    val {role}: Long,\n" for role in roles)
+    palettes = "\n\n".join(kotlin_palette(n, p) for n, p in document["palettes"].items())
+    listed = ", ".join(f"{name!r}" .replace("'", '"') + " to " + name for name in document["palettes"])
+    sections = "\n\n".join(kotlin_section(title, document[key]) for key, title in NUMERIC_SECTIONS.items())
+    fonts = "\n".join(f"    const val {key}: String = {json.dumps(value)}" for key, value in document["fonts"].items())
+    return (
+        f"{header}\npackage com.soyeht.next.android.theme\n\n"
+        "/** One theme: the palette roles every view draws with. */\n"
+        "class Palette(\n    val displayName: String,\n"
+        f"{fields}"
+        "    val wellLip: Long?,\n    val agents: List<Long>,\n    val ansi: List<Long>,\n"
+        "    val syntaxType: Long,\n    val diffAdded: Long,\n)\n\n"
+        f"object Palettes {{\n{palettes}\n\n    /** The themes by name, in the order of the token file; the first is the default. */\n"
+        f"    val all: List<Pair<String, Palette>> = listOf({listed})\n}}\n\n"
+        f"{sections}\n\nobject Fonts {{\n{fonts}\n}}\n"
+    )
+
+
 def render_tokens(document):
     """The generated files for the parsed token file `document`."""
     validate_tokens(document)
@@ -351,4 +400,5 @@ def render_tokens(document):
     return {
         SWIFT_OUTPUT: render_swift(document, header),
         RUST_OUTPUT: render_rust(document, header),
+        KOTLIN_OUTPUT: render_kotlin(document, header),
     }
