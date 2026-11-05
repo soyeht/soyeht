@@ -54,13 +54,16 @@ memoizes it), so the stored-login check never adds a second consent prompt to
 the one the OAuth source already caused.
 
 Sessions take turns on their scratch directory. The directory has a fixed name
-(Claude Code records the path once among its projects, and a name per run would
-add an entry every time), and a session removes and recreates it, which would
-pull it from under another session's running child. The other session can be a
-refresh of another engine on the machine: the installed app, a development
-build, a second profile. So the turn is an operating-system file lock (`flock`
-on Unix, `LockFileEx` on Windows) on a file inside a directory beside the
-scratch directory, named after it with `-lock`. The session waits for the turn
+inside the profile's data directory (Claude Code records the path once among its
+projects, and a name per run would add an entry every time), and a session removes
+and recreates it, which would pull it from under another session's running child.
+The scratch directory belongs to one profile, so the turn is per profile and not
+machine-wide: the installed app, a development build and a second profile each
+have their own directory and do not wait for one another. Within a profile the
+other session can be a refresh by a second engine process started on the same data
+directory. So the turn is an operating-system file lock (`flock` on Unix,
+`LockFileEx` on Windows) on a file inside a directory beside the scratch
+directory, named after it with `-lock`. The session waits for the turn
 within its own 24 s. The lock directory and its file stay after a run on
 purpose: the lock is not their existence but the hold on the open file, which
 the system drops when the holder exits or crashes, so a crashed engine never
@@ -69,11 +72,18 @@ cannot get the turn is unrun and reads as a failed source.
 
 The scratch directory is made while holding the turn, exclusively and
 owner-only (mode 0700): whatever is at the path then (an earlier session's
-leftover, or on Linux something another user put at the predictable path of the
-shared temporary directory, even a link) is removed, never used, and a
+leftover) is removed, never used, and a
 directory or link that appears between the removal and the creation makes the
 session unrun instead of running in it. A failure to make or remove the
 directory is logged by kind, once per streak.
+
+The scratch directory and its lock are not in the temporary directory, which on Linux is
+shared by every user and lets another user make the fixed name first. They are in
+`usage-scratch`, a directory of the engine's own data directory that only the user reaches
+(`ensure_private_dir`): it is made owner-only when missing, made owner-only again when its
+mode was widened, and refused (the session is unrun and the failure logged by kind, once per
+streak) when a link, a file or another user's directory is in its place. A terminal run whose
+working directory is outside it is refused.
 
 A session that fails (a screen it does not know, a program that never answers)
 is not started again by the background for the longest usage backoff, like a

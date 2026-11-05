@@ -193,7 +193,7 @@ impl Core {
             revision: SharedPort::new(Box::new(GitRevision)),
             worktrees: SharedPort::new(Box::new(CommandWorktree::default())),
             background: Default::default(),
-            usage: crate::usage::service_over(usage_readings, hooks.usage_host()),
+            usage: crate::usage::service_over(usage_readings, directory, hooks.usage_host()),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(

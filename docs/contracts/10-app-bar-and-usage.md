@@ -152,8 +152,8 @@ Rules every source keeps:
   retried by the background for 30 min. A provider that stays signed out is
   read after 10 min, 20 min, then every 30 min, until it signs in; a click
   always reads at once.
-- The hidden CLI session runs in a scratch directory under the temporary
-  directory with tools and MCP servers off, ends within 24 s, and leaves no
+- The hidden CLI session runs in a scratch directory inside the engine's
+  owner-only data directory with tools and MCP servers off, ends within 24 s, and leaves no
   scratch directory or session transcript behind. Claude Code records the
   fixed scratch path once among its projects in `~/.claude.json`; Soyeht does
   not edit that file.

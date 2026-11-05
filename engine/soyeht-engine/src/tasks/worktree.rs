@@ -1,10 +1,11 @@
 //! Worktree process boundary and the first prompt of a dispatch.
 
+use super::feedback::bounded;
 use crate::errors::{self, Result};
 use serde::Deserialize;
 use serde_json::Value;
 use soyeht_process::{Limits, Output};
-use soyeht_protocol::{Comment, Subitem, Task, TaskExecutor};
+use soyeht_protocol::{Comment, Subitem, Task, TaskExecutor, limits};
 use soyeht_store::tasks::DispatchCheckpoint;
 use std::{ffi::OsStr, path::Path, process::Command, time::Duration};
 
@@ -374,6 +375,24 @@ pub(crate) fn task_branch(task: &str) -> String {
     format!("task/{}", task.to_ascii_lowercase())
 }
 
+/// The room the first prompt gives to one line or field written by a person or an agent, as a
+/// share of the prompt limit, so the fixed frame stays far below it.
+const FIELD_BYTES: usize = limits::PROMPT_BYTES / 16;
+const DESCRIPTION_BYTES: usize = limits::PROMPT_BYTES / 4;
+const SUBITEMS_BYTES: usize = limits::PROMPT_BYTES / 8;
+/// The comments a first prompt lists at most; the caller loads one more to learn that there
+/// are older ones.
+pub(crate) const PROMPT_COMMENTS: usize = 200;
+const COMMENT_BYTES: usize = limits::PROMPT_BYTES / 32;
+/// Kept free after the comments for the line that counts the ones left out.
+const OMISSION_RESERVE: usize = 64;
+const TRUNCATED: &str = "... [truncated]";
+const INSTRUCTIONS: &str = "Create subitems before starting. Comment at each milestone. Request review when done. If blocked, state the blocking kind.";
+
+/// The first prompt of a dispatched task, never longer than `limits::PROMPT_BYTES`. The frame
+/// (title, must-not-change, how to verify, worktree, instructions) comes first and whole; the
+/// description and the subitems are cut to their share; the comments, newest first, take what
+/// is left, and a line says how many older ones did not fit.
 pub(crate) fn first_prompt(
     request: &DispatchRequest<'_>,
     checkpoint: &DispatchCheckpoint,
@@ -382,11 +401,7 @@ pub(crate) fn first_prompt(
         .worktree_path
         .as_deref()
         .ok_or_else(|| errors::internal("Dispatch checkpoint has no worktree"))?;
-    let verify = request
-        .task
-        .how_to_verify
-        .as_deref()
-        .unwrap_or("Not specified");
+    let task = request.task;
     let subitems = request
         .subitems
         .iter()
@@ -403,36 +418,203 @@ pub(crate) fn first_prompt(
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let comments = request
-        .comments
-        .iter()
-        .map(|comment| format!("- {}: {}", comment.author, comment.text))
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(format!(
-        "# {}\n\n{}\n\n## Must not change\n{}\n\n## How to verify\n{}\n\n## Subitems\n{}\n\n## Comments\n{}\n\n## Worktree\n{}\n\nCreate subitems before starting. Comment at each milestone. Request review when done. If blocked, state the blocking kind.",
-        request.task.title,
-        request.task.description,
-        request.task.must_not_change,
-        verify,
+    let head = format!(
+        "# {}\n\n{}\n\n## Must not change\n{}\n\n## How to verify\n{}\n\n## Subitems\n{}\n\n## Comments\n",
+        clipped(&task.title, FIELD_BYTES),
+        clipped(&task.description, DESCRIPTION_BYTES),
+        clipped(&task.must_not_change, FIELD_BYTES),
+        clipped(
+            task.how_to_verify.as_deref().unwrap_or("Not specified"),
+            FIELD_BYTES
+        ),
         if subitems.is_empty() {
-            "- None"
+            "- None".into()
         } else {
-            &subitems
+            clipped(&subitems, SUBITEMS_BYTES)
         },
-        if comments.is_empty() {
-            "- None"
-        } else {
-            &comments
-        },
-        worktree,
+    );
+    let tail = format!(
+        "\n\n## Worktree\n{}\n\n{INSTRUCTIONS}",
+        clipped(worktree, FIELD_BYTES)
+    );
+    let room = limits::PROMPT_BYTES.saturating_sub(head.len() + tail.len());
+    Ok(format!(
+        "{head}{}{tail}",
+        comments_section(request.comments, room)
     ))
+}
+
+/// `text` cut on a character boundary to at most `limit` bytes, ending in a marker when cut.
+fn clipped(text: &str, limit: usize) -> String {
+    if text.len() <= limit {
+        return text.into();
+    }
+    let kept = bounded(text, limit.saturating_sub(TRUNCATED.len()));
+    format!("{kept}{TRUNCATED}")
+}
+
+/// The comments (newest first, as given) that fit in `room` bytes, each cut to its share, then
+/// the count of those left out.
+fn comments_section(comments: &[Comment], room: usize) -> String {
+    if comments.is_empty() {
+        return "- None".into();
+    }
+    let mut section = String::new();
+    let mut kept = 0;
+    for comment in comments.iter().take(PROMPT_COMMENTS) {
+        let line = clipped(
+            &format!("- {}: {}", comment.author, comment.text),
+            COMMENT_BYTES,
+        );
+        let separator = usize::from(!section.is_empty());
+        let reserve = if kept + 1 < comments.len() {
+            OMISSION_RESERVE
+        } else {
+            0
+        };
+        if section.len() + separator + line.len() + reserve > room {
+            break;
+        }
+        if separator == 1 {
+            section.push('\n');
+        }
+        section.push_str(&line);
+        kept += 1;
+    }
+    let omitted = comments.len() - kept;
+    if omitted > 0 {
+        if !section.is_empty() {
+            section.push('\n');
+        }
+        let plural = if omitted == 1 { "comment" } else { "comments" };
+        // More than the cap were loaded: the count is what is known, not all there is.
+        let count = if comments.len() > PROMPT_COMMENTS {
+            format!("at least {omitted}")
+        } else {
+            omitted.to_string()
+        };
+        section.push_str(&format!("- {count} earlier {plural} omitted"));
+    }
+    section
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn comment(n: usize, text: String) -> Comment {
+        Comment {
+            comment_id: format!("c{n}"),
+            task_id: "WS-1".into(),
+            author: "you".into(),
+            text,
+            at: "2026-09-11T00:00:00Z".into(),
+        }
+    }
+
+    fn prompt_for(task: &Task, comments: &[Comment]) -> String {
+        let request = DispatchRequest {
+            repository: Path::new("/"),
+            task,
+            subitems: &[],
+            comments,
+            preset: TaskExecutor {
+                workspace_default: true,
+                harness: None,
+                model: None,
+                effort: None,
+                permission_mode: None,
+            },
+            pane_id: "pane-1".into(),
+        };
+        let checkpoint = DispatchCheckpoint {
+            stage: "pane_opened".into(),
+            worktree_path: Some("/work/ws-1".into()),
+            branch: Some("task/ws-1".into()),
+            pane_id: Some("pane-1".into()),
+        };
+        first_prompt(&request, &checkpoint).unwrap()
+    }
+
+    #[test]
+    fn a_small_task_keeps_every_section_and_every_comment() {
+        let task = crate::tasks::task_fixture(soyeht_protocol::TaskState::InProgress);
+        let text = prompt_for(
+            &task,
+            &[comment(2, "newer".into()), comment(1, "older".into())],
+        );
+        assert!(
+            text.contains("## Comments\n- you: newer\n- you: older\n\n## Worktree\n/work/ws-1")
+        );
+        assert!(!text.contains("omitted"));
+        assert!(text.ends_with(INSTRUCTIONS));
+    }
+
+    #[test]
+    fn the_first_prompt_stays_within_the_limit_and_keeps_the_newest_comments() {
+        let task = crate::tasks::task_fixture(soyeht_protocol::TaskState::InProgress);
+        let comments: Vec<Comment> = (0..210)
+            .rev()
+            .map(|n| comment(n, format!("note {n} {}", "x".repeat(400))))
+            .collect();
+        let text = prompt_for(&task, &comments);
+        assert!(text.len() <= limits::PROMPT_BYTES, "{}", text.len());
+        assert!(text.contains("note 209 "), "the newest comment is kept");
+        assert!(!text.contains("note 0 "), "the oldest comment is left out");
+        let omitted = text
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("- at least ")?
+                    .strip_suffix(" earlier comments omitted")
+            })
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        assert!(omitted > 0 && omitted < 210);
+        assert_eq!(
+            text.matches("- you: note ").count() + omitted,
+            210,
+            "every comment is either listed or counted"
+        );
+        assert!(text.contains("## Worktree\n/work/ws-1\n\nCreate subitems"));
+    }
+
+    #[test]
+    fn the_omission_line_says_at_least_only_when_more_comments_exist_than_were_loaded() {
+        let task = crate::tasks::task_fixture(soyeht_protocol::TaskState::InProgress);
+        let comments = |count: usize| -> Vec<Comment> {
+            (0..count)
+                .rev()
+                .map(|n| comment(n, format!("note {n} {}", "x".repeat(400))))
+                .collect()
+        };
+        // The cap itself: every comment loaded, so the count of those left out is exact.
+        let exact = prompt_for(&task, &comments(PROMPT_COMMENTS));
+        assert!(exact.contains(" earlier comments omitted"));
+        assert!(!exact.contains("at least"));
+        // One more than the cap: there are older comments that were not even loaded.
+        let more = prompt_for(&task, &comments(PROMPT_COMMENTS + 1));
+        assert!(more.contains("- at least "));
+        assert!(more.len() <= limits::PROMPT_BYTES);
+        // Few enough comments to list every one: no line at all.
+        assert!(!prompt_for(&task, &comments(3)).contains("omitted"));
+    }
+
+    #[test]
+    fn oversized_fields_are_cut_on_a_character_boundary_with_a_marker() {
+        let mut task = crate::tasks::task_fixture(soyeht_protocol::TaskState::InProgress);
+        let wide = "\u{20ac}".repeat(limits::PROMPT_BYTES);
+        task.title.clone_from(&wide);
+        task.description.clone_from(&wide);
+        task.must_not_change.clone_from(&wide);
+        task.how_to_verify = Some(wide.clone());
+        let huge = [comment(1, wide.clone()), comment(0, wide)];
+        let text = prompt_for(&task, &huge);
+        assert!(text.len() <= limits::PROMPT_BYTES, "{}", text.len());
+        assert!(text.contains(TRUNCATED));
+        assert!(text.ends_with(INSTRUCTIONS));
+    }
 
     #[test]
     fn the_engine_runs_the_programs_name_on_this_system() {
