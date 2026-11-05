@@ -22,4 +22,5 @@ dist/
 apps/android/local.properties
 apps/android/app/build/
 apps/android/build/
+apps/android/.kotlin/
 apps/android/core/generated/

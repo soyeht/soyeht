@@ -29,6 +29,54 @@ Open `apps/ios/SoyehtPhone.xcodeproj`, scheme `SoyehtPhone`, select your iPhone
 or iPad and run with the team's development account. The bundle is
 `com.soyeht.next.dev.ios`. The current app does not participate in this build.
 
+## Store build
+
+The project builds the Dev app by default. A store build changes two build settings and nothing
+else, as the Mac packager does (ADR 0120): `SOYEHT_APP_BUNDLE_ID=com.soyeht.next.ios` (the
+production identifier, ADR 0112) and `SOYEHT_PRODUCT_NAME="Soyeht Next"`, the production Mac app's name (`displayNames.macApp` in
+`contracts/profiles.json`). The version is
+`MARKETING_VERSION` and the build number is `CURRENT_PROJECT_VERSION`, both written by
+`uv run python scripts/release.py bump ...` from `contracts/release.json` (ADR 0115); never type
+them. Signing credentials come from the environment, never from the repository.
+
+Archive and export, with a distribution certificate in the keychain and an App Store profile for
+the identifier (both made in the developer account, never kept here):
+
+1. `xcodebuild archive -configuration Release -destination generic/platform=iOS` with
+   `SOYEHT_APP_BUNDLE_ID`, `SOYEHT_PRODUCT_NAME` and `CODE_SIGNING_ALLOWED=NO`. Signing the whole
+   archive by hand fails: a manual profile specifier reaches the Swift package targets, which
+   take none (“does not support provisioning profiles”).
+2. Sign the archived app yourself with the distribution identity and an entitlements file that
+   holds `application-identifier`, `com.apple.developer.team-identifier`, `get-task-allow` false
+   and `aps-environment` `production`. An unsigned archive carries no entitlements, so without
+   this step the exported app has no push entitlement.
+3. `xcodebuild -exportArchive` with `method` `app-store-connect`, manual signing and the profile
+   name for the identifier, then `xcrun altool --validate-app` and `--upload-app`.
+
+The app declares the answers the store asks for in the repository:
+
+- `ITSAppUsesNonExemptEncryption` is `false` in `apps/ios/Info.plist`. The app has no encryption of
+  its own. The wire to the Mac is `ws://` over the tailnet, which Tailscale encrypts; the app
+  uses the system's TLS only for the `https` downloads of the optional dictation models, and
+  CryptoKit only for signatures and hashes that authenticate the device and the Mac.
+- `apps/ios/Resources/PrivacyInfo.xcprivacy` says the app does not track and collects no data. It
+  declares the required-reason APIs the built app imports: `UserDefaults` (`CA92.1`, the app's own
+  settings), file timestamps (`C617.1`: SwiftTerm's inline images call `stat()` and `fstat()` on a
+  path the terminal program sends, and mlx-swift's `fmt` calls `fstat()`; the app's sandbox limits
+  the paths they can reach, and they read only the type and size, never a timestamp) and
+  system boot time (`35F9.1`, `DispatchTime` uptime for the request timer). The app talks to the
+  person's own Mac. When new code or a new dependency uses another API of Apple's list (file
+  timestamps, system boot time, disk space, active keyboards, user defaults), check `nm -u` of an
+  `iphoneos` build and add its category and reason there.
+
+`scripts/check_ios.sh` fails when the built app has no manifest, when the manifest lacks the
+file-timestamp category, or when Info.plist has no encryption answer.
+
+The store record and the name under the icon of a store build are both “Soyeht Next”, as the
+production Mac app is (the name “Soyeht” belongs to an older record). Text that tells the person
+to open the app reads the display name (`AppName`), so the iPhone names the Mac app correctly and
+no string names a build.
+
 On the new Mac app, choose “Pair iPhone or iPad”. On the
 device, choose “Scan Mac QR”. Compare fingerprints and allow access on the Mac.
 Open a pane from the list.

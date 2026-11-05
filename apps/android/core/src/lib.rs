@@ -7,12 +7,14 @@
 mod conversation;
 mod core;
 mod error;
+mod markdown;
 mod overview;
 mod terminal;
 mod usage;
 
 pub use core::{Core, Listener, device_name};
 pub use error::CoreError;
+pub use markdown::{CodeCopy, MarkdownBlock, code_copy, markdown_blocks};
 pub use usage::{GaugeBand, UsageGauge};
 
 uniffi::setup_scaffolding!();
