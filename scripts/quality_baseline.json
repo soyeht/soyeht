@@ -235,7 +235,7 @@
     "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 896,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
-    "engine/soyeht-store/src/editor.rs": 839,
+    "engine/soyeht-store/src/editor.rs": 828,
     "engine/soyeht-store/tests/agents.rs": 976,
     "engine/soyeht-store/tests/tasks.rs": 887
   },

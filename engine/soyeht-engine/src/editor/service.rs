@@ -68,12 +68,7 @@ impl FileSystemPort for SystemFiles {
 
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String> {
         let metadata = fs::metadata(path)?;
-        if !metadata.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "file is not a regular file",
-            ));
-        }
+        super::text_compare::require_regular_file(&metadata)?;
         if metadata.len() > limit as u64 {
             return Err(TextRefusal::TooLarge.into());
         }

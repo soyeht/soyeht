@@ -11,18 +11,24 @@ use std::{
 /// How much of the file is read at a time.
 const CHUNK_BYTES: usize = 64 * 1024;
 
+/// The refusal of a path that is not a regular file (a directory, a device).
+pub(super) fn require_regular_file(metadata: &fs::Metadata) -> io::Result<()> {
+    if metadata.is_file() {
+        return Ok(());
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "file is not a regular file",
+    ))
+}
+
 /// Whether the regular file at `path` holds exactly the bytes of `expected`. A file of another
 /// length is answered from its metadata; otherwise it is compared a chunk at a time and the
 /// comparison ends at the first difference.
 pub(super) fn file_holds(path: &Path, expected: &str) -> io::Result<bool> {
     let mut file = fs::File::open(path)?;
     let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "file is not a regular file",
-        ));
-    }
+    require_regular_file(&metadata)?;
     if metadata.len() != expected.len() as u64 {
         return Ok(false);
     }
