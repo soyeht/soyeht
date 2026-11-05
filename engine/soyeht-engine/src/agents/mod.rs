@@ -25,6 +25,7 @@ pub mod methods;
 pub mod naming;
 pub mod opening;
 pub mod orphans;
+pub(crate) mod package_runner;
 pub mod peer;
 pub mod pending;
 mod pinned_adapter;

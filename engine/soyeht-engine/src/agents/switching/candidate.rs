@@ -186,7 +186,7 @@ impl Core {
             kind: ProcessKind::PipesAcp,
             cwd: crate::agents::adapter_directory::start_in(
                 &self.directory,
-                crate::agents::registry::starts_in_engine_folder(launch),
+                crate::agents::package_runner::starts_in_engine_folder(launch),
                 &saved.pane.cwd,
             ),
             argv: std::iter::once(launch.command.clone())

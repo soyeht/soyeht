@@ -1,10 +1,9 @@
 use super::{
     Changes,
     harness_sign_in::SignInChange,
+    package_runner::{self, PackageRunner},
     purpose::Purpose,
-    registry,
-    registry::PackageRunner,
-    responses,
+    registry, responses,
     state::{Phase, State},
 };
 use crate::dispatch::Outcome;
@@ -29,7 +28,7 @@ fn terminal_auth_argv(
     original_command: &str,
     auth_args: Vec<String>,
 ) -> Result<Vec<String>> {
-    let package_prefix = match registry::package_runner(original_command) {
+    let package_prefix = match package_runner::package_runner(original_command) {
         Some(PackageRunner::Npx) => match launch.args.as_slice() {
             [yes, package, ..] if yes == "--yes" && registry::pinned_package(package) => {
                 vec![yes.clone(), package.clone()]
@@ -93,7 +92,7 @@ fn verified_terminal_auth(
     }
     Ok(TerminalAuth {
         argv: terminal_auth_argv(&state.launch, &entry.launch.command, auth_args)?,
-        package_runner: registry::starts_in_engine_folder(&entry.launch),
+        package_runner: package_runner::starts_in_engine_folder(&entry.launch),
     })
 }
 

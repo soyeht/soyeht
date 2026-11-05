@@ -105,7 +105,7 @@ impl Core {
             kind: ProcessKind::PipesAcp,
             cwd: super::adapter_directory::start_in(
                 &self.directory,
-                super::registry::starts_in_engine_folder(&state.launch),
+                super::package_runner::starts_in_engine_folder(&state.launch),
                 &saved.pane.cwd,
             ),
             argv,

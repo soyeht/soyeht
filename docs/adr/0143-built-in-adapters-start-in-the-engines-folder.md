@@ -19,7 +19,7 @@ folder is the engine's: owner-only, made before each start (so one that was remo
 empty. This holds for the agent process, the candidate process of a harness switch and the
 sign-in terminal an adapter asks for.
 
-- **One rule.** `agents/registry.rs` says what a package runner is (`package_runner`, by file stem:
+- **One rule.** `agents/package_runner.rs` says what a package runner is (`package_runner`, by file stem:
   `npx`, `npx-cli`, `uvx`, `uv`), which launches are built-in (`registry.` ids) and which of those
   start in the engine's folder (`starts_in_engine_folder`). The sign-in terminal reads the runner
   from the catalogue's entry, the same value that builds its arguments.
