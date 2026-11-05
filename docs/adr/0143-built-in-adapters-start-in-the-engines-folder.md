@@ -15,8 +15,8 @@ workspace, so a repository could decide which code the pinned adapter was.
 ## Decision
 
 **A built-in adapter launched through a package runner starts in `<data directory>/adapters`.** The
-folder is the engine's: owner-only, made before each start (so one that was removed is made again),
-empty. This holds for the agent process, the candidate process of a harness switch and the
+folder is the engine's: owner-only, made where the start is sent, off the Core lock, before each
+start (so one that was removed is made again), empty. This holds for the agent process, the candidate process of a harness switch and the
 sign-in terminal an adapter asks for.
 
 - **One rule.** `agents/package_runner.rs` says what a package runner is (`package_runner`, by file stem:

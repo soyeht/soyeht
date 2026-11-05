@@ -28,11 +28,15 @@ pub(crate) fn path(profile: &Path) -> PathBuf {
     profile.join(DIRECTORY)
 }
 
-/// Makes the folder, owner-only, when it is not there (or not private). Called before each start,
-/// so a folder that was removed is made again. Without it the adapter does not start, which is
-/// better than starting it in a workspace: the failure is logged by streak.
-fn prepare(profile: &Path) {
-    match ensure_private_dir(&path(profile)) {
+/// Makes `directory`, the folder [`path`] names, owner-only when it is not there (or not
+/// private). It touches the disk (a stat, and a mkdir and a sync when the folder is missing), so
+/// it runs where the start of the process is sent, off the Core lock ([`Launch::send`]), before
+/// each start: a folder that was removed is made again. Without it the adapter does not start,
+/// which is better than starting it in a workspace: the failure is logged by streak.
+///
+/// [`Launch::send`]: crate::process_start::Launch::send
+pub(crate) fn prepare(directory: &Path) {
+    match ensure_private_dir(directory) {
         Ok(()) => recovered(&FAILURES),
         Err(error) => {
             let error = crate::errors::Error::from(error);
@@ -43,12 +47,18 @@ fn prepare(profile: &Path) {
     }
 }
 
-/// The folder the process of a launch starts in: the engine's own for a built-in package-runner
-/// adapter (`package_runner`, which the caller read from `registry::starts_in_engine_folder`), the pane's `cwd`
-/// for anything else.
-pub(crate) fn start_in(profile: &Path, package_runner: bool, cwd: &str) -> String {
-    if package_runner {
-        prepare(profile);
+/// The folder to [`prepare`] before a process that starts in `cwd` is sent: the engine's own, when
+/// that is where it starts. Computed under the lock (it touches nothing), used off it.
+pub(crate) fn to_prepare(profile: &Path, cwd: &str) -> Option<PathBuf> {
+    let directory = path(profile);
+    (Path::new(cwd) == directory).then_some(directory)
+}
+
+/// The folder the process of a launch starts in: the engine's own when `in_engine_folder` (the
+/// caller read it from `package_runner::starts_in_engine_folder`), the pane's `cwd` for anything
+/// else. It only names the folder; [`prepare`] makes it.
+pub(crate) fn start_in(profile: &Path, in_engine_folder: bool, cwd: &str) -> String {
+    if in_engine_folder {
         path(profile).display().to_string()
     } else {
         cwd.to_owned()
@@ -60,33 +70,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_runner_starts_in_the_engines_folder_and_a_program_in_the_panes() {
-        let profile = soyeht_platform::testing::scratch_dir("adapter-start");
+    fn a_launch_starts_in_the_engines_folder_or_the_panes() {
+        let profile = Path::new("/profile");
         assert_eq!(
-            start_in(&profile, true, "/work/repository"),
-            path(&profile).display().to_string()
+            start_in(profile, true, "/work/repository"),
+            path(profile).display().to_string()
         );
         assert_eq!(
-            start_in(&profile, false, "/work/repository"),
+            start_in(profile, false, "/work/repository"),
             "/work/repository"
         );
+        // Naming the folder touches nothing.
+        assert!(!path(profile).exists());
     }
 
     #[test]
-    fn the_folder_is_made_owner_only_before_a_start_and_again_when_it_is_removed() {
+    fn the_folder_is_made_owner_only_and_again_when_it_is_removed() {
         let profile = soyeht_platform::testing::scratch_dir("adapter-directory");
-        start_in(&profile, true, "/work");
-        assert!(soyeht_platform::fs::dir_is_owner_only(&path(&profile)).unwrap());
-        assert!(std::fs::read_dir(path(&profile)).unwrap().next().is_none());
-        std::fs::remove_dir(path(&profile)).unwrap();
-        start_in(&profile, true, "/work");
-        assert!(soyeht_platform::fs::dir_is_owner_only(&path(&profile)).unwrap());
-    }
-
-    #[test]
-    fn a_program_that_is_not_a_runner_makes_no_folder() {
-        let profile = soyeht_platform::testing::scratch_dir("adapter-none");
-        start_in(&profile, false, "/work");
-        assert!(!path(&profile).exists());
+        let directory = path(&profile);
+        prepare(&directory);
+        assert!(soyeht_platform::fs::dir_is_owner_only(&directory).unwrap());
+        assert!(std::fs::read_dir(&directory).unwrap().next().is_none());
+        std::fs::remove_dir(&directory).unwrap();
+        prepare(&directory);
+        assert!(soyeht_platform::fs::dir_is_owner_only(&directory).unwrap());
     }
 }

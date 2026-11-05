@@ -55,6 +55,22 @@ fn a_package_runner_adapter_starts_in_the_engines_folder_and_works_in_the_worksp
         repository.join("fake-acp-note.txt").exists()
     });
     assert!(!rig.path.join("adapters/fake-acp-note.txt").exists());
+
+    // A folder that was removed is made again by the next start.
+    fs::remove_dir_all(rig.path.join("adapters")).unwrap();
+    fs::remove_file(&seen).unwrap();
+    let second = client.call(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"agent","harness":"registry.claude-acp",
+            "idempotencyKey":"adapter-pane-again"}),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    wait_until("the adapter did not start in the folder made again", || {
+        client.pane(&second)["agent"]["sessionId"].is_string() && seen.exists()
+    });
+    assert!(rig.path.join("adapters").is_dir());
 }
 
 #[cfg(unix)]

@@ -69,12 +69,12 @@ fn terminal_auth_argv(
         .collect())
 }
 
-/// The program of a sign-in terminal, and whether it runs through a package runner: both are
+/// The program of a sign-in terminal, and whether it starts in the engine's folder: both are
 /// read from the catalogue's entry of the harness, so the arguments and the folder it starts in
 /// cannot disagree.
 struct TerminalAuth {
     argv: Vec<String>,
-    package_runner: bool,
+    in_engine_folder: bool,
 }
 
 fn verified_terminal_auth(
@@ -92,7 +92,7 @@ fn verified_terminal_auth(
     }
     Ok(TerminalAuth {
         argv: terminal_auth_argv(&state.launch, &entry.launch.command, auth_args)?,
-        package_runner: package_runner::starts_in_engine_folder(&entry.launch),
+        in_engine_folder: package_runner::starts_in_engine_folder(&entry.launch),
     })
 }
 
@@ -163,7 +163,7 @@ fn login_terminal(
         instance_key: child.instance_key.clone(),
         generation: 1,
         kind: ProcessKind::Pty,
-        cwd: super::adapter_directory::start_in(profile, auth.package_runner, &child.pane.cwd),
+        cwd: super::adapter_directory::start_in(profile, auth.in_engine_folder, &child.pane.cwd),
         argv: auth.argv,
         env: environment,
         cols: child.pane.cols as u16,
