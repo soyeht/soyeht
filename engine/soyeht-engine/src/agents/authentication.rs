@@ -2,7 +2,9 @@ use super::{
     Changes,
     harness_sign_in::SignInChange,
     purpose::Purpose,
-    registry, responses,
+    registry,
+    registry::PackageRunner,
+    responses,
     state::{Phase, State},
 };
 use crate::dispatch::Outcome;
@@ -27,11 +29,8 @@ fn terminal_auth_argv(
     original_command: &str,
     auth_args: Vec<String>,
 ) -> Result<Vec<String>> {
-    let runner = Path::new(original_command)
-        .file_name()
-        .and_then(|name| name.to_str());
-    let package_prefix = match runner {
-        Some("npx" | "npx-cli.js") => match launch.args.as_slice() {
+    let package_prefix = match registry::package_runner(original_command) {
+        Some(PackageRunner::Npx) => match launch.args.as_slice() {
             [yes, package, ..] if yes == "--yes" && registry::pinned_package(package) => {
                 vec![yes.clone(), package.clone()]
             }
@@ -41,7 +40,7 @@ fn terminal_auth_argv(
                 ));
             }
         },
-        Some("uvx") => match launch.args.first() {
+        Some(PackageRunner::Uvx) => match launch.args.first() {
             // The stem, so Windows' `uvx.exe` and `uv.exe` are the same runners as `uvx` and `uv`.
             Some(package) if registry::pinned_package(package) => match Path::new(&launch.command)
                 .file_stem()
@@ -61,7 +60,7 @@ fn terminal_auth_argv(
                 ));
             }
         },
-        _ => vec![],
+        None => vec![],
     };
     // npx and uvx pass arguments after the package position to that package's
     // executable. In particular, an authMethod --package must never be a runner option.
@@ -71,11 +70,19 @@ fn terminal_auth_argv(
         .collect())
 }
 
-fn verified_terminal_auth_argv(
+/// The program of a sign-in terminal, and whether it runs through a package runner: both are
+/// read from the catalogue's entry of the harness, so the arguments and the folder it starts in
+/// cannot disagree.
+struct TerminalAuth {
+    argv: Vec<String>,
+    package_runner: bool,
+}
+
+fn verified_terminal_auth(
     directory: &Path,
     state: &State,
     auth_args: Vec<String>,
-) -> Result<Vec<String>> {
+) -> Result<TerminalAuth> {
     let entry = registry::catalogue_entries(directory)?
         .into_iter()
         .find(|entry| entry.launch.id == state.launch.id)
@@ -84,7 +91,10 @@ fn verified_terminal_auth_argv(
     if current != state.launch || digest != state.binary_digest {
         return Err(errors::invalid("Harness changed; restart the agent pane"));
     }
-    terminal_auth_argv(&state.launch, &entry.launch.command, auth_args)
+    Ok(TerminalAuth {
+        argv: terminal_auth_argv(&state.launch, &entry.launch.command, auth_args)?,
+        package_runner: registry::starts_in_engine_folder(&entry.launch),
+    })
 }
 
 fn auth_pane_created(
@@ -123,7 +133,7 @@ fn login_terminal(
     profile: &Path,
     agent: &soyeht_protocol::Pane,
     state: &State,
-    argv: Vec<String>,
+    auth: TerminalAuth,
     method_env: std::collections::BTreeMap<String, String>,
 ) -> (StoredPane, Spawn) {
     let mut pane = agent.clone();
@@ -154,8 +164,8 @@ fn login_terminal(
         instance_key: child.instance_key.clone(),
         generation: 1,
         kind: ProcessKind::Pty,
-        cwd: super::adapter_directory::start_in(profile, &state.launch.command, &child.pane.cwd),
-        argv,
+        cwd: super::adapter_directory::start_in(profile, auth.package_runner, &child.pane.cwd),
+        argv: auth.argv,
         env: environment,
         cols: child.pane.cols as u16,
         rows: child.pane.rows as u16,
@@ -251,12 +261,12 @@ impl Core {
         // The adapter supplied auth args, but only the catalogue supplies the
         // runner and pinned package. Refuse a stale or replaced launch before
         // creating a terminal pane or spawning any process.
-        let argv = verified_terminal_auth_argv(&self.directory, &state, method.args.clone())?;
+        let auth = verified_terminal_auth(&self.directory, &state, method.args.clone())?;
         let (child, launch) = login_terminal(
             &self.directory,
             &self.panes[id].stored.pane,
             &state,
-            argv,
+            auth,
             method.env,
         );
         let child_id = child.pane.pane_id.clone();

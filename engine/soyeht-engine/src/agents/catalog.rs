@@ -324,7 +324,7 @@ fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value
         installed_without_success
     };
     let package_runner = entry.source == HarnessSource::BuiltIn
-        && matches!(entry.launch.command.as_str(), "npx" | "uvx");
+        && registry::package_runner(&entry.launch.command).is_some();
     let (setup_state, setup_reason) = setup_state(
         resolved.is_some(),
         installed,
