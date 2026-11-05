@@ -127,8 +127,8 @@ impl Core {
         }) else {
             return Ok(());
         };
-        let mut saved = running.stored.clone();
         let mut events = Vec::new();
+        let mut saved = running.stored.clone();
         let layout = self.prepare_pane_close(&mut saved, &mut events)?;
         let mutation = StorePort::mutate(
             &mut self.store,
@@ -140,7 +140,7 @@ impl Core {
                 if let Some(workspace) = &layout {
                     change.update_workspace(workspace)?;
                 }
-                Ok((json!({"paneId":pane_id}), events))
+                Ok((json!({}), events))
             },
         )
         .map_err(errors::storage)?;
