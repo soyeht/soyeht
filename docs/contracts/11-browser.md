@@ -61,7 +61,7 @@ request and sends; it travels as `pane.prompt {attachments}` (ACP content
 blocks: one text block with the package as Markdown, one image block).
 
 ## 5. Agent tools (MCP on the engine; contract 03 tool list)
-`web_open {url, workspaceId?, newPane?}` → `{paneId}`; `web_navigate {paneId,
+`web_open {url, workspaceId?, newPane?, incognito?}` → `{paneId}` (§6 for when it answers); `web_navigate {paneId,
 url | "back" | "forward" | "reload"}`; `web_snapshot {paneId, screenshot?}` →
 page title, URL and the accessibility tree with refs `e1…eN` (interactive
 and named elements only); `web_click {paneId, ref}`; `web_type {paneId, ref,
@@ -135,6 +135,14 @@ address bar) pauses agent driving and the next tool call returns
   that would send cookies for a domain raises `pane.permission_requested
   {kind: "web_session", domain}` with the options "this task only", "always
   in this workspace", "deny". No agent permission mode answers this request.
+  The call that opens a page is such a call: an agent's `web_open` of a pane
+  that is not incognito makes the pane empty and sends it to the address as a
+  `navigate` command, so the host says whether the address's site has cookies
+  before the page loads, and the permission request is the same one
+  `web_navigate` raises. The answer to `web_open` is `{paneId}` once the host
+  accepts the navigation, or the error that stopped it (a denied session
+  leaves the empty pane). A pane a person opens loads the address at once,
+  and so does an incognito pane, which has no session to protect.
 - No cookie import from other browsers in v1. Only `http` and `https`
   navigations; everything else is refused with an explicit message.
 - Console and network readings are kept in memory only (rings of 500 and

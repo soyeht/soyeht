@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, DecisionBy, PaneMode, PanePermissionAnswerParams, PanePermissionAnswerResult,
     PermissionOption, PermissionOptionKind, PermissionRequest, PermissionRequestKind,
-    PermissionResult, Role, WebCommandParams, WebSessionState, event, method,
+    PermissionResult, Role, WebCommandKind, WebCommandParams, WebSessionState, event, method,
 };
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant, WebSessionGrantScope};
 use soyeht_web::NormalizedUrl;
@@ -116,13 +116,7 @@ impl Core {
         self.authorize_web_workspace(&actor, &pane.stored.pane.workspace_id)?;
         let agent = matches!(actor.role, Role::Agent | Role::Chief);
         let domain = if agent {
-            let url = pane
-                .stored
-                .pane
-                .url
-                .as_deref()
-                .ok_or_else(|| errors::invalid("Web pane has no current URL"))?;
-            NormalizedUrl::parse(url)?.host().to_owned()
+            command_domain(params, pane.stored.pane.url.as_deref())?
         } else {
             String::new()
         };
@@ -531,6 +525,20 @@ impl Core {
         self.publish(&mutation.events)?;
         self.resume_web_permission(&request.request_id, false, &request.kind)
     }
+}
+
+/// The site a command is about: the address a navigation is sent to (the page the pane is on now
+/// is not the one whose cookies it would send), else the page the pane is on.
+fn command_domain(params: &WebCommandParams, current: Option<&str>) -> Result<String> {
+    let target = if params.command == WebCommandKind::Navigate {
+        params.args.get("url").and_then(Value::as_str)
+    } else {
+        None
+    };
+    let url = target
+        .or(current)
+        .ok_or_else(|| errors::invalid("Web pane has no current URL"))?;
+    Ok(NormalizedUrl::parse(url)?.host().to_owned())
 }
 
 fn session_access(agent: bool, incognito: bool, granted: bool) -> SessionAccess {

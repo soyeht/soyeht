@@ -9,9 +9,9 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     AttachmentRef, ErrorKind, RpcError, WebActionResult, WebAgentDrivingEvent, WebCloseResult,
     WebCommandKind, WebCommandParams, WebCommandResult, WebConsoleResult, WebEvaluateResult,
-    WebNavigateResult, WebNetworkResult, WebReadResult, WebResizeResult, WebScreenshotResult,
-    WebSnapshotResult, WebWaitResult, attachment::attachment_frames, error_code, event,
-    frame::Frame, method::*,
+    WebNavigateResult, WebNetworkResult, WebOpenResult, WebReadResult, WebResizeResult,
+    WebScreenshotResult, WebSnapshotResult, WebWaitResult, attachment::attachment_frames,
+    error_code, event, frame::Frame, method::*,
 };
 use soyeht_web::{command_response_budget, validate_command};
 use uuid::Uuid;
@@ -336,15 +336,19 @@ impl Core {
         Ok(())
     }
 
-    pub(super) fn send_web_waiter(&mut self, id: &str) -> Result<()> {
-        let host = self
-            .clients
+    /// The connection that hosts the web panes, or `WEB_HOST_UNAVAILABLE` when there is none.
+    pub(super) fn web_host_connection(&self) -> Result<String> {
+        self.clients
             .iter()
             .find(|(_, client)| {
                 client.web_host && client.actor.is_some() && !client.outbox.is_closed()
             })
             .map(|(id, _)| id.clone())
-            .ok_or_else(|| errors::web_host_unavailable("No web host is connected"))?;
+            .ok_or_else(|| errors::web_host_unavailable("No web host is connected"))
+    }
+
+    pub(super) fn send_web_waiter(&mut self, id: &str) -> Result<()> {
+        let host = self.web_host_connection()?;
         let waiter = self
             .web_waiters
             .get_mut(id)
@@ -414,6 +418,10 @@ impl Core {
 
 fn public_result(waiter: &WebWaiter, result: &WebCommandResult) -> Result<Value> {
     match waiter.method.as_str() {
+        WEB_OPEN => serde_json::to_value(WebOpenResult {
+            pane_id: waiter.pane_id.clone(),
+        })
+        .map_err(|_| errors::internal("Web open result serialization failed")),
         WEB_NAVIGATE => serde_json::to_value(WebNavigateResult {
             pane_id: waiter.pane_id.clone(),
             accepted: true,

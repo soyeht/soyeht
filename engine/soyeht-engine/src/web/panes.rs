@@ -58,7 +58,7 @@ impl Core {
             .as_deref()
             .map(NormalizedUrl::parse)
             .transpose()?;
-        self.persist_web_pane(
+        let (result, _) = self.persist_web_pane(
             connection,
             method::PANE_CREATE,
             params,
@@ -68,16 +68,18 @@ impl Core {
                 url: url.as_ref(),
                 incognito: request.incognito.unwrap_or(false),
             },
-        )
+        )?;
+        Ok(result)
     }
 
+    /// The result of the request and whether it was a repeat of one already committed.
     pub(crate) fn persist_web_pane(
         &mut self,
         connection: &str,
         method: &str,
         raw_params: &Value,
         intent: NewWebPane<'_>,
-    ) -> Result<Value> {
+    ) -> Result<(Value, bool)> {
         self.ensure_web_pane_capacity(&intent.workspace.workspace_id)?;
         let pane = web_pane(intent.workspace, intent.name, intent.url, intent.incognito)?;
         let saved = StoredPane {
@@ -113,7 +115,7 @@ impl Core {
                 },
             );
         }
-        Ok(mutation.result)
+        Ok((mutation.result, mutation.repeated))
     }
 
     fn ensure_web_pane_capacity(&self, workspace_id: &str) -> Result<()> {

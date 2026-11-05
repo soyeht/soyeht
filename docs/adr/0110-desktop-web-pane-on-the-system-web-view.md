@@ -216,8 +216,8 @@ host:
 - The MCP server waited 10 s for every answer. A web command runs in the host and may take as
   long as the longest wait the contract allows (`webWaitTimeoutMs`, 60 s) plus a navigation or
   a read of a long page; the server now waits that long and a margin for the host commands and
-  `web.navigate`, and 10 s for the others, `web.open` and `web.close` among them, which answer
-  at once (`reply_timeout`, which asks `soyeht_protocol::web::waits_for_host`). The engine's own
+  `web.navigate` and an agent's `web.open` (ADR 0055), and 10 s for the others, `web.close` among
+  them, which answer at once (`reply_timeout`, which asks `soyeht_protocol::web::waits_for_host`). The engine's own
   default for a web command stays 30 s. A call that times out is sent once more, as any call that
   loses its connection is, and a question the engine puts to the person (a web session, a
   permission) can wait longer than this server does, as before.

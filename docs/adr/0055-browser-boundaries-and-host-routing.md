@@ -95,6 +95,15 @@ only whether the target domain has cookies. The engine then requires a grant
 or creates the existing durable permission flow. No agent permission mode
 answers this permission (ADR 0070). Denial does not clear the user's session.
 
+The page an agent opens is no exception. `web.open` from an agent that is not incognito
+persists the pane with no URL and queues a `navigate` command for the address under the same
+waiter, permission plan and host probe as `web.navigate`; the plan takes the domain from the
+address the navigation goes to, not from the page the pane is on. The reply is `{paneId}` once
+the host accepts the navigation, so the MCP server waits for it as it does for `web.navigate`
+(`waits_for_host`). A person's `web.open`, and an incognito pane's, keep the direct load: the
+pane carries its URL and the host opens it. When no web host is connected the call fails with
+`WEB_HOST_UNAVAILABLE` before a pane is made.
+
 ### Mac WebKit boundary
 
 `apps/mac/Sources/Web/` is the only module that imports WebKit. It is split
