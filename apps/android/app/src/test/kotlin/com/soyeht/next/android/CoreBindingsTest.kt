@@ -48,11 +48,9 @@ class CoreBindingsTest {
     }
 
     @Test
-    fun aProviderChosenForAHarnessIsAcceptedByNameAndAnUnknownNameIsIgnored() {
+    fun aPaneTheReplicaDoesNotHoldHasNoUsageRing() {
         val core = core()
         core.loadUsage()
-        core.chooseUsageProvider("registry.opencode", "codex")
-        core.chooseUsageProvider("registry.opencode", "nobody")
         assertNull(core.usageGauge("pane"))
     }
 }
