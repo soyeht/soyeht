@@ -27,10 +27,45 @@ pub fn listen(address: SocketAddr) -> io::Result<TcpListener> {
     }
 }
 
+/// Whether an error of `accept` concerns the one connection it took from the queue (the peer reset
+/// or aborted it while it waited, the call was interrupted or timed out), not the listener or the
+/// process. The next `accept` has an answer at once; any other error needs a pause before it.
+pub fn accept_error_concerns_one_connection(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::Interrupted
+            | io::ErrorKind::TimedOut
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
+
+    #[test]
+    fn only_the_errors_about_one_connection_need_no_pause() {
+        for kind in [
+            io::ErrorKind::ConnectionAborted,
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::Interrupted,
+            io::ErrorKind::TimedOut,
+        ] {
+            assert!(accept_error_concerns_one_connection(&io::Error::from(kind)));
+        }
+        for kind in [
+            io::ErrorKind::Other,
+            io::ErrorKind::OutOfMemory,
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::InvalidInput,
+        ] {
+            assert!(!accept_error_concerns_one_connection(&io::Error::from(
+                kind
+            )));
+        }
+    }
 
     #[test]
     fn a_listener_takes_connections_on_loopback_and_refuses_a_second_listener_on_its_address() {

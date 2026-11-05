@@ -60,7 +60,7 @@ impl Listener {
                 accepted = self.tcp.accept() => {
                     match accepted {
                         Ok((stream, _)) => self.admit(stream),
-                        Err(error) if endpoint::is_transient(&error) => {}
+                        Err(error) if crate::net::accept_error_concerns_one_connection(&error) => {}
                         Err(error) => return Err(error),
                     }
                 }
