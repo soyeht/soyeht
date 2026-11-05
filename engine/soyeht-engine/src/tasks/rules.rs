@@ -340,6 +340,12 @@ pub fn apply_owner_loss(task: &Task) -> Result<Task> {
 }
 
 pub fn new_loop_config(params: &LoopSetParams) -> Result<LoopConfig> {
+    if params.prompt.len() > soyeht_protocol::limits::PROMPT_BYTES {
+        return Err(errors::invalid(format!(
+            "prompt must contain at most {} bytes",
+            soyeht_protocol::limits::PROMPT_BYTES
+        )));
+    }
     if params.enabled {
         required_text(&params.prompt, "prompt")?;
         if params.interval == 0 {

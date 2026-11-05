@@ -90,7 +90,8 @@ impl Core {
 
     /// Creates this task's worktree off the Core lock when it still needs
     /// one (ADR 0079), then advances the dispatches under the lock and
-    /// answers with `result`. A failure reaches the caller, as before.
+    /// answers with `result`. A failure of this task's own worktree reaches the caller; a
+    /// dispatch row that cannot advance is logged and does not fail the others.
     fn continue_dispatch(
         &mut self,
         workspace: &str,
@@ -242,7 +243,10 @@ impl Core {
         for (workspace, task, checkpoint) in pending {
             if checkpoint.stage != "prompt_accepted" {
                 waiting = true;
-                self.advance_task_dispatch(&workspace, &task, checkpoint)?;
+                // A row that cannot advance is logged under its own key and the others go on.
+                let advanced = self.advance_task_dispatch(&workspace, &task, checkpoint);
+                self.background
+                    .report(&format!("task_dispatch_row:{workspace}:{task}"), &advanced);
             }
         }
         if !waiting {
@@ -749,3 +753,6 @@ fn claimed_events(task: &Task, movement: &TaskMove, pane: &str) -> Vec<(String, 
         events::updated(task),
     ]
 }
+
+#[cfg(test)]
+mod tests;
