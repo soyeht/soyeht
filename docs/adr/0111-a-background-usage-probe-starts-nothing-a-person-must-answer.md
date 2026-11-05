@@ -54,13 +54,16 @@ memoizes it), so the stored-login check never adds a second consent prompt to
 the one the OAuth source already caused.
 
 Sessions take turns on their scratch directory. The directory has a fixed name
-(Claude Code records the path once among its projects, and a name per run would
-add an entry every time), and a session removes and recreates it, which would
-pull it from under another session's running child. The other session can be a
-refresh of another engine on the machine: the installed app, a development
-build, a second profile. So the turn is an operating-system file lock (`flock`
-on Unix, `LockFileEx` on Windows) on a file inside a directory beside the
-scratch directory, named after it with `-lock`. The session waits for the turn
+inside the profile's data directory (Claude Code records the path once among its
+projects, and a name per run would add an entry every time), and a session removes
+and recreates it, which would pull it from under another session's running child.
+The scratch directory belongs to one profile, so the turn is per profile and not
+machine-wide: the installed app, a development build and a second profile each
+have their own directory and do not wait for one another. Within a profile the
+other session can be a refresh by a second engine process started on the same data
+directory. So the turn is an operating-system file lock (`flock` on Unix,
+`LockFileEx` on Windows) on a file inside a directory beside the scratch
+directory, named after it with `-lock`. The session waits for the turn
 within its own 24 s. The lock directory and its file stay after a run on
 purpose: the lock is not their existence but the hold on the open file, which
 the system drops when the holder exits or crashes, so a crashed engine never

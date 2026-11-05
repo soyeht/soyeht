@@ -289,7 +289,11 @@ mod tests {
         let host = SystemHost::new(&directory);
         let elsewhere = directory.join("elsewhere");
         fs::create_dir(&elsewhere).unwrap();
-        symlink(&elsewhere, &host.scratch).unwrap();
+        if symlink(&elsewhere, &host.scratch).is_err() {
+            // Windows without Developer Mode cannot make one; there is nothing to refuse.
+            fs::remove_dir_all(directory).unwrap();
+            return;
+        }
         assert!(host.private_scratch().is_err());
         // The name is still given, but a terminal run in it is refused (`run_terminal`).
         assert_eq!(host.temp_dir(), host.scratch);
