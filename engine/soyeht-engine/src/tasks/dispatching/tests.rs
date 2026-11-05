@@ -142,3 +142,22 @@ fn a_dispatch_row_that_cannot_advance_does_not_stop_the_rows_after_it() {
     assert!(first_text(&core, "pane-2").contains("# Do the work"));
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn the_caller_gets_the_error_of_its_own_row_and_not_the_error_of_another() {
+    let (mut core, directory) = core_with_claimed_tasks(Vec::new());
+
+    // `A-0` cannot advance. A caller of `A-1` is not told, and `A-2` still advances.
+    core.advance_dispatches_for(WORKSPACE, "A-1").unwrap();
+    assert_eq!(stage(&core, "A-1"), "prompt_accepted");
+    assert_eq!(stage(&core, "A-2"), "prompt_accepted");
+    assert_eq!(stage(&core, "A-0"), "pane_opened");
+
+    // The caller of the failing row gets its failure, as before.
+    let error = core.advance_dispatches_for(WORKSPACE, "A-0").unwrap_err();
+    assert_eq!(
+        errors::kind(&error),
+        soyeht_protocol::ErrorKind::InternalError
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}

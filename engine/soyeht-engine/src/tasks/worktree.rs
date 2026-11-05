@@ -380,6 +380,9 @@ pub(crate) fn task_branch(task: &str) -> String {
 const FIELD_BYTES: usize = limits::PROMPT_BYTES / 16;
 const DESCRIPTION_BYTES: usize = limits::PROMPT_BYTES / 4;
 const SUBITEMS_BYTES: usize = limits::PROMPT_BYTES / 8;
+/// The comments a first prompt lists at most; the caller loads one more to learn that there
+/// are older ones.
+pub(crate) const PROMPT_COMMENTS: usize = 200;
 const COMMENT_BYTES: usize = limits::PROMPT_BYTES / 32;
 /// Kept free after the comments for the line that counts the ones left out.
 const OMISSION_RESERVE: usize = 64;
@@ -458,7 +461,7 @@ fn comments_section(comments: &[Comment], room: usize) -> String {
     }
     let mut section = String::new();
     let mut kept = 0;
-    for comment in comments {
+    for comment in comments.iter().take(PROMPT_COMMENTS) {
         let line = clipped(
             &format!("- {}: {}", comment.author, comment.text),
             COMMENT_BYTES,
@@ -484,7 +487,13 @@ fn comments_section(comments: &[Comment], room: usize) -> String {
             section.push('\n');
         }
         let plural = if omitted == 1 { "comment" } else { "comments" };
-        section.push_str(&format!("- {omitted} earlier {plural} omitted"));
+        // More than the cap were loaded: the count is what is known, not all there is.
+        let count = if comments.len() > PROMPT_COMMENTS {
+            format!("at least {omitted}")
+        } else {
+            omitted.to_string()
+        };
+        section.push_str(&format!("- {count} earlier {plural} omitted"));
     }
     section
 }
@@ -556,7 +565,7 @@ mod tests {
         let omitted = text
             .lines()
             .find_map(|line| {
-                line.strip_prefix("- ")?
+                line.strip_prefix("- at least ")?
                     .strip_suffix(" earlier comments omitted")
             })
             .unwrap()
@@ -569,6 +578,27 @@ mod tests {
             "every comment is either listed or counted"
         );
         assert!(text.contains("## Worktree\n/work/ws-1\n\nCreate subitems"));
+    }
+
+    #[test]
+    fn the_omission_line_says_at_least_only_when_more_comments_exist_than_were_loaded() {
+        let task = crate::tasks::task_fixture(soyeht_protocol::TaskState::InProgress);
+        let comments = |count: usize| -> Vec<Comment> {
+            (0..count)
+                .rev()
+                .map(|n| comment(n, format!("note {n} {}", "x".repeat(400))))
+                .collect()
+        };
+        // The cap itself: every comment loaded, so the count of those left out is exact.
+        let exact = prompt_for(&task, &comments(PROMPT_COMMENTS));
+        assert!(exact.contains(" earlier comments omitted"));
+        assert!(!exact.contains("at least"));
+        // One more than the cap: there are older comments that were not even loaded.
+        let more = prompt_for(&task, &comments(PROMPT_COMMENTS + 1));
+        assert!(more.contains("- at least "));
+        assert!(more.len() <= limits::PROMPT_BYTES);
+        // Few enough comments to list every one: no line at all.
+        assert!(!prompt_for(&task, &comments(3)).contains("omitted"));
     }
 
     #[test]

@@ -113,3 +113,31 @@ fn a_loop_prompt_is_bounded_by_the_prompt_limit() {
         );
     }
 }
+
+#[test]
+fn holding_a_loop_back_keeps_the_saved_round_and_does_not_enable_a_finished_loop() {
+    let counted = LoopConfig {
+        rounds: Some(5),
+        ..loop_config("go on".into())
+    };
+    let finished = LoopConfig {
+        enabled: false,
+        rounds: Some(7),
+        ..loop_config("go on".into())
+    };
+    let (mut core, directory) = core_with_two_loops(counted, finished.clone());
+
+    core.hold_task_loop("pane-a", NOW_MS as u64).unwrap();
+    let (kept, held_until) = core.store.loop_config("pane-a").unwrap().unwrap();
+    assert_eq!(kept.rounds, Some(5), "the round already saved stays");
+    assert!(kept.enabled);
+    assert!(held_until > NOW_MS as u64);
+
+    core.hold_task_loop("pane-b", NOW_MS as u64).unwrap();
+    assert_eq!(
+        core.store.loop_config("pane-b").unwrap(),
+        Some((finished, 200)),
+        "a loop that has ended is left as it is"
+    );
+    remove(&directory);
+}
