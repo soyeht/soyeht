@@ -37,7 +37,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub use git::{GIT_UNAVAILABLE_MESSAGE, require_git, require_git_with, run_git, run_git_with};
+pub use git::{
+    GIT_UNAVAILABLE_MESSAGE, read_only_command, read_only_command_with, require_git,
+    require_git_with, run_git, run_git_with,
+};
 use system::Running;
 
 /// How long the pipes may stay open after the command exits or is killed.

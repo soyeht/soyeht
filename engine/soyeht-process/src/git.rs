@@ -2,7 +2,7 @@
 
 use crate::{Error, Limits, Output, Result, run};
 use soyeht_platform::git::{Availability, Probe};
-use std::process::Command;
+use std::{collections::BTreeSet, io, path::Path, process::Command};
 
 /// What a person is told when `git` is not started. It names the cause and the way out, and
 /// says Soyeht did not open the installer.
@@ -32,10 +32,110 @@ pub fn run_git_with(probe: &Probe, command: Command, limits: Limits) -> Result<O
     run(command, limits)
 }
 
+/// The settings of a filter driver that run a program when git compares a file with the index:
+/// the driver's conversions and its long-running process.
+const FILTER_PROGRAMS: [&str; 3] = ["clean", "smudge", "process"];
+
+/// A `git` command for `repository` that reads it and runs nothing the repository configures.
+/// The caller adds the arguments and runs it with [`run_git_with`].
+///
+/// A repository carries its own configuration, and some of it names programs that git starts
+/// while it only reads: the file system monitor (`core.fsmonitor`) and every filter driver that
+/// `.gitattributes` assigns to a path (`filter.<name>.clean`, `.smudge`, `.process`). The command
+/// turns the monitor off and clears the programs of each driver the configuration names (the
+/// names are listed first, with a command that starts nothing). Textconv and external diff
+/// programs are not in this list: they are off with `--no-textconv` and `--no-ext-diff` on the
+/// commands that have them, which the caller passes.
+///
+/// It also never pages, takes no optional lock and reads paths literally. A configuration whose
+/// driver names cannot be listed or cannot be written as `-c` settings is an error: the command
+/// is not built.
+pub fn read_only_command_with(probe: &Probe, repository: &Path, limits: Limits) -> Result<Command> {
+    let mut list = Command::new("git");
+    list.arg("--no-pager")
+        .arg("-C")
+        .arg(repository)
+        .args(["config", "-z", "--name-only", "--get-regexp", "^filter\\."])
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    let listed = run_git_with(probe, list, limits)?;
+    // 1 is "no such key": the repository has no filter drivers.
+    let names = match listed.status.code() {
+        Some(0) => filter_names(&listed.stdout),
+        Some(1) => Some(BTreeSet::new()),
+        _ => None,
+    };
+    let Some(names) = names else {
+        return Err(unreadable_configuration());
+    };
+    let mut command = Command::new("git");
+    command
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(repository)
+        .args(["-c", "core.fsmonitor=false"]);
+    for name in &names {
+        for setting in FILTER_PROGRAMS {
+            command.arg("-c").arg(format!("filter.{name}.{setting}="));
+        }
+        command
+            .arg("-c")
+            .arg(format!("filter.{name}.required=false"));
+    }
+    command
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_LITERAL_PATHSPECS", "1")
+        .env("GIT_PAGER", "cat");
+    Ok(command)
+}
+
+/// [`read_only_command_with`] for this machine's `git`.
+pub fn read_only_command(repository: &Path, limits: Limits) -> Result<Command> {
+    read_only_command_with(&Probe::system(), repository, limits)
+}
+
+fn unreadable_configuration() -> Error {
+    Error::Read {
+        program: "git".into(),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            "the repository's filter drivers cannot be listed",
+        ),
+    }
+}
+
+/// The driver names in the NUL separated keys `filter.<name>.<setting>` of `git config -z
+/// --name-only`. `None` for a name `-c` cannot carry (it has an `=`, which would end the key) or
+/// for output that is not text.
+fn filter_names(listing: &[u8]) -> Option<BTreeSet<String>> {
+    let mut names = BTreeSet::new();
+    for key in listing
+        .split(|&byte| byte == 0)
+        .filter(|key| !key.is_empty())
+    {
+        let key = std::str::from_utf8(key).ok()?;
+        // A key with no subsection (`filter.x`) names no driver.
+        let Some((name, _)) = key
+            .strip_prefix("filter.")
+            .and_then(|rest| rest.rsplit_once('.'))
+        else {
+            continue;
+        };
+        if name.contains('=') {
+            return None;
+        }
+        names.insert(name.to_owned());
+    }
+    Some(names)
+}
+
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use std::{env, fs, path::PathBuf, time::Duration};
+    use std::{
+        env, fs,
+        path::{Path, PathBuf},
+        time::Duration,
+    };
 
     /// A machine whose `git` is a launcher that records that it ran. The launcher stands for
     /// the macOS stub that opens the installer.
@@ -104,5 +204,125 @@ mod tests {
         let limits = Limits::new(Duration::from_secs(10), 8192);
         run_git_with(&machine.probe(), command, limits).unwrap();
         assert!(machine.ran());
+    }
+
+    #[test]
+    fn filter_drivers_are_listed_by_name_from_their_keys() {
+        let names =
+            filter_names(b"filter.lfs.clean\0filter.lfs.smudge\0filter.a.b.process\0filter.x\0");
+        assert_eq!(
+            names.unwrap().into_iter().collect::<Vec<_>>(),
+            ["a.b", "lfs"]
+        );
+        assert!(filter_names(b"").unwrap().is_empty());
+        // A name `-c` could not carry, and output that is not text, are refused.
+        assert!(filter_names(b"filter.a=b.clean\0").is_none());
+        assert!(filter_names(b"filter.\xff.clean\0").is_none());
+    }
+
+    /// A repository whose own configuration names a program for each way git starts one while it
+    /// reads: the file system monitor and the three programs of a filter driver. Each program
+    /// leaves a file named for it in `root`.
+    fn repository_with_programs(label: &str) -> PathBuf {
+        let root = env::temp_dir().join(format!("soyeht-read-only-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let git = |arguments: &[&str]| {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+                .args(arguments)
+                .status()
+                .unwrap();
+            assert!(status.success(), "{arguments:?}");
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join(".gitattributes"), "*.bin filter=probe\n").unwrap();
+        fs::write(root.join("a.bin"), "one\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "baseline"]);
+        let program =
+            |name: &str| format!("sh -c 'touch \"{}/ran-{name}\"; cat' --", root.display());
+        for (key, name) in [
+            ("filter.probe.clean", "clean"),
+            ("filter.probe.smudge", "smudge"),
+            ("core.fsmonitor", "fsmonitor"),
+        ] {
+            git(&["config", key, &program(name)]);
+        }
+        git(&["config", "filter.probe.process", &program("process")]);
+        // A driver name with dots is listed whole.
+        git(&["config", "filter.dotted.name.clean", &program("dotted")]);
+        fs::write(root.join("a.bin"), "two\n").unwrap();
+        fs::write(root.join("untracked.txt"), "new\n").unwrap();
+        root
+    }
+
+    fn programs_that_ran(root: &Path) -> Vec<String> {
+        let mut ran: Vec<String> = fs::read_dir(root)
+            .unwrap()
+            .flatten()
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| name.starts_with("ran-"))
+            .collect();
+        ran.sort();
+        ran
+    }
+
+    #[test]
+    fn a_read_only_command_starts_none_of_the_programs_a_repository_names() {
+        let limits = Limits::new(Duration::from_secs(30), 1 << 20);
+        let root = repository_with_programs("commands");
+        let commands: [&[&str]; 4] = [
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--name-only",
+                "-z",
+                "HEAD",
+                "--",
+                ".",
+            ],
+            &[
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--unified=200",
+                "HEAD",
+                "--",
+                "a.bin",
+            ],
+            &["ls-files", "--others", "--exclude-standard", "-z"],
+            &["status", "--porcelain"],
+        ];
+
+        // The same commands without the hardening do start them, so the check below can fail.
+        for arguments in commands {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(arguments)
+                .output()
+                .unwrap();
+            assert!(status.status.success(), "{arguments:?}");
+        }
+        assert!(
+            !programs_that_ran(&root).is_empty(),
+            "the control started nothing"
+        );
+        for entry in programs_that_ran(&root) {
+            fs::remove_file(root.join(entry)).unwrap();
+        }
+
+        for arguments in commands {
+            let mut command = read_only_command(&root, limits).unwrap();
+            command.args(arguments);
+            let output = run_git(command, limits).unwrap();
+            assert!(output.success(), "{arguments:?}: {}", output.stderr_text());
+        }
+        let ran = programs_that_ran(&root);
+        fs::remove_dir_all(&root).unwrap();
+        assert!(ran.is_empty(), "{ran:?}");
     }
 }

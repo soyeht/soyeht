@@ -143,16 +143,12 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut command = Command::new("git");
-    command
-        .arg("--no-pager")
-        .arg("-C")
-        .arg(repository)
-        .args(arguments)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("GIT_LITERAL_PATHSPECS", "1")
-        .env("GIT_PAGER", "cat");
-    run_git(&Probe::system(), command)
+    let probe = Probe::system();
+    let limits = soyeht_process::Limits::new(COMMAND_TIMEOUT, COMMAND_OUTPUT_BYTES);
+    let mut command = soyeht_process::read_only_command_with(&probe, repository, limits)
+        .map_err(process_error)?;
+    command.args(arguments);
+    run_git(&probe, command)
 }
 
 fn run_git(probe: &Probe, command: Command) -> Result<Output> {
@@ -161,7 +157,11 @@ fn run_git(probe: &Probe, command: Command) -> Result<Output> {
         command,
         soyeht_process::Limits::new(COMMAND_TIMEOUT, COMMAND_OUTPUT_BYTES),
     )
-    .map_err(|error| match error {
+    .map_err(process_error)
+}
+
+fn process_error(error: soyeht_process::Error) -> Error {
+    match error {
         soyeht_process::Error::GitUnavailable => Error::GitUnavailable,
         soyeht_process::Error::Spawn { .. } | soyeht_process::Error::UnderLock { .. } => {
             Error::CommandUnavailable
@@ -171,7 +171,7 @@ fn run_git(probe: &Probe, command: Command) -> Result<Output> {
         soyeht_process::Error::Wait { .. }
         | soyeht_process::Error::Read { .. }
         | soyeht_process::Error::Write { .. } => Error::CommandFailed,
-    })
+    }
 }
 
 fn text(output: Output) -> Result<String> {
@@ -245,14 +245,16 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let marker = root.join("filter-ran");
         let git = |arguments: &[&str]| {
-            let status = Command::new("git")
-                .arg("-C")
-                .arg(&root)
-                .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            let output = Command::new("git")
+                .current_dir(&root)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@example.com")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@example.com")
                 .args(arguments)
-                .status()
+                .output()
                 .unwrap();
-            assert!(status.success(), "{arguments:?}");
+            assert!(output.status.success(), "{arguments:?}");
         };
         git(&["init", "-q"]);
         fs::write(root.join(".gitattributes"), "*.bin diff=probe\n").unwrap();

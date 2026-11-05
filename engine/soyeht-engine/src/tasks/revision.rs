@@ -9,7 +9,6 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::Command,
     time::Duration,
 };
 
@@ -85,18 +84,14 @@ fn canonical_repository(repository: &Path) -> Result<PathBuf> {
         .map_err(|error| errors::worktree_unavailable(error.to_string()))
 }
 
+/// Runs `git` on `repository` the way the review needs it: reading, and starting nothing the
+/// repository's own configuration names (`soyeht_process::read_only_command`).
 fn git(repository: &Path, args: &[&str]) -> Result<Output> {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(repository)
-        .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0");
-    soyeht_process::run_git(
-        command,
-        soyeht_process::Limits::new(GIT_TIMEOUT, OUTPUT_LIMIT),
-    )
-    .map_err(errors::worktree_process)
+    let limits = soyeht_process::Limits::new(GIT_TIMEOUT, OUTPUT_LIMIT);
+    let mut command =
+        soyeht_process::read_only_command(repository, limits).map_err(errors::worktree_process)?;
+    command.args(args);
+    soyeht_process::run_git(command, limits).map_err(errors::worktree_process)
 }
 
 fn bytes(output: Output) -> Result<Vec<u8>> {
@@ -563,19 +558,40 @@ pub(crate) mod testing {
     fn git_adapter_does_not_run_filter_programs_the_repository_names() {
         let repository = Repository::new();
         let marker = repository.0.join("filter-ran");
-        fs::write(repository.0.join(".gitattributes"), "*.bin diff=probe\n").unwrap();
+        fs::write(
+            repository.0.join(".gitattributes"),
+            "*.bin diff=probe filter=probe\n",
+        )
+        .unwrap();
         fs::write(repository.0.join("a.bin"), "one\n").unwrap();
         run(&repository.0, &["add", "."]);
         run(&repository.0, &["commit", "-m", "binary"]);
         let filter = format!("sh -c 'touch \"{}\"; cat \"$1\"' --", marker.display());
         run(&repository.0, &["config", "diff.probe.textconv", &filter]);
         run(&repository.0, &["config", "diff.probe.command", &filter]);
+        // The programs git starts for the working tree, each with a marker of its own.
+        let marker_of = |name: &str| repository.0.join(format!("ran-{name}"));
+        let program =
+            |name: &str| format!("sh -c 'touch \"{}\"; cat' --", marker_of(name).display());
+        run(
+            &repository.0,
+            &["config", "filter.probe.clean", &program("clean")],
+        );
+        run(
+            &repository.0,
+            &["config", "core.fsmonitor", &program("fsmonitor")],
+        );
         fs::write(repository.0.join("a.bin"), "two\n").unwrap();
+        fs::write(repository.0.join("untracked.txt"), "new\n").unwrap();
 
         let snapshot = GitRevision.inspect(&repository.0).unwrap();
 
         assert!(snapshot.changed_paths.contains(&"a.bin".to_owned()));
-        assert!(!marker.exists(), "the filter program must not run");
+        assert!(snapshot.changed_paths.contains(&"untracked.txt".to_owned()));
+        assert!(!marker.exists(), "the conversion program must not run");
+        for name in ["clean", "fsmonitor"] {
+            assert!(!marker_of(name).exists(), "the {name} program must not run");
+        }
     }
 
     #[test]
