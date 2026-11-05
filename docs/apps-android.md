@@ -18,16 +18,18 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   the computer shows is what the phone shows. The phone never resizes the pane (ADR 0013); a pane wider
   than the phone scrolls sideways. Typing goes through the soft keyboard; a row has Esc, Tab, Ctrl,
   the arrows, Backspace and Enter. A hardware keyboard sends Enter, Backspace, Tab, Esc and the arrows.
-- **Agent pane.** The conversation, the prompt, and the question the agent waits on (a permission), with
-  the options the agent gave. Under the message field a row of menus names the harness the pane runs
-  (choosing another restarts the pane on it and hands the conversation over, after asking, ADR 0140) and
-  sets the session's model, effort and permission mode.
+- **Agent pane.** The conversation, with an agent's replies and thoughts drawn as the shared Markdown subset
+  (ADR 0087, 0139: bold, italic, code, lists, quotes, tables, links, and a Copy button on each code block),
+  the prompt, and the question the agent waits on (a permission), with the options the agent gave. Under
+  the message field a row of menus names the harness the pane runs (choosing another restarts the pane on
+  it and hands the conversation over, after asking, ADR 0140) and sets the session's model, effort and
+  permission mode.
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.
 - "Forget" asks first. A web, editor or writing pane says it is shown on the computer.
 
-Not yet: the camera scanner, push notifications, Markdown in agent replies, new panes
+Not yet: the camera scanner, push notifications, new panes
 and workspaces, the board layout of a tablet, the Fira/JetBrains fonts (the terminal uses the system
 monospace font), terminal text size and selection.
 

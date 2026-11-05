@@ -12,12 +12,13 @@ public enum PairingCopy {
   public static let continueTitle = "Continue on \(devices)"
   public static let revokeQuestion = "Revoke this device's access?"
   /// The line under the QR code on the Mac.
-  public static let scanInstruction =
-    "Open Soyeht Dev on your \(devices) and scan this code.\nBoth devices must be on the same tailnet."
+  public static var scanInstruction: String {
+    "Open \(AppName.display()) on your \(devices) and scan this code.\nBoth devices must be on the same tailnet."
+  }
 
   /// The onboarding line of a device that has no Mac yet: where to find the QR code and what to
   /// do with it. `device` is the name of the device the person holds (`DictationPlatform.title`).
   public static func onboarding(on device: String) -> String {
-    "On your Mac, open Soyeht Dev and choose “\(pairButton)”. Then scan the code with this \(device) and confirm access on the Mac."
+    "On your Mac, open \(AppName.display()) and choose “\(pairButton)”. Then scan the code with this \(device) and confirm access on the Mac."
   }
 }

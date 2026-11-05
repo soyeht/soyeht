@@ -62,11 +62,17 @@ private fun Message(item: ConversationItem) {
                 fontSize = TypeScale.small.sp,
             )
         }
-        Text(
-            item.text + if (item.streaming) " …" else "",
-            color = if (item.kind == ItemKind.MESSAGE) roles.ink else roles.secondary,
-            fontSize = TypeScale.body.sp,
-        )
+        val ink = if (item.kind == ItemKind.MESSAGE) roles.ink else roles.secondary
+        if (item.speaker == Speaker.AGENT && (item.kind == ItemKind.MESSAGE || item.kind == ItemKind.THOUGHT)) {
+            // Only an agent's replies and thoughts are Markdown (ADR 0087); what a person typed stays as typed.
+            // The parse is kept until the message changes: a transcript that redraws does not parse what it has.
+            val blocks = remember(item.id, item.revision, item.streaming) { markdownBlocks(item.text, item.streaming) }
+            val copy = remember { codeCopy() }
+            MarkdownView(blocks, copy, ink)
+            if (item.streaming) Text("…", color = roles.muted, fontSize = TypeScale.body.sp)
+        } else {
+            Text(item.text + if (item.streaming) " …" else "", color = ink, fontSize = TypeScale.body.sp)
+        }
     }
 }
 

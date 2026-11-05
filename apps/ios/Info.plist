@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Soyeht Dev</string>
+	<string>$(SOYEHT_PRODUCT_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -22,10 +22,13 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Only standard encryption: TLS through the system, the tailnet, and CryptoKit signatures and hashes. Nothing here needs an export-compliance document. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>SoyehtLicense</key>
 	<string>Apache-2.0</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan the QR shown by Soyeht Dev on the Mac to pair this iPhone or iPad.</string>
+	<string>Scan the QR shown by Soyeht on the Mac to pair this iPhone or iPad.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Dictate messages to your agents: Soyeht listens only while the composer's mic is on.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
@@ -73,7 +76,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.soyeht.next.dev.pair</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER).pair</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>soyeht-next</string>

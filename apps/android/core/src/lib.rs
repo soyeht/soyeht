@@ -8,10 +8,12 @@ mod composer;
 mod conversation;
 mod core;
 mod error;
+mod markdown;
 mod overview;
 mod terminal;
 
 pub use core::{Core, Listener, device_name};
 pub use error::CoreError;
+pub use markdown::{CodeCopy, MarkdownBlock, code_copy, markdown_blocks};
 
 uniffi::setup_scaffolding!();
