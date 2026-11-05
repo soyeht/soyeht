@@ -36,3 +36,20 @@ INFO="$DERIVED/Build/Products/Debug-$PLATFORM/Soyeht Dev.app/Info.plist"
     echo 'check_ios: iPad must support all four orientations' >&2
     exit 1
 }
+
+# The store needs the privacy manifest in the app and the export-compliance answer in Info.plist.
+APP=$(dirname "$INFO")
+[[ -f "$APP/PrivacyInfo.xcprivacy" ]] || {
+    echo 'check_ios: the app must carry PrivacyInfo.xcprivacy' >&2
+    exit 1
+}
+# SwiftTerm calls stat() and fstat(), so the manifest must declare the file-timestamp category.
+plutil -extract NSPrivacyAccessedAPITypes json -o - "$APP/PrivacyInfo.xcprivacy" |
+    grep -q NSPrivacyAccessedAPICategoryFileTimestamp || {
+    echo 'check_ios: PrivacyInfo.xcprivacy must declare NSPrivacyAccessedAPICategoryFileTimestamp' >&2
+    exit 1
+}
+[[ "$(plutil -extract ITSAppUsesNonExemptEncryption raw -o - "$INFO")" == false ]] || {
+    echo 'check_ios: Info.plist must answer ITSAppUsesNonExemptEncryption with false' >&2
+    exit 1
+}
