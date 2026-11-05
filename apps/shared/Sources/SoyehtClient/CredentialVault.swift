@@ -5,6 +5,8 @@ public enum CredentialVault {
   private static var query: [String: Any] {
     [
       kSecClass as String: kSecClassGenericPassword,
+      // Kept on purpose, for every build: a different service name would hide the credential of
+      // every device already paired and force each one to pair again.
       kSecAttrService as String: "com.soyeht.next.dev.ios.identity",
       kSecAttrAccount as String: "paired-engine",
     ]

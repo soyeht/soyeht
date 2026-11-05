@@ -37,7 +37,7 @@ public struct PairingLink: Sendable {
       Self.permittedHost(host), let url = endpoint.url
     else {
       throw ClientFailure.remote(
-        "invalid_pairing_code", "This QR is not a valid Soyeht Dev pairing.")
+        "invalid_pairing_code", "This QR is not a valid \(AppName.display()) pairing.")
     }
     self.engineId = engine
     self.code = code
