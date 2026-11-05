@@ -184,7 +184,11 @@ impl Core {
             instance_key: checkpoint.candidate_instance_key,
             generation: new_generation,
             kind: ProcessKind::PipesAcp,
-            cwd: saved.pane.cwd.clone(),
+            cwd: crate::agents::adapter_directory::start_in(
+                &self.directory,
+                &launch.command,
+                &saved.pane.cwd,
+            ),
             argv: std::iter::once(launch.command.clone())
                 .chain(launch.args.clone())
                 .collect(),

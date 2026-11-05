@@ -162,6 +162,7 @@ impl Core {
         // not by the first terminal under the lock.
         soyeht_ptyd::shell::warm_default_login_shell();
         log_stale_export_cleanup(directory);
+        crate::agents::adapter_directory::prepare(directory);
         let mut store = Store::open(directory).map_err(errors::storage)?;
         let workspaces = store.workspaces().map_err(errors::storage)?;
         for line in crate::workspace_layout::fallback_diagnostics(

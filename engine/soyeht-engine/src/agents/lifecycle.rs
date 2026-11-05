@@ -103,7 +103,11 @@ impl Core {
             instance_key: saved.instance_key.clone(),
             generation: saved.pane.generation,
             kind: ProcessKind::PipesAcp,
-            cwd: saved.pane.cwd.clone(),
+            cwd: super::adapter_directory::start_in(
+                &self.directory,
+                &state.launch.command,
+                &saved.pane.cwd,
+            ),
             argv,
             env: super::environment::launch_environment_with(state.launch.environment.as_deref()),
             cols: saved.pane.cols as u16,

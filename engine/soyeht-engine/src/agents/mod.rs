@@ -1,4 +1,5 @@
 pub mod account;
+pub(crate) mod adapter_directory;
 pub mod attachments;
 pub mod authentication;
 pub mod catalog;

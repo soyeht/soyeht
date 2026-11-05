@@ -120,6 +120,7 @@ fn embedded_auth(state: &mut super::state::State, method_id: &str, now_ms: i64) 
 
 /// The terminal pane that runs a sign-in beside its agent, and the process it spawns.
 fn login_terminal(
+    profile: &Path,
     agent: &soyeht_protocol::Pane,
     state: &State,
     argv: Vec<String>,
@@ -153,7 +154,7 @@ fn login_terminal(
         instance_key: child.instance_key.clone(),
         generation: 1,
         kind: ProcessKind::Pty,
-        cwd: child.pane.cwd.clone(),
+        cwd: super::adapter_directory::start_in(profile, &state.launch.command, &child.pane.cwd),
         argv,
         env: environment,
         cols: child.pane.cols as u16,
@@ -251,7 +252,13 @@ impl Core {
         // runner and pinned package. Refuse a stale or replaced launch before
         // creating a terminal pane or spawning any process.
         let argv = verified_terminal_auth_argv(&self.directory, &state, method.args.clone())?;
-        let (child, launch) = login_terminal(&self.panes[id].stored.pane, &state, argv, method.env);
+        let (child, launch) = login_terminal(
+            &self.directory,
+            &self.panes[id].stored.pane,
+            &state,
+            argv,
+            method.env,
+        );
         let child_id = child.pane.pane_id.clone();
         let screen = Screen::open(&self.directory.join("sessions").join(&child_id), false)?;
         state.login_pane_id = Some(child_id.clone());
