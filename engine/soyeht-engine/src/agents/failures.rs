@@ -116,6 +116,7 @@ impl Core {
         fail_work_in_flight(&mut state, &mut changes, pane, reason)?;
         state.client = Default::default();
         state.cancel_at_ms = None;
+        state.release_held_updates();
         state.phase = Phase::Faulted;
         saved.pane.state = PaneState::Dead;
         saved.pane.source = StateSource::Protocol;

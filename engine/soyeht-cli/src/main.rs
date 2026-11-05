@@ -22,6 +22,11 @@ enum Output {
     Text(String),
 }
 
+/// The product version of this program, from the one place that holds it (`CARGO_PKG_VERSION`).
+fn version() -> Output {
+    Output::Json(json!({"version":env!("CARGO_PKG_VERSION")}))
+}
+
 fn run() -> Result<Output> {
     let mut requested = std::env::var_os(SELECTION_ENV);
     let mut directory = None;
@@ -37,11 +42,19 @@ fn run() -> Result<Output> {
                 ))
             }
             "--help" => return Ok(Output::Json(json!({"usage":USAGE}))),
+            "--version" => return Ok(version()),
             "--bound" => bound = true,
             _ => return Err(Error::InvalidArguments(USAGE.into())),
         }
     }
     let args: Vec<_> = args.collect();
+    // The version needs no profile and no engine.
+    if args.first().is_some_and(|arg| arg == "version") {
+        return match args.len() {
+            1 => Ok(version()),
+            _ => Err(Error::InvalidArguments(USAGE.into())),
+        };
+    }
     let (profile, directory) = resolve(
         requested.as_deref(),
         directory,

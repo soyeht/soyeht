@@ -110,8 +110,14 @@ impl Runtime {
         if !self.attach(&id, &mut session, params) {
             return;
         }
+        if self.settings.updates_around_results {
+            skills::advertise(self, &session);
+        }
         self.answer(id, session.response(&self.settings));
-        skills::advertise(self, &session);
+        // With the early announcement the commands are announced only once, before the answer.
+        if !self.settings.updates_around_results {
+            skills::advertise(self, &session);
+        }
     }
 
     /// Takes the request's MCP servers, metadata and additional directories,
@@ -275,6 +281,9 @@ impl Runtime {
             });
         } else {
             self.answer(id, response);
+            if self.settings.updates_around_results {
+                skills::advertise(self, session);
+            }
         }
     }
 

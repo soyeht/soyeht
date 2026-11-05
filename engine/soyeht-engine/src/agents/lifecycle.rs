@@ -74,6 +74,7 @@ impl Core {
         }
         state.terminals.clear();
         state.initialized = None;
+        state.release_held_updates();
         state.phase = Phase::Initializing;
         state.cancel_at_ms = None;
         state.initial_option = None;
@@ -134,6 +135,7 @@ impl Core {
                     .initialize(self.now_ms() as u64)
                     .map_err(native_error)?,
             );
+            state.release_held_updates();
             state.phase = Phase::Initializing;
         }
         // A pending initialize or prompt belongs to the live process. Adoption

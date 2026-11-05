@@ -107,7 +107,7 @@ struct PhoneAgentChoiceView: View {
   }
 
   private func harnessRow(_ item: HarnessInfo) -> some View {
-    let state = HarnessPickerModel.setupState(for: item)
+    let state = HarnessPickerModel.shownState(for: item)
     return Button {
       form.chooseHarness(item.id)
     } label: {
