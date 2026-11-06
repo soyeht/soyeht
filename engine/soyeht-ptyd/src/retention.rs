@@ -234,7 +234,13 @@ mod tests {
             }
             let from_seq = requested.max(self.first);
             let skip = (from_seq - self.first) as usize;
-            let bytes = self.bytes.iter().skip(skip).take(maximum).copied().collect();
+            let bytes = self
+                .bytes
+                .iter()
+                .skip(skip)
+                .take(maximum)
+                .copied()
+                .collect();
             let gap = (requested < self.first).then_some(Gap {
                 from_seq: requested,
                 to_seq: self.first,

@@ -138,10 +138,15 @@ mod tests {
     fn a_waiter_returns_when_the_child_ends_and_leaves_it_to_be_collected() {
         let mut child = sleeper();
         let waiter = child.exit_waiter();
-        let waiting = thread::spawn(move || waiter.wait());
+        let (done, ended) = std::sync::mpsc::channel();
+        thread::spawn(move || done.send(waiter.wait()));
         // The wait does not hold the child, so ending it from here is possible.
         child.kill(Reach::Group);
-        waiting.join().unwrap().unwrap();
+        // A waiter that never returns fails the test instead of hanging it.
+        ended
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
         assert_eq!(child.try_wait().unwrap(), Some(Exit(None)));
     }
 
@@ -150,6 +155,11 @@ mod tests {
         let mut child = sleeper();
         let waiter = child.exit_waiter();
         assert!(child.end(Reach::Group));
-        waiter.wait().unwrap();
+        let (done, ended) = std::sync::mpsc::channel();
+        thread::spawn(move || done.send(waiter.wait()));
+        ended
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
     }
 }

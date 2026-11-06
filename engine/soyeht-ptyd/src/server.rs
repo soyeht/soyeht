@@ -622,11 +622,15 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
             }
         };
         loop {
-            if let Err(error) = waiter.wait() {
-                log::failure("ptyd.child_wait_failed", &error);
-                live.exited.store(true, Ordering::Release);
-                break;
-            }
+            // A wait that failed still gets one look at the child, so an exit that happened is
+            // recorded and collected; only a child that is still running makes it give up.
+            let wait_failed = match waiter.wait() {
+                Ok(()) => false,
+                Err(error) => {
+                    log::failure("ptyd.child_wait_failed", &error);
+                    true
+                }
+            };
             let exit = match live.child.lock() {
                 Ok(mut child) => child.try_wait(),
                 // ignored: the poisoning is logged by name just below
@@ -664,6 +668,10 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 }
                 Err(error) => {
                     log::failure("ptyd.child_wait_failed", &error);
+                    live.exited.store(true, Ordering::Release);
+                    break;
+                }
+                Ok(None) if wait_failed => {
                     live.exited.store(true, Ordering::Release);
                     break;
                 }
