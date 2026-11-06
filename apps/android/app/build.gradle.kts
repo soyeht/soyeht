@@ -55,6 +55,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     // The bindings of the core call its library through JNA.
     implementation("net.java.dev.jna:jna:5.14.0@aar")
+    // Pairing by camera: CameraX shows and feeds the picture, ZXing reads the code on the phone itself.
+    val camera = "1.4.1"
+    implementation("androidx.camera:camera-core:$camera")
+    implementation("androidx.camera:camera-camera2:$camera")
+    implementation("androidx.camera:camera-lifecycle:$camera")
+    implementation("androidx.camera:camera-view:$camera")
+    implementation("com.google.zxing:core:3.5.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.java.dev.jna:jna:5.14.0")
     testImplementation("org.json:json:20240303")

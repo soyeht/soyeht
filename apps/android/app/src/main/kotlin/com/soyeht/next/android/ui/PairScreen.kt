@@ -18,14 +18,15 @@ fun PairScreen(model: AppModel) {
     val roles = LocalRoles.current
     // Not saved with the state of the screen: the link is the pairing code.
     var link by remember { mutableStateOf("") }
+    val startScan = rememberStartScan(model)
     Column(
         Modifier.padding(PaneInterior.phoneInset.dp),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.stackSpacing.dp),
     ) {
         Text("Soyeht", color = roles.ink, fontSize = TypeScale.title.sp)
         Text(
-            "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then paste " +
-                "the link here or open it on this phone. Both must be on the same tailnet.",
+            "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then scan the code, " +
+                "paste the link here or open it on this phone. Both must be on the same tailnet.",
             color = roles.secondary,
             fontSize = TypeScale.body.sp,
         )
@@ -43,7 +44,11 @@ fun PairScreen(model: AppModel) {
                 inner()
             },
         )
-        Pill("Pair", { model.pair(link) }, primary = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
+            Pill("Pair", { model.pair(link) }, primary = true)
+            Pill("Scan QR code", startScan)
+        }
+        if (model.cameraDenied) CameraDenied()
     }
 }
 
