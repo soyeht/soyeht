@@ -40,6 +40,11 @@ ADDED_AFTER_GENERATION = {
     ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.
     ("paneLayout", "editorPreviewDividerWidth"),
+    # Steps of the scale the preferences and task sheets drew inline (a 1 and 22 point inset, a
+    # 14 point label), now named so no view types them.
+    ("space", "x1"),
+    ("space", "x22"),
+    ("typeScale", "label"),
 }
 
 
@@ -553,6 +558,12 @@ INLINE_LITERALS = [
         ".frame(width: 460, height: {}, alignment: .topLeading)",
         "layout",
         "taskSheetHeight",
+    ),
+    (
+        MAC + "PreferencesPanel.swift",
+        '.font(.system(size: {}, weight: .bold))',
+        "glyph",
+        "chipChevron",
     ),
     (
         SHARED + "PaneLayoutFloors.swift",

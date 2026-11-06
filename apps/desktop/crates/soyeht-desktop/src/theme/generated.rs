@@ -319,6 +319,7 @@ pub mod radius {
     pub const PILL: f32 = 999.0;
 }
 pub mod space {
+    pub const X1: f32 = 1.0;
     pub const X2: f32 = 2.0;
     pub const X3: f32 = 3.0;
     pub const X4: f32 = 4.0;
@@ -331,12 +332,14 @@ pub mod space {
     pub const X14: f32 = 14.0;
     pub const X16: f32 = 16.0;
     pub const X18: f32 = 18.0;
+    pub const X22: f32 = 22.0;
 }
 pub mod type_scale {
     pub const MICRO: f32 = 10.0;
     pub const SMALL: f32 = 11.0;
     pub const CONTROL: f32 = 12.0;
     pub const CAPTION: f32 = 13.0;
+    pub const LABEL: f32 = 14.0;
     pub const BODY: f32 = 15.0;
     pub const SUBHEADING: f32 = 18.0;
     pub const HEADING: f32 = 20.0;
@@ -436,6 +439,7 @@ pub mod glyph {
     pub const CHEVRON: f32 = 11.0;
     pub const TASK_TOOLBAR_ICON: f32 = 13.0;
     pub const TASK_TOOLBAR_CHEVRON: f32 = 10.0;
+    pub const CHIP_CHEVRON: f32 = 8.0;
 }
 pub mod usage_ring {
     pub const DIAMETER: f32 = 40.0;

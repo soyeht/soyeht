@@ -166,6 +166,7 @@ public enum DesignTokens {
   }
 
   public enum Space {
+    public static let x1: CGFloat = 1
     public static let x2: CGFloat = 2
     public static let x3: CGFloat = 3
     public static let x4: CGFloat = 4
@@ -178,6 +179,7 @@ public enum DesignTokens {
     public static let x14: CGFloat = 14
     public static let x16: CGFloat = 16
     public static let x18: CGFloat = 18
+    public static let x22: CGFloat = 22
   }
 
   public enum TypeScale {
@@ -185,6 +187,7 @@ public enum DesignTokens {
     public static let small: CGFloat = 11
     public static let control: CGFloat = 12
     public static let caption: CGFloat = 13
+    public static let label: CGFloat = 14
     public static let body: CGFloat = 15
     public static let subheading: CGFloat = 18
     public static let heading: CGFloat = 20
@@ -288,6 +291,7 @@ public enum DesignTokens {
     public static let chevron: CGFloat = 11
     public static let taskToolbarIcon: CGFloat = 13
     public static let taskToolbarChevron: CGFloat = 10
+    public static let chipChevron: CGFloat = 8
   }
 
   public enum UsageRing {

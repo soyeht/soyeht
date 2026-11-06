@@ -265,6 +265,7 @@ object Radius {
 }
 
 object Space {
+    const val x1: Float = 1.0f
     const val x2: Float = 2.0f
     const val x3: Float = 3.0f
     const val x4: Float = 4.0f
@@ -277,6 +278,7 @@ object Space {
     const val x14: Float = 14.0f
     const val x16: Float = 16.0f
     const val x18: Float = 18.0f
+    const val x22: Float = 22.0f
 }
 
 object TypeScale {
@@ -284,6 +286,7 @@ object TypeScale {
     const val small: Float = 11.0f
     const val control: Float = 12.0f
     const val caption: Float = 13.0f
+    const val label: Float = 14.0f
     const val body: Float = 15.0f
     const val subheading: Float = 18.0f
     const val heading: Float = 20.0f
@@ -387,6 +390,7 @@ object Glyph {
     const val chevron: Float = 11.0f
     const val taskToolbarIcon: Float = 13.0f
     const val taskToolbarChevron: Float = 10.0f
+    const val chipChevron: Float = 8.0f
 }
 
 object UsageRing {

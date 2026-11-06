@@ -214,6 +214,7 @@
     "pill": 999
   },
   "space": {
+    "x1": 1,
     "x2": 2,
     "x3": 3,
     "x4": 4,
@@ -225,13 +226,15 @@
     "x12": 12,
     "x14": 14,
     "x16": 16,
-    "x18": 18
+    "x18": 18,
+    "x22": 22
   },
   "typeScale": {
     "micro": 10,
     "small": 11,
     "control": 12,
     "caption": 13,
+    "label": 14,
     "body": 15,
     "subheading": 18,
     "heading": 20,
@@ -340,7 +343,8 @@
     "tabClose": 9,
     "chevron": 11,
     "taskToolbarIcon": 13,
-    "taskToolbarChevron": 10
+    "taskToolbarChevron": 10,
+    "chipChevron": 8
   },
   "usageRing": {
     "diameter": 40,
