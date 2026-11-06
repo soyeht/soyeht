@@ -279,6 +279,8 @@ step always both desktop-tokens:unit uv run python -m unittest discover -s scrip
 step always both desktop-tokens:check uv run python scripts/check_desktop_tokens.py
 step always both event-literals:unit uv run python -m unittest discover -s scripts -p 'test_check_event_literals.py'
 step always both event-literals:check uv run python scripts/check_event_literals.py
+step always both params-reads:unit uv run python -m unittest discover -s scripts -p 'test_check_params_reads.py'
+step always both params-reads:check uv run python scripts/check_params_reads.py
 step always both legacy-isolation:unit uv run python -m unittest discover -s scripts -p 'test_check_legacy_isolation.py'
 step always both legacy-isolation:check uv run python scripts/check_legacy_isolation.py
 
