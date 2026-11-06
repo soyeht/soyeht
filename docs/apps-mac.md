@@ -70,7 +70,7 @@ An agent pane is created from the same new-pane sheet by selecting agent mode,
 an installed harness, its advertised model and effort, a permission mode and a
 working directory. The conversation view renders normalized messages, thoughts,
 tool calls, plans, inline terminal results, questions, queue state and confirmed
-configuration. See [the real ACP procedure](manual-acceptance-slice-2.md) for the
+configuration. See [the real ACP procedure](archive/manual-acceptance-slice-2.md) for the
 authenticated adapter and physical-device checks.
 
 Open a terminal by choosing a directory. The list and screen follow the engine.
