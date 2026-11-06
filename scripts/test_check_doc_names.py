@@ -56,6 +56,7 @@ class DocumentNameTests(unittest.TestCase):
             "contracts/protocol.json": json.dumps(SCHEMA),
             "docs/contracts/08.md": DOC,
             "docs/reports/old.md": "`pane.removed` was true then.",
+            "docs/archive/old.md": "`pane.removed` was true then.",
             "engine/crate/src/lib.rs": 'const E: &str = "pane.ready";',
             **(extra_docs or {}),
         }
@@ -84,7 +85,7 @@ class DocumentNameTests(unittest.TestCase):
         ):  # fmt: skip
             self.assertNotIn(name, flagged)
 
-    def test_dated_reports_are_not_checked(self):
+    def test_dated_reports_and_the_archive_are_not_checked(self):
         self.assertNotIn("pane.removed", self.names())
 
     def test_prose_outside_a_namespace_is_ignored(self):

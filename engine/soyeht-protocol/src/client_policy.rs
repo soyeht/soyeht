@@ -13,6 +13,7 @@ pub const DIAGNOSTICS_MS: u64 = 30000;
 pub const COPIED_FEEDBACK_MS: u64 = 1500;
 pub const SERVICE_COMMAND_MS: u64 = 60000;
 pub const TERMINAL_INPUT_CHUNK_BYTES: usize = 16384;
+pub const TERMINAL_INPUT_QUEUE_BYTES: usize = 1048576;
 pub const TERMINAL_SCROLLBACK_LINES: usize = 10000;
 pub const CAPS_WAITING_MESSAGES: usize = 1000;
 pub const CAPS_FILE_LINKS: usize = 128;

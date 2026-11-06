@@ -34,7 +34,7 @@
     },
     "python": {
       "clones": 15,
-      "duplicated_lines": 133
+      "duplicated_lines": 130
     },
     "shared": {
       "clones": 63,
@@ -201,9 +201,6 @@
     "engine/soyeht-store/src/web.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-store/src/writing.rs": {
-      "rust_limits": 3
-    },
     "engine/soyeht-store/tests/storage.rs": {
       "rust_limits": 1
     },
@@ -216,14 +213,8 @@
     "engine/soyeht-web/src/snapshot.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-writing/src/beats.rs": {
-      "rust_limits": 1
-    },
     "engine/soyeht-writing/src/markdown.rs": {
       "rust_limits": 1
-    },
-    "engine/soyeht-writing/src/sections.rs": {
-      "rust_limits": 3
     },
     "engine/soyeht-writing/src/slides.rs": {
       "rust_limits": 2

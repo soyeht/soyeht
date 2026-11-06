@@ -8863,6 +8863,56 @@ pub mod method {
     pub const WRITING_BEAT_DELETE: &str = "writing.beat.delete";
     pub const PANE_EXPERIMENT_HOOK: &str = "pane.experiment.hook";
 }
+pub mod method_family {
+    pub const PAIR: &[&str] = &[super::method::PAIR_BEGIN, super::method::PAIR_PROVE];
+    pub const TASK: &[&str] = &[
+        super::method::TASK_CREATE,
+        super::method::TASK_NEXT,
+        super::method::TASK_SHOW,
+        super::method::TASK_LIST,
+        super::method::TASK_COMMENTS,
+        super::method::TASK_UPDATE,
+        super::method::TASK_COMMENT,
+        super::method::TASK_SUBITEM_ADD,
+        super::method::TASK_SUBITEM_DONE,
+        super::method::TASK_BLOCK,
+        super::method::TASK_RELEASE,
+        super::method::TASK_REQUEST_REVIEW,
+        super::method::TASK_COMPLETE,
+        super::method::TASK_DISPATCH,
+        super::method::TASK_UNBLOCK,
+        super::method::TASK_MOVE,
+        super::method::TASK_WORKTREE_CLEAN,
+    ];
+    pub const WEB: &[&str] = &[
+        super::method::WEB_OPEN,
+        super::method::WEB_NAVIGATE,
+        super::method::WEB_SNAPSHOT,
+        super::method::WEB_CLICK,
+        super::method::WEB_TYPE,
+        super::method::WEB_PRESS,
+        super::method::WEB_HOVER,
+        super::method::WEB_SELECT,
+        super::method::WEB_SCROLL,
+        super::method::WEB_WAIT,
+        super::method::WEB_EVALUATE,
+        super::method::WEB_SCREENSHOT,
+        super::method::WEB_READ,
+        super::method::WEB_CONSOLE,
+        super::method::WEB_NETWORK,
+        super::method::WEB_RESIZE,
+        super::method::WEB_CLOSE,
+        super::method::WEB_COMMAND,
+        super::method::WEB_HOST_NAVIGATED,
+        super::method::WEB_HOST_CONSOLE_COUNTS,
+    ];
+    pub const HARNESS_CUSTOM: &[&str] = &[
+        super::method::HARNESS_CUSTOM_LIST,
+        super::method::HARNESS_CUSTOM_CREATE,
+        super::method::HARNESS_CUSTOM_UPDATE,
+        super::method::HARNESS_CUSTOM_REMOVE,
+    ];
+}
 pub mod event {
     pub const AUTH_CHALLENGE: &str = "auth.challenge";
     pub const STATE_SNAPSHOT_PART: &str = "state.snapshot_part";
