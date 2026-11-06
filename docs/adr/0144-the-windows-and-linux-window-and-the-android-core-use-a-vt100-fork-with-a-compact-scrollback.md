@@ -7,7 +7,7 @@
 
 The window for Linux and Windows (ADR 0084) and the Android core (ADR 0134) turn the engine's terminal bytes
 into styled rows with the `vt100` crate. Each terminal pane keeps a parsed screen, for every pane of every
-workspace, with `terminal.scrollbackLines` of history: 10,000 lines (`contracts/protocol.json`, `x-clientPolicy`).
+workspace, with `scrollbackLines` of history: 10,000 lines (`contracts/protocol.json`, `x-clientPolicy`).
 
 `vt100` 0.16.2 stores every row it scrolls out of the screen as a full-width row of 32-byte cells, whatever the
 line holds, in a private queue that nothing can shrink, trim or read before the row is dropped. Measured with
@@ -26,7 +26,7 @@ held, not how many.
 
 Ways out that were looked at:
 
-- **Fewer lines.** It changes what the person can scroll back to. `terminal.scrollbackLines` stays at 10,000
+- **Fewer lines.** It changes what the person can scroll back to. `scrollbackLines` stays at 10,000
   (the Mac and iPhone move to it too).
 - **Drop the screens of panes that are not shown and rebuild them from the engine's output.** The engine keeps
   the last 2 MiB of a pane in memory (`TAIL_BYTES`) and, when the pane records, up to 32 MiB on disk; a pane that
@@ -58,7 +58,7 @@ Ways out that were looked at:
 - **Pinned by revision.** `apps/desktop/Cargo.toml` and `apps/android/Cargo.toml` point `vt100` at the fork
   with `[patch.crates-io]` and a full `rev`; their lockfiles carry it. Both manifests keep `vt100 = "0.16.2"`
   as the requirement. The engine workspace stays on crates.io: its screens have no scrollback.
-- **The 10,000 lines stay.** `terminal.scrollbackLines` is not touched.
+- **The 10,000 lines stay.** `scrollbackLines` is not touched.
 
 ## How we track upstream
 
