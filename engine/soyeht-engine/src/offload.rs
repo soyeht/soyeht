@@ -110,7 +110,12 @@ impl Offload {
     /// Runs both steps on this thread, for callers that hold no lock.
     #[cfg(test)]
     pub(crate) fn run_inline(self, core: &mut Core) -> Result<Outcome> {
-        (self.work)()(core)
+        let mut outcome = (self.work)()(core);
+        // A request may ask to wait again (see `resolve_offload`).
+        while let Ok(Outcome::Offload(next)) = outcome {
+            outcome = (next.work)()(core);
+        }
+        outcome
     }
 
     /// The deadline, the work, and the answer used when the work is late.

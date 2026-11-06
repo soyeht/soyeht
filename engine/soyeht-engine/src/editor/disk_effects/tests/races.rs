@@ -1,7 +1,7 @@
 //! A disk job runs while the person acts: a rename, a delete, a closed tab, a second workspace
 //! on the same folder. Each of these once lost an edit or wrote over another one (ADR 0097).
 
-use super::{Gate, Rig};
+use super::{Gate, Rig, job_running};
 use crate::{dispatch::Outcome, editor::disk_effects::job_key, errors::Error, offload::Background};
 use serde_json::{Value, json};
 use std::{
@@ -201,7 +201,7 @@ async fn two_workspaces_on_one_folder_saving_at_once_leave_one_conflict_not_an_o
     rig.writes.release();
     let editor = |rig: &Rig, id: &str| rig.fixture.core.editor.stored(id).unwrap().clone();
     tick_until(&mut rig, "the saves were never applied", |rig| {
-        !rig.fixture.core.disk_job_running(&first) && !rig.fixture.core.disk_job_running(&second)
+        !job_running(&rig.fixture.core, &first) && !job_running(&rig.fixture.core, &second)
     });
 
     let disk = fs::read_to_string(project.join("main.rs")).unwrap();
@@ -222,7 +222,7 @@ async fn two_workspaces_on_one_folder_saving_at_once_leave_one_conflict_not_an_o
 }
 
 /// The first save ends and the person's newer text starts a second one before a rename's apply
-/// step runs. The apply step cannot offload again (an offload is resolved once), so it refuses.
+/// step runs. A rename waits for the disk once, so its second pass refuses.
 #[tokio::test]
 async fn a_rename_that_finds_another_save_started_is_refused_not_offloaded_again() {
     let mut rig = Rig::saving().await.0;
@@ -266,7 +266,7 @@ async fn a_rename_waits_for_the_job_that_saves_a_closed_tab() {
     // The first job is applied; the job for the rest of the closed tab starts and waits.
     rig.fixture.core.apply_background();
     rig.writes.wait_for_visitors(2);
-    assert!(rig.fixture.core.disk_job_running(&rig.file_id));
+    assert!(job_running(&rig.fixture.core, &rig.file_id));
     release_later(&rig.writes, Duration::from_millis(300));
 
     rename(&mut rig, "main.rs", "moved.rs").unwrap();
