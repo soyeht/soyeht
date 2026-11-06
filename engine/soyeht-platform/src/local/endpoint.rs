@@ -120,17 +120,6 @@ pub(super) fn answer(
     Ok((server, reply))
 }
 
-/// Errors of `accept` that concern one connection, not the listener.
-pub(super) fn is_transient(error: &io::Error) -> bool {
-    matches!(
-        error.kind(),
-        io::ErrorKind::ConnectionAborted
-            | io::ErrorKind::ConnectionReset
-            | io::ErrorKind::Interrupted
-            | io::ErrorKind::TimedOut
-    )
-}
-
 /// The connections that are mid-exchange, oldest first.
 pub(super) struct Admission<T> {
     capacity: usize,
