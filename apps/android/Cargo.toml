@@ -18,9 +18,10 @@ serde_json = "1.0"
 uniffi = { version = "0.29", features = ["cli"] }
 
 [patch.crates-io]
-# The scrollback of the terminal screens holds its rows packed (ADR 0144). The fork is
-# upstream's 0.16.2 with that one change, on the branch `compact-scrollback`.
-vt100 = { git = "https://github.com/soyeht/vt100-rust", rev = "0a1abfbd4dc248fc907aa349e4a5bbea20473122" }
+# The scrollback of the terminal screens holds its rows packed, and the parser does not panic on
+# any output (ADR 0144). The fork is upstream's 0.16.2 with those changes, on the branch
+# `panic-fixes` (tag `soyeht-0.16.2-2`).
+vt100 = { git = "https://github.com/soyeht/vt100-rust", rev = "1f53820f0959c977c7cbc360b87dba4dc8a1df8e" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

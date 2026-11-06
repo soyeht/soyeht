@@ -1,6 +1,8 @@
 //! What a terminal pane's history costs in memory. The window keeps one screen for every
-//! terminal pane, each with `TERMINAL_SCROLLBACK_LINES` lines of history, and the parser stores
-//! every cell of every row (32 bytes, whatever the row holds). Each screen is kept until the end,
+//! terminal pane, each with `TERMINAL_SCROLLBACK_LINES` lines of history. Unmodified vt100 0.16.2
+//! stores every cell of every row of it (32 bytes, whatever the row holds); the fork this client
+//! builds with (ADR 0144) holds a row that scrolled out packed, with no blank end of the line,
+//! and unpacks only the rows in view. Each screen is kept until the end,
 //! so a later one cannot reuse the memory of an earlier one. This prints the resident memory a
 //! screen takes once its history is full, at several widths, with plain and with coloured output.
 //!

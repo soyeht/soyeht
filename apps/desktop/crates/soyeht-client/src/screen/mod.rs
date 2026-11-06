@@ -19,11 +19,13 @@ use soyeht_protocol::client_policy;
 /// Lines of history kept per terminal on the client.
 const SCROLLBACK_LINES: usize = client_policy::TERMINAL_SCROLLBACK_LINES;
 
-/// The smallest screen the parser holds safely. vt100 0.16 panics when it wraps a line, or draws a
-/// wide character, on a screen of one row or one column (it subtracts from the row it left, and
-/// from the width of the character). A pane the engine holds smaller than this, such as one of
-/// eight stacked in a column, gets a screen of this size: the view draws the rows and columns
-/// that fit, and the engine is told this size too, so that the shell and the screen agree.
+/// The smallest screen a pane gets. vt100 0.16 panics when it wraps a line, or draws a wide
+/// character, on a screen of one row or one column (it subtracts from the row it left, and from
+/// the width of the character); the fork this client builds with (ADR 0144) does not. The minimum
+/// stays, so that every screen holds a wide character and a wrapped line: a pane the engine holds
+/// smaller than this, such as one of eight stacked in a column, gets a screen of this size, the
+/// view draws the rows and columns that fit, and the engine is told this size too, so that the
+/// shell and the screen agree.
 pub const MIN_ROWS: u16 = 2;
 pub const MIN_COLUMNS: u16 = 2;
 
@@ -130,6 +132,11 @@ impl TerminalScreen {
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
+        self.feed_with(bytes, |parser| parser.process(bytes));
+    }
+
+    /// `feed` with the work of the parser given, so that a test can make it panic.
+    fn feed_with(&mut self, bytes: &[u8], process: impl FnOnce(&mut vt100::Parser)) {
         self.cut = None;
         // A line feed ends the selection, the rule of SwiftTerm (the Mac client's terminal): the
         // lines move, and what was chosen is no longer where it was drawn.
@@ -142,7 +149,7 @@ impl TerminalScreen {
         // a panic in it must cost this one screen its text, not the window and every pane in it.
         // `caught` tells the crash report hook so: this runs on the main thread, and a panic
         // there that is not caught would be taken for the window closing.
-        if crash::caught(|| parser.process(bytes)).is_err() {
+        if crash::caught(|| process(parser)).is_err() {
             let (rows, cols) = self.size();
             self.recover(rows, cols);
             return;

@@ -6178,7 +6178,7 @@ dependencies = [
 [[package]]
 name = "vt100"
 version = "0.16.2"
-source = "git+https://github.com/soyeht/vt100-rust?rev=0a1abfbd4dc248fc907aa349e4a5bbea20473122#0a1abfbd4dc248fc907aa349e4a5bbea20473122"
+source = "git+https://github.com/soyeht/vt100-rust?rev=1f53820f0959c977c7cbc360b87dba4dc8a1df8e#1f53820f0959c977c7cbc360b87dba4dc8a1df8e"
 dependencies = [
  "itoa",
  "unicode-width",
