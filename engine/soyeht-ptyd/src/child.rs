@@ -7,7 +7,7 @@ mod system;
 #[path = "child/windows.rs"]
 pub(crate) mod system;
 
-pub use system::Child;
+pub use system::{Child, ExitWaiter};
 
 /// How much of a child's processes ending it reaches.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -132,5 +132,24 @@ mod tests {
         // SAFETY: signal 0 only checks whether the process exists; a reaped child does not.
         let alive = unsafe { libc::kill(pid as libc::pid_t, 0) } == 0;
         assert!(!alive, "the discarded child is still there");
+    }
+
+    #[test]
+    fn a_waiter_returns_when_the_child_ends_and_leaves_it_to_be_collected() {
+        let mut child = sleeper();
+        let waiter = child.exit_waiter();
+        let waiting = thread::spawn(move || waiter.wait());
+        // The wait does not hold the child, so ending it from here is possible.
+        child.kill(Reach::Group);
+        waiting.join().unwrap().unwrap();
+        assert_eq!(child.try_wait().unwrap(), Some(Exit(None)));
+    }
+
+    #[test]
+    fn a_waiter_returns_for_a_child_the_owner_already_collected() {
+        let mut child = sleeper();
+        let waiter = child.exit_waiter();
+        assert!(child.end(Reach::Group));
+        waiter.wait().unwrap();
     }
 }
