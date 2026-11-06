@@ -14,9 +14,16 @@ enum UsageDetailsRefreshPolicy {
 /// refresh inside the wire's minimum interval. It owns no connection: `EngineClient` hands it the
 /// engine's answers and the request to refresh with.
 @MainActor @Observable
-public final class UsageReplica {
+public final class UsageReplica: ClientReplica {
   public internal(set) var readings: [UsageReading] = []
-  @ObservationIgnored private var refreshes: [String: Task<UsageRefreshResult, Error>] = [:]
+  @ObservationIgnored private var refreshes: [String: InFlightRefresh] = [:]
+
+  /// A refresh under its key. The identity tells a refresh that finishes after a cancellation and
+  /// a reconnect from the newer one that took its key.
+  private struct InFlightRefresh {
+    let id = UUID()
+    let task: Task<UsageRefreshResult, Error>
+  }
 
   /// Replaces every reading with the engine's list.
   func load(_ providers: [UsageReading]) {
@@ -42,13 +49,12 @@ public final class UsageReplica {
     readings.sort { $0.provider.order < $1.provider.order }
   }
 
-  /// A paired device forgets the readings when the connection goes.
   func reset() {
     readings = []
   }
 
-  func cancelRefreshes() {
-    for task in refreshes.values { task.cancel() }
+  func cancelInFlight() {
+    for refresh in refreshes.values { refresh.task.cancel() }
     refreshes.removeAll()
   }
 
@@ -64,8 +70,8 @@ public final class UsageReplica {
     _ provider: UsageProvider?, now: Date,
     operation: @escaping @MainActor @Sendable (UsageProvider?) async throws -> UsageRefreshResult
   ) async throws {
-    if let task = activeRefresh(for: provider) {
-      apply(try await task.value)
+    if let active = activeRefresh(for: provider) {
+      apply(try await active.task.value)
       return
     }
     guard refreshIsDue(provider, now: now) else { return }
@@ -74,34 +80,24 @@ public final class UsageReplica {
     let task = Task<UsageRefreshResult, Error> { @MainActor in
       try await operation(provider)
     }
-    refreshes[key] = task
+    let refresh = InFlightRefresh(task: task)
+    refreshes[key] = refresh
     do {
       let result = try await task.value
-      refreshes.removeValue(forKey: key)
+      finish(refresh, key: key)
       apply(result)
     } catch {
-      refreshes.removeValue(forKey: key)
+      finish(refresh, key: key)
       throw error
     }
   }
 
-  /// Runs `operation`; when the engine rate-limits it with a delay, waits that long and runs it
-  /// once more.
-  func retryingRateLimitOnce(
-    wait: @escaping @MainActor @Sendable (UInt32) async throws -> Void,
-    operation: @escaping @MainActor @Sendable () async throws -> Void
-  ) async throws {
-    do {
-      try await operation()
-    } catch ClientFailure.remote(let kind, _, let retryAfterSec)
-      where kind == ErrorKind.rate_limited.rawValue && retryAfterSec != nil
-    {
-      try await wait(retryAfterSec!)
-      try await operation()
-    }
+  /// Forgets `refresh` unless a newer one has taken its key since.
+  private func finish(_ refresh: InFlightRefresh, key: String) {
+    if refreshes[key]?.id == refresh.id { refreshes.removeValue(forKey: key) }
   }
 
-  private func activeRefresh(for provider: UsageProvider?) -> Task<UsageRefreshResult, Error>? {
+  private func activeRefresh(for provider: UsageProvider?) -> InFlightRefresh? {
     if let all = refreshes["all"] { return all }
     if let provider { return refreshes[provider.rawValue] }
     return refreshes.values.first

@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SoyehtProtocol
 import Testing
 
@@ -288,10 +289,10 @@ private final class RateLimitRetryProbe {
 
 @MainActor @Test func usageRefreshRetriesRateLimitOnlyOnceAfterServerDelay() async {
   let probe = RateLimitRetryProbe()
-  let usage = UsageReplica()
+  let client = EngineClient(socket: "/tmp/sn-usage-retry/engine.sock")
 
   do {
-    try await usage.retryingRateLimitOnce(
+    try await client.refreshUsageAfterRateLimitOnce(
       wait: probe.wait,
       operation: { try await probe.fail(17) })
     Issue.record("The second rate limit should escape instead of looping")
@@ -323,4 +324,75 @@ private final class RateLimitRetryProbe {
   #expect(!usage.refreshesOnDetailsClick(.claude))
   #expect(usage.refreshesOnDetailsClick(.codex))
   #expect(!usage.refreshesOnDetailsClick(.opencode))
+}
+
+@MainActor @Test func aRefreshThatEndsAfterACancellationDoesNotDropTheNewerOneOfItsKey()
+  async throws
+{
+  let fetchedAt = "2026-09-15T12:00:00Z"
+  let now = try #require(UsageTimestamp.date(from: fetchedAt))
+  let result = UsageRefreshResult(providers: [reading(.claude, fetchedAt: fetchedAt)])
+  let usage = UsageReplica()
+  let probe = UsageRefreshProbe(result: result)
+
+  let old = Task { @MainActor in
+    try await usage.refresh(.claude, now: now) { _ in
+      try await Task.sleep(for: .seconds(30))
+      return result
+    }
+  }
+  await Task.yield()
+  usage.cancelInFlight()
+  let newer = Task { @MainActor in
+    try await usage.refresh(.claude, now: now) { provider in try await probe.run(provider) }
+  }
+  await Task.yield()
+  _ = await old.result
+  // The cancelled refresh has finished; the newer one still holds the key, so this joins it.
+  try await usage.refresh(.claude, now: now) { provider in try await probe.run(provider) }
+  _ = try await newer.value
+
+  #expect(probe.calls == 1)
+}
+
+/// `onChange` runs synchronously on the thread that changes the property; the test reads it right
+/// after.
+private final class ChangeFlag: @unchecked Sendable {
+  var fired = false
+}
+
+@MainActor private func fires(
+  watching read: @MainActor () -> Void, whenChanging change: @MainActor () -> Void
+) -> Bool {
+  let flag = ChangeFlag()
+  withObservationTracking {
+    read()
+  } onChange: {
+    flag.fired = true
+  }
+  change()
+  return flag.fired
+}
+
+@MainActor @Test func theClientObservesItsUsageReadingsAndNotItsPanesThroughThem() {
+  let client = EngineClient(socket: "/tmp/sn-usage-observation/engine.sock")
+
+  let loadFires = fires(
+    watching: { _ = client.usage.readings }, whenChanging: { client.usage.load([reading()]) })
+  let resetFires = fires(
+    watching: { _ = client.usage.readings }, whenChanging: { client.usage.reset() })
+  let panesIgnoreUsage = fires(
+    watching: { _ = client.panes }, whenChanging: { client.usage.load([reading(.codex)]) })
+  let usageIgnoresPanes = fires(
+    watching: { _ = client.usage.readings }, whenChanging: { client.panes = [] })
+
+  #expect(loadFires)
+  #expect(resetFires)
+  #expect(!panesIgnoreUsage)
+  #expect(!usageIgnoresPanes)
+}
+
+@MainActor @Test func aDisconnectReachesEveryReplicaTheClientLists() {
+  let client = EngineClient(socket: "/tmp/sn-usage-replicas/engine.sock")
+  #expect(client.replicas.contains { $0 === client.usage })
 }

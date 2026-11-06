@@ -222,7 +222,7 @@ public final class EngineClient {
     for task in writingRefreshTasks.values { task.cancel() }
     writingRefreshTasks.removeAll()
     writingRefreshGeneration.removeAll()
-    usage.cancelRefreshes()
+    for replica in replicas { replica.cancelInFlight() }
     for task in webHostTasks.values { task.cancel() }
     webHostTasks.removeAll()
     for task in resizeTasks.values { task.cancel() }
@@ -239,7 +239,7 @@ public final class EngineClient {
       taskDetails = [:]
       attentionByWorkspace = [:]
       paneLoops = [:]
-      usage.reset()
+      for replica in replicas { replica.reset() }
       editorFiles = [:]
       writingDocuments = [:]
       webPanes = [:]
