@@ -5,17 +5,32 @@ use super::{SCROLLBACK_LINES, TerminalScreen};
 
 const WIDE: &str = "\u{4f60}";
 
-/// A screen around a parser of one row and one column, which `TerminalScreen::new` never builds:
-/// vt100 0.16 panics when it draws a wide character there.
+/// A screen around a parser of one row and one column, which `TerminalScreen::new` never builds.
 fn undersized() -> TerminalScreen {
     TerminalScreen::around(vt100::Parser::new(1, 1, SCROLLBACK_LINES))
 }
 
+/// Feeds `bytes` to a screen whose parser panics on them, as a parser with a bug would: the
+/// fork of ADR 0144 has no known input that does it.
+fn feed_a_panic(screen: &mut TerminalScreen, bytes: &[u8]) {
+    screen.feed_with(bytes, |_| panic!("a parser with a bug"));
+}
+
 #[test]
-fn a_parser_panic_on_output_starts_the_screen_again() {
+fn the_parser_holds_a_wide_character_on_the_smallest_screen() {
     let mut screen = undersized();
     screen.feed(WIDE.as_bytes());
-    assert!(screen.parser_failed, "the premise: vt100 panics here");
+    screen.feed("x\r\ny".as_bytes());
+    assert!(!screen.parser_failed, "unmodified vt100 0.16 panics here");
+    assert!(screen.contents().contains('y'));
+}
+
+#[test]
+fn a_parser_panic_on_output_starts_the_screen_again() {
+    let mut screen = TerminalScreen::new(3, 10);
+    screen.feed(b"$ ls\r\n");
+    feed_a_panic(&mut screen, b"more");
+    assert!(screen.parser_failed);
     assert!(screen.contents().trim().is_empty());
     assert!(!screen.scrolled_back());
     // The pane keeps working: the screen takes the next bytes, at a size the parser holds.
@@ -27,9 +42,10 @@ fn a_parser_panic_on_output_starts_the_screen_again() {
 
 #[test]
 fn a_selection_does_not_survive_a_screen_that_started_again() {
-    let mut screen = undersized();
+    let mut screen = TerminalScreen::new(3, 10);
+    screen.feed(b"hello");
     screen.begin_selection(0, 0, 1);
-    screen.feed(WIDE.as_bytes());
+    feed_a_panic(&mut screen, WIDE.as_bytes());
     assert!(screen.selected_text().is_none());
 }
 
