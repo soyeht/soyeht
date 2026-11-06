@@ -43,10 +43,11 @@ job still runs stays due and is looked at again on the next tick.
   place. Only the person who renamed waits; other requests and the terminal keep flowing
   (`tests/slow_disk.rs`). If the disk does not answer in time, the request is refused as
   `stale_version` and nothing moves; the person never sees that for a save that is merely
-  slow. An offload is resolved once, so the apply step cannot offload again: if another job
-  started meanwhile (the person typed during the write and the next autosave began), the
-  second pass refuses as `stale_version` instead, and the handlers refuse the same way for a
-  job that started after it. The jobs are found by their keys, so the job that saves a closed
+  slow. The apply step may ask to wait again, and the request says how many times: a rename
+  waits once, so if another job started meanwhile (the person typed during the write and the
+  next autosave began) its second pass refuses as `stale_version` instead; a delete waits up to
+  twice (for the jobs that were running, then for the saves it started after them). The handlers
+  refuse the same way for a job that started after the last pass. The jobs are found by their keys, so the job that saves a closed
   tab (whose file has no open tab or live pane) is waited for too.
 - A tab that closes while its job runs does not wait. The file leaves the open set; when the job
   ends, its result is applied to the file's stored row, and a second job of its own saves what
@@ -93,9 +94,14 @@ segment's flush (`soyeht_store::segments::slow_disk`). No production code reads 
   file is slow to read. `tests/slow_disk.rs` fails on the old code: the longest stretch without
   a terminal frame and the slowest `engine.status` were as long as the save.
 - An autosave reaches the disk one tick later than before, and `file.saved` follows the write.
-- Still under the lock, because a person waits for the answer: `save_editor_now` (the save of a
-  pending draft before a delete, when no job is running) and the project entry requests
-  themselves (create, rename, delete: one filesystem change each).
+- Still under the lock, because a person waits for the answer: the project entry requests
+  themselves (create, rename, delete: one filesystem change each). The save of a pending draft is
+  not: closing a tab and deleting a file start it as one of these jobs (`start_pending_save`); the
+  close does not wait for it, and the delete waits for it off the lock, as it does for a job
+  already running (`project_entry_request`). A job that was running (a disk check) keeps the save
+  from starting, so the delete starts it once the job ended, for the drafts nobody typed in since
+  and whose save has not failed, and waits once more; a draft still there is refused, and says if
+  its save failed.
 - The jobs run on threads of their own (`Background::run_alone`), one per open file at a time,
   so their number is bounded by the number of open files. A hung mount holds one such thread
   per hung file for as long as it hangs, and nothing else: the shared workers stay free. The

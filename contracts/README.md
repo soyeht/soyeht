@@ -29,8 +29,8 @@ request (`maximum` takes the request's own limit), the caps the clients stop at 
 waiting messages read for a queue, the links found in one text, the pages of a model catalogue and
 the tool calls the header ticker lists), the `client` name each client sends in `hello` (a release
 build's and its `-dev` one for a debug build), the terminal input chunk, the lines of terminal history
-(the `terminal` group's scrollback length, read by the desktop screen and the vector test of its resize; the Mac and
-iOS terminals still use SwiftTerm's own default of 500 lines until its memory is measured), the usage and context
+(the `terminal` group's scrollback length, read by the desktop screen, the Mac and iPhone/iPad terminals
+and the vector test of its resize), the usage and context
 band thresholds, the ring opacities, the weekly-window keyword, the provider names, the texts two
 clients both store (the harness switch wording and the reason a card moved on the task board), the
 image types an agent takes inline, what each pane state means (whether a turn runs in it and the

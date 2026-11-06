@@ -45,8 +45,10 @@ Ways out that were looked at:
 
 ## Decision
 
-- **A fork, `soyeht/vt100-rust`, on its branch `compact-scrollback`.** It is upstream's `doy/vt100-rust` at the
-  tag `v0.16.2` with one change: a row that scrolls out of the screen is packed (`src/packed.rs`) into its text,
+- **A fork, `soyeht/vt100-rust`, on its branch `panic-fixes` (tag `soyeht-0.16.2-2`).** It is upstream's
+  `doy/vt100-rust` at the tag `v0.16.2` with five commits. The first, on the branch `compact-scrollback`
+  (tag `soyeht-0.16.2-1`), packs the scrollback: a row that scrolls out of the screen is packed
+  (`src/packed.rs`) into its text,
   the changes of its attributes and its wrap flag, in one allocation, without the blank end of the line, and is
   unpacked only while it is in view. The live screen keeps full cells. `visible_rows`, `Screen::cell` and
   everything else that reads rows return ordinary rows, so the public API and what every method returns are
@@ -54,12 +56,31 @@ Ways out that were looked at:
   against the same output drawn on a screen too tall to scroll (every attribute and color, wide and combining
   characters, wrapped lines, rows with a background to the end of the line, eviction at the cap, output arriving
   while the view is in the history, a resize while it is), and `src/packed.rs` round-trips random rows. The
-  upstream tests pass unchanged.
+  upstream tests pass unchanged. The second commit fixes the panics that follow (below). The third makes the
+  rows in view follow output incrementally: a row that scrolls out while the view is in the history used to
+  unpack a whole screenful again for each line (12 us a line on a 50 row screen, against 1.3 us now and 1.1 us in
+  the live view; unmodified 0.16.2 takes 0.8 us), and `tests/scrollback_view.rs` compares the view after every
+  line with a full refresh. The fourth lets the panic fuzzer limit every screen to a few cells
+  (`VT100_FUZZ_TINY`), and the fifth says in the fork's README what the panic fixes are.
+- **The parser does not panic on any output.** Pty output is untrusted (any program, `cat` of a binary file, a
+  remote shell), and `vt100` 0.16.2 panics on a few sequences: a line that wraps on a screen of one row, a
+  character wider than the screen (a wide character on one column), a resize that cuts a wide character in two
+  and the next write or erase on that row, and a size of zero. `ICH` with a count beyond the row (`CSI 65535 @`)
+  also took seconds. The fork fixes each one at its cause, as upstream's later versions do for some of them
+  (a character wider than the screen is ignored; a shrinking row clears the half of a wide character it cut).
+  `tests/panic_fuzz.rs` generates operations from a seed (escape sequences of every kind, wide, combining and
+  emoji characters, scroll regions, the alternate screen, resizes, scrollback offsets, random bytes), reads the
+  screen back through every accessor after each one, and reduces a failing seed to a short list of operations:
+  15.8% of 10,000 seeds panicked before the fixes (six places), none of 200,000 do after, and none of 100,000
+  that keep every screen to 4 rows by 5 columns. A few seconds' worth of seeds run with `cargo test`.
+  `TerminalScreen` still catches a panic of the parser and starts that screen again (`screen/contained.rs`),
+  for the next one.
 - **Pinned by revision.** `apps/desktop/Cargo.toml` and `apps/android/Cargo.toml` point `vt100` at the fork
-  with `[patch.crates-io]` and a full `rev`; their lockfiles carry it. Both manifests keep `vt100 = "0.16.2"`
-  as the requirement. The engine workspace takes the fork too, with the same
-  `[patch.crates-io]` and `rev` (`engine/Cargo.toml`, `engine/Cargo.lock`), for the fix of the panics on pane
-  output alone: its screens have no scrollback.
+  with `[patch.crates-io]` and a full `rev`; their lockfiles carry it. `apps/desktop/Cargo.toml` keeps
+  `vt100 = "0.16.2"` as the requirement of its workspace; `apps/android/Cargo.toml` has none, since it gets
+  `vt100` through `soyeht-client`, and its `[patch]` replaces that dependency. The engine workspace takes the
+  fork too, with the same `[patch.crates-io]` and `rev` (`engine/Cargo.toml`, `engine/Cargo.lock`), for the fix
+  of the panics on pane output alone: its screens have no scrollback.
 - **The engine parses pane bytes in two places, neither under a lock.** `terminal_projection.rs` (the experiment
   recorder) runs on its own `terminal-observation-projector` thread, which holds no `Mutex` while the parser
   works; a panic there ends that thread, the capture reports a stopped worker, and the thread's join logs
@@ -75,8 +96,11 @@ Ways out that were looked at:
 
 ## How we track upstream
 
-- The fork's README says what changed and why, and the change is three small edits (`grid.rs`, accessors in
-  `cell.rs` and `row.rs`) and one new file, so it rebases on an upstream tag as a single commit.
+- The fork's README says what changed and why, and the changes are small edits (`grid.rs`, `row.rs`,
+  `screen.rs`, accessors in `cell.rs`), one new file (`src/packed.rs`) and new tests, so they rebase on an
+  upstream tag as five commits (the last two only touch the fuzzer and the README). Upstream's later versions
+  fixed some of the same panics; the rebase drops what they made redundant, and `tests/panic_fuzz.rs` says
+  whether any is left.
 - Upstream is at 0.18 and has changed the API (`Callbacks::on_scroll`, a non-zero `Parser::set_size`, and its own
   trimming of scrollback rows). Moving to it is a separate change of the window's code. When it is made, the
   fork's branch is rebased on that tag first, its tests are run, the `rev` is bumped, and `cargo test` of

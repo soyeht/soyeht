@@ -1,5 +1,6 @@
 //! A pane the engine holds at one row or one column, such as one of eight stacked in a column,
-//! must not take the window down: vt100 panics on a screen that small (see `MIN_ROWS`).
+//! must not take the window down: unmodified vt100 0.16 panics on a screen that small (see
+//! `MIN_ROWS`).
 
 use super::{MIN_COLUMNS, MIN_ROWS, TerminalScreen};
 use crate::testing::screen;

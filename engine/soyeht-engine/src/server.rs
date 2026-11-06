@@ -545,35 +545,38 @@ async fn catalog_result(
 
 /// Runs an offloaded request's work on a blocking thread with no lock, then
 /// applies its result under the Core lock (ADR 0079). Late or failed work is
-/// answered with the request's timeout error; its result is discarded.
+/// answered with the request's timeout error; its result is discarded. The apply
+/// step may itself ask to wait again (a delete that waits for the saves it started
+/// after the jobs that were running); the request decides how many times.
 async fn resolve_offload(
     core: &Shared,
     outcome: crate::errors::Result<Outcome>,
 ) -> crate::errors::Result<Outcome> {
-    let Ok(Outcome::Offload(offload)) = outcome else {
-        return outcome;
-    };
-    let (timeout, work, expire) = offload.into_parts();
-    let apply = match tokio::time::timeout(timeout, tokio::task::spawn_blocking(work)).await {
-        Ok(Ok(apply)) => apply,
-        Ok(Err(error)) => {
-            log::event(
-                "engine.offload_work_failed",
-                &[(
-                    "reason",
-                    if error.is_panic() {
-                        "panicked"
-                    } else {
-                        "cancelled"
-                    },
-                )],
-            );
-            expire
-        }
-        // ignored: the deadline passed: the offload's own expiry answers the request.
-        Err(_) => expire,
-    };
-    core_lock::with(core, "offload_apply", apply).await
+    let mut outcome = outcome;
+    while let Ok(Outcome::Offload(offload)) = outcome {
+        let (timeout, work, expire) = offload.into_parts();
+        let apply = match tokio::time::timeout(timeout, tokio::task::spawn_blocking(work)).await {
+            Ok(Ok(apply)) => apply,
+            Ok(Err(error)) => {
+                log::event(
+                    "engine.offload_work_failed",
+                    &[(
+                        "reason",
+                        if error.is_panic() {
+                            "panicked"
+                        } else {
+                            "cancelled"
+                        },
+                    )],
+                );
+                expire
+            }
+            // ignored: the deadline passed: the offload's own expiry answers the request.
+            Err(_) => expire,
+        };
+        outcome = core_lock::with(core, "offload_apply", apply).await;
+    }
+    outcome
 }
 
 fn send_attachment_response(
