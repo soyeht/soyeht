@@ -142,10 +142,7 @@ impl Rig {
     /// The draft "alpha beta" of `main.rs` being saved: its writes are held at a gate, and the
     /// job has started and waits for the disk. Also returns how long the tick took.
     async fn saving() -> (Self, Duration) {
-        let mut rig = Self::new().await;
-        rig.fixture.core.background = Background::default();
-        rig.writes.arm();
-        rig.type_at(5, " beta");
+        let mut rig = Self::typed_over_a_held_disk().await;
         rig.fixture.at(10_000);
         let started = Instant::now();
         rig.fixture.core.advance_editor_effects();
