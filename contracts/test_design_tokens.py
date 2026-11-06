@@ -40,6 +40,8 @@ ADDED_AFTER_GENERATION = {
     ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.
     ("paneLayout", "editorPreviewDividerWidth"),
+    # The corner of a phone writing document's card, between the compact and the card radius.
+    ("radius", "panel"),
 }
 
 
