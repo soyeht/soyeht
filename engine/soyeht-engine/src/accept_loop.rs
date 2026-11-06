@@ -9,7 +9,8 @@
 //!
 //! - **About one connection** (the peer reset or aborted it while it waited, the call was
 //!   interrupted; on macOS an accepted connection with an empty address): the next `accept` has
-//!   an answer at once, so the loop waits only a [`CONNECTION_FLOOR`] (it cannot spin a core). A
+//!   an answer at once, so the loop waits only the platform's `ACCEPT_ERROR_FLOOR` (it cannot spin
+//!   a core). A
 //!   run of them that goes on for [`CONNECTION_GIVE_UP`] with no connection accepted ends the
 //!   listener.
 //! - **The process is out of descriptors or memory** (`EMFILE`, `ENFILE`, `ENOBUFS`, `ENOMEM`):
@@ -25,14 +26,13 @@
 
 use crate::streak::Streak;
 use soyeht_platform::log::{self, Failure as _, Line};
+use soyeht_platform::net::ACCEPT_ERROR_FLOOR;
 use std::{io, time::Duration};
 use tokio::time::Instant;
 
 /// The pause after the first failure is twice this; it doubles while the failures go on.
 const PAUSE_BASE_MS: i64 = 50;
 const PAUSE_CAP_MS: i64 = 5_000;
-/// How long the loop waits after an error about one connection.
-const CONNECTION_FLOOR: Duration = Duration::from_millis(1);
 /// Errors about connections, with none accepted for this long, end the listener.
 const CONNECTION_GIVE_UP: Duration = Duration::from_secs(60);
 /// Consecutive errors of the third kind that end the listener.
@@ -122,8 +122,9 @@ pub(crate) struct Failures {
     connection: Streak,
     resources: Streak,
     other: Streak,
-    /// When the current run of failures began, until an `accept` works.
-    since: Option<Instant>,
+    /// When the current run of errors about connections began, until an `accept` works or an
+    /// error of another kind shows the listener alive.
+    connections_since: Option<Instant>,
 }
 
 impl Failures {
@@ -134,7 +135,7 @@ impl Failures {
             connection: streak(),
             resources: streak(),
             other: streak(),
-            since: None,
+            connections_since: None,
         }
     }
 
@@ -150,12 +151,22 @@ impl Failures {
     /// next.
     fn failed(&mut self, error: &io::Error) -> Verdict {
         let kind = Kind::of(error);
-        let since = *self.since.get_or_insert_with(Instant::now);
         let name = kind.name();
+        if kind == Kind::Connection {
+            self.connections_since.get_or_insert_with(Instant::now);
+        } else {
+            self.connections_since = None;
+        }
+        let since = self.connections_since;
         let streak = self.streak(kind);
         let said = streak.fail(&error.failure_kind());
         let attempts = streak.attempts();
-        let pause = Duration::from_millis(streak.next_delay_ms().max(0).unsigned_abs());
+        // An error about a connection waits only the floor; the others wait their streak's pause.
+        let pause = if kind == Kind::Connection {
+            ACCEPT_ERROR_FLOOR
+        } else {
+            Duration::from_millis(streak.next_delay_ms().max(0).unsigned_abs())
+        };
         if said {
             log::failure_with(
                 FAILED_EVENT,
@@ -168,17 +179,19 @@ impl Failures {
             );
         }
         match kind {
-            Kind::Connection if since.elapsed() >= CONNECTION_GIVE_UP => Verdict::GiveUp,
-            Kind::Connection => Verdict::Retry(CONNECTION_FLOOR),
-            Kind::Resources => Verdict::Retry(pause),
+            Kind::Connection
+                if since.is_some_and(|since| since.elapsed() >= CONNECTION_GIVE_UP) =>
+            {
+                Verdict::GiveUp
+            }
             Kind::Listener if attempts >= LISTENER_GIVE_UP => Verdict::GiveUp,
-            Kind::Listener => Verdict::Retry(pause),
+            Kind::Connection | Kind::Resources | Kind::Listener => Verdict::Retry(pause),
         }
     }
 
     /// Ends the streaks after an `accept` that worked.
     fn accepted(&mut self) {
-        self.since = None;
+        self.connections_since = None;
         let failures: u32 = [&mut self.connection, &mut self.resources, &mut self.other]
             .into_iter()
             .filter_map(|streak| streak.succeed())
@@ -329,13 +342,51 @@ mod tests {
         assert!(waited >= CONNECTION_GIVE_UP, "{waited:?}");
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn the_time_of_connection_errors_does_not_count_the_time_of_other_failures() {
+        let mut failures = Failures::new("test");
+        let exhausted = io::Error::from(io::ErrorKind::OutOfMemory);
+        assert!(matches!(failures.failed(&exhausted), Verdict::Retry(_)));
+        tokio::time::advance(Duration::from_secs(70)).await;
+        // The first error about a connection starts its own run.
+        assert_eq!(
+            failed(&mut failures, io::ErrorKind::ConnectionAborted),
+            Verdict::Retry(ACCEPT_ERROR_FLOOR)
+        );
+        // A run that was interrupted by another kind of error starts again.
+        tokio::time::advance(Duration::from_secs(50)).await;
+        assert!(matches!(failures.failed(&exhausted), Verdict::Retry(_)));
+        tokio::time::advance(Duration::from_secs(50)).await;
+        assert_eq!(
+            failed(&mut failures, io::ErrorKind::ConnectionAborted),
+            Verdict::Retry(ACCEPT_ERROR_FLOOR)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_errors_accept_documents_for_a_connection_are_not_the_listeners() {
+        for code in [
+            libc::EPROTO,
+            libc::ENETDOWN,
+            libc::EHOSTUNREACH,
+            libc::EOPNOTSUPP,
+        ] {
+            assert_eq!(
+                Kind::of(&io::Error::from_raw_os_error(code)),
+                Kind::Connection,
+                "{code}"
+            );
+        }
+    }
+
     #[test]
     fn errors_about_connections_do_not_lengthen_the_pause_of_the_failures_after_them() {
         let mut failures = Failures::new("test");
         for _ in 0..40 {
             assert_eq!(
                 failed(&mut failures, io::ErrorKind::ConnectionReset),
-                Verdict::Retry(CONNECTION_FLOOR)
+                Verdict::Retry(ACCEPT_ERROR_FLOOR)
             );
         }
         assert_eq!(

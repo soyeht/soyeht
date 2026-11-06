@@ -9,6 +9,7 @@
 use std::{
     io,
     net::{SocketAddr, TcpListener},
+    time::Duration,
 };
 
 #[cfg(windows)]
@@ -27,11 +28,17 @@ pub fn listen(address: SocketAddr) -> io::Result<TcpListener> {
     }
 }
 
-/// Whether an error of `accept` concerns the one connection it took from the queue (the peer reset
-/// or aborted it while it waited, the call was interrupted or timed out; on macOS a connection
-/// the peer reset before it was accepted comes back with no address, which the runtime reports as
-/// invalid input), not the listener or the process. The next `accept` has an answer at once; any
-/// other error needs a pause before it.
+/// How long an accept loop waits after an error about one connection, so that a run of them
+/// cannot spin a core.
+pub const ACCEPT_ERROR_FLOOR: Duration = Duration::from_millis(1);
+
+/// Whether an error of `accept` concerns the one connection it took from the queue, not the
+/// listener or the process. The next `accept` has an answer at once, after [`ACCEPT_ERROR_FLOOR`];
+/// any other error needs a pause before it. They are the errors `accept(2)` documents for a
+/// connection (the peer reset or aborted it while it waited, a protocol error on it, a network
+/// error that, as the man page says, is to be treated like `EAGAIN`), the interrupted and timed
+/// out calls, and, on macOS, a connection the peer reset before it was accepted, which comes back
+/// with no address and which the runtime reports as invalid input.
 pub fn accept_error_concerns_one_connection(error: &io::Error) -> bool {
     matches!(
         error.kind(),
@@ -40,7 +47,30 @@ pub fn accept_error_concerns_one_connection(error: &io::Error) -> bool {
             | io::ErrorKind::Interrupted
             | io::ErrorKind::TimedOut
             | io::ErrorKind::InvalidInput
-    )
+            | io::ErrorKind::NetworkDown
+            | io::ErrorKind::HostUnreachable
+            | io::ErrorKind::NetworkUnreachable
+    ) || error.raw_os_error().is_some_and(connection_code)
+}
+
+/// The codes of `accept(2)` for a connection that have no kind of their own.
+#[cfg(unix)]
+fn connection_code(code: i32) -> bool {
+    [
+        libc::EPROTO,
+        libc::ENETDOWN,
+        libc::EHOSTUNREACH,
+        libc::ENETUNREACH,
+        libc::EHOSTDOWN,
+        libc::ENOPROTOOPT,
+        libc::EOPNOTSUPP,
+    ]
+    .contains(&code)
+}
+
+#[cfg(not(unix))]
+fn connection_code(_: i32) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -56,8 +86,31 @@ mod tests {
             io::ErrorKind::Interrupted,
             io::ErrorKind::TimedOut,
             io::ErrorKind::InvalidInput,
+            io::ErrorKind::NetworkDown,
+            io::ErrorKind::HostUnreachable,
+            io::ErrorKind::NetworkUnreachable,
         ] {
             assert!(accept_error_concerns_one_connection(&io::Error::from(kind)));
+        }
+        #[cfg(unix)]
+        for code in [
+            libc::EPROTO,
+            libc::ENETDOWN,
+            libc::EHOSTUNREACH,
+            libc::ENETUNREACH,
+            libc::EHOSTDOWN,
+            libc::ENOPROTOOPT,
+            libc::EOPNOTSUPP,
+        ] {
+            assert!(accept_error_concerns_one_connection(
+                &io::Error::from_raw_os_error(code)
+            ));
+        }
+        #[cfg(unix)]
+        for code in [libc::EBADF, libc::ENOTSOCK, libc::EMFILE, libc::EFAULT] {
+            assert!(!accept_error_concerns_one_connection(
+                &io::Error::from_raw_os_error(code)
+            ));
         }
         for kind in [
             io::ErrorKind::Other,
