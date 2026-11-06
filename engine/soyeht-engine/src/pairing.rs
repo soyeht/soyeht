@@ -327,7 +327,8 @@ impl Core {
         match method {
             method::DEVICE_PAIR_START => self.device_pair_start(connection, method, params),
             method::DEVICE_REVOKE => self.device_revoke(connection, method, params),
-            _ => self.device_pair_decide(connection, method, params),
+            method::DEVICE_PAIR_DECIDE => self.device_pair_decide(connection, method, params),
+            _ => Err(errors::internal("Method is not a device management method")),
         }
     }
 
