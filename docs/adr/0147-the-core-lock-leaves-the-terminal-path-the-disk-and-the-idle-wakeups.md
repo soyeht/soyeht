@@ -145,6 +145,9 @@ Behaviour unchanged. The guard of the lock measures every hold, not only the one
   of holds, the share of the minute the lock was held, the p50 and p99 of the hold and of the wait,
   the longest wait, and the sums of the five costs. With this the question "does SQLite dominate
   the 3 to 20 ms holds" is answered from the owner's own log, which is what decides step 4.
+- The trace hook is the `trace` feature of `rusqlite`, which is enabled only through `test-support`
+  today (`soyeht-store/Cargo.toml`). Production needs it on in the normal build, so this change edits a
+  `Cargo.toml` and is review-required for that reason too.
 - Risk: none to ordering or consistency. Cost: two clock reads per hold and one per statement; the
   aggregate is updated after the lock is released.
 - Tests: unit tests for the accumulator (nesting, no hold, bounded statement stack), for the
@@ -166,12 +169,17 @@ checked against the one active connection. So a second connection that says the 
 work. `Hello` gets an optional `role`, `#[serde(default)]`, whose default is the request role of
 today. A **watch** role:
 
-- is bound to the engine generation the supervisor has recorded, and is refused when its generation
-  is older, as a request connection is;
+- is bound to the engine generation the supervisor has recorded and must **equal** it: an older one
+  is refused as stale, and a newer one is refused too, since a watch can only follow the request
+  connection of its own generation. A watch hello never writes the registry (only a request hello of
+  a newer generation does);
 - skips the "active connection" bookkeeping, so it neither evicts nor is evicted by the request
   connection, and is not counted by `ENGINE_CONNECTED`;
 - is closed by the supervisor when a request connection of a newer generation arrives, together
-  with the one it evicts.
+  with the one it evicts;
+- is made again, with a new `Watch`, whenever the engine's request link is replaced (a reconnect).
+  The answer to `Watch` lists the instances that already have unread output (level before edge), so
+  what was missed between the two links is read.
 
 **No change of `wire::VERSION`.** A version mismatch fails the hello, and a supervisor must survive
 an update of the engine (it holds the terminals, ADR 0123): a new version would either end the
@@ -205,10 +213,18 @@ when a process has exited.
 
 **The engine reads on a notice.** The notice thread takes no Core lock. It marks the pane as readable
 in a small set with its own mutex and sets the wake the tick already has (`Background::woken`). The
-tick starts the drain job for each marked pane. A `Drain` returns at most 64 KiB, so a read that
-finds `end_seq` past the offset it reached is repeated at once; a read that reaches `end_seq` clears
-the mark. After a read that found output a pane is not read again sooner than one tick interval,
-which batches a flood the way it is batched now, while the first read after quiet is immediate. The
+tick starts the drain job for each marked pane. Two rules, and they do not overlap:
+
+- A read that was **truncated** (`Drain` returns at most 64 KiB, and `end_seq` is past the offset it
+  reached) is repeated at once, with no wait for a tick, until it reaches `end_seq` or has been
+  repeated 16 times in a row, after which the pane waits for the next tick like the other panes. A
+  flood is thus limited by the round trip and no longer by the tick, whose 64 KiB per 10 ms is today's
+  ceiling of about 6.4 MB/s per pane; the 16-repeat cap keeps one flooding pane from taking every pool
+  worker and the lock from the others. The cost is more lock occupancy under a flood, which step 0's
+  data and the meter show.
+- A read that **reached** `end_seq` clears the mark. If it found output, the pane is not read again
+  sooner than one tick interval, which batches many small writes the way they are batched now; the
+  first read after quiet is immediate. The
 agents and the language servers use the same marks in place of the per-tick read of `take_read` and
 of `IDLE_PACE_MS`.
 
@@ -271,10 +287,15 @@ bytes) through an ordinary background result.
 Core, then the hub's table, then a pane's mutex; never the other way, and the hub never calls into
 Core.
 
-1. A pane's mutex is **never held across disk I/O.** `Log::read` can open up to 256 files; the
-   reader copies what it needs (the index entries and the file numbers) under the mutex, releases it,
-   reads, and takes it again only to hand over the result. A write holds it for the append only,
-   and the flush runs on a copy of the file list, as it does today.
+1. A pane's mutex is **not held across disk I/O, with one exception: the append.** `Log::read` can
+   open up to 256 files; the reader copies what it needs (the index entries and the file numbers)
+   under the mutex, releases it, reads, and takes it again only to hand over the result. The flush
+   runs on a copy of the file list, as it does today. The append of a record (and the rotation and the
+   `remove_file` of the oldest segment it can cause) stays under the mutex: it writes to the page
+   cache and never calls `fsync` there (ADR 0095), so it is short and bounded, and doing it under the
+   mutex is what keeps the file and the window in step. Core never waits for that mutex on a hot path,
+   because what it reads are the atomics of rule 2; only the hub's own threads and the readers of
+   records wait for it.
 2. **Core handlers do not wait for a pane's mutex.** `state.snapshot` reads every pane's offsets, and
    about 50 other sites read `.screen` (`core.rs`, `agents/lifecycle.rs`, `agents/switching/`,
    `agents/driver.rs`, `tasks/dispatching.rs`, and more). The hub entry publishes `first`, `next` and
@@ -286,11 +307,14 @@ Core.
 **Epoch.** Core publishes to the hub, per pane, what the apply needs to decide whether a read still
 fits: the instance id, the sequence base, `closed`, whether the pane is an agent or has a capture
 waiting to be restored, and what the pump needs (`stream_id`, `generation`, `mode`, `recording`).
-`RunningPane.stored` is assigned directly at about a dozen places today (`core.rs`, `panes.rs`,
-`supervisor_link.rs`, `web/`, `agents/`, `editor/project_entries.rs`, `experiment_build.rs`). In
-step 2a the field becomes private behind one setter that republishes the epoch, so there is one
-choke point, and a test build checks after every hold that the published epoch equals the function of
-`stored`.
+Not all of it lives in `stored`: "is an agent" is `Core.agents` and "capture waiting" is
+`capture_restore`, and each changes at about a dozen places (`agents.insert` and `remove`, and the
+edits of `capture_restore`). `RunningPane.stored` is assigned directly at about a dozen more
+(`core.rs`, `panes.rs`, `supervisor_link.rs`, `web/`, `agents/`, `editor/project_entries.rs`,
+`experiment_build.rs`). In step 2a all three go through one publisher: `stored` becomes private behind
+a setter that republishes the epoch, and the insertions and removals in `agents` and the edits of
+`capture_restore` are methods that republish it. A test build checks after every hold that the
+published epoch equals `f(stored, agents, capture_restore)` for every pane.
 
 **2a. Types.** `Screen` and the subscriptions move into hub types and the offsets become atomics.
 Core still drives the reads and the pump, exactly as now. Reviewable on its own: no behaviour changes,
@@ -302,8 +326,11 @@ the append, the trim) and the pump of the subscribers run in the hub.
 - **Single pumper:** a subscription is pumped by one thread at a time (a token on the subscription,
   or one pump per connection), so frames of a stream never interleave.
 - **A paced replay driver.** A subscription that replays old output sends in pages within the
-  outbox's byte budget; without the 10 ms tick to call it again, the pump re-arms itself while it has
-  more to send and the budget has room, so a replay finishes.
+  outbox's byte budget (8 MiB per connection). Without the 10 ms tick to call it again, a pump that
+  stopped because the budget was full is woken by the **connection's writer**: when the writer drains
+  the queue below the budget it signals a per-connection notify, and the pump of every subscription
+  that is behind re-arms on it. A short timer (50 ms) runs while any subscription is behind, as a
+  safety net for a signal that was missed, so a replay always finishes.
 - **Subscribe:** `pane.stream.subscribe` stays a Core request. In one hub critical section it
   captures the tail boundary, enqueues the mapping response and the replay start, and inserts the
   cursor. Outbox sends do not block, so sending under the hub's lock is safe, and no binary frame can
@@ -314,7 +341,12 @@ the append, the trim) and the pump of the subscribers run in the hub.
   is checked, and the replay-done and gap frames stay ordered with the binary frames of their stream.
 
 **2c. The read, flush and acknowledgement loop in the hub, and the held-Core test.** The loop of
-section "What the hub is" moves; the test below proves it.
+section "What the hub is" moves; the test below proves it. Without a working watch (an old
+supervisor, or a dropped watch connection) the engine polls, and after this change the poll cannot
+be the Core tick, which is blocked in the held-Core test and whenever a handler is slow: the hub owns
+a **poll timer** of its own that marks every pane readable once per tick interval while there is no
+watch, and the same timer carries the one-second sweep of step 1a. The held-Core test runs in both
+modes.
 
 - Risks of the whole step: (a) a deadlock between the two locks, prevented by the order, by the hub
   being the only way to reach a pane's mutex and by never passing a Core reference into it; (b) a
@@ -361,11 +393,17 @@ calls per record under the lock, 6 to 15% of the hold time in the session.
 
 - **3a (scheduled).** The active segment's `File` stays open between records and the per-record
   `set_len` is dropped: a torn tail is already truncated when the log is opened (`Log::open`). The
-  handle is closed on rotation and with the log. The syscall count per record falls to one. No change
+  handle is closed on rotation and with the log. The per-record `set_len` also repairs a partial write
+  made in this process (the disk was full in the middle of a record), so on **any** write error the
+  handle is dropped, the file is reopened and truncated to the recorded size, and the record is not
+  counted as written, as now. The syscall count per record falls to one. No change
   of where the write happens, so no change of ordering, trimming or backpressure. Test: a crash test
   that kills the engine in the middle of a record and checks `Log::open` truncates the tail and the
   output is drained again from the last durable position; the statement and syscall counts of a
-  burst.
+  burst. A Windows case: an open handle must not block the rotation that removes the oldest segment
+  (the active segment is never the one removed, and a log with a single segment closes its handle
+  before it rotates) nor the deletion of a closed pane's folder (the handle is closed first, and the
+  file is opened with delete sharing).
 - **3b (conditional, not scheduled).** Moving the append into the flush job. It is not as simple as
   it looked: the live window trims inside the append (`TAIL_BYTES` or 1024 records), not at
   `take_in_through`, and `Screen::read` reports a range that is outside the window and past what is on
@@ -455,7 +493,7 @@ The rule test grows with the work, so a regression is a red test.
    segment log, the writers of `soyeht_platform::fs` and the editor's port can refuse to run on a marked
    thread (`Error::UnderLock`, as `run` does). The few operations that must stay under the lock (a
    settings file, a registry file) take a named `allow_under_lock(reason)` that the test lists. Until the
-   moves are done these calls only count (step 0). AGENTS.md "The Core lock" is updated in this change.
+   moves are done these calls only count (step 0).
 4. `tests/core_lock.rs` keeps its cases and gains the held-Core case of step 2c and the slow-port cases
    of steps 4 and 5.
 
@@ -490,8 +528,8 @@ The rule test grows with the work, so a regression is a red test.
 ## Consequences
 
 - ADR 0079's list of what still runs under the lock is replaced by this record's: the supervisor was
-  removed from it by ADRs 0117, 0119 and 0126. AGENTS.md "The Core lock" is updated in the first change
-  that moves something, to point here.
+  removed from it by ADRs 0117, 0119 and 0126. AGENTS.md "The Core lock" is updated once, in the change of step 5 (the
+  first that moves something and adds a ratchet), to point here and to say what is left under the lock.
 - After step 2, terminal **output and acknowledgements** no longer depend on the cost of any request.
   Keystroke echo still takes the Core lock (the input is recorded and its receipt is made durable under
   it: two commits per key), so it improves with step R and step 4, not with step 2. After step 1 a
