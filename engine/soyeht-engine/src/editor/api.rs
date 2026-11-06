@@ -7,13 +7,12 @@ use super::{
 use crate::{
     core::Core,
     errors::{self, Result},
-    model::StoredPane,
+    model::{self, StoredPane},
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
     EditorContentSource, FileOpenParams, FileOpenResult, FileReadParams, FileReadResult,
-    FileSaveParams, FileSaveResult, Pane, PaneMode, PaneState, StateSource, method,
-    shared_text::SharedText,
+    FileSaveParams, FileSaveResult, Pane, PaneMode, method, shared_text::SharedText,
 };
 use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use std::path::Path;
@@ -422,33 +421,12 @@ fn editor_pane(workspace: &soyeht_protocol::Workspace, relative_path: &str) -> P
         .and_then(|value| value.to_str())
         .unwrap_or(relative_path);
     Pane {
-        pane_id: Uuid::new_v4().to_string(),
-        workspace_id: workspace.workspace_id.clone(),
-        name: name.into(),
-        cwd: workspace.path.clone(),
-        mode: PaneMode::Editor,
-        state: PaneState::Idle,
-        source: StateSource::Protocol,
-        confidence: 1.0,
         phrase: format!("Editing {name}"),
-        generation: 1,
-        cols: 0,
-        rows: 0,
-        record: false,
-        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
-            on: false,
-            failure: None,
-        }),
-        pid: None,
-        stream_id: None,
-        agent: None,
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
-        writing_kind: None,
-        writing_section: None,
-        exit_code: None,
-        web_session: None,
+        ..model::new_pane(
+            PaneMode::Editor,
+            workspace.workspace_id.clone(),
+            name,
+            workspace.path.clone(),
+        )
     }
 }

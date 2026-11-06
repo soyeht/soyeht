@@ -94,6 +94,8 @@ export const limits = {
   "writingVariantBytes": 16384,
   "writingSuggestionBytes": 65536,
   "writingSidecarBytes": 1048576,
+  "writingTitleBytes": 512,
+  "writingPathBytes": 4096,
   "writingImageBytes": 2097152,
   "harnessContinuationBytes": 15999,
   "harnessContinuationMessages": 6,

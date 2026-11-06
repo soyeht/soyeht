@@ -296,7 +296,31 @@ def rust_names(schema):
         consts = [f'    pub const {snake(variant(n)).upper()}: &str = "{n}";' for n in names]
         return f"pub mod {kind} {{\n" + "\n".join(consts) + "\n}"
 
-    return module("method", schema["x-methods"]) + "\n" + module("event", schema["x-events"])
+    return (
+        module("method", schema["x-methods"])
+        + "\n"
+        + method_families(schema)
+        + "\n"
+        + module("event", schema["x-events"])
+    )
+
+
+# The groups of methods the engine treats alike (who may call them, where they are handled): the
+# methods whose name starts with the group and a dot.
+METHOD_FAMILIES = ("pair", "task", "web", "harness.custom")
+
+
+def method_families(schema):
+    """`method_family::PAIR` and the like: the methods of each group, as a list of names."""
+    rows = []
+    for family in METHOD_FAMILIES:
+        members = [n for n in schema["x-methods"] if n.startswith(family + ".")]
+        if not members:
+            raise ValueError(f"No method belongs to the family {family}")
+        const = family.replace(".", "_").upper()
+        names = ", ".join(f"super::method::{snake(variant(n)).upper()}" for n in members)
+        rows.append(f"    pub const {const}: &[&str] = &[{names}];")
+    return "pub mod method_family {\n" + "\n".join(rows) + "\n}"
 
 
 def method_registry_swift(schema):

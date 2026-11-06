@@ -32,7 +32,7 @@ pub fn new_document_path(
     title: &str,
     relative_folder: Option<&str>,
 ) -> Result<String> {
-    if title.trim().is_empty() || title.len() > 512 {
+    if title.trim().is_empty() || title.len() > limits::WRITING_TITLE_BYTES {
         return Err(Error::InvalidSectionPath);
     }
     let kind = kind_for(section);
@@ -105,7 +105,7 @@ pub fn section_entries(
     let mut entries = Vec::with_capacity(inputs.len());
     for input in inputs {
         validate_path(&input.path, folder, &kind)?;
-        if input.title.trim().is_empty() || input.title.len() > 512 {
+        if input.title.trim().is_empty() || input.title.len() > limits::WRITING_TITLE_BYTES {
             return Err(Error::InvalidSectionPath);
         }
         entries.push(WritingSectionEntry {
@@ -129,7 +129,7 @@ pub fn section_entries(
 }
 
 fn validate_path(path: &str, folder: &str, kind: &WritingKind) -> Result<()> {
-    if path.is_empty() || path.len() > 4096 {
+    if path.is_empty() || path.len() > limits::WRITING_PATH_BYTES {
         return Err(Error::InvalidSectionPath);
     }
     let parsed = Path::new(path);

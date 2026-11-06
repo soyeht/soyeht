@@ -12,7 +12,7 @@ use crate::{
 };
 use serde_json::json;
 use soyeht_pane_state::{EngineBuild, HarnessIdentity, ObservationPaneKind, RecordedRow};
-use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource, Workspace};
+use soyeht_protocol::{Pane, PaneMode, Workspace};
 use soyeht_ptyd::{
     Error as PtydError,
     wire::{Instance, ProcessKind, Request, Response, Spawn},
@@ -129,32 +129,13 @@ pub(crate) fn ready_agent_state() -> crate::agents::state::State {
 /// An idle pane with no optional field set: a test overrides what it exercises with
 /// `Pane { name: .., ..pane(..) }`.
 pub(crate) fn pane(id: &str, workspace_id: &str, mode: PaneMode, cwd: &str) -> Pane {
+    use crate::model::PaneSetup as _;
     Pane {
-        pane_id: id.into(),
-        workspace_id: workspace_id.into(),
-        name: id.into(),
-        cwd: cwd.into(),
-        mode,
-        state: PaneState::Idle,
-        source: StateSource::Protocol,
-        confidence: 1.0,
         phrase: String::new(),
-        generation: 1,
         cols: 80,
         rows: 24,
-        record: false,
         experiment_capture: None,
-        pid: None,
-        exit_code: None,
-        stream_id: None,
-        agent: None,
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
-        web_session: None,
-        writing_kind: None,
-        writing_section: None,
+        ..crate::model::new_pane(mode, workspace_id, id, cwd).with_id(id)
     }
 }
 
