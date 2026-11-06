@@ -6,7 +6,7 @@
 //! package may replace the pane's durable runtime.
 
 use super::{
-    Changes,
+    Changes, adapter_directory,
     harness_sign_in::{self, SignInChange},
     naming, native_error,
     pending::{Completion, UserOperation},
@@ -232,10 +232,14 @@ impl Core {
     fn begin_candidate_spawn(&mut self, pane: &str, draft: Draft, spawn: Spawn) -> Result<()> {
         let supervisor = self.supervisor()?;
         let used = supervisor.clone();
+        let directory = adapter_directory::to_prepare(&self.directory, &spawn.cwd);
         let (owner, initialize) = (pane.to_owned(), draft.initialize.clone());
         self.spawn_prompt_background(
             step_job(pane),
             move || {
+                if let Some(directory) = &directory {
+                    adapter_directory::prepare(directory);
+                }
                 // The candidate is an adapter like a pane's: it drives the person's own CLI too.
                 let Response::Instance(instance) = user_cli::prepare(spawn).send(&supervisor)?
                 else {
