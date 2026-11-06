@@ -36,6 +36,8 @@ class CoreBindingsTest {
         assertTrue(core.overview().workspaces.isEmpty())
         assertNull(core.terminal("pane"))
         assertNull(core.conversation("pane"))
+        assertNull(core.composer("pane"))
+        assertNull(core.harnessChoices("pane"))
     }
 
     @Test
