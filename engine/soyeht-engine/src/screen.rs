@@ -7,7 +7,8 @@ use std::{collections::VecDeque, path::Path, sync::Arc};
 type LiveRecord = Record<Arc<Vec<u8>>>;
 
 pub struct Screen {
-    disk: Log,
+    /// The pane's output on disk. `None` once the pane is closed (see [`Screen::release`]).
+    disk: Option<Log>,
     live: VecDeque<LiveRecord>,
     live_bytes: usize,
     next: u64,
@@ -39,25 +40,57 @@ impl Durable {
     }
 }
 
+fn closed_screen() -> errors::Error {
+    errors::internal("A closed pane keeps no output")
+}
+
 impl Screen {
     pub fn open(directory: &Path, recording: bool) -> Result<Self> {
         let disk = Log::open(directory)?;
         Ok(Self {
             next: disk.next_offset(),
-            disk,
+            disk: Some(disk),
             live: VecDeque::new(),
             live_bytes: 0,
             unacknowledged: None,
             recording,
         })
     }
+
+    /// The screen of a pane that is already closed: it holds no output and never takes any.
+    pub fn closed() -> Self {
+        Self {
+            disk: None,
+            live: VecDeque::new(),
+            live_bytes: 0,
+            next: 0,
+            unacknowledged: None,
+            recording: false,
+        }
+    }
+
+    /// Lets go of everything the screen holds in memory (the tail and the index of the segment
+    /// files) once its pane is closed. Nothing reads the output of a closed pane again, and
+    /// the segment files stay on the disk.
+    pub fn release(&mut self) {
+        self.disk = None;
+        self.live = VecDeque::new();
+        self.live_bytes = 0;
+        self.unacknowledged = None;
+    }
+
+    /// The bytes of output held in memory.
+    #[cfg(test)]
+    pub(crate) fn held_bytes(&self) -> usize {
+        self.live_bytes
+    }
+
     pub fn next_offset(&self) -> u64 {
         self.next
     }
     pub fn first_offset(&self) -> u64 {
-        self.disk
-            .first_offset()
-            .min(self.live.front().map(Record::from).unwrap_or(self.next))
+        let on_disk = self.disk.as_ref().map_or(self.next, Log::first_offset);
+        on_disk.min(self.live.front().map(Record::from).unwrap_or(self.next))
     }
 
     pub fn append(&mut self, record: Record) -> Result<()> {
@@ -95,7 +128,7 @@ impl Screen {
     pub fn take_durable(&mut self) -> Option<Durable> {
         let through = self.unacknowledged.take()?;
         Some(Durable {
-            unsynced: self.disk.take_unsynced(),
+            unsynced: self.disk.as_mut().and_then(Log::take_unsynced),
             through,
         })
     }
@@ -103,12 +136,13 @@ impl Screen {
     /// Owes `durable` again, when its flush failed: the next one retries it.
     pub fn restore_durable(&mut self, durable: &Durable) {
         self.take_in_through(durable.through);
-        if let Some(unsynced) = &durable.unsynced {
-            self.disk.restore_unsynced(unsynced);
+        if let (Some(unsynced), Some(disk)) = (&durable.unsynced, &mut self.disk) {
+            disk.restore_unsynced(unsynced);
         }
     }
 
     fn append_data_record(&mut self, offset: u64, bytes: Arc<Vec<u8>>, flush: bool) -> Result<()> {
+        self.require_open()?;
         let record = LiveRecord::Data { offset, bytes };
         if record.from() != self.next {
             return Err(errors::internal("Noncontiguous screen record"));
@@ -141,7 +175,7 @@ impl Screen {
 
     /// Records the stretch the disk missed (while recording was off) before a record at `to`.
     fn bridge_disk_gap(&mut self, to: u64, flush: bool) -> Result<()> {
-        let from = self.disk.next_offset();
+        let from = self.disk()?.next_offset();
         if from < to {
             self.disk_append(Record::Gap { from, to }, flush)?;
         }
@@ -149,14 +183,28 @@ impl Screen {
     }
 
     fn disk_append(&mut self, record: Record, flush: bool) -> Result<()> {
+        let disk = self.disk_mut()?;
         Ok(if flush {
-            self.disk.append(record)
+            disk.append(record)
         } else {
-            self.disk.append_unsynced(record)
+            disk.append_unsynced(record)
         }?)
     }
 
+    fn disk(&self) -> Result<&Log> {
+        self.disk.as_ref().ok_or_else(closed_screen)
+    }
+
+    fn disk_mut(&mut self) -> Result<&mut Log> {
+        self.disk.as_mut().ok_or_else(closed_screen)
+    }
+
+    fn require_open(&self) -> Result<()> {
+        self.disk().map(drop)
+    }
+
     fn append_gap(&mut self, from: u64, to: u64, flush: bool) -> Result<()> {
+        self.require_open()?;
         let record = LiveRecord::Gap { from, to };
         if record.from() != self.next {
             return Err(errors::internal("Noncontiguous screen record"));
@@ -195,7 +243,10 @@ impl Screen {
             .max(self.first_offset());
         let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
         if desired < live_first {
-            self.disk.align_forward(desired).min(live_first)
+            self.disk
+                .as_ref()
+                .map_or(self.next, |disk| disk.align_forward(desired))
+                .min(live_first)
         } else {
             self.live
                 .iter()
@@ -213,12 +264,13 @@ impl Screen {
         let mut position = from;
         let mut remaining = maximum;
         let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
-        if position < live_first && position < self.disk.next_offset() {
-            for record in self.disk.read(
-                position,
-                to.min(live_first).min(self.disk.next_offset()),
-                remaining,
-            )? {
+        let on_disk = self.disk.as_ref().map_or(0, Log::next_offset);
+        if let Some(disk) = self
+            .disk
+            .as_ref()
+            .filter(|_| position < live_first && position < on_disk)
+        {
+            for record in disk.read(position, to.min(live_first).min(on_disk), remaining)? {
                 if let Record::Data { bytes, .. } = &record {
                     remaining -= bytes.len();
                 }
@@ -232,7 +284,7 @@ impl Screen {
         if position < live_first {
             // The disk reader returns a bounded batch. More persisted records
             // must be read on the next pump, not reported as missing output.
-            if position < self.disk.next_offset() {
+            if position < on_disk {
                 return Ok(result);
             }
             let end = to.min(live_first);
@@ -332,6 +384,35 @@ mod tests {
             );
         }
         fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn a_released_screen_holds_no_output_and_takes_none() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, true).unwrap();
+        screen.append_data(0, vec![b'x'; 1000]).unwrap();
+        assert_eq!(screen.held_bytes(), 1000);
+
+        screen.release();
+
+        assert_eq!(screen.held_bytes(), 0);
+        assert_eq!(screen.next_offset(), 1000);
+        assert_eq!(screen.first_offset(), 1000);
+        assert_eq!(screen.tail_start(), 1000);
+        assert!(screen.read(1000, 1000, 64).unwrap().is_empty());
+        assert!(screen.take_durable().is_none());
+        assert!(screen.append_data(1000, vec![b'y']).is_err());
+        // The segment files are the pane's record and stay.
+        assert!(fs::read_dir(&path).unwrap().next().is_some());
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn the_screen_of_a_pane_that_was_closed_before_the_engine_started_is_empty() {
+        let mut screen = Screen::closed();
+        assert_eq!((screen.first_offset(), screen.next_offset()), (0, 0));
+        assert_eq!(screen.held_bytes(), 0);
+        assert!(screen.append_data(0, vec![b'x']).is_err());
     }
 
     #[test]

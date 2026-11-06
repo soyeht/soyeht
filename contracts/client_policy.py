@@ -193,7 +193,7 @@ def constants(policy):
 
 def rust_constant(name, value):
     if isinstance(value, str):
-        return f"pub const {snake(name).upper()}: &str = {json.dumps(value)};"
+        return f"pub const {snake(name).upper()}: &str = {json.dumps(value, ensure_ascii=False)};"
     if isinstance(value, float):
         return f"pub const {snake(name).upper()}: f64 = {value!r};"
     kind = (
@@ -358,7 +358,7 @@ def render_pane_states_rust(states):
 
 def swift_constant(name, value):
     if isinstance(value, str):
-        return f"    public static let {name} = {json.dumps(value)}"
+        return f"    public static let {name} = {json.dumps(value, ensure_ascii=False)}"
     if isinstance(value, float):
         return f"    public static let {name}: Double = {value!r}"
     if name.startswith(PAGE_SIZES):

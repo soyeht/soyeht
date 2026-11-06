@@ -15,9 +15,11 @@ fun SoyehtApp(model: AppModel) {
     val roles = LocalRoles.current
     Box(Modifier.fillMaxSize().background(roles.screen).safeDrawingPadding()) {
         val pane = model.openPane
-        BackHandler(enabled = pane != null) { model.close() }
+        BackHandler(enabled = pane != null && !model.scanning) { model.close() }
+        BackHandler(enabled = model.scanning) { model.stopScanning() }
         Column(Modifier.fillMaxSize()) {
             when {
+                model.scanning -> ScanScreen(model)
                 !model.paired -> PairScreen(model)
                 pane == null -> HomeScreen(model)
                 pane.kind == PaneKind.TERMINAL -> TerminalScreen(model, pane)

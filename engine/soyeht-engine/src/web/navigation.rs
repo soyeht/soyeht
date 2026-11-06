@@ -6,17 +6,27 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    PaneMode, WebCommandKind, WebCommandParams, WebInteractionMode, WebNavigateParams,
+    PaneMode, Role, WebCommandKind, WebCommandParams, WebInteractionMode, WebNavigateParams,
     WebOpenParams, WebOpenResult, method,
 };
 use soyeht_web::NormalizedUrl;
+use uuid::Uuid;
 
 use super::panes::NewWebPane;
 
 const NAVIGATION_TIMEOUT_MS: u32 = 30_000;
 
 impl Core {
-    pub(crate) fn web_open(&mut self, connection: &str, params: &Value) -> Result<Value> {
+    /// Opens a web pane. A person's pane loads the address at once. An agent's pane that is not
+    /// private is made empty and sent to the address as a `navigate` command, so that the
+    /// permission plan and the host's cookie probe run before the page loads (ADR 0055); the answer
+    /// is the pane's id once the host has accepted the navigation.
+    pub(crate) fn web_open(
+        &mut self,
+        connection: &str,
+        request_id: Value,
+        params: &Value,
+    ) -> Result<Outcome> {
         let request: WebOpenParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid web open parameters"))?;
         if request.mode == Some(WebInteractionMode::Human) {
@@ -25,16 +35,18 @@ impl Core {
         let url = NormalizedUrl::parse(&request.url)?;
         let (scope, workspace_id) = self.web_open_context(connection, request.workspace_id)?;
         let workspace = model::workspace(&self.store, &workspace_id)?;
+        let incognito = request.incognito.unwrap_or(false);
         if !request.new_pane.unwrap_or(false)
-            && let Some(pane_id) = self.matching_web_pane(
-                &workspace_id,
-                url.as_str(),
-                request.incognito.unwrap_or(false),
-            )
+            && let Some(pane_id) = self.matching_web_pane(&workspace_id, url.as_str(), incognito)
         {
-            return self.focus_open_web_pane(connection, params, &scope, &workspace_id, &pane_id);
+            return self
+                .focus_open_web_pane(connection, params, &scope, &workspace_id, &pane_id)
+                .map(Outcome::Reply);
         }
-        self.persist_web_pane(
+        if !incognito && self.web_open_is_agent(connection) {
+            return self.web_open_routed(connection, request_id, params, &workspace, &url);
+        }
+        let result = self.persist_web_pane(
             connection,
             method::WEB_OPEN,
             params,
@@ -42,9 +54,64 @@ impl Core {
                 workspace: &workspace,
                 name: None,
                 url: Some(&url),
-                incognito: request.incognito.unwrap_or(false),
+                incognito,
             },
-        )
+        )?;
+        Ok(Outcome::Reply(result))
+    }
+
+    /// An agent's open of a pane that is not private: the pane is made empty and the address is
+    /// sent to the host as a `navigate` command under the call's own idempotency key. The pane is
+    /// made under a key of its own, so that the call's receipt is the result of the navigation
+    /// (committed when the host accepts it), not of the pane: a retry after a refusal asks again,
+    /// and a retry while the host is still working joins the first call's waiter.
+    fn web_open_routed(
+        &mut self,
+        connection: &str,
+        request_id: Value,
+        params: &Value,
+        workspace: &soyeht_protocol::Workspace,
+        url: &NormalizedUrl,
+    ) -> Result<Outcome> {
+        self.web_host_connection()?;
+        let key = errors::param_str(params, "idempotencyKey")?;
+        if let Some(pane_id) = self.pending_web_open(connection, key) {
+            let command = open_navigation(&pane_id, url, key);
+            self.queue_web_command(connection, request_id, method::WEB_OPEN, params, command)?;
+            return Ok(Outcome::Queued);
+        }
+        let mut for_pane = params.clone();
+        for_pane["idempotencyKey"] = json!(format!("web-open-pane:{}", Uuid::new_v4()));
+        let result = self.persist_web_pane(
+            connection,
+            method::WEB_OPEN,
+            &for_pane,
+            NewWebPane {
+                workspace,
+                name: None,
+                url: None,
+                incognito: false,
+            },
+        )?;
+        let pane_id = result["paneId"]
+            .as_str()
+            .ok_or_else(|| errors::internal("Web open result has no pane"))?
+            .to_owned();
+        let command = open_navigation(&pane_id, url, key);
+        if let Err(error) =
+            self.queue_web_command(connection, request_id, method::WEB_OPEN, params, command)
+        {
+            self.abandon_web_pane(&pane_id)?;
+            return Err(error);
+        }
+        Ok(Outcome::Queued)
+    }
+
+    fn web_open_is_agent(&self, connection: &str) -> bool {
+        self.clients
+            .get(connection)
+            .and_then(|client| client.actor.as_ref())
+            .is_some_and(|actor| matches!(actor.role, Role::Agent | Role::Chief))
     }
 
     pub(crate) fn web_navigate(
@@ -151,6 +218,17 @@ impl Core {
                 Ok((result, Vec::new()))
             })?
             .result)
+    }
+}
+
+/// The navigation of an agent's `web.open`: to `url`, under the call's idempotency key.
+fn open_navigation(pane_id: &str, url: &NormalizedUrl, key: &str) -> WebCommandParams {
+    WebCommandParams {
+        pane_id: pane_id.into(),
+        command: WebCommandKind::Navigate,
+        args: json!({"url":url.as_str()}),
+        timeout_ms: NAVIGATION_TIMEOUT_MS,
+        operation_key: key.into(),
     }
 }
 

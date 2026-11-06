@@ -43,6 +43,18 @@ fun HomeScreen(model: AppModel) {
             modifier = Modifier.padding(PaneInterior.phoneInset.dp),
         )
     }
+    // A person who gets another computer pairs it from here: the scan replaces the one this phone controls,
+    // after asking, as a tapped link does.
+    val startScan = rememberStartScan(model)
+    Row(
+        Modifier.padding(horizontal = PaneInterior.phoneInset.dp),
+        horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp),
+    ) {
+        Pill("Pair another computer", startScan)
+    }
+    if (model.cameraDenied) {
+        Box(Modifier.padding(PaneInterior.phoneInset.dp)) { CameraDenied() }
+    }
     overview?.problem?.let {
         Text(it, color = roles.secondary, fontSize = TypeScale.caption.sp, modifier = Modifier.padding(horizontal = PaneInterior.phoneInset.dp))
     }

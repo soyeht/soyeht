@@ -313,3 +313,55 @@ fn the_text_of_a_response_is_clipped_on_a_character_boundary() {
     assert_eq!(clip("ação", 2), "a");
     assert_eq!(clip("abc", 10), "abc");
 }
+
+/// A registry whose page appears only after it has been asked for a few times: the window makes
+/// the page of a pane when it applies the event that announces it.
+struct LateRegistry {
+    page: Arc<FakePage>,
+    asked: Mutex<u32>,
+    appears_at: u32,
+}
+
+impl Pages for LateRegistry {
+    fn page(&self, pane_id: &str) -> Option<Arc<dyn Page>> {
+        let mut asked = self.asked.lock().unwrap();
+        *asked += 1;
+        (pane_id == "pane-1" && *asked >= self.appears_at)
+            .then(|| self.page.clone() as Arc<dyn Page>)
+    }
+}
+
+#[test]
+fn a_command_for_a_pane_the_window_is_still_making_waits_for_its_page() {
+    let page = FakePage::new();
+    let host = Host {
+        pages: Arc::new(LateRegistry {
+            page: page.clone(),
+            asked: Mutex::new(0),
+            appears_at: 4,
+        }),
+        page_wait: Duration::from_secs(5),
+    };
+    let args = json!({"url": "https://example.com/first"});
+    let outcome = host.execute(&command(WebCommandKind::Navigate, "probe", args));
+    assert_eq!(value(&outcome)["accepted"], true);
+    assert_eq!(
+        *page.navigated.lock().unwrap(),
+        [Target::Url("https://example.com/first".into())]
+    );
+}
+
+#[test]
+fn a_pane_that_never_gets_a_page_is_refused_when_the_wait_ends() {
+    let host = Host {
+        pages: Arc::new(LateRegistry {
+            page: FakePage::new(),
+            asked: Mutex::new(0),
+            appears_at: u32::MAX,
+        }),
+        page_wait: Duration::from_millis(100),
+    };
+    let args = json!({"url": "https://example.com/first"});
+    let outcome = host.execute(&command(WebCommandKind::Navigate, "human", args));
+    assert_eq!(error_kind(&outcome), ErrorKind::InternalError);
+}

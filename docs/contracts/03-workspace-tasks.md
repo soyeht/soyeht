@@ -87,7 +87,10 @@ Two paths, the same contract:
 model, effort, permission, worktree). The engine opens the pane, creates
 the worktree through worktrunk, binds pane and task, and sends the task as
 the first prompt (title, description, must not change, how to verify, existing subitems,
-comments, worktree).
+comments, worktree). The prompt never exceeds the prompt limit: a long description or subitem
+list is cut with a marker, and the newest comments are kept, with a line that says how many
+earlier ones were left out. A dispatch that cannot advance is logged and does not hold back
+the dispatches of other tasks.
 
 **`task_next`** (idle pane, usually through the loop): the pane asks “give
 me the next one”. The engine selects the first `todo` task that has no
@@ -155,7 +158,9 @@ permissions, failed CI without a live pane, refused moves. Each item has
 sends the prompt if the pane is idle; if it is in a turn, it waits. Typical
 use: prompt “pull the next task with task_next; if empty, reply 'nothing to do'”.
 Stop when: rounds exhausted, `task_next` returned empty 3 consecutive times,
-or you turned it off.
+or you turned it off. The prompt is at most the prompt limit (the same bound as a typed
+prompt). A loop that cannot send its prompt is logged and held back for one interval; the
+loops of other panes go on.
 Maximum rounds: PENDING Q1 (assumed 10, configurable, 0 = unlimited).
 
 ## 10. Workspace lead agent

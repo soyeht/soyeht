@@ -174,3 +174,93 @@ fn the_file_system_decides_the_case_of_a_name_and_the_link_opens_the_real_one() 
 fn slashes(path: &std::path::Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
+
+#[test]
+fn a_share_or_a_device_is_refused_by_its_text_before_the_system_is_asked() {
+    let local = r"C:\work\project";
+    for path in [
+        r"\\attacker\share\x.rs",
+        "//attacker/share/x.rs",
+        r"\\attacker@SSL\share\x.rs",
+        r"\\attacker@SSL@443\share\x.rs",
+        r"\\attacker@8080\share\x.rs",
+        r"\\?\UNC\attacker\share\x.rs",
+        r"\\.\pipe\x.rs",
+        r"\\?\C:\work\project\x.rs",
+        "//?/UNC/attacker/share/x.rs",
+        "//./pipe/x.rs",
+    ] {
+        assert!(
+            windows::leaves_the_machine(Dialect::Windows, local, path),
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn a_local_path_is_not_refused_by_its_text() {
+    let local = r"C:\work\project";
+    for path in [
+        "src/main.rs",
+        "C:/work/project/src/main.rs",
+        r"C:\work\project\src\main.rs",
+        "/rooted/on/this/drive.rs",
+    ] {
+        assert!(
+            !windows::leaves_the_machine(Dialect::Windows, local, path),
+            "{path}"
+        );
+    }
+    // Only a windows workspace reads these as shares.
+    assert!(!windows::leaves_the_machine(
+        Dialect::Posix,
+        "/work",
+        "//attacker/share/x.rs"
+    ));
+}
+
+#[test]
+fn a_workspace_on_a_share_keeps_the_paths_under_its_own_text() {
+    let root = r"\\files\team\project";
+    assert!(!windows::leaves_the_machine(
+        Dialect::Windows,
+        root,
+        "//files/team/project/src/x.rs"
+    ));
+    assert!(!windows::leaves_the_machine(
+        Dialect::Windows,
+        r"\\FILES\Team\project\",
+        "//files/team/PROJECT/src/x.rs"
+    ));
+    for path in [
+        "//files/team/project-other/x.rs",
+        "//files/team/x.rs",
+        "//attacker/share/x.rs",
+        "//files@SSL/team/project/x.rs",
+    ] {
+        assert!(
+            windows::leaves_the_machine(Dialect::Windows, root, path),
+            "{path}"
+        );
+    }
+    // A device in the place of the root is not a share the person chose.
+    assert!(windows::leaves_the_machine(
+        Dialect::Windows,
+        r"\\.\pipe",
+        "//./pipe/x.rs"
+    ));
+}
+
+#[test]
+fn the_share_a_reply_names_is_a_path_the_refusal_covers() {
+    let text = r"see \\attacker@SSL@443\share\x.rs:1 and \\attacker\share\y.rs:2";
+    let found = find(Dialect::Windows, text);
+    assert_eq!(found.len(), 2);
+    for found in found {
+        assert!(
+            windows::leaves_the_machine(Dialect::Windows, r"C:\work", &found.reference.path),
+            "{}",
+            found.reference.path
+        );
+    }
+}

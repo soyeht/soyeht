@@ -39,6 +39,10 @@ public enum ClientPolicy {
     public static let pageSizeWritingSection: UInt32 = 100
     public static let harnessSwitchTitle = "Switch agent"
     public static let harnessSwitchHandover = "This starts a new agent session. Recent messages and pending prompts are handed over as historical data."
+    public static let harnessesLoading = "Loading agents…"
+    public static let harnessesNone = "No other agents"
+    public static let harnessesRescan = "Check agents again"
+    public static let cancel = "Cancel"
     public static let taskMoveReason = "Moved on the workspace board"
     public static let editorNoFile = "The engine has no file for this editor tab."
     public static let editorFileNotText = "Binary file, can't be shown."

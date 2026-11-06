@@ -95,8 +95,8 @@ state; `soyeht-protocol` is the only definition of the wire.
 
 ## What this does not do
 
-- The app does not scan a QR with the camera in this phase: the pairing link is pasted or opened
-  (`soyeht-next://pair?...`, an intent filter of the app).
+- The first phase does not scan a QR with the camera: the pairing link is pasted or opened
+  (`soyeht-next://pair?...`, an intent filter of the app). The camera came next (ADR 0138).
 - It has no push notification, no editor, writing or web pane (they show "Open on the computer", as the
   iPad does), and no board layout for tablets. They follow when the rest has been used.
 - It does not move Swift's copy of the signed bytes to the shared functions.
