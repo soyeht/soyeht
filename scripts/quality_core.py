@@ -40,6 +40,7 @@ AREAS = {
     "dictation": ("apps/dictation", "swift", ".swift"),
     "mac": ("apps/mac/Sources", "swift", ".swift"),
     "ios": ("apps/ios/Sources", "swift", ".swift"),
+    "android": ("apps/android/app/src", "kotlin", ".kt"),
 }
 DUPLICATION_SCANS = {
     **{
@@ -209,7 +210,7 @@ def duplicate_measurement(repo: Path, area: str, jscpd: Path) -> dict[str, int |
             "--output",
             output,
             "--ignore",
-            "**/generated.rs,**/Generated.swift,**/target/**,**/.build/**",
+            "**/generated.rs,**/Generated.swift,**/DesignTokens.kt,**/target/**,**/.build/**",
             "--silent",
             "--noTips",
             *paths,

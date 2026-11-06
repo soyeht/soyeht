@@ -301,6 +301,7 @@ impl Core {
                 TurnStopReason::Cancelled,
             )?);
         }
+        state.release_held_updates();
         state.phase = super::state::Phase::Faulted;
         saved.pane.state = PaneState::Dead;
         saved.pane.phrase = "Agent pane closed".into();

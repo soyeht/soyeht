@@ -15,6 +15,7 @@ pub mod failures;
 pub mod filesystem;
 pub mod forms;
 mod harness_sign_in;
+mod held_updates;
 pub mod hooks;
 pub mod idle;
 pub mod lifecycle;
@@ -393,11 +394,14 @@ impl Core {
     }
 
     fn install_committed_agent(&mut self, id: &str, saved: StoredPane, state: State) -> Result<()> {
-        errors::invariant(
+        let pane = errors::invariant(
             self.panes.get_mut(id),
             "Agent pane disappeared before commit publication",
-        )?
-        .stored = saved;
+        )?;
+        pane.stored = saved;
+        if pane.stored.closed {
+            pane.screen.release();
+        }
         if let Some(running) = self.agents.get_mut(id) {
             running.state = state;
             running.idle.touch();

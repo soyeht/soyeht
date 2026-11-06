@@ -122,6 +122,18 @@ fn log_stale_export_cleanup(directory: &Path) {
     }
 }
 
+/// The screen of a pane read from the database. Nobody reads the output of a closed pane, so its
+/// segment files are not opened.
+fn restored_screen(directory: &Path, stored: &StoredPane) -> Result<Screen> {
+    if stored.closed {
+        return Ok(Screen::closed());
+    }
+    Screen::open(
+        &directory.join("sessions").join(&stored.pane.pane_id),
+        stored.pane.record,
+    )
+}
+
 /// The address a paired device reaches the engine at before the listeners say otherwise.
 fn loopback_address(profile: &Profile) -> String {
     format!("127.0.0.1:{}", profile.tcp_port)
@@ -193,7 +205,7 @@ impl Core {
             revision: SharedPort::new(Box::new(GitRevision)),
             worktrees: SharedPort::new(Box::new(CommandWorktree::default())),
             background: Default::default(),
-            usage: crate::usage::service_over(usage_readings, hooks.usage_host()),
+            usage: crate::usage::service_over(usage_readings, directory, hooks.usage_host()),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(
@@ -248,10 +260,7 @@ impl Core {
                 core.terminal_harnesses
                     .insert(stored.pane.pane_id.clone(), session);
             }
-            let screen = Screen::open(
-                &directory.join("sessions").join(&stored.pane.pane_id),
-                stored.pane.record,
-            )?;
+            let screen = restored_screen(directory, &stored)?;
             core.panes
                 .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
         }

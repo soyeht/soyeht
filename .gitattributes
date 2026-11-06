@@ -22,3 +22,4 @@ engine/soyeht-protocol/src/setting.rs linguist-generated=true
 scripts/generated_profile.py linguist-generated=true
 engine/soyeht-protocol/src/legacy.rs linguist-generated=true
 scripts/generated_legacy.py linguist-generated=true
+apps/android/app/src/main/kotlin/com/soyeht/next/android/theme/DesignTokens.kt linguist-generated=true

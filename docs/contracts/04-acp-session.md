@@ -48,7 +48,13 @@ Raw terminal panes continue to exist and do not use this path.
    `audio`, an embedded text `resource`, and otherwise a `resource_link` to the
    file's absolute path, which every ACP v1 agent accepts. A file that would
    push the message past one ACP line is linked (ADR 0076).
-7. **`session/update`.** The engine stores everything in the pane transcript
+7. **`session/update`.** An adapter may send an update before it answers `session/new`
+   (it announces its commands without waiting), so the update names a session the engine
+   does not know yet. While the pane's own `session/new` is open the engine holds those
+   updates (at most 32) and applies them once the answer names the session; before the
+   probe's session exists and after the probe, when the process is about to be replaced,
+   it ignores them. Such an update never stops the pane. The engine stores everything in
+   the pane transcript
    and forwards it to clients: message chunks, thoughts, tool calls and updates,
    plan, options changed by the agent, token usage and `state_update`. The turn
    ends when `idle` arrives with a `stopReason` (`end_turn`, `cancelled`,

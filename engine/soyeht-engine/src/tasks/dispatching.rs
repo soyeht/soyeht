@@ -90,7 +90,9 @@ impl Core {
 
     /// Creates this task's worktree off the Core lock when it still needs
     /// one (ADR 0079), then advances the dispatches under the lock and
-    /// answers with `result`. A failure reaches the caller, as before.
+    /// answers with `result`. A failure of this task's own row (its worktree, pane, session
+    /// or prompt) reaches the caller; the other rows are advanced too, and one that cannot
+    /// advance is logged and does not fail this call.
     fn continue_dispatch(
         &mut self,
         workspace: &str,
@@ -98,7 +100,7 @@ impl Core {
         result: Value,
     ) -> Result<Outcome> {
         let Some(request) = self.worktree_request(workspace, task_id)? else {
-            self.advance_task_dispatches()?;
+            self.advance_dispatches_for(workspace, task_id)?;
             return Ok(Outcome::Reply(result));
         };
         let (workspace, task_id) = (workspace.to_owned(), task_id.to_owned());
@@ -109,7 +111,7 @@ impl Core {
             move || request.prepare(),
             move |core, prepared| {
                 core.record_worktree(&workspace, &task_id, reserved, prepared?)?;
-                core.advance_task_dispatches()?;
+                core.advance_dispatches_for(&workspace, &task_id)?;
                 Ok(Outcome::Reply(result))
             },
         )))
@@ -234,21 +236,40 @@ impl Core {
     }
 
     pub(crate) fn advance_task_dispatches(&mut self) -> Result<()> {
+        self.advance_dispatch_rows(None)
+    }
+
+    /// Advances every dispatch like a tick and answers with the failure of the row of
+    /// `workspace` and `task_id`, if it has one: the caller asked for that row.
+    fn advance_dispatches_for(&mut self, workspace: &str, task_id: &str) -> Result<()> {
+        self.advance_dispatch_rows(Some((workspace, task_id)))
+    }
+
+    fn advance_dispatch_rows(&mut self, own: Option<(&str, &str)>) -> Result<()> {
         let Some(seen) = self.store.begin_poll("task_dispatches", self.now_ms()) else {
             return Ok(());
         };
         let pending = self.store.dispatch_checkpoints().map_err(errors::storage)?;
         let mut waiting = false;
+        let mut own_failure = None;
         for (workspace, task, checkpoint) in pending {
             if checkpoint.stage != "prompt_accepted" {
                 waiting = true;
-                self.advance_task_dispatch(&workspace, &task, checkpoint)?;
+                // A row that cannot advance is logged under its own key and the others go on.
+                let advanced = self.advance_task_dispatch(&workspace, &task, checkpoint);
+                self.background
+                    .report(&format!("task_dispatch_row:{workspace}:{task}"), &advanced);
+                if let Err(error) = advanced
+                    && own == Some((workspace.as_str(), task.as_str()))
+                {
+                    own_failure = Some(error);
+                }
             }
         }
         if !waiting {
             self.store.rest("task_dispatches", seen, i64::MAX);
         }
-        Ok(())
+        own_failure.map_or(Ok(()), Err)
     }
 
     fn advance_task_dispatch(
@@ -619,7 +640,13 @@ impl Core {
             .map_err(errors::storage)?;
         let comments = self
             .store
-            .task_comments(&current.workspace_id, &current.task_id, None, 200)
+            .task_comments(
+                &current.workspace_id,
+                &current.task_id,
+                None,
+                // One more than the prompt lists, to know that there are more.
+                worktree::PROMPT_COMMENTS as u32 + 1,
+            )
             .map_err(errors::storage)?;
         let request = worktree::DispatchRequest {
             repository: Path::new("/"),
@@ -749,3 +776,6 @@ fn claimed_events(task: &Task, movement: &TaskMove, pane: &str) -> Vec<(String, 
         events::updated(task),
     ]
 }
+
+#[cfg(test)]
+mod tests;
