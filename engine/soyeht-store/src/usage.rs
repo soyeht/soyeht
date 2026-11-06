@@ -18,7 +18,7 @@ impl Store {
             .connection
             .query_row(
                 "SELECT observed_at_unix_sec,payload FROM usage_readings WHERE provider=?1",
-                [provider_name(provider)],
+                [provider_name(provider)?],
                 |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?;
@@ -29,9 +29,9 @@ impl Store {
     }
 
     pub fn usage_readings(&self) -> Result<Vec<StoredUsageReading>> {
-        let mut statement = self.connection.prepare(
-            "SELECT provider,observed_at_unix_sec,payload FROM usage_readings ORDER BY CASE provider WHEN 'claude' THEN 0 WHEN 'codex' THEN 1 WHEN 'cursor' THEN 2 WHEN 'opencode' THEN 3 END",
-        )?;
+        let mut statement = self
+            .connection
+            .prepare("SELECT provider,observed_at_unix_sec,payload FROM usage_readings")?;
         let rows = statement.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -42,9 +42,10 @@ impl Store {
         let mut readings = Vec::new();
         for row in rows {
             let (provider, observed_at_unix_sec, payload) = row?;
-            let expected = provider_from_name(&provider).ok_or(Error::InvalidUsageReading)?;
+            let expected = provider_from_name(&provider)?;
             readings.push(decode_stored(&expected, observed_at_unix_sec, &payload)?);
         }
+        readings.sort_by_key(|stored| provider_rank(&stored.reading.provider));
         Ok(readings)
     }
 }
@@ -59,7 +60,7 @@ impl Change<'_> {
         self.transaction.execute(
             "INSERT INTO usage_readings(provider,observed_at_unix_sec,payload) VALUES (?1,?2,?3) ON CONFLICT(provider) DO UPDATE SET observed_at_unix_sec=excluded.observed_at_unix_sec,payload=excluded.payload",
             params![
-                provider_name(&reading.provider),
+                provider_name(&reading.provider)?,
                 observed_at_unix_sec,
                 serde_json::to_string(reading)?,
             ],
@@ -153,21 +154,25 @@ fn valid_window(window: &UsageWindow) -> bool {
         && window.label.len() <= 128
 }
 
-fn provider_name(provider: &UsageProvider) -> &'static str {
-    match provider {
-        UsageProvider::Claude => "claude",
-        UsageProvider::Codex => "codex",
-        UsageProvider::Cursor => "cursor",
-        UsageProvider::Opencode => "opencode",
+/// The name the wire gives the provider, which is also its key in the table.
+fn provider_name(provider: &UsageProvider) -> Result<String> {
+    match serde_json::to_value(provider)? {
+        serde_json::Value::String(name) => Ok(name),
+        _ => Err(Error::InvalidUsageReading),
     }
 }
 
-fn provider_from_name(name: &str) -> Option<UsageProvider> {
-    match name {
-        "claude" => Some(UsageProvider::Claude),
-        "codex" => Some(UsageProvider::Codex),
-        "cursor" => Some(UsageProvider::Cursor),
-        "opencode" => Some(UsageProvider::Opencode),
-        _ => None,
+fn provider_from_name(name: &str) -> Result<UsageProvider> {
+    serde_json::from_value(serde_json::Value::String(name.to_owned()))
+        .map_err(|_| Error::InvalidUsageReading)
+}
+
+/// The order the meters are listed in.
+fn provider_rank(provider: &UsageProvider) -> u8 {
+    match provider {
+        UsageProvider::Claude => 0,
+        UsageProvider::Codex => 1,
+        UsageProvider::Cursor => 2,
+        UsageProvider::Opencode => 3,
     }
 }

@@ -1,7 +1,7 @@
 use crate::{Error, Result, engine::EnginePort};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use soyeht_protocol::{Role, limits, method};
+use soyeht_protocol::{Role, limits, method, method_family};
 use uuid::Uuid;
 
 mod schemas;
@@ -355,7 +355,7 @@ impl<P: EnginePort> Service<P> {
         if params.keys().any(|name| !properties.contains_key(name)) {
             return Err(Error::InvalidArguments("unknown tool argument"));
         }
-        if tool.method.starts_with("task.") {
+        if method_family::TASK.contains(&tool.method) {
             params.insert("workspaceId".into(), json!(self.context.workspace_id));
         }
         if tool.name == "web_open" {
