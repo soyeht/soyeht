@@ -161,7 +161,7 @@ mod tests {
     /// The wiring: the TCP listeners draw on the remote places, the local endpoint on its own.
     mod wiring {
         use super::*;
-        use crate::{core::Core, server};
+        use crate::{core::Core, listeners};
         use std::{io::Read, time::Duration};
         use tokio::{net::TcpListener, sync::mpsc};
 
@@ -232,7 +232,7 @@ mod tests {
             let core = crate::push::share(Core::open(&directory).unwrap(), &directory);
             let admission = Admission::with_slots(1, 1);
             let (catalog_tx, _catalogs) = mpsc::channel(1);
-            let accept = server::Accept {
+            let accept = listeners::Accept {
                 profile: &soyeht_protocol::profile::DEV,
                 core,
                 admission: admission.clone(),
@@ -240,10 +240,10 @@ mod tests {
             };
             let tcp = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = tcp.local_addr().unwrap();
-            tokio::spawn(server::serve_tcp(tcp, accept.clone()));
+            tokio::spawn(listeners::serve_tcp(tcp, accept.clone()));
             let socket = directory.join(soyeht_protocol::profile::ENGINE_SOCKET);
             let local = soyeht_platform::local::asynchronous::Listener::bind(&socket).unwrap();
-            tokio::spawn(server::serve_local(local, accept));
+            tokio::spawn(listeners::serve_local(local, accept));
 
             // Nothing is held: both let a connection through.
             assert!(served_tcp(address).await);

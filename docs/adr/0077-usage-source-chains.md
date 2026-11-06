@@ -69,15 +69,16 @@ it follows the app order.
 
 **The hidden CLI session.**
 
-- It runs `claude` in a pseudo terminal in a scratch directory under the
-  temporary directory, with tools disabled and MCP servers off.
+- It runs `claude` in a pseudo terminal in a scratch directory inside the
+  engine's data directory (`usage-scratch`, owner-only, ADR 0111), with tools
+  disabled and MCP servers off.
 - It has a 24-second deadline.
 - Afterwards the process group is stopped, the scratch directory removed and
   the session transcript under `~/.claude/projects/` deleted.
-- The scratch path is fixed, so Claude Code records it at most once among
-  the projects in `~/.claude.json`. That entry is the one trace left, and it
-  is Claude Code's own file, which Soyeht does not edit. CodexBar leaves the
-  same entry for its probe directory.
+- The scratch path is fixed for a profile, so Claude Code records it at most
+  once per profile among the projects in `~/.claude.json`. That entry is the
+  one trace left, and it is Claude Code's own file, which Soyeht does not
+  edit. CodexBar leaves the same entry for its probe directory.
 
 **Browsers** are read on macOS only, as in CodexBar:
 

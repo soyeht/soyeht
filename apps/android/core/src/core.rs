@@ -3,9 +3,11 @@
 
 use crate::{
     CoreError,
+    composer::{self, ComposerControls, HarnessChoices},
     conversation::{self, Conversation},
     overview::{self, Overview},
     terminal::{self, KeyPress, TerminalFrame},
+    usage::{self, UsageGauge},
 };
 use soyeht_client::{
     Command, Engine, Error, Event, State,
@@ -65,6 +67,7 @@ pub struct Core {
     engine: Mutex<Option<Arc<Engine>>>,
     /// Ends the pairing that is waiting, if there is one.
     pairing: Mutex<Arc<Cancel>>,
+    /// Which provider's meter reads each harness; the contract's rule unless the app chose otherwise.
     /// Which connection the replica belongs to: the events of an earlier one are dropped, not applied.
     epoch: Arc<AtomicU64>,
 }
@@ -228,6 +231,52 @@ impl Core {
 
     pub fn conversation(&self, pane_id: String) -> Option<Conversation> {
         conversation::conversation(&lock(&self.replica).state, &pane_id)
+    }
+
+    /// Asks the engine for the usage of every provider. The answer reaches `usage_gauge` through the replica.
+    pub fn load_usage(&self) {
+        self.send(Command::LoadUsage);
+    }
+
+    /// The usage ring of an agent pane: the meter of the provider that reads its harness.
+    pub fn usage_gauge(&self, pane_id: String) -> Option<UsageGauge> {
+        usage::gauge(&lock(&self.replica).state, &pane_id)
+    }
+
+    /// The controls under the message field of an agent pane: the harness chip, and the model, effort
+    /// and permission menus the session offers.
+    pub fn composer(&self, pane_id: String) -> Option<ComposerControls> {
+        composer::composer(&lock(&self.replica).state, &pane_id)
+    }
+
+    /// The harnesses an agent pane can be switched to, laid out as the new-agent picker lays them out.
+    pub fn harness_choices(&self, pane_id: String) -> Option<HarnessChoices> {
+        composer::harness_choices(&lock(&self.replica).state, &pane_id)
+    }
+
+    /// Asks the engine for the harnesses it can start; `rescan` reads the machine's environment again
+    /// first. The answer reaches `harness_choices` through the replica.
+    pub fn load_harnesses(&self, rescan: bool) {
+        self.send(Command::LoadHarnesses { rescan });
+    }
+
+    /// Chooses a value of one of the session's menus (model, effort, permission mode).
+    pub fn choose_option(&self, pane_id: String, config_id: String, value: String) {
+        self.send(Command::SetConfig {
+            pane_id,
+            config_id,
+            value,
+        });
+    }
+
+    /// Restarts the pane on another harness and hands the conversation over, when it may be: a switch
+    /// that is not allowed now (disconnected, a change in flight, one running, a harness that cannot
+    /// start) is not sent.
+    pub fn switch_harness(&self, pane_id: String, harness: String) {
+        let command = composer::switch_command(&lock(&self.replica).state, &pane_id, &harness);
+        if let Some(command) = command {
+            self.send(command);
+        }
     }
 
     pub fn send_prompt(&self, pane_id: String, text: String) {

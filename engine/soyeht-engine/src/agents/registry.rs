@@ -11,7 +11,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-const BUILTIN_PREFIX: &str = "registry.";
+pub(super) const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
 const BUILTIN_AGENT_COUNT: usize = 41;
 const SOURCE_DIGEST: &str = "2e0ddd7be13f676b48158f266ba8d64a29da7c80e971b493664ed993dd99e295";
@@ -468,7 +468,7 @@ pub(crate) fn resolve_entry(mut entry: RegistryEntry) -> Option<HarnessLaunch> {
 // but its package remains unverified until the user explicitly starts it.
 pub(crate) fn locally_installed(entry: &RegistryEntry, previous_success: bool) -> bool {
     if matches!(entry.source, HarnessSource::Custom)
-        || !matches!(entry.launch.command.as_str(), "npx" | "uvx")
+        || super::package_runner::package_runner(&entry.launch.command).is_none()
     {
         return resolve_entry(entry.clone()).is_some();
     }

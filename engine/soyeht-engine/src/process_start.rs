@@ -45,6 +45,9 @@ pub(crate) struct Launch {
     config: Spawn,
     supervisor: Supervisor,
     turn: Turn,
+    /// The engine's folder for adapters, when the process starts in it: made where the request is
+    /// sent, off the lock.
+    adapter_directory: Option<std::path::PathBuf>,
 }
 
 impl Launch {
@@ -55,6 +58,9 @@ impl Launch {
 
     /// Waits for the sends ahead of it, then asks the supervisor.
     pub(crate) fn send(self) -> Result<Instance> {
+        if let Some(directory) = &self.adapter_directory {
+            crate::agents::adapter_directory::prepare(directory);
+        }
         // An adapter is given the person's own CLI (ADR 0137), which takes a command; that waits
         // for nobody's turn.
         let process = crate::agents::user_cli::prepare(self.config);
@@ -73,10 +79,13 @@ impl Core {
     pub(crate) fn launch(&mut self, config: Spawn, after: &[&str]) -> Result<Launch> {
         let supervisor = self.supervisor()?;
         let turn = self.turn(after);
+        let adapter_directory =
+            crate::agents::adapter_directory::to_prepare(&self.directory, &config.cwd);
         Ok(Launch {
             config,
             supervisor,
             turn,
+            adapter_directory,
         })
     }
 

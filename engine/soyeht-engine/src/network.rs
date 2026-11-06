@@ -483,6 +483,49 @@ mod tests {
         assert_eq!(events.lock().unwrap()[0]["error"], "AddrInUse");
     }
 
+    #[tokio::test]
+    async fn a_listener_that_ended_with_an_error_is_reaped_and_bound_again() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let local: IpAddr = "::1".parse().unwrap();
+        let script: Script = Arc::new(Mutex::new((0..3).map(|_| Ok(vec![local])).collect()));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = Arc::clone(&calls);
+        // The first listener's task ends with the error an accept loop gives up on (`accept_loop`);
+        // the second serves.
+        let serve: Serve = Box::new(move |listener: TcpListener| {
+            let first = counted.fetch_add(1, Ordering::SeqCst) == 0;
+            tokio::spawn(async move {
+                if first {
+                    drop(listener);
+                    return Err(io::Error::from(io::ErrorKind::NotConnected));
+                }
+                loop {
+                    drop(listener.accept().await?);
+                }
+            })
+        });
+        let (log, events) = recorder();
+        let mut tailnet = TailnetListeners::new(0, scripted(&script), serve, log);
+        assert_eq!(tailnet.refresh().await.unwrap().reachability, reachable());
+        while !tailnet.active.values().all(|(_, task)| task.is_finished()) {
+            tokio::task::yield_now().await;
+        }
+
+        // The next lookup reaps it, says why, and binds the address again.
+        let again = tailnet.refresh().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert_eq!(tailnet.active.len(), 1);
+        assert!(tailnet.active.values().all(|(_, task)| !task.is_finished()));
+        assert!(again.is_none_or(|update| update.reachability == reachable()));
+        let logged = events.lock().unwrap();
+        let stopped: Vec<_> = logged
+            .iter()
+            .filter(|event| event["event"] == "engine.tailnet_listener_stopped")
+            .collect();
+        assert_eq!(stopped.len(), 1, "{logged:?}");
+        assert_eq!(stopped[0]["error"], "NotConnected");
+    }
+
     #[test]
     fn fixed_listeners_report_loopback_only() {
         let loopback: SocketAddr = "127.0.0.1:1".parse().unwrap();

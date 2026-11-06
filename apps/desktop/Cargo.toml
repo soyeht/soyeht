@@ -50,6 +50,9 @@ libloading = "0.8"
 [patch.crates-io]
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
 calloop = { git = "https://github.com/zed-industries/calloop", rev = "eb6b4fd17b9af5ecc226546bdd04185391b3e265" }
+# The scrollback of the terminal screens holds its rows packed (ADR 0144). The fork is
+# upstream's 0.16.2 with that one change, on the branch `compact-scrollback`.
+vt100 = { git = "https://github.com/soyeht/vt100-rust", rev = "0a1abfbd4dc248fc907aa349e4a5bbea20473122" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

@@ -148,10 +148,3 @@ private enum Harness {
   #expect(controls.contextPercentage == "18%")
   #expect(Harness.controls(agent, usage: TokenUsage(totalTokens: "10")).contextFraction == nil)
 }
-
-@Test func harnessLogosFollowTheProviderInTheLaunchId() {
-  #expect(UsageProvider(harnessId: "registry.claude-acp") == .claude)
-  #expect(UsageProvider(harnessId: "registry.codex-acp") == .codex)
-  #expect(UsageProvider(harnessId: "registry.cursor") == .cursor)
-  #expect(UsageProvider(harnessId: "local.my-tool") == nil)
-}

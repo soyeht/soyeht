@@ -49,6 +49,13 @@ scroll indicator over the rings.
 
 An activity-only ring never shows a percentage: there is no plan limit to be a fraction of.
 
+**A pane's ring.** The header of an agent pane on the Android app (and the composer's harness mark on
+the Mac and the iPhone) names the provider whose meter reads the pane's harness. The rule is data:
+`usageHarnesses` of `x-clientPolicy` maps a provider to the text its harness id holds, ignoring case
+(`UsageProvider::for_harness`, `UsageProvider(harnessId:)`, the cases `harnessProviders` of
+`contracts/vectors/usage.json`). A harness no provider reads
+has no ring.
+
 A last-known ring never turns gray: it keeps the color band of its value so a
 glance still tells green from red, and the muting tells it is old.
 
@@ -82,8 +89,13 @@ source answers. The ring's detail names the source that answered.
   macOS, the cursor.com session cookie from the user's browsers; both sent
   to cursor.com's usage summary.
 - **OpenCode**: one meter for a program that talks to many providers. It follows the provider
-  OpenCode is set to: the `model` of OpenCode's configuration (`provider/model`), else the
-  provider of the model it used last. Each step reads the data of that provider only.
+  OpenCode is set to: the model of the Soyeht pane in use (the most recently active OpenCode pane,
+  by its model selector, `provider/model`), else the `model` of OpenCode's configuration, else the
+  provider of the model it used last. Each step reads the data of that provider only. The engine
+  copies the pane's model under its lock and wakes the background schedule when a pane's model
+  changes, so the ring follows `pane.config.set` within the 30 seconds a click is limited to.
+  When it follows another provider than its last read, a failed read is shown at once instead of
+  being hidden behind the previous provider's reading.
   1. Provider `opencode` or `opencode-go`: the **Go allowance**, from the Go inference API with
      the Console login OpenCode stores.
   2. Provider `zai-coding-plan` or `zhipuai-coding-plan`: the **GLM Coding Plan quota**, from
@@ -112,7 +124,7 @@ source answers. The ring's detail names the source that answered.
   secondary one ("Weekly"). The monthly meter has no slot on the wire and is not shown. The
   Console named by the login may only be a host of `opencode.ai`: the login goes to no other.
   HTTP 403 (no Go subscription) means nothing to show and leaves the activity; 401 is a rejected
-  login and also leaves the activity. A reply of any other shape is `invalid_response`, never a
+  login and is `login_needed` (the activity would hide that the person is to sign in again). A reply of any other shape is `invalid_response`, never a
   number, so a change on the provider's side shows as "usage reader returned invalid data".
 - **Z.ai** sorts the plan's token (`TOKENS_LIMIT`, `CREDIT_LIMIT`) limits by window length: the
   shortest is the primary window, the longest the secondary one, labelled "5-hour", "Weekly",
@@ -132,8 +144,8 @@ source answers. The ring's detail names the source that answered.
   in them. The Go allowance and the Z.ai quota are the account's, and say so. Only the
   `message` table is read; an OpenCode that keeps its history elsewhere answers `no_data`.
 - **States.** OpenCode is not on this machine (no program on `PATH`, no database, no `auth.json`):
-  `tool_not_found`, "OpenCode not found on this Mac". Set to a plan and not signed in:
-  `login_needed`. Plan expired: `plan_expired`. History with no assistant message in the window:
+  `tool_not_found`, "OpenCode not found on this Mac". Set to a plan and not signed in, or
+  signed in with a login Go rejects: `login_needed`. Plan expired: `plan_expired`. History with no assistant message in the window:
   an `ok` reading with 0 tokens.
 
 Rules every source keeps:
@@ -152,8 +164,8 @@ Rules every source keeps:
   retried by the background for 30 min. A provider that stays signed out is
   read after 10 min, 20 min, then every 30 min, until it signs in; a click
   always reads at once.
-- The hidden CLI session runs in a scratch directory under the temporary
-  directory with tools and MCP servers off, ends within 24 s, and leaves no
+- The hidden CLI session runs in a scratch directory inside the engine's
+  owner-only data directory with tools and MCP servers off, ends within 24 s, and leaves no
   scratch directory or session transcript behind. Claude Code records the
   fixed scratch path once among its projects in `~/.claude.json`; Soyeht does
   not edit that file.

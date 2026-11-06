@@ -2,14 +2,17 @@
 //! network, the keychain, a browser or a real provider process.
 #![allow(dead_code)]
 
+use soyeht_protocol::UsageProvider;
 use soyeht_usage::host::{
     CookieJar, CookieRead, FileRead, Host, HttpRequest, HttpResult, LocalUsageRead, Platform,
     RpcCall, RpcRequest, RpcRun, SecretRead, StoredCredential, TerminalDriver, TerminalRequest,
     TerminalRun, TerminalStep,
 };
+use soyeht_usage::{Planner, ReadHints, RefreshOutcome, Trigger};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
+    sync::Arc,
     sync::Mutex,
     time::Duration,
 };
@@ -321,4 +324,21 @@ impl Host for FakeHost {
         });
         outcome
     }
+}
+
+/// One refresh of `provider` over `host` by a planner of its own, with no hint from the engine.
+pub fn read_once(
+    host: &Arc<FakeHost>,
+    provider: UsageProvider,
+    trigger: Trigger,
+    now_sec: u64,
+    fetched_at: &str,
+) -> RefreshOutcome {
+    Planner::new(host.clone()).refresh(
+        &provider,
+        trigger,
+        now_sec,
+        fetched_at,
+        &ReadHints::default(),
+    )
 }

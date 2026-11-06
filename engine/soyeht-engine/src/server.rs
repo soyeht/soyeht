@@ -6,19 +6,17 @@ use crate::{
     dispatch::Outcome,
     errors::{self, Error},
     hooks::Hooks,
+    listeners::{Accept, serve_local, serve_tcp},
     model, network,
     offload::Offload,
     operation_log::{OperationTimer, connection_close_record, logged_method, operation_pane_id},
     outbox::{self, CloseReason, Outbox},
-    transport, ui_attestation,
+    transport,
 };
 use serde_json::Value;
 use soyeht_platform::{
     fs::{ENGINE_LOCK, LockError, lock_singleton},
-    local::{
-        BindError,
-        asynchronous::{Listener, Stream, same_user},
-    },
+    local::{BindError, asynchronous::Listener},
     log,
 };
 use soyeht_protocol::{
@@ -31,16 +29,12 @@ use soyeht_protocol::{
 use std::{
     collections::{BTreeSet, VecDeque},
     fs::{self, File},
-    io,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{
-    net::TcpListener,
-    sync::{OwnedSemaphorePermit, Semaphore, mpsc},
-};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
 
 /// Requests of one connection whose reply may overtake the ones behind it, in progress at once.
 /// A connection with this many waits for one to finish before it reads the next request.
@@ -72,12 +66,6 @@ fn coalesce_catalog_jobs(
 }
 
 const CATALOG_QUEUE_CAPACITY: usize = 128;
-
-fn local_peer_audit_token(stream: &Stream) -> Option<ui_attestation::PeerAuditToken> {
-    same_user(stream)
-        .then(|| ui_attestation::peer_audit_token(stream))
-        .flatten()
-}
 
 pub struct Config {
     pub directory: PathBuf,
@@ -172,66 +160,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     Ok(())
 }
 
-/// What every accepted connection shares.
-#[derive(Clone)]
-pub(crate) struct Accept {
-    pub(crate) profile: &'static Profile,
-    pub(crate) core: Shared,
-    pub(crate) admission: Admission,
-    pub(crate) catalog_tx: mpsc::Sender<CatalogJob>,
-}
-
-/// Accepts the connections of this user on the local endpoint, for as long as the engine runs.
-pub(crate) async fn serve_local(mut local: Listener, accept: Accept) -> crate::errors::Result<()> {
-    let Accept {
-        profile,
-        core,
-        admission,
-        catalog_tx,
-    } = accept;
-    loop {
-        let stream = local.accept().await?;
-        let Some(peer_audit_token) = local_peer_audit_token(&stream) else {
-            continue;
-        };
-        let Some(slot) = admission.local() else {
-            continue;
-        };
-        let core = Arc::clone(&core);
-        let catalog_tx = catalog_tx.clone();
-        tokio::spawn(async move {
-            let _slot = slot;
-            let signed_ui = tokio::task::spawn_blocking(move || {
-                ui_attestation::signed_ui_peer(peer_audit_token, profile)
-            })
-            .await
-            .unwrap_or(false);
-            let (reader, writer) = transport::local(stream);
-            connection(core, catalog_tx, true, signed_ui, reader, writer).await;
-        });
-    }
-}
-
-pub(crate) async fn serve_tcp(listener: TcpListener, accept: Accept) -> io::Result<()> {
-    loop {
-        let (stream, peer) = listener.accept().await?;
-        let Some(slot) = accept.admission.remote(peer.ip()) else {
-            continue;
-        };
-        let (core, catalog_tx) = (Arc::clone(&accept.core), accept.catalog_tx.clone());
-        tokio::spawn(async move {
-            let _slot = slot;
-            let websocket = transport::websocket(stream);
-            if let Ok(Ok((reader, writer))) =
-                tokio::time::timeout(Duration::from_secs(5), websocket).await
-            {
-                connection(core, catalog_tx, false, false, reader, writer).await;
-            }
-        });
-    }
-}
-
-async fn connection(
+pub(crate) async fn connection(
     core: Shared,
     catalog_tx: mpsc::Sender<CatalogJob>,
     local: bool,

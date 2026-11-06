@@ -4,7 +4,7 @@ mod support;
 
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
 use soyeht_usage::{
-    Planner, RefreshOutcome, Trigger, Window,
+    Planner, ReadHints, RefreshOutcome, Trigger, Window,
     host::{HttpResult, LocalUsage, LocalUsageRead, Platform, Secret, StoredCredential},
 };
 use std::{path::Path, sync::Arc};
@@ -60,7 +60,24 @@ fn activity(tokens: u64, cost_usd: f64) -> LocalUsageRead {
 }
 
 fn refresh(host: &Arc<FakeHost>) -> RefreshOutcome {
-    Planner::new(host.clone()).refresh(&UsageProvider::Opencode, Trigger::Automatic, NOW, "fetched")
+    refresh_with(host, &ReadHints::default())
+}
+
+fn refresh_with(host: &Arc<FakeHost>, hints: &ReadHints) -> RefreshOutcome {
+    Planner::new(host.clone()).refresh(
+        &UsageProvider::Opencode,
+        Trigger::Automatic,
+        NOW,
+        "fetched",
+        hints,
+    )
+}
+
+/// What the engine copies from a pane that uses `model` (`provider/model`).
+fn pane_uses(model: &str) -> ReadHints {
+    ReadHints {
+        opencode_model: Some(model.to_owned()),
+    }
 }
 
 /// The one request the host saw, as the test reads it.
@@ -194,19 +211,30 @@ fn the_retired_console_host_is_read_as_the_default_one() {
 
 #[test]
 fn an_account_without_go_has_nothing_to_show_and_the_device_activity_stays() {
-    for status in [403, 401] {
-        let mut host = with_console_login(machine("opencode/big-pickle"));
-        host.local_usage = activity(5_000, 0.0);
-        let host = Arc::new(host.respond(GO, status, b"{}"));
-        let reading = refresh(&host).reading;
-        assert_eq!(
-            reading.source,
-            UsageSource::OpencodeLocalHistory,
-            "{status}"
-        );
-        assert_eq!(reading.state, UsageState::Ok);
-        assert_eq!(reading.primary, None);
-    }
+    let mut host = with_console_login(machine("opencode/big-pickle"));
+    host.local_usage = activity(5_000, 0.0);
+    let host = Arc::new(host.respond(GO, 403, b"{}"));
+    let reading = refresh(&host).reading;
+    assert_eq!(reading.source, UsageSource::OpencodeLocalHistory);
+    assert_eq!(reading.state, UsageState::Ok);
+    assert_eq!(reading.primary, None);
+}
+
+#[test]
+fn a_rejected_go_login_asks_to_sign_in_again_and_the_activity_does_not_hide_it() {
+    let mut host = with_console_login(machine("opencode/big-pickle"));
+    host.local_usage = activity(5_000, 0.0);
+    let host = Arc::new(host.respond(GO, 401, b"{}"));
+    let outcome = refresh(&host);
+    let reading = outcome.reading;
+    assert_eq!(reading.source, UsageSource::OpencodeGoAllowance);
+    assert_eq!(reading.state, UsageState::LoginNeeded);
+    assert_eq!(
+        reading.unavailable_reason,
+        Some(UsageUnavailableReason::LoginNeeded)
+    );
+    assert_eq!((reading.primary, reading.activity), (None, None));
+    assert!(usage_reads(&host).is_empty());
 }
 
 #[test]
@@ -494,6 +522,59 @@ fn the_configuration_wins_over_the_model_used_last() {
     host.programs = vec!["opencode".into()];
     let host = Arc::new(host.respond(ZAI, 200, zai_quota()));
     assert_eq!(refresh(&host).reading.source, UsageSource::OpencodeZaiPlan);
+}
+
+/// OpenCode's configuration names an expired plan; the pane has been switched to Go.
+fn configured_for_zai_with_a_go_login() -> FakeHost {
+    let mut host = with_console_login(machine("zai-coding-plan/glm-5.3"))
+        .file(
+            ".local/share/opencode/auth.json",
+            include_bytes!("fixtures/opencode-auth.json"),
+        )
+        .respond(GO, 200, go_usage())
+        .respond(
+            ZAI,
+            200,
+            br#"{"code":500,"msg":"your coding plan has expired","success":false}"#,
+        );
+    host.local_usage = activity(5_000, 0.0);
+    host
+}
+
+#[test]
+fn the_provider_of_the_pane_wins_over_the_configuration() {
+    let host = Arc::new(configured_for_zai_with_a_go_login());
+    let reading = refresh_with(&host, &pane_uses("opencode-go/glm-5.3-flash")).reading;
+    assert_eq!(reading.source, UsageSource::OpencodeGoAllowance);
+    assert_eq!(reading.state, UsageState::Ok);
+    assert_eq!(shown(&reading.primary).0, "5-hour");
+    assert_eq!(host.http_urls(), vec![GO.to_owned()]);
+}
+
+#[test]
+fn with_no_pane_hint_the_configuration_decides() {
+    for hints in [ReadHints::default(), pane_uses("no-provider-in-this")] {
+        let host = Arc::new(configured_for_zai_with_a_go_login());
+        let reading = refresh_with(&host, &hints).reading;
+        assert_eq!(reading.source, UsageSource::OpencodeZaiPlan);
+        assert_eq!(
+            reading.unavailable_reason,
+            Some(UsageUnavailableReason::PlanExpired)
+        );
+        assert_eq!(host.http_urls(), vec![ZAI.to_owned()]);
+    }
+}
+
+#[test]
+fn the_activity_of_a_pane_without_a_plan_is_counted_for_the_panes_provider() {
+    let mut host = machine("zai-coding-plan/glm-5.3");
+    host.local_usage = activity(7, 0.0);
+    let host = Arc::new(host);
+    refresh_with(&host, &pane_uses("openai/gpt-5"));
+    assert!(matches!(
+        &usage_reads(&host)[0],
+        Call::OpencodeUsage { provider: Some(provider), .. } if provider == "openai"
+    ));
 }
 
 #[test]

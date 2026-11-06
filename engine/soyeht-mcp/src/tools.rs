@@ -169,7 +169,7 @@ const TOOLS: [Tool; 36] = [
         name: "web_open",
         method: method::WEB_OPEN,
         audience: Audience::Both,
-        description: "Open or focus a web pane in the bound workspace and return its paneId. An address that a web pane already shows returns that pane, which is how to get the paneId of a page the person has open; every other web tool needs a paneId.",
+        description: "Open or focus a web pane in the bound workspace and return its paneId. An address that a web pane already shows returns that pane, which is how to get the paneId of a page the person has open; every other web tool needs a paneId. A pane that is not incognito is opened the way web_navigate goes to an address: if the site has a signed-in session in Soyeht the person is asked first, and the call waits for the answer for about 70 seconds at most; a denied or failed open leaves no pane.",
         schema: web_open_schema,
     },
     Tool {

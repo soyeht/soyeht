@@ -12,7 +12,7 @@ use crate::{
 };
 use gpui::{AnyElement, Context, IntoElement};
 use soyeht_client::harness_picker::{self, Group, MORE_TITLE};
-use soyeht_protocol::HarnessInfo;
+use soyeht_protocol::{HarnessInfo, client_policy};
 use std::rc::Rc;
 
 /// What picking the harness `id` does.
@@ -91,7 +91,7 @@ fn empty_note(
     palette: &'static Palette,
 ) -> AnyElement {
     let text = if !state.harnesses_loaded() {
-        "Loading agents\u{2026}".to_owned()
+        client_policy::HARNESSES_LOADING.to_owned()
     } else if state
         .harnesses()
         .iter()

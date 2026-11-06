@@ -454,4 +454,22 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn a_harness_is_read_by_the_provider_the_vector_says() {
+        let cases = cases("usage", "harnessProviders");
+        assert!(cases.len() >= 6, "the vector file lost its cases");
+        for case in cases {
+            let harness = case["harness"].as_str().unwrap();
+            let expected = case["provider"].as_str();
+            let found = UsageProvider::for_harness(harness)
+                .map(|provider| serde_json::to_value(provider).unwrap());
+            assert_eq!(
+                found.as_ref().and_then(|value| value.as_str()),
+                expected,
+                "{}",
+                case["name"]
+            );
+        }
+    }
 }

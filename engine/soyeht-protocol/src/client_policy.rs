@@ -29,6 +29,10 @@ pub const PAGE_SIZE_TASKS: u32 = 100;
 pub const PAGE_SIZE_WRITING_SECTION: u32 = 100;
 pub const HARNESS_SWITCH_TITLE: &str = "Switch agent";
 pub const HARNESS_SWITCH_HANDOVER: &str = "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.";
+pub const HARNESSES_LOADING: &str = "Loading agents…";
+pub const HARNESSES_NONE: &str = "No other agents";
+pub const HARNESSES_RESCAN: &str = "Check agents again";
+pub const CANCEL: &str = "Cancel";
 pub const TASK_MOVE_REASON: &str = "Moved on the workspace board";
 pub const EDITOR_NO_FILE: &str = "The engine has no file for this editor tab.";
 pub const EDITOR_FILE_NOT_TEXT: &str = "Binary file, can't be shown.";
@@ -204,6 +208,21 @@ impl UsageProvider {
             Self::Cursor => "Cursor",
             Self::Opencode => "OpenCode",
         }
+    }
+
+    /// The provider whose meter reads a harness: the first rule of `usageHarnesses` whose text the
+    /// harness id holds, whatever the case.
+    pub fn for_harness(harness_id: &str) -> Option<Self> {
+        let id = harness_id.to_lowercase();
+        [
+            ("claude", Self::Claude),
+            ("codex", Self::Codex),
+            ("cursor", Self::Cursor),
+            ("opencode", Self::Opencode),
+        ]
+        .into_iter()
+        .find(|(fragment, _)| id.contains(fragment))
+        .map(|(_, provider)| provider)
     }
 }
 

@@ -35,17 +35,15 @@ impl Source for GoAllowanceSource {
         UsageSource::OpencodeGoAllowance
     }
 
-    /// A missing or rejected login, or an account with no Go subscription, leaves the device
-    /// activity to show; anything else is the answer.
+    /// No login, or an account with no Go subscription, leaves the device activity to show;
+    /// anything else is the answer, a rejected login (HTTP 401) included: the person is to sign
+    /// in again, and the activity would hide that.
     fn falls_back(&self, failure: &Failure) -> bool {
-        matches!(
-            failure,
-            Failure::NotConfigured | Failure::LoginNeeded | Failure::NoAccess
-        )
+        matches!(failure, Failure::NotConfigured | Failure::NoAccess)
     }
 
-    fn read(&self, host: &dyn Host, _context: ReadContext) -> Attempt {
-        if !super::follows(host, &["opencode", "opencode-go"]) {
+    fn read(&self, host: &dyn Host, context: ReadContext) -> Attempt {
+        if !super::follows(host, &context, &["opencode", "opencode-go"]) {
             return Err(Failure::NotConfigured);
         }
         let login = credential(host, INTEGRATION)?;

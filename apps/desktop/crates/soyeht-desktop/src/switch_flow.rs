@@ -5,7 +5,12 @@
 use crate::composer_field::{ComposerEvent, ComposerField, new_field};
 use crate::{open_menu::Menu, workbench::Workbench};
 use gpui::{Context, Entity};
-use soyeht_client::{Command, account::AccountAction, harness_picker, switch::can_switch};
+use soyeht_client::{
+    Command,
+    account::AccountAction,
+    harness_picker,
+    switch::{can_switch, startable},
+};
 use soyeht_protocol::HarnessInfo;
 
 /// What the open switch popover has chosen so far.
@@ -67,16 +72,14 @@ impl Workbench {
             return;
         };
         let pane_id = draft.pane_id.clone();
-        let chosen_can_start = draft.harness.as_deref().is_some_and(|id| {
-            self.state
-                .harnesses()
-                .iter()
-                .any(|harness| harness.id == id && harness.available)
-        });
+        let running = self.running_harness(&pane_id);
+        let chosen_can_start = draft
+            .harness
+            .as_deref()
+            .is_some_and(|id| startable(self.state.harnesses(), running.as_deref(), id));
         if chosen_can_start {
             return;
         }
-        let running = self.running_harness(&pane_id);
         let preferred = self.state.preferences().preferred_harness.clone();
         let first = harness_picker::default_harness(
             self.state.harnesses(),
@@ -92,11 +95,11 @@ impl Workbench {
     /// The person picked `harness` in the list: the model and effort start over, and the models
     /// of the harness are fetched when it can start.
     pub(crate) fn choose_switch_harness(&mut self, harness: &str, cx: &mut Context<Self>) {
-        let available = self
-            .state
-            .harnesses()
-            .iter()
-            .any(|known| known.id == harness && known.available);
+        let running = self
+            .switch
+            .as_ref()
+            .and_then(|draft| self.running_harness(&draft.pane_id));
+        let available = startable(self.state.harnesses(), running.as_deref(), harness);
         let Some(draft) = self.switch.as_mut() else {
             return;
         };
