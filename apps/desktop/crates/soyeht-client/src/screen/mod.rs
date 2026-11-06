@@ -3,6 +3,8 @@
 
 #[cfg(test)]
 mod contained;
+#[cfg(test)]
+mod contained_reads;
 mod lines;
 pub mod links;
 #[cfg(test)]
@@ -15,6 +17,7 @@ pub mod settle;
 use lines::Lines;
 use soyeht_platform::{crash, log};
 use soyeht_protocol::client_policy;
+use std::cell::Cell;
 
 /// Lines of history kept per terminal on the client.
 const SCROLLBACK_LINES: usize = client_policy::TERMINAL_SCROLLBACK_LINES;
@@ -95,7 +98,11 @@ pub struct TerminalScreen {
     cut: Option<reflow::Cut>,
     /// Whether the parser has already panicked on this screen, so that a program that repeats the
     /// bytes which did it is logged once and not on every write.
-    parser_failed: bool,
+    parser_failed: Cell<bool>,
+    /// Whether a read of the parser panicked and the screen has not been started again. A read
+    /// cannot start it again (it borrows the screen), so it shows nothing until the next write,
+    /// resize or scroll does.
+    damaged: Cell<bool>,
 }
 
 /// The label a contained parser panic logs under; the payload of a panic can carry output text.
@@ -125,11 +132,13 @@ impl TerminalScreen {
             selection: None,
             history: 0,
             cut: None,
-            parser_failed: false,
+            parser_failed: Cell::new(false),
+            damaged: Cell::new(false),
         }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
+        self.start_again_if_damaged();
         self.cut = None;
         // A line feed ends the selection, the rule of SwiftTerm (the Mac client's terminal): the
         // lines move, and what was chosen is no longer where it was drawn.
@@ -147,7 +156,7 @@ impl TerminalScreen {
             self.recover(rows, cols);
             return;
         }
-        self.history = Lines::new(&mut self.parser).history();
+        self.measure_history();
         self.keep_selection_if_intact(guard);
     }
 
@@ -163,12 +172,14 @@ impl TerminalScreen {
         self.history = 0;
         self.cut = None;
         self.scroll_remainder = 0.0;
+        self.damaged.set(false);
     }
 
     /// Fits the screen to a new size. The normal screen keeps its text and cuts the rows again
     /// at the new width (see `reflow`), also while a program is on the alternate screen, which
     /// draws itself again when it learns the size.
     pub fn resize(&mut self, rows: u16, cols: u16) {
+        self.start_again_if_damaged();
         let (rows, cols) = Self::fitted(rows, cols);
         if (rows, cols) == self.size() {
             return;
@@ -181,19 +192,63 @@ impl TerminalScreen {
         }
         // The cells the selection names are not the same ones any more.
         self.selection = None;
-        self.history = Lines::new(&mut self.parser).history();
+        self.measure_history();
+    }
+
+    /// The lines above the live screen, read from the parser.
+    fn measure_history(&mut self) {
+        self.history = self.contained(0, |screen| Lines::new(&mut screen.parser).history());
     }
 
     /// Starts the screen again, empty, at `rows` by `cols` after the parser panicked. The shell
     /// draws its prompt again on the next write, and the pane keeps working. The first panic of a
     /// screen is logged.
     fn recover(&mut self, rows: u16, cols: u16) {
-        if !self.parser_failed {
-            self.parser_failed = true;
-            log::failure("desktop.screen_parser_panicked", &ParserPanic);
-        }
+        self.log_parser_panic();
         let (rows, cols) = Self::fitted(rows, cols);
         self.restart(rows, cols);
+    }
+
+    fn log_parser_panic(&self) {
+        if !self.parser_failed.replace(true) {
+            log::failure("desktop.screen_parser_panicked", &ParserPanic);
+        }
+    }
+
+    fn start_again_if_damaged(&mut self) {
+        if self.damaged.get() {
+            let (rows, cols) = self.size();
+            self.recover(rows, cols);
+        }
+    }
+
+    /// Runs a read or a move of the view that borrows the screen, with a panic of the parser in
+    /// it costing this one screen its text, as a panic in `feed` does: the screen starts again
+    /// and `fallback` is what the caller gets.
+    fn contained<R>(&mut self, fallback: R, work: impl FnOnce(&mut Self) -> R) -> R {
+        self.start_again_if_damaged();
+        match crash::caught(|| work(self)) {
+            Ok(result) => result,
+            Err(_payload) => {
+                let (rows, cols) = self.size();
+                self.recover(rows, cols);
+                fallback
+            }
+        }
+    }
+
+    /// Runs a read of the parser that cannot start the screen again, which it only borrows. A
+    /// panic in it is logged once, and the screen shows nothing (`fallback`) until the next call
+    /// that can start it again.
+    fn read<R>(&self, fallback: R, work: impl FnOnce(&vt100::Parser) -> R) -> R {
+        if self.damaged.get() {
+            return fallback;
+        }
+        crash::caught(|| work(&self.parser)).unwrap_or_else(|_| {
+            self.damaged.set(true);
+            self.log_parser_panic();
+            fallback
+        })
     }
 
     /// Replaces the screen by the same one at the new size. The parser stays, so that output
@@ -228,10 +283,12 @@ impl TerminalScreen {
 
     /// Scrolls the view into history. Positive moves up toward older lines.
     pub fn scroll(&mut self, lines: i32) {
-        let screen = self.parser.screen_mut();
-        let current = i64::try_from(screen.scrollback()).unwrap_or(0);
-        let target = (current + i64::from(lines)).max(0);
-        screen.set_scrollback(usize::try_from(target).unwrap_or(0));
+        self.contained((), |screen| {
+            let screen = screen.parser.screen_mut();
+            let current = i64::try_from(screen.scrollback()).unwrap_or(0);
+            let target = (current + i64::from(lines)).max(0);
+            screen.set_scrollback(usize::try_from(target).unwrap_or(0));
+        });
     }
 
     /// Scrolls by a fractional number of lines, as a trackpad reports it. What does not make a
@@ -241,14 +298,14 @@ impl TerminalScreen {
         let total = self.scroll_remainder + lines;
         let whole = total.trunc();
         self.scroll_remainder = total - whole;
-        let before = self.parser.screen().scrollback();
+        let before = self.read(0, |parser| parser.screen().scrollback());
         self.scroll(whole as i32);
-        self.parser.screen().scrollback() != before
+        self.read(0, |parser| parser.screen().scrollback()) != before
     }
 
     pub fn scroll_to_bottom(&mut self) {
         self.scroll_remainder = 0.0;
-        self.parser.screen_mut().set_scrollback(0);
+        self.contained((), |screen| screen.parser.screen_mut().set_scrollback(0));
     }
 
     pub fn scrolled_back(&self) -> bool {
@@ -282,16 +339,18 @@ impl TerminalScreen {
     }
 
     pub fn contents(&self) -> String {
-        self.parser.screen().contents()
+        self.read(String::new(), |parser| parser.screen().contents())
     }
 
     /// The character in a cell, or a space when it is empty.
     pub fn text_at(&self, row: u16, column: u16) -> String {
-        self.parser
-            .screen()
-            .cell(row, column)
-            .filter(|cell| cell.has_contents())
-            .map_or_else(|| " ".to_owned(), |cell| cell.contents().to_owned())
+        self.read(" ".to_owned(), |parser| {
+            parser
+                .screen()
+                .cell(row, column)
+                .filter(|cell| cell.has_contents())
+                .map_or_else(|| " ".to_owned(), |cell| cell.contents().to_owned())
+        })
     }
 
     #[cfg(test)]
@@ -302,75 +361,79 @@ impl TerminalScreen {
     /// The runs of a row as far as `limit` columns: what a view narrower than the screen shows
     /// while the screen waits for the size to settle.
     pub fn row_runs_within(&self, row: u16, limit: u16) -> Vec<Run> {
-        let screen = self.parser.screen();
-        let (_, cols) = screen.size();
-        let cols = cols.min(limit);
-        let mut runs: Vec<Run> = Vec::new();
-        // A wide character is a run of its own, so a painter that places every character in a
-        // one-column slot cannot shift what follows it.
-        let mut after_wide = false;
-        for column in 0..cols {
-            let Some(cell) = screen.cell(row, column) else {
-                continue;
-            };
-            if cell.is_wide_continuation() {
-                continue;
-            }
-            let (mut fg, mut bg) = (
-                color(cell.fgcolor(), CellColor::DefaultFg),
-                color(cell.bgcolor(), CellColor::DefaultBg),
-            );
-            if cell.inverse() {
-                std::mem::swap(&mut fg, &mut bg);
-            }
-            let width = if cell.is_wide() { 2 } else { 1 };
-            if column + width > cols {
-                break;
-            }
-            let text = if cell.has_contents() {
-                cell.contents()
-            } else {
-                " "
-            };
-            let style = (
-                fg,
-                bg,
-                cell.bold(),
-                cell.italic(),
-                cell.underline(),
-                cell.dim(),
-            );
-            let joins_previous = width == 1 && !after_wide;
-            after_wide = width == 2;
-            if joins_previous
-                && let Some(last) = runs.last_mut()
-                && (
-                    last.fg,
-                    last.bg,
-                    last.bold,
-                    last.italic,
-                    last.underline,
-                    last.dim,
-                ) == style
-            {
-                last.text.push_str(text);
-                last.columns += width;
-                continue;
-            }
-            runs.push(Run {
-                column,
-                columns: width,
-                text: text.to_owned(),
-                fg,
-                bg,
-                bold: style.2,
-                italic: style.3,
-                underline: style.4,
-                dim: style.5,
-            });
-        }
-        runs
+        self.read(Vec::new(), |parser| runs_of(parser.screen(), row, limit))
     }
+}
+
+/// The runs of a row of `screen`, as [`TerminalScreen::row_runs_within`].
+fn runs_of(screen: &vt100::Screen, row: u16, limit: u16) -> Vec<Run> {
+    let (_, cols) = screen.size();
+    let cols = cols.min(limit);
+    let mut runs: Vec<Run> = Vec::new();
+    // A wide character is a run of its own, so a painter that places every character in a
+    // one-column slot cannot shift what follows it.
+    let mut after_wide = false;
+    for column in 0..cols {
+        let Some(cell) = screen.cell(row, column) else {
+            continue;
+        };
+        if cell.is_wide_continuation() {
+            continue;
+        }
+        let (mut fg, mut bg) = (
+            color(cell.fgcolor(), CellColor::DefaultFg),
+            color(cell.bgcolor(), CellColor::DefaultBg),
+        );
+        if cell.inverse() {
+            std::mem::swap(&mut fg, &mut bg);
+        }
+        let width = if cell.is_wide() { 2 } else { 1 };
+        if column + width > cols {
+            break;
+        }
+        let text = if cell.has_contents() {
+            cell.contents()
+        } else {
+            " "
+        };
+        let style = (
+            fg,
+            bg,
+            cell.bold(),
+            cell.italic(),
+            cell.underline(),
+            cell.dim(),
+        );
+        let joins_previous = width == 1 && !after_wide;
+        after_wide = width == 2;
+        if joins_previous
+            && let Some(last) = runs.last_mut()
+            && (
+                last.fg,
+                last.bg,
+                last.bold,
+                last.italic,
+                last.underline,
+                last.dim,
+            ) == style
+        {
+            last.text.push_str(text);
+            last.columns += width;
+            continue;
+        }
+        runs.push(Run {
+            column,
+            columns: width,
+            text: text.to_owned(),
+            fg,
+            bg,
+            bold: style.2,
+            italic: style.3,
+            underline: style.4,
+            dim: style.5,
+        });
+    }
+    runs
 }
 
 fn color(value: vt100::Color, default: CellColor) -> CellColor {

@@ -268,7 +268,13 @@ fn drive(
                     {
                         return TerminalRun::Incomplete;
                     }
-                    parser.process(bytes);
+                    // The bytes are a program's, and the parser is code of a dependency: a panic in
+                    // it ends this session, not the run, so that the child is stopped below and the
+                    // scratch directory is removed.
+                    if soyeht_platform::crash::caught(|| parser.process(bytes)).is_err() {
+                        log::event("engine.usage_terminal_parser_panicked", &[]);
+                        return TerminalRun::Incomplete;
+                    }
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}

@@ -57,7 +57,20 @@ Ways out that were looked at:
   upstream tests pass unchanged.
 - **Pinned by revision.** `apps/desktop/Cargo.toml` and `apps/android/Cargo.toml` point `vt100` at the fork
   with `[patch.crates-io]` and a full `rev`; their lockfiles carry it. Both manifests keep `vt100 = "0.16.2"`
-  as the requirement. The engine workspace stays on crates.io: its screens have no scrollback.
+  as the requirement. The engine workspace takes the fork too, with the same
+  `[patch.crates-io]` and `rev` (`engine/Cargo.toml`, `engine/Cargo.lock`), for the fix of the panics on pane
+  output alone: its screens have no scrollback.
+- **The engine parses pane bytes in two places, neither under a lock.** `terminal_projection.rs` (the experiment
+  recorder) runs on its own `terminal-observation-projector` thread, which holds no `Mutex` while the parser
+  works; a panic there ends that thread, the capture reports a stopped worker, and the thread's join logs
+  `engine.terminal_capture_panicked`. The usage probes (`usage/terminal.rs`) run on a worker thread of a refresh,
+  off the Core lock (ADR 0079), under a turn that is a lock on a directory, not a `Mutex`; a panic ends that
+  provider's read, which the commit releases and logs. The probe also catches it around the parser
+  (`soyeht_platform::crash::caught`) and goes on to stop the child and remove the scratch directory, which the
+  unwinding would have skipped. No lock is poisoned by a parser panic. The window's `TerminalScreen` catches a
+  panic of the parser on every call that reaches it: writing, resizing, moving the view, selecting and reading
+  rows (`screen/contained_reads.rs`). A read that only borrows the screen shows nothing until the next write,
+  resize or scroll starts the screen again.
 - **The 10,000 lines stay.** `scrollbackLines` is not touched.
 
 ## How we track upstream

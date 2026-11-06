@@ -15,7 +15,7 @@ fn undersized() -> TerminalScreen {
 fn a_parser_panic_on_output_starts_the_screen_again() {
     let mut screen = undersized();
     screen.feed(WIDE.as_bytes());
-    assert!(screen.parser_failed, "the premise: vt100 panics here");
+    assert!(screen.parser_failed.get(), "the premise: vt100 panics here");
     assert!(screen.contents().trim().is_empty());
     assert!(!screen.scrolled_back());
     // The pane keeps working: the screen takes the next bytes, at a size the parser holds.
@@ -114,6 +114,6 @@ fn random_output_and_resizes_never_panic_the_parser() {
             }
         }
         // Contained is not enough: a panic the screen caught is a bug the parser still has.
-        assert!(!screen.parser_failed, "{:?}", screen.size());
+        assert!(!screen.parser_failed.get(), "{:?}", screen.size());
     }
 }
