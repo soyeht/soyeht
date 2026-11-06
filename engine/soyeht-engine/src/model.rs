@@ -6,10 +6,10 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, AttentionItem, ConfigValue, Pane, PaneClosedDraft, PaneConfigFailedDraft,
-    PaneCreatedDraft, PanePermissionAnswerResult, PanePermissionAnsweredDraft, PaneQueuedDraft,
-    PaneTurnEndedDraft, PaneUpdatedDraft, TurnStopReason, Workspace,
-    attachment::AttachmentAssembler, event, frame::Frame,
+    Actor, AgentSession, AttentionItem, ConfigValue, Pane, PaneClosedDraft, PaneConfigFailedDraft,
+    PaneCreatedDraft, PaneExperimentCapture, PaneMode, PanePermissionAnswerResult,
+    PanePermissionAnsweredDraft, PaneQueuedDraft, PaneState, PaneTurnEndedDraft, PaneUpdatedDraft,
+    StateSource, TurnStopReason, Workspace, attachment::AttachmentAssembler, event, frame::Frame,
 };
 use std::collections::BTreeMap;
 
@@ -107,6 +107,84 @@ pub fn pending<P: soyeht_protocol::EventParams>(params: &P) -> Result<(String, V
 }
 
 /// `pane.created` for a pane that has no document yet.
+/// A pane the engine creates: idle and in the protocol's own words, with a fresh id, a first
+/// generation, no size, no recording, the experiment capture off and no optional field set. A
+/// site sets what differs with `..new_pane(..)` or the setters of `PaneSetup`.
+pub(crate) fn new_pane(
+    mode: PaneMode,
+    workspace_id: impl Into<String>,
+    name: impl Into<String>,
+    cwd: impl Into<String>,
+) -> Pane {
+    Pane {
+        pane_id: uuid::Uuid::new_v4().to_string(),
+        workspace_id: workspace_id.into(),
+        name: name.into(),
+        cwd: cwd.into(),
+        mode,
+        state: PaneState::Idle,
+        source: StateSource::Protocol,
+        confidence: 1.0,
+        phrase: "Ready".into(),
+        generation: 1,
+        cols: 0,
+        rows: 0,
+        record: false,
+        experiment_capture: Some(PaneExperimentCapture {
+            on: false,
+            failure: None,
+        }),
+        pid: None,
+        exit_code: None,
+        stream_id: None,
+        agent: None,
+        url: None,
+        title: None,
+        viewport: None,
+        incognito: None,
+        web_session: None,
+        writing_kind: None,
+        writing_section: None,
+    }
+}
+
+/// What several kinds of pane are set up with after `new_pane`.
+pub(crate) trait PaneSetup: Sized {
+    /// The pane id, when the caller already holds it.
+    fn with_id(self, pane_id: impl Into<String>) -> Self;
+    /// A pane whose process is starting, with the phrase it shows meanwhile.
+    fn starting(self, phrase: impl Into<String>) -> Self;
+    /// A recorded agent pane of `cols` by `rows` cells running `agent`.
+    fn recorded_agent(self, agent: AgentSession, cols: u32, rows: u32) -> Self;
+}
+
+impl PaneSetup for Pane {
+    fn with_id(self, pane_id: impl Into<String>) -> Self {
+        Self {
+            pane_id: pane_id.into(),
+            ..self
+        }
+    }
+
+    fn starting(self, phrase: impl Into<String>) -> Self {
+        Self {
+            state: PaneState::Starting,
+            phrase: phrase.into(),
+            ..self
+        }
+    }
+
+    fn recorded_agent(self, agent: AgentSession, cols: u32, rows: u32) -> Self {
+        Self {
+            record: true,
+            cols,
+            rows,
+            agent: Some(agent),
+            ..self
+        }
+    }
+}
+
 pub fn pane_created(pane: &Pane) -> Result<(String, Value)> {
     pending(&PaneCreatedDraft {
         pane: pane.clone(),
