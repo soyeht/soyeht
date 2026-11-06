@@ -98,6 +98,8 @@ public enum ProtocolLimits {
     public static let writingVariantBytes = 16384
     public static let writingSuggestionBytes = 65536
     public static let writingSidecarBytes = 1048576
+    public static let writingTitleBytes = 512
+    public static let writingPathBytes = 4096
     public static let writingImageBytes = 2097152
     public static let harnessContinuationBytes = 15999
     public static let harnessContinuationMessages = 6

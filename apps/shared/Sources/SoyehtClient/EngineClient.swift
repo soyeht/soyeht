@@ -826,7 +826,7 @@ public final class EngineClient {
     guard connected, selectedPaneId == pane,
       panes.contains(where: { $0.paneId == pane && $0.mode == .terminal }), !data.isEmpty
     else { return }
-    guard queuedInputBytes + data.count <= 1_048_576 else {
+    guard queuedInputBytes + data.count <= inputQueueBytes else {
       problem = "Input is too large. Wait for the keyboard queue to empty."
       return
     }
