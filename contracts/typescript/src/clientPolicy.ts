@@ -75,6 +75,10 @@ export const clientPolicy = {
   "texts": {
     "harnessSwitchTitle": "Switch agent",
     "harnessSwitchHandover": "This starts a new agent session. Recent messages and pending prompts are handed over as historical data.",
+    "harnessesLoading": "Loading agents\u2026",
+    "harnessesNone": "No other agents",
+    "harnessesRescan": "Check agents again",
+    "cancel": "Cancel",
     "taskMoveReason": "Moved on the workspace board",
     "editorNoFile": "The engine has no file for this editor tab.",
     "editorFileNotText": "Binary file, can't be shown.",
@@ -154,6 +158,12 @@ export const clientPolicy = {
     "codex": "Codex",
     "cursor": "Cursor",
     "opencode": "OpenCode"
+  },
+  "usageHarnesses": {
+    "claude": "claude",
+    "codex": "codex",
+    "cursor": "cursor",
+    "opencode": "opencode"
   },
   "configRoles": {
     "model": {

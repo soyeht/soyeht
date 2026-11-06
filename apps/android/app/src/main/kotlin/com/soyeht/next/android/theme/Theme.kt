@@ -20,6 +20,11 @@ class Roles(val palette: Palette) {
     val accent = Color(palette.accent)
     val onAccent = Color(palette.onAccent)
     val selection = Color(palette.selection)
+
+    // The bands of a gauge are the palette's own red, green and yellow (the ANSI slots 1, 2 and 3).
+    val danger = Color(palette.ansi[1])
+    val success = Color(palette.ansi[2])
+    val warning = Color(palette.ansi[3])
 }
 
 val LocalRoles = staticCompositionLocalOf { Roles(Palettes.milk) }

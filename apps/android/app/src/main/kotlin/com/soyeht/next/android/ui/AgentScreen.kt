@@ -23,7 +23,7 @@ import uniffi.soyeht_android.*
 fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {
     val roles = LocalRoles.current
     val conversation = model.conversation
-    TopBar(pane.name, pane.status, onBack = model::close)
+    TopBar(pane.name, pane.status, onBack = model::close) { model.usage?.let { UsageRingView(it) } }
     val list = rememberLazyListState()
     val count = conversation?.items?.size ?: 0
     val last = conversation?.items?.lastOrNull()
@@ -42,7 +42,8 @@ fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {
         }
     }
     conversation?.question?.let { Question(it) { option -> model.answer(it.requestId, option) } }
-    Composer(model, working = conversation?.working == true)
+    model.composer?.let { AgentControls(model, it) }
+    MessageField(model, working = conversation?.working == true)
 }
 
 @Composable
@@ -61,11 +62,17 @@ private fun Message(item: ConversationItem) {
                 fontSize = TypeScale.small.sp,
             )
         }
-        Text(
-            item.text + if (item.streaming) " …" else "",
-            color = if (item.kind == ItemKind.MESSAGE) roles.ink else roles.secondary,
-            fontSize = TypeScale.body.sp,
-        )
+        val ink = if (item.kind == ItemKind.MESSAGE) roles.ink else roles.secondary
+        if (item.speaker == Speaker.AGENT && (item.kind == ItemKind.MESSAGE || item.kind == ItemKind.THOUGHT)) {
+            // Only an agent's replies and thoughts are Markdown (ADR 0087); what a person typed stays as typed.
+            // The parse is kept until the message changes: a transcript that redraws does not parse what it has.
+            val blocks = remember(item.id, item.revision, item.streaming) { markdownBlocks(item.text, item.streaming) }
+            val copy = remember { codeCopy() }
+            MarkdownView(blocks, copy, ink)
+            if (item.streaming) Text("…", color = roles.muted, fontSize = TypeScale.body.sp)
+        } else {
+            Text(item.text + if (item.streaming) " …" else "", color = ink, fontSize = TypeScale.body.sp)
+        }
     }
 }
 
@@ -89,7 +96,7 @@ private fun Question(question: PermissionQuestion, answer: (String) -> Unit) {
 }
 
 @Composable
-private fun Composer(model: AppModel, working: Boolean) {
+private fun MessageField(model: AppModel, working: Boolean) {
     val roles = LocalRoles.current
     var text by rememberSaveable { mutableStateOf("") }
     Row(

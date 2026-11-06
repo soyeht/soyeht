@@ -1,5 +1,5 @@
 {
-  "description": "Usage thresholds and the configuration-selector roles, shared by the Mac and iOS clients (UsageBand, UsageEmphasis, ConfigOption.isModel/isEffort/isPermissionMode) and the desktop client (soyeht_client::usage, soyeht_protocol::ConfigOption). Both pass every case. A band is success, warning or danger; an emphasis is current, last_known or none. Which window a reading shows, its text and its stale hint are in usage-presentation.json.",
+  "description": "Usage thresholds and the configuration-selector roles, shared by the Mac and iOS clients (UsageBand, UsageEmphasis, ConfigOption.isModel/isEffort/isPermissionMode) and the desktop client (soyeht_client::usage, soyeht_protocol::ConfigOption). Both pass every case. A band is success, warning or danger; an emphasis is current, last_known or none. Which window a reading shows, its text and its stale hint are in usage-presentation.json. `harnessProviders` says which provider's meter reads a harness (UsageProvider(harnessId:), UsageProvider::for_harness).",
   "bands": [
     {
       "used": -0.2,
@@ -234,6 +234,43 @@
         "category": "appearance"
       },
       "roles": []
+    }
+  ],
+  "harnessProviders": [
+    {
+      "name": "a Claude adapter",
+      "harness": "registry.claude-acp",
+      "provider": "claude"
+    },
+    {
+      "name": "a Codex adapter",
+      "harness": "registry.codex-acp",
+      "provider": "codex"
+    },
+    {
+      "name": "Cursor",
+      "harness": "registry.cursor",
+      "provider": "cursor"
+    },
+    {
+      "name": "OpenCode",
+      "harness": "registry.opencode",
+      "provider": "opencode"
+    },
+    {
+      "name": "the case of the id does not matter",
+      "harness": "Local.CLAUDE-Code",
+      "provider": "claude"
+    },
+    {
+      "name": "a harness no meter reads",
+      "harness": "local.my-tool",
+      "provider": null
+    },
+    {
+      "name": "an empty id",
+      "harness": "",
+      "provider": null
     }
   ]
 }

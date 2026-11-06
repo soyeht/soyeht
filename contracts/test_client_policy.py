@@ -60,6 +60,26 @@ class ClientPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(changed, SCHEMA)
 
+    def test_a_harness_rule_names_a_usage_provider_and_is_lower_case_text(self):
+        for provider, fragment in (
+            ("nobody", "nobody"),
+            ("claude", "Claude"),
+            ("claude", ""),
+            ("claude", "   "),
+            ("claude", 7),
+        ):
+            changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            changed["usageHarnesses"][provider] = fragment
+            with self.subTest(provider=provider, fragment=fragment):
+                with self.assertRaises(ValueError):
+                    validate(changed, SCHEMA)
+
+    def test_the_harness_rules_are_part_of_the_section(self):
+        changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+        del changed["usageHarnesses"]
+        with self.assertRaises(ValueError):
+            validate(changed, SCHEMA)
+
     def test_a_page_size_stays_within_the_limit_of_its_request(self):
         for value in (0, 65, "most", 1.5):
             changed = copy.deepcopy(SCHEMA["x-clientPolicy"])

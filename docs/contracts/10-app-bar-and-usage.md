@@ -49,6 +49,13 @@ scroll indicator over the rings.
 
 An activity-only ring never shows a percentage: there is no plan limit to be a fraction of.
 
+**A pane's ring.** The header of an agent pane on the Android app (and the composer's harness mark on
+the Mac and the iPhone) names the provider whose meter reads the pane's harness. The rule is data:
+`usageHarnesses` of `x-clientPolicy` maps a provider to the text its harness id holds, ignoring case
+(`UsageProvider::for_harness`, `UsageProvider(harnessId:)`, the cases `harnessProviders` of
+`contracts/vectors/usage.json`). A harness no provider reads
+has no ring.
+
 A last-known ring never turns gray: it keeps the color band of its value so a
 glance still tells green from red, and the muting tells it is old.
 
@@ -152,8 +159,8 @@ Rules every source keeps:
   retried by the background for 30 min. A provider that stays signed out is
   read after 10 min, 20 min, then every 30 min, until it signs in; a click
   always reads at once.
-- The hidden CLI session runs in a scratch directory under the temporary
-  directory with tools and MCP servers off, ends within 24 s, and leaves no
+- The hidden CLI session runs in a scratch directory inside the engine's
+  owner-only data directory with tools and MCP servers off, ends within 24 s, and leaves no
   scratch directory or session transcript behind. Claude Code records the
   fixed scratch path once among its projects in `~/.claude.json`; Soyeht does
   not edit that file.

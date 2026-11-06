@@ -103,10 +103,49 @@ impl Core {
         let now = self.now_ms().max(0) as u64;
         let due = self.store.due_loop_configs(now).map_err(errors::storage)?;
         for (pane, config, _) in due {
-            if self.loop_can_dispatch(&pane, now)? {
-                self.dispatch_loop_prompt(&pane, config, now)?;
+            let advanced = self.advance_task_loop(&pane, &config, now);
+            let key = format!("task_loop:{pane}");
+            if advanced.is_err() {
+                // Held back by one interval, so the row neither spins the poll nor, by a fixed
+                // past tick, sorts ahead of the others on every later tick.
+                let held = self.hold_task_loop(&pane, now);
+                self.background
+                    .report(&format!("task_loop_hold:{pane}"), &held);
             }
+            self.background.report(&key, &advanced);
         }
+        Ok(())
+    }
+
+    fn advance_task_loop(&mut self, pane: &str, config: &LoopConfig, now: u64) -> Result<()> {
+        if self.loop_can_dispatch(pane, now)? {
+            self.dispatch_loop_prompt(pane, config.clone(), now)?;
+        }
+        Ok(())
+    }
+
+    /// Moves the next tick of the loop of `pane` one interval ahead and changes nothing else.
+    /// The configuration is read again: the failure may have come after a round was
+    /// committed, and that round, or the end of the loop, must stay.
+    fn hold_task_loop(&mut self, pane: &str, now: u64) -> Result<()> {
+        let Some((config, _)) = self.store.loop_config(pane).map_err(errors::storage)? else {
+            return Ok(());
+        };
+        if !config.enabled {
+            return Ok(());
+        }
+        let next_tick_ms = next_tick(now as i64, config.interval)?;
+        StorePort::mutate(
+            &mut self.store,
+            "engine",
+            &Uuid::new_v4().to_string(),
+            "task-loop-hold",
+            |change| {
+                change.save_loop_config(pane, &config, next_tick_ms)?;
+                Ok((json!({}), Vec::new()))
+            },
+        )
+        .map_err(errors::storage)?;
         Ok(())
     }
 
@@ -219,3 +258,6 @@ fn next_tick(now_ms: i64, interval_seconds: u32) -> Result<u64> {
         .checked_add(delay)
         .ok_or_else(|| errors::invalid("Loop deadline exceeds its range"))
 }
+
+#[cfg(test)]
+mod tests;

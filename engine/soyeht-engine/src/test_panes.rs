@@ -55,6 +55,39 @@ pub(crate) fn insert_terminal_pane(
     pane_id
 }
 
+/// Adds the idle agent pane `id`, ready for work and with no process, to `core` and to its
+/// store. Its workspace `workspace_id` must exist.
+pub(crate) fn insert_agent_pane(core: &mut Core, root: &Path, id: &str, workspace_id: &str) {
+    let state = ready_agent_state();
+    let pane = Pane {
+        record: true,
+        agent: Some(state.public(0)),
+        ..pane(id, workspace_id, PaneMode::Agent, &root.to_string_lossy())
+    };
+    let saved = StoredPane {
+        pane,
+        closed: false,
+        instance_key: format!("{id}-key"),
+        instance_id: None,
+        supervisor_id: None,
+        sequence_base: 0,
+    };
+    StorePort::mutate(&mut core.store, "test", id, "seed-agent-pane", |change| {
+        persist_new_pane(change, &saved, Some(&state))?;
+        Ok((json!({}), Vec::new()))
+    })
+    .unwrap();
+    let screen = Screen::open(&root.join("sessions").join(id), true).unwrap();
+    core.panes.insert(
+        id.into(),
+        RunningPane {
+            stored: saved,
+            screen,
+        },
+    );
+    core.agents.insert(id.into(), Running::new(state));
+}
+
 /// Every row the terminal capture of `pane_id` under `root` recorded, across its segments.
 pub(crate) fn replay_rows(root: &Path, pane_id: &str, build: EngineBuild) -> Vec<RecordedRow> {
     SegmentStore::open(

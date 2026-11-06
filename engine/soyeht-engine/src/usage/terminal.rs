@@ -68,8 +68,9 @@ fn failed(streak: &Mutex<Streak>, name: &str, error: &io::Error) {
 
 /// Takes turns on the scratch directory. A session removes and recreates it, which would pull it
 /// from under a child another session started in it: that session may be a refresh of another
-/// engine on the machine (the installed app, another profile), so the turn is a lock on a
-/// directory beside the scratch directory, not a lock in this process. The turn is waited for
+/// engine process on the same data directory, so the turn is a lock on a directory beside the
+/// scratch directory, not a lock in this process. The scratch directory is the profile's own
+/// (`usage-scratch` in its data directory), so the turn is per profile. The turn is waited for
 /// within the session's own time. A path that names no directory, or a lock that cannot be made,
 /// leaves the session unrun.
 fn take_turn(request: &TerminalRequest) -> Option<File> {
@@ -131,8 +132,7 @@ pub(super) fn run(
 }
 
 /// Makes the scratch directory, owner-only, with the session's files. Called under the turn, so a
-/// directory already there is what an earlier session left (or what someone else put at a
-/// predictable path of a shared temporary directory); it is removed, and the new one is made
+/// directory already there is what an earlier session left; it is removed, and the new one is made
 /// exclusively: a directory or link created in between is refused, not used. A failure removes
 /// what was made and nothing else: the directory is not ours until it is created here.
 fn prepare(request: &TerminalRequest) -> io::Result<()> {
