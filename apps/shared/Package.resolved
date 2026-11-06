@@ -33,8 +33,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/soyeht/SwiftTerm",
       "state" : {
-        "revision" : "b44b42edede10f17a702d19b1e532a4ef2e3a777",
-        "version" : "1.20.0-soyeht.1"
+        "revision" : "8af3448e299d3ef07cff261810ec3715f9935ab2",
+        "version" : "1.20.0-soyeht.2"
       }
     }
   ],

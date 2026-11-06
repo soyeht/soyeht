@@ -1,4 +1,4 @@
-# ADR 0142: The Mac and iOS terminals keep the policy scrollback, in a SwiftTerm fork that stores it compactly
+# ADR 0145: The Mac and iOS terminals keep the policy scrollback, in a SwiftTerm fork that stores it compactly
 
 - Status: accepted. Extends ADR 0012 (the native client uses SwiftTerm's `TerminalView`).
 - Date: 2026-11-06
@@ -36,7 +36,7 @@ desktop client. Keeping 10,000 as SwiftTerm stores them costs too much memory.
   (wide and combining characters, true colour, hyperlinks, prompts, wrapped lines, the cap, resizes, selections,
   searches, history size changes) and compare every cell; the whole upstream suite passes as before.
 - **The dependency is pinned to a tag of the fork**: `apps/shared/Package.swift` has
-  `exact: "1.20.0-soyeht.1"` of `https://github.com/soyeht/SwiftTerm`, and the four `Package.resolved` files
+  `exact: "1.20.0-soyeht.2"` of `https://github.com/soyeht/SwiftTerm`, and the four `Package.resolved` files
   hold the revision of the tag. The Mac and iOS license step reads `checkouts/SwiftTerm/LICENSE`, which the fork
   keeps.
 - **How the fork follows upstream.** Its `compact-scrollback` branch is an upstream release plus the change
@@ -45,6 +45,13 @@ desktop client. Keeping 10,000 as SwiftTerm stores them costs too much memory.
   its tag, run `swift test`, tag `v<upstream>-soyeht.<n>`, and change the pin here with a pull request. A test
   in the fork fails when upstream adds a field to `CharData` or `Attribute` that the packing does not store.
   Upstream is not asked to take the change; if it does, the pin returns to upstream.
+- **One fix of upstream is in the fork.** The fork's fuzz test (random output with margins, scrolling
+  regions and resizes, packing on and off) found that Insert Line and Delete Line with left and right
+  margins moved the rows from the cursor row for as many rows as the scrolling region has, so they read and
+  wrote past the bottom margin and, after a resize, in lines of the old width left in the buffer's array:
+  an out of range copy that a release build does not check, reachable from the bytes a process writes. They
+  now move the rows from the cursor to the bottom margin, and the copy cuts its range to the line.
+  `1.20.0-soyeht.1` does not have it; the pin is `.2`.
 
 ## Consequences
 
