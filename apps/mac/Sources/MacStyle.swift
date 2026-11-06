@@ -51,6 +51,7 @@ extension LocalizedStringKey.StringInterpolation {
   }
 
   enum Space {
+    static let x1: CGFloat = DesignTokens.Space.x1
     static let x2: CGFloat = DesignTokens.Space.x2
     static let x3: CGFloat = DesignTokens.Space.x3
     static let x4: CGFloat = DesignTokens.Space.x4
@@ -63,6 +64,7 @@ extension LocalizedStringKey.StringInterpolation {
     static let x14: CGFloat = DesignTokens.Space.x14
     static let x16: CGFloat = DesignTokens.Space.x16
     static let x18: CGFloat = DesignTokens.Space.x18
+    static let x22: CGFloat = DesignTokens.Space.x22
   }
 
   enum TypeScale {
@@ -70,6 +72,7 @@ extension LocalizedStringKey.StringInterpolation {
     static let small: CGFloat = DesignTokens.TypeScale.small
     static let control: CGFloat = DesignTokens.TypeScale.control
     static let caption: CGFloat = DesignTokens.TypeScale.caption
+    static let label: CGFloat = DesignTokens.TypeScale.label
     static let body: CGFloat = DesignTokens.TypeScale.body
     static let subheading: CGFloat = DesignTokens.TypeScale.subheading
     static let heading: CGFloat = DesignTokens.TypeScale.heading
