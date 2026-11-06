@@ -6,7 +6,7 @@ use super::chips::{
     task_title,
 };
 use crate::{
-    theme::{Palette, desktop, layout, pane_interior, space, type_scale},
+    theme::{Palette, layout, pane_interior, space, type_scale},
     views::prelude::*,
 };
 use gpui::{AppContext, Render, Window};
