@@ -5,10 +5,13 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::collections::VecDeque;
 
-/// What a buffer keeps allocated for the next output once the engine has taken the rest in. A
-/// burst that filled the buffer (up to the limit) would otherwise leave that much memory held for
-/// as long as the process lives.
+/// What a buffer keeps allocated for the next output once the engine has taken the rest in is
+/// twice this (`SHRINK_ABOVE`). A burst that filled the buffer (up to the limit) would otherwise
+/// leave that much memory held for as long as the process lives.
 const KEPT_CAPACITY: usize = 64 * 1024;
+/// The buffer is shrunk, to this, only when it has grown past it, so a burst a little over what
+/// is kept does not grow it and shrink it again on every acknowledgement.
+const SHRINK_ABOVE: usize = 2 * KEPT_CAPACITY;
 
 /// All positions are exclusive byte offsets in one process generation.
 pub struct Retention {
@@ -59,8 +62,8 @@ impl Retention {
         let drop = seq.saturating_sub(self.first).min(self.bytes.len() as u64) as usize;
         self.bytes.drain(..drop);
         self.first += drop as u64;
-        if self.bytes.capacity() > KEPT_CAPACITY && self.bytes.len() * 4 <= self.bytes.capacity() {
-            self.bytes.shrink_to(self.bytes.len().max(KEPT_CAPACITY));
+        if self.bytes.capacity() > SHRINK_ABOVE && self.bytes.len() * 4 <= self.bytes.capacity() {
+            self.bytes.shrink_to(self.bytes.len().max(SHRINK_ABOVE));
         }
         Ok(())
     }
@@ -131,7 +134,7 @@ mod tests {
 
         buffer.acknowledge((1 << 20) - 100).unwrap();
 
-        assert!(buffer.bytes.capacity() <= KEPT_CAPACITY);
+        assert!(buffer.bytes.capacity() <= SHRINK_ABOVE);
         let output = buffer.read((1 << 20) - 100, 1 << 20, false).unwrap();
         assert_eq!(STANDARD.decode(output.bytes).unwrap(), vec![b'x'; 100]);
         // What is still unacknowledged is kept, and so is the room for more.
@@ -140,6 +143,23 @@ mod tests {
             buffer.read(1 << 20, 1 << 20, false).unwrap().next_seq,
             (1 << 20) + (1 << 19)
         );
+    }
+
+    #[test]
+    fn a_burst_a_little_over_what_is_kept_does_not_shrink_the_buffer_again() {
+        let mut buffer = Retention::new(1 << 20).unwrap();
+        let burst = vec![b'x'; KEPT_CAPACITY + KEPT_CAPACITY / 2];
+        let mut kept = None;
+        for round in 1..=4 {
+            buffer.append(&burst).unwrap();
+            // The room the last round left is the room this one used: nothing grew again.
+            if let Some(capacity) = kept {
+                assert_eq!(buffer.bytes.capacity(), capacity, "round {round}");
+            }
+            buffer.acknowledge((round * burst.len()) as u64).unwrap();
+            kept = Some(buffer.bytes.capacity());
+        }
+        assert!(buffer.bytes.capacity() <= SHRINK_ABOVE);
     }
 
     #[test]
