@@ -244,7 +244,7 @@ fn validate_create_intent(intent: WritingCreateIntent) -> Result<WritingCreateIn
         || !bounded_id(&intent.file_id)
         || !bounded_id(&intent.pane_id)
         || intent.relative_path.is_empty()
-        || intent.relative_path.len() > 4096
+        || intent.relative_path.len() > limits::WRITING_PATH_BYTES
         || intent.created_ms < 0
         || !matching
     {
@@ -358,7 +358,7 @@ fn validate_beats(cards: &[BeatCard]) -> Result<()> {
             || card.beat_id.is_empty()
             || card.beat_id.len() > 128
             || card.title.is_empty()
-            || card.title.len() > 512
+            || card.title.len() > limits::WRITING_TITLE_BYTES
             || card.body.len() > limits::WRITING_VARIANT_BYTES
             || card.order as usize != index
             || card
@@ -381,7 +381,7 @@ fn validate_annotations(items: &[WritingSceneAnnotation]) -> Result<()> {
             || item
                 .reference_image
                 .as_ref()
-                .is_some_and(|value| value.len() > 4096)
+                .is_some_and(|value| value.len() > limits::WRITING_PATH_BYTES)
             || item
                 .caption
                 .as_ref()

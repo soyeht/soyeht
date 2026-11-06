@@ -14,6 +14,7 @@ export const clientPolicy = {
   },
   "terminal": {
     "inputChunkBytes": 16384,
+    "inputQueueBytes": 1048576,
     "scrollbackLines": 10000
   },
   "caps": {
