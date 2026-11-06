@@ -105,6 +105,10 @@ pub struct TerminalScreen {
     /// cannot start it again (it borrows the screen), so it shows nothing until the next write,
     /// resize or scroll does.
     damaged: Cell<bool>,
+    /// A test makes the parser's work panic in the call of `contained` that comes after this many
+    /// more.
+    #[cfg(test)]
+    fault_after: Cell<Option<usize>>,
 }
 
 /// The label a contained parser panic logs under; the payload of a panic can carry output text.
@@ -136,6 +140,8 @@ impl TerminalScreen {
             cut: None,
             parser_failed: Cell::new(false),
             damaged: Cell::new(false),
+            #[cfg(test)]
+            fault_after: Cell::new(None),
         }
     }
 
@@ -234,13 +240,29 @@ impl TerminalScreen {
     /// and `fallback` is what the caller gets.
     fn contained<R>(&mut self, fallback: R, work: impl FnOnce(&mut Self) -> R) -> R {
         self.start_again_if_damaged();
-        match crash::caught(|| work(self)) {
+        match crash::caught(|| {
+            #[cfg(test)]
+            self.fault_if_asked();
+            work(self)
+        }) {
             Ok(result) => result,
             Err(_payload) => {
                 let (rows, cols) = self.size();
                 self.recover(rows, cols);
                 fallback
             }
+        }
+    }
+
+    #[cfg(test)]
+    fn fault_if_asked(&self) {
+        match self.fault_after.get() {
+            Some(0) => {
+                self.fault_after.set(None);
+                panic!("a parser with a bug");
+            }
+            Some(calls) => self.fault_after.set(Some(calls - 1)),
+            None => {}
         }
     }
 

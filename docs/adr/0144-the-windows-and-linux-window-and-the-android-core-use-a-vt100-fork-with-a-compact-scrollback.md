@@ -86,9 +86,9 @@ Ways out that were looked at:
   works; a panic there ends that thread, the capture reports a stopped worker, and the thread's join logs
   `engine.terminal_capture_panicked`. The usage probes (`usage/terminal.rs`) run on a worker thread of a refresh,
   off the Core lock (ADR 0079), under a turn that is a lock on a directory, not a `Mutex`; a panic ends that
-  provider's read, which the commit releases and logs. The probe also catches it around the parser
-  (`soyeht_platform::crash::caught`) and goes on to stop the child and remove the scratch directory, which the
-  unwinding would have skipped. No lock is poisoned by a parser panic. The window's `TerminalScreen` catches a
+  provider's read, which the commit releases and logs. The probe also catches a panic of the parser
+  or of the source's driver around its whole read loop (`soyeht_platform::crash::caught`) and goes on to stop
+  the child and remove the scratch directory, which the unwinding would have skipped (`Child` has no `Drop`). No lock is poisoned by a parser panic. The window's `TerminalScreen` catches a
   panic of the parser on every call that reaches it: writing, resizing, moving the view, selecting and reading
   rows (`screen/contained_reads.rs`). A read that only borrows the screen shows nothing until the next write,
   resize or scroll starts the screen again.
