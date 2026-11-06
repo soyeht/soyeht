@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     EditorContentSource, FileOpenParams, FileOpenResult, FileReadParams, FileReadResult,
     FileSaveParams, FileSaveResult, Pane, PaneMode, PaneState, StateSource, method,
+    shared_text::SharedText,
 };
 use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use std::path::Path;
@@ -249,7 +250,7 @@ impl Core {
         &self,
         file: &EditorFile,
         request: &FileReadParams,
-    ) -> Result<(EditorContentSource, String)> {
+    ) -> Result<(EditorContentSource, SharedText)> {
         let source = request
             .source
             .clone()
@@ -311,12 +312,12 @@ impl Core {
 
 pub(crate) fn reconcile_reopened_file(
     mut file: EditorFile,
-    disk: String,
+    disk: SharedText,
     now_ms: i64,
     created_at: String,
 ) -> Result<(EditorFile, Option<StoredFileVersion>)> {
     let known = file.conflict_text.as_ref().unwrap_or(&file.disk_text);
-    if file.draft_text.as_deref() == Some(&disk) {
+    if file.draft_text.as_deref() == Some(&*disk) {
         let author = file
             .draft_author
             .take()
@@ -383,8 +384,8 @@ pub(crate) fn initial_open_result(
     line: Option<u32>,
     column: Option<u32>,
 ) -> Result<(FileOpenResult, soyeht_editor::SyntaxDocument)> {
-    let text = file.draft_text.as_deref().unwrap_or(&file.disk_text);
-    let syntax = soyeht_editor::SyntaxDocument::new(text, file.language.clone())?;
+    let text = file.draft_text.as_ref().unwrap_or(&file.disk_text);
+    let syntax = soyeht_editor::SyntaxDocument::new(text.clone(), file.language.clone())?;
     let last = syntax.buffer().line_count().saturating_sub(1);
     let from = (line.unwrap_or(0) as usize).min(last);
     syntax.buffer().byte_at(&soyeht_protocol::TextPosition {

@@ -12,7 +12,9 @@ use crate::{errors, errors::Result, streak::Streak};
 use soyeht_editor::{
     AppliedStep, EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer,
 };
-use soyeht_protocol::{EditorLanguage, EditorLine, FileAuthor, TextEdit, TextPosition};
+use soyeht_protocol::{
+    EditorLanguage, EditorLine, FileAuthor, TextEdit, TextPosition, shared_text::SharedText,
+};
 use soyeht_store::editor::EditorFile;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -26,6 +28,12 @@ pub trait FileSystemPort: Send + Sync {
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf>;
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>>;
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String>;
+    /// Whether the file holds exactly `expected`. A port that can compare without reading the
+    /// whole file into memory says so by overriding this.
+    fn text_matches(&self, path: &Path, expected: &str) -> io::Result<bool> {
+        let limit = soyeht_protocol::limits::EDITOR_HISTORY_BYTES;
+        Ok(self.read_text(path, limit)? == expected)
+    }
     fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>>;
     fn write_text_if_unchanged(
         &self,
@@ -60,12 +68,7 @@ impl FileSystemPort for SystemFiles {
 
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String> {
         let metadata = fs::metadata(path)?;
-        if !metadata.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "file is not a regular file",
-            ));
-        }
+        super::text_compare::require_regular_file(&metadata)?;
         if metadata.len() > limit as u64 {
             return Err(TextRefusal::TooLarge.into());
         }
@@ -74,6 +77,10 @@ impl FileSystemPort for SystemFiles {
             return Err(TextRefusal::TooLarge.into());
         }
         String::from_utf8(bytes).map_err(|_| TextRefusal::NotText.into())
+    }
+
+    fn text_matches(&self, path: &Path, expected: &str) -> io::Result<bool> {
+        super::text_compare::file_holds(path, expected)
     }
 
     fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
@@ -109,7 +116,9 @@ impl FileSystemPort for SystemFiles {
     ) -> io::Result<bool> {
         // One writer per file between the comparison and the rename (see `write_lock`).
         super::write_lock::exclusive(path, || {
-            if self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)? != expected {
+            if !self.text_matches(path, expected)? {
+                // A file that is no longer text, or too large, says so, as a read does.
+                self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)?;
                 return Ok(false);
             }
             let permissions = fs::metadata(path)?.permissions();
@@ -306,7 +315,7 @@ impl Service {
         contained_path(&root, target).map(Some)
     }
 
-    pub fn read_disk(&self, path: &Path) -> Result<String> {
+    pub fn read_disk(&self, path: &Path) -> Result<SharedText> {
         read_disk_from(&*self.files, path)
     }
 
@@ -372,7 +381,7 @@ impl Service {
         disk_text(&*self.files, file)
     }
 
-    pub fn current_disk(&self, workspace_root: &Path, file: &EditorFile) -> Result<String> {
+    pub fn current_disk(&self, workspace_root: &Path, file: &EditorFile) -> Result<SharedText> {
         let path = self.resolve(workspace_root, &file.relative_path)?;
         self.read_disk(&path.canonical)
     }
@@ -527,9 +536,9 @@ impl Service {
         let text = item
             .file
             .draft_text
-            .as_deref()
+            .as_ref()
             .unwrap_or(&item.file.disk_text);
-        Ok((item, TextBuffer::new(text)))
+        Ok((item, TextBuffer::new(text.clone())))
     }
 
     pub fn commit_edit(&mut self, prepared: PreparedEdit) {
@@ -569,7 +578,7 @@ impl Service {
                         .flatten()
                 })
                 // ignored: text no grammar can parse has no syntax tree, and the editor works without
-                .or_else(|| SyntaxDocument::new(&prepared.file.draft_text.clone()?, language).ok());
+                .or_else(|| SyntaxDocument::new(prepared.file.draft_text.clone()?, language).ok());
             item.syntax = syntax;
             item.save_due_ms = Some(prepared.file.updated_ms.saturating_add(autosave_ms()));
         }
@@ -605,7 +614,7 @@ impl Service {
     pub fn viewport(
         &mut self,
         file_id: &str,
-        text: &str,
+        text: &SharedText,
         language: EditorLanguage,
         from_line: usize,
         line_count: usize,
@@ -627,7 +636,7 @@ impl Service {
         let text = item
             .file
             .draft_text
-            .as_deref()
+            .as_ref()
             .unwrap_or(&item.file.disk_text);
         let document = current_document(&mut item.syntax, text, item.file.language.clone())?;
         soyeht_editor::project(document, from_line, line_count).map_err(Into::into)
@@ -664,9 +673,10 @@ pub(super) fn resolve_in(
 }
 
 /// The text of the file at `path`, with the refusals of a file the editor cannot show.
-pub(super) fn read_disk_from(files: &dyn FileSystemPort, path: &Path) -> Result<String> {
+pub(super) fn read_disk_from(files: &dyn FileSystemPort, path: &Path) -> Result<SharedText> {
     files
         .read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)
+        .map(SharedText::from)
         .map_err(|error| {
             match error
                 .get_ref()
@@ -698,14 +708,14 @@ fn creation_error(error: io::Error) -> errors::Error {
 /// The syntax document of `text`: the one held when it holds exactly this text, else a new one.
 fn current_document<'a>(
     syntax: &'a mut Option<SyntaxDocument>,
-    text: &str,
+    text: &SharedText,
     language: EditorLanguage,
 ) -> Result<&'a SyntaxDocument> {
     if syntax
         .as_ref()
         .is_none_or(|document| !document.buffer().matches(text))
     {
-        *syntax = Some(SyntaxDocument::new(text, language)?);
+        *syntax = Some(SyntaxDocument::new(text.clone(), language)?);
     }
     syntax
         .as_ref()
@@ -750,7 +760,7 @@ fn prepared_text(
         .revision
         .checked_add(1)
         .ok_or_else(|| errors::internal("File revision exhausted"))?;
-    file.draft_text = Some(next_text);
+    file.draft_text = Some(next_text.into());
     file.draft_author = Some(author);
     file.updated_ms = now_ms;
     Ok(PreparedEdit {

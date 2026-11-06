@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, FileAuthor, FileHistoryParams, FileHistoryResult, FileRevertParams, FileRevertResult,
     FileWatchParams, FileWatchResult, FileWriteParams, FileWriteResult, Role, event, method,
+    shared_text::SharedText,
 };
 use soyeht_store::editor::{EditorFile, StoredFileVersion, document};
 use uuid::Uuid;
@@ -138,10 +139,10 @@ impl Core {
     pub(super) fn apply_disk_change(
         &mut self,
         file: EditorFile,
-        disk: String,
+        disk: SharedText,
         now: i64,
     ) -> Result<()> {
-        if file.draft_text.as_deref() == Some(&disk) {
+        if file.draft_text.as_deref() == Some(&*disk) {
             return self.finish_editor_save(file, now);
         }
         if file.draft_text.is_some() {
@@ -181,7 +182,12 @@ impl Core {
         self.persist_editor_system("save", file, Some(version), result, events, true)
     }
 
-    fn reload_editor_file(&mut self, mut file: EditorFile, disk: String, now: i64) -> Result<()> {
+    fn reload_editor_file(
+        &mut self,
+        mut file: EditorFile,
+        disk: SharedText,
+        now: i64,
+    ) -> Result<()> {
         let changed = changed_lines(&file.disk_text, &disk);
         file.revision = next_revision(file.revision)?;
         file.disk_revision = next_revision(file.disk_revision)?;
@@ -207,7 +213,7 @@ impl Core {
     fn record_editor_conflict(
         &mut self,
         mut file: EditorFile,
-        disk: String,
+        disk: SharedText,
         now: i64,
     ) -> Result<()> {
         let base = file.disk_revision;
@@ -297,7 +303,7 @@ pub(super) fn next_revision(current: u64) -> Result<u64> {
 
 pub(crate) fn stored_version(
     file: &EditorFile,
-    content: String,
+    content: SharedText,
     author: FileAuthor,
     created_at: String,
 ) -> StoredFileVersion {

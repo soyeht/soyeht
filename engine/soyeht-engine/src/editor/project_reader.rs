@@ -2,6 +2,7 @@
 
 use super::{project_files::ProjectFile, service::FileSystemPort};
 use crate::{errors, errors::Result};
+use soyeht_protocol::shared_text::SharedText;
 use std::{collections::BTreeMap, io, path::Path, sync::Arc};
 
 /// The disk port plus a copy of one workspace's open buffers, taken under
@@ -9,7 +10,7 @@ use std::{collections::BTreeMap, io, path::Path, sync::Arc};
 pub struct ProjectReader {
     pub(super) files: Arc<dyn FileSystemPort>,
     /// Buffer text by workspace-relative path.
-    pub(super) open: BTreeMap<String, String>,
+    pub(super) open: BTreeMap<String, SharedText>,
 }
 
 impl ProjectReader {
@@ -22,7 +23,7 @@ impl ProjectReader {
     /// that is gone, binary, or over the editor's size limit.
     pub fn text(&self, file: &ProjectFile) -> Result<Option<String>> {
         match self.open.get(&file.relative) {
-            Some(text) => Ok(Some(text.clone())),
+            Some(text) => Ok(Some(text.to_string())),
             None => disk_text(&*self.files, file),
         }
     }

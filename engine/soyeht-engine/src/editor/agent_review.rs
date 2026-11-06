@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, DiffHunk, EditorReviewCommentParams, EditorReviewCommentResult, EditorReviewParams,
     EditorReviewResult, FileAuthor, PaneState, Role, TextPosition, TextRange, event, method,
+    shared_text::SharedText,
 };
 use soyeht_store::{
     database::Change,
@@ -37,7 +38,7 @@ impl AgentWriteChange {
 }
 
 pub(crate) struct PreparedAgentWrite {
-    pub(crate) current_disk: String,
+    pub(crate) current_disk: SharedText,
     pub(crate) change: AgentWriteChange,
     pub(crate) events: Vec<(String, Value)>,
 }
@@ -104,7 +105,8 @@ impl Core {
         let baseline = review_baseline(previous.as_ref(), &file, pane_id)?;
         file.revision = next_revision(file.revision)?;
         file.disk_revision = next_revision(file.disk_revision)?;
-        file.disk_text = content.into();
+        let written = SharedText::from(content);
+        file.disk_text = written.clone();
         file.draft_text = None;
         file.draft_author = None;
         file.conflict_text = None;
@@ -118,7 +120,7 @@ impl Core {
             baseline_text: baseline,
             updated_ms: self.now_ms(),
         });
-        let version = stored_version(&file, content.into(), author.clone(), self.timestamp());
+        let version = stored_version(&file, written, author.clone(), self.timestamp());
         let events = agent_write_events(&file, pane_id, &author, diff.hunks)?;
         Ok(Some(PreparedAgentWrite {
             current_disk: actual,
@@ -271,7 +273,7 @@ impl Core {
         if file.draft_text.is_some() || file.conflict_text.is_some() {
             return Err(errors::stale_version("Agent review file is not clean"));
         }
-        validate_comment_range(&file.disk_text, &request.range)?;
+        validate_comment_range(file.disk_text.clone(), &request.range)?;
         let location = line_location(&file.relative_path, &request.range.start)?;
         let text = format!("Change request at {location}\n\n{body}");
         if text.len() > soyeht_protocol::limits::PROMPT_BYTES {
@@ -321,7 +323,7 @@ impl Core {
                 .vcs
                 .reject_hunk(&current, &review.baseline_text, hunk_id)?;
             file.revision = next_revision(file.revision)?;
-            file.draft_text = Some(next);
+            file.draft_text = Some(next.into());
             file.draft_author = Some(self.file_author(connection)?);
             file.updated_ms = self.now_ms();
             review.revision = file.revision;
@@ -383,7 +385,7 @@ fn review_baseline(
     pane_id: &str,
 ) -> Result<String> {
     let Some(review) = review else {
-        return Ok(file.disk_text.clone());
+        return Ok(file.disk_text.to_string());
     };
     if review.pane_id != pane_id || review.revision != file.revision {
         return Err(errors::stale_version(
@@ -457,7 +459,7 @@ fn parse_revision(value: &str) -> Result<u64> {
         .map_err(|_| errors::invalid("Invalid editor review revision"))
 }
 
-fn validate_comment_range(text: &str, range: &TextRange) -> Result<()> {
+fn validate_comment_range(text: SharedText, range: &TextRange) -> Result<()> {
     let buffer = soyeht_editor::TextBuffer::new(text);
     let start = buffer.byte_at(&range.start)?;
     let end = buffer.byte_at(&range.end)?;

@@ -12,7 +12,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{
-    FileAuthor, FileSearchMatch, FileSearchParams, FileSearchResult, FileSearchScope, event, method,
+    FileAuthor, FileSearchMatch, FileSearchParams, FileSearchResult, FileSearchScope, event,
+    method, shared_text::SharedText,
 };
 use soyeht_store::editor::{
     EditorFile, ProjectReplacement, ProjectReplacementItem, StoredFileVersion, document,
@@ -235,8 +236,8 @@ impl Core {
             .map_err(|_| errors::internal("Replacement file count exceeds the protocol"))?;
         let replaced = u32::try_from(found.replaced)
             .map_err(|_| errors::internal("Replacement count exceeds the protocol"))?;
-        let file =
-            stored.unwrap_or_else(|| detached_file(request, project, disk.clone(), self.now_ms()));
+        let file = stored
+            .unwrap_or_else(|| detached_file(request, project, disk.clone().into(), self.now_ms()));
         outputs
             .2
             .extend(found.matches.into_iter().map(|found| FileSearchMatch {
@@ -300,6 +301,7 @@ impl Core {
         }
         file.revision = next_revision(file.revision)?;
         file.disk_revision = next_revision(file.disk_revision)?;
+        let after = SharedText::from(after);
         file.disk_text = after.clone();
         file.updated_ms = self.now_ms();
         let version = stored_version(&file, after, journal.author.clone(), self.timestamp());
@@ -454,7 +456,7 @@ fn search_project_content(
 fn detached_file(
     request: &FileSearchParams,
     project: &super::ProjectFile,
-    disk: String,
+    disk: SharedText,
     now_ms: i64,
 ) -> EditorFile {
     EditorFile {

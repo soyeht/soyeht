@@ -1,5 +1,5 @@
 use crate::{Error, Result};
-use soyeht_protocol::{TextEdit, TextPosition, TextRange};
+use soyeht_protocol::{TextEdit, TextPosition, TextRange, shared_text::SharedText};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Source {
@@ -29,7 +29,7 @@ pub struct AppliedEdit {
 
 #[derive(Debug, Clone)]
 pub struct TextBuffer {
-    original: String,
+    original: SharedText,
     added: String,
     pieces: Vec<Piece>,
     line_starts: Vec<usize>,
@@ -37,7 +37,7 @@ pub struct TextBuffer {
 }
 
 impl TextBuffer {
-    pub fn new(text: impl Into<String>) -> Self {
+    pub fn new(text: impl Into<SharedText>) -> Self {
         let original = text.into();
         let pieces = (!original.is_empty())
             .then_some(Piece {
@@ -292,7 +292,7 @@ impl TextBuffer {
 
     fn piece_text(&self, piece: Piece) -> &str {
         let source = match piece.source {
-            Source::Original => &self.original,
+            Source::Original => self.original.as_str(),
             Source::Added => &self.added,
         };
         &source[piece.start..piece.start + piece.len]
@@ -345,4 +345,17 @@ fn merge_adjacent(pieces: Vec<Piece>) -> Vec<Piece> {
         }
     }
     merged
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_buffer_made_from_a_shared_text_reads_the_text_it_was_given() {
+        let shared = SharedText::from("one\ntwo\n".to_owned());
+        let buffer = TextBuffer::new(shared.clone());
+        assert_eq!(buffer.chunk_at(0).as_ptr(), shared.as_ptr());
+        assert_eq!(buffer.line(1).unwrap(), "two");
+    }
 }

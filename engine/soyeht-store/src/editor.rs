@@ -4,6 +4,7 @@ use crate::database::{Change, Error, Result, Store};
 use rusqlite::{OptionalExtension, params};
 use soyeht_protocol::{
     EditorLanguage, FileAuthor, FileDocument, FileSearchMatch, FileVersion, Role,
+    shared_text::SharedText,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -15,10 +16,10 @@ pub struct EditorFile {
     pub language: EditorLanguage,
     pub revision: u64,
     pub disk_revision: u64,
-    pub disk_text: String,
-    pub draft_text: Option<String>,
+    pub disk_text: SharedText,
+    pub draft_text: Option<SharedText>,
     pub draft_author: Option<FileAuthor>,
-    pub conflict_text: Option<String>,
+    pub conflict_text: Option<SharedText>,
     pub watching: bool,
     pub updated_ms: i64,
 }
@@ -26,7 +27,7 @@ pub struct EditorFile {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StoredFileVersion {
     pub version: FileVersion,
-    pub content: String,
+    pub content: SharedText,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -117,18 +118,6 @@ impl Store {
             .query_row(
                 "SELECT file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms FROM editor_files WHERE file_id=?1",
                 [file_id],
-                decode_file,
-            )
-            .optional()?;
-        raw.map(validate_file).transpose()
-    }
-
-    pub fn editor_file_for_pane(&self, pane_id: &str) -> Result<Option<EditorFile>> {
-        let raw = self
-            .connection
-            .query_row(
-                "SELECT file_id,pane_id,workspace_id,relative_path,language,revision,disk_revision,disk_text,draft_text,draft_author,conflict_text,watching,updated_ms FROM editor_files WHERE pane_id=?1",
-                [pane_id],
                 decode_file,
             )
             .optional()?;
@@ -329,10 +318,10 @@ impl Change<'_> {
                 language_name(&file.language),
                 to_i64(file.revision)?,
                 to_i64(file.disk_revision)?,
-                file.disk_text,
-                file.draft_text,
+                file.disk_text.as_str(),
+                file.draft_text.as_deref(),
                 file.draft_author.as_ref().map(serde_json::to_string).transpose()?,
-                file.conflict_text,
+                file.conflict_text.as_deref(),
                 file.watching,
                 file.updated_ms,
             ],
@@ -350,7 +339,7 @@ impl Change<'_> {
                 decimal_to_i64(&version.version.revision)?,
                 version.version.created_at,
                 serde_json::to_string(&version.version.author)?,
-                version.content,
+                version.content.as_str(),
                 to_i64(version.content.len() as u64)?,
             ],
         )?;
@@ -539,13 +528,13 @@ fn validate_file(raw: RawEditorFile) -> Result<EditorFile> {
         language: language_from_name(&raw.language).ok_or(Error::InvalidEditorFile)?,
         revision: u64::try_from(raw.revision).map_err(|_| Error::InvalidEditorFile)?,
         disk_revision: u64::try_from(raw.disk_revision).map_err(|_| Error::InvalidEditorFile)?,
-        disk_text: raw.disk_text,
-        draft_text: raw.draft_text,
+        disk_text: raw.disk_text.into(),
+        draft_text: raw.draft_text.map(Into::into),
         draft_author: raw
             .draft_author
             .map(|value| serde_json::from_str(&value))
             .transpose()?,
-        conflict_text: raw.conflict_text,
+        conflict_text: raw.conflict_text.map(Into::into),
         watching: raw.watching,
         updated_ms: raw.updated_ms,
     };
@@ -780,7 +769,7 @@ fn decode_version(
             author: serde_json::from_str(&author).map_err(json_error)?,
             byte_count: row.get::<_, i64>(4)?.to_string(),
         },
-        content: row.get(3)?,
+        content: SharedText::from(row.get::<_, String>(3)?),
     })
 }
 

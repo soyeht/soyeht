@@ -148,22 +148,21 @@ impl Core {
         Ok(mutation.result)
     }
 
-    /// Saves a pending draft before its editor pane closes, so closing a tab
+    /// Starts the save of a pending draft before its editor pane closes, so closing a tab
     /// keeps the autosave promise. A conflicted draft stays in the database
     /// and comes back when the file is opened again.
     pub(crate) fn settle_editor_pane_before_close(&mut self, pane_id: &str) {
-        let Ok(Some(file)) = self.store.editor_file_for_pane(pane_id) else {
+        // The open file is found in memory: reading its row would load its whole text.
+        let Some(file_id) = self
+            .editor
+            .open
+            .values()
+            .find(|item| item.file.pane_id.as_deref() == Some(pane_id))
+            .map(|item| item.file.file_id.clone())
+        else {
             return;
         };
-        // A file whose job is running is left to it: once the tab is closed, the job's result
-        // finishes the file and saves the text typed after the job began (see `disk_effects`).
-        if let Err(error) = self.save_editor_now(&file.file_id) {
-            soyeht_platform::log::failure_with(
-                "editor.close_save_failed",
-                &[("fileId", &file.file_id)],
-                &error,
-            );
-        }
+        self.save_editor_before_close(&file_id);
     }
 
     fn replaceable_preview(
