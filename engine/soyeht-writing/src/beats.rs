@@ -88,7 +88,7 @@ impl BeatBoard {
 fn validate_card(card: &BeatCard, scenes: &HashSet<&str>) -> Result<()> {
     if card.beat_id.is_empty()
         || card.title.is_empty()
-        || card.title.len() > 512
+        || card.title.len() > limits::WRITING_TITLE_BYTES
         || card.body.len() > limits::WRITING_VARIANT_BYTES
     {
         return Err(Error::InvalidBeat);

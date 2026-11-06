@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use soyeht_platform::log::{Failure as _, Line};
 use soyeht_protocol::{
     Actor, AttachmentRef, ClientCapability, HelloParams, Role, Welcome,
-    attachment::AttachmentAssembler, event, frame::Frame, limits, method,
+    attachment::AttachmentAssembler, event, frame::Frame, limits, method, method_family,
 };
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -343,8 +343,8 @@ impl Core {
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
         requires_signed_ui(method, client.signed_ui)?;
         if matches!(actor.role, Role::Agent | Role::Chief)
-            && !method.starts_with("task.")
-            && !method.starts_with("web.")
+            && !method_family::TASK.contains(&method)
+            && !method_family::WEB.contains(&method)
             && !matches!(method, method::AGENT_LIST | method::AGENT_MESSAGE)
             && !matches!(
                 method,
@@ -434,7 +434,7 @@ impl Core {
             method::PANE_AUTH_START | method::PANE_AUTH_CANCEL | method::PANE_AUTH_LOGOUT => {
                 return self.agent_auth(connection, method, params);
             }
-            method if method.starts_with("harness.custom.") => {
+            method if method_family::HARNESS_CUSTOM.contains(&method) => {
                 self.agent_custom_harness(connection, method, params)?
             }
             method if crate::agents::methods::handles(method) => {
@@ -576,7 +576,7 @@ impl Core {
                 .and_then(|welcome| self.welcome(connection, &request["id"], welcome))
                 .inspect_err(|error| log_refused_handshake(connection, &params, error));
         }
-        if method.starts_with("pair.") {
+        if method_family::PAIR.contains(&method) {
             return self
                 .pair_request(connection, method, &params)
                 .map(Outcome::Reply);
