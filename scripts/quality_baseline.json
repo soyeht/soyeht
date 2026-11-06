@@ -34,7 +34,7 @@
     },
     "python": {
       "clones": 15,
-      "duplicated_lines": 133
+      "duplicated_lines": 130
     },
     "shared": {
       "clones": 63,
