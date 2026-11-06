@@ -8,8 +8,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneCreateParams, PaneMode, PaneState, Role, StateSource, WebCloseParams, WebOpenResult,
-    WebSessionState, WebViewportPreset, limits, method,
+    Pane, PaneCreateParams, PaneMode, Role, WebCloseParams, WebOpenResult, WebSessionState,
+    WebViewportPreset, limits, method,
 };
 use soyeht_web::{DEFAULT_ZOOM_PERCENT, NormalizedUrl, viewport};
 use uuid::Uuid;
@@ -174,28 +174,7 @@ fn web_pane(
     incognito: bool,
 ) -> Result<Pane> {
     Ok(Pane {
-        pane_id: Uuid::new_v4().to_string(),
-        workspace_id: workspace.workspace_id.clone(),
-        name: name.unwrap_or("Web").into(),
-        cwd: workspace.path.clone(),
-        mode: PaneMode::Web,
-        state: PaneState::Idle,
-        source: StateSource::Protocol,
-        confidence: 1.0,
-        phrase: "Ready".into(),
-        generation: 1,
-        cols: 0,
-        rows: 0,
-        record: false,
-        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
-            on: false,
-            failure: None,
-        }),
-        pid: None,
-        stream_id: None,
-        agent: None,
         url: url.map(|value| value.as_str().to_owned()),
-        title: None,
         viewport: Some(viewport(
             WebViewportPreset::Responsive,
             Some(DEFAULT_VIEWPORT_WIDTH),
@@ -204,14 +183,17 @@ fn web_pane(
             DEFAULT_ZOOM_PERCENT,
         )?),
         incognito: Some(incognito),
-        writing_kind: None,
-        writing_section: None,
-        exit_code: None,
         web_session: Some(if incognito {
             WebSessionState::Incognito
         } else {
             WebSessionState::Anonymous
         }),
+        ..model::new_pane(
+            PaneMode::Web,
+            workspace.workspace_id.clone(),
+            name.unwrap_or("Web"),
+            workspace.path.clone(),
+        )
     })
 }
 

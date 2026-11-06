@@ -1,16 +1,16 @@
 use crate::{
     core::Core,
     errors::{self, Result},
-    model::{RunningPane, StoredPane},
+    model::{self, PaneSetup as _, RunningPane, StoredPane},
     panes::persist_new_pane,
     screen::Screen,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Pane, PaneMode, PaneState, StateSource, WritingDocument, WritingDocumentCreateParams,
-    WritingDocumentCreateResult, WritingDocumentOpenParams, WritingDocumentOpenResult, WritingFont,
-    WritingKind, WritingPreferencesParams, WritingPreferencesResult, WritingSection, event, method,
+    Pane, PaneMode, WritingDocument, WritingDocumentCreateParams, WritingDocumentCreateResult,
+    WritingDocumentOpenParams, WritingDocumentOpenResult, WritingFont, WritingKind,
+    WritingPreferencesParams, WritingPreferencesResult, WritingSection, event, method,
     shared_text::SharedText,
 };
 use soyeht_store::{
@@ -664,34 +664,16 @@ fn writing_pane_with_id(
         .and_then(|value| value.to_str())
         .unwrap_or(relative);
     Pane {
-        pane_id,
-        workspace_id: workspace.workspace_id.clone(),
-        name: name.into(),
-        cwd: workspace.path.clone(),
-        mode: PaneMode::Writing,
-        state: PaneState::Idle,
-        source: StateSource::Protocol,
-        confidence: 1.0,
         phrase: format!("Writing {name}"),
-        generation: 1,
-        cols: 0,
-        rows: 0,
-        record: false,
-        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
-            on: false,
-            failure: None,
-        }),
-        pid: None,
-        stream_id: None,
-        agent: None,
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
         writing_kind: Some(kind),
         writing_section: Some(section),
-        exit_code: None,
-        web_session: None,
+        ..model::new_pane(
+            PaneMode::Writing,
+            workspace.workspace_id.clone(),
+            name,
+            workspace.path.clone(),
+        )
+        .with_id(pane_id)
     }
 }
 
