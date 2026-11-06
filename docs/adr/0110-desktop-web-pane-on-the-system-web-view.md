@@ -190,6 +190,12 @@ adds what the system web view needs.
   attachment frames before the answer, as the engine requires.
 - `navigate`, `scroll` and `wait` (text, selector and a quiet page; the host cannot count
   requests without a script in the page, which it will not add).
+- A command can arrive before the window has made the page of its pane: the engine sends an
+  agent's `web.open` as a `navigate` in the same hold of its lock as the pane's creation, and
+  the window makes the page when it applies that event. The host waits for the page of a pane
+  for up to 5 s, polling every 25 ms, on the thread of its own that each command already has,
+  and refuses with `internal_error` only when the wait ends (`Host::page_of`). The Mac does not
+  need this, because its host makes the session itself when a command names the pane.
 - The session modes of the engine's note in the arguments (`human`, `incognito`, `probe`,
   `granted`): a probe asks the profile whether the site has cookies before anything runs.
 - `click`, `type`, `press`, `hover`, `select`, `evaluate`, `console`, `network` and `resize`
@@ -216,9 +222,9 @@ host:
 - The MCP server waited 10 s for every answer. A web command runs in the host and may take as
   long as the longest wait the contract allows (`webWaitTimeoutMs`, 60 s) plus a navigation or
   a read of a long page; the server now waits that long and a margin for the host commands and
-  `web.navigate`, and 10 s for the others, `web.open` and `web.close` among them, which answer
-  at once (`reply_timeout`, which asks `soyeht_protocol::web::waits_for_host`). The engine's own
-  default for a web command stays 30 s. A call that times out is sent once more, as any call that
+  `web.navigate` and an agent's `web.open` (ADR 0055), and 10 s for the others, `web.close`
+  among them, which answer at once (`reply_timeout`, which asks
+  `soyeht_protocol::web::waits_for_host`). The engine's own default for a web command stays 30 s. A call that times out is sent once more, as any call that
   loses its connection is, and a question the engine puts to the person (a web session, a
   permission) can wait longer than this server does, as before.
 
