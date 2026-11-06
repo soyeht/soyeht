@@ -139,7 +139,7 @@ impl Workbench {
             .child(status_row(
                 tasks::indicator(task),
                 tasks::status_line(task),
-                desktop::TASK_DOT,
+                layout::TASK_DOT,
                 Some(2),
                 palette,
             ))

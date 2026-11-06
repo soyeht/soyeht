@@ -5,7 +5,7 @@ use crate::composer_field::ComposerField;
 use crate::{
     neo, shortcuts,
     tasks_ui::NewChoice,
-    theme::{Palette, desktop, elevation, pane_interior, radius, space, type_scale},
+    theme::{Palette, desktop, elevation, layout, pane_interior, radius, space, type_scale},
     views::{
         menus,
         prelude::*,
@@ -110,7 +110,7 @@ impl Workbench {
                 .left_0()
                 .right_0()
                 .mx_auto()
-                .w(px(desktop::NEW_TASK_SHEET_WIDTH))
+                .w(px(layout::NEW_TASK_SHEET_WIDTH))
                 .flex()
                 .flex_col()
                 .gap(px(space::X14))
@@ -424,12 +424,12 @@ fn fields_section(
                 .gap(px(space::X8))
                 .child(label(palette, "TITLE \u{b7} REQUIRED"))
                 .child(
-                    field_well(palette, &fields.0, desktop::TASK_FIELD_HEIGHT)
+                    field_well(palette, &fields.0, layout::TASK_FIELD_HEIGHT)
                         .px(px(space::X14))
                         .flex()
                         .items_center()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(desktop::TASK_FIELD_TEXT_SIZE))
+                        .text_size(px(type_scale::LABEL))
                         .child(fields.0.clone()),
                 ),
         )
@@ -437,13 +437,13 @@ fn fields_section(
             palette,
             "DESCRIPTION \u{b7} REQUIRED",
             &fields.1,
-            desktop::TASK_EDITOR_HEIGHT,
+            layout::TASK_EDITOR_HEIGHT,
         ))
         .child(editor(
             palette,
             "MUST NOT CHANGE \u{b7} REQUIRED",
             &fields.2,
-            desktop::TASK_EDITOR_HEIGHT,
+            layout::TASK_EDITOR_HEIGHT,
         ))
 }
 
