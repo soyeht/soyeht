@@ -3,12 +3,14 @@
 
 use super::{DiskJob, DiskResult, Effect, Snapshot};
 use crate::{
+    dispatch::Outcome,
     editor::{
         interfered_files::{InterferedFiles, Interference},
         test_fixture::EditorFixture,
     },
     offload::Background,
 };
+use serde_json::json;
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -385,7 +387,8 @@ async fn a_save_waiting_for_the_disk_holds_neither_the_tick_nor_a_second_write()
         assert!(started.elapsed() < Duration::from_secs(1));
     }
     // A close-time save leaves the file to the job that is writing it.
-    rig.fixture.core.save_editor_now(&rig.file_id).unwrap();
+    let file_id = rig.file_id.clone();
+    rig.fixture.core.start_pending_save(&file_id);
     assert_eq!(rig.writes.visitors(), 1);
     assert!(
         rig.file().draft_text.is_some(),
@@ -438,6 +441,90 @@ async fn a_disk_check_waiting_for_the_disk_does_not_hold_the_tick() {
         thread::sleep(Duration::from_millis(5));
     }
     assert_eq!(rig.file().draft_text, None);
+}
+
+impl Rig {
+    /// The draft "alpha beta" of `main.rs` typed, with the writes of the disk held at their gate and
+    /// the jobs running on the workers.
+    async fn typed_over_a_held_disk() -> Self {
+        let mut rig = Self::new().await;
+        rig.fixture.core.background = Background::default();
+        rig.writes.arm();
+        rig.type_at(5, " beta");
+        rig
+    }
+
+    /// Applies finished jobs until `done`.
+    fn until(&mut self, what: &str, done: impl Fn(&Self) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !done(self) {
+            assert!(Instant::now() < deadline, "{what}");
+            self.fixture.core.apply_background();
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+#[tokio::test]
+async fn closing_a_tab_with_a_draft_does_not_wait_for_the_disk() {
+    let mut rig = Rig::typed_over_a_held_disk().await;
+    let pane = rig.file().pane_id.unwrap();
+
+    let started = Instant::now();
+    rig.fixture.call(
+        "pane.close",
+        json!({"paneId":pane,"idempotencyKey":"close"}),
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "the close waited {:?} for the write",
+        started.elapsed()
+    );
+    // The save has started and is held at the disk: nothing is written, and the tab is closed.
+    rig.writes.wait_for_visitors(1);
+    assert_eq!(fs::read_to_string(rig.path()).unwrap(), "alpha\n");
+    assert!(!rig.fixture.core.editor.is_open(&rig.file_id));
+
+    rig.writes.release();
+    rig.until("the draft of the closed tab was never saved", |rig| {
+        fs::read_to_string(rig.path()).is_ok_and(|text| text == "alpha beta\n")
+    });
+    assert_eq!(rig.writes.visitors(), 1);
+}
+
+#[tokio::test]
+async fn deleting_a_file_with_a_draft_does_not_wait_for_the_disk_and_then_deletes_it() {
+    let mut rig = Rig::typed_over_a_held_disk().await;
+    let request = json!({
+        "jsonrpc":"2.0","id":900,"method":"project.entry.delete",
+        "params":{
+            "workspaceId":rig.fixture.workspace_id,"path":"main.rs","permanent":true,
+            "idempotencyKey":"delete"
+        }
+    });
+
+    let started = Instant::now();
+    let connection = rig.fixture.connection.clone();
+    let outcome = rig.fixture.core.dispatch(&connection, request).unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "the delete waited {:?} for the write",
+        started.elapsed()
+    );
+    // The request is answered once the save is done: it waits for the job off the lock.
+    let Outcome::Offload(offload) = outcome else {
+        panic!("the delete should wait for the save off the lock");
+    };
+    rig.writes.wait_for_visitors(1);
+    assert_eq!(fs::read_to_string(rig.path()).unwrap(), "alpha\n");
+
+    rig.writes.release();
+    let Outcome::Reply(reply) = offload.run_inline(&mut rig.fixture.core).unwrap() else {
+        panic!("expected the reply to the delete");
+    };
+    assert_eq!(reply["outcome"], "deleted");
+    assert!(!rig.path().exists());
+    assert_eq!(rig.writes.visitors(), 1);
 }
 
 mod races;

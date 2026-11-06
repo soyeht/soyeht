@@ -282,11 +282,13 @@ impl Core {
         ))
     }
 
-    /// Starts the save of a pending draft for a tab that is about to close, so closing keeps the
-    /// autosave promise without the request waiting for the disk (the Core lock is held). The
-    /// draft is also in the database, and the job's result finishes the file whether or not its
-    /// tab is still open (`finish_disk_job`). A file whose job is running is left to that job.
-    pub(super) fn save_editor_before_close(&mut self, file_id: &str) {
+    /// Starts the save of a pending draft of a file that is about to close or be deleted, so the
+    /// request keeps the autosave promise without waiting for the disk with the Core lock held.
+    /// The draft is also in the database, and the job's result finishes the file whether or not
+    /// its tab is still open (`finish_disk_job`). A conflict is left untouched, and a file whose
+    /// job is running is left to that job. A request that needs the outcome waits for the job
+    /// off the lock (`project_entry_request`).
+    pub(super) fn start_pending_save(&mut self, file_id: &str) {
         let pending = self
             .editor
             .stored(file_id)
@@ -295,26 +297,6 @@ impl Core {
             let now = self.now_ms();
             self.start_disk_job(file_id, Effect::Save, now);
         }
-    }
-
-    /// Runs a pending autosave now instead of waiting for its debounce; used before a file is
-    /// deleted. A conflict is left untouched. This is a person's request that must know the
-    /// outcome, so it waits for the disk. A file whose job is running is left to that job: its
-    /// result is applied by the tick, and a request that moves or deletes the file has already
-    /// waited for it (`project_entry_request`).
-    pub(super) fn save_editor_now(&mut self, file_id: &str) -> Result<()> {
-        let pending = self
-            .editor
-            .stored(file_id)
-            .is_ok_and(|file| file.draft_text.is_some() && file.conflict_text.is_none());
-        if !pending || self.hooks.pause_editor_autosave() || self.disk_job_running(file_id) {
-            return Ok(());
-        }
-        let Some((job, snapshot)) = self.prepare_disk_job(file_id, Effect::Save)? else {
-            return Ok(());
-        };
-        let result = job.run()?;
-        self.apply_disk_result(file_id, &snapshot, result, self.now_ms())
     }
 
     /// The signals of the jobs working on a file at `path` or below it, for a request to wait on

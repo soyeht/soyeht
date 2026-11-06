@@ -162,7 +162,7 @@ impl Core {
         else {
             return;
         };
-        self.save_editor_before_close(&file_id);
+        self.start_pending_save(&file_id);
     }
 
     fn replaceable_preview(

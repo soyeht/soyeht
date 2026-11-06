@@ -93,9 +93,11 @@ segment's flush (`soyeht_store::segments::slow_disk`). No production code reads 
   file is slow to read. `tests/slow_disk.rs` fails on the old code: the longest stretch without
   a terminal frame and the slowest `engine.status` were as long as the save.
 - An autosave reaches the disk one tick later than before, and `file.saved` follows the write.
-- Still under the lock, because a person waits for the answer: `save_editor_now` (the save of a
-  pending draft before a delete, when no job is running) and the project entry requests
-  themselves (create, rename, delete: one filesystem change each).
+- Still under the lock, because a person waits for the answer: the project entry requests
+  themselves (create, rename, delete: one filesystem change each). The save of a pending draft is
+  not: closing a tab and deleting a file start it as one of these jobs (`start_pending_save`); the
+  close does not wait for it, and the delete waits for it off the lock, as it does for a job
+  already running (`project_entry_request`).
 - The jobs run on threads of their own (`Background::run_alone`), one per open file at a time,
   so their number is bounded by the number of open files. A hung mount holds one such thread
   per hung file for as long as it hangs, and nothing else: the shared workers stay free. The

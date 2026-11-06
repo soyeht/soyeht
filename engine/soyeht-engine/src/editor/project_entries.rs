@@ -5,7 +5,8 @@
 //! closes the editor files that lived at the old path. A rename keeps every
 //! open buffer, draft and local history attached to its file. A delete saves
 //! pending drafts first, refuses while a draft conflicts with the disk, and
-//! closes the tabs of what it removed.
+//! closes the tabs of what it removed. The saves are disk jobs the request waits for off the
+//! Core lock.
 
 use super::{
     disk_effects::SETTLE_WAIT, persistence::parameters, project_paths::normalized,
@@ -48,6 +49,12 @@ impl Core {
         retried: bool,
     ) -> Result<Outcome> {
         let (workspace_id, path) = project_entry_target(method, params)?;
+        if method == method::PROJECT_ENTRY_DELETE && !retried {
+            // The drafts are saved before the files go; the request waits for those jobs below.
+            for file in self.live_files_under(&workspace_id, &path)? {
+                self.start_pending_save(&file.file_id);
+            }
+        }
         let signals = self.disk_job_signals_under(&workspace_id, &path)?;
         if signals.is_empty() {
             let reply = if method == method::PROJECT_ENTRY_RENAME {
@@ -192,9 +199,8 @@ impl Core {
         let open = self.live_files_under(&request.workspace_id, &path)?;
         self.refuse_open_writing(&open)?;
         self.refuse_while_saving(&request.workspace_id, &path)?;
-        for file in &open {
-            self.save_editor_now(&file.file_id)?;
-        }
+        // `project_entry_request` started the saves and waited for them: a draft that is still
+        // there was not saved (a conflict, or a disk that refused).
         if let Some(file) = open.iter().find(|file| {
             self.editor
                 .stored(&file.file_id)
