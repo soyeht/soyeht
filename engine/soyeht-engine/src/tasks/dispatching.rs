@@ -10,7 +10,7 @@ use crate::{
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
-    model::{self, RunningPane, StoredPane},
+    model::{self, PaneSetup as _, RunningPane, StoredPane},
     offload::{Offload, SharedPort},
     panes::persist_new_pane,
     ports::StorePort,
@@ -18,8 +18,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, Pane, PaneMode, PaneState, PromptOrigin, Role, StateSource, Task, TaskDispatchParams,
-    TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree, method,
+    Actor, PaneMode, PaneState, PromptOrigin, Role, Task, TaskDispatchParams, TaskExecutor,
+    TaskMove, TaskNextParams, TaskState, TaskWorktree, method,
 };
 use soyeht_store::{
     database::Change,
@@ -726,36 +726,15 @@ fn prepare_new_pane(
                 .insert(name.into(), soyeht_protocol::ConfigValue::V0(value.clone()));
         }
     }
-    let pane = Pane {
-        pane_id: pane_id.into(),
-        workspace_id: task.workspace_id.clone(),
-        name: task.title.clone(),
-        cwd: cwd.into(),
-        mode: PaneMode::Agent,
-        state: PaneState::Starting,
-        source: StateSource::Protocol,
-        confidence: 1.0,
-        phrase: "Starting task session".into(),
-        generation: 1,
-        cols: 80,
-        rows: 24,
-        record: true,
-        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
-            on: false,
-            failure: None,
-        }),
-        pid: None,
-        stream_id: None,
-        agent: Some(state.public(core.now_ms())),
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
-        writing_kind: None,
-        writing_section: None,
-        exit_code: None,
-        web_session: None,
-    };
+    let pane = model::new_pane(
+        PaneMode::Agent,
+        task.workspace_id.clone(),
+        task.title.clone(),
+        cwd,
+    )
+    .with_id(pane_id)
+    .starting("Starting task session")
+    .recorded_agent(state.public(core.now_ms()), 80, 24);
     let saved = StoredPane {
         pane,
         closed: false,

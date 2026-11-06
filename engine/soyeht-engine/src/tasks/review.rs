@@ -11,7 +11,7 @@ use crate::{
     agents::{Running, state::State},
     core::Core,
     errors::{self, Result},
-    model::{self, RunningPane, StoredPane},
+    model::{self, PaneSetup as _, RunningPane, StoredPane},
     panes::persist_new_pane,
     ports::StorePort,
     screen::Screen,
@@ -19,8 +19,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttemptResult, Comment, Pane, PaneMode, PaneState, PromptOrigin, StateSource, Task,
-    TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole, limits, method,
+    AttemptResult, Comment, PaneMode, PaneState, PromptOrigin, Task, TaskCompleteParams, TaskMove,
+    TaskState, TranscriptKind, TranscriptRole, limits, method,
 };
 use soyeht_store::{
     agents,
@@ -628,36 +628,18 @@ fn reviewer_pane(core: &Core, task: &Task, state: &State, repository: &Path) -> 
     let cwd = repository
         .to_str()
         .ok_or_else(|| errors::invalid("Review directory must be UTF-8"))?;
-    let pane = Pane {
-        pane_id: Uuid::new_v4().to_string(),
-        workspace_id: task.workspace_id.clone(),
-        cwd: cwd.into(),
-        name: format!("Review {}", task.task_id),
-        mode: PaneMode::Agent,
-        state: PaneState::Starting,
-        source: StateSource::Protocol,
-        confidence: 1.0,
-        phrase: "Starting contract-drift review".into(),
-        generation: 1,
-        cols: executor.stored.pane.cols,
-        rows: executor.stored.pane.rows,
-        record: true,
-        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
-            on: false,
-            failure: None,
-        }),
-        pid: None,
-        stream_id: None,
-        agent: Some(state.public(core.now_ms())),
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
-        writing_kind: None,
-        writing_section: None,
-        exit_code: None,
-        web_session: None,
-    };
+    let pane = model::new_pane(
+        PaneMode::Agent,
+        task.workspace_id.clone(),
+        format!("Review {}", task.task_id),
+        cwd,
+    )
+    .starting("Starting contract-drift review")
+    .recorded_agent(
+        state.public(core.now_ms()),
+        executor.stored.pane.cols,
+        executor.stored.pane.rows,
+    );
     Ok(StoredPane {
         pane,
         closed: false,

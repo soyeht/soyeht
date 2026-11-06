@@ -2,15 +2,13 @@ use crate::{
     core::{Core, persist_pane},
     dispatch::Outcome,
     errors::{self, Result},
-    model::{self, RunningPane, StoredPane},
+    model::{self, PaneSetup as _, RunningPane, StoredPane},
     ports::StorePort,
     screen::Screen,
     settings,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{
-    Pane, PaneExperimentCapture, PaneMode, PaneState, StateSource, event, method, setting,
-};
+use soyeht_protocol::{Pane, PaneExperimentCapture, PaneMode, StateSource, event, method, setting};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
@@ -127,39 +125,18 @@ impl Core {
             (None, None) => "Shell".into(),
         };
         let instance_key = Uuid::new_v4().to_string();
+        let mode = if agent_mode {
+            PaneMode::Agent
+        } else {
+            PaneMode::Terminal
+        };
         let mut pane = Pane {
-            agent: agent.map(|state| state.public(self.now_ms())),
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            writing_kind: None,
-            writing_section: None,
-            exit_code: None,
-            web_session: None,
-            pane_id: Uuid::new_v4().to_string(),
-            workspace_id: workspace.workspace_id,
-            cwd: cwd.into(),
-            name,
-            mode: if agent_mode {
-                PaneMode::Agent
-            } else {
-                PaneMode::Terminal
-            },
-            state: PaneState::Starting,
             source: if agent_mode {
                 StateSource::Protocol
             } else {
                 StateSource::None
             },
             confidence: if agent_mode { 1.0 } else { 0.0 },
-            phrase: if agent_mode {
-                "Starting agent"
-            } else {
-                "Starting shell"
-            }
-            .into(),
-            generation: 1,
             cols: params["cols"]
                 .as_u64()
                 .map_or(defaults.cols, |value| value as u32),
@@ -167,12 +144,13 @@ impl Core {
                 .as_u64()
                 .map_or(defaults.rows, |value| value as u32),
             record: agent_mode || defaults.record,
-            experiment_capture: Some(PaneExperimentCapture {
-                on: false,
-                failure: None,
-            }),
-            pid: None,
             stream_id: (!agent_mode).then(|| Uuid::new_v4().to_string()),
+            agent: agent.map(|state| state.public(self.now_ms())),
+            ..model::new_pane(mode, workspace.workspace_id, name, cwd).starting(if agent_mode {
+                "Starting agent"
+            } else {
+                "Starting shell"
+            })
         };
         let terminal_harness = params["harness"]
             .as_str()
