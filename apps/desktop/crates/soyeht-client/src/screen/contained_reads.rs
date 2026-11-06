@@ -78,3 +78,58 @@ fn reads_and_moves_that_do_not_panic_are_unchanged() {
     assert!(!screen.parser_failed.get());
     assert!(!screen.damaged.get());
 }
+
+/// The reads of the parser that `feed` makes around its writing (the selection's fingerprint
+/// before and after, the count of the history) are contained too: the screen starts again and the
+/// bytes of the write are not lost to the panic of a read.
+mod during_a_write {
+    use super::TerminalScreen;
+
+    fn with_a_selection() -> TerminalScreen {
+        let mut screen = TerminalScreen::new(4, 12);
+        screen.feed(b"hello world");
+        screen.begin_selection(0, 0, 1);
+        screen.extend_selection(0, 4);
+        assert!(screen.has_selection());
+        screen
+    }
+
+    fn assert_started_again(screen: &TerminalScreen) {
+        assert!(screen.parser_failed.get());
+        assert!(!screen.damaged.get());
+        assert!(!screen.has_selection());
+        assert_eq!(screen.size(), (4, 12));
+    }
+
+    #[test]
+    fn a_panic_counting_the_history_starts_the_screen_again() {
+        let mut screen = TerminalScreen::new(4, 12);
+        screen.fault_after.set(Some(0));
+        screen.feed(b"hello");
+        assert_started_again(&screen);
+        screen.feed(b"back");
+        assert!(screen.contents().contains("back"));
+    }
+
+    #[test]
+    fn a_panic_taking_the_fingerprint_of_the_selection_starts_the_screen_again() {
+        let mut screen = with_a_selection();
+        screen.fault_after.set(Some(0));
+        screen.feed(b"!");
+        assert_started_again(&screen);
+        // The bytes of the write reach the screen that started again.
+        assert_eq!(screen.contents(), "!");
+    }
+
+    #[test]
+    fn a_panic_comparing_the_selection_after_the_write_starts_the_screen_again() {
+        let mut screen = with_a_selection();
+        // The fingerprint before and the count of the history come first.
+        screen.fault_after.set(Some(2));
+        screen.feed(b"!");
+        assert_started_again(&screen);
+        assert!(screen.contents().trim().is_empty());
+        screen.feed(b"back");
+        assert!(screen.contents().contains("back"));
+    }
+}

@@ -121,13 +121,22 @@ fn run_with(
     let outcome = match spawn(program, path_env, request) {
         Ok(mut session) => {
             recovered(&SPAWN);
-            let outcome = drive(
-                &mut session.input,
-                &mut session.output,
-                request.timeout,
-                driver,
-                feed,
-            );
+            // The bytes are a program's, and the parser and the driver are code of other crates: a
+            // panic in any of them ends this session, not the run, so that the child is stopped
+            // below and the scratch directory is removed (`Child` has no `Drop`).
+            let outcome = soyeht_platform::crash::caught(|| {
+                drive(
+                    &mut session.input,
+                    &mut session.output,
+                    request.timeout,
+                    driver,
+                    feed,
+                )
+            })
+            .unwrap_or_else(|_panic| {
+                log::event("engine.usage_terminal_panicked", &[]);
+                TerminalRun::Incomplete
+            });
             let Session {
                 child,
                 input,
@@ -288,13 +297,7 @@ fn drive(
                     {
                         return TerminalRun::Incomplete;
                     }
-                    // The bytes are a program's, and the parser is code of a dependency: a panic in
-                    // it ends this session, not the run, so that the child is stopped below and the
-                    // scratch directory is removed.
-                    if soyeht_platform::crash::caught(|| feed(&mut parser, bytes)).is_err() {
-                        log::event("engine.usage_terminal_parser_panicked", &[]);
-                        return TerminalRun::Incomplete;
-                    }
+                    feed(&mut parser, bytes);
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
@@ -444,19 +447,105 @@ mod tests {
         fs::remove_dir_all(scratch).unwrap();
     }
 
-    #[test]
-    fn a_parser_panic_ends_the_session_and_still_stops_the_child() {
+    /// A session whose program writes its process id to `pid_file` (outside the scratch
+    /// directory, which the session removes), prints the prompt and then stays alive for 30
+    /// seconds, run with the given driver and parser work.
+    #[cfg(unix)]
+    fn run_script_recording_pid(
+        workdir: &Path,
+        pid_file: &Path,
+        driver: &mut dyn TerminalDriver,
+        feed: FeedParser,
+    ) -> TerminalRun {
+        let script = format!(
+            "echo $$ > '{}'; printf 'READY\\n'; sleep 30",
+            pid_file.display()
+        );
+        let request = TerminalRequest {
+            program: shell_name().into(),
+            args: vec![shell_flag().into(), script],
+            env: Vec::new(),
+            workdir: workdir.to_path_buf(),
+            files: Vec::new(),
+            transcript: None,
+            timeout: Duration::from_secs(10),
+        };
+        run_with(
+            &PathBuf::from(shell_path()),
+            path_env(),
+            &request,
+            driver,
+            feed,
+        )
+    }
+
+    /// Whether a process with this id exists (a signal of 0 only checks).
+    #[cfg(unix)]
+    fn exists(pid: i32) -> bool {
+        // SAFETY: signal 0 sends nothing.
+        unsafe { libc::kill(pid, 0) == 0 }
+    }
+
+    /// Runs the session that panics in `driver` or `feed`, and checks the program it started is
+    /// gone and the scratch directory removed, within the time of the session.
+    #[cfg(unix)]
+    fn assert_a_panic_still_stops_the_child(driver: &mut dyn TerminalDriver, feed: FeedParser) {
         let scratch = scratch_directory();
         let workdir = scratch.join("work");
+        let pid_file = scratch.join("pid");
         let started = Instant::now();
-        let outcome = run_script_with(&workdir, None, 10, &mut |_, _| {
+        let outcome = run_script_recording_pid(&workdir, &pid_file, driver, feed);
+        assert!(matches!(outcome, TerminalRun::Incomplete), "{outcome:?}");
+        assert!(
+            started.elapsed() < Duration::from_secs(8),
+            "the child was left to its 30 seconds"
+        );
+        assert!(!workdir.exists());
+        let pid: i32 = fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while exists(pid) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!exists(pid), "the child {pid} is still running");
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    struct WaitsForever;
+
+    impl TerminalDriver for WaitsForever {
+        fn step(&mut self, _screen: &str, _elapsed: Duration) -> TerminalStep {
+            TerminalStep::Wait
+        }
+    }
+
+    struct Panics;
+
+    impl TerminalDriver for Panics {
+        fn step(&mut self, screen: &str, _elapsed: Duration) -> TerminalStep {
+            // After the program has written its process id, which it does before the prompt.
+            if screen.contains("READY") {
+                panic!("a driver with a bug");
+            }
+            TerminalStep::Wait
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_parser_panic_ends_the_session_and_still_stops_the_child() {
+        assert_a_panic_still_stops_the_child(&mut WaitsForever, &mut |_, _| {
             panic!("a parser with a bug")
         });
-        assert!(matches!(outcome, TerminalRun::Incomplete), "{outcome:?}");
-        // The child was stopped, not left to its 30 seconds, and the scratch directory removed.
-        assert!(started.elapsed() < Duration::from_secs(8));
-        assert!(!workdir.exists());
-        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_driver_panic_ends_the_session_and_still_stops_the_child() {
+        assert_a_panic_still_stops_the_child(&mut Panics, &mut feed_parser);
     }
 
     #[test]
