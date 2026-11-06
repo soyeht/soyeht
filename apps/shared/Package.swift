@@ -7,7 +7,7 @@ let package = Package(
     products: [.library(name: "SoyehtClient", targets: ["SoyehtClient"])],
     dependencies: [
         .package(path: "../../contracts/swift"),
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm", exact: "1.20.0"),
+        .package(url: "https://github.com/soyeht/SwiftTerm", exact: "1.20.0-soyeht.1"),
         .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.9.0"),
     ],
     targets: [
