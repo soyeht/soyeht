@@ -24,9 +24,10 @@ pub fn is_host_command(method: &str) -> bool {
 }
 
 /// Whether an answer to `method` waits on the web host, and so may take as long as the host's
-/// own waits (a read of a long page, a navigation): a command, or a navigation.
+/// own waits (a read of a long page, a navigation): a command, or a navigation. `web.open` is one
+/// when an agent opens a pane, which is sent to its address as a navigation.
 pub fn waits_for_host(method: &str) -> bool {
-    is_host_command(method) || method == method::WEB_NAVIGATE
+    is_host_command(method) || matches!(method, method::WEB_NAVIGATE | method::WEB_OPEN)
 }
 
 #[cfg(test)]
@@ -38,6 +39,7 @@ mod tests {
         assert!(is_host_command(method::WEB_READ));
         assert!(!is_host_command(method::WEB_OPEN));
         assert!(waits_for_host(method::WEB_NAVIGATE) && !is_host_command(method::WEB_NAVIGATE));
+        assert!(waits_for_host(method::WEB_OPEN) && !is_host_command(method::WEB_OPEN));
         assert!(!is_host_command(method::TASK_NEXT));
     }
 }

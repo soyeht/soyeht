@@ -140,6 +140,11 @@ pub fn find_at(dialect: Dialect, characters: &[char], index: usize) -> Option<Fo
 /// absolute path of another folder). The file system answers for the case of names, and the path
 /// that opens is the canonical one, so it has the name's real case.
 pub fn resolve(root: &Path, reference: &Reference) -> Option<Opening> {
+    // Before any call that asks the system: a share or a device is not looked at (opening one
+    // connects to its server), whatever the reply that named it says.
+    if windows::leaves_the_machine(Dialect::HOST, &root.to_string_lossy(), &reference.path) {
+        return None;
+    }
     // A file that cannot be reached is not a link, whatever the reason.
     let (Ok(file), Ok(base)) = (
         canonicalize(&root.join(&reference.path)),

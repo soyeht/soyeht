@@ -53,6 +53,37 @@ fn named(part: &[char]) -> bool {
     !part.is_empty() && part != ['.'] && part != ['.', '.']
 }
 
+/// The path as one string with `/` between components, to compare as text.
+fn slashed(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+/// Whether resolving `path` against the workspace `root` would reach beyond this computer's own
+/// drives, or a device: a share (`\\server\share`, which Windows opens by contacting the server
+/// and authenticating to it), the WebDAV form of one (`\\server@SSL\share`), a verbatim share
+/// (`\\?\UNC\`) or a device (`\\.\`, `\\?\`): every path that starts with two separators.
+/// Only text is compared, so nothing is asked of the system.
+///
+/// The one exception is a path under a workspace that is itself on a share, by the text of its
+/// root: the person chose that share, and a path outside it is refused as before.
+pub(super) fn leaves_the_machine(dialect: Dialect, root: &str, path: &str) -> bool {
+    if !dialect.windows() {
+        return false;
+    }
+    let path = slashed(path);
+    if !path.starts_with("//") {
+        return false;
+    }
+    let root = slashed(root);
+    let root = root.trim_end_matches('/');
+    let share = root.starts_with("//") && !root.starts_with("//?/") && !root.starts_with("//./");
+    let inside = path
+        .to_lowercase()
+        .strip_prefix(&root.to_lowercase())
+        .is_some_and(|rest| rest.starts_with('/'));
+    !(share && inside)
+}
+
 /// How many characters a drive takes at the start of `text` (`C:` of `C:\x`), or 0 when `text`
 /// does not start with a drive and a separator.
 pub(super) fn drive_length(dialect: Dialect, text: &[char]) -> usize {

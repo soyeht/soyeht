@@ -1,4 +1,5 @@
 pub mod account;
+pub(crate) mod adapter_directory;
 pub mod attachments;
 pub mod authentication;
 pub mod catalog;
@@ -24,6 +25,7 @@ pub mod methods;
 pub mod naming;
 pub mod opening;
 pub mod orphans;
+pub(crate) mod package_runner;
 pub mod peer;
 pub mod pending;
 mod pinned_adapter;
@@ -394,11 +396,14 @@ impl Core {
     }
 
     fn install_committed_agent(&mut self, id: &str, saved: StoredPane, state: State) -> Result<()> {
-        errors::invariant(
+        let pane = errors::invariant(
             self.panes.get_mut(id),
             "Agent pane disappeared before commit publication",
-        )?
-        .stored = saved;
+        )?;
+        pane.stored = saved;
+        if pane.stored.closed {
+            pane.screen.release();
+        }
         if let Some(running) = self.agents.get_mut(id) {
             running.state = state;
             running.idle.touch();

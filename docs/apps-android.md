@@ -7,8 +7,12 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
 
 ## What it does
 
-- **Pairs by link.** On the computer choose the pairing window; paste the link
-  (`soyeht-next://pair?...`) into the app, or open it on the phone. A link that reaches the app from
+- **Pairs by link or by camera.** On the computer choose the pairing window; scan its QR code (the
+  camera permission is asked for when you tap Scan, and ZXing reads the code on the phone, ADR 0138),
+  paste the link (`soyeht-next://pair?...`) into the app, or open it on the phone. All three go through
+  the core's one parser; a code that is not a pairing link is refused in words and the camera keeps looking. A phone that is
+  already paired scans from "Pair another computer" on the list of panes; the new computer replaces the old
+  one only after the person confirms, as for a tapped link. A link that reaches the app from
   outside asks first, naming the address it would connect to (ADR 0129). The app shows the fingerprint
   of the phone's key to compare with the one on the computer, and the person allows access there. The
   phone checks that the engine holds the key the link named before it proves the code (ADR 0132). Both
@@ -20,13 +24,17 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   the arrows, Backspace and Enter. A hardware keyboard sends Enter, Backspace, Tab, Esc and the arrows.
 - **Agent pane.** The conversation, with an agent's replies and thoughts drawn as the shared Markdown subset
   (ADR 0087, 0139: bold, italic, code, lists, quotes, tables, links, and a Copy button on each code block),
-  the prompt, and the question the agent waits on (a permission), with the options the agent gave.
+  the prompt, and the question the agent waits on (a permission), with the options the agent gave. Under
+  the message field a row of menus names the harness the pane runs (choosing another restarts the pane on
+  it and hands the conversation over, after asking, ADR 0140) and sets the session's model, effort and
+  permission mode. The header carries the usage ring of the
+  provider that reads the pane's harness (ADR 0141).
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.
 - "Forget" asks first. A web, editor or writing pane says it is shown on the computer.
 
-Not yet: the camera scanner, push notifications, the harness switch, new panes
+Not yet: push notifications, new panes
 and workspaces, the board layout of a tablet, the Fira/JetBrains fonts (the terminal uses the system
 monospace font), terminal text size and selection.
 

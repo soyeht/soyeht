@@ -126,8 +126,12 @@ one place.
 - **Usage rings.** A subscription provider's reader is a source in
   `engine/soyeht-usage/src/sources/`, with a fallback chain in the planner (ADR 0077). The
   provider's display name is `usageProviderNames` in `x-clientPolicy`
-  (`contracts/protocol.json`); add it there and regenerate
-  (`uv run python contracts/generate.py`), and both clients pick it up.
+  (`contracts/protocol.json`), and the rule for which harness it reads is `usageHarnesses`: the
+  lower-case text the harness id holds (`"opencode": "opencode"`). Add both there, add a case to
+  `harnessProviders` in `contracts/vectors/usage.json`, and regenerate
+  (`uv run python contracts/generate.py`); both clients pick it up through
+  `UsageProvider::for_harness` and `UsageProvider(harnessId:)`. A harness no rule matches has no
+  ring.
 - **Terminal hook labels.** Session-scoped hooks for experiment ground truth exist for one
   harness (`engine/soyeht-engine/src/agents/hooks.rs`, `terminal_harness.rs`). A second one
   adds its own settings builder there and its id to the check in `TerminalHarnessSession::prepare`.

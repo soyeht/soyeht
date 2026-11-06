@@ -101,7 +101,10 @@ fn accept_loop(
         }
         let raw = match raw {
             Ok(raw) => raw,
-            Err(error) if endpoint::is_transient(&error) => continue,
+            Err(error) if crate::net::accept_error_concerns_one_connection(&error) => {
+                thread::sleep(crate::net::ACCEPT_ERROR_FLOOR);
+                continue;
+            }
             Err(error) => {
                 // The listener is dead: hand the error to whoever accepts, then stop. If the
                 // listener was dropped as well, nobody is left to hear it.

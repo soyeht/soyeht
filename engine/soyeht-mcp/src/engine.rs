@@ -251,7 +251,8 @@ mod tests {
     fn a_web_command_is_waited_for_as_long_as_a_wait_it_accepts() {
         assert!(reply_timeout(method::WEB_READ) > Duration::from_millis(60_000));
         assert!(reply_timeout(method::WEB_NAVIGATE) > Duration::from_millis(60_000));
-        assert_eq!(reply_timeout(method::WEB_OPEN), Duration::from_secs(10));
+        assert!(reply_timeout(method::WEB_OPEN) > Duration::from_millis(60_000));
+        assert_eq!(reply_timeout(method::WEB_CLOSE), Duration::from_secs(10));
         assert_eq!(reply_timeout("task.next"), Duration::from_secs(10));
     }
 

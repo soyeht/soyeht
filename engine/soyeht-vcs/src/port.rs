@@ -67,6 +67,9 @@ impl CommandPort for SystemGit {
             repository,
             [
                 OsString::from("blame"),
+                // The folder's own configuration may name a filter program for a path; blame
+                // reads the file as it is stored.
+                OsString::from("--no-textconv"),
                 OsString::from("--line-porcelain"),
                 OsString::from("HEAD"),
                 OsString::from("--"),
@@ -140,16 +143,13 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut command = Command::new("git");
-    command
-        .arg("--no-pager")
-        .arg("-C")
-        .arg(repository)
-        .args(arguments)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("GIT_LITERAL_PATHSPECS", "1")
-        .env("GIT_PAGER", "cat");
-    run_git(&Probe::system(), command)
+    let probe = Probe::system();
+    let limits = soyeht_process::Limits::new(COMMAND_TIMEOUT, COMMAND_OUTPUT_BYTES);
+    let mut command = soyeht_process::ReadOnlyGit::prepare_with(&probe, repository, limits)
+        .map_err(process_error)?
+        .command();
+    command.args(arguments);
+    run_git(&probe, command)
 }
 
 fn run_git(probe: &Probe, command: Command) -> Result<Output> {
@@ -158,7 +158,11 @@ fn run_git(probe: &Probe, command: Command) -> Result<Output> {
         command,
         soyeht_process::Limits::new(COMMAND_TIMEOUT, COMMAND_OUTPUT_BYTES),
     )
-    .map_err(|error| match error {
+    .map_err(process_error)
+}
+
+fn process_error(error: soyeht_process::Error) -> Error {
+    match error {
         soyeht_process::Error::GitUnavailable => Error::GitUnavailable,
         soyeht_process::Error::Spawn { .. } | soyeht_process::Error::UnderLock { .. } => {
             Error::CommandUnavailable
@@ -168,7 +172,7 @@ fn run_git(probe: &Probe, command: Command) -> Result<Output> {
         soyeht_process::Error::Wait { .. }
         | soyeht_process::Error::Read { .. }
         | soyeht_process::Error::Write { .. } => Error::CommandFailed,
-    })
+    }
 }
 
 fn text(output: Output) -> Result<String> {
@@ -232,5 +236,39 @@ mod tests {
         let result = SystemGit.repository_root(&directory);
         fs::remove_dir_all(&directory).unwrap();
         assert_eq!(result, Err(Error::InvalidRepository));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn blame_does_not_run_a_filter_program_the_repository_names() {
+        let root = std::env::temp_dir().join(format!("soyeht-vcs-textconv-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let marker = root.join("filter-ran");
+        let git = |arguments: &[&str]| {
+            let output = Command::new("git")
+                .current_dir(&root)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@example.com")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@example.com")
+                .args(arguments)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{arguments:?}");
+        };
+        git(&["init", "-q"]);
+        fs::write(root.join(".gitattributes"), "*.bin diff=probe\n").unwrap();
+        fs::write(root.join("a.bin"), "one\ntwo\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "baseline"]);
+        let filter = format!("sh -c 'touch \"{}\"; cat \"$1\"' --", marker.display());
+        git(&["config", "diff.probe.textconv", &filter]);
+
+        let blame = SystemGit.blame(&root, Path::new("a.bin"));
+        let ran = marker.exists();
+        fs::remove_dir_all(&root).unwrap();
+        assert!(blame.unwrap().contains("\tone\n"));
+        assert!(!ran, "the filter program must not run");
     }
 }

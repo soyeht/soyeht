@@ -9,7 +9,6 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::Command,
     time::Duration,
 };
 
@@ -56,11 +55,11 @@ pub struct GitRevision;
 
 impl RevisionPort for GitRevision {
     fn inspect(&mut self, repository: &Path) -> Result<RevisionSnapshot> {
-        let root = canonical_repository(repository)?;
-        let base = base_commit(&root)?;
-        let head = text(git(&root, &["rev-parse", "HEAD"])?)?;
-        let paths = changed_paths(&root, &base)?;
-        let (patch, changed_surfaces) = complete_patch(&root, &base, &paths)?;
+        let repository = ReviewGit::new(canonical_repository(repository)?)?;
+        let base = base_commit(&repository)?;
+        let head = text(repository.run(&["rev-parse", "HEAD"])?)?;
+        let paths = changed_paths(&repository, &base)?;
+        let (patch, changed_surfaces) = complete_patch(&repository, &base, &paths)?;
         let fingerprint = format!("{:x}", Sha256::digest(patch.as_bytes()));
         Ok(RevisionSnapshot {
             head,
@@ -85,18 +84,28 @@ fn canonical_repository(repository: &Path) -> Result<PathBuf> {
         .map_err(|error| errors::worktree_unavailable(error.to_string()))
 }
 
-fn git(repository: &Path, args: &[&str]) -> Result<Output> {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(repository)
-        .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0");
-    soyeht_process::run_git(
-        command,
-        soyeht_process::Limits::new(GIT_TIMEOUT, OUTPUT_LIMIT),
-    )
-    .map_err(errors::worktree_process)
+/// A repository read the way the review needs it: `git` reads, and starts nothing the
+/// repository's own configuration names (`soyeht_process::ReadOnlyGit`, prepared once for the
+/// whole snapshot).
+struct ReviewGit {
+    root: PathBuf,
+    git: soyeht_process::ReadOnlyGit,
+}
+
+impl ReviewGit {
+    fn new(root: PathBuf) -> Result<Self> {
+        let limits = soyeht_process::Limits::new(GIT_TIMEOUT, OUTPUT_LIMIT);
+        let git = soyeht_process::ReadOnlyGit::prepare(&root, limits)
+            .map_err(errors::worktree_process)?;
+        Ok(Self { root, git })
+    }
+
+    fn run(&self, args: &[&str]) -> Result<Output> {
+        let limits = soyeht_process::Limits::new(GIT_TIMEOUT, OUTPUT_LIMIT);
+        let mut command = self.git.command();
+        command.args(args);
+        soyeht_process::run_git(command, limits).map_err(errors::worktree_process)
+    }
 }
 
 fn bytes(output: Output) -> Result<Vec<u8>> {
@@ -118,18 +127,18 @@ fn bounded(stderr: &[u8]) -> String {
         .to_owned()
 }
 
-fn base_commit(repository: &Path) -> Result<String> {
+fn base_commit(repository: &ReviewGit) -> Result<String> {
     for reference in [
         "refs/remotes/origin/HEAD",
         "refs/remotes/origin/main",
         "main",
     ] {
         let argument = format!("{reference}^{{commit}}");
-        if let Ok(output) = git(repository, &["rev-parse", "--verify", &argument])
+        if let Ok(output) = repository.run(&["rev-parse", "--verify", &argument])
             && output.status.success()
         {
             let candidate = text(output)?;
-            return text(git(repository, &["merge-base", "HEAD", &candidate])?);
+            return text(repository.run(&["merge-base", "HEAD", &candidate])?);
         }
     }
     Err(errors::worktree_unavailable(
@@ -137,15 +146,23 @@ fn base_commit(repository: &Path) -> Result<String> {
     ))
 }
 
-fn changed_paths(repository: &Path, base: &str) -> Result<Vec<String>> {
-    let mut paths = nul_paths(&bytes(git(
-        repository,
-        &["diff", "--name-only", "-z", base, "--", "."],
-    )?)?)?;
-    paths.extend(nul_paths(&bytes(git(
-        repository,
-        &["ls-files", "--others", "--exclude-standard", "-z"],
-    )?)?)?);
+fn changed_paths(repository: &ReviewGit, base: &str) -> Result<Vec<String>> {
+    let mut paths = nul_paths(&bytes(repository.run(&[
+        "diff",
+        "--no-ext-diff",
+        "--ignore-submodules=dirty",
+        "--name-only",
+        "-z",
+        base,
+        "--",
+        ".",
+    ])?)?)?;
+    paths.extend(nul_paths(&bytes(repository.run(&[
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+    ])?)?)?);
     paths.sort();
     paths.dedup();
     Ok(paths)
@@ -162,7 +179,7 @@ fn nul_paths(raw: &[u8]) -> Result<Vec<String>> {
 }
 
 fn complete_patch(
-    repository: &Path,
+    repository: &ReviewGit,
     base: &str,
     paths: &[String],
 ) -> Result<(String, Vec<ChangedSurface>)> {
@@ -181,8 +198,8 @@ fn complete_patch(
     Ok((patch, found))
 }
 
-fn path_patch(repository: &Path, base: &str, path: &str) -> Result<String> {
-    let candidate = repository.join(path);
+fn path_patch(repository: &ReviewGit, base: &str, path: &str) -> Result<String> {
+    let candidate = repository.root.join(path);
     if candidate.is_file() && is_untracked(repository, path)? {
         let content = fs::read_to_string(&candidate)
             .map_err(|error| errors::worktree_unavailable(error.to_string()))?;
@@ -194,15 +211,21 @@ fn path_patch(repository: &Path, base: &str, path: &str) -> Result<String> {
         }
         return Ok(patch);
     }
-    String::from_utf8(bytes(git(
-        repository,
-        &["diff", "--no-ext-diff", "--unified=200", base, "--", path],
-    )?)?)
+    String::from_utf8(bytes(repository.run(&[
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--ignore-submodules=dirty",
+        "--unified=200",
+        base,
+        "--",
+        path,
+    ])?)?)
     .map_err(|_| errors::worktree_unavailable("Revision patch is not UTF-8"))
 }
 
-fn is_untracked(repository: &Path, path: &str) -> Result<bool> {
-    let output = git(repository, &["ls-files", "--error-unmatch", "--", path])?;
+fn is_untracked(repository: &ReviewGit, path: &str) -> Result<bool> {
+    let output = repository.run(&["ls-files", "--error-unmatch", "--", path])?;
     Ok(!output.status.success())
 }
 
@@ -540,6 +563,79 @@ pub(crate) mod testing {
                 && surface.name == "save"
                 && surface.kind == SurfaceKind::Handler
         }));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_adapter_does_not_run_filter_programs_the_repository_names() {
+        let repository = Repository::new();
+        let marker = repository.0.join("filter-ran");
+        fs::write(
+            repository.0.join(".gitattributes"),
+            "*.bin diff=probe filter=probe\n",
+        )
+        .unwrap();
+        fs::write(repository.0.join("a.bin"), "one\n").unwrap();
+        run(&repository.0, &["add", "."]);
+        run(&repository.0, &["commit", "-m", "binary"]);
+        let filter = format!("sh -c 'touch \"{}\"; cat \"$1\"' --", marker.display());
+        run(&repository.0, &["config", "diff.probe.textconv", &filter]);
+        run(&repository.0, &["config", "diff.probe.command", &filter]);
+        // The programs git starts for the working tree, each with a marker of its own.
+        let marker_of = |name: &str| repository.0.join(format!("ran-{name}"));
+        let program =
+            |name: &str| format!("sh -c 'touch \"{}\"; cat' --", marker_of(name).display());
+        run(
+            &repository.0,
+            &["config", "filter.probe.clean", &program("clean")],
+        );
+        run(
+            &repository.0,
+            &["config", "core.fsmonitor", &program("fsmonitor")],
+        );
+        fs::write(repository.0.join("a.bin"), "two\n").unwrap();
+        fs::write(repository.0.join("untracked.txt"), "new\n").unwrap();
+
+        let snapshot = GitRevision.inspect(&repository.0).unwrap();
+
+        assert!(snapshot.changed_paths.contains(&"a.bin".to_owned()));
+        assert!(snapshot.changed_paths.contains(&"untracked.txt".to_owned()));
+        assert!(!marker.exists(), "the conversion program must not run");
+        for name in ["clean", "fsmonitor"] {
+            assert!(!marker_of(name).exists(), "the {name} program must not run");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_adapter_does_not_run_filters_a_submodule_configures() {
+        let repository = Repository::new();
+        let nested = repository.0.join("vendor");
+        fs::create_dir_all(&nested).unwrap();
+        run(&nested, &["init", "-b", "main"]);
+        run(&nested, &["config", "user.name", "Test"]);
+        run(&nested, &["config", "user.email", "test@example.invalid"]);
+        fs::write(nested.join(".gitattributes"), "*.bin filter=subf\n").unwrap();
+        fs::write(nested.join("b.bin"), "one\n").unwrap();
+        run(&nested, &["add", "."]);
+        run(&nested, &["commit", "-m", "inner"]);
+        // The submodule's own configuration names the filter; the superproject's does not.
+        let marker = repository.0.join("ran-submodule-clean");
+        let program = format!("sh -c 'touch \"{}\"; cat' --", marker.display());
+        run(&nested, &["config", "filter.subf.clean", &program]);
+        run(&nested, &["config", "core.fsmonitor", &program]);
+        // Recorded as a gitlink of the superproject, then modified inside.
+        run(&repository.0, &["add", "vendor"]);
+        run(&repository.0, &["commit", "-m", "submodule"]);
+        fs::write(nested.join("b.bin"), "two\n").unwrap();
+        fs::write(nested.join("untracked.txt"), "new\n").unwrap();
+
+        GitRevision.inspect(&repository.0).unwrap();
+
+        assert!(
+            !marker.exists(),
+            "a program of the submodule's configuration must not run"
+        );
     }
 
     #[test]
