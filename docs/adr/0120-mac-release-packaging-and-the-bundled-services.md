@@ -373,10 +373,13 @@ owner's Developer ID):
   `<Product>.app/Contents/MacOS`, and the launch agents name those paths (`--programs` is the
   folder of the app's own `soyeht`). Nothing in the path holds a version, a hash or a temporary
   folder. An update that replaces the bundle in place keeps every path. The engine and the
-  supervisor are the only programs the agents start; they are the identities a file or Automation
-  prompt can name, because a shell started by the supervisor is attributed to it and an agent the
-  engine starts is attributed to the engine. No program disclaims responsibility, so a prompt never
-  names a third identity.
+  supervisor are the only programs the agents start, so they are the identities a file or Automation
+  prompt can name. What was observed, not proven as a mechanism: the Dev supervisor
+  (`.../Soyeht.next/dev/bin/soyeht-ptyd`) and engine each hold their own rows in the owner's TCC
+  database (Automation, Documents, Desktop, Downloads, FileProvider for the supervisor), so
+  prompts caused by a shell or an agent have been recorded against those two paths. No program
+  disclaims responsibility (`responsibility_spawnattrs_setdisclaim` is not used), so no third
+  identity was seen.
 - *Requirement.* Every program is signed with `--identifier` from `binary_identifiers`
   (`com.soyeht.next.engine`, `.ptyd`, `.cli`, `.mcp`), the app under its bundle identifier, all with
   the Developer ID certificate, so the requirement is `identifier "<id>" and anchor apple generic`
@@ -388,7 +391,7 @@ owner's Developer ID):
 
 **What is checked now.** `scripts/release_identity.py` holds the rules and `package_mac.verify_bundle`
 applies them to the app and to every program inside it, in a fresh build and in the image that is
-mounted, and `package_mac.py --verify-only APP` applies them to an app that is already signed. A
+mounted, and `package_mac.py --verify-only APP` applies them to an app that is already signed (of the current release version only: its Info.plist is checked against `contracts/release.json`). A
 program fails when its identifier is not the one it is signed under, or lacks the profile's prefix
 (`com.soyeht.next.`) when it sits beside the app's executable; when its designated requirement is a code
 hash, names another identifier, has no Apple anchor or pins no signer, or pins another team; when its

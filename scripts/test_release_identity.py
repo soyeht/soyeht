@@ -8,6 +8,8 @@ from pathlib import Path
 
 import package_mac
 import release_identity as identity
+from package_common import PackagingError
+from test_package_mac import FULL, MACHO, fake_app, verify_recorded
 from generated_profile import PROFILES
 
 PREFIX = "com.soyeht.next"
@@ -193,6 +195,55 @@ class RealSignatureTests(unittest.TestCase):
             app = build_bundle(Path(temporary))
             package_mac.sign_bundle(app, signing)
             self.assertEqual(self.check(app, signing), [])
+
+
+class WiringTests(unittest.TestCase):
+    """`verify_bundle` and `--verify-only` really apply the rules (recorded output, no codesign)."""
+
+    def verify(self, app, signing, requirement_for=None, identifier_for=None):
+        def details(path):
+            name = Path(path).name
+            return SIGNED.replace(ENGINE, (identifier_for or {}).get(name, ENGINE))
+
+        def requirement(path):
+            name = Path(path).name
+            return (requirement_for or {}).get(name, REQUIREMENT_TEXT.replace(ENGINE, (identifier_for or {}).get(name, ENGINE)))
+
+        return "\n".join(verify_recorded(app, signing, details, requirement))
+
+    def test_a_code_hash_requirement_fails_a_signed_build_but_not_an_ad_hoc_one(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = fake_app(Path(temporary))
+            hashed = {"soyeht-ptyd": AD_HOC_REQUIREMENT}
+            signed = self.verify(app, package_mac.resolve_signing(FULL), hashed)
+            ad_hoc = self.verify(app, package_mac.Signing(), hashed)
+        self.assertIn("soyeht-ptyd: the designated requirement is a code hash", signed)
+        self.assertNotIn("code hash", ad_hoc)
+
+    def test_a_bundle_with_another_name_than_the_product_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = fake_app(Path(temporary))
+            renamed = app.rename(app.with_name("Other.app"))
+            text = self.verify(renamed, package_mac.resolve_signing(FULL))
+        self.assertIn(f"the bundle is called Other.app, not {package_mac.PRODUCT_NAME}.app", text)
+
+    def test_a_program_beside_the_app_with_a_foreign_identifier_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = fake_app(Path(temporary))
+            (app / "Contents/MacOS/stray").write_bytes(MACHO)
+            text = self.verify(app, package_mac.resolve_signing(FULL), identifier_for={"stray": "org.example.stray"})
+        self.assertIn(f"stray: identifier org.example.stray does not start with {PREFIX}.", text)
+
+    def test_verify_only_needs_the_team_and_an_app(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app = fake_app(Path(temporary))
+            with self.assertRaisesRegex(PackagingError, "needs SOYEHT_DEVELOPMENT_TEAM"):
+                package_mac.package(package_mac.parser().parse_args(["--verify-only", str(app)]), {})
+            environment = {package_mac.TEAM_VARIABLE: TEAM}
+            with self.assertRaisesRegex(PackagingError, "is not an app bundle"):
+                package_mac.package(
+                    package_mac.parser().parse_args(["--verify-only", str(Path(temporary) / "absent.app")]), environment
+                )
 
 
 class ProfileTests(unittest.TestCase):

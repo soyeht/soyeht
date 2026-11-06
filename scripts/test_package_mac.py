@@ -42,6 +42,23 @@ def fake_app(root):
     return app
 
 
+def verify_recorded(app, signing, details, requirement=lambda path: ""):
+    """`verify_bundle` with `codesign` replaced by recorded answers: `details(path)` for `-dvv` and
+    `requirement(path)` for `-d -r-`; every other command answers "arm64"."""
+    answer = type("R", (), {"stdout": "arm64", "stderr": "", "returncode": 0})()
+    with (
+        patch.object(package_mac, "run", return_value=answer),
+        patch.object(package_mac, "check_info", return_value=[]),
+        patch.object(package_mac, "signature_details", side_effect=details),
+        patch.object(package_mac, "requirement_text", side_effect=requirement),
+        patch.object(
+            package_mac, "entitlements_of",
+            side_effect=lambda path: package_mac.EXPECTED_APP_ENTITLEMENTS if Path(path) == app else set(),
+        ),
+    ):
+        return package_mac.verify_bundle(app, signing, package_mac.release.current())
+
+
 class SizeCeilingTests(unittest.TestCase):
     CEILINGS = {"macos-aarch64.dmg": 1000, "linux-x86_64.deb": None}
 
@@ -390,18 +407,7 @@ class CheckTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             app = fake_app(Path(temporary))
-            answer = type("R", (), {"stdout": "arm64", "stderr": "", "returncode": 0})()
-            made = package_mac.release.current()
-            with (
-                patch.object(package_mac, "run", return_value=answer),
-                patch.object(package_mac, "check_info", return_value=[]),
-                patch.object(package_mac, "signature_details", side_effect=details),
-                patch.object(
-                    package_mac, "entitlements_of",
-                    side_effect=lambda path: package_mac.EXPECTED_APP_ENTITLEMENTS if Path(path) == app else set(),
-                ),
-            ):
-                problems = package_mac.verify_bundle(app, package_mac.resolve_signing(FULL), made)
+            problems = verify_recorded(app, package_mac.resolve_signing(FULL), details)
         text = "\n".join(problems)
         self.assertIn("Inner: hardened runtime is off", text)
         self.assertIn("Frameworks/Inner.framework", text.replace("Contents/", ""), "a bundle is checked too")

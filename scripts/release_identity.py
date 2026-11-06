@@ -22,8 +22,6 @@ HASH = re.compile(r"(?<![0-9A-Za-z])(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,
 CDHASH = re.compile(r'cdhash\s+H"')
 TEAM_PIN = re.compile(r'certificate leaf\[subject\.OU\]\s*=\s*"?([A-Z0-9]{10})"?')
 LEAF_PIN = re.compile(r"certificate leaf\[subject\.(?:OU|CN)\]\s*=")
-# The folder macOS puts a framework's versions in (`Versions/A`): not a release version.
-FRAMEWORK_LAYOUT = {"Versions", "Current"}
 LIBRARY_SUFFIX = ".dylib"
 
 
@@ -99,7 +97,7 @@ def path_problems(relative, version=None):
     parts = PurePath(relative).parts
     problems = []
     for index, part in enumerate(parts):
-        if part in FRAMEWORK_LAYOUT or (index == len(parts) - 1 and part.endswith(LIBRARY_SUFFIX)):
+        if index == len(parts) - 1 and part.endswith(LIBRARY_SUFFIX):
             continue
         if VERSION.search(part) or (version and str(version) in part):
             problems.append(f"the path component {part!r} holds a version")

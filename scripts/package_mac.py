@@ -572,17 +572,21 @@ def parser():
     argument.add_argument("--ad-hoc", action="store_true", help="sign ad hoc and skip notarization")
     argument.add_argument("--release", action="store_true", help="require the identity, the team and the notary credentials")
     argument.add_argument("--reuse-build", action="store_true", help="reuse the programs and the app of an earlier run")
-    argument.add_argument("--verify-only", type=Path, metavar="APP", help="check a signed app that is already built, with the team from the environment; builds nothing")
+    argument.add_argument("--verify-only", type=Path, metavar="APP", help="check a signed app of the current release version that is already built, with the team from the environment; builds nothing")
     argument.add_argument("--dist", type=Path, default=DIST, help="the output folder (default: dist/)")
     return argument
 
 
 def verify_only(app, environment):
     """Check a built and signed app without building anything (the privacy-list rules included).
-    Only the team comes from the environment; the identity that signed it is not needed."""
+    Only the team comes from the environment; the identity that signed it is not needed. The app
+    must be of the current release version (`contracts/release.json`): its Info.plist is checked
+    against it like a fresh build's."""
     team = environment.get(TEAM_VARIABLE) or ""
     if not TEAM_PATTERN.match(team):
         raise PackagingError(f"--verify-only needs {TEAM_VARIABLE} (a ten-character team identifier) in the environment")
+    if not (app / "Contents/Info.plist").is_file():
+        raise PackagingError(f"--verify-only: {app} is not an app bundle")
     problems = verify_bundle(app, Signing("(already signed)", team), release.current())
     for problem in problems:
         print(f"PROBLEM: {problem}", file=sys.stderr)
