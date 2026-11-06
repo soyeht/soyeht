@@ -15,9 +15,10 @@ use soyeht_protocol::{
     limits::{USAGE_AUTO_REFRESH_INTERVAL_SEC, USAGE_MAX_BACKOFF_SEC},
 };
 use soyeht_usage::{
-    ManualRefresh, Planner, Reading, RefreshOutcome, RefreshPolicy, Trigger, host::Host,
+    ManualRefresh, Planner, ReadHints, Reading, RefreshOutcome, RefreshPolicy, Trigger, host::Host,
 };
 use std::sync::Arc;
+use tokio::sync::Notify;
 
 pub struct Service {
     planner: Arc<Planner>,
@@ -29,6 +30,23 @@ pub struct Service {
     panicked: Vec<(UsageProvider, Streak)>,
     in_flight: Vec<UsageProvider>,
     schedules: bool,
+    /// The provider the last OpenCode read followed (`None` inside: it followed none), once this
+    /// run has read it. A pane that moves OpenCode to another provider changes it.
+    opencode_followed: Option<Option<String>>,
+    /// What the OpenCode read in flight follows. It is recorded when that read commits, and
+    /// dropped when it is abandoned or panics, so the next refresh still sees the change.
+    opencode_pending: Option<OpencodeFollow>,
+    /// Raised when the background schedule should look at what the panes follow now.
+    wake: Arc<Notify>,
+}
+
+/// What an OpenCode read in flight follows, applied when its outcome commits.
+struct OpencodeFollow {
+    /// The provider it follows (`None`: none).
+    provider: Option<String>,
+    /// What it follows changed, so the reading shown, which is another provider's, is not kept
+    /// when the new read fails.
+    restarted: bool,
 }
 
 /// Refreshes chosen under the engine lock, to be read without it.
@@ -38,6 +56,7 @@ pub struct PreparedRefresh {
     trigger: Trigger,
     now_sec: u64,
     fetched_at: String,
+    hints: ReadHints,
 }
 
 #[derive(Debug)]
@@ -86,9 +105,11 @@ impl PreparedRefresh {
                 .map(|provider| {
                     let planner = &self.planner;
                     let fetched_at = &self.fetched_at;
+                    let hints = &self.hints;
                     let (trigger, now_sec) = (self.trigger, self.now_sec);
-                    let handle = scope
-                        .spawn(move || planner.refresh(provider, trigger, now_sec, fetched_at));
+                    let handle = scope.spawn(move || {
+                        planner.refresh(provider, trigger, now_sec, fetched_at, hints)
+                    });
                     (provider, handle)
                 })
                 .collect();
@@ -123,7 +144,20 @@ impl Service {
             panicked: Vec::new(),
             in_flight: Vec::new(),
             schedules,
+            opencode_followed: None,
+            opencode_pending: None,
+            wake: Arc::default(),
         }
+    }
+
+    /// The signal the background schedule waits on besides its tick.
+    pub fn woken(&self) -> Arc<Notify> {
+        Arc::clone(&self.wake)
+    }
+
+    /// Asks the background schedule to look now at what the panes follow.
+    pub fn wake(&self) {
+        self.wake.notify_one();
     }
 
     pub fn schedules(&self) -> bool {
@@ -172,6 +206,7 @@ impl Service {
         provider: Option<UsageProvider>,
         now_sec: u64,
         fetched_at: &str,
+        hints: ReadHints,
     ) -> Result<PreparedRefresh, ManualRefusal> {
         let providers = provider.map_or_else(|| self.providers(), |provider| vec![provider]);
         let mut wait = providers
@@ -193,11 +228,17 @@ impl Service {
         for provider in &providers {
             self.policy.record_manual(provider, now_sec);
         }
-        Ok(self.prepare(providers, Trigger::Manual, now_sec, fetched_at))
+        Ok(self.prepare(providers, Trigger::Manual, now_sec, fetched_at, hints))
     }
 
-    /// The providers the background schedule wants now, if any.
-    pub fn prepare_automatic(&mut self, now_sec: u64, fetched_at: &str) -> Option<PreparedRefresh> {
+    /// The providers the background schedule wants now, if any: those whose interval has run out,
+    /// and OpenCode when the pane in use moved it to another provider.
+    pub fn prepare_automatic(
+        &mut self,
+        now_sec: u64,
+        fetched_at: &str,
+        hints: ReadHints,
+    ) -> Option<PreparedRefresh> {
         let due: Vec<UsageProvider> = self
             .providers()
             .into_iter()
@@ -205,9 +246,20 @@ impl Service {
             .filter(|provider| {
                 self.policy
                     .automatic_due(provider, now_sec, self.reading(provider))
+                    || (self.follow_changed(provider, &hints)
+                        && self.policy.changed_due(provider, now_sec))
             })
             .collect();
-        (!due.is_empty()).then(|| self.prepare(due, Trigger::Automatic, now_sec, fetched_at))
+        (!due.is_empty()).then(|| self.prepare(due, Trigger::Automatic, now_sec, fetched_at, hints))
+    }
+
+    /// Whether `provider` follows something else than its last read did.
+    fn follow_changed(&self, provider: &UsageProvider, hints: &ReadHints) -> bool {
+        *provider == UsageProvider::Opencode
+            && self
+                .opencode_followed
+                .as_ref()
+                .is_some_and(|followed| followed.as_deref() != hints.opencode_provider())
     }
 
     fn prepare(
@@ -216,14 +268,22 @@ impl Service {
         trigger: Trigger,
         now_sec: u64,
         fetched_at: &str,
+        hints: ReadHints,
     ) -> PreparedRefresh {
         self.in_flight.extend(providers.iter().cloned());
+        if providers.contains(&UsageProvider::Opencode) {
+            self.opencode_pending = Some(OpencodeFollow {
+                provider: hints.opencode_provider().map(str::to_owned),
+                restarted: self.follow_changed(&UsageProvider::Opencode, &hints),
+            });
+        }
         PreparedRefresh {
             planner: Arc::clone(&self.planner),
             providers,
             trigger,
             now_sec,
             fetched_at: fetched_at.to_owned(),
+            hints,
         }
     }
 
@@ -231,6 +291,9 @@ impl Service {
     pub fn abandon(&mut self, providers: &[UsageProvider]) {
         self.in_flight
             .retain(|provider| !providers.contains(provider));
+        if providers.contains(&UsageProvider::Opencode) {
+            self.opencode_pending = None;
+        }
     }
 
     pub fn commit(&mut self, batch: RefreshBatch) -> Vec<Committed> {
@@ -246,13 +309,15 @@ impl Service {
                 .record(&provider, batch.now_sec, outcome.transient.as_ref());
             let log_signed_out = self.track_signed_out(&provider, &outcome.reading, batch.manual);
             let previous = self.reading(&provider).cloned();
+            let restarted = self.settle_follow(&provider);
             let fresh = outcome.reading.state == UsageState::Ok;
             let shown = if fresh {
                 self.set_streak(&provider, 0);
                 outcome.reading
             } else {
                 let streak = self.bump_streak(&provider);
-                kept_or_failed(previous.as_ref(), outcome.reading, streak, batch.now_sec)
+                let kept = previous.as_ref().filter(|_| !restarted);
+                kept_or_failed(kept, outcome.reading, streak, batch.now_sec)
             };
             let changed = previous.as_ref() != Some(&shown);
             replace(&mut self.readings, shown.clone());
@@ -267,12 +332,29 @@ impl Service {
         committed
     }
 
+    /// Records what a committed read of `provider` followed. Returns whether it started over.
+    fn settle_follow(&mut self, provider: &UsageProvider) -> bool {
+        if *provider != UsageProvider::Opencode {
+            return false;
+        }
+        match self.opencode_pending.take() {
+            Some(follow) => {
+                self.opencode_followed = Some(follow.provider);
+                follow.restarted
+            }
+            None => false,
+        }
+    }
+
     /// A provider whose reader panicked has no reading to fold in. It is released, so that the
     /// next refresh reads it, and counted as an attempt, so that the schedule waits its interval
     /// and a reader that always panics is not started again on every tick. What the ring shows is
     /// left as it was.
     fn commit_panicked(&mut self, provider: &UsageProvider, now_sec: u64) -> Committed {
         self.in_flight.retain(|item| item != provider);
+        if *provider == UsageProvider::Opencode {
+            self.opencode_pending = None;
+        }
         self.policy.record(provider, now_sec, None);
         let log_panicked = self.track_panicked(provider, true);
         let shown = self

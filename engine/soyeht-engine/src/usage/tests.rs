@@ -4,7 +4,7 @@ use super::*;
 use crate::{dispatch::Outcome, ports::testing::FixedClock};
 use serde_json::json;
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState, UsageUnavailableReason};
-use soyeht_usage::host::*;
+use soyeht_usage::{ReadHints, host::*};
 use std::{
     collections::VecDeque,
     fs,
@@ -21,7 +21,7 @@ const CODEX_LOGIN: &[u8] = br#"{"OPENAI_API_KEY":"sk-recorded-fixture"}"#;
 
 /// Codex reads its API key and gets the scripted HTTP answers; Cursor finds nothing. Claude finds
 /// no login until `claude_login` is set, and then reads the same usage whatever its endpoint is asked.
-struct ScriptedHost {
+pub(super) struct ScriptedHost {
     http: Mutex<VecDeque<HttpResult>>,
     /// When Claude Code's credentials file exists: the expiry of its login, in milliseconds.
     claude_login: Mutex<Option<u64>>,
@@ -37,10 +37,12 @@ struct ScriptedHost {
     /// Whether OpenCode is installed, and what its database records.
     opencode_installed: AtomicBool,
     opencode_usage: Mutex<LocalUsageRead>,
+    /// The provider each read of the OpenCode activity was for.
+    pub(super) opencode_asked: Mutex<Vec<Option<String>>>,
 }
 
 impl ScriptedHost {
-    fn new(answers: Vec<HttpResult>) -> Self {
+    pub(super) fn new(answers: Vec<HttpResult>) -> Self {
         Self {
             http: Mutex::new(answers.into()),
             claude_login: Mutex::new(None),
@@ -50,10 +52,11 @@ impl ScriptedHost {
             panic_http: AtomicBool::new(false),
             opencode_installed: AtomicBool::new(false),
             opencode_usage: Mutex::new(LocalUsageRead::NoDatabase),
+            opencode_asked: Mutex::default(),
         }
     }
 
-    fn record_opencode(&self, read: LocalUsageRead) {
+    pub(super) fn record_opencode(&self, read: LocalUsageRead) {
         self.opencode_installed.store(true, Ordering::Relaxed);
         *self.opencode_usage.lock().unwrap() = read;
     }
@@ -66,7 +69,7 @@ impl ScriptedHost {
 const CLAUDE_USAGE: &[u8] =
     br#"{"five_hour":{"utilization":10,"resets_at":"2030-01-01T00:00:00Z"}}"#;
 
-fn usage_answer(percent: u32) -> HttpResult {
+pub(super) fn usage_answer(percent: u32) -> HttpResult {
     HttpResult::Response {
         status: 200,
         retry_after_sec: None,
@@ -138,8 +141,11 @@ impl Host for ScriptedHost {
         &self,
         _database: &Path,
         _since_ms: i64,
-        _provider: Option<&str>,
+        provider: Option<&str>,
     ) -> LocalUsageRead {
+        let mut asked = self.opencode_asked.lock().unwrap();
+        asked.push(provider.map(str::to_owned));
+        drop(asked);
         self.opencode_usage.lock().unwrap().clone()
     }
     fn json_rpc(&self, _request: &RpcRequest) -> RpcRun {
@@ -431,7 +437,7 @@ const FAR: u64 = 99_999_999_999_999;
 
 /// Reads whatever the background schedule wants at `now_sec` and says whether Claude was in it.
 fn automatic_round(service: &mut Service, now_sec: u64) -> Option<bool> {
-    let prepared = service.prepare_automatic(now_sec, "t")?;
+    let prepared = service.prepare_automatic(now_sec, "t", ReadHints::default())?;
     let claude = prepared.providers().contains(&UsageProvider::Claude);
     let committed = service.commit(prepared.read());
     if claude {
@@ -449,7 +455,7 @@ fn claude_due(service: &mut Service, now_sec: u64) -> bool {
 
 fn provider_due(service: &mut Service, provider: &UsageProvider, now_sec: u64) -> bool {
     service
-        .prepare_automatic(now_sec, "t")
+        .prepare_automatic(now_sec, "t", ReadHints::default())
         .is_some_and(|prepared| {
             let due = prepared.providers().contains(provider);
             service.abandon(prepared.providers());
@@ -499,7 +505,12 @@ fn a_click_reads_a_signed_out_provider_at_once() {
     assert_eq!(automatic_round(&mut service, 1_000_000), Some(true));
     host.sign_in_claude(FAR);
     let prepared = service
-        .prepare_manual(Some(UsageProvider::Claude), 1_000_010, "t")
+        .prepare_manual(
+            Some(UsageProvider::Claude),
+            1_000_010,
+            "t",
+            ReadHints::default(),
+        )
         .ok()
         .unwrap();
     service.commit(prepared.read());
@@ -593,6 +604,7 @@ fn read_claude(host: &Arc<ScriptedHost>) -> soyeht_usage::RefreshOutcome {
         soyeht_usage::Trigger::Manual,
         NOW,
         "t",
+        &ReadHints::default(),
     )
 }
 
@@ -655,7 +667,7 @@ fn a_click_that_finds_the_provider_still_signed_out_does_not_lengthen_the_hold()
     for click in 1..=3 {
         let at = start + click * 40;
         let prepared = service
-            .prepare_manual(Some(UsageProvider::Claude), at, "t")
+            .prepare_manual(Some(UsageProvider::Claude), at, "t", ReadHints::default())
             .ok()
             .unwrap();
         let committed = service.commit(prepared.read());
@@ -675,7 +687,9 @@ fn a_provider_whose_reader_panics_is_released_logged_once_and_read_again() {
     let start = 1_000_000;
     let codex = UsageProvider::Codex;
     let round = |service: &mut Service, at: u64| {
-        let prepared = service.prepare_automatic(at, "t").unwrap();
+        let prepared = service
+            .prepare_automatic(at, "t", ReadHints::default())
+            .unwrap();
         assert!(prepared.providers().contains(&codex));
         let committed = service.commit(prepared.read());
         committed
@@ -690,7 +704,7 @@ fn a_provider_whose_reader_panics_is_released_logged_once_and_read_again() {
     // were read.
     assert!(
         service
-            .prepare_manual(Some(codex.clone()), start + 1, "t")
+            .prepare_manual(Some(codex.clone()), start + 1, "t", ReadHints::default())
             .is_ok()
     );
     service.abandon(std::slice::from_ref(&codex));

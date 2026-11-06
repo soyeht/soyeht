@@ -8,7 +8,7 @@
 //! only; a manual refresh always tries every source, as a click does in CodexBar.
 
 use crate::{
-    Reading,
+    ReadHints, Reading,
     host::Host,
     sources::{self, Failure, ParsedReading, ReadContext, Source, Trigger},
 };
@@ -103,9 +103,10 @@ impl Planner {
         trigger: Trigger,
         now_sec: u64,
         fetched_at: &str,
+        hints: &ReadHints,
     ) -> RefreshOutcome {
         let chain = self.chain(provider).unwrap_or_default();
-        let context = ReadContext::new(now_sec);
+        let context = ReadContext::new(now_sec, hints.clone());
         let mut last: Option<(UsageSource, Failure)> = None;
         for source in chain {
             let id = source.id();

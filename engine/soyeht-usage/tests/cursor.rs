@@ -5,7 +5,7 @@ mod support;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use soyeht_protocol::{UsageProvider, UsageSource, UsageState};
 use soyeht_usage::{
-    Planner, Trigger,
+    Trigger,
     host::{Cookie, CookieJar, Platform, Secret, SecretRead},
 };
 use std::{path::Path, sync::Arc};
@@ -38,9 +38,8 @@ fn app_login_is_sent_as_the_session_cookie() {
     let mut host = FakeHost::new(Platform::MacOs).respond(SUMMARY, 200, summary());
     host.state_db = SecretRead::Found(Secret::new(app_token()));
     let host = Arc::new(host);
-    let reading = Planner::new(host.clone())
-        .refresh(&UsageProvider::Cursor, Trigger::Automatic, NOW, "now")
-        .reading;
+    let reading =
+        support::read_once(&host, UsageProvider::Cursor, Trigger::Automatic, NOW, "now").reading;
     assert_eq!(reading.source, UsageSource::CursorAppLogin);
     let primary = reading.primary.unwrap();
     assert_eq!(primary.used, 0.62);
@@ -77,9 +76,8 @@ fn rejected_app_login_falls_back_to_browser_cookies_on_macos() {
         },
     )];
     let host = Arc::new(host);
-    let reading = Planner::new(host.clone())
-        .refresh(&UsageProvider::Cursor, Trigger::Automatic, NOW, "now")
-        .reading;
+    let reading =
+        support::read_once(&host, UsageProvider::Cursor, Trigger::Automatic, NOW, "now").reading;
     assert_eq!(reading.source, UsageSource::CursorBrowserCookies);
     assert_eq!(
         secret_header(&host).last().unwrap(),
@@ -93,9 +91,8 @@ fn linux_uses_the_xdg_app_login_and_never_a_browser() {
     let config = std::env::temp_dir().join("xdg");
     host.env = vec![("XDG_CONFIG_HOME".into(), config.to_str().unwrap().into())];
     let host = Arc::new(host);
-    let reading = Planner::new(host.clone())
-        .refresh(&UsageProvider::Cursor, Trigger::Automatic, NOW, "now")
-        .reading;
+    let reading =
+        support::read_once(&host, UsageProvider::Cursor, Trigger::Automatic, NOW, "now").reading;
     assert_eq!(reading.state, UsageState::LoginNeeded);
     assert_eq!(
         host.calls(),

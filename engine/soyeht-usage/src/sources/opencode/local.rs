@@ -24,7 +24,7 @@ impl Source for LocalHistorySource {
             return Err(Failure::ToolNotFound);
         }
         let database = super::database(host).ok_or(Failure::NoData)?;
-        let provider = super::active_provider(host);
+        let provider = super::active_provider(host, &context);
         let since_ms = i64::try_from(context.now_sec)
             .unwrap_or(i64::MAX)
             .saturating_sub(i64::try_from(USAGE_ACTIVITY_DAYS).unwrap_or(0) * 86_400)

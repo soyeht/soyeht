@@ -14,7 +14,7 @@ mod go;
 mod local;
 mod zai;
 
-use super::{Failure, Source, read_json_file};
+use super::{Failure, ReadContext, Source, read_json_file};
 use crate::host::{Host, Secret, StoredCredential};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -59,11 +59,17 @@ pub(super) fn database(host: &dyn Host) -> Option<PathBuf> {
     }
 }
 
-/// The provider OpenCode is set to: the `model` of its configuration (`provider/model`), else
-/// the provider of the model it used last. A configuration that is not plain JSON is left
-/// unread, so the last used model decides.
-pub(super) fn active_provider(host: &dyn Host) -> Option<String> {
-    configured_provider(host).or_else(|| last_used_provider(host))
+/// The provider OpenCode is set to: the one the most recently active pane uses (the hint the
+/// engine copies), else the `model` of OpenCode's configuration (`provider/model`), else the
+/// provider of the model it used last. A configuration that is not plain JSON is left unread, so
+/// the last used model decides.
+pub(super) fn active_provider(host: &dyn Host, context: &ReadContext) -> Option<String> {
+    context
+        .hints
+        .opencode_provider()
+        .map(str::to_owned)
+        .or_else(|| configured_provider(host))
+        .or_else(|| last_used_provider(host))
 }
 
 fn configured_provider(host: &dyn Host) -> Option<String> {
@@ -77,7 +83,7 @@ fn configured_provider(host: &dyn Host) -> Option<String> {
     // ignored: a configuration that is missing or not plain JSON leaves the last used model to decide
     let config = read_json_file(host, &path).ok()?;
     let model = config.get("model")?.as_str()?;
-    provider_of(model)
+    provider_of(model).map(str::to_owned)
 }
 
 fn last_used_provider(host: &dyn Host) -> Option<String> {
@@ -89,14 +95,15 @@ fn last_used_provider(host: &dyn Host) -> Option<String> {
     (!provider.is_empty() && provider.len() <= 128).then(|| provider.to_owned())
 }
 
-fn provider_of(model: &str) -> Option<String> {
+/// The provider of a `provider/model` identifier.
+pub(crate) fn provider_of(model: &str) -> Option<&str> {
     let (provider, _) = model.trim().split_once('/')?;
-    (!provider.is_empty() && provider.len() <= 128).then(|| provider.to_owned())
+    (!provider.is_empty() && provider.len() <= 128).then_some(provider)
 }
 
 /// Whether OpenCode is set to one of `providers`.
-pub(super) fn follows(host: &dyn Host, providers: &[&str]) -> bool {
-    active_provider(host).is_some_and(|active| providers.contains(&active.as_str()))
+pub(super) fn follows(host: &dyn Host, context: &ReadContext, providers: &[&str]) -> bool {
+    active_provider(host, context).is_some_and(|active| providers.contains(&active.as_str()))
 }
 
 /// A login OpenCode holds for one integration.

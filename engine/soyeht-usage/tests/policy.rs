@@ -93,3 +93,13 @@ fn kept_and_restored_readings_are_last_known_with_their_values_and_age() {
     assert_eq!(reading("later").for_display(1_900).state, UsageState::Ok);
     assert_eq!(reading("later").for_display(1_901).state, UsageState::Stale);
 }
+
+#[test]
+fn a_changed_follow_is_read_ahead_of_the_interval_but_not_faster_than_a_click() {
+    let mut policy = RefreshPolicy::default();
+    assert!(policy.changed_due(&CODEX, 1_000));
+    policy.record(&CODEX, 1_000, None);
+    assert!(!policy.automatic_due(&CODEX, 1_030, None));
+    assert!(!policy.changed_due(&CODEX, 1_029));
+    assert!(policy.changed_due(&CODEX, 1_030));
+}

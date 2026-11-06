@@ -6,12 +6,14 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod foreign_db;
+mod hints;
 pub mod host;
 mod model;
 mod planner;
 mod policy;
 mod sources;
 
+pub use hints::ReadHints;
 pub use model::{Activity, Reading, Window};
 pub use planner::{PROVIDERS, Planner, RefreshOutcome, TransientFailure};
 pub use policy::{ManualRefresh, RefreshPolicy};
