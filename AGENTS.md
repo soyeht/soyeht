@@ -93,6 +93,8 @@ Each layer depends only on the layers listed above it.
 `scripts/check_layers.py` reads every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and
 fails when a crate depends on a Soyeht crate outside its layer, or when a new crate is not
 in its `LAYERS` table. Place a new crate there and in the list above.
+It also fails when the three cargo workspaces differ in the `vt100` fork under `[patch.crates-io]`,
+the `rust-version` or the `[workspace.lints]` table; change them in all three together.
 
 Every feature starts in `docs/contracts/`. Decisions live in `docs/adr/`; add an
 ADR when you change a boundary.
