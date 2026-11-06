@@ -518,6 +518,14 @@ impl Rig {
         self.fixture.core.dispatch(&connection, request).unwrap()
     }
 
+    /// Lets the request wait, as the server does, and checks that the delete was carried out.
+    fn finish_deleting(&mut self, offload: crate::offload::Offload) {
+        let Outcome::Reply(reply) = offload.run_inline(&mut self.fixture.core).unwrap() else {
+            panic!("expected the reply to the delete");
+        };
+        assert_eq!(reply["outcome"], "deleted");
+    }
+
     /// The request waiting for the saves it started, off the lock.
     fn waiting(outcome: Outcome) -> crate::offload::Offload {
         let Outcome::Offload(offload) = outcome else {
@@ -544,10 +552,7 @@ async fn deleting_a_file_with_a_draft_does_not_wait_for_the_disk_and_then_delete
     assert_eq!(fs::read_to_string(rig.path()).unwrap(), "alpha\n");
 
     rig.writes.release();
-    let Outcome::Reply(reply) = offload.run_inline(&mut rig.fixture.core).unwrap() else {
-        panic!("expected the reply to the delete");
-    };
-    assert_eq!(reply["outcome"], "deleted");
+    rig.finish_deleting(offload);
     assert!(!rig.path().exists());
     assert_eq!(rig.writes.visitors(), 1);
 }
@@ -567,10 +572,7 @@ async fn a_disk_check_running_when_a_file_is_deleted_does_not_keep_its_draft_fro
     rig.reads.release();
     // The delete waits for the check, saves what the check kept from starting, waits for that
     // too, and then deletes.
-    let Outcome::Reply(reply) = offload.run_inline(&mut rig.fixture.core).unwrap() else {
-        panic!("expected the reply to the delete");
-    };
-    assert_eq!(reply["outcome"], "deleted");
+    rig.finish_deleting(offload);
     assert!(!rig.path().exists());
     assert!(
         !rig.versions().is_empty(),
@@ -638,10 +640,7 @@ async fn deleting_a_folder_saves_every_draft_under_it_and_then_deletes_it() {
     };
 
     let offload = Rig::waiting(rig.delete("src"));
-    let Outcome::Reply(reply) = offload.run_inline(&mut rig.fixture.core).unwrap() else {
-        panic!("expected the reply to the delete");
-    };
-    assert_eq!(reply["outcome"], "deleted");
+    rig.finish_deleting(offload);
     assert!(!rig.fixture.project().join("src").exists());
     for id in &ids {
         let saved = rig.fixture.core.store.file_history(id, None, 50).unwrap();
