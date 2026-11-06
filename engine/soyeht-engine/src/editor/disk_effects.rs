@@ -343,12 +343,6 @@ impl Core {
         Err(errors::stale_version("The file is being saved"))
     }
 
-    /// Whether a disk job is working on the file, including the one that saves a closed tab.
-    pub(super) fn disk_job_running(&self, file_id: &str) -> bool {
-        self.background.is_active(&job_key(file_id))
-            || self.background.is_active(&close_key(file_id))
-    }
-
     fn finish_disk_job(
         &mut self,
         file_id: &str,

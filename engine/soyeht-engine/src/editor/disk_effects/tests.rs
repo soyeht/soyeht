@@ -1,7 +1,7 @@
 //! The autosave and the disk watch run off the Core lock, and their results are applied to the
 //! file as it is when they finish (ADR 0097).
 
-use super::{DiskJob, DiskResult, Effect, Snapshot};
+use super::{DiskJob, DiskResult, Effect, Snapshot, close_key, job_key};
 use crate::{
     dispatch::Outcome,
     editor::{
@@ -21,11 +21,13 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+use uuid::Uuid;
 
 /// A point a disk operation can be held at, as a slow disk holds it.
 #[derive(Default)]
 struct Gate {
     armed: AtomicBool,
+    denied: AtomicBool,
     entered: AtomicUsize,
     open: Mutex<bool>,
     changed: Condvar,
@@ -34,6 +36,11 @@ struct Gate {
 impl Gate {
     fn arm(&self) {
         self.armed.store(true, Ordering::SeqCst);
+    }
+
+    /// Makes the operations that reach the gate fail, as a disk that refuses the write.
+    fn deny(&self) {
+        self.denied.store(true, Ordering::SeqCst);
     }
 
     fn pass(&self) {
@@ -100,6 +107,9 @@ impl Interference for Gated {
 
     fn before_write(&self, path: &Path) -> io::Result<()> {
         self.writes.pass();
+        if self.writes.denied.load(Ordering::SeqCst) {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
         match self.before_write.lock().unwrap().take() {
             Some(external) => fs::write(path, external),
             None => Ok(()),
@@ -440,6 +450,11 @@ async fn a_disk_check_waiting_for_the_disk_does_not_hold_the_tick() {
     assert_eq!(rig.file().draft_text, None);
 }
 
+/// Whether a disk job, or the job that saves a closed tab, is working on the file.
+fn job_running(core: &crate::core::Core, file_id: &str) -> bool {
+    core.background.is_active(&job_key(file_id)) || core.background.is_active(&close_key(file_id))
+}
+
 impl Rig {
     /// The draft "alpha beta" of `main.rs` typed, with the writes of the disk held at their gate and
     /// the jobs running on the workers.
@@ -489,29 +504,42 @@ async fn closing_a_tab_with_a_draft_does_not_wait_for_the_disk() {
     assert_eq!(rig.writes.visitors(), 1);
 }
 
+impl Rig {
+    /// Asks to delete `path` for good, as a client does, and returns what dispatch gives back.
+    fn delete(&mut self, path: &str) -> Outcome {
+        let request = json!({
+            "jsonrpc":"2.0","id":900,"method":"project.entry.delete",
+            "params":{
+                "workspaceId":self.fixture.workspace_id,"path":path,"permanent":true,
+                "idempotencyKey":Uuid::new_v4().to_string()
+            }
+        });
+        let connection = self.fixture.connection.clone();
+        self.fixture.core.dispatch(&connection, request).unwrap()
+    }
+
+    /// The request waiting for the saves it started, off the lock.
+    fn waiting(outcome: Outcome) -> crate::offload::Offload {
+        let Outcome::Offload(offload) = outcome else {
+            panic!("the delete should wait for the save off the lock");
+        };
+        offload
+    }
+}
+
 #[tokio::test]
 async fn deleting_a_file_with_a_draft_does_not_wait_for_the_disk_and_then_deletes_it() {
     let mut rig = Rig::typed_over_a_held_disk().await;
-    let request = json!({
-        "jsonrpc":"2.0","id":900,"method":"project.entry.delete",
-        "params":{
-            "workspaceId":rig.fixture.workspace_id,"path":"main.rs","permanent":true,
-            "idempotencyKey":"delete"
-        }
-    });
 
     let started = Instant::now();
-    let connection = rig.fixture.connection.clone();
-    let outcome = rig.fixture.core.dispatch(&connection, request).unwrap();
+    let outcome = rig.delete("main.rs");
     assert!(
         started.elapsed() < Duration::from_secs(1),
         "the delete waited {:?} for the write",
         started.elapsed()
     );
     // The request is answered once the save is done: it waits for the job off the lock.
-    let Outcome::Offload(offload) = outcome else {
-        panic!("the delete should wait for the save off the lock");
-    };
+    let offload = Rig::waiting(outcome);
     rig.writes.wait_for_visitors(1);
     assert_eq!(fs::read_to_string(rig.path()).unwrap(), "alpha\n");
 
@@ -522,6 +550,103 @@ async fn deleting_a_file_with_a_draft_does_not_wait_for_the_disk_and_then_delete
     assert_eq!(reply["outcome"], "deleted");
     assert!(!rig.path().exists());
     assert_eq!(rig.writes.visitors(), 1);
+}
+
+#[tokio::test]
+async fn a_disk_check_running_when_a_file_is_deleted_does_not_keep_its_draft_from_being_saved() {
+    let mut rig = Rig::new().await;
+    rig.fixture.core.background = Background::default();
+    rig.reads.arm();
+    rig.type_at(5, " beta");
+    // The disk check is due, the autosave is not yet: a check is running when the delete comes.
+    rig.tick_at(1_100);
+    rig.reads.wait_for_visitors(1);
+
+    let offload = Rig::waiting(rig.delete("main.rs"));
+    assert!(rig.path().exists());
+    rig.reads.release();
+    // The delete waits for the check, saves what the check kept from starting, waits for that
+    // too, and then deletes.
+    let Outcome::Reply(reply) = offload.run_inline(&mut rig.fixture.core).unwrap() else {
+        panic!("expected the reply to the delete");
+    };
+    assert_eq!(reply["outcome"], "deleted");
+    assert!(!rig.path().exists());
+    assert!(
+        !rig.versions().is_empty(),
+        "the draft was saved before the file went"
+    );
+}
+
+#[tokio::test]
+async fn text_typed_while_a_delete_waits_for_the_save_refuses_the_delete_and_keeps_the_file() {
+    let mut rig = Rig::typed_over_a_held_disk().await;
+    let offload = Rig::waiting(rig.delete("main.rs"));
+    rig.writes.wait_for_visitors(1);
+    rig.type_at(10, " gamma");
+
+    rig.writes.release();
+    let refused = offload.run_inline(&mut rig.fixture.core).err().unwrap();
+    assert!(refused.to_string().contains("unsaved changes"), "{refused}");
+    // What was saved is on the disk, what was typed after it is still a draft, nothing was removed.
+    assert_eq!(fs::read_to_string(rig.path()).unwrap(), "alpha beta\n");
+    assert_eq!(rig.file().draft_text.as_deref(), Some("alpha beta gamma\n"));
+}
+
+#[tokio::test]
+async fn a_save_that_fails_refuses_the_delete_and_says_why() {
+    let mut rig = Rig::new().await;
+    rig.fixture.core.background = Background::default();
+    rig.writes.deny();
+    rig.type_at(5, " beta");
+
+    let offload = Rig::waiting(rig.delete("main.rs"));
+    let refused = offload.run_inline(&mut rig.fixture.core).err().unwrap();
+    let message = refused.to_string();
+    assert!(message.contains("unsaved changes"), "{message}");
+    assert!(message.contains("permission was denied"), "{message}");
+    assert_eq!(fs::read_to_string(rig.path()).unwrap(), "alpha\n");
+    assert_eq!(rig.file().draft_text.as_deref(), Some("alpha beta\n"));
+}
+
+#[tokio::test]
+async fn deleting_a_folder_saves_every_draft_under_it_and_then_deletes_it() {
+    let files = [
+        ("src/a.rs", "a\n"),
+        ("src/b.rs", "b\n"),
+        ("src/c.rs", "c\n"),
+    ];
+    let mut fixture = EditorFixture::new(&files).await;
+    fixture.core.background = Background::default();
+    let ids: Vec<String> = files
+        .iter()
+        .map(|(path, _)| {
+            fixture.open(path, false)["file"]["fileId"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    for id in &ids {
+        fixture.type_at(id, 0, 1, " typed");
+    }
+    let mut rig = Rig {
+        fixture,
+        file_id: ids[0].clone(),
+        reads: Arc::new(Gate::default()),
+        writes: Arc::new(Gate::default()),
+    };
+
+    let offload = Rig::waiting(rig.delete("src"));
+    let Outcome::Reply(reply) = offload.run_inline(&mut rig.fixture.core).unwrap() else {
+        panic!("expected the reply to the delete");
+    };
+    assert_eq!(reply["outcome"], "deleted");
+    assert!(!rig.fixture.project().join("src").exists());
+    for id in &ids {
+        let saved = rig.fixture.core.store.file_history(id, None, 50).unwrap();
+        assert_eq!(saved.items.len(), 1, "the draft of {id} was saved first");
+    }
 }
 
 mod races;

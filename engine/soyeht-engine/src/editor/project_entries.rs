@@ -21,12 +21,13 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    PaneMode, ProjectDeleteOutcome, ProjectEntryCreateParams, ProjectEntryCreateResult,
-    ProjectEntryDeleteParams, ProjectEntryDeleteResult, ProjectEntryRenameParams,
-    ProjectEntryRenameResult, event, method,
+    EditorSaveFailure, PaneMode, ProjectDeleteOutcome, ProjectEntryCreateParams,
+    ProjectEntryCreateResult, ProjectEntryDeleteParams, ProjectEntryDeleteResult,
+    ProjectEntryRenameParams, ProjectEntryRenameResult, event, method,
 };
 use soyeht_store::editor::{EditorFile, document};
 use std::{
+    collections::BTreeMap,
     path::Path,
     time::{Duration, Instant},
 };
@@ -34,41 +35,59 @@ use std::{
 /// How much longer than its own wait the offloaded request may take before it is answered late.
 const OFFLOAD_SLACK: Duration = Duration::from_secs(1);
 
+/// What the earlier passes of one request have settled (see `project_entry_request`).
+pub(crate) struct Settling {
+    passes: u8,
+    /// The pending drafts the delete began with, and their revisions.
+    drafts: BTreeMap<String, u64>,
+}
+
+/// How many times a request waits for the disk: a rename waits for the jobs that were running; a
+/// delete also waits for the saves it started once those ended.
+const RENAME_WAITS: u8 = 1;
+const DELETE_WAITS: u8 = 2;
+
 impl Core {
     /// A rename or a delete. When a disk job is working on a file it moves or removes, the
     /// request waits for that job off the Core lock (ADR 0097), then runs again under the lock:
     /// a write that is renaming its temporary file over the old path would recreate the file
-    /// after it moved. A disk that does not answer in time refuses it as `stale_version`, and
-    /// so does a second pass (`retried`) that finds another job started meanwhile: an offload
-    /// is resolved once, so the apply step cannot offload again.
+    /// after it moved. A delete also starts the save of every pending draft under the path; a job
+    /// that was running (a disk check) keeps a save from starting, so the delete starts it again
+    /// once that job ended, for the drafts that have not changed and whose save has not failed,
+    /// and waits again. A disk that does not answer in time refuses the request as
+    /// `stale_version`, and so does a pass after the last one that finds another job started.
     pub(crate) fn project_entry_request(
         &mut self,
         connection: &str,
         method: &str,
         params: &Value,
-        retried: bool,
+        earlier: Option<Settling>,
     ) -> Result<Outcome> {
         let (workspace_id, path) = project_entry_target(method, params)?;
-        if method == method::PROJECT_ENTRY_DELETE && !retried {
-            // The drafts are saved before the files go; the request waits for those jobs below.
-            for file in self.live_files_under(&workspace_id, &path)? {
-                self.start_pending_save(&file.file_id);
-            }
+        let deleting = method == method::PROJECT_ENTRY_DELETE;
+        let passes = earlier.as_ref().map_or(0, |earlier| earlier.passes);
+        let mut drafts = earlier.map(|earlier| earlier.drafts).unwrap_or_default();
+        if deleting {
+            self.start_saves_before_delete(&workspace_id, &path, passes == 0, &mut drafts)?;
         }
         let signals = self.disk_job_signals_under(&workspace_id, &path)?;
         if signals.is_empty() {
-            let reply = if method == method::PROJECT_ENTRY_RENAME {
-                self.project_entry_rename(connection, params)
-            } else {
+            let reply = if deleting {
                 self.project_entry_delete(connection, params)
+            } else {
+                self.project_entry_rename(connection, params)
             };
             return reply.map(Outcome::Reply);
         }
-        if retried {
+        if passes >= if deleting { DELETE_WAITS } else { RENAME_WAITS } {
             return Err(errors::stale_version("The file is being saved"));
         }
         let (connection, method, params) =
             (connection.to_owned(), method.to_owned(), params.clone());
+        let settling = Settling {
+            passes: passes + 1,
+            drafts,
+        };
         Ok(Outcome::Offload(Offload::new(
             "The file is still being saved",
             SETTLE_WAIT + OFFLOAD_SLACK,
@@ -83,9 +102,38 @@ impl Core {
                     return Err(errors::stale_version("The file is being saved"));
                 }
                 core.apply_background();
-                core.project_entry_request(&connection, &method, &params, true)
+                core.project_entry_request(&connection, &method, &params, Some(settling))
             },
         )))
+    }
+
+    /// Starts the save of each pending draft under `path`. The first pass takes the drafts there
+    /// are; a later one saves again only those the person has not typed in since and whose save
+    /// has not failed, which a job that was running kept from starting.
+    fn start_saves_before_delete(
+        &mut self,
+        workspace_id: &str,
+        path: &str,
+        first: bool,
+        drafts: &mut BTreeMap<String, u64>,
+    ) -> Result<()> {
+        if first {
+            for file in self.live_files_under(workspace_id, path)? {
+                if file.draft_text.is_some() && file.conflict_text.is_none() {
+                    drafts.insert(file.file_id, file.revision);
+                }
+            }
+        }
+        for (file_id, revision) in drafts.iter() {
+            let unchanged = self
+                .editor
+                .stored(file_id)
+                .is_ok_and(|file| file.revision == *revision);
+            if unchanged && (first || self.editor.save_failure(file_id).is_none()) {
+                self.start_pending_save(file_id);
+            }
+        }
+        Ok(())
     }
 
     pub fn project_entry_create(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -206,8 +254,17 @@ impl Core {
                 .stored(&file.file_id)
                 .is_ok_and(|current| current.draft_text.is_some())
         }) {
+            let why = self
+                .editor
+                .save_failure(&file.file_id)
+                .map_or(String::new(), |failure| {
+                    format!(
+                        " and could not be saved ({})",
+                        save_failure_reason(&failure)
+                    )
+                });
             return Err(errors::invalid(format!(
-                "{} has unsaved changes; resolve them before deleting",
+                "{} has unsaved changes{why}; resolve them before deleting",
                 file.relative_path
             )));
         }
@@ -324,6 +381,16 @@ impl Core {
                     && (file.relative_path == path || file.relative_path.starts_with(&prefix))
             })
             .collect())
+    }
+}
+
+/// What a client is told about a save that failed.
+fn save_failure_reason(failure: &EditorSaveFailure) -> &'static str {
+    match failure {
+        EditorSaveFailure::Missing => "the file is gone",
+        EditorSaveFailure::Denied => "permission was denied",
+        EditorSaveFailure::Full => "the disk is full",
+        EditorSaveFailure::Other => "the disk refused it",
     }
 }
 
