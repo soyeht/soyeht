@@ -24,7 +24,7 @@ PROFILES = "contracts/profiles.json"
 ALLOWED = {
     "AGENTS.md": "the rule that forbids them",
     "docs/adr/0112-production-profile-and-native-data-directories.md": "the decision that avoids them",
-    "docs/contracts/00-slice-1-objective.md": "the first slice's list of names it must not use",
+    "docs/archive/contracts/00-slice-1-objective.md": "the first slice's list of names it must not use",
     "engine/soyeht-service/src/guard.rs": "the service files' guard, which refuses them",
     "contracts/legacy.json": "the list of the legacy names that every guard refuses",
     "engine/soyeht-protocol/src/legacy.rs": "the Rust form of that list",

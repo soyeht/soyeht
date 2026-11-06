@@ -29,8 +29,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = "contracts/protocol.json"
 DOC_ROOTS = ("docs", "contracts")
-# Dated reports record what was true when they were written, so they may name what is gone.
-SKIPPED_DOCS = ("docs/reports/",)
+# Dated reports and the archive record what was true when they were written, so they may name
+# what is gone.
+SKIPPED_DOCS = ("docs/reports/", "docs/archive/")
 # Names a document may keep although the protocol has no such name, with the reason.
 HISTORICAL_NAMES = {
     "pane.attention": "left column of the name mapping table in contract 08 section 9",
