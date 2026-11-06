@@ -7,6 +7,7 @@ use crate::{
     conversation::{self, Conversation},
     overview::{self, Overview},
     terminal::{self, KeyPress, TerminalFrame},
+    usage::{self, UsageGauge},
 };
 use soyeht_client::{
     Command, Engine, Error, Event, State,
@@ -66,6 +67,7 @@ pub struct Core {
     engine: Mutex<Option<Arc<Engine>>>,
     /// Ends the pairing that is waiting, if there is one.
     pairing: Mutex<Arc<Cancel>>,
+    /// Which provider's meter reads each harness; the contract's rule unless the app chose otherwise.
     /// Which connection the replica belongs to: the events of an earlier one are dropped, not applied.
     epoch: Arc<AtomicU64>,
 }
@@ -229,6 +231,16 @@ impl Core {
 
     pub fn conversation(&self, pane_id: String) -> Option<Conversation> {
         conversation::conversation(&lock(&self.replica).state, &pane_id)
+    }
+
+    /// Asks the engine for the usage of every provider. The answer reaches `usage_gauge` through the replica.
+    pub fn load_usage(&self) {
+        self.send(Command::LoadUsage);
+    }
+
+    /// The usage ring of an agent pane: the meter of the provider that reads its harness.
+    pub fn usage_gauge(&self, pane_id: String) -> Option<UsageGauge> {
+        usage::gauge(&lock(&self.replica).state, &pane_id)
     }
 
     /// The controls under the message field of an agent pane: the harness chip, and the model, effort

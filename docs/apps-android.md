@@ -27,7 +27,8 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   the prompt, and the question the agent waits on (a permission), with the options the agent gave. Under
   the message field a row of menus names the harness the pane runs (choosing another restarts the pane on
   it and hands the conversation over, after asking, ADR 0140) and sets the session's model, effort and
-  permission mode.
+  permission mode. The header carries the usage ring of the
+  provider that reads the pane's harness (ADR 0141).
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.

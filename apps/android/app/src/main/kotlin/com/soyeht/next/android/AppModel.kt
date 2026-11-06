@@ -25,6 +25,7 @@ import uniffi.soyeht_android.PaneKind
 import uniffi.soyeht_android.PaneRow
 import uniffi.soyeht_android.TerminalFrame
 import uniffi.soyeht_android.TerminalKey
+import uniffi.soyeht_android.UsageGauge
 import uniffi.soyeht_android.deviceName
 import uniffi.soyeht_android.pairingOffer
 
@@ -69,6 +70,10 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var terminal: TerminalFrame? by mutableStateOf(null)
         private set
     var conversation: Conversation? by mutableStateOf(null)
+        private set
+
+    /** The usage ring of the open agent pane's header, when a meter reads its harness. */
+    var usage: UsageGauge? by mutableStateOf(null)
         private set
 
     /** The harness chip and the model, effort and permission menus of the open agent pane. */
@@ -153,6 +158,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
             PaneKind.TERMINAL -> terminal = core.terminal(pane.paneId)
             PaneKind.AGENT -> {
                 conversation = core.conversation(pane.paneId)
+                usage = core.usageGauge(pane.paneId)
                 composer = core.composer(pane.paneId)
                 if (choosingHarness) harnessChoices = core.harnessChoices(pane.paneId)
             }
@@ -258,8 +264,12 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         terminal = null
         resetAgent()
         core.focus(pane.paneId)
-        // The chip names the harness by the engine's catalogue, so it is asked for as the pane opens.
-        if (pane.kind == PaneKind.AGENT) core.loadHarnesses(false)
+        // The chip names the harness by the engine's catalogue and the ring reads the providers' meters:
+        // both are asked for as the pane opens.
+        if (pane.kind == PaneKind.AGENT) {
+            core.loadHarnesses(false)
+            core.loadUsage()
+        }
         refresh()
     }
 
@@ -271,6 +281,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 
     private fun resetAgent() {
         conversation = null
+        usage = null
         composer = null
         harnessChoices = null
         choosingHarness = false

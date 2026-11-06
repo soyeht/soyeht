@@ -23,7 +23,7 @@ import uniffi.soyeht_android.*
 fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {
     val roles = LocalRoles.current
     val conversation = model.conversation
-    TopBar(pane.name, pane.status, onBack = model::close)
+    TopBar(pane.name, pane.status, onBack = model::close) { model.usage?.let { UsageRingView(it) } }
     val list = rememberLazyListState()
     val count = conversation?.items?.size ?: 0
     val last = conversation?.items?.lastOrNull()

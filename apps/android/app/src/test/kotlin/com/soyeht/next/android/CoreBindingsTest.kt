@@ -36,6 +36,7 @@ class CoreBindingsTest {
         assertTrue(core.overview().workspaces.isEmpty())
         assertNull(core.terminal("pane"))
         assertNull(core.conversation("pane"))
+        assertNull(core.usageGauge("pane"))
         assertNull(core.composer("pane"))
         assertNull(core.harnessChoices("pane"))
     }
@@ -51,6 +52,13 @@ class CoreBindingsTest {
     fun accessThatIsNotAccessAsksToPairAgain() {
         val failure = runCatching { core().connect("not json") }.exceptionOrNull()
         assertTrue(failure is CoreException.PairAgain)
+    }
+
+    @Test
+    fun aPaneTheReplicaDoesNotHoldHasNoUsageRing() {
+        val core = core()
+        core.loadUsage()
+        assertNull(core.usageGauge("pane"))
     }
 
     @Test

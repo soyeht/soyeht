@@ -209,6 +209,21 @@ impl UsageProvider {
             Self::Opencode => "OpenCode",
         }
     }
+
+    /// The provider whose meter reads a harness: the first rule of `usageHarnesses` whose text the
+    /// harness id holds, whatever the case.
+    pub fn for_harness(harness_id: &str) -> Option<Self> {
+        let id = harness_id.to_lowercase();
+        [
+            ("claude", Self::Claude),
+            ("codex", Self::Codex),
+            ("cursor", Self::Cursor),
+            ("opencode", Self::Opencode),
+        ]
+        .into_iter()
+        .find(|(fragment, _)| id.contains(fragment))
+        .map(|(_, provider)| provider)
+    }
 }
 
 impl ConfigOption {
