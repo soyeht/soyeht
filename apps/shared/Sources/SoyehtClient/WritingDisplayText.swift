@@ -55,7 +55,7 @@ public enum WritingDisplayText {
 
   public static func fontName(_ font: WritingFont) -> String {
     switch font {
-    case .reading_serif: "Newsreader"
+    case .reading_serif: DesignTokens.Fonts.reading
     case .classic_serif: "Classic serif"
     case .sans: "Sans"
     }
