@@ -50,9 +50,9 @@ Three dependencies are pinned to a git revision instead of a published version:
 
 - the `vt100` crate in all three cargo workspaces (`engine`, `apps/desktop`, `apps/android`), through `[patch.crates-io]`, at a revision of [`soyeht/vt100-rust`](https://github.com/soyeht/vt100-rust): a compact scrollback and no panic on any terminal output ([ADR 0144](docs/adr/0144-the-windows-and-linux-window-and-the-android-core-use-a-vt100-fork-with-a-compact-scrollback.md));
 - SwiftTerm, for the Mac and iOS terminals, at a tag of [`soyeht/SwiftTerm`](https://github.com/soyeht/SwiftTerm): the same compact scrollback ([ADR 0145](docs/adr/0145-the-mac-and-ios-terminals-keep-the-policy-scrollback-in-a-swiftterm-fork.md));
-- GPUI, for `apps/desktop`, at a commit of `zed-industries/zed` ([ADR 0084](docs/adr/)): GPUI has no tagged crate release, so the revision is fixed to build the same code everywhere.
+- GPUI, for `apps/desktop`, at the commit of a Zed release tag in `zed-industries/zed` ([ADR 0084](docs/adr/0084-desktop-client-gpui.md)), so every build gets the same GPUI.
 
-Each fork is upstream plus a few commits, with its licence and history. A pin changes in a pull request that updates every place that names it; the vt100 revision must be the same in the three workspaces, 
+Each fork is upstream plus a few commits, with its licence and history. A pin changes in a pull request that updates every place that names it; the vt100 revision must be the same in the three workspaces, and `scripts/check_layers.py` fails when it is not (it also compares their `rust-version` and lint tables).
 
 ## Contributing
 

@@ -54,12 +54,11 @@ Per system:
 | macOS 15 or later | Xcode 26.6 (Swift 6.3.3) for `apps/shared`, `apps/dictation`, `apps/mac` and `apps/ios`. The desktop client on macOS also needs Xcode with the Metal toolchain. | `docs/toolchains.md`, `docs/apps-mac.md` |
 | Linux (Ubuntu, Fedora) | A C toolchain (`build-essential` on Ubuntu, `gcc` and `make` on Fedora) and `cmake`, `clang`. For `apps/desktop`: the Wayland, X11, xkbcommon, fontconfig, freetype, OpenSSL and ALSA development packages, and a Vulkan driver to run it. | "Running the Linux check" and "Graphics on Linux" in `docs/platforms.md` list the package names for both distributions |
 | Windows 11 | Visual Studio C++ build tools (MSVC and a Windows SDK), Git for Windows, and on ARM64 LLVM. An elevated shell or Developer Mode, because tests check that symbolic links are never followed. | "Running the Windows check" in `docs/platforms.md` |
+| Android (any host) | Android SDK with NDK 27.0.12077973 (`ANDROID_HOME`), JDK 17 and the Rust targets `aarch64-linux-android` and `x86_64-linux-android`. Only for the Kotlin app; its Rust core builds and tests with plain cargo. | `docs/apps-android.md` |
 
 On Windows, `scripts/check_all.sh` needs a bash (Git for Windows or WSL). The maintainers'
 gate does not run on Windows; the engine and desktop checks there are
 `scripts/check_engine_windows.ps1`. Tell us in an issue if a step does not work for you.
-
-| Android (any host) | Android SDK with NDK 27.0.12077973 (`ANDROID_HOME`), JDK 17 and the Rust targets `aarch64-linux-android` and `x86_64-linux-android`. Only for the Kotlin app; its Rust core builds and tests with plain cargo. | `docs/apps-android.md` |
 
 The macOS apps are the only part that needs Xcode, and the only part that needs an Apple
 Development identity (to run them signed). Nothing else does. The Xcode projects hold no
