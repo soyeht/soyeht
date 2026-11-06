@@ -107,7 +107,6 @@ pub fn pending<P: soyeht_protocol::EventParams>(params: &P) -> Result<(String, V
         .map_err(|_| errors::internal("Event serialization failed"))
 }
 
-/// `pane.created` for a pane that has no document yet.
 /// The parameters of a request as the generated `...Params` type of its method. The edge has
 /// validated them against the schema, so a failure here is a mismatch between that schema and the
 /// type, not bad input from a client.
@@ -120,6 +119,7 @@ pub fn to_value(value: &impl Serialize) -> Result<Value> {
     serde_json::to_value(value).map_err(|_| errors::internal("Serialization failed"))
 }
 
+/// `pane.created` for a pane that has no document yet.
 pub fn pane_created(pane: &Pane) -> Result<(String, Value)> {
     pending(&PaneCreatedDraft {
         pane: pane.clone(),
