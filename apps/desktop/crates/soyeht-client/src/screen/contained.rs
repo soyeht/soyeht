@@ -21,7 +21,10 @@ fn the_parser_holds_a_wide_character_on_the_smallest_screen() {
     let mut screen = undersized();
     screen.feed(WIDE.as_bytes());
     screen.feed("x\r\ny".as_bytes());
-    assert!(!screen.parser_failed, "unmodified vt100 0.16 panics here");
+    assert!(
+        !screen.parser_failed.get(),
+        "unmodified vt100 0.16 panics here"
+    );
     assert!(screen.contents().contains('y'));
 }
 
@@ -30,7 +33,7 @@ fn a_parser_panic_on_output_starts_the_screen_again() {
     let mut screen = TerminalScreen::new(3, 10);
     screen.feed(b"$ ls\r\n");
     feed_a_panic(&mut screen, b"more");
-    assert!(screen.parser_failed);
+    assert!(screen.parser_failed.get());
     assert!(screen.contents().trim().is_empty());
     assert!(!screen.scrolled_back());
     // The pane keeps working: the screen takes the next bytes, at a size the parser holds.
@@ -130,6 +133,6 @@ fn random_output_and_resizes_never_panic_the_parser() {
             }
         }
         // Contained is not enough: a panic the screen caught is a bug the parser still has.
-        assert!(!screen.parser_failed, "{:?}", screen.size());
+        assert!(!screen.parser_failed.get(), "{:?}", screen.size());
     }
 }

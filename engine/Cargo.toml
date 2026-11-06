@@ -38,6 +38,11 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 webpki-roots = "1"
 windows-sys = "0.61"
 
+[patch.crates-io]
+# The parser does not panic on any output, which it does in 0.16.2 (ADR 0144). The fork is upstream's
+# 0.16.2 with that fix and a compact scrollback, on the branch `panic-fixes` (tag `soyeht-0.16.2-2`).
+vt100 = { git = "https://github.com/soyeht/vt100-rust", rev = "1f53820f0959c977c7cbc360b87dba4dc8a1df8e" }
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 

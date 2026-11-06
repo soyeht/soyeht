@@ -93,6 +93,24 @@ pub(super) fn run(
     request: &TerminalRequest,
     driver: &mut dyn TerminalDriver,
 ) -> TerminalRun {
+    run_with(program, path_env, request, driver, &mut feed_parser)
+}
+
+/// What the parser does with the bytes of the program.
+type FeedParser<'a> = &'a mut dyn FnMut(&mut vt100::Parser, &[u8]);
+
+fn feed_parser(parser: &mut vt100::Parser, bytes: &[u8]) {
+    parser.process(bytes);
+}
+
+/// [`run`] with the parser's work given, so that a test can make it panic.
+fn run_with(
+    program: &Path,
+    path_env: &str,
+    request: &TerminalRequest,
+    driver: &mut dyn TerminalDriver,
+    feed: FeedParser,
+) -> TerminalRun {
     let Some(_turn) = take_turn(request) else {
         return TerminalRun::Incomplete;
     };
@@ -108,6 +126,7 @@ pub(super) fn run(
                 &mut session.output,
                 request.timeout,
                 driver,
+                feed,
             );
             let Session {
                 child,
@@ -253,6 +272,7 @@ fn drive(
     terminal: &mut Output,
     timeout: Duration,
     driver: &mut dyn TerminalDriver,
+    feed: FeedParser,
 ) -> TerminalRun {
     let started = Instant::now();
     let mut parser = vt100::Parser::new(ROWS, COLUMNS, 0);
@@ -268,7 +288,13 @@ fn drive(
                     {
                         return TerminalRun::Incomplete;
                     }
-                    parser.process(bytes);
+                    // The bytes are a program's, and the parser is code of a dependency: a panic in
+                    // it ends this session, not the run, so that the child is stopped below and the
+                    // scratch directory is removed.
+                    if soyeht_platform::crash::caught(|| feed(&mut parser, bytes)).is_err() {
+                        log::event("engine.usage_terminal_parser_panicked", &[]);
+                        return TerminalRun::Incomplete;
+                    }
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
@@ -360,6 +386,15 @@ mod tests {
 
     /// The script session in `workdir`, run with the scripted driver.
     fn run_script(workdir: &Path, transcript: Option<PathBuf>, timeout: u64) -> TerminalRun {
+        run_script_with(workdir, transcript, timeout, &mut feed_parser)
+    }
+
+    fn run_script_with(
+        workdir: &Path,
+        transcript: Option<PathBuf>,
+        timeout: u64,
+        feed: FeedParser,
+    ) -> TerminalRun {
         let request = TerminalRequest {
             program: shell_name().into(),
             args: vec![shell_flag().into(), SCRIPT.into()],
@@ -369,11 +404,12 @@ mod tests {
             transcript,
             timeout: Duration::from_secs(timeout),
         };
-        run(
+        run_with(
             &PathBuf::from(shell_path()),
             path_env(),
             &request,
             &mut Script { sent: false },
+            feed,
         )
     }
 
@@ -405,6 +441,21 @@ mod tests {
         assert!(!workdir.exists());
         assert!(!transcript.exists());
         assert!(!transcript_dir.exists());
+        fs::remove_dir_all(scratch).unwrap();
+    }
+
+    #[test]
+    fn a_parser_panic_ends_the_session_and_still_stops_the_child() {
+        let scratch = scratch_directory();
+        let workdir = scratch.join("work");
+        let started = Instant::now();
+        let outcome = run_script_with(&workdir, None, 10, &mut |_, _| {
+            panic!("a parser with a bug")
+        });
+        assert!(matches!(outcome, TerminalRun::Incomplete), "{outcome:?}");
+        // The child was stopped, not left to its 30 seconds, and the scratch directory removed.
+        assert!(started.elapsed() < Duration::from_secs(8));
+        assert!(!workdir.exists());
         fs::remove_dir_all(scratch).unwrap();
     }
 

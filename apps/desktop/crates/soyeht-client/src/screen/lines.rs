@@ -96,7 +96,11 @@ impl<'a> Lines<'a> {
 
 impl Drop for Lines<'_> {
     fn drop(&mut self) {
-        self.parser.screen_mut().set_scrollback(self.saved);
+        // A panic in the parser is on its way to the screen that catches it and starts again; a
+        // second one raised here, while it unwinds, would end the program.
+        if !std::thread::panicking() {
+            self.parser.screen_mut().set_scrollback(self.saved);
+        }
     }
 }
 

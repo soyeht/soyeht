@@ -29,8 +29,12 @@ impl TerminalScreen {
             line: self.line_at(row),
             column,
         };
-        let mut lines = Lines::new(&mut self.parser);
-        self.selection = Some(Selection::begin(&mut lines, at, Unit::of_clicks(clicks)));
+        let began = self.contained(None, |screen| {
+            let mut lines = Lines::new(&mut screen.parser);
+            Some(Selection::begin(&mut lines, at, Unit::of_clicks(clicks)))
+        });
+        // A screen that started again has nothing to select.
+        self.selection = began;
     }
 
     /// The pointer moved, with the button down, to a cell of the view. It grows the selection the
@@ -42,11 +46,14 @@ impl TerminalScreen {
         };
         // A selection that output ended while the pointer was down is not begun again where the
         // pointer is: the drag that made it is over.
-        let Some(selection) = self.selection.as_mut() else {
+        let Some(mut selection) = self.selection else {
             return;
         };
-        let mut lines = Lines::new(&mut self.parser);
-        selection.extend(&mut lines, at);
+        self.contained((), |screen| {
+            let mut lines = Lines::new(&mut screen.parser);
+            selection.extend(&mut lines, at);
+            screen.selection = Some(selection);
+        });
     }
 
     pub fn clear_selection(&mut self) {
@@ -62,8 +69,10 @@ impl TerminalScreen {
     /// The selected text, ready for the clipboard.
     pub fn selected_text(&mut self) -> Option<String> {
         let selection = self.selection?;
-        let mut lines = Lines::new(&mut self.parser);
-        selection.text(&mut lines).filter(|text| !text.is_empty())
+        self.contained(None, |screen| {
+            let mut lines = Lines::new(&mut screen.parser);
+            selection.text(&mut lines).filter(|text| !text.is_empty())
+        })
     }
 
     /// The columns of a row of the view that are selected, from the first to one past the last.
@@ -83,21 +92,25 @@ impl TerminalScreen {
             line: self.line_at(row),
             column,
         };
-        let mut lines = Lines::new(&mut self.parser);
-        links::link_at(&mut lines, at)
+        self.contained(None, |screen| {
+            let mut lines = Lines::new(&mut screen.parser);
+            links::link_at(&mut lines, at)
+        })
     }
 
     /// Taken before output is applied.
     pub(super) fn selection_guard(&mut self) -> Option<Guard> {
         let selection = self.selection?;
-        let alternate = self.parser.screen().alternate_screen();
-        let mut lines = Lines::new(&mut self.parser);
-        let live_from = lines.history();
-        let print = fingerprint(&selection, &mut lines, live_from);
-        Some(Guard {
-            live_from,
-            print,
-            alternate,
+        self.contained(None, |screen| {
+            let alternate = screen.parser.screen().alternate_screen();
+            let mut lines = Lines::new(&mut screen.parser);
+            let live_from = lines.history();
+            let print = fingerprint(&selection, &mut lines, live_from);
+            Some(Guard {
+                live_from,
+                print,
+                alternate,
+            })
         })
     }
 
@@ -107,11 +120,13 @@ impl TerminalScreen {
         let (Some(guard), Some(selection)) = (guard, self.selection) else {
             return;
         };
-        let alternate = self.parser.screen().alternate_screen();
-        let mut lines = Lines::new(&mut self.parser);
-        if alternate != guard.alternate
-            || fingerprint(&selection, &mut lines, guard.live_from) != guard.print
-        {
+        let intact = self.contained(false, |screen| {
+            let alternate = screen.parser.screen().alternate_screen();
+            let mut lines = Lines::new(&mut screen.parser);
+            alternate == guard.alternate
+                && fingerprint(&selection, &mut lines, guard.live_from) == guard.print
+        });
+        if !intact {
             self.selection = None;
         }
     }
