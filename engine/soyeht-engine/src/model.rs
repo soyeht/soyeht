@@ -106,7 +106,6 @@ pub fn pending<P: soyeht_protocol::EventParams>(params: &P) -> Result<(String, V
         .map_err(|_| errors::internal("Event serialization failed"))
 }
 
-/// `pane.created` for a pane that has no document yet.
 /// A pane the engine creates: idle and in the protocol's own words, with a fresh id, a first
 /// generation, no size, no recording, the experiment capture off and no optional field set. A
 /// site sets what differs with `..new_pane(..)` or the setters of `PaneSetup`.
@@ -185,6 +184,7 @@ impl PaneSetup for Pane {
     }
 }
 
+/// `pane.created` for a pane that has no document yet.
 pub fn pane_created(pane: &Pane) -> Result<(String, Value)> {
     pending(&PaneCreatedDraft {
         pane: pane.clone(),
