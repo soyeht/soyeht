@@ -48,3 +48,12 @@ private func name(_ band: UsageBand?) -> String? {
       roles == (item["roles"].array ?? []).compactMap(\.string), "\(item["name"].string ?? "")")
   }
 }
+
+@Test func aHarnessIsReadByTheProviderTheVectorSays() throws {
+  for item in ContractVector.cases(try vector(), "harnessProviders") {
+    let harness = try #require(item["harness"].string)
+    #expect(
+      UsageProvider(harnessId: harness)?.rawValue == item["provider"].string,
+      "\(item["name"].string ?? "")")
+  }
+}

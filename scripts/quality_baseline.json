@@ -1,5 +1,9 @@
 {
   "duplication": {
+    "android": {
+      "clones": 0,
+      "duplicated_lines": 0
+    },
     "android_core": {
       "clones": 0,
       "duplicated_lines": 0
@@ -18,7 +22,7 @@
     },
     "engine": {
       "clones": 271,
-      "duplicated_lines": 2087
+      "duplicated_lines": 2086
     },
     "ios": {
       "clones": 4,

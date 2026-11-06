@@ -8,6 +8,7 @@ from pathlib import Path
 from design_tokens import (
     DESKTOP_SECTION,
     FALLBACKS,
+    KOTLIN_OUTPUT,
     NUMERIC_SECTIONS,
     RUST_OUTPUT,
     SWIFT_OUTPUT,
@@ -141,11 +142,24 @@ def static_numbers(source, header):
 
 
 class TokenGenerationTests(unittest.TestCase):
-    def test_both_outputs_render_from_one_source(self):
+    def test_every_output_renders_from_one_source(self):
         outputs = render_tokens(tokens())
-        self.assertEqual(set(outputs), {SWIFT_OUTPUT, RUST_OUTPUT})
+        self.assertEqual(set(outputs), {SWIFT_OUTPUT, RUST_OUTPUT, KOTLIN_OUTPUT})
         for text in outputs.values():
             self.assertTrue(text.startswith("// Generated from contracts/design-tokens.json"))
+
+    def test_generated_kotlin_carries_every_palette_and_number(self):
+        document = tokens()
+        kotlin = render_tokens(document)[KOTLIN_OUTPUT]
+        for name, palette in document["palettes"].items():
+            self.assertIn(f"    val {name} = Palette(", kotlin)
+            for role in ("ink", "accent", "well"):
+                self.assertIn(f"{role} = 0xFF{palette[role][1:]},", kotlin)
+        for key, title in NUMERIC_SECTIONS.items():
+            self.assertIn(f"object {title} {{", kotlin)
+            for name, value in document[key].items():
+                self.assertIn(f"const val {name}: Float = {float(value)!r}f", kotlin)
+        self.assertNotIn("windowWidth", kotlin)  # the desktop section is Rust-only
 
     def test_generated_swift_palettes_read_back_as_the_json(self):
         swift = render_tokens(tokens())[SWIFT_OUTPUT]

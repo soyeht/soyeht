@@ -12,7 +12,7 @@ pub use generated::{
     pane_layout, pane_shell, radius, space, type_scale, usage_ring,
 };
 
-use soyeht_client::screen::CellColor;
+use soyeht_client::screen::{CellColor, xterm_color};
 
 /// Hex colors as `0xRRGGBB`, one field per role of `SoyehtThemePalette`.
 #[derive(Debug, PartialEq, Eq)]
@@ -60,15 +60,8 @@ impl Palette {
             CellColor::DefaultFg => self.ink,
             CellColor::DefaultBg => self.face,
             CellColor::Rgb(r, g, b) => u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b),
-            CellColor::Indexed(index) if index < 16 => self.ansi[usize::from(index)],
-            CellColor::Indexed(index @ 16..=231) => {
-                let cube = u32::from(index - 16);
-                let level = |step: u32| if step == 0 { 0 } else { 55 + 40 * step };
-                level(cube / 36) << 16 | level(cube / 6 % 6) << 8 | level(cube % 6)
-            }
             CellColor::Indexed(index) => {
-                let gray = 8 + 10 * u32::from(index - 232);
-                gray << 16 | gray << 8 | gray
+                xterm_color(index).unwrap_or_else(|| self.ansi[usize::from(index)])
             }
         }
     }

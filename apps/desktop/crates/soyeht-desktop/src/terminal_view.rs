@@ -9,11 +9,8 @@ use gpui::{
     MouseUpEvent, Pixels, ShapedLine, Styled, TextAlign, TextRun, UnderlineStyle, Window, canvas,
     fill, font, outline, point, px, rgb, size,
 };
-use soyeht_client::screen::{CellColor, Cursor, Run};
+use soyeht_client::screen::{CellColor, Cursor, DIM_OPACITY, Run};
 use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Dim text keeps its hue and loses this much opacity.
-const DIM_OPACITY: f32 = 0.7;
 
 /// Whether the last run to paint failed: a failure is logged when it starts, not on every frame.
 static PAINT_FAILING: AtomicBool = AtomicBool::new(false);

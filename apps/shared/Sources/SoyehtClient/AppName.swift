@@ -1,0 +1,14 @@
+import Foundation
+
+/// The name the person sees under the app's icon, which differs by build: "Soyeht Dev" for the
+/// Dev profile and the store build's own name. Text that tells the person to open the app reads
+/// it here, so no string names a build. The Mac's instruction under the QR reads the Mac's own
+/// display name, so it relies on the iPhone and Mac store names matching.
+public enum AppName {
+  public static let fallback = "Soyeht"
+
+  public static func display(info: [String: Any]? = Bundle.main.infoDictionary) -> String {
+    guard let name = info?["CFBundleDisplayName"] as? String, !name.isEmpty else { return fallback }
+    return name
+  }
+}

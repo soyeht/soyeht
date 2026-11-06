@@ -394,11 +394,14 @@ impl Core {
     }
 
     fn install_committed_agent(&mut self, id: &str, saved: StoredPane, state: State) -> Result<()> {
-        errors::invariant(
+        let pane = errors::invariant(
             self.panes.get_mut(id),
             "Agent pane disappeared before commit publication",
-        )?
-        .stored = saved;
+        )?;
+        pane.stored = saved;
+        if pane.stored.closed {
+            pane.screen.release();
+        }
         let model_before = self
             .agents
             .get(id)

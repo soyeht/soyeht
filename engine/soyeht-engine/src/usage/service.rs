@@ -33,11 +33,20 @@ pub struct Service {
     /// The provider the last OpenCode read followed (`None` inside: it followed none), once this
     /// run has read it. A pane that moves OpenCode to another provider changes it.
     opencode_followed: Option<Option<String>>,
-    /// Providers whose next outcome starts over: what they followed changed, so the reading
-    /// they show, which is another provider's, is not kept when the new read fails.
-    restarted: Vec<UsageProvider>,
+    /// What the OpenCode read in flight follows. It is recorded when that read commits, and
+    /// dropped when it is abandoned or panics, so the next refresh still sees the change.
+    opencode_pending: Option<OpencodeFollow>,
     /// Raised when the background schedule should look at what the panes follow now.
     wake: Arc<Notify>,
+}
+
+/// What an OpenCode read in flight follows, applied when its outcome commits.
+struct OpencodeFollow {
+    /// The provider it follows (`None`: none).
+    provider: Option<String>,
+    /// What it follows changed, so the reading shown, which is another provider's, is not kept
+    /// when the new read fails.
+    restarted: bool,
 }
 
 /// Refreshes chosen under the engine lock, to be read without it.
@@ -136,7 +145,7 @@ impl Service {
             in_flight: Vec::new(),
             schedules,
             opencode_followed: None,
-            restarted: Vec::new(),
+            opencode_pending: None,
             wake: Arc::default(),
         }
     }
@@ -263,10 +272,10 @@ impl Service {
     ) -> PreparedRefresh {
         self.in_flight.extend(providers.iter().cloned());
         if providers.contains(&UsageProvider::Opencode) {
-            if self.follow_changed(&UsageProvider::Opencode, &hints) {
-                self.restarted.push(UsageProvider::Opencode);
-            }
-            self.opencode_followed = Some(hints.opencode_provider().map(str::to_owned));
+            self.opencode_pending = Some(OpencodeFollow {
+                provider: hints.opencode_provider().map(str::to_owned),
+                restarted: self.follow_changed(&UsageProvider::Opencode, &hints),
+            });
         }
         PreparedRefresh {
             planner: Arc::clone(&self.planner),
@@ -282,6 +291,9 @@ impl Service {
     pub fn abandon(&mut self, providers: &[UsageProvider]) {
         self.in_flight
             .retain(|provider| !providers.contains(provider));
+        if providers.contains(&UsageProvider::Opencode) {
+            self.opencode_pending = None;
+        }
     }
 
     pub fn commit(&mut self, batch: RefreshBatch) -> Vec<Committed> {
@@ -297,8 +309,7 @@ impl Service {
                 .record(&provider, batch.now_sec, outcome.transient.as_ref());
             let log_signed_out = self.track_signed_out(&provider, &outcome.reading, batch.manual);
             let previous = self.reading(&provider).cloned();
-            let restarted = self.restarted.contains(&provider);
-            self.restarted.retain(|item| item != &provider);
+            let restarted = self.settle_follow(&provider);
             let fresh = outcome.reading.state == UsageState::Ok;
             let shown = if fresh {
                 self.set_streak(&provider, 0);
@@ -321,12 +332,29 @@ impl Service {
         committed
     }
 
+    /// Records what a committed read of `provider` followed. Returns whether it started over.
+    fn settle_follow(&mut self, provider: &UsageProvider) -> bool {
+        if *provider != UsageProvider::Opencode {
+            return false;
+        }
+        match self.opencode_pending.take() {
+            Some(follow) => {
+                self.opencode_followed = Some(follow.provider);
+                follow.restarted
+            }
+            None => false,
+        }
+    }
+
     /// A provider whose reader panicked has no reading to fold in. It is released, so that the
     /// next refresh reads it, and counted as an attempt, so that the schedule waits its interval
     /// and a reader that always panics is not started again on every tick. What the ring shows is
     /// left as it was.
     fn commit_panicked(&mut self, provider: &UsageProvider, now_sec: u64) -> Committed {
         self.in_flight.retain(|item| item != provider);
+        if *provider == UsageProvider::Opencode {
+            self.opencode_pending = None;
+        }
         self.policy.record(provider, now_sec, None);
         let log_panicked = self.track_panicked(provider, true);
         let shown = self

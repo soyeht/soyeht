@@ -3,15 +3,13 @@
 //! `pane.config.set`, and the meter has to show the plan of the provider the person works with.
 
 use crate::{agents::state::State, core::Core};
+use soyeht_protocol::UsageProvider;
 use soyeht_usage::ReadHints;
-
-/// The harness the OpenCode meter reads (`registry.opencode` of the agent catalogue).
-const OPENCODE_HARNESS_ID: &str = "registry.opencode";
 
 /// The model the pane of `state` uses, when it is an OpenCode pane with a model selector. The
 /// selector is the one the clients' policy calls the model (`ConfigOption::is_model`).
 pub(crate) fn opencode_model(state: &State) -> Option<&str> {
-    (state.launch.id == OPENCODE_HARNESS_ID)
+    (UsageProvider::for_harness(&state.launch.id) == Some(UsageProvider::Opencode))
         .then(|| state.options.current_model())
         .flatten()
 }
@@ -46,9 +44,12 @@ impl Core {
 
 #[cfg(test)]
 mod tests {
-    use super::{OPENCODE_HARNESS_ID, latest_model};
+    use super::latest_model;
     use crate::{agents::state::State, test_panes};
     use soyeht_protocol::{ConfigOption, ConfigType, ConfigValue};
+
+    /// A harness id the clients' policy maps to the OpenCode meter.
+    const OPENCODE_HARNESS_ID: &str = "registry.opencode";
 
     fn pane(harness: &str, option: &str, category: Option<&str>, model: &str, at: i64) -> State {
         let mut state = test_panes::ready_agent_state();

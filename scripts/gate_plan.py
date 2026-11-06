@@ -7,7 +7,7 @@ whether the change needs a reviewer. The fast tier is cheap on purpose: format, 
 and the unit tests (`--lib --bins`) of the selected engine, Swift and TypeScript areas, the whole
 `cargo test` of the desktop (its `tests/` directories are scripted-engine tests of a few
 seconds), and the end-to-end suites when the change reaches the engine's programs. The Swift
-tests, the engine integration tests, the Mac and iOS app builds, the editor measurement and the
+tests, the engine integration tests, the Mac, iOS and Android app builds, the editor measurement and the
 timing tests run only in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match
 wins:
 
@@ -18,6 +18,8 @@ wins:
 - a path under one engine crate selects `engine` and that crate plus its reverse
   dependencies in the engine workspace (`cargo metadata`); a crate that the desktop
   workspace depends on also selects `desktop`;
+- the Android core is also selected by a change to the desktop client or to an engine crate the
+  desktop workspace depends on, which it reuses (ADR 0134);
 - the other code directories select their own area;
 - documentation selects only `always`;
 - an unknown path selects every code area.
@@ -53,11 +55,11 @@ from pathlib import Path, PurePosixPath
 from gate_base import BaseError, main_health_dir, resolve_base
 
 ROOT = Path(__file__).resolve().parents[1]
-CODE_AREAS = ("engine", "desktop", "swift", "typescript")
+CODE_AREAS = ("engine", "desktop", "android_core", "swift", "typescript")
 # Areas that only the full tier (the run after the merge) covers: the dictation tests, the
-# Mac and iOS app builds, the editor measurement and the timing tests. The Swift packages and
+# Mac, iOS and Android app builds, the editor measurement and the timing tests. The Swift packages and
 # the engine workspace also have steps that are full-only.
-FULL_ONLY_AREAS = ("dictation", "mac_app", "ios_app", "editor_perf", "timing")
+FULL_ONLY_AREAS = ("dictation", "mac_app", "ios_app", "android_app", "editor_perf", "timing")
 # Selected from the engine selection (see `make_plan`) and not from a path.
 E2E_AREA = "e2e"
 # The engine programs that the end-to-end suites start: a change that reaches one of them
@@ -251,9 +253,17 @@ def make_plan(
             else:
                 crates.add(package.name)
                 if package.name in desktop_engine_deps:
-                    areas.add("desktop")
+                    # The Android core reuses the desktop client, so what the client builds on is
+                    # what the core builds on (ADR 0134).
+                    areas.update(("desktop", "android_core"))
         elif path.startswith("apps/desktop/"):
             areas.add("desktop")
+            if path.startswith("apps/desktop/crates/soyeht-client/"):
+                areas.add("android_core")
+        elif path.startswith("apps/android/"):
+            # The core is built and tested on the host in the fast tier; the Gradle build, the NDK
+            # builds and the emulator are too much for it (ADR 0134): only the full tier builds the app.
+            areas.update(("android_core", "android_app"))
         elif path.startswith(("apps/dictation/", "apps/shared/", "contracts/swift/", "apps/mac/", "apps/ios/")):
             areas.add("swift")
         elif path.startswith("contracts/typescript/"):

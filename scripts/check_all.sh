@@ -6,7 +6,7 @@
 #
 # Every step is one `step AREA TIERS ID command...` line (ADR 0089):
 #   AREA   always | gate_scripts | engine | desktop | swift | dictation | mac_app | ios_app
-#          | typescript | e2e | editor_perf | timing
+#          | android_core | android_app | typescript | e2e | editor_perf | timing
 #   TIERS  both  runs in the fast and the full tier
 #          full  runs only in the full tier
 #          fast  runs only in the fast tier (a cheaper stand-in for a full step)
@@ -48,7 +48,7 @@ while (($#)); do
     esac
 done
 case "$tier" in fast | full) ;; *) echo "check_all: --tier must be fast or full" >&2; exit 64 ;; esac
-known_areas=" always gate_scripts engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing "
+known_areas=" always gate_scripts engine desktop swift dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing "
 set -- ${gate_args[@]+"${gate_args[@]}"}
 # A contributor without the vocabulary sets SOYEHT_SKIP_FORBIDDEN_TERMS=1: the scan prints
 # that it was skipped (scripts/forbidden_terms.py), the run is recorded as not merge-grade, and
@@ -89,7 +89,7 @@ fi
 # Per-step wall times: each step appends a line; the EXIT trap writes the JSON.
 timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
 step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
-GATE_AREAS="always gate_scripts engine desktop swift dictation mac_app ios_app typescript e2e editor_perf timing"
+GATE_AREAS="always gate_scripts engine desktop swift dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing"
 GATE_ENGINE_TEST_ARGS="--workspace"
 matched=0
 
@@ -385,6 +385,13 @@ step always both editor-performance:unit uv run python -m unittest discover -s s
 step engine full editor-performance:rust uv run python scripts/check_editor_performance.py --rust
 step editor_perf full editor-performance:check uv run python scripts/check_editor_performance.py
 step ios_app full ios-app:build bash scripts/check_ios.sh
+# The core of the Android app reuses the desktop client: it is formatted, linted and tested on the host
+# whenever the client or what it builds on changes, so that breakage shows before the merge (ADR 0134).
+step android_core both android-core:fmt in_dir apps/android cargo fmt --all --check
+step android_core both android-core:clippy in_dir apps/android cargo clippy --locked --all-targets -- -D warnings
+step android_core both android-core:test in_dir apps/android cargo test --locked
+step android_app full android-app:build bash scripts/check_android.sh
+step android_app full android-app:test bash scripts/check_android.sh --test
 
 step typescript both typescript:install in_dir contracts/typescript npm ci --ignore-scripts
 step typescript both typescript:check in_dir contracts/typescript npm run check

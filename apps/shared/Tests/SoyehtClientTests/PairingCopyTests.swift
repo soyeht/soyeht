@@ -13,3 +13,10 @@ import Testing
   #expect(PairingCopy.onboarding(on: "iPad").contains("“\(PairingCopy.pairButton)”"))
   #expect(PairingCopy.scanInstruction.contains(PairingCopy.devices))
 }
+
+@Test func theInstructionsNameTheBuildThePersonHolds() {
+  #expect(AppName.display(info: ["CFBundleDisplayName": "Soyeht Dev"]) == "Soyeht Dev")
+  #expect(AppName.display(info: [:]) == AppName.fallback)
+  #expect(AppName.display(info: ["CFBundleDisplayName": ""]) == AppName.fallback)
+  #expect(AppName.display(info: nil) == AppName.fallback)
+}

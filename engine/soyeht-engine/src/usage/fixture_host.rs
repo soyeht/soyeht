@@ -22,8 +22,8 @@ pub struct FixtureHost {
 impl FixtureHost {
     pub fn new(directory: PathBuf) -> Self {
         Self {
+            system: SystemHost::new(&directory),
             directory,
-            system: SystemHost,
         }
     }
 

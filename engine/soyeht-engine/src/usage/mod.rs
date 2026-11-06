@@ -39,7 +39,7 @@ use soyeht_protocol::{
 };
 use soyeht_store::usage::StoredUsageReading;
 use soyeht_usage::{Activity, Reading, Window, host::Host};
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 /// How often the background schedule looks for due providers.
 const SCHEDULE_TICK: Duration = Duration::from_secs(15);
@@ -308,15 +308,20 @@ fn nonnegative_time(value: i64) -> u64 {
     u64::try_from(value).unwrap_or(0)
 }
 
-/// The engine's usage service, restored from the stored readings: over the real host, or
-/// over `replacement` (a test's host), which the background schedule does not drive.
+/// The engine's usage service, restored from the stored readings: over the real host, whose
+/// scratch directories are inside `data_directory`, or over `replacement` (a test's host), which
+/// the background schedule does not drive.
 pub fn service_over(
     stored: Vec<StoredUsageReading>,
+    data_directory: &Path,
     replacement: Option<Arc<dyn Host>>,
 ) -> Service {
     let (host, schedules) = match replacement {
         Some(host) => (host, false),
-        None => (Arc::new(SystemHost) as Arc<dyn Host>, true),
+        None => (
+            Arc::new(SystemHost::new(data_directory)) as Arc<dyn Host>,
+            true,
+        ),
     };
     Service::restore(
         stored.into_iter().map(restored_reading).collect(),

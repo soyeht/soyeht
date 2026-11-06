@@ -119,3 +119,27 @@ async fn the_schedule_is_woken_and_not_otherwise() {
     let signalled = tokio::time::timeout(Duration::from_secs(5), woken.notified()).await;
     assert!(signalled.is_ok());
 }
+
+#[test]
+fn an_abandoned_batch_records_nothing_so_the_next_refresh_still_follows_the_change() {
+    let host = host();
+    let mut service = Service::restore(Vec::new(), host.clone(), true);
+    pass(&mut service, 1_000, ReadHints::default()).unwrap();
+
+    // A batch is prepared after the provider changed, and never produces a batch.
+    let moved = pane_uses("opencode-go/glm-5.3-flash");
+    let prepared = service
+        .prepare_automatic(1_100, "then", moved.clone())
+        .unwrap();
+    let providers = prepared.providers().to_vec();
+    assert_eq!(providers, [UsageProvider::Opencode]);
+    service.abandon(&providers);
+
+    // The change was not consumed: the next pass reads the new provider, and a failed read of it
+    // is not hidden behind the old provider's reading.
+    host.record_opencode(LocalUsageRead::NoHistory);
+    assert_eq!(pass(&mut service, 1_100, moved), Some(providers));
+    assert_eq!(asked(&host), [None, Some("opencode-go".to_owned())]);
+    let after = service.shown(&UsageProvider::Opencode, 1_100);
+    assert_eq!(after.state, UsageState::Unavailable);
+}

@@ -1,7 +1,7 @@
 //! Switching an agent pane to another harness: what the pane says about a switch, and when one
 //! may start. The rules are the Mac's `HarnessSwitchModel`.
 
-use soyeht_protocol::AgentSession;
+use soyeht_protocol::{AgentSession, HarnessInfo};
 
 pub use soyeht_protocol::client_policy::{
     HARNESS_SWITCH_HANDOVER as HANDOVER_EXPLANATION, HARNESS_SWITCH_TITLE as TITLE,
@@ -39,6 +39,15 @@ pub fn can_switch(
     connected
         && agent.is_some_and(|agent| agent.operation.is_none())
         && !HarnessSwitchView::is_switching(view)
+}
+
+/// Whether a pane running `running` may be switched to `target`: the engine lists the harness as
+/// able to start, and it is not the one the pane already runs.
+pub fn startable(harnesses: &[HarnessInfo], running: Option<&str>, target: &str) -> bool {
+    Some(target) != running
+        && harnesses
+            .iter()
+            .any(|harness| harness.id == target && harness.available)
 }
 
 #[cfg(test)]
@@ -82,5 +91,22 @@ mod tests {
                 text(&case["name"])
             );
         }
+    }
+
+    #[test]
+    fn only_a_listed_harness_that_can_start_and_is_not_running_is_startable() {
+        let harness = |id: &str, available: bool| -> HarnessInfo {
+            serde_json::from_value(json!({
+                "id": id, "name": id, "available": available, "capabilities": [],
+                "options": [], "authMethods": [],
+            }))
+            .unwrap()
+        };
+        let listed = [harness("a", true), harness("b", true), harness("c", false)];
+        assert!(startable(&listed, Some("a"), "b"));
+        assert!(startable(&listed, None, "a"));
+        assert!(!startable(&listed, Some("a"), "a"), "already running");
+        assert!(!startable(&listed, Some("a"), "c"), "cannot start");
+        assert!(!startable(&listed, Some("a"), "unknown"), "not listed");
     }
 }
