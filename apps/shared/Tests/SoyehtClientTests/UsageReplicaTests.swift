@@ -203,7 +203,7 @@ private final class RateLimitRetryProbe {
 
 @MainActor @Test func usageEventReplacesOnlyItsProviderAndKeepsCatalogueOrder() throws {
   let client = EngineClient(socket: "/tmp/sn-usage-replica/engine.sock")
-  client.usageReadings = [reading(.cursor, used: 0.2), reading(.claude, used: 0.3)]
+  client.usage.readings = [reading(.cursor, used: 0.2), reading(.claude, used: 0.3)]
   try client.applyUsageEvent(
     .encoded(
       UsageChangedEvent(
@@ -211,13 +211,13 @@ private final class RateLimitRetryProbe {
         primary: UsageWindow(used: 0.7, resetsAt: "later", label: "Current"),
         source: .codex_app_server, fetchedAt: "2026-09-12T12:00:01Z")))
 
-  #expect(client.usageReadings.map(\.provider) == [.claude, .codex, .cursor])
-  #expect(client.usageReadings[1].primary?.used == 0.7)
+  #expect(client.usage.readings.map(\.provider) == [.claude, .codex, .cursor])
+  #expect(client.usage.readings[1].primary?.used == 0.7)
 }
 
 @MainActor @Test func anActivityEventReachesTheReplicaAndSortsOpenCodeLast() throws {
   let client = EngineClient(socket: "/tmp/sn-usage-activity/engine.sock")
-  client.usageReadings = [reading(.cursor, used: 0.2)]
+  client.usage.readings = [reading(.cursor, used: 0.2)]
   try client.applyUsageEvent(
     .encoded(
       UsageChangedEvent(
@@ -225,8 +225,8 @@ private final class RateLimitRetryProbe {
         activity: UsageActivity(
           label: "Last 7 days on this device", tokens: 1_234_567, costUsd: 3.4),
         source: .opencode_local_history, fetchedAt: "2026-11-01T12:00:01Z")))
-  #expect(client.usageReadings.map(\.provider) == [.cursor, .opencode])
-  let opencode = try #require(client.usageReadings.last)
+  #expect(client.usage.readings.map(\.provider) == [.cursor, .opencode])
+  let opencode = try #require(client.usage.readings.last)
   #expect(opencode.activity?.tokens == 1_234_567)
   #expect(UsagePresentation(opencode).fraction == nil)
   #expect(UsagePresentation(opencode).emphasis == .none)
@@ -240,7 +240,7 @@ private final class RateLimitRetryProbe {
         eventId: "2", at: "2026-09-23T12:00:01Z", provider: .codex,
         state: .unavailable, unavailableReason: .tool_not_found,
         source: .codex_app_server, fetchedAt: "2026-09-23T12:00:01Z")))
-  let reading = try #require(client.usageReadings.first)
+  let reading = try #require(client.usage.readings.first)
   #expect(reading.unavailableReason == .tool_not_found)
   #expect(UsagePresentation(reading).unavailableMessage == "Codex not found on this Mac.")
 }
@@ -249,26 +249,26 @@ private final class RateLimitRetryProbe {
   let fetchedAt = "2026-09-15T12:00:00Z"
   let refreshed = reading(.claude, used: 0.6, fetchedAt: fetchedAt)
   let probe = UsageRefreshProbe(result: UsageRefreshResult(providers: [refreshed]))
-  let client = EngineClient(socket: "/tmp/sn-usage-refresh/engine.sock")
+  let usage = UsageReplica()
   let now = try #require(UsageTimestamp.date(from: fetchedAt))
 
-  async let first: Void = client.refreshUsage(.claude, now: now) { provider in
+  async let first: Void = usage.refresh(.claude, now: now) { provider in
     try await probe.run(provider)
   }
-  async let second: Void = client.refreshUsage(.claude, now: now) { provider in
+  async let second: Void = usage.refresh(.claude, now: now) { provider in
     try await probe.run(provider)
   }
   _ = try await (first, second)
 
   #expect(probe.calls == 1)
-  #expect(client.usageReadings.first?.primary?.used == 0.6)
+  #expect(usage.readings.first?.primary?.used == 0.6)
 
-  try await client.refreshUsage(.claude, now: now.addingTimeInterval(29)) { provider in
+  try await usage.refresh(.claude, now: now.addingTimeInterval(29)) { provider in
     try await probe.run(provider)
   }
   #expect(probe.calls == 1)
 
-  try await client.refreshUsage(.claude, now: now.addingTimeInterval(30)) { provider in
+  try await usage.refresh(.claude, now: now.addingTimeInterval(30)) { provider in
     try await probe.run(provider)
   }
   #expect(probe.calls == 2)
@@ -288,10 +288,10 @@ private final class RateLimitRetryProbe {
 
 @MainActor @Test func usageRefreshRetriesRateLimitOnlyOnceAfterServerDelay() async {
   let probe = RateLimitRetryProbe()
-  let client = EngineClient(socket: "/tmp/sn-usage-retry/engine.sock")
+  let usage = UsageReplica()
 
   do {
-    try await client.refreshUsageAfterRateLimitOnce(
+    try await usage.retryingRateLimitOnce(
       wait: probe.wait,
       operation: { try await probe.fail(17) })
     Issue.record("The second rate limit should escape instead of looping")
@@ -304,4 +304,23 @@ private final class RateLimitRetryProbe {
 
   #expect(probe.calls == 2)
   #expect(probe.waits == [17])
+}
+
+@MainActor @Test func resettingTheReplicaForgetsEveryReading() {
+  let usage = UsageReplica()
+  usage.load([reading(.claude), reading(.codex)])
+  #expect(usage.readings.count == 2)
+  usage.reset()
+  #expect(usage.readings.isEmpty)
+}
+
+@MainActor @Test func detailsRefreshOnlyAStaleOrNeverCheckedReading() {
+  let usage = UsageReplica()
+  usage.load([
+    reading(.claude, state: .ok), reading(.codex, state: .stale),
+    reading(.cursor, state: .unavailable, used: nil),
+  ])
+  #expect(!usage.refreshesOnDetailsClick(.claude))
+  #expect(usage.refreshesOnDetailsClick(.codex))
+  #expect(!usage.refreshesOnDetailsClick(.opencode))
 }

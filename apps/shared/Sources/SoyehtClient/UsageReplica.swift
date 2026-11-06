@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SoyehtProtocol
 
 enum UsageDetailsRefreshPolicy {
@@ -8,53 +9,85 @@ enum UsageDetailsRefreshPolicy {
   }
 }
 
-extension EngineClient {
-  public func refreshUsageOnDetailsClick(_ provider: UsageProvider) {
-    guard let reading = usageReadings.first(where: { $0.provider == provider }),
-      UsageDetailsRefreshPolicy.shouldRefresh(reading)
-    else { return }
-    perform { try await self.refreshUsageAfterRateLimitOnce(provider) }
+/// What the engine last said about each provider's usage, and the rules that keep the readings
+/// fresh: one reading per provider in catalogue order, one refresh in flight per request, and no
+/// refresh inside the wire's minimum interval. It owns no connection: `EngineClient` hands it the
+/// engine's answers and the request to refresh with.
+@MainActor @Observable
+public final class UsageReplica {
+  public internal(set) var readings: [UsageReading] = []
+  @ObservationIgnored private var refreshes: [String: Task<UsageRefreshResult, Error>] = [:]
+
+  /// Replaces every reading with the engine's list.
+  func load(_ providers: [UsageReading]) {
+    readings = providers
   }
 
-  func loadUsage() async throws {
-    let result = try await request(.usageList, .encoded(UsageListParams()))
-      .decoded(UsageListResult.self)
-    usageReadings = result.providers
+  func apply(_ event: UsageChangedEvent) {
+    replace(
+      UsageReading(
+        provider: event.provider, state: event.state,
+        unavailableReason: event.unavailableReason, primary: event.primary,
+        secondary: event.secondary, activity: event.activity, source: event.source,
+        fetchedAt: event.fetchedAt))
   }
 
-  public func refreshUsage(_ provider: UsageProvider? = nil) async throws {
-    guard connected else { throw ClientFailure.disconnected }
-    try await refreshUsage(provider, now: Date()) { [self] provider in
-      try await requestUsageRefresh(provider)
+  private func apply(_ result: UsageRefreshResult) {
+    for reading in result.providers { replace(reading) }
+  }
+
+  private func replace(_ reading: UsageReading) {
+    readings.removeAll { $0.provider == reading.provider }
+    readings.append(reading)
+    readings.sort { $0.provider.order < $1.provider.order }
+  }
+
+  /// A paired device forgets the readings when the connection goes.
+  func reset() {
+    readings = []
+  }
+
+  func cancelRefreshes() {
+    for task in refreshes.values { task.cancel() }
+    refreshes.removeAll()
+  }
+
+  /// Whether opening the details of `provider` should refresh its reading.
+  func refreshesOnDetailsClick(_ provider: UsageProvider) -> Bool {
+    guard let reading = readings.first(where: { $0.provider == provider }) else { return false }
+    return UsageDetailsRefreshPolicy.shouldRefresh(reading)
+  }
+
+  /// Refreshes `provider` (every provider for `nil`) with `operation`, joining a refresh already
+  /// in flight and skipping one the wire's minimum interval forbids.
+  func refresh(
+    _ provider: UsageProvider?, now: Date,
+    operation: @escaping @MainActor @Sendable (UsageProvider?) async throws -> UsageRefreshResult
+  ) async throws {
+    if let task = activeRefresh(for: provider) {
+      apply(try await task.value)
+      return
     }
-  }
+    guard refreshIsDue(provider, now: now) else { return }
 
-  /// Refreshes usage in the background: the rings keep their last reading, and a failed
-  /// refresh goes to the log instead of being dropped. Cancellation stays silent.
-  public func refreshUsageInBackground(
-    _ provider: UsageProvider? = nil, retryingRateLimit: Bool = false
-  ) async {
+    let key = provider?.rawValue ?? "all"
+    let task = Task<UsageRefreshResult, Error> { @MainActor in
+      try await operation(provider)
+    }
+    refreshes[key] = task
     do {
-      if retryingRateLimit {
-        try await refreshUsageAfterRateLimitOnce(provider)
-      } else {
-        try await refreshUsage(provider)
-      }
-    } catch is CancellationError {
+      let result = try await task.value
+      refreshes.removeValue(forKey: key)
+      apply(result)
     } catch {
-      clientLogger.notice(
-        "usage_refresh_failed provider=\(provider?.rawValue ?? "all", privacy: .public) error=\(String(describing: error), privacy: .public)"
-      )
+      refreshes.removeValue(forKey: key)
+      throw error
     }
   }
 
-  public func refreshUsageAfterRateLimitOnce(_ provider: UsageProvider? = nil) async throws {
-    try await refreshUsageAfterRateLimitOnce(
-      wait: { seconds in try await Task.sleep(for: .seconds(seconds)) },
-      operation: { [self] in try await refreshUsage(provider) })
-  }
-
-  func refreshUsageAfterRateLimitOnce(
+  /// Runs `operation`; when the engine rate-limits it with a delay, waits that long and runs it
+  /// once more.
+  func retryingRateLimitOnce(
     wait: @escaping @MainActor @Sendable (UInt32) async throws -> Void,
     operation: @escaping @MainActor @Sendable () async throws -> Void
   ) async throws {
@@ -68,79 +101,21 @@ extension EngineClient {
     }
   }
 
-  func refreshUsage(
-    _ provider: UsageProvider?, now: Date,
-    operation: @escaping @MainActor @Sendable (UsageProvider?) async throws -> UsageRefreshResult
-  ) async throws {
-    if let task = activeUsageRefreshTask(for: provider) {
-      applyUsageRefresh(try await task.value)
-      return
-    }
-    guard usageRefreshIsDue(provider, now: now) else { return }
-
-    let key = provider?.rawValue ?? "all"
-    let task = Task<UsageRefreshResult, Error> { @MainActor in
-      try await operation(provider)
-    }
-    usageRefreshTasks[key] = task
-    do {
-      let result = try await task.value
-      usageRefreshTasks.removeValue(forKey: key)
-      applyUsageRefresh(result)
-    } catch {
-      usageRefreshTasks.removeValue(forKey: key)
-      throw error
-    }
+  private func activeRefresh(for provider: UsageProvider?) -> Task<UsageRefreshResult, Error>? {
+    if let all = refreshes["all"] { return all }
+    if let provider { return refreshes[provider.rawValue] }
+    return refreshes.values.first
   }
 
-  private func requestUsageRefresh(_ provider: UsageProvider?) async throws -> UsageRefreshResult {
-    // The engine walks each provider's fallback chain (network, keychain prompt, hidden CLI
-    // session) in parallel; a chain bounds its own waits well inside this.
-    let timeout = 150.0
-    return try await mutation(
-      .usageRefresh,
-      UsageRefreshParams(provider: provider, idempotencyKey: UUID().uuidString),
-      timeoutSeconds: timeout
-    ).decoded(UsageRefreshResult.self)
-  }
-
-  private func activeUsageRefreshTask(
-    for provider: UsageProvider?
-  ) -> Task<UsageRefreshResult, Error>? {
-    if let all = usageRefreshTasks["all"] { return all }
-    if let provider { return usageRefreshTasks[provider.rawValue] }
-    return usageRefreshTasks.values.first
-  }
-
-  private func usageRefreshIsDue(_ provider: UsageProvider?, now: Date) -> Bool {
+  private func refreshIsDue(_ provider: UsageProvider?, now: Date) -> Bool {
     let candidates =
       provider.map { wanted in
-        usageReadings.filter { $0.provider == wanted }
-      } ?? usageReadings
+        readings.filter { $0.provider == wanted }
+      } ?? readings
     return !candidates.contains { reading in
       guard let fetched = UsageTimestamp.date(from: reading.fetchedAt) else { return false }
       return now.timeIntervalSince(fetched) < Double(ProtocolLimits.usageRefreshMinIntervalSec)
     }
-  }
-
-  private func applyUsageRefresh(_ result: UsageRefreshResult) {
-    for reading in result.providers { replaceUsage(reading) }
-  }
-
-  func applyUsageEvent(_ params: JsonValue) throws {
-    let event = try params.decoded(UsageChangedEvent.self)
-    replaceUsage(
-      UsageReading(
-        provider: event.provider, state: event.state,
-        unavailableReason: event.unavailableReason, primary: event.primary,
-        secondary: event.secondary, activity: event.activity, source: event.source,
-        fetchedAt: event.fetchedAt))
-  }
-
-  private func replaceUsage(_ reading: UsageReading) {
-    usageReadings.removeAll { $0.provider == reading.provider }
-    usageReadings.append(reading)
-    usageReadings.sort { $0.provider.order < $1.provider.order }
   }
 }
 

@@ -45,7 +45,8 @@ public final class EngineClient {
   public internal(set) var taskDetails: [String: TaskShowResult] = [:]
   public internal(set) var attentionByWorkspace: [String: [AttentionItem]] = [:]
   public internal(set) var paneLoops: [String: LoopConfig] = [:]
-  public internal(set) var usageReadings: [UsageReading] = []
+  /// The usage readings of the providers; the client asks the engine, the replica keeps them.
+  public let usage = UsageReplica()
   public internal(set) var slashSources = SlashSources()
   public internal(set) var editorFiles: [String: EditorFileView] = [:]
   public internal(set) var editorNavigationTarget: EditorNavigationTarget?
@@ -120,7 +121,6 @@ public final class EngineClient {
   @ObservationIgnored var editorRefreshGeneration: [String: UInt64] = [:]
   @ObservationIgnored var writingRefreshTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored var writingRefreshGeneration: [String: UInt64] = [:]
-  @ObservationIgnored var usageRefreshTasks: [String: Task<UsageRefreshResult, Error>] = [:]
   @ObservationIgnored private let socket: String
   @ObservationIgnored private let credential: DeviceCredential?
   @ObservationIgnored private let webHost: (any WebHostPort)?
@@ -222,8 +222,7 @@ public final class EngineClient {
     for task in writingRefreshTasks.values { task.cancel() }
     writingRefreshTasks.removeAll()
     writingRefreshGeneration.removeAll()
-    for task in usageRefreshTasks.values { task.cancel() }
-    usageRefreshTasks.removeAll()
+    usage.cancelRefreshes()
     for task in webHostTasks.values { task.cancel() }
     webHostTasks.removeAll()
     for task in resizeTasks.values { task.cancel() }
@@ -240,7 +239,7 @@ public final class EngineClient {
       taskDetails = [:]
       attentionByWorkspace = [:]
       paneLoops = [:]
-      usageReadings = []
+      usage.reset()
       editorFiles = [:]
       writingDocuments = [:]
       webPanes = [:]
