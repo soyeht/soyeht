@@ -4,7 +4,8 @@ Status: accepted. Scope: slice 1, Mac app and shared iPhone foundation.
 
 The engine remains the owner of the shell, data and permissions. Clients
 must interpret terminal sequences without starting their own processes.
-We use only SwiftTerm 1.20.0's `TerminalView`, pinned in the lockfile.
+We use only SwiftTerm 1.20.0's `TerminalView`, pinned in the lockfile. Since ADR 0145 the
+pin is the Soyeht fork of it (`soyeht/SwiftTerm`), which is that release plus a compact scrollback.
 The complete MIT license accompanies the bundle, copied from the dependency
 checkout before signing. The project remains Apache-2.0. The dependency plugin
 was inspected: it queries its own revision and writes metadata to the build output.

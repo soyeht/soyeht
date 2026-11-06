@@ -354,10 +354,10 @@
     {
       "identity" : "swiftterm",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/migueldeicaza/SwiftTerm",
+      "location" : "https://github.com/soyeht/SwiftTerm",
       "state" : {
-        "revision" : "5d14406844143538cd8f8851d2d8a67c1fe443e5",
-        "version" : "1.20.0"
+        "revision" : "8af3448e299d3ef07cff261810ec3715f9935ab2",
+        "version" : "1.20.0-soyeht.2"
       }
     },
     {

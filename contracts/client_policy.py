@@ -1,7 +1,7 @@
 """Renders the `x-clientPolicy` section of protocol.json into the clients' shared rules.
 
 The timeouts and the reconnect wait, the page sizes, the terminal input chunk, the terminal
-history length (desktop only for now: the Mac and iOS terminals keep SwiftTerm's default), the usage and
+history length (every client's terminal keeps it), the usage and
 context bands, the provider names, the texts two clients both store, the inline image types, what
 a pane state means (whether a turn runs, the color of its dot) and the rule that tells a model,
 effort or permission selector apart are defined once there. The Rust
