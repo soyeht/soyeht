@@ -370,23 +370,26 @@ fn web_panes_are_bounded_durable_and_never_enter_the_process_registry() {
 fn closing_an_editor_tab_with_a_draft_saves_it_without_the_request_waiting_for_the_disk() {
     let rig = Rig::new();
     let repository = rig.path.join("editor-close-save");
-    fs::create_dir_all(&repository).unwrap();
     let path = repository.join("note.txt");
+    fs::create_dir_all(&repository).unwrap();
     fs::write(&path, "alpha\n").unwrap();
     let mut client = rig.client();
     let workspace = create_workspace(&mut client, "Close", &repository, "close-workspace");
     let opened = client.call(
         "file.open",
-        json!({"workspaceId":workspace,"path":"note.txt","idempotencyKey":"open-close"}),
+        json!({"idempotencyKey":"open-close","path":"note.txt","workspaceId":workspace}),
     );
     let file_id = opened["file"]["fileId"].as_str().unwrap().to_owned();
     let pane = opened["pane"]["paneId"].as_str().unwrap().to_owned();
+    let edit = json!({
+        "range":{"start":{"line":0,"column":0},"end":{"line":0,"column":5}},
+        "text":"bravo"
+    });
     client.call(
         "file.write",
         json!({
-            "fileId":file_id,"baseRevision":"1","author":local_file_author(),
-            "edits":[{"range":{"start":{"line":0,"column":0},"end":{"line":0,"column":5}},"text":"bravo"}],
-            "idempotencyKey":"write-before-close"
+            "idempotencyKey":"write-before-close","edits":[edit],
+            "author":local_file_author(),"baseRevision":"1","fileId":file_id
         }),
     );
     client.call(
