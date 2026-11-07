@@ -55,6 +55,27 @@ pub(crate) fn insert_terminal_pane(
     pane_id
 }
 
+/// A core in a new short folder, with a fixed clock and background work run inline, and the
+/// workspace `workspace_id` at that folder.
+pub(crate) fn core_with_workspace(workspace_id: &str) -> (Core, std::path::PathBuf) {
+    let directory = short_directory();
+    let mut core = Core::open(&directory).unwrap();
+    core.clock = Arc::new(FixedClock(1_000_000));
+    core.background = crate::offload::Background::inline();
+    let workspace = Workspace {
+        workspace_id: workspace_id.into(),
+        name: "Tasks".into(),
+        path: directory.to_string_lossy().into(),
+        layout: json!({}),
+    };
+    StorePort::mutate(&mut core.store, "test", "workspace", "seed", |change| {
+        change.insert_workspace(&workspace)?;
+        Ok((json!({}), Vec::new()))
+    })
+    .unwrap();
+    (core, directory)
+}
+
 /// Adds the idle agent pane `id`, ready for work and with no process, to `core` and to its
 /// store. Its workspace `workspace_id` must exist.
 pub(crate) fn insert_agent_pane(core: &mut Core, root: &Path, id: &str, workspace_id: &str) {

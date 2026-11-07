@@ -257,6 +257,16 @@ impl Core {
                     .and_then(|executor| executor.permission_mode.as_deref()),
             ],
         )?;
+        self.require_modes_within_dispatcher(
+            &actor,
+            [
+                params.permission_mode.as_deref(),
+                params
+                    .executor
+                    .as_ref()
+                    .and_then(|executor| executor.permission_mode.as_deref()),
+            ],
+        )?;
         let should_dispatch = params.dispatch == Some(true);
         let create_key = params.idempotency_key.clone();
         model::workspace(&self.store, &params.workspace_id)?;

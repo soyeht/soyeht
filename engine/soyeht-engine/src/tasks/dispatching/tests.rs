@@ -1,10 +1,9 @@
 use super::*;
 use crate::{
-    ports::testing::FixedClock, supervisor_link::tests::short_directory,
-    tasks::rules::tests::task_fixture, test_panes::insert_agent_pane,
+    tasks::rules::tests::task_fixture,
+    test_panes::{core_with_workspace, insert_agent_pane},
 };
-use soyeht_protocol::{Comment, TaskMove, TaskState, Workspace, limits};
-use std::sync::Arc;
+use soyeht_protocol::{Comment, TaskMove, TaskState, limits};
 
 const WORKSPACE: &str = "workspace-1";
 
@@ -31,21 +30,7 @@ fn opened(pane: Option<&str>) -> DispatchCheckpoint {
 /// dispatch at `pane_opened`, after the task `A-0`, whose checkpoint names no pane and so
 /// cannot advance. `comments` belong to `A-1`.
 fn core_with_claimed_tasks(comments: Vec<Comment>) -> (Core, std::path::PathBuf) {
-    let directory = short_directory();
-    let mut core = Core::open(&directory).unwrap();
-    core.clock = Arc::new(FixedClock(1_000_000));
-    core.background = crate::offload::Background::inline();
-    let workspace = Workspace {
-        workspace_id: WORKSPACE.into(),
-        name: "Tasks".into(),
-        path: directory.to_string_lossy().into(),
-        layout: json!({}),
-    };
-    StorePort::mutate(&mut core.store, "test", "workspace", "seed", |change| {
-        change.insert_workspace(&workspace)?;
-        Ok((json!({}), Vec::new()))
-    })
-    .unwrap();
+    let (mut core, directory) = core_with_workspace(WORKSPACE);
     for pane in ["pane-1", "pane-2"] {
         insert_agent_pane(&mut core, &directory, pane, WORKSPACE);
     }
