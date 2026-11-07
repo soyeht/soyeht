@@ -95,7 +95,8 @@ impl CommandWorktree {
             .arg("-C")
             .arg(repository)
             .args(args);
-        git.harden_environment(&mut command);
+        git.harden_environment(&mut command)
+            .map_err(errors::worktree_process)?;
         bounded_command(command, timeout)
     }
 

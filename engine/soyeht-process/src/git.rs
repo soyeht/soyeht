@@ -4,7 +4,7 @@ use crate::{Error, Limits, Output, Result, run};
 use soyeht_platform::git::{Availability, Probe};
 use std::{
     collections::BTreeSet,
-    io,
+    fs, io,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -54,7 +54,10 @@ const FILTER_PROGRAMS: [&str; 3] = ["clean", "smudge", "process"];
 /// turns the monitor off and clears the programs of each driver that the repository's own
 /// configuration names: the drivers of its `config` and of every file that configuration includes,
 /// whatever the condition of the include (an `includeIf` can hold only inside a worktree not made
-/// yet, so the files are read whether or not it holds). The drivers of the person's global and
+/// yet, so the files are read whether or not it holds), and the `config.worktree` of the main
+/// worktree and of every linked one (`wt` runs git in each). More included
+/// files than the cap, an include git would expand differently (`~user/`) and an unreadable file are errors.
+/// The drivers of the person's global and
 /// system configuration (git-lfs, git-crypt) are theirs and stay. Textconv and external diff
 /// programs are not in this list: they are off with `--no-textconv` and `--no-ext-diff` on the
 /// commands that have them, which the caller passes. A submodule is a repository with its own
@@ -126,20 +129,42 @@ impl ReadOnlyGit {
     /// (`GIT_CONFIG_COUNT`), which git reads as if they were `-c` options. They come after the
     /// entries the environment already carries, so they win and those stay. Git before 2.31
     /// ignores these variables: [`require_config_environment`] refuses to go on with it.
-    pub fn harden_environment(&self, command: &mut Command) {
-        let inherited = std::env::var("GIT_CONFIG_COUNT")
-            .map_or(0, |count| count.parse::<usize>().unwrap_or(0));
-        command.env(
-            "GIT_CONFIG_COUNT",
-            (inherited + self.settings.len()).to_string(),
-        );
+    ///
+    /// Fails, and leaves the command alone, when the environment's own `GIT_CONFIG_COUNT` is not
+    /// a number or leaves no room for these settings: git would read the entries differently
+    /// from here, so the command is not run hardened.
+    pub fn harden_environment(&self, command: &mut Command) -> Result<()> {
+        let inherited = match std::env::var("GIT_CONFIG_COUNT") {
+            Ok(count) => Some(count),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(std::env::VarError::NotUnicode(_)) => {
+                return Err(refused("GIT_CONFIG_COUNT is not text"));
+            }
+        };
+        self.harden_over(command, inherited.as_deref())
+    }
+
+    /// [`harden_environment`](Self::harden_environment) over the given `GIT_CONFIG_COUNT`.
+    fn harden_over(&self, command: &mut Command, inherited: Option<&str>) -> Result<()> {
+        let inherited = match inherited {
+            Some(count) => count
+                .parse::<usize>()
+                .map_err(|_| refused("GIT_CONFIG_COUNT is not a number"))?,
+            None => 0,
+        };
+        let total = inherited
+            .checked_add(self.settings.len())
+            .ok_or_else(|| refused("GIT_CONFIG_COUNT leaves no room for the settings"))?;
+        command.env("GIT_CONFIG_COUNT", total.to_string());
         for (index, setting) in self.settings.iter().enumerate() {
             // `prepare_with` wrote every setting as `key=value`.
             let (key, value) = setting.split_once('=').unwrap_or((setting, ""));
+            // `inherited + index` is below `total`, which did not overflow.
             let number = inherited + index;
             command.env(format!("GIT_CONFIG_KEY_{number}"), key);
             command.env(format!("GIT_CONFIG_VALUE_{number}"), value);
         }
+        Ok(())
     }
 }
 
@@ -214,6 +239,14 @@ fn repository_drivers(
         .filter(|entry| matches!(entry.scope.as_str(), "local" | "worktree"))
         .map(|entry| (entry, 0))
         .collect();
+    // With `extensions.worktreeConfig`, each worktree has a `config.worktree` of its own that git
+    // reads when it runs there, and `wt list` runs git in every worktree: the one of the
+    // repository's main worktree and of every linked one is the repository's configuration too.
+    for file in worktree_config_files(probe, repository, limits)? {
+        if file.is_file() {
+            pending.extend(read(Some(&file))?.into_iter().map(|entry| (entry, 0)));
+        }
+    }
     while let Some((entry, depth)) = pending.pop() {
         if let Some(name) = driver_name(&entry.key) {
             if name.contains('=') {
@@ -221,16 +254,22 @@ fn repository_drivers(
             }
             names.insert(name.to_owned());
         }
-        let Some(target) = include_target(repository, &entry) else {
+        let Some(target) = include_target(repository, &entry)? else {
             continue;
         };
-        // Git itself stops at ten levels; a file already read is not read again.
-        if depth >= INCLUDE_DEPTH
-            || visited.len() >= INCLUDE_FILES
-            || !visited.insert(target.clone())
-        {
+        // Git itself stops at ten levels, with an error; a file already read is not read again.
+        if depth >= INCLUDE_DEPTH {
+            return Err(unreadable_configuration());
+        }
+        if visited.contains(&target) {
             continue;
         }
+        // Past the cap the rest of the includes would go unread, and a driver in one of them
+        // would run: there is no safe way on, so nothing is prepared.
+        if visited.len() >= INCLUDE_FILES {
+            return Err(unreadable_configuration());
+        }
+        visited.insert(target.clone());
         // A file that is not there is ignored by git too.
         if target.is_file() {
             pending.extend(
@@ -241,6 +280,42 @@ fn repository_drivers(
         }
     }
     Ok(names)
+}
+
+/// The `config.worktree` files that can exist: the main worktree's, in the common directory, and
+/// one for each linked worktree under `worktrees/`. A file that is not there is skipped by the
+/// caller; a directory that cannot be listed is an error.
+fn worktree_config_files(probe: &Probe, repository: &Path, limits: Limits) -> Result<Vec<PathBuf>> {
+    let mut command = Command::new("git");
+    command
+        .arg("--no-pager")
+        .arg("-C")
+        .arg(repository)
+        .args(["rev-parse", "--git-common-dir"])
+        .env("GIT_OPTIONAL_LOCKS", "0");
+    let output = run_git_with(probe, command, limits)?;
+    if output.status.code() != Some(0) {
+        return Err(unreadable_configuration());
+    }
+    let printed = std::str::from_utf8(&output.stdout).map_err(|_| unreadable_configuration())?;
+    let printed = printed.trim_end_matches(['\n', '\r']);
+    if printed.is_empty() {
+        return Err(unreadable_configuration());
+    }
+    // Relative to the repository, or absolute (the join keeps an absolute path as it is).
+    let common = repository.join(printed);
+    let mut files = vec![common.join("config.worktree")];
+    match fs::read_dir(common.join("worktrees")) {
+        Ok(linked) => {
+            for entry in linked {
+                let entry = entry.map_err(|_| unreadable_configuration())?;
+                files.push(entry.path().join("config.worktree"));
+            }
+        }
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(unreadable_configuration()),
+    }
+    Ok(files)
 }
 
 const INCLUDE_DEPTH: usize = 10;
@@ -286,30 +361,42 @@ fn driver_name(key: &str) -> Option<&str> {
 }
 
 /// The file an `include.path` or `includeIf.<condition>.path` entry points to: a path relative
-/// to the file that holds the entry, or one that starts with `~/`.
-fn include_target(repository: &Path, entry: &ConfigEntry) -> Option<PathBuf> {
+/// to the file that holds the entry, or one that starts with `~/`. `None` for an entry that
+/// includes nothing. A value git would expand in a way this does not (`~user/`, a lone `~`,
+/// `%(prefix)/`) or a `~/` with no home directory is an error: the file cannot be found, so it
+/// cannot be read.
+fn include_target(repository: &Path, entry: &ConfigEntry) -> Result<Option<PathBuf>> {
     let is_include = entry.key == "include.path"
         || (entry.key.starts_with("includeif.") && entry.key.ends_with(".path"));
     if !is_include || entry.value.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let holder = entry.origin.strip_prefix("file:")?;
-    let holder = repository.join(holder);
-    let path = match entry.value.strip_prefix("~/") {
-        Some(rest) => std::env::home_dir()?.join(rest),
-        None => holder.parent()?.join(&entry.value),
+    let Some(holder) = entry.origin.strip_prefix("file:") else {
+        return Err(unreadable_configuration());
     };
-    Some(path)
+    let holder = repository.join(holder);
+    let path = if let Some(rest) = entry.value.strip_prefix("~/") {
+        let home = std::env::home_dir().ok_or_else(unreadable_configuration)?;
+        home.join(rest)
+    } else if entry.value.starts_with('~') || entry.value.starts_with("%(prefix)/") {
+        return Err(unreadable_configuration());
+    } else {
+        let directory = holder.parent().ok_or_else(unreadable_configuration)?;
+        directory.join(&entry.value)
+    };
+    Ok(Some(path))
+}
+
+/// A refusal to go on, as the error of a read that cannot be trusted.
+fn refused(reason: &'static str) -> Error {
+    Error::Read {
+        program: "git".into(),
+        source: io::Error::new(io::ErrorKind::InvalidData, reason),
+    }
 }
 
 fn unreadable_configuration() -> Error {
-    Error::Read {
-        program: "git".into(),
-        source: io::Error::new(
-            io::ErrorKind::InvalidData,
-            "the repository's filter drivers cannot be listed",
-        ),
-    }
+    refused("the repository's filter drivers cannot be listed")
 }
 
 #[cfg(all(test, unix))]
@@ -411,8 +498,9 @@ mod tests {
         let repository = Path::new("/work/repository");
         let targets: Vec<_> = own
             .iter()
-            .filter_map(|entry| include_target(repository, entry))
+            .map(|entry| include_target(repository, entry).unwrap())
             .collect();
+        let targets: Vec<_> = targets.into_iter().flatten().collect();
         assert_eq!(targets[0], Path::new("/work/repository/.git/../extra.cfg"));
         assert_eq!(targets[1], std::env::home_dir().unwrap().join("more.cfg"));
         // Output that is not text, or that stops in the middle of an entry, is refused.
@@ -459,7 +547,8 @@ mod tests {
             let limits = Limits::new(Duration::from_secs(30), 1 << 20);
             ReadOnlyGit::prepare(root, limits)
                 .unwrap()
-                .harden_environment(&mut command);
+                .harden_environment(&mut command)
+                .unwrap();
         }
         let output = command.output().unwrap();
         assert!(
@@ -595,7 +684,8 @@ mod tests {
         status.arg("-C").arg(&root).args(["status", "--porcelain"]);
         ReadOnlyGit::prepare(&root, limits)
             .unwrap()
-            .harden_environment(&mut status);
+            .harden_environment(&mut status)
+            .unwrap();
         assert!(status.output().unwrap().status.success());
         let ran = programs_that_ran(&root);
         fs::remove_dir_all(&root).unwrap();
@@ -705,7 +795,7 @@ mod tests {
             settings: vec!["core.fsmonitor=false".to_owned()],
         };
         let mut command = Command::new("true");
-        git.harden_environment(&mut command);
+        git.harden_environment(&mut command).unwrap();
         // What the process itself carries comes first; the settings are numbered after it.
         let value = |name: &str| {
             command
@@ -722,5 +812,175 @@ mod tests {
             value(&format!("GIT_CONFIG_KEY_{inherited}")).as_deref(),
             Some("core.fsmonitor")
         );
+    }
+
+    /// A repository with one commit and no drivers, for the tests of what the configuration lists.
+    fn plain_repository(label: &str) -> PathBuf {
+        let root = env::temp_dir().join(format!("soyeht-read-only-{label}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let root = fs::canonicalize(&root).unwrap();
+        git_in(&root, &["init", "-q"]);
+        git_in(&root, &["commit", "-q", "--allow-empty", "-m", "baseline"]);
+        root
+    }
+
+    fn append(file: &Path, text: &str) {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().append(true).open(file).unwrap();
+        file.write_all(text.as_bytes()).unwrap();
+    }
+
+    fn cleared(git: &ReadOnlyGit, driver: &str) -> bool {
+        git.settings.contains(&format!("filter.{driver}.clean="))
+    }
+
+    fn lists() -> Limits {
+        Limits::new(Duration::from_secs(30), 1 << 20)
+    }
+
+    fn includes(count: usize) -> String {
+        (0..count)
+            .map(|number| format!("[include]\n\tpath = inc{number}.cfg\n"))
+            .collect()
+    }
+
+    /// Past the cap the includes that are left would go unread, and a driver in one of them
+    /// would run: preparing fails, and a configuration at the cap still works.
+    #[test]
+    fn more_includes_than_the_cap_fail_instead_of_being_dropped() {
+        let root = plain_repository("include-cap");
+        let config = root.join(".git/config");
+        // The driver is in the first file the walk would drop: it pops the last entry first.
+        fs::write(
+            root.join(".git/inc1.cfg"),
+            "[filter \"late\"]\n\tclean = touch /nonexistent\n",
+        )
+        .unwrap();
+        append(&config, &includes(INCLUDE_FILES));
+        let at_the_cap = ReadOnlyGit::prepare(&root, lists()).unwrap();
+        assert!(cleared(&at_the_cap, "late"));
+        append(&config, "[include]\n\tpath = one-too-many.cfg\n");
+        let over = ReadOnlyGit::prepare(&root, lists());
+        fs::remove_dir_all(&root).unwrap();
+        assert!(over.is_err(), "65 includes were prepared");
+    }
+
+    /// With `extensions.worktreeConfig`, the `config.worktree` of the main worktree and of every
+    /// linked one is read by the git that `wt` starts in it, so its drivers are cleared whichever
+    /// worktree the repository is prepared from, and so are the ones in files it includes.
+    #[test]
+    fn the_worktree_config_of_every_worktree_is_read() {
+        let root = plain_repository("worktree-config");
+        git_in(&root, &["config", "extensions.worktreeConfig", "true"]);
+        git_in(
+            &root,
+            &["worktree", "add", "-q", "-b", "first", "../first-worktree"],
+        );
+        git_in(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "second",
+                "../second-worktree",
+            ],
+        );
+        let common = root.join(".git");
+        fs::write(
+            common.join("worktrees/first-worktree/config.worktree"),
+            "[filter \"linked\"]\n\tclean = x\n[include]\n\tpath = more.cfg\n",
+        )
+        .unwrap();
+        fs::write(
+            common.join("worktrees/first-worktree/more.cfg"),
+            "[filter \"included\"]\n\tclean = x\n",
+        )
+        .unwrap();
+        fs::write(
+            common.join("config.worktree"),
+            "[filter \"main\"]\n\tclean = x\n",
+        )
+        .unwrap();
+        let second = root.with_file_name("second-worktree");
+        let from_main = ReadOnlyGit::prepare(&root, lists()).unwrap();
+        let from_other = ReadOnlyGit::prepare(&second, lists()).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        fs::remove_dir_all(&second).unwrap();
+        let _ = fs::remove_dir_all(root.with_file_name("first-worktree"));
+        for git in [&from_main, &from_other] {
+            for driver in ["linked", "included", "main"] {
+                assert!(cleared(git, driver), "{driver}: {:?}", git.settings);
+            }
+        }
+    }
+
+    /// A `config.worktree` that git cannot read is not skipped.
+    #[test]
+    fn an_unreadable_worktree_config_fails() {
+        let root = plain_repository("worktree-config-bad");
+        fs::write(root.join(".git/config.worktree"), "[filter\n").unwrap();
+        let prepared = ReadOnlyGit::prepare(&root, lists());
+        fs::remove_dir_all(&root).unwrap();
+        assert!(prepared.is_err());
+    }
+
+    /// Git expands `~user/` to that user's home; this cannot, so an include that starts with a
+    /// `~` that is not `~/` fails instead of being read as a relative path.
+    #[test]
+    fn an_include_git_would_expand_differently_fails() {
+        let entry = |value: &str| ConfigEntry {
+            scope: "local".into(),
+            origin: "file:.git/config".into(),
+            key: "include.path".into(),
+            value: value.into(),
+        };
+        let repository = Path::new("/r");
+        for value in ["~someone/x.cfg", "~", "%(prefix)/x.cfg"] {
+            assert!(
+                include_target(repository, &entry(value)).is_err(),
+                "{value}"
+            );
+        }
+        assert!(include_target(repository, &entry("~/x.cfg")).is_ok());
+        assert!(include_target(repository, &entry("x.cfg")).is_ok());
+
+        let root = plain_repository("tilde-user");
+        append(
+            &root.join(".git/config"),
+            "[include]\n\tpath = ~someone/x.cfg\n",
+        );
+        let prepared = ReadOnlyGit::prepare(&root, lists());
+        fs::remove_dir_all(&root).unwrap();
+        assert!(prepared.is_err());
+    }
+
+    #[test]
+    fn a_count_in_the_environment_that_cannot_be_added_to_fails() {
+        let git = ReadOnlyGit {
+            repository: PathBuf::from("/r"),
+            settings: vec!["a=b".to_owned(), "c=d".to_owned()],
+        };
+        let hardened = |inherited: Option<&str>| {
+            let mut command = Command::new("true");
+            let result = git.harden_over(&mut command, inherited);
+            (result, command.get_envs().count())
+        };
+        for bad in [
+            "many",
+            "",
+            "-1",
+            &usize::MAX.to_string(),
+            &(usize::MAX - 1).to_string(),
+        ] {
+            let (result, touched) = hardened(Some(bad));
+            assert!(result.is_err(), "{bad}");
+            assert_eq!(touched, 0, "{bad}: the command was changed");
+        }
+        let (result, _) = hardened(Some("3"));
+        assert!(result.is_ok());
+        assert!(hardened(None).0.is_ok());
     }
 }
