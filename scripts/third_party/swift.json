@@ -1,0 +1,327 @@
+{
+  "packages": {
+    "async-http-client": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "4c005f955e83f888d5616e579717a36d2dfc6301"
+    },
+    "compress-nio": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "revision": "e1caa19077dda4b00441142ef57da3db02acd466"
+    },
+    "eventsource": {
+      "files": [
+        "LICENSE.md"
+      ],
+      "license": "MIT",
+      "revision": "86b5096ac59ab46e66bd1f6377c604bc1dab0bc2"
+    },
+    "hummingbird": {
+      "files": [
+        "LICENSE",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "3ae359b1bb1e72378ed43b59fdcd4d44cac5d7a4"
+    },
+    "hummingbird-websocket": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "revision": "716c54294152c6d3301a6239a1d74db57cbcd6dc"
+    },
+    "mlx-swift": {
+      "files": [
+        "ACKNOWLEDGMENTS.md",
+        "LICENSE",
+        "Source/Cmlx/fmt/LICENSE",
+        "Source/Cmlx/json/LICENSE.MIT",
+        "Source/Cmlx/metal-cpp/LICENSE.txt",
+        "Source/Cmlx/mlx-c/ACKNOWLEDGMENTS.md",
+        "Source/Cmlx/mlx-c/LICENSE",
+        "Source/Cmlx/mlx/ACKNOWLEDGMENTS.md",
+        "Source/Cmlx/mlx/LICENSE"
+      ],
+      "license": "MIT AND Apache-2.0",
+      "revision": "0bb916c67f4b9e5c682cbe02a42c701c93ab5021"
+    },
+    "mlx-swift-lm": {
+      "files": [
+        "ACKNOWLEDGMENTS.md",
+        "LICENSE"
+      ],
+      "license": "MIT",
+      "revision": "bd4b7434e6bdb588c7ef55706ff8904cb7fd4c57"
+    },
+    "speech-swift": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "revision": "2723d1c2754fae2921fd4c475eb2594e88f7de39"
+    },
+    "swift-algorithms": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "87e50f483c54e6efd60e885f7f5aa946cee68023"
+    },
+    "swift-argument-parser": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "6a52f3251125d74daf04fcbd5e6f08a75d074382"
+    },
+    "swift-asn1": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "3b6410f7dee09eb33cdd26260c5fd47fda19b0e2"
+    },
+    "swift-async-algorithms": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "13713a4ffdee8abd929f92568ee9462a46ae26e0"
+    },
+    "swift-atomics": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "0442cb5a3f98ab802acb777929fdb446bda11a34"
+    },
+    "swift-certificates": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "ff86b924ead66f853b8baf91f3c41926a8f36177"
+    },
+    "swift-cmark": {
+      "files": [
+        "COPYING"
+      ],
+      "license": "BSD-2-Clause AND MIT",
+      "revision": "08ddb528923cc1a6527e02b7a1aee9e516ca749a"
+    },
+    "swift-collections": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "3b69cedbaa49957e97c092ae400bb57602ef941f"
+    },
+    "swift-configuration": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "8bae88f79dbddec793390c5bf3e2abb4ac2ece42"
+    },
+    "swift-crypto": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "da9d28d69ebe3894b18376c8f2395c2f37b8448f"
+    },
+    "swift-distributed-tracing": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "cc504a45f6ce73ce6067837d7ac19fa67b229a56"
+    },
+    "swift-http-structured-headers": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "933538faa42c432d385f02e07df0ace7c5ecfc47"
+    },
+    "swift-http-types": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "bff4b6903cdc99dda49649dd52f46c11cfd3ed50"
+    },
+    "swift-huggingface": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "revision": "f0a0cb43cb1b402d2bbf6fb10d8981328c449c48"
+    },
+    "swift-jinja": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "revision": "4588064a20f3fc093c95f2f7d3359999bf30cae5"
+    },
+    "swift-log": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "4038b6a4f74a1426f47eb1dd5b4bb5628a15d597"
+    },
+    "swift-markdown": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "25cb61d3482054b09ae76ca4f281b1bfe7fe5a43"
+    },
+    "swift-metrics": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "9467f9cc3c32b4386fad1ecc4618328887ef5758"
+    },
+    "swift-nio": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt",
+        "Sources/CNIOLLHTTP/LICENSE"
+      ],
+      "license": "Apache-2.0 AND MIT",
+      "revision": "6db9d9abd92ad7399b8a564cafbb87d3507245fa"
+    },
+    "swift-nio-extras": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "41449336c8ecfadac6b4b5be75f9c3c306e61ced"
+    },
+    "swift-nio-http2": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "0f3e54e29c944c2e835ad52159da7d9e1c94ac69"
+    },
+    "swift-nio-ssl": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "322f3c2a4a21df31c84ca416bf65ee5e9059e440"
+    },
+    "swift-nio-transport-services": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "67787bb645a5e67d2edcdfbe48a216cc549222d5"
+    },
+    "swift-numerics": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "0c0290ff6b24942dadb83a929ffaaa1481df04a2"
+    },
+    "swift-sdk": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "revision": "a0ae212ebf6eab5f754c3129608bc5557637e605"
+    },
+    "swift-service-context": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "d0997351b0c7779017f88e7a93bc30a1878d7f29"
+    },
+    "swift-service-lifecycle": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "c55297914e26ce3085b73ca88c521ef99136f6ad"
+    },
+    "swift-syntax": {
+      "files": [
+        "CodeGeneration/Sources/Utils/CopyrightHeader.swift",
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "79e4b74a295b6eb74a8b585e3a39d29e70c1dbd1"
+    },
+    "swift-system": {
+      "files": [
+        "LICENSE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "869129b7bf4ecc57b97d0193ad29690ca2134750"
+    },
+    "swift-transformers": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "Apache-2.0",
+      "revision": "c21fdcde390313a6d98d8e33a346f2c3486c3ab0"
+    },
+    "swift-websocket": {
+      "files": [
+        "LICENSE.txt",
+        "NOTICE.txt"
+      ],
+      "license": "Apache-2.0",
+      "revision": "ca48d46c25f8fa948d37eaa480c73172182cf90f"
+    },
+    "swiftterm": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "MIT",
+      "revision": "8af3448e299d3ef07cff261810ec3715f9935ab2"
+    },
+    "whisperkit": {
+      "files": [
+        "LICENSE",
+        "NOTICES"
+      ],
+      "license": "MIT AND Apache-2.0",
+      "revision": "1e2a163736dfa5a198e637ae44c114e1c6d5cc2d"
+    },
+    "yyjson": {
+      "files": [
+        "LICENSE"
+      ],
+      "license": "MIT",
+      "revision": "8b4a38dc994a110abaec8a400615567bd996105f"
+    }
+  }
+}

@@ -1,0 +1,81 @@
+{
+  "allowed": [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "NCSA",
+    "OFL-1.1",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+    "bzip2-1.0.6"
+  ],
+  "prefer": [
+    "MIT",
+    "Unlicense",
+    "Zlib",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "0BSD",
+    "MIT-0",
+    "CC0-1.0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSL-1.0",
+    "MPL-2.0"
+  ],
+  "clarify": {
+    "gpui_shared_string": {
+      "license": "Apache-2.0",
+      "reason": "The package declares no license field; its folder in the zed repository holds LICENSE-APACHE and nothing else."
+    },
+    "gpui_util": {
+      "license": "Apache-2.0",
+      "reason": "The package declares no license field; its folder in the zed repository holds LICENSE-APACHE and nothing else."
+    },
+    "swift-cmark": {
+      "license": "BSD-2-Clause AND MIT",
+      "reason": "COPYING holds the BSD-2-Clause license of cmark and the MIT texts of the parts it bundles."
+    },
+    "mlx-swift": {
+      "license": "MIT AND Apache-2.0",
+      "reason": "The package is MIT; Source/Cmlx/metal-cpp is Apache-2.0 and its fmt, json, mlx and mlx-c folders are MIT."
+    },
+    "swift-nio": {
+      "license": "Apache-2.0 AND MIT",
+      "reason": "The package is Apache-2.0; Sources/CNIOLLHTTP bundles llhttp, which is MIT."
+    },
+    "whisperkit": {
+      "license": "MIT AND Apache-2.0",
+      "reason": "The package is MIT; NOTICES lists the Apache-2.0 code it derives from swift-transformers."
+    }
+  },
+  "exceptions": [
+    {
+      "package": "zlog",
+      "license": "GPL-3.0-or-later",
+      "reason": "Linked into the window through gpui -> sum_tree -> ztracing -> zlog (zed-industries/zed, the pinned revision). Not allowed for a release: replace it before the public launch (a patch of ztracing that drops the zlog dependency, or an Apache-2.0 relicense upstream). Listed so that the check stays green for what is already there and fails for any new one."
+    },
+    {
+      "package": "ztracing",
+      "license": "GPL-3.0-or-later",
+      "reason": "Same chain as zlog: gpui -> sum_tree -> ztracing. Its folder also holds LICENSE-APACHE, but the manifest declares only the GPL."
+    },
+    {
+      "package": "ztracing_macro",
+      "license": "GPL-3.0-or-later",
+      "reason": "Same chain as zlog: gpui -> sum_tree -> ztracing -> ztracing_macro (a procedural macro, run at build time and not linked)."
+    }
+  ]
+}

@@ -112,6 +112,21 @@ build fetches them from GitHub:
 - GPUI (`apps/desktop`): `gpui` and `gpui_platform` are pinned to a commit of the Zed release
   tag in `zed-industries/zed` (ADR 0084).
 
+## Dependency licenses
+
+Every package carries `THIRD-PARTY-NOTICES.txt`, the licenses and notices of the dependencies it is
+built from (ADR 0149). A change to `Cargo.lock`, to a `Package.resolved` or to
+`apps/android/app/build.gradle.kts` regenerates it, and the gate checks it:
+
+```
+uv run python scripts/third_party_notices.py generate   # needs the crates fetched (a build does it)
+uv run python scripts/third_party_notices.py check
+```
+
+A dependency must be under a license of `scripts/third_party/policy.json` (permissive licenses and
+MPL-2.0; no GPL, AGPL or LGPL alone). A new Swift package or Android library also needs its entry in
+`scripts/third_party/swift.json` (`refresh-swift --checkouts DIR`) or `gradle.json`.
+
 ## Run the engine and a client in a dev profile
 
 The engine is two programs: `soyeht-ptyd` (it holds the pseudoterminals) and

@@ -247,6 +247,17 @@ class StagingTests(unittest.TestCase):
                 files = [p for p in root.rglob("*") if p.is_file() and not p.is_symlink()]
                 self.assertTrue(all(p.stat().st_mode & 0o044 == 0o044 for p in files), name)
 
+    def test_both_formats_carry_the_license_documents_with_the_third_party_notices(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            plan = make_plan(fake_programs(directory))
+            for stage, name in ((package.stage_deb, "deb"), (package.stage_appimage, "image")):
+                root = directory / name
+                stage(root, plan)
+                for document in package.LICENSE_DOCUMENTS:
+                    shipped = root / "usr/share/doc/soyeht" / document
+                    self.assertEqual(shipped.read_bytes(), (package.ROOT / document).read_bytes(), (name, document))
+
     def test_relative_targets_become_absolute(self):
         self.assertTrue(Path(package.absolute("target")).is_absolute())
         self.assertIsNone(package.absolute(None))
