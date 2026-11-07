@@ -20,7 +20,7 @@ const SLOW: Duration = Duration::from_millis(1_500);
 
 /// A supervisor that says what it was asked. A drain takes `delay` to answer; a resize
 /// waits for `gate` when there is one.
-struct Stub {
+pub(crate) struct Stub {
     delay: Duration,
     draining: Arc<AtomicBool>,
     asked: Arc<Mutex<Vec<String>>>,
@@ -30,7 +30,7 @@ struct Stub {
 }
 
 impl Stub {
-    fn new(delay: Duration) -> (Self, Arc<AtomicBool>, Arc<Mutex<Vec<String>>>) {
+    pub(crate) fn new(delay: Duration) -> (Self, Arc<AtomicBool>, Arc<Mutex<Vec<String>>>) {
         let draining = Arc::new(AtomicBool::new(false));
         let asked = Arc::new(Mutex::new(Vec::new()));
         let stub = Self {
@@ -104,7 +104,7 @@ impl SupervisorPort for Stub {
     }
 }
 
-fn open_core() -> (Core, std::path::PathBuf, String) {
+pub(crate) fn open_core() -> (Core, std::path::PathBuf, String) {
     let root = std::env::temp_dir().join(format!("soyeht-handle-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&root).unwrap();
     let mut core = Core::open(&root).unwrap();
@@ -119,12 +119,21 @@ fn open_core() -> (Core, std::path::PathBuf, String) {
     (core, root, format!("{connection}|{pane}"))
 }
 
-fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Value {
+/// A core whose jobs run in the caller, linked to a stub supervisor that says what it was asked.
+pub(crate) fn core_with_stub() -> (Core, std::path::PathBuf, String, Arc<Mutex<Vec<String>>>) {
+    let (mut core, root, ids) = open_core();
+    core.background = crate::offload::Background::inline();
+    let (stub, _, asked) = Stub::new(Duration::ZERO);
+    core.link_supervisor(Box::new(stub));
+    (core, root, ids, asked)
+}
+
+pub(crate) fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Value {
     json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})
 }
 
 /// Waits until `ready`, failing with `what` after 30 s.
-fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
+pub(crate) fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(30);
     while !ready() {
         assert!(Instant::now() < deadline, "{what}");
@@ -230,11 +239,8 @@ fn a_slow_supervisor_holds_up_neither_the_tick_nor_a_request_that_does_not_need_
 
 #[test]
 fn an_input_is_confirmed_once_its_receipt_is_durable() {
-    let (mut core, root, ids) = open_core();
+    let (mut core, root, ids, asked) = core_with_stub();
     let (connection, pane) = ids.split_once('|').unwrap();
-    core.background = crate::offload::Background::inline();
-    let (stub, _, asked) = Stub::new(Duration::ZERO);
-    core.link_supervisor(Box::new(stub));
 
     let reply = core.dispatch_inline(
         connection,
@@ -773,83 +779,5 @@ fn a_job_that_ended_with_no_answer_still_returns_the_sends_it_took() {
 
     assert!(settled.is_err());
     assert_size_queued(&core);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn a_retry_while_the_outcome_waits_is_answered_from_it_and_the_supervisor_writes_once() {
-    let (mut core, root, ids) = open_core();
-    let (connection, pane) = ids.split_once('|').unwrap();
-    core.background = crate::offload::Background::inline();
-    let (stub, _, asked) = Stub::new(Duration::ZERO);
-    core.link_supervisor(Box::new(stub));
-    let clock = Arc::new(crate::supervisor_link::tests::Manual(
-        std::sync::atomic::AtomicI64::new(1_000),
-    ));
-    core.clock = clock.clone();
-    let typed = |id| {
-        request(
-            id,
-            "pane.input",
-            json!({"paneId":pane,"bytes":"bHMK","idempotencyKey":"typed"}),
-        )
-    };
-    let answer = |core: &mut Core, id| match core.dispatch_inline(connection, typed(id)) {
-        Ok(Outcome::Reply(reply)) => reply,
-        other => panic!("pane.input did not reply: {:?}", other.err()),
-    };
-
-    let first = answer(&mut core, 2);
-    assert_eq!(first["acceptedBytes"], 4);
-    // The client retries with the same key while the outcome waits for the next write: it is
-    // answered from the outcome, and the supervisor is not asked again.
-    assert_eq!(answer(&mut core, 3), first);
-    assert_eq!(*asked.lock().unwrap(), ["input:bHMK"]);
-
-    // The outcome is recorded after the linger and the supervisor told to forget the operation;
-    // a retry after that is answered by the database.
-    clock.0.store(
-        1_000 + crate::input_receipts::LINGER_MS,
-        std::sync::atomic::Ordering::SeqCst,
-    );
-    core.flush_input_receipts().unwrap();
-    assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
-    assert_eq!(answer(&mut core, 4), first);
-    assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
-
-    // The same key with other bytes is refused, whichever record it meets.
-    let other = core.dispatch_inline(
-        connection,
-        request(
-            5,
-            "pane.input",
-            json!({"paneId":pane,"bytes":"bHMM","idempotencyKey":"typed"}),
-        ),
-    );
-    assert!(other.is_err());
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[test]
-fn a_confirmation_waits_for_the_inputs_on_their_way() {
-    let (mut core, root, _) = open_core();
-    let (stub, _, asked) = Stub::new(Duration::ZERO);
-    core.link_supervisor(Box::new(stub));
-    // An input to the process is on its way: it holds the turn of the process.
-    let on_its_way = core.turn(&["shell-instance"]);
-    core.send_later(Request::ConfirmInput {
-        operation_key: "op".into(),
-    });
-
-    thread::sleep(Duration::from_millis(300));
-    assert!(
-        asked.lock().unwrap().is_empty(),
-        "the confirmation overtook the input"
-    );
-    drop(on_its_way);
-    wait_for("the confirmation was never sent", || {
-        asked.lock().unwrap().len() == 1
-    });
-    assert_eq!(*asked.lock().unwrap(), ["confirm"]);
     std::fs::remove_dir_all(root).unwrap();
 }

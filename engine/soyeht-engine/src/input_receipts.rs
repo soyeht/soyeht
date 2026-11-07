@@ -183,12 +183,25 @@ pub(crate) fn operation_keys(waiting: Vec<Waiting>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{supervisor_link::tests::Manual, test_panes::Answering};
+    use crate::dispatch::Outcome;
+    use crate::{
+        supervisor_handle::tests::{Stub, core_with_stub, open_core, request, wait_for},
+        supervisor_link::tests::Manual,
+        test_panes::Answering,
+    };
+    use serde_json::json;
     use soyeht_ptyd::wire::Response;
     use std::sync::{Arc, atomic::AtomicI64};
+    use std::{thread, time::Duration};
 
-    #[test]
-    fn an_outcome_that_no_input_follows_is_recorded_alone_after_the_linger_and_then_confirmed() {
+    /// A core whose supervisor records the operations it is told to forget, and whose clock the
+    /// test moves.
+    fn core_confirming() -> (
+        Core,
+        std::path::PathBuf,
+        Arc<std::sync::Mutex<Vec<String>>>,
+        Arc<Manual>,
+    ) {
         let directory =
             std::env::temp_dir().join(format!("soyeht-receipts-{}", uuid::Uuid::new_v4()));
         let mut core = Core::open(&directory).unwrap();
@@ -203,6 +216,12 @@ mod tests {
         core.background = crate::offload::Background::inline();
         let clock = Arc::new(Manual(AtomicI64::new(1_000)));
         core.clock = clock.clone();
+        (core, directory, confirmed, clock)
+    }
+
+    #[test]
+    fn an_outcome_that_no_input_follows_is_recorded_alone_after_the_linger_and_then_confirmed() {
+        let (mut core, directory, confirmed, clock) = core_confirming();
         core.input_receipts
             .push(Waiting::for_test("a", "op-a", 1_000));
         core.input_receipts
@@ -262,20 +281,7 @@ mod tests {
 
     #[test]
     fn an_intent_nobody_retries_is_forgotten_after_a_minute_and_its_operation_confirmed() {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-orphans-{}", uuid::Uuid::new_v4()));
-        let mut core = Core::open(&directory).unwrap();
-        let confirmed = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let record = Arc::clone(&confirmed);
-        core.link_supervisor(Box::new(Answering(move |request| {
-            if let Request::ConfirmInput { operation_key } = request {
-                record.lock().unwrap().push(operation_key);
-            }
-            Ok(Response::Ok)
-        })));
-        core.background = crate::offload::Background::inline();
-        let clock = Arc::new(Manual(AtomicI64::new(1_000)));
-        core.clock = clock.clone();
+        let (mut core, directory, confirmed, clock) = core_confirming();
         let intent = |operation_key: &str| soyeht_store::domain::InputIntent {
             fingerprint: "fingerprint".into(),
             operation_key: operation_key.into(),
@@ -325,5 +331,77 @@ mod tests {
 
         assert!(core.input_receipts.is_empty());
         crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn a_retry_while_the_outcome_waits_is_answered_from_it_and_the_supervisor_writes_once() {
+        let (mut core, root, ids, asked) = core_with_stub();
+        let (connection, pane) = ids.split_once('|').unwrap();
+        let clock = Arc::new(Manual(std::sync::atomic::AtomicI64::new(1_000)));
+        core.clock = clock.clone();
+        let typed = |id| {
+            request(
+                id,
+                "pane.input",
+                json!({"paneId":pane,"bytes":"bHMK","idempotencyKey":"typed"}),
+            )
+        };
+        let answer = |core: &mut Core, id| match core.dispatch_inline(connection, typed(id)) {
+            Ok(Outcome::Reply(reply)) => reply,
+            other => panic!("pane.input did not reply: {:?}", other.err()),
+        };
+
+        let first = answer(&mut core, 2);
+        assert_eq!(first["acceptedBytes"], 4);
+        // The client retries with the same key while the outcome waits for the next write: it is
+        // answered from the outcome, and the supervisor is not asked again.
+        assert_eq!(answer(&mut core, 3), first);
+        assert_eq!(*asked.lock().unwrap(), ["input:bHMK"]);
+
+        // The outcome is recorded after the linger and the supervisor told to forget the operation;
+        // a retry after that is answered by the database.
+        clock
+            .0
+            .store(1_000 + LINGER_MS, std::sync::atomic::Ordering::SeqCst);
+        core.flush_input_receipts().unwrap();
+        assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
+        assert_eq!(answer(&mut core, 4), first);
+        assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
+
+        // The same key with other bytes is refused, whichever record it meets.
+        let other = core.dispatch_inline(
+            connection,
+            request(
+                5,
+                "pane.input",
+                json!({"paneId":pane,"bytes":"bHMM","idempotencyKey":"typed"}),
+            ),
+        );
+        assert!(other.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_confirmation_waits_for_the_inputs_on_their_way() {
+        let (mut core, root, _) = open_core();
+        let (stub, _, asked) = Stub::new(Duration::ZERO);
+        core.link_supervisor(Box::new(stub));
+        // An input to the process is on its way: it holds the turn of the process.
+        let on_its_way = core.turn(&["shell-instance"]);
+        core.send_later(Request::ConfirmInput {
+            operation_key: "op".into(),
+        });
+
+        thread::sleep(Duration::from_millis(300));
+        assert!(
+            asked.lock().unwrap().is_empty(),
+            "the confirmation overtook the input"
+        );
+        drop(on_its_way);
+        wait_for("the confirmation was never sent", || {
+            asked.lock().unwrap().len() == 1
+        });
+        assert_eq!(*asked.lock().unwrap(), ["confirm"]);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
