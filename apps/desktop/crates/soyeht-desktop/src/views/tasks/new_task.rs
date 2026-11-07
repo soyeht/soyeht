@@ -355,9 +355,7 @@ fn action(
         .px(px(space::X14))
         .py(px(space::X6))
         .rounded_full()
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::CONTROL))
+        .chrome_bold(type_scale::CONTROL)
         .when(!enabled, |button| {
             button.opacity(pane_interior::DISABLED_OPACITY)
         })
@@ -395,15 +393,8 @@ fn sheet_header(palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyEl
         )
         .child(spacer())
         .child(
-            row()
-                .id("new-task-close")
-                .cursor_pointer()
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_new_task(cx)))
-                .child(icon(
-                    Icon::Close,
-                    desktop::HEADER_ACTION_GLYPH,
-                    palette.muted,
-                )),
+            close_button("new-task-close", palette)
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_new_task(cx))),
         )
         .into_any_element()
 }
@@ -459,9 +450,7 @@ fn footer(
         .gap(px(space::X10))
         .pt(px(space::X6))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
+            grow()
                 .truncate()
                 .chrome()
                 .font_weight(FontWeight::MEDIUM)

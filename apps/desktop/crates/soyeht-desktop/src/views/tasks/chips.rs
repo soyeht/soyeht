@@ -37,9 +37,7 @@ pub(super) fn capsule(fill: u32, text: impl Into<SharedString>, color: u32) -> D
         .py(px(space::X2))
         .rounded_full()
         .bg(rgb(fill))
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::MICRO))
+        .chrome_bold(type_scale::MICRO)
         .text_color(rgb(color))
         .child(text.into())
 }
@@ -85,10 +83,7 @@ pub(super) fn owner_chip(name: &str, palette: &Palette) -> Div {
         .py(px(space::X3))
         .rounded_full()
         .bg(rgb(plate_color(tasks::owner_plate(name), palette)))
-        .mono()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::MICRO))
-        .text_color(rgb(palette.ink))
+        .mono_bold(type_scale::MICRO, palette.ink)
         .child(
             div()
                 .size(px(pane_interior::COMPACT_SPACING - space::X2))
@@ -110,10 +105,7 @@ pub(super) fn dot(role: Role, size: f32, palette: &Palette) -> Div {
 /// A mono word in the muted ink: a key, a branch.
 pub(super) fn muted_mono(text: impl Into<SharedString>, palette: &Palette) -> Div {
     div()
-        .mono()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::SMALL))
-        .text_color(rgb(palette.muted))
+        .mono_bold(type_scale::SMALL, palette.muted)
         .child(text.into())
 }
 
