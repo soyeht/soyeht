@@ -1,7 +1,8 @@
 """Renders the `x-clientPolicy` section of protocol.json into the clients' shared rules.
 
 The timeouts and the reconnect wait, the page sizes, the terminal input chunk, the terminal
-history length (every client's terminal keeps it), the usage and
+history length (every client's terminal keeps it), the web read's settle poll and the share of a
+command's time it may spend, the usage and
 context bands, the provider names, the texts two clients both store, the inline image types, what
 a pane state means (whether a turn runs, the color of its dot) and the rule that tells a model,
 effort or permission selector apart are defined once there. The Rust
@@ -35,6 +36,9 @@ UNPREFIXED_GROUPS = ("timeouts", "texts")
 # The group of caps, the counts the clients stop at: messages read for a queue, links found in
 # one text, pages of a model catalogue, tool calls the header ticker lists after the current one.
 CAPS = "caps"
+# The group of web read timings: how long the walk waits for a scroll to stop moving, and the
+# share of a command's time a read may spend.
+WEB_READ = "webRead"
 # The group of page sizes: each is a request `limit`, which the wire types as an unsigned 32-bit.
 PAGE_SIZES = "pageSize"
 # The group of client names: what each client sends as `client` in `hello`, a release build's name
@@ -62,6 +66,7 @@ STATE_FIELDS = {"turnRunning", "dot"}
 DOT_ROLES = ("success", "accent", "warning", "muted", "secondary")
 SCALAR_GROUPS = (
     "timeouts",
+    WEB_READ,
     "terminal",
     CAPS,
     PAGE_SIZES,
@@ -167,6 +172,9 @@ def validate(policy, schema):
     for key, value in policy["timeouts"].items():
         if not key.endswith("Ms") or not isinstance(value, int) or value <= 0:
             raise ValueError(f"x-clientPolicy.timeouts.{key} must be positive whole milliseconds")
+    share = policy[WEB_READ]["deadlineShare"]
+    if isinstance(share, bool) or not isinstance(share, int | float) or not 0 < share <= 1:
+        raise ValueError("x-clientPolicy.webRead.deadlineShare must be a share above 0 and at most 1")
     providers = schema["$defs"]["UsageProvider"]["enum"]
     if list(policy[PROVIDER_NAMES]) != providers:
         raise ValueError("usageProviderNames must name every UsageProvider, in order")

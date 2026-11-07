@@ -89,25 +89,14 @@ impl Workbench {
                         .gap(px(space::X8))
                         .child(
                             div()
-                                .mono()
-                                .font_weight(FontWeight::BOLD)
-                                .text_size(px(type_scale::CONTROL))
-                                .text_color(rgb(palette.muted))
+                                .mono_bold(type_scale::CONTROL, palette.muted)
                                 .child(SharedString::from(task_id.clone())),
                         )
                         .child(spacer())
                         .child(
-                            row()
-                                .id(id("task-sheet-close", &task_id))
-                                .cursor_pointer()
-                                .on_click(
-                                    cx.listener(|this, _: &ClickEvent, _, cx| this.close_task(cx)),
-                                )
-                                .child(icon(
-                                    Icon::Close,
-                                    desktop::HEADER_ACTION_GLYPH,
-                                    palette.muted,
-                                )),
+                            close_button(id("task-sheet-close", &task_id), palette).on_click(
+                                cx.listener(|this, _: &ClickEvent, _, cx| this.close_task(cx)),
+                            ),
                         ),
                 )
                 .child(
@@ -202,9 +191,7 @@ impl Workbench {
                     .py(px(space::X4))
                     .rounded_full()
                     .bg(rgb(palette.well))
-                    .chrome()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::SMALL))
+                    .chrome_bold(type_scale::SMALL)
                     .child(icon(Icon::Cpu, desktop::INLINE_GLYPH, palette.ink))
                     .child(SharedString::from(tasks::runner_name(
                         task.executor.as_ref(),

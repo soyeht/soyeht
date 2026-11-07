@@ -181,16 +181,16 @@ struct UsageSettingsDetail: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .background(MacTheme.face, in: RoundedRectangle(cornerRadius: MacTheme.Radius.control))
     .onAppear { chooseFirstProvider() }
-    .onChange(of: client.usageReadings.map(\.provider)) { _, _ in chooseFirstProvider() }
+    .onChange(of: client.usage.readings.map(\.provider)) { _, _ in chooseFirstProvider() }
   }
 
   private var selectedReading: UsageReading? {
-    client.usageReadings.first { $0.provider == selectedProvider }
+    client.usage.readings.first { $0.provider == selectedProvider }
   }
 
   private func providerList(width: CGFloat?) -> some View {
     VStack(spacing: MacTheme.Space.x8) {
-      ForEach(client.usageReadings, id: \.provider) { reading in
+      ForEach(client.usage.readings, id: \.provider) { reading in
         Button {
           selectedProvider = reading.provider
         } label: {
@@ -229,7 +229,7 @@ struct UsageSettingsDetail: View {
   }
 
   private func chooseFirstProvider() {
-    if selectedReading == nil { selectedProvider = client.usageReadings.first?.provider }
+    if selectedReading == nil { selectedProvider = client.usage.readings.first?.provider }
   }
 
   private func refresh() {

@@ -2,7 +2,8 @@
 """Make a release from the packages of every system and publish it as a draft (docs/release.md).
 
     uv run python scripts/release_flow.py prepare TARGET [--dry-run]
-    uv run python scripts/release_flow.py build [--mac] [--linux] [--windows] [--allow-unsigned] [--dry-run]
+    uv run python scripts/release_flow.py build [--mac] [--linux] [--windows] [--linux-arch ARCH ...]
+                                                [--allow-unsigned] [--dry-run]
     uv run python scripts/release_flow.py collect [--from DIR ...] [--allow-unsigned] [--without SYSTEM ...]
     uv run python scripts/release_flow.py publish [--allow-unsigned] [--no-draft] [--dry-run]
 
@@ -11,8 +12,9 @@ Each packager runs on its own system (ADRs 0120, 0121 and 0123); this script onl
   prepare  `release.py bump TARGET` (major, minor, patch, revision, X.Y.Z, or `current` for a first
            release) and the draft section of `CHANGELOG.md`. Nothing is committed: edit the
            changelog, commit, merge, and build from that commit of main.
-  build    the Mac package here, the Linux packages on the CI host over ssh (the rootless script,
-           only inside ~/soyeht-ci), and the command to run on the Windows host.
+  build    the Mac package here, the Linux packages on a CI host of each architecture over ssh (the
+           rootless script, only inside ~/soyeht-ci: x86_64 and aarch64 are built on a host of their
+           own), and the command to run on the Windows host.
   collect  gathers the packages into dist/ (from `--from` folders too), checks that each system is
            there and signed, writes SHA256SUMS, the release notes from the changelog and the signed
            update manifest (`release_manifest.py`).
@@ -57,6 +59,12 @@ SYSTEMS = ("macos", "linux", "windows")
 # clone of it. Everything the release does there stays below CI_FOLDER of the account's home.
 LINUX_HOST_VARIABLE = "SOYEHT_RELEASE_LINUX_HOST"
 RECEIVE_PACK_VARIABLE = "SOYEHT_RELEASE_RECEIVE_PACK"
+# The packager builds for the architecture of the machine it runs on, so each architecture has a host
+# of its own: (variable naming the host, variable naming its `git-receive-pack`, command line option).
+LINUX_BUILDERS = {
+    "x86_64": (LINUX_HOST_VARIABLE, RECEIVE_PACK_VARIABLE, "linux_host"),
+    "aarch64": ("SOYEHT_RELEASE_LINUX_AARCH64_HOST", "SOYEHT_RELEASE_LINUX_AARCH64_RECEIVE_PACK", "linux_aarch64_host"),
+}
 CI_FOLDER = "soyeht-ci"
 MIRROR = f"{CI_FOLDER}/mirror.git"
 CLONE = f"{CI_FOLDER}/repo"
@@ -156,14 +164,18 @@ def prepare(options):
 TARGETS = {"macos": "mac", "linux": "linux", "windows": "windows"}
 
 
-def linux_script(version, sha):
+def linux_script(version, sha, architecture):
     """The script the Linux host runs (on its input, in a login shell): the release commit in a
-    folder of its own below ~/soyeht-ci, built by the rootless script."""
+    folder of its own below ~/soyeht-ci, built by the rootless script. It stops at once on a host of
+    another architecture, whose packages would be the wrong ones."""
     if not FULL_SHA.match(sha):
         raise Refused(f"{sha!r} is not a full commit id")
+    if architecture not in LINUX_BUILDERS:
+        raise Refused(f"{architecture!r} is not a Linux architecture of a release ({', '.join(LINUX_BUILDERS)})")
     return "\n".join(
         [
             "set -euo pipefail",
+            f'test "$(uname -m)" = "{architecture}" || {{ echo "this host is $(uname -m), not {architecture}" >&2; exit 1; }}',
             # A login shell of the host has no git, and the packager's userland would default to
             # a folder outside CI_FOLDER; the release touches nothing but CI_FOLDER.
             f'export PATH="$HOME/{CI_FOLDER}/git/bin:$PATH"',
@@ -177,20 +189,33 @@ def linux_script(version, sha):
             f'test "$(git rev-parse HEAD)" = "{sha}"',
             "nice -n 15 nix-shell -p bubblewrap curl git gnutar coreutils --run "
             "'bash scripts/package_linux_rootless.sh --format all'",
-            f'ls -l "$tree"/dist/soyeht-{version}-linux-*',
+            f'ls -l "$tree"/dist/soyeht-{version}-linux-{architecture}.*',
         ]
     )
 
 
-def build_linux(runner, host, version, sha, destination, environment):
+def linux_host(options, environment, architecture):
+    """The ssh host that builds the packages of `architecture`: the option, else the environment."""
+    variable, _, option = LINUX_BUILDERS[architecture]
+    host = getattr(options, option) or environment.get(variable)
+    if not host:
+        label = "Linux" if architecture == "x86_64" else f"Linux {architecture}"
+        raise Refused(f"no {label} build host: pass --{option.replace('_', '-')} or set {variable} (an ssh host name)")
+    if not HOST_NAME.match(host):
+        raise Refused(f"{host!r} is not a host name")
+    return host
+
+
+def build_linux(runner, host, version, sha, destination, environment, architecture):
     if not HOST_NAME.match(host):
         raise Refused(f"{host!r} is not a host name")
     push = ["git", "push"]
-    if environment.get(RECEIVE_PACK_VARIABLE):
-        push.append(f"--receive-pack={environment[RECEIVE_PACK_VARIABLE]}")
+    receive_pack = LINUX_BUILDERS[architecture][1]
+    if environment.get(receive_pack):
+        push.append(f"--receive-pack={environment[receive_pack]}")
     runner.must([*push, f"{host}:{MIRROR}", f"{sha}:refs/heads/release-{version}"])
-    runner.must(["ssh", "-o", "BatchMode=yes", host, "bash", "-l", "-s"], stdin=linux_script(version, sha))
-    runner.must(["scp", "-o", "BatchMode=yes", f"{host}:{TREES}/{sha}/dist/soyeht-{version}-linux-*", str(destination) + "/"])
+    runner.must(["ssh", "-o", "BatchMode=yes", host, "bash", "-l", "-s"], stdin=linux_script(version, sha, architecture))
+    runner.must(["scp", "-o", "BatchMode=yes", f"{host}:{TREES}/{sha}/dist/soyeht-{version}-linux-{architecture}.*", str(destination) + "/"])
 
 
 def windows_instructions(version, sha):
@@ -260,18 +285,30 @@ def mark_build(folder, sha, dry_run):
 
 def build(options, runner=None, probe=probe, environment=os.environ):
     runner = runner or Runner(options.dry_run)
-    chosen = [system for system, flag in TARGETS.items() if getattr(options, flag)] or list(TARGETS)
+    # `--linux-arch` names Linux packages, so it implies `--linux`.
+    flagged = {system: getattr(options, flag) or (system == "linux" and bool(options.linux_arch)) for system, flag in TARGETS.items()}
+    chosen = [system for system, wanted in flagged.items() if wanted] or list(TARGETS)
     status = refuse_or_warn(source_problems(probe), "not a release checkout", options.dry_run)
     version, sha = str(release.current().version), head(probe)
     status |= refuse_or_warn(stale_build_problems(options.dist, version, sha), "cannot build here", options.dry_run)
+    # The hosts are found before anything is built, so a missing one does not cost a Mac build.
+    hosts = {}
+    if "linux" in chosen:
+        hosts = {architecture: linux_host(options, environment, architecture) for architecture in options.linux_arch or LINUX_BUILDERS}
+
+    def built():
+        """Record the commit as soon as one package set exists, so that a later step that fails (the
+        other Linux host) can be run again alone: its folder is then no stranger's."""
+        if not options.dry_run:
+            mark_build(options.dist, sha, False)
+
     if "macos" in chosen:
         command = ["nice", "-n", "15", "uv", "run", "python", "scripts/package_mac.py", "--dist", str(options.dist)]
         runner.must(command if options.allow_unsigned else [*command, "--release"])
-    if "linux" in chosen:
-        host = options.linux_host or environment.get(LINUX_HOST_VARIABLE)
-        if not host:
-            raise Refused(f"no Linux build host: pass --linux-host or set {LINUX_HOST_VARIABLE} (an ssh host name)")
-        build_linux(runner, host, version, sha, options.dist, environment)
+        built()
+    for architecture, host in hosts.items():
+        build_linux(runner, host, version, sha, options.dist, environment, architecture)
+        built()
     if "windows" in chosen:
         print(windows_instructions(version, sha))
     mark_build(options.dist, sha, options.dry_run)
@@ -559,7 +596,10 @@ def parser():
     common(built, True)
     for name, text in (("mac", "the Mac package"), ("linux", "the Linux packages"), ("windows", "show the Windows command")):
         built.add_argument(f"--{name}", action="store_true", help=f"only {text}")
-    built.add_argument("--linux-host", help=f"the Linux CI host, an ssh host name (default: ${LINUX_HOST_VARIABLE}; there is no built-in host)")
+    built.add_argument("--linux-host", help=f"the x86_64 Linux CI host, an ssh host name (default: ${LINUX_HOST_VARIABLE}; there is no built-in host)")
+    built.add_argument("--linux-aarch64-host", help=f"the aarch64 Linux CI host, an ssh host name (default: ${LINUX_BUILDERS['aarch64'][0]}; an arm64 machine)")
+    built.add_argument("--linux-arch", action="append", choices=tuple(LINUX_BUILDERS),
+                       help="build the Linux packages of this architecture only (repeat for both; default: both)")
     collected = commands.add_parser("collect", help="gather, check and checksum the packages and sign the update manifest")
     common(collected)
     sequence(collected)

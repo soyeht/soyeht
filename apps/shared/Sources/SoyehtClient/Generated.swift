@@ -166,6 +166,7 @@ public enum DesignTokens {
   }
 
   public enum Space {
+    public static let x1: CGFloat = 1
     public static let x2: CGFloat = 2
     public static let x3: CGFloat = 3
     public static let x4: CGFloat = 4
@@ -173,11 +174,13 @@ public enum DesignTokens {
     public static let x6: CGFloat = 6
     public static let x7: CGFloat = 7
     public static let x8: CGFloat = 8
+    public static let x9: CGFloat = 9
     public static let x10: CGFloat = 10
     public static let x12: CGFloat = 12
     public static let x14: CGFloat = 14
     public static let x16: CGFloat = 16
     public static let x18: CGFloat = 18
+    public static let x20: CGFloat = 20
   }
 
   public enum TypeScale {
@@ -185,6 +188,7 @@ public enum DesignTokens {
     public static let small: CGFloat = 11
     public static let control: CGFloat = 12
     public static let caption: CGFloat = 13
+    public static let label: CGFloat = 14
     public static let body: CGFloat = 15
     public static let subheading: CGFloat = 18
     public static let heading: CGFloat = 20
@@ -278,6 +282,21 @@ public enum DesignTokens {
     public static let harnessListHeight: CGFloat = 260
     public static let searchFieldHeight: CGFloat = 32
     public static let modelFieldHeight: CGFloat = 30
+    public static let newTaskSheetTopInset: CGFloat = 47
+    public static let taskDot: CGFloat = 6
+    public static let newTaskSheetWidth: CGFloat = 560
+    public static let taskListMinimumWidth: CGFloat = 960
+    public static let taskListKeyWidth: CGFloat = 70
+    public static let taskListStateWidth: CGFloat = 120
+    public static let taskListPriorityWidth: CGFloat = 90
+    public static let taskListOwnerWidth: CGFloat = 120
+    public static let taskListWorktreeWidth: CGFloat = 90
+    public static let taskListCommentsWidth: CGFloat = 40
+    public static let taskListUpdatedWidth: CGFloat = 90
+    public static let taskListTitleMinimumWidth: CGFloat = 220
+    public static let taskEditorHeight: CGFloat = 96
+    public static let taskFieldHeight: CGFloat = 40
+    public static let taskToolbarHeight: CGFloat = 34
   }
 
   public enum Glyph {
@@ -288,6 +307,7 @@ public enum DesignTokens {
     public static let chevron: CGFloat = 11
     public static let taskToolbarIcon: CGFloat = 13
     public static let taskToolbarChevron: CGFloat = 10
+    public static let taskSheetMore: CGFloat = 16
   }
 
   public enum UsageRing {

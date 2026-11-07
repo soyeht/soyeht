@@ -54,6 +54,24 @@ class ClientPolicyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate(changed, SCHEMA)
 
+    def test_the_web_read_timings_are_shared(self):
+        outputs = render_client_policy(SCHEMA, HEADER)
+        timings = SCHEMA["x-clientPolicy"]["webRead"]
+        self.assertIn(
+            f"pub const WEB_READ_SETTLE_POLL_MS: u64 = {timings['settlePollMs']};",
+            outputs[RUST_OUTPUT],
+        )
+        self.assertIn(
+            f"static let webReadSettlePollMs = {timings['settlePollMs']}",
+            outputs[SWIFT_OUTPUT],
+        )
+        self.assertIn('"settlePollMs"', outputs[TS_OUTPUT])
+        for value in (0, 1.5, "most", True):
+            changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            changed["webRead"]["deadlineShare"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate(changed, SCHEMA)
+
     def test_every_usage_provider_has_exactly_one_name(self):
         changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
         del changed["usageProviderNames"]["cursor"]
