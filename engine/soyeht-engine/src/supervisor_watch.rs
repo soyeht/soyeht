@@ -273,6 +273,13 @@ impl crate::core::Core {
         self.watch.sweep(instances);
     }
 
+    /// Asks the watch to start, or to try again, when the link is up.
+    pub(crate) fn keep_watch(&mut self) {
+        let socket = self.directory.join(soyeht_protocol::profile::PTYD_SOCKET);
+        self.watch
+            .keep(socket, self.generation, self.background.woken());
+    }
+
     /// Whether the supervisor said the process of pane `id` has output to read.
     pub(crate) fn pane_marked(&self, id: &str) -> bool {
         self.panes
@@ -511,5 +518,33 @@ mod tests {
         watch.pretend_notice("p", 7);
         assert!(!watch.is_active());
         assert!(!watch.is_marked("p"));
+    }
+
+    #[test]
+    fn a_supervisor_from_before_the_watch_leaves_the_engine_polling() {
+        let (mut core, directory, id, _calls) =
+            crate::supervisor_link::tests::core_with_unstarted_pane(Vec::new());
+        core.panes.remove(&id);
+        core.lose_supervisor_link();
+        // This supervisor welcomes every hello with no features, as the one before the role does.
+        crate::supervisor_link::tests::serve_registry(&directory);
+        core.background = crate::offload::Background::inline();
+        assert_eq!(core.ensure_supervisor(), crate::supervisor_link::Link::Up);
+
+        // The next tick asks for a watch, and learns it cannot have one.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while !core.watch.is_unsupported() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the watch never gave up"
+            );
+            assert_eq!(core.ensure_supervisor(), crate::supervisor_link::Link::Up);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!core.watch.is_active(), "the panes are read on every tick");
+
+        // A new link is asked again: this one may be a newer supervisor.
+        core.lose_supervisor_link();
+        assert!(!core.watch.is_unsupported());
     }
 }

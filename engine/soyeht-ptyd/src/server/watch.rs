@@ -5,7 +5,7 @@
 //! watch's pending set and wakes that watch's writer thread, which alone owns the socket. A slow
 //! engine can therefore delay only its own notices, and the 5 s write timeout can stall no shell.
 
-use super::{State, lock, refuse, send};
+use super::{Live, State, lock, refuse, send};
 use crate::{
     Result,
     wire::{FEATURE_WATCH, Readable, Request, Response, VERSION, Watched},
@@ -61,6 +61,59 @@ impl Watch {
             // ignored: the peer may have closed it already; either way the watch ends here.
             let _ = stream.shutdown(Shutdown::Both);
         }
+    }
+}
+
+impl Live {
+    /// The process has exited and its last byte has been read.
+    pub(super) fn exited_and_drained(&self) -> bool {
+        self.exited.load(Ordering::Acquire) && self.read_done.load(Ordering::Acquire)
+    }
+
+    /// Tells the watches the process is over, once, when both its exit and the end of its output
+    /// are known: the engine must not read an exit before the last byte.
+    pub(super) fn announce_exit(&self) {
+        if !self.exited_and_drained() || self.exit_announced.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let end_seq = self
+            .output
+            .lock()
+            .map_or(0, |output| output.retention.end_seq());
+        self.watchers.announce(&Readable {
+            instance_id: self.instance_id.clone(),
+            end_seq,
+            exited: true,
+        });
+    }
+}
+
+/// Why a hello of either role is turned away before the role matters: the protocol or the engine
+/// generation is not one this supervisor serves.
+pub(super) fn hello_refusal(
+    state: &State,
+    version: u32,
+    engine_generation: u64,
+) -> Option<(&'static str, &'static str)> {
+    if version != VERSION {
+        return Some((
+            wire_kind::VERSION_UNSUPPORTED,
+            "incompatible supervisor protocol",
+        ));
+    }
+    (engine_generation < state.registry.engine_generation).then_some((
+        wire_kind::STALE_ENGINE_GENERATION,
+        "engine generation is stale",
+    ))
+}
+
+/// The welcome of a connection that was let in.
+pub(super) fn welcome(state: &State) -> Response {
+    Response::Welcome {
+        version: VERSION,
+        supervisor_id: state.supervisor_id.clone(),
+        supervisor_generation: state.registry.supervisor_generation,
+        features: vec![FEATURE_WATCH.into()],
     }
 }
 
@@ -127,19 +180,8 @@ pub(super) fn serve(
 ) -> Result<()> {
     let watchers = {
         let state = lock(shared, "state")?;
-        if version != VERSION {
-            return refuse(
-                &mut stream,
-                wire_kind::VERSION_UNSUPPORTED,
-                "incompatible supervisor protocol",
-            );
-        }
-        if engine_generation < state.registry.engine_generation {
-            return refuse(
-                &mut stream,
-                wire_kind::STALE_ENGINE_GENERATION,
-                "engine generation is stale",
-            );
+        if let Some((kind, message)) = hello_refusal(&state, version, engine_generation) {
+            return refuse(&mut stream, kind, message);
         }
         if engine_generation > state.registry.engine_generation {
             return refuse(
@@ -148,15 +190,7 @@ pub(super) fn serve(
                 "no engine of this generation is connected",
             );
         }
-        send(
-            &mut stream,
-            &Response::Welcome {
-                version: VERSION,
-                supervisor_id: state.supervisor_id.clone(),
-                supervisor_generation: state.registry.supervisor_generation,
-                features: vec![FEATURE_WATCH.into()],
-            },
-        )?;
+        send(&mut stream, &welcome(&state))?;
         Arc::clone(&state.watchers)
     };
     let watch = Arc::new(Watch {

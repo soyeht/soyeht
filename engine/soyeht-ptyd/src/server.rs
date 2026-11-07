@@ -37,7 +37,7 @@ use uuid::Uuid;
 
 mod watch;
 
-use watch::Watchers;
+use watch::{Watchers, hello_refusal, welcome};
 
 struct Live {
     master: Mutex<File>,
@@ -51,30 +51,6 @@ struct Live {
     watchers: Arc<Watchers>,
     /// Whether the exit has been announced to the watches: once, after both of the flags above.
     exit_announced: AtomicBool,
-}
-
-impl Live {
-    /// The process has exited and its last byte has been read.
-    fn exited_and_drained(&self) -> bool {
-        self.exited.load(Ordering::Acquire) && self.read_done.load(Ordering::Acquire)
-    }
-
-    /// Tells the watches the process is over, once, when both its exit and the end of its output
-    /// are known: the engine must not read an exit before the last byte.
-    fn announce_exit(&self) {
-        if !self.exited_and_drained() || self.exit_announced.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        let end_seq = self
-            .output
-            .lock()
-            .map_or(0, |output| output.retention.end_seq());
-        self.watchers.announce(&Readable {
-            instance_id: self.instance_id.clone(),
-            end_seq,
-            exited: true,
-        });
-    }
 }
 
 struct OutputState {
@@ -233,19 +209,8 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
     let connection_id = Uuid::new_v4().to_string();
     {
         let mut state = lock(&shared, "state")?;
-        if version != VERSION {
-            return refuse(
-                &mut stream,
-                wire_kind::VERSION_UNSUPPORTED,
-                "incompatible supervisor protocol",
-            );
-        }
-        if engine_generation < state.registry.engine_generation {
-            return refuse(
-                &mut stream,
-                wire_kind::STALE_ENGINE_GENERATION,
-                "engine generation is stale",
-            );
+        if let Some((kind, message)) = hello_refusal(&state, version, engine_generation) {
+            return refuse(&mut stream, kind, message);
         }
         if engine_generation == state.registry.engine_generation && state.active.is_some() {
             return refuse(
@@ -269,15 +234,7 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
             let _ = old.shutdown(Shutdown::Both);
         }
         state.active = Some((connection_id.clone(), stream.try_clone()?));
-        if let Err(error) = send(
-            &mut stream,
-            &Response::Welcome {
-                version: VERSION,
-                supervisor_id: state.supervisor_id.clone(),
-                supervisor_generation: state.registry.supervisor_generation,
-                features: vec![FEATURE_WATCH.into()],
-            },
-        ) {
+        if let Err(error) = send(&mut stream, &welcome(&state)) {
             state.active = None;
             return Err(error);
         }

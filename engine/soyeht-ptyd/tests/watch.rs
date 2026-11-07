@@ -94,15 +94,7 @@ fn an_exit_is_announced_after_the_last_byte_of_output() {
             break notice;
         }
     };
-    let Response::Output(output) = client
-        .request(Request::Drain {
-            instance_id: instance.instance_id.clone(),
-            from_seq: 0,
-        })
-        .unwrap()
-    else {
-        panic!("expected output");
-    };
+    let output = drain(&mut client, &instance.instance_id, 0);
     assert!(output.exited, "the exit is known when it is announced");
     assert_eq!(exit.end_seq, output.end_seq);
     assert_eq!(

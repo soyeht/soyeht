@@ -188,11 +188,7 @@ impl Core {
         }
         if self.ptyd.is_some() {
             self.settle_link(now);
-            self.watch.keep(
-                self.directory.join(PTYD_SOCKET),
-                self.generation,
-                self.background.woken(),
-            );
+            self.keep_watch();
             return Link::Up;
         }
         if let Some(since) = self.supervisor_retry.connected_ms.take() {
@@ -732,12 +728,10 @@ pub(crate) mod tests {
     }
 
     /// A supervisor on the socket that welcomes the engine and answers its registry reads.
-    fn serve_registry(directory: &std::path::Path) {
-        use soyeht_protocol::frame::read_json;
-        use soyeht_ptyd::wire::Request;
+    pub(crate) fn serve_registry(directory: &std::path::Path) {
+        use {soyeht_protocol::frame::read_json, soyeht_ptyd::wire::Request};
         let listener = Listener::bind(&directory.join(PTYD_SOCKET)).unwrap();
         std::thread::spawn(move || {
-            // A thread for each connection: the engine keeps one open while it asks for another.
             while let Ok(mut stream) = listener.accept() {
                 std::thread::spawn(move || {
                     while let Ok(Some(request)) = read_json::<Request>(&mut stream) {
@@ -788,33 +782,6 @@ pub(crate) mod tests {
             events_named(&mut core, soyeht_protocol::event::PTYD_LOST),
             1
         );
-    }
-
-    #[test]
-    fn a_supervisor_from_before_the_watch_leaves_the_engine_polling() {
-        let (mut core, directory, id, _calls) = core_with_unstarted_pane(Vec::new());
-        core.panes.remove(&id);
-        core.lose_supervisor_link();
-        // This supervisor welcomes every hello with no features, as the one before the role does.
-        serve_registry(&directory);
-        core.background = crate::offload::Background::inline();
-        assert_eq!(core.ensure_supervisor(), Link::Up);
-
-        // The next tick asks for a watch, and learns it cannot have one.
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        while !core.watch.is_unsupported() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the watch never gave up"
-            );
-            assert_eq!(core.ensure_supervisor(), Link::Up);
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        assert!(!core.watch.is_active(), "the panes are read on every tick");
-
-        // A new link is asked again: this one may be a newer supervisor.
-        core.lose_supervisor_link();
-        assert!(!core.watch.is_unsupported());
     }
 
     #[test]

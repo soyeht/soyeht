@@ -322,12 +322,16 @@ mod tests {
         acknowledged: Arc<Mutex<Vec<u64>>>,
         /// How many acknowledgements are refused before one is taken.
         refuse: Arc<Mutex<u32>>,
+        /// How many reads it was asked for.
+        drains: Arc<std::sync::atomic::AtomicU32>,
     }
 
     impl SupervisorPort for Holding {
         fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
             Ok(match request {
                 Request::Drain { from_seq, .. } => {
+                    self.drains
+                        .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     let text = self.output.pop_front().unwrap_or("");
                     let next_seq = self.position + text.len() as u64;
                     self.position = next_seq;
@@ -383,6 +387,7 @@ mod tests {
             position: 0,
             acknowledged: Arc::clone(&acknowledged),
             refuse: Arc::new(Mutex::new(refusals)),
+            drains: Arc::default(),
         }));
         (core, acknowledged, root, id)
     }
@@ -442,34 +447,23 @@ mod tests {
         crate::test_paths::remove_after(core, root);
     }
 
-    /// A supervisor with no output that counts the reads it is asked for.
-    struct Counting(Arc<std::sync::atomic::AtomicU32>);
-
-    impl SupervisorPort for Counting {
-        fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
-            Ok(match request {
-                Request::Drain { from_seq, .. } => {
-                    self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                    Response::Output(Output {
-                        from_seq,
-                        next_seq: from_seq,
-                        end_seq: from_seq,
-                        bytes: String::new(),
-                        gap: None,
-                        exited: false,
-                    })
-                }
-                _ => Response::Ok,
-            })
-        }
-
-        fn supervisor_id(&self) -> &str {
-            "counting"
-        }
-
-        fn supervisor_generation(&self) -> u32 {
-            1
-        }
+    /// A core whose supervisor holds no output and counts the reads it is asked for.
+    fn core_counting() -> (
+        Core,
+        std::path::PathBuf,
+        String,
+        Arc<std::sync::atomic::AtomicU32>,
+    ) {
+        let (mut core, _, root, id) = core_with_output(false);
+        let drains = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        core.link_supervisor(Box::new(Holding {
+            output: VecDeque::new(),
+            position: 0,
+            acknowledged: Arc::default(),
+            refuse: Arc::default(),
+            drains: Arc::clone(&drains),
+        }));
+        (core, root, id, drains)
     }
 
     /// Runs `ticks` ticks of the terminal path, applying each read that starts.
@@ -482,12 +476,7 @@ mod tests {
 
     #[test]
     fn with_the_supervisors_notices_an_idle_pane_makes_no_request_and_a_marked_one_makes_one() {
-        let root = std::env::temp_dir().join(format!("soyeht-drain-{}", Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        let mut core = Core::open(&root).unwrap();
-        let id = insert_terminal_pane(&mut core, &root, "shell", false);
-        let drains = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        core.link_supervisor(Box::new(Counting(Arc::clone(&drains))));
+        let (mut core, root, id, drains) = core_counting();
         let reads = || drains.load(std::sync::atomic::Ordering::SeqCst);
 
         // Polling, as it always was: one request per tick.
@@ -511,12 +500,7 @@ mod tests {
 
     #[test]
     fn the_sweep_reads_every_pane_once_a_second_and_a_quiet_one_is_no_miss() {
-        let root = std::env::temp_dir().join(format!("soyeht-drain-{}", Uuid::new_v4()));
-        fs::create_dir_all(&root).unwrap();
-        let mut core = Core::open(&root).unwrap();
-        let id = insert_terminal_pane(&mut core, &root, "shell", false);
-        let drains = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        core.link_supervisor(Box::new(Counting(Arc::clone(&drains))));
+        let (mut core, root, id, drains) = core_counting();
         core.watch.pretend_active();
 
         tick_the_terminal_path(&mut core, &id, 50);
