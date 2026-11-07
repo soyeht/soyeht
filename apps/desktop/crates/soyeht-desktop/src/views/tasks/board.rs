@@ -72,9 +72,7 @@ impl Workbench {
         let header = row()
             .gap(px(space::X8))
             .px(px(space::X4))
-            .chrome()
-            .font_weight(FontWeight::BOLD)
-            .text_size(px(type_scale::CONTROL))
+            .chrome_bold(type_scale::CONTROL)
             .text_color(rgb(palette.secondary))
             .child(SharedString::from(
                 tasks::state_title(&state).to_uppercase(),

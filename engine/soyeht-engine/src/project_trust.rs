@@ -76,16 +76,14 @@ impl Core {
             .map_err(|_| errors::internal("Project trust serialization failed"))
     }
 
-    /// The events a new workspace needs so a client knows its folder was answered before.
+    /// The event that tells the clients the trust of a new workspace's folder, answered before or
+    /// not: a client learns that a workspace is `undecided` from it, so it asks.
     pub(crate) fn project_trust_event_for(
         &self,
         workspace_id: &str,
         path: &str,
     ) -> Result<Vec<(String, Value)>> {
         let trust = project_trust(&self.store, path)?;
-        if trust == ProjectTrust::Undecided {
-            return Ok(Vec::new());
-        }
         Ok(vec![model::pending(&ProjectTrustChangedDraft {
             workspace_ids: vec![workspace_id.to_owned()],
             trust,

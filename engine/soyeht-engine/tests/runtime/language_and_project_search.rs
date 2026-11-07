@@ -24,7 +24,14 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
     let ready = wait_lsp_ready(&mut client, &workspace, 1);
     assert_eq!(ready["language"], "rust");
     let first = language_registry_instance(&rig);
-    assert_eq!(first["spawn"]["cwd"], repository.to_str().unwrap());
+    // The server runs in the canonical folder, not in a name that could be pointed elsewhere.
+    assert_eq!(
+        first["spawn"]["cwd"],
+        soyeht_platform::fs::canonicalize(&repository)
+            .unwrap()
+            .to_str()
+            .unwrap()
+    );
     assert_eq!(first["spawn"]["argv"], json!(["rust-analyzer"]));
     assert_eq!(first["spawn"]["kind"], "pipes_lsp");
     let instance_id = first["instance_id"].clone();

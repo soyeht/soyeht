@@ -6,8 +6,8 @@ use super::{
     harness_menu::{Pick, Picker},
     menus,
     ui::{
-        OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer, text_width,
-        top_bar_button, waiting_badge, working_dot,
+        ChromeBold, OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer,
+        text_width, top_bar_button, waiting_badge, working_dot,
     },
     window_controls,
 };
@@ -350,9 +350,7 @@ impl Workbench {
             )
             .id("workspace-tabs-overflow")
             .cursor_pointer()
-            .chrome()
-            .font_weight(FontWeight::BOLD)
-            .text_size(px(type_scale::CAPTION))
+            .chrome_bold(type_scale::CAPTION)
             .text_color(rgb(palette.accent))
             .tooltip(hint(
                 format!("Show {} more workspaces", hidden.len()),
