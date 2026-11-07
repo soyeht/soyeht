@@ -156,8 +156,10 @@ fn has_version(package_json: &Path) -> bool {
     package["version"].as_str().is_some_and(|v| !v.is_empty())
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
+    #![cfg(unix)]
+
     use super::*;
     use std::{fs, os::unix::fs::PermissionsExt};
 
