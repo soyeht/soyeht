@@ -415,14 +415,23 @@ other questions of the window are.
 - When the rename fails after the old copy went to the Trash, the old copy is put back. If that
   fails too, the person is told the old copy is in the Trash and to drag it back
   (`oldAppInTrash`), never that it is unchanged. The same holds when the Trash took the old copy
-  and did not say where it put it (`trashItem` gave no `resultingItemURL`): there is nothing to put
-  back from here, so it is reported as in the Trash, not as unchanged.
-- **The copy's signature is checked before it is put in place.** The staged copy must pass
-  `SecStaticCodeCheckValidity` (every architecture, nested code included) before the quarantine
-  mark is cleared and before the old app is touched. A copy that fails it (cut short, or changed on
-  the way) is removed and the move stops with `copyFailed`; the old app is unchanged. It checks that
-  the seal is whole, not who signed it: the copy is the bytes of the running app. An unsigned build
-  has no seal, so it is refused too; a developer's ad-hoc build has one and passes.
+  and did not say where it put it (`trashItem` gave no `resultingItemURL`) and the new copy could
+  not take its place: there is nothing to put back from here, so it is reported as in the Trash,
+  not as unchanged. When the Trash did not say where but the rename works, the checked copy still
+  takes its place (the old app cannot be restored from here either way, and leaving nothing at the
+  destination would be worse); the move succeeded and the old app stays in the Trash.
+- **The copy's signature is checked before it is put in place, and it must be this app's.** The
+  staged copy must pass `SecStaticCodeCheckValidity` (every architecture, nested code included)
+  against the designated requirement of the running app before the quarantine mark is cleared and
+  before the old app is touched. The requirement comes from the running code
+  (`SecCodeCopySelf`, then `SecCodeCopyDesignatedRequirement`), not from the source path, which
+  can be a link to something else. A requirement that cannot be read (an unsigned build) refuses
+  the move, never passes it; so a sealed bundle signed by anyone else, ad hoc included, is
+  refused too. A copy that fails (cut short, changed on the way, or signed by another signer) is
+  removed and the move stops with `signatureRefused`, shown as "The copy is not signed like this
+  app"; the old app is unchanged. A released app is signed with the release identity, so its copy
+  satisfies the requirement; a developer's ad-hoc build has a requirement on its own code hash,
+  which only a whole copy of that build satisfies.
 - A source that is a link to the app is copied as the app it points to, never as a link, and then
   neither the link nor the app it points to is trashed: the person opened the link, not the
   target.

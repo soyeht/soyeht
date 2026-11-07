@@ -48,11 +48,15 @@
     case noWritableFolder
     /// The copy did not finish; the staging copy was removed.
     case copyFailed
+    /// The copy is not signed like the running app (its seal is broken, or someone else signed
+    /// it); the staging copy was removed and the old app is where it was.
+    case signatureRefused
     /// The old app could not be put in the Trash, or the new one could not take its place; the
     /// old app is where it was.
     case replaceFailed
     /// The old app is in the Trash and could not be put back, or the Trash did not say where it
-    /// put it.
+    /// put it and the new app then could not take its place. (When the Trash did not say where and
+    /// the new app took its place, the move succeeded.)
     case oldAppInTrash
   }
 
@@ -256,11 +260,12 @@
         throw AppMoveFailure.copyFailed
       }
       // Before the quarantine mark goes and before the old app is touched: a copy whose seal is
-      // broken (cut short, or changed on the way) is never put in place.
+      // broken (cut short, or changed on the way), or that is not signed like the running app,
+      // is never put in place.
       guard signature.isValid(staging) else {
         clientLogger.error("app move: the copy's signature is not valid")
         Self.discard(staging)
-        throw AppMoveFailure.copyFailed
+        throw AppMoveFailure.signatureRefused
       }
       Self.clearQuarantine(in: staging)
       // The copy took seconds: look at the destination again before anything is trashed.
@@ -269,14 +274,24 @@
         throw error
       }
       var trashed: URL?
+      var oldAppLost = false
       do {
-        if plan.replacesExisting { trashed = try trash.trash(plan.destination) }
+        if plan.replacesExisting {
+          do {
+            trashed = try trash.trash(plan.destination)
+          } catch let failure as AppMoveFailure where failure == .oldAppInTrash {
+            // The Trash took the old app and did not say where: it cannot be put back from here,
+            // but the copy is whole and checked, so it still takes the place. Throwing it away
+            // would leave nothing at the destination.
+            clientLogger.error("app move: the Trash did not say where the old app went")
+            oldAppLost = true
+          }
+        }
         try files.moveItem(at: staging, to: plan.destination)
       } catch {
         clientLogger.error("app move: replace failed kind=\(Self.kind(error), privacy: .public)")
         Self.discard(staging)
-        // The Trash took the old app and did not say where: there is nothing to put back.
-        if let failure = error as? AppMoveFailure, failure == .oldAppInTrash { throw failure }
+        if oldAppLost { throw AppMoveFailure.oldAppInTrash }
         if let trashed, !restore(trashed, to: plan.destination) {
           throw AppMoveFailure.oldAppInTrash
         }

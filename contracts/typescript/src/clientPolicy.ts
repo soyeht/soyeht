@@ -130,6 +130,7 @@ export const clientPolicy = {
     "appMoveNoWritableFolder": "Neither the Applications folder nor your own Applications folder can be written to.",
     "appMoveChanged": "Applications changed while Soyeht was moving. Nothing was replaced.",
     "appMoveNotFinished": "The copy did not finish. The app that was there is unchanged.",
+    "appMoveNotSigned": "The copy is not signed like this app, so it was not installed. The app that was there is unchanged.",
     "appMoveAlreadyThere": "This is the copy that is in Applications. Open it from there.",
     "appMoveRunning": "Soyeht is running from Applications. Quit it there, then move this copy.",
     "appMoveCopyLocked": "A copy of Soyeht is already in Applications and cannot be replaced from this account. Remove it, or open that copy.",

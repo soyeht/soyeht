@@ -213,4 +213,10 @@
     #expect(launch.relocation.phase == .declined)
     #expect(launch.relauncher.apps.isEmpty && launch.quitCount == 0)
   }
+
+  @MainActor @Test func aCopyThatIsNotSignedLikeThisAppHasItsOwnMessage() {
+    let message = AppRelocation.describe(.signatureRefused)
+    #expect(message == ClientPolicy.appMoveNotSigned)
+    #expect(message != AppRelocation.describe(.copyFailed))
+  }
 #endif

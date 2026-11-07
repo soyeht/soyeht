@@ -237,9 +237,12 @@
   final class LosesTheStaging: AppTrashing {
     let inner: FakeTrash
     let blocksRestore: Bool
-    init(_ inner: FakeTrash, blocksRestore: Bool) {
+    /// Also does not say where it put the old app.
+    let silent: Bool
+    init(_ inner: FakeTrash, blocksRestore: Bool, silent: Bool = false) {
       self.inner = inner
       self.blocksRestore = blocksRestore
+      self.silent = silent
     }
 
     func trash(_ url: URL) throws -> URL {
@@ -252,6 +255,7 @@
       if blocksRestore {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
       }
+      if silent { throw AppMoveFailure.oldAppInTrash }
       return trashed
     }
   }
@@ -415,7 +419,7 @@
   @Test func aCopyWhoseSignatureIsBrokenIsNeverPutInPlace() async throws {
     let box = try MoveSandbox()
     let replacement = try box.replacement(signature: BrokenSignature())
-    await replacement.expectMoveFails(.copyFailed)
+    await replacement.expectMoveFails(.signatureRefused)
     try box.expectOnlyThe(app: replacement.existing, stamp: "old")
   }
 
@@ -436,15 +440,26 @@
     #expect(try box.stamp(of: existing) == "new")
   }
 
-  @Test func aTrashThatTookTheOldAppWithoutSayingWhereIsReportedAsBeingInTheTrash() async throws {
+  @Test func aTrashThatTookTheOldAppWithoutSayingWhereStillGetsTheNewAppInPlace() async throws {
     let box = try MoveSandbox()
     let replacement = try box.replacement(trash: TrashesWithoutSayingWhere(box.trash))
-    await replacement.expectMoveFails(.oldAppInTrash)
-    let existing = replacement.existing
-    #expect(box.trash.trashed == [existing])
-    #expect(!FileManager.default.fileExists(atPath: existing.path))
+    let (existing, mover, plan) = replacement.parts
+    let moved = try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    #expect(moved == existing)
+    #expect(try box.stamp(of: existing) == "new", "the checked copy took the place")
+    #expect(box.trash.trashed == [existing], "the old app is in the Trash")
     let folder = existing.deletingLastPathComponent()
-    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["\(testAppName).app"],
+      "no staging copy is left")
+  }
+
+  @Test func aTrashThatSaidNothingAndARenameThatFailedIsReportedAsBeingInTheTrash() async throws {
+    let box = try MoveSandbox()
+    let trash = LosesTheStaging(box.trash, blocksRestore: false, silent: true)
+    let replacement = try box.replacement(trash: trash)
+    await replacement.expectMoveFails(.oldAppInTrash)
+    #expect(box.trash.trashed == [replacement.existing])
   }
 
   @Test func theSystemTrashSaysWhereAnItemWentOrThatItDidNot() throws {

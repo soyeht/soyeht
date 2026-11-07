@@ -93,6 +93,7 @@ public enum ClientPolicy {
     public static let appMoveNoWritableFolder = "Neither the Applications folder nor your own Applications folder can be written to."
     public static let appMoveChanged = "Applications changed while Soyeht was moving. Nothing was replaced."
     public static let appMoveNotFinished = "The copy did not finish. The app that was there is unchanged."
+    public static let appMoveNotSigned = "The copy is not signed like this app, so it was not installed. The app that was there is unchanged."
     public static let appMoveAlreadyThere = "This is the copy that is in Applications. Open it from there."
     public static let appMoveRunning = "Soyeht is running from Applications. Quit it there, then move this copy."
     public static let appMoveCopyLocked = "A copy of Soyeht is already in Applications and cannot be replaced from this account. Remove it, or open that copy."

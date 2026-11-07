@@ -94,6 +94,7 @@ pub const APP_MOVE_CHANGED: &str =
     "Applications changed while Soyeht was moving. Nothing was replaced.";
 pub const APP_MOVE_NOT_FINISHED: &str =
     "The copy did not finish. The app that was there is unchanged.";
+pub const APP_MOVE_NOT_SIGNED: &str = "The copy is not signed like this app, so it was not installed. The app that was there is unchanged.";
 pub const APP_MOVE_ALREADY_THERE: &str =
     "This is the copy that is in Applications. Open it from there.";
 pub const APP_MOVE_RUNNING: &str =

@@ -237,6 +237,7 @@
       case .noWritableFolder: ClientPolicy.appMoveNoWritableFolder
       case .replaceNotConfirmed, .planChanged: ClientPolicy.appMoveChanged
       case .copyFailed, .replaceFailed: ClientPolicy.appMoveNotFinished
+      case .signatureRefused: ClientPolicy.appMoveNotSigned
       case .oldAppInTrash: ClientPolicy.appMoveOldInTrash
       }
     }
