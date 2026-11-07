@@ -578,32 +578,32 @@ fn a_person_who_picks_a_mode_above_the_ceiling_lifts_it_and_a_mode_within_it_doe
     assert!(rig.core.agents["executor"].state.mode_ceiling.is_none());
 }
 
-/// The pane `executor` of `harness` working on a prompt, checked against a ceiling set by a
-/// Claude chief in `chief_mode`, whose agent then reports `reported` as its mode.
-fn executor_moving_itself(harness: &str, chief_mode: &str, current: &str, reported: &str) -> Rig {
-    let mut rig = started_executor(harness, current, chief_mode, current);
-    adopt_executor(&mut rig);
-    let session = {
-        let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
-        state.requested_options.clear();
-        let ceiling = state.mode_ceiling.take();
-        let mut ceiling = ceiling.unwrap();
-        // The session was opened and checked: the mode it runs is within the ceiling.
-        assert_eq!(
-            ceiling.verdict(state, None),
-            crate::agents::mode_ceiling::Verdict::Within
-        );
-        state.mode_ceiling = Some(ceiling);
-        let prompt = state
-            .enqueue(
-                "work".into(),
-                soyeht_protocol::PromptOrigin::Human,
-                "t".into(),
-            )
-            .unwrap();
-        state.active = Some(prompt);
-        state.session_id.clone().unwrap()
-    };
+/// The pane `executor`, started under the ceiling of a chief, has its session checked and works
+/// on a prompt. Returns its session.
+fn start_working(rig: &mut Rig) -> String {
+    adopt_executor(rig);
+    let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
+    state.requested_options.clear();
+    let mut ceiling = state.mode_ceiling.take().unwrap();
+    // The session was opened and checked: the mode it runs is within the ceiling.
+    assert_eq!(
+        ceiling.verdict(state, None),
+        crate::agents::mode_ceiling::Verdict::Within
+    );
+    state.mode_ceiling = Some(ceiling);
+    let prompt = state
+        .enqueue(
+            "work".into(),
+            soyeht_protocol::PromptOrigin::Human,
+            "t".into(),
+        )
+        .unwrap();
+    state.active = Some(prompt);
+    state.session_id.clone().unwrap()
+}
+
+/// The agent of the pane `executor` reports `reported` as its mode.
+fn report_mode(rig: &mut Rig, session: &str, reported: &str) {
     let record = soyeht_acp::rpc::Record {
         from_seq: 0,
         to_seq: 1,
@@ -614,7 +614,36 @@ fn executor_moving_itself(harness: &str, chief_mode: &str, current: &str, report
         },
     };
     rig.core.native_record("executor", record, false).unwrap();
+}
+
+/// The pane `executor` of `harness` working on a prompt, checked against a ceiling set by a
+/// Claude chief in `chief_mode`, whose agent then reports `reported` as its mode.
+fn executor_moving_itself(harness: &str, chief_mode: &str, current: &str, reported: &str) -> Rig {
+    let mut rig = started_executor(harness, current, chief_mode, current);
+    let session = start_working(&mut rig);
+    report_mode(&mut rig, &session, reported);
     rig
+}
+
+/// What the transcript of the pane `executor` says when the harness ends its turn as cancelled,
+/// and its state afterwards.
+fn cancelled_turn(rig: &Rig) -> (Vec<String>, crate::agents::state::State) {
+    let mut state = rig.core.agents["executor"].state.clone();
+    let mut saved = rig.core.panes["executor"].stored.clone();
+    let mut changes = crate::agents::Changes::default();
+    let prompt_id = state.active.as_ref().unwrap().prompt_id.clone();
+    crate::agents::responses::prompt_response(
+        &rig.core.store,
+        &mut state,
+        &mut saved,
+        &prompt_id,
+        &mut changes,
+        Ok(json!({"stopReason":"cancelled"})),
+        "t",
+    )
+    .unwrap();
+    let lines = changes.messages.into_iter().map(|m| m.text).collect();
+    (lines, state)
 }
 
 #[test]
@@ -685,35 +714,8 @@ fn a_task_whose_executor_raised_its_mode_goes_back_to_the_queue_with_the_reason(
     use soyeht_protocol::AttemptResult;
     let mut rig = started_executor("codex", "read-only", "auto", "read-only");
     give_executor_a_task(&mut rig);
-    let record = |session: &str| soyeht_acp::rpc::Record {
-        from_seq: 0,
-        to_seq: 1,
-        message: soyeht_acp::rpc::Message::Notification {
-            method: "session/update".into(),
-            params: json!({"sessionId":session,"update":{
-                "sessionUpdate":"current_mode_update","currentModeId":"agent"}}),
-        },
-    };
-    adopt_executor(&mut rig);
-    let session = {
-        let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
-        state.requested_options.clear();
-        let mut ceiling = state.mode_ceiling.take().unwrap();
-        ceiling.verdict(state, None);
-        state.mode_ceiling = Some(ceiling);
-        let prompt = state
-            .enqueue(
-                "work".into(),
-                soyeht_protocol::PromptOrigin::Human,
-                "t".into(),
-            )
-            .unwrap();
-        state.active = Some(prompt);
-        state.session_id.clone().unwrap()
-    };
-    rig.core
-        .native_record("executor", record(&session), false)
-        .unwrap();
+    let session = start_working(&mut rig);
+    report_mode(&mut rig, &session, "agent");
     // The task is back in the queue, its attempt closed as returned for the ceiling.
     let task = rig
         .core
@@ -743,53 +745,30 @@ fn a_task_whose_executor_raised_its_mode_goes_back_to_the_queue_with_the_reason(
     assert!(comments.iter().any(|c| c.text.contains("mode_ceiling")));
     // The turn is cancelled, and when the harness confirms, the transcript says why.
     assert!(rig.core.agents["executor"].state.cancelled_for_ceiling);
-    let mut state = rig.core.agents["executor"].state.clone();
-    let mut saved = rig.core.panes["executor"].stored.clone();
-    let mut changes = crate::agents::Changes::default();
-    let prompt_id = state.active.as_ref().unwrap().prompt_id.clone();
-    crate::agents::responses::prompt_response(
-        &rig.core.store,
-        &mut state,
-        &mut saved,
-        &prompt_id,
-        &mut changes,
-        Ok(json!({"stopReason":"cancelled"})),
-        "t",
-    )
-    .unwrap();
-    let texts: Vec<_> = changes.messages.iter().map(|m| m.text.as_str()).collect();
+    let (lines, state) = cancelled_turn(&rig);
     assert!(
-        texts
+        lines
             .iter()
-            .any(|text| *text == crate::agents::configuration::MODE_CEILING_CANCELLED),
-        "{texts:?}"
+            .any(|line| line == crate::agents::configuration::MODE_CEILING_CANCELLED),
+        "{lines:?}"
     );
-    assert!(!texts.iter().any(|text| text.contains("by the user")));
+    assert!(!lines.iter().any(|line| line.contains("by the user")));
     assert!(!state.cancelled_for_ceiling);
 }
 
 #[test]
 fn a_person_cancelling_a_turn_keeps_the_usual_transcript_line() {
-    let rig = executor_moving_itself("claude", "auto", "default", "plan");
-    let mut state = rig.core.agents["executor"].state.clone();
-    state.cancel_at_ms = Some(1);
-    let mut saved = rig.core.panes["executor"].stored.clone();
-    let mut changes = crate::agents::Changes::default();
-    let prompt_id = state.active.as_ref().unwrap().prompt_id.clone();
-    crate::agents::responses::prompt_response(
-        &rig.core.store,
-        &mut state,
-        &mut saved,
-        &prompt_id,
-        &mut changes,
-        Ok(json!({"stopReason":"cancelled"})),
-        "t",
-    )
-    .unwrap();
+    let mut rig = executor_moving_itself("claude", "auto", "default", "plan");
+    rig.core
+        .agents
+        .get_mut("executor")
+        .unwrap()
+        .state
+        .cancel_at_ms = Some(1);
+    let (lines, _) = cancelled_turn(&rig);
     assert!(
-        changes
-            .messages
+        lines
             .iter()
-            .any(|m| m.text == "Turn cancelled by the user.")
+            .any(|line| line == "Turn cancelled by the user.")
     );
 }
