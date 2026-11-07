@@ -11,7 +11,7 @@ There are three levels. Start at the first and go further only if you need to.
 | Level | You change | Result |
 | --- | --- | --- |
 | 1. A local harness | One file in your data directory, or Preferences on the Mac | Your machine lists it, opens panes with it, switches to and from it. Nothing to merge. |
-| 2. A built-in harness | The pinned registry snapshot in the engine | Every install lists it. |
+| 2. A built-in harness | The pinned registry snapshot in the engine | Every install can run it; it is listed once it is `supported`. |
 | 3. Special behaviour | Engine code, per harness | Usage rings, skills folders, terminal hooks, a display name. Only when the harness needs it. |
 
 Background to read: ADR 0066 (catalogue and authentication boundaries), ADR 0067 (switching),
@@ -88,9 +88,12 @@ restore. The snapshot is deliberately hard to edit by hand: its bytes, its upstr
 its entry count are checked.
 
 1. Add the entry to `agents` in the snapshot: `id` (must start with `registry.`), `name`,
-   `version`, `command`, `args`, and optionally `environment`, `userDirectories` (folders
+   `version`, `support`, `command`, `args`, and optionally `environment`, `userDirectories` (folders
    under the home directory that show a local install) and `localCommands` (program names
    that show a local install).
+   `support` is `experimental` until the harness has been run against the real program by
+   `scripts/e2e_real_harnesses.py`; `harness.list` offers only `supported` entries (ADR 0143).
+   Making it `supported` also adds its row to `harnesses` in `x-readiness`.
 2. A package-runner entry must pin its package: `npx` with `--yes` and `name@version`, or
    `uvx` with `name==version`, never `latest`. Any other command is a single program name.
 3. Update the constants at the top of `registry.rs`: `BUILTIN_AGENT_COUNT`, `SNAPSHOT_DIGEST`

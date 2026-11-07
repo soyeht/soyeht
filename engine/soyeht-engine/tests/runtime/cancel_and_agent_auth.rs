@@ -680,46 +680,23 @@ fn preferred_harness_setting_is_durable_and_rejects_non_string_values() {
 }
 
 #[test]
-fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
+fn empty_profile_lists_the_supported_catalogue_and_accepts_an_explicit_rescan() {
     let rig = Rig::new();
     assert!(!rig.path.join("harnesses.json").exists());
     let mut client = rig.client();
     let initial = client.call("harness.list", json!({"limit":64}));
-    let unverified = initial["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["id"] == "registry.amp-acp")
-        .unwrap();
-    assert_eq!(
-        unverified["setupState"],
-        if unverified["available"] == true {
-            "not_checked"
-        } else {
-            "not_installed"
-        }
-    );
-    assert_eq!(
-        initial["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|item| item["id"] == "registry.amp-acp")
-            .unwrap()["installed"],
-        false
-    );
-
-    rig.install_stub_executable("amp-acp");
+    // The unchecked built-in harnesses are not listed (ADR 0143); the four supported ones are.
+    assert_eq!(initial["items"].as_array().unwrap().len(), 4);
 
     let registry = client.call("harness.list", json!({"limit":64,"rescan":true}));
     let items = registry["items"].as_array().unwrap();
-    assert_eq!(items.len(), 41);
+    assert_eq!(items.len(), 4);
+    assert!(items.iter().all(|item| item["id"] != "registry.gemini"));
     for id in [
         "registry.claude-acp",
         "registry.codex-acp",
         "registry.cursor",
         "registry.opencode",
-        "registry.gemini",
     ] {
         let item = items.iter().find(|item| item["id"] == id).unwrap();
         assert_eq!(item["source"], "built_in");
@@ -728,13 +705,6 @@ fn empty_profile_lists_the_pinned_catalogue_and_accepts_an_explicit_rescan() {
             Some("ready" | "not_checked" | "not_installed" | "check_setup")
         ));
     }
-    let installed = items
-        .iter()
-        .find(|item| item["id"] == "registry.amp-acp")
-        .unwrap();
-    assert_eq!(installed["available"], true);
-    assert_eq!(installed["installed"], true);
-    assert_eq!(installed["setupState"], "not_checked");
     assert!(registry["nextCursor"].is_null());
 }
 

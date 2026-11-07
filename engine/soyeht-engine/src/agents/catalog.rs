@@ -220,7 +220,7 @@ pub(crate) fn prepare_catalog(
         let mut resolve_ms = 0;
         let mut prepare_ms = 0;
         let mut installed_ms = 0;
-        let entries = registry::catalogue_entries(&directory)?
+        let entries = registry::listed_entries(&directory)?
             .into_iter()
             .map(|entry| {
                 let step = Instant::now();
@@ -645,6 +645,49 @@ mod tests {
         );
         assert_eq!(item["name"], "Claude");
         drop(core);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn only_the_four_checked_harnesses_are_supported_and_they_are_the_readiness_table() {
+        let supported = registry::builtin_entries()
+            .unwrap()
+            .into_iter()
+            .filter(|entry| entry.support == registry::Support::Supported)
+            .map(|entry| entry.launch.id)
+            .collect::<BTreeSet<_>>();
+        let readiness = soyeht_protocol::readiness::HARNESSES
+            .iter()
+            .map(|harness| harness.id.to_owned())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(supported, readiness);
+        assert_eq!(supported.len(), 4);
+    }
+
+    #[test]
+    fn an_unchecked_harness_is_not_listed_for_a_new_pane_but_still_resolves_for_a_bound_one() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-harness-support-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(
+            directory.join("harnesses.json"),
+            br#"[{"id":"mine","name":"Mine","command":"mine","args":[],"version":"1"}]"#,
+        )
+        .unwrap();
+        let listed = registry::listed_entries(&directory)
+            .unwrap()
+            .into_iter()
+            .map(|entry| entry.launch.id)
+            .collect::<BTreeSet<_>>();
+        // A custom entry is listed; the unchecked built-in ones are not.
+        assert!(listed.contains("mine"));
+        assert!(listed.contains("registry.opencode"));
+        assert!(!listed.contains("registry.gemini"));
+        assert_eq!(listed.len(), 5);
+        // Every lookup by id, which a restored pane or a model list uses, reads the whole catalogue.
+        let all = registry::entries(&directory).unwrap();
+        assert!(all.iter().any(|launch| launch.id == "registry.gemini"));
+        assert_eq!(all.len(), registry::builtin_entries().unwrap().len() + 1);
         std::fs::remove_dir_all(directory).unwrap();
     }
 }
