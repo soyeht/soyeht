@@ -101,7 +101,7 @@
         "plasma-wayland-protocols/LICENSES/LGPL-2.1-or-later.txt"
       ],
       "source": "https://github.com/KDE/plasma-wayland-protocols",
-      "reason": "The crate (MIT) turns the XML protocol descriptions of KDE's plasma-wayland-protocols into interface tables at build time. Of its 30 files, 17 are LGPL-2.1-or-later (blur.xml, the one gpui_linux uses, among them), 9 MIT-CMU, 1 BSD-3-Clause, the rest MIT. Only the generated interface tables are compiled in; no LGPL library code is linked. The four license texts are shipped, and the LGPL is allowed here as a notice only."
+      "reason": "The crate (MIT) turns the XML protocol descriptions of KDE's plasma-wayland-protocols into interface tables at build time. Of its 29 SPDX-tagged protocol files, 17 are LGPL-2.1-or-later (blur.xml, the one gpui_linux uses, among them), 10 MIT-CMU, 1 BSD-3-Clause and 1 MIT. Only the generated interface tables are compiled in; no LGPL library code is linked. The four license texts are shipped, and the LGPL is allowed here as a notice only."
     }
   }
 }

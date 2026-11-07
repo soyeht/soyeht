@@ -214,6 +214,25 @@ class CargoTests(unittest.TestCase):
         with self.assertRaises(sources.SourceError):
             sources.cargo_component(other, allowed)
 
+    def test_a_gnu_text_in_a_form_the_signatures_do_not_know_fails_instead_of_shipping(self):
+        forms = {
+            "v3": "GNU General Public License v3.0\n" + "Everyone may copy this license. " * 10,
+            "gpl-or-later": "GNU GPL version 3 or later\n" + "Everyone may copy this license. " * 10,
+            "affero": "Affero General Public License v3 applies to this code.\n" + "Everyone may copy this license. " * 10,
+        }
+        for label, text in forms.items():
+            self.assertTrue(licenses.names_copyleft(text), label)
+            for where in ("vendor/COPYING", "LICENSE-EXTRA"):
+                pkg = package(self.directory.name, f"odd-{label}", "MIT", {"LICENSE": MIT_TEXT})
+                folder = Path(pkg["manifest_path"]).parent
+                target = folder / where
+                target.parent.mkdir(exist_ok=True)
+                target.write_text(text)
+                with self.assertRaisesRegex(sources.SourceError, "names a GNU license"):
+                    sources.cargo_component(pkg, POLICY)
+        self.assertFalse(licenses.names_copyleft(MIT_TEXT))
+        self.assertFalse(licenses.names_copyleft("GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n" + "x " * 100))  # known: judged by its id
+
     def test_the_policy_entries_for_freetype_and_the_plasma_protocols_say_what_is_bundled(self):
         freetype, plasma = POLICY.bundled["freetype-sys"], POLICY.bundled["wayland-protocols-plasma"]
         self.assertIn("2.13.2", freetype["credit"])

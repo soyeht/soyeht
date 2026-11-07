@@ -28,8 +28,8 @@ ship, and nothing in the packages.
   compiles code of another license has a `bundled` entry in the policy: `freetype-sys` builds FreeType, which
   is FTL or GPLv2, and Soyeht follows the FreeType License, whose credit line (the FreeType 2.13.2 it bundles) is in its entry. A nested license file
   classified outside the allow-list fails the check unless the crate's `bundled` entry lists that license in
-  `notice_only`: `wayland-protocols-plasma` has 17 of its 30 XML protocol files under LGPL-2.1-or-later (the
-  generated interface tables are compiled in; no LGPL library code is linked), 9 under MIT-CMU and one under
+  `notice_only`: `wayland-protocols-plasma` has 17 of its 29 SPDX-tagged protocol files under LGPL-2.1-or-later (the
+  generated interface tables are compiled in; no LGPL library code is linked), 10 under MIT-CMU and one under
   BSD-3-Clause, and ships the four license texts with the source address
   (https://github.com/KDE/plasma-wayland-protocols). An entry of
   an MPL-2.0 component gives the address of its source (section 3.2). For the Swift packages, the pins of the four

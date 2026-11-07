@@ -166,6 +166,14 @@ def holder_of(package):
     return named or f"the {package['name']} developers ({package.get('repository') or 'see the package'})"
 
 
+def _refuse_unread_copyleft(name, version, file, body):
+    if not licenses.is_notice_file(Path(file).name) and licenses.names_copyleft(body):
+        raise SourceError(
+            f"{name} {version}: {file} names a GNU license in a form this check does not recognise: "
+            "read it, and teach `SIGNATURES` its form or list the crate in policy.json"
+        )
+
+
 def cargo_component(package, policy):
     """The component of one cargo package, with the texts of its elected license."""
     name, declared = package["name"], package["license"]
@@ -197,6 +205,7 @@ def cargo_component(package, policy):
         component.notes += [f"credit: {bundled['credit']}"] if bundled.get("credit") else []
         component.notes += [f"bundled source: {bundled['source']}"] if bundled.get("source") else []
     for file in kept:
+        _refuse_unread_copyleft(name, package["version"], file, files[file])
         add_text(component, "NOTICE" if licenses.is_notice_file(file) else licenses.classify(files[file]) or declared, files[file])
     for identifier in licenses.missing_texts(chosen, files, kept):
         # The package ships no such file: the standard text, and the holder its metadata names.
@@ -207,6 +216,7 @@ def cargo_component(package, policy):
         if relative in files:
             continue
         kind = licenses.classify(body)
+        _refuse_unread_copyleft(name, package["version"], relative, body)
         if kind and not licenses.usable_choices(kind, policy) and kind not in notice_only:
             raise SourceError(
                 f"{name} {package['version']} bundles {relative}, a {kind} text: {kind} is not on the allow-list; "
@@ -266,6 +276,8 @@ def swift_components(policy, root=ROOT):
         for relative in entry["files"]:
             body = licenses.normal((SWIFT_TEXTS / identity / relative).read_text())
             kind = "NOTICE" if licenses.is_notice_file(Path(relative).name) else licenses.classify(body)
+            if kind is None and licenses.names_copyleft(body):
+                problems.append(f"{identity}: {relative} names a GNU license in a form this check does not recognise")
             add_text(component, kind or entry["license"], body)
         components.append(component)
     if problems:

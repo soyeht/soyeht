@@ -181,6 +181,18 @@ def classify(text):
     return None
 
 
+# A text that names one of the GNU licenses; see `names_copyleft`.
+COPYLEFT_MENTION = re.compile(r"general public licen[sc]e|\b[al]?gpl\b", re.IGNORECASE)
+
+
+def names_copyleft(text):
+    """Whether a license text that `classify` does not know names a GNU license ("GNU General Public
+    License v3.0", "GNU GPL version 3 or later", "Affero General Public License v3"). Such a text may
+    be a copyleft license in a form the signatures do not match, so the check refuses it rather than
+    ship it unread."""
+    return classify(text) is None and bool(COPYLEFT_MENTION.search(text))
+
+
 def base_identifier(identifier):
     return identifier.split(" WITH ")[0]
 
