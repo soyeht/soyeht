@@ -38,14 +38,15 @@ pub fn finish(
 /// generated code of `invalid_params`, as the path is not one an agent may give. (`-32002`, the
 /// code of `unauthorized`, is what an adapter reads as "session not found".)
 fn write_refused(message: impl Into<String>) -> RpcError {
-    match i32::try_from(error_code(&ErrorKind::InvalidParams)) {
-        Ok(code) => RpcError {
+    let message = message.into();
+    i32::try_from(error_code(&ErrorKind::InvalidParams)).map_or_else(
+        |_| failure(message.clone()),
+        |code| RpcError {
             code,
-            message: message.into(),
+            message: message.clone(),
             data: None,
         },
-        Err(_) => failure(message),
-    }
+    )
 }
 
 /// The answer to a write that failed: the refusal of a path keeps its code, the rest are failures.
