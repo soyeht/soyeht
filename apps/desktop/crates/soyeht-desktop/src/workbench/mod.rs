@@ -85,7 +85,7 @@ pub struct Workbench {
     /// The first field of a form that just opened, which takes the keyboard on the next frame
     /// before any pane does.
     pub(crate) field_request: Option<FocusHandle>,
-    /// Whether the "Trust this folder?" sheet holds the keyboard (`hold_keys_for_trust_sheet`).
+    /// Whether the "Trust this folder?" sheet holds the keyboard (`hold_trust_keys`).
     pub(crate) trust_sheet_holds_keys: bool,
     /// The workspace whose close waits for the person's answer to its question.
     pub(crate) closing_workspace: Option<String>,

@@ -70,18 +70,15 @@ impl Workbench {
     /// from a composer or a page, so no pane under the sheet receives a key. When the sheet goes,
     /// the pane in front gets the keyboard back. Called at the start of each frame, before
     /// `apply_focus_request`.
-    pub(crate) fn hold_keys_for_trust_sheet(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn hold_trust_keys(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.state.trust_prompt().is_some() {
             if window.focused(cx).is_none_or(|held| held != self.focus) {
                 window.focus(&self.focus, cx);
             }
             self.trust_sheet_holds_keys = true;
         } else if std::mem::take(&mut self.trust_sheet_holds_keys) {
-            self.focus_request = self.state.focused_pane().map(|pane| pane.pane_id.clone());
+            let pane = self.state.focused_pane().map(|pane| pane.pane_id.clone());
+            self.focus_request = pane;
         }
     }
 
