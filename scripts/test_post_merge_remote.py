@@ -1,8 +1,14 @@
+import contextlib
+import io
+import json
 import os
 import subprocess
+import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
+import gate_remote
 import post_merge_gate
 import post_merge_hosts
 from test_post_merge_fixtures import RemoteHostCase, git
@@ -20,7 +26,6 @@ class RemoteGateTests(RemoteHostCase):
         (remote_directory, remote_arguments), (local_directory, local_arguments) = self.runs()
         self.assertIn("remote-gate/tree", remote_directory)
         self.assertEqual(remote_arguments.split()[0], "only=eng,snap")
-        self.assertNotIn("remote-gate", local_directory)
         self.assertEqual(local_arguments.split()[0], "only=unit,sw,tcc")
         self.assertEqual(git(self.host_checkout / ".cache/remote-gate/tree", "rev-parse", "HEAD"), head)
         self.assertEqual(self.ssh_log.read_text().split(), ["linux-host", "linux-host"])  # run, timings
@@ -223,6 +228,236 @@ exec {self.fake_ssh} "$@"
     def test_a_bad_slot_name_is_refused(self):
         result = self.script_run("--sha", self.shas[0], "--steps", "unit", "--slot", "../x")
         self.assertEqual(result.returncode, 64)
+
+
+# A stand-in with the steps the pre-merge split tells apart, which lists them as the tier would
+# (`--only` names steps of any tier) and records each step it runs, in the timings file, with a
+# trace of the tier, the steps, the base and the engine crates it was given.
+FAKE_TIER_GATE = r"""#!/bin/bash
+tier=full; only=""; base=""; list=0; event=""
+while (($#)); do case "$1" in --tier) tier="$2"; shift 2;; --only) only="$2"; shift 2;; --base) base="$2"; shift 2;; --event-file) event="$2"; shift 2;; --list) list=1; shift;; *) shift;; esac; done
+rows='always both unit
+engine both eng
+engine both engine:build
+engine fast engine:test-changed
+engine full engine:test
+swift both sw
+e2e both snap'
+selected=""
+while read -r area tiers id; do
+    if [[ -n "$only" ]]; then [[ ",$only," == *",$id,"* ]] || continue
+    elif [[ "$tiers" != both && "$tiers" != "$tier" ]]; then continue; fi
+    selected+="$area $tiers $id"$'\n'
+done <<< "$rows"
+if ((list)); then printf '%s' "$selected"; exit 0; fi
+echo "$PWD tier=$tier only=$only base=$base event=$event engine=${SOYEHT_GATE_ENGINE_TEST_ARGS:-}" >> "${FAKE_TRACE:?}"
+steps=""; status=0
+while read -r area tiers id; do
+    [[ -n "$id" ]] || continue
+    status=0; [[ "$id" == "${FAKE_STEP:-}" ]] && status=1
+    steps+="${steps:+,}{\"id\":\"$id\",\"area\":\"$area\",\"seconds\":2.0,\"status\":$status}"
+    if ((status)); then echo "check_all: FAILED step $id (area $area, exit 1)" >&2; break; fi
+done <<< "$selected"
+printf '{"latest":{"steps":[%s]}}' "$steps" > "${SOYEHT_GATE_TIMINGS:?}"
+exit "$status"
+"""
+
+
+# What `gate_plan.py --format shell` prints: the plan's text goes to stderr, the assignments to stdout.
+FAKE_PLAN = """import sys
+print("gate plan", file=sys.stderr)
+print("GATE_AREAS='engine'")
+print("GATE_ENGINE_TEST_ARGS='-p soyeht-store'")
+"""
+
+
+class PullRequestGateTests(RemoteHostCase):
+    """scripts/gate_remote.py: the pre-merge gate, split between the host and this machine, for a
+    head that is on no remote."""
+
+    FILES = {**RemoteHostCase.FILES, "scripts/check_all.sh": FAKE_TIER_GATE, "scripts/gate_plan.py": FAKE_PLAN}
+
+    def setUp(self):
+        super().setUp()
+        # The host reaches nothing but what is sent to it, as a host fed by a mirror that lacks the head.
+        git(self.host_checkout, "remote", "set-url", "origin", str(self.root.parent / "nowhere"))
+        self.head = self.add("the pull request", {"b": "2"})
+        self.timings = self.root.parent / "gate-timings.json"
+        environment = mock.patch.dict(os.environ, {"SOYEHT_GATE_TIMINGS": str(self.timings)})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.remote = post_merge_hosts.Remote("linux-host", str(self.host_checkout))
+
+    def split_gate(self, *extra, tier="fast"):
+        """gate_remote.run in the synthetic repository: the exit code and the output."""
+        arguments = gate_remote.parse(["--tier", tier, "--base", self.shas[0], "--remote", "linux-host",
+                                       "--remote-root", str(self.host_checkout), "--plan", "python3 scripts/gate_plan.py",
+                                       *extra])
+        output = self.root.parent / "gate-output.txt"
+        with captured_stdout(output):
+            code = gate_remote.run(arguments, self.root)
+        return code, output.read_text()
+
+    def ssh_script(self, body):
+        """Inside the context, ssh is this script."""
+        path = self.root.parent / "scripted_ssh"
+        path.write_text("#!/bin/bash\n" + body + "\n")
+        path.chmod(0o755)
+        return mock.patch.dict(os.environ, {post_merge_hosts.SSH_ENV: str(path)})
+
+    def sides(self):
+        """The arguments of the run on the host and of the run here, whichever started first."""
+        runs = self.runs()
+        remote = [arguments for directory, arguments in runs if "remote-gate" in directory]
+        local = [arguments for directory, arguments in runs if "remote-gate" not in directory]
+        return remote, local
+
+    def host_state(self):
+        return self.host_checkout / ".cache/remote-gate"
+
+    def test_the_head_goes_to_the_host_in_a_bundle_and_the_halves_split(self):
+        code, output = self.split_gate()
+        self.assertEqual(code, 0, output)
+        self.assertEqual(git(self.host_state() / "tree", "rev-parse", "HEAD"), self.head)
+        (remote_arguments,), (local_arguments,) = self.sides()
+        self.assertIn("only=eng,engine:build,engine:test-changed,snap", remote_arguments)
+        self.assertIn("engine=-p soyeht-store", remote_arguments)
+        self.assertIn("tier=fast only=unit,sw", local_arguments)
+        self.assertIn(f"base={self.shas[0]}", local_arguments)
+        # the bundle and the ref that carried the commit are gone from the host
+        self.assertEqual(list(self.host_state().glob("*.bundle")), [])
+        self.assertEqual(git(self.host_checkout, "for-each-ref", "refs/remote-gate"), "")
+        self.assertIn("gate_remote: passed", output)
+
+    def test_both_halves_report_their_times_in_the_one_timings_file(self):
+        self.assertEqual(self.split_gate()[0], 0)
+        latest = json.loads(self.timings.read_text())["latest"]
+        self.assertEqual(latest["tier"], "fast+remote:linux-host")
+        self.assertEqual(latest["exit_code"], 0)
+        hosts = {step["id"]: step.get("host") for step in latest["steps"]}
+        self.assertEqual(hosts, {"eng": "linux-host", "engine:build": "linux-host",
+                                 "engine:test-changed": "linux-host", "snap": "linux-host",
+                                 "unit": None, "sw": None})
+
+    def test_the_timings_default_to_the_gated_worktree_not_the_scripts_checkout(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("SOYEHT_GATE_TIMINGS")
+            self.assertEqual(self.split_gate()[0], 0)
+        self.assertTrue((self.root / ".cache/gate-timings.json").is_file())
+
+    def test_a_host_without_the_base_gets_the_whole_history_and_one_with_it_an_increment(self):
+        git(self.host_checkout, "update-ref", "-d", "refs/remotes/origin/main")
+        self.add("another", {"c": "3"})
+        scratch = self.root.parent / "scratch-bundles"
+        scratch.mkdir()
+        requires = []
+        for base in (self.shas[0], self.head):  # the host has the first; the second only comes with the bundle
+            path = post_merge_hosts.ship_commit(self.remote, self.root, base, scratch)
+            requires.append("requires" in git(self.host_checkout, "bundle", "verify", str(self.host_checkout / path)))
+            (self.host_checkout / path).unlink()
+        self.assertEqual(requires, [True, False])
+        self.assertEqual(list(scratch.iterdir()), [])
+
+    def test_a_head_the_host_holds_is_not_sent(self):
+        git(self.host_checkout, "remote", "set-url", "origin", str(self.root))
+        self.assertIsNone(post_merge_hosts.ship_commit(self.remote, self.root, self.shas[0], self.root.parent))
+        self.assertTrue(post_merge_hosts.host_has_commit(self.remote, self.head))
+
+    def test_an_unreachable_host_is_a_clear_failure_and_nothing_runs(self):
+        with self.ssh_script("exit 255"):
+            code, output = self.split_gate()
+        self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
+        self.assertIn("cannot ask linux-host", output)
+        self.assertFalse(self.trace.exists())
+        self.assertIn("FAILED (exit 2)", output)
+
+    def test_a_remote_failure_fails_the_gate_while_the_local_half_still_reports(self):
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "engine:build"}):
+            code, output = self.split_gate()
+        self.assertEqual(code, 1)
+        self.assertIn("check_all: FAILED step engine:build", output)
+        self.assertEqual(len(self.runs()), 2)
+        steps = json.loads(self.timings.read_text())["latest"]["steps"]
+        self.assertEqual([step["id"] for step in steps if step["status"]], ["engine:build"])
+
+    def test_a_local_failure_fails_the_gate_after_the_remote_steps_pass(self):
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "sw"}):
+            code, output = self.split_gate()
+        self.assertEqual(code, 1)
+        self.assertIn("check_all: FAILED step sw", output)
+
+    def test_sequential_stops_at_a_remote_failure_without_running_the_rest_here(self):
+        with mock.patch.dict(os.environ, {"FAKE_STEP": "eng"}):
+            code, _ = self.split_gate("--sequential")
+        self.assertEqual(code, 1)
+        self.assertEqual(len(self.runs()), 1)
+        self.assertIn("remote-gate/tree", self.runs()[0][0])
+
+    def test_a_busy_host_worktree_is_an_infrastructure_failure_and_its_bundle_is_removed(self):
+        with self.ssh_script(f'if [[ "$*" == *"--sha"* ]]; then exit 75; fi\nexec {self.fake_ssh} "$@"'):
+            code, output = self.split_gate()
+        self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
+        self.assertIn("is busy with another run", output)
+        self.assertEqual(list(self.host_state().glob("*.bundle")), [])
+
+    def test_a_slot_gives_the_run_its_own_host_worktree(self):
+        self.assertEqual(self.split_gate("--remote-slot", "slot1")[0], 0)
+        self.assertEqual(git(self.host_state() / "tree-slot1", "rev-parse", "HEAD"), self.head)
+        self.assertFalse((self.host_state() / "tree").exists())
+
+    def test_a_rerun_of_one_engine_test_builds_first_and_has_no_plan(self):
+        code, _ = self.split_gate("--only", "engine:test")
+        self.assertEqual(code, 0)
+        ((remote_arguments,), _) = self.sides()
+        self.assertIn("only=engine:test,engine:build", remote_arguments)
+        self.assertIn("engine= ", remote_arguments + " ")
+
+    def test_the_full_tier_sends_no_engine_selection(self):
+        self.assertEqual(self.split_gate(tier="full")[0], 0)
+        self.assertIn("engine= ", self.sides()[0][0] + " ")
+
+    def test_the_event_file_reaches_the_local_half_only(self):
+        event = self.root.parent / "event.json"
+        event.write_text("{}")
+        self.assertEqual(self.split_gate("--event-file", str(event))[0], 0)
+        (remote_arguments,), (local_arguments,) = self.sides()
+        self.assertIn(f"event={event}", local_arguments)
+        self.assertIn("event= ", remote_arguments + " ")
+
+    def test_it_refuses_to_run_without_a_host(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            for name in (gate_remote.HOST_ENV, gate_remote.ROOT_ENV):
+                os.environ.pop(name, None)
+            with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+                gate_remote.parse(["--tier", "fast"])
+
+    def test_the_host_script_answers_has_and_refuses_bad_arguments(self):
+        script = self.host_checkout / "scripts/remote_gate.sh"
+
+        def ask(*arguments):
+            return subprocess.run(["bash", str(script), *arguments], capture_output=True, text=True,
+                                  cwd=self.host_checkout).returncode
+
+        self.assertEqual(ask("--has", self.shas[0]), 0)
+        self.assertEqual(ask("--has", self.head), 1)
+        self.assertEqual(ask("--has", "main"), 64)
+        self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--engine-test-args", "-p a; rm -rf /"), 64)
+        self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--bundle", "missing.bundle"), 2)
+
+
+@contextlib.contextmanager
+def captured_stdout(path: Path):
+    """The output of this process and of the children it starts, which a Python redirect misses."""
+    sys.stdout.flush()
+    saved, handle = os.dup(1), os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+    os.dup2(handle, 1)
+    try:
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved, 1)
+        os.close(handle)
+        os.close(saved)
 
 
 # A stand-in with the three kinds of step the load rules tell apart: `unit` (no latency limit), `tm`

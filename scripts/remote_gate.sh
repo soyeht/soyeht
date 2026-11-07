@@ -2,6 +2,8 @@
 # The remote side of scripts/post_merge.py --remote (docs/dev-local.md, ADR 0089).
 #
 #   remote_gate.sh --sha FULL_SHA --steps ID[,ID...] [--base FULL_SHA] [--slot NAME]
+#                  [--bundle FILE] [--engine-test-args ARGS]
+#   remote_gate.sh --has FULL_SHA
 #   remote_gate.sh --print-timings [--slot NAME]
 #   remote_gate.sh --print-load
 #
@@ -15,6 +17,15 @@
 # per-step times of the last run; `--print-load` prints the host's 1-minute load average and its
 # processor count (`LOAD CPUS`), which post_merge.py reads to tell a timing failure caused by a
 # busy host from a regression.
+#
+# `--has SHA` exits 0 when the checkout (after a fetch of `origin main`) holds the commit, else 1:
+# the caller asks it before it sends a `--bundle` (below). `--bundle FILE` names a git bundle on
+# the host, relative to the checkout, whose `HEAD` is the commit: a commit that is on no remote
+# (the head of a pull request, which the pre-merge gate checks) is fetched from it, and the file
+# is removed afterwards, whatever the outcome. A bundle that needs commits the host lacks fails
+# with exit 2. `--engine-test-args ARGS` is the package selection of `engine:test-changed`
+# (`-p soyeht-engine -p ...`, as the fast plan computes it); without it the step tests the whole
+# workspace.
 #
 # `--slot NAME` uses the worktree `.cache/remote-gate/tree-NAME` and its own timings file, so
 # two commits can run at once on one host; a worktree takes one run at a time (exit 75 when it
@@ -61,13 +72,16 @@ if [[ -f "$env_file" ]]; then
     . "$env_file" || exit 2
     set +a
 fi
-sha="" steps="" base="" slot="" print_timings=0 print_load=0
+sha="" steps="" base="" slot="" bundle="" engine_test_args="" has="" print_timings=0 print_load=0
 while (($#)); do
     case "$1" in
         --sha) sha="${2:?--sha needs a commit}"; shift 2 ;;
         --steps) steps="${2:?--steps needs step ids}"; shift 2 ;;
         --base) base="${2:?--base needs a commit}"; shift 2 ;;
         --slot) slot="${2:?--slot needs a name}"; shift 2 ;;
+        --bundle) bundle="${2:?--bundle needs a file}"; shift 2 ;;
+        --engine-test-args) engine_test_args="${2:?--engine-test-args needs the arguments}"; shift 2 ;;
+        --has) has="${2:?--has needs a commit}"; shift 2 ;;
         --print-timings) print_timings=1; shift ;;
         --print-load) print_load=1; shift ;;
         *) echo "remote_gate: unknown argument $1" >&2; exit 64 ;;
@@ -77,6 +91,15 @@ if [[ -n "$slot" && ! "$slot" =~ ^[A-Za-z0-9_-]+$ ]]; then
     echo "remote_gate: bad slot name '$slot'" >&2
     exit 64
 fi
+if [[ -n "$engine_test_args" && ! "$engine_test_args" =~ ^(--workspace|-p\ [a-z0-9_-]+(\ -p\ [a-z0-9_-]+)*)$ ]]; then
+    echo "remote_gate: bad --engine-test-args '$engine_test_args'" >&2
+    exit 64
+fi
+if [[ -n "$has" && ! "$has" =~ ^[0-9a-f]{40}$ ]]; then
+    echo 'remote_gate: --has needs a full commit' >&2
+    exit 64
+fi
+[[ -z "$bundle" || "$bundle" == /* ]] || bundle="$PWD/$bundle"
 tree="$state/tree${slot:+-$slot}"
 timings="$state/timings${slot:+-$slot}.json"
 
@@ -96,7 +119,7 @@ if ((print_timings)); then
     cat "$timings"
     exit
 fi
-[[ "$sha" =~ ^[0-9a-f]{40}$ && -n "$steps" ]] || {
+[[ -n "$has" ]] || [[ "$sha" =~ ^[0-9a-f]{40}$ && -n "$steps" ]] || {
     echo 'remote_gate: --sha FULL_SHA and --steps are required' >&2
     exit 64
 }
@@ -110,6 +133,8 @@ reenter() {
         "$next" "$nix_file" "$self" "$sha" "$steps")"
     [[ -z "$base" ]] || command+="$(printf ' --base %q' "$base")"
     [[ -z "$slot" ]] || command+="$(printf ' --slot %q' "$slot")"
+    [[ -z "$bundle" ]] || command+="$(printf ' --bundle %q' "$bundle")"
+    [[ -z "$engine_test_args" ]] || command+="$(printf ' --engine-test-args %q' "$engine_test_args")"
     exec nix-shell "$nix_file" --run "$command"
 }
 
@@ -137,6 +162,44 @@ find_git() {
     export PATH="$(dirname "$git"):$PATH"
 }
 
+# Whether the checkout holds the commit, after a fetch of `origin main` when it does not.
+has_commit() {
+    "$git" -C "$root" cat-file -e "$1^{commit}" 2>/dev/null && return 0
+    "$git" -C "$root" fetch --quiet origin main >/dev/null 2>&1 || true
+    "$git" -C "$root" cat-file -e "$1^{commit}" 2>/dev/null && return 0
+    return 1
+}
+
+bundle_ref="refs/remote-gate/${slot:-default}-$sha"
+
+# The bundle and the ref that held its commit are only a way in: the worktree holds the commit.
+drop_bundle() {
+    [[ -z "$bundle" ]] || rm -f "$bundle"
+    "$git" -C "$root" update-ref -d "$bundle_ref" 2>/dev/null || true
+}
+
+# The commit is in the checkout, from the bundle when it is on no remote, else from `origin`.
+fetch_commit() {
+    if ! has_commit "$sha" && [[ -n "$bundle" ]]; then
+        [[ -f "$bundle" ]] || {
+            echo "remote_gate: the bundle $bundle is not on this host" >&2
+            exit 2
+        }
+        "$git" -C "$root" fetch --quiet "$bundle" "HEAD:$bundle_ref" || {
+            drop_bundle
+            echo "remote_gate: cannot fetch $sha from the bundle (does it need commits this host lacks?)" >&2
+            exit 2
+        }
+    fi
+    if ! "$git" -C "$root" cat-file -e "$sha^{commit}" 2>/dev/null; then
+        "$git" -C "$root" fetch --quiet origin "$sha" || {
+            drop_bundle
+            echo "remote_gate: cannot fetch $sha" >&2
+            exit 2
+        }
+    fi
+}
+
 prepare() {
     find_git
     mkdir -p "$state"
@@ -149,22 +212,15 @@ prepare() {
             exit 75
         }
     fi
-    if ! "$git" -C "$root" cat-file -e "$sha^{commit}" 2>/dev/null; then
-        "$git" -C "$root" fetch --quiet origin main || true
-    fi
-    if ! "$git" -C "$root" cat-file -e "$sha^{commit}" 2>/dev/null; then
-        "$git" -C "$root" fetch --quiet origin "$sha" || {
-            echo "remote_gate: cannot fetch $sha" >&2
-            exit 2
-        }
-    fi
+    fetch_commit
     if [[ -e "$tree/.git" ]]; then
-        "$git" -C "$tree" checkout --quiet --detach --force "$sha" || exit 2
+        "$git" -C "$tree" checkout --quiet --detach --force "$sha" || { drop_bundle; exit 2; }
     else
         "$git" -C "$root" worktree prune
         rm -rf "$tree"
-        "$git" -C "$root" worktree add --quiet --detach "$tree" "$sha" || exit 2
+        "$git" -C "$root" worktree add --quiet --detach "$tree" "$sha" || { drop_bundle; exit 2; }
     fi
+    drop_bundle
     # Untracked files of an earlier run go; ignored ones (target directories) stay.
     "$git" -C "$tree" clean -fdq
     # The commit's own shell wins over the checkout's, so a change to the toolchain is gated
@@ -219,7 +275,8 @@ run_gate() {
     set +e
     # Without the lock descriptor (9>&-): the sccache server and any test process that outlives the
     # gate would otherwise keep the worktree locked.
-    SOYEHT_GATE_STEPS="$steps" SOYEHT_GATE_BASE="$base" "${launcher[@]}" 9>&-
+    SOYEHT_GATE_STEPS="$steps" SOYEHT_GATE_BASE="$base" SOYEHT_GATE_ENGINE_TEST_ARGS="$engine_test_args" \
+        "${launcher[@]}" 9>&-
     code=$?
     set -e
     if [[ -s "$timings" ]] && command -v python3 >/dev/null 2>&1; then
@@ -234,6 +291,12 @@ PY
     echo "remote_gate: exit $code"
     exit "$code"
 }
+
+if [[ -n "$has" ]]; then
+    find_git
+    has_commit "$has"
+    exit
+fi
 
 case "$phase" in
     enter)

@@ -183,6 +183,51 @@ this and nothing else:
   itself and needs none of that; `--slot NAME` adds a second persistent worktree
   (docs/platforms.md, "A Linux gate host").
 
+### The pre-merge gate on the remote host
+
+When the Mac is busy, the timing-sensitive engine tests fail and nothing merges. The same host
+takes the Linux steps of the pre-merge gate: `scripts/gate_remote.py` stands in for
+`bash scripts/check_all.sh --tier fast ...` and is opt-in (without a host it refuses to run; a
+caller that sets none calls `check_all.sh` as before). Run it from the worktree to gate, with the
+script of any checkout (a main checkout's, so that a pull request branched before it existed is
+gated too); the gate that runs is the worktree's own `check_all.sh`.
+
+```sh
+cd WORKTREE && SOYEHT_REMOTE_HOST=HOST SOYEHT_REMOTE_ROOT=PATH SOYEHT_REMOTE_SLOT=slot1 \
+  uv run python /path/to/scripts/gate_remote.py --tier fast [--only ID,ID] [--base FULL_OID] \
+  [--event-file FILE] [--sequential]
+```
+
+The flags `--remote`, `--remote-root` and `--remote-slot` are the same settings. It takes the steps
+`check_all.sh --tier T --list` names (the plan of the changed paths, and the full tier when the
+gate scripts changed), sends those of the areas engine, desktop, e2e and timing to the host
+through `remote_gate.sh` (the same split and the same host settings as `post_merge.py --remote`) and runs the rest here with
+`check_all.sh --only`: the `always` checks, Swift, TypeScript and the Android core. The two halves run at the same time (`--sequential`
+runs the host first and stops at its failure). The exit code is 0 when both pass, the failing half's code
+otherwise, and 2 when the host could not be reached or could not run the gate; the output then says
+which (`gate: cannot reach HOST over ssh ...`), and nothing counts as a pass.
+
+- **The head of a pull request is on no remote the host reads** (the mirror refuses non-main
+  refs). `gate_remote.py` asks the host whether it holds the commit (`remote_gate.sh --has SHA`,
+  which fetches `origin main` first), and if not sends a git bundle of `BASE..HEAD` (the whole
+  history when the host lacks the base) through the same ssh, to `PATH/.cache/remote-gate/`.
+  `remote_gate.sh --bundle FILE` fetches the commit from it into a throwaway ref, checks it out
+  in the worktree and removes the file and the ref; the local side removes the file again if the
+  run never got that far.
+- **`engine:test-changed`** tests the crates the plan names. The plan is computed here and
+  reaches the host as `remote_gate.sh --engine-test-args '-p a -p b'`, which `check_all.sh` reads
+  from `SOYEHT_GATE_ENGINE_TEST_ARGS` (a `--only` run has no plan of its own). Whenever
+  `engine:test` or `engine:test-changed` is sent, `engine:build` goes with it, so a rerun of the
+  test alone does not fail for want of the built programs.
+- **`--remote-slot NAME`** gives the run its own worktree on the host (`tree-NAME`, with its own
+  targets), so two gates run at once; without it the run uses `tree` and a second run finds it busy
+  (exit 75, reported as exit 2).
+- **Timings**: both halves go to one run in `$SOYEHT_GATE_TIMINGS` (default `.cache/gate-timings.json` of the worktree),
+  tier `fast+remote:HOST`, the remote steps tagged with their `host`.
+- The Windows lint (`engine:clippy-windows`) is an engine step, so it runs on the host, which
+  skips it when it lacks the target. Only the Mac has the Mac steps (Swift, Xcode, TCC): the TCC
+  guard brackets the e2e suites and moves with them.
+
 ### The parts of `post_merge.py`
 
 `scripts/post_merge.py` is the command line and the order of a run. Its parts are modules of
