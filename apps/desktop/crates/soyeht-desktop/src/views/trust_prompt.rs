@@ -101,6 +101,12 @@ impl Workbench {
         cx.notify();
     }
 
+    /// The person asked, from the marker beside the tabs, to be asked again.
+    pub(crate) fn reopen_trust_prompt(&mut self, cx: &mut Context<Self>) {
+        self.state.reopen_trust_prompt();
+        cx.notify();
+    }
+
     /// The person closed the sheet without answering.
     pub(crate) fn defer_trust_prompt(&mut self, cx: &mut Context<Self>) {
         self.state.defer_trust_prompt();
