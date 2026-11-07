@@ -103,7 +103,8 @@ pub struct TailnetListeners {
     serve: Serve,
     log: Log,
     active: BTreeMap<IpAddr, (SocketAddr, JoinHandle<io::Result<()>>)>,
-    refused: BTreeSet<IpAddr>,
+    /// The addresses that could not be bound, and whether another program holds the port.
+    refused: BTreeMap<IpAddr, bool>,
     lookup_failure: Streak,
     reported: Option<TailnetUpdate>,
 }
@@ -116,7 +117,7 @@ impl TailnetListeners {
             serve,
             log,
             active: BTreeMap::new(),
-            refused: BTreeSet::new(),
+            refused: BTreeMap::new(),
             lookup_failure: Streak::once(),
             reported: None,
         }
@@ -159,6 +160,9 @@ impl TailnetListeners {
             reachable()
         } else if lookup_failed {
             unreachable(EngineReachabilityReason::TailnetLookupFailed)
+        } else if self.refused.values().any(|in_use| *in_use) {
+            // The person can act on this one: another program has the port Soyeht listens on.
+            unreachable(EngineReachabilityReason::TailnetPortInUse)
         } else if !self.refused.is_empty() {
             unreachable(EngineReachabilityReason::TailnetListenFailed)
         } else {
@@ -206,7 +210,7 @@ impl TailnetListeners {
             }
             keep
         });
-        self.refused.retain(|ip| wanted.contains(ip));
+        self.refused.retain(|ip, _| wanted.contains(ip));
         for ip in wanted {
             if self.active.contains_key(&ip) {
                 continue;
@@ -222,7 +226,8 @@ impl TailnetListeners {
                 }
                 // Retried on every lookup; logged once until the address binds or goes.
                 Err(error) => {
-                    if self.refused.insert(ip) {
+                    let in_use = error.kind() == io::ErrorKind::AddrInUse;
+                    if self.refused.insert(ip, in_use).is_none() {
                         (self.log)(
                             Line::new("engine.tailnet_listen_failed")
                                 .field("family", family(ip))
@@ -471,9 +476,10 @@ mod tests {
         let (log, events) = recorder();
         let mut tailnet = TailnetListeners::new(port, scripted(&script), accepting(), log);
         let refused = tailnet.refresh().await.unwrap();
+        // The port is held by another program: the person is told that, not only that it failed.
         assert_eq!(
             refused.reachability,
-            unreachable(EngineReachabilityReason::TailnetListenFailed)
+            unreachable(EngineReachabilityReason::TailnetPortInUse)
         );
         assert_eq!(tailnet.refresh().await, None);
         assert_eq!(
@@ -481,6 +487,21 @@ mod tests {
             ["engine.tailnet_listen_failed", "engine.tailnet_unreachable"]
         );
         assert_eq!(events.lock().unwrap()[0]["error"], "AddrInUse");
+    }
+
+    /// A bind that fails for any other reason stays the general failure.
+    #[tokio::test]
+    async fn a_bind_that_fails_for_another_reason_is_not_reported_as_a_port_in_use() {
+        // A tailnet address this machine does not have cannot be bound.
+        let absent: IpAddr = "100.64.0.1".parse().unwrap();
+        let script: Script = Arc::new(Mutex::new(VecDeque::from([Ok(vec![absent])])));
+        let (log, _) = recorder();
+        let mut tailnet = TailnetListeners::new(0, scripted(&script), accepting(), log);
+        let update = tailnet.refresh().await.unwrap();
+        assert_eq!(
+            update.reachability,
+            unreachable(EngineReachabilityReason::TailnetListenFailed)
+        );
     }
 
     #[tokio::test]

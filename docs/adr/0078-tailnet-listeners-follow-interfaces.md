@@ -23,7 +23,11 @@ caused the restart.
   interface went away (as in ADR 0015).
 - Reachability is a contract value, `EngineReachability {remote, reason?}`,
   with the closed reasons `tailnet_address_not_found`, `tailnet_lookup_failed`,
-  `tailnet_listen_failed` and `loopback_only` (fixed `--listen` sets).
+  `tailnet_listen_failed`, `tailnet_port_in_use` and `loopback_only` (fixed `--listen` sets).
+  `tailnet_port_in_use` is the listen failure whose cause is that another program holds the
+  port on the tailnet address: the person can act on it, and a program that bound the port
+  first could otherwise sit between the phone and the engine (ADR 0132 lists what that does
+  and does not give it). The Mac pairing sheet and the phone say so.
   `engine.status` and `device.pair.start` return it, and the transient event
   `engine.reachability_changed` announces each change.
 - The log has one structured line per change: `engine.tailnet_unreachable`

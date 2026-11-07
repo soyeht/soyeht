@@ -10,6 +10,8 @@ extension EngineReachability {
       case .tailnet_address_not_found, nil: "Tailscale address not found"
       case .tailnet_lookup_failed: "the network interfaces could not be read"
       case .tailnet_listen_failed: "Soyeht could not listen on the Tailscale address"
+      case .tailnet_port_in_use:
+        "another program on this Mac is using the port Soyeht listens on; quit it, then reopen Soyeht"
       case .loopback_only: "this Mac listens on loopback only"
       }
     return "Not reachable from your devices: \(detail)"
