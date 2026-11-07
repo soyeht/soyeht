@@ -143,7 +143,11 @@
     /// Whether the bundle is a link to an app. `copyItem` would copy the link, and the person's
     /// folder would keep a link where the app was supposed to be.
     static func isLink(_ url: URL) -> Bool {
-      (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+      do {
+        return try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true
+      } catch {
+        return false  // Unreadable: the plan reads the bundle next and refuses what is not an app.
+      }
     }
 
     /// The bundle to copy: the app a link points to, else the bundle itself.

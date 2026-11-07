@@ -125,6 +125,13 @@
     let plan: AppMovePlan
 
     var parts: (URL, AppMover, AppMovePlan) { (existing, mover, plan) }
+
+    /// Confirming the replacement fails with `failure`.
+    func expectMoveFails(_ failure: AppMoveFailure) async {
+      await #expect(throws: failure) {
+        try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+      }
+    }
   }
 
   /// "Trash" is a folder of the sandbox, and it remembers what it was given.
@@ -407,11 +414,9 @@
 
   @Test func aCopyWhoseSignatureIsBrokenIsNeverPutInPlace() async throws {
     let box = try MoveSandbox()
-    let (existing, mover, plan) = try box.replacement(signature: BrokenSignature()).parts
-    await #expect(throws: AppMoveFailure.copyFailed) {
-      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
-    }
-    try box.expectOnlyThe(app: existing, stamp: "old")
+    let replacement = try box.replacement(signature: BrokenSignature())
+    await replacement.expectMoveFails(.copyFailed)
+    try box.expectOnlyThe(app: replacement.existing, stamp: "old")
   }
 
   @Test func theSignatureOfTheStagedCopyIsCheckedWhileTheOldAppIsStillInPlace() async throws {
@@ -433,12 +438,9 @@
 
   @Test func aTrashThatTookTheOldAppWithoutSayingWhereIsReportedAsBeingInTheTrash() async throws {
     let box = try MoveSandbox()
-    let (existing, mover, plan) = try box.replacement(
-      trash: TrashesWithoutSayingWhere(box.trash)
-    ).parts
-    await #expect(throws: AppMoveFailure.oldAppInTrash) {
-      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
-    }
+    let replacement = try box.replacement(trash: TrashesWithoutSayingWhere(box.trash))
+    await replacement.expectMoveFails(.oldAppInTrash)
+    let existing = replacement.existing
     #expect(box.trash.trashed == [existing])
     #expect(!FileManager.default.fileExists(atPath: existing.path))
     let folder = existing.deletingLastPathComponent()
