@@ -6,7 +6,7 @@
 use super::{
     menus,
     preferences::{page, pill_button},
-    ui::{OwnPress, Typeface, chrome_text, column, id, raised_chip, row},
+    ui::{ChromeBold, OwnPress, Typeface, chrome_text, column, id, raised_chip, row},
 };
 use crate::{
     assets::Icon,
@@ -334,9 +334,7 @@ fn identity(
                         .py(px(desktop::HAIRLINE))
                         .rounded_full()
                         .bg(rgb(palette.well))
-                        .chrome()
-                        .font_weight(FontWeight::BOLD)
-                        .text_size(px(type_scale::MICRO))
+                        .chrome_bold(type_scale::MICRO)
                         .text_color(rgb(palette.secondary))
                         .child("default")
                 })),
