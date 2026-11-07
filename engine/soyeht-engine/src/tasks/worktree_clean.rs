@@ -8,7 +8,7 @@ use crate::{
     offload::Offload,
 };
 use serde_json::Value;
-use soyeht_protocol::{Role, TaskWorktreeCleanParams, TaskWorktreeCleanResult, method};
+use soyeht_protocol::{TaskWorktreeCleanParams, TaskWorktreeCleanResult, method};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -28,7 +28,7 @@ impl crate::core::Core {
         }
         let params: TaskWorktreeCleanParams = crate::tasks::api::parameters(raw)?;
         let actor = self.task_actor(connection)?;
-        if !matches!(actor.role, Role::HumanLocal | Role::HumanDevice) {
+        if !actor.role.is_person() {
             return Err(errors::forbidden_role("Worktree cleanup requires a person"));
         }
         let task = crate::tasks::api::task(&self.store, &params.workspace_id, &params.task_id)?;

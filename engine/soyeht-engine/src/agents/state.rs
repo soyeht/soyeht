@@ -120,6 +120,9 @@ pub struct State {
     /// harness switch when the harness offers the same mode.
     #[serde(default)]
     pub mode: Option<String>,
+    /// The mode of the agent that started this pane, above which the pane may not run.
+    #[serde(default)]
+    pub(crate) mode_ceiling: Option<super::mode_ceiling::ModeCeiling>,
     pub operation: Option<ConfigOperation>,
     #[serde(default)]
     pub operation_timed_out: bool,
@@ -231,6 +234,7 @@ impl State {
                 })
                 .collect(),
             mode,
+            mode_ceiling: None,
             operation: None,
             operation_user: None,
             operation_timed_out: false,
@@ -305,6 +309,10 @@ impl State {
         state.binding = self.binding.clone();
         state.mcp_role = self.mcp_role.clone();
         state.mcp_enabled = self.mcp_enabled;
+        state.mode_ceiling = self.mode_ceiling.clone().map(|mut ceiling| {
+            ceiling.reopened();
+            ceiling
+        });
         state.next_message_seq = self.next_message_seq;
         for (name, value) in [("model", &preset.model), ("effort", &preset.effort)] {
             if let Some(value) = value {
@@ -314,6 +322,16 @@ impl State {
             }
         }
         Ok(state)
+    }
+
+    /// Whether options still wait to be applied, or the mode the session runs has yet to be
+    /// checked against the ceiling of the agent that started the pane.
+    pub(crate) fn needs_configuration(&self) -> bool {
+        !self.requested_options.is_empty()
+            || self
+                .mode_ceiling
+                .as_ref()
+                .is_some_and(super::mode_ceiling::ModeCeiling::pending)
     }
 
     pub fn public(&self, now_ms: i64) -> AgentSession {

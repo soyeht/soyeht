@@ -579,7 +579,7 @@ impl Core {
         let mut state = self.agent_state(pane)?;
         match state.phase {
             Phase::RestartAfterProbe => return self.restart_after_probe(pane),
-            Phase::Ready if !state.requested_options.is_empty() => {
+            Phase::Ready if state.needs_configuration() => {
                 return self.configure_initial_agent(pane);
             }
             _ => {}
