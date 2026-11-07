@@ -35,6 +35,10 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
+mod watch;
+
+use watch::Watchers;
+
 struct Live {
     master: Mutex<File>,
     resizer: Option<Resizer>,
@@ -43,11 +47,43 @@ struct Live {
     guard: Option<Mutex<Guard>>,
     exited: AtomicBool,
     read_done: AtomicBool,
+    instance_id: String,
+    watchers: Arc<Watchers>,
+    /// Whether the exit has been announced to the watches: once, after both of the flags above.
+    exit_announced: AtomicBool,
+}
+
+impl Live {
+    /// The process has exited and its last byte has been read.
+    fn exited_and_drained(&self) -> bool {
+        self.exited.load(Ordering::Acquire) && self.read_done.load(Ordering::Acquire)
+    }
+
+    /// Tells the watches the process is over, once, when both its exit and the end of its output
+    /// are known: the engine must not read an exit before the last byte.
+    fn announce_exit(&self) {
+        if !self.exited_and_drained() || self.exit_announced.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        let end_seq = self
+            .output
+            .lock()
+            .map_or(0, |output| output.retention.end_seq());
+        self.watchers.announce(&Readable {
+            instance_id: self.instance_id.clone(),
+            end_seq,
+            exited: true,
+        });
+    }
 }
 
 struct OutputState {
     retention: Retention,
     pending: Option<Pending>,
+    /// A notice for output is on its way to the watches and the engine has not read since. It is
+    /// cleared by the read, in the same critical section, so a chunk that arrives after the read
+    /// is announced and one that arrives before it is read.
+    told: bool,
 }
 
 struct State {
@@ -57,6 +93,7 @@ struct State {
     live: BTreeMap<String, Arc<Live>>,
     active: Option<(String, Stream)>,
     inputs: BTreeMap<String, (String, String, usize)>,
+    watchers: Arc<Watchers>,
 }
 
 fn error(kind: &str, message: &str) -> Response {
@@ -106,6 +143,7 @@ pub fn run(directory: &Path) -> Result<()> {
         live: BTreeMap::new(),
         active: None,
         inputs: BTreeMap::new(),
+        watchers: Arc::default(),
     }));
     println!(
         "{}",
@@ -184,10 +222,14 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
     let Request::Hello {
         version,
         engine_generation,
+        role,
     } = request
     else {
         return refuse(&mut stream, wire_kind::UNAUTHORIZED, "hello required");
     };
+    if role == Role::Watch {
+        return watch::serve(stream, &shared, version, engine_generation);
+    }
     let connection_id = Uuid::new_v4().to_string();
     {
         let mut state = lock(&shared, "state")?;
@@ -218,6 +260,10 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
             state.registry.engine_generation = prior_generation;
             return Err(error);
         }
+        if engine_generation != prior_generation {
+            // The watches followed the request connection of the generation before this one.
+            state.watchers.close_all();
+        }
         if let Some((_, old)) = state.active.take() {
             // ignored: the superseded engine connection may already be closed; either way it ends here.
             let _ = old.shutdown(Shutdown::Both);
@@ -229,6 +275,7 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
                 version: VERSION,
                 supervisor_id: state.supervisor_id.clone(),
                 supervisor_generation: state.registry.supervisor_generation,
+                features: vec![FEATURE_WATCH.into()],
             },
         ) {
             state.active = None;
@@ -287,6 +334,10 @@ fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> R
             from_seq,
         } => execute_drain(state, &instance_id, from_seq),
         Request::Ack { instance_id, seq } => execute_ack(state, &instance_id, seq),
+        Request::Watch { .. } => Ok(error(
+            wire_kind::OPERATION_FAILED,
+            "watching needs a connection with the watch role",
+        )),
     }
 }
 
@@ -357,10 +408,14 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         output: Mutex::new(OutputState {
             retention: Retention::new(limits::PTY_RETENTION_BYTES)?,
             pending: pipes.then(Pending::default),
+            told: false,
         }),
         guard: guard.map(Mutex::new),
         exited: AtomicBool::new(false),
         read_done: AtomicBool::new(false),
+        instance_id: instance.instance_id.clone(),
+        watchers: Arc::clone(&state.watchers),
+        exit_announced: AtomicBool::new(false),
     });
     state
         .registry
@@ -555,11 +610,17 @@ fn execute_drain(state: &State, instance_id: &str, from_seq: u64) -> Result<Resp
     let Some(live) = state.live.get(instance_id) else {
         return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
-    let output = lock(&live.output, "output")?.retention.read(
-        from_seq,
-        limits::TERMINAL_PAYLOAD_BYTES,
-        live.exited.load(Ordering::Acquire) && live.read_done.load(Ordering::Acquire),
-    );
+    let output = {
+        let mut state = lock(&live.output, "output")?;
+        // The read and the clearing of the flag are one critical section: output that arrives
+        // after it is announced, and output that arrived before it is in what is read.
+        state.told = false;
+        state.retention.read(
+            from_seq,
+            limits::TERMINAL_PAYLOAD_BYTES,
+            live.exited_and_drained(),
+        )
+    };
     Ok(match output {
         Ok(output) => Response::Output(output),
         Err(failure) => error(failure.wire_kind(), "invalid output cursor"),
@@ -597,6 +658,18 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                         log::event("ptyd.output_offset_exhausted", &[]);
                         break;
                     }
+                    // One notice per read: the flag stays set until the engine reads.
+                    let announce = reading.watchers.any() && !output.told;
+                    output.told |= announce;
+                    let end_seq = output.retention.end_seq();
+                    drop(output);
+                    if announce {
+                        reading.watchers.announce(&Readable {
+                            instance_id: reading.instance_id.clone(),
+                            end_seq,
+                            exited: false,
+                        });
+                    }
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -609,6 +682,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
             }
         }
         reading.read_done.store(true, Ordering::Release);
+        reading.announce_exit();
     });
     thread::spawn(move || {
         loop {
@@ -618,6 +692,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 Err(_) => {
                     log::event("ptyd.child_lock_poisoned", &[]);
                     live.exited.store(true, Ordering::Release);
+                    live.announce_exit();
                     break;
                 }
             };
@@ -634,6 +709,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     let Ok(mut state) = shared.lock() else {
                         log::event("ptyd.state_lock_poisoned", &[]);
                         live.exited.store(true, Ordering::Release);
+                        live.announce_exit();
                         break;
                     };
                     if let Some(instance) = state.registry.instances.get_mut(&key) {
@@ -642,6 +718,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     // Published after the status, under the lock a `List` takes, so a reader
                     // that sees the process exited also finds its exit status.
                     live.exited.store(true, Ordering::Release);
+                    live.announce_exit();
                     if state.registry.save(&state.directory).is_err() {
                         log::event("ptyd.registry_write_failed", &[]);
                     }
@@ -650,6 +727,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 Err(error) => {
                     log::failure("ptyd.child_wait_failed", &error);
                     live.exited.store(true, Ordering::Release);
+                    live.announce_exit();
                     break;
                 }
                 Ok(None) => thread::sleep(Duration::from_millis(10)),

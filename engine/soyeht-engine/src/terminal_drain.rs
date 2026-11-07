@@ -10,6 +10,7 @@
 //! again from its last durable position, and so it does for a read that no longer fits the
 //! pane when it is applied.
 
+use crate::supervisor_watch::ReadSummary;
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -113,6 +114,10 @@ impl Core {
             saved.instance_id.clone(),
             "Running pane has no adopted process",
         )?;
+        // With the supervisor's notices a process is read when it has output, not on every tick.
+        if self.watch.is_active() && !self.watch.should_read(&instance_id, self.polling_woken()) {
+            return Ok(());
+        }
         let next = self.panes[id].screen.next_offset();
         let seq = next.saturating_sub(saved.sequence_base);
         let supervisor = self.supervisor()?;
@@ -147,6 +152,11 @@ impl Core {
         }) = self.settle_if_current(&started.supervisor, read)?
         else {
             return Ok(());
+        };
+        let summary = ReadSummary {
+            next_seq: output.next_seq,
+            exited: output.exited,
+            found: !output.bytes.is_empty() || output.gap.is_some(),
         };
         let Some(running) = self.panes.get(id) else {
             return Ok(());
@@ -200,6 +210,7 @@ impl Core {
         if taken {
             running.screen.take_in_through(output.next_seq);
         }
+        self.watch.note_read(&started.instance_id, &summary);
         self.acknowledge_when_durable(id, &started.instance_id)?;
         if let Some(bytes) = capture_bytes {
             self.observe_terminal(id, bytes)?;
@@ -428,6 +439,91 @@ mod tests {
         drain_and_apply(&mut core, &id);
         wait_for_acknowledgements(&mut core, &id, &acknowledged, 2);
         assert_eq!(*acknowledged.lock().unwrap(), vec![5, 11]);
+        crate::test_paths::remove_after(core, root);
+    }
+
+    /// A supervisor with no output that counts the reads it is asked for.
+    struct Counting(Arc<std::sync::atomic::AtomicU32>);
+
+    impl SupervisorPort for Counting {
+        fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+            Ok(match request {
+                Request::Drain { from_seq, .. } => {
+                    self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Response::Output(Output {
+                        from_seq,
+                        next_seq: from_seq,
+                        end_seq: from_seq,
+                        bytes: String::new(),
+                        gap: None,
+                        exited: false,
+                    })
+                }
+                _ => Response::Ok,
+            })
+        }
+
+        fn supervisor_id(&self) -> &str {
+            "counting"
+        }
+
+        fn supervisor_generation(&self) -> u32 {
+            1
+        }
+    }
+
+    /// Runs `ticks` ticks of the terminal path, applying each read that starts.
+    fn tick_the_terminal_path(core: &mut Core, id: &str, ticks: usize) {
+        for _ in 0..ticks {
+            core.drain_panes().unwrap();
+            apply_read(core, id);
+        }
+    }
+
+    #[test]
+    fn with_the_supervisors_notices_an_idle_pane_makes_no_request_and_a_marked_one_makes_one() {
+        let root = std::env::temp_dir().join(format!("soyeht-drain-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let mut core = Core::open(&root).unwrap();
+        let id = insert_terminal_pane(&mut core, &root, "shell", false);
+        let drains = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        core.link_supervisor(Box::new(Counting(Arc::clone(&drains))));
+        let reads = || drains.load(std::sync::atomic::Ordering::SeqCst);
+
+        // Polling, as it always was: one request per tick.
+        tick_the_terminal_path(&mut core, &id, 20);
+        assert_eq!(reads(), 20);
+
+        // Listening: a second of ticks asks nothing (the sweep of the second is spent first).
+        core.watch.pretend_active();
+        core.watch.sweep(std::iter::empty());
+        let before = reads();
+        tick_the_terminal_path(&mut core, &id, 100);
+        assert_eq!(reads(), before, "an idle pane is not read");
+
+        // A notice marks it: it is read once, and then left alone again.
+        core.watch.pretend_notice("shell-instance", 0);
+        tick_the_terminal_path(&mut core, &id, 100);
+        assert_eq!(reads(), before + 1);
+        assert!(!core.pane_marked(&id));
+        crate::test_paths::remove_after(core, root);
+    }
+
+    #[test]
+    fn the_sweep_reads_every_pane_once_a_second_and_a_quiet_one_is_no_miss() {
+        let root = std::env::temp_dir().join(format!("soyeht-drain-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let mut core = Core::open(&root).unwrap();
+        let id = insert_terminal_pane(&mut core, &root, "shell", false);
+        let drains = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        core.link_supervisor(Box::new(Counting(Arc::clone(&drains))));
+        core.watch.pretend_active();
+
+        tick_the_terminal_path(&mut core, &id, 50);
+
+        // The first tick sweeps; the rest of the second reads nothing.
+        assert_eq!(drains.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(core.watch.missed(), 0);
         crate::test_paths::remove_after(core, root);
     }
 

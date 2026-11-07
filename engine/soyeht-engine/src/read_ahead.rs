@@ -17,6 +17,7 @@ use crate::{
     core::Core,
     errors::Result,
     supervisor_handle::Supervisor,
+    supervisor_watch::ReadSummary,
     terminal_drain::{Read, read_output},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -81,6 +82,15 @@ fn wakes(owner: &str) -> bool {
     !owner.starts_with("language:")
 }
 
+/// What the watch needs to know of a read that ended.
+fn summary_of(read: &Read) -> ReadSummary {
+    ReadSummary {
+        next_seq: read.output.next_seq,
+        exited: read.output.exited,
+        found: !read.output.bytes.is_empty() || read.output.gap.is_some(),
+    }
+}
+
 /// A read that never wakes the tick.
 fn quiet(_: &Result<Read>) -> bool {
     false
@@ -102,7 +112,10 @@ impl Core {
         look_up_exit: bool,
     ) -> Result<()> {
         let job = job(owner);
-        if self.reads.polling_woken || !self.background.accepts(&job) {
+        // A tick woken by a notice starts the read of the process the notice marked, and no other.
+        if (self.reads.polling_woken && !self.watch.should_read(instance_id, true))
+            || !self.background.accepts(&job)
+        {
             return Ok(());
         }
         let supervisor = self.supervisor()?;
@@ -122,6 +135,9 @@ impl Core {
                     Ok(None) => return Ok(()),
                     Err(error) => Err(error),
                 };
+                if let Ok(read) = &settled {
+                    core.watch.note_read(&instance_id, &summary_of(read));
+                }
                 if !core.reads.live.contains(&owner) {
                     return Ok(());
                 }
@@ -201,7 +217,14 @@ impl Core {
     /// Leaves `owner` alone for [`IDLE_PACE_MS`]: its next read starts after that, so a quiet
     /// idle process is read at a slower pace than the tick.
     pub(crate) fn pause_reads(&mut self, owner: &str) {
-        let until = self.now_ms().saturating_add(IDLE_PACE_MS);
+        // With the supervisor's notices an idle process is read when it has output (a mark ends the
+        // wait), and the wait is only the sweep.
+        let pace = if self.watch.is_active() {
+            crate::supervisor_watch::SWEEP.as_millis() as i64
+        } else {
+            IDLE_PACE_MS
+        };
+        let until = self.now_ms().saturating_add(pace);
         self.reads.paused_until_ms.insert(owner.to_owned(), until);
     }
 

@@ -68,6 +68,11 @@ impl Retention {
         Ok(())
     }
 
+    /// The end of what has been appended.
+    pub fn end_seq(&self) -> u64 {
+        self.next
+    }
+
     pub fn read(&self, requested: u64, maximum: usize, exited: bool) -> Result<Output> {
         if requested > self.next {
             return Err(Error::CursorAhead);
