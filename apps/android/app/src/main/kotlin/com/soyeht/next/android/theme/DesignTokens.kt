@@ -265,6 +265,7 @@ object Radius {
 }
 
 object Space {
+    const val x1: Float = 1.0f
     const val x2: Float = 2.0f
     const val x3: Float = 3.0f
     const val x4: Float = 4.0f
@@ -272,11 +273,13 @@ object Space {
     const val x6: Float = 6.0f
     const val x7: Float = 7.0f
     const val x8: Float = 8.0f
+    const val x9: Float = 9.0f
     const val x10: Float = 10.0f
     const val x12: Float = 12.0f
     const val x14: Float = 14.0f
     const val x16: Float = 16.0f
     const val x18: Float = 18.0f
+    const val x20: Float = 20.0f
 }
 
 object TypeScale {
@@ -284,6 +287,7 @@ object TypeScale {
     const val small: Float = 11.0f
     const val control: Float = 12.0f
     const val caption: Float = 13.0f
+    const val label: Float = 14.0f
     const val body: Float = 15.0f
     const val subheading: Float = 18.0f
     const val heading: Float = 20.0f
@@ -377,6 +381,21 @@ object Layout {
     const val harnessListHeight: Float = 260.0f
     const val searchFieldHeight: Float = 32.0f
     const val modelFieldHeight: Float = 30.0f
+    const val newTaskSheetTopInset: Float = 47.0f
+    const val taskDot: Float = 6.0f
+    const val newTaskSheetWidth: Float = 560.0f
+    const val taskListMinimumWidth: Float = 960.0f
+    const val taskListKeyWidth: Float = 70.0f
+    const val taskListStateWidth: Float = 120.0f
+    const val taskListPriorityWidth: Float = 90.0f
+    const val taskListOwnerWidth: Float = 120.0f
+    const val taskListWorktreeWidth: Float = 90.0f
+    const val taskListCommentsWidth: Float = 40.0f
+    const val taskListUpdatedWidth: Float = 90.0f
+    const val taskListTitleMinimumWidth: Float = 220.0f
+    const val taskEditorHeight: Float = 96.0f
+    const val taskFieldHeight: Float = 40.0f
+    const val taskToolbarHeight: Float = 34.0f
 }
 
 object Glyph {
@@ -387,6 +406,7 @@ object Glyph {
     const val chevron: Float = 11.0f
     const val taskToolbarIcon: Float = 13.0f
     const val taskToolbarChevron: Float = 10.0f
+    const val taskSheetMore: Float = 16.0f
 }
 
 object UsageRing {

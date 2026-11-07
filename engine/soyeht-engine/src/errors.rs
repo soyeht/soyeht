@@ -180,82 +180,6 @@ pub fn lsp(error: soyeht_lsp::Error) -> Error {
     Error::Lsp(error)
 }
 
-fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
-    use soyeht_store::Error;
-    match error {
-        Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
-        Error::CursorTooOld => ErrorKind::CursorTooOld,
-        Error::DiskFull => ErrorKind::DiskFull,
-        Error::TaskVersionConflict => ErrorKind::StaleVersion,
-        Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
-        Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
-        Error::SubitemNotFound => ErrorKind::NotFound,
-        Error::FileVersionNotFound => ErrorKind::NotFound,
-        Error::FileReplacementBusy => ErrorKind::StaleVersion,
-        Error::InvalidEngineGeneration
-        | Error::InvalidIdempotencyKey
-        | Error::EventParametersNotObject
-        | Error::CursorAhead
-        | Error::NegativeEventId
-        | Error::NegativeEventCursor
-        | Error::PairingRequestLimit
-        | Error::InvalidQueuedPrompt
-        | Error::PromptQueueFull
-        | Error::AttentionItemTooLarge
-        | Error::AttentionPaneMismatch
-        | Error::AgentRuntimeTooLarge
-        | Error::StaleAgentGeneration
-        | Error::NewOutboxHasProgress
-        | Error::IncompleteOutboxRecord
-        | Error::InvalidOutboxEnvelope
-        | Error::AgentOutboxFull
-        | Error::InvalidPartialWriteReceipt
-        | Error::NativeWriteAttemptsExhausted
-        | Error::NativeMessageIncomplete
-        | Error::InvalidNativeRequestIdentity
-        | Error::PublicRequestTooLarge
-        | Error::PendingRequestsTooLarge
-        | Error::NativeRequestNotFound
-        | Error::NativeEffectNotFound
-        | Error::NativeEffectNotPending
-        | Error::NativeEffectAlreadyStarted
-        | Error::InvalidTranscriptSequence
-        | Error::TranscriptMessageTooLarge
-        | Error::TranscriptMutation
-        | Error::StaleTranscriptReplay
-        | Error::InvalidTranscriptPageLimit
-        | Error::TranscriptPageTooLarge
-        | Error::ApprovedPairTokenMissing => ErrorKind::InvalidParams,
-        Error::InvalidEditorFile
-        | Error::InvalidFileHistoryLimit
-        | Error::InvalidFileReplacement => ErrorKind::InvalidParams,
-        _ => ErrorKind::InternalError,
-    }
-}
-
-fn supervisor_kind(error: &soyeht_ptyd::Error) -> ErrorKind {
-    match error {
-        soyeht_ptyd::Error::Remote { kind, .. } if kind == wire_kind::STALE_ENGINE_GENERATION => {
-            ErrorKind::StaleEngineGeneration
-        }
-        soyeht_ptyd::Error::Remote { kind, .. }
-            if kind == wire_kind::SPAWN_FAILED || kind == wire_kind::SPAWN_REFUSED =>
-        {
-            ErrorKind::HarnessUnavailable
-        }
-        _ => ErrorKind::PtydUnavailable,
-    }
-}
-
-fn editor_kind(error: &soyeht_editor::Error) -> ErrorKind {
-    match error {
-        soyeht_editor::Error::ParserLanguage | soyeht_editor::Error::ParserStopped => {
-            ErrorKind::InternalError
-        }
-        _ => ErrorKind::InvalidParams,
-    }
-}
-
 fn vcs_kind(error: &soyeht_vcs::Error) -> ErrorKind {
     match error {
         soyeht_vcs::Error::InvalidRepository | soyeht_vcs::Error::InvalidPath => {
@@ -263,46 +187,6 @@ fn vcs_kind(error: &soyeht_vcs::Error) -> ErrorKind {
         }
         soyeht_vcs::Error::GitUnavailable => ErrorKind::GitUnavailable,
         _ => ErrorKind::InternalError,
-    }
-}
-
-fn web_kind(error: &soyeht_web::Error) -> ErrorKind {
-    match error {
-        soyeht_web::Error::EmptyUrl
-        | soyeht_web::Error::InvalidUrl
-        | soyeht_web::Error::UnsupportedScheme
-        | soyeht_web::Error::MissingHost
-        | soyeht_web::Error::InvalidViewport
-        | soyeht_web::Error::InvalidWait
-        | soyeht_web::Error::InvalidCommand => ErrorKind::NavigationRefused,
-        soyeht_web::Error::StaleReference => ErrorKind::StaleReference,
-        soyeht_web::Error::HumanModeUnavailable => ErrorKind::WebHostUnavailable,
-        _ => ErrorKind::InternalError,
-    }
-}
-
-fn writing_kind(error: &soyeht_writing::Error) -> ErrorKind {
-    use soyeht_writing::Error;
-    match error {
-        Error::InvalidSectionPath => ErrorKind::WritingSectionRefused,
-        Error::VariantNotFound | Error::CannotRemoveOnlyVariant => ErrorKind::WritingLineNotFound,
-        Error::BeatNotFound => ErrorKind::NotFound,
-        Error::SceneNotFound => ErrorKind::WritingSceneNotFound,
-        Error::DocumentTooLarge
-        | Error::SlideLimit
-        | Error::SceneLimit
-        | Error::ElementLimit
-        | Error::VariantLimit
-        | Error::VariantTooLarge
-        | Error::BeatLimit
-        | Error::LinkLimit
-        | Error::SectionLimit => ErrorKind::WritingLimitExceeded,
-        Error::InvalidPosition
-        | Error::InvalidRange
-        | Error::EmptySelection
-        | Error::MissingFormatValue
-        | Error::InvalidVariantSelection
-        | Error::InvalidBeat => ErrorKind::InvalidParams,
     }
 }
 
@@ -337,7 +221,8 @@ pub fn log_if_failed(event: &str, result: Result<()>) {
     }
 }
 
-/// The single translation from engine failures to the public protocol.
+/// The single translation from engine failures to the public protocol. A failure of a domain
+/// crate already names its kind where the failure is defined; this names the engine's own.
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
         Error::RecordedRpc(error) => error.data.kind.clone(),
@@ -358,14 +243,14 @@ pub fn kind(error: &Error) -> ErrorKind {
             ErrorKind::HarnessUnavailable
         }
         Error::HarnessSwitchFailed(_) => ErrorKind::HarnessSwitchFailed,
-        Error::Editor(error) => editor_kind(error),
+        Error::Editor(error) => error.into(),
         Error::Vcs(error) => vcs_kind(error),
-        Error::Web(error) => web_kind(error),
+        Error::Web(error) => error.into(),
         Error::PortScan(crate::ports::PortScanError::Unsupported(_)) => {
             ErrorKind::PlatformUnsupported
         }
         Error::PortScan(_) => ErrorKind::InternalError,
-        Error::Writing(error) => writing_kind(error),
+        Error::Writing(error) => error.into(),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
         Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
@@ -406,10 +291,10 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::InvalidPublicKeyLength
         | Error::WeakPublicKey => ErrorKind::InvalidParams,
         Error::SnapshotTooLarge(_) => ErrorKind::SnapshotTooLarge,
-        Error::Storage(error) => store_kind(error),
+        Error::Storage(error) => error.into(),
         Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => ErrorKind::DiskFull,
         Error::Io(_) => ErrorKind::InternalError,
-        Error::Supervisor(error) => supervisor_kind(error),
+        Error::Supervisor(error) => error.into(),
     }
 }
 
@@ -503,7 +388,9 @@ fn message(error: &Error) -> String {
         }
         Error::Storage(soyeht_store::Error::CursorTooOld) => "Request a new snapshot".into(),
         Error::Storage(soyeht_store::Error::DiskFull) => "Storage is full".into(),
-        Error::Storage(error) if store_kind(error) == ErrorKind::InvalidParams => error.to_string(),
+        Error::Storage(error) if ErrorKind::from(error) == ErrorKind::InvalidParams => {
+            error.to_string()
+        }
         Error::Storage(_) => "Storage operation failed".into(),
         Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => "Storage is full".into(),
         Error::Io(_) => "I/O operation failed".into(),

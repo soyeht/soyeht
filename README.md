@@ -20,15 +20,39 @@ One agent is a chat. Five harnesses running side by side are an operations probl
 
 ## Status
 
-Early. macOS is the supported platform. The engine and the desktop client build and pass their checks on Linux and Windows, but those two are not supported yet. There is no release yet; installation instructions will land with the first one.
+Early. macOS is the supported platform. The engine and the Linux and Windows app build and pass their checks on those systems, but they are not supported yet. The iPhone, iPad and Android apps are companions of an engine running on your computer. There is no release yet; installation instructions will land with the first one.
+
+| Platform | App | Where | Build and test |
+| --- | --- | --- | --- |
+| macOS | Native Swift app | `apps/mac` | `bash scripts/check_mac.sh` ([docs/apps-mac.md](docs/apps-mac.md)) |
+| Linux and Windows | Rust and GPUI app (also runs on macOS) | `apps/desktop` | `cd apps/desktop && cargo test --locked --workspace` ([apps/desktop/README.md](apps/desktop/README.md), [docs/platforms.md](docs/platforms.md)) |
+| iPhone and iPad | Native Swift app | `apps/ios` | `bash scripts/check_ios.sh` ([docs/apps-iphone.md](docs/apps-iphone.md)) |
+| Android | Jetpack Compose app over a Rust core | `apps/android` | `bash scripts/check_android.sh` ([docs/apps-android.md](docs/apps-android.md)) |
+
+The engine itself builds on all three desktop systems: `cargo build --manifest-path engine/Cargo.toml --locked --workspace`.
 
 ## Architecture
 
+Each layer depends only on the ones before it; `AGENTS.md` has the full map and the rules.
+
+- `contracts/`: the protocol schema, the installed profiles, the product version and the design tokens. The single source for the types generated in Rust, Swift, TypeScript and Python (and, for the design tokens, Kotlin).
 - `engine/` (Rust): the process supervisor, workspace state, orchestrator and identity, behind one local socket and WebSocket API. The same workspace builds the MCP server and the CLI.
-- `apps/mac/` and `apps/ios/` (Swift): the native macOS and iPhone apps, clients of the engine API.
-- `apps/desktop/` (Rust, GPUI): the desktop app for Linux and Windows, a client of the same API.
-- `contracts/`: the protocol schema, the single source for the types generated in Rust, Swift and TypeScript.
+- `apps/shared/` (Swift, `SoyehtClient`): the engine client, replicas, presentation policies and layout math used by the Mac and iPhone apps. `apps/dictation/` (Swift, `SoyehtDictation`) holds the dictation engines that need third-party dependencies.
+- `apps/mac/` and `apps/ios/` (Swift): the native macOS and iPhone/iPad apps, thin views over `apps/shared/`.
+- `apps/desktop/` (Rust, GPUI): the app for Linux and Windows, a client of the same API. It is its own cargo workspace.
+- `apps/android/` (Kotlin and Rust): the Android app. `apps/android/app` is a Jetpack Compose view over `apps/android/core`, a Rust core that reuses the desktop client's connection and state.
+- `docs/`: contracts (`docs/contracts/`), decisions (`docs/adr/`) and platform and dev notes. `scripts/` holds the merge gate and the build and test helpers.
 - Connectivity between your devices goes over Tailscale.
+
+### Pinned forks
+
+Three dependencies are pinned to a git revision instead of a published version:
+
+- the `vt100` crate in all three cargo workspaces (`engine`, `apps/desktop`, `apps/android`), through `[patch.crates-io]`, at a revision of [`soyeht/vt100-rust`](https://github.com/soyeht/vt100-rust): a compact scrollback and no panic on any terminal output ([ADR 0144](docs/adr/0144-the-windows-and-linux-window-and-the-android-core-use-a-vt100-fork-with-a-compact-scrollback.md));
+- SwiftTerm, for the Mac and iOS terminals, at a tag of [`soyeht/SwiftTerm`](https://github.com/soyeht/SwiftTerm): the same compact scrollback ([ADR 0145](docs/adr/0145-the-mac-and-ios-terminals-keep-the-policy-scrollback-in-a-swiftterm-fork.md));
+- GPUI, for `apps/desktop`, at the commit of a Zed release tag in `zed-industries/zed` ([ADR 0084](docs/adr/0084-desktop-client-gpui.md)), so every build gets the same GPUI.
+
+Each fork is upstream plus a few commits, with its licence and history. A pin changes in a pull request that updates every place that names it; the vt100 revision must be the same in the three workspaces, and `scripts/check_layers.py` fails when it is not (it also compares their `rust-version` and lint tables).
 
 ## Contributing
 
