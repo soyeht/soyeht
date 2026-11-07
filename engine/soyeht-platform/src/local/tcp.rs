@@ -7,6 +7,7 @@ use super::{
     BindError,
     endpoint::{self, Admission, MAX_PENDING, Token},
 };
+use crate::net::ConnectionErrors;
 use std::{
     io,
     net::{Ipv4Addr, Shutdown, SocketAddr, TcpListener, TcpStream},
@@ -94,16 +95,48 @@ fn accept_loop(
     stop: &AtomicBool,
     capacity: usize,
 ) {
+    serve(
+        tcp.incoming(),
+        ConnectionErrors::default(),
+        token,
+        ready,
+        stop,
+        capacity,
+    );
+}
+
+/// Takes the connections `incoming` yields (the accepts of one listener) until `stop`, or until
+/// an error ends them: one that is not about a single connection, or a run of those that
+/// `errors` gives up on.
+fn serve(
+    incoming: impl Iterator<Item = io::Result<TcpStream>>,
+    mut errors: ConnectionErrors,
+    token: Token,
+    ready: &Sender<io::Result<Stream>>,
+    stop: &AtomicBool,
+    capacity: usize,
+) {
     let pending = Arc::new(Mutex::new(Admission::new(capacity)));
-    for raw in tcp.incoming() {
+    for raw in incoming {
         if stop.load(Ordering::Acquire) {
             return;
         }
         let raw = match raw {
-            Ok(raw) => raw,
+            Ok(raw) => {
+                errors.accepted();
+                raw
+            }
             Err(error) if crate::net::accept_error_concerns_one_connection(&error) => {
-                thread::sleep(crate::net::ACCEPT_ERROR_FLOOR);
-                continue;
+                match errors.failed() {
+                    Ok(pause) => {
+                        thread::sleep(pause);
+                        continue;
+                    }
+                    Err(ended) => {
+                        drop(ready.send(Err(ended)));
+                        return;
+                    }
+                }
             }
             Err(error) => {
                 // The listener is dead: hand the error to whoever accepts, then stop. If the
@@ -307,5 +340,41 @@ mod tests {
             Err(BindError::PathNotEndpoint)
         ));
         assert_eq!(fs::read_to_string(&path).unwrap(), "not an endpoint");
+    }
+
+    /// An accept that fails for a reason that concerns one connection, for ever (a dead network
+    /// interface reports it on every call).
+    struct EveryAcceptFails;
+
+    impl Iterator for EveryAcceptFails {
+        type Item = io::Result<TcpStream>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            Some(Err(io::Error::from(io::ErrorKind::ConnectionAborted)))
+        }
+    }
+
+    #[test]
+    fn a_listener_whose_every_accept_fails_gives_up_and_says_so() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopping = Arc::clone(&stop);
+        let token = endpoint::random().unwrap();
+        let worker = thread::spawn(move || {
+            serve(
+                EveryAcceptFails,
+                ConnectionErrors::within(Duration::from_millis(100)),
+                token,
+                &sender,
+                &stopping,
+                MAX_PENDING,
+            );
+        });
+        let heard = receiver.recv_timeout(Duration::from_secs(5));
+        // Without a give-up the loop never ends; stop it so the test can report that.
+        stop.store(true, Ordering::Release);
+        worker.join().unwrap();
+        let ended = heard.expect("the listener went on for ever").unwrap_err();
+        assert_eq!(ended.kind(), io::ErrorKind::Other);
     }
 }

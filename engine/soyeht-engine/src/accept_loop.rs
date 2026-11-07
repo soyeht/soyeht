@@ -34,7 +34,7 @@ use tokio::time::Instant;
 const PAUSE_BASE_MS: i64 = 50;
 const PAUSE_CAP_MS: i64 = 5_000;
 /// Errors about connections, with none accepted for this long, end the listener.
-const CONNECTION_GIVE_UP: Duration = Duration::from_secs(60);
+const CONNECTION_GIVE_UP: Duration = soyeht_platform::net::ACCEPT_GIVE_UP;
 /// Consecutive errors of the third kind that end the listener.
 const LISTENER_GIVE_UP: u32 = 8;
 const FAILED_EVENT: &str = "engine.accept_failed";

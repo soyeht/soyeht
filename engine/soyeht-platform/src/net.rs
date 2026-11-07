@@ -9,7 +9,7 @@
 use std::{
     io,
     net::{SocketAddr, TcpListener},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(windows)]
@@ -31,6 +31,53 @@ pub fn listen(address: SocketAddr) -> io::Result<TcpListener> {
 /// How long an accept loop waits after an error about one connection, so that a run of them
 /// cannot spin a core.
 pub const ACCEPT_ERROR_FLOOR: Duration = Duration::from_millis(1);
+
+/// How long a run of errors about connections may go on with no connection accepted before the
+/// listener is given up (the engine's own accept loops give up at the same time).
+pub const ACCEPT_GIVE_UP: Duration = Duration::from_secs(60);
+
+/// The run of errors about one connection that a listener of the local endpoint has seen since
+/// it last accepted one. Each is waited out for [`ACCEPT_ERROR_FLOOR`], and a run that has gone
+/// on for the limit ends the listener with an error, so that whatever keeps the listener
+/// recovers it. A listener that waited them out for ever would spin at one pass a millisecond,
+/// unseen, while no client could connect.
+#[derive(Debug)]
+pub struct ConnectionErrors {
+    since: Option<Instant>,
+    give_up: Duration,
+}
+
+impl Default for ConnectionErrors {
+    fn default() -> Self {
+        Self::within(ACCEPT_GIVE_UP)
+    }
+}
+
+impl ConnectionErrors {
+    pub(crate) fn within(give_up: Duration) -> Self {
+        Self {
+            since: None,
+            give_up,
+        }
+    }
+
+    /// An error about one connection: the pause before the next `accept`, or the error that
+    /// ends the listener. It names no path or address.
+    pub fn failed(&mut self) -> io::Result<Duration> {
+        let since = *self.since.get_or_insert_with(Instant::now);
+        if since.elapsed() >= self.give_up {
+            return Err(io::Error::other(
+                "the listener accepted no connection while every accept failed",
+            ));
+        }
+        Ok(ACCEPT_ERROR_FLOOR)
+    }
+
+    /// A connection was accepted: the run is over.
+    pub fn accepted(&mut self) {
+        self.since = None;
+    }
+}
 
 /// Whether an error of `accept` concerns the one connection it took from the queue, not the
 /// listener or the process. The next `accept` has an answer at once, after [`ACCEPT_ERROR_FLOOR`];
@@ -122,6 +169,18 @@ mod tests {
                 kind
             )));
         }
+    }
+
+    #[test]
+    fn a_run_of_connection_errors_ends_the_listener_and_an_accepted_connection_ends_the_run() {
+        let mut errors = ConnectionErrors::within(Duration::from_millis(60));
+        assert_eq!(errors.failed().unwrap(), ACCEPT_ERROR_FLOOR);
+        std::thread::sleep(Duration::from_millis(80));
+        let ended = errors.failed().unwrap_err();
+        assert_eq!(ended.kind(), io::ErrorKind::Other);
+        // The listener works again: a new run starts from zero.
+        errors.accepted();
+        assert_eq!(errors.failed().unwrap(), ACCEPT_ERROR_FLOOR);
     }
 
     #[test]
