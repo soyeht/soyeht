@@ -7,7 +7,15 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from check_layers import LAYERS, ROOT, manifest_problems, problems, soyeht_dependencies
+from check_layers import (
+    LAYERS,
+    ROOT,
+    WORKSPACE_ROOTS,
+    manifest_problems,
+    problems,
+    soyeht_dependencies,
+    workspace_problems,
+)
 
 
 def manifest(name: str, body: str) -> dict:
@@ -84,6 +92,75 @@ class LayerTests(unittest.TestCase):
             found = problems(root)
         self.assertEqual(len(found), len(LAYERS))
         self.assertTrue(all("has no Cargo.toml" in line for line in found))
+
+
+VT100 = '{ git = "https://github.com/soyeht/vt100-rust", rev = "aaaa" }'
+WORKSPACE = f"""[workspace]
+members = []
+[workspace.package]
+rust-version = "1.98"
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+[workspace.lints.clippy]
+panic = "deny"
+[patch.crates-io]
+vt100 = {VT100}
+"""
+
+
+class WorkspaceTests(unittest.TestCase):
+    def workspaces(self, **replacements: tuple[str, str]) -> list[str]:
+        """Write the three workspace manifests, with `base: (old, new)` edits, and check them."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for base in WORKSPACE_ROOTS:
+                text = WORKSPACE
+                if base in replacements:
+                    old, new = replacements[base]
+                    self.assertIn(old, text)
+                    text = text.replace(old, new)
+                (root / base).mkdir(parents=True)
+                (root / base / "Cargo.toml").write_text(text)
+            return workspace_problems(root)
+
+    def test_the_repository_workspaces_match(self):
+        self.assertEqual(workspace_problems(ROOT), [])
+
+    def test_equal_workspaces_pass(self):
+        self.assertEqual(self.workspaces(), [])
+
+    def test_a_different_vt100_revision_fails(self):
+        found = self.workspaces(**{"apps/android": ('rev = "aaaa"', 'rev = "bbbb"')})
+        self.assertEqual(len(found), 1)
+        self.assertIn("apps/android/Cargo.toml: [patch.crates-io] vt100", found[0])
+
+    def test_a_missing_vt100_patch_fails(self):
+        found = self.workspaces(**{"apps/desktop": (f"vt100 = {VT100}", "")})
+        self.assertEqual(len(found), 1)
+        self.assertIn("apps/desktop/Cargo.toml: [patch.crates-io] vt100 is missing", found[0])
+
+    def test_another_patched_crate_is_not_compared(self):
+        found = self.workspaces(**{"apps/desktop": (f"vt100 = {VT100}", f'vt100 = {VT100}\ncalloop = "1"')})
+        self.assertEqual(found, [])
+
+    def test_a_different_rust_version_fails(self):
+        found = self.workspaces(engine=('rust-version = "1.98"', 'rust-version = "1.99"'))
+        self.assertEqual(len(found), 2)
+        self.assertTrue(all("rust-version" in line for line in found))
+
+    def test_a_different_lint_table_fails(self):
+        found = self.workspaces(**{"apps/desktop": ('panic = "deny"', 'panic = "warn"')})
+        self.assertEqual(len(found), 1)
+        self.assertIn("apps/desktop/Cargo.toml: [workspace.lints]", found[0])
+
+    def test_a_workspace_without_a_manifest_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for base in WORKSPACE_ROOTS[:2]:
+                (root / base).mkdir(parents=True)
+                (root / base / "Cargo.toml").write_text(WORKSPACE)
+            found = workspace_problems(root)
+        self.assertEqual(found, ["apps/android/Cargo.toml: no workspace manifest to compare"])
 
 
 if __name__ == "__main__":

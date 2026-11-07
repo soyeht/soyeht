@@ -47,7 +47,7 @@ class ProblemsForTests(unittest.TestCase):
 
     def test_binaries_are_allowed_only_in_their_directories(self):
         png = b"\x89PNG\r\n\x1a\n\x00\x00"
-        self.assertEqual(problems_for("docs/reports/slice-1/a.png", png, 10), [])
+        self.assertEqual(problems_for("docs/archive/reports/slice-1/a.png", png, 10), [])
         self.assertEqual(problems_for("apps/mac/Resources/Fonts/A.ttf", b"\x00\x01\x00\x00", 4), [])
         self.assertTrue(problems_for("scripts/a.png", png, 10))
         icon = b"\x00\x00\x01\x00\x01\x00"
