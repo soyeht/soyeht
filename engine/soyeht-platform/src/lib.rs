@@ -13,6 +13,8 @@
 //! - [`diagnostics`]: the report a person pastes into an issue, and the redaction that takes
 //!   paths, names and tokens out of it.
 //! - [`user`]: who is running the process.
+//! - [`hold_cost`]: what a hold of the engine's lock spent its time on (statements, segment
+//!   files, the file port), for the slow-hold log line.
 //! - [`log`]: one structured, escaped log line on standard error.
 //! - [`shutdown`]: when a stop is requested (the `tokio` feature).
 //! - [`process`]: ending a process together with everything it started (a process group on
@@ -33,6 +35,7 @@ pub mod dialog;
 pub mod dirs;
 pub mod fs;
 pub mod git;
+pub mod hold_cost;
 pub mod hostname;
 pub mod local;
 pub mod log;

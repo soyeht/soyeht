@@ -40,6 +40,12 @@ ADDED_AFTER_GENERATION = {
     ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.
     ("paneLayout", "editorPreviewDividerWidth"),
+    # Steps of the scale the task sheets drew inline (a 1, 9 and 20 point inset, a 14 point
+    # label), now named so no view types them.
+    ("space", "x1"),
+    ("space", "x9"),
+    ("space", "x20"),
+    ("typeScale", "label"),
 }
 
 
@@ -553,6 +559,87 @@ INLINE_LITERALS = [
         ".frame(width: 460, height: {}, alignment: .topLeading)",
         "layout",
         "taskSheetHeight",
+    ),
+    (MAC + "TaskWorkspaceViews.swift", ".padding(.top, {})", "layout", "newTaskSheetTopInset"),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        "Circle().fill(indicatorColor).frame(width: {0}, height: {0})",
+        "layout",
+        "taskDot",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(width: {}).foregroundStyle(MacTheme.ink)",
+        "layout",
+        "newTaskSheetWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        "minWidth: max({}, geometry.size.width)",
+        "layout",
+        "taskListMinimumWidth",
+    ),
+    (MAC + "TaskWorkspaceViews.swift", 'heading("KEY", width: {})', "layout", "taskListKeyWidth"),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("STATE", width: {})',
+        "layout",
+        "taskListStateWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("PRIORITY", width: {})',
+        "layout",
+        "taskListPriorityWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("OWNER", width: {})',
+        "layout",
+        "taskListOwnerWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("WORKTREE", width: {})',
+        "layout",
+        "taskListWorktreeWidth",
+    ),
+    (MAC + "TaskWorkspaceViews.swift", 'heading("", width: {})', "layout", "taskListCommentsWidth"),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("UPDATED", width: {})',
+        "layout",
+        "taskListUpdatedWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(minWidth: {}, maxWidth: .infinity, alignment: .leading)",
+        "layout",
+        "taskListTitleMinimumWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(height: {}).neoWell(radius: MacTheme.Radius.control)",
+        "layout",
+        "taskEditorHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".padding(.horizontal, 14).frame(height: {})",
+        "layout",
+        "taskFieldHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(maxWidth: .infinity, minHeight: {})",
+        "layout",
+        "taskToolbarHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'Image(systemName: "ellipsis").font(.system(size: {}, weight: .medium))',
+        "glyph",
+        "taskSheetMore",
     ),
     (
         SHARED + "PaneLayoutFloors.swift",

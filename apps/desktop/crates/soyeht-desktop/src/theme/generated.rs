@@ -319,6 +319,7 @@ pub mod radius {
     pub const PILL: f32 = 999.0;
 }
 pub mod space {
+    pub const X1: f32 = 1.0;
     pub const X2: f32 = 2.0;
     pub const X3: f32 = 3.0;
     pub const X4: f32 = 4.0;
@@ -326,17 +327,20 @@ pub mod space {
     pub const X6: f32 = 6.0;
     pub const X7: f32 = 7.0;
     pub const X8: f32 = 8.0;
+    pub const X9: f32 = 9.0;
     pub const X10: f32 = 10.0;
     pub const X12: f32 = 12.0;
     pub const X14: f32 = 14.0;
     pub const X16: f32 = 16.0;
     pub const X18: f32 = 18.0;
+    pub const X20: f32 = 20.0;
 }
 pub mod type_scale {
     pub const MICRO: f32 = 10.0;
     pub const SMALL: f32 = 11.0;
     pub const CONTROL: f32 = 12.0;
     pub const CAPTION: f32 = 13.0;
+    pub const LABEL: f32 = 14.0;
     pub const BODY: f32 = 15.0;
     pub const SUBHEADING: f32 = 18.0;
     pub const HEADING: f32 = 20.0;
@@ -427,6 +431,21 @@ pub mod layout {
     pub const HARNESS_LIST_HEIGHT: f32 = 260.0;
     pub const SEARCH_FIELD_HEIGHT: f32 = 32.0;
     pub const MODEL_FIELD_HEIGHT: f32 = 30.0;
+    pub const NEW_TASK_SHEET_TOP_INSET: f32 = 47.0;
+    pub const TASK_DOT: f32 = 6.0;
+    pub const NEW_TASK_SHEET_WIDTH: f32 = 560.0;
+    pub const TASK_LIST_MINIMUM_WIDTH: f32 = 960.0;
+    pub const TASK_LIST_KEY_WIDTH: f32 = 70.0;
+    pub const TASK_LIST_STATE_WIDTH: f32 = 120.0;
+    pub const TASK_LIST_PRIORITY_WIDTH: f32 = 90.0;
+    pub const TASK_LIST_OWNER_WIDTH: f32 = 120.0;
+    pub const TASK_LIST_WORKTREE_WIDTH: f32 = 90.0;
+    pub const TASK_LIST_COMMENTS_WIDTH: f32 = 40.0;
+    pub const TASK_LIST_UPDATED_WIDTH: f32 = 90.0;
+    pub const TASK_LIST_TITLE_MINIMUM_WIDTH: f32 = 220.0;
+    pub const TASK_EDITOR_HEIGHT: f32 = 96.0;
+    pub const TASK_FIELD_HEIGHT: f32 = 40.0;
+    pub const TASK_TOOLBAR_HEIGHT: f32 = 34.0;
 }
 pub mod glyph {
     pub const RAIL: f32 = 18.0;
@@ -436,6 +455,7 @@ pub mod glyph {
     pub const CHEVRON: f32 = 11.0;
     pub const TASK_TOOLBAR_ICON: f32 = 13.0;
     pub const TASK_TOOLBAR_CHEVRON: f32 = 10.0;
+    pub const TASK_SHEET_MORE: f32 = 16.0;
 }
 pub mod usage_ring {
     pub const DIAMETER: f32 = 40.0;
@@ -583,21 +603,6 @@ pub mod desktop {
     pub const LOOP_TOGGLE_HEIGHT: f32 = 22.0;
     pub const LOOP_TOGGLE_KNOB: f32 = 18.0;
     pub const LOOP_PROMPT_HEIGHT: f32 = 88.0;
-    pub const TASK_DOT: f32 = 6.0;
-    pub const NEW_TASK_SHEET_WIDTH: f32 = 560.0;
-    pub const TASK_LIST_MINIMUM_WIDTH: f32 = 960.0;
-    pub const TASK_LIST_KEY_WIDTH: f32 = 70.0;
-    pub const TASK_LIST_STATE_WIDTH: f32 = 120.0;
-    pub const TASK_LIST_PRIORITY_WIDTH: f32 = 90.0;
-    pub const TASK_LIST_OWNER_WIDTH: f32 = 120.0;
-    pub const TASK_LIST_WORKTREE_WIDTH: f32 = 90.0;
-    pub const TASK_LIST_COMMENTS_WIDTH: f32 = 40.0;
-    pub const TASK_LIST_UPDATED_WIDTH: f32 = 90.0;
-    pub const TASK_LIST_TITLE_MINIMUM_WIDTH: f32 = 220.0;
-    pub const TASK_EDITOR_HEIGHT: f32 = 96.0;
-    pub const TASK_FIELD_HEIGHT: f32 = 40.0;
-    pub const TASK_FIELD_TEXT_SIZE: f32 = 14.0;
-    pub const TASK_TOOLBAR_HEIGHT: f32 = 34.0;
     pub const TASK_CARD_GLYPH: f32 = 10.0;
     pub const SWITCH_POPOVER_MAXIMUM_HEIGHT: f32 = 780.0;
     pub const SWITCH_POPOVER_PADDING: f32 = 14.0;

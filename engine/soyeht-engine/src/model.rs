@@ -4,6 +4,7 @@ use crate::{
     ports::StorePort,
     screen::Screen,
 };
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use soyeht_protocol::{
     Actor, AgentSession, AttentionItem, ConfigValue, Pane, PaneClosedDraft, PaneConfigFailedDraft,
@@ -104,6 +105,18 @@ pub fn pending<P: soyeht_protocol::EventParams>(params: &P) -> Result<(String, V
     params
         .to_event()
         .map_err(|_| errors::internal("Event serialization failed"))
+}
+
+/// The parameters of a request as the generated `...Params` type of its method. The edge has
+/// validated them against the schema, so a failure here is a mismatch between that schema and the
+/// type, not bad input from a client.
+pub fn typed_params<T: DeserializeOwned>(params: &Value) -> Result<T> {
+    serde_json::from_value(params.clone()).map_err(|error| errors::invalid(error.to_string()))
+}
+
+/// A result or an event body from its generated type.
+pub fn to_value(value: &impl Serialize) -> Result<Value> {
+    serde_json::to_value(value).map_err(|_| errors::internal("Serialization failed"))
 }
 
 /// A pane the engine creates: idle and in the protocol's own words, with a fresh id, a first

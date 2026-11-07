@@ -6,7 +6,7 @@ use super::chips::{
     task_title,
 };
 use crate::{
-    theme::{Palette, desktop, layout, pane_interior, space, type_scale},
+    theme::{Palette, layout, pane_interior, space, type_scale},
     views::prelude::*,
 };
 use gpui::{AppContext, Render, Window};
@@ -72,9 +72,7 @@ impl Workbench {
         let header = row()
             .gap(px(space::X8))
             .px(px(space::X4))
-            .chrome()
-            .font_weight(FontWeight::BOLD)
-            .text_size(px(type_scale::CONTROL))
+            .chrome_bold(type_scale::CONTROL)
             .text_color(rgb(palette.secondary))
             .child(SharedString::from(
                 tasks::state_title(&state).to_uppercase(),
@@ -139,7 +137,7 @@ impl Workbench {
             .child(status_row(
                 tasks::indicator(task),
                 tasks::status_line(task),
-                desktop::TASK_DOT,
+                layout::TASK_DOT,
                 Some(2),
                 palette,
             ))

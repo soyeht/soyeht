@@ -38,6 +38,7 @@ from pathlib import Path
 # The pieces every platform's package shares (the scripts directory is on the path of a script).
 from package_common import (  # noqa: E402
     HOMEPAGE,
+    LICENSE_DOCUMENTS,
     PACKAGE,
     PROFILE_NAME,
     ROOT,
@@ -47,6 +48,7 @@ from package_common import (  # noqa: E402
     cargo_build,
     check_sizes,
     host_arch,
+    license_document,
     make_plan,
     sha256_of,
 )
@@ -211,7 +213,8 @@ def metainfo_text(template, plan):
 
 
 def stage_shared(root, plan):
-    """The files both formats install below `usr`: programs, launcher entry, icons, metainfo."""
+    """The files both formats install below `usr`: programs, launcher entry, icons, metainfo and the
+    license documents."""
     for name, source in plan.programs.items():
         write_file(root / LIBRARY_FOLDER / name, Path(source).read_bytes(), 0o755)
     entry = (PACKAGING / f"{APPLICATION_ID}.desktop").read_bytes()
@@ -222,6 +225,8 @@ def stage_shared(root, plan):
     template = (PACKAGING / f"{APPLICATION_ID}.metainfo.xml").read_text()
     text = metainfo_text(template, plan)
     write_file(root / f"usr/share/metainfo/{APPLICATION_ID}.metainfo.xml", text.encode())
+    for name in LICENSE_DOCUMENTS:
+        write_file(root / "usr/share/doc" / PACKAGE / name, license_document(name))
 
 
 def copyright_text():
@@ -230,7 +235,10 @@ def copyright_text():
         f"Upstream-Name: Soyeht\nSource: {HOMEPAGE}\n\n"
         "Files: *\nCopyright: 2026 Caio Salgado\nLicense: Apache-2.0\n"
         " On Debian systems the full text of the Apache License 2.0 is in\n"
-        " /usr/share/common-licenses/Apache-2.0.\n"
+        " /usr/share/common-licenses/Apache-2.0.\n\n"
+        "Files: usr/lib/soyeht/*\nCopyright: the authors of the components built into the programs\n"
+        "License: see-notices\n The licenses and copyright notices of those components are in\n"
+        " /usr/share/doc/soyeht/THIRD-PARTY-NOTICES.txt.\n"
     )
 
 
@@ -242,7 +250,6 @@ def stage_deb(root, plan):
         link.symlink_to(f"../lib/soyeht/{name}")
     documents = root / "usr/share/doc" / PACKAGE
     write_file(documents / "copyright", copyright_text().encode())
-    write_file(documents / "NOTICE", (ROOT / "NOTICE").read_bytes())
     normalize_modes(root)
 
 
