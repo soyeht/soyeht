@@ -1405,6 +1405,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hmac",
  "libc",
+ "serde_json",
  "sha2",
  "tokio",
  "windows-sys 0.61.2",
