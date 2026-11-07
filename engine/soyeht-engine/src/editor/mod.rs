@@ -2,6 +2,8 @@
 
 pub(crate) mod agent_review;
 pub(crate) mod api;
+#[cfg(test)]
+mod containment_fuzz;
 mod creation;
 mod disk_effects;
 #[cfg(test)]
