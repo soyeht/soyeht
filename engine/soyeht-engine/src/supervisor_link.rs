@@ -188,6 +188,7 @@ impl Core {
         }
         if self.ptyd.is_some() {
             self.settle_link(now);
+            self.keep_watch();
             return Link::Up;
         }
         if let Some(since) = self.supervisor_retry.connected_ms.take() {
@@ -382,6 +383,7 @@ pub(crate) mod tests {
                             version: VERSION,
                             supervisor_id: "test".into(),
                             supervisor_generation: 1,
+                            features: Vec::new(),
                         };
                         assert!(write_json(&mut stream, &welcome).is_ok());
                     }
@@ -726,27 +728,29 @@ pub(crate) mod tests {
     }
 
     /// A supervisor on the socket that welcomes the engine and answers its registry reads.
-    fn serve_registry(directory: &std::path::Path) {
-        use soyeht_protocol::frame::read_json;
-        use soyeht_ptyd::wire::Request;
+    pub(crate) fn serve_registry(directory: &std::path::Path) {
+        use {soyeht_protocol::frame::read_json, soyeht_ptyd::wire::Request};
         let listener = Listener::bind(&directory.join(PTYD_SOCKET)).unwrap();
         std::thread::spawn(move || {
             while let Ok(mut stream) = listener.accept() {
-                while let Ok(Some(request)) = read_json::<Request>(&mut stream) {
-                    let response = match request {
-                        Request::Hello { .. } => Response::Welcome {
-                            version: VERSION,
-                            supervisor_id: "served".into(),
-                            supervisor_generation: 2,
-                        },
-                        Request::PendingInputs => Response::InputReceipts(Vec::new()),
-                        Request::List => Response::Instances(Vec::new()),
-                        _ => Response::Ok,
-                    };
-                    if write_json(&mut stream, &response).is_err() {
-                        break;
+                std::thread::spawn(move || {
+                    while let Ok(Some(request)) = read_json::<Request>(&mut stream) {
+                        let response = match request {
+                            Request::Hello { .. } => Response::Welcome {
+                                version: VERSION,
+                                supervisor_id: "served".into(),
+                                supervisor_generation: 2,
+                                features: Vec::new(),
+                            },
+                            Request::PendingInputs => Response::InputReceipts(Vec::new()),
+                            Request::List => Response::Instances(Vec::new()),
+                            _ => Response::Ok,
+                        };
+                        if write_json(&mut stream, &response).is_err() {
+                            break;
+                        }
                     }
-                }
+                });
             }
         });
     }
