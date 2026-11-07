@@ -298,16 +298,21 @@ fn wait_lsp_ready(client: &mut Client, workspace: &str, generation: u64) -> Valu
     }
 }
 
-fn language_registry_instance(rig: &Rig) -> Value {
+/// The language server processes the supervisor holds open.
+pub(super) fn open_language_instances(rig: &Rig) -> Vec<Value> {
     let registry: Value =
         serde_json::from_slice(&fs::read(rig.path.join("ptyd-registry.json")).unwrap()).unwrap();
-    let instances: Vec<_> = registry["instances"]
+    registry["instances"]
         .as_object()
         .unwrap()
         .values()
         .filter(|instance| instance["spawn"]["kind"] == "pipes_lsp" && instance["closed"] == false)
         .cloned()
-        .collect();
+        .collect()
+}
+
+fn language_registry_instance(rig: &Rig) -> Value {
+    let instances = open_language_instances(rig);
     assert_eq!(instances.len(), 1);
     instances[0].clone()
 }

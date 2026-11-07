@@ -1,7 +1,7 @@
 //! Workspace trust (ADR 0150, contract 18): a folder the person has not trusted never runs its
 //! own files through a language server. The fake server writes what it was started with into
 //! the folder, so these tests read the arguments, the environment and the options it got.
-use super::language_and_project_search::decide_folder;
+use super::language_and_project_search::{decide_folder, open_language_instances};
 use super::*;
 
 const RECORD: &str = ".soyeht-fake-lsp-record.json";
@@ -36,14 +36,7 @@ fn record(folder: &Path) -> Value {
 }
 
 fn live_servers(rig: &Rig) -> usize {
-    let registry: Value =
-        serde_json::from_slice(&fs::read(rig.path.join("ptyd-registry.json")).unwrap()).unwrap();
-    registry["instances"]
-        .as_object()
-        .unwrap()
-        .values()
-        .filter(|instance| instance["spawn"]["kind"] == "pipes_lsp" && instance["closed"] == false)
-        .count()
+    open_language_instances(rig).len()
 }
 
 fn trust_of(client: &mut Client, workspace: &str) -> String {
