@@ -14,13 +14,12 @@ use soyeht_ptyd::{
     client::Client as SupervisorClient,
     wire::{Request, Response, Spawn},
 };
+use soyeht_store::domain::FinishedInput;
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
     agents::{AgentModelRefusal, HarnessReadiness, NativeRequest, Outgoing},
     database::{Change, Mutation, Result as StoreResult, Store},
-    domain::{
-        ClientFocus, DeviceIdentity, FinishedInput, IdempotencyReceipt, InputIntent, PaneRecord,
-    },
+    domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
 
 pub trait Clock: Send + Sync {
@@ -174,7 +173,6 @@ pub trait StorePort {
     fn panes(&self) -> StoreResult<Vec<PaneRecord>>;
     fn setting(&self, key: &str) -> StoreResult<Option<Value>>;
     fn input_intent(&self, scope: &str, key: &str) -> StoreResult<Option<InputIntent>>;
-    /// Makes the outcome of `finished` inputs durable and records `intent`, if any, in one write.
     fn finish_inputs(
         &mut self,
         finished: &[FinishedInput],
@@ -514,7 +512,6 @@ pub(crate) mod testing {
         pub workspaces: BTreeMap<String, Workspace>,
         pub settings: BTreeMap<String, Value>,
         pub intents: BTreeMap<(String, String), InputIntent>,
-        /// The writes of `finish_inputs`: how many outcomes, and whether a new intent.
         pub input_writes: Vec<(usize, bool)>,
         pub pair_requests: BTreeMap<String, Value>,
         pub pair_windows: BTreeMap<String, i64>,
@@ -575,18 +572,15 @@ pub(crate) mod testing {
 
         fn finish_inputs(
             &mut self,
-            finished: &[FinishedInput],
-            intent: Option<(&str, &str, &InputIntent)>,
+            outcomes: &[FinishedInput],
+            next: Option<(&str, &str, &InputIntent)>,
         ) -> StoreResult<()> {
-            self.input_writes.push((finished.len(), intent.is_some()));
-            for input in finished {
-                self.intents
-                    .remove(&(input.scope.clone(), input.key.clone()));
+            self.input_writes.push((outcomes.len(), next.is_some()));
+            for o in outcomes {
+                self.intents.remove(&(o.scope.clone(), o.key.clone()));
             }
-            if let Some((scope, key, intent)) = intent {
-                self.intents
-                    .insert((scope.into(), key.into()), intent.clone());
-            }
+            let new = next.map(|(s, k, intent)| ((s.into(), k.into()), intent.clone()));
+            self.intents.extend(new);
             Ok(())
         }
 
