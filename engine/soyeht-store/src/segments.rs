@@ -1,5 +1,8 @@
 use crate::{Error, Result};
-use soyeht_platform::fs::{OpenOptionsPrivateExt, sync_directory};
+use soyeht_platform::{
+    fs::{OpenOptionsPrivateExt, sync_directory},
+    hold_cost::{self, Cost},
+};
 use soyeht_protocol::limits;
 use std::collections::{BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
@@ -265,6 +268,10 @@ impl Log {
     }
 
     fn write(&mut self, record: Record, flush: bool) -> Result<()> {
+        hold_cost::timed(Cost::Segment, || self.write_record(record, flush))
+    }
+
+    fn write_record(&mut self, record: Record, flush: bool) -> Result<()> {
         if record.from() != self.next || record.end() <= record.from() {
             return Err(Error::InvalidTerminalRecord);
         }
@@ -348,6 +355,10 @@ impl Log {
     }
 
     pub fn read(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {
+        hold_cost::timed(Cost::Segment, || self.read_records(from, to, maximum))
+    }
+
+    fn read_records(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {
         if from < self.first_offset() || from > to || to > self.next {
             return Err(Error::CursorOutOfRange);
         }
