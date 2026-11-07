@@ -20,9 +20,14 @@ ship, and nothing in the packages.
 - **Where the components come from.** For the cargo workspaces, `cargo metadata --locked`: the closure of the
   normal dependencies of the members (not dev-dependencies or build tools), for every target, so the Windows,
   Linux, macOS and Android crates are all in; the license files are read from the crate's folder. For a crate
-  that offers a choice (`MIT OR Apache-2.0`) the text of the most preferred allowed alternative that the crate
+  that offers a choice (`MIT OR Apache-2.0`) the entry says which one is followed and the text of the most preferred allowed alternative that the crate
   ships is used; a crate that ships no license file gets the standard SPDX text (`scripts/third_party/spdx/`)
-  and the holder its metadata names, marked as such. For the Swift packages, the pins of the four
+  and the holder its metadata names, marked as such. The license files below the top of a crate (the Unicode
+  tables of `regex-syntax`, the C code of `tree-sitter` and `ring`, the protocol files of `wayland-protocols`)
+  are shipped too, and so is any `LICENSE-THIRD-PARTY` file whichever license is followed. A crate that
+  compiles code of another license has a `bundled` entry in the policy: `freetype-sys` builds FreeType, which
+  is FTL or GPLv2, and Soyeht follows the FreeType License, whose credit text is in the notices. An entry of
+  an MPL-2.0 component gives the address of its source (section 3.2). For the Swift packages, the pins of the four
   `Package.resolved` files against `scripts/third_party/swift.json` and the texts under
   `scripts/third_party/swift/`, which `third_party_notices.py refresh-swift --checkouts DIR` renews from
   checkouts at the pinned revisions (the nested license files of bundled sources included). For the
@@ -33,7 +38,7 @@ ship, and nothing in the packages.
   source-available license). An expression passes when one alternative of it is entirely allowed. `clarify`
   gives the license of a package whose manifest declares none, or states a combined one, each with its reason.
   `exceptions` lets a known package with a license outside the list pass, each with its reason; an exception
-  that no dependency needs fails, so the list cannot go stale, and a run prints each exception it uses.
+  that no dependency needs fails, so the list cannot go stale, and a run prints each exception it uses. `release_flow.py collect` and `publish` refuse while any exception is in the policy (`release_checks.exception_problems`), so one cannot be forgotten at a release.
 - **The gate checks it.** `third-party-notices:check` (area `always`) fails when a dependency has no allowed
   license, when `swift.json` or `gradle.json` disagree with the lock files, when an exception is unused, or
   when the committed file differs from what `generate` writes. `third-party-notices:unit` runs

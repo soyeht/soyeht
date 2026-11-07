@@ -119,9 +119,13 @@ built from (ADR 0149). A change to `Cargo.lock`, to a `Package.resolved` or to
 `apps/android/app/build.gradle.kts` regenerates it, and the gate checks it:
 
 ```
-uv run python scripts/third_party_notices.py generate   # needs the crates fetched (a build does it)
-uv run python scripts/third_party_notices.py check
+uv run python scripts/third_party_notices.py generate --fetch
+uv run python scripts/third_party_notices.py check --fetch
 ```
+
+The commands read the crates offline, and need every crate of the three lock files (those of the
+other systems too): `--fetch` runs `cargo fetch --locked` in each workspace first, and on a cold
+`CARGO_HOME` without it they stop and say so.
 
 A dependency must be under a license of `scripts/third_party/policy.json` (permissive licenses and
 MPL-2.0; no GPL, AGPL or LGPL alone). A new Swift package or Android library also needs its entry in

@@ -235,7 +235,10 @@ def copyright_text():
         f"Upstream-Name: Soyeht\nSource: {HOMEPAGE}\n\n"
         "Files: *\nCopyright: 2026 Caio Salgado\nLicense: Apache-2.0\n"
         " On Debian systems the full text of the Apache License 2.0 is in\n"
-        " /usr/share/common-licenses/Apache-2.0.\n"
+        " /usr/share/common-licenses/Apache-2.0.\n\n"
+        "Files: usr/lib/soyeht/*\nCopyright: the authors of the components built into the programs\n"
+        "License: see-notices\n The licenses and copyright notices of those components are in\n"
+        " /usr/share/doc/soyeht/THIRD-PARTY-NOTICES.txt.\n"
     )
 
 

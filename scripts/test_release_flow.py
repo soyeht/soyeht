@@ -95,6 +95,7 @@ class FlowCase(unittest.TestCase):
         for patch in (
             mock.patch.dict(release_manifest.POLICY["signature"], {"publicKeys": KEYS}),
             mock.patch.object(changelog, "CHANGELOG", self.root / "CHANGELOG.md"),
+            mock.patch.object(release_checks, "exception_problems", return_value=[]),
         ):
             patch.start()
             self.addCleanup(patch.stop)
@@ -288,6 +289,28 @@ class CollectTests(FlowCase):
         self.assertEqual(asked, [release_manifest.POLICY["manifest"]["url"]])
         self.assertIsNone(release_flow.last_published_sequence(self.options("collect", "--first-release"), self.fail))
         self.assertEqual(release_flow.last_published_sequence(self.options("collect", "--last-sequence", "9"), self.fail), 9)
+
+
+class LicenseExceptionTests(FlowCase):
+    def test_a_license_exception_that_is_still_in_the_policy_stops_collect_and_publish(self):
+        self.all_packages()
+        problem = ["zlog is under GPL-3.0-or-later and still has an exception in scripts/third_party/policy.json: remove it"]
+        with mock.patch.object(release_checks, "exception_problems", return_value=problem):
+            with self.assertRaisesRegex(release_flow.Refused, "still has an exception"):
+                self.quiet(self.collect)
+            found = release_flow.publish_problems(self.options("publish"), [], probe_for(), lambda _address: None, developer_id_tool)
+        self.assertIn(problem[0], found)
+
+
+class ExceptionProblemTests(unittest.TestCase):
+    def test_the_problem_names_each_exception_of_a_policy(self):
+        import third_party_licenses as licenses
+
+        policy = licenses.Policy(frozenset(), (), {}, {("zlog", "GPL-3.0-or-later"): "why", ("abc", "AGPL-3.0-only"): "why"})
+        lines = release_checks.exception_problems(policy)
+        self.assertEqual(len(lines), 2)
+        self.assertIn("abc is under AGPL-3.0-only", lines[0])
+        self.assertEqual(release_checks.exception_problems(licenses.Policy(frozenset(), (), {}, {})), [])
 
 
 class PublishTests(FlowCase):

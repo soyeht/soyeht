@@ -10,7 +10,7 @@ from __future__ import annotations
 import itertools
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 DATA = Path(__file__).with_name("third_party")
@@ -20,15 +20,21 @@ SPDX_TEXTS = DATA / "spdx"
 # What a license file's text says about its license, the most specific first. A file that none of
 # these recognises is kept whatever license is elected: it is a custom or a combined notice.
 SIGNATURES = (
+    # The texts that mention the GNU licenses in passing come first (MPL-2.0 names the GPL, LGPL and
+    # AGPL in its section 1.12; FreeType's license note names the GPL it is the alternative to).
+    ("MPL-2.0", ("Mozilla Public License Version 2.0",)),
+    ("FTL", ("FreeType Project LICENSE",)),
+    ("FTL", ("FREETYPE LICENSES",)),
+    ("LGPL-2.1-or-later", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 2.1, February 1999")),
     ("GPL-3.0-or-later", ("GNU GENERAL PUBLIC LICENSE", "Version 3")),
     ("GPL-2.0-only", ("GNU GENERAL PUBLIC LICENSE", "Version 2")),
-    ("LGPL-2.1-or-later", ("GNU LESSER GENERAL PUBLIC LICENSE",)),
-    ("MPL-2.0", ("Mozilla Public License Version 2.0",)),
+    ("LGPL-3.0-or-later", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 3")),
     ("Apache-2.0", ("Apache License", "Version 2.0")),
     ("Unicode-3.0", ("UNICODE LICENSE V3",)),
     ("CC0-1.0", ("CC0 1.0 Universal",)),
     ("Unlicense", ("This is free and unencumbered software",)),
     ("BSL-1.0", ("Boost Software License",)),
+    ("bzip2-1.0.6", ("bzip2", "libbzip2", "Julian R Seward")),
     ("Zlib", ("altered source versions must be plainly marked",)),
     ("ISC", ("Permission to use, copy, modify, and/or distribute this software for any purpose",)),
     ("BSD-3-Clause", ("Redistributions of source code must retain", "Neither the name")),
@@ -36,6 +42,15 @@ SIGNATURES = (
     ("MIT", ("Permission is hereby granted, free of charge",)),
 )
 NOTICE_PREFIXES = ("NOTICE", "ACKNOWLEDG")
+# A file of one of these is source code or data, not a license, whatever its name (swift-syntax has a
+# `CopyrightHeader.swift`).
+SOURCE_SUFFIXES = (
+    ".rs", ".toml", ".py", ".swift", ".c", ".h", ".cc", ".cpp", ".m", ".mm", ".js", ".ts", ".kt",
+    ".java", ".go", ".rb", ".sh", ".cmake", ".in", ".yaml", ".yml", ".json", ".xml", ".html", ".lock",
+)
+# A file with one of these in its name is a collection of the licenses of bundled code: it is shipped
+# whatever license is elected.
+THIRD_PARTY_MARKS = ("THIRD-PARTY", "THIRDPARTY", "THIRD_PARTY")
 LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "UNLICENSE", "COPYRIGHT", *NOTICE_PREFIXES)
 SPDX_TOKEN = re.compile(r"\(|\)|[A-Za-z0-9][A-Za-z0-9.+\-]*")
 
@@ -50,6 +65,7 @@ class Policy:
     prefer: tuple
     clarify: dict  # package name -> {"license": SPDX expression, "reason": ...}
     exceptions: dict  # (package name, license) -> reason
+    bundled: dict = field(default_factory=dict)  # package name -> {"license", "files", "reason"}
 
     def rank(self, identifier):
         return self.prefer.index(identifier) if identifier in self.prefer else len(self.prefer)
@@ -62,7 +78,10 @@ def load_policy(path=POLICY):
         if not entry.get("reason", "").strip():
             raise LicenseError(f"the exception for {entry['package']} needs a reason")
         exceptions[(entry["package"], entry["license"])] = entry["reason"]
-    return Policy(frozenset(data["allowed"]), tuple(data["prefer"]), data["clarify"], exceptions)
+    for name, entry in data.get("bundled", {}).items():
+        if not entry.get("reason", "").strip():
+            raise LicenseError(f"the bundled entry for {name} needs a reason")
+    return Policy(frozenset(data["allowed"]), tuple(data["prefer"]), data["clarify"], exceptions, data.get("bundled", {}))
 
 
 # ---- SPDX expressions ------------------------------------------------------------------------
@@ -140,7 +159,7 @@ def usable_choices(expression, policy):
 
 
 def is_license_file(name):
-    return name.upper().startswith(LICENSE_PREFIXES) and not name.endswith((".rs", ".toml", ".py"))
+    return name.upper().startswith(LICENSE_PREFIXES) and not name.lower().endswith(SOURCE_SUFFIXES)
 
 
 def is_notice_file(name):
@@ -183,7 +202,10 @@ def elect(expression, files, policy):
 
     chosen = max(options, key=covered)  # max keeps the first (the most preferred) on a tie
     wanted = {base_identifier(i) for i in chosen}
-    kept = [name for name, text in files.items() if is_notice_file(name) or kinds[name] in wanted | {None}]
+    kept = [
+        name for name, text in files.items()
+        if is_notice_file(name) or kinds[name] in wanted | {None} or any(mark in name.upper() for mark in THIRD_PARTY_MARKS)
+    ]
     return chosen, sorted(kept)
 
 
@@ -247,4 +269,4 @@ def allowing(policy, expression):
     """The policy with every license of `expression` allowed: for a package that has an entry in
     `exceptions` and is reported as one."""
     ids = frozenset().union(*choices(parse(expression)))
-    return Policy(policy.allowed | ids, policy.prefer, policy.clarify, policy.exceptions)
+    return replace(policy, allowed=policy.allowed | ids)

@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import third_party_licenses
 from release_manifest import sha256_of
 
 CHECKSUMS = "SHA256SUMS"
@@ -54,6 +55,17 @@ def read_build_sha(path):
     if len(text) != 40 or any(c not in "0123456789abcdef" for c in text):
         raise MarkerError(f"{path} does not hold a full commit id")
     return text
+
+
+def exception_problems(policy=None):
+    """One line for each license exception still in `scripts/third_party/policy.json`. An exception
+    lets the gate pass what is already in the tree (ADR 0149); a release must not ship it."""
+    policy = policy or third_party_licenses.load_policy()
+    return [
+        f"{package} is under {license} and still has an exception in scripts/third_party/policy.json: "
+        "remove the dependency before a release"
+        for package, license in sorted(policy.exceptions)
+    ]
 
 
 def package_name(version, system, architecture, extension):
