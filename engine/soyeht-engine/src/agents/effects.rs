@@ -147,6 +147,8 @@ impl Core {
         let content = request.params["content"]
             .as_str()
             .ok_or_else(|| failure("Text content is required"))?;
+        // Before the editor sees the path: a file the editor tracks is written by another route.
+        filesystem::ensure_writable(root, path).map_err(|error| failure(error.to_string()))?;
         let recovering = request.public.get("started").is_some();
         let tracked = self
             .prepare_agent_write(pane, path, content, recovering)
