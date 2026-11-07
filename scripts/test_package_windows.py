@@ -349,6 +349,8 @@ class BuildTests(unittest.TestCase):
             staging = package.stage(plan, Path(folder) / "out")
             names = sorted(path.name for path in staging.iterdir())
             self.assertEqual(names, sorted([f"{name}.exe" for name in programs] + list(package.LICENSE_FILES)))
+            self.assertIn("THIRD-PARTY-NOTICES.txt", names)
+            self.assertEqual((staging / "THIRD-PARTY-NOTICES.txt").read_bytes(), (package.ROOT / "THIRD-PARTY-NOTICES.txt").read_bytes())
 
     def test_inno_is_found_by_argument_environment_or_the_usual_folders(self):
         with tempfile.TemporaryDirectory() as folder:
