@@ -5,7 +5,7 @@
 //! is the client state's (`State::trust_prompt`).
 
 use super::{prelude::*, sheet};
-use crate::theme::{Palette, desktop, pane_interior, space, type_scale};
+use crate::theme::{Palette, layout, pane_interior, space, type_scale};
 use gpui::MouseButton;
 use soyeht_client::Command;
 use soyeht_protocol::{
@@ -20,7 +20,7 @@ use soyeht_protocol::{
 pub(crate) fn sheet_extent(window: (f32, f32)) -> (f32, f32) {
     let room = |side: f32| (side - 2.0 * desktop::PREFERENCES_INSET).max(0.0);
     (
-        desktop::NEW_TASK_SHEET_WIDTH.min(room(window.0)),
+        layout::NEW_TASK_SHEET_WIDTH.min(room(window.0)),
         room(window.1),
     )
 }
@@ -133,7 +133,7 @@ mod tests {
     #[test]
     fn the_sheet_has_its_width_in_a_window_with_room() {
         let (width, height) = sheet_extent((1280.0, 800.0));
-        assert_eq!(width, desktop::NEW_TASK_SHEET_WIDTH);
+        assert_eq!(width, layout::NEW_TASK_SHEET_WIDTH);
         assert_eq!(height, 800.0 - 2.0 * desktop::PREFERENCES_INSET);
     }
 

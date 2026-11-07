@@ -14,6 +14,7 @@ pub mod project_trust;
 pub mod push;
 mod resting;
 pub mod segments;
+mod statement_cost;
 pub mod tasks;
 #[cfg(feature = "test-support")]
 pub mod test_support;
