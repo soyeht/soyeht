@@ -1,3 +1,4 @@
+use soyeht_protocol::ErrorKind;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,5 +54,35 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// The protocol kind the engine presents for a writing failure. The mapping lives beside the
+/// failures it names, so a new one cannot be added without deciding what a client sees.
+impl From<&Error> for ErrorKind {
+    fn from(error: &Error) -> Self {
+        match error {
+            Error::InvalidSectionPath => ErrorKind::WritingSectionRefused,
+            Error::VariantNotFound | Error::CannotRemoveOnlyVariant => {
+                ErrorKind::WritingLineNotFound
+            }
+            Error::BeatNotFound => ErrorKind::NotFound,
+            Error::SceneNotFound => ErrorKind::WritingSceneNotFound,
+            Error::DocumentTooLarge
+            | Error::SlideLimit
+            | Error::SceneLimit
+            | Error::ElementLimit
+            | Error::VariantLimit
+            | Error::VariantTooLarge
+            | Error::BeatLimit
+            | Error::LinkLimit
+            | Error::SectionLimit => ErrorKind::WritingLimitExceeded,
+            Error::InvalidPosition
+            | Error::InvalidRange
+            | Error::EmptySelection
+            | Error::MissingFormatValue
+            | Error::InvalidVariantSelection
+            | Error::InvalidBeat => ErrorKind::InvalidParams,
+        }
+    }
+}
 
 pub type Result<T> = std::result::Result<T, Error>;
