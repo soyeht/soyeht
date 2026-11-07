@@ -187,18 +187,34 @@ impl Core {
                 continue;
             }
             // A server that cannot start the way its folder's trust asks (no installed
-            // tsserver.js, no program on a trusted path) is left unavailable, with its process
-            // closed; it must not drop the link to the supervisor.
-            let server = language(&self.languages, &key)?;
-            if let Err(error) = server.options().and_then(|_| server.spawn()) {
-                if let Some(instance) = existing {
-                    self.close_process(&instance.instance_id);
+            // tsserver.js, no program outside the folder) is left unavailable, with its process
+            // closed; it must not drop the link to the supervisor. What it starts as is worked
+            // out once here and used for the adoption.
+            let launch = match self.language_launch(&key) {
+                Ok(launch) => launch,
+                Err(error) => {
+                    if let Some(instance) = existing {
+                        self.close_process(&instance.instance_id);
+                    }
+                    self.language_failed(&key, &error);
+                    continue;
                 }
-                self.language_failed(&key, &error);
-                continue;
-            }
+            };
             if let Some(instance) = existing {
-                language_mut(&mut self.languages, &key)?.adopt(instance)?;
+                if let Err(error) =
+                    language_mut(&mut self.languages, &key)?.adopt(instance, &launch.spawn)
+                {
+                    // Started under another identity (another search path, say): it is not
+                    // this engine's to keep, and the link to the supervisor stays.
+                    log::failure("engine.lsp_not_adopted", &error);
+                    self.close_process(&instance.instance_id);
+                    if let Err(error) =
+                        self.restart_language_server(&key, "Language server process was replaced")
+                    {
+                        self.leave_language_server_unavailable(&key, error)?;
+                    }
+                    continue;
+                }
                 self.persist_language_server(&key, Vec::new())?;
                 self.resume_language_writes(&key)?;
                 self.publish_language_completions(&key)?;
@@ -286,9 +302,8 @@ impl Core {
     /// Asks the supervisor for the server's process, off the lock (ADR 0126). The server is
     /// adopted when it has made it; a server restarted meanwhile starts under its new identity.
     pub(super) fn spawn_language_server(&mut self, key: &str) -> Result<()> {
-        // A server whose safe options cannot be made fails before it starts, not after.
-        language(&self.languages, key)?.options()?;
-        let spawn = language(&self.languages, key)?.spawn()?;
+        // A server that cannot start safely fails before it starts, not after.
+        let spawn = self.language_launch(key)?.spawn;
         let (owner, key, identity) = (
             format!("lsp:{key}:{}", spawn.instance_key),
             key.to_owned(),
@@ -351,13 +366,13 @@ impl Core {
     }
 
     fn adopt_language_process(&mut self, key: &str, instance: &Instance) -> Result<()> {
-        language_mut(&mut self.languages, key)?.adopt(instance)?;
+        let launch = self.language_launch(key)?;
+        language_mut(&mut self.languages, key)?.adopt(instance, &launch.spawn)?;
         self.persist_language_server(key, Vec::new())?;
         let root = root_uri(Path::new(&language(&self.languages, key)?.root))?;
-        let options = language(&self.languages, key)?.options()?;
         let initialize = language_mut(&mut self.languages, key)?
             .client
-            .initialize(&root, options.as_ref())
+            .initialize(&root, launch.options.as_ref())
             .map_err(errors::lsp)?;
         self.send_language_value(key, &initialize)
     }

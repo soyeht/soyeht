@@ -176,6 +176,14 @@ fn python_runs_in_its_safe_mode_in_a_restricted_folder_and_trust_lifts_it() {
     // Without trust the program is named by its absolute path, never by a name the folder could
     // answer through its own entries of the search path.
     assert!(Path::new(started["argv"][0].as_str().unwrap()).is_absolute());
+    // It also gets a search path of its own: what it starts by name (`env node`, `python3`) is
+    // never found in the folder it runs in.
+    let search_path = started["env"]["PATH"].as_str().unwrap();
+    let canonical = soyeht_platform::fs::canonicalize(&folder).unwrap();
+    for entry in std::env::split_paths(search_path) {
+        assert!(entry.is_absolute(), "{search_path}");
+        assert!(!entry.starts_with(&canonical), "{search_path}");
+    }
     let environment = started["env"].as_object().unwrap();
     assert!(
         environment.keys().all(|name| !name.starts_with("CARGO")

@@ -92,10 +92,18 @@ the supervisor, as the agent processes are. A server that cannot start the way i
 installed `tsserver.js`, no program on a trusted path) is left `unavailable` with the reason; it never drops the
 engine's link to the supervisor.
 
-**Programs and paths.** Without trust the engine starts a server by the absolute path it found in the absolute
-entries of its search path (a relative or empty entry is the project folder, so it never counts), with the
-canonical folder as the working directory; `typescript-language-server` takes its `tsserver.js` only from a
-`typescript` package that has a readable `package.json` with a version, and a partial install is refused.
+**Programs and paths.** The server's working directory is the project folder, and a program it starts by
+name (`env node` in the launcher of `typescript-language-server`, `python3` for pyright) is found on the search
+path it inherits, where an empty or relative entry is the folder itself. So without trust the engine gives the
+process a search path of its own (`PATH` in the spawn's environment, part of its identity): the engine's absolute
+entries only, each as the system resolves it, none inside the canonical folder. It starts the server by the
+absolute path it found on that path, with the canonical folder as the working directory, and refuses a program
+that resolves inside the folder (an absolute `node_modules/.bin` entry that a shell hook adds, a link into the
+folder). `typescript-language-server` takes its `tsserver.js` only from a `typescript` package that resolves
+outside the folder and has a readable `package.json` with a version; a partial install is refused. What a start
+or an adoption is made of is worked out once (`Server::launch`), from the folders of the search path (a stat of
+each, not a walk). A process the supervisor holds that was started under another identity, a different search
+path for one, is closed and started again; it never drops the link to the supervisor.
 
 **What this does not cover.** A folder that was trusted and then changed (a pull, a checkout) is still
 trusted; the state is a decision about a place, as in other editors. Programs the person starts in a

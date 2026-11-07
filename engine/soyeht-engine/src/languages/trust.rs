@@ -10,8 +10,15 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::LspState;
-use soyeht_ptyd::wire::Instance;
+use soyeht_ptyd::wire::{Instance, ProcessKind, Spawn};
 use soyeht_store::editor::EditorFile;
+use std::{collections::BTreeMap, ffi::OsStr, path::Path};
+
+/// How a server starts: its process, and the options it is initialized with.
+pub struct Launch {
+    pub spawn: Spawn,
+    pub options: Option<Value>,
+}
 
 impl Server {
     /// The server as it starts for the trust of its folder.
@@ -31,18 +38,63 @@ impl Server {
         soyeht_lsp::refusal(&self.language, self.trusted)
     }
 
-    /// The `initializationOptions` of the server's `initialize`, for the folder's trust.
-    pub fn options(&self) -> Result<Option<Value>> {
-        soyeht_lsp::initialization_options(
-            &self.language,
-            self.trusted,
-            std::env::var_os("PATH").as_deref(),
-        )
-        .map_err(|_| {
-            errors::harness_unavailable(
-                "TypeScript for a restricted folder was not found next to typescript-language-server. Trust the folder to use the one in it.",
+    /// How the server starts for the trust of its folder, from the engine's `search_path`: the
+    /// process and the `initializationOptions` of its `initialize`. Looked at once for a start or
+    /// an adoption, since it reads the search path's folders. Without trust the program is named
+    /// by its absolute path, the process gets a search path of its own (absolute entries outside
+    /// the folder), and a program or a TypeScript of the folder is refused.
+    pub fn launch(&self, search_path: Option<&OsStr>) -> Result<Launch> {
+        let config = soyeht_lsp::config(&self.language)
+            .ok_or_else(|| errors::invalid("File language has no language server"))?;
+        let (command, env, options) = if self.trusted {
+            (config.command.to_owned(), BTreeMap::new(), None)
+        } else {
+            if let Some(reason) = self.refusal() {
+                return Err(errors::harness_unavailable(reason));
+            }
+            let search_path = search_path.ok_or_else(|| {
+                errors::harness_unavailable("The engine has no search path for language servers")
+            })?;
+            let restricted =
+                soyeht_lsp::restricted_launch(&self.language, search_path, Path::new(&self.root))
+                    .map_err(|error| match error {
+                        soyeht_lsp::LaunchError::NoProgram => errors::harness_unavailable(
+                            "The language server was not found outside the project folder. Trust the folder to use the one in it.",
+                        ),
+                        soyeht_lsp::LaunchError::NoTrustedTypescript => errors::harness_unavailable(
+                            "TypeScript for a restricted folder was not found next to typescript-language-server. Trust the folder to use the one in it.",
+                        ),
+                    })?;
+            (
+                restricted.program.to_string_lossy().into_owned(),
+                BTreeMap::from([(
+                    "PATH".to_owned(),
+                    restricted.path.to_string_lossy().into_owned(),
+                )]),
+                restricted.options,
             )
+        };
+        let mut argv = vec![command];
+        argv.extend(config.args.iter().map(|value| (*value).into()));
+        Ok(Launch {
+            spawn: Spawn {
+                instance_key: self.instance_key.clone(),
+                generation: self.generation,
+                kind: ProcessKind::PipesLsp,
+                cwd: self.root.clone(),
+                argv,
+                env,
+                cols: 80,
+                rows: 24,
+            },
+            options,
         })
+    }
+
+    /// The process of a trusted server (it needs no search path).
+    #[cfg(test)]
+    pub fn spawn(&self) -> Result<Spawn> {
+        self.launch(None).map(|launch| launch.spawn)
     }
 
     /// Follows the trust of the folder: the next process starts the way the trust asks, or the
@@ -59,6 +111,11 @@ impl Server {
 }
 
 impl Core {
+    /// How the server `key` starts, from the engine's search path.
+    pub(super) fn language_launch(&self, key: &str) -> Result<Launch> {
+        language(&self.languages, key)?.launch(self.language_search_path.as_deref())
+    }
+
     /// Makes the server `key` start the way the trust of its folder asks (ADR 0150): a server
     /// started for another trust, or by an engine that did not record one, is closed and restarts.
     /// `existing` is the process of it that the supervisor still holds, if the engine has not
@@ -175,7 +232,7 @@ mod tests {
         assert_eq!(server.state, LspState::Restarting);
         assert!(server.refusal().is_none());
         assert!(server.status().safe_mode.is_none());
-        assert_eq!(server.options().unwrap(), None);
+        assert_eq!(server.launch(None).unwrap().options, None);
 
         // Restricting it again closes it, and a restart keeps it restricted.
         server.set_trusted(false).unwrap();
@@ -203,8 +260,16 @@ mod tests {
             ["pyright-langserver", "--stdio"]
         );
         assert!(trusted.spawn().unwrap().env.is_empty());
-        if let Ok(spawn) = python.spawn() {
-            assert!(std::path::Path::new(&spawn.argv[0]).is_absolute());
+        // Without trust it is started by an absolute path, from a search path of its own.
+        assert!(python.launch(None).is_err());
+        if !cfg!(windows) {
+            let tools = std::env::temp_dir().join(format!("sn-trust-tools-{}", std::process::id()));
+            std::fs::create_dir_all(&tools).unwrap();
+            std::fs::write(tools.join("pyright-langserver"), "").unwrap();
+            let launch = python.launch(Some(tools.as_os_str())).unwrap();
+            assert!(std::path::Path::new(&launch.spawn.argv[0]).is_absolute());
+            assert!(launch.spawn.env.contains_key("PATH"));
+            let _ = std::fs::remove_dir_all(tools);
         }
     }
 }
