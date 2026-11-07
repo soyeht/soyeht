@@ -3,6 +3,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_platform::fs::{set_private_dir, set_private_file, sync_directory};
+use soyeht_protocol::ErrorKind;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
@@ -202,6 +203,63 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
+
+/// The protocol kind the engine presents for a storage failure. The mapping lives beside the
+/// failures it names, so a new one cannot be added without deciding what a client sees.
+impl From<&Error> for ErrorKind {
+    fn from(error: &Error) -> Self {
+        match error {
+            Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
+            Error::CursorTooOld => ErrorKind::CursorTooOld,
+            Error::DiskFull => ErrorKind::DiskFull,
+            Error::TaskVersionConflict => ErrorKind::StaleVersion,
+            Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
+            Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
+            Error::SubitemNotFound => ErrorKind::NotFound,
+            Error::FileVersionNotFound => ErrorKind::NotFound,
+            Error::FileReplacementBusy => ErrorKind::StaleVersion,
+            Error::InvalidEngineGeneration
+            | Error::InvalidIdempotencyKey
+            | Error::EventParametersNotObject
+            | Error::CursorAhead
+            | Error::NegativeEventId
+            | Error::NegativeEventCursor
+            | Error::PairingRequestLimit
+            | Error::ApprovedPairTokenMissing
+            | Error::InvalidQueuedPrompt
+            | Error::PromptQueueFull
+            | Error::AttentionItemTooLarge
+            | Error::AttentionPaneMismatch
+            | Error::AgentRuntimeTooLarge
+            | Error::StaleAgentGeneration
+            | Error::NewOutboxHasProgress
+            | Error::IncompleteOutboxRecord
+            | Error::InvalidOutboxEnvelope
+            | Error::AgentOutboxFull
+            | Error::InvalidPartialWriteReceipt
+            | Error::NativeWriteAttemptsExhausted
+            | Error::NativeMessageIncomplete
+            | Error::InvalidNativeRequestIdentity
+            | Error::PublicRequestTooLarge
+            | Error::PendingRequestsTooLarge
+            | Error::NativeRequestNotFound
+            | Error::NativeEffectNotFound
+            | Error::NativeEffectNotPending
+            | Error::NativeEffectAlreadyStarted
+            | Error::InvalidTranscriptSequence
+            | Error::TranscriptMessageTooLarge
+            | Error::TranscriptMutation
+            | Error::StaleTranscriptReplay
+            | Error::InvalidTranscriptPageLimit
+            | Error::TranscriptPageTooLarge
+            | Error::InvalidEditorFile
+            | Error::InvalidFileHistoryLimit
+            | Error::InvalidFileReplacement => ErrorKind::InvalidParams,
+            _ => ErrorKind::InternalError,
+        }
+    }
+}
+
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
         if matches!(

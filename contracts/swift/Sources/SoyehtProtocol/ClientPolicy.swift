@@ -22,6 +22,9 @@ public enum ClientPolicy {
     public static let copiedFeedbackSeconds: Double = 1.5
     public static let serviceCommandMs = 60000
     public static let serviceCommandSeconds: Double = 60.0
+    public static let webReadSettlePollMs = 80
+    public static let webReadSettlePollSeconds: Double = 0.08
+    public static let webReadDeadlineShare: Double = 0.8
     public static let terminalInputChunkBytes = 16384
     public static let terminalInputQueueBytes = 1048576
     public static let terminalScrollbackLines = 10000
