@@ -121,6 +121,11 @@ device token. The engine stores one registration per device; renewal =
 register again, and a token moves to the newest device that registers it.
 Revocation deletes the registration in the same transaction.
 
+The engine lists `push` among the `capabilities` of `welcome` (the `EngineCapability` names)
+only while it can send alerts, that is, while its APNs credentials loaded. A device that would ask
+its person for notification permission, or register a token, does so only when `push` is offered.
+Push is not part of Soyeht 0.1.0: the release engine has no credentials, so it never offers it.
+
 Implemented triggers: `pane.permission_requested` and
 `pane.elicitation_requested` on agent panes, sent to every registered device.
 The alert payload carries the same title and body for every question (`pushNeedsYouTitle` and

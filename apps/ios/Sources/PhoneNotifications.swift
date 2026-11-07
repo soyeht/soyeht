@@ -84,8 +84,10 @@ final class PhonePush {
   }
 
   /// Called each time the paired Mac connects. The first time, after pairing, it asks for
-  /// permission to notify; then it (re)registers the device token with the Mac.
+  /// permission to notify; then it (re)registers the device token with the Mac. A Mac that does
+  /// not offer push (it has no APNs credentials) gets no request: no alert could reach the phone.
   func connected(_ client: EngineClient) async {
+    guard client.engineOffers(.push) else { return }
     let center = UNUserNotificationCenter.current()
     var status = await center.notificationSettings().authorizationStatus
     if status == .notDetermined {

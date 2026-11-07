@@ -5681,6 +5681,18 @@ public enum ClientCapability: String, Codable, Sendable, CaseIterable {
     case `web_host` = "web_host"
 }
 
+public enum EngineCapability: String, Codable, Sendable, CaseIterable {
+    case `terminal` = "terminal"
+    case `workspaces` = "workspaces"
+    case `snapshot_parts` = "snapshot-parts"
+    case `event_replay` = "event-replay"
+    case `terminal_replay` = "terminal-replay"
+    case `device_pairing` = "device-pairing"
+    case `workspace_tasks` = "workspace-tasks"
+    case `subscription_usage` = "subscription-usage"
+    case `push` = "push"
+}
+
 public enum WebInteractionMode: String, Codable, Sendable, CaseIterable {
     case `structured` = "structured"
     case `human` = "human"

@@ -1,13 +1,28 @@
 # Push notifications
 
+**Push notifications are not part of Soyeht 0.1.0.** The engine sends straight to APNs with a key
+from the person's own data folder, and only the owner of the key can push to an app whose bundle id
+the key's team signs. The store app, `com.soyeht.next.ios`, is signed by the maintainers, so no
+person who installs it can make this work. Push comes back with a relay that holds the
+maintainers' key. Until then:
+
+- The engine offers the `push` capability in `welcome` (contract 08 §2.3) only while its APNs
+  credentials loaded (`engine.push_enabled`). The release engine has none, so it does not offer it.
+- The iPhone and iPad app asks for notification permission, and registers a token, only when the
+  engine offers `push`. With the release engine it asks for nothing. The Android app never asks.
+- The code and the tests below stay as they are. Someone who builds the app with their own team
+  and gives the engine their own key, as described here, gets push on that build.
+
+The rest of this page describes that developer setup.
+
 When an agent pane (Claude Code, Codex or any ACP harness) stops to ask for
 permission or asks a question, the engine on the Mac sends an alert straight
 to APNs for every paired iPhone or iPad. The alert is generic, a tap opens the app on that pane, and the
 person reads what is asked and answers there, through the same `pane.permission.answer` request as
 the Mac, with the same rules. The protocol is in contract 08 §2.3.
 
-The app asks for notification permission the first time it connects to the
-Mac after pairing, never at launch. Each later connection registers the
+The app asks for notification permission the first time it connects to a
+Mac that offers `push` after pairing, never at launch. Each later connection registers the
 device's current APNs token with `push.register`.
 
 ## Where the key and config go

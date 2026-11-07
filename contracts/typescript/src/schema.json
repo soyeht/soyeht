@@ -10320,6 +10320,21 @@
         "web_host"
       ]
     },
+    "EngineCapability": {
+      "type": "string",
+      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered.",
+      "enum": [
+        "terminal",
+        "workspaces",
+        "snapshot-parts",
+        "event-replay",
+        "terminal-replay",
+        "device-pairing",
+        "workspace-tasks",
+        "subscription-usage",
+        "push"
+      ]
+    },
     "WebInteractionMode": {
       "type": "string",
       "enum": [

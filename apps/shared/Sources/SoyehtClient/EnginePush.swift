@@ -19,6 +19,12 @@ extension EngineClient {
     }
   }
 
+  /// Whether the engine of the last `welcome` offers `capability`. A phone asks for notification permission
+  /// only when the engine offers `push`: without it no alert can reach the phone.
+  public func engineOffers(_ capability: EngineCapability) -> Bool {
+    engineCapabilities.contains(capability.rawValue)
+  }
+
   /// Registers this device's APNs token; registering again replaces it.
   public func registerPush(token: String, environment: PushEnvironment) async throws {
     _ = try await mutation(

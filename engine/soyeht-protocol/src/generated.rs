@@ -5130,6 +5130,27 @@ pub enum ClientCapability {
     WebHost,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EngineCapability {
+    #[serde(rename = "terminal")]
+    Terminal,
+    #[serde(rename = "workspaces")]
+    Workspaces,
+    #[serde(rename = "snapshot-parts")]
+    SnapshotParts,
+    #[serde(rename = "event-replay")]
+    EventReplay,
+    #[serde(rename = "terminal-replay")]
+    TerminalReplay,
+    #[serde(rename = "device-pairing")]
+    DevicePairing,
+    #[serde(rename = "workspace-tasks")]
+    WorkspaceTasks,
+    #[serde(rename = "subscription-usage")]
+    SubscriptionUsage,
+    #[serde(rename = "push")]
+    Push,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WebInteractionMode {
     #[serde(rename = "structured")]
     Structured,
