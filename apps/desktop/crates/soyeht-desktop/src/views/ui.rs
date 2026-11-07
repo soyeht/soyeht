@@ -682,7 +682,7 @@ mod tests {
     fn a_scroller_in_a_pane_goes_through_pane_scroll() {
         // `permission.rs` scrolls both ways and keeps every turn with `keep_every_wheel`.
         // `tiles.rs` is the stage itself and `top_bar.rs` the workspace tabs.
-        const OUTSIDE_PANES: [&str; 9] = [
+        const OUTSIDE_PANES: [&str; 10] = [
             "views/ui.rs",
             "views/permission.rs",
             "views/tiles.rs",
@@ -692,6 +692,7 @@ mod tests {
             "views/rail.rs",
             "views/menus.rs",
             "views/switch_popover.rs",
+            "views/trust_prompt.rs",
         ];
         fn sources(directory: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
             for entry in std::fs::read_dir(directory).unwrap() {
