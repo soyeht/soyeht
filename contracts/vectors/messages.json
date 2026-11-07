@@ -13884,5 +13884,8 @@
       "preview": true,
       "idempotencyKey": "x"
     }
-  }
+  },
+  {"name": "request:project.trust.set", "type": "RequestEnvelope", "value": {"jsonrpc": "2.0", "id": "request-1", "method": "project.trust.set", "params": {"workspaceId": "00000000-0000-4000-8000-000000000002", "trust": "trusted", "idempotencyKey": "00000000-0000-4000-8000-000000000001"}}},
+  {"name": "response:project.trust.set", "type": "SuccessEnvelope", "value": {"jsonrpc": "2.0", "id": "request-1", "result": {"workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "trusted"}}},
+  {"name": "event:project.trust_changed", "type": "NotificationEnvelope", "value": {"jsonrpc": "2.0", "method": "project.trust_changed", "params": {"eventId": "1", "at": "2026-09-11T00:00:00Z", "workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "restricted"}}}
 ]
