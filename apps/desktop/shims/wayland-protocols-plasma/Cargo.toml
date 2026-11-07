@@ -20,3 +20,7 @@ wayland-scanner = "0.31"
 
 [lints]
 workspace = true
+
+# The code that `wayland-scanner` writes names `wayland_backend` itself, which cargo-machete cannot see.
+[package.metadata.cargo-machete]
+ignored = ["wayland-backend"]
