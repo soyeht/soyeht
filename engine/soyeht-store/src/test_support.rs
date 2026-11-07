@@ -4,10 +4,7 @@
 //! crate while letting process-level tests inspect durable boundaries.
 
 use crate::database::{Error, Result};
-use rusqlite::{
-    Connection, OptionalExtension, params,
-    trace::{TraceEvent, TraceEventCodes},
-};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::{cell::Cell, path::Path, time::Duration};
 
@@ -15,17 +12,10 @@ thread_local! {
     static STATEMENTS: Cell<u64> = const { Cell::new(0) };
 }
 
-/// Counts every statement the engine's connection starts, per thread, so a
-/// test can assert that a code path runs no SQL.
-pub(crate) fn count_statements(connection: &Connection) {
-    connection.trace_v2(
-        TraceEventCodes::SQLITE_TRACE_STMT,
-        Some(|event| {
-            if matches!(event, TraceEvent::Stmt(..)) {
-                STATEMENTS.with(|count| count.set(count.get() + 1));
-            }
-        }),
-    );
+/// Counts a statement the engine's connection starts, per thread, so a test can assert that a
+/// code path runs no SQL.
+pub(crate) fn statement_started() {
+    STATEMENTS.with(|count| count.set(count.get() + 1));
 }
 
 /// Statements started by stores opened on this thread, since the thread began.
