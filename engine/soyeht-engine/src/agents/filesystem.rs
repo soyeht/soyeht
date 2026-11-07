@@ -82,6 +82,15 @@ pub fn is_repository_control(root: &Path, path: &Path) -> bool {
     })
 }
 
+/// What a write into a repository's control folder is told. Kept apart so that the effect answers
+/// the agent with the same code whichever of the two checks refused.
+const CONTROL_REFUSAL: &str = "A repository's .git folder is not written by an agent";
+
+/// Whether `error` is the refusal of a write into a repository's control folder.
+pub fn is_control_refusal(error: &Error) -> bool {
+    matches!(error, Error::InvalidParams(message) if message == CONTROL_REFUSAL)
+}
+
 pub fn read(root: &Path, path: &Path) -> Result<String> {
     let (directory, leaf) = parent(root, path)?;
     let file = system::open_file(&directory, &leaf)?;
@@ -117,6 +126,10 @@ pub fn write(root: &Path, path: &Path, content: &str) -> Result<()> {
 }
 
 pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) -> Result<()> {
+    // The effect refuses these first; this is the check that holds for any other caller.
+    if is_repository_control(root, path) {
+        return Err(invalid(CONTROL_REFUSAL));
+    }
     let operation =
         Uuid::parse_str(operation).map_err(|_| invalid("invalid write operation identity"))?;
     if content.len() > limits::ACP_MESSAGE_BYTES {
@@ -232,6 +245,29 @@ mod tests {
             assert!(permits_edit(&root, &root.join(name)), "{name}");
         }
         write(&root, &root.join(".gitignore"), "target\n").unwrap();
+    }
+
+    #[test]
+    fn the_write_itself_refuses_a_repository_control_folder() {
+        let (_fixture, root, _) = fixture();
+        fs::create_dir_all(root.join(".git/hooks")).unwrap();
+        for path in [
+            root.join(".git/hooks/pre-commit"),
+            root.join("sub/.GIT/config"),
+            root.join(".git::$INDEX_ALLOCATION/config"),
+        ] {
+            let refused = write(&root, &path, "#!/bin/sh\n").unwrap_err();
+            assert!(
+                is_control_refusal(&refused),
+                "{}: {refused}",
+                path.display()
+            );
+            assert!(!path.exists(), "{}", path.display());
+        }
+        assert!(!is_control_refusal(&invalid(
+            "path is outside the worktree"
+        )));
+        assert_no_temporary_left(&root);
     }
 
     #[test]

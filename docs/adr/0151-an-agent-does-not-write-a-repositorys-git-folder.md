@@ -21,8 +21,11 @@ project files could reach code that runs outside every permission it was given.
   `filesystem::is_repository_control`; the effect that carries out `fs/write_text_file` is where
   it applies, before the editor sees the path, and `permits_edit` (the automatic approval of
   `accept_edits`) says no for the same paths.
-- **A refusal has its own code** (`-32002` in the answer to the adapter, not the generic failure)
-  and the log gets one line, `engine.agent_write_refused` with `reason=git_folder`, so an agent
+- **A refusal is not the generic failure.** The answer to the adapter carries the generated code of
+  `invalid_params` (`error_code(&ErrorKind::InvalidParams)`), because the path is not one an agent may
+  give. It is not `-32002`, the code of `unauthorized`, which an adapter reads as "session not found".
+  `filesystem::write_with_key` refuses the same paths too, for any caller, and the effect gives that
+  refusal the same code. The log gets one line, `engine.agent_write_refused` with `reason=git_folder`, so an agent
   that probes for the folder is visible. Reads are unchanged.
 
 ## What this does not cover
