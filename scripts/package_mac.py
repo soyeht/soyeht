@@ -47,11 +47,13 @@ import release_identity
 from generated_profile import PROFILES
 from legacy_guard import names_legacy, require_next
 from package_common import (
+    LICENSE_DOCUMENTS,
     PROFILE_NAME,
     ROOT,
     PackagingError,
     artifact_path,
     check_sizes,
+    license_document,
     readable_by_others,
     release_environment,
     run,
@@ -74,6 +76,7 @@ WORK = ROOT / ".cache/package-mac"
 PACKAGES = ROOT / ".cache/apple-packages"
 DIST = ROOT / "dist"
 HELPERS_FOLDER = "Contents/MacOS"
+RESOURCES_FOLDER = "Contents/Resources"
 SYMBOLS_BUNDLE = "app.dSYM"  # the scratch name of the symbols before they are zipped
 
 IDENTITY_VARIABLE = "SOYEHT_MAC_SIGNING_IDENTITY"
@@ -276,7 +279,7 @@ def nested_code(app):
 
 def assemble(app, programs, destination):
     """A copy of the built app with the programs in `Contents/MacOS`, where the app finds them
-    with `Bundle.url(forAuxiliaryExecutable:)`."""
+    with `Bundle.url(forAuxiliaryExecutable:)`, and the license documents in `Contents/Resources`."""
     if destination.exists():
         shutil.rmtree(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -286,6 +289,10 @@ def assemble(app, programs, destination):
             raise PackagingError(f"{source} is missing: build the engine first")
         shutil.copy2(source, destination / HELPERS_FOLDER / name)
         (destination / HELPERS_FOLDER / name).chmod(0o755)
+    resources = destination / RESOURCES_FOLDER
+    resources.mkdir(parents=True, exist_ok=True)
+    for name in LICENSE_DOCUMENTS:
+        (resources / name).write_bytes(license_document(name))
     return destination
 
 

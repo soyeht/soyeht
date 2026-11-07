@@ -294,6 +294,8 @@ step always both package-mac:unit uv run python -m unittest discover -s scripts 
 step always both release-identity:unit uv run python -m unittest discover -s scripts -p 'test_release_identity.py'
 step always both package-windows:unit uv run python -m unittest discover -s scripts -p 'test_package_windows.py'
 step always both release:check uv run python scripts/release.py check
+step always both third-party-notices:unit uv run python -m unittest discover -s scripts -p 'test_third_party_notices.py'
+step always both third-party-notices:check uv run python scripts/third_party_notices.py check --fetch
 step always both agent-precheck:unit uv run python -m unittest discover -s scripts -p 'test_agent_precheck.py'
 
 step engine both engine:fmt in_dir engine cargo fmt --all --check

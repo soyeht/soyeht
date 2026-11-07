@@ -1,5 +1,6 @@
 import json
 import plistlib
+import shutil
 import sys
 import tempfile
 import unittest
@@ -361,6 +362,18 @@ class SigningCallTests(unittest.TestCase):
         self.assertNotIn("--deep", [part for command in calls for part in command])
         entitled = [Path(c[-1]).name for c in calls if "--entitlements" in c]
         self.assertEqual(entitled, ["Soyeht Next.app"], "no program carries an entitlement")
+
+    def test_the_license_documents_are_in_the_resources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = fake_app(root)
+            programs = {name: root / name for name in ("soyeht-engine",)}
+            programs["soyeht-engine"].write_bytes(MACHO)
+            with patch.object(package_mac, "run", side_effect=lambda command, **_: shutil.copytree(command[1], command[2])):
+                staged = package_mac.assemble(app, programs, root / "out/Soyeht Next.app")
+            for name in package_common.LICENSE_DOCUMENTS:
+                self.assertEqual((staged / "Contents/Resources" / name).read_bytes(), (package_common.ROOT / name).read_bytes())
+            self.assertIn(b"Rust crates", (staged / "Contents/Resources/THIRD-PARTY-NOTICES.txt").read_bytes())
 
     def test_a_program_that_is_missing_stops_the_assembly(self):
         with tempfile.TemporaryDirectory() as temporary:
