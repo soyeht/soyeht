@@ -10,7 +10,7 @@ use crate::{
     errors::{self, Result},
 };
 use soyeht_acp::config::{FULL_ACCESS_KIND, mode_kind_rank};
-use soyeht_protocol::{Actor, Role};
+use soyeht_protocol::{Actor, Role, TaskExecutor};
 
 impl Core {
     /// The rank of the mode the agent bound to `actor` is in; a mode that cannot be ranked, or
@@ -81,6 +81,32 @@ impl Core {
             }
         }
         Ok(())
+    }
+
+    /// Fixes the mode of an executor an agent is about to start, then checks it against the
+    /// agent's own. A preset that names no mode, with no harness default either, would start in
+    /// a mode that cannot be ranked before the session announces its modes: it takes the
+    /// agent's own current mode when the executor runs on the agent's harness, and is refused
+    /// otherwise. A person's preset is left as it is.
+    pub(crate) fn cap_preset_mode(&self, actor: &Actor, preset: &mut TaskExecutor) -> Result<()> {
+        if matches!(actor.role, Role::HumanLocal | Role::HumanDevice) {
+            return Ok(());
+        }
+        if self.new_pane_mode(preset)?.is_none() {
+            let agent = actor
+                .pane_id
+                .as_deref()
+                .and_then(|pane| self.agents.get(pane))
+                .map(|agent| &agent.state)
+                .filter(|state| preset.harness.as_deref() == Some(state.launch.id.as_str()));
+            let Some(mode) = agent.and_then(|state| state.options.current_mode()) else {
+                return Err(errors::forbidden_role(
+                    "Name a permission mode for the executor; its harness default cannot be checked before it starts",
+                ));
+            };
+            preset.permission_mode = Some(mode.to_owned());
+        }
+        self.require_modes_within_dispatcher(actor, [self.new_pane_mode(preset)?.as_deref()])
     }
 }
 

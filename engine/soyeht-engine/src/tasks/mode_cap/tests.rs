@@ -58,8 +58,12 @@ impl Rig {
         }
         std::fs::write(
             directory.join("harnesses.json"),
-            json!([{"id":"stub","name":"Stub","command":"/bin/ls","args":[],"version":"1"}])
-                .to_string(),
+            json!([
+                {"id":"stub","name":"Stub","command":"/bin/ls","args":[],"version":"1"},
+                // The harness of the pane `chief`.
+                {"id":"test","name":"Test","command":"/bin/ls","args":[],"version":"1"}
+            ])
+            .to_string(),
         )
         .unwrap();
         Self {
@@ -87,7 +91,23 @@ impl Rig {
     }
 
     fn dispatch(&mut self, connection: &str, mode: Option<&str>, key: &str) -> Option<ErrorKind> {
-        let mut preset = json!({"workspaceDefault":false,"harness":"stub"});
+        self.dispatch_to("stub", connection, mode, key)
+    }
+
+    /// The mode requested for the one executor pane the core holds besides the chief.
+    fn executor_mode(&self) -> Option<String> {
+        let (_, agent) = self.core.agents.iter().find(|(pane, _)| *pane != "chief")?;
+        agent.state.mode.clone()
+    }
+
+    fn dispatch_to(
+        &mut self,
+        harness: &str,
+        connection: &str,
+        mode: Option<&str>,
+        key: &str,
+    ) -> Option<ErrorKind> {
+        let mut preset = json!({"workspaceDefault":false,"harness":harness});
         if let Some(mode) = mode {
             preset["permissionMode"] = json!(mode);
         }
@@ -234,4 +254,37 @@ async fn the_default_mode_of_the_harness_counts_when_the_dispatch_names_none() {
     );
     let person = rig.connect(Role::HumanLocal, None);
     assert_eq!(rig.dispatch(&person, None, "default-person"), None);
+}
+
+#[tokio::test]
+async fn an_unnamed_mode_is_the_dispatchers_own_on_its_harness_and_refused_on_another() {
+    let mut rig = Rig::new("ask");
+    let chief = rig.connect(Role::Chief, Some("chief"));
+    // The executor's harness cannot announce its modes before it starts.
+    assert_eq!(
+        rig.dispatch_to("stub", &chief, None, "other-harness"),
+        Some(ErrorKind::ForbiddenRole)
+    );
+    assert_eq!(rig.executor_mode(), None, "nothing was reserved");
+    assert_eq!(rig.dispatch_to("test", &chief, None, "same-harness"), None);
+    assert_eq!(rig.executor_mode().as_deref(), Some("ask"));
+}
+
+#[tokio::test]
+async fn a_persons_unnamed_mode_is_left_to_the_harness() {
+    let mut rig = Rig::new("read-only");
+    let person = rig.connect(Role::HumanLocal, None);
+    assert_eq!(rig.dispatch_to("stub", &person, None, "person"), None);
+    assert_eq!(rig.executor_mode(), None);
+}
+
+#[tokio::test]
+async fn a_chief_in_full_access_cannot_pass_it_on_by_leaving_the_mode_out() {
+    let mut rig = Rig::new("everything");
+    let chief = rig.connect(Role::Chief, Some("chief"));
+    assert_eq!(
+        rig.dispatch_to("test", &chief, None, "pinned-full"),
+        Some(ErrorKind::ForbiddenRole)
+    );
+    assert_eq!(rig.executor_mode(), None);
 }

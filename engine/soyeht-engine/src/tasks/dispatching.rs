@@ -80,8 +80,11 @@ impl Core {
         )?;
         let current = super::api::task(&self.store, &params.workspace_id, &params.task_id)?;
         ensure_dependencies_closed(self, &current)?;
-        let preset = self.resolve_new_preset(&params.preset)?;
-        self.require_modes_within_dispatcher(&actor, [self.new_pane_mode(&preset)?.as_deref()])?;
+        let mut preset = self.resolve_new_preset(&params.preset)?;
+        self.cap_preset_mode(&actor, &mut preset)?;
+        // The mode the executor takes from its dispatcher is full access only if the
+        // dispatcher is in full access, which is a person's decision to give, not an agent's.
+        self.require_person_for_full_access(&actor.role, [preset.permission_mode.as_deref()])?;
         let pane_id = Uuid::new_v4().to_string();
         let actor_name = self.actor_name(&actor)?;
         let result =
@@ -462,7 +465,7 @@ fn selected_option(state: &State, name: &str) -> Option<String> {
 
 impl Core {
     /// The permission mode a new task pane requests: the preset's, else the harness's default.
-    fn new_pane_mode(&self, preset: &TaskExecutor) -> Result<Option<String>> {
+    pub(super) fn new_pane_mode(&self, preset: &TaskExecutor) -> Result<Option<String>> {
         match &preset.permission_mode {
             Some(mode) => Ok(Some(mode.clone())),
             None => crate::settings::default_agent_mode(&self.store, required_harness(preset)?),
