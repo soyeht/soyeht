@@ -30,8 +30,8 @@ impl Workbench {
     /// whole window.
     pub(super) fn trust_prompt_sheet(
         &self,
-        palette: &'static Palette,
         cx: &mut Context<Self>,
+        palette: &'static Palette,
     ) -> Option<AnyElement> {
         let workspace = self.state.trust_prompt()?;
         let (width, height) = sheet_extent((self.window.width, self.window.height));
@@ -39,8 +39,7 @@ impl Workbench {
             palette,
             PROJECT_TRUST_TITLE,
             workspace.path.clone(),
-            row()
-                .id("trust-prompt-close")
+            close_button("trust-prompt-close", palette)
                 .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.defer_trust_prompt(cx))),
         );
         let buttons = row()

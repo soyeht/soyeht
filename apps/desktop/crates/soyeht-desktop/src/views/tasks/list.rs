@@ -65,9 +65,7 @@ impl Workbench {
                             .pr(px(space::X12))
                             .pt(px(space::X8))
                             .pb(px(space::X3))
-                            .chrome()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(type_scale::SMALL))
+                            .chrome_bold(type_scale::SMALL)
                             .text_color(rgb(palette.muted))
                             .child(disclosure_chevron(true, palette.muted))
                             .child(SharedString::from(
@@ -83,9 +81,7 @@ impl Workbench {
             .gap(px(space::X12))
             .px(px(space::X12))
             .pb(px(space::X6))
-            .chrome()
-            .font_weight(FontWeight::BOLD)
-            .text_size(px(type_scale::MICRO))
+            .chrome_bold(type_scale::MICRO)
             .text_color(rgb(palette.muted))
             .children(COLUMNS.map(|(name, width)| cell(width).child(name)));
         column()

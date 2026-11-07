@@ -26,8 +26,11 @@ impl Core {
         let key = Service::key(&file.workspace_id, &file.language)?;
         let trusted = project_trusted(&self.store, &workspace.path)?;
         if self.languages.get(&key).is_none() {
-            let server = Server::new(&file.workspace_id, &workspace.path, file.language.clone())?
-                .with_trust(trusted);
+            // The canonical folder is the working directory: a link that is swapped afterwards
+            // does not move the server to another folder.
+            let root = crate::project_trust::root_of(&workspace.path);
+            let server =
+                Server::new(&file.workspace_id, &root, file.language.clone())?.with_trust(trusted);
             self.languages.insert(server)?;
             self.persist_language_server(&key, Vec::new())?;
         } else {
@@ -169,8 +172,9 @@ impl Core {
                 // A new trust: the old process is closed, and a server an editor needs starts again.
                 if self.language_server_requires_process(&key)?
                     && language(&self.languages, &key)?.refusal().is_none()
+                    && let Err(error) = self.spawn_language_server(&key)
                 {
-                    self.spawn_language_server(&key)?;
+                    self.language_failed(&key, &error);
                 }
                 continue;
             }
@@ -180,6 +184,17 @@ impl Core {
             }
             if language(&self.languages, &key)?.refusal().is_some() {
                 self.park_language_server(&key, existing)?;
+                continue;
+            }
+            // A server that cannot start the way its folder's trust asks (no installed
+            // tsserver.js, no program on a trusted path) is left unavailable, with its process
+            // closed; it must not drop the link to the supervisor.
+            let server = language(&self.languages, &key)?;
+            if let Err(error) = server.options().and_then(|_| server.spawn()) {
+                if let Some(instance) = existing {
+                    self.close_process(&instance.instance_id);
+                }
+                self.language_failed(&key, &error);
                 continue;
             }
             if let Some(instance) = existing {

@@ -29,6 +29,11 @@ pub struct Server {
     /// A checkpoint that does not say it is restricted.
     #[serde(default)]
     pub trusted: bool,
+    /// Whether `trusted` was recorded by an engine that knows project trust. A checkpoint of an
+    /// earlier engine has no answer: its process may have been started with the folder's own
+    /// tsserver and plugins, so it is closed and started again once.
+    #[serde(default)]
+    pub trust_recorded: bool,
     pub generation: u32,
     pub instance_key: String,
     pub instance_id: Option<String>,
@@ -102,6 +107,7 @@ impl Server {
             root: root.into(),
             language,
             trusted: false,
+            trust_recorded: false,
             generation: 1,
             instance_key: Uuid::new_v4().to_string(),
             instance_id: None,
@@ -124,7 +130,23 @@ impl Server {
     pub fn spawn(&self) -> Result<Spawn> {
         let config = soyeht_lsp::config(&self.language)
             .ok_or_else(|| errors::invalid("File language has no language server"))?;
-        let mut argv = vec![config.command.into()];
+        // The supervisor starts a program by name in the project folder. Without trust the name
+        // is resolved here, from the absolute entries of the search path, so a relative or empty
+        // entry cannot start a program of the folder.
+        let command = if self.trusted {
+            config.command.to_owned()
+        } else {
+            std::env::var_os("PATH")
+                .and_then(|path| soyeht_lsp::absolute_command(config.command, &path))
+                .ok_or_else(|| {
+                    errors::harness_unavailable(
+                        "The language server was not found in a trusted folder of the search path",
+                    )
+                })?
+                .to_string_lossy()
+                .into_owned()
+        };
+        let mut argv = vec![command];
         argv.extend(config.args.iter().map(|value| (*value).into()));
         Ok(Spawn {
             instance_key: self.instance_key.clone(),

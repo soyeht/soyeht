@@ -48,6 +48,12 @@ fn trust_of(client: &mut Client, workspace: &str) -> String {
         .expect("a trust entry for the workspace")
 }
 
+fn trust_events(rig: &Rig, trust: &str) -> u64 {
+    rig.database_probe()
+        .event_count_by_field("project.trust_changed", "trust", trust)
+        .unwrap()
+}
+
 fn folder_with(rig: &Rig, name: &str, file: &str) -> PathBuf {
     let folder = rig.path.join(name);
     fs::create_dir_all(&folder).unwrap();
@@ -117,12 +123,7 @@ fn trusting_a_folder_restarts_the_server_with_every_feature_and_restricting_stop
     );
     assert!(started["initializationOptions"].is_null());
     assert_eq!(trust_of(&mut client, &workspace), "trusted");
-    assert_eq!(
-        rig.database_probe()
-            .event_count("project.trust_changed")
-            .unwrap(),
-        1
-    );
+    assert_eq!(trust_events(&rig, "trusted"), 1);
 
     decide_folder(&rig, &workspace, "restricted");
     wait_state(&mut client, &workspace, "rust", "restricted");
@@ -172,6 +173,9 @@ fn python_runs_in_its_safe_mode_in_a_restricted_folder_and_trust_lifts_it() {
     let started = record(&folder);
     assert_eq!(started["argv"].as_array().unwrap().len(), 2);
     assert_eq!(started["argv"][1], "--stdio");
+    // Without trust the program is named by its absolute path, never by a name the folder could
+    // answer through its own entries of the search path.
+    assert!(Path::new(started["argv"][0].as_str().unwrap()).is_absolute());
     let environment = started["env"].as_object().unwrap();
     assert!(
         environment.keys().all(|name| !name.starts_with("CARGO")
@@ -266,11 +270,56 @@ fn an_agent_and_an_unattested_program_cannot_trust_a_folder() {
         assert_eq!(shell["error"]["data"]["kind"], "forbidden_role");
     }
     assert_eq!(trust_of(&mut human, &workspace), "undecided");
-    assert_eq!(
-        rig.database_probe()
-            .event_count("project.trust_changed")
-            .unwrap(),
-        0
-    );
+    assert_eq!(trust_events(&rig, "trusted"), 0);
+    assert_eq!(trust_events(&rig, "restricted"), 0);
     wait_state(&mut human, &workspace, "rust", "restricted");
+}
+
+#[test]
+fn a_restricted_folder_answers_a_format_request_at_once_and_says_why() {
+    let rig = Rig::new();
+    let folder = folder_with(&rig, "format-restricted", "main.rs");
+    let mut client = rig.client();
+    let workspace = open_in(&mut client, &folder, "Format restricted", "main.rs");
+    wait_state(&mut client, &workspace, "rust", "restricted");
+    let file_id = client.section("files")[0]["fileId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let refused = client.request(
+        "file.format",
+        json!({"fileId":file_id,"baseRevision":"1","idempotencyKey":"format-restricted"}),
+    );
+    assert_eq!(refused["error"]["data"]["kind"], "harness_unavailable");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Trust the folder")
+    );
+}
+
+#[test]
+fn a_new_workspace_is_told_to_the_clients_as_undecided_and_a_folder_trusts_nothing_around_it() {
+    let rig = Rig::new();
+    let parent = folder_with(&rig, "isolation", "main.rs");
+    let child = parent.join("child");
+    fs::create_dir_all(&child).unwrap();
+    let mut client = rig.client();
+    let above = create_workspace(&mut client, "Above", &parent, "isolation-above");
+    let below = create_workspace(&mut client, "Below", &child, "isolation-below");
+    // Each new workspace is announced with its folder's answer, undecided here.
+    assert_eq!(trust_events(&rig, "undecided"), 2);
+
+    decide_folder(&rig, &above, "trusted");
+    assert_eq!(trust_of(&mut client, &above), "trusted");
+    assert_eq!(trust_of(&mut client, &below), "undecided");
+
+    // Trusting the subfolder trusts nothing above it either.
+    let other = folder_with(&rig, "isolation-other", "main.rs");
+    let sibling = create_workspace(&mut client, "Sibling", &other, "isolation-sibling");
+    decide_folder(&rig, &sibling, "trusted");
+    assert_eq!(trust_of(&mut client, &below), "undecided");
+    let again = create_workspace(&mut client, "Again", &parent, "isolation-again");
+    assert_eq!(trust_of(&mut client, &again), "trusted");
 }

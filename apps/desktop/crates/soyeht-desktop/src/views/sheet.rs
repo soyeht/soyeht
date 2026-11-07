@@ -4,11 +4,11 @@
 
 use super::{
     prelude::*,
-    ui::{Typeface, caption, chrome_text},
+    ui::{caption, chrome_text},
 };
 use crate::{
     neo,
-    theme::{Palette, desktop, elevation, radius, space, type_scale},
+    theme::{Palette, elevation, radius, space, type_scale},
 };
 
 /// The raised card of a sheet: its rows are spaced and padded as the Mac's sheets are, and it
@@ -42,11 +42,7 @@ pub(super) fn header(
                 .child(chrome_text(FontWeight::BOLD, type_scale::SUBHEADING).child(title))
                 .child(caption(palette).child(subtitle.into())),
         )
-        .child(close.cursor_pointer().child(icon(
-            Icon::Close,
-            desktop::HEADER_ACTION_GLYPH,
-            palette.muted,
-        )))
+        .child(close)
         .into_any_element()
 }
 
@@ -71,9 +67,7 @@ pub(super) fn button(
         .px(px(space::X14))
         .py(px(space::X6))
         .rounded_full()
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::CONTROL))
+        .chrome_bold(type_scale::CONTROL)
         .own_press()
 }
 

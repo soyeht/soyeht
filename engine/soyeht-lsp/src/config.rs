@@ -89,33 +89,54 @@ pub fn initialization_options(
     })))
 }
 
+/// The absolute path of `command` found in the absolute entries of `search_path`. A relative or
+/// empty entry names a folder of the working directory, which for a language server is the
+/// project folder, so it never counts.
+pub fn absolute_command(command: &str, search_path: &std::ffi::OsStr) -> Option<PathBuf> {
+    std::env::split_paths(search_path)
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join(command))
+        .find(|candidate| candidate.is_file())
+}
+
 const TYPESCRIPT_SERVER: &str = "typescript-language-server";
 
 /// The `tsserver.js` that sits with the `typescript-language-server` found on `search_path`: in
-/// the `node_modules` that holds the server (where npm puts its dependencies) or in its own.
+/// the `node_modules` that holds the server (where npm puts its dependencies) or in its own. The
+/// `typescript` package must be whole (a readable `package.json` with a version): a server that
+/// cannot read its version falls back to the folder's own TypeScript.
 fn installed_tsserver(search_path: &std::ffi::OsStr) -> Option<PathBuf> {
-    for directory in std::env::split_paths(search_path) {
-        let Ok(program) = soyeht_platform::fs::canonicalize(&directory.join(TYPESCRIPT_SERVER))
-        else {
-            continue;
-        };
-        for ancestor in program.ancestors().skip(1) {
-            if ancestor
-                .file_name()
-                .is_some_and(|name| name == TYPESCRIPT_SERVER)
-            {
-                let own = ancestor.join("node_modules");
-                let shared = ancestor.parent().map(Path::to_path_buf);
-                for modules in std::iter::once(own).chain(shared) {
-                    let tsserver = modules.join("typescript/lib/tsserver.js");
-                    if tsserver.is_file() {
-                        return Some(tsserver);
-                    }
+    let program = absolute_command(TYPESCRIPT_SERVER, search_path)?;
+    let Ok(program) = soyeht_platform::fs::canonicalize(&program) else {
+        return None;
+    };
+    for ancestor in program.ancestors().skip(1) {
+        if ancestor
+            .file_name()
+            .is_some_and(|name| name == TYPESCRIPT_SERVER)
+        {
+            let own = ancestor.join("node_modules");
+            let shared = ancestor.parent().map(Path::to_path_buf);
+            for modules in std::iter::once(own).chain(shared) {
+                let package = modules.join("typescript");
+                let tsserver = package.join("lib/tsserver.js");
+                if tsserver.is_file() && has_version(&package.join("package.json")) {
+                    return Some(tsserver);
                 }
             }
         }
     }
     None
+}
+
+fn has_version(package_json: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(package_json) else {
+        return false;
+    };
+    let Ok(package) = serde_json::from_str::<Value>(&text) else {
+        return false;
+    };
+    package["version"].as_str().is_some_and(|v| !v.is_empty())
 }
 
 #[cfg(test)]
@@ -193,6 +214,17 @@ mod tests {
         assert_eq!(missing, Err(OptionsError::NoTrustedTypescript));
 
         std::fs::write(modules.join("typescript/lib/tsserver.js"), "").unwrap();
+        // A partial install (no readable package.json) is not trusted: the server would fall back
+        // to the folder's own TypeScript.
+        assert_eq!(
+            initialization_options(&EditorLanguage::Typescript, false, Some(search.as_os_str())),
+            Err(OptionsError::NoTrustedTypescript)
+        );
+        std::fs::write(
+            modules.join("typescript/package.json"),
+            "{\"version\":\"5.9.2\"}",
+        )
+        .unwrap();
         let options =
             initialization_options(&EditorLanguage::Typescript, false, Some(search.as_os_str()))
                 .unwrap()
@@ -206,6 +238,18 @@ mod tests {
             initialization_options(&EditorLanguage::Typescript, false, None),
             Err(OptionsError::NoTrustedTypescript)
         );
+        // A relative or empty entry of the search path is the project folder, never a program.
+        let relative =
+            std::env::join_paths([std::path::Path::new(""), std::path::Path::new("bin")]).unwrap();
+        assert_eq!(
+            absolute_command("typescript-language-server", &relative),
+            None
+        );
+        assert_eq!(
+            initialization_options(&EditorLanguage::Typescript, false, Some(&relative)),
+            Err(OptionsError::NoTrustedTypescript)
+        );
+        assert!(absolute_command("typescript-language-server", search.as_os_str()).is_some());
         let _ = std::fs::remove_dir_all(root);
     }
 }

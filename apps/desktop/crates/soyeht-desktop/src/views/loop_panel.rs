@@ -6,7 +6,7 @@
 use super::{
     menus,
     prelude::*,
-    ui::{field_well, mono_note, option_pill, switch},
+    ui::{ChromeBold, field_well, mono_note, option_pill, switch},
 };
 use crate::{
     loop_form::Choice,
@@ -58,9 +58,7 @@ impl Workbench {
                 row()
                     .gap(px(space::X8))
                     .pt(px(space::X6))
-                    .chrome()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::CONTROL))
+                    .chrome_bold(type_scale::CONTROL)
                     .text_color(rgb(palette.accent))
                     .child(
                         mono_note(palette)

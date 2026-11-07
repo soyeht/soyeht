@@ -26,8 +26,6 @@
   @MainActor public final class WebPageReader {
     /// Pixel budget of the joined picture, so a long read does not allocate its full size.
     public static let pixelBudget = 4_000_000.0
-    /// The share of a command's time a read may spend; the rest is left for the answer.
-    public static let deadlineShare = 0.8
     /// Rows of one screen that the next screen repeats, so no row is lost at a joint.
     private static let jointOverlap = 8.0
     private let webView: WKWebView
@@ -35,7 +33,8 @@
     public init(webView: WKWebView) { self.webView = webView }
 
     public static func deadline(forTimeoutMs timeoutMs: UInt32) -> ContinuousClock.Instant {
-      .now + .milliseconds(Int64(Double(timeoutMs) * deadlineShare))
+      // A read spends the policy's share of the command's time; the rest is left for the answer.
+      .now + .milliseconds(Int64(Double(timeoutMs) * ClientPolicy.webReadDeadlineShare))
     }
 
     /// - Parameters:
@@ -192,7 +191,7 @@
       var previous: PageState?
       var steady = 0
       for _ in 0..<20 {
-        try await Task.sleep(for: .milliseconds(80))
+        try await Task.sleep(for: .milliseconds(ClientPolicy.webReadSettlePollMs))
         let state = try await pageState(collect: false)
         steady = state.sameGeometry(as: previous) ? steady + 1 : 0
         if steady >= 2 { return }

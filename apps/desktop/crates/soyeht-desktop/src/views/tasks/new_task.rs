@@ -10,7 +10,7 @@ use crate::{
         menus,
         prelude::*,
         sheet,
-        ui::{field_well, option_pill, switch},
+        ui::{close_button, field_well, option_pill, switch},
     },
 };
 use gpui::Entity;
@@ -355,8 +355,7 @@ fn sheet_header(palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyEl
         palette,
         TITLE,
         SUBTITLE,
-        row()
-            .id("new-task-close")
+        close_button("new-task-close", palette)
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_new_task(cx))),
     )
 }
@@ -412,9 +411,7 @@ fn footer(
         .gap(px(space::X10))
         .pt(px(space::X6))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
+            grow()
                 .truncate()
                 .chrome()
                 .font_weight(FontWeight::MEDIUM)
