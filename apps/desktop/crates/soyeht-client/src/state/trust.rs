@@ -20,6 +20,22 @@ impl State {
         }
     }
 
+    /// The note the window shows beside the selected workspace while its folder is restricted or
+    /// undecided, with the way to ask the question again; nothing for a trusted folder.
+    pub fn trust_marker(&self) -> Option<&'static str> {
+        self.selected_workspace()
+            .filter(|workspace| self.trust.is_restricted(&workspace.workspace_id))
+            .map(|_| soyeht_protocol::client_policy::PROJECT_TRUST_RESTRICTED_NOTE)
+    }
+
+    /// The person asks to be asked again about the selected workspace's folder, which they put
+    /// off or kept restricted.
+    pub fn reopen_trust_prompt(&mut self) {
+        if let Some(workspace_id) = self.selected_workspace().map(|w| w.workspace_id.clone()) {
+            self.trust.reopen(&workspace_id);
+        }
+    }
+
     /// The engine's answer to the request to trust, or restrict, a folder, or the failure of it.
     pub(super) fn trust_event(&mut self, event: Event) -> Vec<Effect> {
         match event {

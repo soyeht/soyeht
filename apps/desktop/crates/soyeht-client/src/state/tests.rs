@@ -582,3 +582,61 @@ fn a_closed_workspace_is_no_longer_asked_about() {
     ));
     assert_eq!(prompt_for(&state), Some("w2"));
 }
+
+fn create_workspace(state: &mut State, id: &str) {
+    state.apply(notification(
+        EventName::WorkspaceCreated,
+        json!({"eventId": "9", "at": "now", "workspace": workspace_json(id)}),
+    ));
+}
+
+#[test]
+fn a_workspace_created_during_the_session_is_asked_about_when_the_engine_says_undecided() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Trusted)]));
+    create_workspace(&mut state, "w2");
+    state.apply(trust_changed(&["w2"], "undecided"));
+    assert_eq!(state.selected_workspace().unwrap().workspace_id, "w2");
+    assert_eq!(prompt_for(&state), Some("w2"));
+    state.apply(trust_changed(&["w2"], "trusted"));
+    assert_eq!(prompt_for(&state), None);
+}
+
+#[test]
+fn a_workspace_created_on_an_engine_with_no_trust_section_asks_nothing() {
+    let (mut state, _) = connected(snapshot(&[], &[]));
+    create_workspace(&mut state, "w1");
+    assert_eq!(prompt_for(&state), None);
+    assert_eq!(state.trust_marker(), None);
+}
+
+#[test]
+fn a_restricted_or_undecided_workspace_is_marked_and_can_be_asked_about_again() {
+    let (mut state, _) = connected(with_trust(
+        &["w1", "w2"],
+        &[
+            ("w1", ProjectTrust::Restricted),
+            ("w2", ProjectTrust::Trusted),
+        ],
+    ));
+    let note = Some(soyeht_protocol::client_policy::PROJECT_TRUST_RESTRICTED_NOTE);
+    assert_eq!(state.trust_marker(), note);
+    assert_eq!(prompt_for(&state), None, "the person already answered");
+    state.reopen_trust_prompt();
+    assert_eq!(prompt_for(&state), Some("w1"));
+    state.defer_trust_prompt();
+    assert_eq!(prompt_for(&state), None);
+    assert_eq!(state.trust_marker(), note, "the marker stays");
+    state.apply(trust_changed(&["w1"], "trusted"));
+    assert_eq!(state.trust_marker(), None);
+    state.select_workspace("w2");
+    assert_eq!(state.trust_marker(), None);
+}
+
+#[test]
+fn a_question_put_off_comes_back_when_the_person_asks_for_it() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Undecided)]));
+    state.defer_trust_prompt();
+    assert_eq!(prompt_for(&state), None);
+    state.reopen_trust_prompt();
+    assert_eq!(prompt_for(&state), Some("w1"));
+}
