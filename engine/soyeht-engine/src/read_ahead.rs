@@ -86,6 +86,7 @@ fn wakes(owner: &str) -> bool {
 fn summary_of(read: &Read) -> ReadSummary {
     ReadSummary {
         next_seq: read.output.next_seq,
+        end_seq: read.output.end_seq,
         exited: read.output.exited,
         found: !read.output.bytes.is_empty() || read.output.gap.is_some(),
     }
@@ -217,14 +218,7 @@ impl Core {
     /// Leaves `owner` alone for [`IDLE_PACE_MS`]: its next read starts after that, so a quiet
     /// idle process is read at a slower pace than the tick.
     pub(crate) fn pause_reads(&mut self, owner: &str) {
-        // With the supervisor's notices an idle process is read when it has output (a mark ends the
-        // wait), and the wait is only the sweep.
-        let pace = if self.watch.is_active() {
-            crate::supervisor_watch::SWEEP.as_millis() as i64
-        } else {
-            IDLE_PACE_MS
-        };
-        let until = self.now_ms().saturating_add(pace);
+        let until = self.now_ms().saturating_add(IDLE_PACE_MS);
         self.reads.paused_until_ms.insert(owner.to_owned(), until);
     }
 

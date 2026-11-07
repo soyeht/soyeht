@@ -39,6 +39,11 @@ const RETRY: Duration = Duration::from_secs(2);
 /// How many reads in a row a truncated read may start at once, with no wait for the tick, before
 /// the process waits for the regular tick like the others.
 pub(crate) const IMMEDIATE_REPEATS: u8 = 16;
+/// After a read that found output and reached the end of what the supervisor held, a tick woken by
+/// a notice leaves the process alone this long (one tick): the regular tick reads what arrived
+/// meanwhile, so a process that writes in small chunks costs a read and an apply per tick and not
+/// one per round trip.
+const PACE: Duration = Duration::from_millis(10);
 
 #[derive(Clone, Copy)]
 struct Mark {
@@ -53,6 +58,8 @@ struct Mark {
 /// What the tick needs to know about a read that ended.
 pub(crate) struct ReadSummary {
     pub(crate) next_seq: u64,
+    /// The end of what the supervisor held when the read was made.
+    pub(crate) end_seq: u64,
     pub(crate) exited: bool,
     pub(crate) found: bool,
 }
@@ -68,6 +75,8 @@ struct Inner {
     marks: BTreeMap<String, Mark>,
     last_notice: BTreeMap<String, Instant>,
     repeats: BTreeMap<String, u8>,
+    /// When a woken tick may read a process again after a read that found output.
+    paced: BTreeMap<String, Instant>,
     last_sweep: Option<Instant>,
     missed: u64,
     closer: Option<Stream>,
@@ -85,6 +94,7 @@ impl Default for Inner {
             marks: BTreeMap::new(),
             last_notice: BTreeMap::new(),
             repeats: BTreeMap::new(),
+            paced: BTreeMap::new(),
             last_sweep: None,
             missed: 0,
             closer: None,
@@ -131,6 +141,7 @@ impl Watch {
             inner.retry_at = None;
             inner.marks.clear();
             inner.repeats.clear();
+            inner.paced.clear();
             if let Some(stream) = inner.closer.take() {
                 // ignored: the thread may have ended already; either way it is stale now.
                 let _ = stream.shutdown(Shutdown::Both);
@@ -150,22 +161,25 @@ impl Watch {
     }
 
     /// Whether the tick should read `instance_id` now. A tick woken by a notice reads a process
-    /// that keeps truncating at once, up to [`IMMEDIATE_REPEATS`] times in a row; the regular tick
-    /// always may.
+    /// that keeps truncating at once, up to [`IMMEDIATE_REPEATS`] times in a row, and leaves one
+    /// that has just been read to the end for [`PACE`]; the regular tick always may.
     pub(crate) fn should_read(&self, instance_id: &str, woken: bool) -> bool {
         self.shared.with(|inner| {
             inner.marks.contains_key(instance_id)
                 && (!woken
-                    || inner.repeats.get(instance_id).copied().unwrap_or(0) < IMMEDIATE_REPEATS)
+                    || (inner.repeats.get(instance_id).copied().unwrap_or(0) < IMMEDIATE_REPEATS
+                        && inner
+                            .paced
+                            .get(instance_id)
+                            .is_none_or(|until| Instant::now() >= *until)))
         })
     }
 
     /// A read of `instance_id` ended and was applied.
     pub(crate) fn note_read(&self, instance_id: &str, read: &ReadSummary) {
-        self.shared.with(|inner| {
-            let Some(mark) = inner.marks.get(instance_id).copied() else {
-                return;
-            };
+        let missed = self.shared.with(|inner| {
+            let mut mark = inner.marks.get(instance_id).copied()?;
+            let mut missed = false;
             if mark.swept && read.found {
                 let announced = inner
                     .last_notice
@@ -173,19 +187,42 @@ impl Watch {
                     .is_some_and(|at| at.elapsed() < MISS_AFTER);
                 if !announced {
                     inner.missed += 1;
-                    if inner.failures.fail("missed_notice") {
-                        Line::new("engine.supervisor_watch_missed").emit();
-                    }
+                    missed = inner.failures.fail("missed_notice");
                 }
+                // It is known now how far there is to read: the mark is no sweep's any more, so
+                // a read that stops short of it leaves it, and is not counted again.
+                mark.swept = false;
+                mark.end_seq = read.end_seq;
+                inner.marks.insert(instance_id.to_owned(), mark);
             }
-            let reached = read.next_seq >= mark.end_seq;
-            if (reached || mark.swept) && (!mark.exited || read.exited) {
+            // The mark of a sweep waits for what the supervisor held when it was read; the mark of
+            // a notice also for what the notice announced, and for what a later one did.
+            let target = if mark.swept {
+                read.end_seq
+            } else {
+                mark.end_seq.max(read.end_seq)
+            };
+            let reached = read.next_seq >= target;
+            if reached && (!mark.exited || read.exited) {
                 inner.marks.remove(instance_id);
                 inner.repeats.remove(instance_id);
+                if read.found {
+                    inner
+                        .paced
+                        .insert(instance_id.to_owned(), Instant::now() + PACE);
+                }
             } else {
+                if !reached {
+                    // More is waiting: the next read is not paced.
+                    inner.paced.remove(instance_id);
+                }
                 *inner.repeats.entry(instance_id.to_owned()).or_insert(0) += 1;
             }
+            Some(missed)
         });
+        if missed == Some(true) {
+            Line::new("engine.supervisor_watch_missed").emit();
+        }
     }
 
     /// Marks every process in `instances` for a read when a second has passed since the last
@@ -200,6 +237,7 @@ impl Watch {
             // What belongs to a process that is gone goes with it.
             inner.marks.retain(|id, _| live.contains(id.as_str()));
             inner.repeats.retain(|id, _| live.contains(id.as_str()));
+            inner.paced.retain(|id, _| live.contains(id.as_str()));
             inner.last_notice.retain(|id, _| live.contains(id.as_str()));
             for instance_id in live {
                 inner.marks.entry(instance_id.to_owned()).or_insert(Mark {
@@ -316,9 +354,10 @@ fn run(
     woken: &tokio::sync::Notify,
 ) {
     let outcome = watch(shared, epoch, socket, generation, woken);
-    shared.with(|inner| {
+    // What to write is decided under the mutex and written after it.
+    let log = shared.with(|inner| {
         if inner.epoch != epoch {
-            return;
+            return None;
         }
         inner.active = false;
         inner.running = false;
@@ -328,16 +367,20 @@ fn run(
         match outcome {
             Err(Error::WatchUnavailable) => {
                 inner.unsupported = true;
-                Line::new("engine.supervisor_watch_unavailable").emit();
+                Some(None)
             }
-            Err(error) => {
-                if inner.failures.fail(&error.failure_kind()) {
-                    log::failure("engine.supervisor_watch_failed", &error);
-                }
-            }
-            Ok(()) => {}
+            Err(error) => inner
+                .failures
+                .fail(&error.failure_kind())
+                .then_some(Some(error)),
+            Ok(()) => None,
         }
     });
+    match log {
+        Some(None) => Line::new("engine.supervisor_watch_unavailable").emit(),
+        Some(Some(error)) => log::failure("engine.supervisor_watch_failed", &error),
+        None => {}
+    }
     // Polling resumes on the next tick.
     woken.notify_one();
 }
@@ -412,9 +455,10 @@ fn watch(
 mod tests {
     use super::*;
 
-    fn read(next_seq: u64, _announced: u64, exited: bool, found: bool) -> ReadSummary {
+    fn read(next_seq: u64, end_seq: u64, exited: bool, found: bool) -> ReadSummary {
         ReadSummary {
             next_seq,
+            end_seq,
             exited,
             found,
         }
@@ -445,6 +489,55 @@ mod tests {
         assert!(watch.is_marked("p"));
         watch.note_read("p", &read(30, 30, false, true));
         assert!(!watch.is_marked("p"));
+    }
+
+    #[test]
+    fn a_read_that_stops_short_of_what_the_supervisor_holds_keeps_the_mark_of_a_notice() {
+        // The first notice of a burst said 8; the read found 400063 held and returned 64 KiB.
+        let watch = Watch::default();
+        watch.pretend_active();
+        watch.pretend_notice("p", 8);
+        watch.note_read("p", &read(65_536, 400_063, false, true));
+        assert!(
+            watch.is_marked("p"),
+            "the rest of the burst is still to read"
+        );
+        // The next read is not paced, and the one that reaches the end clears the mark.
+        assert!(watch.should_read("p", true));
+        watch.note_read("p", &read(400_063, 400_063, false, true));
+        assert!(!watch.is_marked("p"));
+    }
+
+    #[test]
+    fn a_read_that_stops_short_keeps_the_mark_of_a_sweep_and_counts_the_miss_once() {
+        let watch = Watch::default();
+        watch.pretend_active();
+        watch.sweep(["p"].into_iter());
+        watch.note_read("p", &read(65_536, 400_063, false, true));
+        assert!(watch.is_marked("p"));
+        assert_eq!(watch.missed(), 1);
+        watch.note_read("p", &read(131_072, 400_063, false, true));
+        assert_eq!(watch.missed(), 1, "the same burst is one miss");
+        watch.note_read("p", &read(400_063, 400_063, false, true));
+        assert!(!watch.is_marked("p"));
+    }
+
+    #[test]
+    fn a_woken_tick_leaves_a_process_it_just_read_to_the_end_for_one_tick() {
+        let watch = Watch::default();
+        watch.pretend_active();
+        watch.pretend_notice("p", 5);
+        watch.note_read("p", &read(5, 5, false, true));
+        // More output arrives at once: the regular tick reads it, the woken one waits.
+        watch.pretend_notice("p", 9);
+        assert!(!watch.should_read("p", true));
+        assert!(watch.should_read("p", false));
+        std::thread::sleep(PACE * 2);
+        assert!(watch.should_read("p", true));
+        // A read that found nothing does not pace the next.
+        watch.note_read("p", &read(9, 9, false, false));
+        watch.pretend_notice("p", 12);
+        assert!(watch.should_read("p", true));
     }
 
     #[test]

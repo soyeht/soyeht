@@ -446,7 +446,7 @@ fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
             if child.try_wait()?.is_none() {
                 child.end(reach(&live));
             }
-            live.exited.store(true, Ordering::Release);
+            live.mark_exited();
         }
     }
     Ok(Response::Ok)
@@ -638,8 +638,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 Err(_) => break,
             }
         }
-        reading.read_done.store(true, Ordering::Release);
-        reading.announce_exit();
+        reading.mark_read_done();
     });
     thread::spawn(move || {
         loop {
@@ -648,8 +647,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 // ignored: the poisoning is logged by name just below
                 Err(_) => {
                     log::event("ptyd.child_lock_poisoned", &[]);
-                    live.exited.store(true, Ordering::Release);
-                    live.announce_exit();
+                    live.mark_exited();
                     break;
                 }
             };
@@ -665,8 +663,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     let code = guarded_code.unwrap_or_else(|| status.code().unwrap_or(-1));
                     let Ok(mut state) = shared.lock() else {
                         log::event("ptyd.state_lock_poisoned", &[]);
-                        live.exited.store(true, Ordering::Release);
-                        live.announce_exit();
+                        live.mark_exited();
                         break;
                     };
                     if let Some(instance) = state.registry.instances.get_mut(&key) {
@@ -674,8 +671,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     }
                     // Published after the status, under the lock a `List` takes, so a reader
                     // that sees the process exited also finds its exit status.
-                    live.exited.store(true, Ordering::Release);
-                    live.announce_exit();
+                    live.mark_exited();
                     if state.registry.save(&state.directory).is_err() {
                         log::event("ptyd.registry_write_failed", &[]);
                     }
@@ -683,8 +679,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 }
                 Err(error) => {
                     log::failure("ptyd.child_wait_failed", &error);
-                    live.exited.store(true, Ordering::Release);
-                    live.announce_exit();
+                    live.mark_exited();
                     break;
                 }
                 Ok(None) => thread::sleep(Duration::from_millis(10)),

@@ -155,6 +155,7 @@ impl Core {
         };
         let summary = ReadSummary {
             next_seq: output.next_seq,
+            end_seq: output.end_seq,
             exited: output.exited,
             found: !output.bytes.is_empty() || output.gap.is_some(),
         };
@@ -324,6 +325,8 @@ mod tests {
         refuse: Arc<Mutex<u32>>,
         /// How many reads it was asked for.
         drains: Arc<std::sync::atomic::AtomicU32>,
+        /// How much output it holds in all, so a read that returns one chunk is short of it.
+        total: u64,
     }
 
     impl SupervisorPort for Holding {
@@ -338,7 +341,7 @@ mod tests {
                     Response::Output(Output {
                         from_seq,
                         next_seq,
-                        end_seq: next_seq,
+                        end_seq: self.total.max(next_seq),
                         bytes: STANDARD.encode(text),
                         gap: None,
                         exited: false,
@@ -388,6 +391,7 @@ mod tests {
             acknowledged: Arc::clone(&acknowledged),
             refuse: Arc::new(Mutex::new(refusals)),
             drains: Arc::default(),
+            total: 11,
         }));
         (core, acknowledged, root, id)
     }
@@ -462,6 +466,7 @@ mod tests {
             acknowledged: Arc::default(),
             refuse: Arc::default(),
             drains: Arc::clone(&drains),
+            total: 0,
         }));
         (core, root, id, drains)
     }
@@ -495,6 +500,32 @@ mod tests {
         tick_the_terminal_path(&mut core, &id, 100);
         assert_eq!(reads(), before + 1);
         assert!(!core.pane_marked(&id));
+        crate::test_paths::remove_after(core, root);
+    }
+
+    #[test]
+    fn a_read_that_stops_short_is_repeated_by_the_next_woken_tick_until_the_burst_is_read() {
+        let (mut core, acknowledged, root, id) = core_with_output(false);
+        core.watch.pretend_active();
+        core.watch.sweep(std::iter::empty());
+        // The notice of the first chunk said 5; the supervisor holds 11 in all, and a read returns
+        // one chunk at a time.
+        core.watch.pretend_notice("shell-instance", 5);
+
+        core.poll_woken().unwrap();
+        apply_read(&mut core, &id);
+        assert_eq!(core.panes[&id].screen.next_offset(), 5);
+        assert!(
+            core.pane_marked(&id),
+            "the rest of the burst is still to read"
+        );
+
+        core.poll_woken().unwrap();
+        apply_read(&mut core, &id);
+        assert_eq!(core.panes[&id].screen.next_offset(), 11);
+        assert!(!core.pane_marked(&id));
+        wait_for_acknowledgements(&mut core, &id, &acknowledged, 1);
+        assert_eq!(core.watch.missed(), 0);
         crate::test_paths::remove_after(core, root);
     }
 

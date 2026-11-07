@@ -101,14 +101,30 @@ impl Watcher {
         }
     }
 
-    /// Says what the engine has read to. The answer lists the processes with more to read.
+    /// Says what the engine has read to. The answer lists the processes with more to read. A
+    /// notice that arrives before the answer is part of it: the supervisor may write one first, and
+    /// a process's first chunk would otherwise be heard by no one.
     pub fn watch(&mut self, instances: Vec<Watched>) -> Result<Vec<Readable>> {
         write_json(&mut self.stream, &Request::Watch { instances })?;
+        let mut early: Vec<Readable> = Vec::new();
         loop {
             match self.notice()? {
-                Notice::Level(readable) => return Ok(readable),
-                // A notice that comes before the answer is in the level or comes again.
-                Notice::Readable(_) => {}
+                Notice::Level(mut level) => {
+                    for notice in early {
+                        match level
+                            .iter_mut()
+                            .find(|found| found.instance_id == notice.instance_id)
+                        {
+                            Some(found) => {
+                                found.end_seq = found.end_seq.max(notice.end_seq);
+                                found.exited |= notice.exited;
+                            }
+                            None => level.push(notice),
+                        }
+                    }
+                    return Ok(level);
+                }
+                Notice::Readable(notice) => early.push(notice),
             }
         }
     }

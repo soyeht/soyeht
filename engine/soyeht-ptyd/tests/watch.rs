@@ -250,3 +250,57 @@ fn an_engine_that_meets_a_supervisor_from_before_the_role_goes_on_polling() {
     let client = Client::connect(&request, 1).unwrap();
     assert!(client.features.is_empty());
 }
+
+#[test]
+fn a_notice_that_comes_before_the_answer_is_part_of_it() {
+    // A supervisor that writes the notice of a process's first chunk before it answers `Watch`.
+    let path = std::path::PathBuf::from(format!("/tmp/soyeht-early-{}.sock", uuid::Uuid::new_v4()));
+    let listener = UnixListener::bind(&path).unwrap();
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _hello: Option<serde_json::Value> = read_json(&mut stream).unwrap();
+        write_json(
+            &mut stream,
+            &serde_json::json!({"status":"welcome","value":{"version":VERSION,
+                "supervisor_id":"early","supervisor_generation":1,"features":[FEATURE_WATCH]}}),
+        )
+        .unwrap();
+        let _watch: Option<serde_json::Value> = read_json(&mut stream).unwrap();
+        let early = serde_json::json!({"status":"readable","value":
+            {"instance_id":"fresh","end_seq":7,"exited":false}});
+        write_json(&mut stream, &early).unwrap();
+        write_json(
+            &mut stream,
+            &serde_json::json!({"status":"watching","value":[]}),
+        )
+        .unwrap();
+    });
+    let mut watcher = Watcher::connect(&path, 1).unwrap();
+
+    let level = watcher.watch(Vec::new()).unwrap();
+
+    assert_eq!(
+        level,
+        [Readable {
+            instance_id: "fresh".into(),
+            end_seq: 7,
+            exited: false
+        }]
+    );
+}
+
+#[test]
+fn at_most_four_watches_are_kept_and_the_oldest_makes_room() {
+    let (daemon, _client) = Daemon::start();
+    let mut watches: Vec<_> = (0..5)
+        .map(|_| Watcher::connect(&watch_socket(&daemon), 1).unwrap())
+        .collect();
+    let oldest = watches.remove(0);
+    let receiver = notices(oldest);
+    assert!(
+        receiver
+            .recv_timeout(WAIT)
+            .expect("the oldest ends")
+            .is_err()
+    );
+}

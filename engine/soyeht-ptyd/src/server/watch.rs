@@ -26,6 +26,12 @@ use std::{
 
 /// How long a notice waits to be written to a watch that does not read.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+/// How many watch connections the supervisor keeps. The engine opens one; a newer one takes the
+/// place of the oldest, so a client that opens them in a loop cannot hold the supervisor's threads.
+const MAX_WATCHES: usize = 4;
+/// How many answers may wait to be written to one watch before it is closed. An engine sends one
+/// request at a time and reads its answer, so a watch with a queue of them does not read.
+const MAX_REPLIES: usize = 16;
 
 #[derive(Default)]
 struct Pending {
@@ -43,10 +49,20 @@ struct Watch {
 }
 
 impl Watch {
-    fn change(&self, change: impl FnOnce(&mut Pending)) {
+    fn change<T>(&self, change: impl FnOnce(&mut Pending) -> T) -> T {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        change(&mut pending);
+        let result = change(&mut pending);
         self.wake.notify_all();
+        result
+    }
+
+    /// Queues an answer to be written. Returns whether the queue is over [`MAX_REPLIES`]: the
+    /// watch does not read, and its owner closes it.
+    fn reply(&self, reply: Response) -> bool {
+        self.change(|pending| {
+            pending.replies.push_back(reply);
+            pending.replies.len() > MAX_REPLIES
+        })
     }
 
     /// Ends the watch: its writer stops and the read of its connection fails.
@@ -67,12 +83,28 @@ impl Watch {
 impl Live {
     /// The process has exited and its last byte has been read.
     pub(super) fn exited_and_drained(&self) -> bool {
-        self.exited.load(Ordering::Acquire) && self.read_done.load(Ordering::Acquire)
+        self.exited.load(Ordering::SeqCst) && self.read_done.load(Ordering::SeqCst)
+    }
+
+    /// Records that the process has exited, and tells the watches if its output is over too.
+    /// Every place that sets the flag goes through here, so the exit is never left unannounced.
+    pub(super) fn mark_exited(&self) {
+        self.exited.store(true, Ordering::SeqCst);
+        self.announce_exit();
+    }
+
+    /// Records that the last byte of the process's output has been read, and tells the watches
+    /// if it has exited too.
+    pub(super) fn mark_read_done(&self) {
+        self.read_done.store(true, Ordering::SeqCst);
+        self.announce_exit();
     }
 
     /// Tells the watches the process is over, once, when both its exit and the end of its output
-    /// are known: the engine must not read an exit before the last byte.
-    pub(super) fn announce_exit(&self) {
+    /// are known: the engine must not read an exit before the last byte. The two flags are stored
+    /// and loaded with sequential consistency: the thread that sets the second of them sees the
+    /// first, so one of the two callers always announces.
+    fn announce_exit(&self) {
         if !self.exited_and_drained() || self.exit_announced.swap(true, Ordering::AcqRel) {
             return;
         }
@@ -132,6 +164,9 @@ impl Watchers {
 
     fn add(&self, watch: &Arc<Watch>) {
         let mut list = self.list.lock().unwrap_or_else(PoisonError::into_inner);
+        if list.len() >= MAX_WATCHES {
+            list.remove(0).close();
+        }
         list.push(Arc::clone(watch));
         self.count.store(list.len(), Ordering::Release);
     }
@@ -221,7 +256,9 @@ fn answer_requests(
                 "a watch connection only watches",
             ),
         };
-        watch.change(|pending| pending.replies.push_back(reply));
+        if watch.reply(reply) {
+            return Ok(());
+        }
     }
     Ok(())
 }
@@ -285,4 +322,23 @@ fn write_notices(mut stream: Stream, watch: Arc<Watch>) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_watch_with_a_queue_of_answers_is_over_the_limit_at_the_seventeenth() {
+        let watch = Watch {
+            pending: Mutex::default(),
+            wake: Condvar::new(),
+            stream: Mutex::new(None),
+        };
+        for _ in 0..MAX_REPLIES {
+            assert!(!watch.reply(Response::Ok));
+        }
+        let over = watch.reply(Response::Ok);
+        assert!(over);
+    }
 }

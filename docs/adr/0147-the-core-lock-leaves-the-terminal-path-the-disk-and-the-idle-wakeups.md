@@ -257,14 +257,21 @@ connection returns the engine to polling at the tick interval until it is made a
 - A process the engine does not name in `Watch` counts as read to offset 0, so the engine names
   none and the answer is every process with output and every process that exited: one pass over
   all of them when a watch starts, which is also the first sweep.
+- A read clears a mark only when it reached the larger of what the notice announced and what the
+  supervisor held when the read was made (`Output.end_seq`); a notice is sent once per read, so the
+  first one of a burst says little. A read that found output and reached the end leaves the process
+  to the regular tick for one tick (the 10 ms `PACE`), so a process that writes in small chunks
+  costs a read and an apply per tick and not one per round trip; a truncated read is repeated at
+  once.
 - A watch notice is a mark with the end it announced. A read clears it when it reached that end (or,
   for a mark that a sweep made, always); a notice that arrives during a read raises the end, so
   that read leaves the mark and the process is read again. A pane whose reads keep truncating is
   repeated at once by a woken tick up to 16 times in a row; the regular tick always reads a marked
   pane.
-- **Agents** keep their poll: it cannot advance without a read, and the timers of an idle agent
-  (expiry, queued work) need it to run. An idle agent therefore waits for its mark instead of the
-  100 ms pace, bounded by the sweep (1 s); a state change still ends the wait at once.
+- **Agents** keep their poll and their pause: it cannot advance without a read, and the native
+  records, deadlines and the expiry of requests of an idle agent must not be late. An idle agent
+  is still read every `IDLE_PACE_MS` (100 ms); a mark ends the pause at once, so output is not
+  waiting for it.
 - **Language servers are not moved in this change.** They are read on every tick, as before: they
   exist only while an editor has a source file open and their poll needs a read each tick. They move
   with step 1b, where the tick has deadlines.
