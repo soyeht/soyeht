@@ -22,8 +22,8 @@ pub const MODE_KEY: &str = "mode";
 /// Permission modes the engine enforces itself, only for agents that
 /// announce no native modes. Agents with native modes answer their own
 /// permission policy; the engine then never approves on the person's behalf.
-pub(super) const ASK: &str = "ask";
-pub(super) const ACCEPT_EDITS: &str = "accept_edits";
+pub(crate) const ASK: &str = "ask";
+pub(crate) const ACCEPT_EDITS: &str = "accept_edits";
 pub(super) const ALLOW_ALL: &str = "allow_all";
 
 fn client_modes(current: Option<&str>) -> ConfigOption {
@@ -297,23 +297,25 @@ impl Core {
             })
     }
 
-    /// Only a person may start work in a mode that approves everything; a
-    /// chief agent writing tasks cannot grant it to itself or other agents.
+    /// A person may pick any mode. An agent (a chief writing tasks) may pick only a mode that is
+    /// positively known to stay below full access: one a running harness announces with a kind
+    /// under full access, or one of the engine's own. A mode the engine cannot rank counts as
+    /// full access, because an id it has never seen may be the harness's name for it.
     pub(crate) fn require_person_for_full_access<'a>(
         &self,
         role: &Role,
         modes: impl IntoIterator<Item = Option<&'a str>>,
     ) -> Result<()> {
         if matches!(role, Role::HumanLocal | Role::HumanDevice)
-            || !modes
+            || modes
                 .into_iter()
                 .flatten()
-                .any(|mode| self.is_full_access_mode(mode))
+                .all(|mode| self.mode_is_known_below_full_access(mode))
         {
             return Ok(());
         }
         Err(errors::forbidden_role(
-            "Only a person can give a task full access",
+            "Only a person can pick a permission mode that is not known to stay below full access",
         ))
     }
 
@@ -428,10 +430,23 @@ mod full_access_tests {
                     .is_ok()
             );
         }
+        // The engine's own modes are known; a mode no harness announced is not, so it counts as
+        // full access for an agent.
         assert!(
-            core.require_person_for_full_access(&Role::Chief, [Some("read-only"), None])
+            core.require_person_for_full_access(&Role::Chief, [Some("ask"), None])
                 .is_ok()
         );
+        for unknown in ["read-only", "yolo"] {
+            assert!(
+                core.require_person_for_full_access(&Role::Chief, [Some(unknown)])
+                    .is_err(),
+                "{unknown}"
+            );
+            assert!(
+                core.require_person_for_full_access(&Role::HumanLocal, [Some(unknown)])
+                    .is_ok()
+            );
+        }
         crate::test_paths::remove_after(core, root);
     }
 }
