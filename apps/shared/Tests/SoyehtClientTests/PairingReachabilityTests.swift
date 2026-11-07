@@ -37,6 +37,15 @@ private let linkKey = "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc"
   #expect(texts.allSatisfy { $0.hasPrefix("Not reachable from your devices: ") })
 }
 
+/// The engine looks for the tailnet address again every two seconds (ADR 0078), so the person is not
+/// told to restart anything.
+@Test func thePortInUseTextSaysSoyehtConnectsByItself() throws {
+  let text = try #require(
+    EngineReachability(remote: false, reason: .tailnet_port_in_use).problemText)
+  #expect(text.contains("connects by itself"))
+  #expect(!text.contains("reopen"))
+}
+
 @Test func aLoopbackPairingLinkIsNotReachableFromAnotherDevice() throws {
   let loopback = try PairingLink(
     "soyeht-next://pair?engineId=\(engine)&address=127.0.0.1:47321&code=\(code)&engineKey=\(linkKey)"

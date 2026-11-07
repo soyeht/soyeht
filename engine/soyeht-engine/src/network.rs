@@ -492,8 +492,10 @@ mod tests {
     /// A bind that fails for any other reason stays the general failure.
     #[tokio::test]
     async fn a_bind_that_fails_for_another_reason_is_not_reported_as_a_port_in_use() {
-        // A tailnet address this machine does not have cannot be bound.
-        let absent: IpAddr = "100.64.0.1".parse().unwrap();
+        // A tailnet address (so `permitted_address` allows it) that no host is given: Tailscale
+        // assigns addresses with a node part, never `::1`, so the bind cannot succeed or find the
+        // port in use on any machine.
+        let absent: IpAddr = "fd7a:115c:a1e0::1".parse().unwrap();
         let script: Script = Arc::new(Mutex::new(VecDeque::from([Ok(vec![absent])])));
         let (log, _) = recorder();
         let mut tailnet = TailnetListeners::new(0, scripted(&script), accepting(), log);
