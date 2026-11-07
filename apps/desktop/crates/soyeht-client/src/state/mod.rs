@@ -5,15 +5,15 @@
 use crate::{
     agent::AgentView, catalogue::Catalogue, editor::Editors, event::Event, new_agent::NewAgent,
     preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput,
-    writing::Writings,
+    trust::Trusts, writing::Writings,
 };
 use serde_json::Value;
 use soyeht_protocol::{
     AgentCommand, AttentionItem, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, Pane,
     PaneClosedEvent, PaneCreatedEvent, PaneMode, PaneStateChangedEvent, PaneUpdatedEvent,
-    SkillsListResult, Task, TaskShowResult, UsageReading, WebNavigatedEvent, Workspace,
-    WorkspaceClosedEvent, WorkspaceCreatedEvent, WorkspaceLayoutUpdatedEvent,
-    WorkspacePaneLayoutAxis, WorkspaceRenamedEvent,
+    ProjectTrustChangedEvent, SkillsListResult, Task, TaskShowResult, UsageReading,
+    WebNavigatedEvent, Workspace, WorkspaceClosedEvent, WorkspaceCreatedEvent,
+    WorkspaceLayoutUpdatedEvent, WorkspacePaneLayoutAxis, WorkspaceRenamedEvent,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -98,6 +98,8 @@ pub struct State {
     pub editors: Editors,
     /// The documents open in writing panes and the lists of the sections.
     pub writings: Writings,
+    /// Whether the person trusts the folder of each workspace, and which questions they put off.
+    trust: Trusts,
     pub(crate) expected: Vec<Expected>,
     /// The arrangement a divider is being dragged to, shown in place of the stored one.
     pub(crate) layout_draft: Option<layout_draft::LayoutDraft>,
@@ -146,6 +148,7 @@ impl Default for State {
             readiness: None,
             editors: Editors::default(),
             writings: Writings::default(),
+            trust: Trusts::default(),
             expected: Vec::new(),
             layout_draft: None,
             confirmed_layouts: HashMap::new(),
@@ -308,6 +311,7 @@ impl State {
                 // A request in flight is lost with the connection.
                 self.forget_requests();
                 self.editors.connection_lost();
+                self.trust.connection_lost();
                 Vec::new()
             }
             Event::Starting => {
@@ -412,6 +416,20 @@ impl State {
             }
             Event::Editor(event) => self.editor_event(event),
             Event::Writing(event) => self.writing_event(event),
+            Event::ProjectTrust {
+                workspace_ids,
+                trust,
+            } => {
+                self.trust.changed(workspace_ids, trust);
+                Vec::new()
+            }
+            Event::ProjectTrustFailed => {
+                self.report(
+                    problem::kind::PROJECT_TRUST_NOT_SAVED,
+                    soyeht_protocol::client_policy::PROJECT_TRUST_FAILED,
+                );
+                Vec::new()
+            }
         }
     }
 
@@ -443,6 +461,7 @@ impl State {
         self.adopt_tasks(&snapshot.tasks, &snapshot.attention);
         effects.extend(self.editors.adopt(snapshot.files, &self.panes));
         self.writings.adopt(snapshot.writing);
+        self.trust.adopt(snapshot.trust);
         let focus = snapshot.focus;
         let keep =
             |id: &Option<String>, exists: &dyn Fn(&str) -> bool| id.clone().filter(|id| exists(id));
@@ -534,6 +553,11 @@ impl State {
                 effects
             }
             EventName::WritingChanged => self.writing_changed(params)?,
+            EventName::ProjectTrustChanged => {
+                let changed = serde_json::from_value::<ProjectTrustChangedEvent>(params)?;
+                self.trust.changed(changed.workspace_ids, changed.trust);
+                Vec::new()
+            }
             EventName::PaneRenamed | EventName::PaneUpdated => {
                 self.upsert_pane(serde_json::from_value::<PaneUpdatedEvent>(params)?.pane)
             }
@@ -581,6 +605,7 @@ impl State {
         self.workspaces.retain(|w| w.workspace_id != workspace_id);
         self.confirmed_layouts.remove(workspace_id);
         self.skills.remove(workspace_id);
+        self.trust.forget(workspace_id);
         self.editors.workspace_closed(workspace_id);
         if self.selected_workspace.as_deref() == Some(workspace_id) {
             self.selected_workspace = workspaces::selection_after_closing(&order, workspace_id);
@@ -738,6 +763,7 @@ mod effect;
 pub use effect::Effect;
 mod layout_draft;
 pub mod problem;
+mod trust;
 mod writing;
 pub(crate) use layout_draft::same_panes;
 mod workspaces;
