@@ -451,8 +451,7 @@ impl Store {
             connection.query_row("SELECT value FROM metadata WHERE key='db_id'", [], |row| {
                 row.get(0)
             })?;
-        #[cfg(feature = "test-support")]
-        crate::test_support::count_statements(&connection);
+        crate::statement_cost::watch(&connection);
         Ok(Self {
             connection,
             db_id,
