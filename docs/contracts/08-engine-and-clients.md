@@ -82,7 +82,7 @@ while the Mac's “Add iPhone” window is open:
    reachability?}`; the app displays a QR with `qr` (`uri` when an older engine sends no `qr`): the same
    fields, engine id, address, `code` and `engineKey`, the engine's Ed25519 public key in URL-safe
    base64, behind the prefix `SOYEHT-PAIR 1 ` instead of `soyeht-next://pair?`, so the
-   system camera cannot hand them to another app (ADR 0150). The in-app scanners read both forms. The app also shows,
+   system camera cannot hand them to another app (ADR 0153). The in-app scanners read both forms. The app also shows,
    when `reachability.remote` is false, why devices cannot reach the Mac.
 2. iPhone: `pair.begin {code, deviceName, devicePublicKey (Ed25519, 32
    bytes, base64)}` → `{requestId, challenge (32 random bytes, base64),

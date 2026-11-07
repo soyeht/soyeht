@@ -9,7 +9,7 @@ public struct PairingLink: Sendable {
   let code: String
   /// The engine's Ed25519 public key, 32 bytes, which the link carries so the device pins it.
   let engineKey: Data
-  /// What a QR code carries in place of the link (ADR 0150): not a URL, so the system camera hands
+  /// What a QR code carries in place of the link (ADR 0153): not a URL, so the system camera hands
   /// it to no app that has claimed the link's scheme. The scanner in the app reads both.
   static let qrPrefix = "SOYEHT-PAIR 1 "
   public init(_ text: String) throws {

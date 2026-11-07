@@ -1,4 +1,4 @@
-# ADR 0150: The pairing QR is not a link
+# ADR 0153: The pairing QR is not a link
 
 - Status: accepted. Extends ADR 0129 (the ways in from outside the Mac), ADR 0132 (the engine
   proves itself to a paired device).

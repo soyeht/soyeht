@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::net::{IpAddr, SocketAddr};
 
 const PREFIX: &str = "soyeht-next://pair?";
-/// What a QR code carries instead of the link (ADR 0150). It is not a URL, so the system camera
+/// What a QR code carries instead of the link (ADR 0153). It is not a URL, so the system camera
 /// shows it as text and hands it to no app that has claimed the link's scheme; only a scanner
 /// inside the app reads it. The number is the grammar's version.
 const QR_PREFIX: &str = "SOYEHT-PAIR 1 ";

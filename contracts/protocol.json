@@ -1431,7 +1431,7 @@
         },
         "qr": {
           "type": "string",
-          "description": "The text of the pairing QR code: the fields of `uri` behind a prefix that is not a URL scheme, so the system camera hands it to no app (ADR 0150). Absent from an engine that predates it, whose app draws `uri`."
+          "description": "The text of the pairing QR code: the fields of `uri` behind a prefix that is not a URL scheme, so the system camera hands it to no app (ADR 0153). Absent from an engine that predates it, whose app draws `uri`."
         },
         "reachability": {
           "$ref": "#/$defs/EngineReachability"
