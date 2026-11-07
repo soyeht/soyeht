@@ -668,5 +668,5 @@ fn the_folder_of_a_workspace_is_read_from_the_database_once() {
     );
     // A workspace that does not exist is not remembered.
     assert!(core.workspace_root("missing").is_err());
-    assert!(core.workspace_roots.get("missing").is_none());
+    assert!(!core.workspace_roots.contains_key("missing"));
 }
