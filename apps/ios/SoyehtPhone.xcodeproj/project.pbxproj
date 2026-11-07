@@ -87,7 +87,7 @@
 		"AD936FCBED631FA67E05C3EA" = {
 			"isa" = "PBXGroup";
 			"sourceTree" = "<group>";
-			"children" = ( "41CF6794BA4200B839C53531", "F30000000000000000000100", "D90000000000000000000011", "DB0000000000000000000011", "DB0000000000000000000012", "0A3E27B8CA818264D75C8D81", );
+			"children" = ( "41CF6794BA4200B839C53531", "F30000000000000000000100", "D90000000000000000000011", "DB0000000000000000000011", "DB0000000000000000000012", "DB0000000000000000000013", "DB0000000000000000000014", "DB0000000000000000000015", "0A3E27B8CA818264D75C8D81", );
 		};
 		"4C9A8D7A2C3C670C889D63E4" = {
 			"isa" = "XCBuildConfiguration";
@@ -129,12 +129,42 @@
 		"41D311A605520FC7B8B9A980" = {
 			"isa" = "PBXResourcesBuildPhase";
 			"buildActionMask" = "2147483647";
-			"files" = ( "DB0000000000000000000001", "DB0000000000000000000002", );
+			"files" = ( "DB0000000000000000000001", "DB0000000000000000000002", "DB0000000000000000000003", "DB0000000000000000000004", "DB0000000000000000000005", );
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
 		"DB0000000000000000000002" = {
 			"isa" = "PBXBuildFile";
 			"fileRef" = "DB0000000000000000000012";
+		};
+		"DB0000000000000000000013" = {
+			"path" = "../../LICENSE";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text";
+			"sourceTree" = "<group>";
+		};
+		"DB0000000000000000000003" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "DB0000000000000000000013";
+		};
+		"DB0000000000000000000014" = {
+			"path" = "../../NOTICE";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text";
+			"sourceTree" = "<group>";
+		};
+		"DB0000000000000000000004" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "DB0000000000000000000014";
+		};
+		"DB0000000000000000000015" = {
+			"path" = "../../THIRD-PARTY-NOTICES.txt";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "text";
+			"sourceTree" = "<group>";
+		};
+		"DB0000000000000000000005" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "DB0000000000000000000015";
 		};
 		"DB0000000000000000000012" = {
 			"path" = "Resources/PrivacyInfo.xcprivacy";
