@@ -21,6 +21,7 @@ pub mod input;
 pub mod languages;
 pub mod launch;
 mod listeners;
+mod lock_usage;
 pub mod log_rotation;
 pub mod model;
 pub mod network;
