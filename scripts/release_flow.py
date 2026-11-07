@@ -388,6 +388,7 @@ def collect(options, environment=os.environ, fetch=fetch_text, tool=release_chec
         print(f"collect: copied {name}")
     names = package_names(folder, version)
     found += stale_problems(folder, version)
+    found += release_checks.exception_problems()
     found += build_sha_problems(folder, probe)
     found += [f"{name} is missing" for name in release_checks.missing_packages(folder, version, options.without)]
     found += release_checks.sidecar_problems(folder)
@@ -465,6 +466,7 @@ def publish_problems(options, files, probe=probe, fetch=fetch_text, tool=release
     else:
         found.append(f"{release_checks.CHECKSUMS} is missing: run collect")
     found += stale_problems(folder, version)
+    found += release_checks.exception_problems()
     found += build_sha_problems(folder, probe)
     found += signing_problems(folder, package_names(folder, version), options, tool)
     found += changelog_problems(version)
