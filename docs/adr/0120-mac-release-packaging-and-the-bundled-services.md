@@ -414,7 +414,18 @@ other questions of the window are.
   or the copy stops the move (`planChanged`) and nothing there is trashed.
 - When the rename fails after the old copy went to the Trash, the old copy is put back. If that
   fails too, the person is told the old copy is in the Trash and to drag it back
-  (`oldAppInTrash`), never that it is unchanged.
+  (`oldAppInTrash`), never that it is unchanged. The same holds when the Trash took the old copy
+  and did not say where it put it (`trashItem` gave no `resultingItemURL`): there is nothing to put
+  back from here, so it is reported as in the Trash, not as unchanged.
+- **The copy's signature is checked before it is put in place.** The staged copy must pass
+  `SecStaticCodeCheckValidity` (every architecture, nested code included) before the quarantine
+  mark is cleared and before the old app is touched. A copy that fails it (cut short, or changed on
+  the way) is removed and the move stops with `copyFailed`; the old app is unchanged. It checks that
+  the seal is whole, not who signed it: the copy is the bytes of the running app. An unsigned build
+  has no seal, so it is refused too; a developer's ad-hoc build has one and passes.
+- A source that is a link to the app is copied as the app it points to, never as a link, and then
+  neither the link nor the app it points to is trashed: the person opened the link, not the
+  target.
 - A move cut short (a crash, a power cut) leaves a hidden `.<name>.moving.<uuid>` folder in an
   Applications folder. Every launch of a released app removes the folders of that exact form.
 - From a disk image or a translocated path the source is only read: it is a copy, and the person
@@ -428,7 +439,8 @@ other questions of the window are.
   everything in it) before it is put in place; the source keeps its own. The trade-off: the copy is
   not assessed again at its first launch from Applications. That is accepted because it is the
   same bytes the person already opened (the running app, notarized and stapled, passed the check
-  for the download), checked for its identifier and executable before it is used, and because a
+  for the download), checked for its identifier, its executable and its signature's seal before it
+  is used, and because a
   second Gatekeeper prompt, or a second translocation to a read-only copy, for an app the person
   has just chosen to install would defeat the move. A failure to clear the mark is logged and the
   move goes on.
@@ -455,7 +467,11 @@ relaunch as seams. The real `NSWorkspace` relaunch, `FileManager.trashItem`, Gat
 the copied app and the look of the alerts need a first run on a Mac that is not the owner's working
 Mac. A path that reaches `/Applications` only through a symbolic link is read as written by the
 placement rule (the mover does tell a link to the copy from another app).
-**Quarantine and translocation were not measured**: whether a copy that kept the rewritten mark
+**The signature check was run only against a signed app of the system and a changed copy of it,
+and against fake bundles with no signature**, never against a release of this app: a notarized
+release must pass it, nested code included, at its first real run on a Mac that is not the owner's
+working Mac. Whether a seal of that app survives a copy with `copyItem` (extended attributes and
+resource forks) is part of that run. **Quarantine and translocation were not measured**: whether a copy that kept the rewritten mark
 would be translocated again at its first launch, and whether the cleared copy opens with no prompt,
 need the app to be launched, which was not done. Clearing is the choice that does not depend on
 the answer.

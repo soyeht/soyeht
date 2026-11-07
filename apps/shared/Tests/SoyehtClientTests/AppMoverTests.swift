@@ -70,22 +70,24 @@
 
     func mover(
       _ folders: [URL], trash: (any AppTrashing)? = nil,
-      running: any AppRunningCheck = NothingRuns()
+      running: any AppRunningCheck = NothingRuns(),
+      signature: any AppCodeValidating = ValidSignature()
     ) -> AppMover {
       AppMover(
         bundleId: testBundleId, appName: testAppName, folders: folders, trash: trash ?? self.trash,
-        running: running)
+        running: running, signature: signature)
     }
 
     /// An image holding the app, an Applications folder holding an older copy of it, and the
     /// plan to replace that copy.
     func replacement(
-      trash: (any AppTrashing)? = nil, running: any AppRunningCheck = NothingRuns()
+      trash: (any AppTrashing)? = nil, running: any AppRunningCheck = NothingRuns(),
+      signature: any AppCodeValidating = ValidSignature()
     ) throws -> Replacement {
       let source = try app(in: try folder("image"))
       let applications = try folder("Applications")
       let existing = try app(in: applications, stamp: "old")
-      let mover = mover([applications], trash: trash, running: running)
+      let mover = mover([applications], trash: trash, running: running, signature: signature)
       return Replacement(
         source: source, applications: applications, existing: existing, mover: mover,
         plan: try mover.plan(source: source, place: .diskImage))
@@ -142,6 +144,43 @@
       try FileManager.default.moveItem(at: url, to: target)
       items.withLock { $0.append(url) }
       return target
+    }
+  }
+
+  /// The fake apps of these tests carry no signature: this one takes every copy as whole.
+  struct ValidSignature: AppCodeValidating {
+    func isValid(_ app: URL) -> Bool { true }
+  }
+
+  /// A copy whose seal is broken.
+  struct BrokenSignature: AppCodeValidating {
+    func isValid(_ app: URL) -> Bool { false }
+  }
+
+  /// Remembers what it was asked about, and what the destination held at that moment.
+  final class RecordsTheCheck: AppCodeValidating {
+    private let seen = OSAllocatedUnfairLock<[(URL, String?)]>(initialState: [])
+    let destination: URL
+    init(destination: URL) { self.destination = destination }
+
+    var asked: [(URL, String?)] { seen.withLock { $0 } }
+
+    func isValid(_ app: URL) -> Bool {
+      let held = try? String(
+        contentsOf: destination.appending(path: "Contents/stamp"), encoding: .utf8)
+      seen.withLock { $0.append((app, held)) }
+      return true
+    }
+  }
+
+  /// A Trash that takes the item and does not say where it put it.
+  final class TrashesWithoutSayingWhere: AppTrashing {
+    let inner: FakeTrash
+    init(_ inner: FakeTrash) { self.inner = inner }
+
+    func trash(_ url: URL) throws -> URL {
+      _ = try inner.trash(url)
+      throw AppMoveFailure.oldAppInTrash
     }
   }
 
@@ -366,6 +405,52 @@
     try box.expectOnlyThe(app: existing, stamp: "old")
   }
 
+  @Test func aCopyWhoseSignatureIsBrokenIsNeverPutInPlace() async throws {
+    let box = try MoveSandbox()
+    let (existing, mover, plan) = try box.replacement(signature: BrokenSignature()).parts
+    await #expect(throws: AppMoveFailure.copyFailed) {
+      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    }
+    try box.expectOnlyThe(app: existing, stamp: "old")
+  }
+
+  @Test func theSignatureOfTheStagedCopyIsCheckedWhileTheOldAppIsStillInPlace() async throws {
+    let box = try MoveSandbox()
+    let source = try box.app(in: try box.folder("image"))
+    let applications = try box.folder("Applications")
+    let existing = try box.app(in: applications, stamp: "old")
+    let check = RecordsTheCheck(destination: existing)
+    let mover = box.mover([applications], signature: check)
+    let plan = try mover.plan(source: source, place: .diskImage)
+    try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    let asked = check.asked
+    #expect(asked.count == 1)
+    #expect(asked[0].0.deletingLastPathComponent() == applications)
+    #expect(asked[0].0.lastPathComponent.hasPrefix(".\(testAppName).moving."))
+    #expect(asked[0].1 == "old", "nothing was trashed or replaced yet")
+    #expect(try box.stamp(of: existing) == "new")
+  }
+
+  @Test func aTrashThatTookTheOldAppWithoutSayingWhereIsReportedAsBeingInTheTrash() async throws {
+    let box = try MoveSandbox()
+    let (existing, mover, plan) = try box.replacement(
+      trash: TrashesWithoutSayingWhere(box.trash)
+    ).parts
+    await #expect(throws: AppMoveFailure.oldAppInTrash) {
+      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    }
+    #expect(box.trash.trashed == [existing])
+    #expect(!FileManager.default.fileExists(atPath: existing.path))
+    let folder = existing.deletingLastPathComponent()
+    #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
+  }
+
+  @Test func theSystemTrashSaysWhereAnItemWentOrThatItDidNot() throws {
+    let url = URL(fileURLWithPath: "/tmp/somewhere-in-the-trash")
+    #expect(try SystemTrash.located(url as NSURL) == url)
+    #expect(throws: AppMoveFailure.oldAppInTrash) { try SystemTrash.located(nil) }
+  }
+
   @Test func aDestinationThatChangedSinceThePlanIsNotTouched() async throws {
     let box = try MoveSandbox()
     let source = try box.app(in: try box.folder("image"))
@@ -407,6 +492,24 @@
     let moved = try await mover.move(plan, place: .diskImage, confirmedReplace: false)
     #expect(!hasQuarantine(moved) && !hasQuarantine(moved.appending(path: "Contents/stamp")))
     #expect(hasQuarantine(source), "a disk image or translocated source is not touched")
+  }
+
+  @Test func aLinkToTheAppIsCopiedAsTheAppNotAsALinkAndNothingIsTrashed() async throws {
+    let box = try MoveSandbox()
+    let real = try box.app(in: try box.folder("Elsewhere"), stamp: "real")
+    let link = try box.folder("Downloads").appending(path: "\(testAppName).app")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    let applications = try box.folder("Applications")
+    let mover = box.mover([applications])
+    let plan = try mover.plan(source: link, place: .elsewhere)
+    #expect(plan.keepsSource, "neither the link nor the app it points to is trashed")
+    let moved = try await mover.move(plan, place: .elsewhere, confirmedReplace: false)
+    let attributes = try FileManager.default.attributesOfItem(atPath: moved.path)
+    #expect(attributes[.type] as? FileAttributeType == .typeDirectory, "a bundle, not a link")
+    #expect(try box.stamp(of: moved) == "real")
+    #expect(try box.stamp(of: real) == "real")
+    #expect(FileManager.default.fileExists(atPath: link.path))
+    #expect(box.trash.trashed.isEmpty)
   }
 
   @Test func aSymlinkToTheCopyInApplicationsIsTheSameAppAndNothingIsTrashed() async throws {

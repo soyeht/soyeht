@@ -13,7 +13,13 @@
     public func trash(_ url: URL) throws -> URL {
       var result: NSURL?
       try FileManager.default.trashItem(at: url, resultingItemURL: &result)
-      guard let trashed = result as URL? else { throw AppMoveFailure.replaceFailed }
+      return try Self.located(result)
+    }
+
+    /// Where the item went. The system reports it with the item already in the Trash; when it
+    /// reports nothing, the item is there but cannot be put back from here.
+    static func located(_ result: NSURL?) throws -> URL {
+      guard let trashed = result as URL? else { throw AppMoveFailure.oldAppInTrash }
       return trashed
     }
   }
@@ -45,7 +51,8 @@
     /// The old app could not be put in the Trash, or the new one could not take its place; the
     /// old app is where it was.
     case replaceFailed
-    /// The old app is in the Trash and could not be put back.
+    /// The old app is in the Trash and could not be put back, or the Trash did not say where it
+    /// put it.
     case oldAppInTrash
   }
 
@@ -87,16 +94,19 @@
     let folders: [URL]
     let trash: any AppTrashing
     let running: any AppRunningCheck
+    let signature: any AppCodeValidating
 
     public init(
       bundleId: String, appName: String, folders: [URL], trash: any AppTrashing = SystemTrash(),
-      running: any AppRunningCheck = WorkspaceRunningCheck()
+      running: any AppRunningCheck = WorkspaceRunningCheck(),
+      signature: any AppCodeValidating = SystemCodeValidity()
     ) {
       self.bundleId = bundleId
       self.appName = appName
       self.folders = folders
       self.trash = trash
       self.running = running
+      self.signature = signature
     }
 
     /// `Contents/Info.plist` of the bundle at `url`, read from the file each time (`Bundle` caches
@@ -128,6 +138,17 @@
       } catch {
         return nil
       }
+    }
+
+    /// Whether the bundle is a link to an app. `copyItem` would copy the link, and the person's
+    /// folder would keep a link where the app was supposed to be.
+    static func isLink(_ url: URL) -> Bool {
+      (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+    }
+
+    /// The bundle to copy: the app a link points to, else the bundle itself.
+    static func copySource(_ url: URL) -> URL {
+      isLink(url) ? url.resolvingSymlinksInPath() : url
     }
 
     private func isThisApp(_ url: URL) -> Bool {
@@ -171,7 +192,7 @@
         if files.fileExists(atPath: target.path) { throw AppMoveFailure.destinationIsAnotherApp }
         return AppMovePlan(
           source: source, destination: target, createsFolder: state == .missing,
-          replacesExisting: false, keepsSource: place.isReadOnlyOrigin, destinationID: nil)
+          replacesExisting: false, keepsSource: keepsSource(source, place), destinationID: nil)
       }
       throw AppMoveFailure.noWritableFolder
     }
@@ -187,7 +208,13 @@
       }
       return AppMovePlan(
         source: source, destination: existing, createsFolder: false, replacesExisting: true,
-        keepsSource: place.isReadOnlyOrigin, destinationID: id)
+        keepsSource: keepsSource(source, place), destinationID: id)
+    }
+
+    /// The source is only read when it is a disk image's or a translocated copy, and when it is
+    /// a link: the app it points to is not what the person opened, so it is not trashed.
+    private func keepsSource(_ source: URL, _ place: AppPlacement.Place) -> Bool {
+      place.isReadOnlyOrigin || Self.isLink(source)
     }
 
     /// Carries out `plan`: copies the app next to its destination under a staging name, checks
@@ -214,13 +241,20 @@
         if plan.createsFolder {
           try files.createDirectory(at: folder, withIntermediateDirectories: false)
         }
-        try files.copyItem(at: plan.source, to: staging)
+        try files.copyItem(at: Self.copySource(plan.source), to: staging)
       } catch {
         Self.discard(staging)
         clientLogger.error("app move: copy failed kind=\(Self.kind(error), privacy: .public)")
         throw AppMoveFailure.copyFailed
       }
       guard isStagedCopy(staging) else {
+        Self.discard(staging)
+        throw AppMoveFailure.copyFailed
+      }
+      // Before the quarantine mark goes and before the old app is touched: a copy whose seal is
+      // broken (cut short, or changed on the way) is never put in place.
+      guard signature.isValid(staging) else {
+        clientLogger.error("app move: the copy's signature is not valid")
         Self.discard(staging)
         throw AppMoveFailure.copyFailed
       }
@@ -237,6 +271,8 @@
       } catch {
         clientLogger.error("app move: replace failed kind=\(Self.kind(error), privacy: .public)")
         Self.discard(staging)
+        // The Trash took the old app and did not say where: there is nothing to put back.
+        if let failure = error as? AppMoveFailure, failure == .oldAppInTrash { throw failure }
         if let trashed, !restore(trashed, to: plan.destination) {
           throw AppMoveFailure.oldAppInTrash
         }
@@ -260,7 +296,7 @@
       else { throw AppMoveFailure.planChanged }
     }
 
-    /// The copy is complete enough to launch: same identifier, and the executable is there.
+    /// The copy is complete enough to check: same identifier, and the executable is there.
     private func isStagedCopy(_ url: URL) -> Bool {
       guard
         let info = Self.info(at: url),
