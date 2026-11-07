@@ -39,6 +39,11 @@ impl Notifier {
         Self::default()
     }
 
+    /// Whether alerts can be sent: the credentials loaded and the worker runs.
+    pub fn enabled(&self) -> bool {
+        self.jobs.as_ref().is_some_and(|jobs| !jobs.is_closed())
+    }
+
     /// Runs `worker` on the current Tokio runtime.
     pub fn spawn<T: apns::Transport>(worker: Worker<T>) -> Self {
         let (jobs, receiver) = mpsc::unbounded_channel();

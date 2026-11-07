@@ -10,7 +10,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_platform::log::{Failure as _, Line};
 use soyeht_protocol::{
-    Actor, AttachmentRef, ClientCapability, HelloParams, Role, Welcome,
+    Actor, AttachmentRef, ClientCapability, EngineCapability, HelloParams, Role, Welcome,
     attachment::AttachmentAssembler, event, frame::Frame, limits, method, method_family,
 };
 use std::collections::BTreeMap;
@@ -262,7 +262,7 @@ impl Core {
             protocol_version: limits::PROTOCOL_VERSION,
             connection_id: connection.into(),
             role,
-            capabilities: capabilities(),
+            capabilities: self.capabilities()?,
             db_id: self.store.db_id.clone(),
             engine_proof,
         })
@@ -639,7 +639,7 @@ impl Core {
         } else {
             sections.push(("requests".into(), pairing));
         }
-        sections.push(("capabilities".into(), json!(capabilities())));
+        sections.push(("capabilities".into(), json!(self.capabilities()?)));
         sections.push(("writing".into(), self.writing_snapshot()?));
         let streams:Vec<_>=self.panes.values().filter(|p|!p.stored.closed && p.stored.pane.mode == soyeht_protocol::PaneMode::Terminal).map(|p|json!({"paneId":p.stored.pane.pane_id,"streamId":p.stored.pane.stream_id,"generation":p.stored.pane.generation,"firstRetainedOffset":p.screen.first_offset().to_string(),"nextOffset":p.screen.next_offset().to_string(),"binaryPaneRef":0})).collect();
         sections.push(("streams".into(), json!(streams)));
@@ -704,19 +704,31 @@ impl Core {
             result: json!({"snapshotId":snapshot_id,"cursor":snapshot.cursor.to_string(),"parts":count,"focus":focus_value}),
         })
     }
-}
 
-pub fn capabilities() -> Vec<String> {
-    vec![
-        "terminal".into(),
-        "workspaces".into(),
-        "snapshot-parts".into(),
-        "event-replay".into(),
-        "terminal-replay".into(),
-        "device-pairing".into(),
-        "workspace-tasks".into(),
-        "subscription-usage".into(),
-    ]
+    /// What the engine offers, by wire name. `push` is offered only while the engine can send
+    /// alerts, so a phone asks for notification permission only when an alert could reach it.
+    pub(crate) fn capabilities(&self) -> Result<Vec<String>> {
+        let mut offered = vec![
+            EngineCapability::Terminal,
+            EngineCapability::Workspaces,
+            EngineCapability::SnapshotParts,
+            EngineCapability::EventReplay,
+            EngineCapability::TerminalReplay,
+            EngineCapability::DevicePairing,
+            EngineCapability::WorkspaceTasks,
+            EngineCapability::SubscriptionUsage,
+        ];
+        if self.push.enabled() {
+            offered.push(EngineCapability::Push);
+        }
+        offered
+            .iter()
+            .map(|capability| match serde_json::to_value(capability) {
+                Ok(Value::String(name)) => Ok(name),
+                _ => Err(errors::internal("Capability serialization failed")),
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]

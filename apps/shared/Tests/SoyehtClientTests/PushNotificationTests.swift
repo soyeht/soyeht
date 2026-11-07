@@ -129,3 +129,12 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
   #expect(PushToken.environment(provisioningProfile: nil, simulator: false) == .production)
   #expect(PushToken.environment(provisioningProfile: nil, simulator: true) == .sandbox)
 }
+
+@MainActor @Test func aPhoneAsksForNotificationsOnlyWhenTheEngineOffersPush() {
+  let client = EngineClient(socket: "/tmp/push-capability.sock")
+  #expect(!client.engineOffers(.push))
+  client.engineCapabilities = [EngineCapability.terminal.rawValue]
+  #expect(!client.engineOffers(.push))
+  client.engineCapabilities.insert(EngineCapability.push.rawValue)
+  #expect(client.engineOffers(.push))
+}

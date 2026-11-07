@@ -348,3 +348,15 @@ async fn only_a_paired_device_registers_and_revocation_removes_it() {
     rig.ask();
     assert!(rig.next_request().await.is_none());
 }
+
+#[tokio::test(start_paused = true)]
+async fn push_is_offered_only_while_the_engine_can_send_alerts() {
+    let push = "push".to_string();
+    let rig = Rig::new(vec![]);
+    assert!(rig.core.capabilities().unwrap().contains(&push));
+    let root = std::env::temp_dir().join(format!("sn-push-off-{}", uuid::Uuid::new_v4()));
+    let core = Core::open(&root).unwrap();
+    let offered = core.capabilities().unwrap();
+    assert!(!offered.contains(&push));
+    assert!(offered.contains(&"terminal".to_string()));
+}

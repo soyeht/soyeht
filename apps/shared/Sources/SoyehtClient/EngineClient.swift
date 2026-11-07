@@ -77,6 +77,7 @@ public final class EngineClient {
   /// Whether paired devices can reach the engine; `nil` until the engine says.
   public internal(set) var reachability: EngineReachability?
   public internal(set) var connectionActor: Actor?
+  public internal(set) var engineCapabilities: Set<String> = []
   @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
   @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
   @ObservationIgnored private var terminalOutputSinks: [String: TerminalOutputTarget] = [:]
@@ -293,11 +294,10 @@ public final class EngineClient {
     try verification?.check(welcome)
     guard welcome.role == (pairedDevice ? .human_device : .human_local),
       welcome.protocolVersion == ProtocolVersion.current
-    else {
-      throw ClientFailure.invalidFrame
-    }
+    else { throw ClientFailure.invalidFrame }
     connectionActor = Actor(
       role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
+    engineCapabilities = Set(welcome.capabilities)
     _ = try await request(.stateSnapshot, .object([:]))
     try await loadPreferredHarness()
     _ = try await request(.eventsSubscribe, .object(["since": .string(String(cursor))]))

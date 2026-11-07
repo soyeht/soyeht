@@ -2870,6 +2870,8 @@ export interface EditorReviewRequestedEvent {
 
 export type ClientCapability = "web_host";
 
+export type EngineCapability = "terminal" | "workspaces" | "snapshot-parts" | "event-replay" | "terminal-replay" | "device-pairing" | "workspace-tasks" | "subscription-usage" | "push";
+
 export type WebInteractionMode = "structured" | "human";
 
 export type WebNavigationAction = "back" | "forward" | "reload" | "reload_ignoring_cache";

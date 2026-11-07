@@ -16,6 +16,11 @@ Security.
 
 The first public release.
 
+Push notifications are not part of this release. The iPhone and iPad app does not ask for
+notification permission, and your computer sends nothing to Apple's push service. The Mac, Windows
+and Linux apps still raise a system notification on your computer when an agent needs you. Push
+comes back in a later release.
+
 ### Added
 
 - Soyeht for the Mac, for Windows and Linux, and for the iPhone and iPad. The phone and the tablet
@@ -52,4 +57,3 @@ The first public release.
   an older Mac says to update it, and one paired before says to pair again.
 - The supervisor's socket checks the user on the other end, and a private directory counts as private only
   when you own it. A web page can no longer open a WebSocket to the engine.
-- A push notification says nothing of what the agent asked.
