@@ -190,14 +190,7 @@ impl Workbench {
                     .px(px(space::X8))
                     .own_press()
                     // One line, cut at the field's edge: an address that wrapped was drawn in pieces.
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .children(field),
-                    ),
+                    .child(grow().overflow_hidden().whitespace_nowrap().children(field)),
             )
             .children(person_has_it.then(|| {
                 let owner = pane_id.clone();
