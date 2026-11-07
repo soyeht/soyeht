@@ -266,7 +266,8 @@ Three things keep that true:
    leaves a running one alone).
 2. The app **refuses to register from a disk image or from an App Translocation path**
    (`/Volumes/...`, `.../AppTranslocation/...`), the two places a freshly downloaded app runs from
-   before it is moved. The setup list says "Move Soyeht Next to your Applications folder and open
+   before it is moved (widened to every place outside Applications, and given a move that the app
+   does itself, by "Amendment: where the app may run" below). The setup list says "Move Soyeht Next to your Applications folder and open
    it from there".
 3. A program already running keeps its old path until it stops (a loaded agent keeps the text it
    was loaded with). If it crashes before the app is opened again, launchd cannot restart it; the
@@ -357,3 +358,104 @@ stale (the new text differs from the file on disk, so `current` is false).
 
 **Superseded in part: the running programs.** Dragging the app to the Trash left the engine and the
 supervisor running; ADR 0130 makes them end themselves when their file is gone.
+
+## Amendment: where the app may run
+
+**Why.** macOS keys the privacy grants of the bundle's programs (Files & Folders, Automation, App
+Management, Local Network) by path, and the launch agents are registered at the path the app had
+when it registered them. An app that registered from `~/Downloads` and is moved later gets new rows
+in System Settings and leaves the old ones behind. The first rule above only refused a disk image
+and a translocated path; a plain download folder registered fine and made the duplicate rows.
+
+**The rule.** A *stable place* is `/Applications` or `~/Applications`, with any subfolder (a path
+with at least one component below the folder; the folder itself is not an app). Every other place
+is not: a mounted volume (`/Volumes/...`), an App Translocation path, and anywhere else
+(`~/Downloads`, the desktop). It is `AppPlacement` in `apps/shared`, a pure function of a path and
+the home folder with its own tests, and it is the only place the rule is written: `BundledEngineService.runsFromStablePlace`
+(what refuses to register), the offer and the menu all ask it. It applies to a released profile
+(`AppPlacement.appliesTo`: every profile but Dev). The Dev profile installs to its own folder
+(`docs/dev-local.md`) and runs from wherever it was built; a copy with no `soyeht` in its bundle
+starts no engine, so where it runs does not matter either. The folder names are compared without
+regard to case (the system volume is case-insensitive, so `/applications/X.app` is
+`/Applications/X.app`). Folders are not resolved through symbolic links: a `~/Applications` that
+the person made a link to another disk is still `~/Applications`.
+
+**The offer.** A released app that starts outside a stable place asks once, before anything is
+registered: "Move Soyeht to Applications?" with "Move to Applications" and "Not now". The words are
+`x-clientPolicy.texts` (`appMove...`, with `loginStartNotNow`, `cancel`, `tryAgain` and `ok`), as the
+other questions of the window are.
+"Move to Applications" copies the app to `/Applications` or, when that cannot be written, to
+`~/Applications` (created if missing), opens the copy and quits this one. `AppMover` does it:
+
+- It reads and writes only bundles whose `CFBundleIdentifier` is the profile's own
+  (`appBundleId` of `contracts/profiles.json`) and refuses anything else with no change
+  (`notThisApp`), and the destination is named by the profile (`macApp`, `Soyeht Next.app`), never
+  by the file that was opened, so it cannot create or replace the legacy `Soyeht.app` (ADR 0112).
+- It copies next to the destination under a hidden staging name, checks the copy (same identifier,
+  executable present), puts an old copy in the Trash, and renames the copy into place. Any failure
+  removes the staging copy; an old copy that was put in the Trash is put back. Nothing is ever
+  hard-deleted.
+- A copy of this app that is already in either Applications folder is the destination: it is
+  replaced there, only after a second question, "Replace the app in Applications?" ("The old copy
+  goes to the Trash."). The move never writes the other folder, since that would leave two stable
+  copies and the duplicate rows again. When the copy is in a folder this account cannot write
+  (installed by an administrator, say), the move is refused and says so (`existingCopyLocked`). A
+  copy that is running is not replaced: the person is asked to quit it first (`destinationRunning`),
+  because a running copy that is trashed would keep running, and the new copy would find its
+  registration current. A different app with the name is never replaced, and the move does not fall
+  through to `~/Applications` to leave a second copy beside it (`destinationIsAnotherApp`).
+- The app being moved is refused when it is the copy in Applications under another path (a link, or
+  a path that differs in case): both resolve to one file (device and inode), and `alreadyThere`
+  says to open that copy. Without this the plan would replace the app with itself and then trash
+  the new copy.
+- The plan is made again at the moment of the move, and the destination is looked at once more
+  after the copy, immediately before the Trash is given anything: it must still be this profile's
+  app, the same file as in the plan, and not running. A destination that changed during the question
+  or the copy stops the move (`planChanged`) and nothing there is trashed.
+- When the rename fails after the old copy went to the Trash, the old copy is put back. If that
+  fails too, the person is told the old copy is in the Trash and to drag it back
+  (`oldAppInTrash`), never that it is unchanged.
+- A move cut short (a crash, a power cut) leaves a hidden `.<name>.moving.<uuid>` folder in an
+  Applications folder. Every launch of a released app removes the folders of that exact form.
+- From a disk image or a translocated path the source is only read: it is a copy, and the person
+  ejects the image afterwards. From any other folder it is a move: the original goes to the Trash
+  once the copy is in place (a failure to trash it is logged, and the move still succeeded).
+- `/Applications` that cannot be written (a standard account) falls back to `~/Applications`
+  when no copy of the app is in either.
+- **Quarantine is cleared on the copy.** `copyItem` rewrites the `com.apple.quarantine` mark (a
+  download mark `0083;<time>;Safari;` became `0283;00000000;;`, with no origin), so the copy would
+  look like a new download to Gatekeeper. The mark is removed from the copy (the staged folder and
+  everything in it) before it is put in place; the source keeps its own. The trade-off: the copy is
+  not assessed again at its first launch from Applications. That is accepted because it is the
+  same bytes the person already opened (the running app, notarized and stapled, passed the check
+  for the download), checked for its identifier and executable before it is used, and because a
+  second Gatekeeper prompt, or a second translocation to a read-only copy, for an app the person
+  has just chosen to install would defeat the move. A failure to clear the mark is logged and the
+  move goes on.
+
+After a successful move the app opens the copy as a new process (the two share a bundle
+identifier) and quits. The copy sees a stable place, asks nothing about moving, repairs a
+registration that names the old path, and asks the login question of the first run as before.
+
+**A no, or a move that does not happen.** The login agents are not registered from the unstable
+path. The engine is simply off, and the setup list says why in one sentence ("The engine is off. It
+needs Soyeht in your Applications folder so macOS remembers its permissions.") with a "Move to
+Applications" button. "Not now" is remembered (`soyeht.appPlacement.declined`), so the question is not
+asked at every launch; a "Soyeht" menu item "Move to Applications…" is there for as long as the app
+is outside a stable place. A failure shows a short alert with the reason and "Try again"; "OK" leaves the engine off
+and the move available. Cancelling the replacement counts as a no. A move that succeeds but whose
+copy does not open says where the app is now, keeps this copy running and offers no second move
+(it would replace the one just made). Nothing loops: the new copy is in a stable place, and every
+retry is the person's click.
+
+**Not verified.** Nothing was opened, launched or installed. The move is tested against temp
+directories (a fake disk image folder, an existing destination, a read-only Applications folder, a
+different bundle identifier, a refusing Trash, a copy that stops half way), with the Trash and the
+relaunch as seams. The real `NSWorkspace` relaunch, `FileManager.trashItem`, Gatekeeper's check of
+the copied app and the look of the alerts need a first run on a Mac that is not the owner's working
+Mac. A path that reaches `/Applications` only through a symbolic link is read as written by the
+placement rule (the mover does tell a link to the copy from another app).
+**Quarantine and translocation were not measured**: whether a copy that kept the rewritten mark
+would be translocated again at its first launch, and whether the cleared copy opens with no prompt,
+need the app to be launched, which was not done. Clearing is the choice that does not depend on
+the answer.
