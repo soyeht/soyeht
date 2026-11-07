@@ -168,15 +168,6 @@ impl Rig {
             ),
         );
     }
-    /// A program named `name` on the engine's search path that exists but is never run.
-    pub fn install_stub_executable(&self, name: &str) {
-        let bin = self.path.join("bin");
-        fs::create_dir_all(&bin).unwrap();
-        #[cfg(unix)]
-        write_script(&bin.join(name), "#!/bin/sh\nexit 0\n");
-        #[cfg(windows)]
-        fs::write(bin.join(format!("{name}.exe")), "MZ").unwrap();
-    }
     pub fn install_switch_harnesses(&self) {
         let binary = sibling_binary("soyeht-fake-acp");
         self.write_harnesses(&json!([
