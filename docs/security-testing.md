@@ -35,8 +35,8 @@ Terminal output parsing is fuzzed in the `vt100` fork and in SwiftTerm, not here
 
 `cargo test -p soyeht-protocol -p soyeht-platform -p soyeht-web -p soyeht-ptyd --test fuzz` and
 `cargo test -p soyeht-engine --lib containment_fuzz` run a fixed number of cases from a fixed
-seed per target, so a run is the same every time and takes seconds. The full engine test run
-includes them.
+seed per target, so a run is the same every time and takes seconds. This is the gate step
+`security:fuzz`; the full engine test run includes the same tests.
 
 ### The long run
 
@@ -51,6 +51,10 @@ SOYEHT_FUZZ_SECONDS=300 nice -n 15 cargo test --release -j 4 \
 SOYEHT_FUZZ_SECONDS=300 nice -n 15 cargo test -j 4 -p soyeht-engine --lib containment_fuzz \
   -- --test-threads 2 --nocapture
 ```
+
+The full tier runs the same targets with a short budget (`security:fuzz-long`, release builds,
+`SOYEHT_FUZZ_LONG_SECONDS` per target, default 30). Run them for minutes or hours before a
+release, or after a change to a parser, and keep any crash as a test (below).
 
 ### When a target fails
 
@@ -88,7 +92,8 @@ in `engine/soyeht-vcs/tests/`.
 Run them with
 `cargo test -p soyeht-engine --features soyeht-engine/contract-checks --test runtime attack_`
 (after `cargo build --workspace --features soyeht-engine/contract-checks`, which builds the
-programs the rig starts) and `cargo test -p soyeht-vcs --test hostile_repository`.
+programs the rig starts) and `cargo test -p soyeht-vcs --test hostile_repository`. The gate step
+is `security:attacks`.
 
 ### Adding an attack
 
@@ -96,3 +101,17 @@ Add a test to the module of its class. Assert the exact error code, and that not
 compare the files outside the workspace before and after, or the panes and workspaces the
 request would have made. A method with a role or path rule is covered by the matrices of
 `attack_wire` and `attack_paths` without a new test; add an entry when a new method takes a path.
+
+## The gate steps
+
+`scripts/check_all.sh` is the only list of steps.
+
+| Step | Area and tier | Runs |
+| --- | --- | --- |
+| `security:fuzz` | `engine`, fast and full | the short fuzz run: the `fuzz` tests of the protocol, platform, web and supervisor crates, and the engine's `containment_fuzz` |
+| `security:attacks` | `engine`, fast and full | the `attack_` tests against a running engine, and the hostile-repository test |
+| `security:fuzz-long` | `engine`, full only | the same fuzz targets for `SOYEHT_FUZZ_LONG_SECONDS` each (default 30), in release builds |
+
+`security:attacks` needs the programs the rig starts, which `engine:build` builds earlier in the
+same run. Both fast steps run whenever the plan selects the engine, so a change to any engine
+crate is attacked, not only a change to the crates that have fuzz targets.
