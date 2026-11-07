@@ -595,7 +595,8 @@ fn a_workspace_created_during_the_session_is_asked_about_when_the_engine_says_un
     let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Trusted)]));
     create_workspace(&mut state, "w2");
     state.apply(trust_changed(&["w2"], "undecided"));
-    assert_eq!(state.selected_workspace().unwrap().workspace_id, "w2");
+    assert_eq!(prompt_for(&state), None, "w1 is still the selected one");
+    state.select_workspace("w2");
     assert_eq!(prompt_for(&state), Some("w2"));
     state.apply(trust_changed(&["w2"], "trusted"));
     assert_eq!(prompt_for(&state), None);
