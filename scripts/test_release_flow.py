@@ -505,12 +505,41 @@ class BuildTests(FlowCase):
 
         class Watching(Recorder):
             def must(inner, command, **options):
-                seen.append((tuple(command[:2]), (self.dist / release_checks.BUILD_SHA).exists()))
+                seen.append((command[0], (self.dist / release_checks.BUILD_SHA).exists()))
                 super().must(command, **options)
 
         self.quiet(release_flow.build, self.options("build", "--mac", "--linux"), Watching(), probe_for(), HOSTS)
-        self.assertTrue(seen and all(not existed for _, existed in seen))
+        self.assertEqual(seen[0], ("nice", False), "nothing is recorded before the first package is built")
+        self.assertTrue(all(recorded for _, recorded in seen[1:]), "it is recorded as soon as one step has built")
         self.assertTrue((self.dist / release_checks.BUILD_SHA).is_file())
+
+    def test_a_host_that_fails_can_be_run_again_alone_after_the_other_one_copied_its_packages(self):
+        class Failing(Recorder):
+            def must(inner, command, **options):
+                super().must(command, **options)
+                if command[0] == "scp" and "linux-x86_64" in command[3]:
+                    self.package("linux", "x86_64", "deb")  # what the copy brought
+                if command[0] == "ssh" and command[3] == "ci-arm":
+                    raise release_flow.Refused("ssh failed with status 255")
+
+        with self.assertRaises(release_flow.Refused):
+            self.quiet(release_flow.build, self.options("build", "--linux"), Failing(), probe_for(), HOSTS)
+        self.assertEqual((self.dist / release_checks.BUILD_SHA).read_text().strip(), SHA)
+        status, recorder, _ = self.build("--linux-arch", "aarch64", environment=HOSTS)
+        self.assertEqual(status, 0)
+        self.assertEqual([c[0] for c in recorder.commands], ["git", "ssh", "scp"])
+
+    def test_one_architecture_implies_linux_and_never_builds_the_mac_package_alone(self):
+        _, recorder, _ = self.build("--linux-arch", "aarch64", environment=HOSTS)
+        self.assertNotIn("nice", [c[0] for c in recorder.commands])
+        _, recorder, _ = self.build("--mac", "--linux-arch", "x86_64", environment=HOSTS)
+        self.assertEqual([c[0] for c in recorder.commands], ["nice", "git", "ssh", "scp"])
+
+    def test_a_missing_linux_host_stops_the_build_before_the_mac_package(self):
+        recorder = Recorder()
+        with self.assertRaisesRegex(release_flow.Refused, "no Linux build host"):
+            self.quiet(release_flow.build, self.options("build", "--mac", "--linux"), recorder, probe_for(), {})
+        self.assertEqual(recorder.commands, [])
 
     def test_a_build_also_marks_an_ad_hoc_folder_and_refuses_one_of_another_commit(self):
         adhoc = self.dist / "ad-hoc"

@@ -111,7 +111,10 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    that architecture's `.deb` and AppImage copied back to `dist/`. The x86_64 host is `--linux-host` or
    `SOYEHT_RELEASE_LINUX_HOST`, the aarch64 host `--linux-aarch64-host` or
    `SOYEHT_RELEASE_LINUX_AARCH64_HOST`; there is no default for either, and `--linux` needs both.
-   `--linux-arch x86_64` or `--linux-arch aarch64` builds one architecture alone (to redo it).
+   The hosts are looked up before anything is built, so a missing one fails at once. `BUILD_SHA` is written
+   as soon as a step has built, so if one host fails after the other copied its packages, run
+   `build --linux-arch aarch64` (or `x86_64`) again for the one that failed. `--linux-arch` implies
+   `--linux`, and with no other flag builds that architecture alone.
 
 3. **Windows.** `build --windows` prints the command; run it on the Windows host with the
    `SOYEHT_WINDOWS_SIGN_*` variables set:

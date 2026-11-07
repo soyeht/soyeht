@@ -285,18 +285,30 @@ def mark_build(folder, sha, dry_run):
 
 def build(options, runner=None, probe=probe, environment=os.environ):
     runner = runner or Runner(options.dry_run)
-    chosen = [system for system, flag in TARGETS.items() if getattr(options, flag)] or list(TARGETS)
+    # `--linux-arch` names Linux packages, so it implies `--linux`.
+    flagged = {system: getattr(options, flag) or (system == "linux" and bool(options.linux_arch)) for system, flag in TARGETS.items()}
+    chosen = [system for system, wanted in flagged.items() if wanted] or list(TARGETS)
     status = refuse_or_warn(source_problems(probe), "not a release checkout", options.dry_run)
     version, sha = str(release.current().version), head(probe)
     status |= refuse_or_warn(stale_build_problems(options.dist, version, sha), "cannot build here", options.dry_run)
+    # The hosts are found before anything is built, so a missing one does not cost a Mac build.
+    hosts = {}
+    if "linux" in chosen:
+        hosts = {architecture: linux_host(options, environment, architecture) for architecture in options.linux_arch or LINUX_BUILDERS}
+
+    def built():
+        """Record the commit as soon as one package set exists, so that a later step that fails (the
+        other Linux host) can be run again alone: its folder is then no stranger's."""
+        if not options.dry_run:
+            mark_build(options.dist, sha, False)
+
     if "macos" in chosen:
         command = ["nice", "-n", "15", "uv", "run", "python", "scripts/package_mac.py", "--dist", str(options.dist)]
         runner.must(command if options.allow_unsigned else [*command, "--release"])
-    if "linux" in chosen:
-        architectures = options.linux_arch or list(LINUX_BUILDERS)
-        hosts = {architecture: linux_host(options, environment, architecture) for architecture in architectures}
-        for architecture, host in hosts.items():
-            build_linux(runner, host, version, sha, options.dist, environment, architecture)
+        built()
+    for architecture, host in hosts.items():
+        build_linux(runner, host, version, sha, options.dist, environment, architecture)
+        built()
     if "windows" in chosen:
         print(windows_instructions(version, sha))
     mark_build(options.dist, sha, options.dry_run)
