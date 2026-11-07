@@ -58,27 +58,28 @@ fn parent(root: &Path, path: &Path) -> Result<(Directory, Name)> {
 /// An agent that may edit the project's files may not edit these: a hook, a setting that names a
 /// program, or the file that points a worktree at its repository run code the next time git is
 /// started, outside every permission the agent was given. Windows reads `.git.` and `GIT~1` as
-/// the same folder, so they count.
+/// the same folder, and an NTFS name may carry a stream (`.git::$INDEX_ALLOCATION` is the folder
+/// itself), so a component is cut at its first `:` before it is compared, and on Windows any name
+/// with a `:` is refused.
+///
+/// What this does not cover: files written by the agent's own tools (a shell, an adapter's editor),
+/// which the engine does not see; a control folder with another name (`GIT_DIR`, a separate git
+/// directory inside the root); and a hook folder that is tracked in the repository (`.githooks`,
+/// `.husky`) which a setting points git to.
 pub fn is_repository_control(root: &Path, path: &Path) -> bool {
     let relative = path.strip_prefix(root).unwrap_or(path);
     relative.components().any(|part| match part {
         Component::Normal(name) => {
             let name = name.to_string_lossy();
-            let name = name.trim_end_matches(['.', ' ']);
-            name.eq_ignore_ascii_case(".git") || name.eq_ignore_ascii_case("git~1")
+            if cfg!(windows) && name.contains(':') {
+                return true;
+            }
+            let base = name.split(':').next().unwrap_or_default();
+            let base = base.trim_end_matches(['.', ' ']);
+            base.eq_ignore_ascii_case(".git") || base.eq_ignore_ascii_case("git~1")
         }
         _ => false,
     })
-}
-
-/// Fails for a path an agent may not write (see [`is_repository_control`]).
-pub fn ensure_writable(root: &Path, path: &Path) -> Result<()> {
-    if is_repository_control(root, path) {
-        return Err(invalid(
-            "a repository's .git folder is not written by an agent",
-        ));
-    }
-    Ok(())
 }
 
 pub fn read(root: &Path, path: &Path) -> Result<String> {
@@ -121,7 +122,6 @@ pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) 
     if content.len() > limits::ACP_MESSAGE_BYTES {
         return Err(invalid("text content exceeds 1 MiB"));
     }
-    ensure_writable(root, path)?;
     let (directory, leaf) = parent(root, path)?;
     let attributes = match system::open_file(&directory, &leaf) {
         Ok(file) => {
@@ -213,10 +213,13 @@ mod tests {
             root.join(".GIT/config"),
             root.join(".git."),
             root.join("GIT~1/config"),
+            root.join(".git::$INDEX_ALLOCATION/config"),
+            root.join(".git:stream"),
+            root.join("sub/.GIT::$DATA"),
             root.join("vendor/inner/.git/config"),
             root.join("linked/.git"),
         ] {
-            assert!(write(&root, &path, "x").is_err(), "{}", path.display());
+            assert!(is_repository_control(&root, &path), "{}", path.display());
             assert!(!permits_edit(&root, &path), "{}", path.display());
         }
         assert!(!hook.exists());

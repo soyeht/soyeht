@@ -33,6 +33,9 @@ pub fn finish(
     changes.outgoing.push(native);
 }
 
+/// The code of a write the engine refuses because of where it is, not because it failed.
+const WRITE_REFUSED: i32 = -32002;
+
 pub fn failure(message: impl Into<String>) -> RpcError {
     RpcError {
         code: -32603,
@@ -147,8 +150,17 @@ impl Core {
         let content = request.params["content"]
             .as_str()
             .ok_or_else(|| failure("Text content is required"))?;
-        // Before the editor sees the path: a file the editor tracks is written by another route.
-        filesystem::ensure_writable(root, path).map_err(|error| failure(error.to_string()))?;
+        // The one place a path is refused, before the editor sees it: a file the editor tracks is
+        // written by another route than the file API.
+        if filesystem::is_repository_control(root, path) {
+            // The kind only, so that an agent that probes for the folder shows in the log.
+            soyeht_platform::log::event("engine.agent_write_refused", &[("reason", "git_folder")]);
+            return Err(RpcError {
+                code: WRITE_REFUSED,
+                message: "A repository's .git folder is not written by an agent".into(),
+                data: None,
+            });
+        }
         let recovering = request.public.get("started").is_some();
         let tracked = self
             .prepare_agent_write(pane, path, content, recovering)
@@ -224,3 +236,6 @@ pub fn require_session(state: &super::state::State, params: &Value) -> Result<()
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
