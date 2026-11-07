@@ -48,10 +48,18 @@ ship, and nothing in the packages.
 
 - A new dependency fails the gate until its license is allowed and the file is regenerated; the diff of
   `THIRD-PARTY-NOTICES.txt` shows the reviewer what was added.
-- The file is about 440 KB, under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
+- The file is about 400 KB, under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
   are kept once and the copyright lines go with each component. It grows with the dependency graph.
 - The Gradle side lists the libraries the build file declares and one line for the transitive AndroidX, Kotlin
   and Compose libraries (all Apache-2.0); it is not resolved from a Gradle dependency report.
-- GPL-3.0-or-later code is in the desktop graph: `zlog`, `ztracing` and `ztracing_macro`, reached through
-  `gpui -> sum_tree -> ztracing -> zlog`. They are the only `exceptions`, with the reason, and a release must
-  not ship them: replace the dependency (a patch of `ztracing` without `zlog`) or get the crates relicensed.
+- GPL-3.0-or-later code was in the desktop graph: Zed's `zlog`, `ztracing` and `ztracing_macro`, reached
+  through `gpui -> sum_tree -> ztracing -> zlog`, at the pinned revision of GPUI (Zed relicensed the three
+  crates under Apache-2.0 on 2026-09-01, after that revision; moving the pin would take unrelated changes
+  of GPUI with it). Of them GPUI's `sum_tree` uses only the `#[instrument]` attribute, which does nothing in
+  a build without Tracy. `apps/desktop/crates/ztracing` is an Apache-2.0 procedural macro with that one
+  attribute, written from that use, and `[patch."https://github.com/zed-industries/zed"]` in
+  `apps/desktop/Cargo.toml` puts it in place of Zed's crate. `ztracing_macro` and `zlog` (and
+  `tracing-subscriber` with the crates only it brought) leave the build and the lockfile; `cargo tree
+  --target all -i zlog` finds nothing. The Android workspace has no GPUI. `policy.json` has no
+  `exceptions`, so a GPL crate that comes back fails the gate. When the GPUI pin moves to a revision after
+  the relicense, the patch and the crate can go.

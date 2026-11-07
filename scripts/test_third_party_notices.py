@@ -243,6 +243,9 @@ class RepositoryTests(unittest.TestCase):
         for identifier in POLICY.allowed - {"OFL-1.1", "Apache-2.0 WITH LLVM-exception"}:
             licenses.spdx_text(identifier)
 
+    def test_the_policy_holds_no_exception_so_a_gpl_crate_that_comes_back_fails_the_gate(self):
+        self.assertEqual(POLICY.exceptions, {})
+
     def test_no_copyleft_license_is_allowed(self):
         for identifier in POLICY.allowed:
             self.assertNotRegex(identifier, r"GPL|AGPL|SSPL|EUPL|CPAL")
