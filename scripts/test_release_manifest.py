@@ -219,6 +219,17 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertTrue(linux["url"].endswith("-linux-x86_64.AppImage"))
         self.assertEqual(linux["sha256"], hashlib.sha256(b"image").hexdigest())
 
+    def test_each_linux_architecture_is_offered_its_own_appimage(self):
+        for architecture in ("x86_64", "aarch64"):
+            self.package(f"soyeht-{VERSION}-linux-{architecture}.deb", b"deb " + architecture.encode())
+            self.package(f"soyeht-{VERSION}-linux-{architecture}.AppImage", b"image " + architecture.encode())
+        text, packages = release_manifest.build(self.dist, ENVIRONMENT, "0.0.0", KEYS)
+        self.assertEqual({(p["system"], p["architecture"]) for p in packages}, {("linux", "x86_64"), ("linux", "aarch64")})
+        for architecture in ("x86_64", "aarch64"):
+            offer = manifest.evaluate(text, (0, 0, 1), "linux", architecture, "stable", KEYS, now=int(time.time()))
+            self.assertTrue(offer["package"]["url"].endswith(f"-linux-{architecture}.AppImage"))
+            self.assertEqual(offer["package"]["sha256"], hashlib.sha256(b"image " + architecture.encode()).hexdigest())
+
     def test_the_release_tag_comes_from_the_notes_address_of_the_contract(self):
         self.assertEqual(release_manifest.release_tag("1.2.3"), "v1.2.3")
         self.assertTrue(release_manifest.POLICY["release"]["notesUrl"].endswith("/" + release_manifest.release_tag("{version}")))
