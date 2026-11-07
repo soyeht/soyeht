@@ -77,6 +77,15 @@ pub fn chrome_text(weight: FontWeight, size: f32) -> Div {
     div().chrome().font_weight(weight).text_size(px(size))
 }
 
+/// Nunito in bold at `size` points: a label, a title, a count.
+pub trait ChromeBold: Styled + Sized {
+    fn chrome_bold(self, size: f32) -> Self {
+        self.chrome().font_weight(FontWeight::BOLD).text_size(px(size))
+    }
+}
+
+impl<T: Styled> ChromeBold for T {}
+
 /// A line icon of `size` points in a palette color.
 pub fn icon(icon: Icon, size: f32, color: u32) -> Svg {
     svg()
@@ -169,9 +178,7 @@ pub fn waiting_badge(count: usize, palette: &Palette) -> Div {
         .py(px(space::X2))
         .rounded_full()
         .bg(rgb(palette.warning()))
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::MICRO))
+        .chrome_bold(type_scale::MICRO)
         .text_color(rgb(palette.ink))
         .child(count.to_string())
 }
@@ -392,6 +399,18 @@ pub fn mono_label() -> Div {
         .text_size(px(type_scale::SMALL))
 }
 
+/// Mono type in bold at `size` points, in `color`.
+pub trait MonoBold: Styled + Sized {
+    fn mono_bold(self, size: f32, color: u32) -> Self {
+        self.mono()
+            .font_weight(FontWeight::BOLD)
+            .text_size(px(size))
+            .text_color(rgb(color))
+    }
+}
+
+impl<T: Styled> MonoBold for T {}
+
 /// A small capitalised heading over a list: FILES.
 pub fn section_label(palette: &Palette, text: &'static str) -> Div {
     div()
@@ -448,6 +467,21 @@ pub fn code_well(content: impl IntoElement, palette: &Palette) -> Div {
 /// A column.
 pub fn column() -> Div {
     div().flex().flex_col()
+}
+
+/// A div that takes the remaining width in a row and may be clipped by its siblings: the common
+/// flexible text container inside a row.
+pub fn grow() -> Div {
+    div().flex_1().min_w_0()
+}
+
+/// A close button for a sheet or a panel: a row with the close glyph, ready for an `on_click`.
+pub fn close_button(key: impl Into<gpui::ElementId>, palette: &Palette) -> gpui::Stateful<Div> {
+    row()
+        .id(key)
+        .cursor_pointer()
+        .own_press()
+        .child(icon(Icon::Close, desktop::HEADER_ACTION_GLYPH, palette.muted))
 }
 
 /// An element that fills the room it is given and shows nothing, to push its siblings apart.

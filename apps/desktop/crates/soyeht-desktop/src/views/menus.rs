@@ -1,7 +1,7 @@
 //! Popup menus: a raised card that opens beside the control that asked for it and closes when
 //! the person clicks anywhere else.
 
-use super::ui::{OwnPress, Typeface, bounds_probe, column, icon, id, row};
+use super::ui::{ChromeBold, OwnPress, Typeface, bounds_probe, column, icon, id, row};
 use crate::{
     assets::Icon,
     neo,
@@ -305,9 +305,7 @@ pub fn detail_item(
 fn heading_face(palette: &Palette, base: Div) -> Div {
     base.pt(px(space::X6))
         .pb(px(space::X4))
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::SMALL))
+        .chrome_bold(type_scale::SMALL)
         .text_color(rgb(palette.muted))
 }
 

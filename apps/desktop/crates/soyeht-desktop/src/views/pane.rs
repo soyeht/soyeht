@@ -5,7 +5,7 @@ use super::{
     cards::{Role, button},
     editor::strip,
     ui::{
-        OwnPress, Typeface, column, header_bar, hint, icon, id, pane_card_shell, pressable, row,
+        OwnPress, Typeface, column, grow, header_bar, hint, icon, id, pane_card_shell, pressable, row,
         rule,
     },
 };
@@ -574,9 +574,7 @@ pub(super) fn close_question_strip(
     }
     strip(palette)
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
+            grow()
                 .child(SharedString::from(format!("{title} {message}"))),
         )
         .children(answers)
