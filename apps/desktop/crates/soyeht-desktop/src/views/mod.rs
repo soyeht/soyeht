@@ -74,6 +74,7 @@ use soyeht_client::{Connection, state::problem::Banner};
 
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.hold_keys_for_trust_sheet(window, cx);
         self.apply_focus_request(window, cx);
         self.settle_preedit(window, cx);
         self.settle_rename(window, cx);

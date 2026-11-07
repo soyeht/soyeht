@@ -66,6 +66,25 @@ impl Workbench {
         }
     }
 
+    /// The "Trust this folder?" sheet owns the keyboard while it is shown: the window takes it
+    /// from a composer or a page, so no pane under the sheet receives a key. When the sheet goes,
+    /// the pane in front gets the keyboard back. Called at the start of each frame, before
+    /// `apply_focus_request`.
+    pub(crate) fn hold_keys_for_trust_sheet(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.trust_prompt().is_some() {
+            if window.focused(cx).is_none_or(|held| held != self.focus) {
+                window.focus(&self.focus, cx);
+            }
+            self.trust_sheet_holds_keys = true;
+        } else if std::mem::take(&mut self.trust_sheet_holds_keys) {
+            self.focus_request = self.state.focused_pane().map(|pane| pane.pane_id.clone());
+        }
+    }
+
     /// Asks that `field`, the first of a sheet or form that has just opened, take the keyboard on
     /// the next frame. Every form opens this way, so that its first field never waits for a click.
     pub(crate) fn focus_field_when_drawn(
@@ -77,10 +96,12 @@ impl Workbench {
     }
 
     /// A sheet or form is on the stage and owns the keyboard: the new-task sheet, the
-    /// new-document form of the place on the stage, or the "Start with an agent" form. A pane
-    /// that asks for the keyboard meanwhile (a terminal that finished opening, say) waits.
+    /// new-document form of the place on the stage, the "Start with an agent" form, or the trust
+    /// question. A pane that asks for the keyboard meanwhile (a terminal that finished opening,
+    /// say) waits.
     fn form_open(&self) -> bool {
-        self.start.as_ref().is_some_and(|start| start.shown)
+        self.state.trust_prompt().is_some()
+            || self.start.as_ref().is_some_and(|start| start.shown)
             || (self.destination == Destination::Tasks && self.tasks_ui.form.is_some())
             || self.places.form_open_in(self.destination)
     }
