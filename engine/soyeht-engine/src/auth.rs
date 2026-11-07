@@ -42,6 +42,9 @@ pub fn public_key(text: &str) -> Result<VerifyingKey> {
     if key.is_weak() {
         return Err(Error::WeakPublicKey);
     }
+    // The rule every side shares (ADR 0132): a non-canonical spelling of a point is refused too,
+    // or one key would have a second fingerprint.
+    soyeht_protocol::device_auth::verifying_key(&raw).ok_or(Error::InvalidPublicKey)?;
     Ok(key)
 }
 

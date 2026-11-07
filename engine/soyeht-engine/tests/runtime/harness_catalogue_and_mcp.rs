@@ -317,7 +317,7 @@ fn mcp_process_launched_outside_the_pane_resolves_identity_from_its_binding() {
     );
 }
 
-fn mcp_server_for(rig: &Rig, human: &mut Client, pane: &str) -> Value {
+pub(super) fn mcp_server_for(rig: &Rig, human: &mut Client, pane: &str) -> Value {
     let session_id = human.pane(pane)["agent"]["sessionId"]
         .as_str()
         .unwrap()
@@ -325,7 +325,7 @@ fn mcp_server_for(rig: &Rig, human: &mut Client, pane: &str) -> Value {
     rig.native_session(&session_id)["mcp_servers"][0].clone()
 }
 
-fn binding_env(server: &Value) -> String {
+pub(super) fn binding_env(server: &Value) -> String {
     server["env"]
         .as_array()
         .unwrap()

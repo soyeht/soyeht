@@ -285,6 +285,26 @@ fn editor_review_turn(runtime: &Runtime, session: &str, cancelled: &AtomicBool) 
     output
 }
 
+/// A file request for the path the prompt names (`fs-write:<path>`, `fs-read:<path>`), and what
+/// the client answered, so a test can see whether the client refused it.
+fn path_turn(
+    runtime: &Runtime,
+    session: &str,
+    method: &str,
+    path: &str,
+    cancelled: &AtomicBool,
+) -> String {
+    let params = if method == "fs/write_text_file" {
+        json!({"path":path,"content":"attacker\n"})
+    } else {
+        json!({"path":path})
+    };
+    let answer = call(runtime, session, method, params, cancelled, false);
+    let output = format!("{method}: {}", answer.unwrap_or(Value::Null));
+    emit(runtime, session, &output);
+    output
+}
+
 fn ordinary_turn(runtime: &Runtime, session: &str, text: &str, cancelled: &AtomicBool) -> String {
     if text == "silent-no-output" {
         while !cancelled.load(Ordering::SeqCst) {
@@ -459,6 +479,12 @@ fn execute_turn(
         let output = format!("Switched to {mode}");
         emit(runtime, session, &output);
         return output;
+    }
+    if let Some(path) = text.strip_prefix("fs-write:") {
+        return path_turn(runtime, session, "fs/write_text_file", path, cancelled);
+    }
+    if let Some(path) = text.strip_prefix("fs-read:") {
+        return path_turn(runtime, session, "fs/read_text_file", path, cancelled);
     }
     if text.starts_with("permission") {
         permission_turn(runtime, session, text, cancelled)
