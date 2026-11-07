@@ -241,6 +241,7 @@ fn migration_from_v31_keeps_the_readings_and_accepts_opencode() {
              );
              INSERT INTO usage_readings SELECT * FROM current_readings;
              DROP TABLE current_readings;
+             DROP TABLE project_trust;
              PRAGMA user_version = 31;",
         )
         .unwrap();

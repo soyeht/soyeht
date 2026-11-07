@@ -5,6 +5,7 @@ use crate::{
     model,
     ports::StorePort,
     process_start::Started,
+    project_trust::project_trusted,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -23,17 +24,17 @@ impl Core {
     pub(crate) fn ensure_language_server(&mut self, file: &EditorFile) -> Result<String> {
         let workspace = model::workspace(&self.store, &file.workspace_id)?;
         let key = Service::key(&file.workspace_id, &file.language)?;
+        let trusted = project_trusted(&self.store, &workspace.path)?;
         if self.languages.get(&key).is_none() {
-            let server = Server::new(&file.workspace_id, &workspace.path, file.language.clone())?;
+            let server = Server::new(&file.workspace_id, &workspace.path, file.language.clone())?
+                .with_trust(trusted);
             self.languages.insert(server)?;
             self.persist_language_server(&key, Vec::new())?;
+        } else {
+            self.follow_language_trust(&key, None)?;
         }
-        if self
-            .languages
-            .get(&key)
-            .and_then(|server| server.instance_id.as_ref())
-            .is_none()
-        {
+        let server = language(&self.languages, &key)?;
+        if server.instance_id.is_none() && server.refusal().is_none() {
             self.spawn_language_server(&key)?;
         }
         self.sync_language_document(&key, file)?;
@@ -164,7 +165,20 @@ impl Core {
                     && !instance.closed
                     && instance.exit_code.is_none()
             });
+            if self.follow_language_trust(&key, existing)? {
+                // A new trust: the old process is closed, and a server an editor needs starts again.
+                if self.language_server_requires_process(&key)?
+                    && language(&self.languages, &key)?.refusal().is_none()
+                {
+                    self.spawn_language_server(&key)?;
+                }
+                continue;
+            }
             if !self.language_server_requires_process(&key)? {
+                self.park_language_server(&key, existing)?;
+                continue;
+            }
+            if language(&self.languages, &key)?.refusal().is_some() {
                 self.park_language_server(&key, existing)?;
                 continue;
             }
@@ -192,7 +206,7 @@ impl Core {
         self.mark_language_unavailable(key, "Language server could not be restarted")
     }
 
-    fn language_server_requires_process(&self, key: &str) -> Result<bool> {
+    pub(super) fn language_server_requires_process(&self, key: &str) -> Result<bool> {
         let server = language(&self.languages, key)?;
         if !server.pending_writes.is_empty() || !server.requests.is_empty() {
             return Ok(true);
@@ -256,7 +270,9 @@ impl Core {
 
     /// Asks the supervisor for the server's process, off the lock (ADR 0126). The server is
     /// adopted when it has made it; a server restarted meanwhile starts under its new identity.
-    fn spawn_language_server(&mut self, key: &str) -> Result<()> {
+    pub(super) fn spawn_language_server(&mut self, key: &str) -> Result<()> {
+        // A server whose safe options cannot be made fails before it starts, not after.
+        language(&self.languages, key)?.options()?;
         let spawn = language(&self.languages, key)?.spawn()?;
         let (owner, key, identity) = (
             format!("lsp:{key}:{}", spawn.instance_key),
@@ -307,7 +323,7 @@ impl Core {
 
     /// Leaves the server unavailable and fails the editor requests waiting for it, after a failure
     /// that stops it.
-    fn language_failed(&mut self, key: &str, error: &errors::Error) {
+    pub(super) fn language_failed(&mut self, key: &str, error: &errors::Error) {
         let marked = self.mark_language_unavailable(key, &error.to_string());
         errors::log_if_failed("engine.lsp_mark_unavailable_failed", marked);
         let failed = self.fail_language_waiters(
@@ -323,9 +339,10 @@ impl Core {
         language_mut(&mut self.languages, key)?.adopt(instance)?;
         self.persist_language_server(key, Vec::new())?;
         let root = root_uri(Path::new(&language(&self.languages, key)?.root))?;
+        let options = language(&self.languages, key)?.options()?;
         let initialize = language_mut(&mut self.languages, key)?
             .client
-            .initialize(&root)
+            .initialize(&root, options.as_ref())
             .map_err(errors::lsp)?;
         self.send_language_value(key, &initialize)
     }
@@ -578,13 +595,16 @@ impl Core {
         language_mut(&mut self.languages, key)?.restart(detail)?;
         self.persist_language_server(key, Vec::new())?;
         self.confirm_language_writes(pending);
+        if language(&self.languages, key)?.refusal().is_some() {
+            return Ok(());
+        }
         self.spawn_language_server(key)
     }
 
     /// Sends the close of the server's process, and returns the writes it never confirmed. Best
     /// effort: the generation bump that follows makes any late output from it stale, and a
     /// replacement starts under a new instance key.
-    fn close_language_process(&mut self, key: &str) -> Result<Vec<String>> {
+    pub(super) fn close_language_process(&mut self, key: &str) -> Result<Vec<String>> {
         let pending = language(&self.languages, key)?
             .pending_writes
             .keys()
@@ -599,7 +619,7 @@ impl Core {
 
     /// Confirms the receipts of writes that will not be delivered. Nobody waits for it: an
     /// unconfirmed receipt is reconciled when the supervisor returns.
-    fn confirm_language_writes(&mut self, operation_keys: Vec<String>) {
+    pub(super) fn confirm_language_writes(&mut self, operation_keys: Vec<String>) {
         for operation_key in operation_keys {
             self.send_later(Request::ConfirmInput { operation_key });
         }
@@ -700,13 +720,13 @@ pub(super) fn bounded_diagnostics(
     Ok((bounded, omitted))
 }
 
-fn language<'a>(service: &'a Service, key: &str) -> Result<&'a Server> {
+pub(super) fn language<'a>(service: &'a Service, key: &str) -> Result<&'a Server> {
     service
         .get(key)
         .ok_or_else(|| errors::internal("Language server disappeared"))
 }
 
-fn language_mut<'a>(service: &'a mut Service, key: &str) -> Result<&'a mut Server> {
+pub(super) fn language_mut<'a>(service: &'a mut Service, key: &str) -> Result<&'a mut Server> {
     service
         .get_mut(key)
         .ok_or_else(|| errors::internal("Language server disappeared"))

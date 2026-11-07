@@ -145,7 +145,7 @@ mod tests {
             let connection = Connection::open(path.join("soyeht.db")).unwrap();
             connection
                 .execute_batch(
-                    "DROP TABLE harness_sign_in; PRAGMA user_version=30;
+                    "DROP TABLE project_trust; DROP TABLE harness_sign_in; PRAGMA user_version=30;
                      INSERT INTO workspaces(id,payload) VALUES ('w','{}');
                      INSERT INTO panes(id,workspace_id,payload,instance_key,closed)
                        VALUES ('open','w','{}','k1',0),('shut','w','{}','k2',1);

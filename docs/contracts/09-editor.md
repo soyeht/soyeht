@@ -60,7 +60,9 @@ watches the disk, keeps history); the app renders and edits.
 12. Inline errors and warnings (underline plus hover message) from language
     servers (LSP): rust-analyzer, sourcekit-lsp, the TypeScript language
     server and pyright, one per language, launched and supervised by the
-    engine (under the process supervisor, like any pane process).
+    engine (under the process supervisor, like any pane process). A folder the person has not
+    trusted starts only the servers that cannot run the folder's files, and says why for the
+    others (contract 18).
 13. The same LSP provides go to definition, references and the symbol list.
 
 **File and disk**

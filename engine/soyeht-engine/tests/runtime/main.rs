@@ -49,6 +49,7 @@ mod task_dispatch;
 mod terminal_hooks_and_phone;
 mod terminal_replay_and_capture;
 mod workspace_and_writing;
+mod workspace_trust;
 mod writing_documents;
 
 /// Polls `observe` until it returns `Ok`; at the deadline the test fails with `what` and the

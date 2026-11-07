@@ -92,6 +92,8 @@ pub enum SnapshotSection {
     Files,
     #[serde(rename = "writing")]
     Writing,
+    #[serde(rename = "trust")]
+    Trust,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ErrorKind {
@@ -3990,6 +3992,58 @@ pub struct PaneRoleSetResult {
     pub role: AgentPaneRole,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProjectTrust {
+    #[serde(rename = "undecided")]
+    Undecided,
+    #[serde(rename = "restricted")]
+    Restricted,
+    #[serde(rename = "trusted")]
+    Trusted,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProjectTrustChoice {
+    #[serde(rename = "restricted")]
+    Restricted,
+    #[serde(rename = "trusted")]
+    Trusted,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustEntry {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustSetParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrustChoice,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustSetResult {
+    #[serde(rename = "workspaceIds")]
+    pub workspace_ids: Vec<Id>,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
+    #[serde(rename = "workspaceIds")]
+    pub workspace_ids: Vec<Id>,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageProvider {
     #[serde(rename = "claude")]
     Claude,
@@ -4266,6 +4320,8 @@ pub enum LspState {
     Restarting,
     #[serde(rename = "unavailable")]
     Unavailable,
+    #[serde(rename = "restricted")]
+    Restricted,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TextPosition {
@@ -5010,6 +5066,8 @@ pub struct LspServerStatus {
     pub generation: u32,
     #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    #[serde(rename = "safeMode", skip_serializing_if = "Option::is_none")]
+    pub safe_mode: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LspStatusParams {
@@ -6559,6 +6617,8 @@ pub enum Request {
     EditorReviewReject(EditorReviewParams),
     #[serde(rename = "editor.review.comment")]
     EditorReviewComment(EditorReviewCommentParams),
+    #[serde(rename = "project.trust.set")]
+    ProjectTrustSet(ProjectTrustSetParams),
     #[serde(rename = "lsp.status")]
     LspStatus(LspStatusParams),
     #[serde(rename = "servers.local.list")]
@@ -7105,6 +7165,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "EditorReviewCommentResult",
         true,
     ),
+    (
+        "project.trust.set",
+        "ProjectTrustSetParams",
+        "ProjectTrustSetResult",
+        true,
+    ),
     ("lsp.status", "LspStatusParams", "LspStatusResult", false),
     (
         "servers.local.list",
@@ -7363,6 +7429,8 @@ pub enum EventName {
     PaneUpdated,
     #[serde(rename = "settings.changed")]
     SettingsChanged,
+    #[serde(rename = "project.trust_changed")]
+    ProjectTrustChanged,
     #[serde(rename = "pane.session_started")]
     PaneSessionStarted,
     #[serde(rename = "pane.turn_ended")]
@@ -7493,6 +7561,7 @@ impl EventName {
             Self::PtydLost => "ptyd.lost",
             Self::PaneUpdated => "pane.updated",
             Self::SettingsChanged => "settings.changed",
+            Self::ProjectTrustChanged => "project.trust_changed",
             Self::PaneSessionStarted => "pane.session_started",
             Self::PaneTurnEnded => "pane.turn_ended",
             Self::PaneQueued => "pane.queued",
@@ -7672,6 +7741,11 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::SettingsChanged,
         params_type: "SettingsChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::ProjectTrustChanged,
+        params_type: "ProjectTrustChangedEvent",
         durable: true,
     },
     EventDescriptor {
@@ -8117,6 +8191,16 @@ pub struct SettingsChangedDraft {
 }
 impl EventParams for SettingsChangedDraft {
     const NAME: EventName = EventName::SettingsChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ProjectTrustChangedDraft {
+    #[serde(rename = "workspaceIds")]
+    pub workspace_ids: Vec<Id>,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+impl EventParams for ProjectTrustChangedDraft {
+    const NAME: EventName = EventName::ProjectTrustChanged;
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PaneSessionStartedDraft {
@@ -8825,6 +8909,7 @@ pub mod method {
     pub const EDITOR_REVIEW_ACCEPT: &str = "editor.review.accept";
     pub const EDITOR_REVIEW_REJECT: &str = "editor.review.reject";
     pub const EDITOR_REVIEW_COMMENT: &str = "editor.review.comment";
+    pub const PROJECT_TRUST_SET: &str = "project.trust.set";
     pub const LSP_STATUS: &str = "lsp.status";
     pub const SERVERS_LOCAL_LIST: &str = "servers.local.list";
     pub const WEB_OPEN: &str = "web.open";
@@ -8938,6 +9023,7 @@ pub mod event {
     pub const PTYD_LOST: &str = "ptyd.lost";
     pub const PANE_UPDATED: &str = "pane.updated";
     pub const SETTINGS_CHANGED: &str = "settings.changed";
+    pub const PROJECT_TRUST_CHANGED: &str = "project.trust_changed";
     pub const PANE_SESSION_STARTED: &str = "pane.session_started";
     pub const PANE_TURN_ENDED: &str = "pane.turn_ended";
     pub const PANE_QUEUED: &str = "pane.queued";

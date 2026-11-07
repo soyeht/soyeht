@@ -17,6 +17,7 @@ pub fn handles(method: &str) -> bool {
             | method::WORKSPACE_RENAME
             | method::WORKSPACE_CLOSE
             | method::WORKSPACE_FOCUS
+            | method::PROJECT_TRUST_SET
     )
 }
 
@@ -56,6 +57,7 @@ impl Core {
         match method {
             method::WORKSPACE_CREATE => self.workspace_create(connection, params),
             method::WORKSPACE_LAYOUT_SET => self.workspace_layout_set(connection, params),
+            method::PROJECT_TRUST_SET => self.project_trust_set(connection, params),
             method::WORKSPACE_RENAME | method::WORKSPACE_CLOSE | method::WORKSPACE_FOCUS => {
                 self.workspace_edit(connection, method, params)
             }
@@ -76,15 +78,16 @@ impl Core {
             path: path.into(),
             layout: json!({"panes":[]}),
         };
+        // A folder the person answered before is told to the clients with its new workspace.
+        let trust_events = self.project_trust_event_for(&workspace.workspace_id, path)?;
         let mutation = self.mutate(connection, method::WORKSPACE_CREATE, params, |tx| {
             tx.insert_workspace(&workspace)?;
-            Ok((
+            let mut events = vec![(
+                event::WORKSPACE_CREATED.into(),
                 json!({"workspace":workspace}),
-                vec![(
-                    event::WORKSPACE_CREATED.into(),
-                    json!({"workspace":workspace}),
-                )],
-            ))
+            )];
+            events.extend(trust_events);
+            Ok((json!({"workspace":workspace}), events))
         })?;
         Ok(mutation.result)
     }

@@ -30,6 +30,10 @@ impl Core {
     ) -> Result<Outcome> {
         let (file, query, context) = self.prepare_language_query(method, params)?;
         let key = self.ensure_language_server(&file)?;
+        // A restricted folder whose server has no safe mode answers at once and says why.
+        if let Some(reason) = self.languages.get(&key).and_then(|server| server.refusal()) {
+            return Err(errors::harness_unavailable(reason));
+        }
         if let Some(result) = self.language_result(&key, &context)? {
             return Ok(Outcome::Reply(result));
         }
