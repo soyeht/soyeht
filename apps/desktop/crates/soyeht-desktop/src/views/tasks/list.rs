@@ -5,7 +5,7 @@ use super::chips::{
     task_title,
 };
 use crate::{
-    theme::{Palette, desktop, space, type_scale},
+    theme::{Palette, desktop, layout, space, type_scale},
     views::{
         prelude::*,
         ui::{disclosure_chevron, mono_note, rule},
@@ -16,14 +16,14 @@ use soyeht_protocol::Task;
 
 /// A column of the table: its heading and how wide it is (the task's own column fills).
 const COLUMNS: [(&str, Option<f32>); 8] = [
-    ("KEY", Some(desktop::TASK_LIST_KEY_WIDTH)),
+    ("KEY", Some(layout::TASK_LIST_KEY_WIDTH)),
     ("TASK", None),
-    ("STATE", Some(desktop::TASK_LIST_STATE_WIDTH)),
-    ("PRIORITY", Some(desktop::TASK_LIST_PRIORITY_WIDTH)),
-    ("OWNER", Some(desktop::TASK_LIST_OWNER_WIDTH)),
-    ("WORKTREE", Some(desktop::TASK_LIST_WORKTREE_WIDTH)),
-    ("", Some(desktop::TASK_LIST_COMMENTS_WIDTH)),
-    ("UPDATED", Some(desktop::TASK_LIST_UPDATED_WIDTH)),
+    ("STATE", Some(layout::TASK_LIST_STATE_WIDTH)),
+    ("PRIORITY", Some(layout::TASK_LIST_PRIORITY_WIDTH)),
+    ("OWNER", Some(layout::TASK_LIST_OWNER_WIDTH)),
+    ("WORKTREE", Some(layout::TASK_LIST_WORKTREE_WIDTH)),
+    ("", Some(layout::TASK_LIST_COMMENTS_WIDTH)),
+    ("UPDATED", Some(layout::TASK_LIST_UPDATED_WIDTH)),
 ];
 
 /// A cell of the table in its column.
@@ -32,7 +32,7 @@ fn cell(width: Option<f32>) -> Div {
         Some(width) => div().w(px(width)).flex_none(),
         None => div()
             .flex_1()
-            .min_w(px(desktop::TASK_LIST_TITLE_MINIMUM_WIDTH)),
+            .min_w(px(layout::TASK_LIST_TITLE_MINIMUM_WIDTH)),
     }
 }
 
@@ -65,9 +65,7 @@ impl Workbench {
                             .pr(px(space::X12))
                             .pt(px(space::X8))
                             .pb(px(space::X3))
-                            .chrome()
-                            .font_weight(FontWeight::BOLD)
-                            .text_size(px(type_scale::SMALL))
+                            .chrome_bold(type_scale::SMALL)
                             .text_color(rgb(palette.muted))
                             .child(disclosure_chevron(true, palette.muted))
                             .child(SharedString::from(
@@ -83,16 +81,14 @@ impl Workbench {
             .gap(px(space::X12))
             .px(px(space::X12))
             .pb(px(space::X6))
-            .chrome()
-            .font_weight(FontWeight::BOLD)
-            .text_size(px(type_scale::MICRO))
+            .chrome_bold(type_scale::MICRO)
             .text_color(rgb(palette.muted))
             .children(COLUMNS.map(|(name, width)| cell(width).child(name)));
         column()
             .id("task-list")
             .flex_1()
             .min_h_0()
-            .min_w(px(desktop::TASK_LIST_MINIMUM_WIDTH))
+            .min_w(px(layout::TASK_LIST_MINIMUM_WIDTH))
             .overflow_scroll()
             .child(header)
             .child(rule(palette.well, desktop::HAIRLINE))
