@@ -72,7 +72,7 @@ public final class PairingSession {
         }
         guard prove?.requestId == result.requestId else { throw ClientFailure.invalidFrame }
         _ = try await request(.pairProve, .encoded(prove!))
-        status = "Compare the fingerprint and allow access on the Mac."
+        status = PairingCopy.waitingForTheMac
         while earlyResult == nil {
           guard Date() < deadline else { throw ClientFailure.timeout }
           try Task.checkCancellation()

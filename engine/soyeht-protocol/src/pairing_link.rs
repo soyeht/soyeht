@@ -56,15 +56,18 @@ pub fn uri(engine_id: &str, address: &str, code: &str, engine_key: &str) -> Stri
 }
 
 /// The short code a pairing shows on both devices for the person to compare (ADR 0152): the first
-/// twelve hexadecimal digits of `fingerprint`, in capitals, in groups of four. `None` for a
-/// fingerprint that is shorter or is not hexadecimal there. The cases are
-/// `contracts/vectors/pairing-comparison.json`, which the Swift client passes too.
+/// sixteen hexadecimal digits of `fingerprint`, in capitals, in four groups of four. `None` unless
+/// the whole fingerprint is plain ASCII hexadecimal digits and has at least sixteen, so that this
+/// and the Swift client, which both read the same bytes, never disagree about a character that is
+/// not one. The cases are `contracts/vectors/pairing-comparison.json`, which the Swift client
+/// passes too.
 pub fn comparison_code(fingerprint: &str) -> Option<String> {
-    let head = fingerprint.get(..COMPARISON_DIGITS)?;
-    if !head.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+    if fingerprint.len() < COMPARISON_DIGITS
+        || !fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
         return None;
     }
-    let head = head.to_ascii_uppercase();
+    let head = fingerprint[..COMPARISON_DIGITS].to_ascii_uppercase();
     let groups: Vec<&str> = (0..COMPARISON_DIGITS)
         .step_by(COMPARISON_GROUP)
         .map(|start| &head[start..start + COMPARISON_GROUP])
@@ -72,7 +75,7 @@ pub fn comparison_code(fingerprint: &str) -> Option<String> {
     Some(groups.join(" "))
 }
 
-const COMPARISON_DIGITS: usize = 12;
+const COMPARISON_DIGITS: usize = 16;
 const COMPARISON_GROUP: usize = 4;
 
 /// A public key as a link carries it: URL-safe base64 without padding.

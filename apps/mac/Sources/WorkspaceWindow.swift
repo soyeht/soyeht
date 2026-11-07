@@ -56,22 +56,11 @@ struct WorkspaceWindow: View {
       }
     }
     .overlay(alignment: .bottom) {
-      if let request = client.pairRequests.first {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Allow access for \(request.deviceName)?")
-            .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
-          Text("Compare this fingerprint on the iPhone:")
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption))
-          Text(request.fingerprint).font(MacTheme.mono(MacTheme.TypeScale.control))
-            .textSelection(.enabled)
-          HStack {
-            Button("Deny") { client.decidePairing(request, approve: false) }
-              .buttonStyle(.paneSecondary)
-            Spacer()
-            Button("Allow") { client.decidePairing(request, approve: true) }
-              .buttonStyle(.panePrimary)
-          }
-        }.padding(22).frame(width: 420).neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+      // The pairing sheet shows the same approval itself while it is open.
+      if let request = client.pairRequests.first, !showPairing {
+        PairApprovalView(request: request) { client.decidePairing(request, approve: $0) }
+          .padding(MacTheme.Space.x20).frame(width: 420)
+          .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
           .padding(.bottom, 40)
       }
     }
@@ -512,20 +501,9 @@ struct WorkspaceWindow: View {
         ProgressView().frame(width: 292, height: 292)
       }
       if let request = client.pairRequests.first {
-        Text(request.deviceName)
-          .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
-        Text(request.comparisonCode).font(MacTheme.mono(MacTheme.TypeScale.subheading))
-          .textSelection(.enabled)
-        Text(PairingCopy.compareOnMac).font(MacTheme.chrome(MacTheme.TypeScale.caption))
-          .foregroundStyle(MacTheme.secondary).multilineTextAlignment(.center)
-        HStack {
-          Button("Deny") { client.decidePairing(request, approve: false) }
-            .buttonStyle(.paneSecondary)
-          Button("Allow") {
-            client.decidePairing(request, approve: true)
-            showPairing = false
-          }
-          .buttonStyle(.panePrimary)
+        PairApprovalView(request: request) { approve in
+          client.decidePairing(request, approve: approve)
+          if approve { showPairing = false }
         }
       }
       if !client.devices.isEmpty {
