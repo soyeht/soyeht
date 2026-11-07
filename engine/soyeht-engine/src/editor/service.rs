@@ -12,7 +12,6 @@ use crate::{errors, errors::Result, streak::Streak};
 use soyeht_editor::{
     AppliedStep, EditHistory, EditStep, HistoryDirection, Replay, SyntaxDocument, TextBuffer,
 };
-use soyeht_platform::hold_cost::{self, Cost};
 use soyeht_protocol::{
     EditorLanguage, EditorLine, FileAuthor, TextEdit, TextPosition, shared_text::SharedText,
 };
@@ -60,63 +59,52 @@ pub struct SystemFiles;
 
 impl FileSystemPort for SystemFiles {
     fn canonicalize(&self, path: &Path) -> io::Result<PathBuf> {
-        hold_cost::timed(Cost::File, || -> io::Result<PathBuf> {
-            soyeht_platform::fs::canonicalize(path)
-        })
+        soyeht_platform::fs::canonicalize(path)
     }
 
     fn project_files(&self, root: &Path) -> io::Result<Vec<ProjectFile>> {
-        hold_cost::timed(Cost::File, || -> io::Result<Vec<ProjectFile>> {
-            super::project_files::enumerate_project_files(root)
-        })
+        super::project_files::enumerate_project_files(root)
     }
 
     fn read_text(&self, path: &Path, limit: usize) -> io::Result<String> {
-        hold_cost::timed(Cost::File, || -> io::Result<String> {
-            let metadata = fs::metadata(path)?;
-            super::text_compare::require_regular_file(&metadata)?;
-            if metadata.len() > limit as u64 {
-                return Err(TextRefusal::TooLarge.into());
-            }
-            let bytes = fs::read(path)?;
-            if bytes.len() > limit {
-                return Err(TextRefusal::TooLarge.into());
-            }
-            String::from_utf8(bytes).map_err(|_| TextRefusal::NotText.into())
-        })
+        let metadata = fs::metadata(path)?;
+        super::text_compare::require_regular_file(&metadata)?;
+        if metadata.len() > limit as u64 {
+            return Err(TextRefusal::TooLarge.into());
+        }
+        let bytes = fs::read(path)?;
+        if bytes.len() > limit {
+            return Err(TextRefusal::TooLarge.into());
+        }
+        String::from_utf8(bytes).map_err(|_| TextRefusal::NotText.into())
     }
 
     fn text_matches(&self, path: &Path, expected: &str) -> io::Result<bool> {
-        hold_cost::timed(Cost::File, || -> io::Result<bool> {
-            super::text_compare::file_holds(path, expected)
-        })
+        super::text_compare::file_holds(path, expected)
     }
 
     fn read_binary(&self, path: &Path, limit: usize) -> io::Result<Vec<u8>> {
-        hold_cost::timed(Cost::File, || -> io::Result<Vec<u8>> {
-            let metadata = fs::symlink_metadata(path)?;
-            let limit = u64::try_from(limit).map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidInput, "binary limit is invalid")
-            })?;
-            if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > limit {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "asset is not a regular file within the writing image limit",
-                ));
-            }
-            let bytes = fs::read(path)?;
-            if bytes.is_empty()
-                || u64::try_from(bytes.len())
-                    .ok()
-                    .is_none_or(|size| size > limit)
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "asset is outside the writing image limit",
-                ));
-            }
-            Ok(bytes)
-        })
+        let metadata = fs::symlink_metadata(path)?;
+        let limit = u64::try_from(limit)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "binary limit is invalid"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > limit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "asset is not a regular file within the writing image limit",
+            ));
+        }
+        let bytes = fs::read(path)?;
+        if bytes.is_empty()
+            || u64::try_from(bytes.len())
+                .ok()
+                .is_none_or(|size| size > limit)
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "asset is outside the writing image limit",
+            ));
+        }
+        Ok(bytes)
     }
 
     fn write_text_if_unchanged(
@@ -126,93 +114,82 @@ impl FileSystemPort for SystemFiles {
         text: &str,
         read_only: ReadOnly,
     ) -> io::Result<bool> {
-        hold_cost::timed(Cost::File, || -> io::Result<bool> {
-            // One writer per file between the comparison and the rename (see `write_lock`).
-            super::write_lock::exclusive(path, || {
-                if !self.text_matches(path, expected)? {
-                    // A file that is no longer text, or too large, says so, as a read does.
-                    self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)?;
-                    return Ok(false);
-                }
-                let permissions = fs::metadata(path)?.permissions();
-                if read_only == ReadOnly::Refuse && permissions.readonly() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "file is read-only",
-                    ));
-                }
-                // The file keeps its own permissions, and the temporary one is owner-only until it
-                // does, so a private file's text is never readable by more people than before.
-                soyeht_platform::fs::write_atomic(
-                    path,
-                    text.as_bytes(),
-                    soyeht_platform::fs::WriteMode::KeepPermissions,
-                )
-                .map(|()| true)
-            })
+        // One writer per file between the comparison and the rename (see `write_lock`).
+        super::write_lock::exclusive(path, || {
+            if !self.text_matches(path, expected)? {
+                // A file that is no longer text, or too large, says so, as a read does.
+                self.read_text(path, soyeht_protocol::limits::EDITOR_HISTORY_BYTES)?;
+                return Ok(false);
+            }
+            let permissions = fs::metadata(path)?.permissions();
+            if read_only == ReadOnly::Refuse && permissions.readonly() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "file is read-only",
+                ));
+            }
+            // The file keeps its own permissions, and the temporary one is owner-only until it
+            // does, so a private file's text is never readable by more people than before.
+            soyeht_platform::fs::write_atomic(
+                path,
+                text.as_bytes(),
+                soyeht_platform::fs::WriteMode::KeepPermissions,
+            )
+            .map(|()| true)
         })
     }
 
     fn creation_target_exists(&self, root: &Path, relative: &Path) -> io::Result<bool> {
-        hold_cost::timed(Cost::File, || -> io::Result<bool> {
-            let root = soyeht_platform::fs::canonicalize(root)?;
-            validate_relative_creation_path(relative)?;
-            let target = root.join(relative);
-            match fs::symlink_metadata(&target) {
-                Ok(metadata) => {
-                    if metadata.file_type().is_symlink() {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidInput,
-                            "document target cannot be a symbolic link",
-                        ));
-                    }
-                    canonical_inside(&root, &target)?;
-                    Ok(true)
+        let root = soyeht_platform::fs::canonicalize(root)?;
+        validate_relative_creation_path(relative)?;
+        let target = root.join(relative);
+        match fs::symlink_metadata(&target) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "document target cannot be a symbolic link",
+                    ));
                 }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-                Err(error) => Err(error),
+                canonical_inside(&root, &target)?;
+                Ok(true)
             }
-        })
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     fn create_empty_text(&self, root: &Path, relative: &Path) -> io::Result<PathBuf> {
-        hold_cost::timed(Cost::File, || -> io::Result<PathBuf> {
-            let root = soyeht_platform::fs::canonicalize(root)?;
-            validate_relative_creation_path(relative)?;
-            let parent = create_contained_directories(&root, relative)?;
-            let filename = relative.file_name().ok_or_else(|| {
-                io::Error::new(io::ErrorKind::InvalidInput, "document filename is missing")
-            })?;
-            let target = parent.join(filename);
-            match fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&target)
-            {
-                Ok(file) => file.sync_all()?,
-                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-                    let metadata = fs::symlink_metadata(&target)?;
-                    if metadata.file_type().is_symlink()
-                        || !metadata.is_file()
-                        || metadata.len() != 0
-                    {
-                        return Err(io::Error::new(
-                            io::ErrorKind::AlreadyExists,
-                            "document target already exists",
-                        ));
-                    }
+        let root = soyeht_platform::fs::canonicalize(root)?;
+        validate_relative_creation_path(relative)?;
+        let parent = create_contained_directories(&root, relative)?;
+        let filename = relative.file_name().ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "document filename is missing")
+        })?;
+        let target = parent.join(filename);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&target)
+        {
+            Ok(file) => file.sync_all()?,
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(&target)?;
+                if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::AlreadyExists,
+                        "document target already exists",
+                    ));
                 }
-                Err(error) => return Err(error),
             }
-            soyeht_platform::fs::sync_directory(&parent)?;
-            canonical_inside(&root, &target)
-        })
+            Err(error) => return Err(error),
+        }
+        soyeht_platform::fs::sync_directory(&parent)?;
+        canonical_inside(&root, &target)
     }
 
     fn create_text_if_absent(&self, root: &Path, rel: &Path, text: &str) -> io::Result<PathBuf> {
-        hold_cost::timed(Cost::File, || -> io::Result<PathBuf> {
-            super::creation::create_text_if_absent(root, rel, text)
-        })
+        super::creation::create_text_if_absent(root, rel, text)
     }
 
     fn create_binary_if_absent_or_matching(
@@ -221,15 +198,13 @@ impl FileSystemPort for SystemFiles {
         relative: &Path,
         bytes: &[u8],
     ) -> io::Result<PathBuf> {
-        hold_cost::timed(Cost::File, || -> io::Result<PathBuf> {
-            if bytes.is_empty() || bytes.len() > soyeht_protocol::limits::WRITING_IMAGE_BYTES {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "writing image is outside the byte budget",
-                ));
-            }
-            super::creation::create_bytes_if_absent(root, relative, bytes)
-        })
+        if bytes.is_empty() || bytes.len() > soyeht_protocol::limits::WRITING_IMAGE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "writing image is outside the byte budget",
+            ));
+        }
+        super::creation::create_bytes_if_absent(root, relative, bytes)
     }
 }
 
