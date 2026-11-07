@@ -354,27 +354,78 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_listener_whose_every_accept_fails_gives_up_and_says_so() {
+    /// What `serve` sends to the one who accepts, when it is fed `incoming` with `errors` and
+    /// ended (by `incoming`, or by the stop flag after `patience`).
+    fn heard_from_serve(
+        incoming: impl Iterator<Item = io::Result<TcpStream>> + Send + 'static,
+        limit: Duration,
+        patience: Duration,
+    ) -> Result<io::Result<Stream>, std::sync::mpsc::TryRecvError> {
         let (sender, receiver) = std::sync::mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = Arc::clone(&stop);
         let token = endpoint::random().unwrap();
         let worker = thread::spawn(move || {
             serve(
-                EveryAcceptFails,
-                ConnectionErrors::within(Duration::from_millis(100)),
+                incoming,
+                ConnectionErrors::within(limit),
                 token,
                 &sender,
                 &stopping,
                 MAX_PENDING,
             );
         });
-        let heard = receiver.recv_timeout(Duration::from_secs(5));
-        // Without a give-up the loop never ends; stop it so the test can report that.
+        let heard = receiver
+            .recv_timeout(patience)
+            .map_err(|error| match error {
+                std::sync::mpsc::RecvTimeoutError::Timeout => std::sync::mpsc::TryRecvError::Empty,
+                std::sync::mpsc::RecvTimeoutError::Disconnected => {
+                    std::sync::mpsc::TryRecvError::Disconnected
+                }
+            });
+        // A loop that has not ended is stopped, so the test can report it.
         stop.store(true, Ordering::Release);
         worker.join().unwrap();
+        heard
+    }
+
+    #[test]
+    fn a_listener_whose_every_accept_fails_gives_up_and_says_so() {
+        let heard = heard_from_serve(
+            EveryAcceptFails,
+            Duration::from_millis(100),
+            Duration::from_secs(5),
+        );
         let ended = heard.expect("the listener went on for ever").unwrap_err();
-        assert_eq!(ended.kind(), io::ErrorKind::Other);
+        assert!(crate::net::is_accept_give_up(&ended));
+    }
+
+    /// Errors for 300 ms, one connection, errors for 400 ms more. The limit is 500 ms: the two
+    /// runs are each under it and together over it, so only a connection that ends the run keeps
+    /// the listener.
+    #[test]
+    fn a_connection_that_is_accepted_ends_the_run_of_errors() {
+        let (_client, accepted) = pair().unwrap();
+        let mut accepted = Some(accepted);
+        let began = std::time::Instant::now();
+        let incoming = std::iter::from_fn(move || {
+            let elapsed = began.elapsed();
+            // The accepts end here, with the second run at 400 ms.
+            if elapsed >= Duration::from_millis(700) {
+                return None;
+            }
+            if elapsed >= Duration::from_millis(300)
+                && let Some(connection) = accepted.take()
+            {
+                return Some(Ok(connection));
+            }
+            Some(Err(io::Error::from(io::ErrorKind::ConnectionAborted)))
+        });
+        let heard = heard_from_serve(incoming, Duration::from_millis(500), Duration::from_secs(3));
+        // The listener did not give up: it only ran out of accepts.
+        assert!(
+            matches!(heard, Err(std::sync::mpsc::TryRecvError::Disconnected)),
+            "the listener gave up: {heard:?}"
+        );
     }
 }
