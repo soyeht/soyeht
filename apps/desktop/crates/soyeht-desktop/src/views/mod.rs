@@ -39,12 +39,14 @@ mod readiness;
 mod resize_handles;
 pub(crate) mod selectable;
 mod settings;
+mod sheet;
 mod slash;
 mod start;
 mod switch_popover;
 mod tasks;
 mod terminal_menu;
 mod tiles;
+mod trust_prompt;
 mod web;
 
 pub(crate) use tiles::sizing;
@@ -131,6 +133,7 @@ impl Render for Workbench {
                 self.prefs_open()
                     .then(|| self.preferences_overlay(palette, window.viewport_size(), cx)),
             )
+            .children(self.trust_prompt_sheet(palette, cx))
             .children(resize_handles::handles(window))
             .child(crate::workbench::input_surface(&self.focus, cx));
         // A page that is a window of its own stays where it was until it is told to go.

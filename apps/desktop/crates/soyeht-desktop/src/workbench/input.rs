@@ -58,6 +58,13 @@ impl Workbench {
             cx.stop_propagation();
             return;
         }
+        // Escape closes the "Trust this folder?" sheet like its close button: the question is put
+        // off and the folder stays restricted.
+        if keystroke.key == "escape" && self.state.trust_prompt().is_some() {
+            self.defer_trust_prompt(cx);
+            cx.stop_propagation();
+            return;
+        }
         // The pane in front takes the keys only while the stage shows it and no field holds the
         // keyboard (`keys_target`, the rule the typed text follows too).
         let target = self.keys_target(window, cx);
