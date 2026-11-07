@@ -24,7 +24,8 @@ SEED = hashlib.sha256(b"soyeht release flow test key").digest()
 KEYS = [{"id": "test-key", "key": base64.b64encode(ed25519.public_key(SEED)).decode()}]
 SECRET = base64.b64encode(SEED).decode()
 ENVIRONMENT = {release_manifest.KEY_ENVIRONMENT: SECRET}
-HOST = {release_flow.LINUX_HOST_VARIABLE: "ci-host"}
+AARCH64_HOST_VARIABLE = release_flow.LINUX_BUILDERS["aarch64"][0]
+HOSTS = {release_flow.LINUX_HOST_VARIABLE: "ci-host", AARCH64_HOST_VARIABLE: "ci-arm"}
 VERSION = str(release.current().version)
 SHA = "a" * 40
 NOTES = f"## [{VERSION}] - 2026-11-01\n\n### Added\n\n- A thing a person can do.\n\n"
@@ -112,6 +113,8 @@ class FlowCase(unittest.TestCase):
         self.package("macos", "aarch64", "dmg")
         self.package("linux", "x86_64", "deb")
         self.package("linux", "x86_64", "AppImage")
+        self.package("linux", "aarch64", "deb")
+        self.package("linux", "aarch64", "AppImage")
         self.package("windows", "x86_64", "exe", pe(signed))
         self.package("windows", "aarch64", "exe", pe(signed))
 
@@ -139,6 +142,10 @@ class CollectTests(FlowCase):
         offer = manifest.evaluate(text, (0, 0, 1), "linux", "x86_64", "stable", KEYS, now=int(time.time()))
         self.assertTrue(offer["package"]["url"].endswith(".AppImage"))
         self.assertEqual(manifest.evaluate(text, (0, 0, 1), "windows", "aarch64", "stable", KEYS, now=int(time.time()))["status"], "available")
+        arm = manifest.evaluate(text, (0, 0, 1), "linux", "aarch64", "stable", KEYS, now=int(time.time()))
+        self.assertTrue(arm["package"]["url"].endswith("-linux-aarch64.AppImage"))
+        offered = {(p["system"], p["architecture"]) for p in manifest.check_payload(manifest.open_envelope(text, KEYS))["packages"]}
+        self.assertEqual(offered, {("macos", "aarch64"), ("linux", "x86_64"), ("linux", "aarch64"), ("windows", "x86_64"), ("windows", "aarch64")})
 
     def test_a_package_changed_after_collect_no_longer_matches_the_checksums(self):
         self.all_packages()
@@ -153,7 +160,8 @@ class CollectTests(FlowCase):
         with self.assertRaises(release_flow.Refused) as caught:
             self.quiet(self.collect, tool=ad_hoc_tool)
         text = str(caught.exception)
-        for part in ("-linux-x86_64.deb is missing", "-linux-x86_64.AppImage is missing", "-windows-aarch64.exe is missing",
+        for part in ("-linux-x86_64.deb is missing", "-linux-x86_64.AppImage is missing", "-linux-aarch64.deb is missing",
+                     "-linux-aarch64.AppImage is missing", "-windows-aarch64.exe is missing",
                      "not signed with a Developer ID", "no stapled notarization ticket", "rejected by Gatekeeper",
                      "carries no Authenticode signature"):
             self.assertIn(part, text)
@@ -172,8 +180,9 @@ class CollectTests(FlowCase):
         (self.dist / "ad-hoc").mkdir()
         (self.dist / "ad-hoc" / release_checks.BUILD_SHA).write_text(SHA + "\n")
         (self.dist / "ad-hoc" / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")).write_bytes(b"adhoc")
-        self.package("linux", "x86_64", "deb")
-        self.package("linux", "x86_64", "AppImage")
+        for architecture in ("x86_64", "aarch64"):
+            self.package("linux", architecture, "deb")
+            self.package("linux", architecture, "AppImage")
         with self.assertRaises(release_flow.Refused):
             self.quiet(self.collect, "--without", "windows")  # not allowed for a release
         self.quiet(self.collect, "--allow-unsigned", "--without", "windows", tool=ad_hoc_tool)
@@ -316,7 +325,8 @@ class PublishTests(FlowCase):
         self.assertEqual(Path(command[command.index("--notes-file") + 1]).name, release_checks.NOTES)
         assets = [Path(part).name for part in command if str(self.dist) in part and not part.endswith(".md")]
         self.assertEqual(assets[-2:], [release_checks.CHECKSUMS, "update-manifest.json"])
-        self.assertEqual(len(assets), 7)
+        self.assertEqual(len(assets), 9)  # seven packages, the checksums and the manifest
+        self.assertEqual(sum("-linux-aarch64." in name for name in assets), 2)
         self.assertIn("--draft=false", out)
 
     def test_a_pre_release_is_marked_and_going_live_is_explicit(self):
@@ -394,7 +404,7 @@ class PublishTests(FlowCase):
         self.ready()
         _, recorder, out = self.publish()
         build_recorder = Recorder()
-        self.quiet(release_flow.build, self.options("build", "--dry-run"), build_recorder, probe_for(), {**ENVIRONMENT, release_flow.LINUX_HOST_VARIABLE: "ci-host"})
+        self.quiet(release_flow.build, self.options("build", "--dry-run"), build_recorder, probe_for(), {**ENVIRONMENT, **HOSTS})
         for command in [*recorder.commands, *build_recorder.commands]:
             self.assertNotIn(SECRET, " ".join(command))
             self.assertNotEqual(command[:2], ["git", "tag"])
@@ -415,25 +425,49 @@ class BuildTests(FlowCase):
         _, recorder, _ = self.build("--mac", "--allow-unsigned")
         self.assertNotIn("--release", recorder.commands[0])
 
-    def test_the_linux_host_gets_the_commit_and_builds_only_inside_soyeht_ci(self):
+    def test_each_linux_host_gets_the_commit_and_builds_only_inside_soyeht_ci(self):
         status, recorder, _ = self.build("--linux", environment={
-            release_flow.RECEIVE_PACK_VARIABLE: "/nix/git-receive-pack", release_flow.LINUX_HOST_VARIABLE: "ci-host"})
+            **HOSTS, release_flow.RECEIVE_PACK_VARIABLE: "/nix/git-receive-pack"})
         self.assertEqual(status, 0)
-        push, ssh, scp = recorder.commands
-        self.assertEqual(push, ["git", "push", "--receive-pack=/nix/git-receive-pack", "ci-host:soyeht-ci/mirror.git",
-                                f"{SHA}:refs/heads/release-{VERSION}"])
-        self.assertEqual(ssh[:4], ["ssh", "-o", "BatchMode=yes", "ci-host"])
-        script = recorder.inputs[1]
-        self.assertIn(f'"$HOME/soyeht-ci/release/{SHA}"', script)
-        self.assertIn("package_linux_rootless.sh --format all", script)
-        self.assertIn(f'git fetch "$HOME/soyeht-ci/mirror.git" {SHA}', script)
-        self.assertIn('export PATH="$HOME/soyeht-ci/git/bin:$PATH"', script)
-        self.assertIn('export SOYEHT_PACKAGE_BASE="$HOME/soyeht-ci/package-base"', script)
-        for line in script.splitlines():
-            for place in ("cd ", "worktree add"):
-                if place in line:
-                    self.assertTrue("$HOME/soyeht-ci" in line or '"$tree"' in line, line)
-        self.assertEqual(scp[3], f"ci-host:soyeht-ci/release/{SHA}/dist/soyeht-{VERSION}-linux-*")
+        self.assertEqual(len(recorder.commands), 6)
+        for index, (architecture, host) in enumerate((("x86_64", "ci-host"), ("aarch64", "ci-arm"))):
+            push, ssh, scp = recorder.commands[3 * index : 3 * index + 3]
+            receive_pack = ["--receive-pack=/nix/git-receive-pack"] if architecture == "x86_64" else []
+            self.assertEqual(push, ["git", "push", *receive_pack, f"{host}:soyeht-ci/mirror.git", f"{SHA}:refs/heads/release-{VERSION}"])
+            self.assertEqual(ssh[:4], ["ssh", "-o", "BatchMode=yes", host])
+            script = recorder.inputs[3 * index + 1]
+            self.assertIn(f'"$HOME/soyeht-ci/release/{SHA}"', script)
+            self.assertIn("package_linux_rootless.sh --format all", script)
+            self.assertIn(f'git fetch "$HOME/soyeht-ci/mirror.git" {SHA}', script)
+            self.assertIn('export PATH="$HOME/soyeht-ci/git/bin:$PATH"', script)
+            self.assertIn('export SOYEHT_PACKAGE_BASE="$HOME/soyeht-ci/package-base"', script)
+            for line in script.splitlines():
+                for place in ("cd ", "worktree add"):
+                    if place in line:
+                        self.assertTrue("$HOME/soyeht-ci" in line or '"$tree"' in line, line)
+            self.assertEqual(scp[3], f"{host}:soyeht-ci/release/{SHA}/dist/soyeht-{VERSION}-linux-{architecture}.*")
+
+    def test_a_linux_host_of_another_architecture_stops_before_it_builds(self):
+        for architecture in ("x86_64", "aarch64"):
+            script = release_flow.linux_script(VERSION, SHA, architecture)
+            check, build = (script.index(text) for text in (f'test "$(uname -m)" = "{architecture}"', "nix-shell"))
+            self.assertLess(check, build)
+            self.assertIn(f"dist/soyeht-{VERSION}-linux-{architecture}.*", script)
+
+    def test_the_aarch64_packages_are_built_on_their_own_host_and_never_on_the_x86_64_one(self):
+        with self.assertRaisesRegex(release_flow.Refused, "no Linux aarch64 build host: pass --linux-aarch64-host or set SOYEHT_RELEASE_LINUX_AARCH64_HOST"):
+            self.build("--linux", environment={release_flow.LINUX_HOST_VARIABLE: "ci-host"})
+        _, recorder, _ = self.build("--linux", "--linux-aarch64-host", "arm-box", environment={release_flow.LINUX_HOST_VARIABLE: "ci-host"})
+        self.assertEqual([c[2].split(":")[0] for c in recorder.commands if c[0] == "git"], ["ci-host", "arm-box"])
+        with self.assertRaises(release_flow.Refused):
+            self.build("--linux", "--linux-aarch64-host=-oProxyCommand=x", environment=HOSTS)
+
+    def test_one_architecture_can_be_built_alone(self):
+        _, recorder, _ = self.build("--linux", "--linux-arch", "aarch64", environment={AARCH64_HOST_VARIABLE: "ci-arm"})
+        self.assertEqual(len(recorder.commands), 3)
+        self.assertIn("linux-aarch64.*", recorder.commands[2][3])
+        _, recorder, _ = self.build("--linux", "--linux-arch", "x86_64", environment={release_flow.LINUX_HOST_VARIABLE: "ci-host"})
+        self.assertIn("linux-x86_64.*", recorder.commands[2][3])
 
     def test_there_is_no_built_in_build_host(self):
         with self.assertRaisesRegex(release_flow.Refused, "no Linux build host"):
@@ -441,17 +475,19 @@ class BuildTests(FlowCase):
         self.build("--mac")  # a build that does not use the host does not ask for one
 
     def test_the_host_comes_from_the_option_or_the_environment_and_must_be_a_name(self):
-        _, recorder, _ = self.build("--linux", environment={release_flow.LINUX_HOST_VARIABLE: "ci-box"})
+        _, recorder, _ = self.build("--linux", environment={**HOSTS, release_flow.LINUX_HOST_VARIABLE: "ci-box"})
         self.assertTrue(recorder.commands[0][2].startswith("ci-box:"))
-        _, recorder, _ = self.build("--linux", "--linux-host", "other")
+        _, recorder, _ = self.build("--linux", "--linux-host", "other", environment=HOSTS)
         self.assertTrue(recorder.commands[0][2].startswith("other:"))
         with self.assertRaises(release_flow.Refused):
-            self.build("--linux", "--linux-host", "x; rm -rf ~")
+            self.build("--linux", "--linux-host", "x; rm -rf ~", environment=HOSTS)
         for name in ("-oProxyCommand=x", "--upload-pack=x", "-"):
             with self.assertRaises(release_flow.Refused):
-                self.build("--linux", f"--linux-host={name}")
+                self.build("--linux", f"--linux-host={name}", environment=HOSTS)
         with self.assertRaises(release_flow.Refused):
-            release_flow.linux_script(VERSION, "../../etc")
+            release_flow.linux_script(VERSION, "../../etc", "x86_64")
+        with self.assertRaises(release_flow.Refused):
+            release_flow.linux_script(VERSION, SHA, "riscv64")
 
     def test_build_records_its_commit_and_a_dry_run_creates_nothing(self):
         fresh = self.root / "fresh"
@@ -472,7 +508,7 @@ class BuildTests(FlowCase):
                 seen.append((tuple(command[:2]), (self.dist / release_checks.BUILD_SHA).exists()))
                 super().must(command, **options)
 
-        self.quiet(release_flow.build, self.options("build", "--mac", "--linux"), Watching(), probe_for(), {release_flow.LINUX_HOST_VARIABLE: "ci-host"})
+        self.quiet(release_flow.build, self.options("build", "--mac", "--linux"), Watching(), probe_for(), HOSTS)
         self.assertTrue(seen and all(not existed for _, existed in seen))
         self.assertTrue((self.dist / release_checks.BUILD_SHA).is_file())
 
@@ -481,9 +517,9 @@ class BuildTests(FlowCase):
         adhoc.mkdir()
         (adhoc / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")).write_bytes(b"old")
         with self.assertRaisesRegex(release_flow.Refused, "ad-hoc holds packages with no BUILD_SHA"):
-            self.build("--linux", environment=HOST)
+            self.build("--linux", environment=HOSTS)
         (adhoc / release_checks.BUILD_SHA).write_text(SHA + "\n")
-        self.build("--linux", environment=HOST)
+        self.build("--linux", environment=HOSTS)
         self.assertEqual((adhoc / release_checks.BUILD_SHA).read_text().strip(), SHA)
 
     def test_packages_left_by_a_build_of_another_commit_stop_a_new_build(self):

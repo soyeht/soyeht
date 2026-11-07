@@ -22,7 +22,8 @@ Before the first release, once:
 | A code-signing certificate for Windows | signing the installers and their programs | on the Windows host: `SOYEHT_WINDOWS_SIGN_THUMBPRINT` (a certificate in the store), or `SOYEHT_WINDOWS_SIGN_AZURE_DLIB` with `SOYEHT_WINDOWS_SIGN_AZURE_METADATA` (Azure Artifact Signing). `docs/platforms.md`, "Windows packages", has the rest |
 | The update signing key | signing `update-manifest.json` | `SOYEHT_UPDATE_SIGNING_KEY_FILE` (a path) or `SOYEHT_UPDATE_SIGNING_KEY` (the value) in the environment of the Mac that collects; see "The update key" below. Never a file of this repository |
 | `gh` logged in with write access to `soyeht/soyeht` | the draft release | `gh auth login`, or `GH_TOKEN` in the environment |
-| The Linux CI host | the `.deb` and the AppImage | an ssh host you name (`--linux-host`, or `SOYEHT_RELEASE_LINUX_HOST`; the repository has no default): a clone at `~/soyeht-ci/repo`, the mirror `~/soyeht-ci/mirror.git` (the release commit is fetched from it, whatever the clone's `origin` is), a git at `~/soyeht-ci/git/bin` when the login shell has none, Nix, and the settings of `docs/platforms.md`, "A Linux gate host". The release uses only `~/soyeht-ci` |
+| The Linux x86_64 CI host | the x86_64 `.deb` and AppImage | an ssh host you name (`--linux-host`, or `SOYEHT_RELEASE_LINUX_HOST`; the repository has no default): a clone at `~/soyeht-ci/repo`, the mirror `~/soyeht-ci/mirror.git` (the release commit is fetched from it, whatever the clone's `origin` is), a git at `~/soyeht-ci/git/bin` when the login shell has none, Nix, and the settings of `docs/platforms.md`, "A Linux gate host". The release uses only `~/soyeht-ci` |
+| A Linux aarch64 (arm64) CI host | the aarch64 `.deb` and AppImage | the same set-up on an arm64 Linux machine, named by `--linux-aarch64-host` or `SOYEHT_RELEASE_LINUX_AARCH64_HOST` (and `SOYEHT_RELEASE_LINUX_AARCH64_RECEIVE_PACK` for its `git-receive-pack`, as below). The packager builds for the architecture of the machine it runs on and does not cross-build, so the x86_64 host cannot stand in for it; the build script stops at once on a host of the other architecture. The Ubuntu 26.04 arm64 VM that verified ADR 0121 is such a host once it has the set-up above. The repository names no host. The size ceilings of the aarch64 packages in `scripts/package_sizes.json` are `null` (not checked) until the first build measures them |
 | A Windows host | the installers | Windows with the build tools of `docs/platforms.md`, "Windows packages", Inno Setup 6 and `uv`. A VM through VMPal does for a dry run (below) |
 
 ### The update key
@@ -103,10 +104,14 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    ```
 
    The Mac package is built here under `nice` with `package_mac.py --release` (it needs the three
-   variables above). The Linux packages are built on the CI host: the commit is pushed to the mirror
-   (`SOYEHT_RELEASE_RECEIVE_PACK` names the host's `git-receive-pack` when its ssh sessions have no
+   variables above). The Linux packages are built on a CI host of each architecture, one after the other:
+   the commit is pushed to the host's mirror (`SOYEHT_RELEASE_RECEIVE_PACK`, and for the arm64 host
+   `SOYEHT_RELEASE_LINUX_AARCH64_RECEIVE_PACK`, name its `git-receive-pack` when its ssh sessions have no
    `git`), checked out in `~/soyeht-ci/release/<commit>`, built by `package_linux_rootless.sh` and
-   copied back to `dist/`. The host is `--linux-host` or `SOYEHT_RELEASE_LINUX_HOST`; there is no default.
+   that architecture's `.deb` and AppImage copied back to `dist/`. The x86_64 host is `--linux-host` or
+   `SOYEHT_RELEASE_LINUX_HOST`, the aarch64 host `--linux-aarch64-host` or
+   `SOYEHT_RELEASE_LINUX_AARCH64_HOST`; there is no default for either, and `--linux` needs both.
+   `--linux-arch x86_64` or `--linux-arch aarch64` builds one architecture alone (to redo it).
 
 3. **Windows.** `build --windows` prints the command; run it on the Windows host with the
    `SOYEHT_WINDOWS_SIGN_*` variables set:
@@ -128,11 +133,11 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
 
    `build` wrote `dist/BUILD_SHA` (and `dist/ad-hoc/BUILD_SHA`) after the packages were built: the commit the packages come from; `collect` and `publish` refuse
    packages of another commit (or of another version, which are never uploaded). It copies the packages
-   into `dist/` and checks that all five are there (the Mac image, the `.deb`
-   and AppImage, the two installers), that the image is signed with a Developer ID certificate,
+   into `dist/` and checks that all seven are there (the Mac image, the `.deb`
+   and AppImage of each Linux architecture, the two installers), that the image is signed with a Developer ID certificate,
    notarized and accepted by Gatekeeper, that each installer carries a signature, and that the
    changelog section is written. Then it writes the release notes (`release-notes.md`), the signed
-   `update-manifest.json` and `SHA256SUMS`. The manifest offers the AppImage to Linux clients, and its
+   `update-manifest.json` and `SHA256SUMS`. The manifest offers each Linux architecture its own AppImage, and its
    sequence is the clock, checked against the manifest the clients read now (below).
 
 5. **Publish, as a draft.** First look at it:
