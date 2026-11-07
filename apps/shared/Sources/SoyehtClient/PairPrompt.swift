@@ -21,3 +21,22 @@ public struct PairPrompt: Identifiable, Sendable {
     expiresAt = pending.expiresAt
   }
 }
+
+extension EngineClient {
+  /// Keeps `pairRequests` and `devices` in step with the engine's device events.
+  func applyDeviceEvent(_ eventName: EventName, _ params: JsonValue) throws {
+    switch eventName {
+    case .devicePairRequested:
+      let event = try params.decoded(DevicePairRequestedEvent.self)
+      pairRequests.removeAll { $0.requestId == event.requestId }
+      pairRequests.append(PairPrompt(event))
+    case .devicePaired:
+      let device = try params["device"].decoded(Device.self)
+      pairRequests.removeAll { $0.fingerprint == device.fingerprint }
+      devices.removeAll { $0.deviceId == device.deviceId }
+      if !device.revoked { devices.append(device) }
+    case .deviceRevoked: devices.removeAll { $0.deviceId == params["deviceId"].string }
+    default: break
+    }
+  }
+}

@@ -57,6 +57,7 @@ extension EngineClient {
     guard let workspaceId else { return }
     paneLayouts.remove(workspaceId: workspaceId)
     editorWorkspace.refusals[workspaceId] = nil
+    projectTrust.forget(workspaceId)
   }
   /// Forgets a pane and everything this client kept for it. When it was selected, the selection
   /// moves to another pane of the same workspace before any other workspace's.
