@@ -1,3 +1,4 @@
+use soyeht_protocol::ErrorKind;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,5 +52,33 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// The protocol kind the engine presents for a web failure. The mapping lives beside the
+/// failures it names, so a new one cannot be added without deciding what a client sees.
+impl From<&Error> for ErrorKind {
+    fn from(error: &Error) -> Self {
+        match error {
+            Error::EmptyUrl
+            | Error::InvalidUrl
+            | Error::UnsupportedScheme
+            | Error::MissingHost
+            | Error::InvalidViewport
+            | Error::InvalidWait
+            | Error::InvalidCommand => ErrorKind::NavigationRefused,
+            Error::StaleReference => ErrorKind::StaleReference,
+            Error::HumanModeUnavailable => ErrorKind::WebHostUnavailable,
+            Error::PortScanTooLarge
+            | Error::InvalidPortRecord
+            | Error::InvalidSnapshotNode
+            | Error::ReferenceExhausted
+            | Error::ElementLimit
+            | Error::InvalidElement
+            | Error::PayloadTooLarge
+            | Error::InvalidConsoleEntry
+            | Error::InvalidNetworkEntry
+            | Error::SequenceExhausted => ErrorKind::InternalError,
+        }
+    }
+}
 
 pub type Result<T> = std::result::Result<T, Error>;
