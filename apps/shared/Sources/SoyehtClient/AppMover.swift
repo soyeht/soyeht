@@ -26,6 +26,14 @@
     /// An app with the destination's name is there, and it is not this profile's app: it is
     /// never replaced.
     case destinationIsAnotherApp
+    /// The app to move is the copy in Applications itself, reached by another path (a link, or
+    /// a path that differs only in case).
+    case alreadyThere
+    /// A copy of this app is in an Applications folder that this account cannot write to.
+    /// Writing the other folder would leave two copies, which is what the move exists to stop.
+    case existingCopyLocked
+    /// The copy in Applications is running.
+    case destinationRunning
     /// An app of this profile is there and the person did not confirm replacing it.
     case replaceNotConfirmed
     /// The destination changed between the plan and the move.
@@ -37,6 +45,8 @@
     /// The old app could not be put in the Trash, or the new one could not take its place; the
     /// old app is where it was.
     case replaceFailed
+    /// The old app is in the Trash and could not be put back.
+    case oldAppInTrash
   }
 
   /// What a move will do, shown to the person before it does anything.
@@ -51,6 +61,20 @@
     /// The source is left alone (a disk image or a translocated copy). Otherwise it goes to the
     /// Trash after the copy is in place, which makes the move a move.
     public let keepsSource: Bool
+    /// The file that `destination` was when the plan was made. The Trash is given only that
+    /// file: something else that lands there during the copy is never trashed.
+    let destinationID: FileID?
+  }
+
+  /// A file on a volume, whatever path reaches it.
+  struct FileID: Equatable, Sendable {
+    let device: Int
+    let inode: Int
+  }
+
+  /// Whether the app of `bundleId` runs from `app`. A seam, so a test starts no program.
+  public protocol AppRunningCheck: Sendable {
+    func isRunning(bundleId: String, at app: URL) -> Bool
   }
 
   /// Copies the running app to Applications. It reads and writes only bundles whose
@@ -62,14 +86,17 @@
     let appName: String
     let folders: [URL]
     let trash: any AppTrashing
+    let running: any AppRunningCheck
 
     public init(
-      bundleId: String, appName: String, folders: [URL], trash: any AppTrashing = SystemTrash()
+      bundleId: String, appName: String, folders: [URL], trash: any AppTrashing = SystemTrash(),
+      running: any AppRunningCheck = WorkspaceRunningCheck()
     ) {
       self.bundleId = bundleId
       self.appName = appName
       self.folders = folders
       self.trash = trash
+      self.running = running
     }
 
     /// `Contents/Info.plist` of the bundle at `url`, read from the file each time (`Bundle` caches
@@ -88,36 +115,79 @@
       info(at: url)?["CFBundleIdentifier"] as? String
     }
 
+    /// The file behind `url`, through links, so two paths to one app (a link, a path that
+    /// differs in case on a case-insensitive volume) give the same answer.
+    static func fileID(of url: URL) -> FileID? {
+      do {
+        let attributes = try FileManager.default.attributesOfItem(
+          atPath: url.resolvingSymlinksInPath().path)
+        guard let device = attributes[.systemNumber] as? Int,
+          let inode = attributes[.systemFileNumber] as? Int
+        else { return nil }
+        return FileID(device: device, inode: inode)
+      } catch {
+        return nil
+      }
+    }
+
     private func isThisApp(_ url: URL) -> Bool {
       url.pathExtension == "app" && Self.bundleIdentifier(at: url) == bundleId
     }
 
-    /// Where `source` would go and what that replaces, or why it cannot move.
+    private func destination(in folder: URL) -> URL {
+      folder.appending(path: appName + ".app", directoryHint: .isDirectory)
+    }
+
+    private enum FolderState { case ready, missing, unusable }
+
+    /// A folder that exists and can be written, one that can be created, or neither.
+    private func state(of folder: URL) -> FolderState {
+      let files = FileManager.default
+      var isFolder: ObjCBool = false
+      if files.fileExists(atPath: folder.path, isDirectory: &isFolder) {
+        return isFolder.boolValue && files.isWritableFile(atPath: folder.path) ? .ready : .unusable
+      }
+      return files.isWritableFile(atPath: folder.deletingLastPathComponent().path)
+        ? .missing : .unusable
+    }
+
+    /// Where `source` would go and what that replaces, or why it cannot move. A copy of this app
+    /// in any Applications folder is the destination, so the app never ends up in both.
     public func plan(source: URL, place: AppPlacement.Place) throws -> AppMovePlan {
       guard isThisApp(source) else { throw AppMoveFailure.notThisApp }
       let files = FileManager.default
       for folder in folders {
-        let destination = folder.appending(path: appName + ".app", directoryHint: .isDirectory)
-        var isFolder: ObjCBool = false
-        let exists = files.fileExists(atPath: folder.path, isDirectory: &isFolder)
-        if exists {
-          guard isFolder.boolValue, files.isWritableFile(atPath: folder.path) else { continue }
-        } else {
-          let parent = folder.deletingLastPathComponent()
-          guard files.isWritableFile(atPath: parent.path) else { continue }
+        let existing = destination(in: folder)
+        if files.fileExists(atPath: existing.path), isThisApp(existing) {
+          return try replacement(of: existing, in: folder, source: source, place: place)
         }
-        var replaces = false
-        if files.fileExists(atPath: destination.path) {
-          // Never replace what is not this app, and never fall through to the next folder to
-          // leave a second copy beside it.
-          guard isThisApp(destination) else { throw AppMoveFailure.destinationIsAnotherApp }
-          replaces = true
-        }
+      }
+      for folder in folders {
+        let state = state(of: folder)
+        guard state != .unusable else { continue }
+        let target = destination(in: folder)
+        // Never replace what is not this app, and never fall through to the next folder to
+        // leave a second copy beside it.
+        if files.fileExists(atPath: target.path) { throw AppMoveFailure.destinationIsAnotherApp }
         return AppMovePlan(
-          source: source, destination: destination, createsFolder: !exists,
-          replacesExisting: replaces, keepsSource: place.isReadOnlyOrigin)
+          source: source, destination: target, createsFolder: state == .missing,
+          replacesExisting: false, keepsSource: place.isReadOnlyOrigin, destinationID: nil)
       }
       throw AppMoveFailure.noWritableFolder
+    }
+
+    private func replacement(
+      of existing: URL, in folder: URL, source: URL, place: AppPlacement.Place
+    ) throws -> AppMovePlan {
+      let id = Self.fileID(of: existing)
+      if id != nil, id == Self.fileID(of: source) { throw AppMoveFailure.alreadyThere }
+      guard state(of: folder) == .ready else { throw AppMoveFailure.existingCopyLocked }
+      if running.isRunning(bundleId: bundleId, at: existing) {
+        throw AppMoveFailure.destinationRunning
+      }
+      return AppMovePlan(
+        source: source, destination: existing, createsFolder: false, replacesExisting: true,
+        keepsSource: place.isReadOnlyOrigin, destinationID: id)
     }
 
     /// Carries out `plan`: copies the app next to its destination under a staging name, checks
@@ -129,7 +199,8 @@
     {
       if plan.replacesExisting && !confirmedReplace { throw AppMoveFailure.replaceNotConfirmed }
       let again = try self.plan(source: plan.source, place: place)
-      guard again.destination == plan.destination, again.replacesExisting == plan.replacesExisting
+      guard again.destination == plan.destination, again.replacesExisting == plan.replacesExisting,
+        again.destinationID == plan.destinationID
       else { throw AppMoveFailure.planChanged }
       // Off the main actor: copying an app of this size takes seconds.
       return try await Task.detached(priority: .userInitiated) { try self.perform(again) }.value
@@ -138,7 +209,7 @@
     private func perform(_ plan: AppMovePlan) throws -> URL {
       let files = FileManager.default
       let folder = plan.destination.deletingLastPathComponent()
-      let staging = folder.appending(path: ".\(appName).moving.\(UUID().uuidString)")
+      let staging = folder.appending(path: Self.stagingPrefix(appName) + UUID().uuidString)
       do {
         if plan.createsFolder {
           try files.createDirectory(at: folder, withIntermediateDirectories: false)
@@ -153,6 +224,12 @@
         Self.discard(staging)
         throw AppMoveFailure.copyFailed
       }
+      Self.clearQuarantine(in: staging)
+      // The copy took seconds: look at the destination again before anything is trashed.
+      do { try confirmDestination(plan) } catch {
+        Self.discard(staging)
+        throw error
+      }
       var trashed: URL?
       do {
         if plan.replacesExisting { trashed = try trash.trash(plan.destination) }
@@ -160,11 +237,27 @@
       } catch {
         clientLogger.error("app move: replace failed kind=\(Self.kind(error), privacy: .public)")
         Self.discard(staging)
-        if let trashed { restore(trashed, to: plan.destination) }
+        if let trashed, !restore(trashed, to: plan.destination) {
+          throw AppMoveFailure.oldAppInTrash
+        }
         throw AppMoveFailure.replaceFailed
       }
-      if !plan.keepsSource { trashOriginal(plan.source) }
+      let sameFile = Self.fileID(of: plan.source) == Self.fileID(of: plan.destination)
+      if !plan.keepsSource && !sameFile { trashOriginal(plan.source) }
       return plan.destination
+    }
+
+    /// The destination is still what the plan saw: the same copy of this app, not running, or
+    /// still nothing.
+    private func confirmDestination(_ plan: AppMovePlan) throws {
+      let exists = FileManager.default.fileExists(atPath: plan.destination.path)
+      guard exists == plan.replacesExisting else { throw AppMoveFailure.planChanged }
+      guard plan.replacesExisting else { return }
+      if running.isRunning(bundleId: bundleId, at: plan.destination) {
+        throw AppMoveFailure.destinationRunning
+      }
+      guard isThisApp(plan.destination), Self.fileID(of: plan.destination) == plan.destinationID
+      else { throw AppMoveFailure.planChanged }
     }
 
     /// The copy is complete enough to launch: same identifier, and the executable is there.
@@ -178,6 +271,30 @@
         atPath: url.appending(path: "Contents/MacOS/\(executable)").path)
     }
 
+    /// Takes the quarantine mark off the copy. `copyItem` rewrites it into a mark without the
+    /// origin, which makes the copy look like a new download to Gatekeeper. The person has already
+    /// opened this app (it is the running one, after the check that ran for the download), the
+    /// release is notarized, and the mark would make macOS check the copy again at the next
+    /// launch, from a place the person chose to trust. A failure is logged and the move goes on:
+    /// the mark is a warning, not a part of the app.
+    static func clearQuarantine(in bundle: URL) {
+      let mark = "com.apple.quarantine"
+      var items = [bundle]
+      if let walk = FileManager.default.enumerator(at: bundle, includingPropertiesForKeys: nil) {
+        items += walk.compactMap { $0 as? URL }
+      }
+      var failures = 0
+      for item in items {
+        let status = item.withUnsafeFileSystemRepresentation { path in
+          path.map { removexattr($0, mark, XATTR_NOFOLLOW) } ?? -1
+        }
+        if status != 0 && errno != ENOATTR { failures += 1 }
+      }
+      if failures > 0 {
+        clientLogger.error("app move: quarantine kept on \(failures, privacy: .public) items")
+      }
+    }
+
     /// The original of an app that was not on a disk image: a move leaves nothing behind. A
     /// failure is only logged, since the new app is already in place.
     private func trashOriginal(_ source: URL) {
@@ -188,11 +305,34 @@
       }
     }
 
-    private func restore(_ trashed: URL, to destination: URL) {
+    private func restore(_ trashed: URL, to destination: URL) -> Bool {
       do {
         try FileManager.default.moveItem(at: trashed, to: destination)
+        return true
       } catch {
         clientLogger.error("app move: restore failed kind=\(Self.kind(error), privacy: .public)")
+        return false
+      }
+    }
+
+    private static func stagingPrefix(_ appName: String) -> String { ".\(appName).moving." }
+
+    /// Removes the hidden copies a move that was cut short (a crash, a power cut) left in the
+    /// Applications folders. Only a name this mover makes, with a UUID, is touched.
+    public func removeLeftovers() {
+      let prefix = Self.stagingPrefix(appName)
+      for folder in folders {
+        let names: [String]
+        do {
+          names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        } catch {
+          continue  // The folder does not exist (yet): nothing was left in it.
+        }
+        for name in names where name.hasPrefix(prefix) {
+          if UUID(uuidString: String(name.dropFirst(prefix.count))) != nil {
+            Self.discard(folder.appending(path: name))
+          }
+        }
       }
     }
 

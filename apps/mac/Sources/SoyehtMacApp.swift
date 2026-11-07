@@ -52,7 +52,7 @@ struct SoyehtMacApp: App {
       CommandGroup(replacing: .newItem) {}
       CommandGroup(after: .appInfo) {
         if appRelocation.canMove {
-          Button(AppRelocation.Words.moveMenu) { Task { await appRelocation.move() } }
+          Button(ClientPolicy.appMoveMenu) { Task { await appRelocation.move() } }
         }
       }
       CommandGroup(after: .toolbar) {
@@ -136,6 +136,7 @@ struct SoyehtMacApp: App {
       .task { client.start() }
       .task { updateChecker.start() }
       .task { await engineService.refresh() }
+      .task { await appRelocation.removeLeftovers() }
       .task { await crashNotice.start() }
       .alert(
         ClientPolicy.loginStartQuestion,
@@ -182,30 +183,31 @@ struct SoyehtMacApp: App {
 /// copy opening. Each alert is shown for as long as the state asks it; the buttons change the state.
 private struct AppRelocationAlerts: ViewModifier {
   let relocation: AppRelocation
-  private typealias Words = AppRelocation.Words
 
   func body(content: Content) -> some View {
     content
-      .alert(Words.question, isPresented: shown(\.asksToMove)) {
-        Button(Words.move) { Task { await relocation.move() } }
-        Button(Words.notNow, role: .cancel) { relocation.decline() }
+      .alert(ClientPolicy.appMoveQuestion, isPresented: shown(\.asksToMove)) {
+        Button(ClientPolicy.appMoveAction) { Task { await relocation.move() } }
+        Button(ClientPolicy.loginStartNotNow, role: .cancel) { relocation.decline() }
       } message: {
-        Text(verbatim: Words.summary)
+        Text(verbatim: ClientPolicy.appMoveSummary)
       }
-      .alert(Words.replaceQuestion, isPresented: shown(\.asksToReplace)) {
-        Button(Words.replace, role: .destructive) { Task { await relocation.confirmReplace() } }
-        Button(Words.cancel, role: .cancel) { relocation.cancelReplace() }
+      .alert(ClientPolicy.appMoveReplaceQuestion, isPresented: shown(\.asksToReplace)) {
+        Button(ClientPolicy.appMoveReplace, role: .destructive) {
+          Task { await relocation.confirmReplace() }
+        }
+        Button(ClientPolicy.cancel, role: .cancel) { relocation.cancelReplace() }
       } message: {
-        Text(verbatim: Words.replaceSummary)
+        Text(verbatim: ClientPolicy.appMoveReplaceSummary)
       }
       .alert(relocation.reportTitle, isPresented: shown(\.hasReport)) {
         if relocation.offersRetry {
-          Button(Words.tryAgain) {
+          Button(ClientPolicy.tryAgain) {
             relocation.acknowledge()
             Task { await relocation.move() }
           }
         }
-        Button(Words.ok, role: .cancel) { relocation.acknowledge() }
+        Button(ClientPolicy.ok, role: .cancel) { relocation.acknowledge() }
       } message: {
         Text(verbatim: messageText)
       }
@@ -213,7 +215,7 @@ private struct AppRelocationAlerts: ViewModifier {
 
   private var messageText: String {
     guard let report = relocation.report else { return "" }
-    return relocation.offersRetry ? report + " " + Words.failureLater : report
+    return relocation.offersRetry ? report + " " + ClientPolicy.appMoveFailedLater : report
   }
 
   /// The state decides when an alert shows; a dismissal changes it through a button.

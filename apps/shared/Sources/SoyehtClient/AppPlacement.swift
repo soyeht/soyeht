@@ -11,7 +11,8 @@
   /// runs anywhere else offers to move itself first. This is the one rule; the service setup, the
   /// move offer and the menu all ask it.
   ///
-  /// Pure: it reads no file, so the answer for a path is the same whether the path exists.
+  /// Pure: it reads no file, so the answer for a path is the same whether the path exists. A link
+  /// to the copy in Applications is told apart from it by `AppMover`, which compares files.
   public enum AppPlacement {
     public enum Place: Equatable, Sendable {
       /// `/Applications` or `~/Applications`, with any subfolder.
@@ -43,16 +44,22 @@
       [systemFolder, userFolder(home: home)]
     }
 
-    /// The place of `url`, a bundle or any path inside one.
+    /// The place of `url`, a bundle or any path inside one. Folder names are compared without
+    /// regard to case: the system volume is case-insensitive by default, so `/applications/X.app`
+    /// is `/Applications/X.app`.
     public static func place(of url: URL, home: URL) -> Place {
-      let parts = url.standardizedFileURL.pathComponents
-      if parts.contains(translocationFolder) { return .translocated }
-      if parts.count > 1, parts[1] == volumesFolder { return .diskImage }
-      let roots = installFolders(home: home).map { $0.standardizedFileURL.pathComponents }
+      let parts = lowered(url)
+      if parts.contains(translocationFolder.lowercased()) { return .translocated }
+      if parts.count > 1, parts[1] == volumesFolder.lowercased() { return .diskImage }
+      let roots = installFolders(home: home).map { lowered($0) }
       let inside = roots.contains { root in
         parts.count > root.count && Array(parts.prefix(root.count)) == root
       }
       return inside ? .stable : .elsewhere
+    }
+
+    private static func lowered(_ url: URL) -> [String] {
+      url.standardizedFileURL.pathComponents.map { $0.lowercased() }
     }
 
     public static func isStable(_ url: URL, home: URL) -> Bool {

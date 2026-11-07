@@ -1,5 +1,6 @@
 #if os(macOS)
   import Foundation
+  import SoyehtProtocol
   import Testing
   import os
 
@@ -42,9 +43,14 @@
       in folder: URL, named name: String = testAppName, id: String = testBundleId,
       stamp: String = "new"
     ) throws -> URL {
-      let files = FileManager.default
       let bundle = folder.appending(path: name + ".app", directoryHint: .isDirectory)
-      if files.fileExists(atPath: bundle.path) { return bundle }
+      if FileManager.default.fileExists(atPath: bundle.path) { return bundle }
+      try Self.writeApp(at: bundle, id: id, stamp: stamp)
+      return bundle
+    }
+
+    static func writeApp(at bundle: URL, id: String, stamp: String) throws {
+      let files = FileManager.default
       let macOS = bundle.appending(path: "Contents/MacOS")
       try files.createDirectory(at: macOS, withIntermediateDirectories: true)
       let info: [String: Any] = ["CFBundleIdentifier": id, "CFBundleExecutable": "app"]
@@ -56,25 +62,30 @@
       try Data(stamp.utf8).write(to: bundle.appending(path: "Contents/stamp"))
       try files.createSymbolicLink(
         atPath: bundle.appending(path: "Contents/current").path, withDestinationPath: "stamp")
-      return bundle
     }
 
     func stamp(of app: URL) throws -> String {
       String(decoding: try Data(contentsOf: app.appending(path: "Contents/stamp")), as: UTF8.self)
     }
 
-    func mover(_ folders: [URL], trash: (any AppTrashing)? = nil) -> AppMover {
+    func mover(
+      _ folders: [URL], trash: (any AppTrashing)? = nil,
+      running: any AppRunningCheck = NothingRuns()
+    ) -> AppMover {
       AppMover(
-        bundleId: testBundleId, appName: testAppName, folders: folders, trash: trash ?? self.trash)
+        bundleId: testBundleId, appName: testAppName, folders: folders, trash: trash ?? self.trash,
+        running: running)
     }
 
     /// An image holding the app, an Applications folder holding an older copy of it, and the
     /// plan to replace that copy.
-    func replacement(trash: (any AppTrashing)? = nil) throws -> Replacement {
+    func replacement(
+      trash: (any AppTrashing)? = nil, running: any AppRunningCheck = NothingRuns()
+    ) throws -> Replacement {
       let source = try app(in: try folder("image"))
       let applications = try folder("Applications")
       let existing = try app(in: applications, stamp: "old")
-      let mover = mover([applications], trash: trash)
+      let mover = mover([applications], trash: trash, running: running)
       return Replacement(
         source: source, applications: applications, existing: existing, mover: mover,
         plan: try mover.plan(source: source, place: .diskImage))
@@ -112,6 +123,71 @@
       try FileManager.default.moveItem(at: url, to: target)
       items.withLock { $0.append(url) }
       return target
+    }
+  }
+
+  struct NothingRuns: AppRunningCheck {
+    func isRunning(bundleId: String, at app: URL) -> Bool { false }
+  }
+
+  /// Answers like a copy that is not running until the `swapAt`th question, which it uses to put
+  /// another bundle in the place of the app, as another process could while the copy is made.
+  final class SwapsTheDestination: AppRunningCheck {
+    private let asked = OSAllocatedUnfairLock(initialState: 0)
+    let swapAt: Int
+    let swap: @Sendable (URL) throws -> Void
+    init(swapAt: Int, swap: @escaping @Sendable (URL) throws -> Void) {
+      self.swapAt = swapAt
+      self.swap = swap
+    }
+
+    func isRunning(bundleId: String, at app: URL) -> Bool {
+      let count = asked.withLock { value -> Int in
+        value += 1
+        return value
+      }
+      if count == swapAt { try? swap(app) }
+      return false
+    }
+  }
+
+  /// Not running when the move is planned and re-planned, running by the time the copy is done.
+  final class RunsFromTheThirdQuestion: AppRunningCheck {
+    private let asked = OSAllocatedUnfairLock(initialState: 0)
+    func isRunning(bundleId: String, at app: URL) -> Bool {
+      asked.withLock { value -> Bool in
+        value += 1
+        return value >= 3
+      }
+    }
+  }
+
+  struct Running: AppRunningCheck {
+    func isRunning(bundleId: String, at app: URL) -> Bool { true }
+  }
+
+  /// A Trash that takes the old app and then loses the new copy's staging folder, so the rename
+  /// fails; with `blocksRestore` it also puts a folder where the old app was, so putting it back
+  /// fails too.
+  final class LosesTheStaging: AppTrashing {
+    let inner: FakeTrash
+    let blocksRestore: Bool
+    init(_ inner: FakeTrash, blocksRestore: Bool) {
+      self.inner = inner
+      self.blocksRestore = blocksRestore
+    }
+
+    func trash(_ url: URL) throws -> URL {
+      let trashed = try inner.trash(url)
+      let folder = url.deletingLastPathComponent()
+      for name in try FileManager.default.contentsOfDirectory(atPath: folder.path)
+      where name.contains(".moving.") {
+        try FileManager.default.removeItem(at: folder.appending(path: name))
+      }
+      if blocksRestore {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+      }
+      return trashed
     }
   }
 
@@ -238,11 +314,10 @@
   }
 
   @Test(.enabled(if: notRoot))
-  func anOldCopyInAReadOnlySystemFolderIsNotReplacedThereAndNothingIsWritable() async throws {
+  func whenNeitherFolderCanBeWrittenNothingIsMoved() async throws {
     let box = try MoveSandbox()
     let source = try box.app(in: try box.folder("image"))
     let system = try box.folder("Applications")
-    let existing = try box.app(in: system, stamp: "old")
     try box.makeReadOnly(system)
     let readOnlyHome = try box.folder("Home")
     try box.makeReadOnly(readOnlyHome)
@@ -250,7 +325,7 @@
     #expect(throws: AppMoveFailure.noWritableFolder) {
       try mover.plan(source: source, place: .diskImage)
     }
-    #expect(try box.stamp(of: existing) == "old")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: system.path).isEmpty)
   }
 
   @Test func aTrashThatRefusesLeavesTheOldAppAndNoStagingCopy() async throws {
@@ -298,5 +373,162 @@
     }
     #expect(try box.stamp(of: appeared) == "appeared")
     #expect(box.trash.trashed.isEmpty)
+  }
+#endif
+
+#if os(macOS)
+  private func hasQuarantine(_ url: URL) -> Bool {
+    url.withUnsafeFileSystemRepresentation { path in
+      path.map { getxattr($0, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW) >= 0 } ?? false
+    }
+  }
+
+  private func quarantine(_ url: URL) {
+    let value = Array("0083;5f000000;Safari;".utf8)
+    _ = url.withUnsafeFileSystemRepresentation { path in
+      path.map { setxattr($0, "com.apple.quarantine", value, value.count, 0, XATTR_NOFOLLOW) }
+    }
+  }
+
+  @Test func theCopyIsNotQuarantinedAgainAndTheSourceKeepsItsMark() async throws {
+    let box = try MoveSandbox()
+    let source = try box.app(in: try box.folder("Downloads"))
+    let inner = source.appending(path: "Contents/stamp")
+    quarantine(source)
+    quarantine(inner)
+    #expect(hasQuarantine(source) && hasQuarantine(inner))
+    let mover = box.mover([try box.folder("Applications")])
+    let plan = try mover.plan(source: source, place: .diskImage)
+    let moved = try await mover.move(plan, place: .diskImage, confirmedReplace: false)
+    #expect(!hasQuarantine(moved) && !hasQuarantine(moved.appending(path: "Contents/stamp")))
+    #expect(hasQuarantine(source), "a disk image or translocated source is not touched")
+  }
+
+  @Test func aSymlinkToTheCopyInApplicationsIsTheSameAppAndNothingIsTrashed() async throws {
+    let box = try MoveSandbox()
+    let applications = try box.folder("Applications")
+    let existing = try box.app(in: applications, stamp: "only")
+    let link = try box.folder("Downloads").appending(path: "\(testAppName).app")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: existing)
+    let mover = box.mover([applications])
+    #expect(throws: AppMoveFailure.alreadyThere) { try mover.plan(source: link, place: .elsewhere) }
+    #expect(try box.stamp(of: existing) == "only")
+    #expect(box.trash.trashed.isEmpty)
+  }
+
+  @Test(.enabled(if: notRoot))
+  func aCopyInALockedSystemFolderIsNotLeftBesideAnotherInTheUsers() async throws {
+    let box = try MoveSandbox()
+    let source = try box.app(in: try box.folder("image"))
+    let system = try box.folder("Applications")
+    let installed = try box.app(in: system, stamp: "admin")
+    try box.makeReadOnly(system)
+    let own = try box.folder("Home/Applications")
+    let mover = box.mover([system, own])
+    #expect(throws: AppMoveFailure.existingCopyLocked) {
+      try mover.plan(source: source, place: .diskImage)
+    }
+    #expect(try box.stamp(of: installed) == "admin")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: own.path).isEmpty)
+  }
+
+  @Test func aCopyInTheUsersFolderIsTheOneReplacedNotANewOneInTheSystemFolder() async throws {
+    let box = try MoveSandbox()
+    let source = try box.app(in: try box.folder("image"))
+    let system = try box.folder("Applications")
+    let own = try box.folder("Home/Applications")
+    let installed = try box.app(in: own, stamp: "mine")
+    let mover = box.mover([system, own])
+    let plan = try mover.plan(source: source, place: .diskImage)
+    #expect(plan.destination == installed && plan.replacesExisting)
+    try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    #expect(try box.stamp(of: installed) == "new")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: system.path).isEmpty)
+  }
+
+  @Test func aCopyThatRunsIsNotReplacedAndIsNotTrashed() async throws {
+    let box = try MoveSandbox()
+    let source = try box.app(in: try box.folder("image"))
+    let applications = try box.folder("Applications")
+    let running = try box.app(in: applications, stamp: "running")
+    let mover = box.mover([applications], running: Running())
+    #expect(throws: AppMoveFailure.destinationRunning) {
+      try mover.plan(source: source, place: .diskImage)
+    }
+    #expect(try box.stamp(of: running) == "running")
+    #expect(box.trash.trashed.isEmpty)
+  }
+
+  @Test func aCopyThatStartsRunningDuringTheCopyIsNotTrashed() async throws {
+    let box = try MoveSandbox()
+    let (existing, mover, plan) = try box.replacement(running: RunsFromTheThirdQuestion()).parts
+    await #expect(throws: AppMoveFailure.destinationRunning) {
+      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    }
+    #expect(try box.stamp(of: existing) == "old")
+    #expect(box.trash.trashed.isEmpty)
+    let folder = existing.deletingLastPathComponent()
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["\(testAppName).app"])
+  }
+
+  @Test func somethingElseThatLandsAtTheDestinationDuringTheCopyIsNotTrashed() async throws {
+    let box = try MoveSandbox()
+    let applications = try box.folder("Applications")
+    _ = try box.app(in: try box.folder("image"))
+    let existing = try box.app(in: applications, stamp: "old")
+    let swapper = SwapsTheDestination(swapAt: 3) { app in
+      try FileManager.default.removeItem(at: app)
+      try MoveSandbox.writeApp(at: app, id: testBundleId, stamp: "intruder")
+    }
+    let source = box.root.appending(path: "image/\(testAppName).app")
+    let mover = box.mover([applications], running: swapper)
+    let plan = try mover.plan(source: source, place: .diskImage)
+    await #expect(throws: AppMoveFailure.planChanged) {
+      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    }
+    #expect(try box.stamp(of: existing) == "intruder")
+    #expect(box.trash.trashed.isEmpty)
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: applications.path) == [
+        "\(testAppName).app"
+      ])
+  }
+
+  @Test func aFailedRenamePutsTheOldAppBackFromTheTrash() async throws {
+    let box = try MoveSandbox()
+    let trash = LosesTheStaging(box.trash, blocksRestore: false)
+    let (existing, mover, plan) = try box.replacement(trash: trash).parts
+    await #expect(throws: AppMoveFailure.replaceFailed) {
+      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    }
+    #expect(try box.stamp(of: existing) == "old", "the old app is back where it was")
+  }
+
+  @Test func anOldAppThatCannotBePutBackIsReportedAsBeingInTheTrash() async throws {
+    let box = try MoveSandbox()
+    let trash = LosesTheStaging(box.trash, blocksRestore: true)
+    let (existing, mover, plan) = try box.replacement(trash: trash).parts
+    await #expect(throws: AppMoveFailure.oldAppInTrash) {
+      try await mover.move(plan, place: .diskImage, confirmedReplace: true)
+    }
+    #expect(box.trash.trashed == [existing])
+    let kept = try FileManager.default.contentsOfDirectory(
+      at: box.root.appending(path: "Trash"), includingPropertiesForKeys: nil)
+    #expect(try kept.map { try box.stamp(of: $0) } == ["old"])
+    #expect(ClientPolicy.appMoveOldInTrash.contains("Trash"))
+  }
+
+  @Test func hiddenCopiesLeftByACutShortMoveAreRemovedAndNothingElseIs() throws {
+    let box = try MoveSandbox()
+    let applications = try box.folder("Applications")
+    let leftover = try box.folder("Applications/.\(testAppName).moving.\(UUID().uuidString)")
+    let installed = try box.app(in: applications, stamp: "keep")
+    let stranger = try box.folder("Applications/.\(testAppName).moving.notes")
+    let missing = applications.deletingLastPathComponent().appending(path: "Home/Applications")
+    box.mover([applications, missing]).removeLeftovers()
+    #expect(!FileManager.default.fileExists(atPath: leftover.path))
+    #expect(FileManager.default.fileExists(atPath: stranger.path))
+    #expect(try box.stamp(of: installed) == "keep")
   }
 #endif

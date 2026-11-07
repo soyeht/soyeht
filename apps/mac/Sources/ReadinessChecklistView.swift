@@ -145,7 +145,7 @@ private struct EngineStartRow: View {
       Spacer(minLength: MacTheme.Space.x10)
       if setup.phase == .moveFirst {
         if relocation.canMove {
-          Button(AppRelocation.Words.move) { Task { await relocation.move() } }
+          Button(ClientPolicy.appMoveAction) { Task { await relocation.move() } }
             .buttonStyle(.paneSecondary)
             .accessibilityIdentifier("engine-service-move")
         }
@@ -161,7 +161,7 @@ private struct EngineStartRow: View {
   private var message: String {
     switch setup.phase {
     case .moveFirst:
-      relocation.explanation ?? AppRelocation.Words.explanation
+      relocation.explanation ?? ClientPolicy.appMoveExplanation
     case .failed(let detail): detail
     case .ready: "Soyeht's engine is set up to start at login, but it is not running now."
     default: "Start the engine now and keep it running whenever you are logged in."

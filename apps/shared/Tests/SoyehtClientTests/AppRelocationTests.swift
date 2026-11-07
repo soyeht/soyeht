@@ -74,6 +74,22 @@
     #expect(launch.relocation.explanation == nil)
   }
 
+  @MainActor @Test(arguments: [ProfileValues.prod, ProfileValues.dev])
+  func leftoversOfACutShortMoveAreRemovedAtLaunchForAReleasedAppOnly(
+    profile: ProfileValues
+  ) async throws {
+    let launch = try Launch(box: MoveSandbox(), profile: profile)
+    let leftover = launch.applications.appending(
+      path: ".\(testAppName).moving.\(UUID().uuidString)")
+    let other = launch.applications.appending(path: ".\(testAppName).moving.not-a-uuid")
+    for item in [leftover, other] {
+      try FileManager.default.createDirectory(at: item, withIntermediateDirectories: true)
+    }
+    await launch.relocation.removeLeftovers()
+    #expect(FileManager.default.fileExists(atPath: leftover.path) == (profile.name == "dev"))
+    #expect(FileManager.default.fileExists(atPath: other.path), "only a name the mover makes goes")
+  }
+
   @MainActor @Test func aCopyInApplicationsAsksNothing() throws {
     let box = try MoveSandbox()
     let home = try box.folder("Home")
@@ -94,7 +110,7 @@
     #expect(first.relocation.phase == .declined)
     #expect(!first.relocation.asksToMove)
     #expect(first.relocation.canMove, "the move stays one click away")
-    #expect(first.relocation.explanation == AppRelocation.Words.explanation)
+    #expect(first.relocation.explanation == ClientPolicy.appMoveExplanation)
     #expect(!FileManager.default.fileExists(atPath: first.destination.path))
 
     // The next launch does not ask again; the menu and the setup row still offer it.
@@ -141,14 +157,14 @@
     let launch = try Launch(box: MoveSandbox(), readOnlyApplications: true)
     await launch.relocation.move()
     #expect(launch.relocation.phase == .failed(.noWritableFolder))
-    #expect(launch.relocation.report == AppRelocation.Words.noWritableFolder)
+    #expect(launch.relocation.report == ClientPolicy.appMoveNoWritableFolder)
     #expect(launch.relocation.offersRetry)
     #expect(launch.relauncher.apps.isEmpty && launch.quitCount == 0)
 
     launch.relocation.acknowledge()
     #expect(launch.relocation.phase == .declined)
     #expect(launch.relocation.canMove)
-    #expect(launch.relocation.explanation == AppRelocation.Words.explanation)
+    #expect(launch.relocation.explanation == ClientPolicy.appMoveExplanation)
 
     try FileManager.default.setAttributes(
       [.posixPermissions: 0o755], ofItemAtPath: launch.applications.path)
@@ -176,11 +192,11 @@
     let launch = try Launch(box: MoveSandbox(), relauncherFails: true)
     await launch.relocation.move()
     #expect(launch.relocation.phase == .relaunchFailed(launch.destination))
-    #expect(launch.relocation.report == AppRelocation.Words.relaunchFailed)
+    #expect(launch.relocation.report == ClientPolicy.appMoveRelaunchFailed)
     #expect(!launch.relocation.offersRetry)
     #expect(launch.quitCount == 0)
     #expect(!launch.relocation.canMove, "the app is already there; asking again would replace it")
-    #expect(launch.relocation.explanation == AppRelocation.Words.relaunchFailed)
+    #expect(launch.relocation.explanation == ClientPolicy.appMoveRelaunchFailed)
     launch.relocation.acknowledge()
     #expect(launch.relocation.report == nil, "a closed message is not shown again")
     #expect(launch.relocation.phase == .relaunchFailed(launch.destination))

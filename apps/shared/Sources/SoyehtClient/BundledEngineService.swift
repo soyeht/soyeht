@@ -49,7 +49,7 @@
       runner: any ServiceCommandRunning = ProcessRunner(),
       home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
-      guard let command = bundle.url(forAuxiliaryExecutable: Self.commandName) else {
+      guard let command = Self.command(in: bundle) else {
         return nil
       }
       self.init(
@@ -67,6 +67,11 @@
       self.dataDirectory = dataDirectory
       self.runner = runner
       self.home = home
+    }
+
+    /// The command line the bundle carries, if it does. Every copy that starts an engine has it.
+    static func command(in bundle: Bundle) -> URL? {
+      bundle.url(forAuxiliaryExecutable: commandName)
     }
 
     /// The folder the programs sit in: the one the command line sits in.

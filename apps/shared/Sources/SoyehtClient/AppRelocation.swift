@@ -20,6 +20,17 @@
     }
   }
 
+  public struct WorkspaceRunningCheck: AppRunningCheck {
+    public init() {}
+
+    public func isRunning(bundleId: String, at app: URL) -> Bool {
+      guard let target = AppMover.fileID(of: app) else { return false }
+      return NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).contains {
+        $0.bundleURL.flatMap { AppMover.fileID(of: $0) } == target
+      }
+    }
+  }
+
   /// The released app outside a stable place, and the person's way to fix it (ADR 0120, "Where
   /// the app may run"). It offers once to move the app to Applications; a no, or a move that does
   /// not happen, leaves the engine unregistered (`EngineServiceSetup` registers only from a stable
@@ -51,6 +62,8 @@
     @ObservationIgnored private let app: URL
     @ObservationIgnored private let place: AppPlacement.Place
     @ObservationIgnored private let mover: AppMover
+    /// A released copy that starts an engine, wherever it runs.
+    @ObservationIgnored private let isReleasedApp: Bool
     @ObservationIgnored private let relauncher: any AppRelaunching
     @ObservationIgnored private let preferences: any ClientPreferenceStore
     @ObservationIgnored private let quit: @MainActor () -> Void
@@ -61,8 +74,7 @@
       let home = FileManager.default.homeDirectoryForCurrentUser
       self.init(
         app: bundle.bundleURL, profile: profile, home: home,
-        carriesPrograms: bundle.url(forAuxiliaryExecutable: BundledEngineService.commandName)
-          != nil,
+        carriesPrograms: BundledEngineService.command(in: bundle) != nil,
         mover: AppMover(
           bundleId: profile.appBundleId, appName: profile.macAppName,
           folders: AppPlacement.installFolders(home: home)),
@@ -83,7 +95,8 @@
       self.relauncher = relauncher
       self.preferences = preferences
       self.quit = quit
-      if !carriesPrograms || !AppPlacement.appliesTo(profile) || place == .stable {
+      isReleasedApp = carriesPrograms && AppPlacement.appliesTo(profile)
+      if !isReleasedApp || place == .stable {
         phase = .notNeeded
       } else {
         phase = preferences.bool(forKey: Self.declinedKey) ? .declined : .offered
@@ -102,7 +115,7 @@
       guard !reportClosed else { return nil }
       return switch phase {
       case .failed(let failure): Self.describe(failure)
-      case .relaunchFailed: Words.relaunchFailed
+      case .relaunchFailed: ClientPolicy.appMoveRelaunchFailed
       default: nil
       }
     }
@@ -110,7 +123,11 @@
     public var hasReport: Bool { report != nil }
 
     public var reportTitle: String {
-      if case .relaunchFailed = phase { Words.relaunchFailedTitle } else { Words.failureTitle }
+      if case .relaunchFailed = phase {
+        ClientPolicy.appMoveRelaunchFailedTitle
+      } else {
+        ClientPolicy.appMoveFailedTitle
+      }
     }
 
     /// The failure can be followed by a new try; a copy that was moved cannot.
@@ -130,8 +147,8 @@
     public var explanation: String? {
       switch phase {
       case .notNeeded, .moving, .moved: nil
-      case .relaunchFailed: Words.relaunchFailed
-      default: Words.explanation
+      case .relaunchFailed: ClientPolicy.appMoveRelaunchFailed
+      default: ClientPolicy.appMoveExplanation
       }
     }
 
@@ -139,6 +156,14 @@
       guard phase == .offered else { return }
       preferences.set(true, forKey: Self.declinedKey)
       phase = .declined
+    }
+
+    /// At launch: removes the hidden copies that a move cut short (a crash, a power cut) left in
+    /// the Applications folders.
+    public func removeLeftovers() async {
+      guard isReleasedApp else { return }
+      let mover = mover
+      await Task.detached(priority: .utility) { mover.removeLeftovers() }.value
     }
 
     /// The person agreed to the move, from the question, the menu or the setup row.
@@ -204,45 +229,16 @@
 
     static func describe(_ failure: AppMoveFailure) -> String {
       switch failure {
-      case .notThisApp: Words.notThisApp
-      case .destinationIsAnotherApp: Words.anotherApp
-      case .noWritableFolder: Words.noWritableFolder
-      case .replaceNotConfirmed, .planChanged: Words.changed
-      case .copyFailed, .replaceFailed: Words.notFinished
+      case .notThisApp: ClientPolicy.appMoveNotThisApp
+      case .destinationIsAnotherApp: ClientPolicy.appMoveAnotherApp
+      case .alreadyThere: ClientPolicy.appMoveAlreadyThere
+      case .existingCopyLocked: ClientPolicy.appMoveCopyLocked
+      case .destinationRunning: ClientPolicy.appMoveRunning
+      case .noWritableFolder: ClientPolicy.appMoveNoWritableFolder
+      case .replaceNotConfirmed, .planChanged: ClientPolicy.appMoveChanged
+      case .copyFailed, .replaceFailed: ClientPolicy.appMoveNotFinished
+      case .oldAppInTrash: ClientPolicy.appMoveOldInTrash
       }
-    }
-
-    /// The words of the offer, the confirmation, the failure and the setup row. Only the Mac has
-    /// this step, so they are not in `x-clientPolicy`.
-    public enum Words {
-      public static let question = "Move Soyeht to Applications?"
-      public static let move = "Move to Applications"
-      public static let moveMenu = "Move to Applications…"
-      public static let notNow = "Not now"
-      public static let cancel = "Cancel"
-      public static let explanation =
-        "The engine is off. It needs Soyeht in your Applications folder so macOS remembers its permissions."
-      public static let summary =
-        "Soyeht's engine needs the app in your Applications folder so macOS remembers the permissions you give it. Soyeht copies itself there and opens again. If it runs from a disk image, you can eject the image afterwards."
-      public static let replaceQuestion = "Replace the app in Applications?"
-      public static let replaceSummary =
-        "Soyeht is already in Applications. The old copy goes to the Trash."
-      public static let replace = "Replace"
-      public static let failureTitle = "Soyeht could not move itself"
-      public static let failureLater =
-        "The engine stays off until Soyeht is in Applications. You can drag it there yourself, or choose Move to Applications again."
-      public static let tryAgain = "Try again"
-      public static let ok = "OK"
-      public static let relaunchFailedTitle = "Soyeht is now in Applications"
-      public static let relaunchFailed =
-        "Soyeht was moved to Applications but could not open there. Open it from Applications."
-      static let notThisApp = "This copy is not the app Soyeht expected, so nothing was changed."
-      static let anotherApp =
-        "A different app with the same name is in Applications. Soyeht did not touch it."
-      static let noWritableFolder =
-        "Neither the Applications folder nor your own Applications folder can be written to."
-      static let changed = "Applications changed while Soyeht was moving. Nothing was replaced."
-      static let notFinished = "The copy did not finish. The app that was there is unchanged."
     }
   }
 #endif
