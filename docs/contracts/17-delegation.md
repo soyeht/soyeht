@@ -38,7 +38,7 @@ It never opens by itself.
 | Message another pane | `agent.message`, `agent.list`, attributed queued prompt, 6 per minute per recipient | No lineage, no limit on how many panes an agent starts, no permission ceiling, no completion notice, no report type |
 | Subagents inside one pane | rows of kind `subagent` (contract 04, ADR 0137) | One harness, die with the turn, share the parent's worktree, cannot be stepped into |
 | Named, reusable roles | skills (ADR 0075): `SKILL.md` folders, user and workspace scope | A skill teaches an agent; a helper type configures another agent. Same store code, different folder (section 6) |
-| Permission prompts | `pane.permission_requested`, answered by a person, grants are per pane | Must stay exactly this for a helper |
+| Permission prompts | `pane.permission_requested`, answered by a person, `allow_always` grants are per pane | Requests stay the person's; a grant the person gave the parent also covers its helpers (section 8) |
 
 A delegation reuses, and does not copy: the worktree port, the checkpointed start of a dispatch, the
 preset resolution (`harness`, `model`, `effort`, `permissionMode` of `TaskExecutor`), the durable
@@ -324,15 +324,23 @@ A helper's `session/request_permission` becomes a `pane.permission_requested` ev
 with the delegation link so a client can say "helper of <parent>". Only `human_local` and `human_device`
 answer it (`pane.permission.answer`), exactly as for the parent's own requests, from the helper's row in the
 helpers view, the attention inbox or the push. The parent has no method that answers, no tool that does, and
-no way to set an `allow_always` on a helper. A grant is per pane, for the same request shown the same way
-(contract 04 section 4): a grant the person gave the parent does not reach a helper, and the reverse. A
+no way to set a grant: a grant exists only because a person chose it.
+
+**Grants follow the session, as in Claude Code.** A persistent grant (`allow_always`) the person gave the
+parent pane covers the helpers of the parent's session: when a helper makes a request that is the same as one
+the parent was granted, and is shown the same way (the title, command, arguments and changes that a grant
+compares, contract 04 section 4), the engine allows it without asking, as it would the parent's own repeat.
+`allow_once` is never a grant and stays per request. A grant the person gives on a helper's request covers that
+helper only: it does not reach the parent or a sibling, so a helper cannot widen what its parent has. A grant
+ends with the parent's session, as the helpers do. When the person's later decision on the same request
+differs from an earlier one (a grant after a refusal, or a refusal after a grant), the later decision wins. A
 harness without modes gets the engine's own selector bounded by the rule above (ADR 0070). Elicitations are
 never answered by any mode.
 
 **A refusal stays refused.** When a person refuses a request (`reject_once` or `reject_always`) of the parent
 or of any helper of the parent's session, the engine remembers its fingerprint (the title, command,
 arguments and changes that a grant also compares) for that session. A later identical request from a helper
-of that session is refused by the engine without asking (a refusal, never an approval), the helper is told
+of that session is refused by the engine without asking, unless the person has since granted it (a refusal, never an approval), the helper is told
 it was refused by the person, and the refusal goes into the report's `facts.permissionDenied`. The parent
 cannot get the action done by a helper that it was refused itself, and a helper cannot do what a sibling was
 refused. The parent's own repeated request is still asked of the person, as always.

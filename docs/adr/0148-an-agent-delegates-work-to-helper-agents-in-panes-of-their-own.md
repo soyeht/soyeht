@@ -25,8 +25,8 @@ Soyeht has most of the parts, none of them this:
   It has no lineage, no limit on how many panes an agent can cause to exist, no ceiling on permission and no report.
 - **Subagents of a harness** are transcript rows inside one pane (ADR 0137). They belong to one harness,
   end with the turn, share the worktree, cannot be stepped into and cannot be another harness.
-- **Permissions**: a request is a `pane.permission_requested` event that only a person answers, grants are
-  per pane, and only a person gives full access (`require_person_for_full_access`).
+- **Permissions**: a request is a `pane.permission_requested` event that only a person answers, `allow_always`
+  grants are per pane, and only a person gives full access (`require_person_for_full_access`).
 - **Skills** (ADR 0075) are a store of named folders with a user and a workspace scope, a watcher and a
   size bound. A named helper type needs the same.
 
@@ -36,12 +36,20 @@ Soyeht has most of the parts, none of them this:
 |---|---|---|
 | 1 | Depth is 1: a helper cannot delegate | contract 17 section 8, Depth |
 | 2 | Delegation is on by default, with the setting `delegation.enabled` | section 5 |
-| 3 | A helper runs under the same permission rules and mode as its parent: never more, no lower cap. A full-access parent gets a full-access helper. Its requests go to the person; the parent never answers; a refused action stays refused | section 8 |
+| 3 | A helper runs under the same permission rules and mode as its parent: never more, no lower cap. A full-access parent gets a full-access helper. Its requests go to the person; the parent never answers; a refused action stays refused. A grant (`allow_always`) the person gave the parent covers its helpers, as in Claude Code; `allow_once` stays per request; a grant given on a helper's request covers that helper only | section 8 |
 | 4 | Closing the parent stops its helpers | section 4 |
 | 5 | Helpers run in the background, are not placed in the layout, and are looked at in a helpers view with the live transcript, Stop and pending permission requests | section 13 |
 | 6 | Quota works as in Claude Code: no hold and no check; a provider limit fails the helper and the parent gets the error in the report. Concurrency caps stay | section 9 |
 | 7 | The person asks in plain language and the agent delegates. User-defined helper types by name, per workspace and per user, in the skills store. No start from a pane menu | section 6 |
 | 8 | A helper lives as long as its parent's session; a finished helper takes a follow-up at any time; no retirement timer. An unchanged worktree is removed, a changed one kept for the person | sections 4 and 10 |
+| 9 | Allowed tools of a helper type are enforced as far as Soyeht can, and the types list says what is not blocked | section 6 |
+| 10 | The parent's session ends on pane close, harness switch or a replacement session; the helpers stop | section 4 |
+| 11 | A helper that failed on a provider limit takes a follow-up once the limit resets | section 4 |
+| 12 | At most 8 finished helpers per parent; an idle finished helper releases its process after 300 s; both confirmed by a memory measurement in phase 4 | section 9 |
+| 13 | One report prompt per report for now | section 8 |
+| 14 | No push when a helper ends | section 13 |
+| 15 | No task link in the first release (phase 11) | section 12 |
+| 16 | No starter helper types shipped; the documentation shows two examples | section 6 |
 
 ## Decision
 
@@ -75,8 +83,9 @@ after the turn; an idle parent wakes.
 **The helper has the parent's permission and no more; only a person approves.** Its mode is the parent's
 (compared through the `kind` of the harness's modes, an unknown ranking low), lowerable by the call or its
 type and never raised. Its permission requests go to the person and to nobody else; no method or tool of the
-parent answers one; a grant is per pane as it is today; a refusal by the person is remembered for the
-parent's session and refuses the same request from any helper of it without asking. The report is text that no
+parent answers one. A grant the person gave the parent covers its helpers, and a grant given on a helper's
+request covers that helper only; a refusal by the person is remembered for the parent's session and refuses
+the same request from any helper of it without asking, until the person decides otherwise. The report is text that no
 engine decision reads.
 
 **Helper types are a second kind in the skills store.** A type is `.agents/helpers/<name>/HELPER.md`, user
@@ -140,7 +149,10 @@ fix that caps it is in progress separately; this decision does not change the di
 14. **The report as a file in the worktree.** The helper chooses the path and the content, and it differs per
     harness. The final message of the turn works for every ACP harness and the facts come from git.
 15. **The engine merges the helper's branch.** The coordinator merges, as the reference behaviour has it.
-16. **A depth above 1.** The owner decided it; a harness's own subagents cover a helper that needs its own.
+16. **Keeping the person's grants per pane, so each helper asks again** (the rule for the parent's own pane
+    today). Claude Code applies a permission the person grants for the session to its subagents; the owner's rule
+    is the same, with `allow_once` and refusals handled as written in contract 17 section 8.
+17. **A depth above 1.** The owner decided it; a harness's own subagents cover a helper that needs its own.
 
 ## Phasing
 
@@ -165,9 +177,12 @@ Each phase is one pull request with its tests; none edits generated files by han
 4. **Follow-up, stop and the end of the parent's session.** `delegation.follow_up` from `done` and from `failed`
    with a live session, the mode check at a follow-up, `delegation.stop`, stop on pane close, harness switch and
    session replacement, the restriction of `agent.message` to parent and helper, the idle process release and its
-   resume, the refusal memory. Tests: follow-up keeps the session (the fake agent's state directory shows one
+   resume, the refusal memory, and the grants that cover helpers (contract 04 section 4 is amended with them). Tests:
+   follow-up keeps the session (the fake agent's state directory shows one
    session), stop during a turn, follow-up after the parent finished other turns, a refused follow-up on a stopped
-   helper, a request refused by the person refused again for a helper without a prompt.
+   helper, a request refused by the person refused again for a helper without a prompt, an `allow_always` on the
+   parent covering a helper's identical request while `allow_once` does not, a grant on a helper not reaching the
+   parent, a later grant lifting an earlier refusal.
 5. **Worktrees.** The `worktree` isolation with `ref`, the removal of an unchanged worktree when the delegation
    ends, `delegation.worktree.clean`, the kept-worktree limit, the orphan listing. Tests with the fake worktrunk of
    the engine tests; `tests/blocking_io_rule.rs` and `tests/core_lock.rs` unchanged and green.
@@ -202,7 +217,9 @@ whose agent calls an MCP tool when its prompt says to). The cases:
   fails the start.
 - A helper raises a permission request: the parent's `pane.permission.answer` is refused with `forbidden_role`, a
   person's answer is accepted; a person's refusal is shown in the next report's facts, and a second helper of the
-  same parent making the same request is refused without a prompt.
+  same parent making the same request is refused without a prompt. After the person gives the parent an `allow_always`
+  for a request, a helper's identical request proceeds without a prompt, an `allow_once` does not carry to a helper,
+  and a grant given on a helper does not reach the parent.
 - A provider-limit error scripted in the fake agent ends a turn: the helper is `failed`, the report holds the error, and
   a follow-up after the script clears continues it.
 - Closing the parent's pane stops its helpers; an unchanged worktree is removed, a changed one is kept.
@@ -211,19 +228,8 @@ whose agent calls an MCP tool when its prompt says to). The cases:
 
 ## Open questions for the owner
 
-The eight decisions above are settled. These remain, each with a recommendation.
-
-| # | Question | Recommendation |
-|---|---|---|
-| 1 | A helper type's allowed tools cannot be enforced for a harness tool that never asks permission and has no adapter option. Accept the limit? | Yes for the first release, stated in the types list; measure which adapters take an allow list and use it |
-| 2 | A grant the person gave the parent (`allow_always`) does not reach its helpers, which ask once each. Should it? | No for now: a grant is per pane today (contract 04), and widening it is a change to the permission model, not to delegation. Revisit after use |
-| 3 | The parent's session ends when its harness is switched or a new session replaces it, and the helpers stop. Is a harness switch the right line? | Yes: the new harness has none of the conversation that started them, and nobody to report to |
-| 4 | A helper that failed on a provider limit takes a follow-up. Right? | Yes: it is what the owner's parent could do with its own turn once the limit resets |
-| 5 | Finished helpers per parent: 8, and an idle release at 300 seconds? | Yes, both from measurement of a harness process's memory in phase 4; they are limits in the contract, so they change in one place |
-| 6 | Several reports waiting for a busy parent: one prompt each, or one merged prompt? | One each in phase 3 so the keys stay simple; merge later if parents spend turns on it |
-| 7 | A push when a helper ends? | No. The permission push already covers a helper that needs a person; the rest would be noise |
-| 8 | Link to tasks in the first release? | No: phase 11, after the ad hoc path has been used |
-| 9 | Ship starter helper types (a reviewer, an investigator)? | No files shipped in the first release; the documentation shows two examples to copy |
+None remain. Every question this decision raised was answered by the owner on 2026-11-06 and is rows 1 to 16 of
+the table at the top.
 
 ## Consequences
 
