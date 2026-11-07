@@ -248,7 +248,8 @@ def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | N
     if problem:
         note(log, problem)
         return REMOTE_UNSUPPORTED_EXIT, []
-    remote_ids, local_ids = divide_steps(areas)
+    wanted = only.split(",") if only else list(areas)
+    remote_ids, local_ids = divide_steps({i: area for i, area in areas.items() if i in wanted})
     sha = git(worktree, "rev-parse", "HEAD")
     timings.unlink(missing_ok=True)
     local_timings = timings.with_name(timings.name + ".local")
