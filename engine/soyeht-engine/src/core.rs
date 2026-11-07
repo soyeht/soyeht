@@ -71,6 +71,9 @@ pub struct Core {
     /// The outcomes of inputs the supervisor accepted that wait for the next write of inputs
     /// (ADR 0147, step R).
     pub(crate) input_receipts: Vec<crate::input_receipts::Waiting>,
+    /// The operations the supervisor holds whose intent the store still holds, when the engine
+    /// first saw them: an input accepted just before the engine ended, which nobody retries.
+    pub(crate) orphan_inputs: BTreeMap<String, i64>,
     /// The folder of each workspace whose files the editor watches, until it is closed.
     pub(crate) workspace_roots: BTreeMap<String, PathBuf>,
     pub clock: Arc<dyn Clock>,
@@ -206,6 +209,7 @@ impl Core {
             reads: Default::default(),
             supervisor_retry: Default::default(),
             input_receipts: Vec::new(),
+            orphan_inputs: BTreeMap::new(),
             workspace_roots: BTreeMap::new(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
@@ -507,8 +511,9 @@ impl Core {
         for operation_key in receipts {
             let pending = StorePort::input_intent_operation_pending(&self.store, &operation_key)
                 .map_err(errors::storage)?;
-            if !pending
-                && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)?
+            if pending {
+                self.watch_orphan_input(operation_key);
+            } else if !crate::agents::delivery::receipt_pending(&self.store, &operation_key)?
                 && !self.languages.has_pending_write(&operation_key)
             {
                 // Nobody waits for it: an unconfirmed receipt is reconciled at the next link.

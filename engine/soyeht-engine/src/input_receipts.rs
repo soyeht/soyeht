@@ -17,13 +17,16 @@ use crate::{
     core::Core,
     errors::{self, Result},
 };
-use serde_json::Value;
 use soyeht_ptyd::wire::Request;
 use soyeht_store::domain::FinishedInput;
 
 /// How long an outcome waits for the next input before it is recorded alone. A person types
 /// faster than this, so the keystrokes of a burst share their commits.
 pub(crate) const LINGER_MS: i64 = 250;
+
+/// How long an intent whose operation the supervisor holds is left for its client to retry before
+/// it is forgotten: a client retries within seconds.
+const ORPHAN_AFTER_MS: i64 = 60_000;
 
 /// An accepted input whose outcome is not durable yet.
 pub(crate) struct Waiting {
@@ -55,37 +58,32 @@ impl Waiting {
 }
 
 impl Core {
-    /// Queues the outcome of the input `key` of `connection`, which the supervisor accepted.
-    pub(crate) fn queue_input_receipt(
-        &mut self,
-        connection: &str,
-        input: (&str, &str, &str),
-        result: &Value,
-        operation_key: String,
-    ) -> Result<()> {
-        let (scope, key, fingerprint) = input;
-        let actor = self.actor_json(connection)?;
+    /// Queues the outcome `finished` of an input the supervisor accepted. The actor was taken
+    /// when the request was dispatched, so a connection that closed meanwhile loses nothing.
+    pub(crate) fn queue_input_receipt(&mut self, finished: FinishedInput, operation_key: String) {
         // A retry that was sent again before the outcome was recorded queues it once.
         if self
-            .input_receipts
-            .iter()
-            .any(|waiting| waiting.finished.scope == scope && waiting.finished.key == key)
+            .queued_input_outcome(&finished.scope, &finished.key)
+            .is_some()
         {
-            return Ok(());
+            return;
         }
         let queued_ms = self.now_ms();
         self.input_receipts.push(Waiting {
-            finished: FinishedInput {
-                scope: scope.into(),
-                key: key.into(),
-                fingerprint: fingerprint.into(),
-                result: result.clone(),
-                actor,
-            },
+            finished,
             operation_key,
             queued_ms,
         });
-        Ok(())
+    }
+
+    /// The outcome of the input `key` when it waits to be recorded: a retry is answered with it
+    /// and goes nowhere near the supervisor, which could have forgotten the operation by the time
+    /// a write of the retry reached it (the confirmation follows the record).
+    pub(crate) fn queued_input_outcome(&self, scope: &str, key: &str) -> Option<&FinishedInput> {
+        self.input_receipts
+            .iter()
+            .map(Waiting::finished)
+            .find(|finished| finished.scope == scope && finished.key == key)
     }
 
     /// Tells the supervisor it may forget the operations whose outcome has just been recorded.
@@ -95,17 +93,57 @@ impl Core {
         }
     }
 
+    /// The supervisor holds the operation of an input whose intent the store holds: either its
+    /// client is about to retry it, or the engine ended before it recorded the outcome and nobody
+    /// will. It is looked at again after [`ORPHAN_AFTER_MS`].
+    pub(crate) fn watch_orphan_input(&mut self, operation_key: String) {
+        let now = self.now_ms();
+        self.orphan_inputs.entry(operation_key).or_insert(now);
+    }
+
+    /// Forgets the intents nobody retried within [`ORPHAN_AFTER_MS`] of the engine seeing them,
+    /// and tells the supervisor to forget their operations. An outcome that waits to be recorded
+    /// confirms its own.
+    fn sweep_orphan_inputs(&mut self) -> Result<()> {
+        let now = self.now_ms();
+        let due: Vec<String> = self
+            .orphan_inputs
+            .iter()
+            .filter(|(_, since)| now < **since || now - **since >= ORPHAN_AFTER_MS)
+            .map(|(operation_key, _)| operation_key.clone())
+            .collect();
+        for operation_key in due {
+            self.orphan_inputs.remove(&operation_key);
+            if self
+                .input_receipts
+                .iter()
+                .any(|waiting| waiting.operation_key == operation_key)
+            {
+                continue;
+            }
+            if self
+                .store
+                .drop_input_intent(&operation_key)
+                .map_err(errors::storage)?
+            {
+                self.confirm_inputs(vec![operation_key]);
+            }
+        }
+        Ok(())
+    }
+
     /// The tick: records the outcomes that have waited for the next input long enough.
     pub(crate) fn flush_input_receipts(&mut self) -> Result<()> {
         let now = self.now_ms();
+        // A clock that went back makes an outcome wait for ever, so it counts as due.
         let due = self
             .input_receipts
             .first()
-            .is_some_and(|waiting| now - waiting.queued_ms >= LINGER_MS);
+            .is_some_and(|waiting| now < waiting.queued_ms || now - waiting.queued_ms >= LINGER_MS);
         if due {
             self.record_input_receipts()?;
         }
-        Ok(())
+        self.sweep_orphan_inputs()
     }
 
     /// The engine is stopping: records every outcome that waits.
@@ -219,6 +257,73 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn an_intent_nobody_retries_is_forgotten_after_a_minute_and_its_operation_confirmed() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-orphans-{}", uuid::Uuid::new_v4()));
+        let mut core = Core::open(&directory).unwrap();
+        let confirmed = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let record = Arc::clone(&confirmed);
+        core.link_supervisor(Box::new(Answering(move |request| {
+            if let Request::ConfirmInput { operation_key } = request {
+                record.lock().unwrap().push(operation_key);
+            }
+            Ok(Response::Ok)
+        })));
+        core.background = crate::offload::Background::inline();
+        let clock = Arc::new(Manual(AtomicI64::new(1_000)));
+        core.clock = clock.clone();
+        let intent = |operation_key: &str| soyeht_store::domain::InputIntent {
+            fingerprint: "fingerprint".into(),
+            operation_key: operation_key.into(),
+            supervisor_id: "supervisor".into(),
+            instance_id: "instance".into(),
+        };
+        for (key, operation) in [("a", "op-a"), ("b", "op-b")] {
+            core.store
+                .finish_inputs(&[], Some(("client", key, &intent(operation))))
+                .unwrap();
+            core.watch_orphan_input(operation.into());
+        }
+        // The outcome of one of them waits: it confirms its own.
+        core.input_receipts
+            .push(Waiting::for_test("b", "op-b", 1_000));
+
+        clock.0.store(
+            1_000 + ORPHAN_AFTER_MS - 1,
+            std::sync::atomic::Ordering::SeqCst,
+        );
+        core.flush_input_receipts().unwrap();
+        assert!(core.store.input_intent_operation_pending("op-a").unwrap());
+
+        clock
+            .0
+            .store(1_000 + ORPHAN_AFTER_MS, std::sync::atomic::Ordering::SeqCst);
+        core.flush_input_receipts().unwrap();
+        assert!(!core.store.input_intent_operation_pending("op-a").unwrap());
+        assert!(core.orphan_inputs.is_empty());
+        let confirmed = confirmed.lock().unwrap();
+        assert!(confirmed.contains(&"op-a".to_owned()), "{confirmed:?}");
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn an_outcome_is_due_when_the_clock_went_back() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-receipts-{}", uuid::Uuid::new_v4()));
+        let mut core = Core::open(&directory).unwrap();
+        let clock = Arc::new(Manual(AtomicI64::new(5_000)));
+        core.clock = clock.clone();
+        core.input_receipts
+            .push(Waiting::for_test("a", "op-a", 5_000));
+        clock.0.store(1_000, std::sync::atomic::Ordering::SeqCst);
+
+        core.flush_input_receipts().unwrap();
+
+        assert!(core.input_receipts.is_empty());
         crate::test_paths::remove_after(core, directory);
     }
 }

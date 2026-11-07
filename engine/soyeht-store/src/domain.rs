@@ -180,6 +180,15 @@ impl Store {
         Ok(())
     }
 
+    /// Forgets the intent of an operation nobody is going to retry. Returns whether there was one.
+    pub fn drop_input_intent(&self, operation_key: &str) -> Result<bool> {
+        let removed = self.connection.execute(
+            "DELETE FROM input_intents WHERE operation_key=?1",
+            [operation_key],
+        )?;
+        Ok(removed > 0)
+    }
+
     pub fn input_intent_operation_pending(&self, operation_key: &str) -> Result<bool> {
         Ok(self.connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM input_intents WHERE operation_key=?1)",

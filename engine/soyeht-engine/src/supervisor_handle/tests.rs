@@ -775,3 +775,81 @@ fn a_job_that_ended_with_no_answer_still_returns_the_sends_it_took() {
     assert_size_queued(&core);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn a_retry_while_the_outcome_waits_is_answered_from_it_and_the_supervisor_writes_once() {
+    let (mut core, root, ids) = open_core();
+    let (connection, pane) = ids.split_once('|').unwrap();
+    core.background = crate::offload::Background::inline();
+    let (stub, _, asked) = Stub::new(Duration::ZERO);
+    core.link_supervisor(Box::new(stub));
+    let clock = Arc::new(crate::supervisor_link::tests::Manual(
+        std::sync::atomic::AtomicI64::new(1_000),
+    ));
+    core.clock = clock.clone();
+    let typed = |id| {
+        request(
+            id,
+            "pane.input",
+            json!({"paneId":pane,"bytes":"bHMK","idempotencyKey":"typed"}),
+        )
+    };
+    let answer = |core: &mut Core, id| match core.dispatch_inline(connection, typed(id)) {
+        Ok(Outcome::Reply(reply)) => reply,
+        other => panic!("pane.input did not reply: {:?}", other.err()),
+    };
+
+    let first = answer(&mut core, 2);
+    assert_eq!(first["acceptedBytes"], 4);
+    // The client retries with the same key while the outcome waits for the next write: it is
+    // answered from the outcome, and the supervisor is not asked again.
+    assert_eq!(answer(&mut core, 3), first);
+    assert_eq!(*asked.lock().unwrap(), ["input:bHMK"]);
+
+    // The outcome is recorded after the linger and the supervisor told to forget the operation;
+    // a retry after that is answered by the database.
+    clock.0.store(
+        1_000 + crate::input_receipts::LINGER_MS,
+        std::sync::atomic::Ordering::SeqCst,
+    );
+    core.flush_input_receipts().unwrap();
+    assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
+    assert_eq!(answer(&mut core, 4), first);
+    assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
+
+    // The same key with other bytes is refused, whichever record it meets.
+    let other = core.dispatch_inline(
+        connection,
+        request(
+            5,
+            "pane.input",
+            json!({"paneId":pane,"bytes":"bHMM","idempotencyKey":"typed"}),
+        ),
+    );
+    assert!(other.is_err());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_confirmation_waits_for_the_inputs_on_their_way() {
+    let (mut core, root, _) = open_core();
+    let (stub, _, asked) = Stub::new(Duration::ZERO);
+    core.link_supervisor(Box::new(stub));
+    // An input to the process is on its way: it holds the turn of the process.
+    let on_its_way = core.turn(&["shell-instance"]);
+    core.send_later(Request::ConfirmInput {
+        operation_key: "op".into(),
+    });
+
+    thread::sleep(Duration::from_millis(300));
+    assert!(
+        asked.lock().unwrap().is_empty(),
+        "the confirmation overtook the input"
+    );
+    drop(on_its_way);
+    wait_for("the confirmation was never sent", || {
+        asked.lock().unwrap().len() == 1
+    });
+    assert_eq!(*asked.lock().unwrap(), ["confirm"]);
+    std::fs::remove_dir_all(root).unwrap();
+}

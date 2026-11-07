@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::method::PANE_INPUT;
 use soyeht_ptyd::wire::Request;
-use soyeht_store::domain::InputIntent;
+use soyeht_store::domain::{FinishedInput, InputIntent};
 use uuid::Uuid;
 
 /// The operation key of the input `key`: the one of its intent when a retry finds it, or a new
@@ -79,6 +79,17 @@ impl Core {
             &json!([PANE_INPUT, params]).to_string(),
         ));
         let bytes = errors::param_str(params, "bytes")?.to_owned();
+        // A retry of an input whose outcome waits to be recorded is answered with that outcome:
+        // the supervisor may have been told to forget the operation before the retry reaches it.
+        if let Some(waiting) = self.queued_input_outcome(&scope, &key) {
+            if waiting.fingerprint != fingerprint {
+                return Err(errors::idempotency_conflict(
+                    "Input key reused with different content",
+                ));
+            }
+            return Ok(Outcome::Reply(waiting.result.clone()));
+        }
+        let actor = self.actor_json(connection)?;
         // The durable intent precedes the irreversible supervisor write. Only
         // a digest is retained; input bytes may contain credentials.
         let (operation_key, recorded) = resolve_intent(
@@ -107,7 +118,6 @@ impl Core {
             operation_key: operation_key.clone(),
             fingerprint,
         };
-        let connection = connection.to_owned();
         Ok(Outcome::Offload(Offload::new(
             "Supervisor input timed out",
             supervisor_handle::DEADLINE,
@@ -128,11 +138,15 @@ impl Core {
                 // supervisor is told to forget the operation: both follow the next write of
                 // inputs (see `input_receipts`).
                 core.queue_input_receipt(
-                    &connection,
-                    (&scope, &key, &receipt_fingerprint),
-                    &result,
+                    FinishedInput {
+                        scope,
+                        key,
+                        fingerprint: receipt_fingerprint,
+                        result: result.clone(),
+                        actor,
+                    },
                     operation_key,
-                )?;
+                );
                 Ok(Outcome::Reply(result))
             },
         )))

@@ -431,7 +431,21 @@ impl Core {
             return;
         };
         let batch = std::mem::take(&mut self.supervisor_later);
-        let instances: Vec<&str> = batch.iter().filter_map(instance_of).collect();
+        let mut instances: Vec<String> = batch
+            .iter()
+            .filter_map(instance_of)
+            .map(str::to_owned)
+            .collect();
+        // A confirmation says the supervisor may forget an operation, so it follows every input
+        // on its way: one for that operation that the supervisor has not yet seen would find it
+        // forgotten and write again.
+        if batch
+            .iter()
+            .any(|request| matches!(request, Request::ConfirmInput { .. }))
+        {
+            instances.extend(self.send_turns.keys().cloned());
+        }
+        let instances: Vec<&str> = instances.iter().map(String::as_str).collect();
         let turn = self.turn(&instances);
         let used = supervisor.clone();
         // On a thread of its own, not a shared worker: this job holds a turn that a typed input

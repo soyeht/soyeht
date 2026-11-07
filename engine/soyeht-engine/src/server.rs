@@ -144,10 +144,14 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         serde_json::json!({"event":"engine.ready","socket":socket,"version":env!("CARGO_PKG_VERSION")})
     );
     let requested = soyeht_platform::shutdown::requested()?;
-    tokio::select! {
-        () = requested => (),
-        result=tasks.join_next()=>{if let Some(result)=result {result??;}},
-    }
+    // A task that ended with an error still lets the engine record what waits before it stops.
+    let ended = tokio::select! {
+        () = requested => Ok(()),
+        result = tasks.join_next() => match result {
+            Some(result) => result.map_err(Error::Join).and_then(|ended| ended),
+            None => Ok(()),
+        },
+    };
     tasks.abort_all();
     core_lock::with(&core, "shutdown", |state| {
         // The outcomes of inputs that wait for the next one are recorded before the engine ends.
@@ -162,7 +166,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     })
     .await?;
     fs::remove_file(socket)?;
-    Ok(())
+    ended
 }
 
 pub(crate) async fn connection(
