@@ -83,12 +83,12 @@ impl CommandWorktree {
         // `wt` runs git on the repository, and git starts the programs the repository's own
         // configuration names (the file system monitor, a filter driver, a hook). The settings that
         // keep git from it travel in the environment `wt` hands to every git it starts.
-        let git = soyeht_process::ReadOnlyGit::prepare_with(
-            &probe,
-            repository,
-            Limits::new(LIST_TIMEOUT, OUTPUT_LIMIT),
-        )
-        .map_err(errors::worktree_process)?;
+        let limits = Limits::new(LIST_TIMEOUT, OUTPUT_LIMIT);
+        // Git before 2.31 ignores the settings, which would leave `wt` unhardened: it is not run.
+        soyeht_process::require_config_environment(&probe, limits)
+            .map_err(errors::worktree_process)?;
+        let git = soyeht_process::ReadOnlyGit::prepare_with(&probe, repository, limits)
+            .map_err(errors::worktree_process)?;
         let mut command = Command::new(&self.executable);
         command
             .env("PATH", path)

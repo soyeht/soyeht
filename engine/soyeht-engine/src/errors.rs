@@ -118,7 +118,7 @@ constructor!(git_unavailable, GitUnavailable);
 /// has no usable `git`, `worktree_unavailable` for any other reason.
 pub fn worktree_process(error: soyeht_process::Error) -> Error {
     match error {
-        soyeht_process::Error::GitUnavailable => git_unavailable(error.to_string()),
+        problem if problem.git_is_unusable() => git_unavailable(problem.to_string()),
         other => worktree_unavailable(other.to_string()),
     }
 }
