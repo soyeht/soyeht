@@ -291,6 +291,7 @@ step always both release-flow:unit uv run python -m unittest discover -s scripts
 step always both changelog:unit uv run python -m unittest discover -s scripts -p 'test_changelog.py'
 step always both package-linux:unit uv run python -m unittest discover -s scripts -p 'test_package_linux.py'
 step always both package-mac:unit uv run python -m unittest discover -s scripts -p 'test_package_mac.py'
+step always both release-identity:unit uv run python -m unittest discover -s scripts -p 'test_release_identity.py'
 step always both package-windows:unit uv run python -m unittest discover -s scripts -p 'test_package_windows.py'
 step always both release:check uv run python scripts/release.py check
 step always both third-party-notices:unit uv run python -m unittest discover -s scripts -p 'test_third_party_notices.py'

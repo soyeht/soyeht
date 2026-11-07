@@ -25,12 +25,15 @@ DEVELOPER_ID = "Authority=Developer ID Application:"
 DIRECTORIES = {0x10B: 96, 0x20B: 112}
 CERTIFICATE_TABLE = 4
 
-# The packages a complete release holds: (system, architecture, extension). A Linux build of the
-# other architecture needs a host of that architecture and is not part of the first releases.
+# The packages a complete release holds: (system, architecture, extension). A Linux package is built
+# on a host of its own architecture (`package_linux.py` does not cross-build), so a release needs one
+# Linux host of each (docs/release.md).
 REQUIRED = (
     ("macos", "aarch64", "dmg"),
     ("linux", "x86_64", "deb"),
     ("linux", "x86_64", "AppImage"),
+    ("linux", "aarch64", "deb"),
+    ("linux", "aarch64", "AppImage"),
     ("windows", "x86_64", "exe"),
     ("windows", "aarch64", "exe"),
 )

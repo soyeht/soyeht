@@ -18,7 +18,7 @@ struct PhoneSettings: View {
           Text("Subscription windows reported by the provider tools signed in on your Mac.")
             .font(.subheadline)
             .foregroundStyle(PhonePalette.secondary)
-          if client.usageReadings.isEmpty {
+          if client.usage.readings.isEmpty {
             ContentUnavailableView(
               "No usage readers", systemImage: "chart.donut",
               description: Text("Connect to the Mac and try again."))
@@ -53,7 +53,7 @@ struct PhoneSettings: View {
         // The shortcut sent the person here to install an engine.
         if DictationEngineStore.shared.installPrompt != nil { scrolledTo = Self.dictationSection }
       }
-      .onChange(of: client.usageReadings.map(\.provider)) { _, _ in chooseProvider() }
+      .onChange(of: client.usage.readings.map(\.provider)) { _, _ in chooseProvider() }
       .task { await refreshPeriodically() }
     }
     .tint(PhonePalette.accent)
@@ -114,7 +114,7 @@ struct PhoneSettings: View {
   private var rings: some View {
     ScrollView(.horizontal, showsIndicators: false) {
       HStack(spacing: 18) {
-        ForEach(client.usageReadings, id: \.provider) { reading in
+        ForEach(client.usage.readings, id: \.provider) { reading in
           Button {
             selectedProvider = reading.provider
           } label: {
@@ -130,11 +130,11 @@ struct PhoneSettings: View {
   }
 
   private var selectedReading: UsageReading? {
-    client.usageReadings.first { $0.provider == selectedProvider }
+    client.usage.readings.first { $0.provider == selectedProvider }
   }
 
   private func chooseProvider() {
-    if selectedReading == nil { selectedProvider = client.usageReadings.first?.provider }
+    if selectedReading == nil { selectedProvider = client.usage.readings.first?.provider }
   }
 
   private func refresh() {

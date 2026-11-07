@@ -222,7 +222,7 @@ impl Workbench {
         };
         row()
             .gap(px(space::X12))
-            .min_h(px(desktop::TASK_TOOLBAR_HEIGHT))
+            .min_h(px(layout::TASK_TOOLBAR_HEIGHT))
             .child(
                 row()
                     .gap(px(space::X2))
@@ -270,9 +270,7 @@ impl Workbench {
             .py(px(space::X6))
             .rounded_full()
             .bg(rgb(palette.accent))
-            .chrome()
-            .font_weight(FontWeight::BOLD)
-            .text_size(px(type_scale::CONTROL))
+            .chrome_bold(type_scale::CONTROL)
             .text_color(rgb(palette.on_accent))
             .when(!connected, |pill| {
                 pill.opacity(crate::theme::pane_interior::DISABLED_OPACITY)
