@@ -4,32 +4,21 @@ use crate::{
     outbox,
     ports::StorePort,
     tasks::rules::tests::task_fixture,
-    test_panes::{agent_with_modes, core_with_workspace, insert_agent_pane},
+    test_panes::{
+        CLAUDE_MODES, CODEX_MODES, agent_with_modes, core_with_workspace, insert_agent_pane,
+    },
 };
 use serde_json::json;
 use soyeht_protocol::{ConfigValue, ErrorKind, Role, TaskState, method};
 
 const WORKSPACE: &str = "workspace-1";
 
-/// The modes the Claude adapter announces, with the kind each carries.
-const CLAUDE: [(&str, &str); 5] = [
-    ("default", "standard"),
-    ("acceptEdits", "standard"),
-    ("plan", "plan"),
-    ("auto", "auto_review"),
-    ("bypassPermissions", "full_access"),
-];
-
-/// The modes the Codex adapter announces: it has no plan mode, and its `read-only` is the
-/// standard one that asks before editing outside the workspace.
-const CODEX: [(&str, &str); 3] = [
-    ("read-only", "standard"),
-    ("agent", "auto_review"),
-    ("agent-full-access", "full_access"),
-];
-
 fn modes(harness: &str) -> &'static [(&'static str, &'static str)] {
-    if harness == "claude" { &CLAUDE } else { &CODEX }
+    if harness == "claude" {
+        &CLAUDE_MODES
+    } else {
+        &CODEX_MODES
+    }
 }
 
 /// The state of a ready agent of `harness` in `current`.

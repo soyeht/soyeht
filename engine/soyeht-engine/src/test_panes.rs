@@ -359,3 +359,20 @@ pub(crate) fn agent_with_modes(
     .unwrap();
     state
 }
+
+/// The modes the Claude adapter announces, with the kind each carries.
+pub(crate) const CLAUDE_MODES: [(&str, &str); 5] = [
+    ("default", "standard"),
+    ("acceptEdits", "standard"),
+    ("plan", "plan"),
+    ("auto", "auto_review"),
+    ("bypassPermissions", "full_access"),
+];
+
+/// The modes the Codex adapter announces: it has no plan mode, and its `read-only` is the
+/// standard one that asks before editing outside the workspace.
+pub(crate) const CODEX_MODES: [(&str, &str); 3] = [
+    ("read-only", "standard"),
+    ("agent", "auto_review"),
+    ("agent-full-access", "full_access"),
+];

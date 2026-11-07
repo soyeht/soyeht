@@ -1,5 +1,5 @@
 use super::{ModeCeiling, State, reviewer_mode};
-use crate::test_panes::agent_with_modes;
+use crate::test_panes::{CLAUDE_MODES, CODEX_MODES, agent_with_modes};
 
 /// An executor on the harness `test` that announces `choices` and runs in `current`.
 fn executor(current: &str, choices: &[(&str, &str)]) -> State {
@@ -9,19 +9,6 @@ fn executor(current: &str, choices: &[(&str, &str)]) -> State {
 fn reviewer(executor: &State) -> Option<String> {
     reviewer_mode(executor, &ModeCeiling::of(executor, true))
 }
-
-const CLAUDE: [(&str, &str); 5] = [
-    ("default", "standard"),
-    ("acceptEdits", "standard"),
-    ("plan", "plan"),
-    ("auto", "auto_review"),
-    ("bypassPermissions", "full_access"),
-];
-const CODEX: [(&str, &str); 3] = [
-    ("read-only", "standard"),
-    ("agent", "auto_review"),
-    ("agent-full-access", "full_access"),
-];
 
 #[test]
 fn reviewers_prefer_plan_then_standard_and_never_full_access() {
@@ -33,7 +20,7 @@ fn reviewers_prefer_plan_then_standard_and_never_full_access() {
         "bypassPermissions",
     ] {
         assert_eq!(
-            reviewer(&executor(current, &CLAUDE)).as_deref(),
+            reviewer(&executor(current, &CLAUDE_MODES)).as_deref(),
             Some("plan"),
             "an executor in {current}"
         );
@@ -41,7 +28,7 @@ fn reviewers_prefer_plan_then_standard_and_never_full_access() {
     // The Codex adapter announces no plan mode: its `read-only` is a standard one.
     for current in ["read-only", "agent", "agent-full-access"] {
         assert_eq!(
-            reviewer(&executor(current, &CODEX)).as_deref(),
+            reviewer(&executor(current, &CODEX_MODES)).as_deref(),
             Some("read-only"),
             "an executor in {current}"
         );
