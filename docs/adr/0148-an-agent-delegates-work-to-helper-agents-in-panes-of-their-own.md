@@ -35,7 +35,7 @@ Soyeht has most of the parts, none of them this:
 | # | Decision | Where it lands |
 |---|---|---|
 | 1 | Depth is 1: a helper cannot delegate | contract 17 section 8, Depth |
-| 2 | Delegation is on by default, with the setting `delegation.enabled` (the engine ships it false until the clients of phase 8, then true) | section 5 |
+| 2 | Delegation is on by default, with the setting `delegation.enabled` (the generated default is false until every shipped client tolerates an unplaced pane; the last client phase flips it) | section 5 |
 | 3 | A helper runs under the same permission rules and mode as its parent: never more, no lower cap. A full-access parent gets a full-access helper. Its requests go to the person; the parent never answers; a refused action stays refused (`reject_always`). A grant (`allow_always`) the person gave the parent covers its helpers, as in Claude Code; `allow_once` stays per request; a grant given on a helper's request covers that helper only; the later decision wins | section 8 |
 | 4 | Closing the parent stops its helpers | section 4 |
 | 5 | Helpers run in the background, are not placed in the layout, and are looked at in a helpers view with the live transcript, Stop and pending permission requests | section 13 |
@@ -50,6 +50,8 @@ Soyeht has most of the parts, none of them this:
 | 14 | No push when a helper ends | section 13 |
 | 15 | No task link in the first release (phase 11) | section 12 |
 | 16 | No starter helper types shipped; the documentation shows two examples | section 6 |
+| 17 | Narrowing of 6 and 11: only an RPC or turn error fails a helper as a provider limit. A limit the harness writes as text is a `done` turn whose text carries it, until a full-tier real-harness check gives evidence for a per-harness classifier | section 9 |
+| 18 | Repository helper types reuse the workspace trust state (the one "Trust this folder?" per workspace, built separately); they have no approval of their own | section 6 |
 
 ## Decision
 
@@ -68,8 +70,7 @@ required fields, and a board card per helper would bury the board. It can be lin
 **The wire is new `delegation` and `helpers` families**, because a task method that meant "start, follow up,
 stop" would break the meaning of the task states. Methods: `delegation.start`, `delegation.follow_up`,
 `delegation.stop`, `delegation.list`, `delegation.report`, the person-only `delegation.worktree.clean`;
-`helpers.list`, `helpers.read`, and the person-only `helpers.create`, `helpers.update`, `helpers.delete`,
-`helpers.trust`. Events: `delegation.created`, `delegation.changed`, `delegation.reported`, `helpers.changed`.
+`helpers.list`, `helpers.read`, and the person-only `helpers.create`, `helpers.update`, `helpers.delete`. Events: `delegation.created`, `delegation.changed`, `delegation.reported`, `helpers.changed`.
 MCP tools: `delegate`, `follow_up_delegate`, `stop_delegate`, `list_delegates`, `delegate_report`,
 `list_harnesses`, `list_helper_types`.
 
@@ -80,15 +81,18 @@ wrapped as data with a random delimiter, and everything a helper or its reposito
 inside the delimiters. A follow-up reaches the helper in a second form with no reply route.
 
 **The helper has the parent's permission and no more; only a person approves.**
-- Its mode is the parent's, compared through a rank table in the contract data, not `kind` (which is wrong for
-  Codex `read-only` and the engine's `accept_edits`). A parent's unknown mode ranks lowest and a helper's unknown
+- Its mode is the parent's, compared through a rank table in the contract data, not `kind` alone (which understates the
+  engine's `accept_edits`; a row may never rank below its `kind` fallback without a written reason). Codex `agent`
+  is 2 (kind `auto_review`) so a `default` Claude parent cannot start an auto-approving Codex helper; Codex
+  `read-only` is 1 until adapter evidence shows it cannot ask for escalation, and Claude `acceptEdits` is
+  unverified until the pinned adapter's announcement is checked. A parent's unknown mode ranks lowest and a helper's unknown
   mode ranks highest. The identifier is never trusted across harnesses.
 - The mode the harness **confirms** is checked before the first prompt and at every follow-up, because the initial
   configuration is best effort: a helper above its parent is failed with no prompt sent.
 - Its requests go to the person; no method or tool of the parent answers one.
 - A grant (`allow_always`) the person gave the parent covers its helpers, through a harness-neutral request
-  fingerprint; a grant on a helper covers that helper only; the later decision wins. A `reject_always` is remembered
-  for the parent's session and refuses the same request from any helper of it without asking. Both live in a store
+  fingerprint; a grant on a helper covers that helper only; the later decision wins. A refusal the person gives with the engine's own "Refuse for this session" choice (or an adapter's `reject_always`) is
+  remembered for the parent's session and refuses the same request from any helper of it without asking. Both live in a store
   table with a session and a sequence, not in the pane's `permission_rules`. This differs on purpose from the rule
   for a harness's in-pane subagents: it is the owner's request for Claude Code's behaviour.
 - The guarantees hold for a connection with an agent binding; the local socket without one is `human_local`, which
@@ -106,8 +110,7 @@ watcher, by giving `soyeht-skills` a kind. It is not a `SKILL.md`, which would d
 in the "/" picker. A type names a harness, model, effort, a mode (lower only), isolation, whether the helper gets the
 Soyeht MCP server at all, allowed tools (narrowing only) and instructions. Because a repository can ship one: the
 user's type wins over a repository type of the same name, the MCP server's static instructions name user types only,
-the body and the composed prompt are bounded before any side effect, and a repository type is inert until a person
-approves its revision.
+the body and the composed prompt are bounded before any side effect, and a repository type is inert in a workspace the person has not trusted, through the workspace trust state.
 
 **Cost is bounded by counts, and the provider is the quota.** Active helpers per parent and workspace, running per
 workspace and in total, finished helpers per parent, and a start rate. The usage meters are not read. A limit the
@@ -136,7 +139,7 @@ fix that caps it is in progress separately; this decision does not change the di
 2. **Only extend tasks.** Every helper would be a board card with required fields, chief-only, one owner and a
    session restart per attempt. The notice, follow-up and stop would still be new, and the board would fill with
    throwaway work. Reuse the machinery; keep the board for work a person plans.
-3. **Let the parent open panes and use `message_agent`.** Agents have no tool that creates a pane, and if they
+3. **Let the parent open panes and use `message_agent`.** Agents have no tool that creates an agent pane (`web_open` creates a web pane), and if they
    had there would be no lineage, ceiling, limit, report type or stop; six messages a minute is not a protocol
    for follow-ups; and a sibling could message a helper.
 4. **Hidden sessions with no pane.** A second transcript, queue and permission surface to build and keep in step,
@@ -179,14 +182,14 @@ Each phase is one pull request with its tests. New code goes in new modules (`en
    `x-modeRanks` table, the `x-paneNonRouteIds` entries, `uv run python contracts/generate.py`, the `delegations` table
    with its checkpoints, contract 08's matrix. No `taskId`. Tests: `--check`, the contract tests, store tests that stop
    between each checkpoint and resume, and the rank-table coverage test over the pinned registry snapshot (a harness
-   with a mode and no row fails). If a gate test needs a handler for every method, this phase and the next are one.
+   with a mode and no row fails; a row below its `kind` fallback with no written reason fails). If a gate test needs a handler for every method, this phase and the next are one.
 2. **Start, list, events, the mode rule, the helper allowlist and the side channels.** `delegation.start` and
    `delegation.list`; shared isolation only; the pane opened by the dispatch machinery and not placed; the `delegation`
    link; depth 1; the counts and the start rate; the duplicate guard; the composed-prompt bound; the confirmed-mode
    check; the binding signal and the engine allowlist in `dispatch.rs`; `agent.message` refused to and from a helper;
    `agent.list` restricted; the route-less follow-up form in `peer.rs`. `delegation.enabled` ships false. Tests: the
-   rank rules (parent's mode, lower accepted, higher refused, unknown in both directions, the engine selector, Codex
-   `read-only`, no rank-0 mode under a plan parent); a fake harness that refuses `session/set_mode`, so the helper is
+   rank rules (parent's mode, lower accepted, higher refused, unknown in both directions, the engine selector, a
+   `default` Claude parent refused an auto-approving Codex `agent`, no rank-0 mode under a plan parent); a fake harness that refuses `session/set_mode`, so the helper is
    failed with `mode_exceeds_parent` and no prompt; a helper calling `task.next`, `loop.set` and `pane.role.set`
    refused; an integration test with `soyeht-fake-acp`. The fake agent gains generic commands "call MCP tool X with JSON"
    and "say text" (`soyeht-acp/tests/fake-agent/mcp.rs`).
@@ -202,9 +205,13 @@ Each phase is one pull request with its tests. New code goes in new modules (`en
    session replacement. Tests: the same session continues; a refused follow-up on a stopped helper; follow-up when the
    running cap is full; `pane.close` of a helper; `workspace.close`; a lowered parent mode refusing a follow-up.
    **(b) Grants and refusals**, a security-review PR: the fingerprint, the `permission_decisions` table and migration,
-   the answer path writing it, the lookup for a helper's request, `reject_always` only. Tests: a parent's
+   the answer path writing it, the lookup for a helper's request, the engine's own "Refuse for this session" choice (so refusal memory does not
+   depend on the adapter offering `reject_always`), eviction of the oldest decision at 128 (the person's answer never
+   fails), the `permissionAlwaysCoversHelpers` line in `x-clientPolicy.texts`, and the amendment of contract 04 section
+   4. The fake agent gains options with `reject_always` and without it (today it offers `reject_once` only). Tests: a parent's
    `allow_always` covering a helper of another harness in a worktree; `allow_once` not covering; a helper's grant not
-   reaching the parent; the later decision winning; `reject_once` not remembered; the 128 cap; the sentence added at
+   reaching the parent; the later decision winning; a plain `reject_once` not remembered; refusal memory with an adapter that offers no `reject_always`; the 128 cap
+   evicting the oldest; the sentence added at
    `rule_key`. **(c) Idle release:** a `Hooks` method or clock, a released marker the reconciler honours, and the resume.
    Tests: a released helper resumed by a follow-up, and after an engine restart.
 5. **Worktrees.** `WorktreePort::prepare` with a start ref; the parent in a worktree; the non-git error; the owner-generic
@@ -215,11 +222,13 @@ Each phase is one pull request with its tests. New code goes in new modules (`en
    depth and `delegation.enabled` gating. `scripts/e2e_delegation.py` joins the e2e steps of the gate as
    `e2e_tasks.py` does (they run when the engine is selected); the Rust integration tests in `engine/soyeht-engine/tests`
    are full-tier. A full-tier real-harness check follows the pattern of `e2e_real_agent_messaging.py`.
-7. **Helper types.** The kind in `soyeht-skills`, `helpers.*` and `helpers.trust`, the resolution, the user-wins rule, the
-   MCP instructions for user types, the bounds, the allowed-tools enforcement, the type case added to the acceptance.
+7. **Helper types.** The kind in `soyeht-skills` (its flat front-matter parser gains list support), `helpers.*`, the resolution, the user-wins rule, the
+   MCP instructions for user types, the bounds, repository types loaded only in a workspace the trust state trusts (this phase follows the workspace trust
+   change; until it lands repository types are not loaded), the allowed-tools enforcement, the type case added to the
+   acceptance.
 8. **The shared client and the Mac.** `DelegationReplica` and its vectors, the chip, the helpers view, Preferences for
-   helper types, the check that the layout tolerates an unplaced pane, the size tokens; then the engine default of
-   `delegation.enabled` becomes true. Tests: `swift test --package-path apps/shared`, the vectors, the Mac view checks.
+   helper types, the check that the layout tolerates an unplaced pane, the size tokens. The last client phase to land
+   (this one, 9, 10, or the Android app if it ships by then) flips the default of `delegation.enabled` to true. Tests: `swift test --package-path apps/shared`, the vectors, the Mac view checks.
 9. **The phone.** 10. **Windows and Linux.** The same view and vectors.
 11. **The task link.** `taskId` on `delegation.start`, with the contract-drift review.
 
@@ -237,8 +246,8 @@ Each phase is one pull request with its tests. New code goes in new modules (`en
   same name wins.
 - A helper raises a permission request: the parent's `pane.permission.answer` is refused; a person's answer is accepted.
   The person gives the parent an `allow_always`: a helper's identical request proceeds without a prompt, an `allow_once`
-  does not carry, a grant on a helper does not reach the parent. A `reject_always` makes a second helper's identical
-  request refused without a prompt and shows in the report.
+  does not carry, a grant on a helper does not reach the parent. "Refuse for this session" makes a second helper's identical
+  request refused without a prompt and shows in the report, with an adapter that offers no `reject_always`.
 - A helper calls `task_next`: refused; the helper's session is not restarted.
 - A turn error scripted in the fake agent: the helper is `failed`, the report holds the error, a follow-up continues it.
   A turn that says a usage limit in text and ends: `done`, the text delivered as data, no classification.
@@ -252,11 +261,8 @@ Each phase is one pull request with its tests. New code goes in new modules (`en
 
 ## Open questions for the owner
 
-The owner's answers of 2026-11-06 are rows 1 to 16 above. One question came out of the design review:
-
-| # | Question | Recommendation |
-|---|---|---|
-| 1 | A repository can ship a helper type. Should a type from the repository be inert until a person approves its revision once (`helpers.trust`)? | Yes. A type chooses a harness, a model and instructions for an agent, so it deserves the confirmation a repository script would. It costs one click per revision, and the user's own types never ask |
+None remain. The owner's answers of 2026-11-06 are rows 1 to 18 of the table at the top, and the question the design
+review raised (repository helper types) is row 18.
 
 ## Consequences
 
@@ -265,7 +271,7 @@ The owner's answers of 2026-11-06 are rows 1 to 16 above. One question came out 
 - A helper can spend a subscription's quota without a person in the loop. The counts and the start rate bound the
   parallelism; the provider's own limit ends the rest, and the report says so when the harness reports it as an error.
 - A repository can ship helper types. They can choose a harness, model and instructions, never a mode above the
-  parent's, and only after the person trusts them.
+  parent's, and only in a workspace the person trusts.
 - Contract 08's role matrix, the `Pane` schema, `x-limits`, `x-settings`, `x-modeRanks`, the `soyeht-skills` crate, the
   worktree port and the permission-answer path grow in the phases above. ADR 0029 and contract 03 R22 are amended for
   the worktrees a delegation makes. Contract 04 section 4 is amended for grants that cover helpers.

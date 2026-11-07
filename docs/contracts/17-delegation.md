@@ -61,7 +61,7 @@ record, a lifecycle and the guards. A delegation is not a task.
 | `parentSessionId` | `Id` | the parent's ACP session id, read by the engine from the parent's state at start; not `pane.generation`, which changes on restarts and reloads that keep the session |
 | `childPaneId` | `Id` | an ordinary agent pane, present from `queued` on |
 | `depth` | integer | always 1 (section 8) |
-| `title` | text, at most `delegationTitleBytes` | helper-authored; bounded, and escaped when quoted (section 8) |
+| `title` | text, at most `delegationTitleBytes` | written by the parent; bounded, and escaped when quoted (section 8) |
 | `brief` | text, at most `delegationBriefBytes` | what the parent sent |
 | `helperType` | name, optional | section 6 |
 | `harness`, `model`, `effort` | as `TaskExecutor` | the harness's own names |
@@ -70,7 +70,7 @@ record, a lifecycle and the guards. A delegation is not a task.
 | `worktree` | `TaskWorktree`, when `isolation` is `worktree` | path, recorded branch, base commit |
 | `status` | section 4 | |
 | `holdReason` | `concurrency`, `reporting`, `needs_login`, `permission`, `question`, absent | why it is `queued`, `running` but held, or `waiting_for_input` |
-| `failure` | typed reason, optional | `mode_exceeds_parent`, `start_failed`, `session_lost`, `turn_error`, `incomplete` |
+| `failure` | typed reason, optional | `mode_exceeds_parent`, `start_failed`, `session_lost`, `turn_error` (`error`, `refusal`), `incomplete` (`max_tokens`, `max_turn_requests`) |
 | `turn`, `steppedIn`, `tokens` | integer, boolean, integer | finished turns that produced a report; a person wrote to the helper; usage rows the harness reports |
 | `cleanup` | `none`, `pending`, `done`, `kept` | section 10 |
 | `createdAt`, `startedAt`, `finishedAt`, `version` | | `version` is optimistic concurrency, as for tasks |
@@ -90,8 +90,8 @@ One per finished turn of the helper. Delivered to the parent (section 8) and kep
 | `facts` | object | measured by the engine, not said by the helper: `stopReason` (a `TurnStopReason`, when the turn ended with one), `failure`, `startedAt`, `finishedAt`, `branch` (the **recorded** branch; `branchMismatch` true when the worktree's HEAD is another branch now), `baseCommit`, `headCommit`, `commitsAhead`, `filesChanged` (count and up to 50 paths), `insertions`, `deletions`, `dirty`, `permissionDenied` (title and time), `steppedIn`, `tokens` |
 | `delivery` | `queued`, `delivered`, `parent_gone` | |
 
-Paths, titles and branch names are written by the helper or by its repository. They are bounded, have control
-characters and the nonce marker removed, and appear only inside the data region of a prompt or tool result
+Paths and branch names are written by the helper or by its repository, titles by the parent. All are bounded, have
+control characters and the nonce marker removed, and appear only inside the data region of a prompt or tool result
 (section 8). The git facts are read by `soyeht_process::git::ReadOnlyGit` off the Core lock, in the helper's
 worktree or working directory; phase 3 adds the operations it lacks (`rev-list --count`, `diff --numstat`,
 `status --porcelain`). `soyeht-vcs` is not the runner.
@@ -128,8 +128,9 @@ replaces it (the `session/new` fallback after a failed `session/load`, or the re
 and not when the same session is reloaded (an engine restart, a role change). Then every helper of that session
 is stopped, nothing is delivered (`delivery` `parent_gone`), and section 10 decides its worktree. There is no
 timer that retires a finished helper. A stopped helper's pane is closed and its transcript stays readable in the
-helpers view while the parent's pane exists; the delegation rows and helper panes are purged with the parent
-pane's history.
+helpers view while the parent's pane exists. The delegation rows, their reports and decisions, and the helper panes
+are deleted in the same store transaction that deletes the parent pane's record (a cascade from it); there is no
+separate timer.
 
 **A person's direct actions on a helper's pane.** `pane.close` is a stop (`stopped`, and the parent is told, as
 for any stop by a person). `pane.harness.switch` and `pane.role.set` are refused (`forbidden_role`): stop the helper
@@ -158,7 +159,10 @@ delegation the caller may not see. The protocol version stays 1. The new `Id` pa
 `delegation.start` is called by the parent agent from a natural-language request of the person; a person starts
 no delegation from a menu or a form. From a helper it is refused with `forbidden_role`. The MCP server mints a
 new `idempotencyKey` for each call, so the engine also keeps a duplicate guard: a start with the same parent,
-title and brief hash within 60 seconds returns the delegation already made. `ref` is a branch or commit for the
+title and brief hash within 60 seconds, while that delegation is unfinished (`queued`, `running` or
+`waiting_for_input`), returns the delegation already made. `delegation.start` carries the binding's
+`sessionGeneration`, as the task tools do: a call from an MCP process that a harness switch retired is refused with
+`stale_reference`. `ref` is a branch or commit for the
 worktree (default the parent's HEAD, section 10). The engine bounds the whole composed prompt (section 8) at
 `delegation.start`, before any pane, worktree or record is made.
 
@@ -178,8 +182,10 @@ Error code appended to `x-errorCodes`: `delegation_limit_exceeded` (a count, the
 isolation is asked in a folder that is not a repository (shared isolation still works); `invalid_params` for a
 composed prompt that is too large.
 
-Setting (a person changes it): `delegation.enabled`. Its default is true (owner decision); the engine ships it false
-until the clients of phase 8, so a build that can run helpers but not show them does not.
+Setting (a person changes it): `delegation.enabled`. The owner wants it on by default, and the generated default is
+plainly **false** until every shipped client tolerates a pane the layout does not place (Mac, iPhone and iPad,
+Windows and Linux, and Android if it ships by then). The last client phase to land flips the default to true; an
+engine phase never does.
 
 Limits (generated; none is typed in the engine): `delegationsPerParent` 4, `delegationsPerWorkspace` 8
 (both count active helpers), `delegationsRunningPerWorkspace` 4, `delegationsRunningTotal` 8,
@@ -213,8 +219,11 @@ hides a user skill of the same name is reversed for types: **the user's type win
 type of the same name, and `helpers.list` shows the scope of every type. The Soyeht MCP server's `instructions`
 (static and read with high authority by the model) name **user-scope types only**; repository types are reachable
 through `list_helper_types`, whose result marks each as repository-written and wraps its description as data
-(section 8). Bounds: the body is at most `helperTypeBodyBytes`. A repository type is inert until a person has
-approved that file's revision once (`helpers.trust`, human only; ADR 0148 question 1).
+(section 8). Bounds: the body is at most `helperTypeBodyBytes`. **A repository type is inert in a workspace the
+person has not trusted.** Trust is the workspace trust state (the one "Trust this folder?" per workspace), which
+helper types reuse and do not duplicate: there is no approval of their own, no method for it, and nothing about it
+is stored by this contract. In a trusted workspace a type is as trusted as that folder's `AGENTS.md`; the mode
+ceiling of section 8 still holds for it. Until the trust state exists, repository types are not loaded.
 
 `HELPER.md` has front matter:
 
@@ -225,7 +234,7 @@ approved that file's revision once (`helpers.trust`, human only; ADR 0148 questi
 | `permissionMode` | optional; a request for a mode **at most** the parent's; never raises it |
 | `isolation` | optional, `worktree` or `shared` |
 | `mcp` | optional boolean, default true; false starts the helper with no Soyeht MCP server at all, as the contract-drift reviewer does, for a read-only helper |
-| `allowed-tools` | optional list; the name and vocabulary of skills and of Claude Code's `tools`: the ACP tool kinds (`read`, `edit`, `execute`, `fetch`, `search`, `other`) and MCP tools as `server.tool`. Only narrows |
+| `allowed-tools` | optional list; the name and vocabulary of skills and of Claude Code's `tools`: the ACP tool kinds (`read`, `edit`, `delete`, `move`, `search`, `execute`, `think`, `fetch`, `other`) and MCP tools as `server.tool`. Only narrows. The front-matter parser of `soyeht-skills` is flat and gains list support in phase 7 |
 | body | the instructions, after the preamble and before the brief |
 
 Resolution: a field of the `delegation.start` call overrides the type, which overrides the defaults
@@ -239,7 +248,7 @@ harness tool that never asks for permission and has no adapter option (a read) i
 says so.
 
 **Reading and writing.** `helpers.list`, `helpers.read` (agent and human; `list` never returns the body) and
-`helpers.create`, `helpers.update`, `helpers.delete`, `helpers.trust` (human only, as `skills.*`), and the transient
+`helpers.create`, `helpers.update`, `helpers.delete` (human only, as `skills.*`), and the transient
 event `helpers.changed`. As with skills, the person can ask an agent to write the file; the engine follows the folders.
 
 ## 7. The tools of the agent, and what a helper may call
@@ -262,10 +271,11 @@ server. The description of `delegate` says when to use it and when not: large or
 model, its own worktree, work that must outlive the turn; a harness's own subagent stays the right tool for a short
 lookup inside the turn. The parent's uncommitted changes are not in the worktree, and the description says so.
 
-**The helper allowlist.** The binding the engine declares for a helper carries `--helper-of <delegation id>`
-(a distinct signal, not a new role), and `dispatch.rs` gives such a connection `Role::Agent` with an explicit
-allowlist, enforced by the engine and not only by the tool list: the web family, `writing_structure`,
-`writing_variant_add`, and `agent.list` (which returns its parent only). Everything else is refused with
+**The helper allowlist.** The binding the engine declares for a helper carries `--helper-of <delegation id>`, which
+only shapes the tool list. The engine derives that a pane is a helper from the pane's delegation link, not from the
+flag. `dispatch.rs` gives such a connection `Role::Agent` with an explicit allowlist, enforced by the engine and not
+only by the tool list: the web family, `writing_structure`, `writing_variant_add`, and `agent.list` (which returns its
+parent only). Everything else is refused with
 `forbidden_role`: the whole task family (`task.next` among them, which would apply a task's preset mode and restart the
 session), `loop.set`, `pane.role.set`, `delegation.*`, `helpers.*`, `harness.list` and `agent.message` in both
 directions. A helper reaches its parent only through its report. The web family can open web panes (`web_open`
@@ -290,8 +300,9 @@ A stop by the parent does not wake the parent (its tool result said so). A stop 
 `queued`; `delegation::deliver_pending`, called by the agent driver's queue advance (`agents/driver.rs`) after it
 takes a prompt off the parent's queue, retries it. `delegation.report` always works.
 
-Turn outcomes: `end_turn` is `done`; `error`, `refusal`, `max_tokens` and `max_turn_requests` are `failed` with the
-stop reason in the facts (the session is alive, follow-up allowed); a `cancelled` the person caused from the
+Turn outcomes: `end_turn` is `done`; `error` and `refusal` are `failed` with `failure` `turn_error`, and `max_tokens` and
+`max_turn_requests` are `failed` with `failure` `incomplete`, the stop reason in the facts (the session is alive, follow-up
+allowed); a `cancelled` the person caused from the
 helper's view is `done` with `steppedIn`; a stop is `stopped`. A session the engine cannot recover is `failed` with
 `failure` `session_lost`, which takes no follow-up.
 
@@ -327,12 +338,14 @@ with no reply route, a second form in `peer.rs` with its own replay parse.
 ### The mode of a helper
 
 Modes are ranked by a **contract data table** (`x-modeRanks` in `protocol.json`), per harness and mode identifier,
-because `kind` alone is wrong: Codex `read-only` has kind `standard` and the engine's `accept_edits` has kind
-`standard`. Meanings: 0 reads and plans; 1 asks for everything beyond reading; 2 approves edits or reviews
-automatically; 3 approves everything. Seed rows: the engine selector `ask` 1, `accept_edits` 2, `allow_all` 3;
-Claude `plan` 0, `default` 1, `acceptEdits` 2, `auto` 2, `bypassPermissions` 3; Codex `read-only` 0, `agent` 1,
-`agent-full-access` 3. A mode id with no row falls back to its `kind` (`plan` 0, `standard` 1, `auto_review` 2,
-`full_access` 3). Unknown has two directions: **a parent's unknown mode ranks 0; a helper's unknown mode (no row, no
+because `kind` alone can understate: the engine's `accept_edits` has kind `standard`. Meanings: 0 reads and plans; 1
+asks for everything beyond reading; 2 approves edits or reviews automatically; 3 approves everything. Seed rows: the
+engine selector `ask` 1, `accept_edits` 2, `allow_all` 3; Claude `plan` 0, `default` 1, `acceptEdits` 2 (unverified
+until the pinned adapter's announcement is checked), `auto` 2, `bypassPermissions` 3; Codex `read-only` 1, `agent` 2
+(its kind is `auto_review`), `agent-full-access` 3. `read-only` ranks 1, not 0, until evidence from the adapter shows
+that it cannot ask for escalation; if it is moved to 0 the evidence goes in ADR 0148. A mode id with no row falls
+back to its `kind` (`plan` 0, `standard` 1, `auto_review` 2, `full_access` 3), and **a row may never rank below its
+`kind` fallback without a written reason** in the table; the coverage test enforces both. Unknown has two directions: **a parent's unknown mode ranks 0; a helper's unknown mode (no row, no
 kind) ranks 3** and so is refused unless the parent ranks 3. A test fails when a harness pinned in the registry
 snapshot has a mode announced in a fixture and no row, and when a pin changes without its row being reviewed.
 
@@ -349,7 +362,7 @@ snapshot has a mode announced in a fixture and no row, and when a pin changes wi
   before the first prompt the engine reads the helper's effective mode, ranks it, and if it ranks above the parent's or is
   unknown, fails the helper with `failure` `mode_exceeds_parent`, sends no prompt and closes the session. The record
   stores the confirmed mode. The check repeats at every follow-up, against the parent's current confirmed mode.
-- `isolation: shared` needs a helper at rank 0 (Codex `read-only` is one).
+- `isolation: shared` needs a helper at rank 0 (Claude `plan` is one; Codex has none yet).
 - The helper is a worker. Its harness and model are free. Worktree isolation is not confinement: a helper can write
   outside its worktree by absolute path, and only its mode and the person's answers limit that.
 
@@ -370,20 +383,32 @@ behaviour, and that comment gains a sentence naming them.
 *Fingerprint.* Today `rule_key` hashes the launch id, the raw tool call (with worktree paths) and the subagent
 session id, so a parent's grant could never match a helper of another harness or in a worktree. The cross-helper
 fingerprint is harness-neutral: for `execute`, the kind and the command with the pane's directory replaced by `$CWD`;
-for `read`, `edit` and `delete`, the kind and the path relative to the pane's directory; for an MCP tool, the server,
-the tool and the canonical arguments. Other kinds are never inherited. The pane's own `permission_rules` map is
+for `read`, `edit` and `delete`, the kind and the path relative to the pane's directory; for `move`, the kind and both
+paths relative to it; for an MCP tool, the server, the tool and the canonical arguments. `think` asks for nothing, and
+`search`, `fetch` and `other` are never inherited. The pane's own `permission_rules` map is
 unchanged. Decisions that cover helpers are kept in a table in `soyeht-store` (`permission_decisions`: parent pane,
 parent session id, fingerprint, `allow`/`reject`, a sequence, the pane they were given on), written in the same
-transaction as the answer, capped at 128 per session, with a migration. Grants the person gave before this table
+transaction as the answer, with a migration. At the cap of 128 decisions per session the **oldest decision of that
+session is evicted**; the person's answer never fails (the pane's own `permission_rules` cap, which fails the answer
+today, is a separate defect and is not changed here). Grants the person gave before this table
 existed, and rules in `permission_rules`, are not inherited.
 
-*A refusal stays refused.* A `reject_always` the person gave on the parent or on any helper of the session is
-remembered in that table. A later request with the same fingerprint from a helper of the session is refused by
+*A refusal stays refused.* The engine hides `reject_always` unless the adapter offers it together with a `reject_once`
+(`agents/questions.rs`), and some adapters, the fake agent included, offer neither. So refusal memory does not depend on
+the adapter: the engine's answer path adds a choice of its own to the options a client sees, "Refuse for this
+session", with an engine-owned option id. Choosing it answers the adapter with its `reject_once` (or its first
+refusing option) and records the decision; an adapter's own `reject_always` is recorded as well. A refusal the person
+gave on the parent or on any helper of the session is remembered in that table. A later request with the same fingerprint from a helper of the session is refused by
 the engine without asking (a refusal, never an approval), the helper is told the person refused it, and the
-refusal is in the report's `permissionDenied`. `reject_once` stores nothing today and stays unremembered:
-a person who wants a refusal to hold chooses `reject_always`. The parent's own repeated request is still asked of
+refusal is in the report's `permissionDenied`. A plain `reject_once` stores nothing and stays
+unremembered: a person who wants a refusal to hold chooses "Refuse for this session" (or `reject_always`). The parent's own repeated request is still asked of
 the person, and an `allow_always` there lifts the refusal (the later decision wins). The helpers view lists the
 requests refused by an earlier decision.
+
+*What the dialog says.* Contract 04 section 4 recorded that an "Always allow" applies to this pane only. With delegation
+enabled it also covers the pane's helpers, so every client shows, beneath the options of a permission request of a
+pane that can have helpers, a line from `x-clientPolicy.texts` (`permissionAlwaysCoversHelpers`) saying that "Always
+allow" also applies to the helpers this agent starts. Contract 04 section 4 is amended in phase 4b.
 
 *Limit.* A mode of the same or a higher rank that approves automatically never produces a request, so a refusal
 cannot apply to it; the mode rank, not the refusal memory, is what bounds the helper there.
@@ -435,7 +460,8 @@ fails with `git_unavailable`. The branch is `delegate/<short id>-<slug of the ti
 **Cleanup amends ADR 0029 and contract 03 R22**, which let only a person clean a worktree. When a delegation ends
 (`stopped`, the end of the parent's session included), the engine removes the worktree **it created for that
 delegation** if the helper never changed it (HEAD is the base, the tree is clean, no process has it as its directory)
-and, then, deletes the `delegate/` branch it made when it has no commit beyond the base. Nothing else is removed
+and, then, deletes the `delegate/` branch it made when the base check shows no commit beyond the base, with the
+semantics of `git branch -d` (it refuses a branch that is not merged, and so never loses a commit). Nothing else is removed
 automatically, and a task branch is never touched. Removal waits for the helper's process to exit, so it is a
 `cleanup` `pending` checkpoint the engine retries after the asynchronous close, and gives up as `kept`. Process
 detection (`process_uses`) is unsupported on Windows, so on Windows nothing is removed automatically. A changed
@@ -479,7 +505,8 @@ clients pass them. Colours are palette tokens: the dot of a status is the dot of
 
 **Background by default.** A helper is not placed in the layout and nothing opens when it starts. Its pane exists in
 the engine and the clients show it only in the helpers view. Clients must tolerate a pane the layout does not place;
-phase 8 checks this and flips `delegation.enabled` to true.
+each client phase (8, 9, 10, and Android if it ships) checks and fixes this, and the last of them flips
+`delegation.enabled` to true (section 5).
 
 **The helpers view** is the equivalent of Claude Code's background task list, discoverable and not intrusive:
 - A quiet chip "3 helpers" in the header of a parent pane while it has any helper; an accent dot and "1 needs you"
