@@ -37,6 +37,8 @@ pub fn run_git_with(probe: &Probe, command: Command, limits: Limits) -> Result<O
     run(command, limits)
 }
 
+/// A hooks folder that holds nothing: git finds no hook there.
+const NO_HOOKS: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 /// The settings of a filter driver that run a program when git compares a file with the index:
 /// the driver's conversions and its long-running process.
 const FILTER_PROGRAMS: [&str; 3] = ["clean", "smudge", "process"];
@@ -87,7 +89,12 @@ impl ReadOnlyGit {
         let Some(names) = names else {
             return Err(unreadable_configuration());
         };
-        let mut settings = vec!["core.fsmonitor=false".to_owned()];
+        // No hook runs either: a command that only reads starts none, and one that changes a
+        // checkout (a worktree add) must not start the program a repository names for it.
+        let mut settings = vec![
+            "core.fsmonitor=false".to_owned(),
+            format!("core.hooksPath={NO_HOOKS}"),
+        ];
         for name in &names {
             for setting in FILTER_PROGRAMS {
                 settings.push(format!("filter.{name}.{setting}="));
@@ -117,6 +124,22 @@ impl ReadOnlyGit {
             .env("GIT_LITERAL_PATHSPECS", "1")
             .env("GIT_PAGER", "cat");
         command
+    }
+}
+
+impl ReadOnlyGit {
+    /// The same settings for every `git` that another program starts: `command` is a program
+    /// that runs git itself (worktrunk), so the settings travel in the environment
+    /// (`GIT_CONFIG_COUNT`), which git reads as if they were `-c` options. A setting the
+    /// environment already carries is replaced. Git before 2.31 ignores these variables.
+    pub fn harden_environment(&self, command: &mut Command) {
+        command.env("GIT_CONFIG_COUNT", self.settings.len().to_string());
+        for (index, setting) in self.settings.iter().enumerate() {
+            // `prepare_with` wrote every setting as `key=value`.
+            let (key, value) = setting.split_once('=').unwrap_or((setting, ""));
+            command.env(format!("GIT_CONFIG_KEY_{index}"), key);
+            command.env(format!("GIT_CONFIG_VALUE_{index}"), value);
+        }
     }
 }
 
@@ -348,6 +371,61 @@ mod tests {
             let output = run_git(command, limits).unwrap();
             assert!(output.success(), "{arguments:?}: {}", output.stderr_text());
         }
+        let ran = programs_that_ran(&root);
+        fs::remove_dir_all(&root).unwrap();
+        assert!(ran.is_empty(), "{ran:?}");
+    }
+
+    /// Worktrunk runs git itself, so the settings must reach the git it starts through the
+    /// environment. The same checkout without them runs the repository's hook and programs.
+    #[test]
+    fn the_environment_carries_the_settings_to_a_git_another_program_starts() {
+        let limits = Limits::new(Duration::from_secs(30), 1 << 20);
+        let root = repository_with_programs("environment");
+        let hook = root.join(".git/hooks/post-checkout");
+        fs::write(
+            &hook,
+            format!("#!/bin/sh\ntouch \"{}/ran-hook\"\n", root.display()),
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let add = |name: &str, hardened: bool| {
+            let mut command = Command::new("git");
+            command
+                .arg("-C")
+                .arg(&root)
+                .args(["worktree", "add", "-q", "-b", name])
+                .arg(root.join(name));
+            if hardened {
+                ReadOnlyGit::prepare(&root, limits)
+                    .unwrap()
+                    .harden_environment(&mut command);
+            }
+            let output = command.output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        add("control", false);
+        assert!(
+            programs_that_ran(&root).contains(&"ran-hook".to_owned()),
+            "the control ran no hook"
+        );
+        for entry in programs_that_ran(&root) {
+            fs::remove_file(root.join(entry)).unwrap();
+        }
+        add("hardened", true);
+        let mut status = Command::new("git");
+        status.arg("-C").arg(&root).args(["status", "--porcelain"]);
+        ReadOnlyGit::prepare(&root, limits)
+            .unwrap()
+            .harden_environment(&mut status);
+        assert!(status.output().unwrap().status.success());
         let ran = programs_that_ran(&root);
         fs::remove_dir_all(&root).unwrap();
         assert!(ran.is_empty(), "{ran:?}");
