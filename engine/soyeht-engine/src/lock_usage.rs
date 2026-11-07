@@ -24,6 +24,20 @@ pub(crate) struct Observation {
     pub(crate) costs: Costs,
 }
 
+#[cfg(test)]
+impl Observation {
+    /// A hold of `held_ms` for a caller that waited `waited_ms`, with no method and no cost.
+    pub(crate) fn for_test(purpose: &'static str, held_ms: u64, waited_ms: u64) -> Self {
+        Self {
+            purpose,
+            method: "",
+            held: Duration::from_millis(held_ms),
+            waited: Duration::from_millis(waited_ms),
+            costs: Costs::default(),
+        }
+    }
+}
+
 fn micros(duration: Duration) -> u64 {
     u64::try_from(duration.as_micros()).unwrap_or(u64::MAX)
 }
@@ -149,16 +163,9 @@ mod tests {
     use super::*;
 
     fn observation(purpose: &'static str, held_ms: u64, waited_ms: u64) -> Observation {
-        Observation {
-            purpose,
-            method: "",
-            held: Duration::from_millis(held_ms),
-            waited: Duration::from_millis(waited_ms),
-            costs: Costs {
-                commit: Duration::from_millis(held_ms / 2),
-                ..Costs::default()
-            },
-        }
+        let mut observation = Observation::for_test(purpose, held_ms, waited_ms);
+        observation.costs.commit = Duration::from_millis(held_ms / 2);
+        observation
     }
 
     #[test]

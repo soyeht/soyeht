@@ -184,7 +184,6 @@ pub(crate) fn emit_due() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soyeht_platform::hold_cost::Costs;
     use std::time::Duration;
 
     fn json(line: Option<Line>) -> String {
@@ -196,13 +195,7 @@ mod tests {
     }
 
     fn waiting(purpose: &'static str, held_ms: u64, waited_ms: u64) -> Observation {
-        Observation {
-            purpose,
-            method: "",
-            held: Duration::from_millis(held_ms),
-            waited: Duration::from_millis(waited_ms),
-            costs: Costs::default(),
-        }
+        Observation::for_test(purpose, held_ms, waited_ms)
     }
 
     #[test]
