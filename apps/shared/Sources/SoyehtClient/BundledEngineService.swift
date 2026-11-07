@@ -39,43 +39,47 @@
     let profile: ProfileValues
     let dataDirectory: URL
     let runner: any ServiceCommandRunning
+    let home: URL
 
     /// Nil when the bundle carries no command line: a development build, which the Dev
     /// installer registers instead.
     public init?(
       bundle: Bundle = .main, profile: ProfileValues = ActiveProfile.values,
       dataDirectory: URL = ActiveProfile.dataDirectory,
-      runner: any ServiceCommandRunning = ProcessRunner()
+      runner: any ServiceCommandRunning = ProcessRunner(),
+      home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
       guard let command = bundle.url(forAuxiliaryExecutable: Self.commandName) else {
         return nil
       }
       self.init(
-        command: command, profile: profile, dataDirectory: dataDirectory, runner: runner)
+        command: command, profile: profile, dataDirectory: dataDirectory, runner: runner,
+        home: home)
     }
 
     init(
       command: URL, profile: ProfileValues, dataDirectory: URL,
-      runner: any ServiceCommandRunning
+      runner: any ServiceCommandRunning,
+      home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
       self.command = command
       self.profile = profile
       self.dataDirectory = dataDirectory
       self.runner = runner
+      self.home = home
     }
 
     /// The folder the programs sit in: the one the command line sits in.
     var programs: URL { command.deletingLastPathComponent() }
 
-    /// A registration points at this bundle's path, so a copy that macOS may move or remove
-    /// must not be registered: one running from a disk image (read-only, and gone when it is
-    /// ejected) or from an App Translocation path (a random read-only copy of a downloaded app
-    /// that has not been moved).
-    public var runsFromStablePlace: Bool { Self.isStablePlace(command) }
-
-    static func isStablePlace(_ url: URL) -> Bool {
-      let path = url.standardizedFileURL.path
-      return !path.hasPrefix("/Volumes/") && !path.contains("/AppTranslocation/")
+    /// A registration points at this bundle's path, so a released app registers only from a stable
+    /// place (`AppPlacement`): `/Applications` or `~/Applications`. macOS keys the privacy grants
+    /// of the programs by path, so a registration made from a disk image (gone when it is
+    /// ejected), an App Translocation path (a random read-only copy) or a folder the person
+    /// later moves the app out of would leave a second set of rows behind. The Dev profile is not
+    /// held to it.
+    public var runsFromStablePlace: Bool {
+      !AppPlacement.appliesTo(profile) || AppPlacement.isStable(command, home: home)
     }
 
     /// What every call of the command line for this profile starts with.
@@ -220,7 +224,7 @@
       /// Not registered: ask the person.
       case offered
       case working
-      /// The app runs from a disk image or a translocated path: move it to Applications first.
+      /// The app runs outside Applications: it must move there before it registers anything.
       case moveFirst
       case failed(String)
     }

@@ -55,11 +55,13 @@
   private let bundledCommand = URL(
     fileURLWithPath: "/Applications/Soyeht Next.app/Contents/MacOS/soyeht")
   private let data = URL(fileURLWithPath: "/Users/person/Library/Application Support/Soyeht.next")
+  private let home = URL(fileURLWithPath: "/Users/person")
 
   private func service(_ runner: ScriptedRunner, command: URL = bundledCommand)
     -> BundledEngineService
   {
-    BundledEngineService(command: command, profile: .prod, dataDirectory: data, runner: runner)
+    BundledEngineService(
+      command: command, profile: .prod, dataDirectory: data, runner: runner, home: home)
   }
 
   /// The setup after the app's first look at the services.
@@ -82,13 +84,22 @@
       ])
   }
 
-  @Test func aCopyOnADiskImageOrTranslocatedIsNotAStablePlace() {
-    #expect(BundledEngineService.isStablePlace(bundledCommand))
-    #expect(BundledEngineService.isStablePlace(URL(fileURLWithPath: "/Users/p/Applications/S.app")))
-    #expect(!BundledEngineService.isStablePlace(URL(fileURLWithPath: "/Volumes/Soyeht Next/S.app")))
-    #expect(
-      !BundledEngineService.isStablePlace(
-        URL(fileURLWithPath: "/private/var/folders/x/AppTranslocation/ABC/d/S.app")))
+  @Test func aReleasedAppRegistersOnlyFromApplications() {
+    func stable(_ path: String, profile: ProfileValues = .prod) -> Bool {
+      let command = URL(fileURLWithPath: path + "/Contents/MacOS/soyeht")
+      return BundledEngineService(
+        command: command, profile: profile, dataDirectory: data,
+        runner: ScriptedRunner(registered: false),
+        home: home
+      ).runsFromStablePlace
+    }
+    #expect(stable("/Applications/Soyeht Next.app"))
+    #expect(stable("/Users/person/Applications/Soyeht Next.app"))
+    #expect(!stable("/Users/person/Downloads/Soyeht Next.app"))
+    #expect(!stable("/Volumes/Soyeht Next/Soyeht Next.app"))
+    #expect(!stable("/private/var/folders/x/AppTranslocation/ABC/d/Soyeht Next.app"))
+    // The Dev profile runs from where it was built.
+    #expect(stable("/Users/person/Downloads/Soyeht Dev.app", profile: .dev))
   }
 
   @Test func theRunnerReturnsWhatAProgramPrintedAndWhatAFailedOneSaid() async throws {
@@ -166,9 +177,13 @@
     #expect(again.phase == .ready)
   }
 
-  @MainActor @Test func aDiskImageCopyAsksToMoveFirstAndRegistersNothing() async {
+  @MainActor
+  @Test(arguments: [
+    "/Volumes/Soyeht Next/Soyeht Next.app", "/Users/person/Downloads/Soyeht Next.app",
+  ])
+  func aCopyOutsideApplicationsAsksToMoveFirstAndRegistersNothing(app: String) async {
     let runner = ScriptedRunner(registered: false)
-    let command = URL(fileURLWithPath: "/Volumes/Soyeht Next/Soyeht Next.app/Contents/MacOS/soyeht")
+    let command = URL(fileURLWithPath: app + "/Contents/MacOS/soyeht")
     let setup = EngineServiceSetup(
       service: service(runner, command: command), preferences: MemoryPreferences())
     await setup.refresh()

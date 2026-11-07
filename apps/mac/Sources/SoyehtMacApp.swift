@@ -15,6 +15,7 @@ struct SoyehtMacApp: App {
   @State private var editorInputPreferences = EditorInputPreferences()
   @State private var webLinkPreferences = WebLinkPreferences()
   @State private var engineService = EngineServiceSetup()
+  @State private var appRelocation = AppRelocation()
   @State private var updateChecker = UpdateChecker()
   @State private var diagnosticsCopy = DiagnosticsCopy()
   @State private var crashNotice = CrashNotice()
@@ -49,6 +50,11 @@ struct SoyehtMacApp: App {
     .windowStyle(.hiddenTitleBar)
     .commands {
       CommandGroup(replacing: .newItem) {}
+      CommandGroup(after: .appInfo) {
+        if appRelocation.canMove {
+          Button(AppRelocation.Words.moveMenu) { Task { await appRelocation.move() } }
+        }
+      }
       CommandGroup(after: .toolbar) {
         Button("Command Palette") {
           NotificationCenter.default.post(
@@ -122,6 +128,7 @@ struct SoyehtMacApp: App {
       .environment(editorInputPreferences)
       .environment(webLinkPreferences)
       .environment(engineService)
+      .environment(appRelocation)
       .environment(updateChecker)
       .environment(diagnosticsCopy)
       .environment(crashNotice)
@@ -141,6 +148,7 @@ struct SoyehtMacApp: App {
       } message: {
         Text(verbatim: ClientPolicy.loginStartSummary + " " + ClientPolicy.loginStartLater)
       }
+      .modifier(AppRelocationAlerts(relocation: appRelocation))
   }
 
   /// Cycles the installed engines. With only one installed, the install step of another opens
@@ -166,6 +174,51 @@ struct SoyehtMacApp: App {
       NotificationCenter.default.post(name: .selectSoyehtWorkspaceView, object: destination)
     }
     .keyboardShortcut(key, modifiers: .command)
+  }
+}
+
+/// The questions of a released app that runs outside Applications (ADR 0120): the one offer, the
+/// confirmation before a copy there is replaced, and the message when a move did not end in a new
+/// copy opening. Each alert is shown for as long as the state asks it; the buttons change the state.
+private struct AppRelocationAlerts: ViewModifier {
+  let relocation: AppRelocation
+  private typealias Words = AppRelocation.Words
+
+  func body(content: Content) -> some View {
+    content
+      .alert(Words.question, isPresented: shown(\.asksToMove)) {
+        Button(Words.move) { Task { await relocation.move() } }
+        Button(Words.notNow, role: .cancel) { relocation.decline() }
+      } message: {
+        Text(verbatim: Words.summary)
+      }
+      .alert(Words.replaceQuestion, isPresented: shown(\.asksToReplace)) {
+        Button(Words.replace, role: .destructive) { Task { await relocation.confirmReplace() } }
+        Button(Words.cancel, role: .cancel) { relocation.cancelReplace() }
+      } message: {
+        Text(verbatim: Words.replaceSummary)
+      }
+      .alert(relocation.reportTitle, isPresented: shown(\.hasReport)) {
+        if relocation.offersRetry {
+          Button(Words.tryAgain) {
+            relocation.acknowledge()
+            Task { await relocation.move() }
+          }
+        }
+        Button(Words.ok, role: .cancel) { relocation.acknowledge() }
+      } message: {
+        Text(verbatim: messageText)
+      }
+  }
+
+  private var messageText: String {
+    guard let report = relocation.report else { return "" }
+    return relocation.offersRetry ? report + " " + Words.failureLater : report
+  }
+
+  /// The state decides when an alert shows; a dismissal changes it through a button.
+  private func shown(_ asks: KeyPath<AppRelocation, Bool>) -> Binding<Bool> {
+    Binding(get: { relocation[keyPath: asks] }, set: { _ in })
   }
 }
 
