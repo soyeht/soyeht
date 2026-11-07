@@ -93,7 +93,7 @@ fn statuses_follow_the_shared_vectors() {
             case["harness"]
         );
         assert_eq!(
-            picker_notice(&harness),
+            picker_notice(&harness).as_deref(),
             case["notice"].as_str(),
             "{}",
             case["harness"]

@@ -1048,6 +1048,8 @@ export interface HarnessInfo {
   "setupState"?: HarnessSetupState;
   "setupReason"?: HarnessSetupReason;
   "lastReadyAtMs"?: Decimal;
+  "package"?: string;
+  "packageLocked"?: boolean;
 }
 
 export interface ModelRefusal {

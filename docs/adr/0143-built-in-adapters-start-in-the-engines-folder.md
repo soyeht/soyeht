@@ -60,3 +60,52 @@ started in, read from the public source of the pinned version, with nothing inst
 - A repository's package-runner configuration no longer reaches a built-in adapter's start.
 - An adapter that reads project files from its process folder must be listed in
   `READS_PROJECT_FROM_ITS_FOLDER`.
+
+## Amendment (2026-11-07): the common adapters are installed once from a lockfile
+
+### Context
+
+A version pin names the adapter and nothing it depends on. `npx --yes <package>@<version>` resolves
+every dependency from the registry when the adapter starts, and a package that depends on others
+runs their install scripts. A substituted or compromised dependency, or a registry mirror, decides
+which code a pane runs, at each start.
+
+### Decision
+
+- **The adapters of the two supported harnesses that are npm packages (`registry.claude-acp`,
+  `registry.codex-acp`) are installed once from a lockfile the engine carries.** The lock
+  (`agents/adapter_locks/<name>/package-lock.json`, `lockfileVersion` 3) holds the exact version and
+  the SHA-512 integrity of every package of the tree. `npm ci --ignore-scripts` installs it into
+  `<data directory>/adapters/installed/<name>-<version>/`, in a staging folder that holds only the
+  engine's manifest and lock, then moves it into place. npm refuses a package whose bytes differ
+  from the lock; the installed adapter's own `package.json` must name the pinned version; the folder
+  carries the digest of the lock it was made from, so an old or half-finished tree is made again.
+  The other two supported harnesses (`registry.cursor`, `registry.opencode`) are programs the person
+  installs and have no package to fetch.
+- **A launch of the pinned `npx --yes <package>@<version>` is rewritten to `node <installed entry>`**
+  where the start is sent, off the Core lock (`agents/adapter_install.rs`), for a pane, the
+  candidate of a harness switch and a sign-in terminal alike. The first start installs it (a
+  fetch of at most a few minutes); every later start finds the tree and runs no npm. An install
+  that fails starts nothing and says why; there is no fallback to `npx`, which would be the
+  unchecked path.
+- **A test ties each lock to the registry snapshot**: the package and version of the snapshot's
+  launch, the manifest, the root package of the lock, its `bin`, integrity on every package, and no
+  package with an install script. A snapshot that moves to a new version without its lock fails
+  the gate instead of going back to `npx`. Moving to a new version is: change the manifest, run
+  `npm install --package-lock-only --ignore-scripts`, and read the diff of the lock.
+- **The rest keep their package runner and say so before the first start.** The catalogue
+  (`harness.list`) carries `package` (`name@version`) and `packageLocked` for a built-in adapter of
+  a package runner. The pickers of the Mac, the iPhone, the iPad and the Windows and Linux app show,
+  for an adapter that is not locked, "Starting it downloads and runs <package> and its
+  dependencies from the package registry. Soyeht has not checked them.", and for a locked one that
+  it is installed once from a lockfile Soyeht carries. A parallel change hides the adapters
+  that were not checked from the catalogue; this notice is for the ones that stay.
+
+### What this does not do
+
+- The lock fixes what is installed, not whether it is good: it is as trustworthy as the version it was made at. A reviewer of
+  a change to a lock reads its diff.
+- `uvx` adapters (`fast-agent`, `minion-code`) have no lock yet.
+- `npm` must be on the launch `PATH`, as `npx` was; a person's own registry configuration still
+  applies to the fetch, and the integrity check still applies to what it returns.
+- The adapter still drives the person's own CLI (ADR 0137), which is outside this install.

@@ -325,6 +325,7 @@ fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value
     };
     let package_runner = entry.source == HarnessSource::BuiltIn
         && package_runner::package_runner(&entry.launch.command).is_some();
+    let package = super::adapter_install::runner_package(&entry.launch);
     let (setup_state, setup_reason) = setup_state(
         resolved.is_some(),
         installed,
@@ -356,7 +357,9 @@ fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value
         source: Some(entry.source),
         setup_state: Some(setup_state),
         setup_reason,
-        last_ready_at_ms: recorded.and_then(|value| value.last_ready_ms.map(|ms| ms.to_string()))
+        last_ready_at_ms: recorded.and_then(|value| value.last_ready_ms.map(|ms| ms.to_string())),
+        package_locked: package.as_ref().map(|(_, locked)| *locked),
+        package: package.map(|(name, _)| name),
     }))
 }
 

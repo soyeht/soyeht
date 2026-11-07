@@ -353,6 +353,17 @@ fn environment_refused(error: &Error) -> bool {
 static REFUSALS: Mutex<Streak> = Mutex::new(Streak::once());
 
 impl Given {
+    /// Replaces the launch of a locked adapter, in both forms of the spawn, with the installed
+    /// one (`adapter_install`). Installs it first when it is not there, so off the Core lock.
+    pub(crate) fn with_installed_adapter(self, profile: &Path) -> Result<Self, Error> {
+        let config = super::adapter_install::installed_spawn(profile, self.config)?;
+        let plain = self
+            .plain
+            .map(|plain| super::adapter_install::installed_spawn(profile, plain))
+            .transpose()?;
+        Ok(Self { config, plain })
+    }
+
     /// Asks the supervisor to start the process; if it refuses the variable, to start it
     /// without. Off the Core lock: it waits for the supervisor.
     pub(crate) fn send(self, supervisor: &Supervisor) -> Result<Response, Error> {

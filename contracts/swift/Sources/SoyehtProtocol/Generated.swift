@@ -2108,7 +2108,9 @@ public struct HarnessInfo: Codable, Sendable {
     public var `setupState`: HarnessSetupState?
     public var `setupReason`: HarnessSetupReason?
     public var `lastReadyAtMs`: Decimal?
-    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil, `setupReason`: HarnessSetupReason? = nil, `lastReadyAtMs`: Decimal? = nil) {
+    public var `package`: String?
+    public var `packageLocked`: Bool?
+    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil, `setupReason`: HarnessSetupReason? = nil, `lastReadyAtMs`: Decimal? = nil, `package`: String? = nil, `packageLocked`: Bool? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`available` = `available`
@@ -2122,6 +2124,8 @@ public struct HarnessInfo: Codable, Sendable {
         self.`setupState` = `setupState`
         self.`setupReason` = `setupReason`
         self.`lastReadyAtMs` = `lastReadyAtMs`
+        self.`package` = `package`
+        self.`packageLocked` = `packageLocked`
     }
 }
 

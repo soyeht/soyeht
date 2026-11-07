@@ -1915,6 +1915,10 @@ pub struct HarnessInfo {
     pub setup_reason: Option<HarnessSetupReason>,
     #[serde(rename = "lastReadyAtMs", skip_serializing_if = "Option::is_none")]
     pub last_ready_at_ms: Option<Decimal>,
+    #[serde(rename = "package", skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    #[serde(rename = "packageLocked", skip_serializing_if = "Option::is_none")]
+    pub package_locked: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelRefusal {

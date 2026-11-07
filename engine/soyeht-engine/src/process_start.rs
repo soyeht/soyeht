@@ -48,6 +48,8 @@ pub(crate) struct Launch {
     /// The engine's folder for adapters, when the process starts in it: made where the request is
     /// sent, off the lock.
     adapter_directory: Option<std::path::PathBuf>,
+    /// The engine's data directory, where the adapters it installs are.
+    profile: std::path::PathBuf,
 }
 
 impl Launch {
@@ -63,7 +65,10 @@ impl Launch {
         }
         // An adapter is given the person's own CLI (ADR 0137), which takes a command; that waits
         // for nobody's turn.
-        let process = crate::agents::user_cli::prepare(self.config);
+        // A locked adapter runs from the tree the engine installed (ADR 0143): the first start
+        // installs it.
+        let process =
+            crate::agents::user_cli::prepare(self.config).with_installed_adapter(&self.profile)?;
         self.turn.wait();
         match process.send(&self.supervisor)? {
             Response::Instance(instance) => Ok(instance),
@@ -86,6 +91,7 @@ impl Core {
             supervisor,
             turn,
             adapter_directory,
+            profile: self.directory.clone(),
         })
     }
 

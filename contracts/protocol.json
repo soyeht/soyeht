@@ -3601,6 +3601,14 @@
         },
         "lastReadyAtMs": {
           "$ref": "#/$defs/Decimal"
+        },
+        "package": {
+          "type": "string",
+          "description": "The package a built-in adapter downloads and runs through a package runner, as `name@version`; absent for any other harness (ADR 0143)."
+        },
+        "packageLocked": {
+          "type": "boolean",
+          "description": "True when the engine installs that package once from a lockfile it carries, with every dependency checked by integrity; false when the runner downloads it and its dependencies on the first start, unchecked."
         }
       },
       "required": [

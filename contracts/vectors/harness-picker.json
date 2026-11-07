@@ -114,6 +114,32 @@
       "installed": true,
       "setupState": "not_checked",
       "setupReason": "never_started"
+    },
+    "downloads": {
+      "id": "registry.downloads",
+      "name": "Downloads",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": false,
+      "setupState": "not_checked",
+      "setupReason": "registry_package_unverified",
+      "package": "some-adapter@1.2.3",
+      "packageLocked": false
+    },
+    "locked": {
+      "id": "registry.locked",
+      "name": "Locked",
+      "available": true,
+      "capabilities": [],
+      "options": [],
+      "authMethods": [],
+      "installed": false,
+      "setupState": "not_checked",
+      "setupReason": "registry_package_unverified",
+      "package": "@scope/locked-adapter@4.5.6",
+      "packageLocked": true
     }
   },
   "layouts": [
@@ -464,12 +490,26 @@
       "reason": "This agent requires sign-in before it can start.",
       "installed": false,
       "notice": "This agent requires sign-in before it can start."
+    },
+    {
+      "harness": "downloads",
+      "label": "Not checked",
+      "reason": "Starting it downloads and runs some-adapter@1.2.3 and its dependencies from the package registry. Soyeht has not checked them.",
+      "installed": false,
+      "notice": "Starting it downloads and runs some-adapter@1.2.3 and its dependencies from the package registry. Soyeht has not checked them."
+    },
+    {
+      "harness": "locked",
+      "label": "Not checked",
+      "reason": "Starting it installs @scope/locked-adapter@4.5.6 once from a lockfile Soyeht carries, with every package checked, then runs it from there.",
+      "installed": false,
+      "notice": "Starting it installs @scope/locked-adapter@4.5.6 once from a lockfile Soyeht carries, with every package checked, then runs it from there."
     }
   ],
   "reasons": [
     {
       "setupReason": "registry_package_unverified",
-      "text": "The adapter runner is available; its package has not been verified locally. Starting it will check the package."
+      "text": "Starting it downloads and runs this agent's adapter package, which Soyeht has not checked."
     },
     {
       "setupReason": "session_failed",

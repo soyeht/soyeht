@@ -120,7 +120,31 @@ pub fn default_harness<'a>(
 
 /// What the second line of a harness row, in short, says is wrong or right about it, in full:
 /// the sentence the person reads when they open a harness's status.
-pub fn status_reason(harness: &HarnessInfo) -> &'static str {
+pub fn status_reason(harness: &HarnessInfo) -> String {
+    match (&harness.setup_reason, &harness.package) {
+        (Some(HarnessSetupReason::RegistryPackageUnverified), Some(package)) => {
+            download_notice(package, harness.package_locked == Some(true))
+        }
+        _ => fixed_reason(harness).to_owned(),
+    }
+}
+
+/// What starting an adapter that a package runner fetches does, before the person starts it
+/// (ADR 0143): the package it downloads and runs, and whether the engine installs it from a
+/// lockfile it carries or the runner fetches it and its dependencies unchecked.
+fn download_notice(package: &str, locked: bool) -> String {
+    if locked {
+        format!(
+            "Starting it installs {package} once from a lockfile Soyeht carries, with every package checked, then runs it from there."
+        )
+    } else {
+        format!(
+            "Starting it downloads and runs {package} and its dependencies from the package registry. Soyeht has not checked them."
+        )
+    }
+}
+
+fn fixed_reason(harness: &HarnessInfo) -> &'static str {
     let reason = harness.setup_reason.clone().or(match setup_state(harness) {
         HarnessSetupState::Ready => None,
         HarnessSetupState::NotChecked => Some(HarnessSetupReason::NeverStarted),
@@ -136,7 +160,7 @@ pub fn status_reason(harness: &HarnessInfo) -> &'static str {
             "Executable not found on the engine's launch PATH."
         }
         Some(HarnessSetupReason::RegistryPackageUnverified) => {
-            "The adapter runner is available; its package has not been verified locally. Starting it will check the package."
+            "Starting it downloads and runs this agent's adapter package, which Soyeht has not checked."
         }
         Some(HarnessSetupReason::AuthenticationRequired) => {
             "This agent requires sign-in before it can start."
@@ -156,7 +180,7 @@ pub fn status_reason(harness: &HarnessInfo) -> &'static str {
 
 /// The line a harness picker shows above the model choices: why the harness needs attention, and
 /// nothing for a ready one, whose "opened successfully" is no news while choosing a model.
-pub fn picker_notice(harness: &HarnessInfo) -> Option<&'static str> {
+pub fn picker_notice(harness: &HarnessInfo) -> Option<String> {
     (setup_state(harness) != HarnessSetupState::Ready).then(|| status_reason(harness))
 }
 

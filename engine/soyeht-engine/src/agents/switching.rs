@@ -233,6 +233,7 @@ impl Core {
         let supervisor = self.supervisor()?;
         let used = supervisor.clone();
         let directory = adapter_directory::to_prepare(&self.directory, &spawn.cwd);
+        let profile = self.directory.clone();
         let (owner, initialize) = (pane.to_owned(), draft.initialize.clone());
         self.spawn_prompt_background(
             step_job(pane),
@@ -241,8 +242,8 @@ impl Core {
                     adapter_directory::prepare(directory);
                 }
                 // The candidate is an adapter like a pane's: it drives the person's own CLI too.
-                let Response::Instance(instance) = user_cli::prepare(spawn).send(&supervisor)?
-                else {
+                let given = user_cli::prepare(spawn).with_installed_adapter(&profile)?;
+                let Response::Instance(instance) = given.send(&supervisor)? else {
                     return Err(errors::ptyd_unavailable("Invalid candidate spawn response"));
                 };
                 let (keys, written) =
