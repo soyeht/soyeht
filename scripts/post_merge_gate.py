@@ -11,7 +11,9 @@ import re
 import shlex
 import signal
 import subprocess
+import sys
 import tempfile
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -34,6 +36,8 @@ TO_STDOUT = Path("-")  # as a log: the gate's output stays on this process's sta
 # remote_gate.sh runs `engine:test` and `engine:test-changed` against the programs `engine:build`
 # builds; without that build a test of the CLI fails for a reason that is not the commit's.
 REMOTE_PREREQUISITES = {"engine:test": "engine:build", "engine:test-changed": "engine:build"}
+# What `check_all.sh` prints when the host lacks the Windows target: the step passes, unlinted.
+WINDOWS_LINT_SKIPPED = b"skipped the Windows lint"
 
 
 @contextmanager
@@ -59,20 +63,55 @@ def note(log: Path | None, message: str) -> None:
 
 def start_process(arguments: list[str], cwd: Path, env: dict, output) -> subprocess.Popen:
     """Start in its own process group, so a signal to this script stops the whole gate."""
-    return subprocess.Popen(arguments, cwd=cwd, env=env, stdout=output,
+    return subprocess.Popen(arguments, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=output,
                             stderr=subprocess.STDOUT if output != subprocess.DEVNULL else subprocess.DEVNULL,
                             start_new_session=True)
+
+
+class Pump(threading.Thread):
+    """Copies the output of the remote gate to its sink, and notes the line that says the host
+    skipped the Windows lint (no sink: the output is dropped)."""
+
+    def __init__(self, stream, sink) -> None:
+        super().__init__(daemon=True)
+        self.stream, self.sink, self.windows_lint_skipped = stream, sink, False
+
+    def run(self) -> None:
+        for line in self.stream:
+            self.windows_lint_skipped = self.windows_lint_skipped or WINDOWS_LINT_SKIPPED in line
+            if self.sink is not None:
+                self.sink.write(line)
+                self.sink.flush()
+
+
+def start_remote(arguments: list[str], cwd: Path, output) -> subprocess.Popen:
+    """The ssh to the host, its output read by a `Pump` into `output` (`opened`'s kinds)."""
+    process = subprocess.Popen(arguments, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    if output is None:
+        sys.stdout.flush()
+        sink = sys.stdout.buffer
+    else:
+        sink = None if output == subprocess.DEVNULL else output
+    process.pump = Pump(process.stdout, sink)
+    process.pump.start()
+    return process
 
 
 def stop_process(process: subprocess.Popen) -> None:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGTERM)
     process.wait()
+    if getattr(process, "pump", None):
+        process.pump.join()
 
 
 def wait_process(process: subprocess.Popen) -> int:
     try:
-        return process.wait()
+        code = process.wait()
+        if getattr(process, "pump", None):
+            process.pump.join()
+        return code
     except BaseException:
         stop_process(process)
         raise
@@ -106,12 +145,18 @@ def run_local_steps(worktree: Path, tier: str, base: str | None, only: str | Non
         return run_process(arguments, worktree, {**os.environ, "SOYEHT_GATE_TIMINGS": str(timings)}, output)
 
 
-def run_local_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
-                   timings: Path, command: list[str]) -> int:
-    # The event is outside the worktree: the checks scan its untracked files.
+@contextmanager
+def commit_event_file(worktree: Path):
+    """The commit's event as a file outside the worktree: the checks scan its untracked files."""
     with tempfile.TemporaryDirectory(dir=scratch_root()) as directory:
         event = Path(directory) / "event.json"
         write_json(event, commit_event(worktree))
+        yield event
+
+
+def run_local_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
+                   timings: Path, command: list[str]) -> int:
+    with commit_event_file(worktree) as event:
         return run_local_steps(worktree, "full", base, only, event, log, timings, command)
 
 
@@ -143,7 +188,7 @@ def remote_steps_timings(remote: Remote) -> list[dict]:
 
 def remote_gate_arguments(remote: Remote, sha: str, ids: list[str], base: str | None,
                           bundle: str | None, engine_test_args: str) -> str:
-    arguments = f"bash scripts/remote_gate.sh --sha {sha} --steps {','.join(ids)}{remote.slot_arguments()}"
+    arguments = f"bash scripts/remote_gate.sh --sha {sha} --steps {shlex.quote(','.join(ids))}{remote.slot_arguments()}"
     for flag, value in (("--base", base), ("--bundle", bundle), ("--engine-test-args", engine_test_args)):
         if value:
             arguments += f" {flag} {shlex.quote(value)}"
@@ -162,6 +207,33 @@ def remote_exit(remote: Remote, code: int, log: Path | None) -> int:
     return code
 
 
+def divide_steps(areas: dict[str, str]) -> tuple[list[str], list[str]]:
+    """The ids that run on the host (with the steps they need there) and the ids that run here."""
+    remote_ids = [i for i in areas if areas[i] in REMOTE_AREAS]
+    needed = [REMOTE_PREREQUISITES[i] for i in remote_ids if i in REMOTE_PREREQUISITES]
+    return list(dict.fromkeys([*remote_ids, *needed])), [i for i in areas if areas[i] not in REMOTE_AREAS]
+
+
+def plan_problem(areas: dict[str, str] | None, only: str | None) -> str | None:
+    """Why the steps cannot be trusted to be the gate, or nothing. An empty plan or a misspelled id
+    would otherwise run nothing and pass."""
+    if areas is None:
+        return "the gate cannot list its steps"
+    if not areas:
+        return "the gate's plan selects no step; refusing to pass a gate that checked nothing"
+    missing = [i for i in (only.split(",") if only else []) if i not in areas]
+    return f"--only names no such step: {', '.join(missing)}" if missing else None
+
+
+def combine_codes(remote_code: int, local_code: int) -> int:
+    """One exit code for the two halves: a gate that could not run (an infrastructure code of either
+    half) outranks a step that failed."""
+    for code in (remote_code, local_code):
+        if code in INFRASTRUCTURE_EXITS:
+            return code
+    return remote_code or local_code
+
+
 def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | None, timings: Path,
                command: list[str], remote: Remote, *, tier: str = "full", event: Path | None = None,
                ship: bool = False, engine_test_args: str = "", concurrent: bool = False
@@ -169,24 +241,26 @@ def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | N
     """The remote areas run on the host and the rest here, and the exit code and the steps with
     their times. By default the remote steps run first and the first failure ends the run; with
     `concurrent` both halves run at once and both are reported. With `ship` the commit travels in
-    a git bundle (it is on no remote, as the head of a pull request); an unreachable host is a
-    clear infrastructure failure, never a pass."""
+    a git bundle (it is on no remote, as the head of a pull request); an unreachable host, an empty
+    plan and an unknown step are clear failures, never a pass."""
     areas = gate_step_areas(worktree, command, tier, only, base)
-    if areas is None:
+    problem = plan_problem(areas, only)
+    if problem:
+        note(log, problem)
         return REMOTE_UNSUPPORTED_EXIT, []
-    wanted = only.split(",") if only else list(areas)
-    remote_ids = [i for i in areas if i in wanted and areas[i] in REMOTE_AREAS]
-    local_ids = [i for i in areas if i in wanted and areas[i] not in REMOTE_AREAS]
-    local_ids += [i for i in wanted if i not in areas]  # the local gate reports an unknown step
-    remote_ids += [REMOTE_PREREQUISITES[i] for i in remote_ids
-                   if i in REMOTE_PREREQUISITES and REMOTE_PREREQUISITES[i] not in remote_ids]
+    remote_ids, local_ids = divide_steps(areas)
     sha = git(worktree, "rev-parse", "HEAD")
     timings.unlink(missing_ok=True)
     local_timings = timings.with_name(timings.name + ".local")
     local_timings.unlink(missing_ok=True)
     process: subprocess.Popen | None = None
+    pump: Pump | None = None
     bundle = None
     remote_code = local_code = 0
+
+    def local() -> int:
+        return run_local_steps(worktree, tier, base, ",".join(local_ids), event, log, local_timings, command)
+
     try:
         if remote_ids:
             try:
@@ -196,35 +270,40 @@ def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | N
                 return INFRASTRUCTURE_EXIT, []
             arguments = remote_gate_arguments(remote, sha, remote_ids, base, bundle, engine_test_args)
             with opened(log) as output:
-                process = start_process(remote.ssh(arguments), worktree, os.environ.copy(), output)
+                process = start_remote(remote.ssh(arguments), worktree, output)
+                pump = process.pump
                 if not concurrent:
                     remote_code, process = wait_process(process), None
                 if not remote_code and local_ids:
-                    local_code = run_local_steps(worktree, tier, base, ",".join(local_ids), event, log,
-                                                 local_timings, command)
+                    local_code = local()
                 if process:
                     remote_code, process = wait_process(process), None
         elif local_ids:
-            local_code = run_local_steps(worktree, tier, base, ",".join(local_ids), event, log,
-                                         local_timings, command)
+            local_code = local()
     finally:
         if process:
             stop_process(process)
         if bundle:
             drop_bundle(remote, bundle)
-    steps = [{**step, "host": remote.host} for step in remote_steps_timings(remote)] if remote_ids else []
+    if pump and pump.windows_lint_skipped:
+        note(log, f"WARNING: {remote.host} skipped the Windows lint (it lacks the target, or a C compiler for it); "
+                  "engine code for Windows is not linted in this run")
+    steps = []
+    if remote_ids and remote_code not in (SSH_FAILED_EXIT, REMOTE_BUSY_EXIT, INFRASTRUCTURE_EXIT):
+        steps = [{**step, "host": remote.host} for step in remote_steps_timings(remote)]
     try:
         steps += json.loads(local_timings.read_text())["latest"]["steps"]
     except (OSError, ValueError, KeyError):
         pass  # a gate that failed to start has no timings; the exit code says so
-    return remote_exit(remote, remote_code, log) or local_code, steps
+    return combine_codes(remote_exit(remote, remote_code, log), local_code), steps
 
 
 def run_split_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
                    timings: Path, command: list[str], remote: Remote) -> int:
     """After the merge: the remote areas run on the host, then the rest here; the first failure
-    ends the run."""
-    code, steps = split_gate(worktree, base, only, log, timings, command, remote)
+    ends the run. The commit's title and body go to the local half as the pull request event."""
+    with commit_event_file(worktree) as event:
+        code, steps = split_gate(worktree, base, only, log, timings, command, remote, event=event)
     if steps:
         write_json(timings, {"latest": {"steps": steps}})
     return code

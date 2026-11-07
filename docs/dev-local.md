@@ -224,9 +224,23 @@ which (`gate: cannot reach HOST over ssh ...`), and nothing counts as a pass.
   (exit 75, reported as exit 2).
 - **Timings**: both halves go to one run in `$SOYEHT_GATE_TIMINGS` (default `.cache/gate-timings.json` of the worktree),
   tier `fast+remote:HOST`, the remote steps tagged with their `host`.
-- The Windows lint (`engine:clippy-windows`) is an engine step, so it runs on the host, which
-  skips it when it lacks the target. Only the Mac has the Mac steps (Swift, Xcode, TCC): the TCC
-  guard brackets the e2e suites and moves with them.
+- **Linux only.** The engine and desktop compile, clippy and tests, and the e2e suites, run on the
+  Linux host and nowhere else in this gate: there is no macOS `cfg` coverage in it, exactly as after
+  the merge. The Mac half is the `always` checks, the Swift format and build, TypeScript and the Android
+  core. The Windows lint (`engine:clippy-windows`) is an engine step and runs on the host, which
+  skips it, with a passing step, when it lacks the Windows target; the output then carries
+  `WARNING: HOST skipped the Windows lint` (`rustup target add x86_64-pc-windows-msvc` on the host fixes it).
+- **A gate that checked nothing is not a pass.** It refuses (exit 2) when the worktree has uncommitted
+  changes to tracked files (the host gates the commit, this machine would gate the working tree);
+  it fails with exit 78 when the plan selects no step or `--only` names a step the plan lacks; and
+  when both halves fail, a gate that could not run (an infrastructure code such as 2 or 78) is the exit code.
+  Only the timings of a host run that happened are recorded.
+- **Also after the merge.** `post_merge.py --remote` hands the commit's title and body (the squashed pull request
+  text) to the local half as the `--event-file`, as the local run does, so a waived `Verification change:`
+  is read on both; and a rerun of `engine:test` there also runs `engine:build`.
+- `remote_gate.sh --bundle` only reads and removes a file named `gate-<12 hex>[-SLOT].bundle` (in
+  `.cache/remote-gate/` or the checkout); a stale `refs/remote-gate/SLOT-*` of a killed run is removed at the next
+  run of that slot.
 
 ### The parts of `post_merge.py`
 

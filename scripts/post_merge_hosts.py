@@ -114,10 +114,12 @@ def ship_commit(remote: Remote, worktree: Path, base: str | None, scratch: Path)
                 remote.ssh(f"mkdir -p {BUNDLE_DIRECTORY} && cat > {shlex.quote(destination)}"),
                 stdin=handle, capture_output=True, text=True, timeout=SHIP_TIMEOUT_SECONDS)
     except (subprocess.TimeoutExpired, OSError) as error:
+        drop_bundle(remote, destination)  # a part of it may have arrived
         raise ShipError(f"cannot send the bundle to {remote.host}: {error}") from error
     finally:
         local.unlink(missing_ok=True)
     if sent.returncode:
+        drop_bundle(remote, destination)
         raise ShipError(f"cannot send the bundle to {remote.host} (exit {sent.returncode}: "
                         f"{sent.stderr.strip() or 'no message'})")
     return destination

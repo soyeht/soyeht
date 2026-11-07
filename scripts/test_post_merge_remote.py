@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -26,6 +27,7 @@ class RemoteGateTests(RemoteHostCase):
         (remote_directory, remote_arguments), (local_directory, local_arguments) = self.runs()
         self.assertIn("remote-gate/tree", remote_directory)
         self.assertEqual(remote_arguments.split()[0], "only=eng,snap")
+        self.assertNotIn("remote-gate", local_directory)
         self.assertEqual(local_arguments.split()[0], "only=unit,sw,tcc")
         self.assertEqual(git(self.host_checkout / ".cache/remote-gate/tree", "rev-parse", "HEAD"), head)
         self.assertEqual(self.ssh_log.read_text().split(), ["linux-host", "linux-host"])  # run, timings
@@ -35,6 +37,17 @@ class RemoteGateTests(RemoteHostCase):
         self.assertEqual(self.run_remote(head), 0)
         parent = self.shas[0]
         self.assertTrue(all(f"base={parent}" in arguments for _, arguments in self.runs()))
+
+    def test_the_commits_title_and_body_reach_the_local_half_as_the_pull_request_event(self):
+        # A squash merge keeps the pull request's text in the commit; a waived drop reads it there.
+        head = self.add("Drop a step\n\nVerification change: dropped on purpose", {"b": "2"})
+        events = self.root.parent / "events"
+        events.mkdir()
+        with mock.patch.dict(os.environ, {"FAKE_EVENTS": str(events)}):
+            self.assertEqual(self.run_remote(head), 0)
+        pull_request = json.loads((events / f"{head}.json").read_text())["pull_request"]
+        self.assertEqual(pull_request["title"], "Drop a step")
+        self.assertIn("Verification change: dropped on purpose", pull_request["body"])
 
     def test_a_remote_failure_names_the_step_and_the_culprit_without_running_the_rest_here(self):
         self.assertEqual(self.run_remote(self.shas[0]), 0)
@@ -249,8 +262,10 @@ while read -r area tiers id; do
     elif [[ "$tiers" != both && "$tiers" != "$tier" ]]; then continue; fi
     selected+="$area $tiers $id"$'\n'
 done <<< "$rows"
+[[ -z "${FAKE_EMPTY_PLAN:-}" ]] || selected=""
 if ((list)); then printf '%s' "$selected"; exit 0; fi
 echo "$PWD tier=$tier only=$only base=$base event=$event engine=${SOYEHT_GATE_ENGINE_TEST_ARGS:-}" >> "${FAKE_TRACE:?}"
+[[ -z "${FAKE_WINDOWS_SKIP:-}" ]] || echo "check_all: skipped the Windows lint; run: rustup target add x86_64-pc-windows-msvc"
 steps=""; status=0
 while read -r area tiers id; do
     [[ -n "$id" ]] || continue
@@ -431,6 +446,108 @@ class PullRequestGateTests(RemoteHostCase):
             with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
                 gate_remote.parse(["--tier", "fast"])
 
+    def test_an_empty_plan_is_not_a_pass(self):
+        with mock.patch.dict(os.environ, {"FAKE_EMPTY_PLAN": "1"}):
+            code, output = self.split_gate()
+        self.assertEqual(code, post_merge_gate.REMOTE_UNSUPPORTED_EXIT)
+        self.assertIn("selects no step", output)
+        self.assertFalse(self.trace.exists())
+
+    def test_a_misspelled_only_step_is_refused_before_anything_runs(self):
+        code, output = self.split_gate("--only", "engine:build,engine:buidl")
+        self.assertEqual(code, post_merge_gate.REMOTE_UNSUPPORTED_EXIT)
+        self.assertIn("engine:buidl", output)
+        self.assertFalse(self.trace.exists())
+
+    def test_a_dirty_worktree_is_refused_because_the_halves_would_gate_different_trees(self):
+        (self.root / "b").write_text("changed after the commit")
+        code, _ = self.split_gate()
+        self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
+        self.assertFalse(self.trace.exists())
+        (self.root / "untracked").write_text("not in the commit, not read by the gate")
+        git(self.root, "checkout", "--", "b")
+        self.assertEqual(self.split_gate()[0], 0)
+
+    def test_a_host_that_skipped_the_windows_lint_is_warned_about_loudly(self):
+        with mock.patch.dict(os.environ, {"FAKE_WINDOWS_SKIP": "1"}):
+            code, output = self.split_gate()
+        self.assertEqual(code, 0)
+        self.assertIn("WARNING: linux-host skipped the Windows lint", output)
+        self.assertNotIn("WARNING", self.split_gate()[1])
+
+    def test_a_gate_that_could_not_run_outranks_a_step_that_failed(self):
+        busy = 'if [[ "$*" == *"--sha"* ]]; then exit 75; fi\nexec ' + str(self.fake_ssh) + ' "$@"'
+        with self.ssh_script(busy), mock.patch.dict(os.environ, {"FAKE_STEP": "sw"}):
+            code, output = self.split_gate()
+        self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
+        self.assertIn("check_all: FAILED step sw", output)  # the local half ran and failed too
+        self.assertEqual(post_merge_gate.combine_codes(1, 1), 1)
+        self.assertEqual(post_merge_gate.combine_codes(1, 78), 78)
+
+    def test_ssh_dying_while_both_halves_run_records_no_remote_times(self):
+        died = 'if [[ "$*" == *"--sha"* ]]; then exit 255; fi\nexec ' + str(self.fake_ssh) + ' "$@"'
+        with self.ssh_script(died):
+            code, output = self.split_gate()
+        self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
+        self.assertIn("cannot reach linux-host over ssh", output)
+        self.assertEqual(len(self.sides()[1]), 1)  # the local half still ran
+        steps = json.loads(self.timings.read_text())["latest"]["steps"]
+        self.assertEqual([step["id"] for step in steps], ["unit", "sw"])
+
+    def test_an_interrupt_stops_the_host_run_and_removes_the_bundle(self):
+        pid_file = self.root.parent / "ssh.pid"
+        hung = f'if [[ "$*" == *"--sha"* ]]; then echo $$ > {pid_file}; exec sleep 60; fi\nexec {self.fake_ssh} "$@"'
+        def interrupted(*_):
+            while not pid_file.exists():  # the host run has started
+                time.sleep(0.05)
+            raise KeyboardInterrupt
+
+        with self.ssh_script(hung), mock.patch.object(post_merge_gate, "run_local_steps", side_effect=interrupted):
+            with self.assertRaises(KeyboardInterrupt):
+                self.split_gate()
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pid_file.read_text()), 0)
+        self.assertEqual(list(self.host_state().glob("*.bundle")), [])
+
+    def test_a_bundle_that_arrived_in_part_is_removed_when_the_upload_fails(self):
+        failing = ('"' + str(self.fake_ssh) + '" "$@"\nstatus=$?\n'
+                   '[[ "$*" == *"cat >"* ]] && exit 1\nexit $status')
+        with self.ssh_script(failing):
+            code, output = self.split_gate()
+        self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
+        self.assertIn("cannot send the bundle", output)
+        self.assertEqual(list(self.host_state().glob("*.bundle")), [])
+
+    def test_a_plan_that_cannot_be_read_tests_the_whole_workspace(self):
+        arguments = gate_remote.parse(["--remote", "h", "--remote-root", "r", "--plan", "python3 -c 'import sys; sys.exit(3)'"])
+        self.assertEqual(gate_remote.engine_test_args(arguments, self.root, self.shas[0]), "")
+        arguments = gate_remote.parse(["--remote", "h", "--remote-root", "r", "--plan", "python3 scripts/gate_plan.py"])
+        self.assertEqual(gate_remote.engine_test_args(arguments, self.root, self.shas[0]), "-p soyeht-store")
+
+    def test_a_slot_name_the_host_would_refuse_is_refused_here(self):
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            gate_remote.parse(["--remote", "h", "--remote-root", "r", "--remote-slot", "../x"])
+
+    def test_the_host_script_only_touches_a_bundle_it_would_have_been_sent(self):
+        script = self.host_checkout / "scripts/remote_gate.sh"
+
+        def ask(bundle):
+            return subprocess.run(["bash", str(script), "--sha", self.head, "--steps", "eng", "--bundle", bundle],
+                                  capture_output=True, text=True, cwd=self.host_checkout).returncode
+
+        for bad in ("/etc/passwd", "../gate-0123456789ab.bundle", "gate-xyz.bundle", "x/gate-0123456789ab.bundle"):
+            self.assertEqual(ask(bad), 64, bad)
+        self.assertEqual(ask(".cache/remote-gate/gate-0123456789ab-slot1.bundle"), 2)  # well named, not there
+
+    def test_the_host_script_drops_the_refs_a_killed_run_left(self):
+        git(self.host_checkout, "update-ref", f"refs/remote-gate/default-{self.shas[0]}", self.shas[0])
+        git(self.host_checkout, "update-ref", f"refs/remote-gate/other-{self.shas[0]}", self.shas[0])
+        script = self.host_checkout / "scripts/remote_gate.sh"
+        subprocess.run(["bash", str(script), "--sha", self.shas[0], "--steps", "eng"], capture_output=True,
+                       cwd=self.host_checkout, check=True)
+        self.assertEqual(git(self.host_checkout, "for-each-ref", "--format=%(refname)", "refs/remote-gate").split(),
+                         [f"refs/remote-gate/other-{self.shas[0]}"])
+
     def test_the_host_script_answers_has_and_refuses_bad_arguments(self):
         script = self.host_checkout / "scripts/remote_gate.sh"
 
@@ -442,7 +559,7 @@ class PullRequestGateTests(RemoteHostCase):
         self.assertEqual(ask("--has", self.head), 1)
         self.assertEqual(ask("--has", "main"), 64)
         self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--engine-test-args", "-p a; rm -rf /"), 64)
-        self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--bundle", "missing.bundle"), 2)
+        self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--bundle", "gate-0123456789ab.bundle"), 2)
 
 
 @contextlib.contextmanager

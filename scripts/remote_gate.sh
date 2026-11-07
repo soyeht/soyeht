@@ -20,7 +20,8 @@
 #
 # `--has SHA` exits 0 when the checkout (after a fetch of `origin main`) holds the commit, else 1:
 # the caller asks it before it sends a `--bundle` (below). `--bundle FILE` names a git bundle on
-# the host, relative to the checkout, whose `HEAD` is the commit: a commit that is on no remote
+# the host, relative to the checkout (named `gate-<12 hex of the commit>[-SLOT].bundle`, in
+# `.cache/remote-gate/` or the checkout itself), whose `HEAD` is the commit: a commit that is on no remote
 # (the head of a pull request, which the pre-merge gate checks) is fetched from it, and the file
 # is removed afterwards, whatever the outcome. A bundle that needs commits the host lacks fails
 # with exit 2. `--engine-test-args ARGS` is the package selection of `engine:test-changed`
@@ -99,7 +100,12 @@ if [[ -n "$has" && ! "$has" =~ ^[0-9a-f]{40}$ ]]; then
     echo 'remote_gate: --has needs a full commit' >&2
     exit 64
 fi
-[[ -z "$bundle" || "$bundle" == /* ]] || bundle="$PWD/$bundle"
+# Only a bundle this gate's caller names (`.cache/remote-gate/gate-<12 hex>[-<slot>].bundle`, relative
+# to the checkout) is ever read or removed here.
+if [[ -n "$bundle" && ! "$bundle" =~ ^(\.cache/remote-gate/)?gate-[0-9a-f]{12}(-[A-Za-z0-9_-]+)?\.bundle$ ]]; then
+    echo "remote_gate: bad --bundle '$bundle'" >&2
+    exit 64
+fi
 tree="$state/tree${slot:+-$slot}"
 timings="$state/timings${slot:+-$slot}.json"
 
@@ -171,21 +177,22 @@ has_commit() {
 }
 
 bundle_ref="refs/remote-gate/${slot:-default}-$sha"
+bundle_file="$root/$bundle"
 
 # The bundle and the ref that held its commit are only a way in: the worktree holds the commit.
 drop_bundle() {
-    [[ -z "$bundle" ]] || rm -f "$bundle"
+    [[ -z "$bundle" ]] || rm -f "$bundle_file"
     "$git" -C "$root" update-ref -d "$bundle_ref" 2>/dev/null || true
 }
 
 # The commit is in the checkout, from the bundle when it is on no remote, else from `origin`.
 fetch_commit() {
     if ! has_commit "$sha" && [[ -n "$bundle" ]]; then
-        [[ -f "$bundle" ]] || {
+        [[ -f "$bundle_file" ]] || {
             echo "remote_gate: the bundle $bundle is not on this host" >&2
             exit 2
         }
-        "$git" -C "$root" fetch --quiet "$bundle" "HEAD:$bundle_ref" || {
+        "$git" -C "$root" fetch --quiet "$bundle_file" "HEAD:$bundle_ref" || {
             drop_bundle
             echo "remote_gate: cannot fetch $sha from the bundle (does it need commits this host lacks?)" >&2
             exit 2
@@ -212,6 +219,9 @@ prepare() {
             exit 75
         }
     fi
+    # Refs of this slot that an earlier, killed run left (the lock says no run holds them now).
+    "$git" -C "$root" for-each-ref --format='%(refname)' "refs/remote-gate/${slot:-default}-*" |
+        while read -r stale; do "$git" -C "$root" update-ref -d "$stale" || true; done
     fetch_commit
     if [[ -e "$tree/.git" ]]; then
         "$git" -C "$tree" checkout --quiet --detach --force "$sha" || { drop_bundle; exit 2; }

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -47,6 +48,7 @@ from post_merge_gate import INFRASTRUCTURE_EXIT, TO_STDOUT, split_gate
 from post_merge_hosts import Remote
 
 HOST_ENV, ROOT_ENV, SLOT_ENV = "SOYEHT_REMOTE_HOST", "SOYEHT_REMOTE_ROOT", "SOYEHT_REMOTE_SLOT"
+SLOT_NAME = re.compile(r"[A-Za-z0-9_-]+")  # what remote_gate.sh --slot accepts
 PLAN_ENGINE_TESTS = "GATE_ENGINE_TEST_ARGS="  # a line of `gate_plan.py --format shell`
 
 
@@ -68,6 +70,8 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     arguments = parser.parse_args(argv)
     if not (arguments.remote and arguments.remote_root):
         parser.error(f"give --remote and --remote-root (or ${HOST_ENV} and ${ROOT_ENV})")
+    if arguments.remote_slot and not SLOT_NAME.fullmatch(arguments.remote_slot):
+        parser.error(f"--remote-slot must match {SLOT_NAME.pattern}")
     return arguments
 
 
@@ -85,6 +89,11 @@ def engine_test_args(arguments: argparse.Namespace, root: Path, base: str) -> st
 
 
 def run(arguments: argparse.Namespace, root: Path) -> int:
+    # The host checks out HEAD, and the local half reads the working tree: they must be one tree.
+    if git(root, "status", "--porcelain", "--untracked-files=no"):
+        print("gate_remote: the worktree has uncommitted changes to tracked files; the host would gate "
+              "the commit and this machine the working tree. Commit or discard them.", file=sys.stderr)
+        return INFRASTRUCTURE_EXIT
     try:
         base = resolve_base(root, arguments.base)
     except BaseError as error:
