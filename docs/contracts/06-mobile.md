@@ -6,8 +6,9 @@ it has been confirmed to work”. Evidence of today's behavior is in
 
 ## 1. Rules (same as today, carried into the new engine and app)
 1. **Network**: the engine listens on the Soyeht port at Tailscale addresses
-   (v4 and v6) and loopback. On the LAN only while the “Add iPhone” window is
-   open. Never `0.0.0.0`. Bonjour advertisement on the LAN and tailnet.
+   (v4 and v6) and loopback, and nowhere else: never the LAN, never `0.0.0.0`
+   (ADR 0078). It advertises nothing and browses for nothing (no Bonjour, no
+   multicast), so macOS never asks to let it use the local network.
 2. **Transport**: plaintext HTTP and WebSocket within the tailnet;
    encryption is provided by Tailscale. The new iOS app carries the same ATS
    exception (`NSAllowsArbitraryLoads`) with the same explanatory comment.

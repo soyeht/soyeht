@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import release
+import release_identity
 from generated_profile import PROFILES
 from legacy_guard import names_legacy, require_next
 from package_common import (
@@ -431,6 +432,12 @@ def signature_details(path):
     return run(["codesign", "-dvv", path], check=False).stderr
 
 
+def requirement_text(path):
+    """What `codesign -d -r-` prints for `path`: the designated requirement macOS stores in a grant."""
+    result = run(["codesign", "-d", "-r-", path], check=False)
+    return result.stdout + result.stderr
+
+
 def flags_of(details):
     """The `flags=` text of the code directory line, or None when there is no such line."""
     for line in details.splitlines():
@@ -505,6 +512,31 @@ def verify_bundle(app, signing, made):
             problems += check_architecture(path)
         if entitled := entitlements_of(path):
             problems.append(f"{name} has entitlements {sorted(entitled)}")
+    if not signing.ad_hoc:
+        problems += identity_problems(app, signing, made)
+    return problems
+
+
+def identity_problems(app, signing, made):
+    """The privacy-list rules (`release_identity`) for the app and every program inside it: a fixed
+    identifier with the profile's prefix, a designated requirement that names it and pins the
+    signer (never a code hash), and a path with no version or hash in it. The app's own executable
+    carries the bundle's signature, so the app stands for it."""
+    identifiers = helper_identifiers()
+    prefix = PROFILE["launchdPrefix"]
+    problems = [] if app.name == f"{PRODUCT_NAME}.app" else [f"the bundle is called {app.name}, not {PRODUCT_NAME}.app"]
+    programs = [(app, APP_ID, True)]
+    for path in nested_code(app):
+        if is_macho(path):
+            executable = path.parent == app / HELPERS_FOLDER
+            programs.append((path, identifiers.get(path.name) if executable else None, executable))
+    for path, identifier, executable in programs:
+        relative = app.name if path == app else str(Path(app.name) / path.relative_to(app))
+        found = release_identity.code_problems(
+            relative, details=signature_details(path), requirement=release_identity.requirement_of(requirement_text(path)),
+            identifier=identifier, prefix=prefix, team=signing.team, executable=executable, version=made.version,
+        )
+        problems += [f"{relative}: {line}" for line in found]
     return problems
 
 
@@ -540,11 +572,31 @@ def parser():
     argument.add_argument("--ad-hoc", action="store_true", help="sign ad hoc and skip notarization")
     argument.add_argument("--release", action="store_true", help="require the identity, the team and the notary credentials")
     argument.add_argument("--reuse-build", action="store_true", help="reuse the programs and the app of an earlier run")
+    argument.add_argument("--verify-only", type=Path, metavar="APP", help="check a signed app of the current release version that is already built, with the team from the environment; builds nothing")
     argument.add_argument("--dist", type=Path, default=DIST, help="the output folder (default: dist/)")
     return argument
 
 
+def verify_only(app, environment):
+    """Check a built and signed app without building anything (the privacy-list rules included).
+    Only the team comes from the environment; the identity that signed it is not needed. The app
+    must be of the current release version (`contracts/release.json`): its Info.plist is checked
+    against it like a fresh build's."""
+    team = environment.get(TEAM_VARIABLE) or ""
+    if not TEAM_PATTERN.match(team):
+        raise PackagingError(f"--verify-only needs {TEAM_VARIABLE} (a ten-character team identifier) in the environment")
+    if not (app / "Contents/Info.plist").is_file():
+        raise PackagingError(f"--verify-only: {app} is not an app bundle")
+    problems = verify_bundle(app, Signing("(already signed)", team), release.current())
+    for problem in problems:
+        print(f"PROBLEM: {problem}", file=sys.stderr)
+    print(f"{app}: {'identity rules hold' if not problems else str(len(problems)) + ' problem(s)'}")
+    return 1 if problems else 0
+
+
 def package(options, environment):
+    if options.verify_only:
+        return verify_only(options.verify_only, environment)
     made = release.current()
     wrong = release.problems()
     if wrong:
