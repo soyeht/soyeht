@@ -27,7 +27,7 @@ struct AppRail: View {
             .fill(MacTheme.shadowDark)
             .frame(width: DesignTokens.Layout.railDividerWidth, height: 1)
             .padding(.vertical, MacTheme.Space.x2)
-          ForEach(client.usageReadings, id: \.provider) { reading in
+          ForEach(client.usage.readings, id: \.provider) { reading in
             UsageRing(reading: reading, onDetails: onUsageDetails)
           }
         }
