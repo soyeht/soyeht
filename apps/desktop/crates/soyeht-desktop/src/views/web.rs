@@ -191,9 +191,7 @@ impl Workbench {
                     .own_press()
                     // One line, cut at the field's edge: an address that wrapped was drawn in pieces.
                     .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
+                        grow()
                             .overflow_hidden()
                             .whitespace_nowrap()
                             .children(field),

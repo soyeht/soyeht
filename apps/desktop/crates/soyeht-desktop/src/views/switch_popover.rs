@@ -6,7 +6,7 @@ use super::{
     cards::{Role, button},
     harness_menu::{Pick, Picker},
     menus,
-    ui::{OwnPress, column, hint, icon, id, row, rule},
+    ui::{OwnPress, column, grow, hint, icon, id, row, rule},
 };
 use crate::workbench::Workbench;
 use crate::{
@@ -291,9 +291,7 @@ fn model_field(
             }
         }))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
+            grow()
                 .truncate()
                 .child(SharedString::from(label)),
         )
