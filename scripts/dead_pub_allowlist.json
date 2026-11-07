@@ -1,4 +1,5 @@
 {
+  "apps/desktop/crates/ztracing/src/lib.rs::instrument": "A procedural macro: the compiler calls it for the #[instrument] attributes of GPUI's sum_tree, which no Soyeht code references (ADR 0149).",
   "engine/soyeht-engine/src/test_hooks.rs::from_environment": "Installed by the soyeht-engine-test program (engine/soyeht-engine/tests/test-engine/program.rs), which is built only with the test-hooks feature and is not production code (ADR 0091).",
   "engine/soyeht-pane-state/src/evaluation.rs::same_dataset_as": "Comparability rule of ADR 0069 for evaluation reports; the experiment tooling that compares two reports is not built yet.",
   "engine/soyeht-pane-state/src/metrics.rs::can_rank_against": "Candidate ranking rule of ADR 0069 (coverage within five percentage points); the experiment tooling that ranks candidates is not built yet.",
