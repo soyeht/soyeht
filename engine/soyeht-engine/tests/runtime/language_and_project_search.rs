@@ -12,6 +12,7 @@ fn language_server_is_scoped_publishes_diagnostics_and_survives_engine_restart()
     .unwrap();
     let mut client = rig.client();
     let workspace = create_workspace(&mut client, "Language", &repository, "language-workspace");
+    trust_folder(&rig, &workspace);
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"language-open"}),
@@ -67,6 +68,7 @@ fn closed_editor_checkpoint_does_not_block_supervisor_reconnect_when_workspace_i
         &repository,
         "closed-language-workspace",
     );
+    trust_folder(&rig, &workspace);
     let opened = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"closed-language-open"}),
@@ -141,6 +143,7 @@ fn language_format_is_revision_checked_durable_and_idempotent() {
     fs::write(repository.join("main.rs"), "fn main() {}\n").unwrap();
     let mut client = rig.client();
     let workspace = create_workspace(&mut client, "Format", &repository, "format-workspace");
+    trust_folder(&rig, &workspace);
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"format-open"}),
@@ -187,6 +190,7 @@ fn every_editor_revision_is_synchronized_with_the_live_language_server() {
     fs::write(&path, "fn main() { alpha(); }\n").unwrap();
     let mut client = rig.client();
     let workspace = create_workspace(&mut client, "Language sync", &repository, "sync-workspace");
+    trust_folder(&rig, &workspace);
     let file_id = client.call(
         "file.open",
         json!({"workspaceId":workspace,"path":"main.rs","idempotencyKey":"sync-open"}),
@@ -255,6 +259,21 @@ fn wait_for_lsp_revision(rig: &Rig, revision: &str) {
         );
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+/// The person trusts the folder of `workspace`. The test program stands for the signed app here
+/// (its local client is attested), as it does for pairing.
+fn trust_folder(rig: &Rig, workspace: &str) {
+    decide_folder(rig, workspace, "trusted");
+}
+
+pub(super) fn decide_folder(rig: &Rig, workspace: &str, trust: &str) -> Value {
+    fs::write(rig.path.join("test-attest-local-ui"), "").unwrap();
+    let mut app = rig.client();
+    app.call(
+        "project.trust.set",
+        json!({"workspaceId":workspace,"trust":trust,"idempotencyKey":format!("trust-{trust}-{workspace}")}),
+    )
 }
 
 fn wait_lsp_ready(client: &mut Client, workspace: &str, generation: u64) -> Value {

@@ -76,15 +76,16 @@ impl Core {
             path: path.into(),
             layout: json!({"panes":[]}),
         };
+        // A folder the person answered before is told to the clients with its new workspace.
+        let trust_events = self.project_trust_event_for(&workspace.workspace_id, path)?;
         let mutation = self.mutate(connection, method::WORKSPACE_CREATE, params, |tx| {
             tx.insert_workspace(&workspace)?;
-            Ok((
+            let mut events = vec![(
+                event::WORKSPACE_CREATED.into(),
                 json!({"workspace":workspace}),
-                vec![(
-                    event::WORKSPACE_CREATED.into(),
-                    json!({"workspace":workspace}),
-                )],
-            ))
+            )];
+            events.extend(trust_events);
+            Ok((json!({"workspace":workspace}), events))
         })?;
         Ok(mutation.result)
     }

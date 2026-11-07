@@ -24,6 +24,11 @@ pub struct Server {
     pub workspace_id: String,
     pub root: String,
     pub language: EditorLanguage,
+    /// Whether the person trusts the folder: a server of a trusted folder starts with every
+    /// feature, and one of any other folder starts in its safe mode or does not start (ADR 0150).
+    /// A checkpoint that does not say it is restricted.
+    #[serde(default)]
+    pub trusted: bool,
     pub generation: u32,
     pub instance_key: String,
     pub instance_id: Option<String>,
@@ -96,6 +101,7 @@ impl Server {
             workspace_id: workspace_id.into(),
             root: root.into(),
             language,
+            trusted: false,
             generation: 1,
             instance_key: Uuid::new_v4().to_string(),
             instance_id: None,
@@ -165,6 +171,10 @@ impl Server {
         self.client = Client::default();
         self.decoder = Decoder::default();
         self.pending_writes.clear();
+        if let Some(reason) = self.refusal() {
+            self.state = LspState::Restricted;
+            self.detail = Some(reason.into());
+        }
         Ok(())
     }
 
@@ -174,6 +184,7 @@ impl Server {
             state: self.state.clone(),
             generation: self.generation,
             detail: self.detail.clone(),
+            safe_mode: (!self.trusted && self.refusal().is_none()).then_some(true),
         }
     }
 
@@ -489,7 +500,9 @@ mod tests {
     use soyeht_lsp::encode;
 
     fn rust_server() -> Server {
-        Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Rust).unwrap()
+        Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Rust)
+            .unwrap()
+            .with_trust(true)
     }
 
     fn instance(server: &Server) -> Instance {

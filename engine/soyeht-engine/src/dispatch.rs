@@ -508,6 +508,7 @@ impl Core {
                 json!({"key":params["key"],"value":self.setting(key)?})
             }
             method::SETTINGS_SET => self.setting_set(connection, params)?,
+            method::PROJECT_TRUST_SET => self.project_trust_set(connection, params)?,
             method::DEVICE_LIST => json!({"items":self.snapshot_section("devices")?}),
             method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE => {
                 self.device_request(connection, method, params)?
@@ -641,6 +642,7 @@ impl Core {
         }
         sections.push(("capabilities".into(), json!(capabilities())));
         sections.push(("writing".into(), self.writing_snapshot()?));
+        sections.push(("trust".into(), self.project_trust_snapshot()?));
         let streams:Vec<_>=self.panes.values().filter(|p|!p.stored.closed && p.stored.pane.mode == soyeht_protocol::PaneMode::Terminal).map(|p|json!({"paneId":p.stored.pane.pane_id,"streamId":p.stored.pane.stream_id,"generation":p.stored.pane.generation,"firstRetainedOffset":p.screen.first_offset().to_string(),"nextOffset":p.screen.next_offset().to_string(),"binaryPaneRef":0})).collect();
         sections.push(("streams".into(), json!(streams)));
         let snapshot_id = Uuid::new_v4().to_string();

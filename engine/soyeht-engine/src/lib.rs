@@ -32,6 +32,7 @@ pub mod pane_observations;
 pub mod panes;
 pub mod ports;
 mod process_start;
+pub mod project_trust;
 pub mod push;
 mod read_ahead;
 mod readiness;
