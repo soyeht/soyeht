@@ -94,10 +94,9 @@ impl Workbench {
                         )
                         .child(spacer())
                         .child(
-                            close_button(id("task-sheet-close", &task_id), palette)
-                                .on_click(
-                                    cx.listener(|this, _: &ClickEvent, _, cx| this.close_task(cx)),
-                                ),
+                            close_button(id("task-sheet-close", &task_id), palette).on_click(
+                                cx.listener(|this, _: &ClickEvent, _, cx| this.close_task(cx)),
+                            ),
                         ),
                 )
                 .child(

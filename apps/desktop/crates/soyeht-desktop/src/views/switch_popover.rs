@@ -290,11 +290,7 @@ fn model_field(
                 this.toggle_switch_models(cx);
             }
         }))
-        .child(
-            grow()
-                .truncate()
-                .child(SharedString::from(label)),
-        )
+        .child(grow().truncate().child(SharedString::from(label)))
         .child(super::ui::disclosure_chevron(open, palette.muted))
         .into_any_element()
 }

@@ -5,8 +5,10 @@
 use super::{
     harness_menu::{Pick, Picker},
     menus,
-    ui::{ChromeBold, OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer, text_width,
-        top_bar_button, waiting_badge, working_dot,},
+    ui::{
+        ChromeBold, OwnPress, Typeface, edge_fades, hidden_ends, hint, icon, id, row, spacer,
+        text_width, top_bar_button, waiting_badge, working_dot,
+    },
     window_controls,
 };
 use crate::{

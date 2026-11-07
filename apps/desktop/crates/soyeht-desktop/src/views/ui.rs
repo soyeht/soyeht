@@ -80,7 +80,9 @@ pub fn chrome_text(weight: FontWeight, size: f32) -> Div {
 /// Nunito in bold at `size` points: a label, a title, a count.
 pub trait ChromeBold: Styled + Sized {
     fn chrome_bold(self, size: f32) -> Self {
-        self.chrome().font_weight(FontWeight::BOLD).text_size(px(size))
+        self.chrome()
+            .font_weight(FontWeight::BOLD)
+            .text_size(px(size))
     }
 }
 
@@ -477,11 +479,11 @@ pub fn grow() -> Div {
 
 /// A close button for a sheet or a panel: a row with the close glyph, ready for an `on_click`.
 pub fn close_button(key: impl Into<gpui::ElementId>, palette: &Palette) -> gpui::Stateful<Div> {
-    row()
-        .id(key)
-        .cursor_pointer()
-        .own_press()
-        .child(icon(Icon::Close, desktop::HEADER_ACTION_GLYPH, palette.muted))
+    row().id(key).cursor_pointer().own_press().child(icon(
+        Icon::Close,
+        desktop::HEADER_ACTION_GLYPH,
+        palette.muted,
+    ))
 }
 
 /// An element that fills the room it is given and shows nothing, to push its siblings apart.

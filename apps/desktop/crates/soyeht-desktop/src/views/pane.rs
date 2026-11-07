@@ -5,8 +5,8 @@ use super::{
     cards::{Role, button},
     editor::strip,
     ui::{
-        OwnPress, Typeface, column, grow, header_bar, hint, icon, id, pane_card_shell, pressable, row,
-        rule,
+        OwnPress, Typeface, column, grow, header_bar, hint, icon, id, pane_card_shell, pressable,
+        row, rule,
     },
 };
 use crate::{
@@ -573,10 +573,7 @@ pub(super) fn close_question_strip(
         ));
     }
     strip(palette)
-        .child(
-            grow()
-                .child(SharedString::from(format!("{title} {message}"))),
-        )
+        .child(grow().child(SharedString::from(format!("{title} {message}"))))
         .children(answers)
         .into_any_element()
 }
