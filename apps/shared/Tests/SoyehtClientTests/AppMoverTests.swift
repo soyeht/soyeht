@@ -91,6 +91,25 @@
         plan: try mover.plan(source: source, place: .diskImage))
     }
 
+    /// An image holding the app, the system Applications folder and the person's own, empty.
+    func imageAndTwoFolders() throws -> (source: URL, system: URL, own: URL) {
+      (
+        try app(in: try folder("image")), try folder("Applications"),
+        try folder("Home/Applications")
+      )
+    }
+
+    /// `folder` holds only the app named for the profile, marked `stamp`, and nothing was trashed.
+    func expectOnlyThe(app: URL, stamp expected: String) throws {
+      #expect(try stamp(of: app) == expected)
+      #expect(trash.trashed.isEmpty)
+      let folder = app.deletingLastPathComponent()
+      #expect(
+        try FileManager.default.contentsOfDirectory(atPath: folder.path) == [
+          "\(testAppName).app"
+        ])
+    }
+
     func makeReadOnly(_ url: URL) throws {
       try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: url.path)
     }
@@ -265,9 +284,7 @@
 
   @Test func anotherAppWithTheNameIsNeverReplacedNorBesideLeftACopy() async throws {
     let box = try MoveSandbox()
-    let source = try box.app(in: try box.folder("image"))
-    let system = try box.folder("Applications")
-    let own = try box.folder("Home/Applications")
+    let (source, system, own) = try box.imageAndTwoFolders()
     let stranger = try box.app(in: system, id: "com.example.stranger", stamp: "stranger")
     let mover = box.mover([system, own])
     #expect(throws: AppMoveFailure.destinationIsAnotherApp) {
@@ -297,11 +314,9 @@
   @Test(.enabled(if: notRoot))
   func aReadOnlySystemFolderFallsBackToTheUsersAndCreatesIt() async throws {
     let box = try MoveSandbox()
-    let source = try box.app(in: try box.folder("image"))
-    let system = try box.folder("Applications")
+    let (source, system, own) = try box.imageAndTwoFolders()
     try box.makeReadOnly(system)
-    let home = try box.folder("Home")
-    let own = home.appending(path: "Applications", directoryHint: .isDirectory)
+    try FileManager.default.removeItem(at: own)
     let mover = box.mover([system, own])
 
     let plan = try mover.plan(source: source, place: .diskImage)
@@ -331,34 +346,24 @@
   @Test func aTrashThatRefusesLeavesTheOldAppAndNoStagingCopy() async throws {
     let box = try MoveSandbox()
     let (existing, mover, plan) = try box.replacement(trash: FailingTrash()).parts
-    let applications = existing.deletingLastPathComponent()
     await #expect(throws: AppMoveFailure.replaceFailed) {
       try await mover.move(plan, place: .diskImage, confirmedReplace: true)
     }
-    #expect(try box.stamp(of: existing) == "old")
-    #expect(
-      try FileManager.default.contentsOfDirectory(atPath: applications.path) == [
-        "\(testAppName).app"
-      ])
+    try box.expectOnlyThe(app: existing, stamp: "old")
   }
 
   @Test(.enabled(if: notRoot))
   func aCopyThatStopsHalfWayLeavesTheOldAppAndNoStagingCopy() async throws {
     let box = try MoveSandbox()
     let (existing, mover, plan) = try box.replacement().parts
-    let (source, applications) = (plan.source, existing.deletingLastPathComponent())
+    let source = plan.source
     // A file that cannot be read stops the copy half way.
     try FileManager.default.setAttributes(
       [.posixPermissions: 0], ofItemAtPath: source.appending(path: "Contents/stamp").path)
     await #expect(throws: AppMoveFailure.copyFailed) {
       try await mover.move(plan, place: .diskImage, confirmedReplace: true)
     }
-    #expect(try box.stamp(of: existing) == "old")
-    #expect(box.trash.trashed.isEmpty)
-    #expect(
-      try FileManager.default.contentsOfDirectory(atPath: applications.path) == [
-        "\(testAppName).app"
-      ])
+    try box.expectOnlyThe(app: existing, stamp: "old")
   }
 
   @Test func aDestinationThatChangedSinceThePlanIsNotTouched() async throws {
@@ -419,11 +424,9 @@
   @Test(.enabled(if: notRoot))
   func aCopyInALockedSystemFolderIsNotLeftBesideAnotherInTheUsers() async throws {
     let box = try MoveSandbox()
-    let source = try box.app(in: try box.folder("image"))
-    let system = try box.folder("Applications")
+    let (source, system, own) = try box.imageAndTwoFolders()
     let installed = try box.app(in: system, stamp: "admin")
     try box.makeReadOnly(system)
-    let own = try box.folder("Home/Applications")
     let mover = box.mover([system, own])
     #expect(throws: AppMoveFailure.existingCopyLocked) {
       try mover.plan(source: source, place: .diskImage)
@@ -434,9 +437,7 @@
 
   @Test func aCopyInTheUsersFolderIsTheOneReplacedNotANewOneInTheSystemFolder() async throws {
     let box = try MoveSandbox()
-    let source = try box.app(in: try box.folder("image"))
-    let system = try box.folder("Applications")
-    let own = try box.folder("Home/Applications")
+    let (source, system, own) = try box.imageAndTwoFolders()
     let installed = try box.app(in: own, stamp: "mine")
     let mover = box.mover([system, own])
     let plan = try mover.plan(source: source, place: .diskImage)
@@ -465,11 +466,7 @@
     await #expect(throws: AppMoveFailure.destinationRunning) {
       try await mover.move(plan, place: .diskImage, confirmedReplace: true)
     }
-    #expect(try box.stamp(of: existing) == "old")
-    #expect(box.trash.trashed.isEmpty)
-    let folder = existing.deletingLastPathComponent()
-    #expect(
-      try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["\(testAppName).app"])
+    try box.expectOnlyThe(app: existing, stamp: "old")
   }
 
   @Test func somethingElseThatLandsAtTheDestinationDuringTheCopyIsNotTrashed() async throws {
@@ -487,12 +484,7 @@
     await #expect(throws: AppMoveFailure.planChanged) {
       try await mover.move(plan, place: .diskImage, confirmedReplace: true)
     }
-    #expect(try box.stamp(of: existing) == "intruder")
-    #expect(box.trash.trashed.isEmpty)
-    #expect(
-      try FileManager.default.contentsOfDirectory(atPath: applications.path) == [
-        "\(testAppName).app"
-      ])
+    try box.expectOnlyThe(app: existing, stamp: "intruder")
   }
 
   @Test func aFailedRenamePutsTheOldAppBackFromTheTrash() async throws {
