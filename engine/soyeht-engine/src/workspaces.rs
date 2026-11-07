@@ -17,6 +17,7 @@ pub fn handles(method: &str) -> bool {
             | method::WORKSPACE_RENAME
             | method::WORKSPACE_CLOSE
             | method::WORKSPACE_FOCUS
+            | method::PROJECT_TRUST_SET
     )
 }
 
@@ -56,6 +57,7 @@ impl Core {
         match method {
             method::WORKSPACE_CREATE => self.workspace_create(connection, params),
             method::WORKSPACE_LAYOUT_SET => self.workspace_layout_set(connection, params),
+            method::PROJECT_TRUST_SET => self.project_trust_set(connection, params),
             method::WORKSPACE_RENAME | method::WORKSPACE_CLOSE | method::WORKSPACE_FOCUS => {
                 self.workspace_edit(connection, method, params)
             }

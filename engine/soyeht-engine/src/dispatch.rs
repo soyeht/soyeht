@@ -508,7 +508,6 @@ impl Core {
                 json!({"key":params["key"],"value":self.setting(key)?})
             }
             method::SETTINGS_SET => self.setting_set(connection, params)?,
-            method::PROJECT_TRUST_SET => self.project_trust_set(connection, params)?,
             method::DEVICE_LIST => json!({"items":self.snapshot_section("devices")?}),
             method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE => {
                 self.device_request(connection, method, params)?
