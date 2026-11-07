@@ -262,6 +262,8 @@ class StagingTests(unittest.TestCase):
         text = package.copyright_text()
         self.assertIn("/usr/share/doc/soyeht/THIRD-PARTY-NOTICES.txt", text)
         self.assertIn("Apache-2.0", text)
+        paragraphs = text.strip().split("\n\n")
+        self.assertTrue(any(p.startswith("License: see-notices\n ") for p in paragraphs), "a standalone License paragraph")
 
     def test_relative_targets_become_absolute(self):
         self.assertTrue(Path(package.absolute("target")).is_absolute())

@@ -56,6 +56,7 @@ class Component:
     products: set = field(default_factory=set)  # the cargo workspaces that build it
     texts: list = field(default_factory=list)
     copyright: list = field(default_factory=list)  # the holders' statements, from the license files
+    notes: list = field(default_factory=list)  # lines of the entry: a credit, the source of bundled code
     elected: list = field(default_factory=list)  # the license(s) of the expression that Soyeht follows
     exception: str = ""  # the reason, for a license outside the allow-list
 
@@ -68,8 +69,8 @@ def add_text(component, label, body, standard=False):
         component.texts.append(Text(label, body))
         return
     rights, parts = licenses.explode(label, body)
-    if not standard:
-        component.copyright += [line for line in rights if line not in component.copyright]
+    if not standard:  # a REUSE-style text keeps `<year> <owner>` where a holder goes: that is no holder
+        component.copyright += [line for line in rights if line not in component.copyright and not PLACEHOLDER.search(line)]
     component.texts += [Text(*part) for part in parts]
 
 
@@ -137,6 +138,7 @@ def read_license_files(folder):
     return found
 
 
+PLACEHOLDER = re.compile(r"<(year|owner|copyright|name)[^>]*>", re.I)
 NESTED_DEPTH = 5
 NESTED_SKIPPED = {"tests", "test", "benches", "examples", "target", "fuzz", ".git", "node_modules"}
 
@@ -177,17 +179,23 @@ def cargo_component(package, policy):
     if exception:
         policy = licenses.allowing(policy, declared)
     expression = declared
-    if name in policy.bundled:
+    bundled = policy.bundled.get(name)
+    notice_only = bundled.get("notice_only", []) if bundled else []
+    if bundled:
         # A package that compiles code of another license (freetype-sys builds FreeType): both apply.
-        bundled = policy.bundled[name]
         expression = f"({declared}) AND ({bundled['license']})"
         files.update({relative: licenses.normal((folder / relative).read_text()) for relative in bundled["files"]})
+        if notice_only:  # licenses of bundled data, shipped as notices and not on the allow-list
+            policy = licenses.allowing(policy, " AND ".join(notice_only))
     try:
         chosen, kept = licenses.elect(expression, files, policy)
     except licenses.LicenseError as error:
         raise SourceError(f"{name} {package['version']}: {error}") from error
     url = package.get("repository") or package.get("homepage") or ""
     component = Component("Rust", name, package["version"], expression, url, exception=exception, elected=sorted(chosen))
+    if bundled:
+        component.notes += [f"credit: {bundled['credit']}"] if bundled.get("credit") else []
+        component.notes += [f"bundled source: {bundled['source']}"] if bundled.get("source") else []
     for file in kept:
         add_text(component, "NOTICE" if licenses.is_notice_file(file) else licenses.classify(files[file]) or declared, files[file])
     for identifier in licenses.missing_texts(chosen, files, kept):
@@ -196,8 +204,15 @@ def cargo_component(package, policy):
         if licenses.base_identifier(identifier) in licenses.NAMES_A_HOLDER:
             component.copyright.append(f"Copyright (c) {holder_of(package)} (named by the package metadata)")
     for relative, body in nested_license_files(folder).items():
-        if relative not in files:
-            add_text(component, licenses.classify(body) or "license of bundled code", body)
+        if relative in files:
+            continue
+        kind = licenses.classify(body)
+        if kind and not licenses.usable_choices(kind, policy) and kind not in notice_only:
+            raise SourceError(
+                f"{name} {package['version']} bundles {relative}, a {kind} text: {kind} is not on the allow-list; "
+                "allow it for this package with `notice_only` in its `bundled` entry of policy.json, or drop the crate"
+            )
+        add_text(component, kind or "license of bundled code", body)
     return component
 
 

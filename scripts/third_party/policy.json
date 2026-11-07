@@ -13,6 +13,7 @@
     "ISC",
     "MIT",
     "MIT-0",
+    "MIT-CMU",
     "MPL-2.0",
     "NCSA",
     "OFL-1.1",
@@ -85,7 +86,22 @@
       "files": [
         "freetype2/docs/FTL.TXT"
       ],
-      "reason": "The crate (MIT) compiles the FreeType 2 sources it bundles, which are licensed FTL or GPLv2 at the user's choice. Soyeht follows the FreeType License, which asks for a credit: the credit text below is in the notices."
+      "reason": "The crate (MIT) compiles the FreeType 2 sources it bundles, which are licensed FTL or GPLv2 at the user's choice. Soyeht follows the FreeType License, which asks for a credit: the credit line of its entry and the license text are in the notices.",
+      "credit": "Portions of this software are copyright \u00a9 2023 The FreeType Project (www.freetype.org). All rights reserved. (FreeType 2.13.2, bundled by freetype-sys 0.20.1)"
+    },
+    "wayland-protocols-plasma": {
+      "license": "MIT AND MIT-CMU AND BSD-3-Clause AND LGPL-2.1-or-later",
+      "notice_only": [
+        "LGPL-2.1-or-later"
+      ],
+      "files": [
+        "plasma-wayland-protocols/LICENSES/MIT.txt",
+        "plasma-wayland-protocols/LICENSES/MIT-CMU.txt",
+        "plasma-wayland-protocols/LICENSES/BSD-3-Clause.txt",
+        "plasma-wayland-protocols/LICENSES/LGPL-2.1-or-later.txt"
+      ],
+      "source": "https://github.com/KDE/plasma-wayland-protocols",
+      "reason": "The crate (MIT) turns the XML protocol descriptions of KDE's plasma-wayland-protocols into interface tables at build time. Of its 30 files, 17 are LGPL-2.1-or-later (blur.xml, the one gpui_linux uses, among them), 9 MIT-CMU, 1 BSD-3-Clause, the rest MIT. Only the generated interface tables are compiled in; no LGPL library code is linked. The four license texts are shipped, and the LGPL is allowed here as a notice only."
     }
   }
 }

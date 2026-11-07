@@ -67,6 +67,21 @@ class FileTests(unittest.TestCase):
         self.assertEqual(licenses.classify('This program, "bzip2", the associated library "libbzip2", Copyright Julian R Seward. Altered source versions must be plainly marked as such'), "bzip2-1.0.6")
         self.assertEqual(licenses.classify("The FreeType Project LICENSE 2006-Jan-27"), "FTL")
 
+    def test_the_gnu_texts_are_told_apart_though_each_names_the_others(self):
+        mentions = " It may be combined with the GNU Affero General Public License and the GNU Lesser General Public License."
+        cases = {
+            "AGPL-3.0-or-later": "GNU AFFERO GENERAL PUBLIC LICENSE\nVersion 3, 19 November 2007\nThe GNU General Public License is a free license.",
+            "LGPL-3.0-or-later": "GNU LESSER GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\nThis version of the GNU Lesser General Public License incorporates the GNU General Public License, version 3.",
+            "LGPL-2.1-or-later": "GNU LESSER GENERAL PUBLIC LICENSE\nVersion 2.1, February 1999\nthe GNU General Public License Version 2",
+            "LGPL-2.0-only": "GNU LIBRARY GENERAL PUBLIC LICENSE\nVersion 2, June 1991\nthe GNU General Public License",
+            "GPL-3.0-or-later": "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007" + mentions,
+            "GPL-2.0-only": "GNU GENERAL PUBLIC LICENSE\nVersion 2, June 1991 ... use the GNU Library General Public License instead.",
+        }
+        for expected, text in cases.items():
+            self.assertEqual(licenses.classify(text), expected)
+        for identifier, needles in licenses.SIGNATURES:  # none is shadowed by an earlier one
+            self.assertEqual(licenses.classify(" ".join(needles)), identifier)
+
     def test_a_source_file_is_not_a_license_file_whatever_its_name(self):
         self.assertFalse(licenses.is_license_file("CopyrightHeader.swift"))
         self.assertFalse(licenses.is_license_file("LICENSE.rs"))
@@ -179,6 +194,40 @@ class CargoTests(unittest.TestCase):
         self.assertEqual(sorted(sources.nested_license_files(folder)), ["src/unicode/LICENSE", "third_party/fiat/LICENSE-MIT"])
         component = sources.cargo_component(pkg, POLICY)
         self.assertEqual(len([t for t in component.texts if t.label == "MIT"]), 3)
+
+    def test_a_nested_license_text_outside_the_allow_list_fails_unless_the_policy_names_it_for_the_package(self):
+        gpl_text = "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n" + "Everyone is permitted to copy and distribute verbatim copies. " * 5
+        pkg = package(self.directory.name, "sneaky", "MIT", {"LICENSE": MIT_TEXT})
+        folder = Path(pkg["manifest_path"]).parent
+        (folder / "vendor").mkdir()
+        (folder / "vendor/COPYING").write_text(gpl_text)
+        with self.assertRaisesRegex(sources.SourceError, "sneaky.*vendor/COPYING.*GPL-3.0-or-later is not on the allow-list"):
+            sources.cargo_component(pkg, POLICY)
+        # A LGPL text is no excuse for a GPL one: the policy lists the license for the package, one license at a time.
+        entry = {"license": "MIT", "files": [], "reason": "data only", "notice_only": ["GPL-3.0-or-later"]}
+        allowed = licenses.Policy(POLICY.allowed, POLICY.prefer, POLICY.clarify, {}, {"sneaky": entry})
+        component = sources.cargo_component(pkg, allowed)
+        self.assertIn("GPL-3.0-or-later", [t.label for t in component.texts])
+        other = package(self.directory.name, "other", "MIT", {"LICENSE": MIT_TEXT})
+        (Path(other["manifest_path"]).parent / "vendor").mkdir()
+        (Path(other["manifest_path"]).parent / "vendor/COPYING").write_text(gpl_text)
+        with self.assertRaises(sources.SourceError):
+            sources.cargo_component(other, allowed)
+
+    def test_the_policy_entries_for_freetype_and_the_plasma_protocols_say_what_is_bundled(self):
+        freetype, plasma = POLICY.bundled["freetype-sys"], POLICY.bundled["wayland-protocols-plasma"]
+        self.assertIn("2.13.2", freetype["credit"])
+        self.assertNotIn("<year>", freetype["credit"])
+        self.assertEqual(plasma["notice_only"], ["LGPL-2.1-or-later"])
+        self.assertEqual(plasma["source"], "https://github.com/KDE/plasma-wayland-protocols")
+        self.assertTrue(all(name.endswith(".txt") for name in plasma["files"]) and len(plasma["files"]) == 4)
+        self.assertIn("MIT-CMU", POLICY.allowed)
+
+    def test_a_credit_and_a_bundled_source_are_lines_of_the_entry(self):
+        found = sources.Component("Rust", "freetype-sys", "0.20.1", "MIT", "", {"apps/desktop"}, notes=["credit: Portions of this software are copyright 2023 The FreeType Project", "bundled source: https://example.com"])
+        text = notices.render([found])
+        self.assertIn("      credit: Portions of this software are copyright 2023 The FreeType Project", text)
+        self.assertIn("      bundled source: https://example.com", text)
 
     def test_a_package_that_bundles_code_follows_the_license_the_policy_names_for_it(self):
         pkg = package(self.directory.name, "freetype-sys", "MIT", {"LICENSE": MIT_TEXT})

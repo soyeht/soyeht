@@ -26,7 +26,12 @@ ship, and nothing in the packages.
   tables of `regex-syntax`, the C code of `tree-sitter` and `ring`, the protocol files of `wayland-protocols`)
   are shipped too, and so is any `LICENSE-THIRD-PARTY` file whichever license is followed. A crate that
   compiles code of another license has a `bundled` entry in the policy: `freetype-sys` builds FreeType, which
-  is FTL or GPLv2, and Soyeht follows the FreeType License, whose credit text is in the notices. An entry of
+  is FTL or GPLv2, and Soyeht follows the FreeType License, whose credit line (the FreeType 2.13.2 it bundles) is in its entry. A nested license file
+  classified outside the allow-list fails the check unless the crate's `bundled` entry lists that license in
+  `notice_only`: `wayland-protocols-plasma` has 17 of its 30 XML protocol files under LGPL-2.1-or-later (the
+  generated interface tables are compiled in; no LGPL library code is linked), 9 under MIT-CMU and one under
+  BSD-3-Clause, and ships the four license texts with the source address
+  (https://github.com/KDE/plasma-wayland-protocols). An entry of
   an MPL-2.0 component gives the address of its source (section 3.2). For the Swift packages, the pins of the four
   `Package.resolved` files against `scripts/third_party/swift.json` and the texts under
   `scripts/third_party/swift/`, which `third_party_notices.py refresh-swift --checkouts DIR` renews from
@@ -53,7 +58,7 @@ ship, and nothing in the packages.
 
 - A new dependency fails the gate until its license is allowed and the file is regenerated; the diff of
   `THIRD-PARTY-NOTICES.txt` shows the reviewer what was added.
-- The file is about 440 KB, under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
+- The file is about 560 KB (about 100 KB compressed), under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
   are kept once and the copyright lines go with each component. It grows with the dependency graph.
 - The Gradle side lists the libraries the build file declares and one line for the transitive AndroidX, Kotlin
   and Compose libraries (all Apache-2.0); it is not resolved from a Gradle dependency report.
