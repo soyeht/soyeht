@@ -8,7 +8,7 @@ use super::{
     copy_button::copyable,
     markdown::{Opens, Replies},
     selectable::Selectable,
-    ui::{PaneScroll, Typeface, code_well, column, disclosure_chevron, icon, id, row},
+    ui::{PaneScroll, Typeface, code_well, column, disclosure_chevron, grow, icon, id, row},
 };
 use crate::{
     assets::Icon,
@@ -432,9 +432,7 @@ fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
                                 }),
                         )
                         .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
+                            grow()
                                 .line_clamp(2)
                                 .text_color(rgb(palette.secondary))
                                 .child(SharedString::from(tool.title.clone())),
