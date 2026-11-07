@@ -68,9 +68,31 @@
         bundleId: testBundleId, appName: testAppName, folders: folders, trash: trash ?? self.trash)
     }
 
+    /// An image holding the app, an Applications folder holding an older copy of it, and the
+    /// plan to replace that copy.
+    func replacement(trash: (any AppTrashing)? = nil) throws -> Replacement {
+      let source = try app(in: try folder("image"))
+      let applications = try folder("Applications")
+      let existing = try app(in: applications, stamp: "old")
+      let mover = mover([applications], trash: trash)
+      return Replacement(
+        source: source, applications: applications, existing: existing, mover: mover,
+        plan: try mover.plan(source: source, place: .diskImage))
+    }
+
     func makeReadOnly(_ url: URL) throws {
       try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: url.path)
     }
+  }
+
+  struct Replacement {
+    let source: URL
+    let applications: URL
+    let existing: URL
+    let mover: AppMover
+    let plan: AppMovePlan
+
+    var parts: (URL, AppMover, AppMovePlan) { (existing, mover, plan) }
   }
 
   /// "Trash" is a folder of the sandbox, and it remembers what it was given.
@@ -148,12 +170,7 @@
 
   @Test func aCopyAlreadyThereIsReplacedOnlyAfterAYesAndGoesToTheTrash() async throws {
     let box = try MoveSandbox()
-    let source = try box.app(in: try box.folder("image"))
-    let applications = try box.folder("Applications")
-    let existing = try box.app(in: applications, stamp: "old")
-    let mover = box.mover([applications])
-
-    let plan = try mover.plan(source: source, place: .diskImage)
+    let (existing, mover, plan) = try box.replacement().parts
     #expect(plan.replacesExisting)
     await #expect(throws: AppMoveFailure.replaceNotConfirmed) {
       try await mover.move(plan, place: .diskImage, confirmedReplace: false)
@@ -238,11 +255,8 @@
 
   @Test func aTrashThatRefusesLeavesTheOldAppAndNoStagingCopy() async throws {
     let box = try MoveSandbox()
-    let source = try box.app(in: try box.folder("image"))
-    let applications = try box.folder("Applications")
-    let existing = try box.app(in: applications, stamp: "old")
-    let mover = box.mover([applications], trash: FailingTrash())
-    let plan = try mover.plan(source: source, place: .diskImage)
+    let (existing, mover, plan) = try box.replacement(trash: FailingTrash()).parts
+    let applications = existing.deletingLastPathComponent()
     await #expect(throws: AppMoveFailure.replaceFailed) {
       try await mover.move(plan, place: .diskImage, confirmedReplace: true)
     }
@@ -256,11 +270,8 @@
   @Test(.enabled(if: notRoot))
   func aCopyThatStopsHalfWayLeavesTheOldAppAndNoStagingCopy() async throws {
     let box = try MoveSandbox()
-    let source = try box.app(in: try box.folder("image"))
-    let applications = try box.folder("Applications")
-    let existing = try box.app(in: applications, stamp: "old")
-    let mover = box.mover([applications])
-    let plan = try mover.plan(source: source, place: .diskImage)
+    let (existing, mover, plan) = try box.replacement().parts
+    let (source, applications) = (plan.source, existing.deletingLastPathComponent())
     // A file that cannot be read stops the copy half way.
     try FileManager.default.setAttributes(
       [.posixPermissions: 0], ofItemAtPath: source.appending(path: "Contents/stamp").path)

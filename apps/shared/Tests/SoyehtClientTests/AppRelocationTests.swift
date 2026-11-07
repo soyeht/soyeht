@@ -6,15 +6,6 @@
 
   @testable import SoyehtClient
 
-  private final class RelocationPreferences: ClientPreferenceStore {
-    var values: [String: Bool] = [:]
-    func bool(forKey key: String) -> Bool { values[key] ?? false }
-    func storedBool(forKey key: String) -> Bool? { values[key] }
-    func set(_ value: Bool, forKey key: String) { values[key] = value }
-    func integer(forKey key: String) -> Int? { nil }
-    func set(_ value: Int, forKey key: String) {}
-  }
-
   private final class RecordingRelauncher: AppRelaunching {
     private let opened = OSAllocatedUnfairLock<[URL]>(initialState: [])
     let fails: Bool
@@ -32,7 +23,7 @@
     let box: MoveSandbox
     let relocation: AppRelocation
     let relauncher: RecordingRelauncher
-    let preferences: RelocationPreferences
+    let preferences: MemoryPreferences
     let quits: OSAllocatedUnfairLock<Int>
     let applications: URL
 
@@ -43,7 +34,7 @@
     init(
       box: MoveSandbox, place: String = "AppTranslocation/ID/d", profile: ProfileValues = .prod,
       carriesPrograms: Bool = true, relauncherFails: Bool = false,
-      preferences: RelocationPreferences = RelocationPreferences(),
+      preferences: MemoryPreferences = MemoryPreferences(),
       readOnlyApplications: Bool = false
     ) throws {
       let source = try box.app(in: try box.folder(place))
@@ -89,7 +80,7 @@
     let source = try box.app(in: try box.folder("Home/Applications/Tools"))
     let relocation = AppRelocation(
       app: source, profile: .prod, home: home, carriesPrograms: true, mover: box.mover([]),
-      relauncher: RecordingRelauncher(), preferences: RelocationPreferences(), quit: {})
+      relauncher: RecordingRelauncher(), preferences: MemoryPreferences(), quit: {})
     #expect(relocation.phase == .notNeeded)
   }
 
@@ -174,7 +165,7 @@
     let relocation = AppRelocation(
       app: other, profile: .prod, home: try box.folder("Home"), carriesPrograms: true,
       mover: box.mover([applications]), relauncher: relauncher,
-      preferences: RelocationPreferences(), quit: {})
+      preferences: MemoryPreferences(), quit: {})
     await relocation.move()
     #expect(relocation.phase == .failed(.notThisApp))
     #expect(relauncher.apps.isEmpty)

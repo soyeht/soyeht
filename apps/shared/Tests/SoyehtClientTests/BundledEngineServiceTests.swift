@@ -43,7 +43,7 @@
     }
   }
 
-  private final class MemoryPreferences: ClientPreferenceStore {
+  final class MemoryPreferences: ClientPreferenceStore {
     var values: [String: Bool] = [:]
     func bool(forKey key: String) -> Bool { values[key] ?? false }
     func storedBool(forKey key: String) -> Bool? { values[key] }
