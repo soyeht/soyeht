@@ -215,7 +215,7 @@ impl Core {
         Ok((draft, spawn))
     }
 
-    fn send_next_candidate_option(
+    pub(super) fn send_next_candidate_option(
         &mut self,
         candidate: &mut Candidate,
         mut requested: Vec<(String, String)>,

@@ -326,12 +326,14 @@ impl State {
 
     /// Whether options still wait to be applied, or the mode the session runs has yet to be
     /// checked against the ceiling of the agent that started the pane.
+    /// A mode the agent moved to by itself is put back only once its turn has ended.
     pub(crate) fn needs_configuration(&self) -> bool {
         !self.requested_options.is_empty()
-            || self
-                .mode_ceiling
-                .as_ref()
-                .is_some_and(super::mode_ceiling::ModeCeiling::pending)
+            || (self.active.is_none()
+                && self
+                    .mode_ceiling
+                    .as_ref()
+                    .is_some_and(super::mode_ceiling::ModeCeiling::pending))
     }
 
     pub fn public(&self, now_ms: i64) -> AgentSession {

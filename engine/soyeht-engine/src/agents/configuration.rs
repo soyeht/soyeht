@@ -179,7 +179,7 @@ pub(super) fn refused_mode(
 }
 
 /// Why a pane stops when the agent that started it leaves it no mode to run in.
-const MODE_CEILING_STOP: &str =
+pub(crate) const MODE_CEILING_STOP: &str =
     "No permission mode of this agent stays within the mode of the agent that started it";
 
 /// Keeps the pane within the mode of the agent that started it. A mode the pane would run above
@@ -258,6 +258,41 @@ pub(super) fn agent_changed(state: &mut State, options: Options) -> Result<()> {
         && !applying_mode
     {
         state.mode = state.options.current_mode().map(str::to_owned);
+    }
+    // A pane that carries a ceiling does not keep a mode above it because the agent moved
+    // there on its own: the next advance checks it again.
+    let exceeded = state.phase == super::state::Phase::Ready
+        && !applying_mode
+        && state
+            .mode_ceiling
+            .as_ref()
+            .is_some_and(|ceiling| ceiling.exceeded_by(state));
+    if exceeded && let Some(ceiling) = state.mode_ceiling.as_mut() {
+        ceiling.reopened();
+    }
+    Ok(())
+}
+
+/// An agent that moved itself above the ceiling of its pane while a turn runs is stopped: the
+/// turn is cancelled, so no further tool call runs in the higher mode, and the queue is held
+/// until a person resumes it. The mode itself is put back by the check the move re-armed.
+pub(super) fn hold_turn_above_ceiling(
+    store: &impl crate::ports::StorePort,
+    pane: &str,
+    state: &mut State,
+    saved: &mut crate::model::StoredPane,
+    changes: &mut Changes,
+    when: (i64, &str),
+) -> Result<()> {
+    let above = state.phase == super::state::Phase::Ready
+        && state.active.is_some()
+        && state.cancel_at_ms.is_none()
+        && state
+            .mode_ceiling
+            .as_ref()
+            .is_some_and(|ceiling| ceiling.pending() && ceiling.exceeded_by(state));
+    if above {
+        super::methods::cancel(store, pane, state, saved, changes, when.0, when.1)?;
     }
     Ok(())
 }

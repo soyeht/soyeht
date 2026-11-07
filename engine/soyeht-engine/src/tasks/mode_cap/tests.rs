@@ -527,3 +527,122 @@ fn a_restart_for_a_task_keeps_the_ceiling_and_checks_the_mode_again() {
         ConfigValue::V0("default".into())
     );
 }
+
+/// The pane `executor` has a process, so the requests it sends have somewhere to go.
+fn adopt_executor(rig: &mut Rig) {
+    let stored = &mut rig.core.panes.get_mut("executor").unwrap().stored;
+    stored.instance_id = Some("executor-instance".into());
+    stored.supervisor_id = Some("executor-supervisor".into());
+}
+
+fn set_mode_request(mode: &str) -> serde_json::Value {
+    json!({"jsonrpc":"2.0","id":"set-mode","method":method::PANE_CONFIG_SET,"params":{
+        "paneId":"executor","configId":"mode","value":mode,"idempotencyKey":"set-mode"}})
+}
+
+#[test]
+fn a_person_who_sets_the_mode_lifts_the_ceiling_and_an_agent_cannot_set_it() {
+    let mut rig = started_executor("claude", "default", "auto", "plan");
+    adopt_executor(&mut rig);
+    rig.core
+        .agents
+        .get_mut("executor")
+        .unwrap()
+        .state
+        .requested_options
+        .clear();
+    // The chief is an agent binding: the method is not open to it, and the ceiling stays.
+    let chief = rig.connect(Role::Chief, Some("chief"));
+    let refused = rig
+        .core
+        .dispatch(&chief, set_mode_request("bypassPermissions"));
+    assert_eq!(
+        refused.err().map(|error| errors::kind(&error)),
+        Some(ErrorKind::ForbiddenRole)
+    );
+    assert!(rig.core.agents["executor"].state.mode_ceiling.is_some());
+    // A person's choice is explicit: the pane has no ceiling afterwards.
+    let person = rig.connect(Role::HumanLocal, None);
+    rig.core
+        .dispatch(&person, set_mode_request("bypassPermissions"))
+        .unwrap();
+    assert!(rig.core.agents["executor"].state.mode_ceiling.is_none());
+}
+
+/// The pane `executor` of `harness` working on a prompt, checked against a ceiling set by a
+/// Claude chief in `chief_mode`, whose agent then reports `reported` as its mode.
+fn executor_moving_itself(harness: &str, chief_mode: &str, current: &str, reported: &str) -> Rig {
+    let mut rig = started_executor(harness, current, chief_mode, current);
+    adopt_executor(&mut rig);
+    let session = {
+        let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
+        state.requested_options.clear();
+        let ceiling = state.mode_ceiling.take();
+        let mut ceiling = ceiling.unwrap();
+        // The session was opened and checked: the mode it runs is within the ceiling.
+        assert_eq!(
+            ceiling.verdict(state, None),
+            crate::agents::mode_ceiling::Verdict::Within
+        );
+        state.mode_ceiling = Some(ceiling);
+        let prompt = state
+            .enqueue(
+                "work".into(),
+                soyeht_protocol::PromptOrigin::Human,
+                "t".into(),
+            )
+            .unwrap();
+        state.active = Some(prompt);
+        state.session_id.clone().unwrap()
+    };
+    let record = soyeht_acp::rpc::Record {
+        from_seq: 0,
+        to_seq: 1,
+        message: soyeht_acp::rpc::Message::Notification {
+            method: "session/update".into(),
+            params: json!({"sessionId":session,"update":{
+                "sessionUpdate":"current_mode_update","currentModeId":reported}}),
+        },
+    };
+    rig.core.native_record("executor", record, false).unwrap();
+    rig
+}
+
+#[test]
+fn an_agent_that_moves_itself_above_the_ceiling_is_stopped_and_checked_again() {
+    // The chief is in `auto`; the executor ran in `read-only` and moves to `agent`.
+    let rig = executor_moving_itself("codex", "auto", "read-only", "agent");
+    let state = &rig.core.agents["executor"].state;
+    assert!(state.cancel_at_ms.is_some(), "the turn is cancelled");
+    assert!(state.queue_paused, "the queue is held");
+    let ceiling = state.mode_ceiling.as_ref().unwrap();
+    assert!(ceiling.pending(), "the next advance checks the mode again");
+    // The check runs once the cancelled turn has ended, not while it goes on.
+    assert!(!state.needs_configuration());
+    let mut ended = state.clone();
+    ended.active = None;
+    assert!(ended.needs_configuration());
+    let mut changes = crate::agents::Changes::default();
+    assert!(crate::agents::configuration::hold_mode_ceiling(&mut ended, 1, &mut changes).unwrap());
+    assert_eq!(
+        ended.requested_options["mode"],
+        ConfigValue::V0("read-only".into())
+    );
+}
+
+#[test]
+fn a_move_within_the_ceiling_leaves_the_turn_alone() {
+    let rig = executor_moving_itself("claude", "auto", "default", "plan");
+    let state = &rig.core.agents["executor"].state;
+    assert!(state.cancel_at_ms.is_none());
+    assert!(!state.queue_paused);
+    assert!(!state.mode_ceiling.as_ref().unwrap().pending());
+}
+
+#[test]
+fn a_full_access_move_of_the_agent_is_above_any_ceiling() {
+    let rig = executor_moving_itself("claude", "auto", "default", "bypassPermissions");
+    let state = &rig.core.agents["executor"].state;
+    assert!(state.cancel_at_ms.is_some());
+    assert!(state.mode_ceiling.as_ref().unwrap().pending());
+}

@@ -101,7 +101,15 @@ impl ModeCeiling {
             .map(|choice| choice.value.clone())
     }
 
-    /// A session opened: the mode it runs is checked again.
+    /// Whether the mode `state` runs now is above the ceiling.
+    pub(crate) fn exceeded_by(&self, state: &State) -> bool {
+        let options = &state.options;
+        options
+            .current_mode()
+            .is_some_and(|mode| !self.allows(&state.launch.id, mode, announced_kind(options, mode)))
+    }
+
+    /// A session opened, or the agent moved its own mode: the mode it runs is checked again.
     pub(crate) fn reopened(&mut self) {
         self.checked = false;
         self.corrected = false;

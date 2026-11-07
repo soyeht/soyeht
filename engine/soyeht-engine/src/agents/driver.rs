@@ -187,7 +187,7 @@ impl Core {
             }
             Message::Notification { method, params } => {
                 if method == "session/update" {
-                    updates::update(
+                    let observed = updates::update(
                         &self.store,
                         pane,
                         saved.pane.generation,
@@ -195,7 +195,16 @@ impl Core {
                         &params,
                         timestamp,
                         &mut changes,
-                    )?
+                    )?;
+                    super::configuration::hold_turn_above_ceiling(
+                        &self.store,
+                        pane,
+                        state,
+                        saved,
+                        &mut changes,
+                        (now_ms, timestamp),
+                    )?;
+                    observed
                 } else {
                     false
                 }

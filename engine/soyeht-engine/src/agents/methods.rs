@@ -416,7 +416,11 @@ impl Core {
                     scope: self.clients[connection].scope.clone(),
                     key: errors::param_str(params, "idempotencyKey")?.into(),
                 };
-                match super::configuration::begin(
+                let sets_mode = state
+                    .options
+                    .mode()
+                    .is_some_and(|option| option.id == config_id);
+                let result = match super::configuration::begin(
                     &mut state,
                     pane,
                     super::configuration::ChangeRequest {
@@ -430,7 +434,18 @@ impl Core {
                 )? {
                     Some(operation_id) => json!({"_nativePending":operation_id}),
                     None => super::configuration::applied(&value),
+                };
+                // A person who sets the mode of a pane an agent started overrides the ceiling
+                // that agent put on it (contract 03, R24); an agent binding cannot reach this.
+                if sets_mode
+                    && self.clients[connection]
+                        .actor
+                        .as_ref()
+                        .is_some_and(|a| a.role.is_person())
+                {
+                    state.mode_ceiling = None;
                 }
+                result
             }
             _ => {
                 return Err(errors::invalid("Agent method unavailable"));
