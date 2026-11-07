@@ -55,6 +55,26 @@ pub fn uri(engine_id: &str, address: &str, code: &str, engine_key: &str) -> Stri
     format!("{PREFIX}engineId={engine_id}&address={address}&code={code}&engineKey={engine_key}")
 }
 
+/// The short code a pairing shows on both devices for the person to compare (ADR 0152): the first
+/// twelve hexadecimal digits of `fingerprint`, in capitals, in groups of four. `None` for a
+/// fingerprint that is shorter or is not hexadecimal there. The cases are
+/// `contracts/vectors/pairing-comparison.json`, which the Swift client passes too.
+pub fn comparison_code(fingerprint: &str) -> Option<String> {
+    let head = fingerprint.get(..COMPARISON_DIGITS)?;
+    if !head.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let head = head.to_ascii_uppercase();
+    let groups: Vec<&str> = (0..COMPARISON_DIGITS)
+        .step_by(COMPARISON_GROUP)
+        .map(|start| &head[start..start + COMPARISON_GROUP])
+        .collect();
+    Some(groups.join(" "))
+}
+
+const COMPARISON_DIGITS: usize = 12;
+const COMPARISON_GROUP: usize = 4;
+
 /// A public key as a link carries it: URL-safe base64 without padding.
 pub fn key_text(key: &[u8; 32]) -> String {
     URL_SAFE_NO_PAD.encode(key)
@@ -187,6 +207,20 @@ mod tests {
         let parsed = PairingLink::parse(&link).unwrap();
         assert_eq!(parsed.engine_key, key);
         assert_eq!(parsed.address.to_string(), "100.64.1.2:8443");
+    }
+
+    #[test]
+    fn the_comparison_code_follows_the_shared_vector() {
+        let vector: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../contracts/vectors/pairing-comparison.json"
+        ))
+        .unwrap();
+        let cases = vector["cases"].as_array().unwrap();
+        assert!(cases.len() >= 5);
+        for case in cases {
+            let found = comparison_code(case["fingerprint"].as_str().unwrap());
+            assert_eq!(found.as_deref(), case["code"].as_str(), "{}", case["name"]);
+        }
     }
 
     #[test]

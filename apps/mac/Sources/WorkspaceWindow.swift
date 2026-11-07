@@ -514,8 +514,10 @@ struct WorkspaceWindow: View {
       if let request = client.pairRequests.first {
         Text(request.deviceName)
           .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
-        Text(request.fingerprint).font(MacTheme.mono(MacTheme.TypeScale.small))
+        Text(request.comparisonCode).font(MacTheme.mono(MacTheme.TypeScale.subheading))
           .textSelection(.enabled)
+        Text(PairingCopy.compareOnMac).font(MacTheme.chrome(MacTheme.TypeScale.caption))
+          .foregroundStyle(MacTheme.secondary).multilineTextAlignment(.center)
         HStack {
           Button("Deny") { client.decidePairing(request, approve: false) }
             .buttonStyle(.paneSecondary)

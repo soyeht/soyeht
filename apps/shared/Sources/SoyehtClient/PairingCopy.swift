@@ -21,4 +21,28 @@ public enum PairingCopy {
   public static func onboarding(on device: String) -> String {
     "On your Mac, open \(AppName.display()) and choose “\(pairButton)”. Then scan the code with this \(device) and confirm access on the Mac."
   }
+
+  /// The short code a pairing shows on the new device and on the Mac, for the person to compare
+  /// (ADR 0152): the first twelve hexadecimal digits of the key's fingerprint, in capitals, in
+  /// three groups of four. `nil` for a fingerprint that has no twelve hexadecimal digits.
+  /// `contracts/vectors/pairing-comparison.json` holds the cases; the Rust client passes them too.
+  public static func comparisonCode(_ fingerprint: String) -> String? {
+    let head = fingerprint.prefix(comparisonDigits)
+    guard head.count == comparisonDigits, head.allSatisfy({ $0.isASCII && $0.isHexDigit })
+    else { return nil }
+    let capitals = Array(head.uppercased())
+    return stride(from: 0, to: comparisonDigits, by: comparisonGroup)
+      .map { String(capitals[$0..<($0 + comparisonGroup)]) }
+      .joined(separator: " ")
+  }
+  private static let comparisonDigits = 12
+  private static let comparisonGroup = 4
+
+  /// What the new device says while the person compares the code with the Mac's.
+  public static let compareOnDevice =
+    "Check that the Mac shows this code, then allow it there. If the Mac shows another code or none, tap Cancel."
+  /// What the Mac says about the request it shows: the code is the one the person's own device
+  /// shows.
+  public static let compareOnMac =
+    "Allow only if your \(devices) shows this same code. If it shows another code or none, deny."
 }

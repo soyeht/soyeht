@@ -5,6 +5,8 @@ import SoyehtProtocol
 @MainActor @Observable
 public final class PairingSession {
   public private(set) var fingerprint = ""
+  /// The short code to compare with the one the Mac shows (ADR 0152).
+  public var comparisonCode: String { PairingCopy.comparisonCode(fingerprint) ?? fingerprint }
   public private(set) var status = "Connecting to the Mac…"
   @ObservationIgnored private var wire: Wire?
   @ObservationIgnored private var earlyResult: PairResultEvent?

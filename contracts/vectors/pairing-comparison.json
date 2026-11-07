@@ -1,0 +1,40 @@
+{
+  "description": "The short code a pairing shows on the new device and on the Mac, for the person to compare (ADR 0152). It is the first twelve hexadecimal digits of the fingerprint of the device's key (the SHA-256 of the key, which the Mac's request already carries), in capitals, in three groups of four. A fingerprint with fewer than twelve digits, or with a character that is not a hexadecimal digit among them, has no code. The Rust protocol crate and the Swift client both pass these cases.",
+  "cases": [
+    {
+      "name": "a full fingerprint",
+      "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "code": "E3B0 C442 98FC"
+    },
+    {
+      "name": "capitals in, capitals out",
+      "fingerprint": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+      "code": "0123 4567 89AB"
+    },
+    {
+      "name": "exactly twelve digits",
+      "fingerprint": "abcdef012345",
+      "code": "ABCD EF01 2345"
+    },
+    {
+      "name": "eleven digits",
+      "fingerprint": "abcdef01234",
+      "code": null
+    },
+    {
+      "name": "a character that is not a hexadecimal digit among the first twelve",
+      "fingerprint": "e3b0c44298fg1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "code": null
+    },
+    {
+      "name": "empty",
+      "fingerprint": "",
+      "code": null
+    },
+    {
+      "name": "multi-byte text",
+      "fingerprint": "ééééééééééééé",
+      "code": null
+    }
+  ]
+}
