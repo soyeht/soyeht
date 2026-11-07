@@ -3,8 +3,9 @@
 Soyeht runs coding agents as a team: each agent harness gets its own terminal or agent
 pane, agents find and message each other over MCP, and sessions survive restarts. It is
 meant to be a platform you download and then change, including Soyeht's own code, and
-share what you built. The engine and the clients are built from this repository on macOS,
-Linux and Windows.
+share what you built. The engine and the clients are built from this repository: the Mac app,
+the Linux and Windows app, the iPhone and iPad app and the Android app. The engine builds on
+macOS, Linux and Windows.
 
 Open an issue before a large change. Every feature starts in `docs/contracts/`; if it is
 not in a contract, it is not in scope yet. Bugs and small fixes can go straight to a pull
@@ -20,10 +21,12 @@ hygiene). Read it before you write code; this file does not repeat it. In short:
 | --- | --- |
 | `contracts/` | The protocol, profiles and design tokens, and the vectors both clients pass. Generated code comes from here. |
 | `engine/` | The Rust engine (a cargo workspace): protocol, platform seams, process supervisor, store, the domain crates, the engine, the CLI and the MCP server. |
-| `apps/shared`, `apps/dictation` | Swift packages shared by the Mac and iPhone apps. |
-| `apps/mac`, `apps/ios` | The native apps, thin views over `apps/shared`. |
+| `apps/shared`, `apps/dictation` | Swift packages shared by the Mac and iPhone apps: `SoyehtClient` (engine client, replicas, policies) and `SoyehtDictation` (dictation engines). |
+| `apps/mac`, `apps/ios` | The native Mac and iPhone/iPad apps, thin views over `apps/shared`. |
 | `apps/desktop` | The Rust and GPUI client for Linux and Windows (also runs on macOS). Its own cargo workspace. |
+| `apps/android` | The Android app: a Jetpack Compose view (`app/`) over a Rust core (`core/`, its own cargo workspace, exposed to Kotlin through UniFFI) that reuses the desktop client's connection and state (ADR 0134). |
 | `docs/` | Contracts (`docs/contracts/`), decisions (`docs/adr/`), platform and dev notes. |
+| `scripts/` | The merge gate, the checks it runs, and the build and test helpers for each platform. |
 
 Guides for the two most common extensions:
 
@@ -51,6 +54,7 @@ Per system:
 | macOS 15 or later | Xcode 26.6 (Swift 6.3.3) for `apps/shared`, `apps/dictation`, `apps/mac` and `apps/ios`. The desktop client on macOS also needs Xcode with the Metal toolchain. | `docs/toolchains.md`, `docs/apps-mac.md` |
 | Linux (Ubuntu, Fedora) | A C toolchain (`build-essential` on Ubuntu, `gcc` and `make` on Fedora) and `cmake`, `clang`. For `apps/desktop`: the Wayland, X11, xkbcommon, fontconfig, freetype, OpenSSL and ALSA development packages, and a Vulkan driver to run it. | "Running the Linux check" and "Graphics on Linux" in `docs/platforms.md` list the package names for both distributions |
 | Windows 11 | Visual Studio C++ build tools (MSVC and a Windows SDK), Git for Windows, and on ARM64 LLVM. An elevated shell or Developer Mode, because tests check that symbolic links are never followed. | "Running the Windows check" in `docs/platforms.md` |
+| Android (any host) | Android SDK with NDK 27.0.12077973 (`ANDROID_HOME`), JDK 17 and the Rust targets `aarch64-linux-android` and `x86_64-linux-android`. Only for the Kotlin app; its Rust core builds and tests with plain cargo. | `docs/apps-android.md` |
 
 On Windows, `scripts/check_all.sh` needs a bash (Git for Windows or WSL). The maintainers'
 gate does not run on Windows; the engine and desktop checks there are
@@ -88,7 +92,25 @@ cargo build --manifest-path apps/desktop/Cargo.toml --locked --release -p soyeht
 
 The first desktop build fetches the GPUI git dependencies and takes several minutes. The
 Mac and iPhone apps build with `bash scripts/check_mac.sh` and `bash scripts/check_ios.sh`
-(`docs/apps-mac.md`, `docs/apps-iphone.md`).
+(`docs/apps-mac.md`, `docs/apps-iphone.md`). The Android app builds with
+`bash scripts/check_android.sh` (`docs/apps-android.md`); its Rust core alone is
+`cargo build --manifest-path apps/android/Cargo.toml --locked --workspace`.
+
+### Pinned git dependencies
+
+Some dependencies are pinned to a git revision of a fork instead of a published version, so a
+build fetches them from GitHub:
+
+- `vt100` (the terminal parser): `[patch.crates-io]` in `engine/Cargo.toml`,
+  `apps/desktop/Cargo.toml` and `apps/android/Cargo.toml` points at one revision of
+  [`soyeht/vt100-rust`](https://github.com/soyeht/vt100-rust), upstream 0.16.2 with a compact
+  scrollback and no panic on any output (ADR 0144). The three workspaces must name the same
+  revision; change all three together.
+- SwiftTerm (the Mac and iOS terminals): `apps/shared/Package.swift` pins a tag of
+  [`soyeht/SwiftTerm`](https://github.com/soyeht/SwiftTerm), upstream plus the same compact
+  scrollback (ADR 0145). The `Package.resolved` files hold the revision.
+- GPUI (`apps/desktop`): `gpui` and `gpui_platform` are pinned to a commit of the Zed release
+  tag in `zed-industries/zed` (ADR 0084).
 
 ## Run the engine and a client in a dev profile
 
@@ -156,10 +178,13 @@ you are done: end the two processes (on Windows, `Stop-Process -Name soyeht-engi
 | One engine crate | `cd engine && cargo test --locked -p soyeht-store` |
 | Engine with the contract checks the gate uses | add `--features soyeht-engine/contract-checks` |
 | Desktop client | `cd apps/desktop && cargo test --locked --workspace` |
+| Android Rust core | `cd apps/android && cargo test --locked` |
+| Android app (needs the SDK) | `bash scripts/check_android.sh`, and `bash scripts/check_android.sh --test` for the app's unit tests |
 | Generated code and generator | `uv run python contracts/generate.py --check` and `uv run python -m unittest discover -s contracts -p 'test_*.py'` |
 | TypeScript package | `cd contracts/typescript && npm ci --ignore-scripts && npm test` |
 | Swift shared client (macOS) | `(cd engine && cargo build --locked --workspace) && swift test --package-path apps/shared` |
 | Swift dictation (macOS) | `swift test --package-path apps/dictation` |
+| Mac and iPhone apps (macOS) | `bash scripts/check_mac.sh`, `bash scripts/check_ios.sh` |
 | Gate scripts | `uv run python -m unittest discover -s scripts -p 'test_check_quality.py'` (one file per run) |
 | End to end (needs the built engine) | `uv run python scripts/e2e.py --report .cache/e2e.json`, and `e2e_agents.py`, `e2e_tasks.py`, `e2e_editor.py`, `e2e_web.py`, `e2e_writing.py` |
 
@@ -172,6 +197,9 @@ test next to the rule it proves. A new rule needs a new test, and the gate flags
 number of tests.
 
 ## Before you open a pull request
+
+The one command to run before you push is the precheck (step 4); it needs no build and reports
+every failure at once. The steps below are the whole list.
 
 1. Branch from an up-to-date `main`, and fetch it, because the ratchets compare with the
    merge-base of `origin/main` and `HEAD` and fail if it cannot be resolved:
