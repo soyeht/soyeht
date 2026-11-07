@@ -2,7 +2,8 @@
 //! icon set and the GPUI traits a view of chained elements needs.
 
 pub(crate) use super::ui::{
-    OwnPress, PaneScroll, Typeface, chrome_text, column, icon, id, row, spacer,
+    ChromeBold, MonoBold, OwnPress, PaneScroll, Typeface, chrome_text, close_button, column, grow,
+    icon, id, row, spacer,
 };
 pub(crate) use crate::{assets::Icon, workbench::Workbench};
 pub(crate) use gpui::{

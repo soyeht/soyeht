@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import SoyehtProtocol
 import Testing
 
@@ -203,7 +204,7 @@ private final class RateLimitRetryProbe {
 
 @MainActor @Test func usageEventReplacesOnlyItsProviderAndKeepsCatalogueOrder() throws {
   let client = EngineClient(socket: "/tmp/sn-usage-replica/engine.sock")
-  client.usageReadings = [reading(.cursor, used: 0.2), reading(.claude, used: 0.3)]
+  client.usage.readings = [reading(.cursor, used: 0.2), reading(.claude, used: 0.3)]
   try client.applyUsageEvent(
     .encoded(
       UsageChangedEvent(
@@ -211,13 +212,13 @@ private final class RateLimitRetryProbe {
         primary: UsageWindow(used: 0.7, resetsAt: "later", label: "Current"),
         source: .codex_app_server, fetchedAt: "2026-09-12T12:00:01Z")))
 
-  #expect(client.usageReadings.map(\.provider) == [.claude, .codex, .cursor])
-  #expect(client.usageReadings[1].primary?.used == 0.7)
+  #expect(client.usage.readings.map(\.provider) == [.claude, .codex, .cursor])
+  #expect(client.usage.readings[1].primary?.used == 0.7)
 }
 
 @MainActor @Test func anActivityEventReachesTheReplicaAndSortsOpenCodeLast() throws {
   let client = EngineClient(socket: "/tmp/sn-usage-activity/engine.sock")
-  client.usageReadings = [reading(.cursor, used: 0.2)]
+  client.usage.readings = [reading(.cursor, used: 0.2)]
   try client.applyUsageEvent(
     .encoded(
       UsageChangedEvent(
@@ -225,8 +226,8 @@ private final class RateLimitRetryProbe {
         activity: UsageActivity(
           label: "Last 7 days on this device", tokens: 1_234_567, costUsd: 3.4),
         source: .opencode_local_history, fetchedAt: "2026-11-01T12:00:01Z")))
-  #expect(client.usageReadings.map(\.provider) == [.cursor, .opencode])
-  let opencode = try #require(client.usageReadings.last)
+  #expect(client.usage.readings.map(\.provider) == [.cursor, .opencode])
+  let opencode = try #require(client.usage.readings.last)
   #expect(opencode.activity?.tokens == 1_234_567)
   #expect(UsagePresentation(opencode).fraction == nil)
   #expect(UsagePresentation(opencode).emphasis == .none)
@@ -240,7 +241,7 @@ private final class RateLimitRetryProbe {
         eventId: "2", at: "2026-09-23T12:00:01Z", provider: .codex,
         state: .unavailable, unavailableReason: .tool_not_found,
         source: .codex_app_server, fetchedAt: "2026-09-23T12:00:01Z")))
-  let reading = try #require(client.usageReadings.first)
+  let reading = try #require(client.usage.readings.first)
   #expect(reading.unavailableReason == .tool_not_found)
   #expect(UsagePresentation(reading).unavailableMessage == "Codex not found on this Mac.")
 }
@@ -249,26 +250,26 @@ private final class RateLimitRetryProbe {
   let fetchedAt = "2026-09-15T12:00:00Z"
   let refreshed = reading(.claude, used: 0.6, fetchedAt: fetchedAt)
   let probe = UsageRefreshProbe(result: UsageRefreshResult(providers: [refreshed]))
-  let client = EngineClient(socket: "/tmp/sn-usage-refresh/engine.sock")
+  let usage = UsageReplica()
   let now = try #require(UsageTimestamp.date(from: fetchedAt))
 
-  async let first: Void = client.refreshUsage(.claude, now: now) { provider in
+  async let first: Void = usage.refresh(.claude, now: now) { provider in
     try await probe.run(provider)
   }
-  async let second: Void = client.refreshUsage(.claude, now: now) { provider in
+  async let second: Void = usage.refresh(.claude, now: now) { provider in
     try await probe.run(provider)
   }
   _ = try await (first, second)
 
   #expect(probe.calls == 1)
-  #expect(client.usageReadings.first?.primary?.used == 0.6)
+  #expect(usage.readings.first?.primary?.used == 0.6)
 
-  try await client.refreshUsage(.claude, now: now.addingTimeInterval(29)) { provider in
+  try await usage.refresh(.claude, now: now.addingTimeInterval(29)) { provider in
     try await probe.run(provider)
   }
   #expect(probe.calls == 1)
 
-  try await client.refreshUsage(.claude, now: now.addingTimeInterval(30)) { provider in
+  try await usage.refresh(.claude, now: now.addingTimeInterval(30)) { provider in
     try await probe.run(provider)
   }
   #expect(probe.calls == 2)
@@ -304,4 +305,94 @@ private final class RateLimitRetryProbe {
 
   #expect(probe.calls == 2)
   #expect(probe.waits == [17])
+}
+
+@MainActor @Test func resettingTheReplicaForgetsEveryReading() {
+  let usage = UsageReplica()
+  usage.load([reading(.claude), reading(.codex)])
+  #expect(usage.readings.count == 2)
+  usage.reset()
+  #expect(usage.readings.isEmpty)
+}
+
+@MainActor @Test func detailsRefreshOnlyAStaleOrNeverCheckedReading() {
+  let usage = UsageReplica()
+  usage.load([
+    reading(.claude, state: .ok), reading(.codex, state: .stale),
+    reading(.cursor, state: .unavailable, used: nil),
+  ])
+  #expect(!usage.refreshesOnDetailsClick(.claude))
+  #expect(usage.refreshesOnDetailsClick(.codex))
+  #expect(!usage.refreshesOnDetailsClick(.opencode))
+}
+
+@MainActor @Test func aRefreshThatEndsAfterACancellationDoesNotDropTheNewerOneOfItsKey()
+  async throws
+{
+  let fetchedAt = "2026-09-15T12:00:00Z"
+  let now = try #require(UsageTimestamp.date(from: fetchedAt))
+  let result = UsageRefreshResult(providers: [reading(.claude, fetchedAt: fetchedAt)])
+  let usage = UsageReplica()
+  let probe = UsageRefreshProbe(result: result)
+
+  let old = Task { @MainActor in
+    try await usage.refresh(.claude, now: now) { _ in
+      try await Task.sleep(for: .seconds(30))
+      return result
+    }
+  }
+  await Task.yield()
+  usage.cancelInFlight()
+  let newer = Task { @MainActor in
+    try await usage.refresh(.claude, now: now) { provider in try await probe.run(provider) }
+  }
+  await Task.yield()
+  _ = await old.result
+  // The cancelled refresh has finished; the newer one still holds the key, so this joins it.
+  try await usage.refresh(.claude, now: now) { provider in try await probe.run(provider) }
+  _ = try await newer.value
+
+  #expect(probe.calls == 1)
+}
+
+/// `onChange` runs synchronously on the thread that changes the property; the test reads it right
+/// after.
+private final class ChangeFlag: @unchecked Sendable {
+  var fired = false
+}
+
+@MainActor private func fires(
+  watching read: @MainActor () -> Void, whenChanging change: @MainActor () -> Void
+) -> Bool {
+  let flag = ChangeFlag()
+  withObservationTracking {
+    read()
+  } onChange: {
+    flag.fired = true
+  }
+  change()
+  return flag.fired
+}
+
+@MainActor @Test func theClientObservesItsUsageReadingsAndNotItsPanesThroughThem() {
+  let client = EngineClient(socket: "/tmp/sn-usage-observation/engine.sock")
+
+  let loadFires = fires(
+    watching: { _ = client.usage.readings }, whenChanging: { client.usage.load([reading()]) })
+  let resetFires = fires(
+    watching: { _ = client.usage.readings }, whenChanging: { client.usage.reset() })
+  let panesIgnoreUsage = fires(
+    watching: { _ = client.panes }, whenChanging: { client.usage.load([reading(.codex)]) })
+  let usageIgnoresPanes = fires(
+    watching: { _ = client.usage.readings }, whenChanging: { client.panes = [] })
+
+  #expect(loadFires)
+  #expect(resetFires)
+  #expect(!panesIgnoreUsage)
+  #expect(!usageIgnoresPanes)
+}
+
+@MainActor @Test func aDisconnectReachesEveryReplicaTheClientLists() {
+  let client = EngineClient(socket: "/tmp/sn-usage-replicas/engine.sock")
+  #expect(client.replicas.contains { $0 === client.usage })
 }
