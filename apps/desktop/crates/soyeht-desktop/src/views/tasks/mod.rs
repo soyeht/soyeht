@@ -222,7 +222,7 @@ impl Workbench {
         };
         row()
             .gap(px(space::X12))
-            .min_h(px(desktop::TASK_TOOLBAR_HEIGHT))
+            .min_h(px(layout::TASK_TOOLBAR_HEIGHT))
             .child(
                 row()
                     .gap(px(space::X2))
