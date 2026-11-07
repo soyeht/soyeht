@@ -6,6 +6,10 @@ every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and compare
 (`dependencies`, `dev-dependencies`, `build-dependencies`, and the same tables under
 `target.*`) with it. Crates outside the Soyeht workspace are not limited. A crate that is not
 in the table fails too: adding a crate means placing it in a layer here and in AGENTS.md.
+
+The three cargo workspaces (`engine`, `apps/desktop`, `apps/android`) repeat a few settings that
+must not drift: the `vt100` fork under `[patch.crates-io]` (ADR 0144), the `rust-version` and the
+`[workspace.lints]` table. `workspace_problems` fails when a workspace differs from the engine's.
 """
 
 from __future__ import annotations
@@ -17,6 +21,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_ROOTS = ("engine", "apps/desktop", "apps/android")
 TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
+# The first workspace is the reference; the others must match it on the settings below.
+WORKSPACE_ROOTS = MANIFEST_ROOTS
+PATCHED_CRATE = "vt100"
 
 FOUNDATION = {"soyeht-protocol", "soyeht-platform", "soyeht-process"}
 # Layer 3: engine building blocks. They depend only on the foundation, and never on each other.
@@ -113,14 +120,52 @@ def problems(root: Path) -> list[str]:
     return found
 
 
+def shared_settings(manifest: dict) -> dict[str, object]:
+    """Return the settings every cargo workspace repeats, by a name for the message."""
+    workspace = manifest.get("workspace", {})
+    return {
+        f"[patch.crates-io] {PATCHED_CRATE}": manifest.get("patch", {})
+        .get("crates-io", {})
+        .get(PATCHED_CRATE),
+        "[workspace.package] rust-version": workspace.get("package", {}).get("rust-version"),
+        "[workspace.lints]": workspace.get("lints"),
+    }
+
+
+def workspace_problems(root: Path) -> list[str]:
+    """Return the settings in which a workspace differs from the first one (the engine's)."""
+    settings: dict[str, dict[str, object]] = {}
+    found: list[str] = []
+    for base in WORKSPACE_ROOTS:
+        path = root / base / "Cargo.toml"
+        if not path.is_file():
+            found.append(f"{base}/Cargo.toml: no workspace manifest to compare")
+            continue
+        settings[base] = shared_settings(tomllib.loads(path.read_text(encoding="utf-8")))
+    reference = settings.get(WORKSPACE_ROOTS[0])
+    if reference is None:
+        return found
+    for base, values in settings.items():
+        for name, value in values.items():
+            if value is None:
+                found.append(f"{base}/Cargo.toml: {name} is missing")
+            elif value != reference[name]:
+                found.append(
+                    f"{base}/Cargo.toml: {name} is {value!r} but {WORKSPACE_ROOTS[0]} has "
+                    f"{reference[name]!r}; the three workspaces must match"
+                )
+    return found
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
-    found = problems(parser.parse_args().root.resolve())
+    root = parser.parse_args().root.resolve()
+    found = problems(root) + workspace_problems(root)
     for line in found:
         print(line)
     if found:
-        print(f"{len(found)} layer violations")
+        print(f"{len(found)} layer or workspace violations")
     return 1 if found else 0
 
 

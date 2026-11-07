@@ -12,8 +12,13 @@ export const clientPolicy = {
     "copiedFeedbackMs": 1500,
     "serviceCommandMs": 60000
   },
+  "webRead": {
+    "settlePollMs": 80,
+    "deadlineShare": 0.8
+  },
   "terminal": {
     "inputChunkBytes": 16384,
+    "inputQueueBytes": 1048576,
     "scrollbackLines": 10000
   },
   "caps": {
