@@ -328,15 +328,7 @@ impl State {
                 pane_id,
                 items,
                 next_cursor,
-            } => {
-                if let Some(view) = self.agents.get_mut(&pane_id) {
-                    view.cards.older = next_cursor;
-                    if let Err(error) = view.merge_page(items) {
-                        self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
-                    }
-                }
-                Vec::new()
-            }
+            } => self.transcript_page(&pane_id, items, next_cursor),
             Event::Task(update) => self.apply_task_update(update),
             Event::TaskPane {
                 task,
@@ -416,21 +408,26 @@ impl State {
             }
             Event::Editor(event) => self.editor_event(event),
             Event::Writing(event) => self.writing_event(event),
-            Event::ProjectTrust {
-                workspace_ids,
-                trust,
-            } => {
-                self.trust.changed(workspace_ids, trust);
-                Vec::new()
-            }
-            Event::ProjectTrustFailed => {
-                self.report(
-                    problem::kind::PROJECT_TRUST_NOT_SAVED,
-                    soyeht_protocol::client_policy::PROJECT_TRUST_FAILED,
-                );
-                Vec::new()
+            event @ (Event::ProjectTrust { .. } | Event::ProjectTrustFailed) => {
+                self.trust_event(event)
             }
         }
+    }
+
+    /// A page of an agent's transcript arrived.
+    fn transcript_page(
+        &mut self,
+        pane_id: &str,
+        items: Vec<soyeht_protocol::TranscriptMessage>,
+        next_cursor: Option<String>,
+    ) -> Vec<Effect> {
+        if let Some(view) = self.agents.get_mut(pane_id) {
+            view.cards.older = next_cursor;
+            if let Err(error) = view.merge_page(items) {
+                self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
+            }
+        }
+        Vec::new()
     }
 
     fn adopt(&mut self, snapshot: Snapshot) -> Vec<Effect> {

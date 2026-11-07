@@ -1,7 +1,8 @@
 //! The part of the replica that is the folder's trust: which workspace the window asks about, and
 //! the question put off. The rules are in `crate::trust`.
 
-use super::State;
+use super::{Effect, State, problem};
+use crate::Event;
 
 impl State {
     /// The workspace the window asks "Trust this folder?" about: the selected one, once the engine
@@ -17,5 +18,20 @@ impl State {
         if let Some(workspace_id) = self.trust_prompt().map(|w| w.workspace_id.clone()) {
             self.trust.defer(&workspace_id);
         }
+    }
+
+    /// The engine's answer to the request to trust, or restrict, a folder, or the failure of it.
+    pub(super) fn trust_event(&mut self, event: Event) -> Vec<Effect> {
+        match event {
+            Event::ProjectTrust {
+                workspace_ids,
+                trust,
+            } => self.trust.changed(workspace_ids, trust),
+            _ => self.report(
+                problem::kind::PROJECT_TRUST_NOT_SAVED,
+                soyeht_protocol::client_policy::PROJECT_TRUST_FAILED,
+            ),
+        }
+        Vec::new()
     }
 }
