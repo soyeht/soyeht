@@ -34,6 +34,18 @@ private func changed(_ ids: [String], _ trust: ProjectTrust) -> ProjectTrustChan
   #expect(!replica.needsDecision("a"))
 }
 
+@MainActor @Test func aWorkspaceCreatedMidSessionNeedsADecisionFromItsFirstEvent() {
+  let replica = ProjectTrustReplica()
+  replica.load([entry("a", .trusted)])
+  #expect(!replica.needsDecision("new"))
+  // The engine always sends the answer right after `workspace.created`, undecided included.
+  replica.apply(changed(["new"], .undecided))
+  #expect(replica.trust(for: "new") == .undecided)
+  #expect(replica.needsDecision("new"))
+  #expect(replica.isRestricted("new"))
+  #expect(replica.promptedWorkspace(selected: "new") == "new")
+}
+
 @MainActor @Test func undecidedBehavesAsRestrictedAndAnUnlistedWorkspaceIsNotClaimed() {
   let replica = ProjectTrustReplica()
   replica.load([entry("u", .undecided), entry("r", .restricted), entry("t", .trusted)])
