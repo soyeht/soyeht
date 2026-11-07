@@ -1,0 +1,22 @@
+[package]
+name = "wayland-protocols-plasma"
+# Above the 0.3.9 that gpui_linux asks for, and below the 0.4 it would not accept. Not the version of
+# the product: this is a stand-in for a crate of the registry, patched in by apps/desktop/Cargo.toml.
+version = "0.3.99"
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0"
+publish = false
+description = "Soyeht's stand-in for the blur module of wayland-protocols-plasma, whose protocol files are LGPL-2.1-or-later"
+
+[features]
+# gpui_linux asks for this feature; the stand-in has the client side only, always.
+client = []
+
+[dependencies]
+wayland-client = "0.31"
+wayland-backend = "0.3"
+wayland-scanner = "0.31"
+
+[lints]
+workspace = true

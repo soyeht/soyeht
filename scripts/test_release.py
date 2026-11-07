@@ -150,6 +150,13 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(found), 1, found)
         self.assertIn("soyeht-client", found[0])
 
+    def test_a_stand_in_for_a_registry_crate_keeps_its_own_version_through_a_bump(self):
+        text = (self.root / "apps/desktop/Cargo.lock").read_text()
+        self.assertIn('name = "wayland-protocols-plasma"\nversion = "0.3.99"', text)
+        release.bump(self.root, "minor")
+        self.assertIn('name = "wayland-protocols-plasma"\nversion = "0.3.99"', (self.root / "apps/desktop/Cargo.lock").read_text())
+        self.assertEqual(release.problems(self.root), [])
+
     def test_a_crate_with_a_version_of_its_own_is_found(self):
         manifest = self.root / "engine/soyeht-store/Cargo.toml"
         manifest.write_text(manifest.read_text().replace("version.workspace = true", 'version = "0.0.0"'))
