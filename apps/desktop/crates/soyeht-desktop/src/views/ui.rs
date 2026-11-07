@@ -486,7 +486,7 @@ pub fn close_button(key: impl Into<gpui::ElementId>, palette: &Palette) -> gpui:
 
 /// An element that fills the room it is given and shows nothing, to push its siblings apart.
 pub fn spacer() -> Div {
-    div().flex_1().min_w_0()
+    grow()
 }
 
 /// A thin horizontal rule in `color`.
