@@ -500,15 +500,20 @@ fn putting_the_question_off_keeps_it_away_until_the_application_restarts() {
     assert_eq!(prompt_for(&state), None);
 }
 
-#[test]
-fn the_engines_event_answers_the_question_for_every_workspace_of_the_folder() {
-    let (mut state, _) = connected(with_trust(
+/// Two workspaces over one folder, neither answered for.
+fn two_undecided_workspaces() -> (State, Vec<Effect>) {
+    connected(with_trust(
         &["w1", "w2"],
         &[
             ("w1", ProjectTrust::Undecided),
             ("w2", ProjectTrust::Undecided),
         ],
-    ));
+    ))
+}
+
+#[test]
+fn the_engines_event_answers_the_question_for_every_workspace_of_the_folder() {
+    let (mut state, _) = two_undecided_workspaces();
     assert!(
         state
             .apply(trust_changed(&["w1", "w2"], "trusted"))
@@ -570,13 +575,7 @@ fn a_trust_the_engine_could_not_save_is_told_in_the_policy_words() {
 
 #[test]
 fn a_closed_workspace_is_no_longer_asked_about() {
-    let (mut state, _) = connected(with_trust(
-        &["w1", "w2"],
-        &[
-            ("w1", ProjectTrust::Undecided),
-            ("w2", ProjectTrust::Undecided),
-        ],
-    ));
+    let (mut state, _) = two_undecided_workspaces();
     state.apply(notification(
         EventName::WorkspaceClosed,
         json!({"eventId": "8", "at": "now", "workspaceId": "w1"}),

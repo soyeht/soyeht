@@ -39,6 +39,7 @@ mod readiness;
 mod resize_handles;
 pub(crate) mod selectable;
 mod settings;
+mod sheet;
 mod slash;
 mod start;
 mod switch_popover;

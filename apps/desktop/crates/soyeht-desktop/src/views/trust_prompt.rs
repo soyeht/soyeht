@@ -4,17 +4,9 @@
 //! folder restricted. The words are the shared client policy's, and which workspace is asked about
 //! is the client state's (`State::trust_prompt`).
 
-use super::ui::{Typeface, caption, chrome_text, column, icon, row};
-use crate::{
-    assets::Icon,
-    neo,
-    theme::{Palette, desktop, elevation, pane_interior, radius, space, type_scale},
-    workbench::Workbench,
-};
-use gpui::{
-    AnyElement, ClickEvent, Context, FontWeight, InteractiveElement, IntoElement, MouseButton,
-    ParentElement, SharedString, StatefulInteractiveElement, Styled, div, px, rgb,
-};
+use super::{prelude::*, sheet};
+use crate::theme::{Palette, desktop, pane_interior, space, type_scale};
+use gpui::MouseButton;
 use soyeht_client::Command;
 use soyeht_protocol::{
     ProjectTrustChoice,
@@ -43,37 +35,14 @@ impl Workbench {
     ) -> Option<AnyElement> {
         let workspace = self.state.trust_prompt()?;
         let (width, height) = sheet_extent((self.window.width, self.window.height));
-        let header = row()
-            .items_start()
-            .gap(px(space::X10))
-            .child(
-                column()
-                    .flex_1()
-                    .min_w_0()
-                    .gap(px(space::X3))
-                    .child(
-                        chrome_text(FontWeight::BOLD, type_scale::SUBHEADING)
-                            .child(PROJECT_TRUST_TITLE),
-                    )
-                    .child(
-                        caption(palette)
-                            .chrome()
-                            .child(SharedString::from(workspace.path.clone())),
-                    ),
-            )
-            .child(
-                row()
-                    .id("trust-prompt-close")
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.defer_trust_prompt(cx);
-                    }))
-                    .child(icon(
-                        Icon::Close,
-                        desktop::HEADER_ACTION_GLYPH,
-                        palette.muted,
-                    )),
-            );
+        let header = sheet::header(
+            palette,
+            PROJECT_TRUST_TITLE,
+            workspace.path.clone(),
+            row()
+                .id("trust-prompt-close")
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.defer_trust_prompt(cx))),
+        );
         let buttons = row()
             .flex_wrap()
             .justify_end()
@@ -94,18 +63,11 @@ impl Workbench {
                 cx,
                 |this, cx| this.answer_trust_prompt(ProjectTrustChoice::Restricted, cx),
             ));
-        let sheet = neo::raised(palette, radius::CARD, elevation::PANEL)
-            .id("trust-prompt")
+        let card = sheet::card(palette, "trust-prompt")
             .w(px(width))
             .max_h(px(height))
             .overflow_y_scroll()
-            .flex()
-            .flex_col()
-            .gap(px(space::X14))
-            .px(px(space::X18 + space::X4))
-            .py(px(space::X18))
             .text_color(rgb(palette.ink))
-            .occlude()
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(header)
             .child(
@@ -115,17 +77,10 @@ impl Workbench {
             )
             .child(buttons);
         Some(
-            div()
+            sheet::centered_layer()
                 .id("trust-prompt-overlay")
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
                 .occlude()
-                .child(sheet)
+                .child(card)
                 .into_any_element(),
         )
     }
@@ -162,26 +117,9 @@ fn choice_button(
     cx: &mut Context<Workbench>,
     act: fn(&mut Workbench, &mut Context<Workbench>),
 ) -> AnyElement {
-    let base = if default {
-        div()
-            .bg(rgb(palette.accent))
-            .text_color(rgb(palette.on_accent))
-    } else {
-        neo::raised(palette, radius::PILL, elevation::ACTION).text_color(rgb(palette.ink))
-    };
-    base.id(key)
-        .flex()
-        .flex_row()
-        .items_center()
-        .px(px(space::X14))
-        .py(px(space::X6))
-        .rounded_full()
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::CONTROL))
+    sheet::button(palette, key.into(), default)
         .cursor_pointer()
         .active(|style| style.opacity(pane_interior::PRESSED_OPACITY))
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| act(this, cx)))
         .child(text)
         .into_any_element()
