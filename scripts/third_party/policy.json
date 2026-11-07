@@ -9,6 +9,7 @@
     "BSL-1.0",
     "CC0-1.0",
     "CDLA-Permissive-2.0",
+    "FTL",
     "ISC",
     "MIT",
     "MIT-0",
@@ -61,5 +62,14 @@
       "reason": "The package is MIT; NOTICES lists the Apache-2.0 code it derives from swift-transformers."
     }
   },
-  "exceptions": []
+  "exceptions": [],
+  "bundled": {
+    "freetype-sys": {
+      "license": "FTL OR GPL-2.0-only",
+      "files": [
+        "freetype2/docs/FTL.TXT"
+      ],
+      "reason": "The crate (MIT) compiles the FreeType 2 sources it bundles, which are licensed FTL or GPLv2 at the user's choice. Soyeht follows the FreeType License, which asks for a credit: the credit text below is in the notices."
+    }
+  }
 }

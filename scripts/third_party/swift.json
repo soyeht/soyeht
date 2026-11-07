@@ -273,7 +273,6 @@
     },
     "swift-syntax": {
       "files": [
-        "CodeGeneration/Sources/Utils/CopyrightHeader.swift",
         "LICENSE.txt"
       ],
       "license": "Apache-2.0",

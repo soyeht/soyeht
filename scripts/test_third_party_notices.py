@@ -56,6 +56,27 @@ class ExpressionTests(unittest.TestCase):
 
 
 class FileTests(unittest.TestCase):
+    def test_the_mpl_text_is_not_taken_for_the_gnu_licenses_it_names(self):
+        text = ("Mozilla Public License Version 2.0\n1.12. Secondary License means either the GNU General Public License, "
+                "Version 2.0, the GNU Lesser General Public License, Version 2.1, the GNU Affero General Public License, "
+                "Version 3.0")
+        self.assertEqual(licenses.classify(text), "MPL-2.0")
+
+    def test_the_lgpl_and_the_bzip2_and_freetype_texts_are_told_apart(self):
+        self.assertEqual(licenses.classify("GNU LESSER GENERAL PUBLIC LICENSE\nVersion 2.1, February 1999\nthe GNU General Public License Version 2"), "LGPL-2.1-or-later")
+        self.assertEqual(licenses.classify('This program, "bzip2", the associated library "libbzip2", Copyright Julian R Seward. Altered source versions must be plainly marked as such'), "bzip2-1.0.6")
+        self.assertEqual(licenses.classify("The FreeType Project LICENSE 2006-Jan-27"), "FTL")
+
+    def test_a_source_file_is_not_a_license_file_whatever_its_name(self):
+        self.assertFalse(licenses.is_license_file("CopyrightHeader.swift"))
+        self.assertFalse(licenses.is_license_file("LICENSE.rs"))
+        self.assertTrue(all(licenses.is_license_file(n) for n in ("LICENSE", "LICENSE-MIT", "COPYING.LIB", "LICENSE.TXT", "NOTICE.txt")))
+
+    def test_a_file_that_collects_the_licenses_of_bundled_code_is_kept_whatever_is_elected(self):
+        files = {"LICENSE-MIT": MIT_TEXT, "LICENSE-APACHE": APACHE_TEXT, "LICENSE-THIRD-PARTY": APACHE_TEXT + "\nMore."}
+        chosen, kept = licenses.elect("MIT OR Apache-2.0", files, POLICY)
+        self.assertEqual((chosen, kept), (frozenset({"MIT"}), ["LICENSE-MIT", "LICENSE-THIRD-PARTY"]))
+
     def test_a_license_text_is_recognised_by_its_words(self):
         self.assertEqual(licenses.classify(MIT_TEXT), "MIT")
         self.assertEqual(licenses.classify(APACHE_TEXT), "Apache-2.0")
@@ -149,6 +170,25 @@ class CargoTests(unittest.TestCase):
         self.assertEqual(component.copyright, ["Copyright (c) 2020 Jane Doe"])
         self.assertEqual([t.label for t in component.texts], ["MIT"])
 
+    def test_the_license_files_below_the_top_of_a_package_are_found_and_sources_and_tests_are_not(self):
+        pkg = package(self.directory.name, "bundler", "MIT", {"LICENSE": MIT_TEXT})
+        folder = Path(pkg["manifest_path"]).parent
+        for relative in ("src/unicode/LICENSE", "third_party/fiat/LICENSE-MIT", "tests/data/LICENSE", "src/CopyrightHeader.swift"):
+            (folder / relative).parent.mkdir(parents=True, exist_ok=True)
+            (folder / relative).write_text(MIT_TEXT)
+        self.assertEqual(sorted(sources.nested_license_files(folder)), ["src/unicode/LICENSE", "third_party/fiat/LICENSE-MIT"])
+        component = sources.cargo_component(pkg, POLICY)
+        self.assertEqual(len([t for t in component.texts if t.label == "MIT"]), 3)
+
+    def test_a_package_that_bundles_code_follows_the_license_the_policy_names_for_it(self):
+        pkg = package(self.directory.name, "freetype-sys", "MIT", {"LICENSE": MIT_TEXT})
+        folder = Path(pkg["manifest_path"]).parent
+        (folder / "freetype2/docs").mkdir(parents=True)
+        (folder / "freetype2/docs/FTL.TXT").write_text("The FreeType Project LICENSE\n" + "You must acknowledge the FreeType project in your documentation. " * 5)
+        component = sources.cargo_component(pkg, POLICY)
+        self.assertEqual(component.elected, ["FTL", "MIT"])
+        self.assertIn("FTL", [t.label for t in component.texts])
+
     def test_a_package_without_a_license_file_takes_the_standard_text_and_names_its_authors(self):
         pkg = package(self.directory.name, "bare", "MIT", {})
         component = sources.cargo_component(pkg, POLICY)
@@ -202,6 +242,16 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(notices.render([one, two]), notices.render([two, one]))
 
 
+class ElectionTextTests(unittest.TestCase):
+    def test_the_entry_says_which_license_is_followed_and_where_the_mpl_source_is(self):
+        mpl = sources.Component("Rust", "uniffi", "0.29.5", "MPL-2.0", "https://example.com", {"apps/android"}, elected=["MPL-2.0"])
+        dual = sources.Component("Rust", "dual", "1.0", "MIT OR Apache-2.0", "", {"engine"}, elected=["MIT"])
+        text = notices.render([mpl, dual])
+        self.assertIn("source code: https://crates.io/crates/uniffi/0.29.5", text)
+        self.assertIn("following: MIT", text)
+        self.assertNotIn("following: MPL-2.0", text)
+
+
 class RepositoryTests(unittest.TestCase):
     """The data that is committed must describe the lock files of this commit."""
 
@@ -240,11 +290,16 @@ class RepositoryTests(unittest.TestCase):
     def test_every_license_the_policy_prefers_is_allowed_and_has_a_standard_text(self):
         for identifier in POLICY.prefer:
             self.assertIn(identifier, POLICY.allowed)
-        for identifier in POLICY.allowed - {"OFL-1.1", "Apache-2.0 WITH LLVM-exception"}:
+        for identifier in POLICY.allowed - {"OFL-1.1", "Apache-2.0 WITH LLVM-exception"}:  # FTL has its own file
             licenses.spdx_text(identifier)
 
     def test_the_policy_holds_no_exception_so_a_gpl_crate_that_comes_back_fails_the_gate(self):
         self.assertEqual(POLICY.exceptions, {})
+
+    def test_a_swift_license_file_is_never_a_source_file(self):
+        data = json.loads(sources.SWIFT_DATA.read_text())["packages"]
+        names = [name for entry in data.values() for name in entry["files"]]
+        self.assertFalse([n for n in names if n.lower().endswith(licenses.SOURCE_SUFFIXES)])
 
     def test_no_copyleft_license_is_allowed(self):
         for identifier in POLICY.allowed:

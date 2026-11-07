@@ -56,6 +56,7 @@ class Component:
     products: set = field(default_factory=set)  # the cargo workspaces that build it
     texts: list = field(default_factory=list)
     copyright: list = field(default_factory=list)  # the holders' statements, from the license files
+    elected: list = field(default_factory=list)  # the license(s) of the expression that Soyeht follows
     exception: str = ""  # the reason, for a license outside the allow-list
 
 
@@ -79,12 +80,27 @@ def cargo_metadata(workspace, root=ROOT):
     cargo_bin = Path.home() / ".cargo/bin"
     environment = {**os.environ, "PATH": f"{cargo_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
     result = subprocess.run(
-        ["cargo", "metadata", "--locked", "--format-version", "1"],
+        ["cargo", "metadata", "--locked", "--offline", "--format-version", "1"],
         cwd=Path(root) / workspace, capture_output=True, text=True, timeout=METADATA_SECONDS, env=environment,
     )
     if result.returncode:
-        raise SourceError(f"cargo metadata failed in {workspace}:\n{result.stderr.strip()[-1500:]}")
+        raise SourceError(
+            f"cargo metadata failed in {workspace} (it runs offline, and needs every crate of the lock file, those of "
+            f"the other systems too): run `cargo fetch --locked` in engine, apps/desktop and apps/android, or add "
+            f"--fetch to this command.\n{result.stderr.strip()[-1200:]}"
+        )
     return json.loads(result.stdout)
+
+
+def fetch_crates(root=ROOT, workspaces=CARGO_WORKSPACES):
+    """`cargo fetch --locked` in each workspace: every crate of the lock file, for every target."""
+    cargo_bin = Path.home() / ".cargo/bin"
+    environment = {**os.environ, "PATH": f"{cargo_bin}{os.pathsep}{os.environ.get('PATH', '')}"}
+    for workspace in workspaces:
+        done = subprocess.run(["cargo", "fetch", "--locked"], cwd=Path(root) / workspace, capture_output=True, text=True,
+                              timeout=METADATA_SECONDS, env=environment)
+        if done.returncode:
+            raise SourceError(f"cargo fetch failed in {workspace}:\n{done.stderr.strip()[-1200:]}")
 
 
 def shipped_packages(metadata):
@@ -121,6 +137,27 @@ def read_license_files(folder):
     return found
 
 
+NESTED_DEPTH = 5
+NESTED_SKIPPED = {"tests", "test", "benches", "examples", "target", "fuzz", ".git", "node_modules"}
+
+
+def nested_license_files(folder):
+    """{relative path: text} of the license files below the top of a package folder: the licenses of
+    the code it bundles (a Unicode table, a C library, protocol descriptions), which travel with it
+    whatever the package's own license is."""
+    base, found = Path(folder), {}
+    for path in sorted(base.rglob("*")):
+        relative = path.relative_to(base)
+        parts = relative.parts
+        if len(parts) < 2 or len(parts) > NESTED_DEPTH or NESTED_SKIPPED & set(parts[:-1]) or not path.is_file():
+            continue
+        if licenses.is_license_file(parts[-1]):
+            body = licenses.normal(path.read_text(errors="replace"))
+            if len(body) >= MIN_LICENSE_BYTES:
+                found[relative.as_posix()] = body
+    return found
+
+
 def holder_of(package):
     authors = [re.sub(r"\s*<[^>]*>", "", a).strip() for a in package.get("authors") or []]
     named = ", ".join(a for a in authors if a)
@@ -130,7 +167,8 @@ def holder_of(package):
 def cargo_component(package, policy):
     """The component of one cargo package, with the texts of its elected license."""
     name, declared = package["name"], package["license"]
-    files = read_license_files(Path(package["manifest_path"]).parent)
+    folder = Path(package["manifest_path"]).parent
+    files = read_license_files(folder)
     if name in policy.clarify:
         declared = policy.clarify[name]["license"]
     if not declared:
@@ -138,12 +176,18 @@ def cargo_component(package, policy):
     exception = policy.exceptions.get((name, declared), "")
     if exception:
         policy = licenses.allowing(policy, declared)
+    expression = declared
+    if name in policy.bundled:
+        # A package that compiles code of another license (freetype-sys builds FreeType): both apply.
+        bundled = policy.bundled[name]
+        expression = f"({declared}) AND ({bundled['license']})"
+        files.update({relative: licenses.normal((folder / relative).read_text()) for relative in bundled["files"]})
     try:
-        chosen, kept = licenses.elect(declared, files, policy)
+        chosen, kept = licenses.elect(expression, files, policy)
     except licenses.LicenseError as error:
         raise SourceError(f"{name} {package['version']}: {error}") from error
     url = package.get("repository") or package.get("homepage") or ""
-    component = Component("Rust", name, package["version"], declared, url, exception=exception)
+    component = Component("Rust", name, package["version"], expression, url, exception=exception, elected=sorted(chosen))
     for file in kept:
         add_text(component, "NOTICE" if licenses.is_notice_file(file) else licenses.classify(files[file]) or declared, files[file])
     for identifier in licenses.missing_texts(chosen, files, kept):
@@ -151,6 +195,9 @@ def cargo_component(package, policy):
         add_text(component, identifier, licenses.spdx_text(identifier), standard=True)
         if licenses.base_identifier(identifier) in licenses.NAMES_A_HOLDER:
             component.copyright.append(f"Copyright (c) {holder_of(package)} (named by the package metadata)")
+    for relative, body in nested_license_files(folder).items():
+        if relative not in files:
+            add_text(component, licenses.classify(body) or "license of bundled code", body)
     return component
 
 
@@ -195,9 +242,12 @@ def swift_components(policy, root=ROOT):
         if entry["revision"] != revision:
             problems.append(f"{identity}: pinned at {revision[:10]}, swift.json has {entry['revision'][:10]}")
             continue
-        if not licenses.usable_choices(entry["license"], policy):
+        options = licenses.usable_choices(entry["license"], policy)
+        if not options:
             problems.append(f"{identity}: {entry['license']} is not on the allow-list")
-        component = Component("Swift", identity, version or revision[:10], entry["license"], location)
+            continue
+        component = Component("Swift", identity, version or revision[:10], entry["license"], location,
+                              elected=sorted(options[0]))
         for relative in entry["files"]:
             body = licenses.normal((SWIFT_TEXTS / identity / relative).read_text())
             kind = "NOTICE" if licenses.is_notice_file(Path(relative).name) else licenses.classify(body)
@@ -244,7 +294,7 @@ def gradle_components(policy, root=ROOT):
         coordinate = library["coordinate"]
         chosen, _ = licenses.elect(library["license"], {}, policy)
         version = library["version"] or ("(Compose BOM)" if coordinate.startswith("androidx.compose.") else "")
-        component = Component("Android", coordinate, version, library["license"], library["url"])
+        component = Component("Android", coordinate, version, library["license"], library["url"], elected=sorted(chosen))
         for identifier in sorted(chosen):
             add_text(component, identifier, licenses.spdx_text(identifier), standard=True)
         components.append(component)
@@ -257,10 +307,11 @@ def gradle_components(policy, root=ROOT):
 def asset_components(policy, root=ROOT):
     components = []
     for asset in json.loads(ASSETS_DATA.read_text())["assets"]:
+        options = licenses.usable_choices(asset["license"], policy)
+        if not options:
+            raise SourceError(f"{asset['name']}: {asset['license']} is not on the allow-list")
         body = licenses.normal((Path(root) / asset["file"]).read_text())
-        component = Component("Asset", asset["name"], asset["version"], asset["license"], asset["url"])
+        component = Component("Asset", asset["name"], asset["version"], asset["license"], asset["url"], elected=sorted(options[0]))
         add_text(component, asset["license"], body)
         components.append(component)
-        if not licenses.usable_choices(asset["license"], policy):
-            raise SourceError(f"{asset['name']}: {asset['license']} is not on the allow-list")
     return components

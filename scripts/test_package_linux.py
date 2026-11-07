@@ -258,6 +258,11 @@ class StagingTests(unittest.TestCase):
                     shipped = root / "usr/share/doc/soyeht" / document
                     self.assertEqual(shipped.read_bytes(), (package.ROOT / document).read_bytes(), (name, document))
 
+    def test_the_debian_copyright_file_points_at_the_third_party_notices(self):
+        text = package.copyright_text()
+        self.assertIn("/usr/share/doc/soyeht/THIRD-PARTY-NOTICES.txt", text)
+        self.assertIn("Apache-2.0", text)
+
     def test_relative_targets_become_absolute(self):
         self.assertTrue(Path(package.absolute("target")).is_absolute())
         self.assertIsNone(package.absolute(None))
