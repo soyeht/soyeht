@@ -81,6 +81,7 @@ impl Core {
         let current = super::api::task(&self.store, &params.workspace_id, &params.task_id)?;
         ensure_dependencies_closed(self, &current)?;
         let preset = self.resolve_new_preset(&params.preset)?;
+        self.require_modes_within_dispatcher(&actor, [self.new_pane_mode(&preset)?.as_deref()])?;
         let pane_id = Uuid::new_v4().to_string();
         let actor_name = self.actor_name(&actor)?;
         let result =
@@ -460,6 +461,14 @@ fn selected_option(state: &State, name: &str) -> Option<String> {
 }
 
 impl Core {
+    /// The permission mode a new task pane requests: the preset's, else the harness's default.
+    fn new_pane_mode(&self, preset: &TaskExecutor) -> Result<Option<String>> {
+        match &preset.permission_mode {
+            Some(mode) => Ok(Some(mode.clone())),
+            None => crate::settings::default_agent_mode(&self.store, required_harness(preset)?),
+        }
+    }
+
     fn resolve_new_preset(&self, requested: &TaskExecutor) -> Result<TaskExecutor> {
         let mut preset = requested.clone();
         if preset.harness.is_none() {
@@ -713,11 +722,7 @@ fn prepare_new_pane(
 ) -> Result<(StoredPane, State, Screen)> {
     let (launch, digest) =
         crate::agents::registry::prepare(&core.directory, required_harness(preset)?)?;
-    let harness = launch.id.clone();
-    let mode = match &preset.permission_mode {
-        Some(mode) => Some(mode.clone()),
-        None => crate::settings::default_agent_mode(&core.store, &harness)?,
-    };
+    let mode = core.new_pane_mode(preset)?;
     let mut state = State::new(launch, digest, mode)?;
     for (name, value) in [("model", &preset.model), ("effort", &preset.effort)] {
         if let Some(value) = value {
