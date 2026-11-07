@@ -432,9 +432,9 @@ impl Core {
 }
 
 impl Core {
-    /// `pane.config.set`: starts the change of one option. A person who sets the mode of a pane
-    /// an agent started overrides the ceiling that agent put on it (contract 03, R24); an
-    /// agent binding cannot reach this method.
+    /// `pane.config.set`: starts the change of one option. A person who sets a mode of a pane
+    /// an agent started that goes beyond the ceiling that agent put on it lifts the ceiling
+    /// (contract 03, R24); a mode within it leaves it. An agent binding cannot reach this method.
     fn set_agent_config(
         &self,
         connection: &str,
@@ -475,7 +475,13 @@ impl Core {
             .actor
             .as_ref()
             .is_some_and(|actor| actor.role.is_person());
-        if sets_mode && by_person {
+        let beyond_ceiling = match (&value, &state.mode_ceiling) {
+            (soyeht_protocol::ConfigValue::V0(mode), Some(ceiling)) => {
+                ceiling.lifted_by(state, mode)
+            }
+            _ => false,
+        };
+        if sets_mode && by_person && beyond_ceiling {
             state.mode_ceiling = None;
         }
         Ok(result)

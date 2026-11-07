@@ -541,7 +541,7 @@ fn set_mode_request(mode: &str) -> serde_json::Value {
 }
 
 #[test]
-fn a_person_who_sets_the_mode_lifts_the_ceiling_and_an_agent_cannot_set_it() {
+fn a_person_who_picks_a_mode_above_the_ceiling_lifts_it_and_a_mode_within_it_does_not() {
     let mut rig = started_executor("claude", "default", "auto", "plan");
     adopt_executor(&mut rig);
     rig.core
@@ -561,11 +561,20 @@ fn a_person_who_sets_the_mode_lifts_the_ceiling_and_an_agent_cannot_set_it() {
         Some(ErrorKind::ForbiddenRole)
     );
     assert!(rig.core.agents["executor"].state.mode_ceiling.is_some());
-    // A person's choice is explicit: the pane has no ceiling afterwards.
+    // A person's mode within the ceiling leaves it in place: `plan` is below `auto`.
     let person = rig.connect(Role::HumanLocal, None);
     rig.core
-        .dispatch(&person, set_mode_request("bypassPermissions"))
+        .dispatch(&person, set_mode_request("plan"))
         .unwrap();
+    assert!(rig.core.agents["executor"].state.mode_ceiling.is_some());
+    // A person's choice above it is explicit: the pane has no ceiling afterwards.
+    let again = json!({"jsonrpc":"2.0","id":"set-mode-2","method":method::PANE_CONFIG_SET,"params":{
+        "paneId":"executor","configId":"mode","value":"bypassPermissions",
+        "idempotencyKey":"set-mode-2"}});
+    // The first change is still pending on the harness; the engine takes the next one once it
+    // has been confirmed.
+    rig.core.agents.get_mut("executor").unwrap().state.operation = None;
+    rig.core.dispatch(&person, again).unwrap();
     assert!(rig.core.agents["executor"].state.mode_ceiling.is_none());
 }
 
@@ -645,4 +654,142 @@ fn a_full_access_move_of_the_agent_is_above_any_ceiling() {
     let state = &rig.core.agents["executor"].state;
     assert!(state.cancel_at_ms.is_some());
     assert!(state.mode_ceiling.as_ref().unwrap().pending());
+}
+
+/// A task of the pane `executor`, in progress with one open attempt.
+fn give_executor_a_task(rig: &mut Rig) {
+    let mut task = task_fixture(TaskState::InProgress);
+    task.task_id = "OWN-1".into();
+    task.owner_pane_id = Some("executor".into());
+    task.current_attempt = 1;
+    let attempt = soyeht_protocol::Attempt {
+        n: 1,
+        pane_id: "executor".into(),
+        harness: "claude".into(),
+        model: "model".into(),
+        start: "2026-09-11T00:00:00Z".into(),
+        end: None,
+        result: None,
+        summary: None,
+    };
+    StorePort::mutate(&mut rig.core.store, "test", "own", "own", |change| {
+        change.insert_task(&task)?;
+        change.insert_attempt(&task.workspace_id, &task.task_id, &attempt)?;
+        Ok((json!({}), Vec::new()))
+    })
+    .unwrap();
+}
+
+#[test]
+fn a_task_whose_executor_raised_its_mode_goes_back_to_the_queue_with_the_reason() {
+    use soyeht_protocol::AttemptResult;
+    let mut rig = started_executor("codex", "read-only", "auto", "read-only");
+    give_executor_a_task(&mut rig);
+    let record = |session: &str| soyeht_acp::rpc::Record {
+        from_seq: 0,
+        to_seq: 1,
+        message: soyeht_acp::rpc::Message::Notification {
+            method: "session/update".into(),
+            params: json!({"sessionId":session,"update":{
+                "sessionUpdate":"current_mode_update","currentModeId":"agent"}}),
+        },
+    };
+    adopt_executor(&mut rig);
+    let session = {
+        let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
+        state.requested_options.clear();
+        let mut ceiling = state.mode_ceiling.take().unwrap();
+        ceiling.verdict(state, None);
+        state.mode_ceiling = Some(ceiling);
+        let prompt = state
+            .enqueue(
+                "work".into(),
+                soyeht_protocol::PromptOrigin::Human,
+                "t".into(),
+            )
+            .unwrap();
+        state.active = Some(prompt);
+        state.session_id.clone().unwrap()
+    };
+    rig.core
+        .native_record("executor", record(&session), false)
+        .unwrap();
+    // The task is back in the queue, its attempt closed as returned for the ceiling.
+    let task = rig
+        .core
+        .store
+        .task("workspace-1", "OWN-1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(task.state, TaskState::Todo);
+    assert_eq!(task.owner_pane_id, None);
+    let attempts = rig
+        .core
+        .store
+        .task_attempts("workspace-1", "OWN-1")
+        .unwrap();
+    assert_eq!(attempts[0].result, Some(AttemptResult::Returned));
+    assert!(
+        attempts[0]
+            .summary
+            .as_deref()
+            .is_some_and(|reason| reason.contains("mode_ceiling"))
+    );
+    let comments = rig
+        .core
+        .store
+        .task_comments("workspace-1", "OWN-1", None, 10)
+        .unwrap();
+    assert!(comments.iter().any(|c| c.text.contains("mode_ceiling")));
+    // The turn is cancelled, and when the harness confirms, the transcript says why.
+    assert!(rig.core.agents["executor"].state.cancelled_for_ceiling);
+    let mut state = rig.core.agents["executor"].state.clone();
+    let mut saved = rig.core.panes["executor"].stored.clone();
+    let mut changes = crate::agents::Changes::default();
+    let prompt_id = state.active.as_ref().unwrap().prompt_id.clone();
+    crate::agents::responses::prompt_response(
+        &rig.core.store,
+        &mut state,
+        &mut saved,
+        &prompt_id,
+        &mut changes,
+        Ok(json!({"stopReason":"cancelled"})),
+        "t",
+    )
+    .unwrap();
+    let texts: Vec<_> = changes.messages.iter().map(|m| m.text.as_str()).collect();
+    assert!(
+        texts
+            .iter()
+            .any(|text| *text == crate::agents::configuration::MODE_CEILING_CANCELLED),
+        "{texts:?}"
+    );
+    assert!(!texts.iter().any(|text| text.contains("by the user")));
+    assert!(!state.cancelled_for_ceiling);
+}
+
+#[test]
+fn a_person_cancelling_a_turn_keeps_the_usual_transcript_line() {
+    let rig = executor_moving_itself("claude", "auto", "default", "plan");
+    let mut state = rig.core.agents["executor"].state.clone();
+    state.cancel_at_ms = Some(1);
+    let mut saved = rig.core.panes["executor"].stored.clone();
+    let mut changes = crate::agents::Changes::default();
+    let prompt_id = state.active.as_ref().unwrap().prompt_id.clone();
+    crate::agents::responses::prompt_response(
+        &rig.core.store,
+        &mut state,
+        &mut saved,
+        &prompt_id,
+        &mut changes,
+        Ok(json!({"stopReason":"cancelled"})),
+        "t",
+    )
+    .unwrap();
+    assert!(
+        changes
+            .messages
+            .iter()
+            .any(|m| m.text == "Turn cancelled by the user.")
+    );
 }

@@ -147,6 +147,10 @@ pub struct State {
     pub active_silent_since_ms: Option<i64>,
     pub draft_until_ms: i64,
     pub cancel_at_ms: Option<i64>,
+    /// The turn being cancelled is cancelled by the engine because the agent raised its mode
+    /// above the ceiling of its pane, not by a person.
+    #[serde(default)]
+    pub(crate) cancelled_for_ceiling: bool,
     /// When `session/cancel` was last sent for the turn being cancelled: it is sent again while the
     /// turn goes on, since an agent drops a cancel that reaches it before the turn has begun.
     #[serde(default)]
@@ -250,6 +254,7 @@ impl State {
             draft_until_ms: 0,
             cancel_at_ms: None,
             cancel_sent_ms: None,
+            cancelled_for_ceiling: false,
             last_update_ms: 0,
             acknowledged_offset: 0,
             discard_until_newline: false,

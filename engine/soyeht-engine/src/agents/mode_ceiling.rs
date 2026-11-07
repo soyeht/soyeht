@@ -109,6 +109,12 @@ impl ModeCeiling {
             .is_some_and(|mode| !self.allows(&state.launch.id, mode, announced_kind(options, mode)))
     }
 
+    /// Whether a person's choice of `mode` for the pane goes beyond the ceiling: the engine
+    /// would not allow that mode under it, so the ceiling cannot stand beside the choice.
+    pub(crate) fn lifted_by(&self, state: &State, mode: &str) -> bool {
+        !self.allows(&state.launch.id, mode, announced_kind(&state.options, mode))
+    }
+
     /// A session opened, or the agent moved its own mode: the mode it runs is checked again.
     pub(crate) fn reopened(&mut self) {
         self.checked = false;

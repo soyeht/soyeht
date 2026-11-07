@@ -182,6 +182,12 @@ pub(super) fn refused_mode(
 pub(crate) const MODE_CEILING_STOP: &str =
     "No permission mode of this agent stays within the mode of the agent that started it";
 
+/// What the transcript says when the engine cancels a turn for the agent having raised its mode.
+pub(crate) const MODE_CEILING_CANCELLED: &str = "Turn cancelled: the agent raised its permission mode above the mode of the agent that started this pane.";
+
+/// Why the task of a pane goes back to the queue when the engine cancels its turn for that.
+pub(crate) const MODE_CEILING_RETURNED: &str = "returned: mode_ceiling, the agent raised its permission mode above the mode of the agent that started its pane";
+
 /// Keeps the pane within the mode of the agent that started it. A mode the pane would run above
 /// it is replaced by the most permissive one within it, and the transcript says so. `false`
 /// when the harness offers no mode within it, or refused the one asked for: the pane stops.
@@ -283,7 +289,7 @@ pub(super) fn hold_turn_above_ceiling(
     saved: &mut crate::model::StoredPane,
     changes: &mut Changes,
     when: (i64, &str),
-) -> Result<()> {
+) -> Result<bool> {
     let above = state.phase == super::state::Phase::Ready
         && state.active.is_some()
         && state.cancel_at_ms.is_none()
@@ -293,8 +299,9 @@ pub(super) fn hold_turn_above_ceiling(
             .is_some_and(|ceiling| ceiling.pending() && ceiling.exceeded_by(state));
     if above {
         super::methods::cancel(store, pane, state, saved, changes, when.0, when.1)?;
+        state.cancelled_for_ceiling = true;
     }
-    Ok(())
+    Ok(above)
 }
 
 pub struct ChangeRequest<'a> {

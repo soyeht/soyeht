@@ -196,14 +196,19 @@ impl Core {
                         timestamp,
                         &mut changes,
                     )?;
-                    super::configuration::hold_turn_above_ceiling(
+                    // The turn is cancelled and its task goes back to the queue, as when the
+                    // pane stops: a task nobody works on is not left in progress.
+                    if super::configuration::hold_turn_above_ceiling(
                         &self.store,
                         pane,
                         state,
                         saved,
                         &mut changes,
                         (now_ms, timestamp),
-                    )?;
+                    )? {
+                        changes.task_owner_loss = self
+                            .task_owner_loss(pane, super::configuration::MODE_CEILING_RETURNED)?;
+                    }
                     observed
                 } else {
                     false
