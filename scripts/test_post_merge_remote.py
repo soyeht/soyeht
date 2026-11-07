@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -560,6 +562,50 @@ class PullRequestGateTests(RemoteHostCase):
         self.assertEqual(ask("--has", "main"), 64)
         self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--engine-test-args", "-p a; rm -rf /"), 64)
         self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--bundle", "gate-0123456789ab.bundle"), 2)
+
+
+class BrokenSink:
+    def write(self, data):
+        raise BrokenPipeError
+
+    def flush(self):
+        raise BrokenPipeError
+
+
+class PumpTests(unittest.TestCase):
+    """The reader of the host run's output must never keep the gate waiting or ssh blocked."""
+
+    def start(self, script, sink):
+        process = post_merge_gate.start_remote(["bash", "-c", script], Path.cwd(), sink)
+        # a hang is a failure, not a stuck test run
+        watchdog = threading.Timer(30, lambda: os.killpg(process.pid, 9))
+        watchdog.start()
+        self.addCleanup(watchdog.cancel)
+        return process
+
+    def test_a_process_that_inherited_the_pipe_does_not_hold_the_gate_after_ssh_exits(self):
+        started = time.monotonic()
+        holder = Path(tempfile.mkdtemp()) / "holder.pid"
+        with mock.patch.object(post_merge_gate, "DRAIN_SECONDS", 1):
+            process = self.start(f"echo done; sleep 8 & echo $! > {holder}; exit 3", io.BytesIO())
+            self.assertEqual(post_merge_gate.wait_process(process), 3)
+        self.assertLess(time.monotonic() - started, 6)
+        os.kill(int(holder.read_text()), 15)  # the holder is ours
+
+    def test_a_sink_that_fails_is_dropped_and_the_output_is_still_drained_and_scanned(self):
+        # More than a pipe holds (64 KB), then the line the scan looks for.
+        script = "head -c 300000 /dev/zero | tr '\\0' x; echo; echo 'check_all: skipped the Windows lint; run: x'"
+        process = self.start(script, BrokenSink())
+        self.assertEqual(post_merge_gate.wait_process(process), 0)
+        self.assertTrue(process.pump.windows_lint_skipped)
+        self.assertIsNone(process.pump.sink)
+
+    def test_the_lint_line_is_found_across_two_reads_and_a_good_sink_gets_everything(self):
+        sink = io.BytesIO()
+        process = self.start("printf 'check_all: skipped the Wi'; sleep 0.5; printf 'ndows lint; run: x\\n'", sink)
+        self.assertEqual(post_merge_gate.wait_process(process), 0)
+        self.assertTrue(process.pump.windows_lint_skipped)
+        self.assertEqual(sink.getvalue(), b"check_all: skipped the Windows lint; run: x\n")
 
 
 @contextlib.contextmanager

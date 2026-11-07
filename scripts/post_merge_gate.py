@@ -8,12 +8,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import select
 import shlex
 import signal
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -38,6 +40,9 @@ TO_STDOUT = Path("-")  # as a log: the gate's output stays on this process's sta
 REMOTE_PREREQUISITES = {"engine:test": "engine:build", "engine:test-changed": "engine:build"}
 # What `check_all.sh` prints when the host lacks the Windows target: the step passes, unlinted.
 WINDOWS_LINT_SKIPPED = b"skipped the Windows lint"
+# After ssh exits, the longest the gate reads what is left in its pipe (a process that inherited the
+# pipe may hold it open for ever).
+DRAIN_SECONDS = 5
 
 
 @contextmanager
@@ -70,18 +75,51 @@ def start_process(arguments: list[str], cwd: Path, env: dict, output) -> subproc
 
 class Pump(threading.Thread):
     """Copies the output of the remote gate to its sink, and notes the line that says the host
-    skipped the Windows lint (no sink: the output is dropped)."""
+    skipped the Windows lint (no sink: the output is dropped). It reads the pipe's descriptor with
+    a timeout so that it can be told to finish (`finish`): a process that inherited ssh's output
+    (a ControlPersist master, a ProxyCommand child) keeps the pipe open after ssh exits, and the
+    gate must not wait for it beyond `DRAIN_SECONDS`. A sink that fails (a closed pipe, a full
+    disk) is dropped and the output is still drained, or ssh would block on a full pipe."""
 
     def __init__(self, stream, sink) -> None:
         super().__init__(daemon=True)
         self.stream, self.sink, self.windows_lint_skipped = stream, sink, False
+        self.finishing = threading.Event()
+
+    def finish(self) -> None:
+        self.finishing.set()
+
+    def write(self, chunk: bytes) -> None:
+        if self.sink is None:
+            return
+        try:
+            self.sink.write(chunk)
+            self.sink.flush()
+        except (OSError, ValueError):
+            self.sink = None  # the output is lost from here; the scan and the drain go on
 
     def run(self) -> None:
-        for line in self.stream:
-            self.windows_lint_skipped = self.windows_lint_skipped or WINDOWS_LINT_SKIPPED in line
-            if self.sink is not None:
-                self.sink.write(line)
-                self.sink.flush()
+        descriptor, tail, deadline = self.stream.fileno(), b"", None
+        while True:
+            if self.finishing.is_set() and deadline is None:
+                deadline = time.monotonic() + DRAIN_SECONDS
+            if deadline is not None and time.monotonic() > deadline:
+                return
+            try:
+                ready, _, _ = select.select([descriptor], [], [], 0.1)
+                chunk = os.read(descriptor, 65536) if ready else None
+            except (OSError, ValueError):
+                return
+            if chunk == b"":
+                return
+            if chunk is None:
+                if deadline is not None:
+                    return  # finishing, and nothing more to read for now
+                continue
+            window = tail + chunk
+            self.windows_lint_skipped = self.windows_lint_skipped or WINDOWS_LINT_SKIPPED in window
+            tail = window[-len(WINDOWS_LINT_SKIPPED):]
+            self.write(chunk)
 
 
 def start_remote(arguments: list[str], cwd: Path, output) -> subprocess.Popen:
@@ -98,19 +136,27 @@ def start_remote(arguments: list[str], cwd: Path, output) -> subprocess.Popen:
     return process
 
 
+def end_pump(process: subprocess.Popen) -> None:
+    """Let the pump drain what ssh wrote, for no more than `DRAIN_SECONDS`, and close the pipe."""
+    pump = getattr(process, "pump", None)
+    if pump:
+        pump.finish()
+        pump.join(timeout=DRAIN_SECONDS * 2)
+        if not pump.is_alive():
+            process.stdout.close()
+
+
 def stop_process(process: subprocess.Popen) -> None:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGTERM)
     process.wait()
-    if getattr(process, "pump", None):
-        process.pump.join()
+    end_pump(process)
 
 
 def wait_process(process: subprocess.Popen) -> int:
     try:
         code = process.wait()
-        if getattr(process, "pump", None):
-            process.pump.join()
+        end_pump(process)
         return code
     except BaseException:
         stop_process(process)
@@ -273,17 +319,19 @@ def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | N
             with opened(log) as output:
                 process = start_remote(remote.ssh(arguments), worktree, output)
                 pump = process.pump
-                if not concurrent:
-                    remote_code, process = wait_process(process), None
-                if not remote_code and local_ids:
-                    local_code = local()
-                if process:
-                    remote_code, process = wait_process(process), None
+                try:
+                    if not concurrent:
+                        remote_code, process = wait_process(process), None
+                    if not remote_code and local_ids:
+                        local_code = local()
+                    if process:
+                        remote_code, process = wait_process(process), None
+                finally:
+                    if process:  # an interrupt: stop the host run while the log is still open
+                        stop_process(process)
         elif local_ids:
             local_code = local()
     finally:
-        if process:
-            stop_process(process)
         if bundle:
             drop_bundle(remote, bundle)
     if pump and pump.windows_lint_skipped:
