@@ -18,6 +18,7 @@ mod frames;
 pub mod hooks;
 mod immutable_file;
 pub mod input;
+mod input_receipts;
 pub mod languages;
 pub mod launch;
 mod listeners;

@@ -249,6 +249,10 @@ fn an_input_is_confirmed_once_its_receipt_is_durable() {
     };
 
     assert_eq!(reply["acceptedBytes"], 4);
+    // The reply goes first; the outcome is recorded with the next write of inputs (or after the
+    // linger, or when the engine stops), and the supervisor forgets the operation after that.
+    assert_eq!(*asked.lock().unwrap(), ["input:bHMK"]);
+    core.flush_all_input_receipts().unwrap();
     assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
     std::fs::remove_dir_all(root).unwrap();
 }

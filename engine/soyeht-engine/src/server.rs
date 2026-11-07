@@ -150,6 +150,11 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     }
     tasks.abort_all();
     core_lock::with(&core, "shutdown", |state| {
+        // The outcomes of inputs that wait for the next one are recorded before the engine ends.
+        errors::log_if_failed(
+            "engine.input_receipts_not_recorded",
+            state.flush_all_input_receipts(),
+        );
         for client in state.clients.values() {
             client.outbox.close(CloseReason::ServerShutdown);
         }

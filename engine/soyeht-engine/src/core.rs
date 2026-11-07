@@ -68,6 +68,11 @@ pub struct Core {
     /// for them (see `read_ahead`).
     pub(crate) reads: crate::read_ahead::Reads,
     pub(crate) supervisor_retry: crate::supervisor_link::Retry,
+    /// The outcomes of inputs the supervisor accepted that wait for the next write of inputs
+    /// (ADR 0147, step R).
+    pub(crate) input_receipts: Vec<crate::input_receipts::Waiting>,
+    /// The folder of each workspace whose files the editor watches, until it is closed.
+    pub(crate) workspace_roots: BTreeMap<String, PathBuf>,
     pub clock: Arc<dyn Clock>,
     /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
     pub hooks: Arc<dyn Hooks>,
@@ -200,6 +205,8 @@ impl Core {
             send_turns: BTreeMap::new(),
             reads: Default::default(),
             supervisor_retry: Default::default(),
+            input_receipts: Vec::new(),
+            workspace_roots: BTreeMap::new(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
             revision: SharedPort::new(Box::new(GitRevision)),
@@ -379,13 +386,7 @@ impl Core {
             .clients
             .get(connection)
             .ok_or_else(|| errors::unauthorized("Connection not found"))?;
-        let actor = serde_json::to_value(
-            client
-                .actor
-                .as_ref()
-                .ok_or_else(|| errors::unauthorized("Handshake required"))?,
-        )
-        .map_err(|_| errors::internal("Connection actor serialization failed"))?;
+        let actor = self.actor_json(connection)?;
         let key = params["idempotencyKey"]
             .as_str()
             .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
@@ -403,6 +404,21 @@ impl Core {
         .map_err(errors::storage)?;
         self.publish(&mutation.events)?;
         Ok(mutation)
+    }
+
+    /// Who the connection is, as the store records it with an idempotency receipt.
+    pub(crate) fn actor_json(&self, connection: &str) -> Result<Value> {
+        let client = self
+            .clients
+            .get(connection)
+            .ok_or_else(|| errors::unauthorized("Connection not found"))?;
+        serde_json::to_value(
+            client
+                .actor
+                .as_ref()
+                .ok_or_else(|| errors::unauthorized("Handshake required"))?,
+        )
+        .map_err(|_| errors::internal("Connection actor serialization failed"))
     }
 
     pub(crate) fn repeated_mutation(
@@ -679,6 +695,7 @@ impl Core {
         self.isolated("project_tree", Self::advance_project_tree);
         self.isolated("skills", Self::advance_skills);
         self.isolated("local_servers", Self::advance_local_servers);
+        self.isolated("input_receipts", Self::flush_input_receipts);
         self.isolated("web_commands", Self::advance_web_commands);
         if self.ensure_supervisor() == crate::supervisor_link::Link::Down {
             return Ok(());

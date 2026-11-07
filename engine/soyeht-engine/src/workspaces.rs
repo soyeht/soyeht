@@ -147,6 +147,7 @@ impl Core {
                 Ok((json!({"workspaceId":id}), events))
             })?
             .result;
+        self.workspace_roots.remove(id);
         for pane in closed {
             errors::invariant(
                 self.panes.get_mut(&pane.pane.pane_id),

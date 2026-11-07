@@ -4,7 +4,7 @@
 //! [`Change`] so domain rows and their public events commit atomically.
 
 use crate::database::{Change, Error, Result, Store};
-use rusqlite::{OptionalExtension, Row, params};
+use rusqlite::{OptionalExtension, Row, TransactionBehavior, params};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use soyeht_protocol::{Pane, Workspace};
@@ -25,6 +25,18 @@ pub struct InputIntent {
     pub operation_key: String,
     pub supervisor_id: String,
     pub instance_id: String,
+}
+
+/// An input the supervisor accepted, waiting for the write that makes its outcome durable: the
+/// request that sent it has been answered, and a retry with its key is answered by the supervisor
+/// (which keeps the operation) until this is recorded.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FinishedInput {
+    pub scope: String,
+    pub key: String,
+    pub fingerprint: String,
+    pub result: Value,
+    pub actor: Value,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -134,13 +146,37 @@ impl Store {
             .optional()?)
     }
 
-    /// Persisted before the irreversible terminal write. The connection uses
-    /// synchronous FULL, so returning success is the durability boundary.
-    pub fn record_input_intent(&self, scope: &str, key: &str, intent: &InputIntent) -> Result<()> {
-        self.connection.execute(
-            "INSERT INTO input_intents(scope,key,fingerprint,operation_key,supervisor_id,instance_id) VALUES (?1,?2,?3,?4,?5,?6)",
-            params![scope, key, intent.fingerprint, intent.operation_key, intent.supervisor_id, intent.instance_id],
-        )?;
+    /// Makes the outcome of `finished` inputs durable (their intents are removed and their
+    /// idempotency receipts recorded) and, with `intent`, records the intent of a new input before
+    /// its irreversible terminal write, all in one transaction: one commit, however many. The
+    /// connection uses synchronous FULL, so returning success is the durability boundary of the
+    /// intent. A receipt already recorded is left as it is.
+    pub fn finish_inputs(
+        &mut self,
+        finished: &[FinishedInput],
+        intent: Option<(&str, &str, &InputIntent)>,
+    ) -> Result<()> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let now = chrono::Utc::now().timestamp();
+        for input in finished {
+            tx.execute(
+                "DELETE FROM input_intents WHERE scope=?1 AND key=?2",
+                params![input.scope, input.key],
+            )?;
+            tx.execute(
+                "INSERT OR IGNORE INTO idempotency(scope,key,fingerprint,result,created_unix,actor) VALUES (?1,?2,?3,?4,?5,?6)",
+                params![input.scope, input.key, input.fingerprint, input.result.to_string(), now, input.actor.to_string()],
+            )?;
+        }
+        if let Some((scope, key, intent)) = intent {
+            tx.execute(
+                "INSERT INTO input_intents(scope,key,fingerprint,operation_key,supervisor_id,instance_id) VALUES (?1,?2,?3,?4,?5,?6)",
+                params![scope, key, intent.fingerprint, intent.operation_key, intent.supervisor_id, intent.instance_id],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -372,14 +408,6 @@ impl Change<'_> {
         Ok(())
     }
 
-    pub fn remove_input_intent(&self, scope: &str, key: &str) -> Result<()> {
-        self.transaction.execute(
-            "DELETE FROM input_intents WHERE scope=?1 AND key=?2",
-            params![scope, key],
-        )?;
-        Ok(())
-    }
-
     pub fn update_idempotency_result(
         &self,
         scope: &str,
@@ -497,5 +525,71 @@ impl Change<'_> {
             ],
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::statement_cost::tests::COMMITS;
+    use serde_json::json;
+
+    fn intent(operation_key: &str) -> InputIntent {
+        InputIntent {
+            fingerprint: "fingerprint".into(),
+            operation_key: operation_key.into(),
+            supervisor_id: "supervisor".into(),
+            instance_id: "instance".into(),
+        }
+    }
+
+    fn finished(key: &str) -> FinishedInput {
+        FinishedInput {
+            scope: "client".into(),
+            key: key.into(),
+            fingerprint: "fingerprint".into(),
+            result: json!({"acceptedBytes": 1}),
+            actor: json!({"role": "human_local"}),
+        }
+    }
+
+    #[test]
+    fn the_outcomes_of_inputs_and_the_next_intent_share_one_commit() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-inputs-{}", uuid::Uuid::new_v4()));
+        let mut store = Store::open(&directory).unwrap();
+        store
+            .finish_inputs(&[], Some(("client", "a", &intent("op-a"))))
+            .unwrap();
+        store
+            .finish_inputs(&[], Some(("client", "b", &intent("op-b"))))
+            .unwrap();
+
+        let before = COMMITS.with(std::cell::Cell::get);
+        store
+            .finish_inputs(
+                &[finished("a"), finished("b")],
+                Some(("client", "c", &intent("op-c"))),
+            )
+            .unwrap();
+        assert_eq!(COMMITS.with(std::cell::Cell::get) - before, 1);
+        assert!(store.input_intent("client", "a").unwrap().is_none());
+        assert!(store.input_intent("client", "b").unwrap().is_none());
+        assert!(store.input_intent("client", "c").unwrap().is_some());
+        for key in ["a", "b"] {
+            let receipt = store.idempotency_receipt("client", key).unwrap().unwrap();
+            assert_eq!(receipt.result, json!({"acceptedBytes": 1}));
+        }
+        // A failed write leaves every one of them as it was: the new intent repeats the key of one
+        // that is still waiting, and the outcome written before it in the same transaction goes too.
+        store
+            .finish_inputs(&[], Some(("client", "d", &intent("op-d"))))
+            .unwrap();
+        let repeated =
+            store.finish_inputs(&[finished("d")], Some(("client", "c", &intent("op-x"))));
+        assert!(repeated.is_err());
+        assert!(store.input_intent("client", "d").unwrap().is_some());
+        assert!(store.idempotency_receipt("client", "d").unwrap().is_none());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

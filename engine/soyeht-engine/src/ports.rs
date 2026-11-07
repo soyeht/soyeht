@@ -18,7 +18,9 @@ use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
     agents::{AgentModelRefusal, HarnessReadiness, NativeRequest, Outgoing},
     database::{Change, Mutation, Result as StoreResult, Store},
-    domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
+    domain::{
+        ClientFocus, DeviceIdentity, FinishedInput, IdempotencyReceipt, InputIntent, PaneRecord,
+    },
 };
 
 pub trait Clock: Send + Sync {
@@ -172,11 +174,11 @@ pub trait StorePort {
     fn panes(&self) -> StoreResult<Vec<PaneRecord>>;
     fn setting(&self, key: &str) -> StoreResult<Option<Value>>;
     fn input_intent(&self, scope: &str, key: &str) -> StoreResult<Option<InputIntent>>;
-    fn record_input_intent(
+    /// Makes the outcome of `finished` inputs durable and records `intent`, if any, in one write.
+    fn finish_inputs(
         &mut self,
-        scope: &str,
-        key: &str,
-        intent: &InputIntent,
+        finished: &[FinishedInput],
+        intent: Option<(&str, &str, &InputIntent)>,
     ) -> StoreResult<()>;
     fn input_intent_operation_pending(&self, operation_key: &str) -> StoreResult<bool>;
     fn pane_launch(&self, pane_id: &str) -> StoreResult<Option<Spawn>>;
@@ -293,13 +295,12 @@ impl StorePort for Store {
         Store::input_intent(self, scope, key)
     }
 
-    fn record_input_intent(
+    fn finish_inputs(
         &mut self,
-        scope: &str,
-        key: &str,
-        intent: &InputIntent,
+        finished: &[FinishedInput],
+        intent: Option<(&str, &str, &InputIntent)>,
     ) -> StoreResult<()> {
-        Store::record_input_intent(self, scope, key, intent)
+        Store::finish_inputs(self, finished, intent)
     }
 
     fn input_intent_operation_pending(&self, operation_key: &str) -> StoreResult<bool> {
@@ -513,6 +514,8 @@ pub(crate) mod testing {
         pub workspaces: BTreeMap<String, Workspace>,
         pub settings: BTreeMap<String, Value>,
         pub intents: BTreeMap<(String, String), InputIntent>,
+        /// The writes of `finish_inputs`: how many outcomes, and whether a new intent.
+        pub input_writes: Vec<(usize, bool)>,
         pub pair_requests: BTreeMap<String, Value>,
         pub pair_windows: BTreeMap<String, i64>,
         pub open_requests: BTreeMap<String, Vec<NativeRequest>>,
@@ -570,14 +573,20 @@ pub(crate) mod testing {
             Ok(self.intents.get(&(scope.into(), key.into())).cloned())
         }
 
-        fn record_input_intent(
+        fn finish_inputs(
             &mut self,
-            scope: &str,
-            key: &str,
-            intent: &InputIntent,
+            finished: &[FinishedInput],
+            intent: Option<(&str, &str, &InputIntent)>,
         ) -> StoreResult<()> {
-            self.intents
-                .insert((scope.into(), key.into()), intent.clone());
+            self.input_writes.push((finished.len(), intent.is_some()));
+            for input in finished {
+                self.intents
+                    .remove(&(input.scope.clone(), input.key.clone()));
+            }
+            if let Some((scope, key, intent)) = intent {
+                self.intents
+                    .insert((scope.into(), key.into()), intent.clone());
+            }
             Ok(())
         }
 
