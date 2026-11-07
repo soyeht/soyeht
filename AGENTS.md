@@ -388,6 +388,12 @@ inherit the main actor.
   `dead_pub_allowlist.json`) or the gate scripts and their tests. A required review is done by a second
   agent before the merge. An `optional` change merges on a green fast tier with no separate
   reviewer.
+- Security tests (`docs/security-testing.md`): `security:fuzz` and `security:attacks` (fast and full
+  tier) and `security:fuzz-long` (full tier) attack the parsers of bytes a peer chose, the
+  handshake and roles, pairing, every path a method takes, web addresses and the commands the
+  engine starts. A new parser of such bytes gets a fuzz target, and a new method that takes a path
+  or an address, or a role rule, is covered by the matrices of `attack_paths` and `attack_wire`,
+  in the same PR.
 - Build cache: when `sccache` is installed (`cargo install sccache --locked`), `check_all.sh`
   uses it with `CARGO_INCREMENTAL=0`. Give every worktree its own target directory, never a
   shared one.
