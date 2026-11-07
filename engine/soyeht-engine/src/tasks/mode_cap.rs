@@ -6,6 +6,7 @@
 //! (`Core::require_person_for_full_access`).
 
 use crate::{
+    agents::configuration::{ACCEPT_EDITS, ASK},
     core::Core,
     errors::{self, Result},
 };
@@ -54,6 +55,30 @@ impl Core {
                     .then(|| mode_kind_rank(Some(FULL_ACCESS_KIND)))
                     .flatten()
             })
+            // The engine's own modes are standard whether or not a pane that uses them is running.
+            .or_else(|| {
+                [ASK, ACCEPT_EDITS]
+                    .contains(&mode)
+                    .then(|| mode_kind_rank(Some("standard")))
+                    .flatten()
+            })
+    }
+
+    /// Whether `mode` is positively known to approve less than everything. A mode that no
+    /// running agent announced, and that the engine does not know, is not.
+    pub(crate) fn mode_is_known_below_full_access(&self, mode: &str) -> bool {
+        let full = mode_kind_rank(Some(FULL_ACCESS_KIND)).unwrap_or(usize::MAX);
+        self.requested_mode_rank(mode)
+            .is_some_and(|rank| rank < full)
+    }
+
+    /// Whether the pane's agent is in a mode that approves everything now: the mode it runs
+    /// in, or the one it was asked to start in while its modes are not announced yet.
+    pub(crate) fn agent_in_full_access(&self, state: &crate::agents::state::State) -> bool {
+        [state.options.current_mode(), state.mode.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|mode| self.is_full_access_mode(mode))
     }
 
     /// Refuses work an agent starts in a mode above its own. A person's request is not capped.

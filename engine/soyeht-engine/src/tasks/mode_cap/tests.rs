@@ -288,3 +288,42 @@ async fn a_chief_in_full_access_cannot_pass_it_on_by_leaving_the_mode_out() {
     );
     assert_eq!(rig.executor_mode(), None);
 }
+
+#[tokio::test]
+async fn a_chief_in_full_access_cannot_start_a_mode_no_harness_announced() {
+    let mut rig = Rig::new("everything");
+    let chief = rig.connect(Role::Chief, Some("chief"));
+    // The id may be the harness's own name for full access: it is not known to be anything less.
+    assert_eq!(
+        rig.dispatch(&chief, Some("never-announced"), "unknown"),
+        Some(ErrorKind::ForbiddenRole)
+    );
+    assert_eq!(
+        rig.create(&chief, "never-announced", "unknown-create"),
+        Some(ErrorKind::ForbiddenRole)
+    );
+    assert_eq!(rig.dispatch(&chief, Some("ask"), "known"), None);
+}
+
+/// A message from the pane `chief` to the pane `target`, whose mode is `target_mode`.
+fn message_error(target_mode: &str) -> Option<ErrorKind> {
+    let mut rig = Rig::new("ask");
+    insert_agent_pane(&mut rig.core, &rig.directory, "target", WORKSPACE);
+    if let Some(agent) = rig.core.agents.get_mut("target") {
+        agent.state.options = options(target_mode, &KINDS);
+    }
+    let sender = rig.connect(Role::Agent, Some("chief"));
+    let params = json!({"targetPaneId":"target","text":"hello","idempotencyKey":"message"});
+    rig.core
+        .agent_peer_method(&sender, method::AGENT_MESSAGE, &params)
+        .err()
+        .map(|error| errors::kind(&error))
+}
+
+#[tokio::test]
+async fn an_agent_cannot_send_a_message_into_a_pane_in_full_access() {
+    assert_eq!(message_error("everything"), Some(ErrorKind::ForbiddenRole));
+    for mode in ["read-only", "ask", "review", "mystery"] {
+        assert_eq!(message_error(mode), None, "{mode}");
+    }
+}

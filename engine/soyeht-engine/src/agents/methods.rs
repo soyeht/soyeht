@@ -210,6 +210,13 @@ impl Core {
         if state.harness_switch.is_some() {
             return Err(errors::pane_busy("Target agent is switching harness"));
         }
+        // A prompt from an agent is not a person's: it carries text an agent read somewhere. A
+        // pane the person put in full access acts on it with nothing left to ask.
+        if self.agent_in_full_access(&state) {
+            return Err(errors::forbidden_role(
+                "An agent cannot send a message to a pane that is in full access",
+            ));
+        }
         let now_ms = self.now_ms();
         let window_ms = (limits::AGENT_MESSAGE_WINDOW_SEC as i64) * 1000;
         let since_ms = now_ms.saturating_sub(window_ms);
