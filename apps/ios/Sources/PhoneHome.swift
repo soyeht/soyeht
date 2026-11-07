@@ -91,6 +91,7 @@ struct PhoneHome: View {
       } options: {
         macOptions
       }
+      .projectTrustSheet(client: client)
     } else {
       NavigationStack {
         Group {
