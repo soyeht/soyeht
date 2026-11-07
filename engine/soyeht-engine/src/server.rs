@@ -295,6 +295,7 @@ async fn read_requests(
         let failed_handshake = request["method"] == method::HELLO;
         let connection = id.to_owned();
         let outcome = core_lock::with(&core, "dispatch", move |state| {
+            core_lock::name_hold(method);
             state.dispatch(&connection, request)
         })
         .await;

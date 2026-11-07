@@ -641,7 +641,26 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
         reading.mark_read_done();
     });
     thread::spawn(move || {
+        // The wait runs without the child's lock, which a kill or a close takes to end it.
+        let waiter = match live.child.lock() {
+            Ok(child) => child.exit_waiter(),
+            // ignored: the poisoning is logged by name just below
+            Err(_) => {
+                log::event("ptyd.child_lock_poisoned", &[]);
+                live.mark_exited();
+                return;
+            }
+        };
         loop {
+            // A wait that failed still gets one look at the child, so an exit that happened is
+            // recorded and collected; only a child that is still running makes it give up.
+            let wait_failed = match waiter.wait() {
+                Ok(()) => false,
+                Err(error) => {
+                    log::failure("ptyd.child_wait_failed", &error);
+                    true
+                }
+            };
             let exit = match live.child.lock() {
                 Ok(mut child) => child.try_wait(),
                 // ignored: the poisoning is logged by name just below
@@ -682,6 +701,12 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     live.mark_exited();
                     break;
                 }
+                Ok(None) if wait_failed => {
+                    live.mark_exited();
+                    break;
+                }
+                // Not collectable yet, which a wait that returned does not leave: look again
+                // after a pause rather than spin.
                 Ok(None) => thread::sleep(Duration::from_millis(10)),
             }
         }

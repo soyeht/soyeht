@@ -10,7 +10,7 @@ const END_WAIT: Duration = Duration::from_secs(2);
 /// A child in its own job, with the pseudo console it runs on when it has one. The job holds
 /// everything the child starts, so ending it ends the whole tree.
 pub struct Child {
-    spawned: Spawned,
+    spawned: Arc<Spawned>,
     pid: u32,
     console: Option<Arc<Console>>,
     exit: Option<Exit>,
@@ -24,7 +24,7 @@ impl Child {
         console: Option<Arc<Console>>,
     ) -> Self {
         Self {
-            spawned: Spawned::new(process, job),
+            spawned: Arc::new(Spawned::new(process, job)),
             pid,
             console,
             exit: None,
@@ -33,6 +33,12 @@ impl Child {
 
     pub fn id(&self) -> u32 {
         self.pid
+    }
+
+    /// A handle that blocks until this child has ended, without holding the child itself, so the
+    /// kill and close paths can take the child's lock while it waits.
+    pub fn exit_waiter(&self) -> ExitWaiter {
+        ExitWaiter(Arc::clone(&self.spawned))
     }
 
     pub fn try_wait(&mut self) -> io::Result<Option<Exit>> {
@@ -80,5 +86,15 @@ impl Child {
             Some(console) => console.close_in_background(),
             None => self.kill(Reach::Tree),
         }
+    }
+}
+
+/// Waits for a child to end. The child's own exit status stays with [`Child::try_wait`].
+pub struct ExitWaiter(Arc<Spawned>);
+
+impl ExitWaiter {
+    /// Blocks until the child has ended.
+    pub fn wait(&self) -> io::Result<()> {
+        self.0.wait_exit(INFINITE).map(|_| ())
     }
 }

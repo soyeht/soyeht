@@ -13,24 +13,24 @@
       "duplicated_lines": 0
     },
     "desktop_views": {
-      "clones": 126,
-      "duplicated_lines": 576
+      "clones": 111,
+      "duplicated_lines": 506
     },
     "dictation": {
       "clones": 0,
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 266,
-      "duplicated_lines": 2004
+      "clones": 264,
+      "duplicated_lines": 1988
     },
     "ios": {
       "clones": 4,
       "duplicated_lines": 31
     },
     "mac": {
-      "clones": 24,
-      "duplicated_lines": 169
+      "clones": 23,
+      "duplicated_lines": 150
     },
     "python": {
       "clones": 15,
@@ -41,8 +41,8 @@
       "duplicated_lines": 468
     },
     "swift_all": {
-      "clones": 97,
-      "duplicated_lines": 704
+      "clones": 96,
+      "duplicated_lines": 685
     }
   },
   "engine_production_panics": 0,
@@ -97,11 +97,6 @@
     "apps/mac/Sources/PreferencesPanel.swift": {
       "padding": 5,
       "system_font_size": 5
-    },
-    "apps/mac/Sources/TaskWorkspaceViews.swift": {
-      "corner_radius": 1,
-      "padding": 37,
-      "system_font_size": 21
     },
     "apps/mac/Sources/UsageViews.swift": {
       "padding": 1
@@ -223,7 +218,6 @@
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1450,
     "apps/mac/Sources/PreferencesPanel.swift": 832,
-    "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 895,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-store/src/editor.rs": 828,
