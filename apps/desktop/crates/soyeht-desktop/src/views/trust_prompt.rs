@@ -5,7 +5,7 @@
 //! is the client state's (`State::trust_prompt`).
 
 use super::{prelude::*, sheet};
-use crate::theme::{Palette, layout, pane_interior, space, type_scale};
+use crate::theme::{Palette, desktop, layout, pane_interior, space, type_scale};
 use gpui::MouseButton;
 use soyeht_client::Command;
 use soyeht_protocol::{
