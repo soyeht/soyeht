@@ -4,10 +4,9 @@ use crate::{
     outbox,
     ports::StorePort,
     tasks::rules::tests::task_fixture,
-    test_panes::{core_with_workspace, insert_agent_pane, ready_agent_state},
+    test_panes::{agent_with_modes, core_with_workspace, insert_agent_pane},
 };
 use serde_json::json;
-use soyeht_acp::config::Options;
 use soyeht_protocol::{ConfigValue, ErrorKind, Role, TaskState, method};
 
 const WORKSPACE: &str = "workspace-1";
@@ -33,22 +32,9 @@ fn modes(harness: &str) -> &'static [(&'static str, &'static str)] {
     if harness == "claude" { &CLAUDE } else { &CODEX }
 }
 
-fn options(current: &str, choices: &[(&str, &str)]) -> Options {
-    let choices: Vec<_> = choices
-        .iter()
-        .map(|(value, kind)| json!({"value":value,"name":value,"_meta":{"kind":kind}}))
-        .collect();
-    Options::from_response(&json!({"configOptions":[{"id":"mode","name":"Mode",
-        "category":"mode","type":"select","currentValue":current,"options":choices}]}))
-    .unwrap()
-}
-
 /// The state of a ready agent of `harness` in `current`.
 fn agent(harness: &str, current: &str) -> crate::agents::state::State {
-    let mut state = ready_agent_state();
-    state.launch.id = harness.into();
-    state.options = options(current, modes(harness));
-    state
+    agent_with_modes(harness, current, modes(harness))
 }
 
 fn announce(core: &mut Core, directory: &std::path::Path, pane: &str, harness: &str, mode: &str) {
@@ -240,7 +226,8 @@ fn a_mode_the_target_harness_does_not_announce_is_refused_whatever_another_harne
 #[test]
 fn a_dispatcher_whose_mode_cannot_be_ranked_is_the_lowest() {
     let mut rig = Rig::new("claude", "plan");
-    rig.core.agents.get_mut("chief").unwrap().state.options = options(
+    rig.core.agents.get_mut("chief").unwrap().state = agent_with_modes(
+        "claude",
         "mystery",
         &[
             ("mystery", "unknown"),

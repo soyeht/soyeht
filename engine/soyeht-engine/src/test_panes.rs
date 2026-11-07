@@ -339,3 +339,23 @@ impl Core {
         self.settle_supervisor(&supervisor, result)
     }
 }
+
+/// The state of a ready agent of `harness`, in the mode `current` of the modes `choices` (a value
+/// and the kind its harness announces for it).
+pub(crate) fn agent_with_modes(
+    harness: &str,
+    current: &str,
+    choices: &[(&str, &str)],
+) -> crate::agents::state::State {
+    let choices: Vec<_> = choices
+        .iter()
+        .map(|(value, kind)| json!({"value":value,"name":value,"_meta":{"kind":kind}}))
+        .collect();
+    let mut state = ready_agent_state();
+    state.launch.id = harness.into();
+    state.options = soyeht_acp::config::Options::from_response(&json!({"configOptions":[{
+        "id":"mode","name":"Mode","category":"mode","type":"select","currentValue":current,
+        "options":choices}]}))
+    .unwrap();
+    state
+}
