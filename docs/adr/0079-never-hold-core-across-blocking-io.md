@@ -197,10 +197,9 @@ named constants.
 The rule covers external commands, network IO and tree walks. These remain
 under the lock, and each is bounded:
 
-- The terminal path itself: draining a pane goes through the supervisor
-  socket (5 s timeouts) and appends to that pane's screen, which Core owns.
-  Taking that path off the lock entirely needs per-pane state or a Core actor.
-  That is the long-term item H3 of the 2026-10-03 quality audit.
+- The terminal path itself: appending a pane's output to its screen (and its segment file) and
+  pumping it to the clients. The requests to the supervisor were moved off the lock by ADRs 0117,
+  0119 and 0126. ADR 0147 plans the rest, with the measurement of where the lock time goes.
 - SQLite reads and writes, and the minute prune.
 - Single-file reads and writes of bounded size: editor open, the save of a pending
   draft before a delete (the autosave, the disk watch and the save of a closed tab run off the
