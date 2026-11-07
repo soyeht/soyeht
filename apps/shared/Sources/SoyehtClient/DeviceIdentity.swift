@@ -13,9 +13,11 @@ public struct PairingLink: Sendable {
   /// it to no app that has claimed the link's scheme. The scanner in the app reads both.
   static let qrPrefix = "SOYEHT-PAIR 1 "
   public init(_ text: String) throws {
+    // Whitespace around the text is not part of it: the same rule as `PairingLink::parse` in Rust.
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     let text =
-      text.hasPrefix(Self.qrPrefix)
-      ? "soyeht-next://pair?" + text.dropFirst(Self.qrPrefix.count) : text
+      trimmed.hasPrefix(Self.qrPrefix)
+      ? "soyeht-next://pair?" + trimmed.dropFirst(Self.qrPrefix.count) : trimmed
     // A Mac that has not been updated writes the three fields of the old link: say what to do.
     if let old = URLComponents(string: text), old.scheme == "soyeht-next", old.host == "pair",
       Set((old.queryItems ?? []).map(\.name)) == Set(["engineId", "address", "code"])

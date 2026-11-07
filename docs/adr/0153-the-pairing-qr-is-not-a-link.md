@@ -38,4 +38,7 @@ to look at the request, which names a device and a fingerprint, not an app).
 
 - Pointing the system camera at the pairing QR code shows text and offers to copy it; the person
   opens Soyeht and uses its scanner. The message that guides pairing says so.
+- The system camera may also offer Search or Copy on that plain text, and the text carries the live
+  one-time code, the address and the engine key. The code expires in 10 minutes and works once, so
+  a copy or a search that leaks it is useful for a short time only.
 - A QR code made by an engine from before this ADR is still read.
