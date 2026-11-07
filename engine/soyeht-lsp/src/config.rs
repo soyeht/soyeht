@@ -107,7 +107,9 @@ const TYPESCRIPT_SERVER: &str = "typescript-language-server";
 /// cannot read its version falls back to the folder's own TypeScript.
 fn installed_tsserver(search_path: &std::ffi::OsStr) -> Option<PathBuf> {
     let program = absolute_command(TYPESCRIPT_SERVER, search_path)?;
-    let program = soyeht_platform::fs::canonicalize(&program).ok()?;
+    let Ok(program) = soyeht_platform::fs::canonicalize(&program) else {
+        return None;
+    };
     for ancestor in program.ancestors().skip(1) {
         if ancestor
             .file_name()
@@ -128,10 +130,13 @@ fn installed_tsserver(search_path: &std::ffi::OsStr) -> Option<PathBuf> {
 }
 
 fn has_version(package_json: &Path) -> bool {
-    std::fs::read_to_string(package_json)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .is_some_and(|package| package["version"].as_str().is_some_and(|v| !v.is_empty()))
+    let Ok(text) = std::fs::read_to_string(package_json) else {
+        return false;
+    };
+    let Ok(package) = serde_json::from_str::<Value>(&text) else {
+        return false;
+    };
+    package["version"].as_str().is_some_and(|v| !v.is_empty())
 }
 
 #[cfg(test)]

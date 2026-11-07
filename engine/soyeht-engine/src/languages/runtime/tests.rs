@@ -104,6 +104,12 @@ type Closed = Arc<std::sync::Mutex<Vec<String>>>;
 /// for; jobs run on the pool.
 fn core_recording_closes() -> (Core, std::path::PathBuf, String, Closed) {
     let (mut core, directory, key) = core_with_a_pending_write();
+    let closed = link_recording_closes(&mut core);
+    (core, directory, key, closed)
+}
+
+/// Links a supervisor that records the closes it is asked for; jobs run on the pool.
+fn link_recording_closes(core: &mut Core) -> Closed {
     core.background = crate::offload::Background::default();
     let closed = Closed::default();
     let record = Arc::clone(&closed);
@@ -113,7 +119,7 @@ fn core_recording_closes() -> (Core, std::path::PathBuf, String, Closed) {
         }
         Ok(Response::Ok)
     })));
-    (core, directory, key, closed)
+    closed
 }
 
 fn language_process(core: &Core, key: &str, id: &str) -> Instance {
@@ -310,15 +316,7 @@ fn a_language_server_process_no_server_owns_is_closed_when_the_supervisor_return
 #[test]
 fn a_server_that_cannot_start_for_its_folders_trust_is_left_unavailable_and_keeps_the_link() {
     let (mut core, _directory) = core_with_agent(&[]);
-    core.background = crate::offload::Background::default();
-    let closed = Closed::default();
-    let record = Arc::clone(&closed);
-    core.link_supervisor(Box::new(Answering(move |request| {
-        if let Request::Close { instance_id } = request {
-            record.lock().unwrap().push(instance_id);
-        }
-        Ok(Response::Ok)
-    })));
+    let closed = link_recording_closes(&mut core);
     let path = _directory.to_string_lossy().into_owned();
     let server = Server::new("workspace", &path, EditorLanguage::Typescript)
         .unwrap()
