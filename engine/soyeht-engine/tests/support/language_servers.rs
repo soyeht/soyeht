@@ -13,6 +13,11 @@ pub fn install(root: &Path) {
     fs::create_dir_all(&server).unwrap();
     fs::create_dir_all(modules.join("typescript/lib")).unwrap();
     fs::write(modules.join("typescript/lib/tsserver.js"), "").unwrap();
+    fs::write(
+        modules.join("typescript/package.json"),
+        "{\"version\":\"5.9.2\"}",
+    )
+    .unwrap();
     #[cfg(unix)]
     {
         let program = server.join("cli");

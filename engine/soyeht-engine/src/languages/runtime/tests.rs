@@ -239,3 +239,124 @@ fn diagnostic_publication_is_bounded_after_wire_expansion() {
     );
     assert!(omitted > 0);
 }
+
+#[test]
+fn a_server_an_earlier_engine_started_is_closed_and_started_again_once() {
+    // The checkpoint of an engine that did not know project trust says nothing about it.
+    let (mut core, _directory, key, closed) = core_recording_closes();
+    assert!(!language(&core.languages, &key).unwrap().trust_recorded);
+
+    assert!(core.follow_language_trust(&key, None).unwrap());
+    apply_until_idle(&mut core);
+    assert_eq!(*closed.lock().unwrap(), ["language-process"]);
+    let server = language(&core.languages, &key).unwrap();
+    assert!(server.trust_recorded);
+    assert_eq!(server.generation, 2);
+    assert!(server.instance_id.is_none());
+
+    // Once: the second look finds it up to date.
+    assert!(!core.follow_language_trust(&key, None).unwrap());
+}
+
+#[test]
+fn revoking_trust_closes_the_process_with_the_close_that_is_retried() {
+    let (mut core, _directory, key) = core_with_a_pending_write();
+    core.background = crate::offload::Background::default();
+    core.link_supervisor(Box::new(Answering(|request| match request {
+        Request::Close { .. } => Err(remote_close_failure()),
+        _ => Ok(Response::Ok),
+    })));
+    let server = language_mut(&mut core.languages, &key).unwrap();
+    server.trusted = true;
+    server.trust_recorded = true;
+
+    // The folder has no answer in the store: the server started for a trusted folder is closed.
+    assert!(core.follow_language_trust(&key, None).unwrap());
+    apply_until_idle(&mut core);
+    assert_eq!(
+        core.supervisor_retry
+            .close_retries
+            .attempts("language-process"),
+        1,
+        "a close that failed is tried again by the tick"
+    );
+    assert_eq!(
+        language(&core.languages, &key).unwrap().state,
+        soyeht_protocol::LspState::Restricted
+    );
+}
+
+fn remote_close_failure() -> soyeht_ptyd::Error {
+    soyeht_ptyd::Error::Remote {
+        kind: soyeht_ptyd::wire_kind::OPERATION_FAILED.into(),
+        message: "registry".into(),
+    }
+}
+
+#[test]
+fn a_language_server_process_no_server_owns_is_closed_when_the_supervisor_returns() {
+    let (mut core, _directory, key, closed) = core_recording_closes();
+    let owned = language_process(&core, &key, "owned");
+    let mut stale = language_process(&core, &key, "stale");
+    stale.spawn.instance_key = "replaced-by-a-restart".into();
+
+    core.close_orphaned_agent_processes(&[owned, stale])
+        .unwrap();
+    apply_until_idle(&mut core);
+
+    assert_eq!(*closed.lock().unwrap(), ["stale"]);
+}
+
+#[test]
+fn a_server_that_cannot_start_for_its_folders_trust_is_left_unavailable_and_keeps_the_link() {
+    let (mut core, _directory) = core_with_agent(&[]);
+    core.background = crate::offload::Background::default();
+    let closed = Closed::default();
+    let record = Arc::clone(&closed);
+    core.link_supervisor(Box::new(Answering(move |request| {
+        if let Request::Close { instance_id } = request {
+            record.lock().unwrap().push(instance_id);
+        }
+        Ok(Response::Ok)
+    })));
+    let path = _directory.to_string_lossy().into_owned();
+    let server = Server::new("workspace", &path, EditorLanguage::Typescript)
+        .unwrap()
+        .with_trust(false);
+    if server.options().is_ok() {
+        // This machine has the TypeScript server installed; there is no failure to meet.
+        return;
+    }
+    let key = core.languages.insert(server).unwrap();
+    let server = language(&core.languages, &key).unwrap();
+    let instance = Instance {
+        instance_id: "typescript-process".into(),
+        supervisor_id: "answering".into(),
+        spawn: soyeht_ptyd::wire::Spawn {
+            instance_key: server.instance_key.clone(),
+            generation: server.generation,
+            kind: soyeht_ptyd::wire::ProcessKind::PipesLsp,
+            cwd: path,
+            argv: vec!["typescript-language-server".into()],
+            env: Default::default(),
+            cols: 80,
+            rows: 24,
+        },
+        pid: 9,
+        closed: false,
+        exit_code: None,
+    };
+    language_mut(&mut core.languages, &key)
+        .unwrap()
+        .pending_writes
+        .insert("op".into(), STANDARD.encode("abcd"));
+
+    core.reconcile_language_servers(&[instance]).unwrap();
+    apply_until_idle(&mut core);
+
+    assert_eq!(
+        language(&core.languages, &key).unwrap().state,
+        soyeht_protocol::LspState::Unavailable
+    );
+    assert_eq!(*closed.lock().unwrap(), ["typescript-process"]);
+}

@@ -11,11 +11,13 @@ use crate::{
 use serde_json::Value;
 use soyeht_protocol::LspState;
 use soyeht_ptyd::wire::Instance;
+use soyeht_store::editor::EditorFile;
 
 impl Server {
     /// The server as it starts for the trust of its folder.
     pub fn with_trust(mut self, trusted: bool) -> Self {
         self.trusted = trusted;
+        self.trust_recorded = true;
         if let Some(reason) = self.refusal() {
             self.state = LspState::Restricted;
             self.detail = Some(reason.into());
@@ -47,6 +49,7 @@ impl Server {
     /// server waits, restricted, when it has no safe mode.
     pub fn set_trusted(&mut self, trusted: bool) -> Result<()> {
         self.trusted = trusted;
+        self.trust_recorded = true;
         self.restart(if trusted {
             "The folder is trusted"
         } else {
@@ -57,9 +60,9 @@ impl Server {
 
 impl Core {
     /// Makes the server `key` start the way the trust of its folder asks (ADR 0150): a server
-    /// started for another trust is closed and restarts, and `existing` is the process of it that
-    /// the supervisor still holds, if the engine has not adopted it yet. Returns whether the
-    /// server changed. The caller starts the new process.
+    /// started for another trust, or by an engine that did not record one, is closed and restarts.
+    /// `existing` is the process of it that the supervisor still holds, if the engine has not
+    /// adopted it yet. Returns whether the server changed. The caller starts the new process.
     pub(super) fn follow_language_trust(
         &mut self,
         key: &str,
@@ -67,17 +70,39 @@ impl Core {
     ) -> Result<bool> {
         let server = language(&self.languages, key)?;
         let trusted = project_trusted(&self.store, &server.root)?;
-        if server.trusted == trusted {
+        if server.trust_recorded && server.trusted == trusted {
             return Ok(false);
         }
-        if let Some(instance) = existing {
-            self.close_process(&instance.instance_id);
+        // The old process is closed with the retrying close, not the best-effort one: a folder
+        // that was restricted must not keep a server running because the supervisor was away.
+        let held = server.instance_id.clone();
+        for instance_id in existing
+            .map(|instance| &instance.instance_id)
+            .into_iter()
+            .chain(&held)
+        {
+            self.close_process(instance_id);
         }
-        let pending = self.close_language_process(key)?;
+        let pending: Vec<String> = language(&self.languages, key)?
+            .pending_writes
+            .keys()
+            .cloned()
+            .collect();
+        self.forget_reads(&crate::read_ahead::language(key));
         language_mut(&mut self.languages, key)?.set_trusted(trusted)?;
         self.persist_language_server(key, Vec::new())?;
         self.confirm_language_writes(pending);
         Ok(true)
+    }
+
+    /// Answers an editor request for a restricted server at once, and says why; otherwise the
+    /// server `file` needs, started if it is not. The one place the editor's requests go through.
+    pub(crate) fn require_language_server(&mut self, file: &EditorFile) -> Result<String> {
+        let key = self.ensure_language_server(file)?;
+        match self.languages.get(&key).and_then(Server::refusal) {
+            Some(reason) => Err(errors::harness_unavailable(reason)),
+            None => Ok(key),
+        }
     }
 
     /// A decision of the person about the folder `root`: every language server of that folder
@@ -168,10 +193,18 @@ mod tests {
             .unwrap()
             .with_trust(false);
         assert_eq!(python.status().safe_mode.is_some(), !cfg!(windows));
+        // Trusted, the supervisor finds the program by name; without trust the engine names it
+        // by an absolute path or does not start it.
+        let trusted = Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Python)
+            .unwrap()
+            .with_trust(true);
         assert_eq!(
-            python.spawn().unwrap().argv,
+            trusted.spawn().unwrap().argv,
             ["pyright-langserver", "--stdio"]
         );
-        assert!(python.spawn().unwrap().env.is_empty());
+        assert!(trusted.spawn().unwrap().env.is_empty());
+        if let Ok(spawn) = python.spawn() {
+            assert!(std::path::Path::new(&spawn.argv[0]).is_absolute());
+        }
     }
 }

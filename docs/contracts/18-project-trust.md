@@ -46,9 +46,9 @@ transaction, then every language server of that folder follows the new answer (s
 ## 3. What the clients receive and show
 
 - The snapshot has a `trust` section: one `ProjectTrustEntry {workspaceId, trust}` per open workspace.
-- `project.trust_changed {workspaceIds, trust}` is durable. It follows `project.trust.set`, and it also
-  follows `workspace.created` when the new workspace's folder was answered before, so a client never has to
-  guess.
+- `project.trust_changed {workspaceIds, trust}` is durable. It follows `project.trust.set`, and it follows
+  every `workspace.created` with the answer for the new workspace's folder, `undecided` included, so a
+  client learns a workspace is undecided from the event and asks, with no reconnect.
 - The first time a workspace whose trust is `undecided` is active, each client asks "Trust this folder?"
   (`projectTrustTitle`, `projectTrustSummary`) with two buttons, `projectTrustTrust` and
   `projectTrustRestrict`, and a dismissal that defers the question until the app starts again (it is not
@@ -74,14 +74,28 @@ hostile element only writes a marker file:
 | `pyright-langserver` | starts, safe mode | Pyright imports nothing from the folder. Its one subprocess is the interpreter (`python3` from the supervisor's `PATH`), run with the code that finds its search paths, and `pyrightconfig.json` and `pyproject.toml` cannot choose the interpreter (`pythonPath` is a language-server setting only). On Windows the system looks in the working directory first, so a `python3.exe` in the folder would win: there it does not start. |
 
 A server that did not start has `state: "restricted"` and a `detail` that ends "Trust the folder to turn it
-on."; an editor request for it answers `harness_unavailable` with the same text at once. A trusted folder
+on."; an editor request for it (a symbol, definition, reference or `file.format`) answers `harness_unavailable`
+with the same text at once, through one function (`require_language_server`). A trusted folder
 starts every server with the options it always had.
 
 **Following a decision.** The server records the trust it was started for. When the answer changes, the
 engine closes the server's process, bumps its generation and starts it again the new way if an editor pane
 needs it (trusting turns a restricted server on; restricting closes a running one). The same check runs when
 the engine starts or reconnects to its supervisor, so a process started for another answer is never adopted.
-A checkpoint that does not say what trust it was started for counts as restricted.
+A checkpoint that does not say what trust it was started for (written by an engine that did not know
+project trust: its process may have been started with the folder's own `tsserver` and plugins) is closed and
+started again once, the first time the engine looks at it after the upgrade.
+
+The old process is closed with the supervisor's retried close, and a language server process whose instance key
+no server owns (a trust that changed while the supervisor was away) is closed when the engine reconciles with
+the supervisor, as the agent processes are. A server that cannot start the way its folder's trust asks (no
+installed `tsserver.js`, no program on a trusted path) is left `unavailable` with the reason; it never drops the
+engine's link to the supervisor.
+
+**Programs and paths.** Without trust the engine starts a server by the absolute path it found in the absolute
+entries of its search path (a relative or empty entry is the project folder, so it never counts), with the
+canonical folder as the working directory; `typescript-language-server` takes its `tsserver.js` only from a
+`typescript` package that has a readable `package.json` with a version, and a partial install is refused.
 
 **What this does not cover.** A folder that was trusted and then changed (a pull, a checkout) is still
 trusted; the state is a decision about a place, as in other editors. Programs the person starts in a

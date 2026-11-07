@@ -52,6 +52,9 @@ folders ask first ("Do you trust the authors of the files in this folder?"), and
   editor shows why and offers the question again. Existing workspaces start `undecided` after the upgrade.
 - Engine integration tests that need a Rust server trust the folder first.
 - The database schema is 33; downgrading to an engine that does not know it is refused as always.
+- On Windows and Linux the system cannot tell the app from another program of the same user, so such a
+  program counts as the person (ADR 0128). That is accepted: a program of the same user can already do everything
+  the folder's code could.
 - A folder stays trusted when its contents change. That is a property of the decision, as in other editors; a
   trusted folder is as dangerous as the person's own account.
 - Not covered: programs started in terminals or by agents, which the person already runs as themselves.
