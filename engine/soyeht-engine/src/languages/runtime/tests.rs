@@ -12,7 +12,13 @@ use std::sync::{
 fn core_with_a_pending_write() -> (Core, std::path::PathBuf, String) {
     let (mut core, directory) = core_with_agent(&[]);
     let path = directory.to_string_lossy().into_owned();
-    let server = Server::new("workspace", &path, EditorLanguage::Rust).unwrap();
+    // The program is looked up in a trusted folder of the test's own, not on the machine's search
+    // path, which may hold no language server.
+    let tools = crate::supervisor_link::tests::short_directory();
+    std::fs::write(tools.join("rust-analyzer"), b"").unwrap();
+    let server = Server::new("workspace", &path, EditorLanguage::Rust)
+        .unwrap()
+        .with_search_path(&tools);
     let key = core.languages.insert(server).unwrap();
     let spawn = language(&core.languages, &key).unwrap().spawn().unwrap();
     let instance = Instance {

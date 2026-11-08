@@ -31,6 +31,33 @@ impl Server {
         soyeht_lsp::refusal(&self.language, self.trusted)
     }
 
+    /// The program the supervisor starts. It starts a program by name in the project folder, so
+    /// without trust the name is resolved here, from the absolute entries of the search path: a
+    /// relative or empty entry cannot start a program of the folder.
+    pub(super) fn program(&self, command: &str) -> Result<String> {
+        if self.trusted {
+            return Ok(command.to_owned());
+        }
+        self.search_path
+            .clone()
+            .or_else(|| std::env::var_os("PATH"))
+            .and_then(|path| soyeht_lsp::absolute_command(command, &path))
+            .map(|program| program.to_string_lossy().into_owned())
+            .ok_or_else(|| {
+                errors::harness_unavailable(
+                    "The language server was not found in a trusted folder of the search path",
+                )
+            })
+    }
+
+    /// Looks the program up in `search_path` instead of the engine's own, so a test needs no
+    /// language server installed on the machine.
+    #[cfg(test)]
+    pub(crate) fn with_search_path(mut self, search_path: &std::path::Path) -> Self {
+        self.search_path = Some(search_path.into());
+        self
+    }
+
     /// The `initializationOptions` of the server's `initialize`, for the folder's trust.
     pub fn options(&self) -> Result<Option<Value>> {
         soyeht_lsp::initialization_options(

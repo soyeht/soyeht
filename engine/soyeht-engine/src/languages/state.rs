@@ -34,6 +34,10 @@ pub struct Server {
     /// tsserver and plugins, so it is closed and started again once.
     #[serde(default)]
     pub trust_recorded: bool,
+    /// The search path an untrusted folder's server is looked up in; the engine's own when none
+    /// is set. Not part of a checkpoint.
+    #[serde(skip)]
+    pub(super) search_path: Option<std::ffi::OsString>,
     pub generation: u32,
     pub instance_key: String,
     pub instance_id: Option<String>,
@@ -108,6 +112,7 @@ impl Server {
             language,
             trusted: false,
             trust_recorded: false,
+            search_path: None,
             generation: 1,
             instance_key: Uuid::new_v4().to_string(),
             instance_id: None,
@@ -130,22 +135,7 @@ impl Server {
     pub fn spawn(&self) -> Result<Spawn> {
         let config = soyeht_lsp::config(&self.language)
             .ok_or_else(|| errors::invalid("File language has no language server"))?;
-        // The supervisor starts a program by name in the project folder. Without trust the name
-        // is resolved here, from the absolute entries of the search path, so a relative or empty
-        // entry cannot start a program of the folder.
-        let command = if self.trusted {
-            config.command.to_owned()
-        } else {
-            std::env::var_os("PATH")
-                .and_then(|path| soyeht_lsp::absolute_command(config.command, &path))
-                .ok_or_else(|| {
-                    errors::harness_unavailable(
-                        "The language server was not found in a trusted folder of the search path",
-                    )
-                })?
-                .to_string_lossy()
-                .into_owned()
-        };
+        let command = self.program(config.command)?;
         let mut argv = vec![command];
         argv.extend(config.args.iter().map(|value| (*value).into()));
         Ok(Spawn {
