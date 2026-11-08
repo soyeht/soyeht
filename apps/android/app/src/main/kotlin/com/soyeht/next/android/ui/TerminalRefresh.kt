@@ -11,7 +11,7 @@ import kotlinx.coroutines.delay
 import uniffi.soyeht_android.TerminalFrame
 
 /**
- * Keeps the e-ink panel's refresh in step with a terminal's output (ADR 0153): the view draws in the text mode;
+ * Keeps the e-ink panel's refresh in step with a terminal's output (ADR 0155): the view draws in the text mode;
  * output that streams switches to the fast mode, and about [Eink.settleDelayMs] after the last changed frame the
  * fast mode ends and one full refresh clears the ghosts. Off e-ink, or off a Boox, it does nothing.
  */

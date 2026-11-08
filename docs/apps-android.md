@@ -34,7 +34,7 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   another phone.
 - "Forget" asks first. A web, editor or writing pane says it is shown on the computer.
 
-- **E-ink mode** (ADR 0153). On by itself on a Boox (`Build.MANUFACTURER` is `ONYX`) and switchable by hand on
+- **E-ink mode** (ADR 0155). On by itself on a Boox (`Build.MANUFACTURER` is `ONYX`) and switchable by hand on
   the pairing screen and the list of panes. It uses the e-ink palette and sizes of `contracts/design-tokens.json`
   (`einkPalette`, `eink`): high contrast, an edge on every card, well, pill and modal, 18 sp text, a 56 dp touch
   target, no animation, a reading column on a wide screen, and a terminal whose font grows until the columns fill

@@ -36,7 +36,7 @@ COLOR_ROLES = (
 # Optional roles of a palette: a missing syntaxType or diffAdded falls back to an ANSI slot,
 # exactly as `SoyehtThemePalette.make` does.
 FALLBACKS = {"syntaxType": 13, "diffAdded": 10}
-# Roles only the e-ink palette has (ADR 0153): the edge of a card, well, pill or modal, which a screen
+# Roles only the e-ink palette has (ADR 0155): the edge of a card, well, pill or modal, which a screen
 # that shows few grey levels needs where the other palettes use a shadow, and the ink of dimmed text,
 # which is a lighter step there and never an alpha.
 EINK_ROLES = ("border", "dim")
@@ -63,7 +63,7 @@ NUMERIC_SECTIONS = {
     "composer": "Composer",
     "editor": "Editor",
 }
-# Sections only the Android app reads (its e-ink mode, ADR 0153): the Kotlin output has them and the Swift and
+# Sections only the Android app reads (its e-ink mode, ADR 0155): the Kotlin output has them and the Swift and
 # Rust outputs do not, so a client that does not use them carries no unused public name.
 ANDROID_SECTIONS = {"eink": "Eink"}
 # Values only the desktop client has (window frame, popups, glyph sizes). They are Rust-only: the

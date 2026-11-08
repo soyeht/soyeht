@@ -6,7 +6,7 @@ import android.view.View
 import java.lang.reflect.InvocationTargetException
 
 /**
- * Control of how an e-ink panel refreshes a view (ADR 0153). A Boox's firmware lets an app pick the waveform
+ * Control of how an e-ink panel refreshes a view (ADR 0155). A Boox's firmware lets an app pick the waveform
  * a view is drawn with: a quick partial one that ghosts, or a slow full one that clears the ghosts.
  * Anywhere else there is nothing to control and every call does nothing.
  */

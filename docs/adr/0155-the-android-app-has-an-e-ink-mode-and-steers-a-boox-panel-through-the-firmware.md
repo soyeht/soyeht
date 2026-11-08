@@ -1,4 +1,4 @@
-# ADR 0153: The Android app has an e-ink mode, and steers a Boox panel through the firmware
+# ADR 0155: The Android app has an e-ink mode, and steers a Boox panel through the firmware
 
 - Status: accepted. Extends ADR 0134 (the Android app) and ADR 0013 (who sizes a terminal).
 - Date: 2026-11-08
