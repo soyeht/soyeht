@@ -24,9 +24,11 @@ use soyeht_store::domain::FinishedInput;
 /// faster than this, so the keystrokes of a burst share their commits.
 pub(crate) const LINGER_MS: i64 = 250;
 
-/// How long an intent whose operation the supervisor holds is left for its client to retry before
-/// it is forgotten: a client retries within seconds.
-const ORPHAN_AFTER_MS: i64 = 60_000;
+/// How long after it was recorded an intent whose operation the supervisor holds is left for its
+/// client to retry before it is forgotten: a client retries within seconds.
+const ORPHAN_AFTER_S: i64 = 60;
+/// How long the sweep leaves an intent that is not old enough yet alone.
+const ORPHAN_RECHECK_MS: i64 = 10_000;
 
 /// An accepted input whose outcome is not durable yet.
 pub(crate) struct Waiting {
@@ -95,41 +97,62 @@ impl Core {
 
     /// The supervisor holds the operation of an input whose intent the store holds: either its
     /// client is about to retry it, or the engine ended before it recorded the outcome and nobody
-    /// will. It is looked at again after [`ORPHAN_AFTER_MS`].
+    /// will. The sweep looks at it, and forgets it once the store says the intent is older than
+    /// [`ORPHAN_AFTER_S`].
     pub(crate) fn watch_orphan_input(&mut self, operation_key: String) {
         let now = self.now_ms();
         self.orphan_inputs.entry(operation_key).or_insert(now);
     }
 
-    /// Forgets the intents nobody retried within [`ORPHAN_AFTER_MS`] of the engine seeing them,
-    /// and tells the supervisor to forget their operations. An outcome that waits to be recorded
-    /// confirms its own.
+    /// Forgets the intents nobody retried within [`ORPHAN_AFTER_S`] of being recorded, and tells
+    /// the supervisor to forget their operations. The age is the store's, so a slow client's retry
+    /// is not cut short by an engine that started late. An outcome that waits to be recorded
+    /// confirms its own. An entry stays until its intent is gone, and a failure is tried again.
     fn sweep_orphan_inputs(&mut self) -> Result<()> {
         let now = self.now_ms();
         let due: Vec<String> = self
             .orphan_inputs
             .iter()
-            .filter(|(_, since)| now < **since || now - **since >= ORPHAN_AFTER_MS)
+            .filter(|(_, next)| now >= **next || **next - now > ORPHAN_RECHECK_MS)
             .map(|(operation_key, _)| operation_key.clone())
             .collect();
+        let recorded_by = self.now_unix() - ORPHAN_AFTER_S;
+        let mut failure = None;
         for operation_key in due {
-            self.orphan_inputs.remove(&operation_key);
             if self
                 .input_receipts
                 .iter()
                 .any(|waiting| waiting.operation_key == operation_key)
             {
+                self.orphan_inputs.remove(&operation_key);
                 continue;
             }
-            if self
-                .store
-                .drop_input_intent(&operation_key)
-                .map_err(errors::storage)?
-            {
-                self.confirm_inputs(vec![operation_key]);
+            match self.store.drop_input_intent(&operation_key, recorded_by) {
+                Ok(true) => {
+                    self.orphan_inputs.remove(&operation_key);
+                    self.confirm_inputs(vec![operation_key]);
+                }
+                Ok(false) => {
+                    // Younger than the grace, or already gone (a retry completed it).
+                    match self.store.input_intent_operation_pending(&operation_key) {
+                        Ok(true) => {
+                            self.orphan_inputs
+                                .insert(operation_key, now + ORPHAN_RECHECK_MS);
+                        }
+                        Ok(false) => {
+                            self.orphan_inputs.remove(&operation_key);
+                        }
+                        Err(error) => failure = Some(errors::storage(error)),
+                    }
+                }
+                Err(error) => {
+                    self.orphan_inputs
+                        .insert(operation_key, now + ORPHAN_RECHECK_MS);
+                    failure = Some(errors::storage(error));
+                }
             }
         }
-        Ok(())
+        failure.map_or(Ok(()), Err)
     }
 
     /// The tick: records the outcomes that have waited for the next input long enough.
@@ -280,7 +303,8 @@ mod tests {
     }
 
     #[test]
-    fn an_intent_nobody_retries_is_forgotten_after_a_minute_and_its_operation_confirmed() {
+    fn an_intent_nobody_retries_is_forgotten_a_minute_after_it_was_recorded_and_its_operation_confirmed()
+     {
         let (mut core, directory, confirmed, clock) = core_confirming();
         let intent = |operation_key: &str| soyeht_store::domain::InputIntent {
             fingerprint: "fingerprint".into(),
@@ -288,6 +312,12 @@ mod tests {
             supervisor_id: "supervisor".into(),
             instance_id: "instance".into(),
         };
+        // The intents are recorded now (the real clock of the store); the engine's clock is the
+        // test's, which starts at a time a new engine might have first seen them.
+        let recorded = chrono::Utc::now().timestamp();
+        clock
+            .0
+            .store(recorded * 1_000, std::sync::atomic::Ordering::SeqCst);
         for (key, operation) in [("a", "op-a"), ("b", "op-b")] {
             core.store
                 .finish_inputs(&[], Some(("client", key, &intent(operation))))
@@ -296,21 +326,28 @@ mod tests {
         }
         // The outcome of one of them waits: it confirms its own.
         core.input_receipts
-            .push(Waiting::for_test("b", "op-b", 1_000));
+            .push(Waiting::for_test("b", "op-b", recorded * 1_000));
 
+        // A new engine that first sees the intents a minute after they were recorded forgets
+        // them at once; one that sees them younger waits for the rest of the minute.
         clock.0.store(
-            1_000 + ORPHAN_AFTER_MS - 1,
+            (recorded + ORPHAN_AFTER_S - 1) * 1_000,
             std::sync::atomic::Ordering::SeqCst,
         );
         core.flush_input_receipts().unwrap();
         assert!(core.store.input_intent_operation_pending("op-a").unwrap());
+        assert!(
+            core.orphan_inputs.contains_key("op-a"),
+            "it is looked at again"
+        );
 
-        clock
-            .0
-            .store(1_000 + ORPHAN_AFTER_MS, std::sync::atomic::Ordering::SeqCst);
+        clock.0.store(
+            (recorded + ORPHAN_AFTER_S + ORPHAN_RECHECK_MS / 1_000) * 1_000,
+            std::sync::atomic::Ordering::SeqCst,
+        );
         core.flush_input_receipts().unwrap();
         assert!(!core.store.input_intent_operation_pending("op-a").unwrap());
-        assert!(core.orphan_inputs.is_empty());
+        assert!(!core.orphan_inputs.contains_key("op-a"));
         let confirmed = confirmed.lock().unwrap();
         assert!(confirmed.contains(&"op-a".to_owned()), "{confirmed:?}");
         crate::test_paths::remove_after(core, directory);

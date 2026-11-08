@@ -172,19 +172,21 @@ impl Store {
         }
         if let Some((scope, key, intent)) = intent {
             tx.execute(
-                "INSERT INTO input_intents(scope,key,fingerprint,operation_key,supervisor_id,instance_id) VALUES (?1,?2,?3,?4,?5,?6)",
-                params![scope, key, intent.fingerprint, intent.operation_key, intent.supervisor_id, intent.instance_id],
+                "INSERT INTO input_intents(scope,key,fingerprint,operation_key,supervisor_id,instance_id,created_unix) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                params![scope, key, intent.fingerprint, intent.operation_key, intent.supervisor_id, intent.instance_id, now],
             )?;
         }
         tx.commit()?;
         Ok(())
     }
 
-    /// Forgets the intent of an operation nobody is going to retry. Returns whether there was one.
-    pub fn drop_input_intent(&self, operation_key: &str) -> Result<bool> {
+    /// Forgets the intent of an operation nobody is going to retry, if it was recorded at
+    /// `recorded_by_unix` or before: a client retries within seconds of the first try, and the
+    /// time counts from the record, whichever engine first sees it. Returns whether it did.
+    pub fn drop_input_intent(&self, operation_key: &str, recorded_by_unix: i64) -> Result<bool> {
         let removed = self.connection.execute(
-            "DELETE FROM input_intents WHERE operation_key=?1",
-            [operation_key],
+            "DELETE FROM input_intents WHERE operation_key=?1 AND created_unix<=?2",
+            params![operation_key, recorded_by_unix],
         )?;
         Ok(removed > 0)
     }
@@ -599,6 +601,25 @@ mod tests {
         assert!(repeated.is_err());
         assert!(store.input_intent("client", "d").unwrap().is_some());
         assert!(store.idempotency_receipt("client", "d").unwrap().is_none());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn an_intent_is_forgotten_only_when_it_was_recorded_long_enough_ago() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-inputs-{}", uuid::Uuid::new_v4()));
+        let mut store = Store::open(&directory).unwrap();
+        store
+            .finish_inputs(&[], Some(("client", "a", &intent("op-a"))))
+            .unwrap();
+        let recorded = chrono::Utc::now().timestamp();
+
+        // A grace that has not passed since the record leaves it; one that has, drops it.
+        assert!(!store.drop_input_intent("op-a", recorded - 60).unwrap());
+        assert!(store.input_intent("client", "a").unwrap().is_some());
+        assert!(store.drop_input_intent("op-a", recorded + 1).unwrap());
+        assert!(store.input_intent("client", "a").unwrap().is_none());
+        assert!(!store.drop_input_intent("op-a", recorded + 1).unwrap());
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

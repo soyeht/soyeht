@@ -7,7 +7,7 @@ use soyeht_protocol::ErrorKind;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 32;
+pub const SCHEMA_VERSION: u32 = 33;
 
 #[derive(Debug)]
 pub enum Error {
@@ -357,7 +357,25 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
     if version < 32 {
         tx.execute_batch(include_str!("../migrations/032-usage-opencode.sql"))?;
     }
+    if version < 33 {
+        if lacks_column(tx, "input_intents", "created_unix")? {
+            tx.execute_batch(include_str!("../migrations/033-input-intent-time.sql"))?;
+        }
+        tx.execute_batch("PRAGMA user_version = 33;")?;
+    }
     Ok(())
+}
+
+/// Whether `table` exists and has no `column` yet: a migration that adds one runs again on a
+/// database whose version was set back (as the tests of earlier migrations do), and SQLite cannot
+/// add a column twice.
+fn lacks_column(tx: &Transaction<'_>, table: &str, column: &str) -> Result<bool> {
+    let (columns, found): (i64, i64) = tx.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(name=?2), 0) FROM pragma_table_info(?1)",
+        [table, column],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    Ok(columns > 0 && found == 0)
 }
 
 /// Version 30 names queued attachments by engine-owned paths. A prompt queued
