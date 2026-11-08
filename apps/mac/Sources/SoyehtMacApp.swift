@@ -107,6 +107,7 @@ struct SoyehtMacApp: App {
         workspaceViewCommand("Presentations", destination: .presentations, key: "8")
         workspaceViewCommand("Screenplays", destination: .screenplays, key: "9")
       }
+      PaneCommands()
       CommandGroup(replacing: .appSettings) {
         Button("Preferences…") {
           NotificationCenter.default.post(name: .showSoyehtPreferences, object: nil)
