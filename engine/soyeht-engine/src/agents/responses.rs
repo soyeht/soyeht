@@ -575,7 +575,7 @@ fn session_lost(
     open(store, runtime, state, saved, changes)
 }
 
-fn prompt_response(
+pub(crate) fn prompt_response(
     store: &impl StorePort,
     state: &mut State,
     saved: &mut StoredPane,
@@ -625,13 +625,19 @@ fn prompt_response(
     };
     super::questions::decide_open_as_system(store, &saved.pane.pane_id, state, changes, timestamp)?;
     transcript::complete(store, &saved.pane.pane_id, state, changes)?;
+    let for_ceiling = std::mem::take(&mut state.cancelled_for_ceiling);
     if cancel_requested && reason == TurnStopReason::Cancelled {
+        let notice = if for_ceiling {
+            super::configuration::MODE_CEILING_CANCELLED
+        } else {
+            "Turn cancelled by the user."
+        };
         changes.messages.push(transcript::new_message(
             state,
             saved.pane.generation,
             TranscriptRole::System,
             TranscriptKind::System,
-            "Turn cancelled by the user.".into(),
+            notice.into(),
             true,
         )?);
     }

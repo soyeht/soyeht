@@ -361,6 +361,9 @@ class RepositoryTests(unittest.TestCase):
         for identifier in POLICY.allowed - {"OFL-1.1", "Apache-2.0 WITH LLVM-exception"}:  # FTL has its own file
             licenses.spdx_text(identifier)
 
+    def test_the_policy_holds_no_exception_so_a_gpl_crate_that_comes_back_fails_the_gate(self):
+        self.assertEqual(POLICY.exceptions, {})
+
     def test_a_swift_license_file_is_never_a_source_file(self):
         data = json.loads(sources.SWIFT_DATA.read_text())["packages"]
         names = [name for entry in data.values() for name in entry["files"]]
