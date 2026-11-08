@@ -36,6 +36,11 @@ COLOR_ROLES = (
 # Optional roles of a palette: a missing syntaxType or diffAdded falls back to an ANSI slot,
 # exactly as `SoyehtThemePalette.make` does.
 FALLBACKS = {"syntaxType": 13, "diffAdded": 10}
+# Roles only the e-ink palette has (ADR 0153): the edge of a card, well, pill or modal, which a screen
+# that shows few grey levels needs where the other palettes use a shadow, and the ink of dimmed text,
+# which is a lighter step there and never an alpha.
+EINK_ROLES = ("border", "dim")
+EINK_PALETTE = "einkPalette"
 PALETTE_KEYS = set(COLOR_ROLES) | {
     "displayName",
     "wellLip",
@@ -57,6 +62,7 @@ NUMERIC_SECTIONS = {
     "paneInterior": "PaneInterior",
     "composer": "Composer",
     "editor": "Editor",
+    "eink": "Eink",
 }
 # Values only the desktop client has (window frame, popups, glyph sizes). They are Rust-only: the
 # Mac output does not mention them, so it does not change when they do.
@@ -78,10 +84,10 @@ def _number(value, where):
         raise ValueError(f"{where}: {value!r} is not a number")
 
 
-def validate_palette(name, palette):
+def validate_palette(name, palette, extra=()):
     if not re.fullmatch(r"[a-z][A-Za-z]*", name):
         raise ValueError(f"palette {name!r} is not a lower camel case name")
-    unknown = set(palette) - PALETTE_KEYS
+    unknown = set(palette) - PALETTE_KEYS - set(extra)
     if unknown:
         raise ValueError(f"palette {name}: unknown keys {sorted(unknown)}")
     if not isinstance(palette.get("displayName"), str) or not palette["displayName"]:
@@ -102,10 +108,12 @@ def validate_palette(name, palette):
     for role in FALLBACKS:
         if role in palette:
             _hex(palette[role], f"palette {name} {role}")
+    for role in extra:
+        _hex(palette.get(role), f"palette {name} {role}")
 
 
 def validate_tokens(document):
-    expected = {"palettes", "fonts", "elevation", DESKTOP_SECTION, *NUMERIC_SECTIONS}
+    expected = {"palettes", EINK_PALETTE, "fonts", "elevation", DESKTOP_SECTION, *NUMERIC_SECTIONS}
     if set(document) != expected:
         raise ValueError(f"design tokens need exactly {sorted(expected)}")
     if list(document)[-1] != DESKTOP_SECTION:
@@ -114,6 +122,7 @@ def validate_tokens(document):
         raise ValueError("at least one palette is required")
     for name, palette in document["palettes"].items():
         validate_palette(name, palette)
+    validate_palette(EINK_PALETTE, document[EINK_PALETTE], EINK_ROLES)
     for section in (*NUMERIC_SECTIONS, DESKTOP_SECTION):
         for key, value in document[section].items():
             _number(value, f"{section}.{key}")
@@ -362,6 +371,8 @@ def kotlin_palette(name, palette):
     ]
     for role, slot in FALLBACKS.items():
         fields.append(f"{role} = {kotlin_color(palette.get(role, ansi[slot]))},")
+    for role in EINK_ROLES:
+        fields.append(f"{role} = " + (kotlin_color(palette[role]) if role in palette else "null") + ",")
     body = "\n".join(f"        {field}" for field in fields)
     return f"    val {name} = Palette(\n        displayName = {json.dumps(palette['displayName'], ensure_ascii=False)},\n{body}\n    )"
 
@@ -377,6 +388,7 @@ def render_kotlin(document, header):
     roles = (*COLOR_ROLES, "selection", "presentationLetterbox")
     fields = "".join(f"    val {role}: Long,\n" for role in roles)
     palettes = "\n\n".join(kotlin_palette(n, p) for n, p in document["palettes"].items())
+    eink = kotlin_palette("eink", document[EINK_PALETTE])
     listed = ", ".join(f"{name!r}" .replace("'", '"') + " to " + name for name in document["palettes"])
     sections = "\n\n".join(kotlin_section(title, document[key]) for key, title in NUMERIC_SECTIONS.items())
     fonts = "\n".join(f"    const val {key}: String = {json.dumps(value)}" for key, value in document["fonts"].items())
@@ -386,8 +398,12 @@ def render_kotlin(document, header):
         "class Palette(\n    val displayName: String,\n"
         f"{fields}"
         "    val wellLip: Long?,\n    val agents: List<Long>,\n    val ansi: List<Long>,\n"
-        "    val syntaxType: Long,\n    val diffAdded: Long,\n)\n\n"
-        f"object Palettes {{\n{palettes}\n\n    /** The themes by name, in the order of the token file; the first is the default. */\n"
+        "    val syntaxType: Long,\n    val diffAdded: Long,\n"
+        "    /** The edge of a card, well, pill or modal, and the ink of dimmed text: the e-ink palette's own. */\n"
+        "    val border: Long?,\n    val dim: Long?,\n)\n\n"
+        f"object Palettes {{\n{palettes}\n\n"
+        "    /** The palette of the e-ink mode: not a theme the person picks, so it is not in [all]. */\n"
+        f"{eink}\n\n    /** The themes by name, in the order of the token file; the first is the default. */\n"
         f"    val all: List<Pair<String, Palette>> = listOf({listed})\n}}\n\n"
         f"{sections}\n\nobject Fonts {{\n{fonts}\n}}\n"
     )

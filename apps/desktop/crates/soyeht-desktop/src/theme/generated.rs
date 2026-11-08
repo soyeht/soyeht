@@ -529,6 +529,21 @@ pub mod editor {
     pub const PREVIEW_MAX_WIDTH: f32 = 460.0;
     pub const PREVIEW_HEADER_HEIGHT: f32 = 26.0;
 }
+pub mod eink {
+    pub const BODY_TEXT_SIZE: f32 = 18.0;
+    pub const CAPTION_TEXT_SIZE: f32 = 16.0;
+    pub const SMALL_TEXT_SIZE: f32 = 16.0;
+    pub const SUBHEADING_TEXT_SIZE: f32 = 22.0;
+    pub const HEADING_TEXT_SIZE: f32 = 24.0;
+    pub const TITLE_TEXT_SIZE: f32 = 32.0;
+    pub const TERMINAL_FONT_SIZE: f32 = 16.0;
+    pub const TERMINAL_FONT_SIZE_MAXIMUM: f32 = 28.0;
+    pub const TOUCH_TARGET: f32 = 56.0;
+    pub const READING_COLUMN_WIDTH: f32 = 640.0;
+    pub const BORDER_WIDTH: f32 = 2.0;
+    pub const REDRAW_INTERVAL_MS: f32 = 250.0;
+    pub const SETTLE_DELAY_MS: f32 = 400.0;
+}
 pub mod desktop {
     pub const WINDOW_WIDTH: f32 = 1280.0;
     pub const WINDOW_HEIGHT: f32 = 800.0;

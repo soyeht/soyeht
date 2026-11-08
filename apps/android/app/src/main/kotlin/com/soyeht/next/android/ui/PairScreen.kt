@@ -16,6 +16,7 @@ import com.soyeht.next.android.theme.*
 @Composable
 fun PairScreen(model: AppModel) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     // Not saved with the state of the screen: the link is the pairing code.
     var link by remember { mutableStateOf("") }
     val startScan = rememberStartScan(model)
@@ -23,24 +24,24 @@ fun PairScreen(model: AppModel) {
         Modifier.padding(PaneInterior.phoneInset.dp),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.stackSpacing.dp),
     ) {
-        Text("Soyeht", color = roles.ink, fontSize = TypeScale.title.sp)
+        Text("Soyeht", color = roles.ink, fontSize = metrics.title.sp)
         Text(
             "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then scan the code, " +
                 "paste the link here or open it on this phone. Both must be on the same tailnet.",
             color = roles.secondary,
-            fontSize = TypeScale.body.sp,
+            fontSize = metrics.body.sp,
         )
         BasicTextField(
             value = link,
             onValueChange = { link = it },
-            textStyle = TextStyle(color = roles.ink, fontSize = TypeScale.caption.sp),
+            textStyle = TextStyle(color = roles.ink, fontSize = metrics.body.sp),
             cursorBrush = SolidColor(roles.accent),
             modifier = Modifier
                 .fillMaxWidth()
-                .background(roles.well, RoundedCornerShape(Radius.control.dp))
+                .panel(roles.well, RoundedCornerShape(Radius.control.dp))
                 .padding(PaneInterior.cardPadding.dp),
             decorationBox = { inner ->
-                if (link.isEmpty()) Text("soyeht-next://pair?…", color = roles.muted, fontSize = TypeScale.caption.sp)
+                if (link.isEmpty()) Text("soyeht-next://pair?…", color = roles.muted, fontSize = metrics.body.sp)
                 inner()
             },
         )
@@ -49,6 +50,7 @@ fun PairScreen(model: AppModel) {
             Pill("Scan QR code", startScan)
         }
         if (model.cameraDenied) CameraDenied()
+        EinkSwitch(model.eink, model::toggleEink)
     }
 }
 
@@ -56,10 +58,13 @@ fun PairScreen(model: AppModel) {
 @Composable
 fun PairingDialogs(model: AppModel) {
     val roles = LocalRoles.current
+    val dialog = dialogModifier()
     if (model.confirmingForget) {
         AlertDialog(
             onDismissRequest = model::keepComputer,
             containerColor = roles.face,
+            modifier = dialog,
+            shape = dialogShape,
             title = { Text("Forget this computer?", color = roles.ink) },
             text = {
                 Text(
@@ -76,6 +81,8 @@ fun PairingDialogs(model: AppModel) {
         is Pairing.Confirm -> AlertDialog(
             onDismissRequest = model::dismissPairing,
             containerColor = roles.face,
+            modifier = dialog,
+            shape = dialogShape,
             title = { Text("Pair with the computer at ${state.address}?", color = roles.ink) },
             text = {
                 Text(
@@ -91,6 +98,8 @@ fun PairingDialogs(model: AppModel) {
         is Pairing.Working -> AlertDialog(
             onDismissRequest = {},
             containerColor = roles.face,
+            modifier = dialog,
+            shape = dialogShape,
             title = { Text(if (state.waiting) "Allow access on the computer" else "Connecting…", color = roles.ink) },
             text = {
                 Text(
@@ -109,6 +118,8 @@ fun PairingDialogs(model: AppModel) {
         is Pairing.Failed -> AlertDialog(
             onDismissRequest = model::dismissPairing,
             containerColor = roles.face,
+            modifier = dialog,
+            shape = dialogShape,
             title = { Text("Could not pair", color = roles.ink) },
             text = { Text(state.message, color = roles.secondary) },
             confirmButton = { TextButton(model::dismissPairing) { Text("OK", color = roles.accent) } },

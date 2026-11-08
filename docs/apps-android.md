@@ -34,9 +34,18 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   another phone.
 - "Forget" asks first. A web, editor or writing pane says it is shown on the computer.
 
+- **E-ink mode** (ADR 0153). On by itself on a Boox (`Build.MANUFACTURER` is `ONYX`) and switchable by hand on
+  the pairing screen and the list of panes. It uses the e-ink palette and sizes of `contracts/design-tokens.json`
+  (`einkPalette`, `eink`): high contrast, an edge on every card, well, pill and modal, 18 sp text, a 56 dp touch
+  target, no animation, a reading column on a wide screen, and a terminal whose font grows until the columns fill
+  the pane's width (the phone still never resizes the pane). Terminal output is redrawn about four times a second
+  and each row is drawn only when it changes. On a Boox the terminal also steers the panel's refresh: the text
+  mode by default, the fast mode while output streams, one full refresh about 400 ms after it stops, and a
+  "Refresh screen" button. Anywhere else the refresh does nothing.
+
 Not yet: push notifications, new panes
 and workspaces, the board layout of a tablet, the Fira/JetBrains fonts (the terminal uses the system
-monospace font), terminal text size and selection.
+monospace font), terminal text size and selection (outside the e-ink mode).
 
 ## Build and test
 

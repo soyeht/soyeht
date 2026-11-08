@@ -13,6 +13,7 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.soyeht.next.android.theme.Eink
 import uniffi.soyeht_android.ComposerControls
 import uniffi.soyeht_android.Conversation
 import uniffi.soyeht_android.Core
@@ -58,6 +59,11 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private val pending = AtomicBoolean(false)
 
     private val saved = credentials.load()
+    private val display = DisplaySettings(application)
+
+    /** The e-ink mode: the palette and sizes of a Boox's screen, no animation, and output batched into few redraws. */
+    var eink by mutableStateOf(einkEnabled(display.saved(), Build.MANUFACTURER))
+        private set
 
     var paired by mutableStateOf(saved != null)
         private set
@@ -132,13 +138,18 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleEink() {
+        eink = !eink
+        display.save(eink)
+    }
+
     /** At most one redraw is queued, however fast the core reports: a terminal can change a hundred times a second. */
     private fun refreshSoon() {
         if (pending.compareAndSet(false, true)) {
             main.postDelayed({
                 pending.set(false)
                 refresh()
-            }, REDRAW_MS)
+            }, if (eink) Eink.redrawIntervalMs.toLong() else REDRAW_MS)
         }
     }
 
