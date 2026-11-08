@@ -4,7 +4,7 @@ use serde_json::Value;
 use soyeht_lsp::{Client, Decoder, Incoming, PositionValue, RequestKind};
 use soyeht_platform::log::Line;
 use soyeht_protocol::{EditorLanguage, FileAuthor, FileDiagnostic, LspServerStatus, LspState};
-use soyeht_ptyd::wire::{Instance, ProcessKind, Spawn};
+use soyeht_ptyd::wire::{Instance, Spawn};
 use soyeht_store::languages::LanguageServerCheckpoint;
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
@@ -34,10 +34,6 @@ pub struct Server {
     /// tsserver and plugins, so it is closed and started again once.
     #[serde(default)]
     pub trust_recorded: bool,
-    /// The search path an untrusted folder's server is looked up in; the engine's own when none
-    /// is set. Not part of a checkpoint.
-    #[serde(skip)]
-    pub(super) search_path: Option<std::ffi::OsString>,
     pub generation: u32,
     pub instance_key: String,
     pub instance_id: Option<String>,
@@ -112,7 +108,6 @@ impl Server {
             language,
             trusted: false,
             trust_recorded: false,
-            search_path: None,
             generation: 1,
             instance_key: Uuid::new_v4().to_string(),
             instance_id: None,
@@ -132,26 +127,9 @@ impl Server {
         })
     }
 
-    pub fn spawn(&self) -> Result<Spawn> {
-        let config = soyeht_lsp::config(&self.language)
-            .ok_or_else(|| errors::invalid("File language has no language server"))?;
-        let command = self.program(config.command)?;
-        let mut argv = vec![command];
-        argv.extend(config.args.iter().map(|value| (*value).into()));
-        Ok(Spawn {
-            instance_key: self.instance_key.clone(),
-            generation: self.generation,
-            kind: ProcessKind::PipesLsp,
-            cwd: self.root.clone(),
-            argv,
-            env: BTreeMap::new(),
-            cols: 80,
-            rows: 24,
-        })
-    }
-
-    pub fn adopt(&mut self, instance: &Instance) -> Result<()> {
-        if instance.spawn != self.spawn()? {
+    /// Takes the process `instance` as the server's, if it was started as `expected`.
+    pub fn adopt(&mut self, instance: &Instance, expected: &Spawn) -> Result<()> {
+        if instance.spawn != *expected {
             return Err(errors::ptyd_unavailable(
                 "Language server identity does not match its checkpoint",
             ));
@@ -510,6 +488,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use soyeht_lsp::encode;
+    use soyeht_ptyd::wire::ProcessKind;
 
     fn rust_server() -> Server {
         Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Rust)
@@ -537,12 +516,12 @@ mod tests {
         assert_eq!(spawn.argv, ["rust-analyzer"]);
 
         let exact = instance(&server);
-        server.adopt(&exact).unwrap();
+        server.adopt(&exact, &spawn).unwrap();
         assert_eq!(server.instance_id.as_deref(), Some("instance-1"));
 
         let mut wrong = exact;
         wrong.spawn.argv.push("--unexpected".into());
-        assert!(server.adopt(&wrong).is_err());
+        assert!(server.adopt(&wrong, &spawn).is_err());
     }
 
     #[test]

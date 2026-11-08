@@ -31,8 +31,9 @@ folders ask first ("Do you trust the authors of the files in this folder?"), and
 - **Without trust a language server starts only in a mode that cannot run the folder's files.** The rule is
   proof, not a flag: a server is allowed untrusted only if, from its source or documentation and from running
   it where we could, nothing in the folder can make it run a program the folder names, with the options we
-  give it. By that rule TypeScript (with the installed `tsserver.js`, no type installs, no plugins) and
-  pyright (nothing to switch off; not on Windows) start, and rust-analyzer and sourcekit-lsp do not. The client
+  give it. By that rule only TypeScript (with the installed `tsserver.js`, no type installs, no plugins) starts;
+  rust-analyzer, sourcekit-lsp and pyright do not. Pyright finds its search paths by running `python3 -c "import json ..."`
+  with the project folder as the working directory and no `-I`, so a `json.py` of the folder runs. The client
   says why (`lsp.status`: `restricted` and the reason) and the editor request answers at once.
   rust-analyzer's own switches for build scripts and proc macros are not enough: with them off, a
   `.cargo/config.toml` rustc wrapper, a `rust-toolchain.toml` toolchain path and a `rust-analyzer.toml`

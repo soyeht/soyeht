@@ -12,13 +12,9 @@ use std::sync::{
 fn core_with_a_pending_write() -> (Core, std::path::PathBuf, String) {
     let (mut core, directory) = core_with_agent(&[]);
     let path = directory.to_string_lossy().into_owned();
-    // The program is looked up in a trusted folder of the test's own, not on the machine's search
-    // path, which may hold no language server.
-    let tools = crate::supervisor_link::tests::short_directory();
-    std::fs::write(tools.join("rust-analyzer"), b"").unwrap();
-    let server = Server::new("workspace", &path, EditorLanguage::Rust)
-        .unwrap()
-        .with_search_path(&tools);
+    // Started for a trusted folder, by an engine that recorded no trust (see `trust_recorded`).
+    let mut server = Server::new("workspace", &path, EditorLanguage::Rust).unwrap();
+    server.trusted = true;
     let key = core.languages.insert(server).unwrap();
     let spawn = language(&core.languages, &key).unwrap().spawn().unwrap();
     let instance = Instance {
@@ -30,7 +26,7 @@ fn core_with_a_pending_write() -> (Core, std::path::PathBuf, String) {
         exit_code: None,
     };
     let server = language_mut(&mut core.languages, &key).unwrap();
-    server.adopt(&instance).unwrap();
+    server.adopt(&instance, &instance.spawn).unwrap();
     server
         .pending_writes
         .insert("op".into(), STANDARD.encode("abcd"));
@@ -319,29 +315,24 @@ fn a_language_server_process_no_server_owns_is_closed_when_the_supervisor_return
     assert_eq!(*closed.lock().unwrap(), ["stale"]);
 }
 
-#[test]
-fn a_server_that_cannot_start_for_its_folders_trust_is_left_unavailable_and_keeps_the_link() {
-    let (mut core, _directory) = core_with_agent(&[]);
-    let closed = link_recording_closes(&mut core);
-    let path = _directory.to_string_lossy().into_owned();
-    let server = Server::new("workspace", &path, EditorLanguage::Typescript)
-        .unwrap()
-        .with_trust(false);
-    if server.options().is_ok() {
-        // This machine has the TypeScript server installed; there is no failure to meet.
-        return;
-    }
-    let key = core.languages.insert(server).unwrap();
-    let server = language(&core.languages, &key).unwrap();
-    let instance = Instance {
-        instance_id: "typescript-process".into(),
+/// A search path with no language server on it: a folder of the test that holds nothing.
+fn empty_search_path(directory: &std::path::Path) -> std::ffi::OsString {
+    let empty = directory.join("empty-tools");
+    std::fs::create_dir_all(&empty).unwrap();
+    empty.into_os_string()
+}
+
+/// A process the supervisor holds for `server`, started as `argv`.
+fn process_of(server: &Server, id: &str, argv: &[&str]) -> Instance {
+    Instance {
+        instance_id: id.into(),
         supervisor_id: "answering".into(),
         spawn: soyeht_ptyd::wire::Spawn {
             instance_key: server.instance_key.clone(),
             generation: server.generation,
             kind: soyeht_ptyd::wire::ProcessKind::PipesLsp,
-            cwd: path,
-            argv: vec!["typescript-language-server".into()],
+            cwd: server.root.clone(),
+            argv: argv.iter().map(|value| (*value).to_owned()).collect(),
             env: Default::default(),
             cols: 80,
             rows: 24,
@@ -349,7 +340,25 @@ fn a_server_that_cannot_start_for_its_folders_trust_is_left_unavailable_and_keep
         pid: 9,
         closed: false,
         exit_code: None,
-    };
+    }
+}
+
+#[test]
+fn a_server_that_cannot_start_for_its_folders_trust_is_left_unavailable_and_keeps_the_link() {
+    let (mut core, directory) = core_with_agent(&[]);
+    let closed = link_recording_closes(&mut core);
+    // A search path with no TypeScript server on it, whatever this machine has installed.
+    core.language_search_path = Some(empty_search_path(&directory));
+    let path = directory.to_string_lossy().into_owned();
+    let server = Server::new("workspace", &path, EditorLanguage::Typescript)
+        .unwrap()
+        .with_trust(false);
+    let instance = process_of(
+        &server,
+        "typescript-process",
+        &["typescript-language-server"],
+    );
+    let key = core.languages.insert(server).unwrap();
     language_mut(&mut core.languages, &key)
         .unwrap()
         .pending_writes
@@ -363,4 +372,28 @@ fn a_server_that_cannot_start_for_its_folders_trust_is_left_unavailable_and_keep
         soyeht_protocol::LspState::Unavailable
     );
     assert_eq!(*closed.lock().unwrap(), ["typescript-process"]);
+}
+
+#[test]
+fn a_process_started_under_another_identity_is_replaced_and_keeps_the_link() {
+    // A trusted server whose process was started with other arguments (another build of the
+    // engine, another search path): adopting it would fail, and that must not drop the link.
+    let (mut core, _directory, key, closed) = core_recording_closes();
+    let stranger = {
+        let server = language(&core.languages, &key).unwrap();
+        process_of(server, "stranger", &["rust-analyzer", "--other"])
+    };
+
+    core.reconcile_language_servers(&[stranger]).unwrap();
+    apply_until_idle(&mut core);
+
+    // The stranger is closed, and so is the process the server had before.
+    assert!(closed.lock().unwrap().contains(&"stranger".to_owned()));
+    assert!(
+        language(&core.languages, &key)
+            .unwrap()
+            .instance_id
+            .is_none()
+    );
+    assert!(core.ptyd.is_some());
 }

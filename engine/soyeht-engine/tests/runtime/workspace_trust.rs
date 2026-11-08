@@ -48,6 +48,15 @@ fn trust_of(client: &mut Client, workspace: &str) -> String {
         .expect("a trust entry for the workspace")
 }
 
+/// Several ticks later still no process was started, and the folder was never run.
+fn assert_never_started(rig: &Rig, folder: &Path) {
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(25));
+        assert_eq!(live_servers(rig), 0);
+    }
+    assert!(!folder.join(RECORD).exists());
+}
+
 fn trust_events(rig: &Rig, trust: &str) -> u64 {
     rig.database_probe()
         .event_count_by_field("project.trust_changed", "trust", trust)
@@ -87,12 +96,7 @@ fn a_folder_nobody_trusted_never_starts_rust_analyzer_and_says_why() {
     );
     assert!(server.get("safeMode").is_none());
     assert_eq!(trust_of(&mut client, &workspace), "undecided");
-    // Several ticks later still no process was started, and the folder was never run.
-    for _ in 0..20 {
-        thread::sleep(Duration::from_millis(25));
-        assert_eq!(live_servers(&rig), 0);
-    }
-    assert!(!folder.join(RECORD).exists());
+    assert_never_started(&rig, &folder);
     // A request for the server answers at once instead of waiting for it.
     let file_id = client.section("files")[0]["fileId"]
         .as_str()
@@ -159,39 +163,24 @@ fn the_trust_of_a_folder_survives_an_engine_restart() {
 }
 
 #[test]
-fn python_runs_in_its_safe_mode_in_a_restricted_folder_and_trust_lifts_it() {
+fn python_does_not_start_in_a_restricted_folder_where_a_json_py_would_run() {
     let rig = Rig::new();
     let folder = folder_with(&rig, "restricted-python", "main.py");
+    // Pyright runs `python3 -c "import json ..."` in the folder, with the folder first on the
+    // import path: this file would run. The server must not be started at all.
+    fs::write(folder.join("json.py"), "open('ran', 'w')\n").unwrap();
     let mut client = rig.client();
     let workspace = open_in(&mut client, &folder, "Restricted python", "main.py");
 
-    let server = wait_state(&mut client, &workspace, "python", "ready");
-    if cfg!(windows) {
-        return;
-    }
-    assert_eq!(server["safeMode"], true);
-    let started = record(&folder);
-    assert_eq!(started["argv"].as_array().unwrap().len(), 2);
-    assert_eq!(started["argv"][1], "--stdio");
-    // Without trust the program is named by its absolute path, never by a name the folder could
-    // answer through its own entries of the search path.
-    assert!(Path::new(started["argv"][0].as_str().unwrap()).is_absolute());
-    let environment = started["env"].as_object().unwrap();
-    assert!(
-        environment.keys().all(|name| !name.starts_with("CARGO")
-            && !name.starts_with("RUSTC")
-            && name != "PYTHONPATH"),
-        "{environment:?}"
-    );
+    let server = wait_state(&mut client, &workspace, "python", "restricted");
+    assert!(server["detail"].as_str().unwrap().contains("json.py"));
+    assert!(server.get("safeMode").is_none());
+    assert_never_started(&rig, &folder);
+    assert!(!folder.join("ran").exists());
 
     decide_folder(&rig, &workspace, "trusted");
-    let server = eventually("the trusted server", || {
-        match status(&mut client, &workspace, "python") {
-            Some(server) if server["state"] == "ready" && server["generation"] == 2 => Ok(server),
-            other => Err(format!("{other:?}")),
-        }
-    });
-    assert!(server.get("safeMode").is_none());
+    wait_state(&mut client, &workspace, "python", "ready");
+    assert_eq!(record(&folder)["argv"][1], "--stdio");
 }
 
 #[cfg(unix)]
@@ -215,6 +204,24 @@ fn typescript_gets_the_installed_tsserver_and_no_type_installs_until_the_folder_
     assert_eq!(options["tsserver"]["path"], installed.to_str().unwrap());
     assert_eq!(options["disableAutomaticTypingAcquisition"], true);
     assert_eq!(options["plugins"], json!([]));
+    // Without trust the program is named by its absolute path, never by a name the folder could
+    // answer through its own entries of the search path, and the process gets a search path of
+    // its own: what it starts by name (`env node`) is never found in the folder it runs in.
+    let started = record(&folder);
+    assert!(Path::new(started["argv"][0].as_str().unwrap()).is_absolute());
+    let search_path = started["env"]["PATH"].as_str().unwrap();
+    let canonical = soyeht_platform::fs::canonicalize(&folder).unwrap();
+    for entry in std::env::split_paths(search_path) {
+        assert!(entry.is_absolute(), "{search_path}");
+        assert!(!entry.starts_with(&canonical), "{search_path}");
+    }
+    let environment = started["env"].as_object().unwrap();
+    assert!(
+        environment
+            .keys()
+            .all(|name| !name.starts_with("CARGO") && !name.starts_with("RUSTC")),
+        "{environment:?}"
+    );
 
     decide_folder(&rig, &workspace, "trusted");
     eventually("the trusted server", || {
