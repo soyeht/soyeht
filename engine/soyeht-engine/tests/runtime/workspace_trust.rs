@@ -48,6 +48,15 @@ fn trust_of(client: &mut Client, workspace: &str) -> String {
         .expect("a trust entry for the workspace")
 }
 
+/// Several ticks later still no process was started, and the folder was never run.
+fn assert_never_started(rig: &Rig, folder: &Path) {
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(25));
+        assert_eq!(live_servers(rig), 0);
+    }
+    assert!(!folder.join(RECORD).exists());
+}
+
 fn trust_events(rig: &Rig, trust: &str) -> u64 {
     rig.database_probe()
         .event_count_by_field("project.trust_changed", "trust", trust)
@@ -87,12 +96,7 @@ fn a_folder_nobody_trusted_never_starts_rust_analyzer_and_says_why() {
     );
     assert!(server.get("safeMode").is_none());
     assert_eq!(trust_of(&mut client, &workspace), "undecided");
-    // Several ticks later still no process was started, and the folder was never run.
-    for _ in 0..20 {
-        thread::sleep(Duration::from_millis(25));
-        assert_eq!(live_servers(&rig), 0);
-    }
-    assert!(!folder.join(RECORD).exists());
+    assert_never_started(&rig, &folder);
     // A request for the server answers at once instead of waiting for it.
     let file_id = client.section("files")[0]["fileId"]
         .as_str()
@@ -171,11 +175,7 @@ fn python_does_not_start_in_a_restricted_folder_where_a_json_py_would_run() {
     let server = wait_state(&mut client, &workspace, "python", "restricted");
     assert!(server["detail"].as_str().unwrap().contains("json.py"));
     assert!(server.get("safeMode").is_none());
-    for _ in 0..20 {
-        thread::sleep(Duration::from_millis(25));
-        assert_eq!(live_servers(&rig), 0);
-    }
-    assert!(!folder.join(RECORD).exists());
+    assert_never_started(&rig, &folder);
     assert!(!folder.join("ran").exists());
 
     decide_folder(&rig, &workspace, "trusted");
