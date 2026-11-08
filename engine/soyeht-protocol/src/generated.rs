@@ -177,6 +177,8 @@ pub enum ErrorKind {
     FileNotText,
     #[serde(rename = "file_too_large")]
     FileTooLarge,
+    #[serde(rename = "adapter_not_acknowledged")]
+    AdapterNotAcknowledged,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -564,6 +566,11 @@ pub struct PaneCreateParams {
     pub effort: Option<String>,
     #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<Id>,
+    #[serde(
+        rename = "acknowledgedPackage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged_package: Option<String>,
     #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
@@ -2274,6 +2281,11 @@ pub struct PaneHarnessSwitchParams {
     pub model: Option<String>,
     #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(
+        rename = "acknowledgedPackage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged_package: Option<String>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -9038,5 +9050,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::GitUnavailable => -32038,
         ErrorKind::FileNotText => -32039,
         ErrorKind::FileTooLarge => -32040,
+        ErrorKind::AdapterNotAcknowledged => -32041,
     }
 }

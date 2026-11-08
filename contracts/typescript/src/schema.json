@@ -128,7 +128,8 @@
         "platform_unsupported",
         "git_unavailable",
         "file_not_text",
-        "file_too_large"
+        "file_too_large",
+        "adapter_not_acknowledged"
       ]
     },
     "RpcError": {
@@ -940,6 +941,11 @@
         },
         "permissionMode": {
           "$ref": "#/$defs/Id"
+        },
+        "acknowledgedPackage": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "The package, as `name@version`, that the person was told the agent downloads and runs unchecked (`HarnessInfo.package`, ADR 0143). The engine starts such an agent only after this exact package was acknowledged once; only a person's request can acknowledge, and a new version asks again."
         },
         "url": {
           "type": "string",
@@ -4422,6 +4428,11 @@
         "effort": {
           "type": "string",
           "maxLength": 256
+        },
+        "acknowledgedPackage": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "The package, as `name@version`, that the person was told the agent downloads and runs unchecked (`HarnessInfo.package`, ADR 0143). The engine starts such an agent only after this exact package was acknowledged once; only a person's request can acknowledge, and a new version asks again."
         },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
@@ -14852,7 +14863,8 @@
     "platform_unsupported": -32037,
     "git_unavailable": -32038,
     "file_not_text": -32039,
-    "file_too_large": -32040
+    "file_too_large": -32040,
+    "adapter_not_acknowledged": -32041
   },
   "x-clientPolicy": {
     "timeouts": {

@@ -58,17 +58,21 @@ impl Launch {
         self.supervisor.clone()
     }
 
+    /// Whether sending it may install an adapter first, which takes minutes on a slow link: it
+    /// must not hold a shared background worker or the deadline of a request.
+    pub(crate) fn may_install(&self) -> bool {
+        crate::agents::adapter_install::is_locked_launch(&self.config.argv)
+    }
+
     /// Waits for the sends ahead of it, then asks the supervisor.
     pub(crate) fn send(self) -> Result<Instance> {
         if let Some(directory) = &self.adapter_directory {
             crate::agents::adapter_directory::prepare(directory);
         }
-        // An adapter is given the person's own CLI (ADR 0137), which takes a command; that waits
-        // for nobody's turn.
-        // A locked adapter runs from the tree the engine installed (ADR 0143): the first start
-        // installs it.
-        let process =
-            crate::agents::user_cli::prepare(self.config).with_installed_adapter(&self.profile)?;
+        // An adapter runs from the tree the engine installed (ADR 0143), which the first start
+        // installs, and is given the person's own CLI (ADR 0137), which takes a command; that
+        // waits for nobody's turn.
+        let process = crate::agents::user_cli::prepare(self.config, &self.profile)?;
         self.turn.wait();
         match process.send(&self.supervisor)? {
             Response::Instance(instance) => Ok(instance),
@@ -82,6 +86,9 @@ impl Core {
     /// processes `after` (a process this one replaces, which must not still hold its session or
     /// its folder when this one starts, ADR 0119). It fails when there is no link.
     pub(crate) fn launch(&mut self, config: Spawn, after: &[&str]) -> Result<Launch> {
+        // The last check before a package that nobody acknowledged is downloaded and run: every
+        // start of a process goes through here (ADR 0143).
+        crate::agents::adapter_consent::require_spawn(&self.store, &config.argv)?;
         let supervisor = self.supervisor()?;
         let turn = self.turn(after);
         let adapter_directory =
@@ -122,6 +129,10 @@ impl Core {
         }
         let launch = self.launch(config, after)?;
         let link = launch.link();
+        if launch.may_install() {
+            // A thread of its own, not one of the four workers the terminal's flushes also need.
+            self.background.run_alone(&job);
+        }
         self.spawn_prompt_background(
             job,
             move || launch.send(),
@@ -188,9 +199,20 @@ impl Core {
     /// connections. A start that cannot begin (no link) answers at once and leaves the pane to
     /// its retry.
     pub(crate) fn spawn_then_reply(&mut self, id: &str, result: Value) -> Result<Outcome> {
-        let launch = self
-            .pane_spawn_config(id)
-            .and_then(|config| Ok((config.instance_key.clone(), self.launch(config, &[])?)));
+        let config = self.pane_spawn_config(id);
+        if config
+            .as_ref()
+            .is_ok_and(|config| crate::agents::adapter_install::is_locked_launch(&config.argv))
+        {
+            // The reply does not wait for an install, which outlasts a request's deadline: the
+            // pane is starting, as it is while the supervisor is away, and the start runs as a
+            // job of its own that settles the pane when it ends.
+            let begun = self.spawn(id);
+            self.spawn_begun(id, begun);
+            return Ok(Outcome::Reply(result));
+        }
+        let launch =
+            config.and_then(|config| Ok((config.instance_key.clone(), self.launch(config, &[])?)));
         let (key, launch) = match launch {
             Ok(launch) => launch,
             Err(error) => {
@@ -439,6 +461,71 @@ mod tests {
             core.panes[PANE].stored.instance_id.as_deref(),
             Some("process-of-p-key")
         );
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    /// The four workers of the shared pool also carry the terminal's flushes: while the starts of
+    /// panes wait for an install (minutes on a slow link), none of them may hold one.
+    #[test]
+    fn starts_that_wait_for_an_install_hold_none_of_the_shared_workers() {
+        use crate::agents::adapter_install::{
+            fail_installs_for_test, hold_installs_for_test, launch_argv_for_test,
+        };
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (mut core, directory, requests) = slow_core(Duration::ZERO);
+        // A failed install is remembered, so that the starts fail once the install lock is free
+        // instead of running `npm`.
+        fail_installs_for_test(&directory, 0);
+        let installing = hold_installs_for_test();
+        // More starts than the pool has workers, as after an upgrade with many panes restored.
+        let owners = ["a", "b", "c", "d", "e", "f"];
+        for owner in owners {
+            let mut config = crate::test_panes::pty_spawn(owner);
+            config.kind = ProcessKind::PipesAcp;
+            config.argv = launch_argv_for_test(0);
+            core.start_process(owner, config, &[], |_, _| Ok(()))
+                .unwrap();
+        }
+        for owner in owners {
+            assert!(
+                core.background.done_of(&format!("start:{owner}")).is_some(),
+                "the start of {owner} is a job of the shared pool"
+            );
+        }
+
+        // The shared pool is free: a job started now runs while all six wait.
+        let ran = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&ran);
+        core.spawn_background(
+            "probe".into(),
+            move || {
+                flag.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !ran.load(Ordering::SeqCst) {
+            assert!(
+                Instant::now() < deadline,
+                "a job of the shared pool did not run while the starts waited for an install"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            asked(&requests).is_empty(),
+            "a start reached the supervisor"
+        );
+
+        // Once the install lock is free, the starts end with the install's failure.
+        drop(installing);
+        for owner in owners {
+            apply_until_done(&mut core, &format!("start:{owner}"));
+        }
+        apply_until_done(&mut core, "probe");
+        assert!(asked(&requests).is_empty());
         crate::test_paths::remove_after(core, directory);
     }
 

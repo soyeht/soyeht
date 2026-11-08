@@ -180,6 +180,7 @@ impl Workbench {
         };
         self.send(Command::SwitchHarness {
             pane_id: pane_id.to_owned(),
+            acknowledged: self.state.acknowledged_package(&harness),
             harness,
             model,
             effort,

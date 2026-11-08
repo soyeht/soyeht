@@ -221,6 +221,40 @@ fn with_agent(state: &mut State) {
     state.apply(Event::Harnesses(vec![agent]));
 }
 
+#[test]
+fn an_agent_whose_package_the_runner_downloads_unchecked_starts_with_its_acknowledgement() {
+    let mut state = state_with(&[("a", "/a")]);
+    let harness =
+        |id: &str, package: serde_json::Value, locked: bool| -> soyeht_protocol::HarnessInfo {
+            serde_json::from_value(json!({
+                "id": id, "name": id, "available": true, "capabilities": [], "options": [],
+                "authMethods": [], "installed": false, "setupState": "not_checked",
+                "setupReason": "registry_package_unverified",
+                "package": package, "packageLocked": locked
+            }))
+            .unwrap()
+        };
+    state.apply(Event::Harnesses(vec![
+        harness("fetched", json!("some-adapter@1.2.3"), false),
+        harness("installed", json!("locked-adapter@4.5.6"), true),
+    ]));
+    let sent = |state: &mut State, harness: &str| {
+        let mut form = form("/a", "");
+        form.harness = harness.into();
+        let started = state.start_agent(1, &form).unwrap();
+        match &started.effects[0] {
+            Effect::Send(Command::CreateAgent { acknowledged, .. }) => acknowledged.clone(),
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(
+        sent(&mut state, "fetched").as_deref(),
+        Some("some-adapter@1.2.3")
+    );
+    // The engine installs the other from its lockfile: nothing to acknowledge.
+    assert_eq!(sent(&mut state, "installed"), None);
+}
+
 /// The agent pane `ticket` asked for arrives in workspace `workspace_id`: the effects it brings.
 fn agent_arrives(state: &mut State, ticket: u64, pane_id: &str, workspace_id: &str) -> Vec<Effect> {
     state.apply(Event::Opened {
@@ -276,6 +310,7 @@ fn an_agent_started_in_a_new_folder_gets_its_workspace_first_and_then_its_first_
         [Effect::Send(Command::CreateAgent {
             workspace_id: "new".into(),
             harness: "ada".into(),
+            acknowledged: None,
             cwd: Some("/home/ana/notes".into()),
             ticket: 7,
         })]
@@ -296,6 +331,7 @@ fn an_agent_started_in_a_folder_that_has_a_workspace_uses_it_and_a_blank_message
         [Effect::Send(Command::CreateAgent {
             workspace_id: "a".into(),
             harness: "ada".into(),
+            acknowledged: None,
             cwd: None,
             ticket: 3,
         })]

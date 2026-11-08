@@ -81,6 +81,9 @@ pub enum Command {
     CreateAgent {
         workspace_id: String,
         harness: String,
+        /// The package the person was told the harness downloads unchecked
+        /// (`harness_picker::acknowledged_package`), which the engine needs to start it.
+        acknowledged: Option<String>,
         /// The folder the agent works in; `None` is the workspace's folder.
         cwd: Option<String>,
         ticket: u64,
@@ -187,6 +190,8 @@ pub enum Command {
     SwitchHarness {
         pane_id: String,
         harness: String,
+        /// As in `CreateAgent`.
+        acknowledged: Option<String>,
         model: Option<String>,
         effort: Option<String>,
     },

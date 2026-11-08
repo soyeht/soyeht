@@ -249,6 +249,15 @@ public enum HarnessPickerModel {
     setupState(for: harness) == .ready ? nil : statusReason(for: harness)
   }
 
+  /// The package a person acknowledges by starting `harness` from a picker that shows its notice
+  /// (ADR 0143): the one the runner downloads unchecked. `nil` when the engine installs the
+  /// package from its lockfile, or the harness downloads none. The engine starts an unchecked
+  /// package only once this exact `name@version` was sent by a person.
+  public static func acknowledgedPackage(for harness: HarnessInfo?) -> String? {
+    guard let harness, harness.packageLocked != true else { return nil }
+    return harness.package
+  }
+
   private static func fallbackReason(for state: HarnessSetupState) -> HarnessSetupReason? {
     switch state {
     case .ready: nil

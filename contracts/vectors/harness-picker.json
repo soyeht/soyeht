@@ -506,6 +506,20 @@
       "notice": "Starting it installs @scope/locked-adapter@4.5.6 once from a lockfile Soyeht carries, with every package checked, then runs it from there."
     }
   ],
+  "acknowledgements": [
+    {
+      "harness": "downloads",
+      "package": "some-adapter@1.2.3"
+    },
+    {
+      "harness": "locked",
+      "package": null
+    },
+    {
+      "harness": "tool",
+      "package": null
+    }
+  ],
   "reasons": [
     {
       "setupReason": "registry_package_unverified",

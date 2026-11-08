@@ -21,6 +21,7 @@ use std::{
 };
 use uuid::Uuid;
 
+mod locked_adapter;
 mod ticker;
 #[allow(unused_imports)] // each test crate uses the part it needs
 pub use ticker::{Ticker, longest_gap};
@@ -154,19 +155,6 @@ impl Rig {
             serde_json::to_vec(entries).unwrap(),
         )
         .unwrap();
-    }
-    /// An `npx` that starts the fake agent, which the registry's package runner launches.
-    #[cfg(unix)]
-    pub fn install_fake_claude_runner(&self) {
-        let binary = sibling_binary("soyeht-fake-acp");
-        write_script(
-            &self.path.join("bin/npx"),
-            &format!(
-                "#!/bin/sh\nexec '{}' --state-dir '{}'\n",
-                binary.display(),
-                self.path.join("claude-native").display()
-            ),
-        );
     }
     /// A program named `name` on the engine's search path that exists but is never run.
     pub fn install_stub_executable(&self, name: &str) {

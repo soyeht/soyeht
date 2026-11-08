@@ -169,7 +169,8 @@ mod installing {
                     format!(
                         "mkdir -p node_modules/{package}/dist\n\
                          echo '{{\"version\":\"{version}\"}}' > node_modules/{package}/package.json\n\
-                         echo '' > node_modules/{package}/dist/index.js"
+                         echo '' > node_modules/{package}/dist/index.js\n\
+                         echo '{{}}' > node_modules/.package-lock.json"
                     )
                 } else {
                     "exit 1".to_owned()
@@ -195,6 +196,15 @@ mod installing {
 
     fn launch(locked: &Locked) -> Spawn {
         spawn(&["npx", "--yes", &pinned(locked), "--acp"])
+    }
+
+    /// Starts `locked` with `npm` and says the install was refused as an unavailable harness.
+    fn refused(profile: &Path, locked: &Locked, npm: &Npm) {
+        let error = installed_spawn_with(profile, launch(locked), npm.program()).unwrap_err();
+        assert_eq!(
+            errors::kind(&error),
+            soyeht_protocol::ErrorKind::HarnessUnavailable
+        );
     }
 
     #[test]
@@ -244,28 +254,162 @@ mod installing {
         installed_spawn_with(&profile, launch(locked), npm.program()).unwrap();
         assert_eq!(npm.calls().len(), 2);
         assert!(locked.installed(&locked.folder(&profile)));
+        // The tree that was replaced is gone, and nothing else was left beside the new one.
+        assert_eq!(entries(&locked.folder(&profile)), 1);
+        fs::remove_dir_all(profile).unwrap();
+    }
+
+    /// How many entries sit beside `folder` in its parent.
+    fn entries(folder: &Path) -> usize {
+        fs::read_dir(folder.parent().unwrap()).unwrap().count()
+    }
+
+    #[test]
+    fn a_tree_changed_after_it_was_installed_is_installed_again() {
+        let profile = soyeht_platform::testing::scratch_dir("adapter-tampered");
+        let locked = &LOCKED[0];
+        let npm = Npm::new(&profile, locked, locked.version, true);
+        installed_spawn_with(&profile, launch(locked), npm.program()).unwrap();
+        let folder = locked.folder(&profile);
+        let modules = folder.join("node_modules");
+        let tampered = [
+            locked.entry_path(&folder),
+            modules.join(locked.package).join("package.json"),
+            modules.join(".package-lock.json"),
+        ];
+        for (index, file) in tampered.iter().enumerate() {
+            assert!(locked.installed(&folder), "{}", file.display());
+            fs::write(file, "changed after the install").unwrap();
+            assert!(
+                !locked.installed(&folder),
+                "{} was not noticed",
+                file.display()
+            );
+            installed_spawn_with(&profile, launch(locked), npm.program()).unwrap();
+            assert_eq!(npm.calls().len(), index + 2);
+            assert!(locked.installed(&folder));
+        }
+        // An entry that was swapped for a link is no tree of ours either.
+        let entry = locked.entry_path(&folder);
+        fs::remove_file(&entry).unwrap();
+        std::os::unix::fs::symlink("/bin/sh", &entry).unwrap();
+        assert!(!locked.installed(&folder));
         fs::remove_dir_all(profile).unwrap();
     }
 
     #[test]
     fn a_failed_install_starts_nothing_and_leaves_nothing_behind() {
-        let profile = soyeht_platform::testing::scratch_dir("adapter-failed");
-        let locked = &LOCKED[0];
-        for (version, succeed) in [(locked.version, false), ("9.9.9", true)] {
+        for (version, succeed) in [("0.0.0", false), ("9.9.9", true)] {
+            let profile = soyeht_platform::testing::scratch_dir("adapter-failed");
+            let locked = &LOCKED[0];
             let npm = Npm::new(&profile, locked, version, succeed);
-            let error = installed_spawn_with(&profile, launch(locked), npm.program()).unwrap_err();
-            assert_eq!(
-                errors::kind(&error),
-                soyeht_protocol::ErrorKind::HarnessUnavailable
-            );
+            refused(&profile, locked, &npm);
             assert!(!locked.folder(&profile).exists());
             let installed = locked.folder(&profile).parent().unwrap().to_owned();
             assert!(
                 fs::read_dir(installed).unwrap().next().is_none(),
                 "a staging folder was left"
             );
+            fs::remove_dir_all(profile).unwrap();
         }
+    }
+
+    #[test]
+    fn an_install_that_just_failed_is_not_run_again_by_every_pane_that_starts() {
+        let profile = soyeht_platform::testing::scratch_dir("adapter-cooldown");
+        let locked = &LOCKED[1];
+        let npm = Npm::new(&profile, locked, locked.version, false);
+        for _ in 0..5 {
+            refused(&profile, locked, &npm);
+        }
+        assert_eq!(npm.calls().len(), 1, "npm ran again within the cooldown");
+        // Once the install works (online again, past the cooldown), the next start installs.
+        FAILED_AT.lock().unwrap().remove(&locked.folder(&profile));
+        let working = Npm::new(&profile, locked, locked.version, true);
+        installed_spawn_with(&profile, launch(locked), working.program()).unwrap();
+        // The two programs log to the same file: the failed call and the one that installed.
+        assert_eq!(working.calls().len(), 2);
         fs::remove_dir_all(profile).unwrap();
+    }
+
+    #[test]
+    fn panes_that_start_together_wait_for_one_install_and_run_its_tree() {
+        let profile = soyeht_platform::testing::scratch_dir("adapter-together");
+        let locked = &LOCKED[1];
+        let npm = Npm::new(&profile, locked, locked.version, true);
+        let argvs: Vec<_> = std::thread::scope(|scope| {
+            let starts: Vec<_> = (0..6)
+                .map(|_| {
+                    scope.spawn(|| {
+                        installed_spawn_with(&profile, launch(locked), npm.program())
+                            .unwrap()
+                            .argv
+                    })
+                })
+                .collect();
+            starts
+                .into_iter()
+                .map(|start| start.join().unwrap())
+                .collect()
+        });
+        assert!(argvs.windows(2).all(|pair| pair[0] == pair[1]));
+        assert_eq!(npm.calls().len(), 1);
+        fs::remove_dir_all(profile).unwrap();
+    }
+
+    #[test]
+    fn what_an_install_cut_short_left_is_swept_when_the_next_one_starts() {
+        let profile = soyeht_platform::testing::scratch_dir("adapter-sweep");
+        let locked = &LOCKED[0];
+        let npm = Npm::new(&profile, locked, locked.version, true);
+        let root = locked.folder(&profile).parent().unwrap().to_owned();
+        fs::create_dir_all(&root).unwrap();
+        let stale = [
+            root.join(format!("{}{}-old", place::STAGING, locked.name)),
+            root.join(".replaced-old"),
+        ];
+        for folder in &stale {
+            fs::create_dir_all(folder.join("node_modules")).unwrap();
+            fs::write(folder.join("node_modules/file"), "left behind").unwrap();
+        }
+        installed_spawn_with(&profile, launch(locked), npm.program()).unwrap();
+        assert!(stale.iter().all(|folder| !folder.exists()));
+        assert_eq!(entries(&locked.folder(&profile)), 1);
+        fs::remove_dir_all(profile).unwrap();
+    }
+
+    #[test]
+    fn a_tree_is_replaced_by_moving_it_aside_and_comes_back_when_the_new_one_cannot_move_in() {
+        let profile = soyeht_platform::testing::scratch_dir("adapter-replace");
+        let root = profile.join("installed");
+        let (folder, staging) = (root.join("tree"), root.join(".staging-tree"));
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join("old"), "old tree").unwrap();
+        // The staging folder is not there: the old tree must still be.
+        place::replace(&staging, &folder, &root).unwrap_err();
+        assert_eq!(fs::read_to_string(folder.join("old")).unwrap(), "old tree");
+        assert_eq!(entries(&folder), 1);
+        // With a finished staging folder, it is replaced and nothing is left beside it.
+        fs::create_dir_all(&staging).unwrap();
+        fs::write(staging.join("new"), "new tree").unwrap();
+        place::replace(&staging, &folder, &root).unwrap();
+        assert!(!folder.join("old").exists());
+        assert_eq!(fs::read_to_string(folder.join("new")).unwrap(), "new tree");
+        assert_eq!(entries(&folder), 1);
+        fs::remove_dir_all(profile).unwrap();
+    }
+
+    #[test]
+    fn another_lock_of_the_same_version_is_another_folder() {
+        let profile = Path::new("/profile");
+        let locked = &LOCKED[0];
+        let folder = locked.folder(profile);
+        let name = folder.file_name().unwrap().to_str().unwrap();
+        assert!(name.starts_with(&format!("{}-{}-", locked.name, locked.version)));
+        assert_eq!(
+            name.len(),
+            locked.name.len() + locked.version.len() + 2 + FOLDER_DIGEST_CHARS
+        );
     }
 
     #[test]

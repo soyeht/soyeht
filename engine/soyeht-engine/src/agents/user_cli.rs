@@ -14,7 +14,8 @@
 //! is sent to the supervisor, never under the Core lock (ADR 0079), and the answer is remembered
 //! for the file it came from, so a program that did not change is not asked again. Every send of
 //! an adapter process goes through [`prepare`] and [`Given::send`]: a pane's process
-//! (`Launch::send`) and the candidate of a harness switch.
+//! (`Launch::send`) and the candidate of a harness switch. [`prepare`] also installs a locked
+//! adapter (`adapter_install`), so a new way to start one cannot skip that.
 
 use super::{environment, pinned_adapter, registry};
 use crate::{
@@ -319,14 +320,25 @@ pub(crate) struct Given {
     plain: Option<Spawn>,
 }
 
-/// Gives the adapter in `config` the person's CLI to drive, when it has one. A launch that sets
-/// the variable itself (a custom entry's environment) keeps its own choice; a process that is not
-/// an adapter is left alone. May run `--version`, so off the Core lock.
-pub(crate) fn prepare(mut config: Spawn) -> Given {
+/// Makes `config` ready to be sent, in the two steps every adapter process goes through, so no
+/// start can skip either:
+///
+/// - A locked adapter (`adapter_install`) runs from the tree the engine installed from its
+///   lockfile, installed first when it is not there. That takes minutes on a slow link: the
+///   caller must not be on a shared background worker (`Core::start_process`).
+/// - The adapter is given the person's CLI to drive, when it has one. A launch that sets the
+///   variable itself (a custom entry's environment) keeps its own choice; a process that is not
+///   an adapter is left alone.
+///
+/// May run `npm` or `--version`, so off the Core lock.
+pub(crate) fn prepare(config: Spawn, profile: &Path) -> Result<Given, Error> {
+    // The CLI is known by the package the launch names, which the install replaces by the script
+    // it installed.
     let cli = (config.kind == ProcessKind::PipesAcp)
         .then(|| cli_of(&config.argv))
         .flatten()
         .filter(|cli| !config.env.contains_key(cli.variable));
+    let mut config = super::adapter_install::installed_spawn(profile, config)?;
     let mut plain = None;
     if let Some(cli) = cli
         && let Choice::Own(path) = settle(cli)
@@ -336,7 +348,7 @@ pub(crate) fn prepare(mut config: Spawn) -> Given {
         config.env.insert(cli.variable.into(), path.into());
         plain = Some(without);
     }
-    Given { config, plain }
+    Ok(Given { config, plain })
 }
 
 /// Whether `error` is a supervisor that does not know the variable, as one that outlived an
@@ -353,17 +365,6 @@ fn environment_refused(error: &Error) -> bool {
 static REFUSALS: Mutex<Streak> = Mutex::new(Streak::once());
 
 impl Given {
-    /// Replaces the launch of a locked adapter, in both forms of the spawn, with the installed
-    /// one (`adapter_install`). Installs it first when it is not there, so off the Core lock.
-    pub(crate) fn with_installed_adapter(self, profile: &Path) -> Result<Self, Error> {
-        let config = super::adapter_install::installed_spawn(profile, self.config)?;
-        let plain = self
-            .plain
-            .map(|plain| super::adapter_install::installed_spawn(profile, plain))
-            .transpose()?;
-        Ok(Self { config, plain })
-    }
-
     /// Asks the supervisor to start the process; if it refuses the variable, to start it
     /// without. Off the Core lock: it waits for the supervisor.
     pub(crate) fn send(self, supervisor: &Supervisor) -> Result<Response, Error> {
@@ -655,17 +656,23 @@ mod tests {
 
     #[test]
     fn a_process_that_is_not_an_adapter_or_names_its_own_cli_is_left_alone() {
+        let profile = soyeht_platform::testing::scratch_dir("user-cli-prepare");
+        super::super::adapter_install::seed_for_test(&profile, 0);
         let package = pinned_claude_package();
+        // The sign-in terminal runs the installed adapter too, and is given no CLI.
         let terminal = adapter(&package, ProcessKind::Pty);
-        let given = prepare(terminal.clone());
-        assert_eq!((given.config, given.plain), (terminal, None));
+        let given = prepare(terminal.clone(), &profile).unwrap();
+        assert_eq!(given.config.argv[0], "node");
+        assert_eq!((given.config.env, given.plain), (terminal.env, None));
 
         let mut recipe = adapter(&package, ProcessKind::PipesAcp);
         recipe
             .env
             .insert(CLAUDE.variable.into(), "/recipe/claude".into());
-        let given = prepare(recipe.clone());
-        assert_eq!((given.config, given.plain), (recipe, None));
+        let given = prepare(recipe.clone(), &profile).unwrap();
+        assert_eq!(given.config.argv[0], "node");
+        assert_eq!((given.config.env, given.plain), (recipe.env, None));
+        std::fs::remove_dir_all(profile).unwrap();
     }
 
     fn instance_of(config: Spawn) -> Response {

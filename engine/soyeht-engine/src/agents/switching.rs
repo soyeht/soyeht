@@ -129,6 +129,10 @@ impl Core {
             return Err(errors::invalid("Choose a different harness"));
         }
         let (launch, binary_digest) = super::registry::prepare(&self.directory, &params.harness)?;
+        // A package nobody acknowledged is refused before the pane is locked for the switch.
+        let acknowledging =
+            self.acknowledgement_of(connection, params.acknowledged_package.as_deref(), &launch)?;
+        super::adapter_consent::require(&self.store, &launch, acknowledging.as_deref())?;
         let checkpoint = HarnessSwitchCheckpoint {
             user: UserOperation {
                 scope: self.clients[connection].scope.clone(),
@@ -142,7 +146,10 @@ impl Core {
         };
         state.harness_switch = Some(checkpoint.clone());
         let mut saved = self.panes[pane].stored.clone();
-        let mut changes = Changes::default();
+        let mut changes = Changes {
+            acknowledged_package: acknowledging,
+            ..Changes::default()
+        };
         if !state.queue_paused {
             state.queue_paused = true;
             changes.events.push((
@@ -230,11 +237,17 @@ impl Core {
 
     /// Starts the candidate's process and writes its `initialize`, off the lock.
     fn begin_candidate_spawn(&mut self, pane: &str, draft: Draft, spawn: Spawn) -> Result<()> {
+        // The candidate does not go through `Core::launch`, so it is checked here (ADR 0143).
+        super::adapter_consent::require_spawn(&self.store, &spawn.argv)?;
         let supervisor = self.supervisor()?;
         let used = supervisor.clone();
         let directory = adapter_directory::to_prepare(&self.directory, &spawn.cwd);
         let profile = self.directory.clone();
         let (owner, initialize) = (pane.to_owned(), draft.initialize.clone());
+        if super::adapter_install::is_locked_launch(&spawn.argv) {
+            // The candidate may install its adapter first: not on a shared worker.
+            self.background.run_alone(&step_job(pane));
+        }
         self.spawn_prompt_background(
             step_job(pane),
             move || {
@@ -242,7 +255,7 @@ impl Core {
                     adapter_directory::prepare(directory);
                 }
                 // The candidate is an adapter like a pane's: it drives the person's own CLI too.
-                let given = user_cli::prepare(spawn).with_installed_adapter(&profile)?;
+                let given = user_cli::prepare(spawn, &profile)?;
                 let Response::Instance(instance) = given.send(&supervisor)? else {
                     return Err(errors::ptyd_unavailable("Invalid candidate spawn response"));
                 };

@@ -119,10 +119,23 @@ fn a_pane_is_created_in_the_folder_it_is_asked_for() {
     let agent = body(Command::CreateAgent {
         workspace_id: "w".into(),
         harness: "claude".into(),
+        acknowledged: None,
         cwd: Some("/home/ana/notes".into()),
         ticket: 2,
     });
     assert_eq!(agent["params"]["cwd"], "/home/ana/notes");
+    assert!(agent["params"].get("acknowledgedPackage").is_none());
+    let downloads = body(Command::CreateAgent {
+        workspace_id: "w".into(),
+        harness: "gemini".into(),
+        acknowledged: Some("@google/gemini-cli@0.59.0".into()),
+        cwd: None,
+        ticket: 4,
+    });
+    assert_eq!(
+        downloads["params"]["acknowledgedPackage"],
+        "@google/gemini-cli@0.59.0"
+    );
     let default = body(Command::CreateTerminal {
         workspace_id: "w".into(),
         cwd: None,
@@ -446,6 +459,7 @@ fn the_switch_carries_the_model_and_effort_the_person_chose() {
             request(&Command::SwitchHarness {
                 pane_id: "p".into(),
                 harness: "codex".into(),
+                acknowledged: None,
                 model: model.map(str::to_owned),
                 effort: effort.map(str::to_owned),
             })
@@ -458,6 +472,21 @@ fn the_switch_carries_the_model_and_effort_the_person_chose() {
     assert_eq!(chosen["params"]["harness"], "codex");
     assert_eq!(chosen["params"]["model"], "gpt-6");
     assert_eq!(chosen["params"]["effort"], "high");
+    let acknowledged = serde_json::to_value(
+        request(&Command::SwitchHarness {
+            pane_id: "p".into(),
+            harness: "gemini".into(),
+            acknowledged: Some("@google/gemini-cli@0.59.0".into()),
+            model: None,
+            effort: None,
+        })
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        acknowledged["params"]["acknowledgedPackage"],
+        "@google/gemini-cli@0.59.0"
+    );
     let left_to_the_harness = body(None, None);
     assert!(left_to_the_harness["params"].get("model").is_none());
     assert!(left_to_the_harness["params"].get("effort").is_none());

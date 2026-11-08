@@ -661,7 +661,9 @@ extension EngineClient {
       PaneCreateParams(
         workspaceId: workspaceId, mode: .agent, cwd: path,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
-        effort: effort, permissionMode: permissionMode))
+        effort: effort, permissionMode: permissionMode,
+        acknowledgedPackage: HarnessPickerModel.acknowledgedPackage(for: self.harness(id: harness))
+      ))
     let paneId = try result.decoded(PaneCreateResult.self).paneId
     if selectPane { select(paneId) }
     return paneId
@@ -759,6 +761,7 @@ extension EngineClient {
       .paneHarnessSwitch,
       PaneHarnessSwitchParams(
         paneId: paneId, harness: harness, model: model, effort: effort,
+        acknowledgedPackage: HarnessPickerModel.acknowledgedPackage(for: self.harness(id: harness)),
         idempotencyKey: UUID().uuidString),
       timeoutSeconds: engineDeadlineTimeout(ProtocolLimits.harnessSwitchTimeoutSec)
     ).decoded(PaneHarnessSwitchResult.self)

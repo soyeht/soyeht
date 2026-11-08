@@ -42,6 +42,7 @@ pub enum Error {
     PlatformUnsupported(String),
     FileNotText(String),
     FileTooLarge(String),
+    AdapterNotAcknowledged(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -128,6 +129,7 @@ constructor!(attachment_limit_exceeded, AttachmentLimitExceeded);
 constructor!(platform_unsupported, PlatformUnsupported);
 constructor!(file_not_text, FileNotText);
 constructor!(file_too_large, FileTooLarge);
+constructor!(adapter_not_acknowledged, AdapterNotAcknowledged);
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -267,6 +269,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::PlatformUnsupported(_) => ErrorKind::PlatformUnsupported,
         Error::FileNotText(_) => ErrorKind::FileNotText,
         Error::FileTooLarge(_) => ErrorKind::FileTooLarge,
+        Error::AdapterNotAcknowledged(_) => ErrorKind::AdapterNotAcknowledged,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -380,6 +383,7 @@ fn message(error: &Error) -> String {
         | Error::PlatformUnsupported(message)
         | Error::FileNotText(message)
         | Error::FileTooLarge(message)
+        | Error::AdapterNotAcknowledged(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),

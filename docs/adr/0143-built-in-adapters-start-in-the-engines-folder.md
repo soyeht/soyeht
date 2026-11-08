@@ -16,7 +16,8 @@ workspace, so a repository could decide which code the pinned adapter was.
 
 **A built-in adapter launched through a package runner starts in `<data directory>/adapters`.** The
 folder is the engine's: owner-only, made where the start is sent, off the Core lock, before each
-start (so one that was removed is made again), empty. This holds for the agent process, the candidate process of a harness switch and the
+start (so one that was removed is made again), and empty but for `installed/`, where the engine
+puts the adapters it installs from a lockfile (see the amendment). This holds for the agent process, the candidate process of a harness switch and the
 sign-in terminal an adapter asks for.
 
 - **One rule.** `agents/package_runner.rs` says what a package runner is (`package_runner`, by file stem:
@@ -76,10 +77,11 @@ which code a pane runs, at each start.
   `registry.codex-acp`) are installed once from a lockfile the engine carries.** The lock
   (`agents/adapter_locks/<name>/package-lock.json`, `lockfileVersion` 3) holds the exact version and
   the SHA-512 integrity of every package of the tree. `npm ci --ignore-scripts` installs it into
-  `<data directory>/adapters/installed/<name>-<version>/`, in a staging folder that holds only the
-  engine's manifest and lock, then moves it into place. npm refuses a package whose bytes differ
-  from the lock; the installed adapter's own `package.json` must name the pinned version; the folder
-  carries the digest of the lock it was made from, so an old or half-finished tree is made again.
+  `<data directory>/adapters/installed/<name>-<version>-<lock digest>/`, in a staging folder that
+  holds only the engine's manifest and lock, then moves it into place. npm refuses a package whose
+  bytes differ from the lock; the installed adapter's own `package.json` must name the pinned
+  version. The folder is named by the lock too, so a new lock never replaces a tree that an adapter
+  of the older engine may still run.
   The other two supported harnesses (`registry.cursor`, `registry.opencode`) are programs the person
   installs and have no package to fetch.
 - **A launch of the pinned `npx --yes <package>@<version>` is rewritten to `node <installed entry>`**
@@ -87,7 +89,26 @@ which code a pane runs, at each start.
   candidate of a harness switch and a sign-in terminal alike. The first start installs it (a
   fetch of at most a few minutes); every later start finds the tree and runs no npm. An install
   that fails starts nothing and says why; there is no fallback to `npx`, which would be the
-  unchecked path.
+  unchecked path. Every send of an adapter process goes through `user_cli::prepare`, which does
+  this rewrite, so a new way to start one cannot skip it.
+- **The install never holds a shared worker or a request's deadline.** The four background workers
+  also carry the terminal's flushes, and a request has the supervisor's deadline (30 s). A start
+  that may install runs as a job on a thread of its own (`Background::run_alone`), and
+  `pane.create` of such an agent answers at once with the pane starting, as it does while the
+  supervisor is away. One install runs at a time, the starts that arrive wait for it and run its
+  tree, and a failed install (offline) is remembered for a minute, so the panes restored after an
+  upgrade do not each run `npm ci` again.
+- **Each start checks the tree again.** The marker of the tree holds the digest of the lock and a
+  digest of the entry script, the adapter's `package.json` and npm's own record of the tree
+  (`node_modules/.package-lock.json`, the version and integrity of every package), taken when it
+  was installed. A start compares them (a few files, off the Core lock); a tree that changed
+  since, or whose entry is a link, is installed again. This notices an edit of what a start runs;
+  it does not read every file of the tree, which is an owner-only folder of the person's own
+  account.
+- **An install is put in place without deleting what a running adapter holds.** A tree already
+  there (the same lock, found changed or half made) is renamed aside and deleted after the new one
+  is moved in, and renamed back if that fails. Staging folders and trees that could not be deleted
+  are swept when the next install starts.
 - **A test ties each lock to the registry snapshot**: the package and version of the snapshot's
   launch, the manifest, the root package of the lock, its `bin`, integrity on every package, and no
   package with an install script. A snapshot that moves to a new version without its lock fails
@@ -100,6 +121,18 @@ which code a pane runs, at each start.
   dependencies from the package registry. Soyeht has not checked them.", and for a locked one that
   it is installed once from a lockfile Soyeht carries. A parallel change hides the adapters
   that were not checked from the catalogue; this notice is for the ones that stay.
+- **The notice is enforced by the engine, not only shown.** The first start of an adapter that the
+  runner downloads unchecked (a built-in `package`, `packageLocked` false) is refused with
+  `adapter_not_acknowledged` unless the request that chooses the agent (`pane.create`,
+  `pane.harness.switch`) carries `acknowledgedPackage` with that exact `name@version` and comes
+  from a person (`human_local` or `human_device`). The acknowledgement is stored per package and
+  version (`adapter_acknowledgements`), so a new version asks again. Every other way to start the
+  agent (a task, a role, a restart, a recovery, the candidate of a switch, another client that
+  sends nothing) finds the stored acknowledgement or is refused, and an agent binding that sends
+  one is refused with `forbidden_role`. The check runs where the agent is chosen and again where
+  the process is sent. A picker that shows the notice sends the package it showed when the person
+  starts the agent from it. The catalogue keeps the notice (`registry_package_unverified`) until
+  the package is acknowledged, also after a start that failed.
 
 ### What this does not do
 

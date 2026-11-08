@@ -108,6 +108,21 @@ fn statuses_follow_the_shared_vectors() {
 }
 
 #[test]
+fn the_acknowledged_package_follows_the_shared_vectors() {
+    let vectors = vectors();
+    for case in vectors["acknowledgements"].as_array().unwrap() {
+        let harness = harness_named(&vectors, case["harness"].as_str().unwrap());
+        assert_eq!(
+            acknowledged_package(Some(&harness)).as_deref(),
+            case["package"].as_str(),
+            "{}",
+            case["harness"]
+        );
+    }
+    assert_eq!(acknowledged_package(None), None);
+}
+
+#[test]
 fn a_reason_the_engine_gave_wins_over_the_one_the_state_implies() {
     let vectors = vectors();
     for case in vectors["reasons"].as_array().unwrap() {

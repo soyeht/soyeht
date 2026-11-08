@@ -25,6 +25,7 @@ pub(super) fn request(command: &Command) -> Option<Request> {
             model: None,
             effort: None,
             permission_mode: None,
+            acknowledged_package: None,
             url: url.clone(),
             incognito: incognito.then_some(true),
             path: None,

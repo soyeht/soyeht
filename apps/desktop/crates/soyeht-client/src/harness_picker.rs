@@ -178,6 +178,16 @@ fn fixed_reason(harness: &HarnessInfo) -> &'static str {
     }
 }
 
+/// The package a person acknowledges by starting `harness` from a picker that shows its notice
+/// (ADR 0143): the one the runner downloads unchecked. `None` when the engine installs the
+/// package from its lockfile, or the harness downloads none. The engine starts an unchecked
+/// package only once a person sent this exact `name@version`.
+pub fn acknowledged_package(harness: Option<&HarnessInfo>) -> Option<String> {
+    harness
+        .filter(|harness| harness.package_locked != Some(true))
+        .and_then(|harness| harness.package.clone())
+}
+
 /// The line a harness picker shows above the model choices: why the harness needs attention, and
 /// nothing for a ready one, whose "opened successfully" is no news while choosing a model.
 pub fn picker_notice(harness: &HarnessInfo) -> Option<String> {
