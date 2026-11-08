@@ -117,8 +117,9 @@ a service that is registered and not current. The Mac app does so at every launc
 the registration of an app dragged from Downloads to Applications, and leaves a right registration
 alone: a person who ran `service stop` does not find the services started again by the next
 launch, and the system announces no new background item. `install` itself writes a definition file
-only when its bytes differ from what is there. The Mac app does not register from a disk image or
-a translocated path, which are gone when the image is ejected or the app is moved. A program that
+only when its bytes differ from what is there. The released Mac app registers only from `/Applications` or
+`~/Applications`, and not from a disk image, a translocated path or any other folder, which are gone
+when the image is ejected or the app is moved (ADR 0120, "Amendment: where the app may run"). A program that
 runs when its folder moves keeps running; if it ends before the repair, the system cannot restart
 it from the old path.
 
