@@ -103,6 +103,13 @@ pub const APP_MOVE_COPY_LOCKED: &str = "A copy of Soyeht is already in Applicati
 pub const APP_MOVE_OLD_IN_TRASH: &str = "The old copy of Soyeht is in the Trash and could not be put back. Drag it from the Trash to Applications to restore it.";
 pub const PUSH_NEEDS_YOU_TITLE: &str = "An agent needs you";
 pub const PUSH_NEEDS_YOU_BODY: &str = "Open Soyeht to see what it asks.";
+pub const PROJECT_TRUST_TITLE: &str = "Trust this folder?";
+pub const PROJECT_TRUST_SUMMARY: &str = "Trusting a folder lets Soyeht run what the folder contains. Language servers read its build files, which can run programs. Keep it restricted if you do not know where it came from.";
+pub const PROJECT_TRUST_TRUST: &str = "Trust folder";
+pub const PROJECT_TRUST_RESTRICT: &str = "Keep restricted";
+pub const PROJECT_TRUST_RESTRICTED_NOTE: &str =
+    "This folder is restricted: language servers run with code execution off, or do not start.";
+pub const PROJECT_TRUST_FAILED: &str = "Soyeht could not save this choice.";
 pub const CLIENT_NAME_MAC: &str = "mac";
 pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
 pub const CLIENT_NAME_IPHONE: &str = "iphone";

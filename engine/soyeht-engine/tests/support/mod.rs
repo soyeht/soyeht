@@ -21,6 +21,7 @@ use std::{
 };
 use uuid::Uuid;
 
+mod language_servers;
 mod ticker;
 #[allow(unused_imports)] // each test crate uses the part it needs
 pub use ticker::{Ticker, longest_gap};
@@ -66,7 +67,7 @@ impl Rig {
         let path = rig_root().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         install_fake_worktrunk(&path);
-        install_fake_lsp(&path);
+        language_servers::install(&path);
         let ptyd = Command::new(sibling_binary("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&path)
@@ -433,10 +434,6 @@ fn install_fake(root: &Path, binary: &str, name: &str) {
     std::os::unix::fs::symlink(binary, bin.join(name)).unwrap();
     #[cfg(windows)]
     fs::copy(binary, bin.join(format!("{name}.exe"))).unwrap();
-}
-
-pub fn install_fake_lsp(root: &Path) {
-    install_fake(root, "soyeht-fake-lsp", "rust-analyzer");
 }
 
 pub fn install_fake_worktrunk(root: &Path) {

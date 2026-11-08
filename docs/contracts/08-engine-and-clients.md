@@ -158,6 +158,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
 | `device.*`, `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
+| `project.trust.set` (trust a folder, contract 18) | yes, in the signed Mac app on macOS | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
 
 **2.5 The local endpoint on Windows (ADR 0086).** Windows has no Unix socket in the
