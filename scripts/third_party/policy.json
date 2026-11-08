@@ -62,23 +62,7 @@
       "reason": "The package is MIT; NOTICES lists the Apache-2.0 code it derives from swift-transformers."
     }
   },
-  "exceptions": [
-    {
-      "package": "zlog",
-      "license": "GPL-3.0-or-later",
-      "reason": "Linked into the window through gpui -> sum_tree -> ztracing -> zlog (zed-industries/zed, the pinned revision). Not allowed for a release: replace it before the public launch (a patch of ztracing that drops the zlog dependency, or an Apache-2.0 relicense upstream). Listed so that the check stays green for what is already there and fails for any new one."
-    },
-    {
-      "package": "ztracing",
-      "license": "GPL-3.0-or-later",
-      "reason": "Same chain as zlog: gpui -> sum_tree -> ztracing. Its folder also holds LICENSE-APACHE, but the manifest declares only the GPL."
-    },
-    {
-      "package": "ztracing_macro",
-      "license": "GPL-3.0-or-later",
-      "reason": "Same chain as zlog: gpui -> sum_tree -> ztracing -> ztracing_macro (a procedural macro, run at build time and not linked)."
-    }
-  ],
+  "exceptions": [],
   "bundled": {
     "freetype-sys": {
       "license": "FTL OR GPL-2.0-only",
