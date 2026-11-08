@@ -49,6 +49,7 @@ public enum PaneInteriorFont {
     private var claimedInitialFocus = false
     private var onActivate: (() -> Void)?
     private(set) var isReceivingOutput = false
+    private var appliedTheme: [SwiftUI.Color] = []
 
     private lazy var scrollerFade = TerminalScrollerFade(terminal: self)
 
@@ -58,6 +59,18 @@ public enum PaneInteriorFont {
     }
 
     func updateActivation(_ action: @escaping () -> Void) { onActivate = action }
+
+    /// Paints the surface in the theme's colors. Setting a color makes the emulator drop its
+    /// attribute caches and mark every row dirty, so a surface that is updated for another
+    /// reason (SwiftUI updates it whenever the pane card changes) keeps the colors it has.
+    func applyTheme(_ colors: SoyehtThemeColorSet) {
+      let theme = [colors.face, colors.ink]
+      guard theme != appliedTheme else { return }
+      appliedTheme = theme
+      nativeBackgroundColor = NSColor(colors.face)
+      nativeForegroundColor = NSColor(colors.ink)
+      needsDisplay = true
+    }
 
     override func viewDidMoveToWindow() {
       super.viewDidMoveToWindow()
@@ -71,11 +84,24 @@ public enum PaneInteriorFont {
       scrollerFade.displayScrolled(awayFromBottom: canScroll && scrollPosition < 1)
     }
 
-    func receive(_ bytes: Data, reset: Bool) {
+    /// The output of the pane, joined into one feed per display frame.
+    private lazy var output = TerminalOutputCoalescer { [weak self] batch in
+      self?.feed(batch)
+    }
+
+    func receive(_ bytes: Data, reset: Bool) { output.enqueue(bytes, reset: reset) }
+
+    /// Feeds what waits, before something that must see the screen as it is: a new grid.
+    func flushOutput() { output.flush() }
+
+    /// The person typed: the echo of the key is not held for the frame.
+    func noteUserInput() { output.noteInput() }
+
+    private func feed(_ batch: TerminalOutputBatch) {
       isReceivingOutput = true
       defer { isReceivingOutput = false }
-      if reset { getTerminal().resetToInitialState() }
-      feed(byteArray: Array(bytes)[...])
+      if batch.reset { getTerminal().resetToInitialState() }
+      feed(byteArray: batch.bytes[...])
     }
 
     func updateKeyboardInputEnabled(_ enabled: Bool) {
@@ -189,10 +215,8 @@ public enum PaneInteriorFont {
     }
 
     private func applyTheme(to view: TerminalView) {
-      let colors = SoyehtThemeColorSet(palette: SoyehtThemeStore.shared.activeTheme.palette)
-      view.nativeBackgroundColor = NSColor(colors.face)
-      view.nativeForegroundColor = NSColor(colors.ink)
-      view.needsDisplay = true
+      (view as? TerminalSurface)?.applyTheme(
+        SoyehtThemeColorSet(palette: SoyehtThemeStore.shared.activeTheme.palette))
     }
     public static func dismantleNSView(_ view: TerminalView, coordinator: TerminalHost) {
       coordinator.detach(view)

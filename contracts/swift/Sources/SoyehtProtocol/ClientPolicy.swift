@@ -28,6 +28,14 @@ public enum ClientPolicy {
     public static let terminalInputChunkBytes = 16384
     public static let terminalInputQueueBytes = 1048576
     public static let terminalScrollbackLines = 10000
+    public static let terminalOutputFlushMs = 16
+    public static let terminalOutputFlushSeconds: Double = 0.016
+    public static let terminalOutputFloodMs = 50
+    public static let terminalOutputFloodSeconds: Double = 0.05
+    public static let terminalOutputFloodBytes = 8192
+    public static let terminalInteractiveWindowMs = 150
+    public static let terminalInteractiveWindowSeconds: Double = 0.15
+    public static let terminalOutputFlushBytes = 1048576
     public static let capsWaitingMessages = 1000
     public static let capsFileLinks = 128
     public static let capsWebLinks = 128

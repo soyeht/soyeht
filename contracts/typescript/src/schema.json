@@ -14991,7 +14991,12 @@
     "terminal": {
       "inputChunkBytes": 16384,
       "inputQueueBytes": 1048576,
-      "scrollbackLines": 10000
+      "scrollbackLines": 10000,
+      "outputFlushMs": 16,
+      "outputFloodMs": 50,
+      "outputFloodBytes": 8192,
+      "interactiveWindowMs": 150,
+      "outputFlushBytes": 1048576
     },
     "caps": {
       "waitingMessages": 1000,
