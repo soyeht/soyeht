@@ -563,7 +563,7 @@ public final class EngineClient {
     case .settingsChanged: try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
     case .engineReachabilityChanged: try applyReachability(params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
-      .ptydReconnected, .ptydLost, .paneConfigChanging, .paneConfigChanged:
+      .ptydReconnected, .ptydLost, .paneConfigChanging, .paneConfigChanged, .projectTrustChanged:
       break
     case .writingChanged: try applyWritingEvent(params)
     }
