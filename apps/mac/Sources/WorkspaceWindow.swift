@@ -525,7 +525,7 @@ struct WorkspaceWindow: View {
       Text(guidance.text)
         .multilineTextAlignment(.center)
         .foregroundStyle(guidance.isProblem ? MacTheme.danger : MacTheme.secondary)
-      if let code = client.pairCode, let image = qr(code.uri) {
+      if let code = client.pairCode, let image = qr(code.qr ?? code.uri) {
         Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
           .padding(MacTheme.Space.x16)
           .background(

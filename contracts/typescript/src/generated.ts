@@ -17,7 +17,7 @@ export type PaneState = "starting" | "working" | "idle" | "waiting_for_you" | "c
 
 export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
-export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files" | "writing";
+export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files" | "writing" | "trust";
 
 export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed" | "attachment_limit_exceeded" | "platform_unsupported" | "git_unavailable" | "file_not_text" | "file_too_large";
 
@@ -398,6 +398,7 @@ export interface DevicePairStartResult {
   "code": string;
   "expiresAt": string;
   "uri": string;
+  "qr"?: string;
   "reachability"?: EngineReachability;
 }
 
@@ -2242,6 +2243,34 @@ export interface PaneRoleSetResult {
   "role": AgentPaneRole;
 }
 
+export type ProjectTrust = "undecided" | "restricted" | "trusted";
+
+export type ProjectTrustChoice = "restricted" | "trusted";
+
+export interface ProjectTrustEntry {
+  "workspaceId": Id;
+  "trust": ProjectTrust;
+}
+
+export interface ProjectTrustSetParams {
+  "workspaceId": Id;
+  "trust": ProjectTrustChoice;
+  "idempotencyKey": Id;
+}
+
+export interface ProjectTrustSetResult {
+  "workspaceIds": Array<Id>;
+  "trust": ProjectTrust;
+}
+
+export interface ProjectTrustChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "actor"?: Actor;
+  "workspaceIds": Array<Id>;
+  "trust": ProjectTrust;
+}
+
 export type UsageProvider = "claude" | "codex" | "cursor" | "opencode";
 
 export type UsageState = "ok" | "stale" | "login_needed" | "no_access" | "unavailable";
@@ -2320,7 +2349,7 @@ export type FileSymbolKind = "function" | "type" | "method" | "property" | "vari
 
 export type DiffLineKind = "context" | "added" | "removed";
 
-export type LspState = "starting" | "ready" | "restarting" | "unavailable";
+export type LspState = "starting" | "ready" | "restarting" | "unavailable" | "restricted";
 
 export interface TextPosition {
   "line": number;
@@ -2796,6 +2825,7 @@ export interface LspServerStatus {
   "state": LspState;
   "generation": number;
   "detail"?: string;
+  "safeMode"?: boolean;
 }
 
 export interface LspStatusParams {
@@ -3637,6 +3667,7 @@ export interface Methods {
   "editor.review.accept": { params: EditorReviewParams; result: EditorReviewResult };
   "editor.review.reject": { params: EditorReviewParams; result: EditorReviewResult };
   "editor.review.comment": { params: EditorReviewCommentParams; result: EditorReviewCommentResult };
+  "project.trust.set": { params: ProjectTrustSetParams; result: ProjectTrustSetResult };
   "lsp.status": { params: LspStatusParams; result: LspStatusResult };
   "servers.local.list": { params: ServersLocalListParams; result: ServersLocalListResult };
   "web.open": { params: WebOpenParams; result: WebOpenResult };
@@ -3701,6 +3732,7 @@ export interface Events {
   "ptyd.lost": PtydLostEvent;
   "pane.updated": PaneUpdatedEvent;
   "settings.changed": SettingsChangedEvent;
+  "project.trust_changed": ProjectTrustChangedEvent;
   "pane.session_started": PaneSessionStartedEvent;
   "pane.turn_ended": PaneTurnEndedEvent;
   "pane.queued": PaneQueuedEvent;
@@ -3783,6 +3815,7 @@ export const eventRegistry = {
   "ptyd.lost": { paramsType: "PtydLostEvent", durable: true },
   "pane.updated": { paramsType: "PaneUpdatedEvent", durable: true },
   "settings.changed": { paramsType: "SettingsChangedEvent", durable: true },
+  "project.trust_changed": { paramsType: "ProjectTrustChangedEvent", durable: true },
   "pane.session_started": { paramsType: "PaneSessionStartedEvent", durable: true },
   "pane.turn_ended": { paramsType: "PaneTurnEndedEvent", durable: true },
   "pane.queued": { paramsType: "PaneQueuedEvent", durable: true },
