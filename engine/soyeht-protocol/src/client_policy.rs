@@ -45,6 +45,7 @@ pub const TASK_MOVE_REASON: &str = "Moved on the workspace board";
 pub const EDITOR_NO_FILE: &str = "The engine has no file for this editor tab.";
 pub const EDITOR_FILE_NOT_TEXT: &str = "Binary file, can't be shown.";
 pub const EDITOR_FILE_TOO_LARGE: &str = "This file is too large to open in the editor.";
+pub const WORKSPACE_FOLDER_GONE: &str = "This workspace's folder is gone:";
 pub const EDITOR_SAVE_MISSING: &str =
     "Couldn't save: this file was deleted from the disk. Save again to create it.";
 pub const EDITOR_SAVE_DENIED: &str =

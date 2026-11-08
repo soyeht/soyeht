@@ -129,7 +129,8 @@
         "platform_unsupported",
         "git_unavailable",
         "file_not_text",
-        "file_too_large"
+        "file_too_large",
+        "workspace_folder_missing"
       ]
     },
     "RpcError": {
@@ -14969,7 +14970,8 @@
     "platform_unsupported": -32037,
     "git_unavailable": -32038,
     "file_not_text": -32039,
-    "file_too_large": -32040
+    "file_too_large": -32040,
+    "workspace_folder_missing": -32042
   },
   "x-clientPolicy": {
     "timeouts": {
@@ -15065,6 +15067,7 @@
       "editorNoFile": "The engine has no file for this editor tab.",
       "editorFileNotText": "Binary file, can't be shown.",
       "editorFileTooLarge": "This file is too large to open in the editor.",
+      "workspaceFolderGone": "This workspace's folder is gone:",
       "editorSaveMissing": "Couldn't save: this file was deleted from the disk. Save again to create it.",
       "editorSaveDenied": "Couldn't save: permission denied. Fix the permissions, then save again.",
       "editorSaveFull": "Couldn't save: the disk is full. Free some space, then save again.",

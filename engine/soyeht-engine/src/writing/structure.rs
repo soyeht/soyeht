@@ -26,8 +26,8 @@ struct ScannedWritingSectionList {
 
 impl PreparedWritingSectionList {
     fn scan(self) -> Result<ScannedWritingSectionList> {
-        let workspace_root =
-            soyeht_platform::fs::canonicalize(&self.workspace_root).map_err(errors::io)?;
+        let workspace_root = soyeht_platform::fs::canonicalize(&self.workspace_root)
+            .map_err(errors::workspace_root)?;
         let folder = soyeht_writing::folder_for(&self.request.section);
         let section_root = match soyeht_platform::fs::canonicalize(&workspace_root.join(folder)) {
             Ok(path) => path,
@@ -280,5 +280,20 @@ mod tests {
             .scan()
             .unwrap();
         assert!(scanned.files.is_empty());
+    }
+
+    #[test]
+    fn a_deleted_workspace_folder_is_a_typed_error() {
+        let fixture = Fixture::new();
+        let mut prepared = fixture.prepared(WritingSection::Texts);
+        prepared.workspace_root = fixture.root.join("gone");
+        let error = match prepared.scan() {
+            Ok(_) => panic!("a missing workspace folder must fail"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            errors::kind(&error),
+            soyeht_protocol::ErrorKind::WorkspaceFolderMissing
+        );
     }
 }

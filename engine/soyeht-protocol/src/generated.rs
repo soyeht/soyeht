@@ -179,6 +179,8 @@ pub enum ErrorKind {
     FileNotText,
     #[serde(rename = "file_too_large")]
     FileTooLarge,
+    #[serde(rename = "workspace_folder_missing")]
+    WorkspaceFolderMissing,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -9124,5 +9126,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::GitUnavailable => -32038,
         ErrorKind::FileNotText => -32039,
         ErrorKind::FileTooLarge => -32040,
+        ErrorKind::WorkspaceFolderMissing => -32042,
     }
 }

@@ -106,6 +106,7 @@ public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `git_unavailable` = "git_unavailable"
     case `file_not_text` = "file_not_text"
     case `file_too_large` = "file_too_large"
+    case `workspace_folder_missing` = "workspace_folder_missing"
 }
 
 public struct RpcError: Codable, Sendable {

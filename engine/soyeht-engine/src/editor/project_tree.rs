@@ -77,7 +77,7 @@ impl Core {
 
     pub(super) fn project_root(&self, workspace_id: &str) -> Result<ProjectRoot> {
         let workspace = model::workspace(&self.store, workspace_id)?;
-        ProjectRoot::open(Path::new(&workspace.path)).map_err(errors::io)
+        ProjectRoot::open(Path::new(&workspace.path)).map_err(errors::workspace_root)
     }
 }
 
