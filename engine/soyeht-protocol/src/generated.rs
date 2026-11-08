@@ -898,6 +898,8 @@ pub enum EngineReachabilityReason {
     TailnetLookupFailed,
     #[serde(rename = "tailnet_listen_failed")]
     TailnetListenFailed,
+    #[serde(rename = "tailnet_port_in_use")]
+    TailnetPortInUse,
     #[serde(rename = "loopback_only")]
     LoopbackOnly,
 }

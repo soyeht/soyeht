@@ -983,6 +983,7 @@ public enum EngineReachabilityReason: String, Codable, Sendable, CaseIterable {
     case `tailnet_address_not_found` = "tailnet_address_not_found"
     case `tailnet_lookup_failed` = "tailnet_lookup_failed"
     case `tailnet_listen_failed` = "tailnet_listen_failed"
+    case `tailnet_port_in_use` = "tailnet_port_in_use"
     case `loopback_only` = "loopback_only"
 }
 
