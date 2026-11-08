@@ -225,6 +225,17 @@ pub fn log_if_failed(event: &str, result: Result<()>) {
 
 /// The single translation from engine failures to the public protocol. A failure of a domain
 /// crate already names its kind where the failure is defined; this names the engine's own.
+impl Error {
+    /// What a pane that cannot start says when it is a package nobody acknowledged (ADR 0143):
+    /// it names the package, so the person knows to acknowledge it. `None` for any other error.
+    pub(crate) fn unacknowledged_reason(&self) -> Option<&str> {
+        match self {
+            Error::AdapterNotAcknowledged(message) => Some(message),
+            _ => None,
+        }
+    }
+}
+
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
         Error::RecordedRpc(error) => error.data.kind.clone(),

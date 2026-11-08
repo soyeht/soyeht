@@ -68,11 +68,12 @@ fn unchecked_package_of(argv: &[String]) -> Option<&str> {
         .then_some(package.as_str())
 }
 
+/// What the refusal says, and what a pane that stopped for it shows beside its dead state: the
+/// package, so the person knows what to acknowledge.
 fn refusal(package: &str) -> errors::Error {
     errors::adapter_not_acknowledged(format!(
-        "Starting this agent downloads and runs {package} and its dependencies from the package \
-         registry, which Soyeht has not checked. Start it from a picker that shows this notice to \
-         acknowledge it."
+        "Acknowledge {package} to start this agent: it downloads and runs the package and its \
+         dependencies unchecked"
     ))
 }
 

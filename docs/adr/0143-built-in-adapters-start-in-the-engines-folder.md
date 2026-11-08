@@ -103,8 +103,9 @@ which code a pane runs, at each start.
   (`node_modules/.package-lock.json`, the version and integrity of every package), taken when it
   was installed. A start compares them (a few files, off the Core lock); a tree that changed
   since, or whose entry is a link, is installed again. This notices an edit of what a start runs;
-  it does not read every file of the tree, which is an owner-only folder of the person's own
-  account.
+  it does not read every file of the tree, and it is not a defence against a writer with the
+  person's own account, who can change the tree and its digest alike: it detects accidental
+  edits and half-finished changes. The tree is an owner-only folder of that account.
 - **An install is put in place without deleting what a running adapter holds.** A tree already
   there (the same lock, found changed or half made) is renamed aside and deleted after the new one
   is moved in, and renamed back if that fails. Staging folders and trees that could not be deleted
@@ -124,21 +125,37 @@ which code a pane runs, at each start.
 - **The notice is enforced by the engine, not only shown.** The first start of an adapter that the
   runner downloads unchecked (a built-in `package`, `packageLocked` false) is refused with
   `adapter_not_acknowledged` unless the request that chooses the agent (`pane.create`,
-  `pane.harness.switch`) carries `acknowledgedPackage` with that exact `name@version` and comes
-  from a person (`human_local` or `human_device`). The acknowledgement is stored per package and
-  version (`adapter_acknowledgements`), so a new version asks again. Every other way to start the
-  agent (a task, a role, a restart, a recovery, the candidate of a switch, another client that
-  sends nothing) finds the stored acknowledgement or is refused, and an agent binding that sends
-  one is refused with `forbidden_role`. The check runs where the agent is chosen and again where
-  the process is sent. A picker that shows the notice sends the package it showed when the person
-  starts the agent from it. The catalogue keeps the notice (`registry_package_unverified`) until
-  the package is acknowledged, also after a start that failed.
+  `pane.harness.switch`) carries `acknowledgedPackage` with that exact `name@version` and does not
+  come through an agent binding. The acknowledgement is stored per package and version
+  (`adapter_acknowledgements`), so a new version asks again.
+  - **Who can acknowledge.** "A person" means "not an agent binding": the roles `human_local` and
+    `human_device` can, and `agent` and `chief` get `forbidden_role`. A process of the same user
+    on the local socket is `human_local`, as it is for every other full-access request; this
+    check keeps an agent from acknowledging, it does not defend against that user.
+  - **What consent is.** The acknowledgement is that the person started the agent from a client
+    that shows the notice. A client sends the package its picker showed for every start of that
+    agent, so the default harness and the shortcuts that start it count, not only a press on a
+    button beside the notice.
+  - **Every other path** (a task, a role, a restart, a recovery, the candidate of a switch,
+    another client that sends nothing) finds the stored acknowledgement or is refused. The check
+    runs where the agent is chosen and again where the process is sent. A pane that was already
+    open when the engine was updated, and that runs such an adapter, stops at the next start with
+    the package named in its reason (`Acknowledge <package> to start this agent ...`) instead of
+    being retried; nothing is acknowledged for it afterwards on the person's behalf.
+  - **The catalogue** keeps the notice (`registry_package_unverified`) until the package is
+    acknowledged, also after a start that failed.
+  - **A test** ties the check at launch to the catalogue for every entry of the registry snapshot,
+    so a form of command line the check does not read (`-y`, `--package`) cannot slip past it.
 
 ### What this does not do
 
 - The lock fixes what is installed, not whether it is good: it is as trustworthy as the version it was made at. A reviewer of
   a change to a lock reads its diff.
 - `uvx` adapters (`fast-agent`, `minion-code`) have no lock yet.
+- Trees of earlier locks stay in `installed/`. Pruning them is a follow-up: a tree may still be
+  run by an adapter that the supervisor keeps alive across an engine update, so deleting one is
+  safe only after asking the supervisor which processes run from it, which the install (it has no
+  supervisor handle) cannot do cheaply.
 - `npm` must be on the launch `PATH`, as `npx` was; a person's own registry configuration still
   applies to the fetch, and the integrity check still applies to what it returns.
 - The adapter still drives the person's own CLI (ADR 0137), which is outside this install.

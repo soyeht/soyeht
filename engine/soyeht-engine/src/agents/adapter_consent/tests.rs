@@ -65,6 +65,29 @@ fn only_a_builtin_package_the_engine_does_not_lock_needs_an_acknowledgement() {
     assert_eq!(unchecked_package(&custom), None);
 }
 
+/// The check where a process is sent reads its command line, the catalogue reads the launch it
+/// came from. They must say the same for every entry of the snapshot, so that a form the check
+/// does not read (`-y`, `--package`) fails here and not silently at launch.
+#[test]
+fn the_check_at_launch_agrees_with_the_catalogue_for_every_snapshot_entry() {
+    let mut runners = 0;
+    for entry in registry::builtin_entries().unwrap() {
+        let launch = entry.launch;
+        let command_line: Vec<String> = std::iter::once(launch.command.clone())
+            .chain(launch.args.iter().cloned())
+            .collect();
+        assert_eq!(
+            unchecked_package_of(&command_line).map(str::to_owned),
+            unchecked_package(&launch),
+            "{}",
+            launch.id
+        );
+        runners += usize::from(adapter_install::runner_package(&launch).is_some());
+    }
+    // Entries that run a package exist, so the comparison above is not empty.
+    assert!(runners > 10, "{runners}");
+}
+
 #[test]
 fn a_start_is_refused_until_its_exact_package_is_acknowledged() {
     let (mut store, directory) = store();
