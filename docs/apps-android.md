@@ -26,7 +26,7 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   its header (state dot, name, what it runs, the state in words) over a flat interior; the tabs and the top bar's
   buttons are raised too. Colors, radii, spacing, type sizes and the shadows of the raised surfaces are the tokens of
   `contracts/design-tokens.json`; the fonts (Nunito, Inter, JetBrains Mono) are the files the Mac ships, copied into
-  the app's resources at build time.
+  the app's resources at build time, and so are the four providers' logos (the shared package's `ProviderIcons.xcassets`, tinted in a palette color as `ProviderGlyph` does). A logo is in each ring of the rail and leads the harness word of the composer's line, by the core's mapping of a harness to its provider; in the e-ink mode they stay, as content.
 - **Terminal pane.** The screen is the computer's, drawn from the desktop client's screen model: what
   the computer shows is what the phone shows. The phone never resizes the pane (ADR 0013); a pane wider
   than the phone scrolls sideways. Typing goes through the soft keyboard; a row has Esc, Tab, Ctrl,
@@ -52,8 +52,7 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   "Refresh screen" button. Anywhere else the refresh does nothing.
 
 Not yet: push notifications, new panes
-and workspaces, closing a workspace tab, the tasks page, the provider logos in the rail's rings (the ring holds the
-provider's initial), the harness logo in the composer, the context ring and the microphone of the composer,
+and workspaces, closing a workspace tab, the tasks page, the the context ring and the microphone of the composer,
 terminal text size and selection (outside the e-ink mode).
 
 ## Build and test

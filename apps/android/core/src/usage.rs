@@ -23,6 +23,8 @@ pub enum GaugeBand {
 pub struct UsageGauge {
     /// The provider's name, for the ring's description.
     pub provider: String,
+    /// The name of the provider's logo (`claude`), the one the Mac and the iPhone draw it from.
+    pub icon: String,
     /// The used fraction of the window the ring follows, when the reading has one.
     pub fraction: Option<f64>,
     pub band: Option<GaugeBand>,
@@ -32,11 +34,22 @@ pub struct UsageGauge {
     pub percentage: String,
 }
 
+/// The logo a provider is drawn with: the resource names of `ProviderGlyph`.
+pub(crate) fn icon_key(provider: &UsageProvider) -> &'static str {
+    match provider {
+        UsageProvider::Claude => "claude",
+        UsageProvider::Codex => "codex",
+        UsageProvider::Cursor => "cursor",
+        UsageProvider::Opencode => "opencode",
+    }
+}
+
 fn reading_gauge(reading: &UsageReading) -> UsageGauge {
     let presentation = Presentation(reading);
     let emphasis = presentation.emphasis();
     UsageGauge {
         provider: reading.provider.display_name().to_owned(),
+        icon: icon_key(&reading.provider).to_owned(),
         fraction: presentation.fraction(),
         band: presentation.band().map(|band| match band {
             Band::Success => GaugeBand::Success,
@@ -109,6 +122,7 @@ mod tests {
         );
         let gauge = gauge(&state, "a").unwrap();
         assert_eq!(gauge.provider, "Codex");
+        assert_eq!(gauge.icon, "codex");
         assert_eq!(gauge.fraction, Some(0.6));
         assert_eq!(gauge.band, Some(GaugeBand::Warning));
         assert_eq!(gauge.percentage, "60%");

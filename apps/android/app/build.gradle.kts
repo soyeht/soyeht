@@ -36,8 +36,8 @@ android {
             jniLibs.srcDir(layout.buildDirectory.dir("generated/jniLibs"))
             // The license documents of the repository root travel in the APK as assets (ADR 0149).
             assets.srcDir(layout.buildDirectory.dir("generated/licenses"))
-            // The approved fonts, copied from the Mac's resources by `copyFonts` below.
-            res.srcDir(layout.buildDirectory.dir("generated/fonts"))
+            // The approved fonts and the providers' logos, copied from the Mac's and the shared package's resources below.
+            res.srcDir(layout.buildDirectory.dir("generated/shared-res"))
         }
     }
     testOptions { unitTests.isReturnDefaultValues = true }
@@ -61,9 +61,21 @@ val copyFonts by tasks.registering(Copy::class) {
         )
         rename { it.lowercase().replace("-", "_") }
     }
-    into(layout.buildDirectory.dir("generated/fonts/font"))
+    into(layout.buildDirectory.dir("generated/shared-res/font"))
 }
 tasks.named("preBuild") { dependsOn(copyFonts) }
+
+// The logos of the four providers are the files the Mac and the iPhone draw (the shared package's asset catalog),
+// copied flat and named for Android; they are tinted in a palette color, as `ProviderGlyph` does.
+val copyProviderIcons by tasks.registering(Copy::class) {
+    from(rootProject.projectDir.resolve("../shared/Sources/SoyehtClient/Resources/ProviderIcons.xcassets")) {
+        include("*.imageset/*.png")
+        eachFile { relativePath = RelativePath(true, "provider_$name") }
+        includeEmptyDirs = false
+    }
+    into(layout.buildDirectory.dir("generated/shared-res/drawable-nodpi"))
+}
+tasks.named("preBuild") { dependsOn(copyProviderIcons) }
 
 // The tests that call the core load the library scripts/check_android.sh built for this computer.
 tasks.withType<Test>().configureEach {

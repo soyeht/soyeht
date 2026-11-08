@@ -30,7 +30,7 @@ import uniffi.soyeht_android.UsageGauge
  * neither is cut at the edge of the box.
  */
 @Composable
-fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier, inside: String = gauge.percentage, insideSize: Float = UsageRing.percentageSize) {
+fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier, logo: Boolean = false) {
     val roles = LocalRoles.current
     // The ring's fading is opacity, which on e-ink is a grey the page nearly hides: it draws at full ink.
     val faded = !LocalMetrics.current.eink
@@ -66,6 +66,7 @@ fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier, inside: Stri
                 )
             }
         }
-        Text(inside, color = roles.ink, fontSize = insideSize.sp, fontWeight = FontWeight.Bold)
+        // The rail's ring holds the provider's logo; a ring with none holds its percentage.
+        if (logo) ProviderLogo(gauge.icon, roles.ink, UsageRing.glyphSize) else Text(gauge.percentage, color = roles.ink, fontSize = UsageRing.percentageSize.sp, fontWeight = FontWeight.Bold)
     }
 }

@@ -48,7 +48,7 @@ fun AppRail(model: AppModel) {
             }
             model.rings.forEach { gauge ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    UsageRingView(gauge, inside = gauge.provider.take(1), insideSize = metrics.paneCaption)
+                    UsageRingView(gauge, logo = true)
                     Text(gauge.percentage, color = roles.secondary, fontWeight = FontWeight.Bold, fontSize = maxOf(UsageRing.percentageSize, metrics.paneMonoSmall - 4).sp)
                 }
             }

@@ -51,23 +51,30 @@ private fun MenuText(
     content: @Composable ColumnScope.(close: () -> Unit) -> Unit,
     onOpen: () -> Unit = {},
     onClose: () -> Unit = {},
+    logo: String? = null,
 ) {
     val roles = LocalRoles.current
     val metrics = LocalMetrics.current
     var open by remember { mutableStateOf(false) }
     Box {
-        Text(
-            label,
-            color = if (enabled) roles.ink else roles.muted,
-            fontFamily = Faces.mono,
-            fontWeight = FontWeight.Bold,
-            fontSize = metrics.paneMonoSmall.sp,
-            maxLines = 1,
-            modifier = Modifier
+        Row(
+            Modifier
                 .defaultMinSize(minHeight = metrics.controlHeight.dp)
-                .clickable(onClickLabel = label) { if (enabled) { onOpen(); open = true } }
-                .wrapContentHeight(Alignment.CenterVertically),
-        )
+                .clickable(onClickLabel = label) { if (enabled) { onOpen(); open = true } },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(com.soyeht.next.android.theme.Composer.chipSpacing.dp),
+        ) {
+            // The harness chip leads with the provider's logo, as on the Mac and the iPhone.
+            logo?.let { ProviderLogo(it, if (enabled) roles.ink else roles.muted, com.soyeht.next.android.theme.Composer.harnessLogoSize * metrics.paneMonoSmall / PaneInterior.monoSmallPointSize) }
+            Text(
+                label,
+                color = if (enabled) roles.ink else roles.muted,
+                fontFamily = Faces.mono,
+                fontWeight = FontWeight.Bold,
+                fontSize = metrics.paneMonoSmall.sp,
+                maxLines = 1,
+            )
+        }
         val close = { open = false; onClose() }
         if (metrics.eink) {
             // Material's menu fades and scales in; on e-ink it appears in one frame, with an edge.
@@ -114,6 +121,7 @@ private fun HarnessMenu(model: AppModel, paneId: String, controls: ComposerContr
         enabled = controls.harness.canSwitch,
         onOpen = { model.openHarnessMenu(paneId) },
         onClose = model::closeHarnessMenu,
+        logo = controls.harness.icon,
         content = { close ->
             if (choices == null || (choices.sections.isEmpty() && choices.more.isEmpty())) {
                 Text(

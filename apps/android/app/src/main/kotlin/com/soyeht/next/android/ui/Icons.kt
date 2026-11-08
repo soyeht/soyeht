@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.res.painterResource
+import com.soyeht.next.android.R
 import androidx.compose.ui.unit.dp
 
 /**
@@ -57,4 +59,20 @@ private fun vectorOf(icon: Icon): ImageVector = cache.getOrPut(icon) {
 fun IconView(icon: Icon, color: Color, size: Float, modifier: Modifier = Modifier) {
     val vector = remember(icon) { vectorOf(icon) }
     Image(vector, contentDescription = null, modifier.size(size.dp), colorFilter = ColorFilter.tint(color))
+}
+
+/**
+ * A provider's logo, in a palette color: the file the Mac and the iPhone draw (`ProviderGlyph`), tinted as a template.
+ * [icon] is the core's name for it (`claude`, `codex`, `cursor`, `opencode`); a name this app has no logo for draws nothing.
+ */
+@Composable
+fun ProviderLogo(icon: String, color: Color, size: Float, modifier: Modifier = Modifier) {
+    val resource = when (icon) {
+        "claude" -> R.drawable.provider_claude
+        "codex" -> R.drawable.provider_codex
+        "cursor" -> R.drawable.provider_cursor
+        "opencode" -> R.drawable.provider_opencode
+        else -> return
+    }
+    Image(painterResource(resource), contentDescription = null, modifier.size(size.dp), colorFilter = ColorFilter.tint(color))
 }
