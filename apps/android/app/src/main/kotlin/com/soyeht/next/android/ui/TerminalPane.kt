@@ -30,22 +30,27 @@ import com.soyeht.next.android.theme.Radius
 import uniffi.soyeht_android.PaneRow
 import uniffi.soyeht_android.TerminalKey
 
+/**
+ * The inside of a terminal pane: the computer's screen, and under it the keys a soft keyboard does not have. The
+ * pane that has the focus takes the keyboard. On e-ink its output also drives the panel's refresh (ADR 0155).
+ */
 @Composable
-fun ColumnScope.TerminalScreen(model: AppModel, pane: PaneRow) {
+fun TerminalBody(model: AppModel, row: PaneRow, focused: Boolean, modifier: Modifier = Modifier) {
     val roles = LocalRoles.current
     val metrics = LocalMetrics.current
     val view = LocalView.current
     val refresh = remember(view) { ScreenRefresh.forView(view) }
-    TerminalRefresh(model.terminal, refresh, metrics.eink)
-    TopBar(pane.name, pane.status, onBack = model::close) {
-        if (metrics.eink && refresh.available) Pill("Refresh screen", refresh::fullRefresh)
-    }
+    val frame = model.data(row.paneId).terminal
+    // The refresh follows the pane the person types in: two terminals would fight over the panel's mode.
+    TerminalRefresh(if (focused) frame else null, refresh, metrics.eink && focused)
     var control by remember { mutableStateOf(false) }
-    Box(Modifier.weight(1f).fillMaxWidth().panel(roles.terminalWell, RoundedCornerShape(Radius.compact.dp))) {
-        model.terminal?.let { TerminalGrid(it) }
-        KeyCatcher(model, control) { control = false }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
+        Box(Modifier.weight(1f).fillMaxWidth().panel(roles.terminalWell, RoundedCornerShape(Radius.compact.dp))) {
+            frame?.let { TerminalGrid(it) }
+            if (focused) KeyCatcher(model, row.paneId, control) { control = false }
+        }
+        if (focused) KeyRow(model, row.paneId, control) { control = !control }
     }
-    KeyRow(model, control) { control = !control }
 }
 
 /**
@@ -53,7 +58,7 @@ fun ColumnScope.TerminalScreen(model: AppModel, pane: PaneRow) {
  * stays empty, so the terminal is the only copy of what was typed.
  */
 @Composable
-private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
+private fun KeyCatcher(model: AppModel, paneId: String, control: Boolean, release: () -> Unit) {
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { focus.requestFocus() }
     BasicTextField(
@@ -61,12 +66,12 @@ private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
         onValueChange = { typed ->
             if (typed.isEmpty()) return@BasicTextField
             if (control && typed.length == 1) {
-                model.press(TerminalKey.Character(typed.lowercase()), control = true)
+                model.press(paneId, TerminalKey.Character(typed.lowercase()), control = true)
                 release()
             } else if (typed.length > 1) {
-                model.paste(typed)
+                model.paste(paneId, typed)
             } else {
-                model.type(typed)
+                model.type(paneId, typed)
             }
         },
         // A password-type field (no suggestions) makes the keyboard commit each key at once, with no composing text to reconcile.
@@ -75,7 +80,7 @@ private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
             imeAction = ImeAction.Send,
             autoCorrectEnabled = false,
         ),
-        keyboardActions = KeyboardActions(onSend = { model.press(TerminalKey.Enter) }),
+        keyboardActions = KeyboardActions(onSend = { model.press(paneId, TerminalKey.Enter) }),
         modifier = Modifier
             .size(1.dp)
             .alpha(0f)
@@ -97,17 +102,17 @@ private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
                 val text = if (typed >= SPACE) String(Character.toChars(typed)) else null
                 when {
                     named != null -> {
-                        model.press(named, control = event.isCtrlPressed)
+                        model.press(paneId, named, control = event.isCtrlPressed)
                         true
                     }
                     // Control or Alt with a character is a key press, not text.
                     text != null && (event.isCtrlPressed || event.isAltPressed) -> {
-                        model.press(TerminalKey.Character(text.lowercase()), control = event.isCtrlPressed, alt = event.isAltPressed)
+                        model.press(paneId, TerminalKey.Character(text.lowercase()), control = event.isCtrlPressed, alt = event.isAltPressed)
                         true
                     }
                     // A key that types a character (a hardware keyboard, or `adb shell input text`).
                     text != null -> {
-                        model.type(text)
+                        model.type(paneId, text)
                         true
                     }
                     else -> false
@@ -118,18 +123,19 @@ private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
 
 /** The keys a soft keyboard does not have: Esc, Tab, Ctrl, arrows, Backspace. */
 @Composable
-private fun KeyRow(model: AppModel, control: Boolean, toggleControl: () -> Unit) {
+private fun KeyRow(model: AppModel, paneId: String, control: Boolean, toggleControl: () -> Unit) {
     val keys = listOf(
         "Esc" to TerminalKey.Escape, "Tab" to TerminalKey.Tab, "↑" to TerminalKey.Up, "↓" to TerminalKey.Down,
         "←" to TerminalKey.Left, "→" to TerminalKey.Right, "⌫" to TerminalKey.Backspace, "⏎" to TerminalKey.Enter,
     )
     Row(
-        Modifier.fillMaxWidth().padding(PaneInterior.tightSpacing.dp),
+        Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(PaneInterior.tightSpacing.dp),
     ) {
         val fit = Modifier.weight(1f)
-        Pill(if (control) "Ctrl ●" else "Ctrl", toggleControl, fit, primary = control, padding = PaneInterior.tightSpacing)
-        keys.forEach { (label, key) -> Pill(label, { model.press(key) }, fit, padding = PaneInterior.tightSpacing) }
+        val size = LocalMetrics.current.paneMonoSmall
+        Pill("Ctrl", toggleControl, fit, tone = if (control) Tone.Primary else Tone.Neutral, padding = 0f, textSize = size)
+        keys.forEach { (label, key) -> Pill(label, { model.press(paneId, key) }, fit, padding = 0f, textSize = size) }
     }
 }
 

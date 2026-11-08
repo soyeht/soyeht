@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.soyeht.next.android.theme.LocalMetrics
@@ -29,7 +30,7 @@ import uniffi.soyeht_android.UsageGauge
  * neither is cut at the edge of the box.
  */
 @Composable
-fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
+fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier, inside: String = gauge.percentage, insideSize: Float = UsageRing.percentageSize) {
     val roles = LocalRoles.current
     // The ring's fading is opacity, which on e-ink is a grey the page nearly hides: it draws at full ink.
     val faded = !LocalMetrics.current.eink
@@ -65,6 +66,6 @@ fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
                 )
             }
         }
-        Text(gauge.percentage, color = roles.ink, fontSize = UsageRing.percentageSize.sp)
+        Text(inside, color = roles.ink, fontSize = insideSize.sp, fontWeight = FontWeight.Bold)
     }
 }
