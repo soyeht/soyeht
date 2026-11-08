@@ -249,6 +249,11 @@ impl Core {
         usage::gauge(&lock(&self.replica).state, &pane_id)
     }
 
+    /// The usage ring of every provider the engine meters: the rings of the app rail.
+    pub fn usage_gauges(&self) -> Vec<UsageGauge> {
+        usage::gauges(&lock(&self.replica).state)
+    }
+
     /// The controls under the message field of an agent pane: the harness chip, and the model, effort
     /// and permission menus the session offers.
     pub fn composer(&self, pane_id: String) -> Option<ComposerControls> {

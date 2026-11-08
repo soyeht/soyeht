@@ -8,7 +8,7 @@ use soyeht_client::{
     State,
     usage::{Band, Presentation},
 };
-use soyeht_protocol::UsageProvider;
+use soyeht_protocol::{UsageProvider, UsageReading};
 
 /// The colour band of the arc, which the view resolves to a palette role.
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,17 +32,11 @@ pub struct UsageGauge {
     pub percentage: String,
 }
 
-pub(crate) fn gauge(state: &State, pane_id: &str) -> Option<UsageGauge> {
-    let harness = &state.pane(pane_id)?.agent.as_ref()?.harness;
-    let provider = UsageProvider::for_harness(harness)?;
-    let reading = state
-        .usage()
-        .iter()
-        .find(|reading| reading.provider == provider)?;
+fn reading_gauge(reading: &UsageReading) -> UsageGauge {
     let presentation = Presentation(reading);
     let emphasis = presentation.emphasis();
-    Some(UsageGauge {
-        provider: provider.display_name().to_owned(),
+    UsageGauge {
+        provider: reading.provider.display_name().to_owned(),
         fraction: presentation.fraction(),
         band: presentation.band().map(|band| match band {
             Band::Success => GaugeBand::Success,
@@ -52,7 +46,22 @@ pub(crate) fn gauge(state: &State, pane_id: &str) -> Option<UsageGauge> {
         arc_opacity: emphasis.arc_opacity(),
         ring_opacity: emphasis.ring_opacity(),
         percentage: presentation.percentage(),
-    })
+    }
+}
+
+pub(crate) fn gauge(state: &State, pane_id: &str) -> Option<UsageGauge> {
+    let harness = &state.pane(pane_id)?.agent.as_ref()?.harness;
+    let provider = UsageProvider::for_harness(harness)?;
+    state
+        .usage()
+        .iter()
+        .find(|reading| reading.provider == provider)
+        .map(reading_gauge)
+}
+
+/// Every provider's meter, in the engine's order: the rings of the app rail.
+pub(crate) fn gauges(state: &State) -> Vec<UsageGauge> {
+    state.usage().iter().map(reading_gauge).collect()
 }
 
 #[cfg(test)]
@@ -104,6 +113,18 @@ mod tests {
         assert_eq!(gauge.band, Some(GaugeBand::Warning));
         assert_eq!(gauge.percentage, "60%");
         assert_eq!((gauge.arc_opacity, gauge.ring_opacity), (1.0, 1.0));
+    }
+
+    #[test]
+    fn the_rail_has_a_ring_for_every_meter_in_the_engines_order() {
+        let state = state(
+            "registry.claude-acp",
+            vec![reading("claude", "ok", 0.1), reading("codex", "ok", 0.6)],
+        );
+        let rings = gauges(&state);
+        let names: Vec<_> = rings.iter().map(|ring| ring.provider.as_str()).collect();
+        assert_eq!(names, ["Claude", "Codex"]);
+        assert!(gauges(&State::default()).is_empty());
     }
 
     #[test]
