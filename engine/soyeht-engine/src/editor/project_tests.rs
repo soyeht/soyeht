@@ -299,6 +299,20 @@ async fn a_deleted_workspace_folder_is_a_typed_error_not_an_io_failure() {
             json!({"workspaceId":workspace_id,"path":"src/lib.rs","preview":false,
                 "idempotencyKey":key()}),
         ),
+        (
+            "project.tree.watch",
+            json!({"workspaceId":workspace_id,"paths":["src"]}),
+        ),
+        (
+            "file.search",
+            json!({"workspaceId":workspace_id,"query":"lib","caseSensitive":true,"limit":10,
+                "idempotencyKey":key()}),
+        ),
+        (
+            "file.search",
+            json!({"workspaceId":workspace_id,"query":"lib","replacement":"x",
+                "caseSensitive":true,"limit":10,"idempotencyKey":key()}),
+        ),
     ] {
         let error = fixture.try_call(method, params).unwrap_err();
         assert_eq!(

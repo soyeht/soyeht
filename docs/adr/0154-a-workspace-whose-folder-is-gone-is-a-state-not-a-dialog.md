@@ -1,4 +1,4 @@
-# ADR 0153: A workspace whose folder is gone is a state, not a dialog
+# ADR 0154: A workspace whose folder is gone is a state, not a dialog
 
 - Status: accepted
 - Date: 2026-11-08
@@ -14,9 +14,10 @@ every launch, with nothing the person could do about it but press OK.
 ## Decision
 
 The engine answers a request that cannot find the workspace's folder with a new error kind,
-`workspace_folder_missing` (code -32041). One rule makes it: opening the workspace root maps a
+`workspace_folder_missing` (code -32042). One rule makes it: opening the workspace root maps a
 missing folder to this kind (`errors::workspace_root`), and the project tree and the editor's
-path resolution both open the root through it. The message is "The workspace folder is missing"
+path resolution, the project watch, the project search and replace, and the writing section
+listing all open the root through it. The message is "The workspace folder is missing"
 and names no path, since a message can reach a log; the client knows the path from the workspace.
 A path that is missing inside a folder that is there stays `not_found`.
 
@@ -39,3 +40,7 @@ It gets the typed kind and the clearer text in the editor pane, and no bar.
 A client built before this change shows the engine's message in its dialog, now saying that the
 folder is missing. A new request that opens the workspace root maps its failure with
 `errors::workspace_root`, so the kind stays one rule.
+
+Not covered: the working directory of a new terminal pane (`panes.rs`) still answers an I/O
+error when the folder is gone, since it resolves a directory the caller named and not the
+workspace root. A later change can map it with the same function.

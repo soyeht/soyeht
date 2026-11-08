@@ -9040,6 +9040,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::GitUnavailable => -32038,
         ErrorKind::FileNotText => -32039,
         ErrorKind::FileTooLarge => -32040,
-        ErrorKind::WorkspaceFolderMissing => -32041,
+        ErrorKind::WorkspaceFolderMissing => -32042,
     }
 }

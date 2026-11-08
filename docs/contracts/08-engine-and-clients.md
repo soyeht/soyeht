@@ -430,7 +430,7 @@ and a later request succeeds once Git is installed),
 `workspace_folder_missing` (the folder of a workspace is not on the disk any more: a request that
 reads the workspace, such as `project.tree.list`, `file.open` or `file.diff`, answers it, with the
 message "The workspace folder is missing" and no path); a client shows it as a standing state of
-that workspace with a way to close it, not as a dialog (ADR 0153).
+that workspace with a way to close it, not as a dialog (ADR 0154).
 
 ## 8. Limits (R20) — single table, overrides every other mention
 | Item | Limit |

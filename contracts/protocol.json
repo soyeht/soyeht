@@ -14766,7 +14766,7 @@
     "git_unavailable": -32038,
     "file_not_text": -32039,
     "file_too_large": -32040,
-    "workspace_folder_missing": -32041
+    "workspace_folder_missing": -32042
   },
   "x-clientPolicy": {
     "timeouts": {
