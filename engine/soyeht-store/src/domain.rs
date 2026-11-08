@@ -564,14 +564,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_outcomes_of_inputs_and_the_next_intent_share_one_commit() {
+    /// A store whose input `a` has an intent, and the folder it lives in.
+    fn store_with_intent_a() -> (Store, std::path::PathBuf) {
         let directory =
             std::env::temp_dir().join(format!("soyeht-inputs-{}", uuid::Uuid::new_v4()));
         let mut store = Store::open(&directory).unwrap();
         store
             .finish_inputs(&[], Some(("client", "a", &intent("op-a"))))
             .unwrap();
+        (store, directory)
+    }
+
+    #[test]
+    fn the_outcomes_of_inputs_and_the_next_intent_share_one_commit() {
+        let (mut store, directory) = store_with_intent_a();
         store
             .finish_inputs(&[], Some(("client", "b", &intent("op-b"))))
             .unwrap();
@@ -606,12 +612,7 @@ mod tests {
 
     #[test]
     fn an_intent_is_forgotten_only_when_it_was_recorded_long_enough_ago() {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-inputs-{}", uuid::Uuid::new_v4()));
-        let mut store = Store::open(&directory).unwrap();
-        store
-            .finish_inputs(&[], Some(("client", "a", &intent("op-a"))))
-            .unwrap();
+        let (mut store, directory) = store_with_intent_a();
         let recorded = chrono::Utc::now().timestamp();
 
         // A grace that has not passed since the record leaves it; one that has, drops it.
