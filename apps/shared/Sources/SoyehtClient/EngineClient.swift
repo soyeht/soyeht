@@ -552,8 +552,7 @@ public final class EngineClient {
       try applyTaskEvent(eventName, params)
     case .attentionChanged: try applyAttentionEvent(params)
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
-    case .usageChanged: try applyUsageEvent(params)
-    case .projectTrustChanged: try applyProjectTrustEvent(params)
+    case .usageChanged, .projectTrustChanged: try applyReplicaEvent(eventName, params)
     case .skillsChanged, .paneCommandsChanged: try applySlashEvent(eventName, params)
     case .fileChangedOnDisk, .fileSaved, .fileSaveFailed, .fileConflict, .lspDiagnostics,
       .editorAgentCursor, .editorReviewRequested, .editorTabsUpdated, .projectEntryRenamed,

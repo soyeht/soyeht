@@ -16,6 +16,16 @@ extension EngineClient {
     projectTrust.apply(try params.decoded(ProjectTrustChangedEvent.self))
   }
 
+  /// The events of the domains that live in a replica (ADR 0146): `receive` hands them over in one
+  /// case, so its length stays under the ratchet.
+  func applyReplicaEvent(_ eventName: EventName, _ params: JsonValue) throws {
+    switch eventName {
+    case .usageChanged: try applyUsageEvent(params)
+    case .projectTrustChanged: try applyProjectTrustEvent(params)
+    default: break
+    }
+  }
+
   /// Answers the trust question of `workspaceId`'s folder and returns whether the engine took the
   /// answer. A refusal is shown as the policy's failure text and the sheet is not asked again in
   /// this session, so a refusal cannot loop.
