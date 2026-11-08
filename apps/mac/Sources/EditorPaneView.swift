@@ -329,7 +329,9 @@ private struct EditorPaneBody: View {
         }
         EditorStatusBar(
           view: view, selectedPosition: selectedPosition, lsp: languageStatus, diff: diff,
-          vimEnabled: vimEnabled, vimMode: vimMode, vimCommandLine: vimCommandLine)
+          vimEnabled: vimEnabled, vimMode: vimMode, vimCommandLine: vimCommandLine,
+          onReviewTrust: client.projectTrust.isRestricted(view.file.workspaceId)
+            ? { client.projectTrust.requestReview(view.file.workspaceId) } : nil)
       }
     }
     .background(MacTheme.face)

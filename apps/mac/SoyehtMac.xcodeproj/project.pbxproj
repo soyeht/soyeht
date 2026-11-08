@@ -17,6 +17,16 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "AD1900000000000000000011";
 		};
+		"AD2600000000000000000011" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "ProjectTrustSheet.swift";
+			"sourceTree" = "<group>";
+		};
+		"AD2600000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "AD2600000000000000000011";
+		};
 		"AD2000000000000000000011" = {
 			"path" = "TaskBoardViews.swift";
 			"isa" = "PBXFileReference";

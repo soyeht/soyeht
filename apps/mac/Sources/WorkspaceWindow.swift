@@ -35,6 +35,7 @@ struct WorkspaceWindow: View {
     )
     .environment(\.askToClosePane, askToClosePane)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
+    .projectTrustSheet(client: client, selectedWorkspaceId: selectedTaskWorkspaceId)
     .modifier(
       CloseAlerts(
         paneToClose: $paneToClose, workspaceToClose: $workspaceToClose,

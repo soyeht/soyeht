@@ -8,6 +8,7 @@ public enum MacSheetKind: String, CaseIterable, Equatable, Sendable {
   case editorDiff
   case reviewComment
   case captureDeletion
+  case projectTrust
   case harnessEditor
   case preferences
 }
@@ -88,6 +89,7 @@ public struct MacSheetLayoutPolicy: Equatable, Sendable {
     case .editorDiff: (980, 620)
     case .reviewComment: (480, nil)
     case .captureDeletion: (420, nil)
+    case .projectTrust: (420, nil)
     case .harnessEditor: (560, nil)
     case .preferences: (1080, 700)
     }
