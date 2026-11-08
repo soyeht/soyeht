@@ -50,6 +50,14 @@ struct WorkspaceWindow: View {
     } message: {
       Text(client.problem ?? "")
     }
+    .overlay(alignment: .top) {
+      if let workspaceId = selectedTaskWorkspaceId,
+        let missing = client.missingWorkspaceFolder(in: workspaceId)
+      {
+        MissingWorkspaceFolderBanner(state: missing) { askToCloseWorkspace(workspaceId) }
+          .padding(.top, DesignTokens.Layout.topBarHeight + MacTheme.Space.x16)
+      }
+    }
     .overlay(alignment: .bottomTrailing) {
       if crashNotice.isShowing {
         CrashNoticeView().padding(MacTheme.Space.x18)

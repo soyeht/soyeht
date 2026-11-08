@@ -278,3 +278,50 @@ async fn tree_lists_lazily_and_tells_the_watcher_when_a_folder_changes() {
             "params":{"workspaceId":workspace_id,"paths":["src"]}})]
     );
 }
+
+#[tokio::test]
+async fn a_deleted_workspace_folder_is_a_typed_error_not_an_io_failure() {
+    let mut fixture = EditorFixture::new(&[("src/lib.rs", "lib\n")]).await;
+    let workspace_id = fixture.workspace_id.clone();
+    let opened = fixture.open("src/lib.rs", false);
+    let file_id = file_of(&opened);
+    let revision = opened["file"]["revision"].as_str().unwrap().to_owned();
+    fs::remove_dir_all(fixture.project()).unwrap();
+
+    for (method, params) in [
+        (
+            "project.tree.list",
+            json!({"workspaceId":workspace_id,"path":""}),
+        ),
+        ("file.diff", json!({"fileId":file_id,"revision":revision})),
+        (
+            "file.open",
+            json!({"workspaceId":workspace_id,"path":"src/lib.rs","preview":false,
+                "idempotencyKey":key()}),
+        ),
+    ] {
+        let error = fixture.try_call(method, params).unwrap_err();
+        assert_eq!(
+            crate::errors::kind(&error),
+            soyeht_protocol::ErrorKind::WorkspaceFolderMissing,
+            "{method}"
+        );
+        // The message says what is wrong, and carries no path of this machine.
+        let wire = crate::errors::wire(error);
+        assert_eq!(wire.message, "The workspace folder is missing", "{method}");
+    }
+
+    // A path that is missing inside a folder that is there stays what it was.
+    let mut present = EditorFixture::new(&[("a.rs", "a\n")]).await;
+    let present_id = present.workspace_id.clone();
+    let error = present
+        .try_call(
+            "project.tree.list",
+            json!({"workspaceId":present_id,"path":"gone"}),
+        )
+        .unwrap_err();
+    assert_eq!(
+        crate::errors::kind(&error),
+        soyeht_protocol::ErrorKind::NotFound
+    );
+}
