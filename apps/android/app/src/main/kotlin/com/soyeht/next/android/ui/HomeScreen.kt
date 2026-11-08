@@ -46,15 +46,15 @@ fun HomeScreen(model: AppModel) {
     // A person who gets another computer pairs it from here: the scan replaces the one this phone controls,
     // after asking, as a tapped link does.
     val startScan = rememberStartScan(model)
+    val paste = rememberPasteLink(model::offer)
+    val hasCamera = rememberHasCamera()
     Row(
         Modifier.padding(horizontal = PaneInterior.phoneInset.dp),
         horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp),
     ) {
-        Pill("Pair another computer", startScan)
+        if (hasCamera) Pill("Pair another computer", startScan) else Pill("Paste a pairing link", paste)
     }
-    if (model.cameraDenied) {
-        Box(Modifier.padding(PaneInterior.phoneInset.dp)) { CameraDenied() }
-    }
+    model.cameraProblem?.let { Box(Modifier.padding(PaneInterior.phoneInset.dp)) { CameraNotice(it) } }
     overview?.problem?.let {
         Text(it, color = roles.secondary, fontSize = TypeScale.caption.sp, modifier = Modifier.padding(horizontal = PaneInterior.phoneInset.dp))
     }

@@ -19,6 +19,8 @@ fun PairScreen(model: AppModel) {
     // Not saved with the state of the screen: the link is the pairing code.
     var link by remember { mutableStateOf("") }
     val startScan = rememberStartScan(model)
+    val hasCamera = rememberHasCamera()
+    val paste = rememberPasteLink { pasted -> link = pasted }
     Column(
         Modifier.padding(PaneInterior.phoneInset.dp),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.stackSpacing.dp),
@@ -46,9 +48,9 @@ fun PairScreen(model: AppModel) {
         )
         Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
             Pill("Pair", { model.pair(link) }, primary = true)
-            Pill("Scan QR code", startScan)
+            if (hasCamera) Pill("Scan QR code", startScan) else Pill("Paste the pairing link", paste)
         }
-        if (model.cameraDenied) CameraDenied()
+        model.cameraProblem?.let { CameraNotice(it) }
     }
 }
 
