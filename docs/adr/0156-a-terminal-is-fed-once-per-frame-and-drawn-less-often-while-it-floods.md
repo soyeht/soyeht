@@ -1,4 +1,4 @@
-# ADR 0155: A terminal is fed once per frame, and drawn less often while it floods
+# ADR 0156: A terminal is fed once per frame, and drawn less often while it floods
 
 - Status: accepted. Extends ADR 0012 (the native client uses SwiftTerm's `TerminalView`) and ADR 0145.
 - Date: 2026-11-08
