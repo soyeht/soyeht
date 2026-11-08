@@ -218,7 +218,7 @@
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1450,
     "apps/mac/Sources/PreferencesPanel.swift": 832,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 880,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 868,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-store/src/editor.rs": 828,
     "engine/soyeht-store/tests/agents.rs": 976,

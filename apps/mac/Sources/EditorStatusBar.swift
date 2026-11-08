@@ -10,6 +10,8 @@ struct EditorStatusBar: View {
   let vimEnabled: Bool
   let vimMode: EditorVimMode
   let vimCommandLine: String?
+  /// Opens "Trust this folder?" again; `nil` when the folder is not restricted.
+  let onReviewTrust: (() -> Void)?
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x14) {
@@ -30,6 +32,14 @@ struct EditorStatusBar: View {
         Text("\(blame.author) · \(blame.summary)")
           .font(MacTheme.ui(MacTheme.TypeScale.small)).lineLimit(1)
           .help("\(blame.commit) · line \(UInt64(blame.line) + 1)")
+      }
+      if let onReviewTrust {
+        Button(action: onReviewTrust) {
+          Image(systemName: "lock.shield")
+        }
+        .help(ProjectTrustPresentation.restrictedNote)
+        .accessibilityLabel(ProjectTrustPresentation.restrictedNote)
+        .accessibilityIdentifier("editor-restricted-folder")
       }
       if !view.diagnostics.isEmpty {
         Circle().fill(MacTheme.warning).frame(width: 6, height: 6)
@@ -66,8 +76,6 @@ struct EditorStatusBar: View {
   }
 
   private var languageHelp: String {
-    guard let lsp else { return "No language server is active" }
-    return lsp.detail.map { "Language server: \(lsp.state.rawValue) · \($0)" }
-      ?? "Language server: \(lsp.state.rawValue)"
+    ProjectTrustPresentation.languageServerHelp(lsp)
   }
 }
