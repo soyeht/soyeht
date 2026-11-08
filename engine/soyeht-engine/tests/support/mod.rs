@@ -22,6 +22,7 @@ use std::{
 use uuid::Uuid;
 
 mod language_servers;
+mod search_path;
 mod ticker;
 #[allow(unused_imports)] // each test crate uses the part it needs
 pub use ticker::{Ticker, longest_gap};
