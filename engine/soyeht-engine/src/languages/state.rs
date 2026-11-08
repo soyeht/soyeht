@@ -4,7 +4,7 @@ use serde_json::Value;
 use soyeht_lsp::{Client, Decoder, Incoming, PositionValue, RequestKind};
 use soyeht_platform::log::Line;
 use soyeht_protocol::{EditorLanguage, FileAuthor, FileDiagnostic, LspServerStatus, LspState};
-use soyeht_ptyd::wire::{Instance, ProcessKind, Spawn};
+use soyeht_ptyd::wire::{Instance, Spawn};
 use soyeht_store::languages::LanguageServerCheckpoint;
 use std::collections::{BTreeMap, VecDeque};
 use uuid::Uuid;
@@ -24,6 +24,16 @@ pub struct Server {
     pub workspace_id: String,
     pub root: String,
     pub language: EditorLanguage,
+    /// Whether the person trusts the folder: a server of a trusted folder starts with every
+    /// feature, and one of any other folder starts in its safe mode or does not start (ADR 0150).
+    /// A checkpoint that does not say it is restricted.
+    #[serde(default)]
+    pub trusted: bool,
+    /// Whether `trusted` was recorded by an engine that knows project trust. A checkpoint of an
+    /// earlier engine has no answer: its process may have been started with the folder's own
+    /// tsserver and plugins, so it is closed and started again once.
+    #[serde(default)]
+    pub trust_recorded: bool,
     pub generation: u32,
     pub instance_key: String,
     pub instance_id: Option<String>,
@@ -96,6 +106,8 @@ impl Server {
             workspace_id: workspace_id.into(),
             root: root.into(),
             language,
+            trusted: false,
+            trust_recorded: false,
             generation: 1,
             instance_key: Uuid::new_v4().to_string(),
             instance_id: None,
@@ -115,25 +127,9 @@ impl Server {
         })
     }
 
-    pub fn spawn(&self) -> Result<Spawn> {
-        let config = soyeht_lsp::config(&self.language)
-            .ok_or_else(|| errors::invalid("File language has no language server"))?;
-        let mut argv = vec![config.command.into()];
-        argv.extend(config.args.iter().map(|value| (*value).into()));
-        Ok(Spawn {
-            instance_key: self.instance_key.clone(),
-            generation: self.generation,
-            kind: ProcessKind::PipesLsp,
-            cwd: self.root.clone(),
-            argv,
-            env: BTreeMap::new(),
-            cols: 80,
-            rows: 24,
-        })
-    }
-
-    pub fn adopt(&mut self, instance: &Instance) -> Result<()> {
-        if instance.spawn != self.spawn()? {
+    /// Takes the process `instance` as the server's, if it was started as `expected`.
+    pub fn adopt(&mut self, instance: &Instance, expected: &Spawn) -> Result<()> {
+        if instance.spawn != *expected {
             return Err(errors::ptyd_unavailable(
                 "Language server identity does not match its checkpoint",
             ));
@@ -165,6 +161,10 @@ impl Server {
         self.client = Client::default();
         self.decoder = Decoder::default();
         self.pending_writes.clear();
+        if let Some(reason) = self.refusal() {
+            self.state = LspState::Restricted;
+            self.detail = Some(reason.into());
+        }
         Ok(())
     }
 
@@ -174,6 +174,7 @@ impl Server {
             state: self.state.clone(),
             generation: self.generation,
             detail: self.detail.clone(),
+            safe_mode: (!self.trusted && self.refusal().is_none()).then_some(true),
         }
     }
 
@@ -487,9 +488,12 @@ mod tests {
     use super::*;
     use serde_json::json;
     use soyeht_lsp::encode;
+    use soyeht_ptyd::wire::ProcessKind;
 
     fn rust_server() -> Server {
-        Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Rust).unwrap()
+        Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Rust)
+            .unwrap()
+            .with_trust(true)
     }
 
     fn instance(server: &Server) -> Instance {
@@ -512,12 +516,12 @@ mod tests {
         assert_eq!(spawn.argv, ["rust-analyzer"]);
 
         let exact = instance(&server);
-        server.adopt(&exact).unwrap();
+        server.adopt(&exact, &spawn).unwrap();
         assert_eq!(server.instance_id.as_deref(), Some("instance-1"));
 
         let mut wrong = exact;
         wrong.spawn.argv.push("--unexpected".into());
-        assert!(server.adopt(&wrong).is_err());
+        assert!(server.adopt(&wrong, &spawn).is_err());
     }
 
     #[test]

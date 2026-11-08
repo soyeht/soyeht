@@ -12,6 +12,8 @@ public struct EditorWorkspaceReplica: Sendable {
   /// The file each workspace's editor last refused to open, until another opens or a tab is
   /// chosen.
   public internal(set) var refusals: [String: EditorOpenRefusal] = [:]
+  /// The workspaces whose folder the engine could not find on its last listing of the project.
+  var missingFolders: Set<String> = []
   var watched: [String: [String]] = [:]
   /// The connection each workspace's tabs and watches were last loaded on;
   /// watches belong to a connection, so a new one starts them over.

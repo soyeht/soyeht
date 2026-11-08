@@ -41,7 +41,10 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
     } detail: {
       if let selection {
         detail(of: selection)
-          .toolbar { closePaneButton(selection) }
+          .toolbar {
+            reviewTrustButton(selection)
+            closePaneButton(selection)
+          }
       } else {
         ContentUnavailableView(
           "Choose a pane", systemImage: "sidebar.left",
@@ -64,6 +67,23 @@ struct PhoneWorkspaceSplit<Status: View, Options: View>: View {
     .onChange(of: client.connected) { reconcile(order, previous: order) }
     .focusedSceneValue(\.phonePaneNavigation, navigation(order, sections: sections))
     .phoneWorkspaceActions(client: client, action: $action, show: $requestedPaneId)
+  }
+
+  /// The restricted marker: shown while the pane's folder is undecided or restricted, and opens
+  /// "Trust this folder?" again.
+  @ToolbarContentBuilder private func reviewTrustButton(_ paneId: String) -> some ToolbarContent {
+    if let workspaceId = client.panes.first(where: { $0.paneId == paneId })?.workspaceId,
+      client.projectTrust.isRestricted(workspaceId)
+    {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          client.projectTrust.requestReview(workspaceId)
+        } label: {
+          Label(ProjectTrustPresentation.restrictedNote, systemImage: "lock.shield")
+        }
+        .accessibilityIdentifier("restricted-folder")
+      }
+    }
   }
 
   /// Closes the pane on screen. A document closes from its own menu.

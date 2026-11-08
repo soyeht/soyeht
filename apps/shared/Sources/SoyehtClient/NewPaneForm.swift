@@ -43,8 +43,13 @@ public enum NewPaneBlocker: Equatable, Sendable {
 /// the pane from it.
 public struct NewPaneForm: Equatable, Sendable {
   public var kind: NewPaneKind
-  /// Absolute path of the folder on the Mac. The pane's workspace is the one at this path.
+  /// Absolute path of the folder on the Mac. The pane's workspace is the one at this path,
+  /// unless `workspaceId` names it.
   public var directory = ""
+  /// The workspace the pane joins, when the form fills a slot of that workspace's layout (a
+  /// split). The folder is then only the pane's working directory, so another folder, or another
+  /// spelling of the workspace's own, never makes a new workspace.
+  public var workspaceId: String?
   public var harness = ""
   /// Empty means the harness default.
   public var model = ""
@@ -57,9 +62,10 @@ public struct NewPaneForm: Equatable, Sendable {
   /// The new document's title, for a writing pane.
   public var title = ""
 
-  public init(kind: NewPaneKind = .agent, directory: String = "") {
+  public init(kind: NewPaneKind = .agent, directory: String = "", workspaceId: String? = nil) {
     self.kind = kind
     self.directory = directory
+    self.workspaceId = workspaceId
   }
 
   /// Choosing another harness drops the model, effort and mode of the previous one.
@@ -120,22 +126,60 @@ extension EngineClient {
     let directory = URL(fileURLWithPath: form.directory, isDirectory: true)
     switch form.kind {
     case .terminal:
-      return try await createTerminalPane(directory: directory)
+      return try await createTerminalPane(directory: directory, workspaceId: form.workspaceId)
     case .agent:
       return try await createAgentPaneNow(
         directory: directory, harness: form.harness,
         model: form.model.isEmpty ? nil : form.model,
         effort: form.effort.isEmpty ? nil : form.effort,
-        permissionMode: form.permissionMode)
+        permissionMode: form.permissionMode, workspaceId: form.workspaceId)
     case .writing(let section):
       guard
         let submission = WritingDocumentDraft(title: form.title).submission(creating: false)
       else { throw ClientFailure.invalidFrame }
-      let workspace = try await workspaceId(
-        for: directory, path: directory.standardizedFileURL.path)
+      let workspace = try await paneWorkspaceId(pinned: form.workspaceId, directory: directory)
       return try await createWritingDocument(
         workspaceId: workspace, section: section, title: submission.title
       ).pane.paneId
     }
+  }
+}
+
+extension EngineClient {
+  /// Starts a shell in `directory`. The pane joins `workspaceId` when one is given (a split's
+  /// placeholder is a slot of that workspace's layout), else the workspace at the folder.
+  public func createTerminalPane(directory: URL, workspaceId pinned: String? = nil) async throws
+    -> String
+  {
+    try await createPaneNow(directory: directory, workspaceId: pinned, selecting: true) {
+      workspaceId, path in
+      PaneCreateParams(
+        workspaceId: workspaceId, mode: .terminal, cwd: path, name: "Terminal",
+        idempotencyKey: UUID().uuidString)
+    }
+  }
+
+  func workspaceId(for directory: URL, path: String) async throws -> String {
+    try await createWorkspace(path: path, name: directory.lastPathComponent).workspaceId
+  }
+
+  /// The workspace a new pane joins: the one it was asked for, else the one rooted at its folder
+  /// (made when the Mac has none). The folder is a spelling of a path and never decides which
+  /// workspace a pane that was asked for one joins.
+  func paneWorkspaceId(pinned: String?, directory: URL) async throws -> String {
+    if let pinned { return pinned }
+    return try await workspaceId(for: directory, path: directory.path)
+  }
+
+  /// Makes the pane `params` describes in `paneWorkspaceId`'s workspace.
+  func createPaneNow(
+    directory: URL, workspaceId pinned: String?, selecting: Bool,
+    params: (_ workspaceId: String, _ cwd: String) -> PaneCreateParams
+  ) async throws -> String {
+    let workspaceId = try await paneWorkspaceId(pinned: pinned, directory: directory)
+    let result = try await mutation(.paneCreate, params(workspaceId, directory.path))
+    let paneId = try result.decoded(PaneCreateResult.self).paneId
+    if selecting { select(paneId) }
+    return paneId
   }
 }

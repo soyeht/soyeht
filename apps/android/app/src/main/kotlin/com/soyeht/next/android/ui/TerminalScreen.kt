@@ -9,6 +9,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
@@ -76,6 +78,8 @@ private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
             autoCorrectEnabled = false,
         ),
         keyboardActions = KeyboardActions(onSend = { model.press(TerminalKey.Enter) }),
+        // The field is invisible, so its caret is too, and no brush means no blink: an idle terminal draws no frames.
+        cursorBrush = SolidColor(Color.Unspecified),
         modifier = Modifier
             .size(1.dp)
             .alpha(0f)

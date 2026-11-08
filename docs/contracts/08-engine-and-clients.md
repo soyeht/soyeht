@@ -158,6 +158,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
 | `device.*`, `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
+| `project.trust.set` (trust a folder, contract 18) | yes, in the signed Mac app on macOS | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
 
 **2.5 The local endpoint on Windows (ADR 0086).** Windows has no Unix socket in the
@@ -427,6 +428,10 @@ and a later request succeeds once Git is installed),
 `file_not_text` (a file the editor was asked to open is not UTF-8 text) and `file_too_large`
 (it exceeds the editor's size limit); a client shows both in the editor pane, not as a dialog
 (ADR 0094).
+`workspace_folder_missing` (the folder of a workspace is not on the disk any more: a request that
+reads the workspace, such as `project.tree.list`, `file.open` or `file.diff`, answers it, with the
+message "The workspace folder is missing" and no path); a client shows it as a standing state of
+that workspace with a way to close it, not as a dialog (ADR 0154).
 
 ## 8. Limits (R20) — single table, overrides every other mention
 | Item | Limit |

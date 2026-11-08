@@ -357,11 +357,11 @@ private final class RateLimitRetryProbe {
 
 /// `onChange` runs synchronously on the thread that changes the property; the test reads it right
 /// after.
-private final class ChangeFlag: @unchecked Sendable {
+final class ChangeFlag: @unchecked Sendable {
   var fired = false
 }
 
-@MainActor private func fires(
+@MainActor func fires(
   watching read: @MainActor () -> Void, whenChanging change: @MainActor () -> Void
 ) -> Bool {
   let flag = ChangeFlag()

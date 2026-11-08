@@ -1,3 +1,4 @@
+import Foundation
 import SoyehtProtocol
 import Testing
 
@@ -165,4 +166,44 @@ private func vectorHarnesses(_ vector: JsonValue, _ item: JsonValue) throws -> [
   #expect(NewPaneKind.agent.returnsFocusToPromptAfterPopover)
   #expect(!NewPaneKind.terminal.returnsFocusToPromptAfterPopover)
   #expect(!NewPaneKind.writing(.texts).returnsFocusToPromptAfterPopover)
+}
+
+@MainActor @Test func aFormThatFillsASlotCreatesItsPaneInThatWorkspaceWhateverTheFolder()
+  async throws
+{
+  // The workspace is stored as `/private/tmp/loadtest`; the folder row may say it another way, or
+  // name another folder altogether. Neither may make a workspace: the slot is in this one.
+  for (kind, folder) in [
+    (NewPaneKind.terminal, "/tmp/loadtest"), (.agent, "/private/tmp/loadtest/"),
+    (.terminal, "/Users/me/elsewhere"),
+  ] {
+    let client = EngineClient(socket: "/tmp/new-pane-slot.sock")
+    var seen: [(RequestMethod, JsonValue)] = []
+    client.requestStub = { method, params in
+      seen.append((method, params))
+      guard method == .paneCreate else { throw ClientFailure.invalidFrame }
+      return .object(["paneId": .string("p1")])
+    }
+    var form = NewPaneForm(kind: kind, directory: folder, workspaceId: "w1")
+    form.harness = "h"
+
+    let paneId = try await client.createPane(form)
+
+    #expect(paneId == "p1")
+    #expect(seen.map(\.0) == [.paneCreate], "\(folder)")
+    #expect(seen[0].1["workspaceId"].string == "w1")
+    #expect(seen[0].1["cwd"].string == URL(fileURLWithPath: folder).path)
+  }
+}
+
+@Test func aSplitPlaceholderFillsASlotAndANewPaneDoesNot() throws {
+  let base = PaneLayoutTree.leaf(PaneLayoutLeaf(paneId: "a", kind: .terminal))
+  let placeholder = PaneLayoutLeaf(paneId: "local", kind: .terminal)
+  let split = PaneLayoutProvisionalInsertion(
+    baseTree: base, placeholder: placeholder,
+    placement: .split(anchorPaneId: "a", axis: .horizontal))
+  let arranged = PaneLayoutProvisionalInsertion(
+    baseTree: base, placeholder: placeholder, placement: .arranged(rule: .initialByType))
+  #expect(split.fillsSlot)
+  #expect(!arranged.fillsSlot)
 }
