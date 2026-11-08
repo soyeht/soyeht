@@ -7,8 +7,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Attempt, AttemptResult, AttentionItem, ErrorKind, Role, Task, TaskMove, TaskMoveParams,
-    TaskState, method,
+    Attempt, AttemptResult, AttentionItem, ErrorKind, Task, TaskMove, TaskMoveParams, TaskState,
+    method,
 };
 use soyeht_store::{
     agents,
@@ -57,7 +57,7 @@ impl Core {
         params: TaskMoveParams,
     ) -> Result<Value> {
         let actor = self.task_actor(connection)?;
-        if !matches!(actor.role, Role::HumanLocal | Role::HumanDevice) {
+        if !actor.role.is_person() {
             return Err(errors::forbidden_role("Only a person may move task cards"));
         }
         let current = task(&self.store, &params.workspace_id, &params.task_id)?;

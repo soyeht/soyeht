@@ -407,31 +407,14 @@ impl Core {
                 }
                 json!({"paneId":pane,"paused":false})
             }
-            method::PANE_CONFIG_SET => {
-                let config_id = errors::param_str(params, "configId")?;
-                let value: soyeht_protocol::ConfigValue =
-                    serde_json::from_value(params["value"].clone())
-                        .map_err(|_| errors::invalid("Configuration value is invalid"))?;
-                let user = super::pending::UserOperation {
-                    scope: self.clients[connection].scope.clone(),
-                    key: errors::param_str(params, "idempotencyKey")?.into(),
-                };
-                match super::configuration::begin(
-                    &mut state,
-                    pane,
-                    super::configuration::ChangeRequest {
-                        config: config_id,
-                        value: value.clone(),
-                        user: Some(user),
-                        started_at: timestamp,
-                        now_ms,
-                    },
-                    &mut changes,
-                )? {
-                    Some(operation_id) => json!({"_nativePending":operation_id}),
-                    None => super::configuration::applied(&value),
-                }
-            }
+            method::PANE_CONFIG_SET => self.set_agent_config(
+                connection,
+                params,
+                pane,
+                &mut state,
+                &mut changes,
+                (timestamp, now_ms),
+            )?,
             _ => {
                 return Err(errors::invalid("Agent method unavailable"));
             }
@@ -445,6 +428,63 @@ impl Core {
                 result,
             )?
             .result)
+    }
+}
+
+impl Core {
+    /// `pane.config.set`: starts the change of one option. A person who sets a mode of a pane
+    /// an agent started that goes beyond the ceiling that agent put on it lifts the ceiling
+    /// (contract 03, R24); a mode within it leaves it. An agent binding cannot reach this method.
+    fn set_agent_config(
+        &self,
+        connection: &str,
+        params: &Value,
+        pane: &str,
+        state: &mut super::state::State,
+        changes: &mut Changes,
+        (started_at, now_ms): (String, i64),
+    ) -> Result<Value> {
+        let config_id = errors::param_str(params, "configId")?;
+        let value: soyeht_protocol::ConfigValue =
+            serde_json::from_value(params["value"].clone())
+                .map_err(|_| errors::invalid("Configuration value is invalid"))?;
+        let user = super::pending::UserOperation {
+            scope: self.clients[connection].scope.clone(),
+            key: errors::param_str(params, "idempotencyKey")?.into(),
+        };
+        let sets_mode = state
+            .options
+            .mode()
+            .is_some_and(|option| option.id == config_id);
+        let result = match super::configuration::begin(
+            state,
+            pane,
+            super::configuration::ChangeRequest {
+                config: config_id,
+                value: value.clone(),
+                user: Some(user),
+                started_at,
+                now_ms,
+            },
+            changes,
+        )? {
+            Some(operation_id) => json!({"_nativePending":operation_id}),
+            None => super::configuration::applied(&value),
+        };
+        let by_person = self.clients[connection]
+            .actor
+            .as_ref()
+            .is_some_and(|actor| actor.role.is_person());
+        let beyond_ceiling = match (&value, &state.mode_ceiling) {
+            (soyeht_protocol::ConfigValue::V0(mode), Some(ceiling)) => {
+                ceiling.lifted_by(state, mode)
+            }
+            _ => false,
+        };
+        if sets_mode && by_person && beyond_ceiling {
+            state.mode_ceiling = None;
+        }
+        Ok(result)
     }
 }
 
