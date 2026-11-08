@@ -368,7 +368,10 @@ pub(super) mod tests {
     fn a_slow_supervisor_does_not_hold_the_tick_of_an_agent() {
         use crate::test_panes::{Answering, core_with_agent, quiet_read};
         let (mut core, directory) = core_with_agent(&[]);
-        let delay = std::time::Duration::from_millis(600);
+        // A tick that waited for the supervisor takes at least `delay`, so each tick is compared
+        // with the whole delay: the test is about blocking, and a loaded host that slows a tick
+        // has to slow it by seconds to fail it.
+        let delay = std::time::Duration::from_secs(2);
         let closed = Arc::new(Mutex::new(Vec::new()));
         let record = Arc::clone(&closed);
         core.background = crate::offload::Background::default();
@@ -396,7 +399,7 @@ pub(super) mod tests {
         let started = std::time::Instant::now();
         core.poll_output().unwrap();
         assert!(
-            started.elapsed() < delay / 3,
+            started.elapsed() < delay,
             "the tick waited for the supervisor: {:?}",
             started.elapsed()
         );
@@ -412,7 +415,7 @@ pub(super) mod tests {
             );
             let started = std::time::Instant::now();
             core.poll_output().unwrap();
-            assert!(started.elapsed() < delay / 3, "a later tick waited");
+            assert!(started.elapsed() < delay, "a later tick waited");
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert_eq!(*closed.lock().unwrap(), ["old"]);
