@@ -206,7 +206,7 @@ fn wait_for_stamped_hook_label(rig: &Rig, pane: &str, generation: u64, capabilit
 #[cfg(unix)]
 #[test]
 fn claude_session_hook_records_only_engine_stamped_labels_on_its_private_channel() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::with_own_search_path();
     rig.install_fake_claude_runner();
     let mut client = rig.client();
     let (pane, capability, generation) = open_claude_hook_session(&mut rig, &mut client);
