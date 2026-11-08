@@ -292,7 +292,7 @@ fn the_environment_carries_the_settings_to_a_git_another_program_starts() {
 /// shows the driver does run in the worktree without the settings.
 #[test]
 fn a_driver_of_an_included_file_is_cleared_whatever_the_condition_of_the_include() {
-    let root = fs::canonicalize(repository_with_programs("included")).unwrap();
+    let root = soyeht_platform::fs::canonicalize(&repository_with_programs("included")).unwrap();
     let git = |arguments: &[&str]| git_in(&root, arguments);
     // Each driver is a script beside the repository's files: a program with a `;` in a
     // config file would be read as a comment.
@@ -414,7 +414,7 @@ fn plain_repository(label: &str) -> PathBuf {
     let root = env::temp_dir().join(format!("soyeht-read-only-{label}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
-    let root = fs::canonicalize(&root).unwrap();
+    let root = soyeht_platform::fs::canonicalize(&root).unwrap();
     git_in(&root, &["init", "-q"]);
     git_in(&root, &["commit", "-q", "--allow-empty", "-m", "baseline"]);
     root

@@ -782,6 +782,8 @@ pub struct DevicePairStartResult {
     pub expires_at: String,
     #[serde(rename = "uri")]
     pub uri: String,
+    #[serde(rename = "qr", skip_serializing_if = "Option::is_none")]
+    pub qr: Option<String>,
     #[serde(rename = "reachability", skip_serializing_if = "Option::is_none")]
     pub reachability: Option<EngineReachability>,
 }
