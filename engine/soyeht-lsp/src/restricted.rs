@@ -158,222 +158,223 @@ fn has_version(package_json: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    #![cfg(unix)]
+    #[cfg(unix)]
+    mod unix {
+        use super::super::*;
+        use std::{fs, os::unix::fs::PermissionsExt};
 
-    use super::*;
-    use std::{fs, os::unix::fs::PermissionsExt};
+        struct Tree(PathBuf);
 
-    struct Tree(PathBuf);
+        impl Tree {
+            fn new(name: &str) -> Self {
+                let root = std::env::temp_dir()
+                    .join(format!("sn-restricted-{name}-{}", std::process::id()));
+                let _ = fs::remove_dir_all(&root);
+                fs::create_dir_all(&root).unwrap();
+                Self(soyeht_platform::fs::canonicalize(&root).unwrap())
+            }
 
-    impl Tree {
-        fn new(name: &str) -> Self {
-            let root =
-                std::env::temp_dir().join(format!("sn-restricted-{name}-{}", std::process::id()));
-            let _ = fs::remove_dir_all(&root);
-            fs::create_dir_all(&root).unwrap();
-            Self(soyeht_platform::fs::canonicalize(&root).unwrap())
+            fn dir(&self, relative: &str) -> PathBuf {
+                let path = self.0.join(relative);
+                fs::create_dir_all(&path).unwrap();
+                path
+            }
+
+            fn script(&self, relative: &str, body: &str) -> PathBuf {
+                let path = self.0.join(relative);
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+                path
+            }
         }
 
-        fn dir(&self, relative: &str) -> PathBuf {
-            let path = self.0.join(relative);
-            fs::create_dir_all(&path).unwrap();
-            path
+        impl Drop for Tree {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
         }
 
-        fn script(&self, relative: &str, body: &str) -> PathBuf {
-            let path = self.0.join(relative);
-            fs::create_dir_all(path.parent().unwrap()).unwrap();
-            fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
-            path
+        fn joined(entries: &[&Path]) -> OsString {
+            std::env::join_paths(entries).unwrap()
         }
-    }
 
-    impl Drop for Tree {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+        #[test]
+        fn the_search_path_keeps_only_absolute_entries_outside_the_folder() {
+            let tree = Tree::new("path");
+            let project = tree.dir("project");
+            let inside = tree.dir("project/node_modules/.bin");
+            let outside = tree.dir("tools");
+            std::os::unix::fs::symlink(&inside, tree.0.join("linked")).unwrap();
+            let entries = [
+                Path::new(""),
+                Path::new("bin"),
+                Path::new("."),
+                inside.as_path(),
+                &tree.0.join("linked"),
+                &tree.0.join("missing"),
+                outside.as_path(),
+            ];
+            let kept = outside_search_path(&joined(&entries), &project).unwrap();
+            assert_eq!(kept, joined(&[outside.as_path()]));
+            assert_eq!(
+                outside_search_path(&joined(&[inside.as_path()]), &project),
+                None
+            );
         }
-    }
 
-    fn joined(entries: &[&Path]) -> OsString {
-        std::env::join_paths(entries).unwrap()
-    }
+        #[test]
+        fn a_program_of_the_folder_is_never_the_server_even_through_a_link() {
+            let tree = Tree::new("program");
+            let project = tree.dir("project");
+            let inside = tree.dir("project/node_modules/.bin");
+            tree.script("project/node_modules/.bin/pyright-langserver", "exit 0");
+            let outside = tree.dir("tools");
+            std::os::unix::fs::symlink(
+                inside.join("pyright-langserver"),
+                outside.join("pyright-langserver"),
+            )
+            .unwrap();
+            let path = joined(&[inside.as_path(), outside.as_path()]);
+            assert_eq!(
+                restricted_launch(&EditorLanguage::Python, &path, &project),
+                Err(LaunchError::NoProgram)
+            );
 
-    #[test]
-    fn the_search_path_keeps_only_absolute_entries_outside_the_folder() {
-        let tree = Tree::new("path");
-        let project = tree.dir("project");
-        let inside = tree.dir("project/node_modules/.bin");
-        let outside = tree.dir("tools");
-        std::os::unix::fs::symlink(&inside, tree.0.join("linked")).unwrap();
-        let entries = [
-            Path::new(""),
-            Path::new("bin"),
-            Path::new("."),
-            inside.as_path(),
-            &tree.0.join("linked"),
-            &tree.0.join("missing"),
-            outside.as_path(),
-        ];
-        let kept = outside_search_path(&joined(&entries), &project).unwrap();
-        assert_eq!(kept, joined(&[outside.as_path()]));
-        assert_eq!(
-            outside_search_path(&joined(&[inside.as_path()]), &project),
-            None
-        );
-    }
+            tree.script("tools2/pyright-langserver", "exit 0");
+            let path = joined(&[inside.as_path(), &tree.0.join("tools2")]);
+            let launch = restricted_launch(&EditorLanguage::Python, &path, &project).unwrap();
+            assert_eq!(launch.program, tree.0.join("tools2/pyright-langserver"));
+            assert_eq!(launch.path, joined(&[&tree.0.join("tools2")]));
+            assert_eq!(launch.options, None);
+        }
 
-    #[test]
-    fn a_program_of_the_folder_is_never_the_server_even_through_a_link() {
-        let tree = Tree::new("program");
-        let project = tree.dir("project");
-        let inside = tree.dir("project/node_modules/.bin");
-        tree.script("project/node_modules/.bin/pyright-langserver", "exit 0");
-        let outside = tree.dir("tools");
-        std::os::unix::fs::symlink(
-            inside.join("pyright-langserver"),
-            outside.join("pyright-langserver"),
-        )
-        .unwrap();
-        let path = joined(&[inside.as_path(), outside.as_path()]);
-        assert_eq!(
-            restricted_launch(&EditorLanguage::Python, &path, &project),
-            Err(LaunchError::NoProgram)
-        );
+        fn typescript_install(tree: &Tree, base: &str) -> PathBuf {
+            let modules = tree.dir(&format!("{base}/lib/node_modules"));
+            tree.script(
+                &format!("{base}/lib/node_modules/typescript-language-server/lib/cli.mjs"),
+                "exit 0",
+            );
+            tree.dir(&format!("{base}/lib/node_modules/typescript/lib"));
+            fs::write(modules.join("typescript/lib/tsserver.js"), "").unwrap();
+            tree.dir(&format!("{base}/bin"));
+            std::os::unix::fs::symlink(
+                modules.join("typescript-language-server/lib/cli.mjs"),
+                tree.0
+                    .join(format!("{base}/bin/typescript-language-server")),
+            )
+            .unwrap();
+            tree.0.join(format!("{base}/bin"))
+        }
 
-        tree.script("tools2/pyright-langserver", "exit 0");
-        let path = joined(&[inside.as_path(), &tree.0.join("tools2")]);
-        let launch = restricted_launch(&EditorLanguage::Python, &path, &project).unwrap();
-        assert_eq!(launch.program, tree.0.join("tools2/pyright-langserver"));
-        assert_eq!(launch.path, joined(&[&tree.0.join("tools2")]));
-        assert_eq!(launch.options, None);
-    }
+        #[test]
+        fn typescript_runs_the_installed_tsserver_when_the_package_is_whole() {
+            let tree = Tree::new("typescript");
+            let project = tree.dir("project");
+            let bin = typescript_install(&tree, "npm");
+            let path = joined(&[bin.as_path()]);
+            // A partial install has no readable package.json: the server would fall back to the
+            // folder's own TypeScript.
+            assert_eq!(
+                restricted_launch(&EditorLanguage::Typescript, &path, &project),
+                Err(LaunchError::NoTrustedTypescript)
+            );
+            fs::write(
+                tree.0.join("npm/lib/node_modules/typescript/package.json"),
+                "{\"version\":\"5.9.2\"}",
+            )
+            .unwrap();
+            let launch = restricted_launch(&EditorLanguage::Typescript, &path, &project).unwrap();
+            let tsserver = soyeht_platform::fs::canonicalize(
+                &tree
+                    .0
+                    .join("npm/lib/node_modules/typescript/lib/tsserver.js"),
+            )
+            .unwrap();
+            let options = launch.options.unwrap();
+            assert_eq!(options["tsserver"]["path"], tsserver.to_str().unwrap());
+            assert_eq!(options["disableAutomaticTypingAcquisition"], true);
+            assert_eq!(options["plugins"], json!([]));
+        }
 
-    fn typescript_install(tree: &Tree, base: &str) -> PathBuf {
-        let modules = tree.dir(&format!("{base}/lib/node_modules"));
-        tree.script(
-            &format!("{base}/lib/node_modules/typescript-language-server/lib/cli.mjs"),
-            "exit 0",
-        );
-        tree.dir(&format!("{base}/lib/node_modules/typescript/lib"));
-        fs::write(modules.join("typescript/lib/tsserver.js"), "").unwrap();
-        tree.dir(&format!("{base}/bin"));
-        std::os::unix::fs::symlink(
-            modules.join("typescript-language-server/lib/cli.mjs"),
-            tree.0
-                .join(format!("{base}/bin/typescript-language-server")),
-        )
-        .unwrap();
-        tree.0.join(format!("{base}/bin"))
-    }
+        #[test]
+        fn a_typescript_install_inside_the_folder_is_not_trusted() {
+            let tree = Tree::new("repository");
+            let project = tree.dir("project");
+            // The folder's own server and TypeScript, on an absolute entry such as direnv adds.
+            let bin = typescript_install(&tree, "project/vendored");
+            fs::write(
+                tree.0
+                    .join("project/vendored/lib/node_modules/typescript/package.json"),
+                "{\"version\":\"5.9.2\"}",
+            )
+            .unwrap();
+            let path = joined(&[bin.as_path()]);
+            assert_eq!(
+                restricted_launch(&EditorLanguage::Typescript, &path, &project),
+                Err(LaunchError::NoProgram)
+            );
+            // Outside the folder, the server is fine but its TypeScript is the folder's: refused.
+            let outside = typescript_install(&tree, "npm");
+            fs::remove_dir_all(tree.0.join("npm/lib/node_modules/typescript")).unwrap();
+            std::os::unix::fs::symlink(
+                tree.0.join("project/vendored/lib/node_modules/typescript"),
+                tree.0.join("npm/lib/node_modules/typescript"),
+            )
+            .unwrap();
+            assert_eq!(
+                restricted_launch(
+                    &EditorLanguage::Typescript,
+                    &joined(&[outside.as_path()]),
+                    &project
+                ),
+                Err(LaunchError::NoTrustedTypescript)
+            );
+        }
 
-    #[test]
-    fn typescript_runs_the_installed_tsserver_when_the_package_is_whole() {
-        let tree = Tree::new("typescript");
-        let project = tree.dir("project");
-        let bin = typescript_install(&tree, "npm");
-        let path = joined(&[bin.as_path()]);
-        // A partial install has no readable package.json: the server would fall back to the
-        // folder's own TypeScript.
-        assert_eq!(
-            restricted_launch(&EditorLanguage::Typescript, &path, &project),
-            Err(LaunchError::NoTrustedTypescript)
-        );
-        fs::write(
-            tree.0.join("npm/lib/node_modules/typescript/package.json"),
-            "{\"version\":\"5.9.2\"}",
-        )
-        .unwrap();
-        let launch = restricted_launch(&EditorLanguage::Typescript, &path, &project).unwrap();
-        let tsserver = soyeht_platform::fs::canonicalize(
-            &tree
-                .0
-                .join("npm/lib/node_modules/typescript/lib/tsserver.js"),
-        )
-        .unwrap();
-        let options = launch.options.unwrap();
-        assert_eq!(options["tsserver"]["path"], tsserver.to_str().unwrap());
-        assert_eq!(options["disableAutomaticTypingAcquisition"], true);
-        assert_eq!(options["plugins"], json!([]));
-    }
+        #[test]
+        fn a_script_started_with_the_restricted_path_never_finds_an_interpreter_in_the_folder() {
+            let tree = Tree::new("shebang");
+            let project = tree.dir("project");
+            // The folder's own interpreter and the program that needs one, as `env node` does.
+            let in_folder = tree.0.join("project-ran");
+            let elsewhere = tree.0.join("trusted-ran");
+            tree.script(
+                "project/fakeinterp",
+                &format!("/usr/bin/touch '{}'", in_folder.display()),
+            );
+            tree.script(
+                "tools/fakeinterp",
+                &format!("/usr/bin/touch '{}'", elsewhere.display()),
+            );
+            let launcher = tree.script("bin/launcher", "exit 0");
+            fs::write(&launcher, "#!/usr/bin/env fakeinterp\n").unwrap();
+            // An empty entry in the middle: the working directory, which is the folder.
+            let raw = joined(&[
+                tree.0.join("bin").as_path(),
+                Path::new(""),
+                tree.0.join("tools").as_path(),
+            ]);
 
-    #[test]
-    fn a_typescript_install_inside_the_folder_is_not_trusted() {
-        let tree = Tree::new("repository");
-        let project = tree.dir("project");
-        // The folder's own server and TypeScript, on an absolute entry such as direnv adds.
-        let bin = typescript_install(&tree, "project/vendored");
-        fs::write(
-            tree.0
-                .join("project/vendored/lib/node_modules/typescript/package.json"),
-            "{\"version\":\"5.9.2\"}",
-        )
-        .unwrap();
-        let path = joined(&[bin.as_path()]);
-        assert_eq!(
-            restricted_launch(&EditorLanguage::Typescript, &path, &project),
-            Err(LaunchError::NoProgram)
-        );
-        // Outside the folder, the server is fine but its TypeScript is the folder's: refused.
-        let outside = typescript_install(&tree, "npm");
-        fs::remove_dir_all(tree.0.join("npm/lib/node_modules/typescript")).unwrap();
-        std::os::unix::fs::symlink(
-            tree.0.join("project/vendored/lib/node_modules/typescript"),
-            tree.0.join("npm/lib/node_modules/typescript"),
-        )
-        .unwrap();
-        assert_eq!(
-            restricted_launch(
-                &EditorLanguage::Typescript,
-                &joined(&[outside.as_path()]),
-                &project
-            ),
-            Err(LaunchError::NoTrustedTypescript)
-        );
-    }
+            let run = |path: &OsStr| {
+                let status = std::process::Command::new(&launcher)
+                    .current_dir(&project)
+                    .env_clear()
+                    .env("PATH", path)
+                    .status()
+                    .unwrap();
+                assert!(status.success());
+            };
+            // The hole: with the inherited path the folder's interpreter runs.
+            run(&raw);
+            assert!(in_folder.exists() && !elsewhere.exists());
+            fs::remove_file(&in_folder).unwrap();
 
-    #[test]
-    fn a_script_started_with_the_restricted_path_never_finds_an_interpreter_in_the_folder() {
-        let tree = Tree::new("shebang");
-        let project = tree.dir("project");
-        // The folder's own interpreter and the program that needs one, as `env node` does.
-        let in_folder = tree.0.join("project-ran");
-        let elsewhere = tree.0.join("trusted-ran");
-        tree.script(
-            "project/fakeinterp",
-            &format!("/usr/bin/touch '{}'", in_folder.display()),
-        );
-        tree.script(
-            "tools/fakeinterp",
-            &format!("/usr/bin/touch '{}'", elsewhere.display()),
-        );
-        let launcher = tree.script("bin/launcher", "exit 0");
-        fs::write(&launcher, "#!/usr/bin/env fakeinterp\n").unwrap();
-        // An empty entry in the middle: the working directory, which is the folder.
-        let raw = joined(&[
-            tree.0.join("bin").as_path(),
-            Path::new(""),
-            tree.0.join("tools").as_path(),
-        ]);
-
-        let run = |path: &OsStr| {
-            let status = std::process::Command::new(&launcher)
-                .current_dir(&project)
-                .env_clear()
-                .env("PATH", path)
-                .status()
-                .unwrap();
-            assert!(status.success());
-        };
-        // The hole: with the inherited path the folder's interpreter runs.
-        run(&raw);
-        assert!(in_folder.exists() && !elsewhere.exists());
-        fs::remove_file(&in_folder).unwrap();
-
-        // The restricted path does not have it.
-        fs::write(tree.0.join("bin/pyright-langserver"), "").unwrap();
-        let launch = restricted_launch(&EditorLanguage::Python, &raw, &project).unwrap();
-        run(&launch.path);
-        assert!(!in_folder.exists() && elsewhere.exists());
+            // The restricted path does not have it.
+            fs::write(tree.0.join("bin/pyright-langserver"), "").unwrap();
+            let launch = restricted_launch(&EditorLanguage::Python, &raw, &project).unwrap();
+            run(&launch.path);
+            assert!(!in_folder.exists() && elsewhere.exists());
+        }
     }
 }

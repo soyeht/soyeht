@@ -51,8 +51,8 @@ pub fn refusal(language: &EditorLanguage, trusted: bool) -> Option<&'static str>
         EditorLanguage::Swift => Some(
             "sourcekit-lsp is off in a restricted folder: it builds Package.swift and starts the build servers the folder names. Trust the folder to turn it on.",
         ),
-        EditorLanguage::Python if cfg!(windows) => Some(
-            "pyright is off in a restricted folder on Windows: the system looks for python3 in the folder first. Trust the folder to turn it on.",
+        EditorLanguage::Python => Some(
+            "pyright is off in a restricted folder: it runs python3 in the project folder with the folder first on the import path, so a file of the folder such as json.py would run. Trust the folder to turn it on.",
         ),
         _ => None,
     }
@@ -82,17 +82,17 @@ mod tests {
     }
 
     #[test]
-    fn rust_and_swift_have_no_safe_mode_and_python_and_typescript_need_none() {
-        for language in [EditorLanguage::Rust, EditorLanguage::Swift] {
+    fn rust_swift_and_python_have_no_safe_mode_and_typescript_has_one() {
+        for language in [
+            EditorLanguage::Rust,
+            EditorLanguage::Swift,
+            EditorLanguage::Python,
+        ] {
             let reason = refusal(&language, false).unwrap();
             assert!(reason.contains("Trust the folder"), "{reason}");
             assert!(reason.len() <= 1024);
             assert_eq!(refusal(&language, true), None);
         }
         assert_eq!(refusal(&EditorLanguage::Typescript, false), None);
-        assert_eq!(
-            refusal(&EditorLanguage::Python, false).is_some(),
-            cfg!(windows)
-        );
     }
 }

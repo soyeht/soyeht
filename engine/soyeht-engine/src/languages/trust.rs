@@ -245,13 +245,28 @@ mod tests {
     }
 
     #[test]
-    fn a_server_with_a_safe_mode_says_so_while_the_folder_is_restricted() {
+    fn python_waits_restricted_and_typescript_runs_in_its_safe_mode_while_the_folder_is_restricted()
+    {
         let python = Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Python)
             .unwrap()
             .with_trust(false);
-        assert_eq!(python.status().safe_mode.is_some(), !cfg!(windows));
-        // Trusted, the supervisor finds the program by name; without trust the engine names it
-        // by an absolute path or does not start it.
+        assert_eq!(python.state, LspState::Restricted);
+        assert!(python.detail.as_deref().unwrap().contains("json.py"));
+        assert!(python.status().safe_mode.is_none());
+        assert!(python.launch(None).is_err());
+
+        let typescript = Server::new(
+            "workspace-1",
+            "/tmp/workspace-1",
+            EditorLanguage::Typescript,
+        )
+        .unwrap()
+        .with_trust(false);
+        assert_eq!(typescript.status().safe_mode, Some(true));
+        // It cannot start without a search path to find the installed server on.
+        assert!(typescript.launch(None).is_err());
+
+        // Trusted, the supervisor finds the program by name.
         let trusted = Server::new("workspace-1", "/tmp/workspace-1", EditorLanguage::Python)
             .unwrap()
             .with_trust(true);
@@ -260,16 +275,5 @@ mod tests {
             ["pyright-langserver", "--stdio"]
         );
         assert!(trusted.spawn().unwrap().env.is_empty());
-        // Without trust it is started by an absolute path, from a search path of its own.
-        assert!(python.launch(None).is_err());
-        if !cfg!(windows) {
-            let tools = std::env::temp_dir().join(format!("sn-trust-tools-{}", std::process::id()));
-            std::fs::create_dir_all(&tools).unwrap();
-            std::fs::write(tools.join("pyright-langserver"), "").unwrap();
-            let launch = python.launch(Some(tools.as_os_str())).unwrap();
-            assert!(std::path::Path::new(&launch.spawn.argv[0]).is_absolute());
-            assert!(launch.spawn.env.contains_key("PATH"));
-            let _ = std::fs::remove_dir_all(tools);
-        }
     }
 }
