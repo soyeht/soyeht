@@ -1,5 +1,6 @@
 import json
 import plistlib
+import shutil
 import sys
 import tempfile
 import unittest
@@ -40,6 +41,23 @@ def fake_app(root):
     (app / "Contents/Resources/default.metallib").write_bytes(b"MTLB")
     (app / "Contents/Resources/link").symlink_to(macos / "soyeht")
     return app
+
+
+def verify_recorded(app, signing, details, requirement=lambda path: ""):
+    """`verify_bundle` with `codesign` replaced by recorded answers: `details(path)` for `-dvv` and
+    `requirement(path)` for `-d -r-`; every other command answers "arm64"."""
+    answer = type("R", (), {"stdout": "arm64", "stderr": "", "returncode": 0})()
+    with (
+        patch.object(package_mac, "run", return_value=answer),
+        patch.object(package_mac, "check_info", return_value=[]),
+        patch.object(package_mac, "signature_details", side_effect=details),
+        patch.object(package_mac, "requirement_text", side_effect=requirement),
+        patch.object(
+            package_mac, "entitlements_of",
+            side_effect=lambda path: package_mac.EXPECTED_APP_ENTITLEMENTS if Path(path) == app else set(),
+        ),
+    ):
+        return package_mac.verify_bundle(app, signing, package_mac.release.current())
 
 
 class SizeCeilingTests(unittest.TestCase):
@@ -345,6 +363,18 @@ class SigningCallTests(unittest.TestCase):
         entitled = [Path(c[-1]).name for c in calls if "--entitlements" in c]
         self.assertEqual(entitled, ["Soyeht Next.app"], "no program carries an entitlement")
 
+    def test_the_license_documents_are_in_the_resources(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = fake_app(root)
+            programs = {name: root / name for name in ("soyeht-engine",)}
+            programs["soyeht-engine"].write_bytes(MACHO)
+            with patch.object(package_mac, "run", side_effect=lambda command, **_: shutil.copytree(command[1], command[2])):
+                staged = package_mac.assemble(app, programs, root / "out/Soyeht Next.app")
+            for name in package_common.LICENSE_DOCUMENTS:
+                self.assertEqual((staged / "Contents/Resources" / name).read_bytes(), (package_common.ROOT / name).read_bytes())
+            self.assertIn(b"Rust crates", (staged / "Contents/Resources/THIRD-PARTY-NOTICES.txt").read_bytes())
+
     def test_a_program_that_is_missing_stops_the_assembly(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -390,18 +420,7 @@ class CheckTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary:
             app = fake_app(Path(temporary))
-            answer = type("R", (), {"stdout": "arm64", "stderr": "", "returncode": 0})()
-            made = package_mac.release.current()
-            with (
-                patch.object(package_mac, "run", return_value=answer),
-                patch.object(package_mac, "check_info", return_value=[]),
-                patch.object(package_mac, "signature_details", side_effect=details),
-                patch.object(
-                    package_mac, "entitlements_of",
-                    side_effect=lambda path: package_mac.EXPECTED_APP_ENTITLEMENTS if Path(path) == app else set(),
-                ),
-            ):
-                problems = package_mac.verify_bundle(app, package_mac.resolve_signing(FULL), made)
+            problems = verify_recorded(app, package_mac.resolve_signing(FULL), details)
         text = "\n".join(problems)
         self.assertIn("Inner: hardened runtime is off", text)
         self.assertIn("Frameworks/Inner.framework", text.replace("Contents/", ""), "a bundle is checked too")
