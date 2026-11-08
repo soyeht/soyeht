@@ -19,7 +19,12 @@ export const clientPolicy = {
   "terminal": {
     "inputChunkBytes": 16384,
     "inputQueueBytes": 1048576,
-    "scrollbackLines": 10000
+    "scrollbackLines": 10000,
+    "outputFlushMs": 16,
+    "outputFloodMs": 50,
+    "outputFloodBytes": 8192,
+    "interactiveWindowMs": 150,
+    "outputFlushBytes": 1048576
   },
   "caps": {
     "waitingMessages": 1000,
@@ -137,7 +142,13 @@ export const clientPolicy = {
     "appMoveCopyLocked": "A copy of Soyeht is already in Applications and cannot be replaced from this account. Remove it, or open that copy.",
     "appMoveOldInTrash": "The old copy of Soyeht is in the Trash and could not be put back. Drag it from the Trash to Applications to restore it.",
     "pushNeedsYouTitle": "An agent needs you",
-    "pushNeedsYouBody": "Open Soyeht to see what it asks."
+    "pushNeedsYouBody": "Open Soyeht to see what it asks.",
+    "projectTrustTitle": "Trust this folder?",
+    "projectTrustSummary": "Trusting a folder lets Soyeht run what the folder contains. Language servers read its build files, which can run programs. Keep it restricted if you do not know where it came from.",
+    "projectTrustTrust": "Trust folder",
+    "projectTrustRestrict": "Keep restricted",
+    "projectTrustRestrictedNote": "This folder is restricted: language servers run with code execution off, or do not start.",
+    "projectTrustFailed": "Soyeht could not save this choice."
   },
   "inlineImageTypes": [
     "image/png",

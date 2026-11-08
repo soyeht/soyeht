@@ -89,6 +89,7 @@ fn section_name(section: &SnapshotSection) -> &'static str {
         SnapshotSection::Streams => "streams",
         SnapshotSection::Files => "files",
         SnapshotSection::Writing => "writing",
+        SnapshotSection::Trust => "trust",
     }
 }
 

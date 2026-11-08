@@ -178,7 +178,7 @@ import Testing
   return (client, requests)
 }
 
-@MainActor private func installStream(_ client: EngineClient, _ paneId: String) throws {
+@MainActor func installStream(_ client: EngineClient, _ paneId: String) throws {
   try client.terminalStreams.install(
     paneId: paneId,
     info: StreamInfo(

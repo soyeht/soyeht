@@ -69,23 +69,25 @@ impl Client {
         Ok(json!({"jsonrpc":"2.0","id":self.next_id,"method":method(kind),"params":params}))
     }
 
-    pub fn initialize(&mut self, root_uri: &str) -> Result<Value> {
-        self.request(
-            RequestKind::Initialize,
-            json!({
-                "processId":null,
-                "rootUri":root_uri,
-                "capabilities":{
-                    "general":{"positionEncodings":["utf-16"]},
-                    "textDocument":{
-                        "publishDiagnostics":{},"documentSymbol":{},"definition":{},
-                        "references":{},"formatting":{}
-                    }
-                },
-                "clientInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")}
-            }),
-            "initialize",
-        )
+    /// The `initialize` request. `options` are the server's `initializationOptions`, which carry
+    /// the settings that keep it from running a folder's code while the folder is restricted.
+    pub fn initialize(&mut self, root_uri: &str, options: Option<&Value>) -> Result<Value> {
+        let mut params = json!({
+            "processId":null,
+            "rootUri":root_uri,
+            "capabilities":{
+                "general":{"positionEncodings":["utf-16"]},
+                "textDocument":{
+                    "publishDiagnostics":{},"documentSymbol":{},"definition":{},
+                    "references":{},"formatting":{}
+                }
+            },
+            "clientInfo":{"name":"Soyeht","version":env!("CARGO_PKG_VERSION")}
+        });
+        if let Some(options) = options {
+            params["initializationOptions"] = options.clone();
+        }
+        self.request(RequestKind::Initialize, params, "initialize")
     }
 
     pub fn symbols(&mut self, uri: &str, context: &str) -> Result<Value> {
@@ -262,7 +264,7 @@ mod tests {
     #[test]
     fn restart_state_preserves_request_correlation_and_utf16_capability() {
         let mut client = Client::default();
-        let initialize = client.initialize("file:///workspace").unwrap();
+        let initialize = client.initialize("file:///workspace", None).unwrap();
         assert_eq!(
             initialize["params"]["capabilities"]["general"]["positionEncodings"][0],
             "utf-16"

@@ -126,7 +126,7 @@ impl Workbench {
         let workspace_id = workspace.workspace_id.clone();
         let ticket = self.next_ticket();
         self.state.expect_open(ticket, &workspace_id);
-        self.request_pane(workspace_id, harness, ticket, cx);
+        self.request_pane(workspace_id, harness, None, ticket, cx);
     }
 
     pub(crate) fn next_ticket(&mut self) -> u64 {
@@ -140,14 +140,17 @@ impl Workbench {
         &mut self,
         workspace_id: String,
         harness: Option<String>,
+        cwd: Option<String>,
         ticket: u64,
         cx: &mut Context<Self>,
     ) {
-        // A pane starts in the folder of its workspace, as the Mac asks.
-        let cwd = self
-            .state
-            .workspace(&workspace_id)
-            .map(|workspace| workspace.path.clone());
+        // A pane starts in the folder it is asked for (a split's: that of the pane it splits),
+        // else in the folder of its workspace, as the Mac asks.
+        let cwd = cwd.or_else(|| {
+            self.state
+                .workspace(&workspace_id)
+                .map(|workspace| workspace.path.clone())
+        });
         self.send_open(
             match harness {
                 Some(harness) => Command::CreateAgent {

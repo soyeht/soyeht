@@ -5,9 +5,9 @@ use crate::{Error, Result, event::Event, tasks::TaskUpdate};
 use serde_json::Value;
 use soyeht_protocol::{
     EngineReadinessResult, EngineStatusResult, HarnessInfo, HarnessListResult, LoopSetResult,
-    PaneCommandsListResult, PaneCreateResult, PaneTranscriptResult, SkillsListResult,
-    TaskCreateResult, TaskDispatchResult, TaskMoveResult, TaskShowResult, UsageListResult,
-    WorkspaceCreateResult,
+    PaneCommandsListResult, PaneCreateResult, PaneTranscriptResult, ProjectTrustSetResult,
+    SkillsListResult, TaskCreateResult, TaskDispatchResult, TaskMoveResult, TaskShowResult,
+    UsageListResult, WorkspaceCreateResult,
 };
 
 /// What the engine's answer to `command` tells the application, for the commands that fetch
@@ -72,6 +72,13 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
             ticket: *ticket,
             workspace: serde_json::from_value::<WorkspaceCreateResult>(result)?.workspace,
         }),
+        Command::SetProjectTrust { .. } => {
+            let set = serde_json::from_value::<ProjectTrustSetResult>(result)?;
+            Some(Event::ProjectTrust {
+                workspace_ids: set.workspace_ids,
+                trust: set.trust,
+            })
+        }
         Command::CreateTerminal { ticket, .. }
         | Command::CreateAgent { ticket, .. }
         | Command::OpenWeb { ticket, .. } => Some(Event::Opened {

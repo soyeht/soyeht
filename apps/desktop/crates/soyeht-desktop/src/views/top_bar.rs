@@ -69,6 +69,11 @@ impl Workbench {
                 cx,
             ))
             .children((!hidden.is_empty()).then(|| self.overflow(&hidden, palette, cx)))
+            .children(
+                self.state
+                    .trust_marker()
+                    .map(|note| self.trust_shield(note, palette, cx)),
+            )
             .child(self.new_pane_button(connected, palette, cx))
             .children(reconnecting.then(|| reconnecting_note(palette)))
             .children((!shown.is_empty()).then(|| window_controls::controls(&shown, palette, cx)))
@@ -196,6 +201,28 @@ impl Workbench {
             element,
             hidden: hidden.into_iter().map(|index| ids[index].clone()).collect(),
         }
+    }
+
+    /// While the selected workspace's folder is restricted or undecided: a shield that says what
+    /// that means and asks the question again. The rule is the client state's (`trust_marker`).
+    fn trust_shield(
+        &self,
+        note: &'static str,
+        palette: &'static Palette,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        top_bar_button(
+            palette,
+            radius::PILL,
+            elevation::PILL,
+            layout::TOP_BAR_CONTROL_HEIGHT,
+        )
+        .id("trust-marker")
+        .cursor_pointer()
+        .tooltip(hint(note, palette))
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.reopen_trust_prompt(cx)))
+        .child(icon(Icon::Shield, glyph::TOP_BAR_NEW_PANE, palette.ink))
+        .into_any_element()
     }
 
     fn rail_toggle(&self, palette: &'static Palette, cx: &mut Context<Self>) -> AnyElement {
