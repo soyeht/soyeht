@@ -77,6 +77,16 @@
 			"isa" = "PBXBuildFile";
 			"fileRef" = "AD2400000000000000000011";
 		};
+		"AD2600000000000000000011" = {
+			"path" = "PairApprovalView.swift";
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"sourceTree" = "<group>";
+		};
+		"AD2600000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "AD2600000000000000000011";
+		};
 		"AD2500000000000000000011" = {
 			"path" = "NewTaskFields.swift";
 			"isa" = "PBXFileReference";
