@@ -71,7 +71,7 @@ hostile element only writes a marker file:
 | `rust-analyzer` | does not start | Switching build scripts, proc macros and check-on-save off (`cargo.buildScripts.enable`, `procMacro.enable`, `checkOnSave` of `initializationOptions`; [configuration](https://rust-analyzer.github.io/book/configuration.html)) stops `build.rs` and macro expansion, but `cargo metadata` still ran the `rustc-wrapper`, `rustc` and `rustc-workspace-wrapper` that the folder's `.cargo/config.toml` names, and `rustup` ran the program a `rust-toolchain.toml` `path` names, and a `rust-analyzer.toml` in the folder sets `rustfmt.overrideCommand` above the client's options (`crates/rust-analyzer/src/config.rs`: workspace-level keys are read from the folder first). A safe start needs the real toolchain binary by absolute path, a scrubbed environment (`RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER`, `RUSTC`, `RUSTUP_TOOLCHAIN` and their `CARGO_BUILD_*` forms), no formatting, and offline cargo, with the credential-provider and other cargo configuration keys not audited; the supervisor's environment allowlist does not carry them today. It is future work, not a flag. |
 | `sourcekit-lsp` | does not start | A `.sourcekit-lsp/config.json` in the folder is applied after `initializationOptions` and can switch the manifest sandbox off; `Package.swift` is compiled and run (the sandbox allows reading the disk and starting processes), `buildServer.json` and `.bsp/*.json` name a program, and `compile_commands.json` or the repository's own compiler flags can load a compiler plugin (`-load-plugin-executable`). `--default-workspace-type` only reorders the search; no option turns a type off ([configuration file](https://github.com/swiftlang/sourcekit-lsp/blob/main/Documentation/Configuration%20File.md), `DetermineBuildServer.swift`). |
 | `typescript-language-server` | starts, safe mode | It takes the `tsserver.js` that is installed with it (`tsserver.path`, an absolute path found beside the server on `PATH`), not the folder's `node_modules/typescript` that it would pick otherwise (`findTypescriptVersion`), `disableAutomaticTypingAcquisition: true` (type acquisition runs `npm install`), and no plugins. The server never passes `--allowLocalPluginLoads`, so `compilerOptions.plugins` loads nothing. Without a `tsserver.js` beside the server it does not start and says so. |
-| `pyright-langserver` | starts, safe mode | Pyright imports nothing from the folder. Its one subprocess is the interpreter (`python3` from the supervisor's `PATH`), run with the code that finds its search paths, and `pyrightconfig.json` and `pyproject.toml` cannot choose the interpreter (`pythonPath` is a language-server setting only). On Windows the system looks in the working directory first, so a `python3.exe` in the folder would win: there it does not start. |
+| `pyright-langserver` | does not start | Pyright finds its search paths by running `python3 -c "import os, sys, json ..."` with no `-I` and the project folder as the working directory (`fullAccessHost.ts`, when no virtual environment is configured), so `sys.path[0]` is the folder and a `json.py` there runs. A restricted `PATH` does not change that, `PYTHONSAFEPATH` is neither settable by the engine nor known to older Pythons, and `pyrightconfig.json` cannot choose another interpreter (`pythonPath` is a language-server setting only). It does not start; the reason names `json.py`. |
 
 A server that did not start has `state: "restricted"` and a `detail` that ends "Trust the folder to turn it
 on."; an editor request for it (a symbol, definition, reference or `file.format`) answers `harness_unavailable`
@@ -92,10 +92,18 @@ the supervisor, as the agent processes are. A server that cannot start the way i
 installed `tsserver.js`, no program on a trusted path) is left `unavailable` with the reason; it never drops the
 engine's link to the supervisor.
 
-**Programs and paths.** Without trust the engine starts a server by the absolute path it found in the absolute
-entries of its search path (a relative or empty entry is the project folder, so it never counts), with the
-canonical folder as the working directory; `typescript-language-server` takes its `tsserver.js` only from a
-`typescript` package that has a readable `package.json` with a version, and a partial install is refused.
+**Programs and paths.** The server's working directory is the project folder, and a program it starts by
+name (`env node` in the launcher of `typescript-language-server`) is found on the search
+path it inherits, where an empty or relative entry is the folder itself. So without trust the engine gives the
+process a search path of its own (`PATH` in the spawn's environment, part of its identity): the engine's absolute
+entries only, each as the system resolves it, none inside the canonical folder. It starts the server by the
+absolute path it found on that path, with the canonical folder as the working directory, and refuses a program
+that resolves inside the folder (an absolute `node_modules/.bin` entry that a shell hook adds, a link into the
+folder). `typescript-language-server` takes its `tsserver.js` only from a `typescript` package that resolves
+outside the folder and has a readable `package.json` with a version; a partial install is refused. What a start
+or an adoption is made of is worked out once (`Server::launch`), from the folders of the search path (a stat of
+each, not a walk). A process the supervisor holds that was started under another identity, a different search
+path for one, is closed and started again; it never drops the link to the supervisor.
 
 **What this does not cover.** A folder that was trusted and then changed (a pull, a checkout) is still
 trusted; the state is a decision about a place, as in other editors. Programs the person starts in a
