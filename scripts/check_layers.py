@@ -64,6 +64,9 @@ LAYERS: dict[str, set[str]] = {
     # The system web view of the desktop client (ADR 0110): it knows pages and pixels, and no
     # other crate of Soyeht.
     "soyeht-webview": set(),
+    # Soyeht's Apache-2.0 stand-in for Zed's GPL-3.0 `ztracing` (ADR 0149): a proc-macro that does
+    # nothing, patched in for the crate that GPUI's `sum_tree` uses. It depends on nothing.
+    "ztracing": set(),
     "soyeht-desktop": {"soyeht-client", "soyeht-webview", "soyeht-protocol", "soyeht-platform"},
     # Layer 8: the Android app's core (ADR 0134), its own workspace. It reuses the desktop client's
     # connection and replica and holds no rule of its own.

@@ -19,8 +19,6 @@ run time (ADR 0090).
 
 from __future__ import annotations
 
-import argparse
-import json
 import re
 from pathlib import Path
 
@@ -30,8 +28,8 @@ from check_swallowed_errors import (
     skip_balanced,
     without_test_items,
 )
+from count_ratchet import run
 
-ROOT = Path(__file__).resolve().parents[1]
 ENGINE_SOURCE = "engine/soyeht-engine/src"
 BASELINE = Path(__file__).resolve().parent / "event_literals_baseline.json"
 KEY = "pane_id_literals"
@@ -42,17 +40,25 @@ JSON_LITERAL = re.compile(r"\bjson!\s*\(")
 PANE_ID_KEY = re.compile(r'"paneId"\s*:')
 
 
-def sites(root: Path) -> list[tuple[str, int]]:
-    """Return (path, line) for every `json!(...)` literal with a `"paneId"` key in production code."""
-    found: list[tuple[str, int]] = []
+def production_sources(root: Path):
+    """Yield (path, source, production) for each production file of the engine.
+
+    `production` is the source with literals, comments and test items blanked in place, so an
+    offset in it is an offset in `source`; a file only test builds compile is left out.
+    """
     files = production_files(root, ENGINE_SOURCE, ".rs")
     sources = {path: path.read_text(encoding="utf-8") for path in files}
     test_modules = {name for source in sources.values() for name in TEST_MODULE.findall(source)}
     for path, source in sources.items():
         if test_modules.intersection({path.stem, path.parent.name}):
             continue
-        # Offsets agree: the test items are blanked in place, so a match inside one is skipped.
-        production = without_test_items(blank_literals_and_comments(source))
+        yield path, source, without_test_items(blank_literals_and_comments(source))
+
+
+def sites(root: Path) -> list[tuple[str, int]]:
+    """Return (path, line) for every `json!(...)` literal with a `"paneId"` key in production code."""
+    found: list[tuple[str, int]] = []
+    for path, source, production in production_sources(root):
         for match in JSON_LITERAL.finditer(source):
             if not production[match.start()].strip():
                 continue
@@ -66,33 +72,17 @@ def sites(root: Path) -> list[tuple[str, int]]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
-    parser.add_argument("--baseline", type=Path, default=BASELINE, help=argparse.SUPPRESS)
-    parser.add_argument("--print-baseline", action="store_true")
-    args = parser.parse_args()
-    root = args.root.resolve()
-    found = sites(root)
-    if args.print_baseline:
-        print(json.dumps({KEY: len(found)}, indent=2))
-        return 0
-    allowed = json.loads(args.baseline.read_text(encoding="utf-8"))[KEY]
-    if len(found) > allowed:
-        for path, line in found:
-            print(f"event literals: {path}:{line}: json!(... \"paneId\" ...)")
-        print(
-            f"event literals: FAIL: {len(found)} untyped literals, {allowed} allowed; build the "
-            "event from its generated type (model::pending) instead"
-        )
-        return 1
-    if len(found) < allowed:
-        print(
-            f"event literals: FAIL: {len(found)} untyped literals, baseline {allowed}; lower it "
-            "with --print-baseline"
-        )
-        return 1
-    print(f"event literals: PASS: {len(found)} untyped paneId literals")
-    return 0
+    return run(
+        description=__doc__,
+        label="event literals",
+        key=KEY,
+        baseline=BASELINE,
+        find=sites,
+        site='json!(... "paneId" ...)',
+        noun="untyped paneId literals",
+        fix="build the event from its generated type (model::pending) instead",
+        baseline_name=BASELINE.name,
+    )
 
 
 if __name__ == "__main__":

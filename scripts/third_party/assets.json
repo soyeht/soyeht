@@ -1,0 +1,53 @@
+{
+  "assets": [
+    {
+      "name": "Inter",
+      "version": "",
+      "license": "OFL-1.1",
+      "url": "https://github.com/rsms/inter",
+      "file": "apps/mac/Resources/Fonts/OFL-Inter.txt"
+    },
+    {
+      "name": "JetBrains Mono",
+      "version": "",
+      "license": "OFL-1.1",
+      "url": "https://github.com/JetBrains/JetBrainsMono",
+      "file": "apps/mac/Resources/Fonts/OFL.txt"
+    },
+    {
+      "name": "Nunito",
+      "version": "",
+      "license": "OFL-1.1",
+      "url": "https://github.com/googlefonts/nunito",
+      "file": "apps/mac/Resources/Fonts/OFL-Nunito.txt"
+    },
+    {
+      "name": "Courier Prime",
+      "version": "",
+      "license": "OFL-1.1",
+      "url": "https://github.com/quoteunquoteapps/CourierPrime",
+      "file": "apps/mac/Resources/Fonts/OFL-CourierPrime.txt"
+    },
+    {
+      "name": "Newsreader",
+      "version": "",
+      "license": "OFL-1.1",
+      "url": "http://github.com/productiontype/Newsreader",
+      "file": "apps/mac/Resources/Fonts/OFL-Newsreader.txt"
+    },
+    {
+      "name": "Lucide icons",
+      "version": "",
+      "license": "ISC",
+      "url": "https://lucide.dev",
+      "file": "apps/desktop/crates/soyeht-desktop/assets/LICENSE-lucide.txt"
+    },
+    {
+      "name": "Lobe Icons (provider glyphs)",
+      "version": "1.95.0",
+      "license": "MIT",
+      "url": "https://github.com/lobehub/lobe-icons",
+      "file": "apps/shared/Sources/SoyehtClient/Resources/Licenses/Provider-Icons-MIT.txt"
+    }
+  ]
+}

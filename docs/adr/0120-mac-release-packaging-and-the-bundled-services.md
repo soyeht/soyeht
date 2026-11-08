@@ -357,3 +357,51 @@ stale (the new text differs from the file on disk, so `current` is false).
 
 **Superseded in part: the running programs.** Dragging the app to the Trash left the engine and the
 supervisor running; ADR 0130 makes them end themselves when their file is gone.
+
+## Amendment: the privacy lists never show the app twice (2026-11-06)
+
+**The rule.** An update of the released Mac app must not add a row to System Settings, Privacy &
+Security (Files & Folders, Automation, App Management, Local Network, ...). macOS keys a grant of a
+program by its path and the designated requirement stored with it. A row survives an update when
+the path is the same and the new program still satisfies that requirement. So every program a
+person can be asked about has a fixed place and a requirement that does not move with a build.
+
+**What holds today** (read from the packaging script, not from a signed release, which needs the
+owner's Developer ID):
+
+- *Place.* The app, the engine, the supervisor, the command line and the MCP program live in
+  `<Product>.app/Contents/MacOS`, and the launch agents name those paths (`--programs` is the
+  folder of the app's own `soyeht`). Nothing in the path holds a version, a hash or a temporary
+  folder. An update that replaces the bundle in place keeps every path. The engine and the
+  supervisor are the only programs the agents start, so they are the identities a file or Automation
+  prompt can name. What was observed, not proven as a mechanism: the Dev supervisor
+  (`.../Soyeht.next/dev/bin/soyeht-ptyd`) and engine each hold their own rows in the owner's TCC
+  database (Automation, Documents, Desktop, Downloads, FileProvider for the supervisor), so
+  prompts caused by a shell or an agent have been recorded against those two paths. No program
+  disclaims responsibility (`responsibility_spawnattrs_setdisclaim` is not used), so no third
+  identity was seen.
+- *Requirement.* Every program is signed with `--identifier` from `binary_identifiers`
+  (`com.soyeht.next.engine`, `.ptyd`, `.cli`, `.mcp`), the app under its bundle identifier, all with
+  the Developer ID certificate, so the requirement is `identifier "<id>" and anchor apple generic`
+  and the team's certificate, not a code hash. An ad-hoc signature (or a bare program with no
+  `--identifier`) would store `cdhash`, and each update would then add a row.
+- *Local Network.* The engine binds loopback and tailnet addresses only (`permitted_address`), and
+  nothing browses, advertises or joins a multicast group, so the Mac app and its programs carry no
+  `NSLocalNetworkUsageDescription` or `NSBonjourServices`.
+
+**What is checked now.** `scripts/release_identity.py` holds the rules and `package_mac.verify_bundle`
+applies them to the app and to every program inside it, in a fresh build and in the image that is
+mounted, and `package_mac.py --verify-only APP` applies them to an app that is already signed (of the current release version only: its Info.plist is checked against `contracts/release.json`). A
+program fails when its identifier is not the one it is signed under, or lacks the profile's prefix
+(`com.soyeht.next.`) when it sits beside the app's executable; when its designated requirement is a code
+hash, names another identifier, has no Apple anchor or pins no signer, or pins another team; when its
+signature has no team; or when its path in the bundle holds a version or a hash. The rules read
+recorded `codesign` output in `scripts/test_release_identity.py`, which needs no identity; the same
+file signs a bundle ad hoc for real to prove the refusal, and signs one with `SOYEHT_MAC_SIGNING_IDENTITY`
+and `SOYEHT_DEVELOPMENT_TEAM` when they are set.
+
+**What is not covered.** An app opened from a folder that is not `/Applications` registers the agents
+at that path, and moving it later registers new paths: the old rows stay behind. The app already
+refuses a disk image and a translocated path; asking for `/Applications` or `~/Applications` is a
+product decision left to the owner. A privacy row for a path macOS keeps for a program that was
+deleted is not removed by this check.
