@@ -1,5 +1,11 @@
 use super::{
-    Changes, native_error, pending::UserOperation, purpose::Purpose, responses, state::State,
+    Changes,
+    mode_ceiling::{ModeCeiling, Verdict},
+    native_error,
+    pending::UserOperation,
+    purpose::Purpose,
+    responses,
+    state::State,
     transcript,
 };
 use crate::model::{config_failed, pending};
@@ -108,6 +114,9 @@ pub(super) fn open_session(state: &mut State, options: Options) -> Result<()> {
     state.options = options;
     // A failure belongs to the session that refused; a new one tries again.
     state.initial_config_failed = false;
+    if let Some(ceiling) = &mut state.mode_ceiling {
+        ceiling.reopened();
+    }
     ensure_engine_modes(state)?;
     match state.mode.clone() {
         Some(mode)
@@ -122,6 +131,15 @@ pub(super) fn open_session(state: &mut State, options: Options) -> Result<()> {
         _ => keep_harness_mode(state),
     }
     Ok(())
+}
+
+/// The name the harness announced for one of its modes, else the identifier.
+fn mode_name(state: &State, value: &str) -> String {
+    state
+        .options
+        .mode()
+        .and_then(|option| option.options.iter().find(|choice| choice.value == value))
+        .map_or_else(|| value.to_owned(), |choice| choice.name.clone())
 }
 
 /// Stops applying the pane's mode: the mode the harness reports becomes the
@@ -140,21 +158,14 @@ pub(super) fn refused_mode(
     changes: &mut Changes,
 ) -> Result<()> {
     keep_harness_mode(state);
-    let name = |value: &str| {
-        state
-            .options
-            .mode()
-            .and_then(|option| option.options.iter().find(|choice| choice.value == value))
-            .map_or_else(|| value.to_owned(), |choice| choice.name.clone())
-    };
     let refused = match refused {
-        ConfigValue::V0(value) => name(value),
+        ConfigValue::V0(value) => mode_name(state, value),
         ConfigValue::V1(value) => value.to_string(),
     };
     let kept = state
         .mode
         .as_deref()
-        .map_or_else(|| "its own mode".into(), name);
+        .map_or_else(|| "its own mode".into(), |value| mode_name(state, value));
     let notice = transcript::new_message(
         state,
         generation,
@@ -165,6 +176,58 @@ pub(super) fn refused_mode(
     )?;
     changes.messages.push(notice);
     Ok(())
+}
+
+/// Why a pane stops when the agent that started it leaves it no mode to run in.
+pub(crate) const MODE_CEILING_STOP: &str =
+    "No permission mode of this agent stays within the mode of the agent that started it";
+
+/// What the transcript says when the engine cancels a turn for the agent having raised its mode.
+pub(crate) const MODE_CEILING_CANCELLED: &str = "Turn cancelled: the agent raised its permission mode above the mode of the agent that started this pane.";
+
+/// Why the task of a pane goes back to the queue when the engine cancels its turn for that.
+pub(crate) const MODE_CEILING_RETURNED: &str = "returned: mode_ceiling, the agent raised its permission mode above the mode of the agent that started its pane";
+
+/// Keeps the pane within the mode of the agent that started it. A mode the pane would run above
+/// it is replaced by the most permissive one within it, and the transcript says so. `false`
+/// when the harness offers no mode within it, or refused the one asked for: the pane stops.
+pub(crate) fn hold_mode_ceiling(
+    state: &mut State,
+    generation: u32,
+    changes: &mut Changes,
+) -> Result<bool> {
+    let Some(mut ceiling) = state.mode_ceiling.take() else {
+        return Ok(true);
+    };
+    // A queue that stopped on a failed option applies no mode.
+    let wanted = match state.requested_options.get(MODE_KEY) {
+        Some(ConfigValue::V0(mode)) if !state.initial_config_failed => Some(mode.clone()),
+        _ => None,
+    };
+    let verdict = ceiling.verdict(state, wanted.as_deref());
+    state.mode_ceiling = Some(ceiling);
+    match verdict {
+        Verdict::Within => {}
+        Verdict::Stop => return Ok(false),
+        Verdict::Switch(mode) => {
+            let notice = transcript::new_message(
+                state,
+                generation,
+                TranscriptRole::System,
+                TranscriptKind::System,
+                format!(
+                    "The agent that started this one is in a lower permission mode; it starts in {}",
+                    mode_name(state, &mode)
+                ),
+                true,
+            )?;
+            changes.messages.push(notice);
+            state
+                .requested_options
+                .insert(MODE_KEY.into(), ConfigValue::V0(mode));
+        }
+    }
+    Ok(true)
 }
 
 /// Records a confirmed option; a confirmed mode becomes the pane's mode.
@@ -202,7 +265,43 @@ pub(super) fn agent_changed(state: &mut State, options: Options) -> Result<()> {
     {
         state.mode = state.options.current_mode().map(str::to_owned);
     }
+    // A pane that carries a ceiling does not keep a mode above it because the agent moved
+    // there on its own: the next advance checks it again.
+    let exceeded = state.phase == super::state::Phase::Ready
+        && !applying_mode
+        && state
+            .mode_ceiling
+            .as_ref()
+            .is_some_and(|ceiling| ceiling.exceeded_by(state));
+    if exceeded && let Some(ceiling) = state.mode_ceiling.as_mut() {
+        ceiling.reopened();
+    }
     Ok(())
+}
+
+/// An agent that moved itself above the ceiling of its pane while a turn runs is stopped: the
+/// turn is cancelled, so no further tool call runs in the higher mode, and the queue is held
+/// until a person resumes it. The mode itself is put back by the check the move re-armed.
+pub(super) fn hold_turn_above_ceiling(
+    store: &impl crate::ports::StorePort,
+    pane: &str,
+    state: &mut State,
+    saved: &mut crate::model::StoredPane,
+    changes: &mut Changes,
+    when: (i64, &str),
+) -> Result<bool> {
+    let above = state.phase == super::state::Phase::Ready
+        && state.active.is_some()
+        && state.cancel_at_ms.is_none()
+        && state
+            .mode_ceiling
+            .as_ref()
+            .is_some_and(|ceiling| ceiling.pending() && ceiling.exceeded_by(state));
+    if above {
+        super::methods::cancel(store, pane, state, saved, changes, when.0, when.1)?;
+        state.cancelled_for_ceiling = true;
+    }
+    Ok(above)
 }
 
 pub struct ChangeRequest<'a> {
@@ -304,7 +403,7 @@ impl Core {
         role: &Role,
         modes: impl IntoIterator<Item = Option<&'a str>>,
     ) -> Result<()> {
-        if matches!(role, Role::HumanLocal | Role::HumanDevice)
+        if role.is_person()
             || !modes
                 .into_iter()
                 .flatten()
@@ -322,14 +421,23 @@ impl Core {
     /// own mode rather than a guessed one.
     pub fn configure_initial_agent(&mut self, pane: &str) -> Result<()> {
         let mut state = self.agent_state(pane)?;
-        if state.operation.is_some() || state.initial_config_failed {
+        let ceiling_pending = state
+            .mode_ceiling
+            .as_ref()
+            .is_some_and(ModeCeiling::pending);
+        if state.operation.is_some() || (state.initial_config_failed && !ceiling_pending) {
             return Ok(());
         }
         let mut changes = Changes::default();
-        while let Some((key, desired)) = state
-            .requested_options
-            .first_key_value()
-            .map(|(k, v)| (k.clone(), v.clone()))
+        let generation = self.panes[pane].stored.pane.generation;
+        if !hold_mode_ceiling(&mut state, generation, &mut changes)? {
+            return self.fail_agent(pane, MODE_CEILING_STOP);
+        }
+        while !state.initial_config_failed
+            && let Some((key, desired)) = state
+                .requested_options
+                .first_key_value()
+                .map(|(k, v)| (k.clone(), v.clone()))
         {
             let offered = requested_option(&state.options, &key).filter(|_| {
                 key != MODE_KEY
@@ -379,7 +487,6 @@ impl Core {
                         &error.to_string(),
                     )?);
                     if key == MODE_KEY {
-                        let generation = self.panes[pane].stored.pane.generation;
                         refused_mode(&mut state, generation, &desired, &mut changes)?;
                         continue;
                     }

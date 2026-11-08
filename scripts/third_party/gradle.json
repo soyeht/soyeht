@@ -1,0 +1,83 @@
+{
+  "libraries": [
+    {
+      "coordinate": "androidx.compose:compose-bom",
+      "version": "2024.12.01",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/compose"
+    },
+    {
+      "coordinate": "androidx.compose.ui:ui",
+      "version": "",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/compose-ui"
+    },
+    {
+      "coordinate": "androidx.compose.foundation:foundation",
+      "version": "",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/compose-foundation"
+    },
+    {
+      "coordinate": "androidx.compose.material3:material3",
+      "version": "",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/compose-material3"
+    },
+    {
+      "coordinate": "androidx.activity:activity-compose",
+      "version": "1.9.3",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/activity"
+    },
+    {
+      "coordinate": "androidx.lifecycle:lifecycle-viewmodel-compose",
+      "version": "2.8.7",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/lifecycle"
+    },
+    {
+      "coordinate": "net.java.dev.jna:jna",
+      "version": "5.14.0",
+      "license": "Apache-2.0 OR LGPL-2.1-or-later",
+      "url": "https://github.com/java-native-access/jna"
+    },
+    {
+      "coordinate": "androidx.camera:camera-core",
+      "version": "1.4.1",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/camera"
+    },
+    {
+      "coordinate": "androidx.camera:camera-camera2",
+      "version": "1.4.1",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/camera"
+    },
+    {
+      "coordinate": "androidx.camera:camera-lifecycle",
+      "version": "1.4.1",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/camera"
+    },
+    {
+      "coordinate": "androidx.camera:camera-view",
+      "version": "1.4.1",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx/releases/camera"
+    },
+    {
+      "coordinate": "com.google.zxing:core",
+      "version": "3.5.3",
+      "license": "Apache-2.0",
+      "url": "https://github.com/zxing/zxing"
+    },
+    {
+      "coordinate": "Kotlin standard library, AndroidX and Compose runtime libraries (transitive)",
+      "version": "",
+      "license": "Apache-2.0",
+      "url": "https://developer.android.com/jetpack/androidx",
+      "transitive": true
+    }
+  ]
+}

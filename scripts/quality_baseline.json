@@ -33,8 +33,8 @@
       "duplicated_lines": 150
     },
     "python": {
-      "clones": 15,
-      "duplicated_lines": 130
+      "clones": 14,
+      "duplicated_lines": 124
     },
     "shared": {
       "clones": 63,
@@ -105,7 +105,7 @@
       "system_font_size": 2
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
-      "padding": 4,
+      "padding": 3,
       "system_font_size": 2
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {

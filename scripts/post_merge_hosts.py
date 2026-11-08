@@ -1,5 +1,6 @@
-"""The hosts a post-merge run uses (ADR 0089): the remote Linux host that runs the engine,
-desktop, e2e and timing steps over ssh, and the load of the host a timing step runs on.
+"""The hosts a gate run uses (ADR 0089): the remote Linux host that runs the engine, desktop, e2e
+and timing steps over ssh (after the merge, and before it with scripts/gate_remote.py), how a
+commit that is on no remote reaches it, and the load of the host a timing step runs on.
 
 A timing-sensitive step is judged by the load of its host, and a run waits a bounded time for a
 busy one to quiet down (`WaitBudget`). Callers that the tests replace (`local_load`,
@@ -13,6 +14,7 @@ import shlex
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 # The Rust half of the editor check: an `engine` step (so it runs on the remote host) with a latency
@@ -42,18 +44,26 @@ SSH_FAILED_EXIT = 255  # ssh itself could not connect or run the command
 # scripts/remote_gate.sh: the host's worktree is held by another run. Not BUSY_EXIT, which is
 # this machine's own lock; neither says anything about the commit.
 REMOTE_BUSY_EXIT = 75
+HOST_PROBE_TIMEOUT_SECONDS = 120  # the ssh that asks whether the host holds a commit (it fetches)
+SHIP_TIMEOUT_SECONDS = 300  # the ssh that receives a bundle
+# Where on the host, under the checkout, a bundle waits for scripts/remote_gate.sh --bundle.
+BUNDLE_DIRECTORY = ".cache/remote-gate"
 
 
 @dataclass(frozen=True)
 class Remote:
     host: str
     root: str  # a checkout of the repository on the host that has scripts/remote_gate.sh
+    slot: str = ""  # a persistent worktree of its own on the host (remote_gate.sh --slot)
 
     def remote_path(self) -> str:
         """The root as the host's shell should read it: a leading `~` is the host's home."""
         if self.root == "~" or self.root.startswith("~/"):
             return '"$HOME"' + shlex.quote(self.root[1:])
         return shlex.quote(self.root)
+
+    def slot_arguments(self) -> str:
+        return f" --slot {shlex.quote(self.slot)}" if self.slot else ""
 
     def ssh(self, command: str) -> list[str]:
         ssh = os.environ.get(SSH_ENV, "ssh -o BatchMode=yes").split()
@@ -62,6 +72,66 @@ class Remote:
         script = (f"cd {self.remote_path()} || exit 2; "
                   f"[ -f scripts/remote_gate.sh ] || exit 2; {command}")
         return [*ssh, self.host, "bash -lc " + shlex.quote(script)]
+
+
+class ShipError(RuntimeError):
+    """A commit could not be sent to the host: a gate that cannot run, not a red commit."""
+
+
+def host_has_commit(remote: Remote, sha: str) -> bool:
+    """Whether the host's checkout holds the commit (it fetches `origin main` first). An
+    unreachable host, or one that cannot answer, is a `ShipError`: nothing is silently skipped."""
+    try:
+        result = subprocess.run(remote.ssh(f"bash scripts/remote_gate.sh --has {sha}"),
+                                capture_output=True, text=True, timeout=HOST_PROBE_TIMEOUT_SECONDS)
+    except (subprocess.TimeoutExpired, OSError) as error:
+        raise ShipError(f"cannot ask {remote.host} whether it holds {sha[:12]}: {error}") from error
+    if result.returncode not in (0, 1):
+        raise ShipError(f"cannot ask {remote.host} whether it holds {sha[:12]} "
+                        f"(exit {result.returncode}: {result.stderr.strip() or 'no message'})")
+    return result.returncode == 0
+
+
+def ship_commit(remote: Remote, worktree: Path, base: str | None, scratch: Path) -> str | None:
+    """Send the commit checked out in `worktree` to the host in a git bundle, for a commit that is
+    on no remote (the head of a pull request). The bundle holds `base..HEAD` when the host has the
+    base, else the whole history. Returns the bundle's path on the host (for `remote_gate.sh
+    --bundle`, which removes it), or nothing when the host already holds the commit."""
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=worktree, capture_output=True, text=True,
+                         check=True).stdout.strip()
+    if host_has_commit(remote, sha):
+        return None
+    name = f"gate-{sha[:12]}{'-' + remote.slot if remote.slot else ''}.bundle"
+    local, destination = scratch / name, f"{BUNDLE_DIRECTORY}/{name}"
+    revisions = f"{base}..HEAD" if base and base != sha and host_has_commit(remote, base) else "HEAD"
+    made = subprocess.run(["git", "bundle", "create", str(local), revisions], cwd=worktree,
+                          capture_output=True, text=True)
+    if made.returncode:
+        raise ShipError(f"cannot bundle {revisions}: {made.stderr.strip()}")
+    try:
+        with local.open("rb") as handle:
+            sent = subprocess.run(
+                remote.ssh(f"mkdir -p {BUNDLE_DIRECTORY} && cat > {shlex.quote(destination)}"),
+                stdin=handle, capture_output=True, text=True, timeout=SHIP_TIMEOUT_SECONDS)
+    except (subprocess.TimeoutExpired, OSError) as error:
+        drop_bundle(remote, destination)  # a part of it may have arrived
+        raise ShipError(f"cannot send the bundle to {remote.host}: {error}") from error
+    finally:
+        local.unlink(missing_ok=True)
+    if sent.returncode:
+        drop_bundle(remote, destination)
+        raise ShipError(f"cannot send the bundle to {remote.host} (exit {sent.returncode}: "
+                        f"{sent.stderr.strip() or 'no message'})")
+    return destination
+
+
+def drop_bundle(remote: Remote, destination: str) -> None:
+    """Remove a bundle from the host when `remote_gate.sh` never got to (a busy worktree, a failed ssh)."""
+    try:
+        subprocess.run(remote.ssh(f"rm -f {shlex.quote(destination)}"), capture_output=True,
+                       timeout=LOAD_PROBE_TIMEOUT_SECONDS)
+    except (subprocess.TimeoutExpired, OSError):
+        pass  # the next bundle of this commit overwrites it, and remote_gate.sh removes it after use
 
 
 @dataclass(frozen=True)
