@@ -68,6 +68,39 @@ pub const LOGIN_START_SUMMARY: &str = "Soyeht's engine keeps your terminals and 
 pub const LOGIN_START_LATER: &str = "You can turn it on later from Preferences.";
 pub const LOGIN_START_TURN_ON: &str = "Turn on";
 pub const LOGIN_START_NOT_NOW: &str = "Not now";
+pub const TRY_AGAIN: &str = "Try again";
+pub const OK: &str = "OK";
+pub const APP_MOVE_QUESTION: &str = "Move Soyeht to Applications?";
+pub const APP_MOVE_SUMMARY: &str = "Soyeht's engine needs the app in your Applications folder so macOS remembers the permissions you give it. Soyeht copies itself there and opens again. If it runs from a disk image, you can eject the image afterwards.";
+pub const APP_MOVE_ACTION: &str = "Move to Applications";
+pub const APP_MOVE_MENU: &str = "Move to Applications…";
+pub const APP_MOVE_EXPLANATION: &str = "The engine is off. It needs Soyeht in your Applications folder so macOS remembers its permissions.";
+pub const APP_MOVE_REPLACE_QUESTION: &str = "Replace the app in Applications?";
+pub const APP_MOVE_REPLACE_SUMMARY: &str =
+    "Soyeht is already in Applications. The old copy goes to the Trash.";
+pub const APP_MOVE_REPLACE: &str = "Replace";
+pub const APP_MOVE_FAILED_TITLE: &str = "Soyeht could not move itself";
+pub const APP_MOVE_FAILED_LATER: &str = "The engine stays off until Soyeht is in Applications. You can drag it there yourself, or choose Move to Applications again.";
+pub const APP_MOVE_RELAUNCH_FAILED_TITLE: &str = "Soyeht is now in Applications";
+pub const APP_MOVE_RELAUNCH_FAILED: &str =
+    "Soyeht was moved to Applications but could not open there. Open it from Applications.";
+pub const APP_MOVE_NOT_THIS_APP: &str =
+    "This copy is not the app Soyeht expected, so nothing was changed.";
+pub const APP_MOVE_ANOTHER_APP: &str =
+    "A different app with the same name is in Applications. Soyeht did not touch it.";
+pub const APP_MOVE_NO_WRITABLE_FOLDER: &str =
+    "Neither the Applications folder nor your own Applications folder can be written to.";
+pub const APP_MOVE_CHANGED: &str =
+    "Applications changed while Soyeht was moving. Nothing was replaced.";
+pub const APP_MOVE_NOT_FINISHED: &str =
+    "The copy did not finish. The app that was there is unchanged.";
+pub const APP_MOVE_NOT_SIGNED: &str = "The copy is not signed like this app, so it was not installed. The app that was there is unchanged.";
+pub const APP_MOVE_ALREADY_THERE: &str =
+    "This is the copy that is in Applications. Open it from there.";
+pub const APP_MOVE_RUNNING: &str =
+    "Soyeht is running from Applications. Quit it there, then move this copy.";
+pub const APP_MOVE_COPY_LOCKED: &str = "A copy of Soyeht is already in Applications and cannot be replaced from this account. Remove it, or open that copy.";
+pub const APP_MOVE_OLD_IN_TRASH: &str = "The old copy of Soyeht is in the Trash and could not be put back. Drag it from the Trash to Applications to restore it.";
 pub const PUSH_NEEDS_YOU_TITLE: &str = "An agent needs you";
 pub const PUSH_NEEDS_YOU_BODY: &str = "Open Soyeht to see what it asks.";
 pub const PROJECT_TRUST_TITLE: &str = "Trust this folder?";
