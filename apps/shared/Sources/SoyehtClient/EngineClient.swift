@@ -771,21 +771,6 @@ public final class EngineClient {
       terminalViewRegistry.remove(paneId)
     #endif
   }
-  public func createTerminalPane(directory: URL) async throws -> String {
-    let path = directory.standardizedFileURL.path
-    let workspaceId = try await workspaceId(for: directory, path: path)
-    let result = try await mutation(
-      .paneCreate,
-      PaneCreateParams(
-        workspaceId: workspaceId,
-        mode: .terminal, cwd: path, name: "Terminal", idempotencyKey: UUID().uuidString))
-    let paneId = try result.decoded(PaneCreateResult.self).paneId
-    select(paneId)
-    return paneId
-  }
-  func workspaceId(for directory: URL, path: String) async throws -> String {
-    try await createWorkspace(path: path, name: directory.lastPathComponent).workspaceId
-  }
   public func setWorkspacePaneLayout(
     workspaceId: String, state: PaneLayoutState
   ) async throws -> Workspace {
