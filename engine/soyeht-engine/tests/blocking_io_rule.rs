@@ -58,6 +58,19 @@ fn rust_files(directory: &Path, found: &mut Vec<PathBuf>) {
     }
 }
 
+/// A `#[cfg(...)]` line that holds for tests: `#[cfg(test)]` or `#[cfg(all(test, unix))]`, not
+/// `cfg(not(test))` and not a feature such as `"test-hooks"`.
+fn is_test_cfg(line: &str) -> bool {
+    let Some(condition) = line.strip_prefix("#[cfg(") else {
+        return false;
+    };
+    let unquoted = condition.split('"').step_by(2).collect::<String>();
+    let words = unquoted
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .collect::<Vec<_>>();
+    words.contains(&"test") && !words.contains(&"not")
+}
+
 /// The source before its first inline `#[cfg(test)]` module. A `#[cfg(test)] mod tests;` that
 /// names a file of its own is no cut: the code after it ships, and the scan reads the module's
 /// file on its own.
@@ -65,7 +78,7 @@ fn shipped(source: &str) -> &str {
     let lines = source.lines().collect::<Vec<_>>();
     let mut offset = 0;
     for (index, line) in lines.iter().enumerate() {
-        if *line == "#[cfg(test)]"
+        if is_test_cfg(line)
             && lines
                 .get(index + 1)
                 .is_some_and(|next| next.contains("mod ") && !next.trim_end().ends_with(';'))
@@ -83,6 +96,61 @@ fn a_test_module_in_a_file_of_its_own_does_not_hide_the_code_after_it() {
     assert_eq!(shipped(source), source);
     let inline = "fn ships() {}\n#[cfg(test)]\nmod tests {\n    fn hidden() {}\n}\n";
     assert_eq!(shipped(inline), "fn ships() {}\n");
+}
+
+/// The files and folders `files` declare as test modules with `#[cfg(test)] mod name;`: the
+/// module's file and everything under its folder. A file is test code, not shipped, when it is
+/// one of them or under one.
+fn test_modules(files: &[PathBuf]) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for file in files {
+        let source = fs::read_to_string(file).unwrap();
+        let name = file.file_stem().unwrap().to_string_lossy();
+        let parent = file.parent().unwrap();
+        let folder = if ["mod", "lib", "main"].contains(&name.as_ref()) {
+            parent.to_path_buf()
+        } else {
+            parent.join(name.as_ref())
+        };
+        let lines = source.lines().collect::<Vec<_>>();
+        for pair in lines.windows(2) {
+            let declared = pair[1]
+                .trim_end()
+                .strip_suffix(';')
+                .and_then(|declaration| declaration.rsplit_once("mod ").map(|(_, module)| module));
+            if let (true, Some(module)) = (is_test_cfg(pair[0]), declared) {
+                found.push(folder.join(format!("{module}.rs")));
+                found.push(folder.join(module));
+            }
+        }
+    }
+    found
+}
+
+fn is_test_module(file: &Path, test_modules: &[PathBuf]) -> bool {
+    test_modules
+        .iter()
+        .any(|module| file == module || file.starts_with(module))
+}
+
+#[test]
+fn a_file_its_parent_declares_as_a_test_module_is_test_code() {
+    let directory = std::env::temp_dir().join(format!("blocking-io-rule-{}", std::process::id()));
+    fs::create_dir_all(directory.join("worktree")).unwrap();
+    let parent = directory.join("worktree.rs");
+    fs::write(
+        &parent,
+        "#[cfg(all(test, unix))]\nmod hardening_tests;\n#[cfg(feature = \"test-hooks\")]\nmod hooks;\n",
+    )
+    .unwrap();
+    let modules = test_modules(&[parent]);
+    let child = |name: &str| directory.join("worktree").join(name);
+    assert!(is_test_module(&child("hardening_tests.rs"), &modules));
+    assert!(is_test_module(&child("hardening_tests/inner.rs"), &modules));
+    assert!(!is_test_module(&child("hooks.rs"), &modules));
+    assert!(!is_test_module(&directory.join("worktree.rs"), &modules));
+    assert!(!is_test_cfg("#[cfg(not(test))]"));
+    fs::remove_dir_all(&directory).unwrap();
 }
 
 /// A std `Command` run without the bounded runner.
@@ -105,7 +173,11 @@ fn every_engine_command_runs_through_the_bounded_runner() {
     for krate in ENGINE_CRATES {
         let mut files = Vec::new();
         rust_files(&root.join(krate).join("src"), &mut files);
+        let test_modules = test_modules(&files);
         for file in files {
+            if is_test_module(&file, &test_modules) {
+                continue;
+            }
             // Forward slashes on every system, as the allowlist spells them.
             let relative = file
                 .strip_prefix(&root)
