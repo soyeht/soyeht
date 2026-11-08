@@ -475,7 +475,7 @@ export interface PairProveResult {
   "status": string;
 }
 
-export type EngineReachabilityReason = "tailnet_address_not_found" | "tailnet_lookup_failed" | "tailnet_listen_failed" | "loopback_only";
+export type EngineReachabilityReason = "tailnet_address_not_found" | "tailnet_lookup_failed" | "tailnet_listen_failed" | "tailnet_port_in_use" | "loopback_only";
 
 export interface EngineReachability {
   "remote": boolean;
