@@ -28,6 +28,14 @@ public enum ClientPolicy {
     public static let terminalInputChunkBytes = 16384
     public static let terminalInputQueueBytes = 1048576
     public static let terminalScrollbackLines = 10000
+    public static let terminalOutputFlushMs = 16
+    public static let terminalOutputFlushSeconds: Double = 0.016
+    public static let terminalOutputFloodMs = 50
+    public static let terminalOutputFloodSeconds: Double = 0.05
+    public static let terminalOutputFloodBytes = 8192
+    public static let terminalInteractiveWindowMs = 150
+    public static let terminalInteractiveWindowSeconds: Double = 0.15
+    public static let terminalOutputFlushBytes = 1048576
     public static let capsWaitingMessages = 1000
     public static let capsFileLinks = 128
     public static let capsWebLinks = 128
@@ -51,6 +59,7 @@ public enum ClientPolicy {
     public static let editorNoFile = "The engine has no file for this editor tab."
     public static let editorFileNotText = "Binary file, can't be shown."
     public static let editorFileTooLarge = "This file is too large to open in the editor."
+    public static let workspaceFolderGone = "This workspace's folder is gone:"
     public static let editorSaveMissing = "Couldn't save: this file was deleted from the disk. Save again to create it."
     public static let editorSaveDenied = "Couldn't save: permission denied. Fix the permissions, then save again."
     public static let editorSaveFull = "Couldn't save: the disk is full. Free some space, then save again."

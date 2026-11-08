@@ -76,6 +76,12 @@ import SoyehtProtocol
 }
 
 extension EngineClient: TerminalStreamControl {
+  /// A gap notice changes when a gap does, not when a chunk arrives.
+  func syncGapTexts() {
+    if terminalGapTexts != terminalStreams.gapTextByPane {
+      terminalGapTexts = terminalStreams.gapTextByPane
+    }
+  }
   var isConnected: Bool { connected }
   func isTerminal(_ paneId: String) -> Bool {
     panes.contains { $0.paneId == paneId && $0.mode == .terminal }

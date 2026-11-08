@@ -72,9 +72,6 @@ public final class EngineClient {
       workspaceLayout: workspace.layout,
       livePanes: self.layoutPanes(self.panes.filter { $0.workspaceId == workspaceId }))
   }
-  public var gapText: String? {
-    selectedPaneId.flatMap { terminalStreams.gapText(for: $0) }
-  }
   public internal(set) var pairCode: DevicePairStartResult?
   /// Whether paired devices can reach the engine; `nil` until the engine says.
   public internal(set) var reachability: EngineReachability?
@@ -99,7 +96,9 @@ public final class EngineClient {
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
   @ObservationIgnored private var snapshot = SnapshotAssembly()
-  var terminalStreams = TerminalStreamReplica()
+  /// Not observed: positions move with every chunk. A view reads `terminalGapTexts`.
+  @ObservationIgnored var terminalStreams = TerminalStreamReplica() { didSet { syncGapTexts() } }
+  var terminalGapTexts: [String: String] = [:]
   @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
   @ObservationIgnored private var inputTask: Task<Void, Never>?
@@ -718,7 +717,7 @@ public final class EngineClient {
     guard !terminalStreams.contains(paneId) else { return }
     perform { try await self.subscribe(paneId) }
   }
-  public func gapText(for paneId: String) -> String? { terminalStreams.gapText(for: paneId) }
+  public func gapText(for paneId: String) -> String? { terminalGapTexts[paneId] }
   func claimTerminalOutput(
     owner: AnyObject, sink: @escaping (Data, Bool) -> Void
   ) {
@@ -758,21 +757,6 @@ public final class EngineClient {
     #if os(macOS)
       terminalViewRegistry.remove(paneId)
     #endif
-  }
-  public func createTerminalPane(directory: URL) async throws -> String {
-    let path = directory.standardizedFileURL.path
-    let workspaceId = try await workspaceId(for: directory, path: path)
-    let result = try await mutation(
-      .paneCreate,
-      PaneCreateParams(
-        workspaceId: workspaceId,
-        mode: .terminal, cwd: path, name: "Terminal", idempotencyKey: UUID().uuidString))
-    let paneId = try result.decoded(PaneCreateResult.self).paneId
-    select(paneId)
-    return paneId
-  }
-  func workspaceId(for directory: URL, path: String) async throws -> String {
-    try await createWorkspace(path: path, name: directory.lastPathComponent).workspaceId
   }
   public func setWorkspacePaneLayout(
     workspaceId: String, state: PaneLayoutState

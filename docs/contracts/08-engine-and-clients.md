@@ -428,6 +428,10 @@ and a later request succeeds once Git is installed),
 `file_not_text` (a file the editor was asked to open is not UTF-8 text) and `file_too_large`
 (it exceeds the editor's size limit); a client shows both in the editor pane, not as a dialog
 (ADR 0094).
+`workspace_folder_missing` (the folder of a workspace is not on the disk any more: a request that
+reads the workspace, such as `project.tree.list`, `file.open` or `file.diff`, answers it, with the
+message "The workspace folder is missing" and no path); a client shows it as a standing state of
+that workspace with a way to close it, not as a dialog (ADR 0154).
 
 ## 8. Limits (R20) — single table, overrides every other mention
 | Item | Limit |

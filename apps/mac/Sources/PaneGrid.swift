@@ -15,6 +15,10 @@ enum PaneSplitAxis: Sendable {
 
   var placeholderPaneId: String { insertion.placeholder.paneId }
 
+  /// The workspace a pane made for this draft must join: the one whose layout holds the slot
+  /// of a split. A pane that is placed by the arrangement may start its own workspace.
+  var slotWorkspaceId: String? { insertion.fillsSlot ? workspaceId : nil }
+
   func previewTree() throws -> PaneLayoutTree {
     try insertion.previewTree(sizing: MacPaneLayoutMetrics.sizing)
   }
@@ -398,6 +402,7 @@ struct PaneLayoutNodeSurface: View {
     let height = CGFloat(geometry.frame.size.height)
     return NewPaneSheet(
       client: client, workspaceId: presentation.draft.workspaceId,
+      slotWorkspaceId: presentation.draft.slotWorkspaceId,
       mode: Binding(
         get: {
           presentation.draft.insertion.placeholder.kind == .agent ? .agent : .terminal

@@ -23,6 +23,8 @@ pub(super) fn classify(error: &Error) -> EditorSaveFailure {
     }
     match error {
         Error::Io(error) => classify_io(error.kind()),
+        // The folder of the workspace is gone, and the file with it.
+        Error::WorkspaceFolderMissing(_) => EditorSaveFailure::Missing,
         _ => EditorSaveFailure::Other,
     }
 }
@@ -41,7 +43,11 @@ fn classify_io(kind: io::ErrorKind) -> EditorSaveFailure {
 /// Whether `error` says that the file is not there: a save of a file the person asked for may
 /// then create it again.
 pub(super) fn is_missing(error: &Error) -> bool {
-    matches!(error, Error::Io(error) if error.kind() == io::ErrorKind::NotFound)
+    match error {
+        Error::Io(error) => error.kind() == io::ErrorKind::NotFound,
+        Error::WorkspaceFolderMissing(_) => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -61,6 +67,13 @@ mod tests {
         ] {
             assert_eq!(classify(&errors::io(kind.into())), expected, "{kind:?}");
         }
+    }
+
+    #[test]
+    fn a_workspace_folder_that_is_gone_is_a_missing_file() {
+        let gone = errors::workspace_root(io::ErrorKind::NotFound.into());
+        assert_eq!(classify(&gone), EditorSaveFailure::Missing);
+        assert!(is_missing(&gone));
     }
 
     #[test]

@@ -19,7 +19,12 @@ export const clientPolicy = {
   "terminal": {
     "inputChunkBytes": 16384,
     "inputQueueBytes": 1048576,
-    "scrollbackLines": 10000
+    "scrollbackLines": 10000,
+    "outputFlushMs": 16,
+    "outputFloodMs": 50,
+    "outputFloodBytes": 8192,
+    "interactiveWindowMs": 150,
+    "outputFlushBytes": 1048576
   },
   "caps": {
     "waitingMessages": 1000,
@@ -88,6 +93,7 @@ export const clientPolicy = {
     "editorNoFile": "The engine has no file for this editor tab.",
     "editorFileNotText": "Binary file, can't be shown.",
     "editorFileTooLarge": "This file is too large to open in the editor.",
+    "workspaceFolderGone": "This workspace's folder is gone:",
     "editorSaveMissing": "Couldn't save: this file was deleted from the disk. Save again to create it.",
     "editorSaveDenied": "Couldn't save: permission denied. Fix the permissions, then save again.",
     "editorSaveFull": "Couldn't save: the disk is full. Free some space, then save again.",
