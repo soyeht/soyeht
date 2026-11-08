@@ -12,8 +12,10 @@ also scan PR history and the final title/body, pass
 ratchets compare with the merge-base of `origin/main` and `HEAD`, and fail when
 it cannot be resolved; run `git fetch origin main` first. Keep the vocabulary
 outside the repository. `.github/workflows/check-all.yml` only calls
-`check_all.sh`, for when hosted CI resumes; add new steps to the script, never to
-a workflow.
+`check_all.sh --tier fast`; add new steps to the script, never to a workflow. A change
+to the gate scripts or the workflow runs the full tier (`gate_plan.py`), which the hosted
+runner cannot finish (the editor measurement on VM1, the app builds), so it stays a local
+and post-merge run.
 
 The editor performance proof is collected separately on VM1, from the same
 checkout as the PR. Set `SOYEHT_EDITOR_METER_VM=1` and a locally configured
