@@ -521,6 +521,26 @@ fn prepare_with_file(label: &str, file: &str, text: &str) -> Result<ReadOnlyGit>
     prepared
 }
 
+/// A folder that is not in a repository has no configuration of its own: nothing is cleared and
+/// nothing fails, so a program that runs git on a plain folder is not refused for it.
+#[test]
+fn a_folder_outside_any_repository_prepares_with_no_drivers() {
+    let root = env::temp_dir().join(format!("soyeht-read-only-none-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(&root).unwrap();
+    let prepared = ReadOnlyGit::prepare(&root, lists());
+    fs::remove_dir_all(&root).unwrap();
+    assert_eq!(
+        prepared
+            .unwrap()
+            .settings
+            .iter()
+            .filter(|setting| setting.starts_with("filter."))
+            .count(),
+        0
+    );
+}
+
 /// A `config.worktree` that git cannot read is not skipped.
 #[test]
 fn an_unreadable_worktree_config_fails() {

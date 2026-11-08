@@ -234,7 +234,12 @@ fn repository_drivers(
     };
     let mut names = BTreeSet::new();
     let mut visited: BTreeSet<PathBuf> = BTreeSet::new();
-    let mut pending: Vec<(ConfigEntry, usize)> = read(None)?
+    let listed = read(None)?;
+    // A repository always has a `config` of its own, so its entries have the `local` scope. A
+    // folder with none is not inside a repository: it has no configuration of its own to read,
+    // and git run there starts nothing the folder names.
+    let in_repository = listed.iter().any(|entry| entry.scope == "local");
+    let mut pending: Vec<(ConfigEntry, usize)> = listed
         .into_iter()
         .filter(|entry| matches!(entry.scope.as_str(), "local" | "worktree"))
         .map(|entry| (entry, 0))
@@ -242,9 +247,11 @@ fn repository_drivers(
     // With `extensions.worktreeConfig`, each worktree has a `config.worktree` of its own that git
     // reads when it runs there, and `wt list` runs git in every worktree: the one of the
     // repository's main worktree and of every linked one is the repository's configuration too.
-    for file in worktree_config_files(probe, repository, limits)? {
-        if file.is_file() {
-            pending.extend(read(Some(&file))?.into_iter().map(|entry| (entry, 0)));
+    if in_repository {
+        for file in worktree_config_files(probe, repository, limits)? {
+            if file.is_file() {
+                pending.extend(read(Some(&file))?.into_iter().map(|entry| (entry, 0)));
+            }
         }
     }
     while let Some((entry, depth)) = pending.pop() {
