@@ -35,6 +35,7 @@ struct WorkspaceWindow: View {
     )
     .environment(\.askToClosePane, askToClosePane)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
+    .projectTrustSheet(client: client, selectedWorkspaceId: selectedTaskWorkspaceId)
     .modifier(
       CloseAlerts(
         paneToClose: $paneToClose, workspaceToClose: $workspaceToClose,
@@ -185,6 +186,22 @@ struct WorkspaceWindow: View {
     .padding(.bottom, CGFloat(policy.paneVerticalInset))
     .padding(.horizontal, CGFloat(horizontalInset))
     .frame(width: windowSize.width, height: windowSize.height)
+    .onReceive(NotificationCenter.default.publisher(for: .splitSoyehtPane)) { note in
+      guard navigation.destination == .agents, let axis = note.object as? PaneSplitAxis,
+        let paneId = client.selectedPaneId
+      else { return }
+      presentSplit(paneId, axis)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .moveSoyehtPaneFocus)) { note in
+      guard navigation.destination == .agents, let move = note.object as? PaneFocusMove,
+        let workspaceId = selectedTaskWorkspaceId,
+        let paneId = client.paneToFocus(
+          move, workspaceId: workspaceId,
+          viewport: PaneLayoutSize(width: contentSize.width, height: contentSize.height),
+          sizing: MacPaneLayoutMetrics.sizing)
+      else { return }
+      client.select(paneId)
+    }
   }
 
   private var appRail: some View {
@@ -333,8 +350,27 @@ struct WorkspaceWindow: View {
       client.problem = "Couldn't open the new pane chooser. The layout was not changed."
     }
   }
+  /// A split opens a pane beside the pane at once, as tmux does (`PaneSplitPolicy`); only a
+  /// writing pane asks what its companion is.
   private func presentSplit(_ paneId: String, _ axis: PaneSplitAxis) {
     guard let anchor = client.panes.first(where: { $0.paneId == paneId }) else { return }
+    guard PaneSplitPolicy.kind(splitting: anchor) != .chooser else {
+      presentSplitChooser(anchor, axis)
+      return
+    }
+    newPaneDraft = nil
+    Task { @MainActor in
+      do {
+        try await client.split(
+          paneId, axis: axis == .columns ? .horizontal : .vertical,
+          sizing: MacPaneLayoutMetrics.sizing)
+      } catch {
+        client.problem = "Couldn't split the pane. The layout was not changed."
+      }
+    }
+  }
+  private func presentSplitChooser(_ anchor: Pane, _ axis: PaneSplitAxis) {
+    let paneId = anchor.paneId
     do {
       let snapshot = try layoutSnapshot(anchor.workspaceId)
       newPaneDraft = NewPaneDraft(
