@@ -44,8 +44,9 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   finger still scrolls and types. From Android 14 the platform's own stylus handwriting does it through the keyboard and
   the app does nothing; below it, ML Kit's recognizer reads the strokes on the device with a language model that follows
   the system language, which the person installs from Settings (nothing is downloaded before Install). The ML Kit
-  libraries are proprietary Google binaries: the policy lists them as exceptions and a release refuses them until the
-  owner accepts their terms.
+  libraries are proprietary Google binaries, free of charge, that the owner accepted on 2026-11-08 (the policy lists
+  them as accepted exceptions); ML Kit sends performance and usage metrics to Google, which the Settings row and
+  `PRIVACY.md` say, and the strokes and the text stay on the device.
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.

@@ -66,12 +66,20 @@
     {
       "package": "com.google.mlkit:digital-ink-recognition",
       "license": "LicenseRef-ML-Kit-Terms",
-      "reason": "Handwriting recognition on a Boox below Android 14 (ADR 0157). The library is Google's proprietary binary under the ML Kit Terms of Service: free to ship in an app, not open source and not on the allow-list. It is not GPL and links no GPL code. A release must not ship it until the owner has accepted these terms."
+      "reason": "Handwriting recognition on a Boox below Android 14 (ADR 0157). The library is Google's proprietary binary under the ML Kit Terms of Service: free to ship in an app, not open source and not on the allow-list. It is not GPL and links no GPL code. The owner accepted it on 2026-11-08: the library is free of charge, and the app tells the person that it sends performance and usage metrics to Google (PRIVACY.md).",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
     },
     {
       "package": "ML Kit's runtime libraries: ML Kit common, Google Play services base, basement and tasks (transitive)",
       "license": "LicenseRef-ML-Kit-Terms AND LicenseRef-Android-SDK-License",
-      "reason": "The libraries the ML Kit recognizer needs at run time: ML Kit common (ML Kit Terms of Service) and Google Play services base, basement and tasks (Android Software Development Kit License). Proprietary Google binaries, covered by the same decision as the recognizer (ADR 0157)."
+      "reason": "The libraries the ML Kit recognizer needs at run time: ML Kit common (ML Kit Terms of Service) and Google Play services base, basement and tasks (Android Software Development Kit License). Proprietary Google binaries, covered by the same decision as the recognizer (ADR 0157). The owner accepted it on 2026-11-08: the library is free of charge, and the app tells the person that it sends performance and usage metrics to Google (PRIVACY.md).",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
     }
   ],
   "bundled": {

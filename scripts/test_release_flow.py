@@ -321,6 +321,38 @@ class ExceptionProblemTests(unittest.TestCase):
         self.assertIn("abc is under AGPL-3.0-only", lines[0])
         self.assertEqual(release_checks.exception_problems(licenses.Policy(frozenset(), (), {}, {})), [])
 
+    def test_an_exception_the_owner_accepted_passes_a_release_and_the_others_do_not(self):
+        import third_party_licenses as licenses
+
+        exceptions = {("kit", "LicenseRef-Terms"): "why", ("other", "LicenseRef-Other"): "why"}
+        policy = licenses.Policy(frozenset(), (), {}, exceptions, {}, {("kit", "LicenseRef-Terms"): "owner, 2026-11-08"})
+        lines = release_checks.exception_problems(policy)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("other is under LicenseRef-Other", lines[0])
+
+    def test_an_acceptance_needs_who_and_a_date_and_never_covers_copyleft(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        import third_party_licenses as licenses
+
+        def load(entry):
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "policy.json"
+                path.write_text(json.dumps({"allowed": [], "prefer": [], "clarify": {}, "exceptions": [entry]}))
+                return licenses.load_policy(path)
+
+        base = {"package": "kit", "license": "LicenseRef-Terms", "reason": "why"}
+        self.assertEqual(load({**base, "accepted": {"by": "owner", "date": "2026-11-08"}}).accepted, {("kit", "LicenseRef-Terms"): "owner, 2026-11-08"})
+        for bad in ({"by": "", "date": "2026-11-08"}, {"by": "owner", "date": "yesterday"}, {"by": "owner"}):
+            with self.assertRaises(licenses.LicenseError):
+                load({**base, "accepted": bad})
+        with self.assertRaisesRegex(licenses.LicenseError, "copyleft"):
+            load({**base, "license": "GPL-3.0-or-later", "accepted": {"by": "owner", "date": "2026-11-08"}})
+        # An exception with no acceptance is not accepted.
+        self.assertEqual(load(base).accepted, {})
+
 
 class PublishTests(FlowCase):
     def ready(self):

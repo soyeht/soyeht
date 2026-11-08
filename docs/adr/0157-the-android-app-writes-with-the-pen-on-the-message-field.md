@@ -1,6 +1,6 @@
 # ADR 0157: The Android app writes with the pen on the message field
 
-- Status: proposed. Extends ADR 0134 (the Android app) and ADR 0155 (the e-ink mode); needs the owner's decision on the ML Kit terms (below) before a release.
+- Status: accepted. Extends ADR 0134 (the Android app) and ADR 0155 (the e-ink mode). The owner accepted ML Kit on 2026-11-08.
 - Date: 2026-11-08
 
 ## Context
@@ -43,13 +43,21 @@ permissive licenses (ADR 0149). The libraries ML Kit brings are not open source:
 | `com.google.android.gms:play-services-base`, `-basement`, `-tasks` | Android Software Development Kit License (Google's, proprietary) |
 | WorkManager, Firebase components and encoders, Datatransport, OkHttp, Okio | Apache-2.0 |
 
-None is GPL, AGPL or LGPL, and no GPL code is linked: the check `third-party-notices:check` still fails for one. The
+None is GPL, AGPL or LGPL, and no GPL code is linked: `third-party-notices:check` still fails for one. The
 proprietary ones are listed in `scripts/third_party/gradle.json` and in `exceptions` of `scripts/third_party/policy.json`,
-each with its reason. The gradle part of `third_party_sources.py` now honours `exceptions` as the cargo part does.
-**`release_flow.py collect` and `publish` refuse while an exception is in the policy, so no release ships with this until
-the owner accepts the ML Kit terms** (or the dependency is replaced). That is the intended consequence, not an
-oversight. Also for the review: the SDK carries Google's logging transport (Datatransport), which reports usage
-metrics under the ML Kit terms; the strokes are recognized on the device and are not sent by the app.
+each with its reason. The gradle part of `third_party_sources.py` honours `exceptions` as the cargo part does.
+
+**The owner accepted ML Kit on 2026-11-08.** It is free of charge. Each of its exceptions carries
+`"accepted": {"by": "owner", "date": "2026-11-08"}`; `release_checks.exception_problems` lets an accepted exception
+pass `release_flow.py collect` and `publish` and still stops at one nobody accepted, and a copyleft entry cannot be
+accepted at all (`load_policy` refuses it). There is no blanket bypass: an acceptance names one package and one
+license, and a new exception is refused by a release until the owner accepts it the same way.
+
+**What the person is told.** The ML Kit terms require telling users that ML Kit sends performance and usage metrics
+to Google; the input and the output of the recognizer stay on the device. The Settings row says it where Install is
+pressed, and `PRIVACY.md` says it (the exception to "no analytics library", the list of what leaves the device, and a
+note that a Google Play data-safety form declares these metrics). The SDK's logging transport (Datatransport) is what
+sends them; the app sends neither the strokes nor the recognized text.
 
 ## Alternatives
 
@@ -61,6 +69,6 @@ metrics under the ML Kit terms; the strokes are recognized on the device and are
 
 ## Consequences
 
-- A new dependency with a proprietary license: the review is required, and a release is blocked until it is decided.
+- A new dependency with a proprietary license, accepted by the owner: the review is required; a release passes it because of the recorded acceptance, and `PRIVACY.md` and Settings carry the metrics disclosure.
 - The APK grows by the ML Kit libraries; the model is not in it.
 - On Android 14 and later the code is not used; the platform's handwriting takes over.

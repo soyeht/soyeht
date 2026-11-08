@@ -295,10 +295,12 @@ class RepositoryTests(unittest.TestCase):
 
     def test_the_only_exceptions_are_the_ml_kit_libraries_and_no_copyleft_one_is_among_them(self):
         # A GPL crate that comes back must fail the gate, so no exception may name one; the ML Kit libraries (ADR 0157)
-        # are proprietary binaries and are refused by a release until the owner accepts their terms.
+        # are proprietary binaries that the owner accepted on 2026-11-08 (`accepted` in the policy).
         for package, license in POLICY.exceptions:
             self.assertTrue(package.startswith(("com.google.mlkit:", "ML Kit's runtime libraries")), package)
             self.assertNotRegex(license, r"GPL|AGPL|LGPL")
+        # The owner accepted them (2026-11-08): a release passes them, and only them.
+        self.assertEqual(set(POLICY.accepted), set(POLICY.exceptions))
 
     def test_a_swift_license_file_is_never_a_source_file(self):
         data = json.loads(sources.SWIFT_DATA.read_text())["packages"]

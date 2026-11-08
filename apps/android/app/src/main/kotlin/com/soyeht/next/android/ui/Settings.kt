@@ -66,7 +66,7 @@ private fun HandwritingRow(handwriting: Handwriting) {
     val language = Locale.getDefault().displayLanguage
     val (detail, action) = when (val state = handwriting.state) {
         ModelState.Checking -> "Looking for the $language model…" to null
-        ModelState.NotInstalled -> "Write with the pen in the message field. It is read on this device; the $language model downloads once, when you press Install." to ("Install" to handwriting::install)
+        ModelState.NotInstalled -> "Write with the pen in the message field. It is read on this device, and the $language model downloads once, when you press Install. Google ML Kit sends usage metrics to Google, never what you write." to ("Install" to handwriting::install)
         ModelState.Downloading -> "Installing the $language model…" to ("Installing…" to {})
         ModelState.Installed -> "The $language model is installed. Write with the pen in the message field." to ("Remove" to handwriting::remove)
         is ModelState.Failed -> "Could not ${state.kind} the $language model. Try again." to ("Retry" to handwriting::install)

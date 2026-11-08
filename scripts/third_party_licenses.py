@@ -66,6 +66,7 @@ class Policy:
     clarify: dict  # package name -> {"license": SPDX expression, "reason": ...}
     exceptions: dict  # (package name, license) -> reason
     bundled: dict = field(default_factory=dict)  # package name -> {"license", "files", "reason"}
+    accepted: dict = field(default_factory=dict)  # (package name, license) -> "who, date": an exception the owner accepted
 
     def rank(self, identifier):
         return self.prefer.index(identifier) if identifier in self.prefer else len(self.prefer)
@@ -74,14 +75,33 @@ class Policy:
 def load_policy(path=POLICY):
     data = json.loads(Path(path).read_text())
     exceptions = {}
+    accepted = {}
     for entry in data["exceptions"]:
         if not entry.get("reason", "").strip():
             raise LicenseError(f"the exception for {entry['package']} needs a reason")
         exceptions[(entry["package"], entry["license"])] = entry["reason"]
+        if "accepted" in entry:
+            accepted[(entry["package"], entry["license"])] = acceptance(entry)
     for name, entry in data.get("bundled", {}).items():
         if not entry.get("reason", "").strip():
             raise LicenseError(f"the bundled entry for {name} needs a reason")
-    return Policy(frozenset(data["allowed"]), tuple(data["prefer"]), data["clarify"], exceptions, data.get("bundled", {}))
+    return Policy(frozenset(data["allowed"]), tuple(data["prefer"]), data["clarify"], exceptions, data.get("bundled", {}), accepted)
+
+
+COPYLEFT = re.compile(r"GPL|AGPL|LGPL", re.IGNORECASE)
+
+
+def acceptance(entry):
+    """"By whom, on what date" of an exception the owner accepted (`"accepted": {"by": "owner", "date": "2026-11-08"}`).
+    A release stops at an exception nobody accepted; one that is accepted passes it. Copyleft is never accepted: a
+    GPL, AGPL or LGPL package stays refused whatever the entry says."""
+    accepted = entry["accepted"]
+    who, date = str(accepted.get("by", "")).strip(), str(accepted.get("date", "")).strip()
+    if not who or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        raise LicenseError(f"the acceptance of the exception for {entry['package']} needs `by` and a `date` (YYYY-MM-DD)")
+    if COPYLEFT.search(entry["license"]):
+        raise LicenseError(f"{entry['package']} is under {entry['license']}: a copyleft exception is never accepted")
+    return f"{who}, {date}"
 
 
 # ---- SPDX expressions ------------------------------------------------------------------------

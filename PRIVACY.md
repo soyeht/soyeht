@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated: 2026-11-04
+Last updated: 2026-11-08
 
 This policy covers Soyeht Next: the Mac app, the Windows and Linux app, the iPhone and iPad app,
 the Android app (not yet released) and the engine and command line that run on your computer. Soyeht is
@@ -14,12 +14,14 @@ against the source in that repository.
   talk to. We receive no data about you, your devices, your terminals or your agents.
 - **No analytics, no advertising, no tracking.** None of the apps contains an analytics,
   advertising or crash-reporting library, and the iPhone and iPad app declares in its privacy
-  manifest that it does not track you and collects no data.
+  manifest that it does not track you and collects no data. The one exception is Google's ML Kit
+  in the Android app, which sends performance and usage metrics to Google (see "Handwriting on
+  Android" below); what you write never leaves the device.
 - **Your work stays on your computer.** Terminals, prompts, agent conversations, files and settings
   live on the computer that runs the engine. Your iPhone, iPad or Android phone talks only to that
   computer, over your own private network.
 - **A few requests leave your devices, and each one is listed in this document**: the update check,
-  push alerts through Apple, dictation, optional model downloads, the usage meters, and the agents
+  push alerts through Apple, dictation, optional model downloads (and, on Android, the metrics of Google's handwriting library), the usage meters, and the agents
   and web pages you choose to run. None of them goes to a server run by Soyeht.
 
 ## What stays on your devices
@@ -105,6 +107,16 @@ The Nemotron dictation model (about 642 MB) is downloaded only after you press I
 Preferences. It is fetched from the Hugging Face model hub (`huggingface.co`) and then runs
 entirely on your device; nothing about you is sent beyond what any download request reveals, such as
 the IP address. You can delete it again with "Remove download" in Preferences. Nothing is downloaded before you ask.
+
+### Handwriting on Android (optional)
+
+On Android 13 and older, writing with a pen in the message field is read by Google's ML Kit Digital Ink
+Recognition, on the device. The language model is downloaded from Google's servers only after you press Install in
+Settings, and you can remove it there. **ML Kit sends performance and usage metrics to Google**, as the
+[ML Kit terms](https://developers.google.com/ml-kit/terms) require us to tell you; the input (your strokes) and
+the output (the recognized text) stay on the device and are not sent. Soyeht itself sends nothing. On Android 14
+and later the system's own handwriting is used and ML Kit is not involved. If the app is listed on Google Play, its
+data-safety form declares these metrics (`docs/adr/0157-the-android-app-writes-with-the-pen-on-the-message-field.md`).
 
 ### The agents you run
 
