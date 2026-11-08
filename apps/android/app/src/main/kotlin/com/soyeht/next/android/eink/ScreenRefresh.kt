@@ -1,6 +1,7 @@
 package com.soyeht.next.android.eink
 
 import android.os.Build
+import android.util.Log
 import android.view.View
 import java.lang.reflect.InvocationTargetException
 
@@ -74,13 +75,20 @@ class BooxRefresh private constructor(
             method.invoke(view, mode)
         } catch (failure: InvocationTargetException) {
             // The firmware refused the call: it is not one this adapter can drive, so it stops trying.
-            working = false
+            stop(failure)
         } catch (failure: IllegalAccessException) {
-            working = false
+            stop(failure)
         }
     }
 
+    /** Says which kind of failure ended the adapter, never its message. */
+    private fun stop(failure: Exception) {
+        working = false
+        Log.w(TAG, "the refresh adapter is off: ${failure.javaClass.simpleName}")
+    }
+
     companion object {
+        private const val TAG = "BooxRefresh"
         const val REGAL = 6
         const val ANIMATION = 4
         const val GC = 98

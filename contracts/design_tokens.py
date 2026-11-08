@@ -62,8 +62,10 @@ NUMERIC_SECTIONS = {
     "paneInterior": "PaneInterior",
     "composer": "Composer",
     "editor": "Editor",
-    "eink": "Eink",
 }
+# Sections only the Android app reads (its e-ink mode, ADR 0153): the Kotlin output has them and the Swift and
+# Rust outputs do not, so a client that does not use them carries no unused public name.
+ANDROID_SECTIONS = {"eink": "Eink"}
 # Values only the desktop client has (window frame, popups, glyph sizes). They are Rust-only: the
 # Mac output does not mention them, so it does not change when they do.
 DESKTOP_SECTION = "desktop"
@@ -113,7 +115,9 @@ def validate_palette(name, palette, extra=()):
 
 
 def validate_tokens(document):
-    expected = {"palettes", EINK_PALETTE, "fonts", "elevation", DESKTOP_SECTION, *NUMERIC_SECTIONS}
+    expected = {
+        "palettes", EINK_PALETTE, "fonts", "elevation", DESKTOP_SECTION, *NUMERIC_SECTIONS, *ANDROID_SECTIONS
+    }
     if set(document) != expected:
         raise ValueError(f"design tokens need exactly {sorted(expected)}")
     if list(document)[-1] != DESKTOP_SECTION:
@@ -123,7 +127,7 @@ def validate_tokens(document):
     for name, palette in document["palettes"].items():
         validate_palette(name, palette)
     validate_palette(EINK_PALETTE, document[EINK_PALETTE], EINK_ROLES)
-    for section in (*NUMERIC_SECTIONS, DESKTOP_SECTION):
+    for section in (*NUMERIC_SECTIONS, *ANDROID_SECTIONS, DESKTOP_SECTION):
         for key, value in document[section].items():
             _number(value, f"{section}.{key}")
     for key, value in document["fonts"].items():
@@ -390,7 +394,8 @@ def render_kotlin(document, header):
     palettes = "\n\n".join(kotlin_palette(n, p) for n, p in document["palettes"].items())
     eink = kotlin_palette("eink", document[EINK_PALETTE])
     listed = ", ".join(f"{name!r}" .replace("'", '"') + " to " + name for name in document["palettes"])
-    sections = "\n\n".join(kotlin_section(title, document[key]) for key, title in NUMERIC_SECTIONS.items())
+    kotlin_sections = {**NUMERIC_SECTIONS, **ANDROID_SECTIONS}
+    sections = "\n\n".join(kotlin_section(title, document[key]) for key, title in kotlin_sections.items())
     fonts = "\n".join(f"    const val {key}: String = {json.dumps(value)}" for key, value in document["fonts"].items())
     return (
         f"{header}\npackage com.soyeht.next.android.theme\n\n"

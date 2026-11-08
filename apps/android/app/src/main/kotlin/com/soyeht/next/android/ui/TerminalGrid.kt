@@ -132,11 +132,11 @@ private fun TerminalRow(row: RowRuns, style: GridStyle, width: Dp, height: Dp) {
         drawIntoCanvas { canvas ->
             row.runs.forEach { run ->
                 val left = run.column.toInt() * style.cellWidth
-                val background = color(run.background, style, style.ground, style.ground)
+                val background = color(run.background, style)
                 if (run.background !is TermColor.DefaultBackground) {
                     drawRect(background, Offset(left, 0f), Size(run.columns.toInt() * style.cellWidth, style.cellHeight))
                 }
-                var foreground = color(run.foreground, style, style.ink, style.ground)
+                var foreground = color(run.foreground, style)
                 if (style.legible) foreground = legible(foreground, background, style.ink, style.page)
                 val ink = when {
                     !run.dim -> foreground
@@ -153,8 +153,7 @@ private fun TerminalRow(row: RowRuns, style: GridStyle, width: Dp, height: Dp) {
     }
 }
 
-private fun color(color: TermColor, style: GridStyle, foreground: Color, background: Color): Color =
-    resolve(color, style.palette, foreground, background)
+private fun color(color: TermColor, style: GridStyle): Color = resolve(color, style.palette, style.ink, style.ground)
 
 /** A static block, as the desktop draws a focused cursor: an accent cell with the glyph in the on-accent color. */
 @Composable

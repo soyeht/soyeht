@@ -29,7 +29,9 @@ who turns it off on a Boox is not switched back. In the mode:
   label (9.2 to 1); the page and four fills are five distinct grey levels of a sixteen-level panel; the ANSI
   colours 0 to 7 are eight distinct steps of luminance, each at least 3 to 1 on the page. A colour a program
   writes is moved towards ink until it reads on its ground (`legible`), because a program assumes a dark one.
-- **The sizes are the `eink` section**, a shared section like the others: body text 18 sp, secondary 16 sp,
+- **The sizes are the `eink` section**, a section of the token file outside `desktop`. Only the Kotlin output
+  carries it (as it does `einkPalette`): the Swift and Rust outputs do not, because a public name nothing
+  reads fails `dead-public-swift:check`. Body text 18 sp, secondary 16 sp,
   terminal font 16 sp (growing to 28 sp, below), touch target 56 dp, a reading column of 640 dp, a border
   of 2 dp, the redraw interval (250 ms) and the settle delay (400 ms).
 - **Nothing animates.** No ripple, no pressed indication, no overscroll glow, no fling, and the pickers are a

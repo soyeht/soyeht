@@ -386,22 +386,6 @@ public enum DesignTokens {
     public static let previewHeaderHeight: CGFloat = 26
   }
 
-  public enum Eink {
-    public static let bodyTextSize: CGFloat = 18
-    public static let captionTextSize: CGFloat = 16
-    public static let smallTextSize: CGFloat = 16
-    public static let subheadingTextSize: CGFloat = 22
-    public static let headingTextSize: CGFloat = 24
-    public static let titleTextSize: CGFloat = 32
-    public static let terminalFontSize: CGFloat = 16
-    public static let terminalFontSizeMaximum: CGFloat = 28
-    public static let touchTarget: CGFloat = 56
-    public static let readingColumnWidth: CGFloat = 640
-    public static let borderWidth: CGFloat = 2
-    public static let redrawIntervalMs: CGFloat = 250
-    public static let settleDelayMs: CGFloat = 400
-  }
-
   public enum Fonts {
     public static let chrome = "Nunito"
     public static let ui = "Inter"

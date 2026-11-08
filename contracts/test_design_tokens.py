@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from design_tokens import (
+    ANDROID_SECTIONS,
     DESKTOP_SECTION,
     FALLBACKS,
     KOTLIN_OUTPUT,
@@ -46,20 +47,6 @@ ADDED_AFTER_GENERATION = {
     ("space", "x9"),
     ("space", "x20"),
     ("typeScale", "label"),
-    # The e-ink mode of the Android app has no Mac counterpart: its sizes are the token file's alone.
-    ("eink", "bodyTextSize"),
-    ("eink", "captionTextSize"),
-    ("eink", "smallTextSize"),
-    ("eink", "subheadingTextSize"),
-    ("eink", "headingTextSize"),
-    ("eink", "titleTextSize"),
-    ("eink", "terminalFontSize"),
-    ("eink", "terminalFontSizeMaximum"),
-    ("eink", "touchTarget"),
-    ("eink", "readingColumnWidth"),
-    ("eink", "borderWidth"),
-    ("eink", "redrawIntervalMs"),
-    ("eink", "settleDelayMs"),
 }
 
 
@@ -175,7 +162,7 @@ class TokenGenerationTests(unittest.TestCase):
             self.assertIn(f"    val {name} = Palette(", kotlin)
             for role in ("ink", "accent", "well"):
                 self.assertIn(f"{role} = 0xFF{palette[role][1:]},", kotlin)
-        for key, title in NUMERIC_SECTIONS.items():
+        for key, title in {**NUMERIC_SECTIONS, **ANDROID_SECTIONS}.items():
             self.assertIn(f"object {title} {{", kotlin)
             for name, value in document[key].items():
                 self.assertIn(f"const val {name}: Float = {float(value)!r}f", kotlin)
@@ -198,6 +185,10 @@ class TokenGenerationTests(unittest.TestCase):
         self.assertNotIn("E-ink", outputs[SWIFT_OUTPUT])
         self.assertNotIn("E-ink", outputs[RUST_OUTPUT])
         self.assertIn('displayName = "E-ink"', outputs[KOTLIN_OUTPUT])
+        # The e-ink sizes are the Android app's alone: no other client carries an unused name.
+        self.assertIn("object Eink {", outputs[KOTLIN_OUTPUT])
+        self.assertNotIn("Eink", outputs[SWIFT_OUTPUT])
+        self.assertNotIn("pub mod eink", outputs[RUST_OUTPUT])
         for role in ("border", "dim"):
             missing = copy.deepcopy(document)
             del missing["einkPalette"][role]

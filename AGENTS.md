@@ -111,7 +111,8 @@ ADR when you change a boundary.
   frame, popup gaps, glyph sizes and the sizes of views the Mac does not have. A size both
   clients draw (a sheet, a popover, a field, a column) is a token of a shared section
   (`layout`, `composer`, ...) that the Mac reads as `DesignTokens`; the same number as a Mac
-  literal and a `desktop` token is the copy this rule stops. `contracts/test_design_tokens.py`
+  literal and a `desktop` token is the copy this rule stops. The `eink` section and `einkPalette` (the
+  Android e-ink mode, ADR 0153) are read by the Kotlin output alone. `contracts/test_design_tokens.py`
   proves a token that replaces a Mac literal against the pre-generation Mac source
   (`INLINE_LITERALS`), and a token with no such source is listed in `ADDED_AFTER_GENERATION`.
 - Once a generated form exists, use it. Do not hand-type a method or event name,

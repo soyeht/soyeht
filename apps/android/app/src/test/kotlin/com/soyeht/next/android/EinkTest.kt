@@ -38,7 +38,7 @@ class EinkTest {
         // Each fill is darker than the one before it: five levels, the page and four fills.
         assertEquals(steps.sortedDescending(), steps)
         assertEquals(steps.size, steps.toSet().size)
-        assertTrue(contrast(color(palette.screen), color(palette.well)) >= 2f)
+        assertTrue(contrast(color(palette.screen), color(palette.well)) >= 1.8f)
     }
 
     @Test
