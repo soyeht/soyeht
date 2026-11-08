@@ -93,7 +93,7 @@ while the Mac's “Add iPhone” window is open:
 3. iPhone: `pair.prove {requestId, proof}` with `proof = HMAC-SHA-256(key,
    challenge || deviceName)`, `key = SHA-256(code || devicePublicKey)` →
    `{status: "pending"}`; Mac receives `device.pair_requested {requestId,
-   deviceName, fingerprint = SHA-256(devicePublicKey) in short hex}`.
+   deviceName, fingerprint = SHA-256(devicePublicKey) in short hex}`. Both screens show the same short comparison code, the first sixteen hexadecimal digits of that fingerprint in four groups of four, and the Mac asks the person to allow only if the device shows the same one. Every place the Mac can approve a request shows the code beside Allow, and a fingerprint with no code can only be denied (ADR 0152; `contracts/vectors/pairing-comparison.json`).
 4. Mac: `device.pair.decide {requestId, approve: true|false}`. The engine waits
    for consent until the code deadline (10 min); this pre-pairing dialogue
    is NOT subject to `hello`'s 5 s limit.

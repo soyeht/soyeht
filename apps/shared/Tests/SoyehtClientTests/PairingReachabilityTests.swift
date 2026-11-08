@@ -28,12 +28,22 @@ private let linkKey = "0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc"
 @Test func everyUnreachableReasonExplainsItselfAndReachableSaysNothing() {
   #expect(EngineReachability(remote: true).problemText == nil)
   let reasons: [EngineReachabilityReason] = [
-    .tailnet_address_not_found, .tailnet_lookup_failed, .tailnet_listen_failed, .loopback_only,
+    .tailnet_address_not_found, .tailnet_lookup_failed, .tailnet_listen_failed,
+    .tailnet_port_in_use, .loopback_only,
   ]
   let texts = reasons.compactMap { EngineReachability(remote: false, reason: $0).problemText }
   #expect(texts.count == reasons.count)
   #expect(Set(texts).count == reasons.count)
   #expect(texts.allSatisfy { $0.hasPrefix("Not reachable from your devices: ") })
+}
+
+/// The engine looks for the tailnet address again every two seconds (ADR 0078), so the person is not
+/// told to restart anything.
+@Test func thePortInUseTextSaysSoyehtConnectsByItself() throws {
+  let text = try #require(
+    EngineReachability(remote: false, reason: .tailnet_port_in_use).problemText)
+  #expect(text.contains("connects by itself"))
+  #expect(!text.contains("reopen"))
 }
 
 @Test func aLoopbackPairingLinkIsNotReachableFromAnotherDevice() throws {

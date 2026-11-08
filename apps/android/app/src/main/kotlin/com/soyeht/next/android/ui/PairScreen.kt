@@ -95,8 +95,9 @@ fun PairingDialogs(model: AppModel) {
             text = {
                 Text(
                     if (state.fingerprint != null) {
-                        "Compare this fingerprint with the one the computer shows:\n\n" +
-                            state.fingerprint.chunked(8).joinToString(" ")
+                        "Check that the computer shows this code, then allow it there. " +
+                            "If it shows another code or none, tap Cancel.\n\n" +
+                            state.fingerprint
                     } else {
                         "Reaching the computer."
                     },

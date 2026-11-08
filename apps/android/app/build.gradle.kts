@@ -34,10 +34,20 @@ android {
         getByName("main") {
             kotlin.srcDir(layout.buildDirectory.dir("generated/uniffi"))
             jniLibs.srcDir(layout.buildDirectory.dir("generated/jniLibs"))
+            // The license documents of the repository root travel in the APK as assets (ADR 0149).
+            assets.srcDir(layout.buildDirectory.dir("generated/licenses"))
         }
     }
     testOptions { unitTests.isReturnDefaultValues = true }
 }
+
+// LICENSE, NOTICE and the generated THIRD-PARTY-NOTICES.txt are copied from the repository root, so
+// the app holds no second copy of them.
+val copyLicenses by tasks.registering(Copy::class) {
+    from(rootProject.projectDir.resolve("../..")) { include("LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt") }
+    into(layout.buildDirectory.dir("generated/licenses"))
+}
+tasks.named("preBuild") { dependsOn(copyLicenses) }
 
 // The tests that call the core load the library scripts/check_android.sh built for this computer.
 tasks.withType<Test>().configureEach {
