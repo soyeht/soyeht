@@ -1,6 +1,7 @@
 # Run the new Dev profile
 
-GitHub Actions is disabled until the product is ready. Before every merge, run
+Hosted CI (`.github/workflows/check-all.yml`) runs the fast tier on every pull request and
+push to main, as a check for contributors. The merge gate stays local: before every merge, run
 `bash scripts/check_all.sh --tier fast` with `FORBIDDEN_TERMS` supplied through the
 environment; after the merge `scripts/main_watch.py` runs the full tier on main through
 `scripts/post_merge.py` and reverts a confirmed culprit (ADRs 0089 and 0092).
