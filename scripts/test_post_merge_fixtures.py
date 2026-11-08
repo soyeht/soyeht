@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import gate_base
+import gate_remote
 import gate_worktree
 import post_merge
 import post_merge_editor
@@ -113,11 +114,18 @@ def commit(root: Path, name: str, files: dict[str, str | None]) -> str:
     return git(root, "rev-parse", "HEAD")
 
 
+# The variables scripts/remote_gate.sh reads from its environment: its state directory and its host settings file.
+REMOTE_GATE_SCRIPT_ENV = ("SOYEHT_REMOTE_GATE_DIR", "SOYEHT_GATE_ENV_FILE")
+
+
 def isolate_environment():
-    """Inside a `mock.patch.dict(os.environ)`: forget the variables post_merge reads, which a
-    watch wrapper may export (they would send the tests to a real worktree, meter or host)."""
+    """Inside a `mock.patch.dict(os.environ)`: forget the variables post_merge, gate_remote and
+    remote_gate.sh read, which a watch or merge-gate wrapper may export (they would send the tests
+    to a real worktree, meter or host, or to the host's slot worktree instead of `tree`). A gate
+    that runs through gate_remote.py hands them to the local half, which runs these tests."""
     for name in (post_merge.WORKTREE_ENV, post_merge_editor.EDITOR_METER_ENV, post_merge_hosts.SSH_ENV,
-                 gate_base.MAIN_HEALTH_DIR_ENV):
+                 gate_base.MAIN_HEALTH_DIR_ENV, gate_remote.HOST_ENV, gate_remote.ROOT_ENV,
+                 gate_remote.SLOT_ENV, *REMOTE_GATE_SCRIPT_ENV):
         os.environ.pop(name, None)
 
 
