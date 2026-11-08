@@ -49,7 +49,7 @@ fn burst(bytes: usize, stopped: Option<Duration>, limit: Duration) -> (Rig, Vec<
     // seconds to start, and what is typed before it reads the terminal is lost.
     wait_for_shell(&mut client, &mut watcher, &pane, pane_ref);
 
-    let pause = if stopped.is_some() { "sleep 1; " } else { "" };
+    let pause = if stopped.is_some() { "sleep 0.5; " } else { "" };
     let command = format!("{pause}head -c {bytes} /dev/zero | tr '\\0' x; echo DO\"\"NE\n");
     client.call(
         "pane.input",
@@ -140,7 +140,7 @@ fn a_burst_longer_than_one_read_arrives_whole_without_waiting_for_the_sweep() {
     // under the two seconds after which a sweep counts output nobody announced as missed.
     let (rig, received, took) = burst(
         BURST,
-        Some(Duration::from_millis(1_800)),
+        Some(Duration::from_millis(1_000)),
         Duration::from_secs(10),
     );
     assert!(
