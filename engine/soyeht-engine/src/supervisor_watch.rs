@@ -216,7 +216,9 @@ impl Watch {
                     // More is waiting: the next read is not paced.
                     inner.paced.remove(instance_id);
                 }
-                *inner.repeats.entry(instance_id.to_owned()).or_insert(0) += 1;
+                // Capped: a process that stays behind for thousands of reads must not overflow it.
+                let repeats = inner.repeats.entry(instance_id.to_owned()).or_insert(0);
+                *repeats = repeats.saturating_add(1).min(IMMEDIATE_REPEATS);
             }
             Some(missed)
         });
@@ -549,6 +551,31 @@ mod tests {
         assert!(watch.is_marked("p"));
         watch.note_read("p", &read(5, 5, true, false));
         assert!(!watch.is_marked("p"));
+    }
+
+    #[test]
+    fn a_process_that_stays_behind_for_thousands_of_reads_keeps_a_bounded_count() {
+        let watch = Watch::default();
+        watch.pretend_active();
+        watch.pretend_notice("p", u64::MAX - 1);
+        // 64 KiB a read: a few hundred reads are some tens of megabytes of one build log.
+        for _ in 0..5_000 {
+            watch.note_read("p", &read(10, u64::MAX - 1, false, true));
+        }
+        assert!(watch.is_marked("p"));
+        assert!(
+            !watch.should_read("p", true),
+            "a woken tick still leaves it to the regular one"
+        );
+        assert!(watch.should_read("p", false));
+        // The read that reaches the end clears the count with the mark.
+        watch.note_read("p", &read(u64::MAX - 1, u64::MAX - 1, false, false));
+        assert!(!watch.is_marked("p"));
+        watch.pretend_notice("p", 5);
+        assert!(
+            watch.should_read("p", true),
+            "the count did not outlive the mark"
+        );
     }
 
     #[test]
