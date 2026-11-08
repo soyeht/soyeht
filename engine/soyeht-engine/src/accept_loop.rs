@@ -11,8 +11,9 @@
 //!   interrupted; on macOS an accepted connection with an empty address): the next `accept` has
 //!   an answer at once, so the loop waits only the platform's `ACCEPT_ERROR_FLOOR` (it cannot spin
 //!   a core). A
-//!   run of them that goes on for [`CONNECTION_GIVE_UP`] with no connection accepted ends the
-//!   listener.
+//!   run of them (`soyeht_platform::net::ConnectionErrors`, which the local endpoint's own
+//!   listeners use too) that goes on for `ACCEPT_GIVE_UP` with no connection accepted ends the
+//!   listener; two errors far apart are two runs.
 //! - **The process is out of descriptors or memory** (`EMFILE`, `ENFILE`, `ENOBUFS`, `ENOMEM`):
 //!   the listener is fine and a connection that closes frees a descriptor. The loop pauses, for
 //!   longer while the errors go on, up to a cap, and never ends.
@@ -26,15 +27,13 @@
 
 use crate::streak::Streak;
 use soyeht_platform::log::{self, Failure as _, Line};
-use soyeht_platform::net::ACCEPT_ERROR_FLOOR;
+use soyeht_platform::net::{ACCEPT_ERROR_FLOOR, ConnectionErrors, is_accept_give_up};
 use std::{io, time::Duration};
 use tokio::time::Instant;
 
 /// The pause after the first failure is twice this; it doubles while the failures go on.
 const PAUSE_BASE_MS: i64 = 50;
 const PAUSE_CAP_MS: i64 = 5_000;
-/// Errors about connections, with none accepted for this long, end the listener.
-const CONNECTION_GIVE_UP: Duration = Duration::from_secs(60);
 /// Consecutive errors of the third kind that end the listener.
 const LISTENER_GIVE_UP: u32 = 8;
 const FAILED_EVENT: &str = "engine.accept_failed";
@@ -122,9 +121,9 @@ pub(crate) struct Failures {
     connection: Streak,
     resources: Streak,
     other: Streak,
-    /// When the current run of errors about connections began, until an `accept` works or an
-    /// error of another kind shows the listener alive.
-    connections_since: Option<Instant>,
+    /// The current run of errors about connections, until an `accept` works or an error of
+    /// another kind shows the listener alive.
+    run: ConnectionErrors,
 }
 
 impl Failures {
@@ -135,7 +134,7 @@ impl Failures {
             connection: streak(),
             resources: streak(),
             other: streak(),
-            connections_since: None,
+            run: ConnectionErrors::default(),
         }
     }
 
@@ -152,12 +151,17 @@ impl Failures {
     fn failed(&mut self, error: &io::Error) -> Verdict {
         let kind = Kind::of(error);
         let name = kind.name();
-        if kind == Kind::Connection {
-            self.connections_since.get_or_insert_with(Instant::now);
+        // The clock of the loop, which a test can pause.
+        let now = Instant::now().into_std();
+        let ended_run = if kind == Kind::Connection {
+            self.run.failed_at(now).is_err()
         } else {
-            self.connections_since = None;
-        }
-        let since = self.connections_since;
+            self.run.accepted();
+            false
+        };
+        // A local endpoint's listener that ended itself says so; that is the end, not a failure to
+        // wait out.
+        let ended_below = is_accept_give_up(error);
         let streak = self.streak(kind);
         let said = streak.fail(&error.failure_kind());
         let attempts = streak.attempts();
@@ -179,11 +183,8 @@ impl Failures {
             );
         }
         match kind {
-            Kind::Connection
-                if since.is_some_and(|since| since.elapsed() >= CONNECTION_GIVE_UP) =>
-            {
-                Verdict::GiveUp
-            }
+            _ if ended_below => Verdict::GiveUp,
+            Kind::Connection if ended_run => Verdict::GiveUp,
             Kind::Listener if attempts >= LISTENER_GIVE_UP => Verdict::GiveUp,
             Kind::Connection | Kind::Resources | Kind::Listener => Verdict::Retry(pause),
         }
@@ -191,7 +192,7 @@ impl Failures {
 
     /// Ends the streaks after an `accept` that worked.
     fn accepted(&mut self) {
-        self.connections_since = None;
+        self.run.accepted();
         let failures: u32 = [&mut self.connection, &mut self.resources, &mut self.other]
             .into_iter()
             .filter_map(|streak| streak.succeed())
@@ -339,7 +340,39 @@ mod tests {
             .collect();
         let (accepted, waited) = accept_after(answers).await;
         assert_eq!(accepted.unwrap_err().kind(), io::ErrorKind::ConnectionReset);
-        assert!(waited >= CONNECTION_GIVE_UP, "{waited:?}");
+        assert!(waited >= soyeht_platform::net::ACCEPT_GIVE_UP, "{waited:?}");
+    }
+
+    /// A listener that waits for connections meets an error now and then; none of them is a run.
+    #[tokio::test(start_paused = true)]
+    async fn two_connection_errors_far_apart_do_not_end_a_healthy_listener() {
+        let mut failures = Failures::new("test");
+        for _ in 0..3 {
+            assert!(matches!(
+                failed(&mut failures, io::ErrorKind::ConnectionReset),
+                Verdict::Retry(_)
+            ));
+            tokio::time::advance(Duration::from_secs(61)).await;
+        }
+        // The same errors one after another do end it.
+        let mut dead = Failures::new("dead");
+        let mut verdict = Verdict::Retry(Duration::ZERO);
+        for _ in 0..70_000 {
+            verdict = failed(&mut dead, io::ErrorKind::ConnectionReset);
+            if verdict == Verdict::GiveUp {
+                break;
+            }
+            tokio::time::advance(Duration::from_millis(1)).await;
+        }
+        assert_eq!(verdict, Verdict::GiveUp);
+    }
+
+    /// The listener of the local endpoint ended itself: that is the end, whatever its kind.
+    #[tokio::test(start_paused = true)]
+    async fn a_listener_that_gave_itself_up_below_is_given_up_at_once() {
+        let mut failures = Failures::new("test");
+        let ended = io::Error::other(soyeht_platform::net::AcceptGaveUp);
+        assert_eq!(failures.failed(&ended), Verdict::GiveUp);
     }
 
     #[tokio::test(start_paused = true)]

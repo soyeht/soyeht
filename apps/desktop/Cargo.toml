@@ -65,6 +65,12 @@ wayland-protocols-plasma = { path = "shims/wayland-protocols-plasma" }
 [patch."https://github.com/zed-industries/zed"]
 ztracing = { path = "crates/ztracing" }
 
+# Zed's `ztracing`, `ztracing_macro` and `zlog`, which GPUI's `sum_tree` reaches, are GPL-3.0-or-later at
+# the pinned revision. Only the `#[instrument]` attribute is used, so this crate (Apache-2.0, ADR 0149)
+# takes the place of `ztracing`, and the other two leave the build.
+[patch."https://github.com/zed-industries/zed"]
+ztracing = { path = "crates/ztracing" }
+
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 

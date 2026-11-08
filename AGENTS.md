@@ -133,6 +133,10 @@ ADR when you change a boundary.
   the engine sends against the contract; the merge gate builds and tests with it, so a field
   the contract does not have fails the request or, for a background publication, the engine
   integration rig and the end-to-end run that read the engine log.
+- A handler reads the parameters of its request through the generated `...Params` type of the
+  method (deserialize once, then read typed fields), never `params["field"]` on a `Value`: an
+  optional field that changes then fails to compile instead of at run time.
+  `scripts/check_params_reads.py` holds the count of those reads down.
 - Rules every client must share that are not wire values (the Markdown subset of agent
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
   the same file. Change the vectors first.
